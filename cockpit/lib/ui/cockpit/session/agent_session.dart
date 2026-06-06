@@ -1,0 +1,431 @@
+import 'dart:async';
+
+import 'package:cockpit/domain/contracts/rpc_gateway_factory.dart';
+import 'package:cockpit/domain/contracts/rpc_process_gateway.dart';
+import 'package:cockpit/domain/entities/context_usage.dart';
+import 'package:cockpit/domain/entities/pi_command.dart';
+import 'package:cockpit/domain/entities/pi_model.dart';
+import 'package:cockpit/domain/entities/rpc_event.dart';
+import 'package:cockpit/domain/entities/thinking_level.dart';
+import 'package:cockpit/domain/entities/transcript_message.dart';
+import 'package:cockpit/ui/cockpit/session/agent_entry.dart';
+import 'package:cockpit/ui/cockpit/session/pane_item.dart';
+import 'package:flutter/foundation.dart';
+
+enum AgentStatus { empty, booting, idle, streaming, crashed }
+
+/// Controlador de UM agente (uma aba do multiplexador). Dono de um
+/// [RpcProcessGateway] próprio (criado pela fábrica), do transcript e dos
+/// controles (modelo/effort/contexto/aprovação). `ChangeNotifier`: cada pane
+/// escuta só a sua sessão, então um agente em streaming rebuilda só o seu pane.
+class AgentSession extends PaneItem {
+  AgentSession({
+    required this.id,
+    required this.projectId,
+    required this.workingDirectory,
+    required RpcGatewayFactory factory,
+    String? title,
+  }) : _factory = factory,
+       _title = title ?? 'Novo agente';
+
+  @override
+  final String id;
+  @override
+  final String projectId;
+
+  /// Disparado quando o agente fecha um turno (`agent_end`). A VM usa pra
+  /// notificar o workspace.
+  VoidCallback? onTurnEnd;
+
+  /// Pasta (subpasta do projeto) onde o `pi --mode rpc` roda.
+  @override
+  final String workingDirectory;
+
+  final RpcGatewayFactory _factory;
+  RpcProcessGateway? _gateway;
+  StreamSubscription<RpcEvent>? _sub;
+
+  /// Caminho do arquivo de sessão do pi (`~/.pi/agent/sessions/<cwd>/*.jsonl`)
+  /// que pertence a este agente. Capturado pela VM no 1º fim de turno e usado
+  /// pra reanexar a conversa ao restaurar o workspace.
+  String? sessionPath;
+
+  /// Sessões que já existiam na pasta **antes** deste agente bootar — a VM usa
+  /// pra descobrir, por diferença, qual arquivo o pi criou pra ele.
+  Set<String>? sessionBaseline;
+
+  String _title;
+  AgentStatus _status = AgentStatus.empty;
+
+  /// Quando o turno atual começou (streaming). `null` quando ocioso — a UI usa
+  /// pra mostrar o cronômetro de "trabalhando".
+  DateTime? _turnStartedAt;
+  final List<AgentEntry> _entries = <AgentEntry>[];
+
+  List<PiModel> _models = const <PiModel>[];
+  List<PiCommand> _commands = const <PiCommand>[];
+  PiModel? _model;
+  ThinkingLevel _thinking = ThinkingLevel.off;
+  ContextUsage? _ctx;
+
+  /// `true` quando o agente fechou um turno e o usuário ainda não olhou — move
+  /// a evidência na aba e conta pro badge do workspace.
+  bool _unseenFinish = false;
+  @override
+  bool get unseenFinish => _unseenFinish;
+
+  void markUnseen() {
+    if (_unseenFinish) return;
+    _unseenFinish = true;
+    notifyListeners();
+  }
+
+  @override
+  void clearUnseen() {
+    if (!_unseenFinish) return;
+    _unseenFinish = false;
+    notifyListeners();
+  }
+
+  AssistantTextEntry? _openText;
+  ThinkingEntry? _openThinking;
+  final Map<String, ToolEntry> _openTools = <String, ToolEntry>{};
+
+  // ---- getters (UI) ---------------------------------------------------------
+  @override
+  String get title => _title;
+  AgentStatus get status => _status;
+
+  /// Início do turno em andamento (`null` se ocioso).
+  DateTime? get turnStartedAt => _turnStartedAt;
+  bool get isStreaming => _status == AgentStatus.streaming;
+  bool get isBusy => _status == AgentStatus.streaming;
+  bool get isAlive =>
+      _status == AgentStatus.idle || _status == AgentStatus.streaming;
+  List<AgentEntry> get entries => List<AgentEntry>.unmodifiable(_entries);
+  List<PiModel> get models => _models;
+  List<PiCommand> get commands => _commands;
+  PiModel? get model => _model;
+  ThinkingLevel get thinking => _thinking;
+  ContextUsage? get contextUsage => _ctx;
+
+  // ---- lifecycle ------------------------------------------------------------
+
+  /// Sobe o `pi --mode rpc` na [workingDirectory] e começa a ouvir o stream.
+  Future<void> boot() async {
+    if (_status == AgentStatus.booting || isAlive) return;
+    _status = AgentStatus.booting;
+    _entries.clear();
+    _resetOpenBuffers();
+    notifyListeners();
+
+    final gateway = _factory.create();
+    _gateway = gateway;
+    final result = await gateway.spawn(workingDirectory: workingDirectory);
+    result.fold(
+      (_) {
+        _status = AgentStatus.idle;
+        _sub = gateway.events.listen(_onEvent);
+        _addInfo('agente pronto em $workingDirectory');
+        unawaited(_loadControls());
+        notifyListeners();
+      },
+      (error) {
+        _status = AgentStatus.crashed;
+        _addInfo('falha ao iniciar: ${error.message}', isError: true);
+        notifyListeners();
+      },
+    );
+  }
+
+  Future<void> send(String message) async {
+    final text = message.trim();
+    final gateway = _gateway;
+    if (text.isEmpty || gateway == null || !isAlive || isBusy) return;
+    _addUser(text);
+    _status = AgentStatus.streaming;
+    _turnStartedAt = DateTime.now();
+    notifyListeners();
+    final result = await gateway.sendPrompt(text);
+    result.fold((_) {}, (error) {
+      _addInfo('erro ao enviar: ${error.message}', isError: true);
+      _status = AgentStatus.idle;
+      _turnStartedAt = null;
+      notifyListeners();
+    });
+  }
+
+  /// Interrompe o turno atual (não mata o processo).
+  Future<void> stop() async {
+    await _gateway?.abort();
+  }
+
+  /// `/new` — começa uma sessão nova: zera a conversa. O `sessionPath` é
+  /// resetado pra a VM recapturar o novo arquivo de sessão no próximo turno.
+  Future<void> startNewSession() async {
+    final gateway = _gateway;
+    if (gateway == null || isBusy) return;
+    final result = await gateway.newSession();
+    result.fold(
+      (_) {
+        _entries.clear();
+        _resetOpenBuffers();
+        _ctx = null;
+        sessionPath = null;
+        _addInfo('nova sessão');
+        notifyListeners();
+      },
+      (error) {
+        _addInfo('falha ao criar sessão: ${error.message}', isError: true);
+        notifyListeners();
+      },
+    );
+  }
+
+  /// `/compact` — compacta o contexto da sessão.
+  Future<void> compact() async {
+    final gateway = _gateway;
+    if (gateway == null || isBusy) return;
+    final result = await gateway.compact();
+    result.fold(
+      (_) => _addInfo('contexto compactado'),
+      (error) => _addInfo('falha ao compactar: ${error.message}', isError: true),
+    );
+    notifyListeners();
+    unawaited(_refreshStats()); // o contexto mudou
+  }
+
+  Future<void> changeModel(PiModel model) async {
+    final gateway = _gateway;
+    if (gateway == null || isBusy || model == _model) return;
+    final result = await gateway.setModel(model);
+    result.fold((applied) => _model = applied, (error) {
+      _addInfo('falha ao trocar modelo: ${error.message}', isError: true);
+    });
+    notifyListeners();
+    unawaited(_refreshStats());
+  }
+
+  Future<void> changeThinking(ThinkingLevel level) async {
+    final gateway = _gateway;
+    if (gateway == null || isBusy || level == _thinking) return;
+    final result = await gateway.setThinkingLevel(level);
+    result.fold((_) => _thinking = level, (error) {
+      _addInfo('falha ao mudar effort: ${error.message}', isError: true);
+    });
+    notifyListeners();
+  }
+
+  /// Carrega uma sessão salva do pi (histórico) e **substitui** o transcript
+  /// atual pelas mensagens dela.
+  Future<void> loadHistory(String sessionPath) async {
+    final gateway = _gateway;
+    if (gateway == null || isBusy) return;
+
+    final switched = await gateway.switchSession(sessionPath);
+    final ok = switched.fold((_) => true, (error) {
+      _addInfo('falha ao trocar sessão: ${error.message}', isError: true);
+      notifyListeners();
+      return false;
+    });
+    if (!ok) return;
+
+    final result = await gateway.getMessages();
+    result.fold(
+      (messages) {
+        _entries.clear();
+        _resetOpenBuffers();
+        for (final message in messages) {
+          switch (message) {
+            case TmUser(:final text):
+              _add(UserEntry(text));
+            case TmAssistantText(:final text):
+              _add(AssistantTextEntry(text));
+            case TmThinking(:final text):
+              _add(ThinkingEntry(text));
+            case TmTool(
+              :final callId,
+              :final name,
+              :final args,
+              :final done,
+              :final isError,
+              :final resultText,
+            ):
+              final tool = ToolEntry(
+                toolCallId: callId,
+                toolName: name,
+                args: args,
+              );
+              tool.done = done;
+              tool.isError = isError;
+              tool.resultText = resultText;
+              _add(tool);
+          }
+        }
+        _status = AgentStatus.idle;
+        notifyListeners();
+      },
+      (error) {
+        _addInfo('falha ao carregar mensagens: ${error.message}', isError: true);
+        notifyListeners();
+      },
+    );
+  }
+
+  void rename(String title) {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty || trimmed == _title) return;
+    _title = trimmed;
+    notifyListeners();
+  }
+
+  /// Mata o processo limpo e libera o gateway. Chamado ao fechar a aba.
+  @override
+  Future<void> dispose() async {
+    await _sub?.cancel();
+    final gateway = _gateway;
+    _gateway = null;
+    if (gateway != null) {
+      await gateway.kill();
+      gateway.dispose();
+    }
+    super.dispose();
+  }
+
+  // ---- controles (request/response) -----------------------------------------
+
+  Future<void> _loadControls() async {
+    final gateway = _gateway;
+    if (gateway == null) return;
+    final modelsResult = await gateway.availableModels();
+    modelsResult.fold((list) => _models = list, (_) {});
+    final commandsResult = await gateway.commands();
+    commandsResult.fold((list) => _commands = list, (_) {});
+    final stateResult = await gateway.state();
+    stateResult.fold((snapshot) {
+      _model = snapshot.model;
+      _thinking = snapshot.thinkingLevel;
+    }, (_) {});
+    notifyListeners();
+    unawaited(_refreshStats());
+  }
+
+  Future<void> _refreshStats() async {
+    final gateway = _gateway;
+    if (gateway == null || !isAlive) return;
+    final result = await gateway.sessionStats();
+    result.fold((usage) {
+      if (usage != null) _ctx = usage;
+    }, (_) {});
+    notifyListeners();
+  }
+
+  // ---- fold do stream -------------------------------------------------------
+
+  void _onEvent(RpcEvent event) {
+    switch (event) {
+      case RpcAgentStart():
+        _status = AgentStatus.streaming;
+        _turnStartedAt ??= DateTime.now();
+      case RpcAgentEnd():
+        final wasStreaming = _status == AgentStatus.streaming;
+        if (wasStreaming) _status = AgentStatus.idle;
+        final startedAt = _turnStartedAt;
+        _turnStartedAt = null;
+        _resetOpenBuffers();
+        // Registra quanto tempo o turno levou no fim da conversa.
+        if (wasStreaming && startedAt != null) {
+          _add(WorkedEntry(DateTime.now().difference(startedAt)));
+        }
+        unawaited(_refreshStats());
+        if (wasStreaming) onTurnEnd?.call();
+      case RpcTurnStart():
+        _resetOpenBuffers();
+      case RpcTurnEnd():
+        _resetOpenBuffers();
+      case RpcThinkingDelta(:final delta):
+        _appendThinking(delta);
+      case RpcTextDelta(:final delta):
+        _appendText(delta);
+      case RpcTextEnd(:final content):
+        _finishText(content);
+      case RpcToolStart(:final toolCallId, :final toolName, :final args):
+        _startTool(toolCallId, toolName, args);
+      case RpcToolEnd(:final toolCallId, :final isError, :final resultText):
+        _finishTool(toolCallId, isError, resultText);
+      case RpcCommandResponse(:final command, :final success, :final error):
+        if (!success) {
+          _addInfo('comando "$command" falhou: ${error ?? "?"}', isError: true);
+        }
+      case RpcStreamError(:final message):
+        if (_status == AgentStatus.streaming) _status = AgentStatus.idle;
+        _turnStartedAt = null;
+        _addInfo('erro do agente: $message', isError: true, dedup: true);
+      case RpcAutoRetry(:final attempt, :final maxAttempts, :final delayMs, :final message):
+        _addInfo('retentando ($attempt/$maxAttempts em ${delayMs}ms) — $message');
+      case RpcDiagnostic(:final text):
+        _addInfo('stderr: $text');
+      case RpcProcessExit(:final code):
+        _status = AgentStatus.crashed;
+        _resetOpenBuffers();
+        _addInfo('processo encerrado (code=$code)', isError: code != 0);
+      case RpcUnknown():
+        return;
+    }
+    notifyListeners();
+  }
+
+  void _appendText(String delta) {
+    final open = _openText ??= _add(AssistantTextEntry());
+    open.text += delta;
+  }
+
+  void _finishText(String content) {
+    final open = _openText;
+    if (open != null && content.isNotEmpty) open.text = content;
+    _openText = null;
+  }
+
+  void _appendThinking(String delta) {
+    final open = _openThinking ??= _add(ThinkingEntry());
+    open.text += delta;
+  }
+
+  void _startTool(String id, String name, Map<String, dynamic> args) {
+    _openTools[id] = _add(ToolEntry(toolCallId: id, toolName: name, args: args));
+  }
+
+  void _finishTool(String id, bool isError, String resultText) {
+    final entry = _openTools.remove(id);
+    if (entry == null) return;
+    entry.done = true;
+    entry.isError = isError;
+    entry.resultText = resultText;
+  }
+
+  // ---- helpers --------------------------------------------------------------
+
+  T _add<T extends AgentEntry>(T entry) {
+    _entries.add(entry);
+    return entry;
+  }
+
+  void _addUser(String text) {
+    _resetOpenBuffers();
+    _add(UserEntry(text));
+  }
+
+  void _addInfo(String text, {bool isError = false, bool dedup = false}) {
+    if (dedup) {
+      final last = _entries.isNotEmpty ? _entries.last : null;
+      if (last is InfoEntry && last.text == text) return;
+    }
+    _add(InfoEntry(text, isError: isError));
+  }
+
+  void _resetOpenBuffers() {
+    _openText = null;
+    _openThinking = null;
+    _openTools.clear();
+  }
+}

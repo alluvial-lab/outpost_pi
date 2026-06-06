@@ -1,0 +1,94 @@
+import 'package:cockpit/config/env.dart';
+import 'package:cockpit/config/utils/injector.dart';
+import 'package:cockpit/data/filesystem/file_reader_impl.dart';
+import 'package:cockpit/data/filesystem/file_searcher_impl.dart';
+import 'package:cockpit/data/filesystem/file_system_reader_impl.dart';
+import 'package:cockpit/data/filesystem/git_status_reader_impl.dart';
+import 'package:cockpit/data/filesystem/folder_lister_impl.dart';
+import 'package:cockpit/data/filesystem/remote_pi_config_store_impl.dart';
+import 'package:cockpit/data/filesystem/session_history_impl.dart';
+import 'package:cockpit/data/notifications/local_notifier.dart';
+import 'package:cockpit/data/repositories/hive_project_repository.dart';
+import 'package:cockpit/data/repositories/hive_workspace_layout_store.dart';
+import 'package:cockpit/data/rpc/pi_rpc_process_factory.dart';
+import 'package:cockpit/data/terminal/pty_terminal_gateway_factory.dart';
+import 'package:cockpit/domain/contracts/file_reader.dart';
+import 'package:cockpit/domain/contracts/file_searcher.dart';
+import 'package:cockpit/domain/contracts/file_system_reader.dart';
+import 'package:cockpit/domain/contracts/folder_lister.dart';
+import 'package:cockpit/domain/contracts/git_status_reader.dart';
+import 'package:cockpit/domain/contracts/notifier.dart';
+import 'package:cockpit/domain/contracts/project_repository.dart';
+import 'package:cockpit/domain/contracts/remote_pi_config_store.dart';
+import 'package:cockpit/domain/contracts/rpc_gateway_factory.dart';
+import 'package:cockpit/domain/contracts/session_history.dart';
+import 'package:cockpit/domain/contracts/terminal_gateway_factory.dart';
+import 'package:cockpit/domain/contracts/workspace_layout_store.dart';
+import 'package:flutter/foundation.dart';
+import 'package:cockpit/ui/cockpit/viewmodels/cockpit_viewmodel.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+
+final CustomInjector _injector = CustomInjector();
+
+/// Acesso direto ao injector — só para bootstrap e composição de rotas.
+CustomInjector get injector => _injector;
+
+/// Inicializa Hive e registra as dependências. Chamado uma vez no `main`.
+Future<void> setupDependencies() async {
+  // Subdiretório próprio (evita poluir a raiz de ~/Documents).
+  await Hive.initFlutter('cockpit');
+  final box = await Hive.openBox<dynamic>(HiveProjectRepository.boxName);
+  final layoutBox = await Hive.openBox<dynamic>(
+    HiveWorkspaceLayoutStore.boxName,
+  );
+
+  final config = await PiSpawnConfig.resolve();
+
+  _injector.addInstance<PiSpawnConfig>(config);
+  _injector.addInstance<ProjectRepository>(HiveProjectRepository(box));
+  _injector.addInstance<WorkspaceLayoutStore>(
+    HiveWorkspaceLayoutStore(layoutBox),
+  );
+  _injector.addInstance<FolderLister>(const FolderListerImpl());
+  _injector.addInstance<FileSystemReader>(const FileSystemReaderImpl());
+  _injector.addInstance<FileReader>(const FileReaderImpl());
+  _injector.addInstance<FileSearcher>(FileSearcherImpl());
+  _injector.addInstance<GitStatusReader>(GitStatusReaderImpl());
+  _injector.addInstance<SessionHistory>(const SessionHistoryImpl());
+  _injector.addInstance<RemotePiConfigStore>(const RemotePiConfigStoreImpl());
+  _injector.addInstance<RpcGatewayFactory>(PiRpcProcessFactory(config));
+  _injector.addInstance<TerminalGatewayFactory>(
+    const PtyTerminalGatewayFactory(),
+  );
+
+  // Notificações do SO — inicializa (pede permissão). Falha de init não pode
+  // derrubar o boot do app.
+  final notifier = LocalNotifier();
+  try {
+    await notifier.init();
+  } catch (error) {
+    debugPrint('Falha ao iniciar notificações: $error');
+  }
+  _injector.addInstance<Notifier>(notifier);
+
+  _injector.commit();
+}
+
+/// Constrói o ViewModel do shell. Criado pela rota (provider é dono do ciclo de
+/// vida → `dispose` mata as sessões/processos vivos).
+CockpitViewModel buildCockpitViewModel() {
+  return CockpitViewModel(
+    _injector.get<ProjectRepository>(),
+    _injector.get<RpcGatewayFactory>(),
+    _injector.get<FolderLister>(),
+    _injector.get<SessionHistory>(),
+    _injector.get<RemotePiConfigStore>(),
+    _injector.get<Notifier>(),
+    _injector.get<FileSystemReader>(),
+    _injector.get<TerminalGatewayFactory>(),
+    _injector.get<FileReader>(),
+    _injector.get<WorkspaceLayoutStore>(),
+    _injector.get<GitStatusReader>(),
+    _injector.get<FileSearcher>(),
+  );
+}

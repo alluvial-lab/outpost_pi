@@ -11,7 +11,7 @@ Você está na **raiz** do monorepo Remote Pi. Esta pasta é exclusivamente para
 
 ## O que NÃO fazer aqui
 
-- Não editar código em `app/`, `pi-extension/`, `relay/`, `site/`
+- Não editar código em `app/`, `pi-extension/`, `relay/`, `site/`, `cockpit/`
 - Não rodar comandos de build/test dos subprojetos a partir daqui
 - Para implementar algo, despache via `cmux send` pro pane do subprojeto
   alvo (ver seção [Panes deste workspace cmux](#panes-deste-workspace-cmux)
@@ -52,6 +52,7 @@ formato fixo:
 - `scout-pi-extension` — Node/TS (`pi-extension/`)
 - `scout-relay` — Rust (`relay/`)
 - `scout-site` — NextJS (`site/`)
+- `scout-cockpit` — Flutter Desktop (`cockpit/`)
 
 Dispare múltiplos numa única mensagem para rodar em paralelo. Cada reporte
 volta com Stack & versões, Dependências, Estrutura, Saúde (lint/build/testes)
@@ -59,7 +60,7 @@ e Smells detectados.
 
 ## Panes deste workspace cmux
 
-Este workspace ("Remote PI") tem 4 panes dedicados — um por subprojeto — e este
+Este workspace ("Remote PI") tem 5 panes dedicados — um por subprojeto — e este
 Orquestrador. Cada pane já tem um `claude` rodando em sessão própria. **Use os
 panes existentes em vez de pedir pro usuário abrir terminal novo.**
 
@@ -69,7 +70,14 @@ panes existentes em vez de pedir pro usuário abrir terminal novo.**
 | `Relay` | `relay/` |
 | `Extension` | `pi-extension/` |
 | `Site` | `site/` |
+| `Cockpit` | `cockpit/` |
 | `Orquestrador` (você) | raiz do monorepo |
+
+> **Cockpit é o pane mais novo** e por enquanto é **iniciado manualmente** pelo
+> usuário — ele **ainda não está** no `cmux-bootstrap-agents.sh` (que cria os 4
+> originais: App/Relay/Extension/Site). Ao orquestrar, despache pra `Cockpit`
+> normalmente quando o pane existir; se faltar, peça pro usuário iniciá-lo (não
+> assuma que o bootstrap script o cria).
 
 > **Nunca hardcode surface IDs nesta documentação.** Eles mudam a cada
 > bootstrap dos panes. Sempre resolva por título via `cmux tree`.

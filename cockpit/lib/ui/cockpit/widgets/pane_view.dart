@@ -1,0 +1,846 @@
+import 'package:cockpit/ui/cockpit/session/agent_session.dart';
+import 'package:cockpit/ui/cockpit/session/file_viewer_session.dart';
+import 'package:cockpit/ui/cockpit/session/pane_item.dart';
+import 'package:cockpit/ui/cockpit/session/terminal_session.dart';
+import 'package:cockpit/ui/cockpit/states/pane_node.dart';
+import 'package:cockpit/ui/cockpit/viewmodels/cockpit_viewmodel.dart';
+import 'package:cockpit/ui/cockpit/widgets/agent_composer.dart';
+import 'package:cockpit/ui/cockpit/widgets/app_menu.dart';
+import 'package:cockpit/ui/cockpit/widgets/confirm_dialog.dart';
+import 'package:cockpit/ui/cockpit/widgets/agent_transcript.dart';
+import 'package:cockpit/ui/cockpit/widgets/empty_pane.dart';
+import 'package:cockpit/ui/cockpit/widgets/file_viewer.dart';
+import 'package:cockpit/ui/core/themes/terminal_theme.dart';
+import 'package:cockpit/ui/core/themes/themes.dart';
+import 'package:flutter/material.dart';
+import 'package:xterm/xterm.dart';
+
+/// Folha do multiplexador: tab strip + corpo (agente: transcript+composer / empty;
+/// terminal: TerminalView). O foco aparece **só na aba ativa**.
+class PaneView extends StatelessWidget {
+  const PaneView({
+    super.key,
+    required this.pane,
+    required this.vm,
+    required this.focused,
+    required this.onCreateTab,
+    required this.onSplit,
+    required this.onFillEmpty,
+    required this.onHistoryAgent,
+    required this.onEditAgent,
+  });
+
+  final LeafPane pane;
+  final CockpitViewModel vm;
+  final bool focused;
+
+  /// Abre uma aba "Novo" (placeholder vazio) — o tipo é escolhido dentro dela.
+  final VoidCallback onCreateTab;
+  final ValueChanged<SplitDir> onSplit;
+
+  /// Preenche a pane vazia — `(emptyId, terminal)`.
+  final void Function(String emptyId, bool terminal) onFillEmpty;
+
+  /// Abre o histórico de sessões de um agente (por id da aba).
+  final ValueChanged<String> onHistoryAgent;
+  final ValueChanged<String> onEditAgent;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final active = vm.session(pane.active);
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTapDown: (_) => vm.focus(pane.id),
+      child: Container(
+        color: colors.panel,
+        child: Column(
+          children: [
+            _TabStrip(
+              pane: pane,
+              vm: vm,
+              focused: focused,
+              onCreateTab: onCreateTab,
+              onSplit: onSplit,
+              onHistoryAgent: onHistoryAgent,
+              onEditAgent: onEditAgent,
+            ),
+            Expanded(
+              child: active == null
+                  ? const SizedBox.shrink()
+                  : _PaneBody(
+                      key: ValueKey('body-${active.id}'),
+                      item: active,
+                      onFillEmpty: (terminal) =>
+                          onFillEmpty(active.id, terminal),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TabStrip extends StatelessWidget {
+  const _TabStrip({
+    required this.pane,
+    required this.vm,
+    required this.focused,
+    required this.onCreateTab,
+    required this.onSplit,
+    required this.onHistoryAgent,
+    required this.onEditAgent,
+  });
+
+  final LeafPane pane;
+  final CockpitViewModel vm;
+  final bool focused;
+  final VoidCallback onCreateTab;
+  final ValueChanged<SplitDir> onSplit;
+  final ValueChanged<String> onHistoryAgent;
+  final ValueChanged<String> onEditAgent;
+
+  /// Fechar a pane fecha **todas** as abas dela (encerra agentes/terminais) →
+  /// confirma antes.
+  Future<void> _confirmClosePane(BuildContext context) async {
+    final count = pane.tabs.length;
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Fechar pane?',
+      message:
+          'Isso fecha todas as $count aba(s) desta pane e encerra os agentes/'
+          'terminais nela.',
+      confirmLabel: 'Fechar',
+      danger: true,
+    );
+    if (ok) vm.closePane(pane.id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: colors.bg,
+        border: Border(bottom: BorderSide(color: colors.border)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(
+                context,
+              ).copyWith(scrollbars: false),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < pane.tabs.length; i++)
+                      _TabDropSlot(
+                        index: i,
+                        onInsert: (data, index) => vm.moveTabToIndex(
+                          data.paneId,
+                          data.tabId,
+                          pane.id,
+                          index,
+                        ),
+                        child: _Tab(
+                          item: vm.session(pane.tabs[i]),
+                          paneId: pane.id,
+                          active: pane.tabs[i] == pane.active,
+                          focused: focused,
+                          onSelect: () => vm.selectTab(pane.id, pane.tabs[i]),
+                          onClose: () => vm.closeTab(pane.id, pane.tabs[i]),
+                          onEdit: () => onEditAgent(pane.tabs[i]),
+                          onHistory: () => onHistoryAgent(pane.tabs[i]),
+                        ),
+                      ),
+                    _TabAdd(onTap: onCreateTab),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          _PaneTools(
+            onSplitRight: () => onSplit(SplitDir.vertical),
+            onSplitDown: () => onSplit(SplitDir.horizontal),
+            onClosePane: () => _confirmClosePane(context),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Tab extends StatelessWidget {
+  const _Tab({
+    required this.item,
+    required this.paneId,
+    required this.active,
+    required this.focused,
+    required this.onSelect,
+    required this.onClose,
+    required this.onEdit,
+    required this.onHistory,
+  });
+
+  final PaneItem? item;
+  final String paneId;
+  final bool active;
+  final bool focused;
+  final VoidCallback onSelect;
+  final VoidCallback onClose;
+  final VoidCallback onEdit;
+  final VoidCallback onHistory;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = item;
+    if (s == null) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: s,
+      builder: (context, _) {
+        final colors = context.colors;
+        final isFocusedActive = active && focused;
+        final agent = s is AgentSession ? s : null;
+        final isTerminal = s is TerminalSession;
+        final isEmpty = agent?.status == AgentStatus.empty;
+        final streaming = agent?.isStreaming ?? false;
+
+        void showTabMenu() {
+          showAppMenu<String>(
+            context,
+            minWidth: 150,
+            items: [
+              if (agent != null && !isEmpty) ...[
+                const AppMenuItem(
+                  value: 'edit',
+                  label: 'Editar',
+                  icon: Icons.edit_outlined,
+                ),
+                const AppMenuItem(
+                  value: 'history',
+                  label: 'Histórico',
+                  icon: Icons.history,
+                ),
+              ],
+              const AppMenuItem(
+                value: 'close',
+                label: 'Fechar',
+                icon: Icons.close,
+              ),
+            ],
+          ).then((value) {
+            if (value == 'edit') onEdit();
+            if (value == 'history') onHistory();
+            if (value == 'close') onClose();
+          });
+        }
+
+        final isViewer = s is FileViewerSession;
+        final IconData icon = isTerminal
+            ? Icons.terminal_outlined
+            : isViewer
+            ? Icons.description_outlined
+            : (isEmpty ? Icons.edit_outlined : Icons.auto_awesome);
+
+        final tabBody = Container(
+          height: 40,
+          width: 188,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active ? colors.panel : colors.bg,
+            border: Border(right: BorderSide(color: colors.border)),
+          ),
+          foregroundDecoration: isFocusedActive
+              ? BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: colors.accent, width: 2),
+                  ),
+                )
+              : null,
+          padding: const EdgeInsets.only(left: 11, right: 7),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 13,
+                color: isFocusedActive
+                    ? colors.accentText
+                    : (active ? colors.text2 : colors.text3),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  s.title,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.typo.tab.copyWith(
+                    color: isFocusedActive
+                        ? Colors.white
+                        : (active ? colors.text : colors.text3),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              if (streaming) ...[
+                SizedBox(
+                  width: 10,
+                  height: 10,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: colors.accent,
+                  ),
+                ),
+                const SizedBox(width: 7),
+              ] else if (s.unseenFinish) ...[
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: colors.accent,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 7),
+              ],
+              _TabClose(onTap: onClose),
+            ],
+          ),
+        );
+
+        final interactive = GestureDetector(
+          // Clique normal só seleciona; o menu (Editar/Histórico/Fechar) abre
+          // apenas com o botão direito.
+          onTapUp: (d) => onSelect(),
+          onSecondaryTapUp: isEmpty ? null : (d) => showTabMenu(),
+          child: tabBody,
+        );
+
+        // Arrastável: solta sobre outro pane pra acoplar a aba ou criar split.
+        // `pointerDragAnchorStrategy` faz o feedback seguir o cursor (e o
+        // `onMove` do alvo reportar a posição real do ponteiro → zonas certas).
+        return Draggable<TabDragData>(
+          data: TabDragData(paneId: paneId, tabId: s.id),
+          dragAnchorStrategy: pointerDragAnchorStrategy,
+          feedback: Transform.translate(
+            offset: const Offset(12, 8),
+            child: _DragFeedback(icon: icon, title: s.title),
+          ),
+          childWhenDragging: Opacity(opacity: 0.3, child: tabBody),
+          child: interactive,
+        );
+      },
+    );
+  }
+}
+
+/// Alvo de drop por aba: ao arrastar outra aba pra cima desta, mostra um caret
+/// vertical no lado (esquerda = inserir antes, direita = depois) e, ao soltar,
+/// insere/reordena naquela posição. É o que permite **trocar abas de lugar**.
+class _TabDropSlot extends StatefulWidget {
+  const _TabDropSlot({
+    required this.index,
+    required this.onInsert,
+    required this.child,
+  });
+
+  final int index;
+  final void Function(TabDragData data, int index) onInsert;
+  final Widget child;
+
+  @override
+  State<_TabDropSlot> createState() => _TabDropSlotState();
+}
+
+class _TabDropSlotState extends State<_TabDropSlot> {
+  /// `null` = sem caret; `true` = caret à esquerda (antes); `false` = direita.
+  bool? _before;
+
+  void _update(Offset global) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final local = box.globalToLocal(global);
+    final before = local.dx < box.size.width / 2;
+    if (before != _before) setState(() => _before = before);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DragTarget<TabDragData>(
+      onMove: (d) => _update(d.offset),
+      onLeave: (_) {
+        if (_before != null) setState(() => _before = null);
+      },
+      onAcceptWithDetails: (d) {
+        final before = _before ?? true;
+        setState(() => _before = null);
+        widget.onInsert(d.data, before ? widget.index : widget.index + 1);
+      },
+      builder: (context, candidate, rejected) {
+        final caret = candidate.isNotEmpty ? _before : null;
+        return Stack(
+          children: [
+            widget.child,
+            if (caret != null)
+              Positioned(
+                top: 6,
+                bottom: 6,
+                left: caret ? 0 : null,
+                right: caret ? null : 0,
+                child: Container(
+                  width: 2.5,
+                  decoration: BoxDecoration(
+                    color: colors.accent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TabClose extends StatelessWidget {
+  const _TabClose({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Icon(Icons.close, size: 12, color: context.colors.text3),
+      ),
+    );
+  }
+}
+
+/// "+" — abre direto uma aba "Novo" (placeholder); o tipo (agente/terminal) é
+/// escolhido dentro da aba.
+class _TabAdd extends StatelessWidget {
+  const _TabAdd({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Tooltip(
+      message: 'Nova aba',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            decoration: BoxDecoration(
+              border: Border(right: BorderSide(color: colors.border)),
+            ),
+            child: Icon(Icons.add, size: 14, color: colors.text4),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PaneTools extends StatelessWidget {
+  const _PaneTools({
+    required this.onSplitRight,
+    required this.onSplitDown,
+    required this.onClosePane,
+  });
+
+  final VoidCallback onSplitRight;
+  final VoidCallback onSplitDown;
+  final VoidCallback onClosePane;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    Widget btn(IconData icon, String tip, VoidCallback onTap) => Tooltip(
+      message: tip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(5),
+        onTap: onTap,
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: Icon(icon, size: 14, color: colors.text3),
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Row(
+        children: [
+          btn(Icons.vertical_split_outlined, 'Dividir à direita', onSplitRight),
+          btn(Icons.horizontal_split_outlined, 'Dividir abaixo', onSplitDown),
+          btn(Icons.close, 'Fechar pane', onClosePane),
+        ],
+      ),
+    );
+  }
+}
+
+class _PaneBody extends StatefulWidget {
+  const _PaneBody({super.key, required this.item, required this.onFillEmpty});
+  final PaneItem item;
+
+  /// `(terminal)` — qual tipo criar ao preencher a pane vazia.
+  final ValueChanged<bool> onFillEmpty;
+
+  @override
+  State<_PaneBody> createState() => _PaneBodyState();
+}
+
+class _PaneBodyState extends State<_PaneBody> {
+  final ScrollController _scroll = ScrollController();
+
+  static const double _stickThreshold = 80;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _maybeStickToBottom() {
+    final bool stick;
+    if (!_scroll.hasClients) {
+      stick = true;
+    } else {
+      final pos = _scroll.position;
+      stick = pos.pixels >= pos.maxScrollExtent - _stickThreshold;
+    }
+    if (!stick) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+
+    // Viewer de arquivo (read-only): markdown / texto / imagem.
+    if (item is FileViewerSession) {
+      return FileViewer(view: item.view);
+    }
+
+    // Terminal: só o TerminalView (ele se atualiza sozinho pelo Terminal model).
+    if (item is TerminalSession) {
+      return ColoredBox(
+        color: context.colors.panel,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+          child: TerminalView(item.terminal, theme: cockpitTerminalTheme),
+        ),
+      );
+    }
+
+    final agent = item as AgentSession;
+    return ListenableBuilder(
+      listenable: agent,
+      builder: (context, _) {
+        if (agent.status == AgentStatus.empty) {
+          return EmptyPane(
+            onNewAgent: () => widget.onFillEmpty(false),
+            onNewTerminal: () => widget.onFillEmpty(true),
+          );
+        }
+        _maybeStickToBottom();
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: AgentTranscript(
+                entries: agent.entries,
+                controller: _scroll,
+                bottomPadding: 150,
+              ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              // Centraliza e limita a largura — em panes largas o input não
+              // estica de ponta a ponta; em panes estreitas, preenche.
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: AgentComposer(
+                    key: ValueKey('composer-${agent.id}'),
+                    session: agent,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ============================================================================
+// Drag & drop de abas entre panes
+// ============================================================================
+
+/// Carga arrastada quando o usuário pega uma aba: de onde veio e qual aba.
+class TabDragData {
+  const TabDragData({required this.paneId, required this.tabId});
+  final String paneId;
+  final String tabId;
+}
+
+/// Onde a aba será solta dentro de um pane.
+/// [strip]/[center] = acoplar como aba; as bordas = criar um split.
+enum _DropZone { strip, center, left, right, top, bottom }
+
+/// Mini-chip que segue o cursor enquanto a aba é arrastada.
+class _DragFeedback extends StatelessWidget {
+  const _DragFeedback({required this.icon, required this.title});
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+        decoration: BoxDecoration(
+          color: colors.panel2,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: colors.accent),
+          boxShadow: const [
+            BoxShadow(color: Color(0x55000000), blurRadius: 12, offset: Offset(0, 4)),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: colors.accentText),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                title,
+                overflow: TextOverflow.ellipsis,
+                style: context.typo.tab.copyWith(color: colors.text),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Envolve uma [PaneView] como alvo de drop. Mostra as zonas (acoplar / dividir)
+/// sob o cursor enquanto uma aba é arrastada, e dispara a operação ao soltar.
+class PaneDropZone extends StatefulWidget {
+  const PaneDropZone({
+    super.key,
+    required this.paneId,
+    required this.vm,
+    required this.child,
+  });
+
+  final String paneId;
+  final CockpitViewModel vm;
+  final Widget child;
+
+  @override
+  State<PaneDropZone> createState() => _PaneDropZoneState();
+}
+
+class _PaneDropZoneState extends State<PaneDropZone> {
+  static const double _stripHeight = 40;
+  static const double _edge = 0.25; // fração da borda que vira split
+
+  _DropZone? _zone;
+
+  _DropZone _zoneAt(Offset global) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return _DropZone.center;
+    final local = box.globalToLocal(global);
+    final size = box.size;
+    if (local.dy <= _stripHeight) return _DropZone.strip;
+
+    final bw = size.width;
+    final bh = size.height - _stripHeight;
+    if (bw <= 0 || bh <= 0) return _DropZone.center;
+    final fx = (local.dx / bw).clamp(0.0, 1.0);
+    final fy = ((local.dy - _stripHeight) / bh).clamp(0.0, 1.0);
+
+    // Profundidade dentro de cada borda; a mais rasa (< _edge) vence.
+    var best = _DropZone.center;
+    var bestDepth = _edge;
+    void consider(_DropZone zone, double depth) {
+      if (depth < bestDepth) {
+        bestDepth = depth;
+        best = zone;
+      }
+    }
+
+    consider(_DropZone.left, fx);
+    consider(_DropZone.right, 1 - fx);
+    consider(_DropZone.top, fy);
+    consider(_DropZone.bottom, 1 - fy);
+    return best;
+  }
+
+  void _commit(TabDragData data) {
+    final zone = _zone ?? _DropZone.center;
+    final vm = widget.vm;
+    final target = widget.paneId;
+    switch (zone) {
+      case _DropZone.strip:
+      case _DropZone.center:
+        vm.moveTabToPane(data.paneId, data.tabId, target);
+      case _DropZone.left:
+        vm.moveTabToNewSplit(
+          data.paneId,
+          data.tabId,
+          target,
+          SplitDir.vertical,
+          before: true,
+        );
+      case _DropZone.right:
+        vm.moveTabToNewSplit(
+          data.paneId,
+          data.tabId,
+          target,
+          SplitDir.vertical,
+          before: false,
+        );
+      case _DropZone.top:
+        vm.moveTabToNewSplit(
+          data.paneId,
+          data.tabId,
+          target,
+          SplitDir.horizontal,
+          before: true,
+        );
+      case _DropZone.bottom:
+        vm.moveTabToNewSplit(
+          data.paneId,
+          data.tabId,
+          target,
+          SplitDir.horizontal,
+          before: false,
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<TabDragData>(
+      hitTestBehavior: HitTestBehavior.opaque,
+      onMove: (d) {
+        final z = _zoneAt(d.offset);
+        if (z != _zone) setState(() => _zone = z);
+      },
+      onLeave: (_) {
+        if (_zone != null) setState(() => _zone = null);
+      },
+      onAcceptWithDetails: (d) {
+        _commit(d.data);
+        setState(() => _zone = null);
+      },
+      builder: (context, candidate, rejected) {
+        final dragging = candidate.isNotEmpty && _zone != null;
+        return Stack(
+          children: [
+            widget.child,
+            if (dragging)
+              Positioned.fill(
+                child: IgnorePointer(child: _ZonePreview(zone: _zone!)),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Realce da zona de drop sob o cursor (metade pra split, tudo pra acoplar, ou
+/// uma faixa na tab strip).
+class _ZonePreview extends StatelessWidget {
+  const _ZonePreview({required this.zone});
+  final _DropZone zone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    if (zone == _DropZone.strip) {
+      return Align(
+        alignment: Alignment.topCenter,
+        child: Container(
+          height: 40,
+          width: double.infinity,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: colors.accentSoft,
+            border: Border(bottom: BorderSide(color: colors.accent, width: 2)),
+          ),
+          child: Text(
+            'Soltar aqui pra mover a aba',
+            style: context.typo.tab.copyWith(color: colors.accentText),
+          ),
+        ),
+      );
+    }
+
+    final (align, wf, hf, label) = switch (zone) {
+      _DropZone.center => (Alignment.center, 1.0, 1.0, 'Acoplar como aba'),
+      _DropZone.left => (Alignment.centerLeft, 0.5, 1.0, null),
+      _DropZone.right => (Alignment.centerRight, 0.5, 1.0, null),
+      _DropZone.top => (Alignment.topCenter, 1.0, 0.5, null),
+      _DropZone.bottom => (Alignment.bottomCenter, 1.0, 0.5, null),
+      _DropZone.strip => (Alignment.center, 1.0, 1.0, null), // inalcançável
+    };
+
+    return Padding(
+      // Não cobre a tab strip (o realce de split mora só no corpo).
+      padding: const EdgeInsets.only(top: 40),
+      child: Align(
+        alignment: align,
+        child: FractionallySizedBox(
+          widthFactor: wf,
+          heightFactor: hf,
+          child: Container(
+            margin: const EdgeInsets.all(8),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: colors.accentSoft,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: colors.accent, width: 2),
+            ),
+            child: label == null
+                ? null
+                : Text(
+                    label,
+                    style: context.typo.tab.copyWith(color: colors.accentText),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}

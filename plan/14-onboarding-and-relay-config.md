@@ -32,7 +32,7 @@ lados + criar onboarding stepper de 3 passos pro primeiro uso.
 | **Boot sem peer** | Vai pra `/home` (HomeNoPeer state com botão "Scan QR"). Apenas onboarding manda pra câmera |
 | **Pi-ext novo comando** | `/remote-pi set-relay <url>` — escreve config persistente + valida URL |
 | **Pi-ext `/remote-pi config`** | Mostra valor ativo + source (env / config / default) |
-| **Pareamento "1 por Mac, várias sessões"** | Adiado pro plano 15+ (mudança grande de modelo) |
+| ~~**Pareamento "1 por Mac, várias sessões"**~~ | ~~Adiado pro plano 15+~~ — **entregue pelo plano 17 (rooms)**; ver lápide `plan/15-one-mac-many-sessions.md` |
 
 ## Estrutura esperada
 
@@ -247,6 +247,6 @@ lados + criar onboarding stepper de 3 passos pro primeiro uso.
 
 ## Próximos planos
 
-- **Plano 07** — relay deploy. **Lembrete da memory `project-relay-throttle-env-future`**: incluir vars de env pra throttle/jitter/rate-limit antes de produção
-- **Plano 15** — pareamento "1 por Mac, várias sessões" (mudança grande de modelo): pi-ext anuncia `session_announced` ao subir nova sessão; app mantém lista de sessões agrupadas por peer
+- ~~**Plano 07** — relay deploy + throttle/jitter/rate-limit env~~ — **NÃO FAREMOS por agora** (decisão 2026-06-05; ver lápide `plan/07-revoke-and-multi-session.md`). Reabrir só se o relay público virar gargalo
+- ~~**Plano 15** — pareamento "1 por Mac, várias sessões"~~ — **ENTREGUE pelo plano 17 (rooms)** + 08 (multi-pairing); ver lápide `plan/15-one-mac-many-sessions.md`
 - **Plano 16+** — features pós-MVP (push notifications, etc)
