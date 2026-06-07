@@ -5,8 +5,10 @@ import 'package:cockpit/ui/cockpit/session/agent_entry.dart';
 import 'package:cockpit/ui/cockpit/widgets/agent_markdown.dart';
 import 'package:cockpit/ui/core/file_icons/file_icons.dart';
 import 'package:cockpit/ui/core/themes/themes.dart';
+import 'package:cockpit/ui/settings/settings_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_sticky_header/flutter_sticky_header.dart';
+import 'package:provider/provider.dart';
 
 /// Teto de largura do conteúdo do chat — em panes largas a conversa não estica
 /// de ponta a ponta (folgado; alinhado à esquerda).
@@ -39,17 +41,53 @@ class AgentTranscript extends StatelessWidget {
         ),
       );
     }
+    // Sticky header (pinar pergunta) é opcional — Configurações → Aparência.
+    final pin = context.watch<SettingsController>().settings.pinUserMessage;
     // A scrollbar e a lista ocupam a largura inteira (scrollbar na borda do
     // pane); o **conteúdo** é centralizado com teto de largura via padding
-    // horizontal calculado. Cada turno (pergunta do usuário + resposta) é uma
-    // seção: a pergunta vira um **header sticky** que fica pinado no topo
-    // enquanto a resposta rola, trocando ao chegar no próximo turno.
+    // horizontal calculado. Com [pin], cada turno (pergunta + resposta) vira uma
+    // seção cujo header (a pergunta) fica pinado no topo enquanto a resposta
+    // rola; sem [pin], é uma lista plana (pergunta no fluxo, como balão).
     return LayoutBuilder(
       builder: (context, constraints) {
         final extra = (constraints.maxWidth - _kChatMaxWidth) / 2;
         final hpad = extra > 26 ? extra : 26.0;
         final hPadding = EdgeInsets.symmetric(horizontal: hpad);
-        final turns = _groupIntoTurns(entries);
+
+        final slivers = <Widget>[
+          const SliverToBoxAdapter(child: SizedBox(height: 26)),
+        ];
+        if (pin) {
+          for (final turn in _groupIntoTurns(entries)) {
+            if (turn.header == null) {
+              slivers.add(
+                SliverPadding(padding: hPadding, sliver: _bodySliver(turn.body)),
+              );
+            } else {
+              slivers.add(
+                SliverStickyHeader.builder(
+                  builder: (context, state) => Padding(
+                    padding: hPadding,
+                    child: _PinnedUserHeader(
+                      entry: turn.header!,
+                      pinned: state.isPinned,
+                    ),
+                  ),
+                  sliver: SliverPadding(
+                    padding: hPadding,
+                    sliver: _bodySliver(turn.body),
+                  ),
+                ),
+              );
+            }
+          }
+        } else {
+          slivers.add(
+            SliverPadding(padding: hPadding, sliver: _bodySliver(entries)),
+          );
+        }
+        slivers.add(SliverToBoxAdapter(child: SizedBox(height: bottomPadding)));
+
         return Scrollbar(
           controller: controller,
           thumbVisibility: true,
@@ -58,33 +96,7 @@ class AgentTranscript extends StatelessWidget {
             behavior: ScrollConfiguration.of(
               context,
             ).copyWith(scrollbars: false),
-            child: CustomScrollView(
-              controller: controller,
-              slivers: [
-                const SliverToBoxAdapter(child: SizedBox(height: 26)),
-                for (final turn in turns)
-                  if (turn.header == null)
-                    SliverPadding(
-                      padding: hPadding,
-                      sliver: _bodySliver(turn.body),
-                    )
-                  else
-                    SliverStickyHeader.builder(
-                      builder: (context, state) => Padding(
-                        padding: hPadding,
-                        child: _PinnedUserHeader(
-                          entry: turn.header!,
-                          pinned: state.isPinned,
-                        ),
-                      ),
-                      sliver: SliverPadding(
-                        padding: hPadding,
-                        sliver: _bodySliver(turn.body),
-                      ),
-                    ),
-                SliverToBoxAdapter(child: SizedBox(height: bottomPadding)),
-              ],
-            ),
+            child: CustomScrollView(controller: controller, slivers: slivers),
           ),
         );
       },
@@ -136,7 +148,11 @@ class _PinnedUserHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final child = _UserMessage(text: entry.text, images: entry.images);
+    final child = _UserMessage(
+      text: entry.text,
+      images: entry.images,
+      compact: true,
+    );
     if (!pinned) return child;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -208,22 +224,37 @@ String _formatWorked(Duration d) {
   return '${d.inHours}h ${(m % 60).toString().padLeft(2, '0')}m';
 }
 
-class _UserMessage extends StatelessWidget {
-  const _UserMessage({required this.text, this.images = const <Uint8List>[]});
+class _UserMessage extends StatefulWidget {
+  const _UserMessage({
+    required this.text,
+    this.images = const <Uint8List>[],
+    this.compact = false,
+  });
   final String text;
   final List<Uint8List> images;
+
+  /// `true` no sticky header: reduz padding vertical para não ocupar espaço.
+  final bool compact;
+
+  @override
+  State<_UserMessage> createState() => _UserMessageState();
+}
+
+class _UserMessageState extends State<_UserMessage> {
+  bool _expanded = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final hasText = text.trim().isNotEmpty;
-    // Balão flexível (encolhe pro conteúdo), alinhado à **esquerda** e limitado
-    // a 75% da largura da coluna. O padding no topo dá respiro quando vira
-    // header pinado (não cola no topo). Imagens anexadas no topo.
+    final hasText = widget.text.trim().isNotEmpty;
+    final vpad = widget.compact
+        ? const EdgeInsets.only(top: 6, bottom: 6)
+        : const EdgeInsets.only(top: 12, bottom: 16);
     return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 16),
+      padding: vpad,
       child: Align(
-        alignment: Alignment.centerLeft,
+        alignment: Alignment.centerRight,
         child: LayoutBuilder(
           builder: (context, constraints) => ConstrainedBox(
             constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.75),
@@ -235,27 +266,121 @@ class _UserMessage extends StatelessWidget {
                 borderRadius: BorderRadius.circular(7),
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  for (var i = 0; i < images.length; i++)
+                  for (var i = 0; i < widget.images.length; i++)
                     Padding(
                       padding: EdgeInsets.only(
-                        bottom: (i < images.length - 1 || hasText) ? 8 : 0,
+                        bottom:
+                            (i < widget.images.length - 1 || hasText) ? 8 : 0,
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(6),
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxHeight: 240),
-                          child: Image.memory(images[i], fit: BoxFit.contain),
+                          child: Image.memory(
+                            widget.images[i],
+                            fit: BoxFit.contain,
+                          ),
                         ),
                       ),
                     ),
-                  if (hasText) _MessageText(text: text),
+                  if (hasText)
+                    LayoutBuilder(
+                      builder: (ctx, inner) =>
+                          _buildText(ctx, inner.maxWidth, colors),
+                    ),
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildText(BuildContext context, double maxWidth, AppColors colors) {
+    final style = context.typo.body.copyWith(
+      fontSize: 13.5,
+      color: context.colors.text,
+    );
+    final tp = TextPainter(
+      text: TextSpan(text: widget.text, style: style),
+      maxLines: 3,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth);
+    final overflows = tp.didExceedMaxLines;
+
+    if (!overflows) return _MessageText(text: widget.text);
+
+    if (_expanded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _MessageText(text: widget.text),
+          const SizedBox(height: 2),
+          GestureDetector(
+            onTap: () => setState(() => _expanded = false),
+            child: Icon(
+              Icons.expand_less,
+              size: 15,
+              color: context.colors.text3,
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Colapsado: chevron flutua sobre o texto no hover, sem consumir linha extra.
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: () => setState(() {
+          _expanded = true;
+          _hovered = false;
+        }),
+        child: Stack(
+          children: [
+            Text(
+              widget.text,
+              style: style,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (_hovered)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 22,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      colors.panel2.withValues(alpha: 0),
+                      colors.panel2,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (_hovered)
+              Positioned(
+                bottom: 2,
+                right: 0,
+                child: Icon(
+                  Icons.expand_more,
+                  size: 15,
+                  color: colors.text3,
+                ),
+              ),
+          ],
         ),
       ),
     );

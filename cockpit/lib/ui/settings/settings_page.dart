@@ -1,5 +1,6 @@
 import 'package:cockpit/domain/entities/app_settings.dart';
 import 'package:cockpit/ui/cockpit/widgets/app_menu.dart';
+import 'package:cockpit/ui/cockpit/widgets/code_highlight.dart';
 import 'package:cockpit/ui/cockpit/widgets/window_controls.dart';
 import 'package:cockpit/ui/settings/settings_controller.dart';
 import 'package:cockpit/ui/core/themes/themes.dart';
@@ -252,7 +253,7 @@ class _AppearancePanel extends StatelessWidget {
                     _Row(
                       title: 'Fonte do código',
                       description:
-                          'Código, diffs e terminal. Vazio = padrão do sistema.',
+                          'Código e diffs. Vazio = padrão do sistema.',
                       trailing: _FontField(
                         value: s.codeFont,
                         hint: 'JetBrains Mono',
@@ -268,20 +269,55 @@ class _AppearancePanel extends StatelessWidget {
                         onChanged: controller.setCodeSize,
                       ),
                     ),
+                    _Row(
+                      title: 'Fonte do terminal',
+                      description:
+                          'Usa o tamanho do código. Vazio = padrão do sistema.',
+                      trailing: _FontField(
+                        value: s.terminalFont,
+                        hint: 'Menlo · monospace',
+                        onChanged: controller.setTerminalFont,
+                      ),
+                    ),
                   ],
                 ),
               ),
               _Section(
                 label: 'Syntax',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _Card(
+                      children: [
+                        _Row(
+                          title: 'Tema de highlight',
+                          description:
+                              'Cores do código, independentes do tema do app.',
+                          trailing: _SyntaxDropdown(
+                            value: s.syntaxTheme,
+                            onChanged: controller.setSyntaxTheme,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    const _SyntaxPreview(),
+                  ],
+                ),
+              ),
+              _Section(
+                label: 'Conversa',
                 child: _Card(
                   children: [
                     _Row(
-                      title: 'Tema de highlight',
+                      title: 'Pinar mensagem do usuário',
                       description:
-                          'Cores do código, independentes do tema do app.',
-                      trailing: _SyntaxDropdown(
-                        value: s.syntaxTheme,
-                        onChanged: controller.setSyntaxTheme,
+                          'A pergunta fica fixa no topo enquanto a resposta '
+                          'rola.',
+                      trailing: Switch.adaptive(
+                        value: s.pinUserMessage,
+                        activeTrackColor: context.colors.accent,
+                        onChanged: controller.setPinUserMessage,
                       ),
                     ),
                   ],
@@ -291,6 +327,48 @@ class _AppearancePanel extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Amostra de código realçada com o tema de syntax atual (atualiza ao trocar o
+/// dropdown). Usa o `context.syntax` (fundo + cores) e o `buildCodeSpan`.
+class _SyntaxPreview extends StatelessWidget {
+  const _SyntaxPreview();
+
+  static const String _sample =
+      '{\n'
+      '  "name": "cockpit",\n'
+      '  "version": 2,\n'
+      '  "active": true,\n'
+      '  "tags": ["dev", "ui"]\n'
+      '}';
+
+  @override
+  Widget build(BuildContext context) {
+    final syntax = context.syntax;
+    final base = context.typo.mono.copyWith(
+      fontSize: 12.5,
+      height: 1.5,
+      color: syntax.base,
+    );
+    final span = buildCodeSpan(
+      context,
+      source: _sample,
+      language: 'json',
+      baseStyle: base,
+    );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: syntax.background,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.colors.border),
+      ),
+      child: span == null
+          ? Text(_sample, style: base)
+          : Text.rich(span),
     );
   }
 }

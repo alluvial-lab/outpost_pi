@@ -20,6 +20,7 @@ import 'package:cockpit/domain/entities/git_info.dart';
 import 'package:cockpit/domain/entities/launchable_app.dart';
 import 'package:cockpit/domain/entities/project.dart';
 import 'package:cockpit/domain/entities/session_info.dart';
+import 'package:cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/ui/cockpit/session/agent_session.dart';
 import 'package:cockpit/ui/cockpit/session/file_viewer_session.dart';
 import 'package:cockpit/ui/cockpit/session/pane_item.dart';
@@ -715,6 +716,8 @@ class CockpitViewModel extends ChangeNotifier {
     String? title,
     bool autoStartRelay = false,
     String? restoreSessionPath,
+    String? preferredModelId,
+    ThinkingLevel preferredThinking = ThinkingLevel.off,
   }) {
     final s = AgentSession(
       id: id,
@@ -723,8 +726,11 @@ class CockpitViewModel extends ChangeNotifier {
       factory: _factory,
       title: title,
       autoStartRelay: autoStartRelay,
-    );
+    )
+      ..preferredModelId = preferredModelId
+      ..preferredThinking = preferredThinking;
     s.onTurnEnd = () => _onAgentTurnEnd(s);
+    s.onPreferenceChanged = () => _scheduleSave(project.id);
     _sessions[s.id] = s;
     unawaited(_bootAgent(s, cwd, project, restoreSessionPath));
     return s;
@@ -912,6 +918,12 @@ class CockpitViewModel extends ChangeNotifier {
           title: desc['title'] as String?,
           autoStartRelay: desc['auto_start_relay'] == true,
           restoreSessionPath: desc['sessionPath'] as String?,
+          preferredModelId: desc['preferred_model'] as String?,
+          preferredThinking: _enumByName(
+            ThinkingLevel.values,
+            desc['preferred_thinking'],
+            ThinkingLevel.off,
+          ),
         );
         return true;
     }
@@ -1015,6 +1027,9 @@ class CockpitViewModel extends ChangeNotifier {
       'title': a.title,
       if (a.sessionPath != null) 'sessionPath': a.sessionPath,
       if (a.autoStartRelay) 'auto_start_relay': true,
+      if (a.preferredModelId != null) 'preferred_model': a.preferredModelId,
+      if (a.preferredThinking != ThinkingLevel.off)
+        'preferred_thinking': a.preferredThinking.name,
     };
   }
 
@@ -1087,4 +1102,12 @@ class CockpitViewModel extends ChangeNotifier {
     _sessions.clear();
     super.dispose();
   }
+}
+
+T _enumByName<T extends Enum>(List<T> values, Object? raw, T fallback) {
+  if (raw is! String) return fallback;
+  for (final v in values) {
+    if (v.name == raw) return v;
+  }
+  return fallback;
 }

@@ -35,12 +35,12 @@ class AppTypography extends ThemeExtension<AppTypography> {
 
   /// Monta a tipografia. Sem args = defaults do design. [uiFont]/[monoFont]
   /// vazios mantêm Space Grotesk/Hanken e JetBrains Mono; preenchidos trocam a
-  /// família (resolução pelo SO). [interfaceSize] escala toda a UI
-  /// proporcionalmente (baseline 14); [codeSize] define o tamanho do mono.
+  /// família (resolução pelo SO). [codeSize] define o tamanho do mono. O
+  /// "tamanho da interface" NÃO escala aqui — é aplicado globalmente via
+  /// `MediaQuery.textScaler` (zoom de texto em todo o app).
   factory AppTypography.build({
     String? uiFont,
     String? monoFont,
-    double interfaceSize = 14,
     double codeSize = 13,
   }) {
     final hasUi = uiFont != null && uiFont.trim().isNotEmpty;
@@ -57,18 +57,17 @@ class AppTypography extends ThemeExtension<AppTypography> {
         ? TextStyle(fontFamily: monoFont)
         : GoogleFonts.jetBrainsMono();
 
-    final s = interfaceSize / 14.0; // baseline = 14
     return AppTypography(
       display: displayBase.copyWith(
-        fontSize: 22 * s,
+        fontSize: 22,
         fontWeight: FontWeight.w600,
         height: 1.25,
         letterSpacing: -0.2,
       ),
-      title: displayBase.copyWith(fontSize: 13 * s, fontWeight: FontWeight.w600),
-      body: ui.copyWith(fontSize: 14.5 * s, height: 1.6),
-      label: ui.copyWith(fontSize: 12 * s, height: 1.3),
-      tab: displayBase.copyWith(fontSize: 12.5 * s, fontWeight: FontWeight.w500),
+      title: displayBase.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+      body: ui.copyWith(fontSize: 14.5, height: 1.6),
+      label: ui.copyWith(fontSize: 12, height: 1.3),
+      tab: displayBase.copyWith(fontSize: 12.5, fontWeight: FontWeight.w500),
       mono: mono.copyWith(fontSize: codeSize, height: 1.55),
     );
   }

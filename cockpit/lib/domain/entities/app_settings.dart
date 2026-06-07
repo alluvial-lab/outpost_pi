@@ -15,7 +15,9 @@ class AppSettings {
     this.interfaceSize = 14,
     this.codeFont,
     this.codeSize = 13,
+    this.terminalFont,
     this.syntaxTheme = SyntaxThemeId.one,
+    this.pinUserMessage = true,
     this.lastOpenAppId,
   });
 
@@ -33,7 +35,15 @@ class AppSettings {
   /// Tamanho da fonte de código (px) — viewer/diff/terminal.
   final double codeSize;
 
+  /// Família da fonte do **terminal** (`null`/vazio = mono padrão do xterm). O
+  /// tamanho segue [codeSize].
+  final String? terminalFont;
+
   final SyntaxThemeId syntaxTheme;
+
+  /// Fixa a mensagem do usuário no topo do chat enquanto a resposta rola
+  /// (sticky header por turno).
+  final bool pinUserMessage;
 
   /// ID do último app usado para "Abrir" (ex: `'cursor'`, `'vscode'`, `'finder'`).
   final String? lastOpenAppId;
@@ -46,7 +56,10 @@ class AppSettings {
     String? codeFont,
     bool clearCodeFont = false,
     double? codeSize,
+    String? terminalFont,
+    bool clearTerminalFont = false,
     SyntaxThemeId? syntaxTheme,
+    bool? pinUserMessage,
     String? lastOpenAppId,
   }) {
     return AppSettings(
@@ -57,7 +70,11 @@ class AppSettings {
       interfaceSize: interfaceSize ?? this.interfaceSize,
       codeFont: clearCodeFont ? null : (codeFont ?? this.codeFont),
       codeSize: codeSize ?? this.codeSize,
+      terminalFont: clearTerminalFont
+          ? null
+          : (terminalFont ?? this.terminalFont),
       syntaxTheme: syntaxTheme ?? this.syntaxTheme,
+      pinUserMessage: pinUserMessage ?? this.pinUserMessage,
       lastOpenAppId: lastOpenAppId ?? this.lastOpenAppId,
     );
   }
@@ -68,7 +85,9 @@ class AppSettings {
     'interfaceSize': interfaceSize,
     'codeFont': codeFont,
     'codeSize': codeSize,
+    'terminalFont': terminalFont,
     'syntaxTheme': syntaxTheme.name,
+    'pinUserMessage': pinUserMessage,
     if (lastOpenAppId != null) 'lastOpenAppId': lastOpenAppId,
   };
 
@@ -88,11 +107,13 @@ class AppSettings {
       interfaceSize: (json['interfaceSize'] as num?)?.toDouble() ?? 14,
       codeFont: str(json['codeFont']),
       codeSize: (json['codeSize'] as num?)?.toDouble() ?? 13,
+      terminalFont: str(json['terminalFont']),
       syntaxTheme: _enumByName(
         SyntaxThemeId.values,
         json['syntaxTheme'],
         SyntaxThemeId.one,
       ),
+      pinUserMessage: json['pinUserMessage'] as bool? ?? true,
       lastOpenAppId: str(json['lastOpenAppId']),
     );
   }

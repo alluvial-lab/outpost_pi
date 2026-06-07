@@ -13,7 +13,9 @@ import 'package:cockpit/ui/cockpit/widgets/file_viewer.dart';
 import 'package:cockpit/ui/core/file_icons/file_icons.dart';
 import 'package:cockpit/ui/core/themes/terminal_theme.dart';
 import 'package:cockpit/ui/core/themes/themes.dart';
+import 'package:cockpit/ui/settings/settings_controller.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
 
 /// Folha do multiplexador: tab strip + corpo (agente: transcript+composer / empty;
@@ -699,6 +701,14 @@ class _PaneBodyState extends State<_PaneBody> {
 
     // Terminal: só o TerminalView (ele se atualiza sozinho pelo Terminal model).
     if (item is TerminalSession) {
+      final settings = context.watch<SettingsController>().settings;
+      final termFont = settings.terminalFont;
+      // Fonte exclusiva do terminal (vazia = mono padrão do xterm); tamanho =
+      // "tamanho do código". O zoom da interface é global (Transform em
+      // `_AppZoom`), então não precisa escalar aqui.
+      final termStyle = (termFont == null || termFont.isEmpty)
+          ? TerminalStyle(fontSize: settings.codeSize)
+          : TerminalStyle(fontSize: settings.codeSize, fontFamily: termFont);
       return ColoredBox(
         color: context.colors.panel,
         child: Padding(
@@ -706,6 +716,7 @@ class _PaneBodyState extends State<_PaneBody> {
           child: TerminalView(
             item.terminal,
             theme: cockpitTerminalThemeFor(Theme.of(context).brightness),
+            textStyle: termStyle,
           ),
         ),
       );

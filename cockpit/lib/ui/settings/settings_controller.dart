@@ -40,8 +40,16 @@ class SettingsController extends ChangeNotifier {
   void setCodeSize(double size) =>
       _apply(_settings.copyWith(codeSize: size));
 
+  void setTerminalFont(String? font) {
+    final empty = font == null || font.trim().isEmpty;
+    _apply(_settings.copyWith(terminalFont: font, clearTerminalFont: empty));
+  }
+
   void setSyntaxTheme(SyntaxThemeId id) =>
       _apply(_settings.copyWith(syntaxTheme: id));
+
+  void setPinUserMessage(bool value) =>
+      _apply(_settings.copyWith(pinUserMessage: value));
 
   void setLastOpenApp(String id) =>
       _apply(_settings.copyWith(lastOpenAppId: id));

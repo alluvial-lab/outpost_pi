@@ -40,12 +40,24 @@ class AgentSession extends PaneItem {
   /// notificar o workspace.
   VoidCallback? onTurnEnd;
 
+  /// Disparado quando o usuário altera [preferredModelId] ou [preferredThinking].
+  /// A VM usa pra agendar um save imediato — sem depender do fim de turno.
+  VoidCallback? onPreferenceChanged;
+
   /// Pasta (subpasta do projeto) onde o `pi --mode rpc` roda.
   @override
   final String workingDirectory;
 
   /// Conectar ao relay ao iniciar (injetado em `REMOTE_PI_DIRECT_CONFIG`).
   bool autoStartRelay;
+
+  /// ID do modelo que o usuário escolheu para este agente (ex: `'claude-sonnet-4-6'`).
+  /// `null` = nunca foi alterado → pi decide o default.
+  /// Persistido no layout; aplicado automaticamente após cada boot via [_loadControls].
+  String? preferredModelId;
+
+  /// Nível de effort preferido. Persistido e reaplicado após cada boot.
+  ThinkingLevel preferredThinking = ThinkingLevel.off;
 
   final RpcGatewayFactory _factory;
   RpcProcessGateway? _gateway;
@@ -224,7 +236,11 @@ class AgentSession extends PaneItem {
     final gateway = _gateway;
     if (gateway == null || isBusy || model == _model) return;
     final result = await gateway.setModel(model);
-    result.fold((applied) => _model = applied, (error) {
+    result.fold((applied) {
+      _model = applied;
+      preferredModelId = applied.id; // persiste a escolha do usuário
+      onPreferenceChanged?.call();
+    }, (error) {
       _addInfo('falha ao trocar modelo: ${error.message}', isError: true);
     });
     notifyListeners();
@@ -235,7 +251,11 @@ class AgentSession extends PaneItem {
     final gateway = _gateway;
     if (gateway == null || isBusy || level == _thinking) return;
     final result = await gateway.setThinkingLevel(level);
-    result.fold((_) => _thinking = level, (error) {
+    result.fold((_) {
+      _thinking = level;
+      preferredThinking = level; // persiste a escolha do usuário
+      onPreferenceChanged?.call();
+    }, (error) {
       _addInfo('falha ao mudar effort: ${error.message}', isError: true);
     });
     notifyListeners();
@@ -353,6 +373,30 @@ class AgentSession extends PaneItem {
     }, (_) {});
     notifyListeners();
     unawaited(_refreshStats());
+    // Reaplicar preferências do usuário (persistidas do boot anterior).
+    unawaited(_applyPreferred());
+  }
+
+  /// Envia `set_model` / `set_thinking_level` silenciosamente se as preferências
+  /// diferem do estado que o pi subiu. Erros são descartados (o pi pode não ter
+  /// o modelo; a UI continua com o default dele nesse caso).
+  Future<void> _applyPreferred() async {
+    final gateway = _gateway;
+    if (gateway == null) return;
+    final pid = preferredModelId;
+    if (pid != null) {
+      final target = _models.where((m) => m.id == pid).firstOrNull;
+      if (target != null && target != _model) {
+        final r = await gateway.setModel(target);
+        r.fold((applied) => _model = applied, (_) {});
+        notifyListeners();
+      }
+    }
+    if (preferredThinking != _thinking) {
+      final r = await gateway.setThinkingLevel(preferredThinking);
+      r.fold((_) => _thinking = preferredThinking, (_) {});
+      notifyListeners();
+    }
   }
 
   Future<void> _refreshStats() async {

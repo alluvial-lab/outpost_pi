@@ -17,7 +17,6 @@ ThemeData buildTheme({
   final typo = AppTypography.build(
     uiFont: settings.interfaceFont,
     monoFont: settings.codeFont,
-    interfaceSize: settings.interfaceSize,
     codeSize: settings.codeSize,
   );
   // Syntax segue o brilho do app (cada família tem variante light/dark).
