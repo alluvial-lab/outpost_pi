@@ -53,6 +53,12 @@ outra.
 | `src/daemon/client.ts` | helpers tipados CLI↔supervisor pras ops novas |
 | `src/index.ts` | roteamento `/remote-pi cron …` + bloco CLI standalone (`_isDirectRun`) |
 | `package.json` | `+ croner` |
+| `pi-extension/README.md` | adicionar `remote-pi cron …` à tabela **"Daemon fleet"** (já existe, ~`:375`) + subseção curta (cron-expr, regra ≥60s, `tz`, pré-requisito) |
+
+> **Doc user-facing (pane `Site`)**: o **tutorial de daemon já existe**
+> (`site/src/app/tutorials/daemon`, página TSX) → ganha uma seção "agendar prompts
+> recorrentes"; a **referência do comando** entra em `site/src/app/docs`. Regra do
+> site: **sem screenshots** — validar só com `pnpm lint && pnpm build`.
 
 ### Shape do job (`cron.json`)
 
@@ -140,6 +146,19 @@ remote-pi cron log [<jobId>] [--tail N]   # lê o cron.jsonl
 6. **`pnpm test` + `tsc` verdes** com os casos novos (registry, log, parse +
    min-interval, fireJob nos 4 ramos, reconciliação).
 
+7. **Documentação (cross-pane — depois da feature verde)**
+   - **`Extension`** — `pi-extension/README.md`: adicionar `remote-pi cron …` à
+     tabela "Daemon fleet" (`:375`) + subseção curta com o formato cron-expr, a
+     regra ≥60s, `tz`, os resultados do log e o **pré-requisito** (supervisor como
+     serviço). Apontar pro tutorial do site pro passo-a-passo.
+   - **`Site`** — estender o tutorial de daemon (`site/src/app/tutorials/daemon`)
+     com "agendar prompts recorrentes": `install` do supervisor → criar daemon →
+     `cron add` → conferir com `cron list`/`cron log`; pré-requisito em destaque.
+     Acrescentar a referência dos 6 subcomandos em `site/src/app/docs`.
+   - *Aceite*: README lista os 6 subcomandos `cron` + a validação (≥60s,
+     supervisor-up); o tutorial cobre o fluxo end-to-end com o pré-requisito
+     evidente; **`pnpm lint && pnpm build` do site verdes** (sem screenshots).
+
 ## Detalhes a fixar na implementação (não bloqueiam o plano)
 
 1. **Marcadores de busy** no stream RPC — qual evento abre e qual fecha o turn.
@@ -150,17 +169,30 @@ remote-pi cron log [<jobId>] [--tail N]   # lê o cron.jsonl
 
 ## DoD
 
-- [ ] **Registry + log** — `cron_registry.ts` (CRUD em `cron.json`) e `cron_log.ts`
+> **pi-ext implementado 2026-06-07** (dispatch `39-daemon-cron` → pane Extension,
+> ainda **NÃO commitado**): `tsc` limpo, `pnpm test` **498/498**. Os 2 detalhes
+> parkados foram resolvidos: **busy** → `message_*` é só hint (o SDK não tem evento
+> de fecho de turn; `response{command:prompt}` sai no preflight), fonte
+> autoritativa é `get_state.isStreaming` via `refreshBusy()`; **catchup** →
+> `croner.previousRun()`, default-OFF, opt-in, máx 1×. Falta: doc do site +
+> consolidação (commit). Detalhes em `.orchestration/results/39-daemon-cron.md`.
+
+- [x] **Registry + log** — `cron_registry.ts` (CRUD em `cron.json`) e `cron_log.ts`
       (append/tail em `cron.jsonl`) com testes
-- [ ] **Busy** — flag `isBusy` no `RpcChild` (stream + fallback `isStreaming`) testada
-- [ ] **Scheduler** — `Cron`/job no Supervisor + `fireJob` cobrindo os 4 resultados
+- [x] **Busy** — flag `isBusy` no `RpcChild` (stream + fallback `isStreaming`) testada
+- [x] **Scheduler** — `Cron`/job no Supervisor + `fireJob` cobrindo os 4 resultados
       (delivered/skipped_busy/skipped_down/woke_and_delivered) + reconciliação em
       start/add/remove/enable
-- [ ] **CLI + ops** — `remote-pi cron add/list/remove/enable/run/log`; validação
+- [x] **CLI + ops** — `remote-pi cron add/list/remove/enable/disable/run/log`; validação
       (expr, intervalo ≥60s, supervisor-up); standalone + `/remote-pi cron …`
-- [ ] **Auditoria** — toda execução E todo skip geram 1 linha no `cron.jsonl`;
+- [x] **Auditoria** — toda execução E todo skip geram 1 linha no `cron.jsonl`;
       `last_status` no `cron.json` reflete o último
-- [ ] **`croner`** adicionado; `pnpm test` + `tsc` verdes
+- [x] **`croner`** adicionado (`@10.0.1`); `pnpm test` (498/498) + `tsc` verdes
+- [x] **Documentação** — `remote-pi cron` no README do pi-ext (tabela "Daemon
+      fleet") ✅ (commitado `a7a40ed`); tutorial `tutorials/daemon` (seção cron +
+      pré-requisito em `Callout` de destaque) + referência dos 7 subcomandos em
+      `docs` ✅ (pane Site, `pnpm lint && build` verdes — **uncommitted**, publica
+      via `push-docker.sh` junto/depois do release que contém `remote-pi cron`)
 
 ## Riscos / edge cases
 

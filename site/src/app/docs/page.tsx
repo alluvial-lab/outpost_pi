@@ -47,6 +47,7 @@ const DOCS_TOC: TocItem[] = [
     sub: [
       { id: "commands-local", label: "Local session" },
       { id: "commands-daemon", label: "Daemon fleet" },
+      { id: "commands-cron", label: "Daemon cron" },
     ],
   },
   { id: "config", label: "Configuration files" },
@@ -533,8 +534,8 @@ export default function DocsPage() {
                 <>Stop everything for <em>this</em> terminal (mesh + relay)</>,
               ],
               [
-                <InlineCode key="c">/remote-pi pair</InlineCode>,
-                "Show QR + copy-paste pairing URI for a new mobile device",
+                <InlineCode key="c">/remote-pi pair [--ttl &lt;seconds&gt;]</InlineCode>,
+                "Show QR + copy-paste pairing URI for a new mobile device (QR valid 60s by default; --ttl clamps to 10–600s)",
               ],
               [
                 <InlineCode key="c">/remote-pi devices</InlineCode>,
@@ -542,7 +543,7 @@ export default function DocsPage() {
               ],
               [
                 <InlineCode key="c">/remote-pi revoke &lt;shortid&gt;</InlineCode>,
-                "Revoke a paired device by its shortid",
+                "Revoke a paired device by its shortid (brings the relay up first, like pair, to notify the device)",
               ],
               [
                 <InlineCode key="c">/remote-pi set-relay &lt;url&gt;</InlineCode>,
@@ -576,19 +577,20 @@ export default function DocsPage() {
                 "List registered daemons + state",
               ],
               [
-                <InlineCode key="c">/remote-pi daemon start</InlineCode>,
-                "Start every registered daemon",
+                <InlineCode key="c">/remote-pi daemon start [&lt;id&gt;]</InlineCode>,
+                "Start one daemon by id, or every registered daemon with no id",
               ],
               [
-                <InlineCode key="c">/remote-pi daemon stop</InlineCode>,
+                <InlineCode key="c">/remote-pi daemon stop [&lt;id&gt;]</InlineCode>,
                 <>
-                  Stop every running daemon (<InlineCode>/remote-pi stop</InlineCode>{" "}
-                  stops only the local terminal)
+                  Stop one daemon by id, or every running daemon with no id (
+                  <InlineCode>/remote-pi stop</InlineCode> stops only the local
+                  terminal)
                 </>,
               ],
               [
-                <InlineCode key="c">/remote-pi daemon restart</InlineCode>,
-                "Stop + start all daemons",
+                <InlineCode key="c">/remote-pi daemon restart [&lt;id&gt;]</InlineCode>,
+                "Restart one daemon by id, or every daemon with no id",
               ],
               [
                 <InlineCode key="c">/remote-pi daemon status</InlineCode>,
@@ -617,6 +619,103 @@ export default function DocsPage() {
               ],
             ]}
           />
+        </DocsSubsection>
+
+        <DocsSubsection
+          id="commands-cron"
+          title="Daemon cron — scheduled prompts"
+        >
+          <p className="text-sm">
+            Schedule recurring prompts to a daemon. The scheduler runs{" "}
+            <strong className="text-fg">inside the supervisor</strong>, so it
+            only fires when the supervisor is installed as a service (
+            <a href="#daemon-mode" className="text-accent underline">
+              Daemon mode
+            </a>{" "}
+            / <InlineCode>/remote-pi install</InlineCode>) — otherwise{" "}
+            <InlineCode>cron add</InlineCode> warns instead of scheduling. See
+            the{" "}
+            <Link href="/tutorials/daemon#cron" className="text-accent underline">
+              Daemon mode tutorial
+            </Link>{" "}
+            for the walkthrough.
+          </p>
+          <DocsTable
+            headers={["Command", "Description"]}
+            rows={[
+              [
+                <InlineCode key="c">
+                  /remote-pi cron add &lt;id&gt; &quot;&lt;expr&gt;&quot;
+                  &quot;&lt;prompt&gt;&quot; [--tz Area/City] [--wake]
+                  [--no-skip-busy] [--catchup]
+                </InlineCode>,
+                "Schedule a recurring prompt to a daemon (5-field cron expression; runs must be ≥60s apart)",
+              ],
+              [
+                <InlineCode key="c">/remote-pi cron list</InlineCode>,
+                "List jobs: schedule, enabled, last run / status, next run",
+              ],
+              [
+                <InlineCode key="c">/remote-pi cron run &lt;jobId&gt;</InlineCode>,
+                "Fire a job now, ignoring its schedule",
+              ],
+              [
+                <InlineCode key="c">/remote-pi cron enable &lt;jobId&gt;</InlineCode>,
+                "Resume a paused job",
+              ],
+              [
+                <InlineCode key="c">/remote-pi cron disable &lt;jobId&gt;</InlineCode>,
+                "Pause a job without deleting it",
+              ],
+              [
+                <InlineCode key="c">/remote-pi cron remove &lt;jobId&gt;</InlineCode>,
+                "Delete a job",
+              ],
+              [
+                <InlineCode key="c">/remote-pi cron log [&lt;jobId&gt;] [--tail N]</InlineCode>,
+                <>
+                  Tail the fire / skip audit log (default N = 20), optionally for
+                  one job
+                </>,
+              ],
+            ]}
+          />
+          <ul className="ml-6 list-disc space-y-2">
+            <li>
+              <strong className="text-fg">Minimum interval 60s.</strong> A more
+              frequent expression is rejected (each fire spends tokens). Croner
+              syntax — five fields (
+              <InlineCode>min hour day-of-month month day-of-week</InlineCode>),
+              plus an optional seconds field, still bounded by the 60s floor.
+            </li>
+            <li>
+              <strong className="text-fg">Timezone per job.</strong>{" "}
+              <InlineCode>--tz Area/City</InlineCode> resolves DST; without it a
+              job runs in the machine&apos;s local time.
+            </li>
+            <li>
+              <strong className="text-fg">Overlap &amp; downtime.</strong> A fire
+              is skipped while the daemon is mid-turn (
+              <InlineCode>--no-skip-busy</InlineCode> overrides), skipped if the
+              daemon is down (<InlineCode>--wake</InlineCode> starts it first),
+              and at most one missed run is replayed on startup (
+              <InlineCode>--catchup</InlineCode>, off by default).
+            </li>
+            <li>
+              <strong className="text-fg">Audit.</strong> Every fire{" "}
+              <em>and</em> every skip appends one line to{" "}
+              <InlineCode>~/.pi/remote/cron.jsonl</InlineCode> with a{" "}
+              <InlineCode>result</InlineCode> of{" "}
+              <InlineCode>delivered</InlineCode>,{" "}
+              <InlineCode>deliver_failed</InlineCode>,{" "}
+              <InlineCode>woke_and_delivered</InlineCode>,{" "}
+              <InlineCode>skipped_busy</InlineCode>,{" "}
+              <InlineCode>skipped_down</InlineCode>, or{" "}
+              <InlineCode>skipped_disabled</InlineCode>. The agent&apos;s reply
+              itself is fire-and-forget into the mesh — cron records the trigger,
+              not the response.
+            </li>
+          </ul>
         </DocsSubsection>
         <p>The footer in the Pi TUI reflects state live:</p>
         <ul className="ml-6 list-disc space-y-2">
@@ -670,7 +769,7 @@ export default function DocsPage() {
             [
               <InlineCode key="p">~/.pi/remote/daemons.json</InlineCode>,
               "Per-machine",
-              <>Daemon registry (list of <InlineCode>{`{ cwd }`}</InlineCode> entries)</>,
+              <>Daemon registry (list of <InlineCode>{`{ cwd, name }`}</InlineCode> entries)</>,
             ],
             [
               <InlineCode key="p">~/.pi/remote/identity.json</InlineCode>,
@@ -715,6 +814,23 @@ export default function DocsPage() {
           rejected at validation, the extension converts to the WebSocket
           form internally when it opens the connection.
         </p>
+        <p className="text-sm">
+          Daemons don&apos;t read the per-directory file at all — the supervisor
+          injects their whole config inline via the{" "}
+          <InlineCode>REMOTE_PI_DIRECT_CONFIG</InlineCode> environment variable
+          at spawn (a fixed <InlineCode>assistent</InlineCode> workspace with
+          the relay on), so a daemon folder needs no{" "}
+          <InlineCode>.pi/remote-pi/</InlineCode> of its own. You can set the
+          same variable yourself to override{" "}
+          <InlineCode>&lt;cwd&gt;/.pi/remote-pi/config.json</InlineCode> for a
+          single run — an escape hatch for CI, ops, and the Cockpit desktop
+          client:
+        </p>
+        <CodeBlock
+          code={`REMOTE_PI_DIRECT_CONFIG='{"agent_name":"ci","auto_start_relay":true}' pi`}
+          label="Shell"
+          language="bash"
+        />
       </DocsSection>
 
       <DocsSection id="troubleshooting" title="Troubleshooting">

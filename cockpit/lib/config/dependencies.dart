@@ -26,6 +26,7 @@ import 'package:cockpit/domain/contracts/file_system_reader.dart';
 import 'package:cockpit/domain/contracts/folder_lister.dart';
 import 'package:cockpit/domain/contracts/git_status_reader.dart';
 import 'package:cockpit/domain/contracts/environment_probe.dart';
+import 'package:cockpit/domain/contracts/cron_gateway.dart';
 import 'package:cockpit/domain/contracts/daemon_supervisor.dart';
 import 'package:cockpit/domain/contracts/notifier.dart';
 import 'package:cockpit/domain/contracts/project_repository.dart';
@@ -40,6 +41,7 @@ import 'package:flutter/foundation.dart';
 import 'package:cockpit/ui/cockpit/viewmodels/cockpit_viewmodel.dart';
 import 'package:cockpit/ui/cockpit/viewmodels/setup_viewmodel.dart';
 import 'package:cockpit/ui/settings/connectivity_viewmodel.dart';
+import 'package:cockpit/ui/settings/cron_viewmodel.dart';
 import 'package:cockpit/ui/settings/daemons_viewmodel.dart';
 import 'package:cockpit/ui/settings/settings_controller.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -86,8 +88,11 @@ Future<void> setupDependencies() async {
   // Conectividade: relay global + aparelhos pareados (shell-out do `remote-pi`).
   _injector.addInstance<RelayGateway>(RelayGatewayImpl());
 
-  // Daemon Agents: controle dos agentes 24/7 via UDS do `pi-supervisord`.
-  _injector.addInstance<DaemonSupervisor>(SupervisorClientImpl());
+  // Daemon Agents + Agendamentos (cron): mesmo control-plane UDS do
+  // `pi-supervisord` → uma instância sob os dois contratos.
+  final supervisorClient = SupervisorClientImpl();
+  _injector.addInstance<DaemonSupervisor>(supervisorClient);
+  _injector.addInstance<CronGateway>(supervisorClient);
 
   // Notificações do SO — inicializa (pede permissão). Falha de init não pode
   // derrubar o boot do app.
@@ -151,4 +156,13 @@ ConnectivityViewModel buildConnectivityViewModel() {
 /// rota `/settings`; carrega sob demanda quando a aba abre.
 DaemonsViewModel buildDaemonsViewModel() {
   return DaemonsViewModel(_injector.get<DaemonSupervisor>());
+}
+
+/// ViewModel da aba Agendamentos (cron). Usa o [CronGateway] + a lista de
+/// daemons (nomes + dropdown). Criado pela rota `/settings`.
+CronViewModel buildCronViewModel() {
+  return CronViewModel(
+    _injector.get<CronGateway>(),
+    _injector.get<DaemonSupervisor>(),
+  );
 }

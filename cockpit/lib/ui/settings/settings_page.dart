@@ -1,10 +1,13 @@
+import 'package:cockpit/domain/cron_schedule.dart';
 import 'package:cockpit/domain/entities/app_settings.dart';
+import 'package:cockpit/domain/entities/cron_job.dart';
 import 'package:cockpit/domain/entities/daemon_info.dart';
 import 'package:cockpit/domain/entities/paired_device.dart';
 import 'package:cockpit/ui/cockpit/widgets/app_menu.dart';
 import 'package:cockpit/ui/cockpit/widgets/code_highlight.dart';
 import 'package:cockpit/ui/cockpit/widgets/window_controls.dart';
 import 'package:cockpit/ui/settings/connectivity_viewmodel.dart';
+import 'package:cockpit/ui/settings/cron_viewmodel.dart';
 import 'package:cockpit/ui/settings/daemons_viewmodel.dart';
 import 'package:cockpit/ui/settings/pairing_controller.dart';
 import 'package:cockpit/ui/settings/pairing_dialog.dart';
@@ -54,12 +57,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     _Category.appearance => const _AppearancePanel(),
                     _Category.connectivity => const _ConnectivityPanel(),
                     _Category.daemons => const _DaemonsPanel(),
-                    _Category.scheduling => const _ComingSoonPanel(
-                      title: 'Agendamentos',
-                      message:
-                          'Agendar prompts e rotinas para os seus agentes '
-                          'chega em breve.',
-                    ),
+                    _Category.scheduling => const _AgendamentosPanel(),
                   },
                 ),
               ],
@@ -1323,43 +1321,864 @@ IconData _deviceIcon(String label) {
 }
 
 // ---------------------------------------------------------------------------
-// Placeholder genérico (Agendamentos por ora)
+// Agendamentos (cron — plan/39)
 // ---------------------------------------------------------------------------
-class _ComingSoonPanel extends StatelessWidget {
-  const _ComingSoonPanel({required this.title, required this.message});
-  final String title;
-  final String message;
+class _AgendamentosPanel extends StatefulWidget {
+  const _AgendamentosPanel();
+
+  @override
+  State<_AgendamentosPanel> createState() => _AgendamentosPanelState();
+}
+
+class _AgendamentosPanelState extends State<_AgendamentosPanel> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<CronViewModel>().reload();
+    });
+  }
+
+  Future<void> _openEditor() async {
+    final vm = context.read<CronViewModel>();
+    if (vm.daemons.isEmpty) return;
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (_) => _CronEditorDialog(vm: vm),
+    );
+    if (created == true && mounted) await vm.reload();
+  }
+
+  Future<void> _openLog(CronJob job) async {
+    final vm = context.read<CronViewModel>();
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _CronLogDialog(vm: vm, job: job),
+    );
+  }
+
+  Future<void> _confirmRemove(CronJob job) async {
+    final vm = context.read<CronViewModel>();
+    final colors = context.colors;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: colors.panel2,
+        title: Text(
+          'Remover agendamento?',
+          style: ctx.typo.title.copyWith(fontSize: 15, color: colors.text),
+        ),
+        content: Text(
+          'O job "${job.schedule}" para ${vm.daemonName(job.daemonId)} é apagado. '
+          'Os disparos param.',
+          style: ctx.typo.body.copyWith(fontSize: 13.5, color: colors.text2),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Cancelar',
+              style: ctx.typo.body.copyWith(fontSize: 13, color: colors.text2),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Remover',
+              style: ctx.typo.body.copyWith(
+                fontSize: 13,
+                color: colors.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await vm.remove(job);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<CronViewModel>();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 24, 28, 40),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 680),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (vm.actionError != null) ...[
+                _ErrorBanner(message: vm.actionError!),
+                const SizedBox(height: 12),
+              ],
+              if (vm.online) ...[
+                _cronActions(context, vm),
+                const SizedBox(height: 16),
+              ],
+              _Section(
+                label: 'Prompts agendados',
+                trailing: _ReloadButton(
+                  busy: vm.load == CronLoad.loading,
+                  onTap: vm.reload,
+                ),
+                child: _body(context, vm),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _cronActions(BuildContext context, CronViewModel vm) {
+    final colors = context.colors;
+    return Row(
+      children: [
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: colors.accent,
+            disabledBackgroundColor: colors.panel3,
+            disabledForegroundColor: colors.text4,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+          onPressed: vm.hasDaemons ? () => _openEditor() : null,
+          icon: const Icon(Icons.add, size: 16),
+          label: const Text('Criar agendamento'),
+        ),
+        if (!vm.hasDaemons) ...[
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              'Crie um Daemon Agent primeiro.',
+              style: context.typo.label.copyWith(color: colors.text3),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _body(BuildContext context, CronViewModel vm) {
+    final colors = context.colors;
+
+    if (!vm.online && vm.load != CronLoad.loading) {
+      return _MessageCard(
+        child: Text(
+          'Supervisor offline. Agendamentos precisam do pi-supervisord rodando '
+          '(`remote-pi install`).',
+          style: context.typo.body.copyWith(fontSize: 13.5, color: colors.text3),
+        ),
+      );
+    }
+    if (vm.load == CronLoad.loading && vm.jobs.isEmpty) {
+      return _MessageCard(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: colors.text3),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Carregando…',
+              style: context.typo.body.copyWith(fontSize: 13.5, color: colors.text3),
+            ),
+          ],
+        ),
+      );
+    }
+    if (vm.load == CronLoad.error && vm.jobs.isEmpty) {
+      return _MessageCard(
+        child: Text(
+          vm.error ?? 'Falha ao listar os agendamentos.',
+          style: context.typo.body.copyWith(fontSize: 13.5, color: colors.error),
+        ),
+      );
+    }
+    if (vm.jobs.isEmpty) {
+      return _MessageCard(
+        child: Text(
+          'Nenhum agendamento. Crie um prompt recorrente para um daemon.',
+          style: context.typo.body.copyWith(fontSize: 13.5, color: colors.text3),
+        ),
+      );
+    }
+    return _Card(
+      children: [
+        for (final job in vm.jobs)
+          _CronTile(
+            job: job,
+            daemonName: vm.daemonName(job.daemonId),
+            busy: vm.isBusy(job.id),
+            onToggle: (v) => vm.setEnabled(job, v),
+            onRun: () => vm.run(job),
+            onLog: () => _openLog(job),
+            onRemove: () => _confirmRemove(job),
+          ),
+      ],
+    );
+  }
+}
+
+/// Uma linha de agendamento: alvo + schedule + prompt + estado + ações.
+class _CronTile extends StatelessWidget {
+  const _CronTile({
+    required this.job,
+    required this.daemonName,
+    required this.busy,
+    required this.onToggle,
+    required this.onRun,
+    required this.onLog,
+    required this.onRemove,
+  });
+  final CronJob job;
+  final String daemonName;
+  final bool busy;
+  final ValueChanged<bool> onToggle;
+  final Future<void> Function() onRun;
+  final Future<void> Function() onLog;
+  final Future<void> Function() onRemove;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.construction_outlined, size: 28, color: colors.text3),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: context.typo.title.copyWith(fontSize: 15, color: colors.text2),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.schedule_outlined, size: 18, color: colors.text3),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        daemonName,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.typo.body.copyWith(
+                          fontSize: 13.5,
+                          color: colors.text,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      job.schedule,
+                      style: context.typo.mono.copyWith(
+                        fontSize: 11.5,
+                        color: colors.accentText,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  job.prompt,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.typo.body.copyWith(
+                    fontSize: 12.5,
+                    color: colors.text2,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                _CronMeta(job: job),
+              ],
             ),
-            const SizedBox(height: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 320),
-              child: Text(
-                message,
-                textAlign: TextAlign.center,
-                style: context.typo.label.copyWith(color: colors.text3),
-              ),
+          ),
+          const SizedBox(width: 8),
+          if (busy)
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: colors.text3),
+            )
+          else ...[
+            Switch.adaptive(
+              value: job.enabled,
+              activeTrackColor: colors.accent,
+              onChanged: onToggle,
             ),
+            _cronAct(context, Icons.play_arrow, 'Rodar agora', onRun),
+            _cronAct(context, Icons.history, 'Ver log', onLog),
+            _cronAct(context, Icons.delete_outline, 'Remover', onRemove),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _cronAct(
+    BuildContext context,
+    IconData icon,
+    String tip,
+    Future<void> Function() onTap,
+  ) {
+    return Tooltip(
+      message: tip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () => onTap(),
+        child: SizedBox(
+          width: 30,
+          height: 30,
+          child: Icon(icon, size: 16, color: context.colors.text3),
         ),
       ),
     );
   }
 }
+
+/// Linha de metadados do job: próximo disparo + último status.
+class _CronMeta extends StatelessWidget {
+  const _CronMeta({required this.job});
+  final CronJob job;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final children = <Widget>[];
+
+    if (!job.enabled) {
+      children.add(Text(
+        'desativado',
+        style: context.typo.label.copyWith(color: colors.text4),
+      ));
+    } else if (job.nextRun != null) {
+      children.add(Text(
+        'próximo ${_fmtIso(job.nextRun)}',
+        style: context.typo.label.copyWith(color: colors.text3),
+      ));
+    }
+
+    if (job.lastStatus != null) {
+      final (color, label) = _cronResultView(context, cronResultFromWire(job.lastStatus));
+      if (children.isNotEmpty) {
+        children.add(Text(
+          '  ·  ',
+          style: context.typo.label.copyWith(color: colors.text4),
+        ));
+      }
+      children.add(Text(
+        'último: $label',
+        style: context.typo.label.copyWith(color: color),
+      ));
+    }
+
+    if (children.isEmpty) return const SizedBox.shrink();
+    return Row(mainAxisSize: MainAxisSize.min, children: children);
+  }
+}
+
+/// Dialog de criar agendamento: daemon + cron-expr (com preview) + prompt +
+/// opções. Chama `vm.create` direto pra mostrar erro do servidor sem perder o
+/// que foi digitado.
+class _CronEditorDialog extends StatefulWidget {
+  const _CronEditorDialog({required this.vm});
+  final CronViewModel vm;
+
+  @override
+  State<_CronEditorDialog> createState() => _CronEditorDialogState();
+}
+
+class _CronEditorDialogState extends State<_CronEditorDialog> {
+  final TextEditingController _expr = TextEditingController();
+  final TextEditingController _prompt = TextEditingController();
+  final TextEditingController _tz = TextEditingController();
+  late String _daemonId;
+  bool _skipIfBusy = true;
+  bool _wake = false;
+  bool _catchup = false;
+  bool _saving = false;
+  String? _localError;
+
+  static const _examples = <(String, String)>[
+    ('0 9 * * *', 'todo dia 9h'),
+    ('0 * * * *', 'de hora em hora'),
+    ('*/15 * * * *', 'a cada 15 min'),
+    ('0 18 * * 1-5', 'dias úteis 18h'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _daemonId = widget.vm.daemons.first.id;
+    _expr.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _expr.dispose();
+    _prompt.dispose();
+    _tz.dispose();
+    super.dispose();
+  }
+
+  String get _previewText {
+    final expr = _expr.text.trim();
+    if (expr.isEmpty) return 'Próximo disparo aparece aqui';
+    final next = nextCronRun(expr, DateTime.now());
+    if (next == null) return 'Próximo: calculado ao salvar';
+    return 'Próximo: ${_fmtDateTime(next)}';
+  }
+
+  Future<void> _submit() async {
+    final expr = _expr.text.trim();
+    final prompt = _prompt.text.trim();
+    if (expr.isEmpty || prompt.isEmpty) {
+      setState(() => _localError = 'Preencha a expressão e o prompt.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _localError = null;
+    });
+    final tz = _tz.text.trim();
+    final ok = await widget.vm.create(
+      daemonId: _daemonId,
+      schedule: expr,
+      prompt: prompt,
+      tz: tz.isEmpty ? null : tz,
+      skipIfBusy: _skipIfBusy,
+      wake: _wake,
+      catchup: _catchup,
+    );
+    if (!mounted) return;
+    if (ok) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _saving = false;
+        _localError = widget.vm.actionError ?? 'Falha ao criar o agendamento.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final vm = widget.vm;
+
+    return AlertDialog(
+      backgroundColor: colors.panel2,
+      title: Text(
+        'Novo agendamento',
+        style: context.typo.title.copyWith(fontSize: 15, color: colors.text),
+      ),
+      content: SizedBox(
+        width: 440,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _fieldLabel(context, 'Daemon'),
+              const SizedBox(height: 6),
+              _DropdownChip(
+                label: vm.daemonName(_daemonId),
+                icon: Icons.dns_outlined,
+                onTap: () async {
+                  final picked = await showAppMenu<String>(
+                    context,
+                    minWidth: 220,
+                    items: [
+                      for (final d in vm.daemons)
+                        AppMenuItem(
+                          value: d.id,
+                          label: d.name.isEmpty ? d.id : d.name,
+                          selected: d.id == _daemonId,
+                        ),
+                    ],
+                  );
+                  if (picked != null) setState(() => _daemonId = picked);
+                },
+              ),
+              const SizedBox(height: 16),
+              _fieldLabel(context, 'Quando (expressão cron)'),
+              const SizedBox(height: 6),
+              _dialogField(context, _expr, 'Ex.: 0 9 * * *', mono: true),
+              const SizedBox(height: 6),
+              Text(
+                _previewText,
+                style: context.typo.label.copyWith(color: colors.text3),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final (expr, label) in _examples)
+                    _ExampleChip(
+                      expr: expr,
+                      label: label,
+                      onTap: () {
+                        _expr.text = expr;
+                        _expr.selection = TextSelection.collapsed(
+                          offset: expr.length,
+                        );
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _fieldLabel(context, 'Prompt'),
+              const SizedBox(height: 6),
+              _dialogField(
+                context,
+                _prompt,
+                'Ex.: Resuma as PRs novas',
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+              _fieldLabel(context, 'Fuso (opcional)'),
+              const SizedBox(height: 6),
+              _dialogField(
+                context,
+                _tz,
+                'Ex.: America/Sao_Paulo (vazio = do sistema)',
+                mono: true,
+              ),
+              const SizedBox(height: 12),
+              _CronOptionSwitch(
+                label: 'Pular se o agente estiver ocupado',
+                value: _skipIfBusy,
+                onChanged: (v) => setState(() => _skipIfBusy = v),
+              ),
+              _CronOptionSwitch(
+                label: 'Acordar o daemon se estiver parado',
+                value: _wake,
+                onChanged: (v) => setState(() => _wake = v),
+              ),
+              _CronOptionSwitch(
+                label: 'Recuperar 1 disparo perdido (catchup)',
+                value: _catchup,
+                onChanged: (v) => setState(() => _catchup = v),
+              ),
+              if (_localError != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _localError!,
+                  style: context.typo.label.copyWith(color: colors.error),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancelar',
+            style: context.typo.body.copyWith(fontSize: 13, color: colors.text2),
+          ),
+        ),
+        TextButton(
+          onPressed: _saving ? null : _submit,
+          child: Text(
+            _saving ? 'Criando…' : 'Criar',
+            style: context.typo.body.copyWith(
+              fontSize: 13,
+              color: colors.accentText,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _fieldLabel(BuildContext context, String text) => Text(
+    text,
+    style: context.typo.label.copyWith(color: context.colors.text3),
+  );
+
+  Widget _dialogField(
+    BuildContext context,
+    TextEditingController controller,
+    String hint, {
+    bool mono = false,
+    int maxLines = 1,
+  }) {
+    final colors = context.colors;
+    final style = mono
+        ? context.typo.mono.copyWith(fontSize: 12.5, color: colors.text)
+        : context.typo.body.copyWith(fontSize: 13.5, color: colors.text);
+    OutlineInputBorder border(Color c) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: BorderSide(color: c),
+    );
+    return TextField(
+      controller: controller,
+      maxLines: maxLines,
+      style: style,
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: hint,
+        hintStyle: style.copyWith(color: colors.text3),
+        filled: true,
+        fillColor: colors.panel3,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+        border: border(colors.border),
+        enabledBorder: border(colors.border),
+        focusedBorder: border(colors.accent),
+      ),
+    );
+  }
+}
+
+class _ExampleChip extends StatelessWidget {
+  const _ExampleChip({
+    required this.expr,
+    required this.label,
+    required this.onTap,
+  });
+  final String expr;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Material(
+      color: colors.panel3,
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          child: Text(
+            label,
+            style: context.typo.label.copyWith(color: colors.text2),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CronOptionSwitch extends StatelessWidget {
+  const _CronOptionSwitch({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: context.typo.body.copyWith(fontSize: 13, color: colors.text2),
+            ),
+          ),
+          Switch.adaptive(
+            value: value,
+            activeTrackColor: colors.accent,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Dialog de histórico de um job (lê `cron.jsonl` via `cron_log`).
+class _CronLogDialog extends StatefulWidget {
+  const _CronLogDialog({required this.vm, required this.job});
+  final CronViewModel vm;
+  final CronJob job;
+
+  @override
+  State<_CronLogDialog> createState() => _CronLogDialogState();
+}
+
+class _CronLogDialogState extends State<_CronLogDialog> {
+  List<CronLogEntry>? _entries;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final entries = await widget.vm.fetchLog(jobId: widget.job.id);
+    if (!mounted) return;
+    setState(() {
+      _entries = entries;
+      _error = entries == null ? (widget.vm.actionError ?? 'Falha ao ler o log.') : null;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return AlertDialog(
+      backgroundColor: colors.panel2,
+      title: Text(
+        'Histórico — ${widget.job.schedule}',
+        style: context.typo.title.copyWith(fontSize: 15, color: colors.text),
+      ),
+      content: SizedBox(width: 460, child: _content(context)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Fechar',
+            style: context.typo.body.copyWith(fontSize: 13, color: colors.text2),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _content(BuildContext context) {
+    final colors = context.colors;
+    if (_loading) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2, color: colors.text3),
+          ),
+        ),
+      );
+    }
+    if (_error != null) {
+      return Text(
+        _error!,
+        style: context.typo.body.copyWith(fontSize: 13.5, color: colors.error),
+      );
+    }
+    final entries = _entries ?? const <CronLogEntry>[];
+    if (entries.isEmpty) {
+      return Text(
+        'Sem registros ainda.',
+        style: context.typo.body.copyWith(fontSize: 13.5, color: colors.text3),
+      );
+    }
+    // Mais recentes primeiro.
+    final ordered = entries.reversed.toList(growable: false);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 360),
+      child: ListView.separated(
+        shrinkWrap: true,
+        itemCount: ordered.length,
+        separatorBuilder: (_, _) =>
+            Divider(height: 1, color: colors.border),
+        itemBuilder: (context, i) {
+          final e = ordered[i];
+          final (color, label) = _cronResultView(context, e.result);
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  margin: const EdgeInsets.only(top: 5),
+                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            label,
+                            style: context.typo.body.copyWith(
+                              fontSize: 12.5,
+                              color: color,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            _fmtTs(e.tsMs),
+                            style: context.typo.mono.copyWith(
+                              fontSize: 11,
+                              color: colors.text3,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (e.promptPreview.isNotEmpty)
+                        Text(
+                          e.promptPreview,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.typo.label.copyWith(color: colors.text3),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---- cron helpers ----------------------------------------------------------
+
+(Color, String) _cronResultView(BuildContext context, CronResult r) {
+  final colors = context.colors;
+  return switch (r) {
+    CronResult.delivered => (colors.online, 'entregue'),
+    CronResult.wokeAndDelivered => (colors.online, 'acordou + entregou'),
+    CronResult.deliverFailed => (colors.error, 'falhou'),
+    CronResult.skippedBusy => (colors.warn, 'pulou (ocupado)'),
+    CronResult.skippedDown => (colors.text4, 'pulou (parado)'),
+    CronResult.skippedDisabled => (colors.text4, 'pulou (desativado)'),
+    CronResult.unknown => (colors.text4, '—'),
+  };
+}
+
+String _fmt2(int n) => n.toString().padLeft(2, '0');
+
+String _fmtDateTime(DateTime dt) {
+  final l = dt.toLocal();
+  return '${_fmt2(l.day)}/${_fmt2(l.month)} ${_fmt2(l.hour)}:${_fmt2(l.minute)}';
+}
+
+String _fmtIso(String? iso) {
+  if (iso == null) return '—';
+  final dt = DateTime.tryParse(iso);
+  return dt == null ? iso : _fmtDateTime(dt);
+}
+
+String _fmtTs(int ms) =>
+    _fmtDateTime(DateTime.fromMillisecondsSinceEpoch(ms));
 
 // ---------------------------------------------------------------------------
 // Daemon Agents
@@ -1380,93 +2199,71 @@ class _DaemonsPanelState extends State<_DaemonsPanel> {
     });
   }
 
-  Future<void> _create() async {
+  /// Abre o editor (criar quando [editing] é null; senão edita só o nome).
+  /// Valida pasta-única (criar) e nome-único, depois cria ou renomeia+reinicia.
+  Future<void> _openEditor([DaemonInfo? editing]) async {
     final vm = context.read<DaemonsViewModel>();
-    final dir = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Escolha a pasta do Daemon Agent',
+    final others = vm.daemons.where((d) => d.id != editing?.id);
+    final result = await showDialog<_DaemonEditorResult>(
+      context: context,
+      builder: (_) => _DaemonEditorDialog(
+        editing: editing,
+        existingNames: others
+            .map((d) => d.name.trim().toLowerCase())
+            .where((n) => n.isNotEmpty)
+            .toSet(),
+        existingCwds: others.map((d) => d.cwd).toSet(),
+      ),
     );
-    if (dir == null || !mounted) return;
-    final name = await _askName(dir);
-    if (!mounted || name == null) return; // null = cancelado
-    await vm.create(dir, name: name.isEmpty ? null : name);
+    if (result == null || !mounted) return;
+    if (editing == null) {
+      await vm.create(result.cwd, name: result.name);
+    } else {
+      await vm.rename(editing, result.name);
+    }
   }
 
-  Future<String?> _askName(String dir) async {
-    final controller = TextEditingController();
+  /// Reiniciar o supervisor é pesado (derruba todos os daemons) → confirma.
+  Future<void> _confirmRestartSupervisor() async {
+    final vm = context.read<DaemonsViewModel>();
     final colors = context.colors;
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: colors.panel2,
-          title: Text(
-            'Nome do agente',
-            style: ctx.typo.title.copyWith(fontSize: 15, color: colors.text),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                dir,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: ctx.typo.mono.copyWith(fontSize: 11.5, color: colors.text3),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
-                style: ctx.typo.body.copyWith(fontSize: 13.5, color: colors.text),
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: 'Opcional — padrão: nome da pasta',
-                  hintStyle: ctx.typo.body.copyWith(fontSize: 13, color: colors.text3),
-                  filled: true,
-                  fillColor: colors.panel3,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(7),
-                    borderSide: BorderSide(color: colors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(7),
-                    borderSide: BorderSide(color: colors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(7),
-                    borderSide: BorderSide(color: colors.accent),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(
-                'Cancelar',
-                style: ctx.typo.body.copyWith(fontSize: 13, color: colors.text2),
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-              child: Text(
-                'Criar',
-                style: ctx.typo.body.copyWith(
-                  fontSize: 13,
-                  color: colors.accentText,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: colors.panel2,
+        title: Text(
+          'Reiniciar o supervisor?',
+          style: ctx.typo.title.copyWith(fontSize: 15, color: colors.text),
         ),
-      );
-    } finally {
-      controller.dispose();
-    }
+        content: Text(
+          'Reinicia o processo do supervisor (recarrega o código). Todos os '
+          'daemons reiniciam junto e ficam fora por alguns segundos.',
+          style: ctx.typo.body.copyWith(fontSize: 13.5, color: colors.text2),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              'Cancelar',
+              style: ctx.typo.body.copyWith(fontSize: 13, color: colors.text2),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Reiniciar',
+              style: ctx.typo.body.copyWith(
+                fontSize: 13,
+                color: colors.warn,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await vm.restartSupervisor();
   }
 
   Future<void> _confirmRemove(DaemonInfo daemon) async {
@@ -1527,6 +2324,14 @@ class _DaemonsPanelState extends State<_DaemonsPanel> {
                 _ErrorBanner(message: vm.actionError!),
                 const SizedBox(height: 12),
               ],
+              if (vm.online) ...[
+                _DaemonActionsBar(
+                  vm: vm,
+                  onCreate: () => _openEditor(),
+                  onRestartSupervisor: _confirmRestartSupervisor,
+                ),
+                const SizedBox(height: 16),
+              ],
               _Section(
                 label: 'Agentes sempre ativos',
                 trailing: _ReloadButton(
@@ -1535,9 +2340,6 @@ class _DaemonsPanelState extends State<_DaemonsPanel> {
                 ),
                 child: _body(context, vm),
               ),
-              if (vm.online) ...[
-                _DaemonActionsBar(vm: vm, onCreate: _create),
-              ],
             ],
           ),
         ),
@@ -1624,6 +2426,7 @@ class _DaemonsPanelState extends State<_DaemonsPanel> {
             onStart: () => vm.start(daemon.id),
             onStop: () => vm.stop(daemon.id),
             onRestart: () => vm.restart(daemon.id),
+            onEdit: () => _openEditor(daemon),
             onRemove: () => _confirmRemove(daemon),
           ),
       ],
@@ -1631,11 +2434,16 @@ class _DaemonsPanelState extends State<_DaemonsPanel> {
   }
 }
 
-/// Barra de ações: criar daemon + controles da frota inteira.
+/// Barra de ações: criar daemon + controles da frota + reiniciar supervisor.
 class _DaemonActionsBar extends StatelessWidget {
-  const _DaemonActionsBar({required this.vm, required this.onCreate});
+  const _DaemonActionsBar({
+    required this.vm,
+    required this.onCreate,
+    required this.onRestartSupervisor,
+  });
   final DaemonsViewModel vm;
   final Future<void> Function() onCreate;
+  final Future<void> Function() onRestartSupervisor;
 
   @override
   Widget build(BuildContext context) {
@@ -1643,66 +2451,75 @@ class _DaemonActionsBar extends StatelessWidget {
     final hasDaemons = vm.daemons.isNotEmpty;
     final fleetEnabled = hasDaemons && !vm.busyAll;
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        children: [
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: colors.accent,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            onPressed: () => onCreate(),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('Criar daemon'),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: colors.accent,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
-          const Spacer(),
-          if (vm.busyAll)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: SizedBox(
-                width: 15,
-                height: 15,
-                child: CircularProgressIndicator(strokeWidth: 2, color: colors.text3),
-              ),
-            ),
-          _FleetButton(
-            label: 'Iniciar',
-            icon: Icons.play_arrow,
-            onTap: fleetEnabled ? vm.startAll : null,
+          onPressed: () => onCreate(),
+          icon: const Icon(Icons.add, size: 16),
+          label: const Text('Criar daemon'),
+        ),
+        if (vm.busyAll)
+          SizedBox(
+            width: 15,
+            height: 15,
+            child: CircularProgressIndicator(strokeWidth: 2, color: colors.text3),
           ),
-          const SizedBox(width: 8),
-          _FleetButton(
-            label: 'Parar',
-            icon: Icons.stop,
-            onTap: fleetEnabled ? vm.stopAll : null,
-          ),
-          const SizedBox(width: 8),
-          _FleetButton(
-            label: 'Reiniciar',
-            icon: Icons.restart_alt,
-            onTap: fleetEnabled ? vm.restartAll : null,
-          ),
-        ],
-      ),
+        _FleetButton(
+          label: 'Iniciar todos',
+          icon: Icons.play_arrow,
+          onTap: fleetEnabled ? vm.startAll : null,
+        ),
+        _FleetButton(
+          label: 'Parar todos',
+          icon: Icons.stop,
+          onTap: fleetEnabled ? vm.stopAll : null,
+        ),
+        _FleetButton(
+          label: 'Reiniciar todos',
+          icon: Icons.restart_alt,
+          onTap: fleetEnabled ? vm.restartAll : null,
+        ),
+        _FleetButton(
+          label: 'Reiniciar supervisor',
+          icon: Icons.sync,
+          tint: colors.warn,
+          onTap: vm.busyAll ? null : onRestartSupervisor,
+        ),
+      ],
     );
   }
 }
 
 class _FleetButton extends StatelessWidget {
-  const _FleetButton({required this.label, required this.icon, required this.onTap});
+  const _FleetButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.tint,
+  });
   final String label;
   final IconData icon;
   final Future<void> Function()? onTap;
 
+  /// Cor opcional (texto + borda) — usada pra destacar ações mais pesadas.
+  final Color? tint;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final fg = tint ?? colors.text2;
     return OutlinedButton.icon(
       style: OutlinedButton.styleFrom(
-        foregroundColor: colors.text2,
+        foregroundColor: fg,
         disabledForegroundColor: colors.text4,
-        side: BorderSide(color: colors.border2),
+        side: BorderSide(color: tint ?? colors.border2),
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
         visualDensity: VisualDensity.compact,
       ),
@@ -1721,6 +2538,7 @@ class _DaemonTile extends StatelessWidget {
     required this.onStart,
     required this.onStop,
     required this.onRestart,
+    required this.onEdit,
     required this.onRemove,
   });
   final DaemonInfo daemon;
@@ -1728,6 +2546,7 @@ class _DaemonTile extends StatelessWidget {
   final Future<void> Function() onStart;
   final Future<void> Function() onStop;
   final Future<void> Function() onRestart;
+  final Future<void> Function() onEdit;
   final Future<void> Function() onRemove;
 
   @override
@@ -1777,11 +2596,15 @@ class _DaemonTile extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (running) ...[
-                  _act(context, Icons.stop, 'Parar', onStop),
-                  _act(context, Icons.restart_alt, 'Reiniciar', onRestart),
-                ] else
-                  _act(context, Icons.play_arrow, 'Iniciar', onStart),
+                // Botão único iniciar/parar (alterna conforme o estado).
+                _act(
+                  context,
+                  running ? Icons.stop : Icons.play_arrow,
+                  running ? 'Parar' : 'Iniciar',
+                  running ? onStop : onStart,
+                ),
+                if (running) _act(context, Icons.restart_alt, 'Reiniciar', onRestart),
+                _act(context, Icons.edit_outlined, 'Editar', onEdit),
                 _act(context, Icons.delete_outline, 'Remover', onRemove),
               ],
             ),
@@ -1871,4 +2694,236 @@ String _fmtUptime(int s) {
   if (h < 24) return '${h}h${m % 60}m';
   final d = h ~/ 24;
   return '${d}d${h % 24}h';
+}
+
+/// Resultado do editor de daemon: pasta (fixa na edição) + nome.
+class _DaemonEditorResult {
+  const _DaemonEditorResult({required this.cwd, required this.name});
+  final String cwd;
+  final String name;
+}
+
+/// Dialog de criar/editar daemon. Na criação escolhe a pasta + nome; na edição
+/// (`editing != null`) a pasta fica travada e só o nome muda. Valida nome único
+/// (sempre) e pasta única (só na criação) contra os daemons existentes.
+class _DaemonEditorDialog extends StatefulWidget {
+  const _DaemonEditorDialog({
+    required this.editing,
+    required this.existingNames,
+    required this.existingCwds,
+  });
+  final DaemonInfo? editing;
+  final Set<String> existingNames; // nomes (lowercased) dos OUTROS daemons
+  final Set<String> existingCwds; // cwds dos OUTROS daemons
+
+  @override
+  State<_DaemonEditorDialog> createState() => _DaemonEditorDialogState();
+}
+
+class _DaemonEditorDialogState extends State<_DaemonEditorDialog> {
+  late final TextEditingController _nameCtrl;
+  String? _cwd;
+  String? _nameError;
+  String? _pathError;
+
+  bool get _isEdit => widget.editing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.editing?.name ?? '');
+    _cwd = widget.editing?.cwd;
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickFolder() async {
+    final picked = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: 'Escolha a pasta do Daemon Agent',
+    );
+    if (picked == null || !mounted) return;
+    // A checagem de pasta-duplicada aqui é best-effort (compara o caminho
+    // escolhido com os já registrados). O `remote-pi create` normaliza pra
+    // realpath e rejeita duplicata (inclusive via symlink) como backstop.
+    setState(() {
+      _cwd = picked;
+      _pathError = null;
+    });
+  }
+
+  void _submit() {
+    final name = _nameCtrl.text.trim();
+    String? nameError;
+    String? pathError;
+
+    if (name.isEmpty) {
+      nameError = 'Informe um nome.';
+    } else if (widget.existingNames.contains(name.toLowerCase())) {
+      nameError = 'Já existe um agente com esse nome.';
+    }
+    if (!_isEdit) {
+      if (_cwd == null) {
+        pathError = 'Escolha uma pasta.';
+      } else if (widget.existingCwds.contains(_cwd)) {
+        pathError = 'Já existe um agente nessa pasta.';
+      }
+    }
+
+    if (nameError != null || pathError != null) {
+      setState(() {
+        _nameError = nameError;
+        _pathError = pathError;
+      });
+      return;
+    }
+    Navigator.of(context).pop(
+      _DaemonEditorResult(
+        cwd: _isEdit ? widget.editing!.cwd : _cwd!,
+        name: name,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    OutlineInputBorder border(Color c) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: BorderSide(color: c),
+    );
+
+    return AlertDialog(
+      backgroundColor: colors.panel2,
+      title: Text(
+        _isEdit ? 'Editar daemon' : 'Novo daemon',
+        style: context.typo.title.copyWith(fontSize: 15, color: colors.text),
+      ),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _label(context, 'Nome'),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _nameCtrl,
+              autofocus: true,
+              onChanged: (_) {
+                if (_nameError != null) setState(() => _nameError = null);
+              },
+              onSubmitted: (_) => _submit(),
+              style: context.typo.body.copyWith(fontSize: 13.5, color: colors.text),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'Ex.: PC, Servidor, Casa',
+                hintStyle: context.typo.body.copyWith(fontSize: 13, color: colors.text3),
+                filled: true,
+                fillColor: colors.panel3,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+                border: border(colors.border),
+                enabledBorder: border(colors.border),
+                focusedBorder: border(colors.accent),
+              ),
+            ),
+            if (_nameError != null) ...[
+              const SizedBox(height: 6),
+              Text(_nameError!, style: context.typo.label.copyWith(color: colors.error)),
+            ],
+            const SizedBox(height: 16),
+            _label(context, 'Pasta'),
+            const SizedBox(height: 6),
+            if (_isEdit)
+              SizedBox(
+                width: double.infinity,
+                child: _pathBox(context, _cwd ?? '', enabled: false),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: _pathBox(
+                      context,
+                      _cwd ?? 'Nenhuma pasta escolhida',
+                      enabled: _cwd != null,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: colors.text2,
+                      side: BorderSide(color: colors.border2),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                    onPressed: () => _pickFolder(),
+                    child: Text(_cwd == null ? 'Escolher' : 'Alterar'),
+                  ),
+                ],
+              ),
+            if (_isEdit) ...[
+              const SizedBox(height: 6),
+              Text(
+                'A pasta não pode ser alterada.',
+                style: context.typo.label.copyWith(color: colors.text3),
+              ),
+            ],
+            if (_pathError != null) ...[
+              const SizedBox(height: 6),
+              Text(_pathError!, style: context.typo.label.copyWith(color: colors.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Cancelar',
+            style: context.typo.body.copyWith(fontSize: 13, color: colors.text2),
+          ),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: Text(
+            _isEdit ? 'Salvar' : 'Criar',
+            style: context.typo.body.copyWith(
+              fontSize: 13,
+              color: colors.accentText,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _label(BuildContext context, String text) => Text(
+    text,
+    style: context.typo.label.copyWith(color: context.colors.text3),
+  );
+
+  Widget _pathBox(BuildContext context, String text, {required bool enabled}) {
+    final colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.panel3,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: colors.border),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: context.typo.mono.copyWith(
+          fontSize: 11.5,
+          color: enabled ? colors.text2 : colors.text3,
+        ),
+      ),
+    );
+  }
 }

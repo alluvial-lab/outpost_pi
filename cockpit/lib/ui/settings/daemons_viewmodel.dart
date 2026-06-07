@@ -65,6 +65,51 @@ class DaemonsViewModel extends ChangeNotifier {
   Future<void> stopAll() => _globalAction(_supervisor.stopAll);
   Future<void> restartAll() => _globalAction(_supervisor.restartAll);
 
+  /// Reinicia o **processo do supervisor** (recarrega o código). Espera ele
+  /// voltar online antes de recarregar a lista.
+  Future<void> restartSupervisor() async {
+    if (busyAll) return;
+    busyAll = true;
+    actionError = null;
+    _notify();
+    final result = await _supervisor.restartSupervisor();
+    result.fold((_) {}, (e) => actionError = e.message);
+    // Aguarda o supervisor rebindar o UDS (até ~12s) antes de listar.
+    for (var i = 0; i < 12; i++) {
+      if (await _supervisor.isOnline()) break;
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
+    busyAll = false;
+    _notify();
+    await reload();
+  }
+
+  /// Renomeia o agente (grava o `agent_name`) e **reinicia** o daemon para
+  /// aplicar ao processo vivo. Retorna `true` se o nome foi gravado.
+  Future<bool> rename(DaemonInfo daemon, String name) async {
+    if (_busy.contains(daemon.id)) return false;
+    _busy.add(daemon.id);
+    actionError = null;
+    _notify();
+    final result = await _supervisor.setAgentName(daemon.cwd, name);
+    final ok = result.fold((_) => true, (e) {
+      actionError = e.message;
+      return false;
+    });
+    if (ok) {
+      // Reinicia pra o processo vivo assumir o novo nome.
+      final restart = await _supervisor.restart(daemon.id);
+      restart.fold(
+        (_) {},
+        (e) => actionError = 'Nome salvo, mas falha ao reiniciar: ${e.message}',
+      );
+    }
+    _busy.remove(daemon.id);
+    _notify();
+    await reload();
+    return ok;
+  }
+
   /// Cria/registra um daemon pra [cwd]. Retorna `true` no sucesso.
   Future<bool> create(String cwd, {String? name}) async {
     actionError = null;

@@ -4,6 +4,7 @@ import 'package:cockpit/ui/cockpit/cockpit_page.dart';
 import 'package:cockpit/ui/cockpit/viewmodels/cockpit_viewmodel.dart';
 import 'package:cockpit/ui/cockpit/viewmodels/setup_viewmodel.dart';
 import 'package:cockpit/ui/settings/connectivity_viewmodel.dart';
+import 'package:cockpit/ui/settings/cron_viewmodel.dart';
 import 'package:cockpit/ui/settings/daemons_viewmodel.dart';
 import 'package:cockpit/ui/settings/settings_page.dart';
 import 'package:flutter/widgets.dart';
@@ -47,6 +48,9 @@ GoRouter buildRouter() {
               ),
               ChangeNotifierProvider<DaemonsViewModel>(
                 create: (_) => buildDaemonsViewModel(),
+              ),
+              ChangeNotifierProvider<CronViewModel>(
+                create: (_) => buildCronViewModel(),
               ),
             ],
             child: const SettingsPage(),

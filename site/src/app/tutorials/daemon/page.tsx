@@ -79,9 +79,14 @@ export default function DaemonTutorial() {
 
         <DocsSection id="create" title="2. Promote a folder to a daemon">
           <p>
-            First make sure the folder is configured the normal way — run{" "}
-            <InlineCode>/remote-pi</InlineCode> in it once (the wizard), and pair
-            your phone if you want to reach it remotely. Then register it:
+            No per-folder setup is needed first — <InlineCode>create</InlineCode>{" "}
+            registers any folder and the supervisor injects the daemon&apos;s
+            config at spawn (a fixed <InlineCode>assistent</InlineCode>{" "}
+            workspace, relay on), so the folder needs no{" "}
+            <InlineCode>.pi/remote-pi/</InlineCode> of its own. To reach the
+            daemon from your phone, just make sure this machine has been paired
+            once — pairing is per-machine, so any earlier{" "}
+            <InlineCode>/remote-pi pair</InlineCode> on it counts. Then register:
           </p>
           <CodeBlock
             code={`remote-pi create ~/Movies --name "Video Editor"
@@ -101,9 +106,8 @@ export default function DaemonTutorial() {
           <Callout variant="note" title="One daemon per folder">
             The by-path id rejects a second daemon in the same directory at{" "}
             <InlineCode>create</InlineCode> time. Pairing stays interactive — a
-            daemon reuses the keypair and paired devices from the earlier{" "}
-            <InlineCode>/remote-pi</InlineCode> session in that folder; it
-            doesn&apos;t show a QR itself.
+            daemon reuses the keypair and paired devices already set up on this
+            machine; it doesn&apos;t show a QR itself.
           </Callout>
         </DocsSection>
 
@@ -117,7 +121,9 @@ export default function DaemonTutorial() {
             code={`remote-pi daemons                  # list registered daemons + state
 remote-pi daemon status            # pid, uptime, restart count
 remote-pi daemon send 4e39152d "Cut the first 30s of the latest clip"
-remote-pi daemon restart           # restart all
+remote-pi daemon restart 4e39152d  # restart one daemon by id
+remote-pi daemon restart           # ...or the whole fleet (no id)
+remote-pi daemon stop 4e39152d     # stop one
 remote-pi daemon stop              # stop all`}
             label="Fleet commands"
             language="bash"
@@ -144,6 +150,95 @@ tail -f ~/.pi/remote/supervisord.log`}
               the whole fleet.
             </p>
           </DocsSubsection>
+        </DocsSection>
+
+        <DocsSection id="cron" title="4. Schedule recurring prompts (cron)">
+          <p>
+            A daemon only acts when something prompts it.{" "}
+            <InlineCode>cron</InlineCode> lets the supervisor be that something on
+            a schedule — &ldquo;every weekday at 9am, summarize the new
+            PRs&rdquo; — with no one at the keyboard. Jobs target a daemon by id
+            and survive reboots along with the supervisor.
+          </p>
+          <Callout
+            variant="warning"
+            title="Cron needs the supervisor installed as a service"
+          >
+            The scheduler runs <em>inside</em> the supervisor, so it only fires
+            when the supervisor is installed as a user service. Run{" "}
+            <InlineCode>/remote-pi install</InlineCode> (step 1) first — without
+            it, <InlineCode>cron add</InlineCode> warns instead of pretending to
+            schedule. It is the same launchd / systemd service that keeps your
+            daemons alive; there is no second scheduler.
+          </Callout>
+          <p>
+            With a daemon registered (step 2) and the supervisor running, add a
+            job. The first argument is the daemon id, then a standard five-field
+            cron expression, then the prompt:
+          </p>
+          <CodeBlock
+            code={`# every weekday at 9am, São Paulo time
+remote-pi cron add 4e39152d "0 9 * * 1-5" "Summarize the new PRs" --tz America/Sao_Paulo
+# → Cron j_ab12 added → daemon 4e39152d: "0 9 * * 1-5" (America/Sao_Paulo). Next run: …`}
+            label="Schedule a prompt"
+            language="bash"
+          />
+          <p>
+            Runs must be at least <strong className="text-fg">60 seconds</strong>{" "}
+            apart — a more frequent expression is rejected with a clear message,
+            since every fire spends tokens. Flags on{" "}
+            <InlineCode>cron add</InlineCode>:
+          </p>
+          <ul className="ml-6 list-disc space-y-2">
+            <li>
+              <InlineCode>--tz Area/City</InlineCode> — run in a specific,
+              DST-aware timezone (e.g. <InlineCode>America/Sao_Paulo</InlineCode>
+              ). Defaults to the machine&apos;s local time.
+            </li>
+            <li>
+              <InlineCode>--wake</InlineCode> — if the daemon is stopped when the
+              job fires, start it first, then send. Default: skip (logged as{" "}
+              <InlineCode>skipped_down</InlineCode>).
+            </li>
+            <li>
+              <InlineCode>--no-skip-busy</InlineCode> — send even if the daemon is
+              mid-turn. By default a fire is skipped while the daemon is still
+              working (<InlineCode>skipped_busy</InlineCode>) so prompts
+              don&apos;t pile up on an unfinished turn.
+            </li>
+            <li>
+              <InlineCode>--catchup</InlineCode> — after the supervisor was down,
+              fire <em>one</em> missed run on startup. Default off; never replays
+              the whole backlog.
+            </li>
+          </ul>
+          <p>
+            Each job gets an id like <InlineCode>j_ab12</InlineCode> (printed by{" "}
+            <InlineCode>cron add</InlineCode> and <InlineCode>cron list</InlineCode>
+            ). Inspect, test, and audit the fleet&apos;s schedule:
+          </p>
+          <CodeBlock
+            code={`remote-pi cron list                # schedule, enabled, last run/status, next run
+remote-pi cron run j_ab12          # fire one now, ignoring its schedule
+remote-pi cron disable j_ab12      # pause without deleting (enable to resume)
+remote-pi cron log --tail 20       # recent fires AND skips
+remote-pi cron remove j_ab12       # delete the job`}
+            label="Inspect & audit"
+            language="bash"
+          />
+          <p>
+            The agent&apos;s reply is fire-and-forget into the mesh — your phone
+            and other agents see it live, exactly like a manual{" "}
+            <InlineCode>daemon send</InlineCode>. Cron itself only audits the{" "}
+            <em>trigger</em>: every fire and every skip appends one line to{" "}
+            <InlineCode>~/.pi/remote/cron.jsonl</InlineCode>, which{" "}
+            <InlineCode>cron log</InlineCode> tails. Full subcommand reference is
+            in the{" "}
+            <Link href="/docs#commands-cron" className="text-accent underline">
+              docs
+            </Link>
+            .
+          </p>
         </DocsSection>
 
         <DocsSection id="cleanup" title="Removing a daemon">
