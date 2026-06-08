@@ -35,9 +35,14 @@ abstract class RpcProcessGateway implements Service {
   /// [environment] é **fundido** com o ambiente do processo pai — variáveis
   /// ausentes aqui são herdadas normalmente. Use para injetar
   /// `REMOTE_PI_DIRECT_CONFIG` sem perder PATH/HOME/etc.
+  ///
+  /// [sessionId] (opcional) é o ID da sessão a restaurar (basename do `.jsonl`
+  /// sem extensão). Quando presente, passa `--session <id>` ao pi para que ele
+  /// inicie já carregado na sessão — sem `switch_session` posterior.
   Future<Result<void, RpcError>> spawn({
     required String workingDirectory,
     Map<String, String>? environment,
+    String? sessionId,
   });
 
   /// Envia um prompt do usuário pelo stdin. Se [steerIfBusy], anexa
@@ -48,6 +53,14 @@ abstract class RpcProcessGateway implements Service {
     bool steerIfBusy = false,
     List<PromptImage> images = const <PromptImage>[],
   });
+
+  /// Responde a um `extension_ui_request` interativo (select/confirm/input/
+  /// editor) — escreve `{type:"extension_ui_response", id, ...response}` no
+  /// stdin. [response] é `{value:…}` / `{confirmed:…}` / `{cancelled:true}`.
+  Future<Result<void, RpcError>> respondUi(
+    String id,
+    Map<String, dynamic> response,
+  );
 
   /// Mata o child limpo: fecha o stdin (encerramento gracioso, code 0) e só
   /// escala para SIGTERM/SIGKILL se ele não sair. Sem processo órfão.

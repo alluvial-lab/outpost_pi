@@ -122,8 +122,59 @@ final class RpcProcessExit extends RpcEvent {
   final int code;
 }
 
+/// Nível de um [RpcNotice] (`extension_ui_request` method `notify`).
+enum RpcNoticeLevel { info, warning, error }
+
+/// `extension_ui_request` method `notify` — aviso fire-and-forget da extensão
+/// (status do mesh, "QR ready", erros). Não espera resposta.
+final class RpcNotice extends RpcEvent {
+  const RpcNotice(this.message, this.level);
+  final String message;
+  final RpcNoticeLevel level;
+}
+
+/// `extension_ui_request` interativo (`select` / `confirm` / `input` / `editor`)
+/// — a extensão pede uma escolha ao usuário e **espera** um
+/// `extension_ui_response` com o mesmo [id] no stdin. Sem resposta, a extensão
+/// fica pendurada (ou resolve no timeout dela).
+final class RpcUiRequest extends RpcEvent {
+  const RpcUiRequest({
+    required this.id,
+    required this.method,
+    this.title,
+    this.message,
+    this.placeholder,
+    this.defaultValue,
+    this.options = const <String>[],
+  });
+
+  final String id;
+  final String method; // select | confirm | input | editor
+  final String? title;
+  final String? message; // confirm
+  final String? placeholder; // input/editor — hint
+  final String? defaultValue; // input/editor — valor inicial (prefill)
+  final List<String> options; // select
+}
+
+/// `message_start` com `role:"custom"` e `customType:"remote-pi:name-assigned"`.
+///
+/// Emitido pelo broker ao entrar no mesh: o broker pode ter atribuído um nome
+/// diferente do pedido (`agent_name`) para evitar colisão (ex.: "Proj" → "Proj#2").
+/// Quando [changed] é `false`, [assigned] == o nome original — sem ação necessária.
+final class RpcNameAssigned extends RpcEvent {
+  const RpcNameAssigned({required this.assigned, required this.changed});
+
+  /// Nome efetivo atribuído pelo broker (o que aparece no mesh).
+  final String assigned;
+
+  /// `true` quando o broker mudou o nome pedido por colisão.
+  final bool changed;
+}
+
 /// Qualquer evento ainda não mapeado (compaction, retry, queue_update, deltas
-/// de toolcall, message_start/end...). A UI ignora com segurança — nunca crasha.
+/// de toolcall, message_start/end, setStatus/setTitle...). A UI ignora com
+/// segurança — nunca crasha.
 final class RpcUnknown extends RpcEvent {
   const RpcUnknown(this.type, [this.raw = '']);
   final String type;

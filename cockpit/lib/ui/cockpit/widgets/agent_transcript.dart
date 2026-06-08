@@ -16,16 +16,28 @@ const double _kChatMaxWidth = 920;
 
 /// Corpo do pane: o stream do agente (texto, raciocínio, tool calls, infos),
 /// estilizado conforme o design (rp-p / rp-think / rp-tool / rp-usermsg).
+/// Responde a um pedido interativo da extensão (card no transcript):
+/// `(id, response, label)`. Ligado em `AgentSession.respondUi`.
+typedef UiResponder = void Function(
+  String id,
+  Map<String, dynamic> response,
+  String label,
+);
+
 class AgentTranscript extends StatelessWidget {
   const AgentTranscript({
     super.key,
     required this.entries,
     required this.controller,
+    this.onUiResponse,
     this.bottomPadding = 8,
   });
 
   final List<AgentEntry> entries;
   final ScrollController controller;
+
+  /// Callback pros cards de `extension_ui_request` interativos responderem.
+  final UiResponder? onUiResponse;
 
   /// Espaço extra no fim da lista para a conversa não ficar atrás do composer
   /// flutuante.
@@ -130,7 +142,11 @@ class AgentTranscript extends StatelessWidget {
   Widget _bodySliver(List<AgentEntry> body) {
     return SliverList(
       delegate: SliverChildBuilderDelegate(
-        (context, i) => _EntryView(key: ValueKey(body[i]), entry: body[i]),
+        (context, i) => _EntryView(
+          key: ValueKey(body[i]),
+          entry: body[i],
+          onUiResponse: onUiResponse,
+        ),
         childCount: body.length,
       ),
     );
@@ -165,8 +181,9 @@ class _PinnedUserHeader extends StatelessWidget {
 }
 
 class _EntryView extends StatelessWidget {
-  const _EntryView({super.key, required this.entry});
+  const _EntryView({super.key, required this.entry, this.onUiResponse});
   final AgentEntry entry;
+  final UiResponder? onUiResponse;
 
   @override
   Widget build(BuildContext context) {
@@ -210,6 +227,14 @@ class _EntryView extends StatelessWidget {
             ),
           ],
         ),
+      ),
+      NoticeEntry(:final message, :final level) => _NoticeLine(
+        message: message,
+        level: level,
+      ),
+      UiRequestEntry() => _UiRequestCard(
+        entry: entry as UiRequestEntry,
+        onRespond: onUiResponse,
       ),
     };
   }
@@ -656,4 +681,288 @@ class _ToolCard extends StatelessWidget {
 
   String _clip(String text, int max) =>
       text.length <= max ? text : '${text.substring(0, max)}\n… (truncado)';
+}
+
+/// Aviso da extensão (`notify`) — linha inline, cor por nível (0 info / 1 warn /
+/// 2 erro). Preserva quebras de linha da mensagem.
+class _NoticeLine extends StatelessWidget {
+  const _NoticeLine({required this.message, required this.level});
+  final String message;
+  final int level;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final (IconData icon, Color color) = switch (level) {
+      2 => (Icons.error_outline, colors.error),
+      1 => (Icons.warning_amber_rounded, colors.warn),
+      _ => (Icons.info_outline, colors.text3),
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(icon, size: 14, color: color),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: context.typo.label.copyWith(color: color, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Card de um pedido interativo da extensão (`select`/`confirm`/`input`/
+/// `editor`). Responde via [onRespond] e, depois, mostra o que foi escolhido.
+class _UiRequestCard extends StatefulWidget {
+  const _UiRequestCard({required this.entry, required this.onRespond});
+  final UiRequestEntry entry;
+  final UiResponder? onRespond;
+
+  @override
+  State<_UiRequestCard> createState() => _UiRequestCardState();
+}
+
+class _UiRequestCardState extends State<_UiRequestCard> {
+  late final TextEditingController _input = TextEditingController(
+    text: widget.entry.defaultValue ?? '',
+  );
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  void _respond(Map<String, dynamic> body, String label) =>
+      widget.onRespond?.call(widget.entry.id, body, label);
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final entry = widget.entry;
+
+    if (entry.resolved) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Icon(Icons.check_circle_outline, size: 14, color: colors.text3),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                entry.answerLabel == null
+                    ? '${entry.title ?? "Pedido"} — respondido'
+                    : '${entry.title ?? "Você escolheu"}: ${entry.answerLabel}',
+                style: context.typo.label.copyWith(color: colors.text3),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: colors.panel2,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.accent),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (entry.title != null && entry.title!.isNotEmpty)
+            Text(
+              entry.title!,
+              style: context.typo.body.copyWith(
+                fontSize: 13.5,
+                color: colors.text,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          if (entry.message != null && entry.message!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              entry.message!,
+              style: context.typo.label.copyWith(color: colors.text2),
+            ),
+          ],
+          const SizedBox(height: 10),
+          _controls(context),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: () => _respond(
+                <String, dynamic>{'cancelled': true},
+                'cancelado',
+              ),
+              child: Text(
+                'Cancelar',
+                style: context.typo.label.copyWith(color: colors.text3),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _controls(BuildContext context) {
+    final entry = widget.entry;
+    switch (entry.method) {
+      case 'confirm':
+        return Row(
+          children: [
+            _ChoiceButton(
+              label: 'Não',
+              filled: false,
+              onTap: () => _respond(
+                <String, dynamic>{'confirmed': false},
+                'Não',
+              ),
+            ),
+            const SizedBox(width: 8),
+            _ChoiceButton(
+              label: 'Sim',
+              filled: true,
+              onTap: () => _respond(
+                <String, dynamic>{'confirmed': true},
+                'Sim',
+              ),
+            ),
+          ],
+        );
+      case 'input':
+      case 'editor':
+        return _InputRow(
+          controller: _input,
+          hint: entry.placeholder ?? 'Digite a resposta',
+          onSubmit: () {
+            final v = _input.text.trim();
+            if (v.isEmpty) return;
+            _respond(<String, dynamic>{'value': v}, v);
+          },
+        );
+      case 'select':
+      default:
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final option in entry.options)
+              _ChoiceButton(
+                label: option,
+                filled: false,
+                onTap: () => _respond(<String, dynamic>{'value': option}, option),
+              ),
+          ],
+        );
+    }
+  }
+}
+
+class _ChoiceButton extends StatelessWidget {
+  const _ChoiceButton({
+    required this.label,
+    required this.filled,
+    required this.onTap,
+  });
+  final String label;
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Material(
+      color: filled ? colors.accent : colors.panel3,
+      borderRadius: BorderRadius.circular(7),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(7),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Text(
+            label,
+            style: context.typo.body.copyWith(
+              fontSize: 13,
+              color: filled ? colors.bg : colors.text,
+              fontWeight: filled ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InputRow extends StatelessWidget {
+  const _InputRow({
+    required this.controller,
+    required this.hint,
+    required this.onSubmit,
+  });
+  final TextEditingController controller;
+  final String hint;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    OutlineInputBorder border(Color c) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: BorderSide(color: c),
+    );
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            onSubmitted: (_) => onSubmit(),
+            style: context.typo.body.copyWith(fontSize: 13, color: colors.text),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: hint,
+              hintStyle: context.typo.body.copyWith(
+                fontSize: 13,
+                color: colors.text3,
+              ),
+              filled: true,
+              fillColor: colors.panel3,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 11,
+                vertical: 9,
+              ),
+              border: border(colors.border),
+              enabledBorder: border(colors.border),
+              focusedBorder: border(colors.accent),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _ChoiceButton(label: 'Enviar', filled: true, onTap: onSubmit),
+      ],
+    );
+  }
 }

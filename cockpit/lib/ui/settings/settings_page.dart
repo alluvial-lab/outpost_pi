@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cockpit/domain/cron_schedule.dart';
 import 'package:cockpit/domain/entities/app_settings.dart';
 import 'package:cockpit/domain/entities/cron_job.dart';
@@ -1331,12 +1333,25 @@ class _AgendamentosPanel extends StatefulWidget {
 }
 
 class _AgendamentosPanelState extends State<_AgendamentosPanel> {
+  Timer? _poll;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<CronViewModel>().reload();
     });
+    // Sem push do supervisor: refaz o list a cada 10s pra refletir disparos
+    // agendados, next_run e last_status que mudam fora da UI.
+    _poll = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) context.read<CronViewModel>().refreshQuiet();
+    });
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
   }
 
   Future<void> _openEditor() async {
@@ -2191,12 +2206,24 @@ class _DaemonsPanel extends StatefulWidget {
 }
 
 class _DaemonsPanelState extends State<_DaemonsPanel> {
+  Timer? _poll;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<DaemonsViewModel>().reload();
     });
+    // Reflete mudanças de estado feitas fora da UI (crash/restart/uptime).
+    _poll = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) context.read<DaemonsViewModel>().refreshQuiet();
+    });
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
   }
 
   /// Abre o editor (criar quando [editing] é null; senão edita só o nome).

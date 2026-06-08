@@ -28,6 +28,13 @@ class DaemonsViewModel extends ChangeNotifier {
   bool isBusy(String id) => _busy.contains(id);
   bool get anyBusy => busyAll || _busy.isNotEmpty;
 
+  /// Refresh silencioso (polling): só recarrega se estiver ocioso, pra refletir
+  /// mudanças de estado feitas fora da UI (crash, restart, etc.).
+  Future<void> refreshQuiet() async {
+    if (anyBusy || load == DaemonsLoad.loading) return;
+    await reload();
+  }
+
   /// Checa o supervisor e lista os daemons. Chamado ao abrir a aba.
   Future<void> reload() async {
     load = DaemonsLoad.loading;

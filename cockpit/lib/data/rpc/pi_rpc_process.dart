@@ -15,8 +15,10 @@ import 'package:cockpit/domain/entities/prompt_image.dart';
 import 'package:cockpit/domain/entities/rpc_event.dart';
 import 'package:cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/domain/entities/transcript_message.dart';
+import 'package:cockpit/data/rpc/pi_process_registry.dart';
 import 'package:cockpit/domain/exceptions/rpc_error.dart';
 import 'package:cockpit/domain/result.dart';
+import 'package:flutter/foundation.dart';
 
 /// Implementação do [RpcProcessGateway] sobre `dart:io` `Process`.
 ///
@@ -63,6 +65,7 @@ class PiRpcProcess implements RpcProcessGateway {
   Future<Result<void, RpcError>> spawn({
     required String workingDirectory,
     Map<String, String>? environment,
+    String? sessionId,
   }) async {
     if (_process != null) {
       return const Failure(
@@ -76,12 +79,13 @@ class PiRpcProcess implements RpcProcessGateway {
           : null;
       final process = await Process.start(
         _config.executable,
-        _config.spawnArgs(),
+        _config.spawnArgs(sessionId: sessionId),
         workingDirectory: workingDirectory,
         environment: env,
       );
       _process = process;
       _cwd = workingDirectory;
+      unawaited(PiProcessRegistry.register(process.pid));
 
       _stdoutSub = process.stdout
           .transform(const JsonlLineSplitter())
@@ -142,6 +146,34 @@ class PiRpcProcess implements RpcProcessGateway {
   }
 
   @override
+  Future<Result<void, RpcError>> respondUi(
+    String id,
+    Map<String, dynamic> response,
+  ) async {
+    final process = _process;
+    if (process == null) {
+      return const Failure(RpcError('Nenhum agente em execução.'));
+    }
+    final command = <String, dynamic>{
+      'type': 'extension_ui_response',
+      'id': id,
+      ...response,
+    };
+    try {
+      await _writeLine('${jsonEncode(command)}\n');
+      return const Success(null);
+    } catch (error, stackTrace) {
+      return Failure(
+        RpcError(
+          'Falha ao responder UI: $error',
+          cause: error,
+          stackTrace: stackTrace,
+        ),
+      );
+    }
+  }
+
+  @override
   Future<void> kill() async {
     final process = _process;
     if (process == null) return;
@@ -183,6 +215,7 @@ class PiRpcProcess implements RpcProcessGateway {
   }
 
   void _onStdoutLine(String line) {
+    debugPrint('[rpc-mode-agent][out] $line');
     try {
       final decoded = jsonDecode(line);
       if (decoded is! Map<String, dynamic>) {
@@ -216,6 +249,7 @@ class PiRpcProcess implements RpcProcessGateway {
       if (process == null) {
         throw const RpcError('Nenhum agente em execução.');
       }
+      debugPrint('[rpc-mode-agent][in] $line');
       process.stdin.write(line);
       await process.stdin.flush();
     });
@@ -357,8 +391,10 @@ class PiRpcProcess implements RpcProcessGateway {
     _stderrSub?.cancel();
     _stdoutSub = null;
     _stderrSub = null;
+    final pid = _process?.pid;
     _process = null;
     _cwd = null;
+    if (pid != null) unawaited(PiProcessRegistry.unregister(pid));
     // Não deixe requests pendentes pendurados quando o processo morre.
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {

@@ -79,6 +79,11 @@ class AgentSession extends PaneItem {
   String _title;
   AgentStatus _status = AgentStatus.empty;
 
+  /// `true` entre o `sendPrompt` e o `RpcAgentStart`: a mensagem foi enviada
+  /// mas o agente ainda não confirmou que iniciou o turno. Bloqueia novo envio
+  /// sem acender o indicador de "trabalhando" (que só aparece com AgentStart).
+  bool _pendingSend = false;
+
   /// Quando o turno atual começou (streaming). `null` quando ocioso — a UI usa
   /// pra mostrar o cronômetro de "trabalhando".
   DateTime? _turnStartedAt;
@@ -113,6 +118,10 @@ class AgentSession extends PaneItem {
   ThinkingEntry? _openThinking;
   final Map<String, ToolEntry> _openTools = <String, ToolEntry>{};
 
+  /// Pedidos interativos da extensão (`extension_ui_request`) ainda abertos,
+  /// por `id` — pra marcar o card como resolvido ao responder.
+  final Map<String, UiRequestEntry> _openUiRequests = <String, UiRequestEntry>{};
+
   // ---- getters (UI) ---------------------------------------------------------
   @override
   String get title => _title;
@@ -121,7 +130,7 @@ class AgentSession extends PaneItem {
   /// Início do turno em andamento (`null` se ocioso).
   DateTime? get turnStartedAt => _turnStartedAt;
   bool get isStreaming => _status == AgentStatus.streaming;
-  bool get isBusy => _status == AgentStatus.streaming;
+  bool get isBusy => _status == AgentStatus.streaming || _pendingSend;
   bool get isAlive =>
       _status == AgentStatus.idle || _status == AgentStatus.streaming;
   List<AgentEntry> get entries => List<AgentEntry>.unmodifiable(_entries);
@@ -137,8 +146,17 @@ class AgentSession extends PaneItem {
   ///
   /// [environment] é fundido com o ambiente do processo pai — use para injetar
   /// `REMOTE_PI_DIRECT_CONFIG` sem perder PATH/HOME. Se `null`, herda tudo.
-  Future<void> boot({Map<String, String>? environment}) async {
+  ///
+  /// [restoreSessionPath] (opcional) é o caminho completo do `.jsonl` a
+  /// restaurar. Quando presente, passa `--session <id>` ao pi para que ele
+  /// inicie já naquela sessão — sem `switch_session` posterior, evitando a
+  /// re-avaliação dupla do módulo da extensão.
+  Future<void> boot({
+    Map<String, String>? environment,
+    String? restoreSessionPath,
+  }) async {
     if (_status == AgentStatus.booting || isAlive) return;
+    debugPrint('[agent-boot] boot() id=$id cwd=$workingDirectory');
     _status = AgentStatus.booting;
     _entries.clear();
     _resetOpenBuffers();
@@ -149,6 +167,7 @@ class AgentSession extends PaneItem {
     final result = await gateway.spawn(
       workingDirectory: workingDirectory,
       environment: environment,
+      sessionId: restoreSessionPath,
     );
     result.fold(
       (_) {
@@ -156,6 +175,9 @@ class AgentSession extends PaneItem {
         _sub = gateway.events.listen(_onEvent);
         _addInfo('agente pronto em $workingDirectory');
         unawaited(_loadControls());
+        if (restoreSessionPath != null) {
+          unawaited(_populateTranscript(restoreSessionPath));
+        }
         notifyListeners();
       },
       (error) {
@@ -179,19 +201,19 @@ class AgentSession extends PaneItem {
       return;
     }
     // Balão do usuário: texto + miniaturas das imagens (decodifica o base64
-    // uma vez pra exibir).
+    // uma vez pra exibir). Status permanece idle até RpcAgentStart confirmar
+    // o início do turno — comandos não-bloqueantes (compact etc.) não devem
+    // acender o indicador de "trabalhando".
     _addUser(
       text,
       images: [for (final image in images) base64Decode(image.data)],
     );
-    _status = AgentStatus.streaming;
-    _turnStartedAt = DateTime.now();
+    _pendingSend = true;
     notifyListeners();
     final result = await gateway.sendPrompt(text, images: images);
     result.fold((_) {}, (error) {
       _addInfo('erro ao enviar: ${error.message}', isError: true);
-      _status = AgentStatus.idle;
-      _turnStartedAt = null;
+      _pendingSend = false;
       notifyListeners();
     });
   }
@@ -215,6 +237,9 @@ class AgentSession extends PaneItem {
         sessionPath = null;
         _addInfo('nova sessão');
         notifyListeners();
+        // sessionPath mudou → pede à VM para salvar o layout agora (sem esperar
+        // o próximo fim de turno, que pode nunca vir antes do app fechar).
+        onPreferenceChanged?.call();
       },
       (error) {
         _addInfo('falha ao criar sessão: ${error.message}', isError: true);
@@ -265,8 +290,8 @@ class AgentSession extends PaneItem {
     notifyListeners();
   }
 
-  /// Carrega uma sessão salva do pi (histórico) e **substitui** o transcript
-  /// atual pelas mensagens dela.
+  /// Troca de sessão interativamente (picker de histórico) e recarrega o
+  /// transcript. Usa `switch_session` para mudar a sessão no processo pi vivo.
   Future<void> loadHistory(String sessionPath) async {
     final gateway = _gateway;
     if (gateway == null || isBusy) return;
@@ -278,6 +303,16 @@ class AgentSession extends PaneItem {
       return false;
     });
     if (!ok) return;
+
+    await _populateTranscript(sessionPath);
+  }
+
+  /// Busca as mensagens da sessão atual do pi e substitui o transcript exibido.
+  /// Chamado após boot com `--session <id>` (sem `switch_session`) e após
+  /// [loadHistory] (que já fez o `switch_session`).
+  Future<void> _populateTranscript(String sessionPath) async {
+    final gateway = _gateway;
+    if (gateway == null) return;
 
     final result = await gateway.getMessages();
     result.fold(
@@ -311,11 +346,13 @@ class AgentSession extends PaneItem {
               _add(tool);
           }
         }
+        this.sessionPath = sessionPath;
         _status = AgentStatus.idle;
         notifyListeners();
+        onPreferenceChanged?.call();
       },
       (error) {
-        _addInfo('falha ao carregar mensagens: ${error.message}', isError: true);
+        _addInfo('falha ao carregar histórico: ${error.message}', isError: true);
         notifyListeners();
       },
     );
@@ -418,8 +455,9 @@ class AgentSession extends PaneItem {
   void _onEvent(RpcEvent event) {
     switch (event) {
       case RpcAgentStart():
+        _pendingSend = false;
         _status = AgentStatus.streaming;
-        _turnStartedAt ??= DateTime.now();
+        _turnStartedAt = DateTime.now();
       case RpcAgentEnd():
         final wasStreaming = _status == AgentStatus.streaming;
         if (wasStreaming) _status = AgentStatus.idle;
@@ -451,6 +489,7 @@ class AgentSession extends PaneItem {
           _addInfo('comando "$command" falhou: ${error ?? "?"}', isError: true);
         }
       case RpcStreamError(:final message):
+        _pendingSend = false;
         if (_status == AgentStatus.streaming) _status = AgentStatus.idle;
         _turnStartedAt = null;
         _addInfo('erro do agente: $message', isError: true, dedup: true);
@@ -459,12 +498,54 @@ class AgentSession extends PaneItem {
       case RpcDiagnostic(:final text):
         _addInfo('stderr: $text');
       case RpcProcessExit(:final code):
+        _pendingSend = false;
         _status = AgentStatus.crashed;
         _resetOpenBuffers();
         _addInfo('processo encerrado (code=$code)', isError: code != 0);
+      case RpcNotice(:final message, :final level):
+        _add(NoticeEntry(message, level.index));
+      case RpcUiRequest(
+        :final id,
+        :final method,
+        :final title,
+        :final message,
+        :final placeholder,
+        :final defaultValue,
+        :final options,
+      ):
+        _openUiRequests[id] = _add(
+          UiRequestEntry(
+            id: id,
+            method: method,
+            title: title,
+            message: message,
+            placeholder: placeholder,
+            defaultValue: defaultValue,
+            options: options,
+          ),
+        );
+      case RpcNameAssigned(:final assigned, :final changed):
+        if (changed) {
+          rename(assigned);
+          onPreferenceChanged?.call(); // persiste no layout imediatamente
+        }
+        return; // sem notifyListeners extra — rename() já chama
       case RpcUnknown():
         return;
     }
+    notifyListeners();
+  }
+
+  /// Responde a um pedido interativo da extensão (card do transcript) e marca o
+  /// card como resolvido. [response] é `{value:…}`/`{confirmed:…}`/`{cancelled:
+  /// true}`; [label] é o texto que o card mostra depois ("você escolheu …").
+  void respondUi(String id, Map<String, dynamic> response, String label) {
+    final entry = _openUiRequests.remove(id);
+    if (entry != null) {
+      entry.resolved = true;
+      entry.answerLabel = label;
+    }
+    unawaited(_gateway?.respondUi(id, response));
     notifyListeners();
   }
 

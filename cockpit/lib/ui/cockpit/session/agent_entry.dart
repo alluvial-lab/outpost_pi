@@ -55,3 +55,37 @@ final class WorkedEntry extends AgentEntry {
   WorkedEntry(this.duration);
   final Duration duration;
 }
+
+/// Aviso da extensão (`extension_ui_request` method `notify`) — não é resposta
+/// do agente. `level`: 0 info, 1 warning, 2 error.
+final class NoticeEntry extends AgentEntry {
+  NoticeEntry(this.message, this.level);
+  final String message;
+  final int level;
+}
+
+/// Pedido interativo da extensão (`select`/`confirm`/`input`/`editor`).
+/// Renderiza um card no transcript; ao responder, vira [resolved] com
+/// [answerLabel] e o `extension_ui_response` é enviado. Mutável de propósito.
+final class UiRequestEntry extends AgentEntry {
+  UiRequestEntry({
+    required this.id,
+    required this.method,
+    this.title,
+    this.message,
+    this.placeholder,
+    this.defaultValue,
+    this.options = const <String>[],
+  });
+
+  final String id;
+  final String method; // select | confirm | input | editor
+  final String? title;
+  final String? message;
+  final String? placeholder;
+  final String? defaultValue;
+  final List<String> options;
+
+  bool resolved = false;
+  String? answerLabel;
+}

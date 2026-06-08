@@ -778,6 +778,7 @@ class _PaneBodyState extends State<_PaneBody> {
               child: AgentTranscript(
                 entries: agent.entries,
                 controller: _scroll,
+                onUiResponse: agent.respondUi,
                 bottomPadding: 150,
               ),
             ),

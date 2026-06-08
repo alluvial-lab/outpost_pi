@@ -15,6 +15,7 @@ import 'package:cockpit/data/relay/revoke_gateway_impl.dart';
 import 'package:cockpit/data/repositories/hive_project_repository.dart';
 import 'package:cockpit/data/repositories/hive_settings_store.dart';
 import 'package:cockpit/data/repositories/hive_workspace_layout_store.dart';
+import 'package:cockpit/data/rpc/pi_process_registry.dart';
 import 'package:cockpit/data/rpc/pi_rpc_process_factory.dart';
 import 'package:cockpit/data/setup/environment_probe_impl.dart';
 import 'package:cockpit/data/setup/system_permissions_impl.dart';
@@ -53,6 +54,11 @@ CustomInjector get injector => _injector;
 
 /// Inicializa Hive e registra as dependências. Chamado uma vez no `main`.
 Future<void> setupDependencies() async {
+  // Mata processos `pi --mode rpc` órfãos do ciclo anterior antes de qualquer
+  // novo spawn. Cobre hot restart (main() re-executa mas Process.start não mata
+  // os filhos) e cold restart com crash (processo morre, filhos ficam órfãos).
+  await PiProcessRegistry.cleanOrphans();
+
   // Subdiretório próprio (evita poluir a raiz de ~/Documents).
   await Hive.initFlutter('cockpit');
   final box = await Hive.openBox<dynamic>(HiveProjectRepository.boxName);

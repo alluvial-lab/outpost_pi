@@ -1,434 +1,291 @@
-# 38 — Malha: identidade estruturada de peer (workspace + worktree)
+# 38 — Malha: endereçamento por `(pc, cwd, nome)`
+
+> **Reescrito 2026-06-08.** Versão anterior (identidade estruturada de 4 eixos
+> `pc·workspace·worktree·name` com derivação marker-gated + detecção git de
+> worktree) foi **descontinuada** — ver [Decisões revertidas](#decisões-revertidas-2026-06-08).
+> A extension passou a permitir **vários agentes na mesma pasta** com primary key
+> `(cwd, nome)` (já implementado na camada de identidade local). Este plano
+> alinha **a malha** a esse modelo: o endereço de um peer passa a ser
+> `(pc, cwd, nome)`, e ponto. Sem workspace, sem worktree, sem heurística.
 
 ## Contexto
 
-A identidade de um agente na malha hoje é uma **string achatada**: o **nome** é, ao
-mesmo tempo, a única identidade *e* o único endereço. Identidade, lock, room e id
-derivam de `realpath(cwd)` (`src/rooms.ts`, `src/daemon/id.ts`,
-`src/session/cwd_lock.ts`); o nome vem de `agent_name` no
-`<cwd>/.pi/remote-pi/config.json` ou do default `parent/folder`. O broker mapeia
-`name → conexão` e resolve colisão com sufixo `#N` (`broker.ts:_uniqueName`).
-Endereçamento: local por nome; cross-PC por `<pcLabel>:<name>` (split no 1º `:`,
-`broker_remote.ts:parseAddress`); `broadcast` = todos os locais.
+A identidade de um agente na malha hoje é **só o nome**, e o broker roteia por
+nome **global**. Verificado no HEAD (`41cdeac`):
 
-Isso quebra em dois cenários que vão ficar comuns:
+- `RegisterMsg = { type: "register", name }` — o peer manda só o nome
+  (`broker.ts:83-86`, enviado em `peer.ts:268`).
+- `peers = Map<string, PeerConn>` chaveado pelo **nome assinado** (`broker.ts:100`,
+  set em `:228`); roteamento é `this.peers.get(env.to)` (`injectFromRemote`
+  `:139`, `_route` `:293+`).
+- `_uniqueName` resolve colisão com `#N` **global** — dois agentes com o mesmo
+  nome em **pastas diferentes** colidem (`broker.ts:276-283`).
+- `defaultAgentName(cwd)` ainda devolve `parent/folder` achatado
+  (`local_config.ts:136-142`) — o "workspace enfiado no nome" que queremos desfazer.
 
-1. **Vários projetos / um broker local** — dois agentes com o **mesmo
-   `agent_name` explícito** (ex.: `backend`) em projetos diferentes colidem → um
-   vira `backend#2`. Ninguém sabe quem é quem. (O default `parent/folder` mascara
-   parcialmente isso hoje, justamente porque já enfia o "workspace" dentro da
-   string do nome — que é o problema que queremos desfazer.)
-2. **Git worktrees** (o gatilho desta discussão) — uma worktree mora num path
-   diferente → realpath diferente → coexiste sem travar (lock/room/id próprios).
-   **Mas** o mesh não tem consciência de git: a worktree é "só outra pasta". Se o
-   checkout principal roda `app` e a worktree também roda `app`, o broker local
-   resolve com `app#2`, e **nenhum peer tem como saber** que o outro está numa
-   worktree (o broker só vê a string do nome).
+Isso quebra no mundo novo: **a extension agora permite N agentes na mesma pasta**,
+com primary key `(cwd, nome)`. A malha não enxerga `cwd` — ela só vê a string do
+nome. Logo:
 
-**A armadilha que travou as primeiras ideias**: concatenar tudo no nome
-(`acme/feat-login/app`) e inferir escopo por **prefixo de string** não fecha —
-tanto `workspace` quanto `agent_name` podem conter `/` (o default já é
-`parent/folder`), então o limite das dimensões fica ambíguo e a lógica de "mesmo
-workspace" adivinha e erra.
+1. Dois agentes na **mesma pasta** com o mesmo nome → `#2` (ok, caso genuíno).
+2. Dois agentes em **pastas diferentes** com o mesmo nome → `#2` (colisão falsa —
+   são agentes distintos, não deviam disputar nome).
+3. Worktree (= outra pasta, outro `realpath`) coexiste por path, mas a malha não
+   distingue: vira `app` e `app#2`, e nenhum peer sabe quem é quem.
 
-**A solução** é trocar a identidade plana por um **objeto estruturado de peer**
-com 4 eixos — `pc` · `workspace` · `worktree` · `name` — carregado no `register`
-e devolvido pelo `list_peers`, mantendo o endereçamento como uma **string
-canônica opaca** (ecoada, nunca montada à mão). Toda decisão de escopo (quem fala
-com quem, broadcast) passa a usar **campos**, não split de string. Bônus: o app
-mobile ganha a estrutura de graça pra agrupar/filtrar agentes.
+**A solução é tornar o `cwd` um eixo de primeira classe no endereço da malha**,
+do mesmo jeito que ele já é a chave de lock/room/id local. O endereço vira:
 
-> **Origem**: handoff do pane `Extension`
-> (`.orchestration/results/handoff-mesh-structured-identity.md`, 2026-06-05).
-> Promovido a plano após aprovação do Orquestrador.
+```
+[<pc>:]<cwd>@<nome>
+```
+
+`cwd` (path absoluto) é a fonte da verdade que já desambigua pasta **e** worktree
+**por construção** — sem marker-gating, sem `git plumbing`. `nome` é o
+discriminador **dentro** da pasta (agora que cabem vários). `pc` é o salto
+cross-PC (como hoje). `#N` só dispara no caso real: **mesmo cwd + mesmo nome**.
+
+> **Origem da reescrita**: decisão do Orquestrador (2026-06-08) de colapsar a
+> identidade estruturada em `(cwd, nome)` — "a única coisa que iremos manter é
+> cwd e nome pra termos vários agentes na mesma pasta". Cortamos os eixos
+> derivados (`workspace`/`worktree`) por YAGNI (`00-decisions.md:113`).
 
 ### Relação com planos/decisões existentes
 
-- **Baseline real é o plano 34** (malha: entrega confiável + presença passiva,
-  DoD fechado): busy-drop removido, presença passiva via `list_peers` (pull),
-  `mesh_server` descarta envelopes `from=broker`. Este plano constrói sobre esse
-  broker.
-- **Plano 35 (mesh leaderless, UDS-direto) foi DESCONTINUADO** (2026-06-05, ver
-  lápide `plan/35-mesh-leaderless-redesign.md`). Logo o **broker** (planos 19/25 +
-  34) é a arquitetura **permanente e mantida** — não um transporte de transição.
-  A identidade estruturada assenta sobre ele, sem ressalva de "reconciliar com 35".
-- **Decisão de escopo de visibilidade (`00-decisions.md`)**: o MVP cortou
-  "project scope"/multi-sessão pro App↔Pi 1:1. Isto **não conflita** — aqui o
-  escopo é *entre agentes da malha* (mesh peers), não o pareamento App↔Pi.
-- **Modelo de rooms (plano 17) é uma camada DIFERENTE — não confundir.** O
-  `roomId = sha256(realpath(cwd))` identifica uma **sessão App↔Pi** (o que o app
-  abre e conversa); é opaco e já distingue worktrees por path. A identidade
-  estruturada deste plano (`name`/`workspace`/`worktree`) é da **malha**
-  (agente↔agente), legível. São ortogonais: o app já agrupa por `(peer, room)`;
-  a **Fase 3** adiciona uma superfície **nova** (mesh peers por workspace) que
-  **não** substitui nem se mistura com a lista de rooms.
-- **Sem novo tipo no protocolo App↔Pi**: as mudanças vivem no wire da **malha**
-  (`register`/`list_peers` entre brokers/peers), não no envelope App↔Pi.
+- **Baseline = plano 34** (entrega confiável + presença passiva): broker é a
+  arquitetura permanente; o leaderless da **35 foi descontinuado**. Este plano é
+  aditivo ao broker.
+- **Rooms (plano 17) são camada DIFERENTE.** `roomId = sha256(realpath(cwd))`
+  identifica a **sessão App↔Pi**. Este plano mexe no **wire da malha**
+  (`register`/`list_peers` entre peers/brokers), não no envelope App↔Pi.
+  - ⚠️ **Consequência a rastrear (não é deste plano)**: se cabem N agentes por
+    pasta, o room `sha256(realpath(cwd))` deixa de ser 1:1 com agente. Avaliar no
+    plano do **app** se o room precisa virar `sha256(realpath + nome)`. Aqui só
+    registramos a dependência.
+- **`00-decisions.md`**: project-scope por marcador/walk-up já foi **refutado**
+  no lado App↔Pi (`:43-44`, `:56`). Reforça cortar a heurística de workspace.
+- **Relay intacto** (mesma análise da versão anterior, ainda válida): o relay é
+  cego ao conteúdo do blob cross-PC (`relay/src/mesh/handler.rs` só inspeciona
+  `version` + `owner_pk`, assina os bytes crus). `cwd` entra **dentro do blob
+  assinado** sem tocar o relay. Único limite: cap de 500 KB por body
+  (`MAX_BODY_BYTES`) — paths curtos são desprezíveis.
 
-## Decisões fechadas (2026-06-05)
+## Decisões (2026-06-08)
 
 | # | Decisão | Valor | Por quê |
 |---|---|---|---|
-| **A** | Derivação do `workspace` | **Auto-derivada, marker-gated** (revisado 2026-06-05): `workspace = basename(parent)` **se** o `parent` tem `CLAUDE.md`/`AGENTS.md`; senão `workspace = basename(projectRoot)`. `name = agent_name` explícito ou `basename(projectRoot)`. Config explícita (`workspace`/`agent_name`) sobrescreve | O default de HOJE (`parent/folder`, `local_config.ts:67-73`) **já é** um workspace achatado dentro do nome. Esta regra **ergue** o `parent` pro campo `workspace` só quando ele é um root real (marcador), e cai pro próprio folder quando não é. Resolve o #1 **inclusive com `agent_name` explícito** (que hoje colide); torna o broadcast per-projeto de graça; deixa `name` uma folha limpa (sanitização da decisão B deixa de ser issue) |
-| **B** | Render do `address` | **Legível + sanitizado** (`pc:workspace/worktree/name`; `sanitizeSegment` já troca `/ : #`/espaços → `-` e rejeita reservados `broadcast`/`broker` — **feito 2026-06-06**), roteado por **exact-match** no broker dono | Debuggável em log/UI sem comprometer correção (o lookup é igualdade exata na `Map<address,conn>`); address opaco+hash perde legibilidade sem ganho — o modelo de ameaça não exige endereço opaco (qualquer peer da malha já enxerga os outros) |
-| **C** | Escopo default do broadcast | Par exato **`(workspace, worktree)`** — colegas da *mesma* worktree; **local-only** (cross-PC segue unicast) | Broadcast não deve vazar entre worktrees (é o ponto do isolamento) nem entre workspaces. Com `workspace`/`worktree` ambos vazios (caso default), todos os agentes de nome-puro do mesmo PC se enxergam — igual a hoje. Aceito |
-| **D** | Derivação da `worktree` | **`branch` sanitizada** + fallback **`basename(toplevel)`** em detached HEAD; **+ override opcional via config `worktree?`** (normalmente unset — derivado em runtime, não persistido) | Branch é o rótulo humano da worktree; basename do toplevel cobre o detached HEAD sem virar hash ilegível; o override deixa Cockpit/usuário fixar um rótulo custom |
-
-> **Consequência da decisão A**: o problema #1 (colisão multi-projeto) e o #2
-> (worktree) são resolvidos **de fábrica** — sem exigir config. O `workspace`
-> auto-derivado (marker-gated) desambigua projetos mesmo com `agent_name`
-> explícito; a `worktree` auto-derivada do git desambigua checkouts. Config
-> explícita (`workspace`/`agent_name`) só **sobrescreve** o rótulo.
->
-> **Heurística do marcador (assumida, ajustável na Fase 1):**
-> - `CLAUDE.md`/`AGENTS.md` no `parent` = "este pai é um root de workspace
->   (monorepo / projeto multi-agente)". É um chute bom porque é o sinal que o
->   próprio ecossistema de agentes usa. Risco conhecido: um `CLAUDE.md` solto num
->   diretório genérico de dev (`~/Projects/CLAUDE.md`) agruparia tudo embaixo
->   dele — aceitável; o usuário controla com `workspace` explícito.
-> - **Colapso `name == workspace`**: no caso standalone (parent sem marcador →
->   `workspace = name = basename(projectRoot)`), a render omite o `name`
->   redundante → address `myapp`, não `myapp/myapp`.
-> - **Worktree**: o `projectRoot` ancora no repo principal (via `git-common-dir`),
->   então principal e worktree **compartilham** `workspace`; o campo `worktree`
->   os distingue. (Combinação monorepo-subpasta-em-worktree é detalhe de impl da
->   Fase 1 — preservar o `workspace` do marcador do repo principal.)
-
-## Solução — objeto estruturado de peer
-
-### Os 4 eixos (worktree é campo próprio, irmão do workspace — não aninhado)
-
-```jsonc
-// identidade de um peer — enviada no register e devolvida pelo list_peers
-{
-  "name":      "app",            // o agente (folha)
-  "workspace": "acme",           // projeto lógico — OPCIONAL, só config explícita (decisão A)
-  "worktree":  "feat-login",     // variante de checkout — só em worktree linkada, auto do git
-  "pc":        "laptop",         // máquina (label cross-PC) — preenchido por broker_remote/relay
-  "address":   "laptop:acme/feat-login/app"  // string canônica pro `to` — ECOAR, nunca montar
-}
-```
-
-`workspace` pode atravessar PCs (mesmo projeto em duas máquinas); `worktree` é
-por-checkout (local). São ortogonais → campos separados, não uma string só.
+| **A** | Eixos da identidade | **`(pc, cwd, nome)`** — três campos, fim. `cwd` = `realpath(cwd)`; `nome` = `config.agent_name` ?? `basename(cwd)`; `pc` = label cross-PC (preenchido por broker_remote/relay). | `cwd` já é a chave de lock/room/id e desambigua pasta+worktree de fábrica. Não há o que adivinhar — sem marker-gating, sem detecção git. |
+| **B** | Render do `address` | **`[<pc>:]<cwd>@<nome>`**, legível, casado por **igualdade exata** no broker dono. `@` separa o nome do path (não colide com `/`). Sanitização só no `nome` (`sanitizeSegment`, de `af66d04`). | Debuggável em log/UI; lookup é igualdade exata na `Map<address,conn>`, então `/` no path não atrapalha. Threat model não exige endereço opaco (qualquer peer da malha já enxerga os outros). Path absoluto vaza home/username — aceitável pro modelo (máquinas do próprio dono). |
+| **C** | Escopo do broadcast | **mesma `cwd`** (colegas da mesma pasta); **local-only** (cross-PC segue unicast). | Reframe do antigo `(workspace, worktree)`. Com N agentes por pasta, "broadcast = minha pasta" é o escopo natural e preciso. Cross-PC não deve vazar broadcast. Revisitável se aparecer demanda de broadcast multi-pasta. |
+| **D** | `nome` = folha limpa | `defaultAgentName` deixa de ser `parent/folder`; vira `basename(cwd)`. `config.agent_name` sobrescreve. | O `cwd` agora viaja como campo próprio; não precisa mais enfiar o "workspace" no nome. Folha limpa → `#N` quase nunca dispara. |
+| **E** | Persistência do nome | **Só o nome limpo explícito** é persistido em `agent_name`. O sufixo `#N` — venha do lock (`_lockedName`) ou do broker — é **runtime-only**, recomputado a cada register, **nunca** gravado. `_cmdJoin` para de persistir o `assigned` (`index.ts:2760`); nome derivado (`basename(cwd)`) também não se persiste (é re-derivável). | `#N` é resolução de colisão em runtime; gravá-lo congela um acidente como identidade e gera **ping-pong cross-folder** a cada restart (relatado pelo pane Extension, 2026-06-08). Com o broker por `(cwd,nome)` (passo 4) a colisão cross-folder some na raiz; a decisão E garante que nem o `#N` residual (mesmo cwd+nome) fossilize. |
 
 ### Princípio que mantém o endereçamento são
 
-> **O roteamento NUNCA re-deriva dimensões da string.** As dimensões viajam como
-> campos. A `address` é um **handle opaco**, casado por **igualdade exata** no
-> broker dono do peer. A única coisa parseada na string é o salto `<pc>:` (split
-> no 1º `:`, como hoje).
+> **O roteamento NUNCA re-deriva nada da string.** `cwd` e `nome` viajam como
+> campos no `register`. O broker dono **compõe** o `address` e o guarda em
+> `Map<address, conn>` → lookup por igualdade exata. A única coisa parseada na
+> string é o salto `<pc>:` (split no 1º `:`, como hoje). Agente/app **nunca
+> montam** o endereço — pegam `peer.address` do `list_peers` e ecoam verbatim.
 
 Consequências:
-- Agente/app **nunca constrói** o endereço — pega o peer do `list_peers` e usa
-  `peer.address` verbatim (a skill já diz "use o nome exato do list_peers"). A
-  complexidade de montagem mora num único encoder.
-- O broker que **possui** o peer gerou aquela string e a guarda em
-  `Map<address, conn>` → lookup exato, não importa se a `address` tem `/`/`#`.
-- "Mesmo escopo" (teammates/broadcast) compara **campos** (`workspace` +
-  `worktree`), nunca prefixo. Acabou a adivinhação.
+- Único encoder de `address` (no broker). Todo mundo ecoa.
+- "Mesmo escopo" (broadcast) compara o **campo `cwd`**, nunca prefixo de string.
+- Address hardcodado fica stale no upgrade → mitigado pelo "ecoar, nunca montar".
 
-### Render do `address` (decisão A = workspace auto-derivado, marker-gated)
+### Render — exemplos
 
-Formato: `[pc:]workspace[/worktree][/name]` — o `name` é **omitido quando ==
-workspace** (evita `myapp/myapp`).
+| Cenário | pc · cwd · nome | render |
+|---|---|---|
+| 1 agente, pasta `~/acme/backend`, sem `agent_name` | — · `/Users/jacob/acme/backend` · `backend` | `/Users/jacob/acme/backend@backend` |
+| 2º agente na mesma pasta, `agent_name=reviewer` | — · `…/acme/backend` · `reviewer` | `/Users/jacob/acme/backend@reviewer` |
+| Worktree em `~/.wt/feat-login` | — · `/Users/jacob/.wt/feat-login` · `backend` | `/Users/jacob/.wt/feat-login@backend` |
+| Mesmo cwd + mesmo nome (colisão real) | — · `…/backend` · `backend` | `…/backend@backend#2` |
+| Cross-PC | `MacMini` · `/Users/jose/work/acme` · `app` | `MacMini:/Users/jose/work/acme@app` |
 
-| Layout (cwd) | `parent` tem marcador? | workspace · worktree · name | render (local) |
-|---|---|---|---|
-| `~/acme/backend` (monorepo, `acme/CLAUDE.md`) | sim | `acme` · — · `backend` | `acme/backend` |
-| `~/acme/backend` + worktree `feat-login` | sim | `acme` · `feat-login` · `backend` | `acme/feat-login/backend` |
-| `~/Projects/myapp` (standalone) | não | `myapp` · — · `myapp` | `myapp` |
-| `~/Projects/myapp` + worktree `feat-x` | não | `myapp` · `feat-x` · `myapp` | `myapp/feat-x` |
-| `~/Projects/myapp` + `agent_name=reviewer` | não | `myapp` · — · `reviewer` | `myapp/reviewer` |
+> **Worktree é grátis**: mora noutro `realpath` → endereço distinto sem nenhum
+> código de git. (A versão anterior gastava 4 chamadas de `git plumbing` pra
+> derivar um rótulo de branch que o path já tornava redundante.)
 
-Cross-PC: prefixa `<pc>:` (ex.: `laptop:acme/feat-login/backend`). `/` interno de
-qualquer componente é sanitizado pra `-` antes de compor (decisão B) — mas com
-`name` virando folha limpa, isso quase nunca dispara.
+## Compatibilidade — comunicação não se perde
 
-**Compor, não sobrescrever**: principal e worktree compartilham `workspace`; é o
-campo `worktree` que os separa. Sem compor (ou se o explícito ignorasse a
-worktree), ambos colidiriam no mesmo address.
-
-### Detecção de worktree (git plumbing, 1–2 chamadas no startup)
-
-```bash
-git rev-parse --absolute-git-dir   # principal: /repo/.git ; worktree: /repo/.git/worktrees/<nome>
-git rev-parse --git-common-dir     # SEMPRE o .git compartilhado (principal + todas as worktrees)
-git branch --show-current          # branch da worktree ("" se detached HEAD)
-git rev-parse --show-toplevel      # raiz daquela worktree
-```
-
-**Regra**: é worktree linkada ⟺ `absolute-git-dir` contém `/worktrees/`
-(equiv. `git-dir != git-common-dir`). `dirname(realpath(git-common-dir))` dá a
-**raiz do repo principal** — âncora estável compartilhada por principal + todas
-as worktrees. Validado no checkout atual ("NÃO é worktree linkada").
-
-Valor de `worktree` (decisão D): `sanitize(git branch --show-current)`; se vazio
-(detached HEAD), `basename(git rev-parse --show-toplevel)`. Pasta não-git ou git
-sem worktree linkada → campo ausente.
-
-### Derivação do `workspace` (decisão A — marker-gated)
-
-Roda no startup, depois da detecção de worktree (reusa o `git-common-dir`):
-
-```
-projectRoot = worktree linkada ? dirname(realpath(git-common-dir))   // raiz do repo principal
-                               : realpath(cwd)
-parent      = dirname(projectRoot)
-workspace   = exists(parent/CLAUDE.md) || exists(parent/AGENTS.md)
-                ? basename(parent)        // o pai é um root de workspace real
-                : basename(projectRoot)   // o próprio folder é o workspace
-name        = config.agent_name ?? basename(projectRoot)
-// config.workspace explícito sobrescreve o derivado; config.agent_name sobrescreve o name
-```
-
-Pontos finos (ver também o box "Heurística do marcador" na seção de decisões):
-- **2 `existsSync`** no `parent` — barato, no startup.
-- **Worktree ancora no repo principal**: o `projectRoot` de uma worktree é a raiz
-  do repo principal (não a pasta da worktree), então principal + worktrees
-  **compartilham** `workspace`; o campo `worktree` os separa.
-- **Colapso**: quando `name == workspace` (standalone sem `agent_name`), a render
-  do address omite o `name` redundante.
-- A detecção git serve a **dois** campos agora: `worktree` (branch) e a âncora do
-  `workspace` (em worktrees).
-
-### Compatibilidade — comunicação não se perde
-
-- `register` ganha `workspace?`/`worktree?` **opcionais** → builds antigos
-  registram só `name`, e pra eles `address == name` (comportamento de hoje).
-- **Rollout — o address derivado muda no upgrade**: um agente que hoje é
-  `Projects/myapp` (default `parent/folder`) vira `myapp` (ou `acme/backend` etc.)
-  com a derivação nova. Isso **não quebra roteamento** porque o princípio é
-  sempre **ecoar `peer.address` do `list_peers`**, nunca hardcodar — quem segue a
-  skill nem percebe. Risco só pra address hardcodado (que o design já desencoraja).
+- `register` **ganha `cwd`** (campo novo, obrigatório no build novo). Build antigo
+  manda só `name` → o broker compõe `address = name` (sem `@cwd`), comportamento
+  de hoje. Malha mista funciona.
+- `register_ack` devolve `address_assigned` (era `name_assigned`); cliente antigo
+  que lê `name_assigned` recebe o mesmo campo por compat (alias) com o address.
 - `list_peers_reply` devolve **os dois**: `peers: string[]` (addresses, cliente
-  velho) **+** `peers_detailed: PeerInfo[]` (estruturado, cliente novo).
-  Migração sem big-bang; ninguém perde endereçamento.
-- A skill só redeploya no próximo `remote-pi claude` (`_deployClaudeMeshSkill`),
-  então sessões rodando mantêm o comportamento antigo até relaunch — fases sobem
-  sem quebrar malha viva.
+  velho roteia) **+** `peers_detailed: PeerInfo[]` (`{ pc?, cwd, name, address }`,
+  cliente novo agrupa por `cwd` sem parsear). Migração sem big-bang.
+- Skill redeploya só no próximo `remote-pi claude` (`_deployClaudeMeshSkill`) →
+  sessões rodando mantêm o comportamento antigo até relaunch. Malha viva não quebra.
+- **O address derivado muda no upgrade** (`Projects/myapp` vira
+  `/abs/Projects/myapp@myapp`). Não quebra roteamento porque o princípio é
+  **ecoar `peer.address`**, nunca hardcodar.
+- **Migração de nome congelado** (re-derivado no load — decisão E): `agent_name`
+  com `#N` (só pode vir de assignment do broker/lock — `sanitizeSegment` troca
+  `#`→`-`, então o usuário nunca grava `#`) tem o sufixo **removido**; o legado
+  `parent/folder` (contém `/`) vira `basename(cwd)`. Sem isso, daemons/sessões
+  pré-fix carregam `#N` ou `parent/folder` fossilizado como se fosse explícito.
 
-## Estrutura esperada (touchpoints — pi-extension)
+## Touchpoints (pi-extension) — verificados no HEAD `41cdeac`
 
 | Arquivo | Mudança |
 |---|---|
-| `src/session/local_config.ts` | campo `workspace?` (override explícito); **substitui** `defaultAgentName` (`:67-73`) pela derivação estruturada — `workspace` marker-gated (`CLAUDE.md`/`AGENTS.md` no parent) + `worktree` via git + `name`=folha |
-| `src/session/broker.ts` | `RegisterMsg`/`PeerConn`/`register_ack`/`_handleBrokerMessage` (list_peers detailed); broadcast escopado por `(workspace, worktree)`; encoder do `address` |
-| `src/session/peer.ts` · `src/session/mesh_node.ts` | propagar os campos no register; API de `listPeers` estruturada |
-| `src/session/broker_remote.ts` · `src/session/peer_inventory.ts` | campos no inventário cross-PC (**Fase 2**) |
-| `src/mcp/mesh_server.ts` · `src/session/tools.ts` | passar workspace/worktree na construção; render de list_peers; `agent_send` por `address` |
-| `src/daemon/rpc_child.ts` | 3º callsite de resolução de nome (`sessionName`) deve usar a identidade efetiva (workspace prefix) também nos daemons |
-| `skills/agent-network/SKILL.md` | seção de workspace/worktree: explicar que `workspace` é **auto-derivado** (marker-gated) e que setar `workspace` no config é só **override**; preferir mesmo escopo; exemplo de `list_peers` estruturado |
+| `src/session/local_config.ts:136-142` | `defaultAgentName` → `basename(cwd)` (folha limpa), não mais `parent/folder`. `config.agent_name` sobrescreve. |
+| `src/session/broker.ts:83-86` | `RegisterMsg` ganha `cwd: string`. |
+| `src/session/broker.ts:88-91` | `RegisterAck.name_assigned` → `address_assigned` (valor = address composto); manter `name_assigned` como alias de compat. |
+| `src/session/broker.ts:100` | `peers: Map<string, PeerConn>` passa a ser chaveado pelo **`address`** (`cwd@nome`), não pelo nome cru. |
+| `src/session/broker.ts:167` | `PeerConn` ganha `cwd` + `address`. |
+| `src/session/broker.ts:207-237` | `_handleRegister`: parseia `cwd`, **compõe `address`** (único encoder), chaveia o Map por address, ack devolve `address_assigned`. |
+| `src/session/broker.ts:276-283` | `_uniqueName` → chave composta `(cwd, nome)`: `#N` só em **mesmo cwd + mesmo nome**. |
+| `src/session/broker.ts:133-151,293+` | `injectFromRemote`/`_route`: lookup por `env.to` (= address) — só muda a chave do Map. |
+| `src/session/broker.ts:236,288` | `peer_joined`/`peer_left` carregam `address` (não nome cru). |
+| `src/session/broker.ts:247-274` | `list_peers`/observer probe: devolve addresses + `peers_detailed`. |
+| `src/session/peer.ts:259,268` | register **envia `cwd`**; ack lê `address_assigned` (fallback `name_assigned`). |
+| `src/session/peer.ts` · `mesh_node.ts` | opts/propagação carregam `cwd` ao lado de `name`; API de `listPeers` expõe os campos. |
+| `src/mcp/mesh_server.ts` · `src/session/tools.ts` | passar `cwd` (da sessão) na construção; render de `list_peers` por address; `agent_send` por address verbatim. |
+| `src/session/broker_remote.ts` · `peer_inventory.ts` | `cwd` + `pc` no inventário cross-PC (**Fase 2**). |
+| `src/daemon/rpc_child.ts` | daemon registra com a **mesma** `(cwd, nome)` que a sessão interativa geraria. |
+| `src/index.ts:2654-2760` | `_cmdJoin`: **já encaminha `cwd`** ao `MeshNode` (`:2676-2682`, progresso parcial do passo 3). **Mudar `:2760`** (decisão E): não persistir o `assigned` (com `#N`); persistir só `agent_name` explícito. Evento `name-assigned` (`:2752`) fica. |
+| `src/index.ts:545-558` (load) | `getAgentName`/`loadLocalConfig`: migração — strip de `#N` e do legado `parent/folder` ao ler `agent_name`, re-derivando. |
+| `skills/agent-network/SKILL.md` | explicar `(cwd, nome)`, N agentes por pasta, e **usar `peer.address` verbatim** (nunca montar). |
 
-> **Correção de caminho**: o handoff e o `plan/34` citam variações
-> (`skills/claude-agent-network/SKILL.md`). O arquivo real é
-> **`pi-extension/skills/agent-network/SKILL.md`**, copiado pra
-> `~/.claude/skills/agent-network/SKILL.md` a cada launch de `remote-pi claude`
-> (`_deployClaudeMeshSkill`, `index.ts`). Fonte-da-verdade = repo; não editar
-> `~/.claude/skills/` na mão.
+> **`af66d04` (camada de config) — o que sobra**: `sanitizeSegment` é reusado pro
+> `nome` no render. `REMOTE_PI_DIRECT_CONFIG` é ortogonal (intacto). Os campos de
+> config `workspace?`/`worktree?` ficam **órfãos** (ninguém deriva mais) — remover
+> no cleanup ou deixar como no-op inerte. Não consumir.
 
-### Relay — nenhuma mudança (verificado no código, 2026-06-05)
-
-A identidade estruturada é **inteiramente pi-extension + app**. O relay é cego ao
-conteúdo por design e continua assim:
-
-- **Cross-PC (`peer_inventory`) → `POST/GET /mesh/:hash`**: o relay
-  (`relay/src/mesh/handler.rs`, `relay/src/mesh/types.rs:23-27`) só inspeciona
-  **`version` + `owner_pk`** do blob — *"Members and other fields exist in the
-  blob but are NOT inspected by the relay"*. Verifica a assinatura Ed25519 sobre
-  os **bytes crus** (não re-canonicaliza), confere `url_hash == sha256(owner_pk)`
-  e guarda o blob versionado intacto. Logo `workspace`/`worktree`/`pc` entram
-  **dentro do blob assinado** sem tocar o relay: sem `deny_unknown_fields`, sem
-  schema do member-list, assinatura segue válida (cliente assina os bytes novos).
-  Único limite real: o cap de **500 KB** por body (`MAX_BODY_BYTES`) — alguns
-  strings curtos por peer são desprezíveis.
-- **App↔Pi (`pi_forward`)**: outra rota, e o envelope App↔Pi é não-objetivo deste
-  plano. Intacto.
-- **Mesh local (`broker.ts`)**: UDS puro, nem passa pelo relay.
-
-## Impacto nos legados / rollout (verificado no código, 2026-06-05)
-
-**Sem quebra (aditivo):** wire da malha (`register` opcional → `address == name`
-pra build velho; malha mista OK), `list_peers` dual, **relay zero**, **app intacto
-até Fase 3**, **`daemons.json` guarda só `cwd`** (`registry.ts:10-14` — nome
-recomputado, sem dado stale), sessões rodando não quebram (skill redeploya só no
-relaunch).
-
-**Muda comportamento:**
-1. **Nome efetivo muda em ~12 callsites de `defaultAgentName`** (não só a malha:
-   `getAgentName` `index.ts:523`, wizard `:1379/1420/2916`, `mesh_server.ts:48`
-   `AGENT_NAME`, daemon `rpc_child.ts:116` / `supervisor.ts:207`, footer). Por isso
-   a Fase 1 **triagem os callsites** (estruturado vs display name), não faz replace
-   cego.
-2. **Broadcast estreita** (decisão C): "todos os locais" → "mesma
-   `(workspace, worktree)`". Setup multi-projeto que dependia de broadcast
-   cross-projeto vê menos destinatários — mudança semântica, intencional.
-3. **Colisão `#N` fica rara** (workspace desambigua) — melhoria, strings mudam.
-4. **App vê o nome via `room_meta` (cosmético, NÃO quebra)** — o `room_meta.name`
-   que o app exibe vem de `_displayName(cwd)` → `_meshNode.name()` (com malha) ou
-   `agent_name || defaultAgentName` (`index.ts:520-523`, `:1501`). Como o 38 muda
-   essa derivação, o **valor** do rótulo muda (`Projects/myapp` → `myapp` etc.);
-   mesmo campo/tipo, app velho só re-rotula. O **apelido local** do pareamento
-   (Keychain) é app-local e **não** é afetado.
-   - **Decisão de Fase 1 que respinga no app**: o que `_meshNode.name()` retorna
-     pós-38 — a folha `name` (`relay`) ou o `address` composto (`remote_pi/relay`)?
-     Define o rótulo da sessão no app. **Parkear pro dive do app** (ver Fase 3).
-
-**Exige migração:**
-- **Config com `agent_name` achatado congelado**: `index.ts:1870-1874` persiste
-  `agent_name: defaultAgentName(cwd)` ao criar daemon sem nome → `remote_pi/app`
-  fica gravado e, pós-upgrade, é tratado como explícito (sanitiza pra
-  `remote_pi-app`, sem split). **Migração**: no load, se `agent_name` ==
-  `defaultAgentName_legado(cwd)` (auto-preenchido, contém `/`), **re-derivar** em
-  vez de honrar como explícito. (Manter a função legada só pra comparação.)
-- **Addresses hardcodados** em CLAUDE.md/contexto/skills ficam stale → mitigado
-  pelo princípio "ecoar `peer.address`, nunca hardcodar".
-- **Testes a atualizar**: `footer.test.ts`, `e2e.test.ts`, `setup_wizard.test.ts`
-  assertam nome default / roteamento / sugestão.
+> **Fonte-da-verdade da skill = repo** (`pi-extension/skills/agent-network/SKILL.md`),
+> copiada pra `~/.claude/skills/` a cada `remote-pi claude`. Não editar à mão a cópia.
 
 ## Passos (por fase, com critério de aceite)
 
-### Fase 1 — broker + extension (local)  ← cai no pane `Extension`
+### Fase 1 — broker + extension (local) ← cai no pane `Extension`
 
-1. **Identidade + derivação git/marcador** (`local_config.ts`)
-   - **✅ Camada de config FEITA e committada+pushada** (em `af66d04`, bundled —
-     mensagem enganosa; ver plano 37): campos `workspace?` (override) e `worktree?`
-     (override opcional) + `sanitizeSegment` + refactor `parseLocalConfig` + env
-     `REMOTE_PI_DIRECT_CONFIG`. **Falta o resto deste passo** (derivação
-     marker-gated + migração do nome congelado + triagem dos callsites) e o consumo
-     (passos 2-8). ⚠️ Ninguém ainda *consome* os campos → inertes até lá.
-   - Campo `workspace?` opcional no config (override explícito do derivado).
-   - Helper que retorna `{ name, workspace, worktree? }` resolvendo, nesta ordem:
-     `worktree` via git plumbing (decisão D); `projectRoot` (repo principal se
-     worktree, senão `realpath(cwd)`); `workspace` **marker-gated** (`parent` com
-     `CLAUDE.md`/`AGENTS.md` → `basename(parent)`, senão `basename(projectRoot)`),
-     com `config.workspace` sobrescrevendo; `name` = `config.agent_name` ??
-     `basename(projectRoot)`.
-   - **Atenção**: o default atual `defaultAgentName` (`parent/folder`,
-     `local_config.ts:67-73`) é **substituído** por esta derivação estruturada —
-     não somar os dois (senão volta o achatamento).
-   - **Migração do nome congelado**: se `config.agent_name` == o que o
-     `defaultAgentName` **legado** produziria pra aquele cwd (auto-preenchido,
-     contém `/`), **re-derivar** em vez de honrar como explícito — manter a função
-     legada só pra essa comparação. Senão daemons criados pré-38
-     (`index.ts:1870-1874`) ficam com `name` achatado + sanitizado.
-   - **Triagem dos ~12 callsites de `defaultAgentName`**: os de **malha**
-     (`getAgentName` `index.ts:523`, `mesh_server.ts:48`, `rpc_child.ts:116`)
-     passam à identidade estruturada; os de **display/wizard**
-     (`index.ts:1379/1420/2916`) podem seguir mostrando só o `name`. Mapear cada
-     um explicitamente — não trocar em massa.
-   - *Aceite*: testes unitários cobrem —
-     - monorepo (`parent` com `CLAUDE.md`) → `workspace=parent`, `name=folha`;
-     - standalone (`parent` sem marcador) → `workspace == name == basename(cwd)`;
-     - `agent_name=backend` em 2 projetos distintos → workspaces distintos (sem `#2`);
-     - worktree linkada → `worktree=branch` + `workspace` ancorado no repo principal
-       (principal e worktree compartilham workspace);
-     - detached HEAD → `worktree = basename(toplevel)`;
-     - pasta não-git → sem `worktree`, `workspace = basename(cwd)`;
-     - `workspace`/`agent_name` no config **sobrescrevem** o derivado;
-     - **migração**: config com `agent_name` == default legado (com `/`) →
-       re-deriva (não vira `parent-folder`).
+1. **`nome` = folha** (`local_config.ts`) — `defaultAgentName` → `basename(cwd)`;
+   `agent_name` explícito sobrescreve.
+   - *Aceite*: pasta `~/acme/backend` sem config → `nome = backend` (não
+     `acme/backend`); `agent_name=reviewer` → `nome = reviewer`.
 
-2. **Encoder do `address`** (`broker.ts` ou helper)
-   - Compõe `[pc:]workspace[/worktree][/name]`, **omitindo `name` quando ==
-     workspace** (colapso standalone), com sanitização `/`→`-` por componente
-     (decisões A+B). Único lugar que monta string.
-   - *Aceite*: a matriz da tabela de render (5 linhas locais + variante cross-PC)
-     passa em teste; colapso `name==workspace` confere; componentes com `/` são
-     sanitizados.
+2. **Encoder do `address`** (`broker.ts`, helper único) — compõe
+   `[<pc>:]<cwd>@<nome>`, sanitizando só o `nome`.
+   - *Aceite*: a matriz da tabela de render passa em teste; `@` separa nome do
+     path; nome com `/`/`#`/espaço é sanitizado; cross-PC prefixa `<pc>:`.
 
-3. **Register carrega os campos** (`peer.ts`/`mesh_node.ts` → `broker.ts`)
-   - `RegisterMsg` ganha `workspace?`/`worktree?` opcionais; `PeerConn` guarda os
-     campos + a `address` canônica; `_uniqueName`/`Map` chaveado por `address`.
-   - *Aceite*: build antigo (sem campos) registra e `address == name`; build novo
-     registra com campos e `address` composta; dois `app` em worktrees diferentes
-     coexistem sem `#2` (addresses distintas).
+3. **Register carrega `cwd`** (`peer.ts`/`mesh_node.ts` → `broker.ts`) —
+   `RegisterMsg.cwd`; `PeerConn` guarda `cwd` + `address`; Map chaveado por address.
+   - *Aceite*: build antigo (sem `cwd`) registra e `address == name` (compat);
+     build novo registra com `cwd` e address composto; dois `backend` em pastas
+     diferentes coexistem **sem `#2`** (addresses distintas).
 
-4. **`list_peers` aditivo** (`broker.ts` `_handleBrokerMessage` + `mesh_server.ts`/`tools.ts`)
-   - `list_peers_reply` devolve `peers: string[]` **e** `peers_detailed:
-     PeerInfo[]`. O render do MCP mostra address; o detailed expõe os 4 eixos.
-   - *Aceite*: cliente velho lê `peers` (addresses) e roteia; cliente novo lê
-     `peers_detailed`; ambos no mesmo reply.
+4. **`#N` por `(cwd, nome)` e runtime-only** (`broker.ts` + `index.ts`)
+   - `_uniqueName` (`broker.ts:276`) chaveia por `(cwd, nome)` → `#N` só em mesmo
+     cwd + mesmo nome; pastas diferentes não colidem.
+   - **Persistência sem drift** (decisão E): `_cmdJoin` (`index.ts:2760`) **não**
+     grava o `assigned` (com `#N`) em `agent_name`; só nome explícito persiste.
+     O evento `name-assigned` (`index.ts:2752`, runtime) continua informando o
+     Cockpit do nome efetivo.
+   - **Migração no load**: `agent_name` com `#N` (só vem de assignment — o usuário
+     nunca grava `#`, que `sanitizeSegment` troca por `-`) tem o sufixo removido e
+     re-deriva; idem o legado `parent/folder` (contém `/`).
+   - *Aceite*: 2 agentes mesma pasta mesmo nome → `…@backend` + `…@backend#2`
+     (runtime); pastas diferentes mesmo nome → **sem** `#N`; restart repetido de A
+     e B (mesmo nome, pastas distintas) → cada uma mantém o nome limpo, **nenhum
+     config ganha `#N`**, sem ping-pong; config pré-fix com `#N`/`parent/folder`
+     re-deriva no load.
 
-5. **Broadcast escopado** (`broker.ts`)
-   - Broadcast entrega só a peers locais com `(workspace, worktree)` == do
-     remetente (decisão C). Cross-PC permanece unicast-only.
-   - *Aceite*: broadcast de um agente em `(acme, feat-login)` não chega a peer em
-     `(acme, main)` nem em `(outro, …)`; chega aos da mesma worktree; caso default
-     (ambos vazios, mesmo PC) mantém o alcance de hoje.
+5. **`list_peers` aditivo** (`broker.ts` + `mesh_server.ts`/`tools.ts`) —
+   `peers: string[]` (addresses) **e** `peers_detailed: PeerInfo[]`
+   (`{ pc?, cwd, name, address }`).
+   - *Aceite*: cliente velho lê `peers` e roteia; cliente novo lê `peers_detailed`
+     e agrupa por `cwd` sem string-split; ambos no mesmo reply.
 
-6. **`rpc_child.ts`** — `sessionName` usa a identidade efetiva (workspace prefix)
-   também nos daemons.
-   - *Aceite*: daemon registra com a mesma `address` que a sessão interativa
-     geraria pra aquela pasta/config.
+6. **Broadcast escopado por `cwd`** (`broker.ts`) — entrega só a peers locais com
+   `cwd` == do remetente; cross-PC permanece unicast.
+   - *Aceite*: broadcast de um agente em `/a/b` não chega a peer em `/a/c`; chega
+     aos da mesma pasta.
 
-7. **Skill `agent-network`** — seção workspace/worktree: explicar que `workspace`
-   é **auto-derivado** (marker-gated) e `worktree` vem do git; setar `workspace`
-   no config é **override**; preferir mesmo escopo; usar `peer.address` verbatim.
-   - *Aceite*: a skill não instrui montar address à mão; explica a derivação e
-     quando vale **sobrescrever** com `workspace` explícito.
+7. **`rpc_child.ts`** — daemon registra com a mesma `(cwd, nome)` da sessão interativa.
+   - *Aceite*: daemon gera a mesma `address` que a sessão geraria pra aquela pasta/config.
 
-8. **`pnpm test` verde** com os novos casos (identidade, encoder, register c/
-   campos, list_peers detailed, broadcast escopado).
+8. **Skill `agent-network`** — `(cwd, nome)`, N agentes por pasta, `peer.address` verbatim.
+   - *Aceite*: a skill não instrui montar address à mão; explica o modelo.
+
+9. **`pnpm test` verde** com os casos novos (folha, encoder, register c/ `cwd`,
+   `_uniqueName` por `(cwd,nome)`, list_peers detailed, broadcast por cwd).
 
 ### Fase 2 — cross-PC
 
-- `broker_remote.ts` + `peer_inventory.ts` carregam `workspace`/`worktree`/`pc`
-  no inventário cross-PC → `list_peers` cross-PC estruturado com `pc` preenchido.
-- *Aceite*: dois PCs na malha; `list_peers` de um lado mostra peers do outro com
-  `pc` correto e address `<pc>:…`; roteamento cross-PC por `address` verbatim
-  funciona; broadcast continua local-only (não vaza cross-PC).
+- `broker_remote.ts` + `peer_inventory.ts` carregam `cwd` + `pc` no inventário →
+  `list_peers` cross-PC com `pc` preenchido e address `<pc>:<cwd>@<nome>`.
+- ⚠️ **Wrinkle Windows** (plano 40 colocou Windows em escopo): o split do salto no
+  1º `:` colide com a letra de drive (`C:\...`). Mitigação: o parser do salto
+  cross-PC testa o prefixo contra o **conjunto conhecido de PCs da malha** (se não
+  é PC conhecido, é path local) — ou o encoder usa um separador de pc que não
+  aparece em path. Decidir na Fase 2 (não bloqueia a Fase 1, que é local e sem
+  prefixo de pc).
+- *Aceite*: dois PCs; `list_peers` de um mostra peers do outro com `pc` correto e
+  address `<pc>:…@…`; roteamento cross-PC por address verbatim; broadcast local-only
+  preservado; address com drive-letter Windows roteia certo.
 
 ### Fase 3 — app (mobile)
 
-- App consome `peers_detailed`: agrupa por `workspace`, badge de `worktree`/branch,
-  ícone de `pc`. **Não parseia nome.** (Cai no pane `App`.)
-- *Aceite*: lista de peers no app agrupada/filtrada pelos campos, sem string-split;
-  worktree aparece como badge; PC como ícone.
+- App consome `peers_detailed`: agrupa por `cwd` (pasta), ícone de `pc`. **Não
+  parseia nome nem path** pra escopo — usa os campos.
+- *Aceite*: lista agrupada/filtrada pelos campos, sem string-split.
 
 ## DoD
 
-- [ ] **Fase 1** — identidade estruturada + detecção git de worktree;
-      `register`/`PeerConn` com campos; `list_peers` aditivo (`peers` +
-      `peers_detailed`); encoder de `address` (sanitizado, exact-match); broadcast
-      escopado por `(workspace, worktree)`; `rpc_child` alinhado; skill atualizada;
-      `pnpm test` verde
-      — *parcial: camada de config (`workspace?`/`worktree?` + `sanitizeSegment` +
-      env `REMOTE_PI_DIRECT_CONFIG`) FEITA, committada+pushada (`af66d04`, bundled);
-      falta derivação marker-gated + consumo (register/list_peers/broadcast)*
-- [ ] **Fase 2** — `broker_remote` + `peer_inventory` propagam os campos;
-      `list_peers` cross-PC estruturado com `pc`; roteamento por address verbatim;
-      broadcast local-only preservado
-- [ ] **Fase 3** — app consome `peers_detailed` (agrupa por workspace, badge de
-      worktree, ícone de pc), sem parsear nome
-- [ ] **Compat** — build antigo (sem campos) continua registrando e roteando
+- [ ] **Fase 1** — `nome`=folha; `register` carrega `cwd`; `PeerConn`/`Map` por
+      `address`; encoder único `[pc:]cwd@nome`; `_uniqueName` por `(cwd,nome)`;
+      `#N` runtime-only (não persistido) + migração strip `#N`/`parent/folder` no
+      load; `list_peers` aditivo (`peers` + `peers_detailed`); broadcast por `cwd`;
+      `rpc_child` alinhado; skill atualizada; `pnpm test` verde
+- [ ] **Fase 2** — `broker_remote` + `peer_inventory` propagam `cwd`/`pc`;
+      `list_peers` cross-PC com `pc`; roteamento por address verbatim; wrinkle
+      Windows resolvido; broadcast local-only preservado
+- [ ] **Fase 3** — app agrupa por `cwd`/`pc` via `peers_detailed`, sem parsear nome/path
+- [ ] **Compat** — build antigo (sem `cwd`) continua registrando e roteando
       (`address == name`); nenhum peer perde endereçamento na migração
-- [ ] **Migração de legado** — config com `agent_name` == default legado é
-      re-derivada (não congela `parent-folder`); triagem dos ~12 callsites de
-      `defaultAgentName` feita; testes `footer`/`e2e`/`setup_wizard` atualizados
 
 ## Não-objetivos
 
-- **Walk-up multi-nível pelo marcador** — a derivação do `workspace` checa **só o
-  `parent` imediato** por `CLAUDE.md`/`AGENTS.md` (decisão A). Subir a árvore
-  procurando o "root mais alto" fica fora; se a heurística errar, o usuário corrige
-  com `workspace` explícito.
-- **Mudar o envelope App↔Pi** — as mudanças são no wire da malha (register /
-  list_peers), não no protocolo de pareamento.
-- **Address opaco/hash** (decisão B = legível). 
-- **Broadcast cross-PC** (decisão C = local-only; cross-PC é unicast).
-- **Mexer no transporte da malha** — o broker (planos 19/25 + 34) é o baseline
-  mantido (o redesign leaderless da 35 foi descontinuado). A identidade
-  estruturada é aditiva a ele.
+- **Reintroduzir `workspace`/`worktree`** como eixos ou derivação — cortados
+  (ver Decisões revertidas). `cwd` subsume a desambiguação.
+- **Cross-PC "mesmo projeto"** — sem campo `workspace`, a malha não diz que dois
+  cwds em PCs diferentes são o mesmo projeto. Aceito; re-adicionar um campo no dia
+  que houver demanda (não é redesign).
+- **Aninhar worktree sob o repo-pai no app** — exigiria git; app agrupa por
+  pasta (cwd), que resolve o caso comum.
+- **Address opaco/hash** (decisão B = legível).
+- **Broadcast cross-PC** (decisão C = local-only).
+- **Mexer no envelope App↔Pi / no transporte da malha** — broker (34) é o baseline; isto é aditivo.
+
+## Decisões revertidas (2026-06-08)
+
+Da versão anterior deste plano (identidade estruturada de 4 eixos):
+
+- ❌ **Workspace auto-derivado marker-gated** (`CLAUDE.md`/`AGENTS.md` no parent).
+  Heurística admitidamente "chute bom" com falhas conhecidas; já refutada análoga
+  no App↔Pi (`00-decisions.md:43-44,56`). **Substituída** por `cwd` cru.
+- ❌ **Detecção git de worktree** (`git-common-dir`, branch, detached-HEAD
+  fallback). O `realpath` já distingue worktree por path; o rótulo de branch era
+  cosmético. **Removida.**
+- ⚠️ **Migração do "nome congelado" + triagem dos ~12 callsites de
+  `defaultAgentName`**: a triagem dos callsites cai (sem workspace prefix), e a
+  derivação vira `basename(cwd)` (decisão D). Mas **uma migração mais leve
+  permanece** (decisão E): strip do `#N` persistido e do legado `parent/folder` no
+  load — caso contrário o drift de runtime fossiliza no config.
+- ✅ **Mantido/aproveitado**: `sanitizeSegment` (`af66d04`), princípio "ecoar
+  `peer.address`, nunca montar", `list_peers` dual, relay-zero, broadcast escopado
+  (agora por `cwd`), `register` aditivo.
 
 ## Próximos planos / evolução
 
-- **Transporte leaderless** (se um dia ressuscitar — a 35 foi descontinuada):
-  a identidade estruturada é ortogonal ao transporte e valeria igual sobre
-  UDS-direto. Reabrir como discussão explícita.
-- **Reachability do cockpit (plano 37 "Próximos")**: quando o cockpit spawnar com
-  a extensão remote-pi, os agentes entram na malha já com identidade estruturada
-  (workspace/worktree) de graça.
-- **Refinar a heurística do marcador** (se a derivação errar na prática): além de
-  `CLAUDE.md`/`AGENTS.md`, considerar `.git`/`pyproject.toml`/`package.json`, ou
-  walk-up. Só com evidência de erro real — hoje o `workspace` explícito é o escape.
+- **Campo `workspace` opcional** (só se aparecer demanda real de agrupar projeto
+  cross-PC) — aditivo, não redesign.
+- **Room por `(cwd, nome)`** no app, se a multiplicidade de agentes por pasta
+  exigir (rastreado no Contexto; é plano do app, não deste).
+- **Reachability do cockpit (plano 37)**: agentes spawnados pela extensão entram
+  na malha já com `(cwd, nome)` de graça.

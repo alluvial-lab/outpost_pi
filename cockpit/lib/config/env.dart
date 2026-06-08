@@ -46,8 +46,12 @@ class PiSpawnConfig {
   /// carregamos as extensions pra ter os slash commands (`get_commands`).
   final bool noExtensions;
 
-  List<String> spawnArgs() => <String>[
+  /// [sessionId] é o ID (basename sem `.jsonl`) da sessão a restaurar. Quando
+  /// presente, o pi inicia já carregado naquela sessão — evita o ciclo extra de
+  /// `switch_session` que causa re-avaliação dupla do módulo da extensão.
+  List<String> spawnArgs({String? sessionId}) => <String>[
     '--mode', 'rpc',
+    if (sessionId != null) ...['--session', sessionId],
     if (noSession) '--no-session',
     if (noExtensions) '--no-extensions',
     if (provider != null && provider!.isNotEmpty) ...['--provider', provider!],

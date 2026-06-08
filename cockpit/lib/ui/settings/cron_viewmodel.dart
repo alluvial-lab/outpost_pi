@@ -29,7 +29,15 @@ class CronViewModel extends ChangeNotifier {
   bool _disposed = false;
 
   bool isBusy(String id) => _busy.contains(id);
+  bool get anyBusy => _busy.isNotEmpty;
   bool get hasDaemons => daemons.isNotEmpty;
+
+  /// Refresh silencioso (polling): só recarrega se estiver ocioso, sem piscar
+  /// o spinner de "primeira carga".
+  Future<void> refreshQuiet() async {
+    if (anyBusy || load == CronLoad.loading) return;
+    await reload();
+  }
 
   /// Nome do daemon alvo de um job (resolve pela lista; fallback ao id).
   String daemonName(String daemonId) {

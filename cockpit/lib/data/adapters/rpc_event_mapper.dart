@@ -43,8 +43,14 @@ class RpcEventMapper {
           resultText: _extractContentText(json['result']),
         );
 
+      case 'extension_ui_request':
+        return _fromUiRequest(json);
+
       case 'message_update':
         return _fromMessageUpdate(json['assistantMessageEvent']);
+
+      case 'message_start':
+        return _fromCustomMessage(json['message']);
 
       case 'message_end':
         // Carrega o erro do turno quando o assistant falhou (provider fora do
@@ -65,6 +71,33 @@ class RpcEventMapper {
     }
   }
 
+  /// `message_start` com `role:"custom"` — despacha para o handler do tipo
+  /// customizado. Outros roles (ou role ausente) viram [RpcUnknown].
+  RpcEvent _fromCustomMessage(Object? message) {
+    if (message is! Map<String, dynamic>) return const RpcUnknown('message_start');
+    if (message['role'] != 'custom') return const RpcUnknown('message_start');
+
+    final customType = message['customType'] as String?;
+    final details = message['details'];
+
+    switch (customType) {
+      case 'remote-pi:name-assigned':
+        if (details is! Map<String, dynamic>) {
+          return const RpcUnknown('message_start:name-assigned:no-details');
+        }
+        final assigned = details['assigned'] as String?;
+        if (assigned == null) {
+          return const RpcUnknown('message_start:name-assigned:no-assigned');
+        }
+        return RpcNameAssigned(
+          assigned: assigned,
+          changed: details['changed'] == true,
+        );
+      default:
+        return RpcUnknown('message_start:custom:${customType ?? "?"}');
+    }
+  }
+
   /// `errorMessage` de uma mensagem com `stopReason == "error"`, ou `null`.
   String? _errorMessageOf(Object? message) {
     if (message is Map && message['stopReason'] == 'error') {
@@ -73,6 +106,59 @@ class RpcEventMapper {
       return 'erro desconhecido';
     }
     return null;
+  }
+
+  /// `extension_ui_request`: `notify` (fire-and-forget) vira [RpcNotice]; os
+  /// interativos (`select`/`confirm`/`input`/`editor`) viram [RpcUiRequest]; o
+  /// resto (setStatus/setTitle/setWidget/set_editor_text) é chrome de TUI →
+  /// ignorado.
+  RpcEvent _fromUiRequest(Map<String, dynamic> json) {
+    final method = json['method'] as String?;
+    switch (method) {
+      case 'notify':
+        return RpcNotice(
+          _str(json['message']) ?? '',
+          switch (json['notifyType']) {
+            'warning' => RpcNoticeLevel.warning,
+            'error' => RpcNoticeLevel.error,
+            _ => RpcNoticeLevel.info,
+          },
+        );
+      case 'select':
+      case 'confirm':
+      case 'input':
+      case 'editor':
+        final id = _str(json['id']);
+        if (id == null) return const RpcUnknown('extension_ui_request:no-id');
+        final rawOptions = json['options'];
+        // `placeholder` pode vir como string (hint) OU objeto
+        // `{defaultValue: "..."}` (valor inicial). Nada de `as String` cru —
+        // um cast errado derrubaria o evento inteiro pra <parse-error>.
+        return RpcUiRequest(
+          id: id,
+          method: method!,
+          title: _str(json['title']),
+          message: _str(json['message']),
+          placeholder: _str(json['placeholder']),
+          defaultValue: _defaultValue(json),
+          options: rawOptions is List
+              ? rawOptions.map((o) => o.toString()).toList(growable: false)
+              : const <String>[],
+        );
+      default:
+        return RpcUnknown('extension_ui_request:${method ?? "?"}');
+    }
+  }
+
+  /// Coerção segura pra String (nunca lança): não-string vira `null`.
+  String? _str(Object? v) => v is String ? v : null;
+
+  /// Valor inicial do campo: `placeholder.defaultValue`, `defaultValue` ou
+  /// `prefill`. Cobre o `ui.input(title, {defaultValue})` do remote-pi.
+  String? _defaultValue(Map<String, dynamic> json) {
+    final p = json['placeholder'];
+    if (p is Map && p['defaultValue'] is String) return p['defaultValue'] as String;
+    return _str(json['defaultValue']) ?? _str(json['prefill']);
   }
 
   RpcEvent _fromMessageUpdate(Object? assistantMessageEvent) {

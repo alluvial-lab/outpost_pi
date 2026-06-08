@@ -710,6 +710,8 @@ class CockpitViewModel extends ChangeNotifier {
   /// Cria e boota um agente. [restoreSessionPath] (restauração) faz reanexar a
   /// conversa salva via `switch_session`; senão, a VM captura o arquivo de
   /// sessão que o pi criar (no 1º fim de turno) pra poder restaurar depois.
+  /// O nome final é atribuído pelo broker via evento `remote-pi:name-assigned`
+  /// quando houver colisão de mesh — [AgentSession] trata o evento e persiste.
   AgentSession _buildAgent(
     String id,
     Project project,
@@ -746,11 +748,10 @@ class CockpitViewModel extends ChangeNotifier {
     s.sessionBaseline = (await _history.sessionsFor(cwd))
         .map((e) => e.path)
         .toSet();
-    await s.boot(environment: _buildDirectConfig(s, project));
-    if (restoreSessionPath != null) {
-      s.sessionPath = restoreSessionPath;
-      await s.loadHistory(restoreSessionPath);
-    }
+    await s.boot(
+      environment: _buildDirectConfig(s, project),
+      restoreSessionPath: restoreSessionPath,
+    );
   }
 
   /// Serializa `agent_name`, `auto_start_relay` e `workspace` em
@@ -759,9 +760,10 @@ class CockpitViewModel extends ChangeNotifier {
     return {
       'REMOTE_PI_DIRECT_CONFIG': jsonEncode(<String, dynamic>{
         'agent_name': s.title,
-        'auto_start_relay': s.autoStartRelay,
         'workspace': project.name,
+        'auto_start_relay': s.autoStartRelay,
       }),
+      'REMOTE_PI_DAEMON': '1',
     };
   }
 
@@ -787,18 +789,23 @@ class CockpitViewModel extends ChangeNotifier {
     unawaited(_notifyIfNeeded(s));
   }
 
-  /// Notifica e marca "unseen" apenas se o usuário não está ativamente vendo
-  /// este agente — ou seja: aba diferente da focada **ou** janela sem foco
-  /// no SO (usuário em outra app/espaço).
+  /// Badge (ponto na aba) → só se o agente NÃO for a aba ativa.
+  /// OS notification → só se a janela não estiver focada.
+  /// Separar as duas responsabilidades evita badge preso: se o usuário já está
+  /// na aba, não há nada a marcar — ele verá a resposta ao olhar para a janela.
   Future<void> _notifyIfNeeded(AgentSession s) async {
     final isActiveTab = s.id == _focusedAgentId;
-    final windowFocused = await windowManager.isFocused();
-    if (isActiveTab && windowFocused) return;
 
-    s.markUnseen();
-    final workspace = _projectById(s.projectId)?.name ?? '';
-    await _notifier.agentFinished(agentName: s.title, workspace: workspace);
-    notifyListeners(); // atualiza o badge na rail
+    if (!isActiveTab) {
+      s.markUnseen();
+      notifyListeners();
+    }
+
+    final windowFocused = await windowManager.isFocused();
+    if (!windowFocused) {
+      final workspace = _projectById(s.projectId)?.name ?? '';
+      await _notifier.agentFinished(agentName: s.title, workspace: workspace);
+    }
   }
 
   /// Limpa a notificação do agente que acabou de virar o focado.
