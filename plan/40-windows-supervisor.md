@@ -109,12 +109,24 @@ prontos. **Validar** rodando 1 job num Windows real.
 
 ## DoD
 
-> **Implementado + commitado em `e6e2753`** (2026-06-08; só `pi-extension/`). POSIX
-> sem regressão: `tsc` limpo, `pnpm test` **507/507**; ramos win32 por testes
-> platform-injected. **Smoke real em Windows PENDENTE** (5 itens: pipe bind/connect,
-> `schtasks` create/run/end/delete, `pi.cmd` via `where`, cron 1 job, encoding do
-> XML UTF-8 vs UTF-16) — exige máquina/CI Windows; **não declarar "Windows ok"** sem
-> isso. Detalhes em `.orchestration/results/40-windows-supervisor.md`.
+> **✅ VALIDADO EM WINDOWS REAL** — CI `windows-pi-extension.yml`, run **27112124093 verde**
+> (2026-06-08): `windows-latest` (x64) **+** `windows-11-arm` — **suíte completa** + **smoke
+> named-pipe IPC** (Bloco A, ao vivo) + **smoke schtasks install/query/uninstall** (Bloco C).
+> Implementado em `e6e2753`; a CI em Windows real surfou **3 achados, todos corrigidos**:
+> 1. **`cwd_lock.ts` foi esquecido no Bloco A** (montava `.sock` cru, sem `ipcAddress`) → bug de
+>    **produção** no Windows (lock 1-Pi-por-pasta quebrado); corrigido (pipe via `ipcAddress`) em `3c02737`.
+> 2. **Risco #5 do plano confirmado**: `schtasks /Create /XML` exige **UTF-16LE+BOM** (UTF-8 dava
+>    `"(1,40) unable to switch the encoding"`); corrigido em `2eeacf5` (+ `install` propaga exit code).
+> 3. **3 ondas de portabilidade de TESTE** (suposições POSIX no harness: `/usr/bin/true`, paths,
+>    `chmod`, symlink/launchd/systemd, fs-sobre-pipe) — `7f18ef8`/`3c02737`/`4c57e85`; **zero**
+>    mudança de produção nessas.
+>
+> Também precisou: reparar `pnpm-lock.yaml` corrompido (`bfd3ea2`) e um `exit 0` no assert do
+> próprio workflow (`c61ad5d`). **Os Blocos A/B/C agora estão confirmados em Windows real**, não
+> só platform-injected.
+>
+> **Pendente (validação de USO, não de build)**: smoke do **cron 1-job ponta-a-ponta** + spawn
+> real de `pi.cmd` — precisam de `pi` global + provider via **secret**; comentados no workflow.
 
 - [x] **Bloco A** — resolvedor de socket por plataforma (`supervisor.sock` +
       `broker.sock`, via novo `ipc.ts`) + lifecycle pipe-aware; testes por
