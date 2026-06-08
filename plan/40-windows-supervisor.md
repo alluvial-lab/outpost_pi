@@ -109,14 +109,23 @@ prontos. **Validar** rodando 1 job num Windows real.
 
 ## DoD
 
-- [ ] **Bloco A** — resolvedor de socket por plataforma (`supervisor.sock` +
-      `broker.sock`) + lifecycle pipe-aware; testes por plataforma; **POSIX sem
-      regressão** (suíte atual verde)
-- [ ] **Bloco B** — `pi`/`pi.cmd` resolvido no Windows; daemons sobem
-- [ ] **Bloco C** — `install`/`uninstall`/`restart-supervisor` no Windows via
-      `schtasks`; help atualizado; `linkCli` pulado no Windows
-- [ ] **Cron** — roda no Windows sem alteração de código (validação manual de 1 job)
-- [ ] `tsc` + `pnpm test` verdes; `pnpm build`
+> **Implementado + commitado em `e6e2753`** (2026-06-08; só `pi-extension/`). POSIX
+> sem regressão: `tsc` limpo, `pnpm test` **507/507**; ramos win32 por testes
+> platform-injected. **Smoke real em Windows PENDENTE** (5 itens: pipe bind/connect,
+> `schtasks` create/run/end/delete, `pi.cmd` via `where`, cron 1 job, encoding do
+> XML UTF-8 vs UTF-16) — exige máquina/CI Windows; **não declarar "Windows ok"** sem
+> isso. Detalhes em `.orchestration/results/40-windows-supervisor.md`.
+
+- [x] **Bloco A** — resolvedor de socket por plataforma (`supervisor.sock` +
+      `broker.sock`, via novo `ipc.ts`) + lifecycle pipe-aware; testes por
+      plataforma; **POSIX sem regressão** (507/507)
+- [x] **Bloco B** — `pi`/`pi.cmd` resolvido no Windows (`resolvePiBin` via `where`)
+- [x] **Bloco C** — `install`/`uninstall`/`restart-supervisor` no Windows via
+      `schtasks` (template `task-scheduler.xml`); `linkCli` pulado no Windows
+- [ ] **Cron** — roda no Windows sem alteração de código (código cross-platform
+      confirmado; **smoke ponta-a-ponta de 1 job ainda PENDENTE** — comentado na CI,
+      precisa do `pi` + provider/secret; o resto da validação Windows já corre na CI)
+- [x] `tsc` + `pnpm test` (507/507) verdes; `pnpm build`
 
 ## Riscos / notas
 
@@ -133,7 +142,10 @@ prontos. **Validar** rodando 1 job num Windows real.
 
 ## Próximos planos / evolução
 
-- **Runner Windows no CI** — pré-requisito pra fechar a validação real (hoje só
-  platform-injected). Pode virar tarefa própria quando houver CI.
+- **Runner Windows no CI** — ✅ **criado**: `.github/workflows/windows-pi-extension.yml`
+  (`windows-11-arm` + `windows-latest`). Roda a suíte em Windows real (ARM+x64) +
+  smoke de `schtasks` (valida XML) + smoke de named-pipe (best-effort). **Roda no
+  GitHub só após push.** Falta o smoke do cron ponta-a-ponta (comentado no
+  workflow — precisa do `pi` global + provider via secret).
 - **Paridade de install no Cockpit** — se o Cockpit (plano 37) passar a oferecer
   "instalar supervisor" pela UI, o backend Windows daqui é reusado.
