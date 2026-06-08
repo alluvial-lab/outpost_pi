@@ -310,13 +310,11 @@ não `TabBar`+`TabBarView` (filtros, não páginas deslizáveis).
       `_meshNode.name()`=folha verificado (sem vazar address pro app). **Sem
       commit** (modo orquestrado). `rpc_child` não exigiu código (daemon roda a
       mesma extensão → mesma address por construção).*
-- [ ] **Fase 2** — `broker_remote` + `peer_inventory` propagam `cwd`/`pc`;
+- [x] **Fase 2** — `broker_remote` + `peer_inventory` propagam `cwd`/`pc`;
       `list_peers` cross-PC com `pc`; roteamento por address verbatim; wrinkle
       Windows resolvido; broadcast local-only preservado
-      — *lógica implementada 2026-06-08, 530/530 verde (unit/integration
-      FakePi+Broker real); **falta smoke real de 2 PCs** (laptop↔MacMini) pra
-      fechar o aceite. Sem commit (Fase 1 está em `main` `f2002d3`; Fase 2 por cima
-      no working tree).*
+      — *implementada 2026-06-08, 530/530 verde; commitada em `63c3014`;
+      **smoke real de 2 PCs VALIDADO** (malha + comunicação cross-PC funcionais).*
 - [x] **Fase 3** — app: filtro de presença em tabs (All/Online/Offline) no Home,
       default Online, sobre a lista existente (peer→room); `visibleItems` por
       `isRoomLive`; peer sem item visível some; **zero protocolo/Pi**; `flutter
@@ -325,8 +323,10 @@ não `TabBar`+`TabBarView` (filtros, não páginas deslizáveis).
       (switch exaustivo do `visibleItems`, `==`/`hashCode` incluem `filter`,
       `_onStatus` preserva a tab). **Sem commit** (modo orquestrado). Falta só
       olhar no device, se quiser.*
-- [ ] **Compat** — build antigo (sem `cwd`) continua registrando e roteando
+- [x] **Compat** — build antigo (sem `cwd`) continua registrando e roteando
       (`address == name`); nenhum peer perde endereçamento na migração
+      — *coberto por testes de malha mista (Fase 1: register sem campos →
+      `address==name`; Fase 2: `_parsePeersUpdate` sintetiza de `string[]`).*
 
 ## Não-objetivos
 
