@@ -81,6 +81,19 @@ class RpcEventMapper {
     final details = message['details'];
 
     switch (customType) {
+      case 'remote-pi:relay-state':
+        if (details is! Map<String, dynamic>) {
+          return const RpcUnknown('message_start:relay-state:no-details');
+        }
+        final statusStr = details['status'] as String?;
+        return RpcRelayState(
+          status: switch (statusStr) {
+            'connected' => RelayStatus.connected,
+            'reconnecting' => RelayStatus.reconnecting,
+            _ => RelayStatus.disconnected,
+          },
+          connected: details['connected'] == true,
+        );
       case 'remote-pi:name-assigned':
         if (details is! Map<String, dynamic>) {
           return const RpcUnknown('message_start:name-assigned:no-details');

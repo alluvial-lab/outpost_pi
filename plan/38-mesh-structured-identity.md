@@ -226,23 +226,78 @@ Consequências:
 
 ### Fase 2 — cross-PC
 
-- `broker_remote.ts` + `peer_inventory.ts` carregam `cwd` + `pc` no inventário →
-  `list_peers` cross-PC com `pc` preenchido e address `<pc>:<cwd>@<nome>`.
-- ⚠️ **Wrinkle Windows** (plano 40 colocou Windows em escopo): o split do salto no
-  1º `:` colide com a letra de drive (`C:\...`). Mitigação: o parser do salto
-  cross-PC testa o prefixo contra o **conjunto conhecido de PCs da malha** (se não
-  é PC conhecido, é path local) — ou o encoder usa um separador de pc que não
-  aparece em path. Decidir na Fase 2 (não bloqueia a Fase 1, que é local e sem
-  prefixo de pc).
+> **Estado pós-Fase-1 (fotografado 2026-06-08)**: muito da Fase 2 já funciona por
+> construção. O inventário propaga `broker.peerNames()`, que **agora são addresses**
+> (`broker_remote.ts:132`), então `listRemotePeers()` já gera `<pc>:<cwd>@<nome>`;
+> `parseAddress` corta no 1º `:` (`:482-488`) → `peerName = <cwd>@<nome>` →
+> `injectFromRemote` busca **por address** (Map da Fase 1) → entrega. O wrinkle
+> Windows no **roteamento** já está defendido: `tryRouteOutbound` valida o prefixo
+> contra os siblings conhecidos (`:272-273` — prefixo não-sibling cai pra local), e
+> o lookup local usa o `env.to` completo. Broadcast cross-PC já é negado em
+> `injectFromRemote`. **Confirmar tudo isso com teste de 2 PCs.**
+
+O gap real a fechar:
+
+1. **Inventário estruturado** — `peers_detailed` de entradas remotas hoje sai
+   best-effort (`_allPeerInfos`, `broker.ts:365-377`: `{cwd:"", name:addr,
+   address:addr}`). Propagar `PeerInfo[]` no `peers_update`/`RemotePeerEntry`
+   (`broker_remote.ts:43-70`) em vez de `string[]`, e **preencher `pc`** (da label
+   do sibling) no receptor. `PeerInfo` ganha `pc?`.
+2. **Back-compat** — sibling rodando só-Fase-1 ainda manda `string[]` (addresses):
+   o receptor aceita ambos (`string[]` → `{cwd:"", name:addr, address:addr, pc}`).
+3. **Wrinkle Windows residual (count/push, NÃO roteamento)** — `index.ts:2700`
+   separa local de remoto com `peers.filter(p => !p.includes(":"))`. Pós-Fase-1 o
+   address local é `<cwd>@<nome>`; no Windows `C:\...@app` tem `:` → seria
+   classificado como remoto (erro de contagem/push, não de entrega). Trocar pela
+   checagem sibling-aware (`parseAddress` + `siblingByLabel`), não o `:` ingênuo.
+
 - *Aceite*: dois PCs; `list_peers` de um mostra peers do outro com `pc` correto e
-  address `<pc>:…@…`; roteamento cross-PC por address verbatim; broadcast local-only
-  preservado; address com drive-letter Windows roteia certo.
+  address `<pc>:<cwd>@<nome>`; roteamento cross-PC por address verbatim entrega;
+  malha mista (sibling Fase-1-only mandando `string[]`) não quebra; broadcast
+  local-only preservado; address local com drive-letter Windows não é contado como
+  remoto.
 
-### Fase 3 — app (mobile)
+### Fase 3 — app: filtro de presença em tabs (All / Online / Offline)
 
-- App consome `peers_detailed`: agrupa por `cwd` (pasta), ícone de `pc`. **Não
-  parseia nome nem path** pra escopo — usa os campos.
-- *Aceite*: lista agrupada/filtrada pelos campos, sem string-split.
+> **Redefinida 2026-06-08.** A Fase 3 **não** é mais "consumir `peers_detailed` /
+> agrupar por cwd / roster da malha" (ver Não-objetivos). Decisão do usuário: o app
+> **reusa a lista que já existe** (peer→room) e ganha só um **filtro em tabs** por
+> presença — `All` · `Online` · `Offline`, default **Online**. Tabs são só filtro.
+> **Zero protocolo / zero Pi**: os sinais de presença já fluem do relay.
+
+**Por que é barato** (verificado em
+`app/lib/data/transport/connection_manager.dart`): `_roomsByPeer` é o conjunto
+**canônico** (cached +
+anunciado); `_liveRoomIds` são os **vivos agora**; "room em `_roomsByPeer` mas não
+em `_liveRoomIds` = offline" (`:114-118`); `room_ended` **mantém** o tile (cinza)
+em vez de remover (`:640-644`); rooms restauram do disco no boot (`:336`). Logo as
+sessões offline **já estão na lista** e online/offline por item já é
+`isRoomLive(epk, roomId)`. O filtro é **view pura** sobre `HomeList.items()`.
+
+Por camada (respeitando `app/lib/ui/CLAUDE.md`):
+- **State** (`home_state.dart`): `enum HomeFilter { all, online, offline }`;
+  `HomeList` ganha `final HomeFilter filter` (default `online`) + no `copyWith`.
+  Seleção reativa = parte do state imutável (padrão `ViewModel<T>`).
+- **ViewModel** (`home_viewmodel.dart`): `setFilter(f)` → `emit(s.copyWith(filter:
+  f))`; getter `visibleItems` = `state.items()` filtrado por `_online(i)`; `counts`
+  (all/online/offline) pros badges. Predicado `_online(i) = isRelayConnected &&
+  isRoomLive(i.peer.remoteEpk, i.room.roomId)` — ambos **já existem** no VM.
+- **UI** (`home_page.dart` + `widgets/home_filter_tabs.dart` novo): controle
+  segmentado estilo-tab no topo, ligado a `state.filter`/`setFilter`, default
+  Online, badges de contagem; renderiza `visibleItems`; **esconde
+  `PeerSectionHeader`** de peer sem item visível no filtro; tema via
+  `context.colors`/`context.typo`/`kMonoFamily`; empty-state por tab. Tap
+  inalterado (`openSession` → chat).
+
+Decisões pequenas (assumidas, ajustáveis): tab **não** persiste entre sessões
+(re-abre em Online); durante reconnect (WS caído) o split reflete o último
+`isRoomLive` (tiles âmbar ficam na sua tab); "tab" = **segmentado de 3 pílulas**,
+não `TabBar`+`TabBarView` (filtros, não páginas deslizáveis).
+
+- *Aceite*: 3 tabs no topo do Home, default Online; Online mostra só sessões vivas,
+  Offline só as cinzas, All ambas; trocar de tab refiltra sem recarregar; peer sem
+  item visível some do filtro; empty-state por tab; `flutter analyze` 0; testes
+  (VM: `setFilter`/`visibleItems`/`counts`; widget: troca de tab + empty-state).
 
 ## DoD
 
@@ -258,7 +313,18 @@ Consequências:
 - [ ] **Fase 2** — `broker_remote` + `peer_inventory` propagam `cwd`/`pc`;
       `list_peers` cross-PC com `pc`; roteamento por address verbatim; wrinkle
       Windows resolvido; broadcast local-only preservado
-- [ ] **Fase 3** — app agrupa por `cwd`/`pc` via `peers_detailed`, sem parsear nome/path
+      — *lógica implementada 2026-06-08, 530/530 verde (unit/integration
+      FakePi+Broker real); **falta smoke real de 2 PCs** (laptop↔MacMini) pra
+      fechar o aceite. Sem commit (Fase 1 está em `main` `f2002d3`; Fase 2 por cima
+      no working tree).*
+- [x] **Fase 3** — app: filtro de presença em tabs (All/Online/Offline) no Home,
+      default Online, sobre a lista existente (peer→room); `visibleItems` por
+      `isRoomLive`; peer sem item visível some; **zero protocolo/Pi**; `flutter
+      analyze` 0 + testes (VM + widget)
+      — *implementado 2026-06-08, `flutter analyze` 0, **456/456 verde**, revisado
+      (switch exaustivo do `visibleItems`, `==`/`hashCode` incluem `filter`,
+      `_onStatus` preserva a tab). **Sem commit** (modo orquestrado). Falta só
+      olhar no device, se quiser.*
 - [ ] **Compat** — build antigo (sem `cwd`) continua registrando e roteando
       (`address == name`); nenhum peer perde endereçamento na migração
 
@@ -269,8 +335,14 @@ Consequências:
 - **Cross-PC "mesmo projeto"** — sem campo `workspace`, a malha não diz que dois
   cwds em PCs diferentes são o mesmo projeto. Aceito; re-adicionar um campo no dia
   que houver demanda (não é redesign).
-- **Aninhar worktree sob o repo-pai no app** — exigiria git; app agrupa por
-  pasta (cwd), que resolve o caso comum.
+- **Aninhar worktree sob o repo-pai no app** — exigiria git; cortado.
+- **Agrupar/aninhar no app** (por cwd/pasta→agente) — cortado 2026-06-08. O app
+  reusa a lista (peer→room) e só ganha o filtro de presença (Fase 3).
+- **Multiagente-por-pasta no app** (`roomId` por `(cwd,nome)`) — não faremos; o uso
+  real é **1 agente por pasta/PC**. O `roomId = sha256(realpath(cwd))` fica.
+- **Roster da malha no app** (consumir `peers_detailed` via nova msg App↔Pi) —
+  redundante: agentes já se comunicam cross-PC headless (`agent_send`); seria só
+  observabilidade. Registrado como evolução futura, fora do roadmap.
 - **Address opaco/hash** (decisão B = legível).
 - **Broadcast cross-PC** (decisão C = local-only).
 - **Mexer no envelope App↔Pi / no transporte da malha** — broker (34) é o baseline; isto é aditivo.
@@ -298,7 +370,9 @@ Da versão anterior deste plano (identidade estruturada de 4 eixos):
 
 - **Campo `workspace` opcional** (só se aparecer demanda real de agrupar projeto
   cross-PC) — aditivo, não redesign.
-- **Room por `(cwd, nome)`** no app, se a multiplicidade de agentes por pasta
-  exigir (rastreado no Contexto; é plano do app, não deste).
+- ~~**Room por `(cwd, nome)`** no app~~ — **declinado 2026-06-08** (uso é 1 agente
+  por pasta; sem multiagente-no-app). Reabrir só se o padrão mudar.
+- ~~**Roster da malha no app**~~ — **declinado** (redundante; agentes já se falam
+  headless). Vira observabilidade futura, se houver demanda de monitorar a frota.
 - **Reachability do cockpit (plano 37)**: agentes spawnados pela extensão entram
   na malha já com `(cwd, nome)` de graça.

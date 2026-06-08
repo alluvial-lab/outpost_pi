@@ -55,6 +55,9 @@ class AgentSession extends PaneItem {
   /// Conectar ao relay ao iniciar (injetado em `REMOTE_PI_DIRECT_CONFIG`).
   bool autoStartRelay;
 
+  /// Estado atual da conexão do relay (atualizado por `remote-pi:relay-state`).
+  RelayStatus relayStatus = RelayStatus.disconnected;
+
   /// ID do modelo que o usuário escolheu para este agente (ex: `'claude-sonnet-4-6'`).
   /// `null` = nunca foi alterado → pi decide o default.
   /// Persistido no layout; aplicado automaticamente após cada boot via [_loadControls].
@@ -175,6 +178,7 @@ class AgentSession extends PaneItem {
         _sub = gateway.events.listen(_onEvent);
         _addInfo('agente pronto em $workingDirectory');
         unawaited(_loadControls());
+        unawaited(_syncRelayStatus());
         if (restoreSessionPath != null) {
           unawaited(_populateTranscript(restoreSessionPath));
         }
@@ -400,6 +404,17 @@ class AgentSession extends PaneItem {
 
   // ---- controles (request/response) -----------------------------------------
 
+  /// Liga/desliga/alterna o relay sem envolver o LLM. Não aparece no transcript.
+  /// [verb]: `relay:on` | `relay:off` | `relay:toggle` | `relay:status`.
+  Future<void> sendRelayControl(String verb) async {
+    await _gateway?.sendControl(verb);
+  }
+
+  /// Solicita o estado atual do relay ao pi (resposta chega como RpcRelayState).
+  Future<void> _syncRelayStatus() async {
+    await _gateway?.sendControl('relay:status');
+  }
+
   Future<void> _loadControls() async {
     final gateway = _gateway;
     if (gateway == null) return;
@@ -524,6 +539,8 @@ class AgentSession extends PaneItem {
             options: options,
           ),
         );
+      case RpcRelayState(:final status):
+        relayStatus = status;
       case RpcNameAssigned(:final assigned, :final changed):
         if (changed) {
           rename(assigned);

@@ -157,6 +157,20 @@ final class RpcUiRequest extends RpcEvent {
   final List<String> options; // select
 }
 
+/// Estado da conexão do relay para [RpcRelayState].
+enum RelayStatus { connected, reconnecting, disconnected }
+
+/// `message_start` com `role:"custom"` e `customType:"remote-pi:relay-state"`.
+///
+/// Emitido em toda transição do relay (liga, queda → reconnecting, desliga,
+/// reconexão) e em resposta ao controle `relay:status`.
+final class RpcRelayState extends RpcEvent {
+  const RpcRelayState({required this.status, required this.connected});
+
+  final RelayStatus status;
+  final bool connected;
+}
+
 /// `message_start` com `role:"custom"` e `customType:"remote-pi:name-assigned"`.
 ///
 /// Emitido pelo broker ao entrar no mesh: o broker pode ter atribuído um nome

@@ -172,18 +172,24 @@ class _CockpitPageState extends State<CockpitPage> {
     await session.loadHistory(picked.path);
   }
 
-  /// "Editar": dialog com infos + config do agente (nome + relay).
-  Future<void> _openEdit(String agentId) async {
+  void _renameAgent(String agentId, String name) {
     final vm = _vm;
     final session = vm.session(agentId);
     if (session is! AgentSession) return;
-    final edited = await showAgentEditDialog(context, session: session);
-    if (!mounted || edited == null) return;
+    unawaited(
+      vm.saveAgentConfig(agentId, agentName: name, autoStartRelay: session.autoStartRelay),
+    );
+  }
+
+  void _toggleRelayAgent(String agentId) {
+    final vm = _vm;
+    final session = vm.session(agentId);
+    if (session is! AgentSession) return;
     unawaited(
       vm.saveAgentConfig(
         agentId,
-        agentName: edited.agentName,
-        autoStartRelay: edited.autoStartRelay,
+        agentName: session.title,
+        autoStartRelay: !session.autoStartRelay,
       ),
     );
   }
@@ -364,7 +370,8 @@ class _CockpitPageState extends State<CockpitPage> {
             (sub) => vm.fillEmpty(node.id, emptyId, sub, terminal: terminal),
           ),
           onHistoryAgent: _openHistory,
-          onEditAgent: _openEdit,
+          onRenameAgent: _renameAgent,
+          onToggleRelayAgent: _toggleRelayAgent,
         ),
       );
     }

@@ -353,15 +353,6 @@ class CockpitViewModel extends ChangeNotifier {
     s.rename(agentName.trim());
     s.autoStartRelay = autoStartRelay;
     notifyListeners();
-
-    if (!s.isAlive) return;
-
-    final project = _projectById(s.projectId);
-    if (project == null) return;
-
-    final sessionPath = s.sessionPath;
-    await s.killForRestart();
-    unawaited(_bootAgent(s, s.workingDirectory, project, sessionPath));
   }
 
   // ---- agent / tab / split operations (projeto ativo) -----------------------

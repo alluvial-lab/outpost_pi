@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:cockpit/domain/entities/pi_command.dart';
 import 'package:cockpit/domain/entities/prompt_image.dart';
+import 'package:cockpit/domain/entities/rpc_event.dart' show RelayStatus;
 import 'package:cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/ui/cockpit/session/agent_session.dart';
 import 'package:cockpit/ui/cockpit/viewmodels/cockpit_viewmodel.dart';
@@ -645,6 +646,7 @@ class _AgentComposerState extends State<AgentComposer> {
                         _EffortChip(session: session, enabled: controlsEnabled),
                       // Bolinha de uso do contexto (enche conforme a janela enche).
                       _ContextGauge(session: session),
+                      _RelayButton(session: session),
                       const Spacer(),
                       // Spinner + cronômetro do turno (só enquanto trabalha).
                       _TurnIndicator(session: session),
@@ -1169,6 +1171,50 @@ class _SendButton extends StatelessWidget {
             height: 30,
             child: Icon(icon, size: 15, color: fg),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Indicador/botão do relay: ativo (verde), reconectando (âmbar), offline (cinza).
+/// Toca `relay:toggle` no processo sem envolver o LLM nem o transcript.
+class _RelayButton extends StatelessWidget {
+  const _RelayButton({required this.session});
+  final AgentSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final status = session.relayStatus;
+    final (icon, color, tooltip) = switch (status) {
+      RelayStatus.connected => (
+        Icons.cell_tower,
+        colors.online,
+        'Relay online',
+      ),
+      RelayStatus.reconnecting => (
+        Icons.cell_tower,
+        colors.warn,
+        'Relay reconectando...',
+      ),
+      RelayStatus.disconnected => (
+        Icons.cell_tower_outlined,
+        colors.text3,
+        'Relay offline',
+      ),
+    };
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(5),
+        onTap: session.isAlive
+            ? () => session.sendRelayControl('relay:toggle')
+            : null,
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: Icon(icon, size: 16, color: color),
         ),
       ),
     );

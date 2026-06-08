@@ -15,6 +15,7 @@ import 'package:cockpit/ui/core/themes/terminal_theme.dart';
 import 'package:cockpit/ui/core/themes/themes.dart';
 import 'package:cockpit/ui/settings/settings_controller.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
 
@@ -30,7 +31,8 @@ class PaneView extends StatelessWidget {
     required this.onSplit,
     required this.onFillEmpty,
     required this.onHistoryAgent,
-    required this.onEditAgent,
+    required this.onRenameAgent,
+    required this.onToggleRelayAgent,
   });
 
   final LeafPane pane;
@@ -46,7 +48,12 @@ class PaneView extends StatelessWidget {
 
   /// Abre o histórico de sessões de um agente (por id da aba).
   final ValueChanged<String> onHistoryAgent;
-  final ValueChanged<String> onEditAgent;
+
+  /// Renomeia o agente (id da aba, novo nome já sanitizado).
+  final void Function(String agentId, String name) onRenameAgent;
+
+  /// Alterna o auto-relay do agente (por id da aba).
+  final ValueChanged<String> onToggleRelayAgent;
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +74,8 @@ class PaneView extends StatelessWidget {
               onCreateTab: onCreateTab,
               onSplit: onSplit,
               onHistoryAgent: onHistoryAgent,
-              onEditAgent: onEditAgent,
+              onRenameAgent: onRenameAgent,
+              onToggleRelayAgent: onToggleRelayAgent,
             ),
             Expanded(
               child: active == null
@@ -108,7 +116,8 @@ class _TabStrip extends StatefulWidget {
     required this.onCreateTab,
     required this.onSplit,
     required this.onHistoryAgent,
-    required this.onEditAgent,
+    required this.onRenameAgent,
+    required this.onToggleRelayAgent,
   });
 
   final LeafPane pane;
@@ -117,7 +126,8 @@ class _TabStrip extends StatefulWidget {
   final VoidCallback onCreateTab;
   final ValueChanged<SplitDir> onSplit;
   final ValueChanged<String> onHistoryAgent;
-  final ValueChanged<String> onEditAgent;
+  final void Function(String agentId, String name) onRenameAgent;
+  final ValueChanged<String> onToggleRelayAgent;
 
   @override
   State<_TabStrip> createState() => _TabStripState();
@@ -277,7 +287,8 @@ class _TabStripState extends State<_TabStrip> {
                               widget.vm.selectTab(pane.id, pane.tabs[i]),
                           onClose: () =>
                               widget.vm.closeTab(pane.id, pane.tabs[i]),
-                          onEdit: () => widget.onEditAgent(pane.tabs[i]),
+                          onRename: (name) => widget.onRenameAgent(pane.tabs[i], name),
+                          onToggleRelay: () => widget.onToggleRelayAgent(pane.tabs[i]),
                           onHistory: () => widget.onHistoryAgent(pane.tabs[i]),
                         ),
                       ),
@@ -337,7 +348,7 @@ class _StripButton extends StatelessWidget {
   }
 }
 
-class _Tab extends StatelessWidget {
+class _Tab extends StatefulWidget {
   const _Tab({
     required this.item,
     required this.paneId,
@@ -345,7 +356,8 @@ class _Tab extends StatelessWidget {
     required this.focused,
     required this.onSelect,
     required this.onClose,
-    required this.onEdit,
+    required this.onRename,
+    required this.onToggleRelay,
     required this.onHistory,
   });
 
@@ -355,18 +367,76 @@ class _Tab extends StatelessWidget {
   final bool focused;
   final VoidCallback onSelect;
   final VoidCallback onClose;
-  final VoidCallback onEdit;
+  final ValueChanged<String> onRename;
+  final VoidCallback onToggleRelay;
   final VoidCallback onHistory;
 
   @override
+  State<_Tab> createState() => _TabState();
+}
+
+class _TabState extends State<_Tab> {
+  bool _editing = false;
+  final TextEditingController _ctrl = TextEditingController();
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(_Tab old) {
+    super.didUpdateWidget(old);
+    // Se a aba mudou enquanto estava editando, cancela a edição.
+    if (old.item?.id != widget.item?.id && _editing) {
+      setState(() => _editing = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _startEditing() {
+    final s = widget.item;
+    if (s is! AgentSession) return;
+    _ctrl.text = s.title;
+    _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: s.title.length);
+    setState(() => _editing = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  void _commitEdit() {
+    if (!_editing) return;
+    final name = _ctrl.text.trim().replaceAll(' ', '-');
+    setState(() => _editing = false);
+    if (name.isNotEmpty) widget.onRename(name);
+  }
+
+  void _cancelEdit() {
+    setState(() => _editing = false);
+  }
+
+  void _onFocusChange() {
+    if (!_focus.hasFocus && _editing) _commitEdit();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final s = item;
+    final s = widget.item;
     if (s == null) return const SizedBox.shrink();
     return ListenableBuilder(
       listenable: s,
       builder: (context, _) {
         final colors = context.colors;
-        final isFocusedActive = active && focused;
+        final isFocusedActive = widget.active && widget.focused;
         final agent = s is AgentSession ? s : null;
         final isEmpty = agent?.status == AgentStatus.empty;
         final streaming = agent?.isStreaming ?? false;
@@ -377,10 +447,16 @@ class _Tab extends StatelessWidget {
             minWidth: 150,
             items: [
               if (agent != null && !isEmpty) ...[
-                const AppMenuItem(
-                  value: 'edit',
-                  label: 'Editar',
+                AppMenuItem(
+                  value: 'rename',
+                  label: 'Renomear',
                   icon: Icons.edit_outlined,
+                ),
+                AppMenuItem(
+                  value: 'relay',
+                  label: 'Auto-relay',
+                  icon: Icons.cell_tower_outlined,
+                  selected: agent.autoStartRelay,
                 ),
                 const AppMenuItem(
                   value: 'history',
@@ -395,20 +471,62 @@ class _Tab extends StatelessWidget {
               ),
             ],
           ).then((value) {
-            if (value == 'edit') onEdit();
-            if (value == 'history') onHistory();
-            if (value == 'close') onClose();
+            if (value == 'rename') _startEditing();
+            if (value == 'relay') widget.onToggleRelay();
+            if (value == 'history') widget.onHistory();
+            if (value == 'close') widget.onClose();
           });
         }
 
         final icon = _tabIcon(s);
+
+        // Título: texto normal ou campo inline ao renomear.
+        final titleWidget = _editing && agent != null
+            ? CallbackShortcuts(
+                bindings: {
+                  const SingleActivator(LogicalKeyboardKey.escape): _cancelEdit,
+                },
+                child: TextField(
+                  controller: _ctrl,
+                  focusNode: _focus,
+                  onSubmitted: (_) => _commitEdit(),
+                  style: context.typo.tab.copyWith(
+                    fontSize: 12,
+                    color: colors.text,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter(
+                      RegExp(r' '),
+                      allow: false,
+                      replacementString: '-',
+                    ),
+                  ],
+                ),
+              )
+            : Text(
+                s.title,
+                overflow: TextOverflow.ellipsis,
+                style: context.typo.tab.copyWith(
+                  color: isFocusedActive || widget.active
+                      ? colors.text
+                      : colors.text3,
+                ),
+              );
 
         final tabBody = Container(
           height: 40,
           width: _kTabWidth,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: active ? colors.panel : colors.bg,
+            color: widget.active ? colors.panel : colors.bg,
             border: Border(right: BorderSide(color: colors.border)),
           ),
           foregroundDecoration: isFocusedActive
@@ -421,8 +539,6 @@ class _Tab extends StatelessWidget {
           padding: const EdgeInsets.only(left: 11, right: 7),
           child: Row(
             children: [
-              // Aba de arquivo → ícone colorido por tipo (material-icon-theme);
-              // demais abas → ícone Material por tipo de sessão.
               if (s is FileViewerSession)
                 FileTypeIcon.file(s.title, size: 15)
               else
@@ -431,20 +547,10 @@ class _Tab extends StatelessWidget {
                   size: 13,
                   color: isFocusedActive
                       ? colors.accentText
-                      : (active ? colors.text2 : colors.text3),
+                      : (widget.active ? colors.text2 : colors.text3),
                 ),
               const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  s.title,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.typo.tab.copyWith(
-                    color: isFocusedActive || active
-                        ? colors.text
-                        : colors.text3,
-                  ),
-                ),
-              ),
+              Expanded(child: titleWidget),
               const SizedBox(width: 10),
               if (streaming) ...[
                 SizedBox(
@@ -467,24 +573,24 @@ class _Tab extends StatelessWidget {
                 ),
                 const SizedBox(width: 7),
               ],
-              _TabClose(onTap: onClose),
+              _TabClose(onTap: widget.onClose),
             ],
           ),
         );
 
+        // Ao editar o nome, desabilita drag e cliques de seleção para não
+        // interferir com a seleção de texto no TextField.
+        if (_editing) return tabBody;
+
         final interactive = GestureDetector(
-          // Clique normal só seleciona; o menu (Editar/Histórico/Fechar) abre
-          // apenas com o botão direito.
-          onTapUp: (d) => onSelect(),
+          onTapUp: (d) => widget.onSelect(),
+          onDoubleTap: agent != null && !isEmpty ? _startEditing : null,
           onSecondaryTapUp: isEmpty ? null : (d) => showTabMenu(),
           child: tabBody,
         );
 
-        // Arrastável: solta sobre outro pane pra acoplar a aba ou criar split.
-        // `pointerDragAnchorStrategy` faz o feedback seguir o cursor (e o
-        // `onMove` do alvo reportar a posição real do ponteiro → zonas certas).
         return Draggable<TabDragData>(
-          data: TabDragData(paneId: paneId, tabId: s.id),
+          data: TabDragData(paneId: widget.paneId, tabId: s.id),
           dragAnchorStrategy: pointerDragAnchorStrategy,
           feedback: Transform.translate(
             offset: const Offset(12, 8),

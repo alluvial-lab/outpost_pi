@@ -377,6 +377,32 @@ class PiRpcProcess implements RpcProcessGateway {
         return _dataMapper.transcriptMessages(response['data']);
       });
 
+  static const _ctrlPrefix = '\x00remote-pi-ctrl:';
+
+  @override
+  Future<Result<void, RpcError>> sendControl(String verb) async {
+    if (_process == null) {
+      return const Failure(RpcError('Nenhum agente em execução.'));
+    }
+    try {
+      await _writeLine(
+        '${jsonEncode(<String, dynamic>{
+          'type': 'prompt',
+          'message': '$_ctrlPrefix$verb',
+        })}\n',
+      );
+      return const Success(null);
+    } catch (error, stackTrace) {
+      return Failure(
+        RpcError(
+          'Falha ao enviar controle: $error',
+          cause: error,
+          stackTrace: stackTrace,
+        ),
+      );
+    }
+  }
+
   void _onStderrLine(String line) {
     if (line.trim().isEmpty) return;
     _emit(RpcDiagnostic(line));

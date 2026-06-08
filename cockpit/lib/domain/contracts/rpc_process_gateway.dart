@@ -100,4 +100,10 @@ abstract class RpcProcessGateway implements Service {
 
   /// `get_session_stats` — uso da janela de contexto (pode ser `null`).
   Future<Result<ContextUsage?, RpcError>> sessionStats();
+
+  /// Envia um controle de relay diretamente no stdin, sem envolver o LLM nem
+  /// aparecer no transcript. [verb]: `relay:on` | `relay:off` | `relay:toggle`
+  /// | `relay:status`. O pi engole silenciosamente; a resposta chega como
+  /// evento customizado `remote-pi:relay-state` no stdout.
+  Future<Result<void, RpcError>> sendControl(String verb);
 }
