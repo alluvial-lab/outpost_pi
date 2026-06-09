@@ -428,55 +428,66 @@ class _TabState extends State<_Tab> {
     if (!_focus.hasFocus && _editing) _commitEdit();
   }
 
+  Future<void> _showTabMenu(BuildContext menuCtx) async {
+    final s = widget.item;
+    if (s == null) return;
+    final agent = s is AgentSession ? s : null;
+    final isEmpty = agent?.status == AgentStatus.empty;
+
+    final value = await showAppMenu<String>(
+      menuCtx,
+      minWidth: 150,
+      items: [
+        if (agent != null && !isEmpty) ...[
+          const AppMenuItem(
+            value: 'rename',
+            label: 'Renomear',
+            icon: Icons.edit_outlined,
+          ),
+          AppMenuItem(
+            value: 'relay',
+            label: 'Auto-relay',
+            icon: Icons.cell_tower_outlined,
+            selected: agent.autoStartRelay,
+          ),
+          const AppMenuItem(
+            value: 'history',
+            label: 'Histórico',
+            icon: Icons.history,
+          ),
+        ],
+        const AppMenuItem(
+          value: 'close',
+          label: 'Fechar',
+          icon: Icons.close,
+        ),
+      ],
+    );
+    if (!mounted) return;
+    switch (value) {
+      case 'rename':
+        _startEditing();
+      case 'relay':
+        widget.onToggleRelay();
+      case 'history':
+        widget.onHistory();
+      case 'close':
+        widget.onClose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.item;
     if (s == null) return const SizedBox.shrink();
     return ListenableBuilder(
       listenable: s,
-      builder: (context, _) {
+      builder: (_, _) {
         final colors = context.colors;
         final isFocusedActive = widget.active && widget.focused;
         final agent = s is AgentSession ? s : null;
         final isEmpty = agent?.status == AgentStatus.empty;
         final streaming = agent?.isStreaming ?? false;
-
-        void showTabMenu() {
-          showAppMenu<String>(
-            context,
-            minWidth: 150,
-            items: [
-              if (agent != null && !isEmpty) ...[
-                AppMenuItem(
-                  value: 'rename',
-                  label: 'Renomear',
-                  icon: Icons.edit_outlined,
-                ),
-                AppMenuItem(
-                  value: 'relay',
-                  label: 'Auto-relay',
-                  icon: Icons.cell_tower_outlined,
-                  selected: agent.autoStartRelay,
-                ),
-                const AppMenuItem(
-                  value: 'history',
-                  label: 'Histórico',
-                  icon: Icons.history,
-                ),
-              ],
-              const AppMenuItem(
-                value: 'close',
-                label: 'Fechar',
-                icon: Icons.close,
-              ),
-            ],
-          ).then((value) {
-            if (value == 'rename') _startEditing();
-            if (value == 'relay') widget.onToggleRelay();
-            if (value == 'history') widget.onHistory();
-            if (value == 'close') widget.onClose();
-          });
-        }
 
         final icon = _tabIcon(s);
 
@@ -494,7 +505,7 @@ class _TabState extends State<_Tab> {
                     fontSize: 12,
                     color: colors.text,
                   ),
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     isDense: true,
                     contentPadding: EdgeInsets.zero,
                     border: InputBorder.none,
@@ -582,11 +593,15 @@ class _TabState extends State<_Tab> {
         // interferir com a seleção de texto no TextField.
         if (_editing) return tabBody;
 
-        final interactive = GestureDetector(
-          onTapUp: (d) => widget.onSelect(),
-          onDoubleTap: agent != null && !isEmpty ? _startEditing : null,
-          onSecondaryTapUp: isEmpty ? null : (d) => showTabMenu(),
-          child: tabBody,
+        // Builder garante um BuildContext com RenderBox para showAppMenu.
+        final interactive = Builder(
+          builder: (menuCtx) => GestureDetector(
+            onTapUp: (d) => widget.onSelect(),
+            onDoubleTap: agent != null && !isEmpty ? _startEditing : null,
+            onSecondaryTapUp:
+                isEmpty ? null : (d) => _showTabMenu(menuCtx),
+            child: tabBody,
+          ),
         );
 
         return Draggable<TabDragData>(

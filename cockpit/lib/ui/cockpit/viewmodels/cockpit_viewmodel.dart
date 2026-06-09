@@ -352,6 +352,9 @@ class CockpitViewModel extends ChangeNotifier {
 
     s.rename(agentName.trim());
     s.autoStartRelay = autoStartRelay;
+    if (nameChanged && s.isAlive) {
+      unawaited(s.sendRelayControl('rename:${agentName.trim()}'));
+    }
     notifyListeners();
   }
 
