@@ -31,6 +31,7 @@ class ChatViewModel extends ViewModel<ChatState> {
   StreamSubscription<RuntimeRecord>? _runtimeSub;
   StreamSubscription<StreamingMessage?>? _streamingSub;
   StreamSubscription<bool>? _workingSub;
+  StreamSubscription<String?>? _queuedSub;
   StreamSubscription<SessionEvent>? _eventSub;
   StreamSubscription<Map<String, List<RoomInfo>>>? _roomsSub;
   StreamSubscription<ConnectionStatus>? _statusSub;
@@ -43,6 +44,7 @@ class ChatViewModel extends ViewModel<ChatState> {
   List<ChatMessage> _messages = const [];
   StreamingMessage? _streaming;
   bool _working = false;
+  String? _queuedText;
   RuntimeRecord _runtime = const RuntimeRecord();
   bool _pairingRevoked = false;
   String? _peerOfflineReason;
@@ -57,6 +59,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     // seed AFTER activate() in _bootstrap, when the sync owns THIS session.
     _streamingSub = _sync.streamingStream.listen(_onStreaming);
     _workingSub = _sync.workingStream.listen(_onWorking);
+    _queuedSub = _sync.queuedStream.listen(_onQueued);
     _eventSub = _sync.events.listen(_onEvent);
     _roomsSub = _conn.roomsStream.listen((_) => _recompute());
     _statusSub = _conn.statusStream.listen(_onStatus);
@@ -105,6 +108,16 @@ class ChatViewModel extends ViewModel<ChatState> {
   /// falls back to the SyncService's tracked turn id.
   String? get cancelTargetId => _streaming?.inReplyTo ?? _sync.workingReplyTo;
 
+  String? get queuedText => _queuedText;
+
+  void setQueuedMessage(String text) {
+    unawaited(_sync.setQueuedMessage(text));
+  }
+
+  void clearQueuedMessage() {
+    unawaited(_sync.clearQueuedMessage());
+  }
+
   // ---------------------------------------------------------------------------
 
   Future<void> _bootstrap() async {
@@ -145,6 +158,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     // the constructor avoids inheriting the previous chat's bubble/pill.
     _streaming = _sync.streaming;
     _working = _sync.isWorking;
+    _queuedText = _sync.queuedText;
     _msgsSub = _read.watchMessages(epk, roomId).listen(_onMessages);
     _runtimeSub = _read.watchRuntime(epk, roomId).listen(_onRuntime);
 
@@ -165,6 +179,11 @@ class ChatViewModel extends ViewModel<ChatState> {
 
   void _onWorking(bool working) {
     _working = working;
+    _recompute();
+  }
+
+  void _onQueued(String? text) {
+    _queuedText = text;
     _recompute();
   }
 
@@ -229,6 +248,7 @@ class ChatViewModel extends ViewModel<ChatState> {
       peerOfflineReason: _peerOfflineReason,
       peerPresence: peerPresence,
       isWorking: isWorking,
+      queuedText: _queuedText,
     );
   }
 
@@ -261,6 +281,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     _runtimeSub?.cancel();
     _streamingSub?.cancel();
     _workingSub?.cancel();
+    _queuedSub?.cancel();
     _eventSub?.cancel();
     _roomsSub?.cancel();
     _statusSub?.cancel();
