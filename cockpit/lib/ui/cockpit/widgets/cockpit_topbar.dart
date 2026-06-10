@@ -48,7 +48,8 @@ class CockpitTopbar extends StatelessWidget {
     return DragToMoveArea(
       child: Container(
         height: 46,
-        padding: const EdgeInsets.only(left: 18, right: 12),
+        // Windows: botões de caption colam no canto direito (sem padding).
+        padding: EdgeInsets.only(left: 18, right: Platform.isWindows ? 0 : 12),
         decoration: BoxDecoration(
           color: colors.bg,
           border: Border(bottom: BorderSide(color: colors.border)),
@@ -85,6 +86,7 @@ class CockpitTopbar extends StatelessWidget {
               active: !treeVisible,
               onTap: onToggleTree,
             ),
+            const WindowControlsTrailing(),
           ],
         ),
       ),

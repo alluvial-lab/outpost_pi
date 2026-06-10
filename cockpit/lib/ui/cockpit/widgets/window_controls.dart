@@ -1,9 +1,20 @@
+import 'dart:io';
+
+import 'package:cockpit/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// Semáforo macOS funcional (fechar/minimizar/maximizar). Os símbolos aparecem
-/// ao passar o mouse no cluster. Usado na topbar do shell e no header da tela
-/// cheia de Configurações (que substitui a topbar no push).
+Future<void> _toggleMaximize() async {
+  if (await windowManager.isMaximized()) {
+    await windowManager.unmaximize();
+  } else {
+    await windowManager.maximize();
+  }
+}
+
+/// Controles de janela **à esquerda** (convenção macOS): semáforo
+/// fechar/minimizar/maximizar. Em plataformas não-macOS não renderiza nada —
+/// no Windows os controles vão à direita via [WindowControlsTrailing].
 class WindowControls extends StatefulWidget {
   const WindowControls({super.key});
 
@@ -14,16 +25,9 @@ class WindowControls extends StatefulWidget {
 class _WindowControlsState extends State<WindowControls> {
   bool _hover = false;
 
-  Future<void> _toggleMaximize() async {
-    if (await windowManager.isMaximized()) {
-      await windowManager.unmaximize();
-    } else {
-      await windowManager.maximize();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    if (!Platform.isMacOS) return const SizedBox.shrink();
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -56,6 +60,87 @@ class _WindowControlsState extends State<WindowControls> {
           child: _hover
               ? Icon(icon, size: 8, color: Colors.black.withValues(alpha: 0.55))
               : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// Controles de janela **à direita** (convenção Windows): botões quadrados
+/// minimizar/maximizar/fechar, com hover de fundo (fechar fica vermelho). Em
+/// plataformas não-Windows não renderiza nada. Posicione no fim da topbar.
+class WindowControlsTrailing extends StatelessWidget {
+  const WindowControlsTrailing({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!Platform.isWindows) return const SizedBox.shrink();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _WinButton(
+          icon: Icons.remove,
+          tooltip: 'Minimizar',
+          onTap: windowManager.minimize,
+        ),
+        _WinButton(
+          icon: Icons.crop_square,
+          tooltip: 'Maximizar',
+          onTap: _toggleMaximize,
+        ),
+        _WinButton(
+          icon: Icons.close,
+          tooltip: 'Fechar',
+          onTap: windowManager.close,
+          danger: true,
+        ),
+      ],
+    );
+  }
+}
+
+class _WinButton extends StatefulWidget {
+  const _WinButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  State<_WinButton> createState() => _WinButtonState();
+}
+
+class _WinButtonState extends State<_WinButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final Color? bg = _hover
+        ? (widget.danger ? const Color(0xFFE81123) : colors.panel3)
+        : null;
+    final Color fg = _hover && widget.danger ? Colors.white : colors.text2;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Tooltip(
+        message: widget.tooltip,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: Container(
+            width: 46,
+            height: 46,
+            color: bg ?? Colors.transparent,
+            alignment: Alignment.center,
+            child: Icon(widget.icon, size: 16, color: fg),
+          ),
         ),
       ),
     );

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cockpit/domain/cron_schedule.dart';
 import 'package:cockpit/domain/entities/app_settings.dart';
@@ -81,7 +82,8 @@ class _SettingsHeader extends StatelessWidget {
     return DragToMoveArea(
       child: Container(
         height: 46,
-        padding: const EdgeInsets.only(left: 18, right: 12),
+        // Windows: botões de caption colam no canto direito (sem padding).
+        padding: EdgeInsets.only(left: 18, right: Platform.isWindows ? 0 : 12),
         decoration: BoxDecoration(
           color: colors.bg,
           border: Border(bottom: BorderSide(color: colors.border)),
@@ -114,6 +116,8 @@ class _SettingsHeader extends StatelessWidget {
                 color: colors.text,
               ),
             ),
+            const Spacer(),
+            const WindowControlsTrailing(),
           ],
         ),
       ),
