@@ -3,6 +3,7 @@ import 'package:cockpit/domain/entities/project.dart';
 import 'package:cockpit/ui/cockpit/widgets/app_menu.dart';
 import 'package:cockpit/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// Rail esquerda (~252px): cabeçalho "Sessions", lista de projetos (avatar +
 /// nome + git + contador de notificações), rodapé com a máquina.
@@ -397,7 +398,10 @@ class _WorktreeItem extends StatelessWidget {
                             hasNotification: notifications > 0,
                           ),
                           const SizedBox(width: 2),
-                          _ForkMenuButton(onRemove: onRemove),
+                          _ForkMenuButton(
+                            branch: worktree.name,
+                            onRemove: onRemove,
+                          ),
                         ],
                       ),
                     ),
@@ -414,14 +418,20 @@ class _WorktreeItem extends StatelessWidget {
 
 /// Menu ⋮ compacto do fork — só "Remover" (plan/42, decisão 13).
 class _ForkMenuButton extends StatelessWidget {
-  const _ForkMenuButton({required this.onRemove});
+  const _ForkMenuButton({required this.branch, required this.onRemove});
 
+  final String branch;
   final VoidCallback onRemove;
 
   Future<void> _show(BuildContext context) async {
     final pick = await showAppMenu<String>(
       context,
       items: const [
+        AppMenuItem(
+          value: 'copy',
+          label: 'Copiar branch',
+          icon: Icons.content_copy,
+        ),
         AppMenuItem(
           value: 'remove',
           label: 'Remover',
@@ -430,6 +440,17 @@ class _ForkMenuButton extends StatelessWidget {
         ),
       ],
     );
+    if (pick == 'copy') {
+      await Clipboard.setData(ClipboardData(text: branch));
+      if (context.mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text('Branch "$branch" copiada'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
     if (pick == 'remove') onRemove();
   }
 
