@@ -752,25 +752,35 @@ class _PaneTools extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    Widget btn(IconData icon, String tip, VoidCallback onTap) => Tooltip(
+    final iconColor = colors.text3;
+    Widget btn(Widget icon, String tip, VoidCallback onTap) => Tooltip(
       message: tip,
       child: InkWell(
         borderRadius: BorderRadius.circular(5),
         onTap: onTap,
-        child: SizedBox(
-          width: 28,
-          height: 28,
-          child: Icon(icon, size: 14, color: colors.text3),
-        ),
+        child: SizedBox(width: 28, height: 28, child: icon),
       ),
     );
+    // Mesma base (splitscreen = dois painéis), pra ler "horizontal vs vertical"
+    // num relance: empilhado = dividir abaixo; girado 90° (colunas lado-a-lado)
+    // = dividir à direita. (Mockup.)
+    Icon split() =>
+        Icon(Icons.splitscreen_outlined, size: 14, color: iconColor);
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: Row(
         children: [
-          btn(Icons.vertical_split_outlined, 'Dividir à direita', onSplitRight),
-          btn(Icons.horizontal_split_outlined, 'Dividir abaixo', onSplitDown),
-          btn(Icons.close, 'Fechar pane', onClosePane),
+          btn(
+            Transform.rotate(angle: 1.5707963267948966, child: split()),
+            'Dividir à direita',
+            onSplitRight,
+          ),
+          btn(split(), 'Dividir abaixo', onSplitDown),
+          btn(
+            Icon(Icons.close, size: 14, color: iconColor),
+            'Fechar pane',
+            onClosePane,
+          ),
         ],
       ),
     );
