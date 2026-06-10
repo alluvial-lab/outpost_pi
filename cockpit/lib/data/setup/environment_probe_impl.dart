@@ -11,20 +11,28 @@ class EnvironmentProbeImpl implements EnvironmentProbe {
 
   final PiSpawnConfig _config;
 
-  String? get _home => Platform.environment['HOME'];
+  // Windows não seta HOME; o equivalente é USERPROFILE.
+  String? get _home =>
+      Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
 
   @override
   Future<bool> piInstalled() async {
     final exe = _config.executable;
-    // Caminho absoluto resolvido no boot → basta existir.
-    if (exe.contains('/')) {
+    // Caminho (não um nome solto no PATH) resolvido no boot → basta existir.
+    // Detecta separador Unix (`/`) e Windows (`\`).
+    if (exe.contains('/') || exe.contains(r'\')) {
       if (await File(exe).exists()) return true;
     }
     // 'pi' solto (PATH): tenta rodar. App macOS não herda o PATH do shell, então
     // isto pode falhar mesmo instalado — mas aí os caminhos-candidato do boot já
-    // teriam achado. Best-effort.
+    // teriam achado. `runInShell` deixa o Windows resolver shims `.cmd`/`.bat`
+    // do npm via PATHEXT. Best-effort.
     try {
-      final result = await Process.run(exe, const ['--version']);
+      final result = await Process.run(
+        exe,
+        const ['--version'],
+        runInShell: true,
+      );
       return result.exitCode == 0;
     } catch (_) {
       return false;

@@ -50,6 +50,8 @@ class EphemeralPiRpc {
       _args(),
       workingDirectory: dir.path,
       environment: env,
+      // Windows: o `pi` é shim `.cmd`/`.bat` do npm — só executa via shell.
+      runInShell: Platform.isWindows,
     );
     _process = process;
 

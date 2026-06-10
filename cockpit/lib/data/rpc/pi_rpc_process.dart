@@ -82,6 +82,8 @@ class PiRpcProcess implements RpcProcessGateway {
         _config.spawnArgs(sessionId: sessionId),
         workingDirectory: workingDirectory,
         environment: env,
+        // Windows: o `pi` é shim `.cmd`/`.bat` do npm — só executa via shell.
+        runInShell: Platform.isWindows,
       );
       _process = process;
       _cwd = workingDirectory;
