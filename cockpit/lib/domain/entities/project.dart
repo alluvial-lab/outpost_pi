@@ -1,4 +1,7 @@
-/// Uma pasta que o usuário salvou como projeto (workspace). Persistido via Hive.
+/// Uma pasta que o usuário salvou como projeto (workspace). Os workspaces raiz
+/// são persistidos via Hive; as **worktrees** (forks) são `Project`s de runtime
+/// com [parentId] preenchido, derivados do git e **não** persistidos (a
+/// existência mora no git — ver `plan/42`, decisões 1 e 4).
 /// Agentes do Cockpit atuam em subpastas de [path].
 class Project {
   const Project({
@@ -7,6 +10,7 @@ class Project {
     required this.path,
     required this.colorValue,
     required this.createdAt,
+    this.parentId,
   });
 
   final String id;
@@ -22,6 +26,13 @@ class Project {
 
   final DateTime createdAt;
 
+  /// `null` para um workspace raiz; o id do workspace pai quando este `Project`
+  /// é uma worktree (fork). Define o aninhamento no rail.
+  final String? parentId;
+
+  /// `true` quando este `Project` é uma worktree de outro workspace.
+  bool get isWorktree => parentId != null;
+
   /// Inicial pro avatar da rail.
   String get initial => name.isNotEmpty ? name[0].toUpperCase() : '?';
 
@@ -31,6 +42,7 @@ class Project {
     path: path,
     colorValue: colorValue ?? this.colorValue,
     createdAt: createdAt,
+    parentId: parentId,
   );
 
   @override

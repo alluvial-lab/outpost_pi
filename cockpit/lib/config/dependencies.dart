@@ -5,6 +5,7 @@ import 'package:cockpit/data/filesystem/file_reader_impl.dart';
 import 'package:cockpit/data/filesystem/file_searcher_impl.dart';
 import 'package:cockpit/data/filesystem/file_system_reader_impl.dart';
 import 'package:cockpit/data/filesystem/git_status_reader_impl.dart';
+import 'package:cockpit/data/filesystem/worktree_manager_impl.dart';
 import 'package:cockpit/data/filesystem/folder_lister_impl.dart';
 import 'package:cockpit/data/filesystem/session_history_impl.dart';
 import 'package:cockpit/data/daemon/supervisor_client_impl.dart';
@@ -26,6 +27,7 @@ import 'package:cockpit/domain/contracts/file_searcher.dart';
 import 'package:cockpit/domain/contracts/file_system_reader.dart';
 import 'package:cockpit/domain/contracts/folder_lister.dart';
 import 'package:cockpit/domain/contracts/git_status_reader.dart';
+import 'package:cockpit/domain/contracts/worktree_manager.dart';
 import 'package:cockpit/domain/contracts/environment_probe.dart';
 import 'package:cockpit/domain/contracts/cron_gateway.dart';
 import 'package:cockpit/domain/contracts/daemon_supervisor.dart';
@@ -80,6 +82,7 @@ Future<void> setupDependencies() async {
   _injector.addInstance<FileReader>(const FileReaderImpl());
   _injector.addInstance<FileSearcher>(FileSearcherImpl());
   _injector.addInstance<GitStatusReader>(GitStatusReaderImpl());
+  _injector.addInstance<WorktreeManager>(WorktreeManagerImpl());
   _injector.addInstance<SessionHistory>(const SessionHistoryImpl());
   _injector.addInstance<RpcGatewayFactory>(PiRpcProcessFactory(config));
   _injector.addInstance<TerminalGatewayFactory>(
@@ -129,6 +132,7 @@ CockpitViewModel buildCockpitViewModel() {
     _injector.get<GitStatusReader>(),
     _injector.get<FileSearcher>(),
     _injector.get<AppLauncherGateway>(),
+    _injector.get<WorktreeManager>(),
   );
 }
 

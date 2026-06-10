@@ -24,5 +24,8 @@ class FileViewerSession extends PaneItem {
   final String workingDirectory;
 
   final String path;
-  final FileView view;
+
+  /// Conteúdo atual. **Mutável**: a VM reatribui ao detectar mudança no disco
+  /// (file watcher — plan/42 follow-up), e o `notifyListeners` reconstrói a aba.
+  FileView view;
 }

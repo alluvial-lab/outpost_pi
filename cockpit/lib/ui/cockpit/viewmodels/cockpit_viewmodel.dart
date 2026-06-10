@@ -14,6 +14,7 @@ import 'package:cockpit/domain/contracts/rpc_gateway_factory.dart';
 import 'package:cockpit/domain/contracts/session_history.dart';
 import 'package:cockpit/domain/contracts/terminal_gateway_factory.dart';
 import 'package:cockpit/domain/contracts/workspace_layout_store.dart';
+import 'package:cockpit/domain/contracts/worktree_manager.dart';
 import 'package:cockpit/domain/entities/file_node.dart';
 import 'package:cockpit/domain/entities/file_view.dart';
 import 'package:cockpit/domain/entities/git_info.dart';
@@ -21,6 +22,8 @@ import 'package:cockpit/domain/entities/launchable_app.dart';
 import 'package:cockpit/domain/entities/project.dart';
 import 'package:cockpit/domain/entities/session_info.dart';
 import 'package:cockpit/domain/entities/thinking_level.dart';
+import 'package:cockpit/domain/entities/worktree.dart';
+import 'package:cockpit/domain/result.dart';
 import 'package:cockpit/ui/cockpit/session/agent_session.dart';
 import 'package:cockpit/ui/cockpit/session/file_viewer_session.dart';
 import 'package:cockpit/ui/cockpit/session/pane_item.dart';
@@ -53,6 +56,7 @@ class CockpitViewModel extends ChangeNotifier {
     this._gitReader,
     this._fileSearcher,
     this._launcher,
+    this._worktreeMgr,
   );
 
   final ProjectRepository _projects;
@@ -67,12 +71,20 @@ class CockpitViewModel extends ChangeNotifier {
   final GitStatusReader _gitReader;
   final FileSearcher _fileSearcher;
   final AppLauncherGateway _launcher;
+  final WorktreeManager _worktreeMgr;
 
   List<LaunchableApp> _availableApps = const [];
 
   final List<Project> _projectList = <Project>[];
   String? _selectedProjectId;
   final Map<String, PaneItem> _sessions = <String, PaneItem>{};
+
+  /// Watcher por aba de arquivo: relê o conteúdo ao vivo quando o disco muda
+  /// (o agente edita o arquivo). Chaveado pelo id da sessão; cancelado no
+  /// `_disposeSession`. O [_fileWatchDebounce] junta rajadas de eventos do editor.
+  final Map<String, StreamSubscription<void>> _fileWatchers =
+      <String, StreamSubscription<void>>{};
+  final Map<String, Timer> _fileWatchDebounce = <String, Timer>{};
 
   /// Árvore de splits por projeto (workspace).
   final Map<String, PaneNode> _trees = <String, PaneNode>{};
@@ -95,6 +107,12 @@ class CockpitViewModel extends ChangeNotifier {
   /// null) = não é repo git → a rail mostra só o título.
   final Map<String, GitInfo?> _gitInfo = <String, GitInfo?>{};
 
+  /// Worktrees (forks) por workspace raiz, na ordem do `git worktree list`
+  /// (decisão 20). Reconciliado contra o git nos ganchos de refresh; a
+  /// existência mora no git, não no Hive (decisões 4, 17). Os mesmos `Project`s
+  /// também entram em [_projectList] (pro IndexedStack e o lookup).
+  final Map<String, List<Project>> _worktrees = <String, List<Project>>{};
+
   bool _railVisible = true;
   bool _treeVisible = true;
   bool _ready = false;
@@ -114,8 +132,29 @@ class CockpitViewModel extends ChangeNotifier {
 
   // ---- getters --------------------------------------------------------------
   List<Project> get projects => List<Project>.unmodifiable(_projectList);
+
+  /// Só os workspaces raiz (sem as worktrees) — o nível de topo do rail.
+  List<Project> get rootProjects =>
+      _projectList.where((p) => p.parentId == null).toList(growable: false);
+
+  /// Worktrees (forks) de um workspace raiz, na ordem do git (vazio se nenhuma).
+  List<Project> worktreesOf(String rootId) =>
+      _worktrees[rootId] ?? const <Project>[];
+
   String? get selectedProjectId => _selectedProjectId;
   Project? get selectedProject => _projectById(_selectedProjectId);
+
+  /// Título pro topbar: `"<workspace> · <worktree>"` quando um fork está
+  /// selecionado (separador middle-dot U+00B7); só o nome do workspace caso
+  /// contrário. `null` quando nada está selecionado.
+  String? get selectedDisplayTitle {
+    final p = selectedProject;
+    if (p == null) return null;
+    final parentId = p.parentId;
+    if (parentId == null) return p.name;
+    final root = _projectById(parentId);
+    return root == null ? p.name : '${root.name} · ${p.name}';
+  }
 
   /// `false` até [init] terminar de carregar os projetos do Hive.
   bool get ready => _ready;
@@ -180,6 +219,7 @@ class CockpitViewModel extends ChangeNotifier {
       view: view,
     );
     _sessions[viewer.id] = viewer;
+    _watchFileViewer(viewer);
 
     // Se a pane só tem o placeholder vazio, substitui; senão adiciona aba.
     final current = _trees[projectId] ?? tree;
@@ -228,9 +268,11 @@ class CockpitViewModel extends ChangeNotifier {
     if (selected != null) await _activateProject(selected);
     _ready = true;
     notifyListeners();
-    // Estado git de todos os projetos (assíncrono — a rail atualiza conforme chega).
+    // Estado git + worktrees de todos os projetos (assíncrono — a rail atualiza
+    // conforme chega). Só há raízes no boot; os forks entram pela reconciliação.
     for (final project in _projectList) {
       unawaited(_refreshGit(project.id));
+      unawaited(_refreshWorktrees(project.id));
     }
     // Detecta IDEs instaladas (assíncrono — topbar atualiza ao chegar).
     unawaited(_launcher.probe().then((apps) {
@@ -262,12 +304,13 @@ class CockpitViewModel extends ChangeNotifier {
     final resolvedName = (name != null && name.trim().isNotEmpty)
         ? name.trim()
         : (basename.isEmpty ? path : basename);
+    // Cor pela contagem de raízes (forks não entram no rodízio da paleta).
+    final rootCount = _projectList.where((p) => p.parentId == null).length;
     final project = Project(
       id: path, // o caminho é único e estável entre reinícios
       name: resolvedName,
       path: path,
-      colorValue:
-          colorValue ?? _palette[_projectList.length % _palette.length],
+      colorValue: colorValue ?? _palette[rootCount % _palette.length],
       createdAt: DateTime.now(),
     );
     _projectList.add(project);
@@ -275,6 +318,7 @@ class CockpitViewModel extends ChangeNotifier {
     await _projects.save(project);
     await _activateProject(project.id); // sem layout salvo → pane vazia
     unawaited(_refreshGit(project.id));
+    unawaited(_refreshWorktrees(project.id)); // pode já ter worktrees no disco
     notifyListeners();
     return project;
   }
@@ -293,21 +337,16 @@ class CockpitViewModel extends ChangeNotifier {
   }
 
   Future<void> removeProject(String id) async {
-    final tree = _trees.remove(id);
-    if (tree != null) {
-      for (final leaf in leaves(tree)) {
-        for (final agentId in leaf.tabs) {
-          _disposeSession(agentId);
-        }
-      }
+    // Encerra as worktrees do workspace junto (não deixa fork órfão).
+    for (final fork in _worktrees.remove(id) ?? const <Project>[]) {
+      _disposeProjectRuntime(fork.id);
+      _projectList.removeWhere((p) => p.id == fork.id);
     }
-    _focused.remove(id);
-    _savedLayouts.remove(id);
-    _gitInfo.remove(id);
-    _saveTimers.remove(id)?.cancel();
+    _disposeProjectRuntime(id);
     _projectList.removeWhere((p) => p.id == id);
-    if (_selectedProjectId == id) {
-      _selectedProjectId = _projectList.isEmpty ? null : _projectList.first.id;
+    if (_selectedProjectId == id ||
+        _projectById(_selectedProjectId) == null) {
+      _selectedProjectId = rootProjects.isEmpty ? null : rootProjects.first.id;
     }
     await _projects.remove(id);
     await _layoutStore.remove(id);
@@ -316,12 +355,100 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Encerra o runtime de um projeto (árvore de panes + sessões + foco + caches),
+  /// **sem** mexer em persistência. Usado ao remover um workspace e ao detectar
+  /// que uma worktree sumiu (mata `pi` + fecha panes — decisão 9).
+  void _disposeProjectRuntime(String id) {
+    final tree = _trees.remove(id);
+    if (tree != null) {
+      for (final leaf in leaves(tree)) {
+        for (final sid in leaf.tabs) {
+          _disposeSession(sid);
+        }
+      }
+    }
+    _focused.remove(id);
+    _savedLayouts.remove(id);
+    _gitInfo.remove(id);
+    _saveTimers.remove(id)?.cancel();
+  }
+
+  /// Cria uma worktree [name] no workspace [rootId] (decisões 2, 3, 14, 15). Em
+  /// sucesso, reconcilia, **auto-seleciona** o fork (pane vazia) e o devolve; em
+  /// falha, devolve o erro do git pra mostrar inline no dialog (decisão 21).
+  Future<Result<Project, WorktreeOpError>> createWorktree(
+    String rootId,
+    String name,
+  ) async {
+    final root = _projectById(rootId);
+    if (root == null) {
+      return const Failure(WorktreeOpError('Workspace não encontrado.'));
+    }
+    final res = await _worktreeMgr.add(root.path, name);
+    switch (res) {
+      case Failure(:final error):
+        return Failure<Project, WorktreeOpError>(error);
+      case Success(:final value):
+        await _refreshWorktrees(rootId); // insere o fork em _projectList
+        final fork = _projectById(value.path);
+        if (fork == null) {
+          return const Failure(
+            WorktreeOpError('Worktree criada, mas não apareceu na lista.'),
+          );
+        }
+        selectProject(fork.id); // auto-select → activate → pane vazia
+        return Success<Project, WorktreeOpError>(fork);
+    }
+  }
+
+  /// Branches locais + worktrees de [rootId], pra validação ao vivo do dialog
+  /// de criar (decisão 11).
+  Future<WorktreeNamespace> worktreeNamespace(String rootId) async {
+    final root = _projectById(rootId);
+    if (root == null) return const WorktreeNamespace.empty();
+    return _worktreeMgr.namespace(root.path);
+  }
+
+  /// Remove o fork [forkId] (decisão 6): `git worktree remove` + `git branch -D`
+  /// via [WorktreeManager.remove]; em sucesso, reconcilia com `_refreshWorktrees`
+  /// — a **mesma** rotina do someço externo, que mata os `pi`, fecha as panes e
+  /// devolve a seleção pro pai (decisão 9). Em falha, devolve o erro do git pra
+  /// mostrar inline.
+  Future<Result<void, WorktreeOpError>> removeWorktree(String forkId) async {
+    final fork = _projectById(forkId);
+    if (fork == null || fork.parentId == null) {
+      return const Failure(WorktreeOpError('Worktree não encontrada.'));
+    }
+    final root = _projectById(fork.parentId);
+    if (root == null) {
+      return const Failure(WorktreeOpError('Workspace pai não encontrado.'));
+    }
+    final res = await _worktreeMgr.remove(root.path, fork.path, fork.name);
+    if (res.isSuccess) {
+      // O fork sai do `git worktree list` → a reconciliação detecta o someço e
+      // dispara kill+close+volta-pro-pai (não duplicamos a rotina).
+      await _refreshWorktrees(fork.parentId!);
+    }
+    return res;
+  }
+
+  /// `true` se a branch do fork [forkId] já foi mergeada — alimenta o aviso forte
+  /// de remoção (decisão 6). Em dúvida/erro, `false` (mostra o aviso por segurança).
+  Future<bool> isWorktreeBranchMerged(String forkId) async {
+    final fork = _projectById(forkId);
+    if (fork == null || fork.parentId == null) return false;
+    final root = _projectById(fork.parentId);
+    if (root == null) return false;
+    return _worktreeMgr.isBranchMerged(root.path, fork.name);
+  }
+
   void selectProject(String id) {
     if (_selectedProjectId == id) return;
     _selectedProjectId = id;
     _clearFocusedNotification();
     unawaited(_activateProject(id)); // reconstrói (lazy) se ainda não ativo
     unawaited(_refreshGit(id)); // pode ter mudado desde a última vez
+    unawaited(_refreshWorktrees(_rootOf(id))); // reflete worktrees externas
     notifyListeners();
   }
 
@@ -657,6 +784,9 @@ class CockpitViewModel extends ChangeNotifier {
     return null;
   }
 
+  /// Id do workspace raiz dono de [id] (ele mesmo, se já for raiz).
+  String _rootOf(String id) => _projectById(id)?.parentId ?? id;
+
   PaneNode? get _activeTree =>
       _selectedProjectId == null ? null : _trees[_selectedProjectId];
 
@@ -782,6 +912,7 @@ class CockpitViewModel extends ChangeNotifier {
   void _onAgentTurnEnd(AgentSession s) {
     if (s.sessionPath == null) unawaited(_captureSessionPath(s));
     unawaited(_refreshGit(s.projectId));
+    unawaited(_refreshWorktrees(_rootOf(s.projectId)));
     unawaited(_notifyIfNeeded(s));
   }
 
@@ -827,8 +958,39 @@ class CockpitViewModel extends ChangeNotifier {
   }
 
   void _disposeSession(String id) {
+    _fileWatchers.remove(id)?.cancel();
+    _fileWatchDebounce.remove(id)?.cancel();
     final s = _sessions.remove(id);
     s?.dispose();
+  }
+
+  /// Observa o arquivo de uma aba de viewer e relê o conteúdo ao vivo quando ele
+  /// muda no disco (decisão de UX — antes a aba congelava até fechar/reabrir). O
+  /// debounce junta a rajada de eventos que um editor dispara num save; o re-read
+  /// que volta `FileViewUnsupported` (sumiu/binário transitório) é ignorado pra
+  /// não piscar. Tudo guardado por id de sessão e cancelado no `_disposeSession`.
+  void _watchFileViewer(FileViewerSession viewer) {
+    final id = viewer.id;
+    _fileWatchers.remove(id)?.cancel();
+    _fileWatchers[id] = _fileReader.watch(viewer.path).listen(
+      (_) {
+        _fileWatchDebounce[id]?.cancel();
+        _fileWatchDebounce[id] = Timer(
+          const Duration(milliseconds: 120),
+          () async {
+            _fileWatchDebounce.remove(id);
+            if (_sessions[id] is! FileViewerSession) return; // aba fechou
+            final fresh = await _fileReader.read(viewer.path);
+            if (fresh is FileViewUnsupported) return;
+            final s = _sessions[id];
+            if (s is! FileViewerSession) return; // fechou durante o read
+            s.view = fresh;
+            notifyListeners();
+          },
+        );
+      },
+      onError: (_) {}, // watch falhou (sandbox, rename) → sem live-reload
+    );
   }
 
   // ---- persistência do layout ----------------------------------------------
@@ -1073,6 +1235,59 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Reconcilia as worktrees de um workspace raiz contra o git (decisões 4, 5,
+  /// 17, 20). Forks novos entram em [_projectList]; forks sumidos (por fora ou
+  /// via remove) têm o runtime encerrado (mata `pi` + fecha panes — decisão 9) e,
+  /// se selecionados, a seleção volta pro pai. Só notifica quando a lista muda.
+  Future<void> _refreshWorktrees(String rootId) async {
+    final root = _projectById(rootId);
+    if (root == null || root.parentId != null) return;
+
+    final wts = await _worktreeMgr.list(root.path);
+    final forks = <Project>[
+      for (final Worktree w in wts)
+        Project(
+          id: w.path, // o caminho é o id estável do fork
+          name: w.branch,
+          path: w.path,
+          colorValue: root.colorValue,
+          createdAt: root.createdAt,
+          parentId: rootId,
+        ),
+    ];
+
+    final old = _worktrees[rootId] ?? const <Project>[];
+    final oldSig = old.map((f) => '${f.id}|${f.name}').toList();
+    final newSig = forks.map((f) => '${f.id}|${f.name}').toList();
+    final newIds = forks.map((f) => f.id).toSet();
+    final oldIds = old.map((f) => f.id).toSet();
+
+    // Forks que sumiram → encerra runtime e tira de _projectList.
+    var switched = false;
+    for (final gone in old.where((f) => !newIds.contains(f.id))) {
+      _disposeProjectRuntime(gone.id);
+      _projectList.removeWhere((p) => p.id == gone.id);
+      if (_selectedProjectId == gone.id) {
+        _selectedProjectId = rootId; // pai assume
+        switched = true;
+      }
+    }
+    // Forks novos → entram em _projectList + carregam layout salvo (decisão 18).
+    for (final fresh in forks.where((f) => !oldIds.contains(f.id))) {
+      _projectList.add(fresh);
+      _savedLayouts[fresh.id] = await _layoutStore.load(fresh.id);
+    }
+    _worktrees[rootId] = forks;
+
+    // dirtyCount por fork (decisão 8) — cada um notifica se mudou.
+    for (final f in forks) {
+      unawaited(_refreshGit(f.id));
+    }
+
+    if (switched) await _activateProject(_selectedProjectId!);
+    if (switched || !listEquals(oldSig, newSig)) notifyListeners();
+  }
+
   void _ensureFocusValid() {
     final id = _selectedProjectId;
     if (id == null) return;
@@ -1106,6 +1321,14 @@ class CockpitViewModel extends ChangeNotifier {
       t.cancel();
     }
     _saveTimers.clear();
+    for (final w in _fileWatchers.values) {
+      w.cancel();
+    }
+    _fileWatchers.clear();
+    for (final t in _fileWatchDebounce.values) {
+      t.cancel();
+    }
+    _fileWatchDebounce.clear();
     for (final s in _sessions.values) {
       s.dispose();
     }

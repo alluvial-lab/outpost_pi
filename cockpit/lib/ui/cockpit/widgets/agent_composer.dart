@@ -164,6 +164,15 @@ class _AgentComposerState extends State<AgentComposer> {
     _addFileMention(path, _basename(path));
   }
 
+  /// Devolve o foco ao input depois de um drop de arquivo (o drag — externo do
+  /// SO ou interno do painel Files — rouba o foco do `TextField`). Pós-frame
+  /// porque o drop do SO só libera o foco após o evento assentar.
+  void _restoreInputFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _inputFocus.requestFocus();
+    });
+  }
+
   /// Chip de arquivo a partir da referência (sem duplicar).
   void _addFileMention(String mention, String name) {
     if (!mounted) return;
@@ -537,9 +546,13 @@ class _AgentComposerState extends State<AgentComposer> {
       onDragDone: (detail) {
         if (_osDragOver) setState(() => _osDragOver = false);
         _onOsDrop(detail.files);
+        _restoreInputFocus();
       },
       child: DragTarget<String>(
-        onAcceptWithDetails: (d) => _addFileFromPath(d.data),
+        onAcceptWithDetails: (d) {
+          _addFileFromPath(d.data);
+          _restoreInputFocus();
+        },
         builder: (context, candidate, rejected) {
           final dragging = candidate.isNotEmpty;
           final borderColor = (_focused || dragging || _osDragOver)

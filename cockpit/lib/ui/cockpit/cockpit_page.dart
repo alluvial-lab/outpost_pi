@@ -86,7 +86,7 @@ class _CockpitPageState extends State<CockpitPage> {
     if (path == null || !mounted) return false;
     final suggestedName = path.split('/').where((p) => p.isNotEmpty).lastOrNull;
     final suggestedColor =
-        kWorkspacePalette[vm.projects.length % kWorkspacePalette.length];
+        kWorkspacePalette[vm.rootProjects.length % kWorkspacePalette.length];
     final result = await showWorkspaceSettingsDialog(
       context,
       name: suggestedName ?? path,
@@ -125,6 +125,24 @@ class _CockpitPageState extends State<CockpitPage> {
     }
   }
 
+  /// "Criar worktree": busca o namespace (branches + worktrees) pra validação ao
+  /// vivo e abre o dialog. O dialog roda o `git worktree add` via `onCreate` e a
+  /// VM auto-seleciona o fork novo (decisões 14, 21).
+  Future<void> _createWorktree(Project root) async {
+    final vm = _vm;
+    final namespace = await vm.worktreeNamespace(root.id);
+    if (!mounted) return;
+    await showWorktreeCreateDialog(
+      context,
+      rootName: root.name,
+      namespace: namespace,
+      onCreate: (name) async {
+        final res = await vm.createWorktree(root.id, name);
+        return res.fold((_) => null, (e) => e.message);
+      },
+    );
+  }
+
   /// "Deletar" o workspace (confirma → remove da base local + encerra agentes).
   Future<void> _deleteProject(Project project) async {
     final vm = _vm;
@@ -139,6 +157,40 @@ class _CockpitPageState extends State<CockpitPage> {
     );
     if (!ok) return;
     await vm.removeProject(project.id);
+  }
+
+  /// "Remover" a worktree (fork): confirma (aviso reforçado se a branch ainda
+  /// não foi mergeada) → `git worktree remove` + `git branch -D`, encerra os
+  /// agentes do fork e volta a seleção pro pai (decisões 6, 9). Erro do git →
+  /// dialog de informação.
+  Future<void> _removeWorktree(Project fork) async {
+    final vm = _vm;
+    final merged = await vm.isWorktreeBranchMerged(fork.id);
+    if (!mounted) return;
+    final warn = merged
+        ? ''
+        : '\n\nAviso: a branch "${fork.name}" ainda não foi mergeada — '
+              'removê-la (git branch -D) descarta o trabalho não-mergeado.';
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Remover worktree',
+      message:
+          'Remover "${fork.name}"? A pasta do worktree e a branch serão '
+          'apagadas e os agentes deste fork serão encerrados.$warn',
+      confirmLabel: 'Remover',
+      danger: true,
+    );
+    if (!ok) return;
+    final res = await vm.removeWorktree(fork.id);
+    if (!mounted) return;
+    final err = res.fold<String?>((_) => null, (e) => e.message);
+    if (err != null) {
+      await showInfoDialog(
+        context,
+        title: 'Falha ao remover worktree',
+        message: err,
+      );
+    }
   }
 
   /// Pede a subpasta onde o agente vai atuar e dispara [action] com o caminho
@@ -229,7 +281,7 @@ class _CockpitPageState extends State<CockpitPage> {
           body: Column(
             children: [
               CockpitTopbar(
-                projectName: vm.selectedProject?.name ?? 'Cockpit',
+                projectName: vm.selectedDisplayTitle ?? 'Cockpit',
                 railVisible: vm.railVisible,
                 treeVisible: vm.treeVisible,
                 openEnabled: vm.selectedProject != null,
@@ -256,7 +308,8 @@ class _CockpitPageState extends State<CockpitPage> {
                         children: [
                           ProjectsRail(
                             width: _railWidth,
-                            projects: vm.projects,
+                            projects: vm.rootProjects,
+                            worktreesOf: vm.worktreesOf,
                             selectedId: vm.selectedProjectId,
                             notificationCount: vm.notificationCount,
                             gitInfo: vm.gitInfo,
@@ -264,6 +317,8 @@ class _CockpitPageState extends State<CockpitPage> {
                             onAdd: _createWorkspace,
                             onConfigure: _configureProject,
                             onDelete: _deleteProject,
+                            onCreateWorktree: _createWorktree,
+                            onRemoveWorktree: _removeWorktree,
                             onOpenSettings: () =>
                                 context.push(RoutePaths.settings),
                           ),

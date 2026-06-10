@@ -62,6 +62,19 @@ class FileReaderImpl implements FileReader {
     return FileViewText(text, language: ext.isEmpty ? null : ext);
   }
 
+  @override
+  Stream<void> watch(String path) {
+    try {
+      // FSEvents no macOS. Erros do stream (arquivo trocado por rename, etc.)
+      // viram fim silencioso — o consumidor (VM) trata via onError.
+      return File(path)
+          .watch(events: FileSystemEvent.modify | FileSystemEvent.delete)
+          .map((_) {});
+    } catch (_) {
+      return const Stream<void>.empty();
+    }
+  }
+
   /// Heurística de binário: null byte nos primeiros ~8KB.
   bool _looksBinary(List<int> bytes) {
     final n = bytes.length < 8000 ? bytes.length : 8000;

@@ -15,3 +15,4 @@ export 'pane_view.dart';
 export 'projects_rail.dart';
 export 'subfolder_dialog.dart';
 export 'workspace_settings_dialog.dart';
+export 'worktree_create_dialog.dart';
