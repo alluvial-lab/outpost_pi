@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:cockpit/ui/cockpit/session/agent_session.dart';
@@ -902,7 +903,11 @@ class _PaneBodyState extends State<_PaneBody> {
           child: TerminalView(
             item.terminal,
             focusNode: _terminalFocus,
-
+            // Windows: o caminho de IME/TextInput do xterm quebra no desktop
+            // ("Could not set client, view ID is null") e impede digitar. O
+            // modo só-hardware ignora o TextInput e lê KeyEvents crus. No
+            // macOS mantemos o IME (melhor pra acentos/composição).
+            hardwareKeyboardOnly: Platform.isWindows,
             theme: cockpitTerminalThemeFor(Theme.of(context).brightness),
             textStyle: termStyle,
           ),
