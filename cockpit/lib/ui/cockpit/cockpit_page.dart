@@ -1,4 +1,5 @@
 import 'dart:async' show unawaited;
+import 'dart:io';
 
 import 'package:cockpit/config/app_intents.dart';
 import 'package:cockpit/domain/entities/project.dart';
@@ -78,23 +79,40 @@ class _CockpitPageState extends State<CockpitPage> {
 
   /// Fluxo "Criar Workspace": escolhe a pasta, abre o dialog de configurações
   /// (nome pré-preenchido com o da pasta + cor sugerida, ambos editáveis) e cria.
+  // DEBUG (temporário): marcadores síncronos pra localizar o segfault no
+  // Windows. Escrita síncrona+flush sobrevive a um crash nativo (print não).
+  // Arquivo: <temp>/ck_trace.log
+  void _mark(String m) {
+    try {
+      File(
+        '${Directory.systemTemp.path}/ck_trace.log',
+      ).writeAsStringSync('$m\n', mode: FileMode.append, flush: true);
+    } catch (_) {}
+  }
+
   Future<bool> _createWorkspace() async {
     final vm = _vm;
+    _mark('picker:start');
     final path = await FilePicker.platform.getDirectoryPath(
       dialogTitle: 'Escolha a pasta do workspace',
     );
+    _mark('picker:done path=$path mounted=$mounted');
     if (path == null || !mounted) return false;
     final suggestedName = path.split('/').where((p) => p.isNotEmpty).lastOrNull;
     final suggestedColor =
         kWorkspacePalette[vm.rootProjects.length % kWorkspacePalette.length];
+    _mark('dialog:show');
     final result = await showWorkspaceSettingsDialog(
       context,
       name: suggestedName ?? path,
       colorValue: suggestedColor,
       path: path,
     );
+    _mark('dialog:done result=$result');
     if (result == null) return false;
+    _mark('addProject:start');
     await vm.addProject(path, name: result.name, colorValue: result.colorValue);
+    _mark('addProject:done');
     return true;
   }
 

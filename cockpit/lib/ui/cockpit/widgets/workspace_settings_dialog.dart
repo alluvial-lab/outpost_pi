@@ -1,5 +1,16 @@
+import 'dart:io';
+
 import 'package:cockpit/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
+
+// DEBUG temporário: marcadores síncronos pra localizar o segfault no Windows ARM.
+void _trace(String m) {
+  try {
+    File(
+      '${Directory.systemTemp.path}/ck_trace.log',
+    ).writeAsStringSync('$m\n', mode: FileMode.append, flush: true);
+  } catch (_) {}
+}
 
 /// Paleta de cores do avatar de workspace.
 const List<int> kWorkspacePalette = <int>[
@@ -49,6 +60,7 @@ class _WorkspaceSettingsDialog extends StatefulWidget {
 
 class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
   late final TextEditingController _name;
+  final FocusNode _nameFocus = FocusNode();
   late int _color;
 
   @override
@@ -56,10 +68,17 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
     super.initState();
     _name = TextEditingController(text: widget.name);
     _color = widget.colorValue;
+    _trace('dlg:initState');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _trace('dlg:postframe-before-focus');
+      if (mounted) _nameFocus.requestFocus();
+      _trace('dlg:postframe-after-focus');
+    });
   }
 
   @override
   void dispose() {
+    _nameFocus.dispose();
     _name.dispose();
     super.dispose();
   }
@@ -67,11 +86,14 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
   void _save() {
     final name = _name.text.trim();
     if (name.isEmpty) return;
+    _trace('save:before-pop');
     Navigator.of(context).pop((name: name, colorValue: _color));
+    _trace('save:after-pop');
   }
 
   @override
   Widget build(BuildContext context) {
+    _trace('dlg:build');
     final colors = context.colors;
     final initial = _name.text.trim().isEmpty
         ? '?'
@@ -121,7 +143,7 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
                   Expanded(
                     child: TextField(
                       controller: _name,
-                      autofocus: true,
+                      focusNode: _nameFocus,
                       onChanged: (_) => setState(() {}),
                       style: context.typo.body.copyWith(
                         fontSize: 14,
@@ -188,7 +210,7 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
                   borderRadius: BorderRadius.circular(7),
                   border: Border.all(color: colors.border),
                 ),
-                child: SelectableText(
+                child: Text(
                   widget.path,
                   style: context.typo.mono.copyWith(
                     fontSize: 12,
@@ -201,7 +223,11 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () {
+                      _trace('cancel:before-pop');
+                      Navigator.of(context).pop();
+                      _trace('cancel:after-pop');
+                    },
                     child: const Text('Cancelar'),
                   ),
                   const SizedBox(width: 8),

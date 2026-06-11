@@ -10,7 +10,7 @@ class _Candidate {
   final String bundle;
 }
 
-/// Candidatos por ordem de preferência (primeiro encontrado = padrão no botão).
+/// Candidatos macOS por ordem de preferência (primeiro encontrado = padrão).
 const _kCandidates = [
   _Candidate('cursor', 'Cursor', 'Cursor.app'),
   _Candidate('windsurf', 'Windsurf', 'Windsurf.app'),
@@ -18,13 +18,54 @@ const _kCandidates = [
   _Candidate('vscode', 'Visual Studio Code', 'Visual Studio Code.app'),
 ];
 
-/// Implementação macOS: sonda `/Applications` e `~/Applications` e extrai ícones
-/// via `sips` (converte `.icns` → PNG, cacheado em `Directory.systemTemp`).
+class _WinCandidate {
+  const _WinCandidate(this.id, this.name, this.exeCandidates);
+  final String id;
+  final String name;
+
+  /// Pares `(envVar, subpath)` — o caminho final é `%envVar%\<subpath>`. O
+  /// primeiro que existir no disco resolve o app.
+  final List<(String, String)> exeCandidates;
+}
+
+/// Candidatos Windows por ordem de preferência. Os IDEs instalam o `.exe` sob
+/// `%LOCALAPPDATA%\Programs\…` (install por usuário) ou `%ProgramFiles%\…`.
+const _kWinCandidates = [
+  _WinCandidate('cursor', 'Cursor', [
+    ('LOCALAPPDATA', r'Programs\cursor\Cursor.exe'),
+  ]),
+  _WinCandidate('windsurf', 'Windsurf', [
+    ('LOCALAPPDATA', r'Programs\Windsurf\Windsurf.exe'),
+  ]),
+  _WinCandidate('vscode', 'Visual Studio Code', [
+    ('LOCALAPPDATA', r'Programs\Microsoft VS Code\Code.exe'),
+    ('ProgramFiles', r'Microsoft VS Code\Code.exe'),
+  ]),
+];
+
+/// Lança apps externos pra abrir uma pasta. **macOS**: sonda `/Applications` e
+/// extrai ícones via `sips`. **Windows**: resolve os `.exe` conhecidos sob
+/// `%LOCALAPPDATA%`/`%ProgramFiles%` e usa o Explorer como equivalente do Finder
+/// (sem ícone — a UI cai no fallback Material). Outras plataformas: lista vazia.
 class AppLauncherImpl implements AppLauncherGateway {
   const AppLauncherImpl();
 
   @override
   Future<List<LaunchableApp>> probe() async {
+    if (Platform.isMacOS) return _probeMacOS();
+    if (Platform.isWindows) return _probeWindows();
+    return const <LaunchableApp>[];
+  }
+
+  @override
+  Future<void> launch(LaunchableApp app, String path) async {
+    if (Platform.isWindows) return _launchWindows(app, path);
+    if (Platform.isMacOS) return _launchMacOS(app, path);
+  }
+
+  // ---- macOS ----------------------------------------------------------------
+
+  Future<List<LaunchableApp>> _probeMacOS() async {
     final found = <LaunchableApp>[];
     for (final c in _kCandidates) {
       final bundlePath = await _findBundle(c.bundle);
@@ -41,8 +82,7 @@ class AppLauncherImpl implements AppLauncherGateway {
     return found;
   }
 
-  @override
-  Future<void> launch(LaunchableApp app, String path) async {
+  Future<void> _launchMacOS(LaunchableApp app, String path) async {
     if (app.id == 'finder') {
       await Process.run('open', [path]);
       return;
@@ -51,8 +91,6 @@ class AppLauncherImpl implements AppLauncherGateway {
     if (c == null) return;
     await Process.run('open', ['-a', c.name, path]);
   }
-
-  // ---- helpers ---------------------------------------------------------------
 
   Future<String?> _findBundle(String bundle) async {
     final home = Platform.environment['HOME'] ?? '';
@@ -95,5 +133,44 @@ class AppLauncherImpl implements AppLauncherGateway {
     } catch (_) {
       return null;
     }
+  }
+
+  // ---- Windows --------------------------------------------------------------
+
+  Future<List<LaunchableApp>> _probeWindows() async {
+    final found = <LaunchableApp>[];
+    for (final c in _kWinCandidates) {
+      if (await _findWindowsExe(c) != null) {
+        found.add(LaunchableApp(id: c.id, name: c.name));
+      }
+    }
+    // Explorer — equivalente do Finder, sempre disponível no Windows.
+    found.add(const LaunchableApp(id: 'explorer', name: 'Explorer'));
+    return found;
+  }
+
+  Future<void> _launchWindows(LaunchableApp app, String path) async {
+    if (app.id == 'explorer') {
+      // explorer.exe abre a pasta; ignora o exit code (retorna 1 mesmo no ok).
+      await Process.run('explorer', [path]);
+      return;
+    }
+    final c = _kWinCandidates.where((x) => x.id == app.id).firstOrNull;
+    if (c == null) return;
+    final exe = await _findWindowsExe(c);
+    if (exe == null) return;
+    // IDE abre a pasta como workspace; detached pra não prender o app.
+    await Process.start(exe, [path], mode: ProcessStartMode.detached);
+  }
+
+  /// Primeiro `.exe` candidato que existir no disco, ou `null`.
+  Future<String?> _findWindowsExe(_WinCandidate c) async {
+    for (final (envVar, sub) in c.exeCandidates) {
+      final base = Platform.environment[envVar];
+      if (base == null || base.isEmpty) continue;
+      final exe = '$base\\$sub';
+      if (await File(exe).exists()) return exe;
+    }
+    return null;
   }
 }

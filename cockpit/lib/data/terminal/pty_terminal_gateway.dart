@@ -45,7 +45,7 @@ class PtyTerminalGateway implements TerminalGateway {
 
   /// Shell por plataforma.
   String _shell() {
-    if (Platform.isWindows) return 'powershell.exe';
+    if (Platform.isWindows) return Platform.environment['COMSPEC'] ?? 'cmd.exe';
     return Platform.environment['SHELL'] ?? '/bin/zsh';
   }
 }

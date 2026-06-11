@@ -77,6 +77,24 @@ class EnvironmentProbeImpl implements EnvironmentProbe {
           '$home/.config/systemd/user/remote-pi-supervisord.service',
         );
         if (await unit.exists()) return true;
+      } else if (Platform.isWindows) {
+        // Windows: o supervisor roda como uma Scheduled Task
+        // (`RemotePiSupervisor`) criada por `remote-pi install`. A task é a
+        // fonte de verdade — sobrevive a reboot e ao uninstall do .vbs.
+        // Query não precisa de elevação; só o /Create precisava.
+        try {
+          final task = await Process.run(
+            'schtasks',
+            const ['/Query', '/TN', 'RemotePiSupervisor'],
+            runInShell: true,
+          );
+          if (task.exitCode == 0) return true;
+        } catch (_) {
+          // schtasks indisponível → cai pro check de arquivo abaixo.
+        }
+        // Secundário: o launcher VBS escrito no install (em ~/.pi/remote/).
+        final vbs = File('$home/.pi/remote/RemotePiSupervisorLauncher.vbs');
+        return vbs.exists();
       }
       // Fallback: o binário existe em algum prefixo de usuário conhecido.
       const candidates = <String>[
