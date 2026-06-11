@@ -45,7 +45,17 @@ class PtyTerminalGateway implements TerminalGateway {
 
   /// Shell por plataforma.
   String _shell() {
-    if (Platform.isWindows) return Platform.environment['COMSPEC'] ?? 'cmd.exe';
+    if (Platform.isWindows) {
+      // ARM: mantém cmd.exe (o spawn de PTY do powershell ainda é instável no
+      // Windows ARM). Demais Windows (x64): powershell.exe como default.
+      if (_isWindowsArm) return Platform.environment['COMSPEC'] ?? 'cmd.exe';
+      return 'powershell.exe';
+    }
     return Platform.environment['SHELL'] ?? '/bin/zsh';
   }
+
+  /// Arquitetura do build (ex.: `... on "windows_arm64"`) — fonte confiável da
+  /// arch do app nativo, ao contrário de `PROCESSOR_ARCHITECTURE` (que reporta
+  /// emulação WOW). Casa `arm`/`arm64`.
+  bool get _isWindowsArm => Platform.version.toLowerCase().contains('arm');
 }
