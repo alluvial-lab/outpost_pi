@@ -46,7 +46,7 @@ Future<String> resolveExecutable(
   }
 
   // macOS/Linux: `which` via shell de login (PATH completa do usuário).
-  final viaWhich = await _unixWhich(name);
+  final viaWhich = await unixWhich(name);
   if (viaWhich != null) return viaWhich;
 
   // Fallback: caminhos conhecidos.
@@ -76,7 +76,7 @@ Future<String> resolveExecutable(
 ///    "cannot set terminal process group / no job control" no **stderr** — que
 ///    o `Process.run` captura e nós ignoramos; lemos só o `stdout`. Por isso
 ///    **não** gateamos no `exitCode`: parseamos a saída direto.
-Future<String?> _unixWhich(String name) async {
+Future<String?> unixWhich(String name) async {
   final shell = Platform.environment['SHELL'] ?? '/bin/sh';
   return await _runWhich(shell, ['-lc', 'which $name']) ??
       await _runWhich(shell, ['-ic', 'which $name']);

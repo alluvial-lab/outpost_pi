@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cockpit/config/utils/executable_resolver.dart';
 import 'package:cockpit/domain/contracts/app_launcher.dart';
 import 'package:cockpit/domain/entities/launchable_app.dart';
 
@@ -43,10 +44,29 @@ const _kWinCandidates = [
   ]),
 ];
 
+class _LinuxCandidate {
+  const _LinuxCandidate(this.id, this.name, this.command);
+  final String id;
+  final String name;
+
+  /// Comando CLI resolvido via PATH (`cursor`, `windsurf`, `code`).
+  final String command;
+}
+
+/// Candidatos Linux por ordem de preferência. Os IDEs expõem um comando no PATH
+/// (deb/snap/flatpak-wrapper) que abre a pasta como workspace.
+const _kLinuxCandidates = [
+  _LinuxCandidate('cursor', 'Cursor', 'cursor'),
+  _LinuxCandidate('windsurf', 'Windsurf', 'windsurf'),
+  _LinuxCandidate('vscode', 'Visual Studio Code', 'code'),
+];
+
 /// Lança apps externos pra abrir uma pasta. **macOS**: sonda `/Applications` e
 /// extrai ícones via `sips`. **Windows**: resolve os `.exe` conhecidos sob
-/// `%LOCALAPPDATA%`/`%ProgramFiles%` e usa o Explorer como equivalente do Finder
-/// (sem ícone — a UI cai no fallback Material). Outras plataformas: lista vazia.
+/// `%LOCALAPPDATA%`/`%ProgramFiles%` e usa o Explorer como equivalente do Finder.
+/// **Linux**: resolve os comandos de IDE no PATH e usa `xdg-open` como
+/// equivalente do Finder (gerenciador de arquivos padrão). Sem ícone fora do
+/// macOS — a UI cai no fallback Material.
 class AppLauncherImpl implements AppLauncherGateway {
   const AppLauncherImpl();
 
@@ -54,6 +74,7 @@ class AppLauncherImpl implements AppLauncherGateway {
   Future<List<LaunchableApp>> probe() async {
     if (Platform.isMacOS) return _probeMacOS();
     if (Platform.isWindows) return _probeWindows();
+    if (Platform.isLinux) return _probeLinux();
     return const <LaunchableApp>[];
   }
 
@@ -61,6 +82,7 @@ class AppLauncherImpl implements AppLauncherGateway {
   Future<void> launch(LaunchableApp app, String path) async {
     if (Platform.isWindows) return _launchWindows(app, path);
     if (Platform.isMacOS) return _launchMacOS(app, path);
+    if (Platform.isLinux) return _launchLinux(app, path);
   }
 
   // ---- macOS ----------------------------------------------------------------
@@ -172,5 +194,36 @@ class AppLauncherImpl implements AppLauncherGateway {
       if (await File(exe).exists()) return exe;
     }
     return null;
+  }
+
+  // ---- Linux ----------------------------------------------------------------
+
+  Future<List<LaunchableApp>> _probeLinux() async {
+    final found = <LaunchableApp>[];
+    for (final c in _kLinuxCandidates) {
+      if (await unixWhich(c.command) != null) {
+        found.add(LaunchableApp(id: c.id, name: c.name));
+      }
+    }
+    // Gerenciador de arquivos via `xdg-open` — equivalente do Finder/Explorer,
+    // presente em praticamente todo desktop Linux (xdg-utils).
+    if (await unixWhich('xdg-open') != null) {
+      found.add(const LaunchableApp(id: 'files', name: 'Arquivos'));
+    }
+    return found;
+  }
+
+  Future<void> _launchLinux(LaunchableApp app, String path) async {
+    if (app.id == 'files') {
+      // Abre a pasta no gerenciador de arquivos padrão.
+      final xdg = await unixWhich('xdg-open') ?? 'xdg-open';
+      await Process.run(xdg, [path]);
+      return;
+    }
+    final c = _kLinuxCandidates.where((x) => x.id == app.id).firstOrNull;
+    if (c == null) return;
+    final exe = await unixWhich(c.command) ?? c.command;
+    // IDE abre a pasta como workspace; detached pra não prender o app.
+    await Process.start(exe, [path], mode: ProcessStartMode.detached);
   }
 }
