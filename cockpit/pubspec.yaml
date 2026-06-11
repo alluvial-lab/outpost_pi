@@ -94,6 +94,12 @@ dependencies:
   # `remote-pi` como QR Code no dialog. NOTA: registrar esta dep no plano 37.
   qr_flutter: ^4.1.0
 
+  # Windows-only — cliente de named pipe (Win32 FFI) pra falar com o supervisor,
+  # que no Windows escuta em `\\.\pipe\…` em vez de UDS. Ver
+  # lib/data/daemon/win_named_pipe.dart.
+  ffi: ^2.1.0
+  win32: ^5.5.0
+
 dependency_overrides:
   gpt_markdown:
     git:

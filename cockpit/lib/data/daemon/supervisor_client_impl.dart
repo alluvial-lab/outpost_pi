@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cockpit/data/daemon/win_named_pipe.dart';
 import 'package:cockpit/domain/contracts/cron_gateway.dart';
 import 'package:cockpit/domain/contracts/daemon_supervisor.dart';
 import 'package:cockpit/domain/entities/cron_job.dart';
@@ -21,7 +22,9 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
 
   Future<String>? _resolvedCli;
 
-  String? get _home => Platform.environment['HOME'];
+  // Windows não seta HOME; o equivalente é USERPROFILE.
+  String? get _home =>
+      Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
 
   String? _sockPath() {
     final home = _home;
@@ -30,6 +33,16 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
 
   @override
   Future<bool> isOnline() async {
+    // Windows: o supervisor escuta num named pipe (não há arquivo de socket).
+    // Uma transação `list` que volta != null prova que o pipe está aceitando.
+    if (Platform.isWindows) {
+      final reply = await winPipeTransact(
+        supervisorPipeName(),
+        '${jsonEncode(<String, dynamic>{'op': 'list'})}\n',
+        timeout: const Duration(seconds: 1),
+      );
+      return reply != null;
+    }
     final path = _sockPath();
     if (path == null || !await File(path).exists()) return false;
     try {
@@ -302,25 +315,13 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
   Future<Result<Map<String, dynamic>, DaemonError>> _call(
     Map<String, dynamic> request,
   ) async {
-    final path = _sockPath();
-    if (path == null) {
-      return const Failure(DaemonError('HOME não encontrado no ambiente.'));
-    }
-    if (!await File(path).exists()) {
-      return const Failure(
-        DaemonError('Supervisor offline (socket ausente).'),
-      );
-    }
-
-    Socket? socket;
     try {
-      socket = await Socket.connect(
-        InternetAddress(path, type: InternetAddressType.unix),
-        0,
-      ).timeout(const Duration(seconds: 2));
-      socket.write('${jsonEncode(request)}\n');
-      await socket.flush();
-      final line = await _readLine(socket).timeout(const Duration(seconds: 6));
+      final line = await _transact('${jsonEncode(request)}\n');
+      if (line == null) {
+        return const Failure(
+          DaemonError('Não foi possível falar com o supervisor.'),
+        );
+      }
       final decoded = jsonDecode(line);
       if (decoded is! Map) {
         return const Failure(DaemonError('Resposta inválida do supervisor.'));
@@ -332,14 +333,34 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
       return Failure(
         DaemonError((decoded['error'] as String?) ?? 'Erro do supervisor.'),
       );
-    } on SocketException {
-      return const Failure(DaemonError('Não foi possível falar com o supervisor.'));
     } on TimeoutException {
       return const Failure(DaemonError('Tempo esgotado ao falar com o supervisor.'));
     } catch (error, stackTrace) {
       return Failure(
         DaemonError('Falha no supervisor: $error', cause: error, stackTrace: stackTrace),
       );
+    }
+  }
+
+  /// Transação 1-req → 1-reply com o supervisor. Windows usa named pipe; POSIX
+  /// usa o UDS. Devolve a linha de resposta (sem `\n`) ou `null` se offline.
+  Future<String?> _transact(String requestLine) async {
+    if (Platform.isWindows) {
+      return winPipeTransact(supervisorPipeName(), requestLine);
+    }
+    final path = _sockPath();
+    if (path == null || !await File(path).exists()) return null;
+    Socket? socket;
+    try {
+      socket = await Socket.connect(
+        InternetAddress(path, type: InternetAddressType.unix),
+        0,
+      ).timeout(const Duration(seconds: 2));
+      socket.write(requestLine);
+      await socket.flush();
+      return await _readLine(socket).timeout(const Duration(seconds: 6));
+    } on SocketException {
+      return null;
     } finally {
       socket?.destroy();
     }
