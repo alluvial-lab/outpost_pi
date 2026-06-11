@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cockpit/data/setup/remote_pi_resolver.dart';
 import 'package:cockpit/domain/contracts/relay_gateway.dart';
 import 'package:cockpit/domain/entities/paired_device.dart';
 import 'package:cockpit/domain/exceptions/relay_error.dart';
@@ -10,15 +11,16 @@ import 'package:cockpit/domain/result.dart';
 /// Implementação via **shell-out** do `remote-pi` + leitura do config global
 /// `~/.pi/remote/config.json`.
 ///
-/// macOS não herda o PATH do shell, então o binário é resolvido em caminhos
-/// conhecidos (mesmo padrão do `pi` em `config/env.dart`). A resolução é
-/// memoizada — só faz os `exists()` uma vez.
+/// O `remote-pi` é resolvido via [resolveRemotePiCommand]: binário no PATH/
+/// prefixos conhecidos no POSIX; `node <index.js>` no Windows (onde não está no
+/// PATH). A resolução é memoizada — só faz os `exists()` uma vez.
 class RelayGatewayImpl implements RelayGateway {
   RelayGatewayImpl();
 
-  Future<String>? _resolvedExe;
+  Future<({String exe, List<String> prefixArgs})?>? _resolvedCmd;
 
-  String? get _home => Platform.environment['HOME'];
+  // Windows não seta HOME; o equivalente é USERPROFILE.
+  String? get _home => remotePiHome();
 
   @override
   Future<Result<String?, RelayError>> currentRelay() async {
@@ -111,8 +113,19 @@ class RelayGatewayImpl implements RelayGateway {
     String onError,
   ) async {
     try {
-      final exe = await _exe();
-      final result = await Process.run(exe, args);
+      final cmd = await _cmd();
+      if (cmd == null) {
+        return Failure(
+          RelayError(
+            '$onError\nNão encontrei o remote-pi (instale a extensão).',
+          ),
+        );
+      }
+      final result = await Process.run(
+        cmd.exe,
+        [...cmd.prefixArgs, ...args],
+        runInShell: Platform.isWindows,
+      );
       if (result.exitCode != 0) {
         final err = (result.stderr as String? ?? '').trim();
         return Failure(RelayError(err.isEmpty ? onError : '$onError\n$err'));
@@ -144,21 +157,6 @@ class RelayGatewayImpl implements RelayGateway {
     return devices;
   }
 
-  Future<String> _exe() => _resolvedExe ??= _resolveExecutable();
-
-  static Future<String> _resolveExecutable() async {
-    const candidates = <String>[
-      '/opt/homebrew/bin/remote-pi',
-      '/usr/local/bin/remote-pi',
-    ];
-    for (final candidate in candidates) {
-      if (await File(candidate).exists()) return candidate;
-    }
-    final home = Platform.environment['HOME'];
-    if (home != null) {
-      final local = '$home/.local/bin/remote-pi';
-      if (await File(local).exists()) return local;
-    }
-    return 'remote-pi';
-  }
+  Future<({String exe, List<String> prefixArgs})?> _cmd() =>
+      _resolvedCmd ??= resolveRemotePiCommand();
 }
