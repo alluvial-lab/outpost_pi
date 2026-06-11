@@ -159,6 +159,7 @@ class RelayGatewayImpl implements RelayGateway {
         cmd.exe,
         [...cmd.prefixArgs, ...args],
         runInShell: Platform.isWindows,
+        environment: await envWithNodeOnPath(),
       );
       if (result.exitCode != 0) {
         final err = (result.stderr as String? ?? '').trim();

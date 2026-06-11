@@ -6,6 +6,7 @@ import 'package:cockpit/config/env.dart';
 import 'package:cockpit/data/adapters/rpc_data_mapper.dart';
 import 'package:cockpit/data/adapters/rpc_event_mapper.dart';
 import 'package:cockpit/data/rpc/jsonl_line_splitter.dart';
+import 'package:cockpit/data/setup/remote_pi_resolver.dart';
 import 'package:cockpit/domain/contracts/rpc_process_gateway.dart';
 import 'package:cockpit/domain/entities/agent_snapshot.dart';
 import 'package:cockpit/domain/entities/context_usage.dart';
@@ -73,10 +74,10 @@ class PiRpcProcess implements RpcProcessGateway {
       );
     }
     try {
-      // Funde com o ambiente do processo pai para preservar PATH/HOME/etc.
-      final env = environment != null
-          ? {...Platform.environment, ...environment}
-          : null;
+      // Base = ambiente do pai com o bin do `node` na PATH (shim `pi` usa
+      // `#!/usr/bin/env node`; em nvm/Homebrew o node não está na PATH do GUI).
+      final base = await envWithNodeOnPath();
+      final env = environment != null ? {...base, ...environment} : base;
       final process = await Process.start(
         _config.executable,
         _config.spawnArgs(sessionId: sessionId),

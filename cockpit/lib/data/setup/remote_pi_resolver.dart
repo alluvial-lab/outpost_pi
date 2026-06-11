@@ -59,6 +59,35 @@ Future<String> resolveNode() => resolveExecutable(
   windowsExtraDirs: const [r'C:\Program Files\nodejs'],
 );
 
+/// Diretório onde o `node` resolvido mora (geralmente o mesmo bin do `pi`/`npm`/
+/// `remote-pi`). `null` se o node não foi resolvido pra um caminho.
+Future<String?> resolveNodeBinDir() async {
+  final node = await resolveNode();
+  final idx = node.lastIndexOf(RegExp(r'[/\\]'));
+  return idx > 0 ? node.substring(0, idx) : null;
+}
+
+/// Environment do processo com o bin do `node` **prefixado** na PATH. Necessário
+/// pra rodar shims `pi`/`remote-pi`, cujo shebang `#!/usr/bin/env node` precisa
+/// achar o `node` — que em setups nvm/Homebrew não está na PATH herdada pelo app
+/// GUI (erro `/usr/bin/env: 'node': No such file or directory`).
+Future<Map<String, String>> envWithNodeOnPath() async {
+  final env = Map<String, String>.of(Platform.environment);
+  final dir = await resolveNodeBinDir();
+  if (dir != null) {
+    final sep = Platform.isWindows ? ';' : ':';
+    // Windows usa 'Path'; POSIX usa 'PATH'.
+    final key = env.containsKey('Path') && !env.containsKey('PATH')
+        ? 'Path'
+        : 'PATH';
+    final cur = env[key] ?? '';
+    if (!cur.split(sep).contains(dir)) {
+      env[key] = cur.isEmpty ? dir : '$dir$sep$cur';
+    }
+  }
+  return env;
+}
+
 /// Como invocar o `remote-pi`: o executável + os args de prefixo. No POSIX é o
 /// binário `remote-pi` (prefixo vazio); no Windows é `node <index.js>`. Devolve
 /// `null` se o Windows não conseguir localizar o `index.js` da extensão.

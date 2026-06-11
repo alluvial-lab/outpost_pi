@@ -19,6 +19,7 @@ class EnvironmentInstallerImpl implements EnvironmentInstaller {
         _config.executable,
         const ['install', 'npm:remote-pi'],
         runInShell: Platform.isWindows,
+        environment: await envWithNodeOnPath(),
       );
       if (result.exitCode == 0) return const InstallResult.success();
       return InstallResult.failure(_output(result));
@@ -42,6 +43,7 @@ class EnvironmentInstallerImpl implements EnvironmentInstaller {
         node,
         [indexJs, 'install'],
         runInShell: Platform.isWindows,
+        environment: await envWithNodeOnPath(),
       );
       if (result.exitCode == 0) return const InstallResult.success();
       return InstallResult.failure(_output(result));

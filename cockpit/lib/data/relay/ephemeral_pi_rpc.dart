@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:cockpit/config/env.dart';
 import 'package:cockpit/data/rpc/jsonl_line_splitter.dart';
+import 'package:cockpit/data/setup/remote_pi_resolver.dart';
 
 /// Sessão **efêmera e dedicada** de `pi --mode rpc --no-session` para comandos
 /// pontuais do remote-pi (pareamento, revoke). Roda numa pasta temporária única
@@ -38,7 +39,8 @@ class EphemeralPiRpc {
     _tempDir = dir;
 
     final env = <String, String>{
-      ...Platform.environment,
+      // bin do `node` na PATH (shim `pi` usa `#!/usr/bin/env node`).
+      ...await envWithNodeOnPath(),
       'REMOTE_PI_DIRECT_CONFIG': jsonEncode(<String, dynamic>{
         'agent_name': _randomName(),
         'workspace': 'pareamento',
