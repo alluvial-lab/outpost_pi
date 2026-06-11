@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cockpit/data/daemon/win_named_pipe.dart';
+import 'package:cockpit/data/setup/remote_pi_resolver.dart';
 import 'package:cockpit/domain/contracts/cron_gateway.dart';
 import 'package:cockpit/domain/contracts/daemon_supervisor.dart';
 import 'package:cockpit/domain/entities/cron_job.dart';
@@ -20,7 +21,7 @@ import 'package:cockpit/domain/result.dart';
 class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
   SupervisorClientImpl();
 
-  Future<String>? _resolvedCli;
+  Future<({String exe, List<String> prefixArgs})?>? _resolvedCli;
 
   // Windows não seta HOME; o equivalente é USERPROFILE.
   String? get _home =>
@@ -89,13 +90,16 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
   @override
   Future<Result<void, DaemonError>> create(String cwd, {String? name}) async {
     try {
-      final exe = await _cli();
-      final args = <String>[
+      final result = await _runCli(<String>[
         'create',
         cwd,
         if (name != null && name.trim().isNotEmpty) ...['--name', name.trim()],
-      ];
-      final result = await Process.run(exe, args);
+      ]);
+      if (result == null) {
+        return const Failure(
+          DaemonError('Não encontrei o remote-pi (instale a extensão).'),
+        );
+      }
       if (result.exitCode != 0) {
         final err = (result.stderr as String? ?? '').trim();
         final out = (result.stdout as String? ?? '').trim();
@@ -162,8 +166,12 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
     // plataforma (launchctl no macOS, systemctl no Linux, serviço no Windows).
     // Centraliza a lógica de SO no remote-pi em vez de duplicá-la aqui.
     try {
-      final exe = await _cli();
-      final result = await Process.run(exe, const ['restart-supervisor']);
+      final result = await _runCli(const ['restart-supervisor']);
+      if (result == null) {
+        return const Failure(
+          DaemonError('Não encontrei o remote-pi (instale a extensão).'),
+        );
+      }
       final out = (result.stdout as String? ?? '');
       final err = (result.stderr as String? ?? '');
       // O CLI imprime o help e sai 0 quando o comando não existe — não dá pra
@@ -408,21 +416,20 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
 
   // ---- CLI resolution -------------------------------------------------------
 
-  Future<String> _cli() => _resolvedCli ??= _resolveCli();
+  /// Como invocar o `remote-pi`: binário no POSIX, `node <index.js>` no Windows.
+  Future<({String exe, List<String> prefixArgs})?> _cli() =>
+      _resolvedCli ??= resolveRemotePiCommand();
 
-  static Future<String> _resolveCli() async {
-    const candidates = <String>[
-      '/opt/homebrew/bin/remote-pi',
-      '/usr/local/bin/remote-pi',
-    ];
-    for (final candidate in candidates) {
-      if (await File(candidate).exists()) return candidate;
-    }
-    final home = Platform.environment['HOME'];
-    if (home != null) {
-      final local = '$home/.local/bin/remote-pi';
-      if (await File(local).exists()) return local;
-    }
-    return 'remote-pi';
+  /// Roda o `remote-pi <args>` resolvido por plataforma, com o `node` na PATH
+  /// (shim usa `#!/usr/bin/env node`) e `runInShell` no Windows.
+  Future<ProcessResult?> _runCli(List<String> args) async {
+    final cmd = await _cli();
+    if (cmd == null) return null;
+    return Process.run(
+      cmd.exe,
+      [...cmd.prefixArgs, ...args],
+      runInShell: Platform.isWindows,
+      environment: await envWithNodeOnPath(),
+    );
   }
 }
