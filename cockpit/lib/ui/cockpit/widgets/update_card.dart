@@ -3,9 +3,9 @@ import 'package:cockpit/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-/// Mini card de atualização no rodapé do rail — acima do nome da máquina. Só
-/// renderiza quando o [UpdateViewModel] tem uma versão nova não dispensada.
-/// Clicar baixa o artefato; o X dispensa (persiste por versão).
+/// Mini update card at the bottom of the rail — above the machine name. Only
+/// renders when the [UpdateViewModel] has a new, non-dismissed version.
+/// Clicking downloads the artifact; the X dismisses it (persisted per version).
 class UpdateCard extends StatelessWidget {
   const UpdateCard({super.key});
 

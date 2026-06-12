@@ -134,6 +134,17 @@ Estas decisões foram **propositalmente adiadas**. Quando alguém quiser fechar,
 
 ---
 
+## Distribuição (fechado 2026-06-12 — planos 43/44/45)
+
+| Decisão | Razão / nota |
+|---|---|
+| **App mobile: distribuição DUPLA** | iOS = **App Store**; Android = **Play Store** (AAB) **+ APK direto** (`RemotePi.apk` em GitHub Release `app-v*`, ofertado na `/download` do site). A frase "não precisamos subir pras lojas" significava não *depender* delas — as lojas continuam canais. Artefatos store-ready verificados em `1.1.0+5` (IPA assinado Apple Distribution + AAB assinado release), build manual via agente do App; o CI cobre só o APK direto |
+| **Cockpit (desktop): fora de lojas** | DMG notarizado (macOS) + EXE sem assinatura (Windows, SmartScreen documentado) + deb/rpm (Linux x64+arm64) via GitHub Release `cockpit-v*` |
+| **Hospedagem de binários** | Assets de GitHub Releases (tags prefixadas por produto; monorepo ok como puro storage). VPS **sem SSH** → `rp-s3` serve só os `latest.json` por produto; usuário posiciona o manifest manualmente = **gate de publicação** |
+| **Updates** | Sem auto-update. Site (`/download`) + card in-app dispensável (Cockpit e app Android) lendo o `latest.json`; card pode aparecer pra install de loja (sem detecção de origem) |
+
+---
+
 ## Como atualizar este arquivo
 
 - **Decisão nova fechada em conversa** → adicione bullet na seção certa
