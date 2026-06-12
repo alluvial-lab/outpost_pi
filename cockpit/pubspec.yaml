@@ -100,6 +100,11 @@ dependencies:
   ffi: ^2.1.0
   win32: ^5.5.0
 
+  # Aviso de atualização in-app (plano 43, passo 7): versão atual do app
+  # (package_info_plus) + abrir a URL do artefato no navegador (url_launcher).
+  package_info_plus: ^8.0.0
+  url_launcher: ^6.3.0
+
 dependency_overrides:
   gpt_markdown:
     git:

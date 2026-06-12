@@ -1,0 +1,313 @@
+# Release do Cockpit (plano 43, passo 3).
+#
+# Trigger: tag `cockpit-v<versão>` (a versão DEVE bater com o pubspec.yaml).
+# Produz: GitHub Release com 6 artefatos + SHA256SUMS + latest.json.
+# Publicação no site é MANUAL (gate): baixar o latest.json da release e colocar
+# no rp-s3 (volume /Users/flutterando/cockpit/data) — ver rp-s3/README.md.
+#
+# Runbook por plataforma: cockpit/packaging/README.md.
+
+name: cockpit-release
+
+on:
+  push:
+    tags: ["cockpit-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag da release (ex: cockpit-v1.0.0); precisa existir"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cockpit-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  FLUTTER_VERSION: "3.41.7"
+
+jobs:
+  meta:
+    name: Valida tag ↔ pubspec
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - id: v
+        run: |
+          VERSION="${RELEASE_TAG#cockpit-v}"
+          PUBSPEC=$(grep '^version:' cockpit/pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
+          if [ "$VERSION" != "$PUBSPEC" ]; then
+            echo "::error::tag $RELEASE_TAG pede $VERSION mas o pubspec está em $PUBSPEC"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  macos:
+    name: macOS dmg (universal, notarizado)
+    needs: meta
+    runs-on: macos-latest
+    defaults: { run: { working-directory: cockpit } }
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      SIGN_ID: "Developer ID Application: Jacob Moura (U843T2P7A2)"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Importa certificado Developer ID em keychain temporário
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASS=$(openssl rand -hex 16)
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN"
+          echo "$MACOS_CERT_P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASS" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Build + sign + DMG (runbook packaging/README.md)
+        run: |
+          flutter pub get
+          flutter build macos --release
+          APP="build/macos/Build/Products/Release/Cockpit.app"
+          codesign --force --deep --options runtime --timestamp \
+            --entitlements macos/Runner/Release.entitlements \
+            --sign "$SIGN_ID" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          mkdir -p dist
+          STAGE=$(mktemp -d)
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          DMG="dist/RemotePiCockpit-${VERSION}-macos-universal.dmg"
+          hdiutil create -volname "Remote Pi Cockpit" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+          rm -rf "$STAGE"
+          codesign --force --timestamp --sign "$SIGN_ID" "$DMG"
+
+      - name: Notariza + staple + valida
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          DMG="dist/RemotePiCockpit-${VERSION}-macos-universal.dmg"
+          echo "$APPLE_API_KEY" | base64 -d > "$RUNNER_TEMP/apikey.p8"
+          xcrun notarytool submit "$DMG" \
+            --key "$RUNNER_TEMP/apikey.p8" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait
+          rm "$RUNNER_TEMP/apikey.p8"
+          xcrun stapler staple "$DMG"
+          spctl -a -t open --context context:primary-signature -vv "$DMG"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: cockpit/dist/*.dmg
+          if-no-files-found: error
+
+  windows:
+    name: Windows exe (x64, Inno Setup)
+    needs: meta
+    runs-on: windows-latest
+    defaults: { run: { working-directory: cockpit, shell: bash } }
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Prepara Fastforge e Inno Setup
+        run: |
+          dart pub global activate fastforge
+          echo "$LOCALAPPDATA\\Pub\\Cache\\bin" >> "$GITHUB_PATH"
+          echo "C:\\Program Files (x86)\\Inno Setup 6" >> "$GITHUB_PATH"
+
+      - name: Build + empacota
+        run: |
+          flutter pub get
+          flutter build windows --release
+          fastforge package --platform windows --targets exe
+          EXE=$(find dist -name "*.exe" | head -1)
+          test -n "$EXE"
+          mkdir -p out
+          mv "$EXE" "out/RemotePiCockpit-Setup-${VERSION}-windows-x64.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: cockpit/out/*.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux deb+rpm (${{ matrix.deb_arch }})
+    needs: meta
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            deb_arch: amd64
+            rpm_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            deb_arch: arm64
+            rpm_arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    defaults: { run: { working-directory: cockpit } }
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Deps de sistema (GTK, ninja, rpmbuild)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev rpm
+          dart pub global activate fastforge
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Build + empacota
+        run: |
+          flutter pub get
+          flutter build linux --release
+          fastforge package --platform linux --targets deb
+          fastforge package --platform linux --targets rpm
+          DEB=$(find dist -name "*.deb" | head -1); test -n "$DEB"
+          RPM=$(find dist -name "*.rpm" | head -1); test -n "$RPM"
+          mkdir -p out
+          mv "$DEB" "out/remote-pi-cockpit_${VERSION}_${{ matrix.deb_arch }}.deb"
+          mv "$RPM" "out/remote-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm"
+
+      - name: Smoke test .deb (instala no próprio runner)
+        run: |
+          sudo apt-get install -y "./out/remote-pi-cockpit_${VERSION}_${{ matrix.deb_arch }}.deb"
+          dpkg -L remote-pi-cockpit | grep -m1 "\.desktop$"
+
+      - name: Smoke test .rpm (container fedora:40)
+        run: |
+          docker run --rm -v "$PWD/out:/out:ro" fedora:40 bash -c \
+            "dnf install -y /out/remote-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm \
+             && rpm -ql remote-pi-cockpit | grep -m1 '\.desktop$'"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.deb_arch }}
+          path: cockpit/out/*
+          if-no-files-found: error
+
+  publish:
+    name: GitHub Release + latest.json
+    needs: [meta, macos, windows, linux]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Gera SHA256SUMS e latest.json
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
+          : > artifacts.ndjson
+          for f in *; do
+            case "$f" in
+              *macos-universal.dmg) p=macos   a=universal fmt=dmg ;;
+              *windows-x64.exe)     p=windows a=x64       fmt=exe ;;
+              *_amd64.deb)          p=linux   a=x64       fmt=deb ;;
+              *_arm64.deb)          p=linux   a=arm64     fmt=deb ;;
+              *.x86_64.rpm)         p=linux   a=x64       fmt=rpm ;;
+              *.aarch64.rpm)        p=linux   a=arm64     fmt=rpm ;;
+              *) continue ;;
+            esac
+            jq -n --arg platform "$p" --arg arch "$a" --arg format "$fmt" \
+              --arg url "$BASE/$f" \
+              --arg sha256 "$(sha256sum "$f" | cut -d' ' -f1)" \
+              --argjson size "$(stat -c%s "$f")" \
+              '{platform:$platform, arch:$arch, format:$format, url:$url, sha256:$sha256, size:$size}' \
+              >> artifacts.ndjson
+          done
+          COUNT=$(jq -s length artifacts.ndjson)
+          if [ "$COUNT" -ne 6 ]; then
+            echo "::error::esperava 6 artefatos no manifest, achei $COUNT"
+            exit 1
+          fi
+          # Notas: primeira seção do CHANGELOG; fallback genérico.
+          NOTES=$(awk '/^## /{n++} n==1' ../cockpit/CHANGELOG.md | tail -n +2 | sed '/^$/d' | head -20)
+          [ -n "$NOTES" ] || NOTES="Remote Pi Cockpit ${VERSION}"
+          jq -n --arg version "$VERSION" --arg date "$(date -u +%F)" \
+            --arg notes "$NOTES" --slurpfile artifacts artifacts.ndjson \
+            '{version:$version, date:$date, notes:$notes, artifacts:$artifacts}' \
+            > latest.json
+          rm artifacts.ndjson
+          cat latest.json
+
+      - name: Cria (ou atualiza) a GitHub Release
+        run: |
+          NOTES_FILE=$(mktemp)
+          jq -r .notes release/latest.json > "$NOTES_FILE"
+          {
+            echo ""
+            echo "---"
+            echo "**Publicação no site (gate manual):** baixe o \`latest.json\` desta"
+            echo "release e coloque em \`/Users/flutterando/cockpit/data/\` no host do"
+            echo "rp-s3 (ver \`rp-s3/README.md\`). Só então o site passa a ofertar esta versão."
+          } >> "$NOTES_FILE"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release/* \
+              --title "Remote Pi Cockpit ${VERSION}" \
+              --notes-file "$NOTES_FILE" \
+              --latest=false
+          fi
+
+      - name: Resumo
+        run: |
+          {
+            echo "## Cockpit ${VERSION} publicado"
+            echo ""
+            echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
+            echo ""
+            echo "**Próximo passo (manual):** baixar o \`latest.json\` da release e"
+            echo "colocar no rp-s3 (\`/Users/flutterando/cockpit/data/\`) pra ir ao ar no site."
+          } >> "$GITHUB_STEP_SUMMARY"

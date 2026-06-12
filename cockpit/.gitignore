@@ -33,6 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Empacotamento (artefatos gerados — DMG/EXE/DEB/RPM)
+/dist/
+
 # Symbolication related
 app.*.symbols
 

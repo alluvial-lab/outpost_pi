@@ -3,6 +3,7 @@ import 'package:cockpit/routing/routes.dart';
 import 'package:cockpit/ui/cockpit/cockpit_page.dart';
 import 'package:cockpit/ui/cockpit/viewmodels/cockpit_viewmodel.dart';
 import 'package:cockpit/ui/cockpit/viewmodels/setup_viewmodel.dart';
+import 'package:cockpit/ui/cockpit/viewmodels/update_viewmodel.dart';
 import 'package:cockpit/ui/settings/connectivity_viewmodel.dart';
 import 'package:cockpit/ui/settings/cron_viewmodel.dart';
 import 'package:cockpit/ui/settings/daemons_viewmodel.dart';
@@ -27,6 +28,10 @@ GoRouter buildRouter() {
             ),
             ChangeNotifierProvider<SetupViewModel>(
               create: (_) => buildSetupViewModel(),
+            ),
+            // Aviso de atualização in-app: checa o manifest no boot (silencioso).
+            ChangeNotifierProvider<UpdateViewModel>(
+              create: (_) => buildUpdateViewModel()..check(),
             ),
           ],
           child: const CockpitPage(),

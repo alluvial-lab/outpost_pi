@@ -1,6 +1,7 @@
 import 'package:cockpit/domain/entities/git_info.dart';
 import 'package:cockpit/domain/entities/project.dart';
 import 'package:cockpit/ui/cockpit/widgets/app_menu.dart';
+import 'package:cockpit/ui/cockpit/widgets/update_card.dart';
 import 'package:cockpit/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -157,6 +158,8 @@ class _ProjectsRailState extends State<ProjectsRail> {
                     ),
                   ),
           ),
+          // Aviso de atualização in-app — acima do nome da máquina (passo 7).
+          const UpdateCard(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(

@@ -48,8 +48,8 @@ export default function GettingStartedTutorial() {
                 rel="noopener noreferrer"
               >
                 App Store
-              </a>{" "}
-              or{" "}
+              </a>
+              ,{" "}
               <a
                 className="text-accent underline"
                 href="https://play.google.com/store/apps/details?id=work.jacobmoura.remotepi"
@@ -58,7 +58,11 @@ export default function GettingStartedTutorial() {
               >
                 Google Play
               </a>
-              .
+              , or the{" "}
+              <Link className="text-accent underline" href="/download">
+                Android APK
+              </Link>{" "}
+              direct download.
             </li>
           </ul>
           <p className="text-sm">

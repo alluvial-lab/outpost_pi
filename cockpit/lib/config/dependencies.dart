@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cockpit/config/env.dart';
 import 'package:cockpit/config/utils/injector.dart';
 import 'package:cockpit/data/filesystem/app_launcher_impl.dart';
@@ -13,9 +15,12 @@ import 'package:cockpit/data/notifications/local_notifier.dart';
 import 'package:cockpit/data/relay/pairing_gateway_impl.dart';
 import 'package:cockpit/data/relay/relay_gateway_impl.dart';
 import 'package:cockpit/data/relay/revoke_gateway_impl.dart';
+import 'package:cockpit/data/repositories/hive_dismissed_update_store.dart';
 import 'package:cockpit/data/repositories/hive_project_repository.dart';
 import 'package:cockpit/data/repositories/hive_settings_store.dart';
 import 'package:cockpit/data/repositories/hive_workspace_layout_store.dart';
+import 'package:cockpit/data/update/update_checker_impl.dart';
+import 'package:cockpit/data/update/url_opener_impl.dart';
 import 'package:cockpit/data/rpc/pi_process_registry.dart';
 import 'package:cockpit/data/rpc/pi_rpc_process_factory.dart';
 import 'package:cockpit/data/setup/environment_installer_impl.dart';
@@ -39,12 +44,17 @@ import 'package:cockpit/domain/contracts/relay_gateway.dart';
 import 'package:cockpit/domain/contracts/system_permissions.dart';
 import 'package:cockpit/domain/contracts/rpc_gateway_factory.dart';
 import 'package:cockpit/domain/contracts/session_history.dart';
+import 'package:cockpit/domain/contracts/dismissed_update_store.dart';
 import 'package:cockpit/domain/contracts/settings_store.dart';
 import 'package:cockpit/domain/contracts/terminal_gateway_factory.dart';
+import 'package:cockpit/domain/contracts/update_checker.dart';
+import 'package:cockpit/domain/contracts/url_opener.dart';
 import 'package:cockpit/domain/contracts/workspace_layout_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cockpit/ui/cockpit/viewmodels/cockpit_viewmodel.dart';
 import 'package:cockpit/ui/cockpit/viewmodels/setup_viewmodel.dart';
+import 'package:cockpit/ui/cockpit/viewmodels/update_viewmodel.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:cockpit/ui/settings/connectivity_viewmodel.dart';
 import 'package:cockpit/ui/settings/cron_viewmodel.dart';
 import 'package:cockpit/ui/settings/daemons_viewmodel.dart';
@@ -79,6 +89,14 @@ Future<void> setupDependencies() async {
     HiveWorkspaceLayoutStore(layoutBox),
   );
   _injector.addInstance<SettingsStore>(HiveSettingsStore(settingsBox));
+
+  // Aviso de atualização in-app (plano 43, passo 7).
+  _injector.addInstance<UpdateChecker>(const UpdateCheckerImpl());
+  _injector.addInstance<UrlOpener>(const UrlOpenerImpl());
+  _injector.addInstance<DismissedUpdateStore>(
+    HiveDismissedUpdateStore(settingsBox),
+  );
+  _appVersion = (await PackageInfo.fromPlatform()).version;
   _injector.addInstance<FolderLister>(const FolderListerImpl());
   _injector.addInstance<FileSystemReader>(const FileSystemReaderImpl());
   _injector.addInstance<FileReader>(const FileReaderImpl());
@@ -146,6 +164,34 @@ SetupViewModel buildSetupViewModel() {
     _injector.get<SystemPermissions>(),
     _injector.get<EnvironmentInstaller>(),
   );
+}
+
+/// Versão do app rodando, resolvida no boot via `package_info_plus`.
+String _appVersion = '0.0.0';
+
+/// ViewModel do aviso de atualização in-app (plano 43, passo 7). Resolve a
+/// plataforma/formato/arch correntes pra escolher o artefato certo do manifest.
+UpdateViewModel buildUpdateViewModel() {
+  final (platform, format, arch) = _updateTarget();
+  return UpdateViewModel(
+    _injector.get<UpdateChecker>(),
+    _injector.get<DismissedUpdateStore>(),
+    _injector.get<UrlOpener>(),
+    currentVersion: _appVersion,
+    platform: platform,
+    format: format,
+    arch: arch,
+  );
+}
+
+/// (plataforma, formato, arch) do manifest pra a máquina atual.
+/// macOS → dmg/universal; Windows → exe/x64; Linux → deb/(arm64|x64).
+(String, String, String) _updateTarget() {
+  if (Platform.isMacOS) return ('macos', 'dmg', 'universal');
+  if (Platform.isWindows) return ('windows', 'exe', 'x64');
+  final arch =
+      Platform.version.toLowerCase().contains('arm') ? 'arm64' : 'x64';
+  return ('linux', 'deb', arch);
 }
 
 /// Controller global de preferências (tema/fonte/syntax). Vive acima do

@@ -20,6 +20,9 @@ export function SiteHeader() {
           <Link className="lnk" href="/docs">
             Docs
           </Link>
+          <Link className="lnk" href="/download">
+            Download
+          </Link>
           <a
             className="lnk"
             href={GITHUB_URL}

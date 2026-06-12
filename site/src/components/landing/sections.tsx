@@ -5,6 +5,7 @@ import {
   IconAlwaysOn,
   IconMesh,
   IconArrow,
+  IconAndroid,
   IconPlay,
   IconApple,
   IconDownload,
@@ -118,29 +119,40 @@ type Store = {
   name: string;
   sub: string;
   href: string;
+  /** External store link (new tab). Internal hrefs route through /download. */
+  external?: boolean;
 };
 
 const STORES: Store[] = [
   {
-    glyph: <IconPlay />,
-    top: "Get it on",
-    name: "Google Play",
-    sub: "Now available",
-    href: "https://play.google.com/store/apps/details?id=work.jacobmoura.remotepi",
-  },
-  {
     glyph: <IconApple />,
     top: "Download on the",
     name: "App Store",
-    sub: "Now available",
+    sub: "iOS · iPhone & iPad",
     href: "https://apps.apple.com/app/remote-pi-coding-agent/id6773499691",
+    external: true,
+  },
+  {
+    glyph: <IconPlay />,
+    top: "Get it on",
+    name: "Google Play",
+    sub: "Android",
+    href: "https://play.google.com/store/apps/details?id=work.jacobmoura.remotepi",
+    external: true,
+  },
+  {
+    glyph: <IconAndroid />,
+    top: "Direct download",
+    name: "Android APK",
+    sub: "Signed · with sha256",
+    href: "/download",
   },
   {
     glyph: <IconDownload />,
-    top: "Direct download",
-    name: "Android APK",
-    sub: "GitHub Releases",
-    href: `${GITHUB_URL}/releases`,
+    top: "Desktop app",
+    name: "Cockpit",
+    sub: "macOS · Windows · Linux",
+    href: "/download",
   },
 ];
 
@@ -152,28 +164,46 @@ export function GetApp() {
           <span className="eyebrow">Get the app</span>
           <h2>Pair your phone, drive your agents.</h2>
           <p>
-            The authenticator and the remote control — on the App Store, Google
-            Play, or as an Android APK on GitHub.
+            The authenticator and the remote control. Get it on the App Store or
+            Google Play, grab the Android APK direct, or download the desktop
+            Cockpit.
           </p>
         </div>
         <div className="app-grid">
-          {STORES.map((s, i) => (
-            <a
-              className="store reveal"
-              key={s.name}
-              href={s.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ transitionDelay: `${i * 0.06}s` }}
-            >
-              <span className="glyph">{s.glyph}</span>
-              <span>
-                <span className="s-top">{s.top}</span>
-                <div className="s-name">{s.name}</div>
-                <div className="s-sub">{s.sub}</div>
-              </span>
-            </a>
-          ))}
+          {STORES.map((s, i) => {
+            const inner = (
+              <>
+                <span className="glyph">{s.glyph}</span>
+                <span>
+                  <span className="s-top">{s.top}</span>
+                  <div className="s-name">{s.name}</div>
+                  <div className="s-sub">{s.sub}</div>
+                </span>
+              </>
+            );
+            const style = { transitionDelay: `${i * 0.06}s` };
+            return s.external ? (
+              <a
+                className="store reveal"
+                key={s.name}
+                href={s.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={style}
+              >
+                {inner}
+              </a>
+            ) : (
+              <Link
+                className="store reveal"
+                key={s.name}
+                href={s.href}
+                style={style}
+              >
+                {inner}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </section>

@@ -156,6 +156,45 @@ export function IconApple() {
   );
 }
 
+/* Windows — classic four-pane flag */
+export function IconWindows() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M3 4.6 10.7 3.5v7.8H3V4.6ZM11.6 3.37 21 2v9.3h-9.4V3.37ZM3 12.7h7.7v7.8L3 19.4v-6.7ZM11.6 12.7H21V22l-9.4-1.35V12.7Z" />
+    </svg>
+  );
+}
+
+/* Linux — penguin silhouette */
+export function IconLinux() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2.4c-2.1 0-3.5 1.7-3.5 4 0 .9.1 1.7.1 2.5 0 1-.7 1.7-1.6 3C6.1 13.2 5.2 14.4 5.2 15.8c0 .7.4 1.2 1.1 1.4-.1.3-.2.6-.2.9 0 1.4 2.6 2 5.9 2s5.9-.6 5.9-2c0-.3-.1-.6-.2-.9.7-.2 1.1-.7 1.1-1.4 0-1.4-.9-2.6-1.8-3.9-.9-1.3-1.6-2-1.6-3 0-.8.1-1.6.1-2.5 0-2.3-1.4-4-3.5-4Zm-1.6 3.2c.5 0 .9.5.9 1.1s-.4 1.1-.9 1.1-.9-.5-.9-1.1.4-1.1.9-1.1Zm3.2 0c.5 0 .9.5.9 1.1s-.4 1.1-.9 1.1-.9-.5-.9-1.1.4-1.1.9-1.1Z" />
+    </svg>
+  );
+}
+
+/* Android — robot front, line style */
+export function IconAndroid() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={S}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M7 4.5 5.5 2.8M17 4.5l1.5-1.7" opacity=".7" />
+      <path d="M5.5 11a6.5 6.5 0 0 1 13 0" />
+      <path d="M5.5 11h13v6a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 17v-6Z" />
+      <path d="M9 8h.01M15 8h.01" />
+      <path d="M8.7 18.5V21M15.3 18.5V21" opacity=".7" />
+    </svg>
+  );
+}
+
 export function IconPlay() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">

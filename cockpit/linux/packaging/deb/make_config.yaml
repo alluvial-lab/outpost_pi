@@ -1,0 +1,31 @@
+# Pacote .deb do Cockpit. NÃO buildável neste Mac — gerado nos jobs `linux-x64`
+# (ubuntu-24.04) e `linux-arm64` (ubuntu-24.04-arm) do CI. A arquitetura é
+# detectada pelo Fastforge (uname -m) no runner.
+#
+# Artefato resultante: remote-pi-cockpit_<versão>_<arch>.deb
+display_name: Remote Pi Cockpit
+package_name: remote-pi-cockpit
+maintainer:
+  name: Jacob Moura
+  email: jacobaraujo7@gmail.com
+section: devel
+priority: optional
+# Deps de runtime: GTK3 + libs base do bundle Flutter Linux. (Confirmar/expandir
+# via `ldd` do bundle no CI — premissa do plano.)
+dependencies:
+  - libgtk-3-0
+  - libblkid1
+  - liblzma5
+generic_name: Remote Pi Cockpit
+categories:
+  - Development
+  - IDE
+keywords:
+  - pi
+  - remote-pi
+  - agent
+  - cockpit
+startup_notify: true
+startup_wm_class: work.jacobmoura.cockpit
+icon: linux/runner/resources/app_icon_512.png
+metainfo: linux/work.jacobmoura.cockpit.metainfo.xml

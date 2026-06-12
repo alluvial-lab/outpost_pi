@@ -142,3 +142,8 @@ foreach(icon_size 64 128 256 512 1024)
     RENAME "${APPLICATION_ID}.png"
     COMPONENT Runtime)
 endforeach()
+
+# AppStream metainfo — descreve o app pra centros de software/empacotadores.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${APPLICATION_ID}.metainfo.xml"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/metainfo"
+  COMPONENT Runtime)
