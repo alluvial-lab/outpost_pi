@@ -127,12 +127,16 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" out/RemotePi.apk out/SHA256SUMS out/latest.json --clobber
           else
+            NOTES_FILE=$(mktemp)
+            {
+              echo "APK Android assinado — instalação direta. Conferir integridade com o SHA256SUMS."
+              echo ""
+              echo "---"
+              echo "**Publicação no site (gate manual):** baixe o \`latest.json\` desta release e coloque em \`/Users/flutterando/app/data/\` no host do rp-s3 — só então o site e o aviso in-app passam a ofertar esta versão."
+            } > "$NOTES_FILE"
             gh release create "$RELEASE_TAG" out/RemotePi.apk out/SHA256SUMS out/latest.json \
               --title "Remote Pi (app) ${VERSION}" \
-              --notes "APK Android assinado — instalação direta (fora da Play Store). Conferir integridade com o SHA256SUMS.
-
----
-**Publicação no site (gate manual):** baixe o \`latest.json\` desta release e coloque em \`/Users/flutterando/app/data/\` no host do rp-s3 — só então o site e o aviso in-app passam a ofertar esta versão." \
+              --notes-file "$NOTES_FILE" \
               --latest=false
           fi
 
