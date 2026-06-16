@@ -61,7 +61,11 @@ class PaneView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final active = vm.session(pane.active);
+    final tabs = pane.tabs;
+    // Índice da aba ativa em [tabs] (fallback 0 se, transitoriamente, o active
+    // ainda não constar na lista — ex.: durante um move/close).
+    final rawIndex = tabs.indexOf(pane.active);
+    final activeIndex = rawIndex < 0 ? 0 : rawIndex;
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -81,19 +85,37 @@ class PaneView extends StatelessWidget {
               onToggleRelayAgent: onToggleRelayAgent,
             ),
             Expanded(
-              child: active == null
+              child: tabs.isEmpty
                   ? const SizedBox.shrink()
-                  : _PaneBody(
-                      key: ValueKey('body-${active.id}'),
-                      item: active,
-                      focused: focused,
-                      onFillEmpty: (terminal) =>
-                          onFillEmpty(active.id, terminal),
+                  // IndexedStack mantém TODAS as abas montadas e só pinta a
+                  // ativa. Sem isso, trocar de aba remove o _PaneBody da anterior
+                  // da árvore e seu State é destruído — perdendo o estado de
+                  // *view*: scroll do transcript, viewport/seleção do terminal,
+                  // foco e o rascunho digitado no composer. (As sessões/dados já
+                  // persistem na VM; aqui preservamos a apresentação.)
+                  : IndexedStack(
+                      index: activeIndex,
+                      sizing: StackFit.expand,
+                      children: [for (final id in tabs) _keyedBody(id)],
                     ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  /// Corpo de uma aba, com key estável por sessão — preserva o State através de
+  /// troca e reordenação de abas. Só a aba ativa recebe `focused`; do contrário
+  /// vários terminais montados disputariam o foco do teclado.
+  Widget _keyedBody(String tabId) {
+    final session = vm.session(tabId);
+    if (session == null) return SizedBox.shrink(key: ValueKey('body-$tabId'));
+    return _PaneBody(
+      key: ValueKey('body-$tabId'),
+      item: session,
+      focused: focused && tabId == pane.active,
+      onFillEmpty: (terminal) => onFillEmpty(tabId, terminal),
     );
   }
 }
@@ -386,6 +408,10 @@ class _TabState extends State<_Tab> {
   final TextEditingController _ctrl = TextEditingController();
   final FocusNode _focus = FocusNode();
 
+  /// Instante do último tap nesta aba — usado pra detectar duplo-clique
+  /// manualmente (ver [_handleTap]).
+  DateTime? _lastTapAt;
+
   @override
   void initState() {
     super.initState();
@@ -406,6 +432,29 @@ class _TabState extends State<_Tab> {
     _ctrl.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  /// Tap na aba: **seleciona na hora** e detecta duplo-clique manualmente pra
+  /// renomear — sem `onDoubleTap`. Um `DoubleTapGestureRecognizer` seguraria a
+  /// arena de gestos por `kDoubleTapTimeout` (~300ms) antes de cada `onTapUp`,
+  /// atrasando a seleção. Por isso a aba de agente (única com renomear) demorava
+  /// ~meio segundo pra trocar, enquanto a de terminal (sem duplo-clique) trocava
+  /// na hora.
+  void _handleTap() {
+    final s = widget.item;
+    final agent = s is AgentSession ? s : null;
+    final canRename = agent != null && agent.status != AgentStatus.empty;
+    final now = DateTime.now();
+    final last = _lastTapAt;
+    _lastTapAt = now;
+    if (canRename &&
+        last != null &&
+        now.difference(last) < const Duration(milliseconds: 300)) {
+      _lastTapAt = null; // consumiu o segundo clique
+      _startEditing();
+      return;
+    }
+    widget.onSelect();
   }
 
   void _startEditing() {
@@ -601,8 +650,7 @@ class _TabState extends State<_Tab> {
         // Builder garante um BuildContext com RenderBox para showAppMenu.
         final interactive = Builder(
           builder: (menuCtx) => GestureDetector(
-            onTapUp: (d) => widget.onSelect(),
-            onDoubleTap: agent != null && !isEmpty ? _startEditing : null,
+            onTapUp: (d) => _handleTap(),
             onSecondaryTapUp: isEmpty ? null : (d) => _showTabMenu(menuCtx),
             child: tabBody,
           ),
