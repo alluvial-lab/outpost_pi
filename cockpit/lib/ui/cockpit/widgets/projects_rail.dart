@@ -662,8 +662,8 @@ class _MenuButton extends StatelessWidget {
         ),
         const AppMenuItem(
           value: 'delete',
-          label: 'Delete',
-          icon: Icons.delete_outline,
+          label: 'Close',
+          icon: Icons.close,
           danger: true,
         ),
       ],

@@ -161,16 +161,17 @@ class _CockpitPageState extends State<CockpitPage> {
     );
   }
 
-  /// "Deletar" o workspace (confirma → remove da base local + encerra agentes).
+  /// "Fechar" o workspace (confirma → remove da lista local + encerra agentes).
+  /// **Não deleta** a pasta no disco — só sai do cockpit.
   Future<void> _deleteProject(Project project) async {
     final vm = _vm;
     final ok = await showConfirmDialog(
       context,
-      title: 'Delete workspace',
+      title: 'Close workspace',
       message:
-          'Remove "${project.name}"? The agents in this workspace will be '
-          'terminated. The folder on disk is not deleted.',
-      confirmLabel: 'Delete',
+          'Close "${project.name}"? The agents in this workspace will be '
+          'terminated. The folder on disk is kept.',
+      confirmLabel: 'Close',
       danger: true,
     );
     if (!ok) return;
