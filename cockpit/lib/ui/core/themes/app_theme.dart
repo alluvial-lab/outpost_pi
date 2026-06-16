@@ -44,6 +44,12 @@ ThemeData buildTheme({
       selectionColor: colors.accentSoft,
       selectionHandleColor: colors.accent,
     ),
+    // Tooltips: exigem ~0,5s de hover antes de aparecer (default do Flutter é
+    // `Duration.zero` → instantâneo, que parecia "rápido demais"). Global aqui
+    // pra todos os Tooltip do app ficarem consistentes.
+    tooltipTheme: const TooltipThemeData(
+      waitDuration: Duration(milliseconds: 500),
+    ),
     // Botões secundários ("Cancelar" etc.) — fosco/neutro, **não** com a cor
     // primária (que faria parecer a ação principal). Pareiam com o FilledButton.
     textButtonTheme: TextButtonThemeData(

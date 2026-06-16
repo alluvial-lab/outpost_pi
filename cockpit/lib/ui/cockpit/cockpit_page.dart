@@ -111,7 +111,12 @@ class _CockpitPageState extends State<CockpitPage> {
     _mark('dialog:done result=$result');
     if (result == null) return false;
     _mark('addProject:start');
-    await vm.addProject(path, name: result.name, colorValue: result.colorValue);
+    await vm.addProject(
+      path,
+      name: result.name,
+      colorValue: result.colorValue,
+      imagePath: result.imagePath,
+    );
     _mark('addProject:done');
     return true;
   }
@@ -124,12 +129,14 @@ class _CockpitPageState extends State<CockpitPage> {
       name: project.name,
       colorValue: project.colorValue,
       path: project.path,
+      imagePath: project.imagePath,
     );
     if (result == null) return;
     await vm.updateProject(
       project.id,
       name: result.name,
       colorValue: result.colorValue,
+      imagePath: result.imagePath,
     );
     if (!mounted) return;
     if (result.name != project.name) {
@@ -247,7 +254,11 @@ class _CockpitPageState extends State<CockpitPage> {
     final session = vm.session(agentId);
     if (session is! AgentSession) return;
     unawaited(
-      vm.saveAgentConfig(agentId, agentName: name, autoStartRelay: session.autoStartRelay),
+      vm.saveAgentConfig(
+        agentId,
+        agentName: name,
+        autoStartRelay: session.autoStartRelay,
+      ),
     );
   }
 
@@ -337,6 +348,12 @@ class _CockpitPageState extends State<CockpitPage> {
                             onDelete: _deleteProject,
                             onCreateWorktree: _createWorktree,
                             onRemoveWorktree: _removeWorktree,
+                            onReorder: (moved, target, before) =>
+                                vm.reorderWorkspace(
+                                  moved,
+                                  target,
+                                  before: before,
+                                ),
                             onOpenSettings: () =>
                                 context.push(RoutePaths.settings),
                           ),

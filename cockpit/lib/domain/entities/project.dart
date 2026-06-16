@@ -11,7 +11,13 @@ class Project {
     required this.colorValue,
     required this.createdAt,
     this.parentId,
+    this.order = 0,
+    this.imagePath,
   });
+
+  /// Sentinela do [copyWith] para distinguir "não mexer em [imagePath]" de
+  /// "limpar [imagePath] (passar null)".
+  static const Object unchanged = Object();
 
   final String id;
 
@@ -30,19 +36,36 @@ class Project {
   /// é uma worktree (fork). Define o aninhamento no rail.
   final String? parentId;
 
+  /// Posição manual no rail (drag-drop de workspaces). Só relevante para
+  /// workspaces raiz — worktrees herdam a do pai e aninham embaixo dele.
+  /// Persistido; default `0` (dados antigos caem na ordem por [createdAt]).
+  final int order;
+
+  /// Caminho absoluto de uma imagem (PNG/JPG) que substitui o avatar
+  /// quadrado-com-inicial no rail. `null` = sem imagem. Persistido; se o arquivo
+  /// sumir/ilegível, a UI cai num placeholder de erro (ver `WorkspaceAvatar`).
+  final String? imagePath;
+
   /// `true` quando este `Project` é uma worktree de outro workspace.
   bool get isWorktree => parentId != null;
 
   /// Inicial pro avatar da rail.
   String get initial => name.isNotEmpty ? name[0].toUpperCase() : '?';
 
-  Project copyWith({String? name, int? colorValue}) => Project(
+  Project copyWith({
+    String? name,
+    int? colorValue,
+    int? order,
+    Object? imagePath = unchanged,
+  }) => Project(
     id: id,
     name: name ?? this.name,
     path: path,
     colorValue: colorValue ?? this.colorValue,
     createdAt: createdAt,
     parentId: parentId,
+    order: order ?? this.order,
+    imagePath: imagePath == unchanged ? this.imagePath : imagePath as String?,
   );
 
   @override

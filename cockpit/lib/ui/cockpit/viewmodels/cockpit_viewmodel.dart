@@ -134,8 +134,15 @@ class CockpitViewModel extends ChangeNotifier {
   List<Project> get projects => List<Project>.unmodifiable(_projectList);
 
   /// Só os workspaces raiz (sem as worktrees) — o nível de topo do rail.
-  List<Project> get rootProjects =>
-      _projectList.where((p) => p.parentId == null).toList(growable: false);
+  List<Project> get rootProjects {
+    final roots = _projectList.where((p) => p.parentId == null).toList();
+    // Ordem manual do usuário (drag-drop); createdAt como desempate/fallback.
+    roots.sort((a, b) {
+      final byOrder = a.order.compareTo(b.order);
+      return byOrder != 0 ? byOrder : a.createdAt.compareTo(b.createdAt);
+    });
+    return List<Project>.unmodifiable(roots);
+  }
 
   /// Worktrees (forks) de um workspace raiz, na ordem do git (vazio se nenhuma).
   List<Project> worktreesOf(String rootId) =>
@@ -275,10 +282,12 @@ class CockpitViewModel extends ChangeNotifier {
       unawaited(_refreshWorktrees(project.id));
     }
     // Detecta IDEs instaladas (assíncrono — topbar atualiza ao chegar).
-    unawaited(_launcher.probe().then((apps) {
-      _availableApps = apps;
-      notifyListeners();
-    }));
+    unawaited(
+      _launcher.probe().then((apps) {
+        _availableApps = apps;
+        notifyListeners();
+      }),
+    );
   }
 
   /// Abre a pasta do projeto selecionado no [app] informado.
@@ -292,7 +301,12 @@ class CockpitViewModel extends ChangeNotifier {
   /// Cria (ou seleciona, se já existir) um workspace pra [path]. [name] e
   /// [colorValue] permitem sobrescrever os defaults (fluxo "Criar Workspace",
   /// onde o usuário edita nome/cor antes de confirmar).
-  Future<Project> addProject(String path, {String? name, int? colorValue}) async {
+  Future<Project> addProject(
+    String path, {
+    String? name,
+    int? colorValue,
+    String? imagePath,
+  }) async {
     for (final existing in _projectList) {
       if (existing.path == path) {
         _selectedProjectId = existing.id;
@@ -305,13 +319,20 @@ class CockpitViewModel extends ChangeNotifier {
         ? name.trim()
         : (basename.isEmpty ? path : basename);
     // Cor pela contagem de raízes (forks não entram no rodízio da paleta).
-    final rootCount = _projectList.where((p) => p.parentId == null).length;
+    final roots = _projectList.where((p) => p.parentId == null);
+    final rootCount = roots.length;
+    // Entra no fim da lista (maior order + 1).
+    final nextOrder = roots.isEmpty
+        ? 0
+        : roots.map((p) => p.order).reduce(max) + 1;
     final project = Project(
       id: path, // o caminho é único e estável entre reinícios
       name: resolvedName,
       path: path,
       colorValue: colorValue ?? _palette[rootCount % _palette.length],
       createdAt: DateTime.now(),
+      order: nextOrder,
+      imagePath: imagePath,
     );
     _projectList.add(project);
     _selectedProjectId = project.id;
@@ -323,16 +344,50 @@ class CockpitViewModel extends ChangeNotifier {
     return project;
   }
 
-  /// Altera nome e/ou cor do projeto e persiste.
-  Future<void> updateProject(String id, {String? name, int? colorValue}) async {
+  /// Altera nome, cor e/ou imagem do projeto e persiste. [imagePath] usa o
+  /// sentinel [Project.unchanged] como default — passe `null` para **remover** a
+  /// imagem, ou um caminho para defini-la.
+  Future<void> updateProject(
+    String id, {
+    String? name,
+    int? colorValue,
+    Object? imagePath = Project.unchanged,
+  }) async {
     final index = _projectList.indexWhere((p) => p.id == id);
     if (index < 0) return;
     final updated = _projectList[index].copyWith(
       name: name,
       colorValue: colorValue,
+      imagePath: imagePath,
     );
     _projectList[index] = updated;
     await _projects.save(updated);
+    notifyListeners();
+  }
+
+  /// Reordena os workspaces raiz (drag-drop no rail): move [movedId] para antes
+  /// ou depois de [targetId] e persiste a nova sequência no campo `order`. As
+  /// worktrees acompanham o pai (herdam o `order` na reconciliação).
+  Future<void> reorderWorkspace(
+    String movedId,
+    String targetId, {
+    required bool before,
+  }) async {
+    if (movedId == targetId) return;
+    final roots = rootProjects.toList(); // já ordenado por order
+    final from = roots.indexWhere((p) => p.id == movedId);
+    if (from < 0 || roots.indexWhere((p) => p.id == targetId) < 0) return;
+    final moved = roots.removeAt(from);
+    var insertAt = roots.indexWhere((p) => p.id == targetId);
+    if (!before) insertAt += 1;
+    roots.insert(insertAt, moved);
+    // Reatribui order sequencial (0..n) e persiste cada raiz.
+    for (var i = 0; i < roots.length; i++) {
+      final updated = roots[i].copyWith(order: i);
+      final idx = _projectList.indexWhere((p) => p.id == updated.id);
+      if (idx >= 0) _projectList[idx] = updated;
+      await _projects.save(updated);
+    }
     notifyListeners();
   }
 
@@ -344,8 +399,7 @@ class CockpitViewModel extends ChangeNotifier {
     }
     _disposeProjectRuntime(id);
     _projectList.removeWhere((p) => p.id == id);
-    if (_selectedProjectId == id ||
-        _projectById(_selectedProjectId) == null) {
+    if (_selectedProjectId == id || _projectById(_selectedProjectId) == null) {
       _selectedProjectId = rootProjects.isEmpty ? null : rootProjects.first.id;
     }
     await _projects.remove(id);
@@ -396,7 +450,9 @@ class CockpitViewModel extends ChangeNotifier {
         final fork = _projectById(value.path);
         if (fork == null) {
           return const Failure(
-            WorktreeOpError('Worktree created, but did not appear in the list.'),
+            WorktreeOpError(
+              'Worktree created, but did not appear in the list.',
+            ),
           );
         }
         if (clonedLayout != null) {
@@ -405,7 +461,9 @@ class CockpitViewModel extends ChangeNotifier {
           _savedLayouts[fork.id] = clonedLayout;
           unawaited(_layoutStore.save(fork.id, clonedLayout));
         }
-        selectProject(fork.id); // auto-select → activate → reconstrói a estrutura
+        selectProject(
+          fork.id,
+        ); // auto-select → activate → reconstrói a estrutura
         return Success<Project, WorktreeOpError>(fork);
     }
   }
@@ -557,8 +615,7 @@ class CockpitViewModel extends ChangeNotifier {
     _setActiveTree(
       updateLeaf(tree, leaf.id, (p) {
         if (replaceEmpty) {
-          final tabs =
-              p.tabs.map((t) => t == leaf.active ? s.id : t).toList();
+          final tabs = p.tabs.map((t) => t == leaf.active ? s.id : t).toList();
           return p.copyWith(tabs: tabs, active: s.id);
         }
         return p.copyWith(tabs: [...p.tabs, s.id], active: s.id);
@@ -611,7 +668,10 @@ class CockpitViewModel extends ChangeNotifier {
       t = updateLeaf(
         t,
         srcPaneId,
-        (p) => p.copyWith(tabs: remaining, active: _activeAfter(src, tabId, remaining)),
+        (p) => p.copyWith(
+          tabs: remaining,
+          active: _activeAfter(src, tabId, remaining),
+        ),
       );
     }
     _setActiveTree(t);
@@ -648,11 +708,21 @@ class CockpitViewModel extends ChangeNotifier {
       t = updateLeaf(
         t,
         srcPaneId,
-        (p) => p.copyWith(tabs: remaining, active: _activeAfter(src, tabId, remaining)),
+        (p) => p.copyWith(
+          tabs: remaining,
+          active: _activeAfter(src, tabId, remaining),
+        ),
       );
     }
     // 2. Divide o alvo, inserindo o novo pane.
-    t = splitLeaf(t, targetPaneId, dir, newLeaf, splitId: _nid('sp'), before: before);
+    t = splitLeaf(
+      t,
+      targetPaneId,
+      dir,
+      newLeaf,
+      splitId: _nid('sp'),
+      before: before,
+    );
     // 3. Origem ficou vazia → remove (o irmão expande).
     if (remaining.isEmpty) {
       t = removeLeaf(t, srcPaneId);
@@ -683,7 +753,11 @@ class CockpitViewModel extends ChangeNotifier {
     if (srcPaneId == targetPaneId) {
       final tabs = reorderTabs(src.tabs, tabId, index);
       _setActiveTree(
-        updateLeaf(tree, srcPaneId, (p) => p.copyWith(tabs: tabs, active: tabId)),
+        updateLeaf(
+          tree,
+          srcPaneId,
+          (p) => p.copyWith(tabs: tabs, active: tabId),
+        ),
       );
       _focused[projectId] = srcPaneId;
       notifyListeners();
@@ -705,7 +779,10 @@ class CockpitViewModel extends ChangeNotifier {
       t = updateLeaf(
         t,
         srcPaneId,
-        (p) => p.copyWith(tabs: remaining, active: _activeAfter(src, tabId, remaining)),
+        (p) => p.copyWith(
+          tabs: remaining,
+          active: _activeAfter(src, tabId, remaining),
+        ),
       );
     }
     _setActiveTree(t);
@@ -893,16 +970,17 @@ class CockpitViewModel extends ChangeNotifier {
     String? preferredModelId,
     ThinkingLevel preferredThinking = ThinkingLevel.off,
   }) {
-    final s = AgentSession(
-      id: id,
-      projectId: project.id,
-      workingDirectory: cwd,
-      factory: _factory,
-      title: title,
-      autoStartRelay: autoStartRelay,
-    )
-      ..preferredModelId = preferredModelId
-      ..preferredThinking = preferredThinking;
+    final s =
+        AgentSession(
+            id: id,
+            projectId: project.id,
+            workingDirectory: cwd,
+            factory: _factory,
+            title: title,
+            autoStartRelay: autoStartRelay,
+          )
+          ..preferredModelId = preferredModelId
+          ..preferredThinking = preferredThinking;
     s.onTurnEnd = () => _onAgentTurnEnd(s);
     s.onPreferenceChanged = () => _scheduleSave(project.id);
     _sessions[s.id] = s;
@@ -916,9 +994,9 @@ class CockpitViewModel extends ChangeNotifier {
     Project project,
     String? restoreSessionPath,
   ) async {
-    s.sessionBaseline = (await _history.sessionsFor(cwd))
-        .map((e) => e.path)
-        .toSet();
+    s.sessionBaseline = (await _history.sessionsFor(
+      cwd,
+    )).map((e) => e.path).toSet();
     await s.boot(
       environment: _buildDirectConfig(s, project),
       restoreSessionPath: restoreSessionPath,
@@ -1080,7 +1158,11 @@ class CockpitViewModel extends ChangeNotifier {
 
     var tree = paneNodeFromJson(treeJson.cast<String, dynamic>());
     _bumpSeqPast(sessionsJson.keys, tree); // antes do sanitize criar ids novos
-    tree = _sanitizeTree(tree, created, id); // descarta abas que não restauraram
+    tree = _sanitizeTree(
+      tree,
+      created,
+      id,
+    ); // descarta abas que não restauraram
     _trees[id] = tree;
     final focused = doc['focused'] as String?;
     _focused[id] = (focused != null && findLeaf(tree, focused) != null)
@@ -1279,8 +1361,8 @@ class CockpitViewModel extends ChangeNotifier {
         ];
         // Folha que só tinha viewers fica vazia → o sanitize do restore põe um
         // placeholder. `active` aqui é só um fallback inofensivo nesse caso.
-        final active = tabIdMap[node.active] ??
-            (tabs.isNotEmpty ? tabs.first : newId);
+        final active =
+            tabIdMap[node.active] ?? (tabs.isNotEmpty ? tabs.first : newId);
         return LeafPane(id: newId, tabs: tabs, active: active);
       case SplitPane():
         final newId = nodeIdMap.putIfAbsent(node.id, () => _nid('sp'));
@@ -1380,6 +1462,7 @@ class CockpitViewModel extends ChangeNotifier {
           colorValue: root.colorValue,
           createdAt: root.createdAt,
           parentId: rootId,
+          order: root.order, // aninha junto do pai
         ),
     ];
 

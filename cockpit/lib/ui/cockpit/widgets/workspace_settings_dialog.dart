@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:cockpit/ui/cockpit/widgets/workspace_avatar.dart';
 import 'package:cockpit/ui/core/themes/themes.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 // DEBUG temporário: marcadores síncronos pra localizar o segfault no Windows ARM.
@@ -24,20 +26,24 @@ const List<int> kWorkspacePalette = <int>[
   0xFF8E8E96,
 ];
 
-/// Dialog de configurações do workspace: nome + cor do avatar. Devolve
-/// `(name, colorValue)` ou `null` se cancelar.
-Future<({String name, int colorValue})?> showWorkspaceSettingsDialog(
+/// Dialog de configurações do workspace: nome, cor e foto do avatar. Devolve
+/// `(name, colorValue, imagePath)` ou `null` se cancelar. `imagePath` null no
+/// retorno = sem imagem (nunca teve ou foi removida).
+Future<({String name, int colorValue, String? imagePath})?>
+showWorkspaceSettingsDialog(
   BuildContext context, {
   required String name,
   required int colorValue,
   required String path,
+  String? imagePath,
 }) {
-  return showDialog<({String name, int colorValue})>(
+  return showDialog<({String name, int colorValue, String? imagePath})>(
     context: context,
     builder: (context) => _WorkspaceSettingsDialog(
       name: name,
       colorValue: colorValue,
       path: path,
+      imagePath: imagePath,
     ),
   );
 }
@@ -47,11 +53,13 @@ class _WorkspaceSettingsDialog extends StatefulWidget {
     required this.name,
     required this.colorValue,
     required this.path,
+    required this.imagePath,
   });
 
   final String name;
   final int colorValue;
   final String path;
+  final String? imagePath;
 
   @override
   State<_WorkspaceSettingsDialog> createState() =>
@@ -62,12 +70,14 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
   late final TextEditingController _name;
   final FocusNode _nameFocus = FocusNode();
   late int _color;
+  late String? _imagePath;
 
   @override
   void initState() {
     super.initState();
     _name = TextEditingController(text: widget.name);
     _color = widget.colorValue;
+    _imagePath = widget.imagePath;
     _trace('dlg:initState');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _trace('dlg:postframe-before-focus');
@@ -87,8 +97,24 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
     final name = _name.text.trim();
     if (name.isEmpty) return;
     _trace('save:before-pop');
-    Navigator.of(context).pop((name: name, colorValue: _color));
+    Navigator.of(
+      context,
+    ).pop((name: name, colorValue: _color, imagePath: _imagePath));
     _trace('save:after-pop');
+  }
+
+  /// Escolhe um PNG/JPG para o avatar do workspace. Guarda só o caminho — se o
+  /// arquivo sumir depois, o `WorkspaceAvatar` mostra o placeholder de erro.
+  Future<void> _pickImage() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['png', 'jpg', 'jpeg'],
+      dialogTitle: 'Choose workspace photo',
+    );
+    if (!mounted || result == null) return;
+    final path = result.files.single.path;
+    if (path == null) return;
+    setState(() => _imagePath = path);
   }
 
   @override
@@ -123,21 +149,12 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
               const SizedBox(height: 18),
               Row(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Color(_color),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Text(
-                      initial,
-                      style: context.typo.title.copyWith(
-                        fontSize: 18,
-                        color: Colors.white,
-                      ),
-                    ),
+                  WorkspaceAvatar(
+                    imagePath: _imagePath,
+                    colorValue: _color,
+                    initial: initial,
+                    size: 40,
+                    radius: 9,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -178,6 +195,25 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _PhotoButton(
+                    icon: Icons.image_outlined,
+                    label: _imagePath == null ? 'Add photo' : 'Change photo',
+                    onTap: _pickImage,
+                  ),
+                  if (_imagePath != null) ...[
+                    const SizedBox(width: 8),
+                    _PhotoButton(
+                      icon: Icons.delete_outline,
+                      label: 'Remove',
+                      danger: true,
+                      onTap: () => setState(() => _imagePath = null),
+                    ),
+                  ],
+                ],
+              ),
               const SizedBox(height: 18),
               Text(
                 'Color',
@@ -204,7 +240,10 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
               const SizedBox(height: 6),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
                 decoration: BoxDecoration(
                   color: colors.panel2,
                   borderRadius: BorderRadius.circular(7),
@@ -276,6 +315,46 @@ class _Swatch extends StatelessWidget {
         child: selected
             ? const Icon(Icons.check, size: 15, color: Colors.white)
             : null,
+      ),
+    );
+  }
+}
+
+/// Botão compacto da seção de foto (Add/Change/Remove).
+class _PhotoButton extends StatelessWidget {
+  const _PhotoButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final fg = danger ? colors.error : colors.text2;
+    return Material(
+      color: colors.panel2,
+      borderRadius: BorderRadius.circular(7),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(7),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: fg),
+              const SizedBox(width: 7),
+              Text(label, style: context.typo.label.copyWith(color: fg)),
+            ],
+          ),
+        ),
       ),
     );
   }

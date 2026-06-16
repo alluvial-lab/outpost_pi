@@ -19,7 +19,12 @@ class HiveProjectRepository implements ProjectRepository {
         .map(_fromMap)
         .whereType<Project>()
         .toList();
-    projects.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    // Ordem manual do usuário (drag-drop); `createdAt` como desempate e como
+    // fallback para dados antigos (todos com order=0 → caem no createdAt).
+    projects.sort((a, b) {
+      final byOrder = a.order.compareTo(b.order);
+      return byOrder != 0 ? byOrder : a.createdAt.compareTo(b.createdAt);
+    });
     return projects;
   }
 
@@ -35,6 +40,8 @@ class HiveProjectRepository implements ProjectRepository {
     'path': p.path,
     'color': p.colorValue,
     'createdAt': p.createdAt.millisecondsSinceEpoch,
+    'order': p.order,
+    'image': p.imagePath,
   };
 
   Project? _fromMap(Map<dynamic, dynamic> map) {
@@ -49,6 +56,9 @@ class HiveProjectRepository implements ProjectRepository {
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         (map['createdAt'] as num?)?.toInt() ?? 0,
       ),
+      // Ausente em dados de versões anteriores → 0 (ordena por createdAt).
+      order: (map['order'] as num?)?.toInt() ?? 0,
+      imagePath: map['image'] as String?,
     );
   }
 }
