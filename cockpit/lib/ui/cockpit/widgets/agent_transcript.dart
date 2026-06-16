@@ -201,7 +201,7 @@ class _EntryView extends StatelessWidget {
                   color: context.colors.text3,
                 ),
               )
-            : AgentMarkdown(text),
+            : _CachedMarkdown(text),
       ),
       ThinkingEntry(:final text) => _ThinkingBlock(text: text),
       ToolEntry() => _ToolCard(tool: entry as ToolEntry),
@@ -238,6 +238,37 @@ class _EntryView extends StatelessWidget {
       ),
     };
   }
+}
+
+/// Cacheia o [AgentMarkdown] por texto. O parsing do `gpt_markdown` roda no
+/// `build` e é caro; o transcript rebuilda em toda notificação da sessão (cada
+/// delta de streaming) e em toda troca de aba (o `IndexedStack` mantém o corpo
+/// montado, e o rebuild do `_PaneBody` propaga até aqui). Reusar a **mesma
+/// instância** do widget quando o texto não mudou faz o framework pular o
+/// rebuild da subárvore (`identical` → sem re-parse / re-layout do markdown).
+///
+/// Mudança de tema continua refletindo: a dependência de `InheritedWidget` (cores)
+/// é registrada lá dentro do [AgentMarkdown] e rebuilda o descendente direto,
+/// fora deste atalho de identidade (que só pula rebuilds vindos do pai).
+class _CachedMarkdown extends StatefulWidget {
+  const _CachedMarkdown(this.text);
+  final String text;
+
+  @override
+  State<_CachedMarkdown> createState() => _CachedMarkdownState();
+}
+
+class _CachedMarkdownState extends State<_CachedMarkdown> {
+  late Widget _markdown = AgentMarkdown(widget.text);
+
+  @override
+  void didUpdateWidget(_CachedMarkdown old) {
+    super.didUpdateWidget(old);
+    if (old.text != widget.text) _markdown = AgentMarkdown(widget.text);
+  }
+
+  @override
+  Widget build(BuildContext context) => _markdown;
 }
 
 /// Formata a duração de um turno: `12s` → `3m 05s` → `1h 02m`.
