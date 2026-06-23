@@ -13,6 +13,7 @@ import 'package:cockpit/ui/cockpit/widgets/app_menu.dart';
 import 'package:cockpit/ui/cockpit/widgets/confirm_dialog.dart';
 import 'package:cockpit/ui/cockpit/widgets/empty_pane.dart';
 import 'package:cockpit/ui/cockpit/widgets/file_viewer.dart';
+import 'package:cockpit/ui/cockpit/widgets/terminal_pane.dart';
 import 'package:cockpit/ui/core/file_icons/file_icons.dart';
 import 'package:cockpit/ui/core/themes/terminal_theme.dart';
 import 'package:cockpit/ui/core/themes/themes.dart';
@@ -925,8 +926,7 @@ class _PaneBodyState extends State<_PaneBody> {
   /// atalho confiável de colar é o Cmd+V — por isso checamos a tecla certa por
   /// plataforma. As demais teclas seguem o fluxo normal do terminal (`ignored`).
   KeyEventResult _onTerminalKey(KeyEvent event, TerminalSession session) {
-    if (event is! KeyDownEvent ||
-        event.logicalKey != LogicalKeyboardKey.keyV) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyV) {
       return KeyEventResult.ignored;
     }
     // Cmd+V no macOS (atalho confiável; o Ctrl+V cru é engolido pelo IME) e
@@ -978,8 +978,8 @@ class _PaneBodyState extends State<_PaneBody> {
         color: context.colors.panel,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 8, 0, 8),
-          child: TerminalView(
-            item.terminal,
+          child: TerminalPane(
+            terminal: item.terminal,
             focusNode: _terminalFocus,
             // Windows: o caminho de IME/TextInput do xterm quebra no desktop
             // ("Could not set client, view ID is null") e impede digitar. O
@@ -988,7 +988,7 @@ class _PaneBodyState extends State<_PaneBody> {
             hardwareKeyboardOnly: Platform.isWindows,
             // Intercepta o atalho de colar pra suportar IMAGEM do clipboard
             // (o paste padrão do xterm só cola texto). Ver `_onTerminalKey`.
-            onKeyEvent: (_, event) => _onTerminalKey(event, item),
+            onKeyEvent: (event) => _onTerminalKey(event, item),
             theme: cockpitTerminalThemeFor(Theme.of(context).brightness),
             textStyle: termStyle,
           ),
