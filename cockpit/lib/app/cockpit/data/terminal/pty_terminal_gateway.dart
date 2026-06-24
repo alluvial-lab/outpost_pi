@@ -18,7 +18,7 @@ class PtyTerminalGateway implements TerminalGateway {
       _shell(),
       arguments: _shellArgs(),
       workingDirectory: workingDirectory.isEmpty ? null : workingDirectory,
-      environment: Map<String, String>.of(Platform.environment),
+      environment: _terminalEnv(),
       rows: rows,
       columns: columns,
     );
@@ -43,6 +43,27 @@ class PtyTerminalGateway implements TerminalGateway {
       // já encerrado.
     }
   }
+
+  /// Ambiente do PTY: herda o do app e **anuncia as capacidades do terminal**
+  /// que o emulador realmente tem, mas que ninguém declarava.
+  ///
+  /// - `TERM=xterm-256color`: o `xterm` (pacote Flutter) emula um xterm de 256
+  ///   cores. Fixamos explícito em vez de depender do default do `kyroon_pty`
+  ///   (que só preenche se ausente) — ao abrir pelo Finder, o `.app` não herda
+  ///   `TERM` algum e TUIs ncurses degradam.
+  /// - `COLORTERM=truecolor`: **a correção central pra "as cores saem um pouco
+  ///   diferentes".** O emulador pinta RGB 24-bit (SGR `38;2;r;g;b`), mas sem
+  ///   esta var os harnesses TUI (claude, codex, vim, lazygit…) assumem que o
+  ///   terminal não tem truecolor e rebaixam pra aproximações de 256 cores —
+  ///   exatamente o que iTerm/Terminal.app evitam ao anunciá-la.
+  ///
+  /// O `kyroon_pty` faz `addAll(environment)` por último, então estes overrides
+  /// vencem o que veio herdado.
+  Map<String, String> _terminalEnv() => {
+    ...Platform.environment,
+    'TERM': 'xterm-256color',
+    'COLORTERM': 'truecolor',
+  };
 
   /// Shell por plataforma.
   String _shell() {
