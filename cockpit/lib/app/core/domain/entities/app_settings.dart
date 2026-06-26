@@ -20,6 +20,8 @@ class AppSettings {
     this.pinUserMessage = true,
     this.lastOpenAppId,
     this.lspCommands = const <String, String>{},
+    this.lspFormatters = const <String, String>{},
+    this.formatOnSave = false,
   });
 
   final AppThemeMode themeMode;
@@ -54,6 +56,14 @@ class AppSettings {
   /// catálogo. Editado na seção "Language" das Configurações.
   final Map<String, String> lspCommands;
 
+  /// Comando de formatador **externo** por `languageId`, com placeholder
+  /// `%FILE%` (ex.: `'typescript' → 'prettier --write %FILE%'`). Quando
+  /// presente, tem precedência sobre o formatting do LSP. Vazio = usa o LSP.
+  final Map<String, String> lspFormatters;
+
+  /// Formatar automaticamente ao salvar (Cmd+S).
+  final bool formatOnSave;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     String? interfaceFont,
@@ -68,6 +78,8 @@ class AppSettings {
     bool? pinUserMessage,
     String? lastOpenAppId,
     Map<String, String>? lspCommands,
+    Map<String, String>? lspFormatters,
+    bool? formatOnSave,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -84,6 +96,8 @@ class AppSettings {
       pinUserMessage: pinUserMessage ?? this.pinUserMessage,
       lastOpenAppId: lastOpenAppId ?? this.lastOpenAppId,
       lspCommands: lspCommands ?? this.lspCommands,
+      lspFormatters: lspFormatters ?? this.lspFormatters,
+      formatOnSave: formatOnSave ?? this.formatOnSave,
     );
   }
 
@@ -98,6 +112,8 @@ class AppSettings {
     'pinUserMessage': pinUserMessage,
     if (lastOpenAppId != null) 'lastOpenAppId': lastOpenAppId,
     if (lspCommands.isNotEmpty) 'lspCommands': lspCommands,
+    if (lspFormatters.isNotEmpty) 'lspFormatters': lspFormatters,
+    if (formatOnSave) 'formatOnSave': true,
   };
 
   factory AppSettings.fromJson(Map<dynamic, dynamic> json) {
@@ -125,6 +141,8 @@ class AppSettings {
       pinUserMessage: json['pinUserMessage'] as bool? ?? true,
       lastOpenAppId: str(json['lastOpenAppId']),
       lspCommands: _strMap(json['lspCommands']),
+      lspFormatters: _strMap(json['lspFormatters']),
+      formatOnSave: json['formatOnSave'] as bool? ?? false,
     );
   }
 }

@@ -7,8 +7,11 @@ import 'package:cockpit/app/cockpit/ui/session/file_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/agent_markdown.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/code_editor.dart';
+import 'package:cockpit/app/core/data/lsp/lsp_command.dart';
+import 'package:cockpit/app/core/data/lsp/lsp_launchers.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_text_edit.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
+import 'package:cockpit/app/core/ui/settings_controller.dart';
 import 'package:cockpit/app/core/ui/widgets/code_editing_controller.dart';
 import 'package:cockpit/app/core/ui/widgets/code_highlight.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/media_view.dart';
@@ -214,11 +217,37 @@ class _FileViewerState extends State<FileViewer> {
     _updateDirty(false);
   }
 
+  /// Comando de formatador externo (`%FILE%`) configurado pra linguagem deste
+  /// arquivo, ou `null`. Lido das Configurações (app-scoped).
+  String? _externalFormatter() {
+    final lang = languageForPath(widget.session.path)?.id;
+    if (lang == null) return null;
+    return context.read<SettingsController>().settings.lspFormatters[lang];
+  }
+
+  bool get _formatOnSave =>
+      context.read<SettingsController>().settings.formatOnSave;
+
   /// Grava o buffer em disco. Retorna `true` no sucesso (ou se nada a salvar).
+  /// Com **format-on-save** ligado: formatadores de buffer (JSON/LSP) rodam
+  /// **antes** de gravar; formatador externo roda **depois** (file-based) e relê.
   Future<bool> _save() async {
     final ctrl = _ctrl;
     if (ctrl == null) return false;
     if (!_dirty || _saving) return true;
+
+    final external = _externalFormatter();
+    final formatOnSave = _formatOnSave;
+
+    // Buffer-format antes de gravar (só quando não há formatador externo).
+    if (formatOnSave && external == null) {
+      final formatted = await _formatBuffer();
+      if (!mounted) return false;
+      if (formatted != null && formatted != ctrl.text) {
+        _applyToBuffer(formatted);
+      }
+    }
+
     final content = ctrl.text;
     setState(() => _saving = true);
     final ok = await widget.onSave(content);
@@ -228,42 +257,83 @@ class _FileViewerState extends State<FileViewer> {
       _baseline = content;
       _updateDirty(false);
     }
+
+    // Formatador externo: roda no arquivo já gravado e relê.
+    if (ok && formatOnSave && external != null) {
+      await _runExternalFormatter(external);
+    }
     return ok;
   }
 
-  /// Formata o buffer: JSON via stdlib (sem servidor); demais via LSP
-  /// (`textDocument/formatting`, edits aplicados no buffer). Preserva o cursor
-  /// (best-effort). No-op se não há mudança, JSON inválido, ou linguagem sem
-  /// servidor/suporte a formatting.
+  /// Formata sob demanda (⇧⌘F). Externo (file-based) tem precedência; senão
+  /// JSON via stdlib / LSP no buffer.
   Future<void> _format() async {
     final ctrl = _ctrl;
     if (ctrl == null || _saving) return;
+    final external = _externalFormatter();
+    if (external != null) {
+      // File-based: grava o buffer atual, roda o formatador, relê.
+      final ok = await _save();
+      if (!ok || !mounted) return;
+      await _runExternalFormatter(external);
+      return;
+    }
+    final formatted = await _formatBuffer();
+    if (!mounted || formatted == null || formatted == ctrl.text) return;
+    _applyToBuffer(formatted);
+  }
+
+  /// Formata o conteúdo atual **no buffer** e devolve o texto (sem gravar):
+  /// JSON via stdlib, demais via LSP. `null` se não há o que formatar.
+  Future<String?> _formatBuffer() async {
+    final ctrl = _ctrl;
+    if (ctrl == null) return null;
     final path = widget.session.path;
     final ext = path.contains('.') ? path.split('.').last.toLowerCase() : '';
-    final original = ctrl.text;
-    String? formatted;
-
     if (ext == 'json') {
       try {
-        final decoded = jsonDecode(original);
-        formatted = '${const JsonEncoder.withIndent('  ').convert(decoded)}\n';
+        return '${const JsonEncoder.withIndent('  ').convert(jsonDecode(ctrl.text))}\n';
       } catch (_) {
-        return; // JSON inválido → não mexe
+        return null; // JSON inválido
       }
-    } else {
-      final vm = _vm;
-      if (vm == null) return;
-      final edits = await vm.lspFormat(path, original);
-      if (!mounted || edits.isEmpty) return;
-      formatted = applyTextEdits(original, edits);
     }
+    final vm = _vm;
+    if (vm == null) return null;
+    final edits = await vm.lspFormat(path, ctrl.text);
+    if (edits.isEmpty) return null;
+    return applyTextEdits(ctrl.text, edits);
+  }
 
-    if (formatted == original) return;
+  /// Roda o formatador externo no arquivo em disco e relê o buffer.
+  Future<void> _runExternalFormatter(String command) async {
+    final result = await runFormatterCommand(command, widget.session.path);
+    if (!mounted) return;
+    await result.fold((_) => _reloadFromDisk(), (_) async {});
+  }
+
+  /// Relê o conteúdo do disco para o buffer (após o formatador externo).
+  Future<void> _reloadFromDisk() async {
+    try {
+      final fresh = await File(widget.session.path).readAsString();
+      if (!mounted) return;
+      final ctrl = _ctrl;
+      if (ctrl == null || ctrl.text == fresh) return;
+      _applyToBuffer(fresh);
+      _baseline = fresh;
+      _updateDirty(false);
+      unawaited(_vm?.lspChangeDocument(widget.session.path, fresh));
+    } catch (_) {}
+  }
+
+  /// Aplica [text] no buffer preservando o cursor (best-effort).
+  void _applyToBuffer(String text) {
+    final ctrl = _ctrl;
+    if (ctrl == null) return;
     final caret = ctrl.selection.baseOffset;
     ctrl.value = TextEditingValue(
-      text: formatted,
+      text: text,
       selection: TextSelection.collapsed(
-        offset: caret < 0 ? 0 : caret.clamp(0, formatted.length),
+        offset: caret < 0 ? 0 : caret.clamp(0, text.length),
       ),
     );
   }

@@ -719,12 +719,28 @@ class _LanguagesPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<SettingsController>();
-    final overrides = ctrl.settings.lspCommands;
+    final settings = ctrl.settings;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 24, 28, 40),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _Section(
+            label: 'FORMATTING',
+            child: _Card(
+              children: [
+                _Row(
+                  title: 'Format on save',
+                  description:
+                      'Format the file automatically when you save (⌘S).',
+                  trailing: Switch(
+                    value: settings.formatOnSave,
+                    onChanged: ctrl.setFormatOnSave,
+                  ),
+                ),
+              ],
+            ),
+          ),
           _Section(
             label: 'LANGUAGE SERVERS',
             child: _Card(
@@ -733,17 +749,19 @@ class _LanguagesPanel extends StatelessWidget {
                   _LanguageRow(
                     key: ValueKey(def.id),
                     def: def,
-                    overrideCommand: overrides[def.id],
-                    onChanged: (value) => ctrl.setLspCommand(def.id, value),
+                    overrideCommand: settings.lspCommands[def.id],
+                    formatterCommand: settings.lspFormatters[def.id],
+                    onChangedCommand: (v) => ctrl.setLspCommand(def.id, v),
+                    onChangedFormatter: (v) => ctrl.setLspFormatter(def.id, v),
                   ),
               ],
             ),
           ),
           Text(
-            'Erros e formatação usam o language server da linguagem. O Cockpit '
-            'não instala servidores — ele usa o que já está na sua máquina. '
-            '● responde · ○ não encontrado ou comando inválido (instale o '
-            'servidor ou ajuste o comando).',
+            'Errors and formatting use each language\'s language server. '
+            'Cockpit does not install servers — it uses what is already on your '
+            'machine. ● responds · ○ not found or invalid command (install the '
+            'server or adjust the command).',
             style: context.typo.label.copyWith(color: context.colors.text3),
           ),
         ],
@@ -752,81 +770,99 @@ class _LanguagesPanel extends StatelessWidget {
   }
 }
 
-/// Linha de uma linguagem: nome + status (●/○) + campo do comando. A detecção no
-/// PATH roda ao montar e a cada edição (com o primeiro token do comando).
+/// Linha de uma linguagem (tile expansível): nome + status (●/○) e, ao expandir,
+/// o comando do language server + o comando do formatador externo (opcional). A
+/// sonda do servidor roda ao montar e ao salvar.
 class _LanguageRow extends StatefulWidget {
   const _LanguageRow({
     super.key,
     required this.def,
     required this.overrideCommand,
-    required this.onChanged,
+    required this.formatterCommand,
+    required this.onChangedCommand,
+    required this.onChangedFormatter,
   });
 
   final LanguageDef def;
   final String? overrideCommand;
-  final ValueChanged<String?> onChanged;
+  final String? formatterCommand;
+  final ValueChanged<String?> onChangedCommand;
+  final ValueChanged<String?> onChangedFormatter;
 
   @override
   State<_LanguageRow> createState() => _LanguageRowState();
 }
 
 class _LanguageRowState extends State<_LanguageRow> {
-  late final TextEditingController _ctrl;
+  late final TextEditingController _serverCtrl;
+  late final TextEditingController _formatterCtrl;
   bool? _available; // null = checando
   bool _expanded = false;
+  bool _dirty = false;
 
   String get _default => <String>[
     widget.def.defaultExecutable,
     ...widget.def.defaultArgs,
   ].join(' ').trim();
 
-  bool _dirty = false;
+  String get _savedServer => widget.overrideCommand ?? _default;
+  String get _savedFormatter => widget.formatterCommand ?? '';
 
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: widget.overrideCommand ?? _default);
-    _ctrl.addListener(_onTextChanged);
+    _serverCtrl = TextEditingController(text: _savedServer)
+      ..addListener(_onTextChanged);
+    _formatterCtrl = TextEditingController(text: _savedFormatter)
+      ..addListener(_onTextChanged);
     _detect();
   }
 
   @override
   void dispose() {
-    _ctrl.removeListener(_onTextChanged);
-    _ctrl.dispose();
+    _serverCtrl
+      ..removeListener(_onTextChanged)
+      ..dispose();
+    _formatterCtrl
+      ..removeListener(_onTextChanged)
+      ..dispose();
     super.dispose();
   }
 
-  /// Estado salvo atual (o que está persistido), pra comparar com o buffer.
-  String get _saved => widget.overrideCommand ?? _default;
-
   void _onTextChanged() {
-    final dirty = _ctrl.text.trim() != _saved.trim();
+    final dirty =
+        _serverCtrl.text.trim() != _savedServer.trim() ||
+        _formatterCtrl.text.trim() != _savedFormatter.trim();
     if (dirty != _dirty) setState(() => _dirty = dirty);
   }
 
-  /// Sonda o comando salvo: spawna e verifica se fica vivo como um LSP de
-  /// verdade (valida os argumentos, não só o binário). Usa o comando salvo
-  /// (`_saved`), não o buffer não-salvo — o status reflete o que está ativo.
+  /// Sonda o comando do servidor salvo: spawna e verifica se fica vivo como um
+  /// LSP de verdade (valida os argumentos, não só o binário no PATH).
   Future<void> _detect() async {
     setState(() => _available = null); // checando
-    final ok = await probeLspCommand(_saved);
+    final ok = await probeLspCommand(_savedServer);
     if (mounted) setState(() => _available = ok);
   }
 
-  /// Salva o comando (persiste + reinicia o LSP daquela linguagem via o listener
-  /// do shell). Igual ao default → limpa o override.
+  /// Persiste comando do servidor + formatador (reinicia o LSP da linguagem via
+  /// o listener do shell). Servidor igual ao default → limpa o override.
   void _save() {
-    final value = _ctrl.text.trim();
-    widget.onChanged(value.isEmpty || value == _default ? null : value);
+    final server = _serverCtrl.text.trim();
+    widget.onChangedCommand(
+      server.isEmpty || server == _default ? null : server,
+    );
+    final formatter = _formatterCtrl.text.trim();
+    widget.onChangedFormatter(formatter.isEmpty ? null : formatter);
     setState(() => _dirty = false);
     _detect();
   }
 
-  /// Volta ao comando padrão do catálogo e salva (limpa o override).
+  /// Volta o servidor ao default e limpa o formatador (limpa ambos os overrides).
   void _reset() {
-    _ctrl.text = _default;
-    widget.onChanged(null);
+    _serverCtrl.text = _default;
+    _formatterCtrl.text = '';
+    widget.onChangedCommand(null);
+    widget.onChangedFormatter(null);
     setState(() => _dirty = false);
     _detect();
   }
@@ -866,30 +902,30 @@ class _LanguageRowState extends State<_LanguageRow> {
             ],
           ),
         ),
-        // Corpo expandido: rótulo + campo do comando (largura cheia). Espaço pra
-        // crescer com mais opções por linguagem no futuro.
         if (_expanded)
           Padding(
             padding: const EdgeInsets.fromLTRB(40, 0, 14, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Language server command',
-                  style: context.typo.label.copyWith(color: colors.text3),
-                ),
+                _fieldLabel(context, 'Language server command'),
                 const SizedBox(height: 6),
-                TextField(
-                  controller: _ctrl,
-                  onSubmitted: (_) => _save(),
-                  style: context.typo.mono.copyWith(
-                    fontSize: 12.5,
-                    color: colors.text,
-                  ),
-                  placeholder: Text(_default),
-                  borderRadius: BorderRadius.circular(7),
+                _commandField(context, _serverCtrl, _default),
+                const SizedBox(height: 14),
+                _fieldLabel(context, 'Formatter command (optional)'),
+                const SizedBox(height: 6),
+                _commandField(
+                  context,
+                  _formatterCtrl,
+                  'prettier --write %FILE%',
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 4),
+                Text(
+                  'External formatter with %FILE% placeholder. Takes precedence '
+                  'over the LSP formatter when set.',
+                  style: context.typo.label.copyWith(color: colors.text4),
+                ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     HoverTap(
@@ -932,6 +968,26 @@ class _LanguageRowState extends State<_LanguageRow> {
       ],
     );
   }
+
+  Widget _fieldLabel(BuildContext context, String text) => Text(
+    text,
+    style: context.typo.label.copyWith(color: context.colors.text3),
+  );
+
+  Widget _commandField(
+    BuildContext context,
+    TextEditingController controller,
+    String placeholder,
+  ) => TextField(
+    controller: controller,
+    onSubmitted: (_) => _save(),
+    style: context.typo.mono.copyWith(
+      fontSize: 12.5,
+      color: context.colors.text,
+    ),
+    placeholder: Text(placeholder),
+    borderRadius: BorderRadius.circular(7),
+  );
 }
 
 /// Bolinha de status do executável: verde (encontrado), cinza vazado (ausente),

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
+import 'package:cockpit/app/core/domain/result.dart';
 import 'package:cockpit/app/core/utils/executable_resolver.dart';
 
 /// Quebra uma linha de comando em tokens respeitando aspas simples/duplas (pra
@@ -72,4 +73,40 @@ Future<bool> probeLspCommand(String command) async {
 
   proc.kill(ProcessSignal.sigkill);
   return aliveAfterWindow;
+}
+
+/// Roda um **formatador externo** (ex.: `prettier --write %FILE%`) sobre o
+/// arquivo em [filePath]. O token `%FILE%` é substituído pelo caminho em cada
+/// argumento. File-based: o formatador reescreve o arquivo no disco. Sucesso se
+/// exit code 0; senão devolve o stderr (ou exit code) como mensagem.
+Future<Result<void, String>> runFormatterCommand(
+  String command,
+  String filePath,
+) async {
+  final parts = splitLspCommand(command.trim());
+  if (parts.isEmpty) return const Failure('Empty formatter command.');
+  if (!command.contains('%FILE%')) {
+    return const Failure(
+      'Formatter command must include the %FILE% placeholder.',
+    );
+  }
+  final substituted = parts
+      .map((t) => t.replaceAll('%FILE%', filePath))
+      .toList();
+  final exec = await resolveExecutable(substituted.first);
+  try {
+    final r = await Process.run(
+      exec,
+      substituted.sublist(1),
+      environment: await envWithNodeOnPath(),
+      runInShell: Platform.isWindows,
+    ).timeout(const Duration(seconds: 30));
+    if (r.exitCode == 0) return const Success(null);
+    final err = (r.stderr as String? ?? '').trim();
+    return Failure(err.isEmpty ? 'Formatter exited with ${r.exitCode}.' : err);
+  } on TimeoutException {
+    return const Failure('Formatter timed out.');
+  } catch (e) {
+    return Failure('$e');
+  }
 }

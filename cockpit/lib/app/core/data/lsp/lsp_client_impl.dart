@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cockpit/app/core/data/lsp/lsp_codec.dart';
+import 'package:cockpit/app/core/data/lsp/lsp_process_registry.dart';
 import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
 import 'package:cockpit/app/core/domain/contracts/lsp_client.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
@@ -64,6 +65,7 @@ class LspClientImpl implements LspClient {
         runInShell: Platform.isWindows,
       );
       _process = process;
+      unawaited(LspProcessRegistry.register(process.pid));
 
       _stdoutSub = process.stdout
           .transform(const LspMessageDecoder())
@@ -332,8 +334,10 @@ class LspClientImpl implements LspClient {
     _stderrSub?.cancel();
     _stdoutSub = null;
     _stderrSub = null;
+    final exitedPid = _process?.pid;
     _process = null;
     _initialized = false;
+    if (exitedPid != null) unawaited(LspProcessRegistry.unregister(exitedPid));
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
         completer.completeError(
