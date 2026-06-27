@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cockpit/app/core/data/lsp/lsp_command.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_launchers.dart';
@@ -278,8 +279,20 @@ class LspServerPool {
     }
 
     final resolved = await resolveExecutable(executable);
+    // Não sobe o servidor se o binário não existe de fato. `resolveExecutable`
+    // devolve o nome cru quando não acha (ex.: `gopls` sem o `~/go/bin` na PATH
+    // de um launch GUI). Spawnar um executável inexistente dispara
+    // ProcessException — e, no modo merged-thread, um SIGPIPE que derrubava o app
+    // inteiro. Degradação graciosa: retorna null → status "stopped", e um
+    // restart (após instalar o server / ajustar o comando) re-tenta.
+    if (!_resolvesToRealFile(resolved)) return null;
     return def.toSpec(executable: resolved, args: args);
   }
+
+  /// `true` se [exec] aponta pra um arquivo real (caminho absoluto existente).
+  /// Nome cru (sem separador) = `resolveExecutable` não achou → não dá pra subir.
+  bool _resolvesToRealFile(String exec) =>
+      (exec.contains('/') || exec.contains(r'\')) && File(exec).existsSync();
 
   /// Separador da chave `(linguagem, raiz)`. NUL nunca aparece num caminho nem
   /// num languageId, então é um delimitador seguro (raízes podem ter espaços).
