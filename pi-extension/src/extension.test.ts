@@ -3418,7 +3418,7 @@ describe("rooms wiring", () => {
     expect(_getState()).toBe("idle");
   });
 
-  test("PeerChannel outer envelope omits `room` field (defensive, until W1.A/C ready)", async () => {
+  test("PeerChannel outer envelope carries `room` (relay-0.2.0 requires it for routing)", async () => {
     captureHandler("remote-pi");
     await _connectForTest(makeMockCtx("/tmp/remote-pi-room-test"));
 
@@ -3441,9 +3441,14 @@ describe("rooms wiring", () => {
     const allFrames = sent.map((line) => JSON.parse(line) as { peer: string; room?: string; ct: string });
     const channelFrames = allFrames.filter((o) => o.peer === "peer-room-test");
     expect(channelFrames.length).toBeGreaterThan(0);
-    // Defensive: no frame should carry `room` until downstream is ready.
+    // relay-0.2.0 requires `room` on every outer envelope (relay/src/protocol/
+    // generated/outer.rs derives `pub room: String` with deny_unknown_fields); a
+    // frame missing it is rejected with `invalid json: missing field room`.
+    // The value is the DESTINATION room (the app's auth room, "main") so the
+    // relay routes to the app's (peer, "main") connection. The relay rewrites
+    // the delivered frame's `room` to the SENDER's auth room (anti-spoof).
     for (const f of channelFrames) {
-      expect(f.room).toBeUndefined();
+      expect(f.room).toBe("main");
     }
   });
 });
