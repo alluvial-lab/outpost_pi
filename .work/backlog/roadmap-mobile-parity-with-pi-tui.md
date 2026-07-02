@@ -67,6 +67,19 @@ prompt/response order. The transport health (connected/reconnecting/offline)
 is a separate concern that should compose with, not collapse into, the agent
 state.
 
+### Guiding principle: the pi TUI is the reference implementation
+
+When in doubt about what the mobile app should do, **port the affordance from
+the pi TUI** rather than designing mobile UX from scratch. The TUI already
+encodes the canonical interaction model (steering indicator, Stop semantics,
+message reorder-on-pickup, working/waiting distinction, tool-execution
+visibility). A user will expect the app to behave similarly to the TUI they
+already know, so the TUI is the source of truth for interaction semantics;
+the mobile work is adaptation (touch affordances, lifecycle resilience,
+compact status presentation), not reinvention. Audit the TUI's affordances
+systematically when scoping each parity gap — the answer to "what should the
+app do here?" is usually "whatever the TUI does."
+
 ## Not yet scoped
 
 This capture deliberately does not:
