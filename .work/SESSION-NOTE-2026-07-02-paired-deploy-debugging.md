@@ -68,10 +68,14 @@ cause. Recording the full trail so it isn't re-derived.
   failure); kept the suppress ONLY in `_sendRelayStateSnapshot` (the one
   telemetry path that was actually spamming). Pair-code + critical sends now
   surface failure loudly.
-- **Status: STILL BROKEN after restart.** The operator restarted pi and
-  re-ran `/remote-pi pair`; footer now shows 🟢 relay connected (auth fix
-  works), "QR ready" notify fires, but **still no QR/pairing code printed.**
-  The revert didn't resolve it. → See follow-up below.
+- **Status: ROOT-CAUSED & FIXED** (story-pair-code-qr-not-rendering). The
+  revert was necessary but not sufficient. Root cause was NOT the send guard
+  — it was `SdkSessionProjection.bindSessionContext` calling
+  `replaceSessionCapabilities(ctx)`, which nulled the `messageApi` armed at
+  factory init on every `session_start` (the `session_start` ctx from
+  `ExtensionRunner.createContext()` carries no `sendMessage`/`sendUserMessage`).
+  Fix: `bindSessionContext` now uses additive `bindCapabilities` (pre-split
+  behavior). Regression test added. dist rebuilt. → See story for full grounding.
 
 ## Current state (what's live)
 
@@ -146,6 +150,18 @@ whether it does. If it fires, the projection binding is the issue; if not,
    connection. The extension can be in "started" state with a null/
    unauthenticated RelayClient. Trust server logs over the footer for
    connection truth.
+5. **Mocked-ctx false greens:** the `session_start replacement contexts …`
+   test mocked the `session_start` ctx WITH `sendMessage`/`sendUserMessage`
+   attached — but the real SDK ctx (`ExtensionRunner.createContext()`) does
+   NOT carry those. The test passed while production was broken. When a test
+   exercises a lifecycle binding, ground the mock ctx shape against the actual
+   SDK `createContext()` output, not the type union's richest member.
+6. **Regression-introducing refactor pattern:** a split that changed an
+   additive bind (`bindCapabilities`: only set when value qualifies) into a
+   replacing bind (`replaceSessionCapabilities`: unconditional null-else-set)
+   silently inverted the semantics for inputs that don't carry the capability.
+   When extracting `replaceSessionCapabilities`, audit every caller: the
+   `session_start` ctx is NOT a replacement context.
 
 ## Uncommitted working-tree state (verify before next session)
 
