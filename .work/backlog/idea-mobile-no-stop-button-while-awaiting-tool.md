@@ -7,14 +7,20 @@ tags: [app, pi-extension, ux, bug]
 
 # Mobile: agent doesn't show "working" (and no Stop button) while waiting on a tool result
 
-## Observed
+## Observed (refined with operator 2026-07-02)
 
 While the agent is waiting for a `bash` or `background` command to come back,
-the mobile app does not show the agent as "working," and there is no Stop
-button in that state. The user can't interrupt a turn that's blocked on a
-long-running tool call. This is "technically accurate" (the model isn't
-streaming tokens) but poor UX: the user has no indication the turn is still
-active and no way to cancel it.
+the mobile app shows the status as **"online"** — same as fully idle — and
+there is no Stop button. For contrast, while the model is actively thinking
+the app shows **"working."** So the current three-state surface collapses to:
+
+- thinking/streaming tokens → **"working"**
+- awaiting tool result → **"online"** (looks idle — wrong)
+- actually idle → **"online"**
+
+A distinct **"waiting"** status (or similar) would let the user see the turn
+is still active but blocked on a tool, and a Stop button is needed in that
+state so the user can interrupt a turn stuck on a long-running tool call.
 
 ## Root cause (bounded scan — projection gap, not data gap)
 
@@ -55,9 +61,15 @@ interruptible.
   path (`pi-extension/src/index.ts` `_abortCurrentTurn`, `cancel` message in
   `_routeClientMessageFrom`). The app sends `cancel`; confirm it interrupts a
   tool-blocked turn and not just token streaming.
-- Consider distinct UX for `awaitingTool` (e.g. "running tool…" vs
-  "working…") so the user sees the agent is blocked on a tool, not idle —
-  the `AppTurnStatus.awaitingTool` value is already there to drive it.
+- **Primary UX ask (operator 2026-07-02):** surface a distinct **"waiting"**
+  status during `awaitingTool`, separate from both "working" (token
+  streaming) and "online" (idle). The `AppTurnStatus.awaitingTool` value is
+  already there to drive it — the indicator just needs to read it and render
+  a third label/state instead of falling through to "online".
+  Candidate vocabulary: `working` (thinking) → `waiting` (awaiting tool) →
+  `online` (idle) → `reconnecting` / `offline`. Confirm whether the AppBar
+  dot color should also differ for `waiting` (e.g. a third color or a
+  pulsing variant) to distinguish blocked-but-active from idle.
 
 ## References
 
