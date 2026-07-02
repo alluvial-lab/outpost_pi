@@ -571,6 +571,14 @@ function _sendPiMessage(
   options?: Parameters<ExtensionAPI["sendMessage"]>[1],
   label = "sendMessage",
 ): boolean {
+  // The projection's `messageApi` is the source of truth for whether a Pi
+  // session is bound and can accept a send. The module-level `_messageApi`/
+  // `_pi` refs can lag (cleared on session_shutdown, re-armed on session_start)
+  // and disagree with the projection after replacement — checking only them
+  // produced "Pi rejected message" spam on relay-up before session_start armed
+  // the projection. Treat a projection with no binding as "not bound yet"
+  // (silent) rather than a rejected send.
+  if (!_sdkSessionProjection.messageApiBinding()) return false;
   const delivered = _sdkSessionProjection.sendPiMessage(message, options);
   if (!delivered) console.error(`[remote-pi] ${label}: Pi rejected message: agent session not bound yet`);
   return delivered;
@@ -957,10 +965,11 @@ function _emitRelayState(force = false): void {
 }
 
 function _sendRelayStateSnapshot(snapshot: RelayStateSnapshot): void {
-  // During session_shutdown we intentionally clear the message API before
-  // tearing down relay state. There is no live Pi session to notify, and the
-  // replacement instance / withSession rearm will publish its own fresh state.
-  if (!_messageApi && !_pi) return;
+  // Relay-state is display telemetry, never a load-bearing send. Suppress it
+  // entirely when no Pi session is bound (startup race before session_start,
+  // or during session_shutdown). The replacement instance / withSession rearm
+  // publishes its own fresh state once bound.
+  if (!_sdkSessionProjection.messageApiBinding()) return;
   _sendPiMessage({
     customType: "remote-pi:relay-state",
     content: `Relay ${snapshot.status}`,
