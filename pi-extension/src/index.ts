@@ -571,14 +571,6 @@ function _sendPiMessage(
   options?: Parameters<ExtensionAPI["sendMessage"]>[1],
   label = "sendMessage",
 ): boolean {
-  // The projection's `messageApi` is the source of truth for whether a Pi
-  // session is bound and can accept a send. The module-level `_messageApi`/
-  // `_pi` refs can lag (cleared on session_shutdown, re-armed on session_start)
-  // and disagree with the projection after replacement — checking only them
-  // produced "Pi rejected message" spam on relay-up before session_start armed
-  // the projection. Treat a projection with no binding as "not bound yet"
-  // (silent) rather than a rejected send.
-  if (!_sdkSessionProjection.messageApiBinding()) return false;
   const delivered = _sdkSessionProjection.sendPiMessage(message, options);
   if (!delivered) console.error(`[remote-pi] ${label}: Pi rejected message: agent session not bound yet`);
   return delivered;
