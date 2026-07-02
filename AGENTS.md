@@ -104,3 +104,91 @@ pnpm build
 ```
 
 Do not commit generated `dist/`, build artifacts, local `.pi/`, or secrets.
+
+## Deployment and running
+
+This fork runs end-to-end on the dev VM (`codebox` = `<lan-ip>`). The
+three runtime components are **separate artifacts** that deploy independently,
+and the pi-extension is registered as a **local-path** extension (not npm).
+
+### Component locations and how they load
+
+- **relay** — Docker container `remote-pi-relay` on `:3300` (host) → `:3000`
+  (container). Image built from `relay/` source (`docker build -t
+  remote-pi-relay:<version> relay/`); the persistent `mesh_versions` SQLite DB
+  lives in the named volume `remote-pi-data:/data`. Do NOT confuse with the
+  upstream image `jacobmoura7/remote-pi-relay:latest` (stale).
+- **pi-extension** — registered in `~/.pi/agent/settings.json` as the local path
+  `/home/agent/projects/remote_pi/pi-extension`, loading `dist/index.js` (the
+  `package.json` `main`). npm publishes `0.5.3`; ignore — the local path is
+  authoritative. `dist/` is gitignored and **not rebuilt automatically**; a
+  source edit requires `corepack pnpm build` (or `./node_modules/.bin/tsc` to
+  bypass the corepack deps-status RO-cache check) before it's live.
+- **app** — Flutter mobile; sideloaded via `adb install <apk>` to a phone on a
+  workstation (the VM has no phone attached).
+
+### Paired wire changes (deploy together)
+
+relay-0.2.0 introduced two wire changes that are **version-paired** — mixed
+versions break:
+- **Auth domain-separation** (`app-v1.2.0` ↔ `relay-0.2.0`): app signs
+  `remote-pi-relay-auth-v1\n` ++ nonce; relay verifies the same. Old app +
+  new relay (or vice versa) fails the WS handshake.
+- **`to_room` required** (`relay-0.2.0` ↔ `extension-0.6.0` sender): the
+  relay rejects `pi_envelope` frames with empty/missing `to_room` as
+  `bad_envelope`. The sender-side room-targeting (targeting the sibling's
+  actual room, not the temporary `"main"` default) is deferred to design —
+  see `story-to-room-sender-side-room-targeting`. It only affects **cross-PC
+  agent mesh** (Pi↔Pi `agent_send`); the app↔pi path is unaffected.
+
+Safe deploy order: **relay first**, then reload/restart the extension, then
+sideload the app.
+
+### Reload vs restart (pi-extension)
+
+`/reload` in the pi TUI re-fires `session_start` against the **already-loaded**
+module instance — it does **not** re-`require` `dist/index.js`. A source edit
+is only picked up by a **full pi process restart** (quit + relaunch), not
+`/reload`. If a fix is in `dist/` but the symptom persists after `/reload`, a
+stale module is still in memory; restart pi.
+
+### Relay container commands
+
+```bash
+# build from current fork source
+docker build -t remote-pi-relay:0.2.0 relay/
+# run (reproduces the live container's config: port 3300→3000, named volume)
+docker run -d --name remote-pi-relay -p 3300:3000 \
+  -v remote-pi-data:/data --restart unless-stopped remote-pi-relay:0.2.0
+# rebuild from updated source + swap in
+docker stop remote-pi-relay && docker rm remote-pi-relay  # then build + run
+```
+
+### App APK build on the dev VM (memory-sensitive)
+
+The VM has 11G RAM shared with ~10 other containers. The default
+`android/gradle.properties` heap (`-Xmx8G`) is for a workstation and will **OOM
+the VM**; `/tmp` is a **tmpfs** (RAM-backed) that Gradle also uses for build
+  temp. Two fixes are required for a safe build on the VM:
+- cap the Gradle heap to `3G` and redirect its temp off tmpfs:
+  `org.gradle.jvmargs=-Xmx3G ... -Djava.io.tmpdir=/home/agent/.gradle-tmp`
+  (mkdir `/home/agent/.gradle-tmp` first; it's on the 54G disk)
+- prefer `flutter build apk --release` (single fat APK, one dart2native pass)
+  over `--split-per-abi` (3 passes, ~3× peak RAM) when RAM is tight
+
+Toolchain: Flutter at `~/projects/remote_pi/.tools/flutter`, JDK 21
+(`JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`), Android SDK API 36 at
+`/opt/android-sdk`. Full build-path notes in `.agents/skills/flutter-mobile/SKILL.md`.
+
+### Sideload to phone
+
+The phone is attached to a workstation, not the VM. After building on the VM,
+copy the APK to the workstation and install with `adb` (USB debugging on):
+```bash
+scp app/build/app/outputs/flutter-apk/app-release.apk <workstation>:~/app.apk
+# on the workstation:
+adb install -r ~/app.apk   # -r keeps data; INSTALL_FAILED_UPDATE_INCOMPATIBLE →
+                            # adb uninstall dev.remotepi.app && adb install
+```
+The app's `pubspec.yaml` version is NOT bumped by `release-deploy`; bump it
+manually before building when shipping a new version.
