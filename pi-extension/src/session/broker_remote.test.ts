@@ -576,7 +576,7 @@ describe("detached cross-PC bridge components", () => {
       off: vi.fn(() => relay),
     };
     const onMessage = vi.fn();
-    const channel = new PlainPeerChannel(relay as never, "app-peer", undefined, onMessage);
+    const channel = new PlainPeerChannel(relay as never, "app-peer", onMessage);
     channel.detach();
 
     channel.send({ type: "pong", in_reply_to: "ping-1" } as never);
@@ -598,7 +598,7 @@ describe("detached cross-PC bridge components", () => {
       off: vi.fn(() => relay),
     };
     const onMessage = vi.fn();
-    new PlainPeerChannel(relay as never, "app-peer", undefined, onMessage);
+    new PlainPeerChannel(relay as never, "app-peer", onMessage);
 
     const malformedKnownClient = Buffer.from(JSON.stringify({
       type: "model_set",
