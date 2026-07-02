@@ -101,6 +101,31 @@ cause. Recording the full trail so it isn't re-derived.
   recipient-side, not routing. Trust the relay log's negatives, not just its
   positives.
 
+### Symptom 5 (after the cross-room fix): app pairs, then spins (no transcript)
+- After restarting pi with the cross-room fix, `/remote-pi pair` renders the
+  QR; the app scans and shows "Paired with Android device" — but the session
+  never hydrates (spinning, no chat/transcript).
+- **Decisive signal:** `docker logs` showed the relay rejecting EVERY frame
+  the Pi sends: `invalid relay frame, dropping peer=YqWjpYw= err=invalid
+  json: missing field room`. (`YqWjpYw=` is the Pi.)
+- **Root cause:** `PlainPeerChannel.send` emitted `{peer, ct}` with NO `room`
+  field (a deliberate older defensive hold from MVP — "until relay/app accept
+  the field"). But relay-0.2.0's generated `OuterEnvelope` made `room` REQUIRED
+  (`pub room: String`, `deny_unknown_fields`), so every post-pair server→app
+  frame was rejected with `missing field room` and dropped. This is the
+  `to_room required (relay-0.2.0 ↔ extension-0.6.0 sender)` paired wire change
+  flagged in AGENTS.md — the extension sender side was never updated.
+- **Fix (committed):** `PlainPeerChannel.send` now emits `room: "main"`
+  (the app's auth room, for relay routing to `(appPeer, "main")`). The relay
+  then rewrites the delivered `room` to the Pi's auth room (anti-spoof), which
+  the app's inbound filter accepts. Removed a stale unused `myRoomId` ctor
+  param that carried the WRONG value (the Pi's room, not the app's) — emitting
+  it would have routed to a nonexistent `(appPeer, piRoom)`. Flipped the
+  obsolete `omits room` test. → See story-peer-channel-room-required.
+- **Debugging lesson:** the relay log named the EXACT missing field (`missing
+  field room`) and the sender (`peer=YqWjpYw=` = the Pi). When the relay
+  rejects frames, the error string is the diagnosis — read it literally.
+
 ## Current state (what's live)
 
 - **relay**: `remote-pi-relay:0.2.0`, healthy, `RUST_LOG=relay=debug,info`

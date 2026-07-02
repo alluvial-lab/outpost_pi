@@ -270,7 +270,6 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     return new PlainPeerChannel(
       current,
       input.peerId,
-      input.roomId ?? roomId ?? undefined,
       (message) => { void input.onMessage(message); },
       () => input.onDisconnect(input.peerId),
     );
