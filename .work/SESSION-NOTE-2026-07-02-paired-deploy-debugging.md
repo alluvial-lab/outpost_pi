@@ -77,6 +77,30 @@ cause. Recording the full trail so it isn't re-derived.
   Fix: `bindSessionContext` now uses additive `bindCapabilities` (pre-split
   behavior). Regression test added. dist rebuilt. → See story for full grounding.
 
+### Symptom 4 (after the QR fix shipped): app scans QR, connects, then times out
+- After restarting pi with the QR-rendering fix, `/remote-pi pair` renders the
+  QR. App scans → connects to relay (footer 🟢) → spinning wheel ~30s →
+  `"Timed out — make sure /remote-pi is running on your Mac"`.
+- **Decisive signal:** `docker logs` (RUST_LOG=relay=debug,info) showed the
+  app `authenticated peer=/uV6O0I= room=main` then `disconnected` 30s later
+  with **no** `dest (peer, room) not found` warning. Routing succeeded; the
+  message reached the Pi and was dropped recipient-side.
+- **Root cause:** `OwnerMultiplexer.handleOuterLine` had a recipient-side guard
+  `if (outer.room && input.roomId && outer.room !== input.roomId) return;`.
+  But the relay's `dispatch_outer` REWRITES the delivered envelope's `room` to
+  the SENDER's auth room (anti-spoof). The app always auths in `main`; the Pi
+  is in its cwd-room — so the guard always dropped the pair_request (and would
+  drop ALL post-pair app traffic too). The relay's `(peer, room)` routing
+  already enforced delivery; the recipient-side re-check was redundant and
+  wrong.
+- **Fix (committed):** removed the guard from `OwnerMultiplexer.handleOuterLine`.
+  Regression test added (`makeRelayDeliveredLine` helper + cross-room pair test).
+  → See story-pair-request-cross-room-dropped for full grounding.
+- **Debugging lesson:** the relay debug log's *absence* of a `dest not found`
+  warning was the key — it proved the forward succeeded and the drop was
+  recipient-side, not routing. Trust the relay log's negatives, not just its
+  positives.
+
 ## Current state (what's live)
 
 - **relay**: `remote-pi-relay:0.2.0`, healthy, `RUST_LOG=relay=debug,info`

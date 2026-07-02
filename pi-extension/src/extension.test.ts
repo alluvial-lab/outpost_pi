@@ -219,6 +219,18 @@ function makeInnerLine(peer: string, inner: object): string {
   return JSON.stringify({ peer, ct });
 }
 
+/** Realistic relay-delivered envelope shape. The relay's `dispatch_outer`
+ *  rewrites the delivered `room` to the SENDER's authenticated room_id
+ *  (anti-spoof: "recipient sees sender's room_id"), not the destination
+ *  room the sender requested. For a pairing app (always authed in `main`)
+ *  targeting a Pi in its cwd-room, the delivered `room` is therefore `main`
+ *  — which differs from the Pi's own room. Tests that omit `room` (via
+ *  makeInnerLine) hide the recipient-side room guard; this helper exposes it. */
+function makeRelayDeliveredLine(peer: string, senderRoom: string, inner: object): string {
+  const ct = Buffer.from(JSON.stringify(inner)).toString("base64");
+  return JSON.stringify({ peer, room: senderRoom, ct });
+}
+
 function decodeSentCt(raw: string): { peer: string; inner: { type: string; [k: string]: unknown } } {
   const outer = JSON.parse(raw) as { peer: string; ct: string };
   const inner = JSON.parse(Buffer.from(outer.ct, "base64").toString("utf8")) as {
@@ -499,6 +511,42 @@ describe("state machine + pair_request flow", () => {
     expect(_addedPeers[0]).toMatchObject({
       name: "iPhone do Jacob",
       remote_epk: APP_PEER_ID,
+    });
+  });
+
+  test("pair_request delivered with sender's auth room (relay rewrite) still pairs cross-room", async () => {
+    // Regression: the relay's dispatch_outer rewrites the delivered envelope's
+    // `room` to the SENDER's authenticated room_id (anti-spoof). A pairing app
+    // auths in 'main' while the Pi is in its cwd-room, so the Pi receives
+    // outer.room='main' !== <pi room>. The recipient-side guard
+    // `outer.room !== roomId` dropped the pair_request → app timed out.
+    // The relay already enforced room routing (the message arrived because the
+    // sender's destination room matched the Pi's room); the recipient-side
+    // outer.room is the sender's auth room, not a destination to re-check.
+    _tokenStatus = "ok";
+    const APP_PEER_ID = "cross-room-pair-peer";
+
+    captureHandler("remote-pi");
+    await _connectForTest(makeMockCtx());
+    expect(_getState()).toBe("started");
+
+    // Relay-delivered shape: room = sender's auth room ('main'), not the Pi's.
+    relayRef.current!.emit("message", makeRelayDeliveredLine(APP_PEER_ID, "main", {
+      type: "pair_request",
+      id: "req-cross-room",
+      token: "test-token",
+      device_name: "Cross-room Phone",
+    }));
+
+    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+
+    const sent = relayRef.current!.send.mock.calls.map((c) => c[0] as string);
+    const pairOks = sent.map(decodeSentCt).filter((d) => d.inner.type === "pair_ok");
+    expect(pairOks).toHaveLength(1);
+    expect(pairOks[0]!.peer).toBe(APP_PEER_ID);
+    expect(pairOks[0]!.inner).toMatchObject({
+      type: "pair_ok",
+      in_reply_to: "req-cross-room",
     });
   });
 
