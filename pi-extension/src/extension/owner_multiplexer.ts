@@ -229,7 +229,19 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     const outer = decodeOuterEnvelope(input.line);
     if (!outer) return;
     if (!input.isCurrent()) return;
-    if (outer.room && input.roomId && outer.room !== input.roomId) return;
+    // NOTE: do NOT re-check `outer.room` against `input.roomId` here. The
+    // relay's `dispatch_outer` rewrites the DELIVERED envelope's `room` to the
+    // SENDER's authenticated room_id (anti-spoof: "recipient sees sender's
+    // room_id"), not the destination room the sender targeted. An app (and
+    // any peer that authenticates in `main`) targeting a Pi in its cwd-room
+    // delivers `outer.room = 'main'`, which never equals the Pi's own room —
+    // so a recipient-side guard here would silently drop EVERY cross-room
+    // message: the pair_request first (app times out), then all post-pair
+    // app traffic. Room routing was already enforced by the relay's
+    // `(peer, room)` lookup in `send_to_room` — this message arrived because
+    // the sender's destination room matched this Pi's registered room. The
+    // sender's identity is established by Ed25519 auth at the relay, not by
+    // this rewritten field, so there is no spoofing surface to re-defend.
     if (this.channels.has(outer.peer)) return;
 
     const inner = decodeClientMessage(outer.ct);
