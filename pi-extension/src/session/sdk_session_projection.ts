@@ -141,7 +141,18 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
 
   bindSessionContext(ctx: ExtensionContext): void {
     this.eventCtx = ctx;
-    this.replaceSessionCapabilities(ctx);
+    // Additive, not replacing: the `session_start` ctx (built by
+    // `ExtensionRunner.createContext()` in the SDK) carries ui/cwd/abort/compact
+    // but NOT sendMessage/sendUserMessage — only `ExtensionAPI` (the factory
+    // `pi`) and `ReplacedSessionContext` carry those. Replacing here would null
+    // the valid `messageApi` armed at factory init by `bindApi(pi)` on every
+    // session_start (including startup), making `sendPiMessage` return false and
+    // silently dropping user-facing renders like the pair-code QR. Additive
+    // `bindCapabilities` only rebinds when the ctx actually carries the message
+    // API (a `withSession` ReplacedSessionContext), which is the intended path;
+    // otherwise the `pi`-armed binding is preserved. `bindReplacementContext`
+    // still calls `replaceSessionCapabilities` to drop a stale `pi`.
+    this.bindCapabilities(ctx);
   }
 
   bindReplacementContext(ctx: ActionCtx): RemoteSessionId {
