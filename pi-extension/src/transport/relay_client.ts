@@ -7,6 +7,12 @@ import {
   REACHABILITY_RELAY_LIVENESS_TIMEOUT_MS,
 } from "../reachability/reachability_contract.js";
 
+/** Auth-signature domain prefix. MUST match the relay's `RELAY_AUTH_DOMAIN_PREFIX`
+ *  (`relay/src/auth/challenge.rs`). The relay verifies the auth signature over
+ *  `prefix ++ nonce`; signing the bare nonce is rejected as `invalid signature`
+ *  and makes the extension a signing oracle under the long-term identity key. */
+const RELAY_AUTH_DOMAIN_PREFIX = Buffer.from("remote-pi-relay-auth-v1\n", "utf8");
+
 const AUTH_TIMEOUT_MS = 5_000;
 
 /**
@@ -236,7 +242,13 @@ export class RelayClient extends EventEmitter {
     }
 
     const nonce = Buffer.from((challenge as ChallengeMsg).nonce, "base64");
-    const sig = ed25519Sign(this.keypair.secretKey, nonce);
+    // Domain-separated auth signature: must match the relay's
+    // `RELAY_AUTH_DOMAIN_PREFIX` (relay/src/auth/challenge.rs). The relay
+    // verifies the signature over `prefix ++ nonce`, NOT the bare nonce —
+    // signing the bare nonce makes the extension a signing oracle for
+    // arbitrary Ed25519 messages under the long-term identity key and is
+    // rejected by relay-0.2.0 as `invalid signature`.
+    const sig = ed25519Sign(this.keypair.secretKey, Buffer.concat([RELAY_AUTH_DOMAIN_PREFIX, nonce]));
     const auth: AuthMsg = {
       type: "auth",
       sig: Buffer.from(sig).toString("base64"),
