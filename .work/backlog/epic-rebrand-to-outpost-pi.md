@@ -27,10 +27,13 @@ needs its own name now.
 
 ## The name: Outpost-Pi
 
-**Outpost-Pi** — the outpost designated Pi (military designation convention,
-à la "Outpost Alpha"). The Pi session is a forward position you hold and
-operate from; you command it from the field (phone). The relay is the supply
-line.
+**Outpost-Pi** — the outpost designated Pi (a la "Outpost Alpha").
+
+- **The name is just the name.** Do NOT carry any military metaphor into the
+  product: no forward-position / field-command / supply-line framing in docs,
+  README, site copy, status labels, or design language. The word "outpost" in
+  the name carries no operative meaning beyond being the product wordmark.
+  (Operator stance, 2026-07-02.)
 
 - Stays Pi-centric honestly: Pi is in the name, and the product is
   Pi-centric and will remain so (this is the Pi-native control surface).
