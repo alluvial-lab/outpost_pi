@@ -19,13 +19,32 @@ export interface RemoteSession {
 
 type SessionIdContext = Pick<ExtensionContext, "sessionManager">;
 
-function hasSessionManager(value: unknown): value is SessionIdContext {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "sessionManager" in value &&
-    typeof (value as { sessionManager?: { getSessionId?: unknown } }).sessionManager?.getSessionId === "function"
-  );
+/**
+ * Whether `value` exposes a usable `sessionManager.getSessionId()`. Reading the
+ * `sessionManager` getter on a STALE SDK ctx throws a stale-context error via
+ * `ExtensionRunner.assertActive()`, and this helper is reached from the relay
+ * message router (`_routeClientMessageFrom` → `_currentRemoteSessionId` →
+ * `resolveRemoteSessionId`) on EVERY inbound session-scoped message — so an
+ * unguarded read here crashes pi (the same crash-class as `wrapActionCtx`'s
+ * `modelRegistry` access, one frame earlier and more reachable). The stale
+ * error is caught by the caller (`resolveRemoteSessionId`), which falls back to
+ * a fresh UUID7 id; the session_gate then rejects the stale message gracefully
+ * instead of crashing the process.
+ */
+function safeSessionManager(value: unknown): { getSessionId(): unknown } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  if (!("sessionManager" in value)) return undefined;
+  let sm: unknown;
+  try {
+    sm = (value as { sessionManager?: unknown }).sessionManager;
+  } catch {
+    // Stale ctx: the guarded getter threw. Caller falls back to a UUID7.
+    return undefined;
+  }
+  if (sm && typeof (sm as { getSessionId?: unknown }).getSessionId === "function") {
+    return sm as { getSessionId(): unknown };
+  }
+  return undefined;
 }
 
 export function uuid7(): string {
@@ -44,8 +63,15 @@ export function uuid7(): string {
 }
 
 export function resolveRemoteSessionId(ctx: unknown): RemoteSessionId {
-  if (hasSessionManager(ctx)) {
-    const sdkId = ctx.sessionManager.getSessionId();
+  const sm = safeSessionManager(ctx);
+  if (sm) {
+    let sdkId: unknown;
+    try {
+      sdkId = sm.getSessionId();
+    } catch {
+      // `getSessionId()` itself may throw on a stale runner; fall back.
+      return uuid7();
+    }
     if (typeof sdkId === "string" && sdkId.length > 0) return sdkId;
   }
   return uuid7();
