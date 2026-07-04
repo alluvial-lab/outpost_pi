@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { SdkSessionProjection, isAgentMessageApi } from "./sdk_session_projection.js";
+import type { LegacyAgentMessage } from "./transcript_projection.js";
 
 /**
  * Regression coverage for the pair-code QR-not-rendering bug.
@@ -81,5 +82,314 @@ describe("SdkSessionProjection messageApi binding across session_start", () => {
     const fresh = makePi();
     projection.bindSessionContext(fresh as never);
     expect(projection.messageApiBinding()).toBe(fresh);
+  });
+});
+
+/**
+ * Regression: a stale-ctx failure in `wakeAgent` (and the null-`messageApi`
+ * window after a replacement) must be RECOVERABLE, not a permanent
+ * `internal_error`. The phone should tolerate it — a sibling pi may have
+ * handled the message (cross-process fanout to the same owner_pk+room), or
+ * the next session_start rebinds a working api and the phone retries. Real
+ * delivery failures stay non-recoverable so they still surface.
+ */
+describe("SdkSessionProjection wakeAgent recoverable failures", () => {
+  const STALE_MSG =
+    "This extension ctx is stale after session replacement or reload";
+
+  function makeStalePi() {
+    return {
+      sendMessage: vi.fn(),
+      sendUserMessage: vi.fn(() => { throw new Error(STALE_MSG); }),
+    };
+  }
+
+  test("a stale sendUserMessage returns recoverable (not a permanent failure)", async () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makeStalePi());
+
+    const result = await projection.wakeAgent({ type: "text", text: "hi" });
+    expect(result.ok).toBe(false);
+    expect(result.recoverable).toBe(true);
+    expect(result.detail).toContain("stale");
+    // The stale binding was forgotten so a later wake doesn't reuse it.
+    expect(projection.messageApiBinding()).toBeNull();
+  });
+
+  test("a null messageApi (post-replacement window) returns recoverable", async () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    // No bindApi — messageApi is null, the immediate-after-replacement window.
+    const result = await projection.wakeAgent({ type: "text", text: "hi" });
+    expect(result.ok).toBe(false);
+    expect(result.recoverable).toBe(true);
+    expect(result.detail).toBe("agent session not bound yet");
+  });
+
+  test("a non-stale delivery failure stays non-recoverable (still surfaces)", async () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi({
+      sendMessage: vi.fn(),
+      sendUserMessage: vi.fn(() => { throw new Error("malformed content"); }),
+    });
+    const result = await projection.wakeAgent({ type: "text", text: "hi" });
+    expect(result.ok).toBe(false);
+    expect(result.recoverable).toBe(false);
+    expect(result.detail).toBe("malformed content");
+  });
+
+  test("a successful wake is not recoverable", async () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi({
+      sendMessage: vi.fn(),
+      sendUserMessage: vi.fn(async () => {}),
+    });
+    const result = await projection.wakeAgent({ type: "text", text: "hi" });
+    expect(result.ok).toBe(true);
+    expect(result.recoverable).toBeUndefined();
+  });
+});
+
+/**
+ * Regression: an inbound app action routed through `freshActionCtx()` must NOT
+ * crash pi when the captured event/command ctx is stale after a session
+ * replacement or `/reload`.
+ *
+ * The SDK marks a replaced ctx's guarded getters (modelRegistry, ui, cwd,
+ * compact, newSession, getModel, …) to throw a stale-context error via
+ * `assertActive()`. `wrapActionCtx` previously accessed those getters OUTSIDE
+ * its per-method try/catch (e.g. `if (ctx.modelRegistry) …`), so a stale ctx
+ * threw synchronously and propagated uncaught through the relay message
+ * router, taking down the whole pi process. The fix wraps the whole
+ * property-access sequence and returns null on a stale ctx so callers degrade
+ * to a graceful `action_error` instead of crashing.
+ */
+describe("SdkSessionProjection stale-ctx crash guard on freshActionCtx", () => {
+  const STALE_MSG =
+    "This extension ctx is stale after session replacement or reload.";
+
+  /** A ctx whose every guarded getter throws the stale-context error, mirroring
+   *  a real SDK ctx after `runner.markStale()`. */
+  function makeStaleCtx(): Record<string, unknown> {
+    const throwStale = (): never => { throw new Error(STALE_MSG); };
+    // `typeof ctx.X === "function"` triggers the getter, so model it as a
+    // throwing function property too.
+    return {
+      get compact() { throwStale(); },
+      get newSession() { throwStale(); },
+      get getModel() { throwStale(); },
+      get modelRegistry() { throwStale(); },
+      get ui() { throwStale(); },
+      get cwd() { throwStale(); },
+      get abort() { throwStale(); },
+    };
+  }
+
+  test("freshActionCtx on a stale event ctx returns null instead of throwing", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    // Arm a stale event ctx directly (simulates a post-replacement window
+    // before clearStaleContexts / the next session_start rebinds it).
+    (projection as unknown as { eventCtx: unknown }).eventCtx = makeStaleCtx();
+
+    expect(() => projection.freshActionCtx()).not.toThrow();
+    expect(projection.freshActionCtx()).toBeNull();
+  });
+
+  test("freshCommandActionCtx on a stale command ctx returns null instead of throwing", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    (projection as unknown as { commandCtx: unknown }).commandCtx = makeStaleCtx();
+
+    expect(() => projection.freshCommandActionCtx()).not.toThrow();
+    expect(projection.freshCommandActionCtx()).toBeNull();
+  });
+
+  test("a non-stale error from the getters still propagates (guard is stale-specific)", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    const otherErr = new Error("some unrelated getter failure");
+    (projection as unknown as { eventCtx: unknown }).eventCtx = {
+      get modelRegistry() { throw otherErr; },
+      get compact() { throw otherErr; },
+      get newSession() { throw otherErr; },
+      get getModel() { throw otherErr; },
+    };
+
+    expect(() => projection.freshActionCtx()).toThrow(otherErr);
+  });
+});
+
+/**
+ * Regression: a `/resume`-style `session_start` must backfill the transcript
+ * log from the persisted session manager so `session_sync` can replay history
+ * that predates this extension instance.
+ *
+ * The SDK's `/resume` loads persisted entries into a fresh `SessionManager` and
+ * renders them DIRECTLY to the TUI via `buildSessionContext()` — bypassing the
+ * agent message pipeline, so `message_end` never fires for resumed history.
+ * Without backfill, `TranscriptEventLog` stays empty and `session_sync` returns
+ * a blank `session_history` even though the TUI shows full history.
+ */
+describe("SdkSessionProjection resume backfill", () => {
+  type ResumableCtx = ReturnType<typeof makeSessionStartCtx> & {
+    sessionManager: {
+      getSessionId: () => string;
+      buildSessionContext: () => { messages: LegacyAgentMessage[] };
+    };
+  };
+
+  function makeResumedCtx(sessionId: string, messages: LegacyAgentMessage[]): ResumableCtx {
+    return {
+      ...makeSessionStartCtx(),
+      sessionManager: {
+        getSessionId: () => sessionId,
+        buildSessionContext: () => ({ messages }),
+      },
+    };
+  }
+
+  const persistedHistory: LegacyAgentMessage[] = [
+    { role: "user", content: "hello from the earlier session", timestamp: 1_000 },
+    { role: "assistant", content: [{ type: "text", text: "hi back" }], timestamp: 1_001 },
+    {
+      role: "toolResult",
+      toolCallId: "call-1",
+      content: "[{ type: 'text', text: '42' }]",
+      timestamp: 1_002,
+    },
+  ];
+
+  test("session_sync after a resume-style session_start replays persisted entries", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+
+    projection.bindSessionContext(makeResumedCtx("resumed-session-1", persistedHistory));
+
+    const history = projection.buildSessionHistoryMessage("req-1", undefined);
+    expect(history.events.map((e) => e.type)).toEqual([
+      "user_input",
+      "agent_message",
+      "tool_result",
+    ]);
+    expect(history.events[0]).toMatchObject({ text: "hello from the earlier session" });
+  });
+
+  test("backfill stamps events with the fresh session id, not a stale prior id", () => {
+    // Simulate a prior session id still held by the issuer (clearStaleContexts
+    // does not clear it). The backfill must use the NEW resumed id, otherwise
+    // forSession(currentId) would filter the events out → blank history.
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    // First session captures id "prior-session".
+    projection.bindSessionContext(makeResumedCtx("prior-session", []));
+    // Resume into a new session with persisted history.
+    projection.bindSessionContext(makeResumedCtx("resumed-session-2", persistedHistory));
+
+    const history = projection.buildSessionHistoryMessage("req-2", undefined);
+    expect(history.session_id).toBe("resumed-session-2");
+    expect(history.events.map((e) => e.type)).toEqual([
+      "user_input",
+      "agent_message",
+      "tool_result",
+    ]);
+  });
+
+  test("backfill is idempotent across a reload of the same session (no duplicates)", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    const ctx = makeResumedCtx("same-session", persistedHistory);
+
+    projection.bindSessionContext(ctx);
+    projection.bindSessionContext(ctx); // reload re-fires session_start
+
+    const history = projection.buildSessionHistoryMessage("req-3", undefined);
+    // Three persisted entries, not six — deduped by eventId.
+    expect(history.events).toHaveLength(3);
+  });
+
+  test("a session_start with no persisted history backfills nothing", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    projection.bindSessionContext(makeResumedCtx("fresh-session", []));
+
+    const history = projection.buildSessionHistoryMessage("req-4", undefined);
+    expect(history.events).toEqual([]);
+  });
+
+  test("backfill does not duplicate a user prompt already captured live from the app", () => {
+    // Review finding: a live app-origin user_message is stamped with the APP's
+    // clientMessageId, while the backfill maps the same persisted user message
+    // to a synthetic `sync_${ts}` id. eventId-only dedupe would NOT collapse
+    // them, and the projection dedupes by clientMessageId — so the phone would
+    // show the same prompt twice after a /reload. The backfill must reuse the
+    // existing live event's clientMessageId/eventId (content-aware dedupe).
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    projection.bindSessionContext(makeResumedCtx("live-session", []));
+
+    // App delivered a user message live (same content as a persisted one).
+    projection.appendUserConfirmedTranscriptEvent({
+      sessionId: "live-session",
+      ts: 5_000,
+      clientMessageId: "app-msg-1",
+      text: "hello from the earlier session",
+    });
+
+    // Reload-style session_start re-runs the backfill over the live log, with
+    // the same persisted user prompt present.
+    projection.bindSessionContext(
+      makeResumedCtx("live-session", [
+        { role: "user", content: "hello from the earlier session", timestamp: 1_000 },
+        { role: "assistant", content: [{ type: "text", text: "hi back" }], timestamp: 1_001 },
+      ]),
+    );
+
+    const history = projection.buildSessionHistoryMessage("req-5", undefined);
+    // One user_input (the live app event), not two.
+    const userInputs = history.events.filter((e) => e.type === "user_input");
+    expect(userInputs).toHaveLength(1);
+    expect(userInputs[0]).toMatchObject({ id: "app-msg-1" });
+  });
+
+  test("backfill replays a persisted compaction summary (compactionSummary role)", () => {
+    // Review finding: buildSessionContext() emits compaction entries as role
+    // "compactionSummary" (summary on .summary, not .content), but the mapper
+    // only recognized role "compaction" — so a session compacted before
+    // pairing would silently drop the compaction marker from mobile history.
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    projection.bindSessionContext(
+      makeResumedCtx("compacted-session", [
+        { role: "user", content: "old prompt", timestamp: 100 },
+        {
+          role: "compactionSummary",
+          summary: "prior context was compacted",
+          tokensBefore: 5000,
+          timestamp: 200,
+        },
+        { role: "assistant", content: [{ type: "text", text: "post-compact reply" }], timestamp: 300 },
+      ]),
+    );
+
+    const history = projection.buildSessionHistoryMessage("req-6", undefined);
+    expect(history.events.map((e) => e.type)).toEqual([
+      "user_input",
+      "compaction",
+      "agent_message",
+    ]);
+    expect(history.events[1]).toMatchObject({ summary: "prior context was compacted", tokens_before: 5000 });
+  });
+
+  test("a /new after backfill returns empty history for the new session", () => {
+    // resetSessionForNew clears the transcript log and broadcasts an empty
+    // session_history. A prior backfill must not bleed into the new session.
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    projection.bindSessionContext(makeResumedCtx("old-session", persistedHistory));
+    expect(projection.buildSessionHistoryMessage("before", undefined).events).toHaveLength(3);
+
+    projection.resetSessionForNew("new-ack");
+
+    expect(projection.buildSessionHistoryMessage("after", undefined).events).toEqual([]);
   });
 });
