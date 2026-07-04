@@ -2,8 +2,9 @@ import type { SessionHistoryEvent, Usage, WireImage } from "../protocol/types.js
 import type { TranscriptEvent } from "./transcript_event.js";
 
 export type LegacyAgentMessage = {
-  role: "user" | "assistant" | "toolResult" | "compaction" | string;
+  role: "user" | "assistant" | "toolResult" | "compaction" | "compactionSummary" | string;
   content?: unknown;
+  summary?: string;
   timestamp?: number;
   toolCallId?: string;
   toolName?: string;
@@ -133,13 +134,22 @@ export function mapLegacyAgentMessagesToTranscriptEvents(input: LegacyAdapterInp
   let lastUserId: string | null = null;
   for (const [messageIndex, message] of input.messages.entries()) {
     const ts = typeof message.timestamp === "number" ? message.timestamp : 0;
-    if (message.role === "compaction") {
+    if (message.role === "compaction" || message.role === "compactionSummary") {
+      // `compaction` is the legacy SDK message_end shape (content holds the
+      // summary). `compactionSummary` is what `buildSessionContext()` emits for
+      // a persisted compaction entry (messages.js createCompactionSummaryMessage):
+      // the summary lives on `.summary`, not `.content`. Both must map to the
+      // same `compaction_recorded` transcript event so session_history can
+      // replay a compaction that happened before the extension attached.
+      const summary = message.role === "compactionSummary"
+        ? (typeof message.summary === "string" ? message.summary : "")
+        : (typeof message.content === "string" ? message.content : "");
       events.push({
         kind: "compaction_recorded",
         eventId: deterministicTranscriptEventId(input.sessionId, "compaction_recorded", String(ts)),
         sessionId: input.sessionId,
         ts,
-        summary: typeof message.content === "string" ? message.content : "",
+        summary,
         tokensBefore: typeof message.tokensBefore === "number" ? message.tokensBefore : 0,
       });
     } else if (message.role === "user") {
