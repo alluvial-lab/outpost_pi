@@ -1,0 +1,222 @@
+---
+id: story-mobile-assistant-message-duplicated-live-replay
+kind: story
+stage: implementing
+tags: [app, pi-extension, bug]
+parent: epic-remote-session-resilience-refactor
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-07-03
+updated: 2026-07-04
+confirmed_root_cause: 2026-07-03
+---
+
+# Mobile renders one assistant message N times (live × replay eventId mismatch)
+
+## Observed
+
+Operator scenario (phone, live relay): after a fresh pi restart and fresh
+session, the operator opened chat and saw a single assistant turn rendered
+3–4 times. Specifically the **first assistant paragraph** of the turn
+("I'll get oriented on what was recently closed…") appeared **4 times**,
+while the next three paragraphs in the same turn each appeared **once**. The
+single user prompt appeared once. (Reported as "I got 3 copies of your turn
+when I opened up chat.")
+
+## Distinct from
+
+- `idea-mobile-message-duplication-send-timeout` — that is an **outgoing
+  user-message** duplication on back-navigation plus a false `send_timeout`,
+  tied to optimistic-insert/echo and in-flight-send lifecycle. This is an
+  **incoming assistant-message** duplication from a live/replay eventId
+  collision, with a different trigger (chat-open / late-attach sync) and a
+  different confirmed root cause. Both may ultimately trace to "app lacks
+  canonical transcript-event identity," but the fix surfaces differ.
+- `idea-mobile-chat-reorder-on-return` — row **ordering** on rehydrate, not
+  duplication. Same sort surface (`seq` then `eventId`) but a distinct symptom.
+- `story-mobile-chat-blank-on-pair-after-pre-pair-work` (done, in review) —
+  that fix made persisted history actually arrive on the wire
+  (`backfillTranscriptFromSessionManager`). This bug was **masked** while
+  history was blank: with nothing to replay, the live/replay collision never
+  occurred. Once the backfill ships, the replay path is exercised and this
+  dup becomes visible. Conceptual predecessor, not a hard dependency.
+
+## Root cause (CONFIRMED 2026-07-03 via SDK persisted session + extension repro + app-side trace)
+
+The app has **no canonical assistant-message identity that is stable across
+the live-streaming path and the `session_history` replay path.** The same
+logical assistant message, arriving once via live streaming and once via
+replay, survives as **two distinct Hive rows** because the two paths stamp
+**incompatible `eventId` schemes**, and the Hive store dedupes only by
+`eventId` as the box key.
+
+### Ground truth (rules out the SDK/extension side)
+
+The SDK persisted the duplicated message **exactly once**. From the live
+session jsonl
+(`~/.pi/agent/sessions/--home-agent-projects-remote_pi--/2026-07-03T23-10-56-525Z_*.jsonl`):
+
+- The assistant message "I'll get oriented…" (ts `1783120377469`) is stored
+  as a single `type:"message", role:"assistant"` entry.
+- A python pass over the entries found exactly **1** assistant message
+  containing that text. (A naive `grep -c` returns 10 because the text also
+  appears in tool results, compaction records, and summaries — but the
+  persisted assistant message itself is singular.)
+- The turn's other three assistant paragraphs are likewise stored once each.
+
+So the duplication is **entirely app-side**: the phone rendered one stored
+message four times.
+
+### Extension-side dedup is correct (rules out the backfill)
+
+A focused repro test was written
+(`pi-extension/src/session/repro_dup.test.ts`, since removed): live
+`appendLegacySdkMessageToTranscript` for an assistant message, then a
+`session_start` backfill whose `buildSessionContext()` returns the same
+persisted assistant message. `buildSessionHistoryMessage` returned **1**
+`agent_message`, not 2 — the backfill's deterministic
+`deterministicTranscriptEventId(sessionId, "assistant_committed", messageId)`
+collapses against the live path's identical eventId (both key on the same
+`ts`/`messageId` because `appendLegacySdkMessageToTranscript` and
+`mapLegacyAgentMessagesToTranscriptEvents` share the eventId scheme). The
+`/reload`-idempotency and live-user-dedupe regression tests in
+`sdk_session_projection.test.ts` already pin this. **The backfill is not the
+culprit; story-mobile-chat-blank-on-pair-after-pre-pair-work is sound.**
+
+### The app-side eventId mismatch
+
+Two code paths create `AssistantMessageCommitted` transcript events, with
+**incompatible eventId schemes**:
+
+| Path | File:line | eventId | messageId | ts |
+|---|---|---|---|---|
+| **Live** `AgentDone` (buffered commit) | `app/lib/data/sync/sync_service.dart:566` | `server:assistant_committed:$inReplyTo:${uuid7()}` | `agent_${uuid7()}` | `DateTime.now()` |
+| **Live** `AgentMessage` (non-streaming) | `app/lib/data/sync/sync_service.dart:590` | `server:assistant_message:$inReplyTo:${uuid7()}` | `agent_$inReplyTo` | `DateTime.now()` |
+| **Live** `ToolRequest` pre-tool flush | `app/lib/data/sync/sync_service.dart:654` | `server:assistant_committed:$toolCallId:${uuid7()}` | `agent_${uuid7()}` | `DateTime.now()` |
+| **Replay** `AgentMessageEvt` | `app/lib/data/sync/session_history_replay.dart:62` | `server:$sessionId:agent_message:$inReplyTo:$ts` | `server-message:$sessionId:agent_message:$inReplyTo:$ts` | `event.ts` (SDK) |
+
+The live schemes use a **random `uuid7()`**; the replay scheme is
+**deterministic** over `(sessionId, inReplyTo, ts)`. They can never match.
+The Hive store dedupes by `eventId` as the box key
+(`app/lib/data/local/transcript_event_store_hive.dart:28`:
+`if (box.containsKey(event.eventId)) continue;`), and the projection dedupes
+assistant rows by `messageId`
+(`app/lib/domain/transcript/transcript_projection.dart:191-196`), so a live
+commit and its replay twin both survive as distinct rows → duplicate bubble.
+
+### Why ×4 and why only the FIRST message
+
+A pure live+replay overlap explains ×2, not ×4. The extra multiplier is the
+**`ToolRequest` pre-tool flush** at `sync_service.dart:648-660`: when a
+`ToolRequest` arrives mid-stream, the handler commits `_streaming.buffer` as
+an `AssistantMessageCommitted` with a fresh random eventId — and it is
+**fire-and-forget** (`// ignore: discarded_futures`), with the in-memory
+`_streaming` buffer only cleared later when the async projection write
+completes (`AssistantMessageCommitted` sets `streaming = null` at
+`transcript_projection.dart:195`, but that runs after the enqueued
+`_appendTranscriptEvents` async write resolves).
+
+So if multiple `ToolRequest`s arrive before the earlier async projection
+clears `_streaming`, **each re-flushes the same buffer** with a new random
+eventId. In the operator's first turn there were several tool batches → the
+first paragraph got flushed multiple times → then the chat-open/late-attach
+`session_history` replay added one more → ×4. The later paragraphs in the
+turn did not overlap a chat-open/late-attach replay boundary the same way,
+so they rendered once.
+
+```text
+turn: user → assistant#1 (streaming) → tool#1 → assistant#2 → tool#2 → …
+  AgentChunk accumulates into _streaming.buffer
+  ToolRequest#1 → flush buffer as AssistantMessageCommitted (random id A)   [fire-and-forget, buffer NOT cleared synchronously]
+  ToolRequest#2 → flush SAME buffer as AssistantMessageCommitted (random id B) [buffer still not cleared]
+  … async projection finally clears _streaming …
+  chat-open / late-attach session_sync → replay AssistantMessageCommitted (deterministic id C)
+  Hive box keys A, B, C all distinct → 3+ rows, same text → ×N bubbles
+```
+
+## Fix shape
+
+**The deterministic server/replay identity must win; live assistant commits
+must derive the same stable identity replay uses.** The live random-uuid
+eventIds/messageIds must be replaced with stable, server-derived ids.
+
+### Decisions to pin at implement time
+
+1. **Identity source.** The live frames currently lack the stable facts
+   replay derives its id from (`sessionId`, SDK assistant `ts`, a stable
+   message id). Two options:
+   - (a) **Extension emits stable identity on live frames** (paired wire
+     change): the extension's `agent_message`/`agent_chunk`/`agent_done`
+     broadcasts carry the SDK assistant `timestamp` (and ideally a stable
+     `message_id`) so the app can compute
+     `server:$sessionId:agent_message:$inReplyTo:$ts` deterministically on
+     both paths. This is the single-source-of-truth option — the extension
+     owns the canonical id; the app derives it.
+   - (b) **App-side content+ts dedup** (no wire change): the app dedupes
+     assistant commits by a content signature + `inReplyTo` + nearest `ts`,
+     collapsing live vs replay twins. Weaker — content can legitimately
+     repeat across turns, and it papers over the missing server identity
+     rather than fixing it. Prefer (a) unless the wire change is blocked.
+   - Recommendation: **(a)**. It also retires the random-uuid live ids that
+     make the `ToolRequest` re-flush amplification possible (a re-flush of
+     the same `(inReplyTo, ts)` would then collapse by eventId).
+2. **`ToolRequest` flush amplification.** Independent of the identity fix,
+   the fire-and-forget `ToolRequest` flush must not re-commit an
+   already-flushed buffer. Either clear the local buffer reference at flush
+   time (so a second `ToolRequest` before the async projection sees an empty
+   buffer) or guard against double-flush by tracking the flushed buffer's
+   content signature. This is a behavior-preserving lifecycle fix.
+3. **Migration of existing Hive rows.** Existing phones may already have
+   duplicate rows persisted with random eventIds. A one-time dedup pass on
+   `activate()`/`_loadIndex` (collapse assistant rows that share
+   `(inReplyTo, text, ts)` keeping the deterministic id) may be needed, or
+   accept that the dup clears on the next full replay after the fix ships.
+   Decide based on whether stale dup rows cause ongoing visible duplication.
+
+## Regression tests
+
+1. **Extension** (`pi-extension/src/session/sdk_session_projection.test.ts`):
+   pin that the live `agent_message`/`agent_done` broadcast carries the stable
+   identity the replay path uses (once (a) is chosen) — a test that the wire
+   `agent_message` event's `in_reply_to`/`ts`/`message_id` match what
+   `session_history` emits for the same persisted message.
+2. **App** (`app/test/...sync_service...` or projection test): a live
+   `AssistantMessageCommitted` followed by a replay `AssistantMessageCommitted`
+   for the same `(sessionId, inReplyTo, ts)` produces **one** row in the Hive
+   store, not two.
+3. **App**: a `ToolRequest` flush followed by a second `ToolRequest` before
+   the async projection resolves commits the buffered text **once**, not
+   twice (the fire-and-forget re-flush amplification fix).
+4. **App**: end-to-end — live streaming a turn with multiple tool batches,
+   then a `session_history` replay of the same turn, renders each assistant
+   paragraph exactly once.
+
+## Verification matrix (after fix)
+
+- Fresh pair, send one message, agent replies with multiple text+tool
+  batches → each assistant paragraph renders once on first view.
+- Open chat after the turn completes (late-attach / chat-open sync) → no
+  duplicate of the first (or any) paragraph.
+- `/reload` mid-session, then open chat → no duplicate (the backfill + replay
+  both produce deterministic ids that collapse).
+- A turn with 3+ tool batches → first paragraph renders once (ToolRequest
+  re-flush fix).
+- `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build` on
+  `pi-extension/`; `flutter analyze && flutter test` on `app/`.
+
+## References
+
+- `app/lib/data/sync/sync_service.dart:549-595` — live `AgentChunk`/`AgentDone`/`AgentMessage` append paths (random-uuid eventIds).
+- `app/lib/data/sync/sync_service.dart:648-660` — `ToolRequest` pre-tool flush (fire-and-forget, buffer not cleared synchronously).
+- `app/lib/data/sync/session_history_replay.dart:52-77,127,134` — replay deterministic eventId/messageId (`serverReplayEventId` / `serverReplayMessageId`).
+- `app/lib/data/local/transcript_event_store_hive.dart:28` — Hive dedup by `eventId` box key.
+- `app/lib/domain/transcript/transcript_projection.dart:191-196` — projection dedup of assistant rows by `messageId`.
+- `app/lib/domain/session_state.dart:163-176` — `StreamingMessage.buffer` (the re-flushed buffer).
+- `pi-extension/src/index.ts:1269-1273` — `message_end` feeds the transcript log (extension side is correct; identity is stable here).
+- `pi-extension/src/session/sdk_session_projection.ts:378-440` — `appendLegacySdkMessageToTranscript` (extension eventId scheme, shared with the backfill mapper → extension dedup works).
+- `pi-extension/src/session/transcript_projection.ts:136-160` — `mapLegacyAgentMessagesToTranscriptEvents` (deterministic eventId by `ts`).
+- `.agents/skills/flutter-mobile/SKILL.md` — sync/transcript identity.
+- `.agents/rules/code-design.md` — Single Source of Truth (one assistant-message identity, derived everywhere).
+- Sibling (predecessor that unmasked this): `story-mobile-chat-blank-on-pair-after-pre-pair-work.md`.
+- Related-but-distinct backlog: `idea-mobile-message-duplication-send-timeout.md` (outgoing-message dup, different root cause).
