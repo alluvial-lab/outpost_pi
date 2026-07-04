@@ -86,3 +86,8 @@ pi-extension/test/.pi/
 # state written by `remote-pi claude` / the wizard, never repo content. Matches
 # any `.pi/` dir at any depth (root, pi-extension/, subprojects).
 .pi/
+
+# Local key material / secrets — never commit (AGENTS.md: never commit
+# key material, local .pi/, pairing state, or secrets)
+*.key
+*.pem
