@@ -10,6 +10,15 @@ gate_origin: null
 created: 2026-07-04
 updated: 2026-07-04
 ---
+status: superseded
+superseded_by: feature-contract-gap-audit
+superseded_date: 2026-07-04
+---
+
+> **SUPERSEDED 2026-07-04.** Restructured into `feature-contract-gap-audit`
+> (targeting audit + typed-error spike) under the reframed
+> `epic-targeting-and-session-lifecycle-contracts`. See
+> `.work/reviews/review-epic-targeting-and-session-lifecycle-contracts-2026-07-04.md`.
 
 # Targeting & delivery contract (App↔Pi data-plane)
 
