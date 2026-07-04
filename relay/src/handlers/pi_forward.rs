@@ -31,7 +31,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use axum::extract::ws::Message;
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use rand::{RngCore, thread_rng};
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::mesh::{MeshStore, owner_pk_hash, verify_envelope};
 use crate::peers::connections::ConnectionRegistry;
@@ -175,6 +175,13 @@ pub(crate) async fn handle_pi_envelope(
     }
 
     if !cache.is_authorized(sender_peer_id, frame.to_pc.as_str(), mesh) {
+        debug!(
+            from_tail = %peer_tail(sender_peer_id),
+            to_pc_tail = %peer_tail(&frame.to_pc),
+            room = %frame.to_room,
+            env_id_tail = %id_tail(&frame.envelope.id),
+            "pi_envelope not_authorized",
+        );
         return PiForwardResult::TransportError(make_transport_error_from_agent(
             Some(&frame.envelope),
             sender_room_id,
@@ -187,6 +194,11 @@ pub(crate) async fn handle_pi_envelope(
         to_room: frame.to_room.clone(),
         envelope: frame.envelope,
     };
+    // Capture the envelope id tail from `outbound.envelope.id` (after the
+    // move above) for cross-side correlation in the debug logs below. The id
+    // is expected protocol metadata (an envelope routing id), not payload;
+    // only a tail is logged, never the full id.
+    let env_id_tail = id_tail(&outbound.envelope.id);
 
     // Room-targeted delivery: only the addressed room of the destination peer
     // receives the frame, and the sender's own connection is skipped so
@@ -200,8 +212,22 @@ pub(crate) async fn handle_pi_envelope(
         ),
         sender_conn_id,
     ) {
+        debug!(
+            from_tail = %peer_tail(sender_peer_id),
+            to_pc_tail = %peer_tail(&frame.to_pc),
+            room = %frame.to_room,
+            env_id_tail = %env_id_tail,
+            "pi_envelope forwarded",
+        );
         PiForwardResult::Forwarded
     } else {
+        debug!(
+            from_tail = %peer_tail(sender_peer_id),
+            to_pc_tail = %peer_tail(&frame.to_pc),
+            room = %frame.to_room,
+            env_id_tail = %env_id_tail,
+            "pi_envelope offline (dest not found)",
+        );
         PiForwardResult::TransportError(make_transport_error_from_agent(
             Some(&outbound.envelope),
             sender_room_id,
@@ -314,6 +340,36 @@ fn make_relay_envelope_id() -> String {
         bytes[14],
         bytes[15]
     )
+}
+
+/// Last 8 chars of an envelope `id`, for cross-side correlation in `debug!`
+/// logs only. The envelope `id` is expected protocol metadata (an envelope
+/// routing id already used for `re` correlation), not payload; only a tail is
+/// logged, never the full id.
+///
+/// Char-boundary-safe: the id is untrusted client-provided text and may be
+/// non-ASCII or shorter than 8 chars, so byte-slicing (as the existing
+/// `peer_short` helper does for pubkey-derived ASCII ids) would risk a panic
+/// on a non-UTF-8 boundary. This iterates `char`s instead.
+fn id_tail(id: &str) -> String {
+    id.chars()
+        .rev()
+        .take(8)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect()
+}
+
+/// Last 8 chars of a Pi-pubkey peer id, for `debug!` logs only. Matches the
+/// `peer_short` / `dest_tail` convention (`peer.rs`, `connection_actor.rs`):
+/// peer ids are Ed25519-pubkey-derived and ASCII by construction, so a tail is
+/// sufficient to identify a peer in logs without logging the full key. The
+/// new persistent file sink (when `REMOTEPI_RELAY_LOG_DIR` is set) makes
+/// tail-only logging the consistent choice across INFO and DEBUG lines.
+fn peer_tail(peer_id: &str) -> String {
+    let len = peer_id.len();
+    peer_id[len.saturating_sub(8)..].to_string()
 }
 
 #[cfg(test)]
@@ -726,5 +782,71 @@ mod tests {
         let forwarded: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(forwarded["from_pc"], "pi_a");
         assert_eq!(forwarded["envelope"]["from"], expected_from);
+    }
+
+    // --- id_tail / peer_tail helpers ---------------------------------------
+    // `id_tail` processes untrusted client-provided envelope ids. Byte-slicing
+    // (the pattern `peer_short` uses for pubkey-derived ASCII ids) would panic
+    // on a non-UTF-8 boundary; `id_tail` must be char-boundary-safe.
+
+    #[test]
+    fn id_tail_normal_uuid() {
+        assert_eq!(id_tail("018f4444-4444-7444-8444-444444444444"), "44444444");
+    }
+
+    #[test]
+    fn id_tail_shorter_than_eight_chars_returns_whole_id() {
+        assert_eq!(id_tail("abc"), "abc");
+    }
+
+    #[test]
+    fn id_tail_empty_returns_empty() {
+        assert_eq!(id_tail(""), "");
+    }
+
+    #[test]
+    fn id_tail_exactly_eight_chars() {
+        assert_eq!(id_tail("12345678"), "12345678");
+    }
+
+    #[test]
+    fn id_tail_non_ascii_does_not_panic_and_returns_char_tail() {
+        // A non-ASCII id where byte-slicing at `len-8` would land mid-codepoint
+        // (byte 10 sits inside the 😂 codepoint at bytes 8-11). The char-safe
+        // helper must not panic; since the id has only 6 chars, the whole id is
+        // returned (fewer than 8 chars → no truncation).
+        let id = "😀😁😂🚀ab";
+        let tail = id_tail(id);
+        assert_eq!(tail, "😀😁😂🚀ab");
+    }
+
+    #[test]
+    fn id_tail_non_ascii_long_truncates_to_eight_chars() {
+        // 9 black stars (U+2605, 3 bytes each = 27 bytes). Byte-slicing at
+        // `len-8 = 19` would land mid-codepoint (byte 19 is inside the 7th
+        // star, bytes 18-20) → panic. The char-safe helper returns the last 8
+        // chars. This is the regression case for the untrusted-input DoS with
+        // a >8-char id (actual truncation, not the under-8 passthrough).
+        let id = "★★★★★★★★★";
+        let tail = id_tail(id);
+        assert_eq!(tail, "★★★★★★★★");
+    }
+
+    #[test]
+    fn id_tail_non_ascii_short_returns_whole_id() {
+        // Fewer than 8 chars, all non-ASCII: must not slice into a codepoint.
+        let id = "😀😁";
+        assert_eq!(id_tail(id), "😀😁");
+    }
+
+    #[test]
+    fn peer_tail_short_pubkey_returns_whole_id() {
+        // Peer ids are ASCII by construction, but the helper must still be safe.
+        assert_eq!(peer_tail("pi_a"), "pi_a");
+    }
+
+    #[test]
+    fn peer_tail_normal_pubkey() {
+        assert_eq!(peer_tail("pi_abcdefgh"), "abcdefgh");
     }
 }
