@@ -3,12 +3,12 @@ id: story-add-transport-frame-observability
 kind: story
 stage: drafting
 tags: [app, relay, pi-extension]
-parent: epic-remote-session-resilience-refactor
-depends_on: [feature-adversarial-codebase-review]
+parent: feature-cross-side-observability
+depends_on: [story-app-debug-log-adapter]
 release_binding: null
 gate_origin: null
 created: 2026-06-28
-updated: 2026-06-28
+updated: 2026-07-04
 ---
 
 # Design transport-frame observability for malformed or unknown app frames
