@@ -10,6 +10,15 @@ gate_origin: null
 created: 2026-07-04
 updated: 2026-07-04
 ---
+status: superseded
+superseded_by: feature-cross-side-observability
+superseded_date: 2026-07-04
+---
+
+> **SUPERSEDED 2026-07-04.** Promoted and renamed to `feature-cross-side-observability`
+> (now the critical-path lead feature) under the reframed
+> `epic-targeting-and-session-lifecycle-contracts`. See
+> `.work/reviews/review-epic-targeting-and-session-lifecycle-contracts-2026-07-04.md`.
 
 # Session-replacement integration harness & boundary observability
 
