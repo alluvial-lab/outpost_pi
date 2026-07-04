@@ -1866,9 +1866,19 @@ async function _wakeAgent(
     : await _sdkSessionProjection.wakeAgent(content);
   if (!wake.ok) {
     const detail = wake.detail ?? "agent session not bound yet";
+    if (wake.recoverable) {
+      // Stale ctx or the null-messageApi window after a replacement. The
+      // message wasn't delivered to THIS pi's agent, but it's recoverable:
+      // a sibling pi may have handled it (cross-process fanout to the same
+      // owner_pk+room), or the next session_start rebinds a working api and
+      // the phone retries. Log for operator/dev visibility but do NOT surface
+      // a permanent internal_error that breaks the phone.
+      console.warn(`[remote-pi] ${label}: recoverable wake failure (not delivered to this pi): ${detail}`);
+      return wake;
+    }
     console.error(`[remote-pi] ${label}: agent rejected incoming message: ${detail}`);
     _notify(`[remote-pi] failed to process incoming message: ${detail}`, "error");
-    return { ok: false, detail };
+    return wake;
   }
   return wake;
 }
@@ -2012,7 +2022,14 @@ async function _deliverUserMessage(
     if (turnSeed.seeded) {
       _applyTurnAndPublish({ type: "delivery_error", turnId: msg.id });
     }
-    _sendDeliveryError(sender, msg.id, wake.detail ?? "agent session not bound yet");
+    // Recoverable (stale ctx / null-messageApi window): do NOT surface a
+    // permanent internal_error. A sibling pi may have handled this message
+    // (cross-process fanout), or the next session_start rebinds and the phone
+    // retries. The phone's existing send-timeout will surface "not delivered"
+    // if nothing ever handles it — accurate, not a permanent broken state.
+    if (!wake.recoverable) {
+      _sendDeliveryError(sender, msg.id, wake.detail ?? "agent session not bound yet");
+    }
     return;
   }
   const sessionId = _currentRemoteSessionId();
