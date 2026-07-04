@@ -141,6 +141,14 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
 
   bindSessionContext(ctx: ExtensionContext): void {
     this.eventCtx = ctx;
+    // Capture the fresh session id BEFORE any backfill. `session_start` fires
+    // for startup/new/fork/reload/resume, and `clearStaleContexts` does NOT
+    // clear the issuer — so without this the prior session's id would still be
+    // current and the backfill below would stamp events with the stale id,
+    // leaving them unreachable to `forSession(currentId)` (the blank-history
+    // bug). The index.ts wrapper re-captures via `_captureRemoteSession`
+    // (idempotent) and publishes room_meta; capturing here is the ordering fix.
+    this.issuer.capture(ctx);
     // Additive, not replacing: the `session_start` ctx (built by
     // `ExtensionRunner.createContext()` in the SDK) carries ui/cwd/abort/compact
     // but NOT sendMessage/sendUserMessage — only `ExtensionAPI` (the factory
@@ -153,6 +161,95 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     // otherwise the `pi`-armed binding is preserved. `bindReplacementContext`
     // still calls `replaceSessionCapabilities` to drop a stale `pi`.
     this.bindCapabilities(ctx);
+    this.backfillTranscriptFromSessionManager(ctx);
+  }
+
+  /**
+   * On `session_start`, backfill the in-memory `TranscriptEventLog` from the
+   * SDK's durable persisted session so `session_sync` can replay history that
+   * predates this extension instance.
+   *
+   * The SDK loads a resumed/started session's persisted messages into the
+   * `SessionManager` and renders them DIRECTLY to the TUI via
+   * `buildSessionContext()` — bypassing the agent's message pipeline, so
+   * `message_end` never fires for that history. This log is fed only by live
+   * hooks (`message_end`, `tool_execution_*`), so without this backfill a
+   * `/resume`, `/fork`, daemon respawn, or reload leaves the log empty and the
+   * phone's `session_sync` returns a blank `session_history` even though the
+   * TUI shows full history. The SDK is the durable session owner; this log is
+   * only the extension's typed replay source (see `transcript_event_log.ts`).
+   *
+   * Dedupe is by `eventId` (`append`'s `seen` set), so a `/reload` of the same
+   * session re-appends the same persisted entries as no-ops while preserving
+   * any live events captured since the reload. Entries from a prior session id
+   * are inert: `forSession(currentId)` filters them at read time.
+   */
+  private backfillTranscriptFromSessionManager(ctx: ExtensionContext): void {
+    const sm = (ctx as { sessionManager?: unknown }).sessionManager;
+    if (!sm || typeof sm !== "object") return;
+    // `buildSessionContext` is on `SessionManager` at runtime but is NOT part
+    // of the `ReadonlySessionManager` Pick exposed on the typed ctx. Narrow at
+    // this SDK-read boundary rather than widening the public type.
+    const build = (sm as { buildSessionContext?: () => { messages?: unknown[] } }).buildSessionContext;
+    if (typeof build !== "function") return;
+    let messages: unknown[];
+    try {
+      const resolved = build.call(sm);
+      messages = Array.isArray(resolved?.messages) ? resolved.messages : [];
+    } catch {
+      // Never block session_start on a backfill read failure.
+      return;
+    }
+    if (messages.length === 0) return;
+    // `issuer.capture` already ran at the top of `bindSessionContext`, so the
+    // current id is the fresh session id for this ctx.
+    const sessionId = this.issuer.current() ?? this.currentRemoteSessionId(ctx);
+    const mapped = mapLegacyAgentMessagesToTranscriptEvents({
+      sessionId,
+      messages: messages as LegacyAgentMessage[],
+    });
+    // Content-aware dedupe against live app-origin user events. A live
+    // `user_message` from the app is stamped with the APP's clientMessageId
+    // (e.g. `msg-1`), while `mapLegacyAgentMessagesToTranscriptEvents` always
+    // synthesizes `sync_${ts}`. eventId-only dedupe (`append`'s `seen` set)
+    // would then NOT collapse them, and the projection dedupes user messages
+    // by `clientMessageId` — so the phone would show the same prompt twice
+    // after a `/reload` that re-runs this backfill over an already-live log.
+    // Reuse any existing same-session user event with matching text+images so
+    // the backfilled event is a true no-op against the live one.
+    const existingUserByContent = this.indexExistingUserEventsByContent(sessionId);
+    for (const event of mapped) {
+      if (event.kind === "user_confirmed") {
+        const key = userContentSignature(event.text, event.images);
+        const existing = existingUserByContent.get(key);
+        if (existing) {
+          // Preserve the app's real clientMessageId + eventId; the synthetic
+          // sync_ event is dropped in favor of the live one already in the log.
+          this.transcriptLog.append({ ...event, clientMessageId: existing.clientMessageId, eventId: existing.eventId });
+          continue;
+        }
+      }
+      this.transcriptLog.append(event);
+    }
+    this.recomputeLastTranscriptUserId();
+  }
+
+  /**
+   * Index existing `user_confirmed` transcript events for `sessionId` by
+   * content signature, so the resume backfill can reuse an app-origin event's
+   * real `clientMessageId`/`eventId` instead of emitting a duplicate
+   // synthetic `sync_${ts}` event for the same prompt.
+   */
+  private indexExistingUserEventsByContent(
+    sessionId: string,
+  ): Map<string, { clientMessageId: string; eventId: string }> {
+    const out = new Map<string, { clientMessageId: string; eventId: string }>();
+    for (const event of this.transcriptLog.forSession(sessionId)) {
+      if (event.kind !== "user_confirmed") continue;
+      const key = userContentSignature(event.text, event.images);
+      if (!out.has(key)) out.set(key, { clientMessageId: event.clientMessageId, eventId: event.eventId });
+    }
+    return out;
   }
 
   bindReplacementContext(ctx: ActionCtx): RemoteSessionId {
@@ -425,13 +522,22 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
 
   async wakeAgent(...args: Parameters<ExtensionAPI["sendUserMessage"]>): Promise<WakeAgentResult> {
     const api = this.messageApi;
-    if (!api) return { ok: false, detail: "agent session not bound yet" };
+    // The null-`messageApi` window immediately after a session replacement
+    // (clearStaleContexts nulls it; bindApi re-arms on the next factory
+    // invocation). Not a real delivery failure — the phone should tolerate it.
+    if (!api) return { ok: false, detail: "agent session not bound yet", recoverable: true };
     try {
       await api.sendUserMessage(...args);
       return { ok: true };
     } catch (err) {
-      if (isStaleContextError(err)) this.forget(api);
-      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+      const stale = isStaleContextError(err);
+      if (stale) this.forget(api);
+      // A stale ctx is recoverable: the message wasn't delivered to THIS pi's
+      // agent, but a sibling pi may have handled it (cross-process fanout) or
+      // the next session_start rebinds a working api and the phone retries.
+      // Real delivery failures (malformed content, provider down at handoff)
+      // are NOT recoverable and still surface as internal_error.
+      return { ok: false, detail: err instanceof Error ? err.message : String(err), recoverable: stale };
     }
   }
 
@@ -629,40 +735,55 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     };
   }
 
-  private wrapActionCtx(ctx: ActionCtx): ActionCtx {
-    const wrapped: ActionCtx = {};
-    if (typeof ctx.compact === "function") {
-      wrapped.compact = (options?: object) => {
-        try {
-          return ctx.compact?.(options);
-        } catch (err) {
-          if (isStaleContextError(err)) this.forgetStaleBinding(ctx);
-          throw err;
-        }
-      };
+  private wrapActionCtx(ctx: ActionCtx): ActionCtx | null {
+    // Accessing guarded SDK getters (modelRegistry, compact, newSession,
+    // getModel, ui, cwd, ...) on a STALE ctx throws a stale-context error
+    // synchronously — and the `typeof ctx.X === "function"` / `ctx.modelRegistry`
+    // accesses below happen OUTSIDE the per-method try/catch, so a stale ctx
+    // here crashes pi (uncaught through the message router). Guard the whole
+    // property-access sequence: on a stale ctx, forget the binding and return
+    // null so callers degrade to "no action ctx available" instead of crashing.
+    try {
+      const wrapped: ActionCtx = {};
+      if (typeof ctx.compact === "function") {
+        wrapped.compact = (options?: object) => {
+          try {
+            return ctx.compact?.(options);
+          } catch (err) {
+            if (isStaleContextError(err)) this.forgetStaleBinding(ctx);
+            throw err;
+          }
+        };
+      }
+      if (typeof ctx.newSession === "function") {
+        wrapped.newSession = async (options) => {
+          try {
+            return await ctx.newSession!(options);
+          } catch (err) {
+            if (isStaleContextError(err)) this.forgetStaleBinding(ctx);
+            throw err;
+          }
+        };
+      }
+      if (typeof ctx.getModel === "function") {
+        wrapped.getModel = () => {
+          try {
+            return ctx.getModel?.();
+          } catch (err) {
+            if (isStaleContextError(err)) this.forgetStaleBinding(ctx);
+            throw err;
+          }
+        };
+      }
+      if (ctx.modelRegistry) wrapped.modelRegistry = ctx.modelRegistry;
+      return wrapped;
+    } catch (err) {
+      if (isStaleContextError(err)) {
+        this.forgetStaleBinding(ctx);
+        return null;
+      }
+      throw err;
     }
-    if (typeof ctx.newSession === "function") {
-      wrapped.newSession = async (options) => {
-        try {
-          return await ctx.newSession!(options);
-        } catch (err) {
-          if (isStaleContextError(err)) this.forgetStaleBinding(ctx);
-          throw err;
-        }
-      };
-    }
-    if (typeof ctx.getModel === "function") {
-      wrapped.getModel = () => {
-        try {
-          return ctx.getModel?.();
-        } catch (err) {
-          if (isStaleContextError(err)) this.forgetStaleBinding(ctx);
-          throw err;
-        }
-      };
-    }
-    if (ctx.modelRegistry) wrapped.modelRegistry = ctx.modelRegistry;
-    return wrapped;
   }
 
   private consumeDeliveredUserEvent(

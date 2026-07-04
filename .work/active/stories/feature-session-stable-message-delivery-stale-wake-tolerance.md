@@ -1,14 +1,14 @@
 ---
 id: feature-session-stable-message-delivery-stale-wake-tolerance
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, bug]
 parent: feature-session-stable-message-delivery
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-03
+updated: 2026-07-04
 ---
 
 # Stale-ctx tolerance on the wake path (no visible `internal_error`)
@@ -60,6 +60,36 @@ the full corrected root-cause analysis.
   `messageApi` throws stale → assert no `internal_error` sent (or recoverable
   code per chosen wire shape).
 - [ ] `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`.
+
+## Implementation notes
+
+- Files changed:
+  - `pi-extension/src/extension/ports.ts` — added `recoverable?: boolean` to
+    `WakeAgentResult`.
+  - `pi-extension/src/session/sdk_session_projection.ts` — `wakeAgent` sets
+    `recoverable: true` on the stale-ctx path and the null-`messageApi`
+    ("agent session not bound yet") path; real delivery failures leave it false.
+  - `pi-extension/src/index.ts` — `_wakeAgent` logs (warn, not error) and
+    returns on recoverable; `_deliverUserMessage` skips `_sendDeliveryError`
+    on recoverable (silent tolerance — phone's existing 20s send-timeout surfaces
+    "not delivered" if nothing ever handles it).
+- Tests added (`sdk_session_projection.test.ts` — `wakeAgent recoverable
+  failures` describe block, 4 tests):
+  - stale `sendUserMessage` → `recoverable: true` + binding forgotten.
+  - null `messageApi` window → `recoverable: true` ("agent session not bound yet").
+  - non-stale delivery error → `recoverable: false` (still surfaces).
+  - successful wake → `recoverable: undefined` (not recoverable).
+- Wire shape chosen: **(a) silent** — send nothing on recoverable failure.
+    No app-side change needed; the phone's existing send-timeout handles the
+    "nothing handled this" case accurately without a permanent broken state.
+    Option (b) recoverable error code was rejected because the app has no
+    existing retry-on-code path; (a) is the smaller, correct fix.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
+- Verification: `tsc --noEmit` clean; full suite 738 pass / 3 pre-existing
+  skips / 0 regressions; `tsc` build clean, `dist/` rebuilt.
+- Not deployed: needs a full pi process restart (parked
+  `idea-mobile-restart-pi-session-affordance` is the mobile-path blocker).
 
 ## References
 
