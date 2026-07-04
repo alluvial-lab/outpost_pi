@@ -93,27 +93,56 @@ one-line fixes.
 - The `#2` stale-error repro as a contract item (separate observe-and-diagnose
   task; this feature makes it reproducible, doesn't fix it).
 
-## Design decisions (locked 2026-07-04, operator-confirmed)
+## Design decisions (locked 2026-07-04, operator-confirmed; revised after design review)
 
-- **Release gating:** always-on, privacy-scrubbed subset. Intermittent bugs
-  happen in release, and `adb logcat` only covers USB; an always-on ring log
-  is what converts the "anecdotal" case to diagnosable. Privacy is enforced
-  by scrubbing at the capture sites (never bodies/images), not by gating the
-  logger off.
+- **Debug-gated, app-global, not always-on.** An app-level "Debug logging"
+  toggle in Settings (persisted in `Preferences`) gates capture. When ON, the
+  ring accumulates across peers/sessions until cleared or capped. When OFF,
+  `log()` is an early no-op. This is an operator-owned diagnostic dump for the
+  operator's own dev/testing, destinations operator-chosen (sent to the agent
+  or the workstation) — NOT end-user telemetry. **Revisit condition:** if the
+  product later wants always-on telemetry for end-user bugs, the privacy
+  posture tightens then (full scrub of previews; not now).
+- **Capture surface = "all the logs useful for debugging broadly,"** not just
+  the existing 15 `debugPrint`s. This is the key revision from the design
+  review (which flagged that routing existing breadcrumbs misses the
+  `ConnectionManager` reconnect/backoff/room-snapshot/working-state
+  transitions the named intermittent bugs actually need). The expanded
+  surface (Unit 4):
+  - **ConnectionManager** (first-class, the A1 gap): `connecting → online →
+    retrying(attempt, delayMs) → offline`, `_onChannelLost`,
+    `_replaySubscriptions` (resume hydration), `_onControl` room/presence/
+    snapshot adoption, `markRoomWorking`/`_markActiveRoomOffline` (working
+    convergence), duplicate-connection takeover.
+  - **The existing 15 sites**: `ws-in` frame demux, `msg-send`/`msg-echo`,
+    `msg-failed`, `session-gate` drops (`missing_session_id`/
+    `session_mismatch`/`active_session_unknown`), `session-sync` failures.
+    (Tags corrected from the review: `:341` is `msg-failed`, `:538` is
+    `session-gate`, only `:425` is `session-sync`.)
+  - **Sync/replay**: `session_history` replay dedup, transcript-event
+    identity collisions (the duplication bug's surface), backfill triggers.
+- **Privacy posture: operator debug dump, destinations operator-chosen.**
+  Truncated message preview (`_preview(text, image)`) IS persisted (it's
+  diagnostic for swallowed/dup/not-delivered bugs). Scrub only **full message
+  bodies, image data, and tool args/results**. This is tighter than "log
+  everything" but looser than the earlier end-user-telemetry scrub. The
+  typed-event registry (below) makes the per-event scrub explicit.
 - **Share format:** jsonl. Matches the extension's `audit.jsonl` so a single
   message id greps across all three sides; machine-parseable for triage.
-- **Ring log retention:** 1 MiB cap, single file, ring-truncate at cap (drop
-  oldest lines, no multi-file rotation). Grounded in the measured capture
-  surface: 15 `debugPrint` sites, all state-transition lines (NOT per-token
-  `agent_chunk` streaming), so volume is per-turn (~5-10 lines/turn). 1 MiB
-  covers 48h of reconnect-storm pathology with headroom; the operator's actual
-  "few hours to hit errors" window is < 100 KiB even at heavy use.
-- **Capture surface:** the 15 existing `debugPrint` sites in `ws_transport.dart`
-  (`[ws-in] …`) and `sync_service.dart` (`[msg-send]`, `[msg-echo]`,
-  `[session-sync]`, send-timeout, session-gate rejections). The one scrub
-  point: `[msg-send] id=$id text=${_preview(text, image)}`
-  (`sync_service.dart:260`) drops the `text=` preview in the persisted copy,
-  keeps it in logcat (dev-only).
+  `session_id` + message `id` fields disambiguate which session a line belongs
+  to in a multi-session dump.
+- **Retention:** 1 MiB cap, single file, ring-truncate at cap (drop oldest
+  lines). With the expanded capture surface the per-turn volume is higher
+  (~10-20 lines/turn incl. ConnectionManager transitions), but 1 MiB still
+  covers the operator's "few hours to hit errors" window with headroom.
+- **Crash-resilient flush** (from the review): debounced 2s flush for routine
+  lines, BUT critical events (send attempt, send failure/timeout, session-gate
+  drop, status retry/offline/online, room snapshot/session rotation, lifecycle
+  pause/detach) flush immediately. The diagnostic tail is the whole point;
+  losing it on a crash defeats the feature.
+- **Export reads from the file** (the source of truth), not the in-memory ring:
+  `export()` force-flushes, then reads the file. This recovers lines that
+  already reached disk even if the in-memory ring diverged.
 - **Relay file sink:** DONE 2026-07-04 (`story-relay-retroactive-file-logging`,
   stage:review) — `REMOTEPI_RELAY_LOG_DIR` + `tracing-appender` daily rotation,
   `EnvFilter` from `RUST_LOG`, cross-PC `pi_envelope` forward-path `debug!`
@@ -121,149 +150,219 @@ one-line fixes.
 
 ## Architectural choice
 
-**Thin `DebugLog` port in `domain/` + file-backed adapter in `data/` +
-routed capture at the existing `debugPrint` sites.** The app already has a
-clean `domain/` (contracts) ← `data/` (adapters) ← `config/` (DI) layering
-(`app/CLAUDE.md`); the ring log fits it exactly: a `DebugLog` port the call
-sites depend on, a `DebugLogImpl` adapter that persists to
-`getApplicationDocumentsDirectory`, and a DI singleton so all call sites
-share one ring. This keeps domain logic free of filesystem I/O (Ports &
-Adapters) and makes the adapter swappable in tests.
+**Typed `DebugEvent` registry in `domain/` + file-backed adapter in `data/` +
+DI singleton + app-global debug toggle.** The app's `domain/` (contracts) ←
+`data/` (adapters) ← `config/` (DI) layering (`app/CLAUDE.md`) fits a ring
+log exactly: a `DebugLog` port + a typed `DebugEvent` registry the call sites
+emit, a `DebugLogImpl` adapter that persists to `getApplicationDocumentsDirectory`,
+and a DI singleton gated by a `Preferences` debug flag.
 
-Rejected: a logging package (`package:logging`) hierarchy. Heavier, and the
-survey already noted it's in `pubspec.lock` but unused — adopting it would
-add a configuration surface (loggers, levels, handlers) for no gain over a
-single-purpose ring. The ring log has one job: retroactive capture of the
-state-transition lines that map to the resilience fixes. A 60-line adapter
-beats a framework.
+**Typed events, not `Map<String, Object?>`** (from the review's B2/C1). The
+reviewer flagged the open-map API as too weak for a release-log and offloading
+the scrub invariant to 15+ call sites. Debug-gating loosens that from
+security-critical to code-quality, but a typed registry is still the right
+shape: each `DebugEvent` variant owns its allowed fields and its scrub, the
+tag is an enum (not a free string), and the adapter rejects non-primitive /
+oversized values. This documents the capture surface and makes the scrub
+explicit per-event rather than hoping each call site remembers.
+
+Rejected: a `package:logging` hierarchy. Heavier; the survey already noted
+it's in `pubspec.lock` but unused. The ring log has one job: retroactive
+capture of diagnostic events. A typed registry + a 60-line adapter beats a
+framework.
 
 ## Implementation Units
 
-### Unit 1: `DebugLog` port (lead child — the ring log)
+### Unit 1: `DebugLog` port + `DebugEvent` registry
 **File**: `app/lib/domain/contracts/debug_log.dart` (+ export in `contracts.dart`)
-**Story**: `story-app-persistent-ring-log`
+**Story**: `story-app-debug-log-adapter` (split A — see Implementation Order)
 
 ```dart
-abstract class DebugLog {
-  /// Appends a structured line. [tag] is a short grep-able prefix (`ws-in`,
-  /// `msg-send`, …). [fields] carries routing metadata + ids ONLY — never
-  /// payload. Callers scrub; this contract does not parse payloads.
-  void log(String tag, {Map<String, Object?>? fields});
+/// Typed diagnostic event. Each variant owns its allowed fields and its
+/// scrub (full message bodies / image data / tool args+results are NEVER
+/// fields; a truncated preview IS allowed for `msgSend`). Tag is an enum,
+/// not a free string — the registry IS the capture surface.
+sealed class DebugEvent {
+  final DebugTag tag;
+  final DateTime ts;
+  const DebugEvent(this.tag, this.ts);
+}
+// Variants (one per capture site family):
+//   WsInEvent        {bytes, kind, stage?, senderRoom?, controlType?, error?}
+//   MsgSendEvent     {id, blocked?, preview?}   // preview = truncated _preview
+//   MsgEchoEvent     {id}
+//   MsgFailedEvent   {id, code, detail}         // detail scrubbed to a short reason
+//   SessionGateEvent {messageType, reason, sessionIdTail?}
+//   SessionSyncEvent {err}                       // err = short reason, no content
+//   ConnStatusEvent  {status, attempt?, delayMs?, peerTail?, room?}
+//   ConnHydrateEvent {action, room?, snapshotCount?}
+//   RoomSnapshotEvent{room, presenceCount?, working?}
+//   WorkingConvEvent {room, working, reason}
+//   ReplayDedupEvent {sessionId, eventIdTail, dropped}
+//   ... (one per ConnectionManager/sync transition in the expanded surface)
 
-  /// Persisted log as jsonl, or null when empty. Drives the share-sheet export.
+class DebugLog {
+  /// Early no-op when debug mode is OFF (checked via Preferences). When ON,
+  /// appends the event to the ring + schedules flush (immediate for critical
+  /// events, debounced for routine).
+  void log(DebugEvent event);
+
+  /// Force-flush, then read the file (source of truth). Null when empty.
   Future<String?> export();
 
-  /// Clears the persisted log (after export, or to reset).
+  /// Wipe ring + file.
   Future<void> clear();
 }
 ```
 
 **Acceptance Criteria**:
-- [ ] `DebugLog` is an abstract class in `domain/contracts/`.
-- [ ] Exported via `contracts.dart`.
+- [ ] `DebugEvent` sealed class + variants in `domain/contracts/`; `DebugTag` enum.
+- [ ] No variant carries full message body / image data / tool args or results.
+- [ ] `MsgSendEvent.preview` is the truncated `_preview`, never full text.
 - [ ] No imports of `dart:io`, `path_provider`, or `share_plus` (domain purity).
+- [ ] Exported via `contracts.dart`.
 
-### Unit 2: `DebugLogImpl` adapter
+### Unit 2: `DebugLogImpl` adapter + lifecycle
 **File**: `app/lib/data/debug/debug_log_impl.dart`
-**Story**: `story-app-persistent-ring-log`
+**Story**: `story-app-debug-log-adapter` (split A)
 
 ```dart
 class DebugLogImpl implements DebugLog {
   static const int _maxBytes = 1 << 20; // 1 MiB cap
-  final List<String> _ring = []; // jsonl lines
-  Timer? _flushTimer; // debounced 2s flush
+  static const Duration _flushInterval = Duration(seconds: 2);
+  static const Set<DebugTag> _immediateFlushTags = {
+    DebugTag.msgSend, DebugTag.msgFailed, DebugTag.sessionGate,
+    DebugTag.connStatus /* retrying/offline/online */, DebugTag.roomSnapshot,
+    DebugTag.lifecyclePause, DebugTag.lifecycleDetach,
+  };
+  final List<String> _ring = [];
+  Timer? _flushTimer;
   String? _filePath;
-  // log(): append to ring, mirror to debugPrint (logcat), schedule flush
-  // export(): flush + return ring joined
-  // clear(): wipe ring + file
-  // _ensureLoaded(): warm ring from existing file on startup
-  // dispose(): final flush (best-effort)
+  final bool Function() _debugEnabled; // reads Preferences (no I/O in hot path)
+  // log(): if !_debugEnabled() return; encode (typed→jsonl, cap field lengths,
+  //        catch encode errors); append + truncate-on-append; immediate or
+  //        debounced flush per tag.
+  // export(): flushNow(); read file line-by-line; return joined (or null).
+  // clear(): wipe ring + file.
+  // _ensureLoaded(): warm ring from file, skip unparseable lines.
+  // dispose(): flushNow() (best-effort).
 }
 ```
 
-**Implementation Notes**:
-- **1 MiB cap is byte-based, not line-based** — ring-truncate drops oldest
-  lines until under cap. (Earlier 8000-line draft was a guess; the measured
-  surface justifies the byte cap for 48h coverage.)
-- **Debounced flush** (2s timer): appends write to the in-memory ring
-  immediately; a timer batches file writes to avoid per-frame I/O. Worst-case
-  crash loss = the unflushed tail (≤2s of lines).
-- **Warm on startup**: `_ensureLoaded()` reads the existing file into the ring
-  so a restart keeps recent history (the whole point — survive reboot).
-- **Never throw**: the logger must not break the app. All file I/O wrapped in
-  try/catch with `debugPrint` fallback.
-- **Privacy is at the call site, not here**: the adapter serializes whatever
-  fields it receives. The scrubbing happens in Unit 4 (call-site routing).
+**Implementation Notes** (from the review):
+- **Cap enforced on append**, not just on flush — truncate oldest lines in
+  `log()` immediately after encoding, so the in-memory ring never overshoots.
+- **Per-field length caps** before `jsonEncode` — a malformed untrusted string
+  (e.g. `ws-in` decode error, `senderRoom`) can't dominate the ring. Truncate
+  field values to e.g. 256 chars; drop the entry if encoding fails.
+- **Critical-event immediate flush** (the `_immediateFlushTags` set) — the
+  diagnostic tail survives a crash. Routine lines keep the 2s debounce.
+- **Export reads from the file** (source of truth), line-by-line, skipping
+  unparseable lines — recovers disk state even if the in-memory ring diverged.
+- **Never throws**: `log/export/clear/dispose` catch `Object, StackTrace`; the
+  flush timer callback catches internally; failures emit a scrubbed
+  `debugPrint('[debug-log] ...')` and never rethrow. The logger must not break
+  the app even on platform/quota/permission failure.
+- **Dispose wired** (review C3): register via the DI path that disposes
+  (`addService` with `onDispose: debugLog.dispose()`), NOT `addInstance`/
+  `addOther` (which don't dispose). `disposeDependencies()` in `main.dart`
+  then flushes pending lines on app teardown.
 
 **Acceptance Criteria**:
 - [ ] Ring persists to `getApplicationDocumentsDirectory()/remote_pi_debug.jsonl`.
-- [ ] Ring survives app restart (warm-from-file on `_ensureLoaded`).
-- [ ] Ring is capped at 1 MiB (oldest lines dropped); no unbounded growth.
-- [ ] Crash in file I/O does NOT propagate (logger never breaks the app).
-- [ ] Debounced flush; no per-frame file write.
+- [ ] Ring survives app restart (warm-from-file, skipping corrupt lines).
+- [ ] Cap enforced on append (no overshoot between flushes).
+- [ ] Per-field length caps; a huge untrusted string can't evict the window.
+- [ ] Critical events flush immediately; routine events debounce 2s.
+- [ ] `export()` reads from the file after a forced flush.
+- [ ] All public methods + timer callback catch `Object`; never rethrows.
+- [ ] `disposeDependencies()` flushes pending lines (lifecycle test).
 
-### Unit 3: DI wiring + export UI
-**File**: `app/lib/config/dependencies.dart`, `app/lib/ui/settings/*`
-**Story**: `story-app-persistent-ring-log`
+### Unit 3: App-global debug toggle + export/clear UI
+**File**: `app/lib/config/dependencies.dart`, `app/lib/ui/settings/*`, `app/lib/data/preferences/preferences.dart`
+**Story**: `story-app-debug-toggle-ui` (split B)
 
-- Register `DebugLogImpl` as a singleton in `setupDependencies()` (alongside
-  `LocalBoxes`).
-- Add `exportDebugLog()` / `clearDebugLog()` to `SettingsViewModel`.
-- Add a `_DebugSection` to `settings_page.dart` with two actions:
-  - **Export debug log** → `share_plus` share sheet (jsonl file).
+- Add `debugLogging` (bool, default false) to `Preferences` (persisted).
+- Register `DebugLogImpl` via `addService` (disposing) so `dispose()` flushes.
+- Add `isDebugLogging` / `setDebugLogging(bool)` / `exportDebugLog()` /
+  `clearDebugLog()` to `SettingsViewModel`.
+- Add a `_DebugSection` to `settings_page.dart`:
+  - **Debug logging** switch (on/off).
+  - **Export debug log** → share sheet (`share_plus`, jsonl file).
   - **Clear debug log** → confirm dialog, then `clear()`.
+- When OFF, `DebugLogImpl.log()` early-returns (cheap no-op).
 
 **Acceptance Criteria**:
-- [ ] `DebugLog` resolves via `injector.get<DebugLog>()` in data + UI.
-- [ ] Settings page has an "Export debug log" action that opens the share sheet.
-- [ ] Exported content is jsonl; empty-when-nothing-to-export returns null
-  (action disabled or shows "no log yet").
+- [ ] Toggle persists across restarts in `Preferences`.
+- [ ] When OFF, `log()` is a no-op (no serialization work, no file I/O).
+- [ ] When ON, capture flows; export opens the share sheet with the jsonl file.
+- [ ] `disposeDependencies()` flushes (lifecycle test passes).
+- [ ] Export disabled / shows "no log yet" when `export()` returns null.
 
-### Unit 4: Route capture sites (the 15 `debugPrint`s)
-**File**: `app/lib/data/transport/ws_transport.dart`, `app/lib/data/sync/sync_service.dart`
-**Story**: `story-app-persistent-ring-log`
+### Unit 4: Emit diagnostic events at the expanded capture surface
+**File**: `app/lib/data/transport/connection_manager.dart` (NEW events), `app/lib/data/transport/ws_transport.dart`, `app/lib/data/sync/sync_service.dart`
+**Story**: `story-app-capture-routing` (split C)
 
-Route the 15 existing `debugPrint` sites through `_debugLog.log(tag, fields: …)`.
-Each call keeps its existing `debugPrint` (logcat path unchanged) AND persists
-a privacy-scrubbed jsonl line. The full capture surface:
+Two parts:
 
-| Tag | File:line | Fields persisted | Scrub |
+**4a — Route the existing 15 `debugPrint` sites** through `DebugLog.log(event)`,
+keeping the existing `debugPrint` as the verbose logcat path. `DebugLog` is
+persistence-only (it does NOT mirror to logcat — review B3); the existing
+`debugPrint` calls stay as-is. Corrected tags:
+
+| Tag | File:line | Persisted fields | Scrub |
 |---|---|---|---|
-| `ws-in` | `ws_transport.dart:82,103,106,113,117,127,133,142` | `bytes`, `kind`, `stage`/`senderRoom`/`controlType`/`error` | — |
-| `msg-send` | `sync_service.dart:212,245,260` | `id`, `blocked`/send state | **drop `text=` preview at :260** |
+| `ws-in` | `ws_transport.dart:82,103,106,113,117,127,133,142` | `bytes`, `kind`, `stage`/`senderRoom`/`controlType`/`error` | field-length caps |
+| `msg-send` | `sync_service.dart:212,245,260` | `id`, `blocked`/state, `preview` (:260 only) | full body scrubbed; preview = truncated `_preview` |
 | `msg-echo` | `sync_service.dart:610` | `id` | — |
-| `session-sync` | `sync_service.dart:341,425,538` | `err`/state | — |
+| `msg-failed` | `sync_service.dart:341` | `id`, `code`, `detail` | detail = short reason |
+| `session-gate` | `sync_service.dart:538` | `messageType`, `reason`, `sessionIdTail` | — |
+| `session-sync` | `sync_service.dart:425` | `err` | err = short reason |
 
-**The scrub point** (`sync_service.dart:260`): the persisted copy logs
-`{id: …}` only; the logcat `debugPrint` keeps `id=$id text=${_preview(text, image)}`
-for dev. This is the single explicit privacy boundary in the capture surface.
+**4b — ADD first-class events at `ConnectionManager`** (the A1 gap the review
+flagged — this is what makes the ring log actually diagnose the reconnect
+cluster, not just repack existing breadcrumbs):
+
+| Tag | File:line | Persisted fields |
+|---|---|---|
+| `conn-status` | `connection_manager.dart:520-553` (connect), `:1177-1184` (retry) | `status`, `attempt?`, `delayMs?`, `peerTail?`, `room?` |
+| `conn-channel-lost` | `_onChannelLost` | `peerTail?`, `room?`, `reason` |
+| `conn-hydrate` | `_replaySubscriptions:329-337,1136-1143` | `action`, `room?`, `snapshotCount?` |
+| `room-snapshot` | `_onControl:566-706` | `room`, `presenceCount?`, `working?` |
+| `working-conv` | `markRoomWorking:914-929`, `_markActiveRoomOffline:1194-1252` | `room`, `working`, `reason` |
+| `replay-dedup` | `sync_service.dart` replay/backfill | `sessionId`, `eventIdTail`, `dropped` |
 
 **Acceptance Criteria**:
-- [ ] All 15 sites route through `DebugLog.log` (ring persists).
-- [ ] Existing `debugPrint` behavior unchanged (logcat still gets every line).
-- [ ] `[msg-send]` persisted line has NO `text`/image preview; logcat does.
-- [ ] No message body or image content reaches the persisted/shared log.
-- [ ] Correlation: a message id in `[msg-send]` / `[msg-echo]` matches the
-  extension's `app user_message id=…` and the relay's `env_id_tail`.
+- [ ] All 15 existing sites route through `DebugLog.log`; logcat unchanged.
+- [ ] `ConnectionManager` emits the 6 new event types at the transitions listed.
+- [ ] No full message body / image data / tool args or results in any event.
+- [ ] `msg-send` persisted line includes the truncated `preview`; NOT full text.
+- [ ] Correlation: `id` in `msg-send`/`msg-echo` matches the extension's
+  `app user_message id` and the relay's `env_id_tail`.
+- [ ] A fake-`DebugLog` test asserts the expected events fire on a reconnect/
+  send/gate path (covers the "routing actually happens" gap the review E2
+  flagged).
 
 ### Unit 5: Cross-side correlation key (relay half DONE)
 **File**: relay (done), app confirmation
 **Story**: none — verification only
 
-The relay half shipped (`story-relay-retroactive-file-logging`). The app
-half is implicit in Unit 4: the `id` field in `msg-send`/`msg-echo` IS the
-correlation key. Confirm at implementation time that the app's `user_message`
-id, the extension's `app user_message id`, and the relay's `env_id_tail` are
-the same value end-to-end (survey says yes; a one-line grep check).
+The relay half shipped. The app half is implicit in Unit 4: the `id` field in
+`msg-send`/`msg-echo` IS the correlation key. Confirm at implementation time
+that the app's `user_message` id, the extension's `app user_message id`, and
+the relay's `env_id_tail` are the same value end-to-end (survey says yes; a
+one-line grep check).
 
 ### Unit 6: Transport-frame observability
 **File**: parked — `story-add-transport-frame-observability` (drafting)
-**Story**: `story-add-transport-frame-observability` (already exists)
+**Story**: `story-add-transport-frame-observability` (re-parent to this feature)
 
 Privacy-safe, throttled diagnostic surface for dropped/malformed relay and
-peer-channel frames. Already a drafting story; re-parented to this feature.
-Design it as a follow-on child after the ring log lands — it extends the
-same `DebugLog` surface (or a relay-side equivalent) with frame-drop counters.
+peer-channel frames. Already a drafting story; **re-parent to this feature**
+(the review E1 caught that its frontmatter still points to
+`epic-remote-session-resilience-refactor`). Design it as a follow-on child
+after the ring log lands — it extends the same `DebugEvent` surface with
+frame-drop counters.
 
 ### Unit 7: Session-replacement integration harness
 **File**: `pi-extension/test/` (new)
@@ -274,44 +373,68 @@ SDK `ExtensionRunner` and asserts post-replacement delivery + history +
 actions. **Highest-risk unit** — feasibility depends on whether the
 installed SDK's `ExtensionRunner` can be driven headless from a vitest.
 
-**Pre-mortem spike first**: before designing the full harness, spike whether
-`ExtensionRunner` can be instantiated and driven from a test. If feasible,
-spawn `story-session-replacement-harness` with the full assertion matrix. If
-not, document exactly why and ship an honest xfail + the ring log as the
-diagnostic substitute (the epic's strategic-decisions section already
-permits this fallback).
+**Pre-mortem spike first** (review D1): spike whether `ExtensionRunner` can
+be instantiated and driven from a test. If feasible, spawn
+`story-session-replacement-harness` with the full assertion matrix. If NOT
+feasible, the story must produce an **alternate verification plan** before
+session-replacement fixes proceed — NOT merely "xfail + ring log": options
+include a process-level harness around a real Pi session, an SDK-seam wrapper
+test exercising `runtime.assertActive()`, or a documented manual smoke recipe
+with required ring/extension/relay artifacts attached to the work item. Do
+not count "ring log + manual reproduction someday" as equivalent to CI
+harness coverage.
 
 ## Implementation Order
 
-1. **Units 1-4** (the ring log) — `story-app-persistent-ring-log`, single
-   stride. This is the lead and the actual gap closure; the rest build on it.
-2. **Unit 5** (correlation confirmation) — verification only, no story.
-3. **Unit 6** (transport-frame observability) — `story-add-transport-frame-
-   observability` (already drafting), follow-on after the ring log surface
-   exists.
-4. **Unit 7** (session-replacement harness) — spike first, then spawn
-   `story-session-replacement-harness` if feasible. Highest-risk; runs in
-   parallel with the above since it's pi-extension-side, not app-side.
+Split into 3 stories (review F1 — the prior inline attempt failed; this is
+heterogeneous work, not a single stride):
+
+1. **`story-app-debug-log-adapter`** (Units 1+2) — typed `DebugEvent` registry
+   + `DebugLog` port + `DebugLogImpl` adapter + lifecycle tests. Foundation;
+   no UI, no capture sites yet.
+2. **`story-app-debug-toggle-ui`** (Unit 3) — `Preferences.debugLogging` + DI
+   wiring (disposing) + settings toggle + export/clear UI. Depends on #1.
+3. **`story-app-capture-routing`** (Unit 4) — route the 15 existing sites +
+   ADD the 6 `ConnectionManager` event types + privacy/correlation tests.
+   Depends on #1; can run in parallel with #2.
+
+Then:
+4. **Unit 5** (correlation confirmation) — verification only, no story.
+5. **Unit 6** (transport-frame observability) — re-parent + design as follow-on.
+6. **Unit 7** (session-replacement harness) — spike first; pi-extension-side,
+   runs in parallel with the app stories.
 
 ## Testing
 
 ### Unit tests: `app/test/data/debug/debug_log_impl_test.dart`
-- Ring persists across `dispose()` + re-instantiate (warm-from-file).
-- Ring caps at 1 MiB (oldest dropped; no unbounded growth).
-- File I/O failure does NOT throw (logger never breaks the app).
-- Debounced flush coalesces writes (no per-`log()` file write).
-- `export()` returns null when empty; jsonl when populated.
+- Ring persists across `dispose()` + re-instantiate (warm-from-file, skips
+  corrupt lines).
+- Cap enforced on append (no overshoot between flushes).
+- Per-field length caps: a huge untrusted string can't evict the window.
+- Critical events flush immediately; routine events debounce (no per-`log()`
+  file write for routine tags).
+- `export()` reads from the file after a forced flush; returns null when empty.
 - `clear()` wipes ring + file.
+- All public methods + timer callback catch `Object`; never rethrows.
+- `disposeDependencies()` flushes pending lines (lifecycle test — review C3).
+- `log()` is a no-op when `Preferences.debugLogging` is false.
 
-### Capture-site tests: `app/test/data/sync/sync_service_test.dart` (extend)
-- A `[msg-send]` line persists with `id` but NO `text`/image preview.
-- A `[msg-echo]` line persists with `id`.
-- Correlation: the persisted `id` matches what a mock extension would emit
-  as `app user_message id`.
+### Capture-site + routing tests: `app/test/data/...` (review E2)
+- A fake `DebugLog` records the expected `DebugEvent`s on:
+  - a reconnect path (status transitions, hydrate, room snapshot, working conv).
+  - a send path (`msg-send` with truncated preview, `msg-echo`).
+  - a session-gate drop (`session-gate` with reason).
+  - a `msg-failed` and `session-sync` failure.
+- `MsgSendEvent.preview` is the truncated `_preview`, NOT full text.
+- Correlation: the persisted `id` matches the extension's `app user_message id`.
+- A static/registry test fails if a declared `DebugEvent` variant has no
+  routing test (catches "a capture site silently stopped emitting").
 
-### UI test: `app/test/ui/settings/settings_page_test.dart` (extend)
-- "Export debug log" action opens the share sheet (mock `share_plus`).
-- Action disabled / shows "no log yet" when `export()` returns null.
+### UI test: `app/test/ui/settings/settings_page_test.dart`
+- Toggle flips `Preferences.debugLogging` and persists.
+- "Export debug log" opens the share sheet (mock `share_plus`); disabled /
+  "no log yet" when `export()` returns null.
+- "Clear debug log" confirms then wipes.
 
 ### Harness tests (Unit 7, if feasible)
 - `ctx.newSession()` then `sendUserMessage` lands on the fresh ctx.
@@ -321,19 +444,26 @@ permits this fallback).
 
 ## Risks
 
-- **Ring log warm-from-file on a corrupted file**: a half-written jsonl from
-  a crash could fail to parse. Mitigation: read line-by-line, skip unparseable
-  lines (don't fail the whole warm). Already in the "never throw" rule.
+- **Capture-volume higher than the 15-site estimate**: adding `ConnectionManager`
+  transitions raises per-turn volume (~10-20 lines/turn). Mitigation: 1 MiB cap
+  still covers the operator's "few hours" window; monitor and tighten if a
+  reconnect storm evicts too fast.
+- **Crash before the immediate flush of a critical event**: even immediate
+  flush is async to disk. Mitigation: the events most likely to precede a
+  crash (status transitions, send failure, session-gate drop) are in the
+  immediate-flush set; the file is the export source of truth.
 - **`share_plus` platform differences**: iOS vs Android share-sheet behavior.
-  Low risk — the export is a plain text/jsonl file; both platforms handle it.
+  Low risk — the export is a plain jsonl file; both platforms handle it.
 - **Harness infeasibility** (Unit 7): the installed SDK may not expose
-  `ExtensionRunner` for headless driving. Mitigation: spike first; the epic
-  already permits the xfail + ring-log substitute fallback. This is the
-  riskiest unit and the one most likely to surface a hard constraint.
-- **Capture-site regression**: routing 15 `debugPrint`s through a new path
-  could change behavior subtly (e.g. a `debugPrint` that was inside a hot
-  loop). Mitigation: the capture surface is state-transition lines, not
-  per-token; none are in hot loops. Existing tests stay green.
+  `ExtensionRunner` for headless driving. Mitigation: spike first; the fallback
+  is an alternate verification plan (not just xfail), per review D1.
+- **Routing 15 existing + 6 new sites through a new path could change behavior
+  subtly**: mitigation — `DebugLog` is persistence-only (logcat `debugPrint`s
+  stay as-is); the new events are at state transitions, not in hot loops; a
+  registry test catches a silently-stopped emitter.
+- **Privacy posture assumes operator-owned destinations**: if the product later
+  ships always-on telemetry to end users, the scrub must tighten (full preview
+  scrub, not just full-body). Recorded as a revisit condition above.
 
 ## Relationship to released bold work
 
