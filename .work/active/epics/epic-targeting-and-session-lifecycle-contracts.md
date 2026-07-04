@@ -2,172 +2,243 @@
 id: epic-targeting-and-session-lifecycle-contracts
 kind: epic
 stage: drafting
-tags: [pi-extension, app, relay, bug, docs]
+tags: [pi-extension, app, relay, bug, docs, observability]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-04
 updated: 2026-07-04
+reframed: 2026-07-04
 ---
 
-# Targeting & session-lifecycle contracts (clear the contract debt the resilience refactor assumed)
+# Boundary observability & contract gap audit (clear the observability debt that masquerades as contract debt)
 
 ## Brief
 
-A cluster of bugs across the app↔relay↔extension surface all share one root
-cause: **undefined state machines at the boundaries.** The code implements
-*something* at each boundary, but no spec pins what it must be, so each surface
-improvised a local decision that's wrong under an untested condition. This epic
-clears that contract debt by pinning the contracts and building the
-instrumentation to diagnose them — **specification surface first, not a code
-rewrite** (per the `formal-rigor-stack` skill's default recommendation).
+A cluster of bugs across the app↔relay↔extension surface **look like** they
+share one root cause — "undefined state machines at the boundaries" — but the
+2026-07-04 adversarial review (`.work/reviews/review-epic-targeting-and-session-lifecycle-contracts-2026-07-04.md`)
+showed that framing over-aggregates confirmed code defects, SDK seam
+constraints, and **unreproduced** hypotheses under one banner. The actual
+shared root cause is narrower and more operational:
 
-This is the work `epic-remote-session-resilience-refactor` step 3 was *supposed*
-to clear: the v0.5.0 adversarial review ran without writing the contracts, and
-the v0.6.0 bold-refactor scan restructured the *code* while the *contracts*
-stayed unwritten. The result is that bugs in this area keep outpacing fixes —
-this session alone produced three wrong fixes (a `factoryApi` re-arm, a
-single-process framing, a manufactured routing leak) because each author
-improvised the boundary behavior.
+> **We are observability-blind on the side where these bugs manifest.**
 
-## Scope — three child features
+The extension side is already retroactively diagnosable (`audit.jsonl`,
+append-only, survives reboots). The phone side is not — only `debugPrint` →
+logcat ring buffer (bounded, wiped on reboot, rolled over). The relay is not —
+stdout only. So every intermittent mobile bug noticed after the fact
+(reconnect cluster, swallowed messages, no-echo timeouts, stale-ctx throws) is
+**anecdotal** on the phone: by the time it's noticed, the logcat is gone.
 
-### 1. Targeting & delivery contract (`feature-targeting-delivery-contract`)
-Pin, in `PROTOCOL.md`, the App↔Pi data-plane targeting model that is currently
-load-bearing but undocumented:
-- `owner_pk` is per-machine, not per-Pi-process (the App pairs with a machine).
-- `room_id` is per-`(cwd, assigned-name)`; the cwd-lock disambiguates; two
-  same-named pis in one room is a lock violation, not a supported topology.
-- Relay forwarding is fanout to every conn at `(owner_pk, room)` (intentional
-  for multi-device owners).
-- A `user_message` targets one Pi session via `session_id`.
-- **Typed error codes** (operator Q1, 2026-07-04): disambiguate the single
-  `session_mismatch` into `session_superseded` (your session_id is stale →
-  re-sync) vs `not_my_session` (this message was for a different pi → silent
-  drop). The extension can distinguish these via the session parent-chain.
-  Needs wire-format work (generated protocol + app handling).
+The operator opened this epic to see if a foundational issue was contributing
+to the bug class. The foundational issue is real, but it is **observability
+debt**, not contract debt. Contracts written now would either (a) re-document
+truth already pinned by the released bold-refactor epics
+(`epic-bold-canonical-session`, `epic-bold-reachability-contract`,
+`epic-bold-transcript-event-log`, `epic-bold-turn-state-machine` — all
+`stage: done` in `.work/releases/v0.6.0/`), or (b) canonize unverified
+assumptions as current-state truth (the draft contract's "collision
+conditions" premise was already invalidated once by the operator's Q2
+clarification — exactly the failure mode current-state docs must avoid).
 
-Draft in progress: `.work/drafts/draft-protocol-targeting.md` (premise
-corrected — the stale error was in `#2`'s own session, NOT a cross-room leak;
-the "collision conditions" section of the draft is INVALIDATED and to be deleted).
+**Reframe:** make observability + reproduction the first-class critical path,
+and demote contract prose to an **evidence-sourced gap audit** that runs
+*after* reproduction makes the actual bugs visible. Most of the speculative
+contract work will turn out not to be contract debt at all.
 
-**Unblocks:** `story-foreign-session-user-message-tolerance`,
-`story-fix-stale-ctx-messageapi-rearm-on-reload` (reopened).
+## Scope — three child features (reordered)
 
-### 2. Session-lifecycle & reconnect state-machine contract (`feature-session-lifecycle-contract`)
-Pin two state machines that are currently improvised per surface:
-- **Session-lifecycle** (the stale-ctx contract): when a captured SDK ctx/pi may
-  be used, what invalidates it, and what tolerates the gap window on
-  replacement/reload/resume/fork/daemon-respawn. Includes the canonical
-  transcript-event identity contract (the live-vs-replay `eventId` collision
-  root cause of `story-mobile-assistant-message-duplicated-live-replay`).
-- **Reconnect** (the mobile-remote-coding skill already lists the states:
-  `connected idle / working / reconnecting / offline / stale-unknown`): pin the
-  transitions, who owns each state, and the rehydration contract. This is the
-  upstream gap for the 2026-07-02 live-drop-test bug cluster
-  (`idea-mobile-drop-slow-recovery`, `idea-mobile-drop-half-open-tcp`,
-  `idea-extension-pumps-into-dead-app-peer`, `idea-mobile-outgoing-message-swallowed`,
-  `idea-mobile-user-message-not-delivered-timeout`).
+### 1. Cross-side observability & reproduction (`feature-cross-side-observability`) — CRITICAL PATH
+**Promoted from the old feature #3.** This is the unlock for the whole epic.
+Deliver, in priority order:
+- **Phone-side persistent ring log** (`idea-cross-side-logging-for-debug`,
+  2026-06-29 survey): a bounded in-memory ring buffer flushed to a file on
+  device (`getApplicationDocumentsDirectory`) + an in-app "Export debug log"
+  share-sheet action. This is the single highest-leverage piece — it converts
+  the entire reconnect cluster from "anecdotal" to "diagnosable after the
+  fact." `adb logcat -d` remains the zero-setup USB path; the ring log covers
+  the non-USB / reboot / buffer-rollover case.
+- **Cross-side correlation key:** the message id already shared between app
+  (`[msg-send] id=…`) and extension (`app user_message id=…`). Extend it onto
+  the relay forward path (`pi_forward`) so one id greps across all three
+  sides.
+- **Relay persistent logging:** optional file sink for `tracing` (stdout
+  remains default; gate the file sink behind an env flag / container volume).
+  Today the relay's stdout is gone on scroll/restart unless the operator
+  redirected at launch — making the relay side match the extension's
+  retroactive capability.
+- **Transport-frame observability** (`story-add-transport-frame-observability`,
+  parked): privacy-safe, throttled diagnostic surface for dropped/malformed
+  relay and peer-channel frames.
+- **Session-replacement integration harness** (the old "harness" half of
+  feature #3): drives a real `ctx.newSession()`/`/reload`/`/resume` through
+  the actual SDK `ExtensionRunner` and asserts post-replacement delivery +
+  history + actions. This is the **test-side analog** of the ring log — it
+  makes the mock-only failures (`messageApi` re-arm) reproducible in CI
+  instead of only in live use. Same disease (can't observe real replacement),
+  different surface. If genuinely infeasible against the installed SDK,
+  document exactly why and ship an honest xfail + the ring log as the
+  diagnostic substitute.
 
-Output: `PROTOCOL.md` + `docs/ARCHITECTURE.md` sections + property/conformance
-tests against the pinned invariants.
+**Unblocks:** honest verification of every code fix under this epic; rapid
+diagnosis of future boundary bugs; attribution of the reconnect cluster.
 
-**Unblocks:** the reconnect bug cluster, `story-mobile-assistant-message-duplicated-live-replay`,
-`idea-mobile-conflates-transport-and-agent-state`.
+### 2. Reconnect reproduction & attribution (`feature-reconnect-reproduction`) — OBSERVATION WORKSTREAM
+Split out from the old "session-lifecycle contract" feature. These bugs are
+**observation gaps, not design gaps** — most are explicitly unreproduced:
+- `idea-mobile-drop-slow-recovery` (unconfirmed contributors; needs phone-side timing).
+- `idea-mobile-drop-half-open-tcp` (duplicate-auth cleanup confirmation).
+- `idea-extension-pumps-into-dead-app-peer` (`peer_offline` emission/consumption unconfirmed).
+- `idea-mobile-outgoing-message-swallowed` (not reproduced server-side).
+- `idea-mobile-user-message-not-delivered-timeout` (hypothetical echo-drop).
 
-### 3. Integration test harness & observability (`feature-session-replacement-harness-and-observability`)
-The single highest-leverage gap. Every wrong fix this session *passed its
-mock-based tests* because the mocks don't model `runtime.assertActive()` or
-real SDK session replacement. Deliver:
-- **A session-replacement integration harness** that drives a real
-  `ctx.newSession()`/`/reload`/`/resume` through the actual SDK `ExtensionRunner`
-  and asserts post-replacement delivery + history + actions. Until this exists,
-  every fix in this area is faith.
-- **Transport-frame observability** (the parked `story-add-transport-frame-observability`)
-  + **cross-side logging** (`idea-cross-side-logging-for-debug`): the
-  instrumentation that makes A/B bugs diagnosable without a 30-minute source
-  re-derivation. These are force-multipliers for the whole epic.
+**Do not pin a reconnect state machine in foundation docs from assumed
+behavior.** The mobile-remote-coding skill lists target states
+(`connected idle / working / reconnecting / offline / stale-unknown`); those
+are the *target*, but the contract should be updated **after** the trace
+tells which state machine is wrong (app backoff, relay duplicate-connection
+cleanup, extension peer-offline consumption, send queue, or UI projection).
+This feature **feeds** the contract rather than being blocked-on or
+unblocked-by it. Blocked on feature #1's ring log + relay logging.
 
-**Unblocks:** honest verification of every fix under this epic; rapid diagnosis
-of future boundary bugs.
+### 3. Contract gap audit (verified) (`feature-contract-gap-audit`) — DOWNSTREAM
+**Demoted and renamed.** A narrow, evidence-sourced audit against the
+released bold-refactor outputs, NOT a parallel contract-design pass. Two
+sub-tracks, both gated on reproduction evidence from #1/#2:
+- **Targeting facts already missing from `PROTOCOL.md`.** `docs/ARCHITECTURE.md`
+  already pins canonical `session_id`, relay-opaque routing, room-targeted
+  cross-PC, and fail-closed app session gates. The genuine gap is narrower
+  than the original draft claimed: App↔Pi pairing/room-derivation/fanout
+  semantics and the `owner_pk` (per-machine) / `room_id` (per-`(cwd,
+  assigned-name)`) facts. Audit, don't invent.
+- **Typed error-code spike** (`session_superseded` vs `not_my_session`): the
+  foreign-session story shows the extension **cannot** distinguish
+  duplicate-delivery from legitimate stale re-sync without cross-process
+  sibling state. Make this a feasibility spike with tests for both cases, not
+  a confirmed wire change. If parent-chain/sibling state is unavailable,
+  prefer an app-side handling rule scoped to `user_message` replies.
+- **Session-lifecycle / transcript-identity invariants:** harvest from
+  already-fixed stories (`story-fix-stale-ctx-wrapactionctx-crash`,
+  `story-mobile-chat-blank-on-pair-after-pre-pair-work`,
+  `story-mobile-assistant-message-duplicated-live-replay`) **after** their
+  review lands — record the discovered invariant, don't pre-write it. The
+  duplication bug's root cause (random-uuid live vs deterministic replay
+  eventIds + fire-and-forget `ToolRequest` re-flush) is a transcript-identity
+  fix + wire change the story already specifies, not blocked on contract prose.
+
+**Unblocks:** `story-foreign-session-user-message-tolerance` (after the
+typed-error spike), `story-fix-stale-ctx-messageapi-rearm-on-reload`
+(after the harness answers the SDK-seam question).
 
 ## What this epic deliberately does NOT include
 
 - **Cluster C (ordering/steering UX bugs):** `idea-mobile-chat-reorder-on-return`,
   `idea-mobile-queued-message-does-not-reorder`,
-  `idea-mobile-no-steering-indicator-when-queued`. These share a grounded
-  app-side root cause (`seq`-then-`eventId` sort + no "queued" state) with NO
-  contract gap — they're a real coding cluster and proceed in parallel as
-  app-only work, not under this epic.
+  `idea-mobile-no-steering-indicator-when-queued`. Grounded app-side root cause
+  (`seq`-then-`eventId` sort + no "queued" state) with NO contract gap —
+  app-only work in parallel.
+- **`idea-mobile-conflates-transport-and-agent-state`:** misfiled under the old
+  "reconnect contract." Its own analysis shows the domain model
+  (`AppTurnStatus`) is already correct and the gap is the UI projection
+  flattening two axes. Route under turn-state/UI projection work (consumes
+  released `epic-bold-turn-state-machine`), not this epic.
 - **UX affordances & relay/security policy:** `idea-mobile-restart-pi-session-affordance`,
   `idea-mobile-session-control`, `idea-mobile-no-stop-button-while-awaiting-tool`,
   `idea-same-pc-peer-presence-ux`, `relay-mutex-poison-recovery`,
   `relay-pi-key-clone-detection`, `relay-revocation-cache-window`,
-  `idea-agent-send-sandbox-egress-gate`. Each is its own design decision; not
-  contract debt.
-- **A code rewrite.** The contracts come first; code changes flow from them via
-  the design family on each child feature.
+  `idea-agent-send-sandbox-egress-gate`. Each its own design decision; not
+  observability debt.
+- **A code rewrite.** Observability + reproduction first; code changes flow
+  from what reproduction finds, via the design family on each child feature.
 
 ## Existing items that fold under this epic (re-parented by reference)
 
-Already-active items that belong here (keep their stage; re-parented via this
-prose reference, not `git mv`, to preserve their history):
-- `feature-session-stable-message-delivery` (implementing) + its child
+- `feature-session-stable-message-delivery` (implementing) + child
   `feature-session-stable-message-delivery-stale-wake-tolerance` (done) — the
-  tolerance fix; partial coverage of the session-lifecycle contract.
+  tolerance fix; partial coverage of the session-lifecycle invariant.
 - `story-foreign-session-user-message-tolerance` (drafting) — blocked on the
-  targeting contract (#1).
+  typed-error spike (feature #3).
 - `story-fix-stale-ctx-messageapi-rearm-on-reload` (drafting, reopened) —
-  blocked on the session-lifecycle contract (#2).
-- `story-fix-stale-ctx-wrapactionctx-crash` (review) — a crash guard in this
-  area; folds under #2's boundary contract.
-- `story-mobile-chat-blank-on-pair-after-pre-pair-work` (review) — the
-  backfill fix; folds under #2's replay-identity contract.
+  blocked on the harness (feature #1) answering the SDK-seam question.
+- `story-fix-stale-ctx-wrapactionctx-crash` (review) — crash guard; harvests
+  invariant into feature #3 after review.
+- `story-mobile-chat-blank-on-pair-after-pre-pair-work` (review) — backfill
+  fix; harvests invariant into feature #3 after review.
 - `story-mobile-assistant-message-duplicated-live-replay` (implementing) —
-  folds under #2's canonical transcript-event identity.
-- `story-add-transport-frame-observability` (drafting) — folds under #3.
+  transcript-identity fix; harvests invariant into feature #3.
+- `story-add-transport-frame-observability` (drafting) — folds under feature #1.
+- `idea-cross-side-logging-for-debug` (backlog) — promoted to the lead child
+  of feature #1.
+
+## Relationship to the released bold refactor DAG
+
+`docs/ARCHITECTURE.md` currently calls the bold refactor DAG "in-flight," but
+the four epics this area overlaps are all `stage: done` in
+`.work/releases/v0.6.0/`:
+- `epic-bold-canonical-session` — canonical `session_id` on every chat-bearing
+  message; relay routes to `(to_pc, to_room)` opaquely; endpoints validate
+  fail-closed. (Overlaps the old targeting contract.)
+- `epic-bold-transcript-event-log` — `TranscriptEvent` canonical; hydration is
+  replay, not replace. (Overlaps transcript-identity.)
+- `epic-bold-reachability-contract` — one `Reachability` state machine
+  (`Connecting / Online / Degraded / Offline / Retrying` + one backoff policy).
+  (Overlaps the old reconnect contract.)
+- `epic-bold-turn-state-machine` — algebraic `Turn` lifecycle replacing
+  smeared booleans. (Overlaps turn/working convergence.)
+
+**This epic does NOT design parallel contracts.** Feature #3 is an audit that
+consumes/amends the released bold outputs. The `docs/ARCHITECTURE.md`
+"in-flight" wording is itself doc drift to fix as part of feature #3's gap
+audit (rolling-foundation: rewrite current-state in place).
 
 ## Strategic decisions
 
-- **Spec-first, not code-first.** Pin the contracts in `PROTOCOL.md` /
-  `docs/ARCHITECTURE.md` before rewriting code. Code changes flow from the
-  contracts via the design family. (Per `formal-rigor-stack`: "rewrite the
-  specification surface first.")
-- **Contracts in `PROTOCOL.md`.** Confirmed by operator 2026-07-04: the
-  targeting + session-lifecycle contracts belong in `PROTOCOL.md` (the
-  data-plane authority), cross-referenced with `docs/ARCHITECTURE.md`.
-- **Typed error codes over blunt tolerance.** Operator Q1, 2026-07-04:
-  disambiguate `session_mismatch` into typed codes rather than treating all
-  mismatches as silent re-sync. A cleaner, non-blunt answer; needs wire-format
-  work scoped under feature #1.
-- **The `#2` stale error is a repro-and-observe task, not a contract item.**
-  Operator clarified 2026-07-04: the stale `internal_error` occurred in a
-  freshly-started `#2`'s own session (not a cross-room leak). That's the
-  same-session stale wake case the shipped tolerance fix should cover — the
-  open question is whether the fix was live in `#2` or there's a gap. This is
-  diagnosed by reproduction, NOT by inference, and is tracked separately from
-  the epic (do not let it block the contract arc).
+- **Observability-first, not spec-first.** The `formal-rigor-stack` "rewrite
+  the specification surface first" default targets *rigorous reimplementation*;
+  this is contract-pinning on an existing, working system, and the actual
+  bottleneck is reproduction, not prose. (Per the 2026-07-04 review's central
+  question: this epic pins only verified current-state contracts and routes
+  everything else through observability/reproduction first.)
+- **Contracts in `PROTOCOL.md` / `docs/ARCHITECTURE.md` — but evidence-sourced.**
+  Every foundation-doc claim carries an evidence source: code path, passing
+  test, live reproduction, or released work item. No pinning of unverified
+  assumptions as current-state truth.
+- **Typed error codes are a spike, not a confirmed scope item.** Feasibility
+  depends on whether the extension can distinguish the two cases; tests for
+  both cases gate any wire change.
+- **The `#2` stale error is a repro-and-observe task.** Operator Q2: the stale
+  `internal_error` occurred in a freshly-started `#2`'s own session, not a
+  cross-room leak. Diagnosed by reproduction (does the shipped tolerance fix
+  cover it?), NOT by inference. The ring log (feature #1) is what makes this
+  reproducible instead of anecdotal.
 
 ## Dependencies
 
-- No `depends_on` on the epic itself.
-- Child feature #1 (targeting) and #2 (session-lifecycle) are independent of
-  each other and can be drafted in parallel.
-- Child feature #3 (harness + observability) is a precondition for *honest
-  verification* of #1 and #2's code changes, but not for drafting the contract
-  prose — so it's `depends_on: []` for the prose and a soft dependency for
-  implementation verification.
-
-## Foundation-doc impact
-
-This epic's *output* is primarily foundation-doc impact: new `PROTOCOL.md`
-targeting + session-lifecycle sections, and `docs/ARCHITECTURE.md` state-machine
-sections. Rolling-foundation: write current-state, no history prose.
+- Feature #1 (observability) — `depends_on: []`. First-class critical path.
+- Feature #2 (reconnect reproduction) — depends on feature #1's ring log +
+  relay logging for attribution.
+- Feature #3 (contract gap audit) — soft depends on #1 (harness answers the
+  SDK-seam question) and #2 (reproduction attributes the reconnect cluster).
+  Noncontroversial verified-doc cleanup can proceed in parallel.
 
 ## Next
 
-`/agile-workflow:feature-design` on each child feature (#1 and #2 can run in
-parallel; #3 alongside). The draft at `.work/drafts/draft-protocol-targeting.md`
-is the seed for #1's contract prose (after the invalidated collision section is
-removed and the real shape is confirmed via repro).
+`/agile-workflow:feature-design` on feature #1 (observability) first — it
+unblocks the rest. Feature #2 follows once the ring log lands. Feature #3
+runs as an audit once reproduction evidence is in. The draft at
+`.work/drafts/draft-protocol-targeting.md` is retained as background for #3's
+targeting audit (collision section invalidated and to be deleted per operator Q2).
+
+## Review provenance
+
+Reframed 2026-07-04 from the original "targeting & session-lifecycle
+contracts" framing after the adversarial review at
+`.work/reviews/review-epic-targeting-and-session-lifecycle-contracts-2026-07-04.md`
+(verdict: REFRAME BEFORE PROCEEDING). The original framing over-aggregated
+confirmed code defects, SDK seam constraints, and unreproduced hypotheses
+under "undefined state machines"; the operator's framing — that the bug class
+exists because productions/reproductions can't be captured on the app side
+except anecdotally — is the actual root cause and drives the observability-first
+reorder.
