@@ -1,7 +1,7 @@
 ---
 id: feature-session-stable-message-delivery-stale-wake-tolerance
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug]
 parent: feature-session-stable-message-delivery
 depends_on: []
@@ -141,3 +141,21 @@ Tracked in `story-foreign-session-user-message-tolerance`.
   `:1966-1975` (`_sendDeliveryError`), `:_deliverUserMessage`.
 - `pi-extension/src/session/sdk_session_projection.ts` (`wakeAgent`, `forget`).
 - `.agents/skills/pi-extension-typescript/SKILL.md` (stale-context rules).
+
+## Review (2026-07-04)
+
+**Verdict**: Approve
+
+**Blockers**: none (the prior block — overstated coverage — was resolved by
+rescoping to same-session stale wake + filing `story-foreign-session-user-message-tolerance`)
+**Important**: none (the prior important — missing route-level regression test —
+was resolved by adding `stale wakeAgent on a non-disposed session tolerates` in
+`extension.test.ts`)
+**Nits**: none
+
+**Notes**: Deep fresh-context review (gpt-5.5) blocked on first pass; author
+bounced to implementing, addressed both findings, re-advanced; second deep
+fresh-context review (gpt-5.5) approved. Coverage is same-session stale wake
+tolerance only — the cross-process foreign-session gap is honestly tracked in
+a sibling design story, not hidden. Tolerance fix is safe to ship for what it
+ covers; the broader benign-coverage claim was correctly retracted.
