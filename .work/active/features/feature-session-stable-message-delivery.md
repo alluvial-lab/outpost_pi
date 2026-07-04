@@ -1,7 +1,7 @@
 ---
 id: feature-session-stable-message-delivery
 kind: feature
-stage: drafting
+stage: implementing
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on:
@@ -10,6 +10,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-03
 updated: 2026-07-03
+designed: 2026-07-03
 ---
 
 # Session-stable message delivery (the stale-`internal_error` architectural gap)
@@ -166,20 +167,171 @@ This is the one question that must be answered before designing the fix —
 and it needs either live-process instrumentation or a repro with logging,
 not more static reading.
 
+## CORRECTED root cause (2026-07-03, after operator disambiguation)
+
+Operator confirmed: pi was **idle**, the "peer session in the same CWD" was a
+**separate pi process**, timing unsure. This is **NOT the single-process
+`messageApi`-rearm problem** the reverted fix and the SDK investigation above
+were chasing. It is a **multi-instance identity/room collision**:
+
+1. **Shared identity.** The Ed25519 identity is per-MACHINE
+   (`pairing/storage.ts`: keyring service `dev.remotepi.pi` / account
+   `longterm-ed25519`, with file fallback `~/.pi/remote/identity.json`). Two pi
+   processes on the same host share the same private key → same `owner_pk`.
+2. **Shared room.** The relay room is derived from the CWD. Two pis in the same
+   CWD derive the same `room_id`.
+3. **Relay accepts duplicates.** The relay does NOT emit `room_already_open`
+   (that error code is dead — never emitted relay-side). `PeerRegistry`
+   explicitly allows multiple conns at the same `(peer, room)` to coexist
+   (`registry.rs:355` test `duplicate_room_accepted_and_broadcast`), designed
+   for multi-device owners sharing a key.
+4. **Fanout to ALL conns.** Data-plane forwarding is keyed by `(owner_pk,
+   room_id)` and **every live conn receives a copy** (`registry.rs:33`:
+   "Every live conn in the corresponding Vec receives a copy"). So when the
+   phone sends `user_message` to `(owner_pk, room)`, the relay delivers it to
+   **both** pi processes.
+5. **The idle/wrong pi errors.** The phone's message was meant for the active
+   test pi, but the idle pi (e.g. the coding-agent's session, whose ctx may
+   have been replaced by harness `/new`/`/resume` during work) also receives
+   it, runs `wakeAgent` → `sendUserMessage` on a stale `messageApi`, throws →
+   `internal_error` to the phone. The active pi may handle it fine, but the
+   phone sees the stale error from the idle one.
+
+So the symptom is real, but the cause is **cross-process message delivery to a
+pi that wasn't the intended target and has a stale ctx**, not a single-process
+binding that needs re-arming. The reverted fix was solving the wrong problem
+for this scenario (though the single-process re-arm question it raised is
+still valid for the TUI-`/reload`-then-phone case — now a secondary concern).
+
 ## Design decisions
 
-- **Fix direction: deferred pending (A)/(B) disambiguation.** The design
-  cannot proceed until we know whether this is a null-window race (fix = guard
-  + retry) or a multi-replacement/stale-runner case (fix = re-capture or
-  process-model). Captured here so the next pass inherits the constraint.
-- **Integration test is mandatory** regardless of direction: a real
-  `ctx.newSession()` through the SDK `ExtensionRunner` asserting delivery to
-  the new session. Mock-based tests cannot catch this class (the reverted fix
-  proved it).
-- **Stopgap is acceptable interim:** a graceful "session replacing, retry"
-  signal instead of `internal_error` so the phone stops going permanently
-  broken while the real fix is designed. Pairs with
-  `idea-mobile-restart-pi-session-affordance`.
+- **Primary fix direction: the idle/wrong pi must NOT error visibly when it
+  receives a `user_message` it wasn't the intended target of.** Two sub-angles:
+  - **(P1) Session-gate the delivery.** `_routeClientMessageFrom` already
+    validates `session_id` via `validateClientSession`. A `user_message` whose
+    `session_id` doesn't match this pi's current session should be rejected
+    *silently* (or with a benign no-op), not delivered via `wakeAgent` to a
+    stale ctx. Confirm whether `user_message` carries a `session_id` and
+    whether the gate already covers it; if the gate passes but `messageApi`
+    is stale, the delivery attempt itself is the bug.
+  - **(P2) Stale-ctx tolerance on the wake path.** If `wakeAgent` returns
+    stale, return a *recoverable* signal (or a silent drop) instead of
+    `internal_error`, so a duplicate-delivered message on the wrong pi
+    doesn't surface a broken UX. This is the "stopgap" from the original
+    brief, now promoted to the primary fix for this scenario.
+- **Secondary: the single-process re-arm after TUI `/reload`.** Still a real
+  gap (the SDK investigation confirmed `bindApi` re-arms a fresh `pi` on every
+  replacement, so this may already be handled — but an idle pi whose ctx was
+  replaced by the harness is the same stale-ctx surface). Lower priority now;
+  fold into P2.
+- **Prevention vs tolerance:** preventing two pis on the same identity+room
+  (e.g. a second-pi detection that refuses to claim a room already held by
+  the same pubkey on this host) is a bigger UX change and may conflict with
+  the legitimate multi-device-owner design. **Tolerance (P1/P2) is the
+  smaller, correct fix for the reported symptom.**
+- **Integration test is still mandatory:** a two-instance simulation (or a
+  unit test that delivers a foreign-`session_id` `user_message` to a pi with
+  a stale ctx) asserting no visible `internal_error`.
+
+## What the reverted fix got right/wrong
+
+- WRONG: it assumed the factory `pi` is a single stale object (it's re-created
+  per replacement) and that re-arming from it would help (it re-arms a fresh
+  one already via `bindApi`). For the *operator's actual scenario* it was
+  irrelevant — the problem is cross-process fanout, not single-process binding.
+- The crash-class siblings (`resolveRemoteSessionId`, `wrapActionCtx`) ARE
+  still correct and deployed — those are unguarded getter reads, unrelated to
+  this scenario.
+
+## Design decision (final, 2026-07-03)
+
+**Fix = P2: stale-ctx tolerance on the wake path.** When `wakeAgent` returns
+stale (or "not bound yet" in the immediate aftermath), `_deliverUserMessage`
+must NOT surface `internal_error` to the phone. The message is either
+re-deliverable (the phone retries after the next `session_start` rebinds) or
+it was a duplicate to a pi that wasn't the target — in both cases a visible
+broken UX is wrong. This single change covers:
+
+- the operator's reported scenario (stale ctx on an idle/wrong pi, whatever
+  the source of staleness), and
+- the same-process TUI-`/reload`/harness-`/new` case (P2 is the union of the
+  prior "stopgap" and "primary fix").
+
+P1 (session-gate) already rejects foreign-`session_id` messages as
+`session_mismatch` *before* `wakeAgent` — confirmed `user_message` is
+session-scoped and gated (`session_scope.ts`, `index.ts:_routeClientMessageFrom`).
+So the stale error must come from a pi whose `currentRemoteSessionId` *matched*
+the phone's `session_id` (same-session, ctx replaced in-process) — which P2
+covers. No P1 change needed.
+
+**Prevention** (second-pi-on-same-identity detection) is explicitly out of
+scope for this feature — it conflicts with the legitimate multi-device-owner
+design and is a larger UX change. Tolerance is correct and small.
+
+## Implementation units
+
+### Unit 1: stale/no-op tolerance in `_deliverUserMessage`
+**File**: `pi-extension/src/index.ts` (`_wakeAgent` ~L1859, `_deliverUserMessage`)
+**Story**: `feature-session-stable-message-delivery-stale-wake-tolerance`
+
+Change `_wakeAgent`'s stale-error handling: instead of returning
+`{ok:false, detail}` (which `_deliverUserError` turns into `internal_error`),
+distinguish a *stale* failure from a *real* delivery failure. On stale:
+- Log a debug line (the operator/dev can see it).
+- Return a recoverable result so `_deliverUserMessage` sends a **benign no-op**
+  (or nothing) rather than `internal_error`.
+
+Decide the wire shape at implement time: (a) send nothing (the phone's
+existing send-timeout will surface "not delivered" — acceptable, but noisy),
+or (b) reuse/extend the existing `error` with a recoverable code the app
+treats as "retry, not broken" (cleaner; may need an app-side change — scope
+that as a child if needed). Prefer (b) only if the app already has a retry
+path; otherwise (a) + document.
+
+**Acceptance Criteria**:
+- [ ] A `wakeAgent` stale-ctx failure does NOT produce a visible
+  `internal_error: Agent rejected incoming message` on the phone.
+- [ ] A non-stale wake failure (real delivery error) still surfaces.
+- [ ] Regression test: deliver a `user_message` to a projection with a stale
+  `messageApi` → assert no `internal_error` is sent (silent or recoverable).
+
+## Implementation Order
+1. Unit 1 (the tolerance fix + regression test).
+
+## Testing
+
+### Unit test: `pi-extension/src/extension.test.ts` (or a new projection test)
+- `wakeAgent` with a stale `messageApi` (throws stale) → `_deliverUserMessage`
+  sends no `internal_error` (or a recoverable code), logs the stale detail.
+- `wakeAgent` with a real error → `internal_error` still surfaces (unchanged).
+- `wakeAgent` with null `messageApi` ("not bound yet") → same tolerance
+  (the immediate-after-replacement window).
+
+### Integration (stretch): two-instance simulation
+- Two `SdkSessionProjection` instances sharing a session id; deliver a
+  `user_message` to one whose ctx is stale → no visible error. If too hard to
+  simulate against the installed SDK, ship the unit test + an honest note.
+
+## Risks
+
+- **Masking real failures.** Tolerance must distinguish stale/not-bound-yet
+  (recoverable) from genuine delivery errors (e.g. malformed content, provider
+  down). The SDK runtime owns post-handoff failures (no extension error event
+  for them), so the extension only sees handoff-time failures — those split
+  cleanly into stale (tolerate) vs not (surface). Low risk if the split is on
+  `isStaleContextError` + "not bound yet" detail only.
+- **Phone UX on full tolerance.** If we send nothing on stale, the app's 20s
+  send-timeout surfaces "not delivered" — which is accurate (the message
+  wasn't delivered to *this* pi) but noisy if the other pi handled it. The
+  recoverable-code option (b) is cleaner but needs an app change. Pick at
+  implement time.
+
+## Foundation-doc impact
+
+If option (b) adds a new recoverable error code, update `PROTOCOL.md`'s error
+table. Otherwise none. No skill change needed — the stale-context section of
+`pi-extension-typescript/SKILL.md` stays accurate (it already describes the
+stale-after-replacement class).
 
 ## Foundation-doc impact
 
