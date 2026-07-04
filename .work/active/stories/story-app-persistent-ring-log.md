@@ -1,7 +1,7 @@
 ---
 id: story-app-persistent-ring-log
 kind: story
-stage: drafting
+stage: implementing
 tags: [app, observability, bug]
 parent: feature-cross-side-observability
 depends_on: []
@@ -15,13 +15,14 @@ updated: 2026-07-04
 
 ## Status
 
-**Design seed only — no implementation yet.** An earlier inline build
-attempt was reverted 2026-07-04 (it left the app in a non-compiling state:
-`DebugLog` contract + `DebugLogImpl` adapter + DI registration + viewmodel
-export methods were added without a producer or consumer, and a dangling
-`_DebugSection` reference). The story starts clean from this scoping. The
-relay-side companion (`story-relay-retroactive-file-logging`) IS implemented
-and verified — that half is done.
+**Design landed 2026-07-04** (`feature-cross-side-observability` advanced to
+`stage: implementing`). An earlier inline build attempt was reverted 2026-07-04
+(it left the app non-compiling: `DebugLog` contract + `DebugLogImpl` adapter +
+DI registration + viewmodel export methods were added without a producer or
+consumer, and a dangling `_DebugSection` reference). The design pass wrote the
+full unit breakdown into the feature body; this story implements Units 1-4
+(the ring log) as a single stride. The relay-side companion
+(`story-relay-retroactive-file-logging`) IS implemented and verified.
 
 ## Observed
 
@@ -82,18 +83,16 @@ phone-side half of the cross-side observability gap; the relay half is
   buffer cap + privacy scrubbing).
 - [ ] No message text or image content reaches the persisted/shared log.
 
-## Open decisions (design time — privacy-sensitive, confirm before wiring capture)
+## Open decisions (RESOLVED 2026-07-04, operator-confirmed)
 
-- **Release gating:** always-on ring log vs debug-build-only. The survey
-  leans always-on (intermittent bugs happen in release), but privacy review
-  should confirm. Default proposal: always-on, privacy-scrubbed subset.
-- **Retention:** size cap (512 KiB?) and whether to keep N rotated files.
-- **Capture surface:** confirm the exact state-transition lines to capture
-  without logging payload. The `[msg-send]` text preview is the one explicit
-  scrub point.
-- **Share format:** raw jsonl (machine-parseable, matches extension audit
-  trail) vs rendered text (human-readable). Survey suggests jsonl to match
-  `audit.jsonl`.
+All four open decisions are closed in the parent feature's `## Design
+decisions` section:
+- **Release gating:** always-on, privacy-scrubbed subset.
+- **Share format:** jsonl.
+- **Retention:** 1 MiB cap, single file, ring-truncate, 48h coverage.
+- **Capture surface:** the 15 `debugPrint` sites; scrub `[msg-send]` text preview.
+
+No further design input needed — proceed to implementation.
 
 ## Out of scope
 
