@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-03
+updated: 2026-07-04
 designed: 2026-07-03
 ---
 
@@ -326,20 +326,30 @@ path; otherwise (a) + document.
   recoverable-code option (b) is cleaner but needs an app change. Pick at
   implement time.
 
+## Review outcome (2026-07-04)
+
+Deep fresh-context review (gpt-5.5) of the child tolerance story **blocked**,
+and in doing so corrected an overstatement in this feature's design:
+
+- **Same-session stale wake** (gate passes, stale `messageApi`) → covered by
+  the tolerance fix. This is the operator's reported *stale* symptom.
+- **Cross-process foreign-session delivery** (the original operator scenario)
+  → NOT covered. The session-gate emits `session_mismatch` BEFORE `wakeAgent`,
+  which the app renders as a visible ⚠ error. The broad "idle/wrong pi is
+  benign" claim is not achieved by tolerance alone.
+
+The child story was rescoped to same-session tolerance and advanced; the
+foreign-session gap was filed as `story-foreign-session-user-message-tolerance`
+(needs design — a pi cannot distinguish duplicate delivery from a legitimate
+stale-session re-sync, so blindly tolerating `session_mismatch` would break the
+re-sync signal).
+
 ## Foundation-doc impact
 
-If option (b) adds a new recoverable error code, update `PROTOCOL.md`'s error
-table. Otherwise none. No skill change needed — the stale-context section of
-`pi-extension-typescript/SKILL.md` stays accurate (it already describes the
-stale-after-replacement class).
-
-## Foundation-doc impact
-
-Likely updates `PROTOCOL.md` (if a new "session replacing, retry" wire signal
-is added, option 3) and possibly the pi-extension skill
-(`.agents/skills/pi-extension-typescript/SKILL.md`) stale-context section if
-the binding model changes. No vision/spec/architecture change — this fixes an
-existing capability, doesn't introduce a new one.
+None for the tolerance fix as shipped (no new wire signal — option (a) silent).
+If the foreign-session gap later adds a new signal/code, update `PROTOCOL.md`'s
+error table. No skill change needed — the stale-context section of
+`pi-extension-typescript/SKILL.md` stays accurate.
 
 ## References
 

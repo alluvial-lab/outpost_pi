@@ -4037,6 +4037,42 @@ describe("session_shutdown teardown", () => {
     expect(JSON.stringify(sent)).not.toContain(staleMessage);
   });
 
+  test("stale wakeAgent on a non-disposed session tolerates (no visible internal_error)", async () => {
+    // Regression for the recoverable-tolerance fix: when the session gate
+    // PASSES (same session_id) but the bound messageApi is stale, the phone
+    // must NOT receive a permanent `internal_error: Agent rejected incoming
+    // message`. The stale failure is recoverable — another pi may have handled
+    // it (cross-process fanout) or the next session_start rebinds and the
+    // phone retries. Real (non-stale) delivery failures still surface.
+    const staleMessage = "This extension ctx is stale after session replacement or reload.";
+    _setPiForTest({
+      sendUserMessage: vi.fn(() => { throw new Error(staleMessage); }),
+      sendMessage: vi.fn(() => { throw new Error(staleMessage); }),
+    });
+    _setDisposedForTest(false);
+    const sessionId = "019f17a6-9143-7be1-825b-183b42c3e682";
+    _setRemoteSessionIdForTest(sessionId);
+
+    const sent: unknown[] = [];
+    await _routeClientMessageFrom(
+      { send: (msg: unknown) => { sent.push(msg); } } as Parameters<typeof _routeClientMessageFrom>[0],
+      { type: "user_message", id: "msg-stale", session_id: sessionId, text: "hello" },
+      { abort: vi.fn() },
+    );
+    // Allow the async _deliverUserMessage to settle.
+    await vi.waitFor(() => expect(sent.length === 0 || sent.every((m) =>
+      !(typeof m === "object" && m !== null &&
+        (m as { type?: string }).type === "error" &&
+        (m as { code?: string }).code === "internal_error"))).toBe(true));
+
+    // No internal_error was surfaced to the phone for the stale wake.
+    expect(sent.find((m) =>
+      typeof m === "object" && m !== null &&
+      (m as { type?: string }).type === "error" &&
+      (m as { code?: string }).code === "internal_error" &&
+      JSON.stringify(m).includes("Agent rejected incoming message"))).toBeUndefined();
+  });
+
   test("known-peer reconnect resolving after session_shutdown does not attach a ghost owner", async () => {
     captureHandler("remote-pi");
     await _connectForTest(makeMockCtx());

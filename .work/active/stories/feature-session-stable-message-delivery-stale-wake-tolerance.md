@@ -61,6 +61,49 @@ the full corrected root-cause analysis.
   code per chosen wire shape).
 - [ ] `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`.
 
+## Review (deep, fresh-context, 2026-07-04) — verdict: Block, addressed
+
+A fresh-context gpt-5.5 review blocked on two findings:
+
+1. **Root-cause reframing overstated coverage (Blocker).** `user_message` is
+   session-scoped, so `_routeClientMessageFrom`'s `validateClientSession`
+   gate rejects a foreign-session message BEFORE `_deliverUserMessage`/`wakeAgent`,
+   emitting `error{code:"session_mismatch"}` — which the app renders as a
+   visible ⚠ assistant-error row (`sync_service.dart:729-746`). So this fix only
+   covers the **same-session stale wake** case (gate passes → stale wake →
+   tolerated). The broad "idle/wrong pi is benign" claim is NOT achieved by
+   this fix alone. Addressed by rescoping (below) + filing the foreign-session
+   gap (`story-foreign-session-user-message-tolerance`).
+2. **Missing route-level regression test (Important).** The 4 unit tests only
+   prove `wakeAgent` classification, not that `_deliverUserMessage` suppresses
+   `_sendDeliveryError` on recoverable (the actual phone-visible behavior).
+   **Addressed:** added `stale wakeAgent on a non-disposed session tolerates
+   (no visible internal_error)` in `extension.test.ts` — delivers a same-session
+   `user_message` to a stale `messageApi`, asserts no `internal_error: Agent
+   rejected incoming message` is sent. Passes.
+
+Also noted (Important): null-`messageApi` tolerance is broader than stale
+(always `recoverable:true`), which could mask a real binding regression for
+20s. Accepted — the route-level test + the existing `console.warn` logging
+are adequate for diagnosis; the binding-regression case would also surface
+as "not delivered" via the phone's send-timeout.
+
+## Scope correction (after review)
+
+This fix tolerates **same-session stale wake**: the phone's `user_message`
+carries a `session_id` that matches this pi's current session, the gate
+passes, but the bound `messageApi` throws stale (ctx replaced in-process by
+harness `/new`/`/resume`, or a stale-id collision). That is the operator's
+reported *stale* symptom (the error string is the wakeAgent stale detail).
+
+**Out of scope (filed separately):** cross-process foreign-session delivery —
+where a duplicate pi with a *different* `session_id` receives the message and
+the gate emits `session_mismatch`. That still produces a visible app error
+and needs its own design (a pi cannot distinguish "duplicate delivery to the
+wrong pi" from "phone held a stale session_id and is legitimately re-syncing",
+so blindly tolerating `session_mismatch` would break the re-sync signal).
+Tracked in `story-foreign-session-user-message-tolerance`.
+
 ## Implementation notes
 
 - Files changed:
