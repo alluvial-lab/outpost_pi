@@ -96,6 +96,14 @@ export interface OwnerMultiplexerPort {
 export interface WakeAgentResult {
   ok: boolean;
   detail?: string;
+  /** True when the failure is recoverable: a stale session ctx after a
+   *  replacement/reload, or the null-`messageApi` window immediately after.
+   *  Such a message was not delivered to THIS pi's agent, but the phone should
+   *  NOT see a permanent `internal_error` — either another pi handled it
+   *  (cross-process fanout) or the next `session_start` rebinds a working api
+   *  and the phone retries. Real delivery failures leave this false so they
+   *  still surface. */
+  recoverable?: boolean;
 }
 
 export interface SdkSessionProjectionPort {
