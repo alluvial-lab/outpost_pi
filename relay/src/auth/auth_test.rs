@@ -1,7 +1,9 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::{Signer as _, SigningKey};
 
-use super::challenge::{AuthError, RELAY_AUTH_DOMAIN_PREFIX, gen_nonce, parse_hello, parse_hello_bootstrap, verify_auth};
+use super::challenge::{
+    AuthError, RELAY_AUTH_DOMAIN_PREFIX, gen_nonce, parse_hello, parse_hello_bootstrap, verify_auth,
+};
 
 /// First message is not "hello" → NoHello error.
 #[test]

@@ -10,6 +10,16 @@ gate_origin: null
 created: 2026-07-04
 updated: 2026-07-04
 ---
+status: superseded
+superseded_by: feature-contract-gap-audit, feature-reconnect-reproduction
+superseded_date: 2026-07-04
+---
+
+> **SUPERSEDED 2026-07-04.** Split into `feature-contract-gap-audit`
+> (session-lifecycle/transcript-identity invariants, harvested after review)
+> and `feature-reconnect-reproduction` (reconnect attribution, gated on
+> observability) under the reframed `epic-targeting-and-session-lifecycle-contracts`.
+> See `.work/reviews/review-epic-targeting-and-session-lifecycle-contracts-2026-07-04.md`.
 
 # Session-lifecycle & reconnect state-machine contract
 
