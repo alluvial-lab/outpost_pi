@@ -1,5 +1,8 @@
 ---
 id: story-app-persistent-ring-log
+status: superseded
+superseded_by: story-app-debug-log-adapter, story-app-debug-toggle-ui, story-app-capture-routing
+superseded_date: 2026-07-04
 kind: story
 stage: implementing
 tags: [app, observability, bug]
@@ -10,6 +13,11 @@ gate_origin: null
 created: 2026-07-04
 updated: 2026-07-04
 ---
+
+> **SUPERSEDED 2026-07-04.** Split into 3 stories under the debug-gated,
+> app-global design revision (post design-review). See
+> `.work/reviews/review-feature-cross-side-observability-design-2026-07-04.md`
+> and the revised `feature-cross-side-observability` body.
 
 # App: persistent debug ring log + in-app export
 
