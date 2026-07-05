@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/relay_config.dart';
 import 'package:app/pairing/storage.dart';
@@ -9,6 +12,27 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+/// Test seam for the platform share sheet. Production uses [shareDebugLog].
+typedef DebugLogShare = Future<void> Function(String jsonl);
+
+Future<void> shareDebugLog(String jsonl) async {
+  final bytes = Uint8List.fromList(
+    utf8.encode(jsonl.endsWith('\n') ? jsonl : '$jsonl\n'),
+  );
+  await Share.shareXFiles(
+    [
+      XFile.fromData(
+        bytes,
+        name: 'remote_pi_debug.jsonl',
+        mimeType: 'application/x-ndjson',
+      ),
+    ],
+    subject: 'Remote Pi debug log',
+    text: 'Remote Pi debug log',
+  );
+}
 
 class SettingsPage extends StatelessWidget {
   /// Plan/tablet — `true` when presented as a modal bottom sheet (tablet)
@@ -16,7 +40,13 @@ class SettingsPage extends StatelessWidget {
   /// for a close (X), since the sheet is dismissed, not popped to a parent.
   final bool embedded;
 
-  const SettingsPage({super.key, this.embedded = false});
+  final DebugLogShare shareDebugLogFn;
+
+  const SettingsPage({
+    super.key,
+    this.embedded = false,
+    this.shareDebugLogFn = shareDebugLog,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +81,8 @@ class SettingsPage extends StatelessWidget {
           const _RelaySection(),
           Divider(color: colors.border, height: 1),
           const _DisplaySection(),
+          Divider(color: colors.border, height: 1),
+          _DebugSection(shareDebugLogFn: shareDebugLogFn),
           Divider(color: colors.border, height: 1),
           const _SectionHeader('Pairings'),
           switch (state) {
@@ -280,14 +312,8 @@ class _DisplaySection extends StatelessWidget {
                       value: ThemeMode.system,
                       label: Text('System'),
                     ),
-                    ButtonSegment(
-                      value: ThemeMode.light,
-                      label: Text('Light'),
-                    ),
-                    ButtonSegment(
-                      value: ThemeMode.dark,
-                      label: Text('Dark'),
-                    ),
+                    ButtonSegment(value: ThemeMode.light, label: Text('Light')),
+                    ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
                   ],
                   selected: {prefs.themeMode},
                   onSelectionChanged: (s) => prefs.setThemeMode(s.first),
@@ -314,6 +340,164 @@ class _DisplaySection extends StatelessWidget {
           onChanged: (v) => prefs.setHideToolCalls(v),
         ),
         const SizedBox(height: 8),
+      ],
+    );
+  }
+}
+
+class _DebugSection extends StatelessWidget {
+  final DebugLogShare shareDebugLogFn;
+
+  const _DebugSection({required this.shareDebugLogFn});
+
+  Future<void> _export(BuildContext context) async {
+    final vm = context.read<SettingsViewModel>();
+    final messenger = ScaffoldMessenger.of(context);
+    final jsonl = await vm.exportDebugLog();
+    if (!context.mounted) return;
+    if (jsonl == null || jsonl.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No debug log yet',
+            style: TextStyle(fontFamily: kMonoFamily),
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    await shareDebugLogFn(jsonl);
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Debug log export opened',
+          style: TextStyle(fontFamily: kMonoFamily),
+        ),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _clear(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Clear debug log?'),
+        content: const Text(
+          'This wipes the saved debug ring file. The Debug logging switch stays unchanged.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Clear debug log'),
+          ),
+        ],
+      ),
+    );
+    if (!context.mounted || confirmed != true) return;
+    final vm = context.read<SettingsViewModel>();
+    final messenger = ScaffoldMessenger.of(context);
+    await vm.clearDebugLog();
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Debug log cleared',
+          style: TextStyle(fontFamily: kMonoFamily),
+        ),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<SettingsViewModel>();
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SectionHeader('Debug'),
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 18),
+          activeThumbColor: colors.accent,
+          title: Text(
+            'Debug logging',
+            style: context.typo.sansBody.copyWith(color: colors.text),
+          ),
+          subtitle: Text(
+            'Persist a bounded jsonl ring log for diagnosing mobile session bugs.',
+            style: context.typo.sansBody.copyWith(
+              color: colors.muted,
+              fontSize: 12,
+            ),
+          ),
+          value: vm.isDebugLogging,
+          onChanged: (v) => vm.setDebugLogging(v),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+          child: Text(
+            'Exports may include truncated message previews and diagnostic IDs. Share only with destinations you choose.',
+            style: context.typo.sansBody.copyWith(
+              color: colors.muted,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 16),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _export(context),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: colors.accent,
+                  side: BorderSide(color: colors.border),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 10,
+                    horizontal: 14,
+                  ),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(6)),
+                  ),
+                ),
+                icon: const Icon(LucideIcons.share, size: 18),
+                label: Text(
+                  'Export debug log',
+                  style: const TextStyle(fontFamily: kMonoFamily, fontSize: 13),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _clear(context),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: colors.error,
+                  side: BorderSide(color: colors.border),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 10,
+                    horizontal: 14,
+                  ),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(6)),
+                  ),
+                ),
+                icon: const Icon(LucideIcons.trash2, size: 18),
+                label: Text(
+                  'Clear debug log',
+                  style: const TextStyle(fontFamily: kMonoFamily, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

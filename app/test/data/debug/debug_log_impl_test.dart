@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
+import 'package:app/config/dependencies.dart';
 import 'package:app/data/debug/debug_log_impl.dart';
+import 'package:app/data/preferences/preferences.dart';
 import 'package:app/domain/contracts/debug_log.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
@@ -46,31 +49,57 @@ void main() {
     log.dispose();
   });
 
+  test(
+    'Preferences.debugLogging gates capture through the injected callback',
+    () async {
+      final prefs = Preferences(_FakeSecureStorage());
+      final log = DebugLogImpl(debugEnabled: () => prefs.debugLogging);
+
+      log.log(MsgSendEvent(ts: DateTime.now(), id: 'off-1'));
+      expect(await log.export(), isNull);
+
+      await prefs.setDebugLogging(true);
+      log.log(MsgSendEvent(ts: DateTime.now(), id: 'on-1'));
+      var exported = await log.export();
+      expect(exported, contains('on-1'));
+      expect(exported, isNot(contains('off-1')));
+
+      await prefs.setDebugLogging(false);
+      log.log(MsgSendEvent(ts: DateTime.now(), id: 'off-2'));
+      exported = await log.export();
+      expect(exported, contains('on-1'));
+      expect(exported, isNot(contains('off-2')));
+      log.dispose();
+    },
+  );
+
   test('export returns null when empty', () async {
     final log = newLog();
     expect(await log.export(), isNull);
     log.dispose();
   });
 
-  test('log persists to the ring file and survives restart (warm-from-file)',
-      () async {
-    final path = '${tempDir.path}/remote_pi_debug.jsonl';
-    final log1 = newLog();
-    log1.log(MsgSendEvent(ts: DateTime.utc(2026, 7, 4), id: 'msg-1'));
-    await disposeAndDrain(log1); // final flush
-    expect(await File(path).exists(), isTrue);
+  test(
+    'log persists to the ring file and survives restart (warm-from-file)',
+    () async {
+      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      final log1 = newLog();
+      log1.log(MsgSendEvent(ts: DateTime.utc(2026, 7, 4), id: 'msg-1'));
+      await disposeAndDrain(log1); // final flush
+      expect(await File(path).exists(), isTrue);
 
-    // A fresh instance warms from the file.
-    final log2 = newLog();
-    final exported = await log2.export();
-    expect(exported, isNotNull);
-    final lines = exported!.split('\n');
-    expect(lines, hasLength(1));
-    final json = jsonDecode(lines.first) as Map<String, dynamic>;
-    expect(json['tag'], 'msgSend');
-    expect(json['id'], 'msg-1');
-    log2.dispose();
-  });
+      // A fresh instance warms from the file.
+      final log2 = newLog();
+      final exported = await log2.export();
+      expect(exported, isNotNull);
+      final lines = exported!.split('\n');
+      expect(lines, hasLength(1));
+      final json = jsonDecode(lines.first) as Map<String, dynamic>;
+      expect(json['tag'], 'msgSend');
+      expect(json['id'], 'msg-1');
+      log2.dispose();
+    },
+  );
 
   test('warm-from-file skips corrupt lines without throwing', () async {
     final path = '${tempDir.path}/remote_pi_debug.jsonl';
@@ -90,29 +119,31 @@ void main() {
     log.dispose();
   });
 
-  test('cap enforced on append — oldest lines dropped, no unbounded growth',
-      () async {
-    final log = DebugLogImpl.withMaxBytesForTest(
-      debugEnabled: () => true,
-      maxBytes: 300, // tiny cap so a few lines trigger truncation
-    );
-    for (var i = 0; i < 50; i++) {
-      log.log(MsgSendEvent(ts: DateTime.now(), id: 'msg-$i'));
-    }
-    final exported = await log.export();
-    expect(exported, isNotNull);
-    final totalBytes = exported!.length;
-    expect(
-      totalBytes,
-      lessThanOrEqualTo(300 + 50),
-      reason: 'ring must stay under cap (+slack for line joins)',
-    );
-    // Oldest lines evicted; only the most recent survive.
-    final lines = exported.split('\n');
-    expect(lines.last, contains('msg-49'));
-    expect(exported, isNot(contains('msg-0')));
-    log.dispose();
-  });
+  test(
+    'cap enforced on append — oldest lines dropped, no unbounded growth',
+    () async {
+      final log = DebugLogImpl.withMaxBytesForTest(
+        debugEnabled: () => true,
+        maxBytes: 300, // tiny cap so a few lines trigger truncation
+      );
+      for (var i = 0; i < 50; i++) {
+        log.log(MsgSendEvent(ts: DateTime.now(), id: 'msg-$i'));
+      }
+      final exported = await log.export();
+      expect(exported, isNotNull);
+      final totalBytes = exported!.length;
+      expect(
+        totalBytes,
+        lessThanOrEqualTo(300 + 50),
+        reason: 'ring must stay under cap (+slack for line joins)',
+      );
+      // Oldest lines evicted; only the most recent survive.
+      final lines = exported.split('\n');
+      expect(lines.last, contains('msg-49'));
+      expect(exported, isNot(contains('msg-0')));
+      log.dispose();
+    },
+  );
 
   test('a huge untrusted string field cannot evict the window alone', () async {
     final log = DebugLogImpl.withMaxBytesForTest(
@@ -128,16 +159,18 @@ void main() {
     log.dispose();
   });
 
-  test('critical events flush immediately (survive a simulated crash)',
-      () async {
-    final path = '${tempDir.path}/remote_pi_debug.jsonl';
-    final log = newLog();
-    log.log(ConnChannelLostEvent(ts: DateTime.now(), stale: false));
-    await disposeAndDrain(log); // the immediate flush + dispose re-flush
-    final onDisk = await File(path).readAsString();
-    expect(onDisk, contains('connChannelLost'));
-    expect(onDisk, contains('"stale":false'));
-  });
+  test(
+    'critical events flush immediately (survive a simulated crash)',
+    () async {
+      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      final log = newLog();
+      log.log(ConnChannelLostEvent(ts: DateTime.now(), stale: false));
+      await disposeAndDrain(log); // the immediate flush + dispose re-flush
+      final onDisk = await File(path).readAsString();
+      expect(onDisk, contains('connChannelLost'));
+      expect(onDisk, contains('"stale":false'));
+    },
+  );
 
   test('clear wipes ring + file but the log can be used again', () async {
     final log = newLog();
@@ -156,12 +189,38 @@ void main() {
     final path = '${tempDir.path}/remote_pi_debug.jsonl';
     final log = newLog();
     // A routine (non-critical) event: stays pending until the debounce fires.
-    log.log(ReplayDedupEvent(ts: DateTime.now(), sessionId: 's1', dropped: true));
+    log.log(
+      ReplayDedupEvent(ts: DateTime.now(), sessionId: 's1', dropped: true),
+    );
     // Dispose immediately — must flush the pending line.
     await disposeAndDrain(log);
     final onDisk = await File(path).readAsString();
     expect(onDisk, contains('replayDedup'));
   });
+
+  test(
+    'disposeDependencies flushes DebugLogImpl registered via addService',
+    () async {
+      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      final prefs = Preferences(_FakeSecureStorage());
+      await prefs.setDebugLogging(true);
+      injector.addService<DebugLog>(
+        () => DebugLogImpl(debugEnabled: () => prefs.debugLogging),
+      );
+      injector.commit();
+
+      final log = injector.get<DebugLog>();
+      log.log(
+        ReplayDedupEvent(ts: DateTime.now(), sessionId: 's1', dropped: true),
+      );
+      disposeDependencies();
+      await pumpEventQueue(times: 10);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final onDisk = await File(path).readAsString();
+      expect(onDisk, contains('replayDedup'));
+    },
+  );
 
   test('never throws — file I/O failure does not propagate', () async {
     // Point path_provider at a non-existent dir to force I/O failure.
@@ -176,67 +235,74 @@ void main() {
     expect(true, isTrue);
   });
 
-  test('export reads from the file (source of truth) after a forced flush',
-      () async {
-    final path = '${tempDir.path}/remote_pi_debug.jsonl';
-    // Pre-write a line directly to the file (simulating a prior session).
-    await File(path).writeAsString(
-      '{"tag":"msgEcho","ts":"2026-07-04T00:00:00.000Z","id":"pre-existing"}\n',
-    );
-    final log = newLog();
-    // Don't log anything new — export should read the pre-existing file.
-    final exported = await log.export();
-    expect(exported, contains('pre-existing'));
-    log.dispose();
-  });
+  test(
+    'export reads from the file (source of truth) after a forced flush',
+    () async {
+      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      // Pre-write a line directly to the file (simulating a prior session).
+      await File(path).writeAsString(
+        '{"tag":"msgEcho","ts":"2026-07-04T00:00:00.000Z","id":"pre-existing"}\n',
+      );
+      final log = newLog();
+      // Don't log anything new — export should read the pre-existing file.
+      final exported = await log.export();
+      expect(exported, contains('pre-existing'));
+      log.dispose();
+    },
+  );
 
-  test('snapshot-write: on-disk file is capped (no unbounded growth)', () async {
-    // The blocker fix: the file is an atomic snapshot of the capped ring, not
-    // append-only. So evicted lines don't persist on disk.
-    final log = DebugLogImpl.withMaxBytesForTest(
-      debugEnabled: () => true,
-      maxBytes: 500, // tiny cap
-    );
-    for (var i = 0; i < 100; i++) {
-      log.log(MsgSendEvent(ts: DateTime.now(), id: 'msg-$i'));
-    }
-    await log.export(); // force-flush the snapshot
-    final path = '${tempDir.path}/remote_pi_debug.jsonl';
-    final onDisk = await File(path).readAsString();
-    // The file must be under the cap (+slack for newlines), not 100 lines.
-    expect(
-      onDisk.length,
-      lessThanOrEqualTo(500 + 200),
-      reason: 'on-disk file must be capped (snapshot-write, not append-only)',
-    );
-    expect(onDisk, isNot(contains('msg-0'))); // oldest evicted
-    expect(onDisk, contains('msg-99')); // newest retained
-    log.dispose();
-  });
+  test(
+    'snapshot-write: on-disk file is capped (no unbounded growth)',
+    () async {
+      // The blocker fix: the file is an atomic snapshot of the capped ring, not
+      // append-only. So evicted lines don't persist on disk.
+      final log = DebugLogImpl.withMaxBytesForTest(
+        debugEnabled: () => true,
+        maxBytes: 500, // tiny cap
+      );
+      for (var i = 0; i < 100; i++) {
+        log.log(MsgSendEvent(ts: DateTime.now(), id: 'msg-$i'));
+      }
+      await log.export(); // force-flush the snapshot
+      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      final onDisk = await File(path).readAsString();
+      // The file must be under the cap (+slack for newlines), not 100 lines.
+      expect(
+        onDisk.length,
+        lessThanOrEqualTo(500 + 200),
+        reason: 'on-disk file must be capped (snapshot-write, not append-only)',
+      );
+      expect(onDisk, isNot(contains('msg-0'))); // oldest evicted
+      expect(onDisk, contains('msg-99')); // newest retained
+      log.dispose();
+    },
+  );
 
-  test('export recovers on-disk state when the in-memory ring diverged',
-      () async {
-    final path = '${tempDir.path}/remote_pi_debug.jsonl';
-    // Log a line, flush it to disk, then SIMULATE ring divergence by writing
-    // an extra line directly to the file that the ring doesn't know about.
-    final log = newLog();
-    log.log(MsgEchoEvent(ts: DateTime.now(), id: 'ring-known'));
-    await log.export(); // flush ring-known to disk
-    log.dispose();
-    // Append a line the ring never saw (simulating a prior-session line that
-    // warm-from-file would have loaded, but we're testing export-from-file).
-    await File(path, ).writeAsString(
-      '{"tag":"msgSend","ts":"2026-07-04T00:00:00.000Z","id":"disk-only"}\n',
-      mode: FileMode.append,
-    );
-    // A fresh instance warms from file (gets both lines), but export reads the
-    // FILE — so even if the ring somehow diverged, export reflects disk truth.
-    final log2 = newLog();
-    final exported = await log2.export();
-    expect(exported, contains('ring-known'));
-    expect(exported, contains('disk-only'));
-    log2.dispose();
-  });
+  test(
+    'export recovers on-disk state when the in-memory ring diverged',
+    () async {
+      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      // Log a line, flush it to disk, then SIMULATE ring divergence by writing
+      // an extra line directly to the file that the ring doesn't know about.
+      final log = newLog();
+      log.log(MsgEchoEvent(ts: DateTime.now(), id: 'ring-known'));
+      await log.export(); // flush ring-known to disk
+      log.dispose();
+      // Append a line the ring never saw (simulating a prior-session line that
+      // warm-from-file would have loaded, but we're testing export-from-file).
+      await File(path).writeAsString(
+        '{"tag":"msgSend","ts":"2026-07-04T00:00:00.000Z","id":"disk-only"}\n',
+        mode: FileMode.append,
+      );
+      // A fresh instance warms from file (gets both lines), but export reads the
+      // FILE — so even if the ring somehow diverged, export reflects disk truth.
+      final log2 = newLog();
+      final exported = await log2.export();
+      expect(exported, contains('ring-known'));
+      expect(exported, contains('disk-only'));
+      log2.dispose();
+    },
+  );
 
   test('log() catches a throwing _debugEnabled callback (never throws)', () {
     final log = DebugLogImpl(debugEnabled: () => throw StateError('boom'));
@@ -246,8 +312,7 @@ void main() {
     log.dispose();
   });
 
-  test('clear serializes with an in-flight flush (no log resurrection)',
-      () async {
+  test('clear serializes with an in-flight flush (no log resurrection)', () async {
     // The v2-blocker regression: a stale snapshot write completing AFTER
     // clear() must not resurrect the wiped logs. clear() awaits the in-flight
     // _flushFuture before wiping.
@@ -277,8 +342,11 @@ void main() {
     // The in-flight flush is still pending (held by flushDelayForTesting) —
     // clear() must not have completed yet. If clear() did NOT await the flush,
     // clearDone would be completed here.
-    expect(clearDone.isCompleted, isFalse,
-        reason: 'clear() must not complete before the in-flight flush settles');
+    expect(
+      clearDone.isCompleted,
+      isFalse,
+      reason: 'clear() must not complete before the in-flight flush settles',
+    );
     // Now let the flush complete.
     log.flushDelayForTesting = null;
     await inFlight;
@@ -297,7 +365,9 @@ void main() {
     final log = newLog();
     // Fire many critical logs back-to-back — each triggers an immediate flush.
     for (var i = 0; i < 10; i++) {
-      log.log(ConnStatusEvent(ts: DateTime.now(), status: 'retrying', attempt: i));
+      log.log(
+        ConnStatusEvent(ts: DateTime.now(), status: 'retrying', attempt: i),
+      );
     }
     await log.export(); // drain the flush chain
     final onDisk = await File(path).readAsString();
@@ -314,6 +384,53 @@ void main() {
 }
 
 /// Mock path_provider so tests use a real temp dir (no Android/iOS plugin).
+class _FakeSecureStorage implements FlutterSecureStorage {
+  final Map<String, String> _store = {};
+
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => _store[key];
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (value == null) {
+      _store.remove(key);
+    } else {
+      _store[key] = value;
+    }
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => _store.remove(key);
+
+  @override
+  dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
+}
+
 class _MockPathProvider extends PathProviderPlatform {
   String? appDocsDir;
 

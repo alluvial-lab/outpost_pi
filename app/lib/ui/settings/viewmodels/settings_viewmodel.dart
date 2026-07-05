@@ -2,6 +2,7 @@ import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/relay_config.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/ui/core/viewmodel/viewmodel.dart';
 import 'package:app/ui/settings/states/settings_state.dart';
@@ -14,6 +15,7 @@ class SettingsViewModel extends ViewModel<SettingsState> {
   final PairingStorage _storage;
   final Preferences _prefs;
   final ConnectionManager _conn;
+  final DebugLog? _debugLog;
 
   /// Optional in tests; required in production. The revoke flow drives
   /// it explicitly with `allowEmpty:true` so a revoke of the last
@@ -23,8 +25,13 @@ class SettingsViewModel extends ViewModel<SettingsState> {
   final MeshSyncService? _meshSync;
   bool _disposed = false;
 
-  SettingsViewModel(this._storage, this._prefs, this._conn, [this._meshSync])
-    : super(const SettingsLoading()) {
+  SettingsViewModel(
+    this._storage,
+    this._prefs,
+    this._conn, [
+    this._meshSync,
+    this._debugLog,
+  ]) : super(const SettingsLoading()) {
     _load();
   }
 
@@ -59,6 +66,22 @@ class SettingsViewModel extends ViewModel<SettingsState> {
 
   /// Effective relay URL the app is connecting to right now.
   String get effectiveRelayUrl => resolveRelayUrl(_prefs);
+
+  bool get isDebugLogging => _prefs.debugLogging;
+
+  Future<void> setDebugLogging(bool value) async {
+    await _prefs.setDebugLogging(value);
+    if (_disposed) return;
+    notifyListeners();
+  }
+
+  /// Returns jsonl content to be shared by the UI, or null when no log exists.
+  /// Export intentionally works even while capture is disabled.
+  Future<String?> exportDebugLog() => _debugLog?.export() ?? Future.value();
+
+  /// Wipes the debug ring/file without changing [isDebugLogging]. Clear
+  /// intentionally works even while capture is disabled.
+  Future<void> clearDebugLog() => _debugLog?.clear() ?? Future.value();
 
   /// User-set override for the relay URL. If `null`, the app is using the
   /// default endpoint [kDefaultRelayUrl].
