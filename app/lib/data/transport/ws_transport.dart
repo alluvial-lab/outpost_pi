@@ -17,6 +17,7 @@ import 'dart:convert';
 
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/relay_config.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
@@ -29,7 +30,9 @@ import '../../pairing/pair_request_flow.dart';
 /// relay-provided nonce before signing, so the owner key cannot be abused as a
 /// cross-protocol signing oracle. MUST stay byte-for-byte identical to the
 /// relay's `RELAY_AUTH_DOMAIN_PREFIX` (relay/src/auth/challenge.rs).
-final List<int> relayAuthDomainPrefix = utf8.encode('remote-pi-relay-auth-v1\n');
+final List<int> relayAuthDomainPrefix = utf8.encode(
+  'remote-pi-relay-auth-v1\n',
+);
 
 class WsTransportError implements Exception {
   final String message;
@@ -41,16 +44,18 @@ class WsTransportError implements Exception {
 
 class WsTransport implements PeerTransport, IControlLink {
   final WebSocketChannel _ws;
+  final DebugLog? _debugLog;
   final _queue = _MsgQueue();
   final _controlController = StreamController<ControlInbound>.broadcast();
 
-  WsTransport._(this._ws);
+  WsTransport._(this._ws, {DebugLog? debugLog}) : _debugLog = debugLog;
 
   // Connect, authenticate with relay, and return a ready transport.
   static Future<WsTransport> connect({
     required String relayUrl,
     required String peerPubkey, // base64 standard or url — destination peer
     required SimpleKeyPair ed25519Key, // this device's Ed25519 long-term key
+    DebugLog? debugLog,
   }) async {
     // Plan-18 follow-up — set a WS-level pingInterval (RFC 6455
     // control frames). This keeps the TCP connection alive through
@@ -65,7 +70,7 @@ class WsTransport implements PeerTransport, IControlLink {
       Uri.parse(toWsRelayUrl(relayUrl)),
       pingInterval: const Duration(seconds: 20),
     );
-    final transport = WsTransport._(ws);
+    final transport = WsTransport._(ws, debugLog: debugLog);
 
     final challengeCompleter = Completer<Map<String, dynamic>>();
     bool authDone = false;
@@ -80,6 +85,14 @@ class WsTransport implements PeerTransport, IControlLink {
         final rawStr = raw is String ? raw : raw.toString();
         if (!authDone) {
           debugPrint('[ws-in] bytes=${rawStr.length} stage=preauth');
+          transport._logWsIn(
+            WsInEvent(
+              ts: DateTime.now(),
+              bytes: rawStr.length,
+              kind: 'preauth',
+              stage: 'preauth',
+            ),
+          );
           try {
             challengeCompleter.complete(
               jsonDecode(raw as String) as Map<String, dynamic>,
@@ -98,19 +111,36 @@ class WsTransport implements PeerTransport, IControlLink {
 
         switch (decision.kind) {
           case WsInboundFrameKind.enqueue:
-            final envelopeBytes = decision.envelopeBytes;
-            if (envelopeBytes == null) {
-              debugPrint('[ws-in] kind=envelope DROPPED (malformed)');
-              return;
-            }
+            final envelopeBytes = decision.envelopeBytes!;
+            // demuxPostAuthInboundFrame only returns `enqueue` after a
+            // successful _b64Decode (any decode failure throws and is caught
+            // → dropMalformed), so envelopeBytes is always non-null here.
+            // The previous `envelopeBytes == null` defensive branch was
+            // unreachable dead code; removed during review.
             debugPrint(
               '[ws-in] kind=envelope ct.bytes=${envelopeBytes.length}',
+            );
+            transport._logWsIn(
+              WsInEvent(
+                ts: DateTime.now(),
+                bytes: envelopeBytes.length,
+                kind: 'envelope',
+                stage: 'enqueue',
+              ),
             );
             transport._queue.add(envelopeBytes);
             return;
 
           case WsInboundFrameKind.dropMissingRoom:
             debugPrint('[ws-in] kind=envelope DROPPED (missing-room)');
+            transport._logWsIn(
+              WsInEvent(
+                ts: DateTime.now(),
+                bytes: rawStr.length,
+                kind: 'envelope',
+                stage: 'missing-room',
+              ),
+            );
             return;
 
           case WsInboundFrameKind.dropRoomMismatch:
@@ -118,21 +148,39 @@ class WsTransport implements PeerTransport, IControlLink {
               '[ws-in] kind=envelope sender_room=${decision.senderRoom} '
               'DROPPED (room-mismatch)',
             );
+            transport._logWsIn(
+              WsInEvent(
+                ts: DateTime.now(),
+                bytes: rawStr.length,
+                kind: 'envelope',
+                stage: 'room-mismatch',
+                senderRoom: decision.senderRoom,
+              ),
+            );
             return;
 
           case WsInboundFrameKind.control:
             if (!transport._controlController.isClosed) {
-              final control = decision.control;
-              if (control == null) {
-                debugPrint(
-                  '[ws-in] bytes=${rawStr.length} kind=control '
-                  'DROPPED (malformed)',
-                );
-                return;
-              }
+              // demuxPostAuthInboundFrame returns `control` only when
+              // ControlInbound.tryFromJson returned non-null; unknown types
+              // return null → demux returns dropMalformed. So decision.control
+              // is always non-null here. The previous `control == null`
+              // defensive branch was unreachable dead code; removed during
+              // review. (A typed-but-malformed control frame throws inside
+              // tryFromJson → caught by the demux → dropMalformed.)
+              final control = decision.control!;
               debugPrint(
                 '[ws-in] bytes=${rawStr.length} kind=control '
                 'type=${decision.controlType}',
+              );
+              transport._logWsIn(
+                WsInEvent(
+                  ts: DateTime.now(),
+                  bytes: rawStr.length,
+                  kind: 'control',
+                  stage: 'accepted',
+                  controlType: decision.controlType,
+                ),
               );
               transport._controlController.add(control);
             }
@@ -142,6 +190,15 @@ class WsTransport implements PeerTransport, IControlLink {
             debugPrint(
               '[ws-in] bytes=${rawStr.length} kind=malformed '
               'DROPPED err=${decision.error}',
+            );
+            transport._logWsIn(
+              WsInEvent(
+                ts: DateTime.now(),
+                bytes: rawStr.length,
+                kind: 'malformed',
+                stage: 'dropped',
+                error: decision.error,
+              ),
             );
             return;
         }
@@ -212,6 +269,8 @@ class WsTransport implements PeerTransport, IControlLink {
 
   String _peerPubkey = '';
   StreamSubscription? _sub;
+
+  void _logWsIn(WsInEvent event) => _debugLog?.log(event);
 
   /// Active target room on the Pi side. Plan 17: set via
   /// `setActiveRoom`, defaults to 'main' when unset. The outer envelope
