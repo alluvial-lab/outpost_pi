@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 
 import 'package:app/config/utils/injector.dart';
 import 'package:app/data/actions/actions_repository.dart';
+import 'package:app/data/debug/debug_log_impl.dart';
 import 'package:app/data/mesh/mesh_client.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/local/boxes.dart';
@@ -21,6 +22,7 @@ import 'package:app/data/update/secure_dismissed_update_store.dart';
 import 'package:app/data/update/update_checker_impl.dart';
 import 'package:app/data/update/url_launcher_opener.dart';
 import 'package:app/data/voice/speech_service.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/dismissed_update_store.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
 import 'package:app/domain/contracts/update_checker.dart';
@@ -57,6 +59,14 @@ Future<void> setupDependencies() async {
   final prefs = Preferences();
   await prefs.load();
   _injector.addInstance<Preferences>(prefs);
+
+  // Debug ring log — addService is required so disposeDependencies() flushes
+  // pending lines through DebugLogImpl.dispose(). Capture is gated by the
+  // persisted app-global Preferences.debugLogging toggle; export/clear remain
+  // available while capture is off.
+  _injector.addService<DebugLog>(
+    () => DebugLogImpl(debugEnabled: () => prefs.debugLogging),
+  );
 
   // Plan 31 — local SSOT box facade (boxes already opened + runtime wiped in
   // bootstrap before this runs).
