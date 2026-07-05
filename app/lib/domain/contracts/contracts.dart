@@ -1,3 +1,4 @@
+export 'debug_log.dart';
 export 'disposable.dart';
 export 'repository.dart';
 export 'service.dart';
