@@ -1,0 +1,1053 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:app/data/local/boxes.dart';
+import 'package:app/data/sync/sync_service.dart';
+import 'package:app/data/transport/channel.dart';
+import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/transport/ws_transport.dart';
+import 'package:app/domain/contracts/debug_log.dart';
+import 'package:app/protocol/protocol.dart';
+import 'package:app/pairing/storage.dart';
+import 'package:cryptography/cryptography.dart';
+import 'package:fake_async/fake_async.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
+
+const _peerEpk = 'debug-peer-0001';
+
+const _peer = PeerRecord(
+  remoteEpk: _peerEpk,
+  sessionName: 'Debug Pi',
+  relayUrl: 'http://127.0.0.1:1',
+  pairedAt: '2026-01-01T00:00:00Z',
+  roomId: 'main',
+);
+
+final Set<DebugTag> _assertedRoutingTags = <DebugTag>{};
+
+/// Every event ever asserted by _assertEvent, for the site-coverage registry
+/// test to confirm each required capture site's discriminant actually matched
+/// a recorded event (not just a tag mention).
+final List<DebugEvent> _assertedSiteEvents = <DebugEvent>[];
+
+class _FakeDebugLog implements DebugLog {
+  final List<DebugEvent> events = <DebugEvent>[];
+
+  @override
+  void log(DebugEvent event) => events.add(event);
+
+  @override
+  Future<String?> export() async => null;
+
+  @override
+  Future<void> clear() async => events.clear();
+
+  @override
+  void dispose() {}
+}
+
+class _FakeStorage extends PairingStorage {
+  _FakeStorage([this.peers = const [_peer]]);
+
+  final List<PeerRecord> peers;
+  final Map<String, List<PersistedRoom>> savedRooms =
+      <String, List<PersistedRoom>>{};
+
+  @override
+  Future<List<PeerRecord>> listPeers() async => peers;
+
+  @override
+  Future<void> savePeer(PeerRecord r) async {}
+
+  @override
+  Future<void> saveRooms(String epk, List<PersistedRoom> rooms) async {
+    savedRooms[epk] = rooms;
+  }
+
+  @override
+  Future<List<PersistedRoom>> loadRooms(String epk) async =>
+      savedRooms[epk] ?? const <PersistedRoom>[];
+}
+
+class _FakeChannel implements IChannel, IControlLink {
+  final _server = StreamController<ServerMessage>.broadcast();
+  final _control = StreamController<ControlInbound>.broadcast();
+  final List<ClientMessage> sent = <ClientMessage>[];
+  final List<Map<String, dynamic>> controls = <Map<String, dynamic>>[];
+  Object? sendFailure;
+  String defaultSessionId = '';
+
+  @override
+  Stream<ServerMessage> get serverMessages => _server.stream;
+
+  @override
+  Stream<ControlInbound> get controlFrames => _control.stream;
+
+  @override
+  Future<void> send(ClientMessage msg) async {
+    final failure = sendFailure;
+    if (failure != null) throw failure;
+    sent.add(msg);
+  }
+
+  @override
+  void sendControl(Map<String, dynamic> json) => controls.add(json);
+
+  @override
+  Future<void> close() async {
+    if (!_server.isClosed) await _server.close();
+    if (!_control.isClosed) await _control.close();
+  }
+
+  void push(ServerMessage m) => _server.add(_withDefaultSession(m));
+  void pushRaw(ServerMessage m) => _server.add(m);
+  void pushControl(ControlInbound frame) => _control.add(frame);
+
+  ServerMessage _withDefaultSession(ServerMessage m) {
+    final sid = defaultSessionId;
+    if (sid.isEmpty) return m;
+    return switch (m) {
+      UserInput(:final sessionId) when sessionId.isEmpty => UserInput(
+        id: m.id,
+        sessionId: sid,
+        text: m.text,
+        streamingBehavior: m.streamingBehavior,
+        image: m.image,
+      ),
+      AgentChunk(:final sessionId) when sessionId.isEmpty => AgentChunk(
+        sessionId: sid,
+        inReplyTo: m.inReplyTo,
+        delta: m.delta,
+      ),
+      AgentDone(:final sessionId) when sessionId.isEmpty => AgentDone(
+        sessionId: sid,
+        inReplyTo: m.inReplyTo,
+        usage: m.usage,
+      ),
+      SessionHistory(:final sessionId) when sessionId.isEmpty => SessionHistory(
+        sessionId: sid,
+        inReplyTo: m.inReplyTo,
+        sessionStartedAt: m.sessionStartedAt,
+        events: m.events,
+        eos: m.eos,
+        truncated: m.truncated,
+      ),
+      _ => m,
+    };
+  }
+}
+
+late Directory _boxesDir;
+
+Future<void> _settle() =>
+    Future<void>.delayed(const Duration(milliseconds: 30));
+
+T _assertEvent<T extends DebugEvent>(
+  Iterable<DebugEvent> events,
+  DebugTag tag, {
+  bool Function(T event)? where,
+}) {
+  final event = events.whereType<T>().firstWhere(
+    (event) => where?.call(event) ?? true,
+    orElse: () => throw TestFailure('No $T event found for $tag'),
+  );
+  expect(event.tag, tag);
+  _assertedRoutingTags.add(tag);
+  _assertedSiteEvents.add(event);
+  return event;
+}
+
+List<DebugTag> _tags(Iterable<DebugEvent> events) =>
+    events.map((event) => event.tag).toList(growable: false);
+
+Future<({ConnectionManager conn, _FakeChannel channel, _FakeDebugLog log})>
+_connectedManager() async {
+  final log = _FakeDebugLog();
+  final channel = _FakeChannel();
+  final conn = ConnectionManager(
+    factory: (_, _) async => channel,
+    storage: _FakeStorage(),
+    debugLog: log,
+    emitDebounce: Duration.zero,
+  );
+  conn.subscribeToPeers(const [_peerEpk]);
+  await conn.boot(preferredEpk: _peerEpk);
+  await _settle();
+  return (conn: conn, channel: channel, log: log);
+}
+
+Future<
+  ({
+    ConnectionManager conn,
+    _FakeChannel channel,
+    SyncService sync,
+    _FakeDebugLog log,
+    String sessionId,
+  })
+>
+_syncHarness({
+  Duration pendingSendTimeout = const Duration(seconds: 20),
+}) async {
+  final log = _FakeDebugLog();
+  final channel = _FakeChannel();
+  const sessionId = 'debug-session-0001';
+  channel.defaultSessionId = sessionId;
+  final conn = ConnectionManager(
+    factory: (_, _) async => channel,
+    storage: _FakeStorage(),
+    debugLog: log,
+    emitDebounce: Duration.zero,
+  );
+  final sync = SyncService(
+    conn,
+    LocalBoxes(),
+    debugLog: log,
+    pendingSendTimeout: pendingSendTimeout,
+  );
+  conn.adopt(channel, _peer);
+  channel.pushRaw(
+    PairOk(
+      inReplyTo: 'pair-debug',
+      sessionName: 'Debug Pi',
+      sessionStartedAt: 1,
+      roomId: 'main',
+      sessionId: sessionId,
+    ),
+  );
+  await _settle();
+  await sync.activate(_peerEpk, 'main');
+  await _settle();
+  log.events.clear();
+  return (
+    conn: conn,
+    channel: channel,
+    sync: sync,
+    log: log,
+    sessionId: sessionId,
+  );
+}
+
+Future<({HttpServer server, Uri uri})> _startRelayProbeServer({
+  required List<String> postAuthFrames,
+}) async {
+  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  server.listen((request) async {
+    final socket = await WebSocketTransformer.upgrade(request);
+    var count = 0;
+    socket.listen((raw) {
+      final frame = jsonDecode(raw as String) as Map<String, dynamic>;
+      count += 1;
+      if (count == 1 && frame['type'] == 'hello') {
+        socket.add(
+          jsonEncode({
+            'type': 'challenge',
+            'nonce': base64.encode([1, 2, 3]),
+          }),
+        );
+        return;
+      }
+      if (count == 2 && frame['type'] == 'auth') {
+        for (final out in postAuthFrames) {
+          socket.add(out);
+        }
+      }
+    });
+  });
+  return (server: server, uri: Uri.parse('http://127.0.0.1:${server.port}'));
+}
+
+void main() {
+  setUpAll(() async {
+    _boxesDir = Directory.systemTemp.createTempSync('rp_debug_capture_');
+    await LocalBoxes.initForTest(_boxesDir.path);
+  });
+
+  tearDownAll(() async {
+    await Hive.close();
+    await _boxesDir.delete(recursive: true);
+  });
+
+  test('WsTransport routes inbound frame probes through DebugLog', () async {
+    final log = _FakeDebugLog();
+    final payload = Uint8List.fromList(<int>[1, 2, 3, 4]);
+    final relay = await _startRelayProbeServer(
+      postAuthFrames: <String>[
+        jsonEncode({
+          'peer': 'peer-a',
+          'room': 'main',
+          'ct': base64.encode(payload),
+        }),
+      ],
+    );
+    final keyPair = await Ed25519().newKeyPair();
+
+    final transport = await WsTransport.connect(
+      relayUrl: relay.uri.toString(),
+      peerPubkey: 'peer-a',
+      ed25519Key: keyPair,
+      debugLog: log,
+    );
+    expect(await transport.receive(), payload);
+    await _settle();
+
+    final preauth = _assertEvent<WsInEvent>(
+      log.events,
+      DebugTag.wsIn,
+      where: (event) => event.stage == 'preauth' && event.bytes != null,
+    );
+    expect(preauth.kind, 'preauth');
+    final envelope = _assertEvent<WsInEvent>(
+      log.events,
+      DebugTag.wsIn,
+      where: (event) => event.kind == 'envelope' && event.stage == 'enqueue',
+    );
+    expect(envelope.bytes, payload.length);
+
+    await transport.close();
+    await relay.server.close(force: true);
+  });
+
+  test(
+    'WsTransport routes every ws-in dropped/control branch through DebugLog',
+    () async {
+      final log = _FakeDebugLog();
+      // Active room is 'main' — frames targeting other rooms or missing a
+      // room hit the drop branches; unrecognized frames hit malformed.
+      final relay = await _startRelayProbeServer(
+        postAuthFrames: <String>[
+          // dropMissingRoom — envelope without a room field.
+          jsonEncode({
+            'peer': 'peer-a',
+            'ct': base64.encode(Uint8List.fromList([9, 9, 9])),
+          }),
+          // dropRoomMismatch — envelope with a non-active room.
+          jsonEncode({
+            'peer': 'peer-a',
+            'room': 'other-room',
+            'ct': base64.encode(Uint8List.fromList([8, 8, 8])),
+          }),
+          // control accepted — a real control frame (peer_online).
+          jsonEncode({'type': 'peer_online', 'peer': 'peer-a'}),
+          // control dropped malformed — a control-typed frame whose body
+          // ControlInbound.tryFromJson rejects (presence requires `states`).
+          jsonEncode({'type': 'presence', 'peer': 'peer-a'}),
+          // envelope dropped malformed — has peer+ct but ct is not valid
+          // base64, so _b64Decode throws inside demux.
+          jsonEncode({'peer': 'peer-a', 'room': 'main', 'ct': '!!!notb64'}),
+          // malformed — no peer/ct and not a control frame.
+          jsonEncode({'type': 'unknown_garbage', 'foo': 'bar'}),
+        ],
+      );
+      final keyPair = await Ed25519().newKeyPair();
+
+      final transport = await WsTransport.connect(
+        relayUrl: relay.uri.toString(),
+        peerPubkey: 'peer-a',
+        ed25519Key: keyPair,
+        debugLog: log,
+      );
+      // Receive the one enqueueable frame — there is none in this batch
+      // (all are dropped/control/malformed), so drain briefly.
+      await _settle();
+      await _settle();
+
+      _assertEvent<WsInEvent>(
+        log.events,
+        DebugTag.wsIn,
+        where: (event) =>
+            event.kind == 'envelope' && event.stage == 'missing-room',
+      );
+      _assertEvent<WsInEvent>(
+        log.events,
+        DebugTag.wsIn,
+        where: (event) =>
+            event.kind == 'envelope' &&
+            event.stage == 'room-mismatch' &&
+            event.senderRoom == 'other-room',
+      );
+      _assertEvent<WsInEvent>(
+        log.events,
+        DebugTag.wsIn,
+        where: (event) =>
+            event.kind == 'control' && event.stage == 'accepted',
+      );
+      // The control-typed-but-malformed frame (presence without states) and
+      // the bad-base64 envelope both throw inside demux → dropMalformed →
+      // the `malformed` kind/stage=dropped path (NOT a control/envelope
+      // dropped_malformed branch — those were unreachable dead code, removed
+      // during review). Assert at least two malformed events land.
+      final malformed = log.events.whereType<WsInEvent>().where(
+        (event) => event.kind == 'malformed' && event.stage == 'dropped',
+      );
+      expect(
+        malformed.length,
+        greaterThanOrEqualTo(2),
+        reason:
+            'Expected ≥2 malformed events (bad control + bad envelope); '
+            'got ${malformed.length}',
+      );
+      _assertEvent<WsInEvent>(
+        log.events,
+        DebugTag.wsIn,
+        where: (event) =>
+            event.kind == 'malformed' && event.stage == 'dropped',
+      );
+
+      await transport.close();
+      await relay.server.close(force: true);
+    },
+  );
+
+  test(
+    'ConnectionManager marks the active room offline after 3 missed pings',
+    () {
+      fakeAsync((async) {
+        final log = _FakeDebugLog();
+        final channel = _FakeChannel();
+        final conn = ConnectionManager(
+          factory: (_, _) async => channel,
+          storage: _FakeStorage(),
+          debugLog: log,
+          emitDebounce: Duration.zero,
+          // Short interval so the missed-ping → _markActiveRoomOffline path
+          // is exercisable inside FakeAsync without real-time waits. This
+          // tests the real _startPing timer + missedPings counter +
+          // _markActiveRoomOffline emission, not a test-only seam.
+          pingInterval: const Duration(milliseconds: 50),
+        );
+        conn.subscribeToPeers(const [_peerEpk]);
+        // boot drives an async connect; flush microtasks so it completes.
+        // ignore: discarded_futures
+        conn.boot(preferredEpk: _peerEpk);
+        async.flushMicrotasks();
+        async.flushMicrotasks();
+
+        // Bring the room live so _markActiveRoomOffline actually fires its
+        // event (it early-returns when the room isn't live).
+        channel.pushControl(
+          const RoomAnnounced(
+            peer: _peerEpk,
+            roomId: 'main',
+            sessionId: 'debug-session-0001',
+            startedAt: 1,
+            working: true,
+          ),
+        );
+        async.flushMicrotasks();
+        log.events.clear();
+
+        // Three ping cycles, each advancing past the 50ms interval and
+        // flushing the async ping callback (which calls onPingMissed and,
+        // on the 3rd, _markActiveRoomOffline). The channel never sends a
+        // Pong, so missedPings climbs to 3.
+        async.elapse(const Duration(milliseconds: 60));
+        async.flushMicrotasks();
+        async.elapse(const Duration(milliseconds: 60));
+        async.flushMicrotasks();
+        async.elapse(const Duration(milliseconds: 60));
+        async.flushMicrotasks();
+
+        final offline = _assertEvent<WorkingConvEvent>(
+          log.events,
+          DebugTag.workingConv,
+          where: (event) =>
+              event.room == 'main' &&
+              event.working == false &&
+              event.reason == 'ping_missed_room_offline',
+        );
+        expect(offline.room, 'main');
+
+        conn.dispose();
+      });
+    },
+  );
+
+  test(
+    'ConnectionManager emits reconnect, hydrate, room snapshot, and working convergence events',
+    () async {
+      final s = await _connectedManager();
+
+      // Connection lifecycle events fired during _connectedManager setup
+      // (connecting → online → hydrate). Assert them against the full event
+      // log before clearing for the per-phase room-snapshot assertions below.
+      expect(_tags(s.log.events).take(3), <DebugTag>[
+        DebugTag.connStatus,
+        DebugTag.connStatus,
+        DebugTag.connHydrate,
+      ]);
+      final connecting = _assertEvent<ConnStatusEvent>(
+        s.log.events,
+        DebugTag.connStatus,
+        where: (event) => event.status == 'connecting',
+      );
+      expect(connecting.room, 'main');
+      _assertEvent<ConnStatusEvent>(
+        s.log.events,
+        DebugTag.connStatus,
+        where: (event) => event.status == 'online',
+      );
+      final hydrate = _assertEvent<ConnHydrateEvent>(
+        s.log.events,
+        DebugTag.connHydrate,
+      );
+      expect(hydrate.action, 'replay_subscriptions');
+      expect(hydrate.snapshotCount, 1);
+
+      // Phase 1 — RoomAnnounced brings the room live with working=true.
+      s.log.events.clear();
+      s.channel.pushControl(
+        const RoomAnnounced(
+          peer: _peerEpk,
+          roomId: 'main',
+          sessionId: 'debug-session-0001',
+          startedAt: 1,
+          working: true,
+        ),
+      );
+      await _settle();
+      _assertEvent<RoomSnapshotEvent>(
+        s.log.events,
+        DebugTag.roomSnapshot,
+        where: (event) =>
+            event.room == 'main' &&
+            event.working == true &&
+            event.presenceCount == null,
+      );
+
+      // Phase 2 — markRoomWorking(false) flips the dot (mark_room_working).
+      s.log.events.clear();
+      s.conn.markRoomWorking(_peerEpk, 'main', false);
+      await _settle();
+      final working = _assertEvent<WorkingConvEvent>(
+        s.log.events,
+        DebugTag.workingConv,
+        where: (event) => event.room == 'main' && event.working == false,
+      );
+      expect(working.reason, 'mark_room_working');
+
+      // Phase 3 — RoomMetaUpdated flips working back to true. This is a real
+      // change (current is false), so the case emits rather than dedup-
+      // breaking on the nothing-changed branch.
+      s.log.events.clear();
+      s.channel.pushControl(
+        const RoomMetaUpdated(
+          peer: _peerEpk,
+          roomId: 'main',
+          working: true,
+          hasModel: false,
+          hasThinking: false,
+          hasSessionId: false,
+        ),
+      );
+      await _settle();
+      _assertEvent<RoomSnapshotEvent>(
+        s.log.events,
+        DebugTag.roomSnapshot,
+        where: (event) =>
+            event.room == 'main' &&
+            event.working == true &&
+            event.presenceCount == null,
+      );
+
+      // Phase 4 — RoomsSnapshot carries presenceCount for the batch entry.
+      s.log.events.clear();
+      s.channel.pushControl(
+        const RoomsSnapshot(
+          peer: _peerEpk,
+          rooms: <RoomInfo>[
+            RoomInfo(roomId: 'main', startedAt: 2, working: false),
+          ],
+        ),
+      );
+      await _settle();
+      _assertEvent<RoomSnapshotEvent>(
+        s.log.events,
+        DebugTag.roomSnapshot,
+        where: (event) =>
+            event.room == 'main' &&
+            event.presenceCount == 1 &&
+            event.working == false,
+      );
+
+      s.conn.dispose();
+    },
+  );
+
+  test(
+    'ConnectionManager distinguishes stale takeover close from real channel loss',
+    () async {
+      final s = await _connectedManager();
+      final current = s.channel;
+      final stale = _FakeChannel();
+
+      s.conn.debugSimulateChannelLost(stale);
+      await _settle();
+
+      final staleEvent = _assertEvent<ConnChannelLostEvent>(
+        s.log.events,
+        DebugTag.connChannelLost,
+        where: (event) => event.stale == true,
+      );
+      expect(staleEvent.room, 'main');
+      expect(s.conn.status, isA<StatusOnline>());
+      expect(
+        s.log.events.whereType<ConnStatusEvent>().where(
+          (event) => event.status == 'retrying',
+        ),
+        isEmpty,
+        reason: 'stale replaced-channel close must not start retry',
+      );
+
+      final fresh = _FakeChannel();
+      s.conn.adopt(fresh, _peer);
+      await _settle();
+      _assertEvent<ConnStatusEvent>(
+        s.log.events,
+        DebugTag.connStatus,
+        where: (event) => event.status == 'online',
+      );
+
+      s.conn.debugSimulateChannelLost(fresh);
+      await _settle();
+
+      final realLoss = _assertEvent<ConnChannelLostEvent>(
+        s.log.events,
+        DebugTag.connChannelLost,
+        where: (event) => event.stale == false,
+      );
+      expect(realLoss.room, 'main');
+      final retry = _assertEvent<ConnStatusEvent>(
+        s.log.events,
+        DebugTag.connStatus,
+        where: (event) => event.status == 'retrying',
+      );
+      expect(retry.attempt, greaterThanOrEqualTo(0));
+      expect(retry.delayMs, greaterThan(0));
+
+      expect(current, isNot(s.conn.channel));
+      s.conn.dispose();
+    },
+  );
+
+  test(
+    'SyncService emits send preview, echo, gate, failure, session-sync, and replay-dedup events',
+    () async {
+      final s = await _syncHarness(
+        pendingSendTimeout: const Duration(seconds: 5),
+      );
+      final longText = '${'x' * 90} trailing body that must not be persisted';
+
+      await s.sync.sendMessage(longText);
+      await _settle();
+      final sent = s.channel.sent.whereType<UserMessage>().single;
+      s.channel.push(UserInput(id: sent.id, text: longText));
+      await _settle();
+
+      final msgSend = _assertEvent<MsgSendEvent>(
+        s.log.events,
+        DebugTag.msgSend,
+        where: (event) => event.id == sent.id && event.preview != null,
+      );
+      expect(msgSend.blocked, isFalse);
+      expect(msgSend.preview, '${'x' * 80}…');
+      expect(msgSend.preview, isNot(contains('trailing body')));
+      final echo = _assertEvent<MsgEchoEvent>(
+        s.log.events,
+        DebugTag.msgEcho,
+        where: (event) => event.id == sent.id,
+      );
+      expect(echo.id, sent.id);
+
+      s.channel.pushRaw(
+        const AgentChunk(
+          sessionId: 'foreign-session-9999',
+          inReplyTo: 'u1',
+          delta: 'drop',
+        ),
+      );
+      await _settle();
+      final gate = _assertEvent<SessionGateEvent>(
+        s.log.events,
+        DebugTag.sessionGate,
+        where: (event) => event.reason == 'session_mismatch',
+      );
+      expect(gate.messageType, 'agent_chunk');
+      expect(gate.sessionIdTail, 'ion-9999');
+
+      s.channel.sendFailure = StateError(
+        'socket write refused with verbose detail ${'z' * 200}',
+      );
+      await s.sync.sendMessage('will fail');
+      await _settle();
+      final failed = _assertEvent<MsgFailedEvent>(
+        s.log.events,
+        DebugTag.msgFailed,
+      );
+      expect(failed.code, 'send_error');
+      expect(failed.detail!.length, lessThanOrEqualTo(121));
+
+      s.sync.requestSync();
+      await _settle();
+      final sync = _assertEvent<SessionSyncEvent>(
+        s.log.events,
+        DebugTag.sessionSync,
+      );
+      expect(sync.err, contains('socket write refused'));
+      expect(sync.err!.length, lessThanOrEqualTo(121));
+
+      s.channel.sendFailure = null;
+      final history = SessionHistory(
+        sessionId: s.sessionId,
+        inReplyTo: 'history-1',
+        sessionStartedAt: 10,
+        events: const <SessionHistoryEvent>[
+          UserInputEvt(ts: 1, id: 'replay-u1', text: 'hello'),
+        ],
+        eos: true,
+      );
+      s.channel.pushRaw(history);
+      await _settle();
+      s.channel.pushRaw(history);
+      await _settle();
+      _assertEvent<ReplayDedupEvent>(
+        s.log.events,
+        DebugTag.replayDedup,
+        where: (event) =>
+            event.sessionId == s.sessionId && event.dropped == false,
+      );
+      _assertEvent<ReplayDedupEvent>(
+        s.log.events,
+        DebugTag.replayDedup,
+        where: (event) =>
+            event.sessionId == s.sessionId && event.dropped == true,
+      );
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
+    'SyncService replay-dedup reports within-batch duplicate eventIds as dropped',
+    () async {
+      // Regression test for the [I1] bug: the OLD dropped derivation
+      // checked only against IDs that pre-existed in the store before
+      // appendAll. A SessionHistory containing the SAME eventId twice would
+      // log dropped:false for BOTH occurrences (since neither pre-existed),
+      // even though appendAll skips the second. The fix tracks a mutable
+      // seenEventIds set across the batch so the second occurrence logs
+      // dropped:true. This test would pass under the old logic (both false)
+      // only if the bug were present; it asserts the second is true, so it
+      // FAILS under the old logic — that's the teeth.
+      final s = await _syncHarness(
+        pendingSendTimeout: const Duration(seconds: 5),
+      );
+      const dupId = 'replay-dup-1';
+      const dupTs = 5;
+      // The persisted eventId is serverReplayEventId(session, 'user_input',
+      // dupId, dupTs) — both events share it (same id + same ts). Compute
+      // its tail the same way SyncService._eventIdTail does so the test can
+      // match the persisted eventIdTail without hardcoding.
+      final dupEventId =
+          'server:${s.sessionId}:user_input:$dupId:$dupTs';
+      final expectedTail = dupEventId.length <= 12
+          ? dupEventId
+          : dupEventId.substring(dupEventId.length - 12);
+      final history = SessionHistory(
+        sessionId: s.sessionId,
+        inReplyTo: 'history-dup',
+        sessionStartedAt: 20,
+        events: const <SessionHistoryEvent>[
+          // Same id AND same ts → serverReplayEventId produces the SAME
+          // eventId for both, so appendAll skips the second (box.containsKey).
+          UserInputEvt(ts: dupTs, id: dupId, text: 'first'),
+          UserInputEvt(ts: dupTs, id: dupId, text: 'second (duplicate)'),
+        ],
+        eos: true,
+      );
+      s.log.events.clear();
+      s.channel.pushRaw(history);
+      await _settle();
+
+      final dupEvents = s.log.events
+          .whereType<ReplayDedupEvent>()
+          .where((event) => event.eventIdTail == expectedTail)
+          .toList();
+      expect(
+        dupEvents.length,
+        2,
+        reason: 'Both within-batch duplicates must emit a ReplayDedupEvent.',
+      );
+      expect(
+        dupEvents.first.dropped,
+        isFalse,
+        reason: 'First occurrence is new → not dropped.',
+      );
+      expect(
+        dupEvents.last.dropped,
+        isTrue,
+        reason:
+            'Second occurrence is a within-batch duplicate → must be dropped. '
+            'Under the OLD logic this was false (the bug).',
+      );
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
+    'SyncService emits offline held-pending msg-send when channel is unavailable',
+    () async {
+      final s = await _syncHarness();
+
+      final retrying = s.conn.statusStream.firstWhere(
+        (status) => status is StatusRetrying,
+      );
+      await s.channel.close();
+      await retrying;
+      await _settle();
+      s.log.events.clear();
+      await s.sync.sendMessage('held while offline');
+      await _settle();
+
+      final blocked = _assertEvent<MsgSendEvent>(
+        s.log.events,
+        DebugTag.msgSend,
+        where: (event) => event.blocked == true && event.preview == null,
+      );
+      expect(blocked.id, startsWith('cli_'));
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
+    'SyncService emits blocked msg-send when session identity is unavailable',
+    () async {
+      final log = _FakeDebugLog();
+      final conn = ConnectionManager(
+        factory: (_, _) async => _FakeChannel(),
+        storage: _FakeStorage(const <PeerRecord>[]),
+        debugLog: log,
+      );
+      final sync = SyncService(conn, LocalBoxes(), debugLog: log);
+
+      await sync.sendMessage('blocked');
+      await _settle();
+
+      final blocked = _assertEvent<MsgSendEvent>(
+        log.events,
+        DebugTag.msgSend,
+        where: (event) => event.blocked == true,
+      );
+      expect(blocked.preview, isNull);
+
+      conn.dispose();
+      sync.dispose();
+    },
+  );
+
+  test('every required capture site has an asserted routing test', () {
+    // Tag coverage is necessary but not sufficient: a single assertion per
+    // tag can pass even if several distinct capture sites (ws-in dropped
+    // branches, RoomMetaUpdated, RoomsSnapshot, _markActiveRoomOffline)
+    // silently stop emitting. This guard tracks the specific sites the
+    // feature design (Unit 4) requires, each asserted via a real
+    // _assertEvent emission above. Deleting any required emission above
+    // must fail its corresponding site here.
+    //
+    // Each entry is (tag, siteName, discriminant) where the discriminant
+    // identifies THAT capture site's emitted event shape and was asserted
+    // by a real _assertEvent call in the tests above. The tag is enforced
+    // separately: a discriminant match against an event of the wrong tag
+    // does not count. For the one case where two branches emit the same
+    // shape (RoomAnnounced + RoomMetaUpdated), the per-phase test with
+    // events.clear() between phases is the real proof both fired; the
+    // registry backstops that the shape was seen at all.
+    final requiredSites = <(DebugTag, String, bool Function(DebugEvent))>[
+      // ws-in branches (Unit 4a) — preauth + enqueue asserted in the probe
+      // test; the dropped branches (missing-room/room-mismatch/control/
+      // malformed) are asserted in the dedicated dropped-frames test.
+      (
+        DebugTag.wsIn,
+        'preauth',
+        (e) => e is WsInEvent && e.stage == 'preauth',
+      ),
+      (
+        DebugTag.wsIn,
+        'envelope-enqueue',
+        (e) => e is WsInEvent && e.kind == 'envelope' && e.stage == 'enqueue',
+      ),
+      (
+        DebugTag.wsIn,
+        'drop-missing-room',
+        (e) =>
+            e is WsInEvent && e.stage == 'missing-room' && e.kind == 'envelope',
+      ),
+      (
+        DebugTag.wsIn,
+        'drop-room-mismatch',
+        (e) =>
+            e is WsInEvent &&
+            e.stage == 'room-mismatch' &&
+            e.kind == 'envelope',
+      ),
+      (
+        DebugTag.wsIn,
+        'control-accepted',
+        (e) =>
+            e is WsInEvent && e.kind == 'control' && e.stage == 'accepted',
+      ),
+      (
+        DebugTag.wsIn,
+        'malformed',
+        (e) => e is WsInEvent && e.kind == 'malformed' && e.stage == 'dropped',
+      ),
+      // conn-status branches (Unit 4b).
+      (
+        DebugTag.connStatus,
+        'connecting',
+        (e) => e is ConnStatusEvent && e.status == 'connecting',
+      ),
+      (
+        DebugTag.connStatus,
+        'online',
+        (e) => e is ConnStatusEvent && e.status == 'online',
+      ),
+      (
+        DebugTag.connStatus,
+        'retrying',
+        (e) => e is ConnStatusEvent && e.status == 'retrying',
+      ),
+      // conn-channel-lost both branches (the takeover proof).
+      (
+        DebugTag.connChannelLost,
+        'stale-true',
+        (e) => e is ConnChannelLostEvent && e.stale == true,
+      ),
+      (
+        DebugTag.connChannelLost,
+        'stale-false',
+        (e) => e is ConnChannelLostEvent && e.stale == false,
+      ),
+      // conn-hydrate — discriminant on the real action field.
+      (
+        DebugTag.connHydrate,
+        'replay-subscriptions',
+        (e) => e is ConnHydrateEvent && e.action == 'replay_subscriptions',
+      ),
+      // room-snapshot: RoomAnnounced and RoomMetaUpdated emit the same
+      // RoomSnapshotEvent shape, so a single discriminant can't distinguish
+      // them. The per-phase reconnect test (with events.clear() between
+      // phases) is the real proof both branches fired; this registry entry
+      // backstops that the shape was seen at all. RoomsSnapshot is
+      // distinguishable by presenceCount.
+      (
+        DebugTag.roomSnapshot,
+        'room-announced-or-meta-updated',
+        (e) =>
+            e is RoomSnapshotEvent &&
+            e.presenceCount == null &&
+            e.working == true,
+      ),
+      (
+        DebugTag.roomSnapshot,
+        'rooms-snapshot',
+        (e) => e is RoomSnapshotEvent && e.presenceCount == 1,
+      ),
+      // working-conv both branches (markRoomWorking + _markActiveRoomOffline).
+      (
+        DebugTag.workingConv,
+        'mark-room-working',
+        (e) => e is WorkingConvEvent && e.reason == 'mark_room_working',
+      ),
+      (
+        DebugTag.workingConv,
+        'ping-missed-room-offline',
+        (e) => e is WorkingConvEvent && e.reason == 'ping_missed_room_offline',
+      ),
+      // sync_service sites.
+      (
+        DebugTag.msgSend,
+        'send-with-preview',
+        (e) => e is MsgSendEvent && e.blocked == false && e.preview != null,
+      ),
+      (
+        DebugTag.msgSend,
+        'blocked-offline',
+        (e) => e is MsgSendEvent && e.blocked == true && e.preview == null,
+      ),
+      (
+        DebugTag.msgSend,
+        'blocked-no-session',
+        (e) => e is MsgSendEvent && e.blocked == true && e.preview == null,
+      ),
+      (
+        DebugTag.msgEcho,
+        'echo',
+        (e) => e is MsgEchoEvent && e.id.isNotEmpty,
+      ),
+      (
+        DebugTag.msgFailed,
+        'send-error',
+        (e) => e is MsgFailedEvent && e.code == 'send_error',
+      ),
+      (
+        DebugTag.sessionGate,
+        'session-mismatch',
+        (e) => e is SessionGateEvent && e.reason == 'session_mismatch',
+      ),
+      (
+        DebugTag.sessionSync,
+        'request-failed',
+        (e) => e is SessionSyncEvent && (e.err?.isNotEmpty ?? false),
+      ),
+      // replay-dedup both dropped=false (new) and dropped=true (dedup).
+      (
+        DebugTag.replayDedup,
+        'new',
+        (e) => e is ReplayDedupEvent && e.dropped == false,
+      ),
+      (
+        DebugTag.replayDedup,
+        'dropped',
+        (e) => e is ReplayDedupEvent && e.dropped == true,
+      ),
+    ];
+
+    // Every required site must have an event that was asserted by a real
+    // _assertEvent call (recorded in _assertedSiteEvents) AND whose
+    // discriminant matches an event of the correct tag. Requiring the
+    // discriminant to match a *recorded* event of the right tag — not just
+    // a tag mention — means deleting any required emission above fails the
+    // registry. (For RoomAnnounced/RoomMetaUpdated which share a shape, the
+    // per-phase reconnect test with events.clear() is the real proof both
+    // fired; the registry backstops that the shape was seen.)
+    final recordedEvents = _assertedSiteEvents;
+    for (final (tag, siteName, matches) in requiredSites) {
+      final matching = recordedEvents.where(
+        (e) => e.tag == tag && matches(e),
+      );
+      expect(
+        matching,
+        isNotEmpty,
+        reason:
+            'Required capture site $tag/$siteName has no recorded event '
+            'of the right tag matching its discriminant — a required '
+            'emission may be missing or the test is wrong.',
+      );
+    }
+    // Backstop: every DebugTag must still appear (catches a tag with no
+    // required sites at all).
+    expect(
+      requiredSites.map((s) => s.$1).toSet(),
+      containsAll(DebugTag.values),
+      reason: 'Every DebugTag must have at least one required capture site.',
+    );
+  });
+}

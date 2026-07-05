@@ -35,7 +35,9 @@ import 'dart:async';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/data/transport/reachability_adapter.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
@@ -95,6 +97,7 @@ class CancelToken {
 class ConnectionManager extends Service {
   final ConnectionFactory _factory;
   final PairingStorage _storage;
+  final DebugLog? _debugLog;
 
   final _statusController = StreamController<ConnectionStatus>.broadcast();
   // Presence (plano 12): map per remote_epk + a broadcast stream the UI
@@ -154,12 +157,20 @@ class ConnectionManager extends Service {
   ConnectionManager({
     required ConnectionFactory factory,
     required PairingStorage storage,
+    DebugLog? debugLog,
     Duration emitDebounce = const Duration(milliseconds: 50),
+    this.pingInterval = const Duration(seconds: 25),
   }) : _factory = factory,
        _storage = storage,
+       _debugLog = debugLog,
        _emitDebounce = emitDebounce {
     _startWatchdog();
   }
+
+  /// Interval between Pi-liveness pings. Defaults to 25s in production;
+  /// tests inject a short interval so the missed-ping →
+  /// `_markActiveRoomOffline` path is exercisable without real-time waits.
+  final Duration pingInterval;
 
   /// Plan-18 follow-up — periodically checks for stuck offline state
   /// and forces a reconnect attempt. Runs every 15s. Cheap; only
@@ -665,6 +676,7 @@ class ConnectionManager extends Service {
         list.add(next);
         _roomsByPeer[key] = list;
         (_liveRoomIds[key] ??= <String>{}).add(roomId);
+        _logRoomSnapshot(room: roomId, working: next.working);
         roomsDirty = true;
         // Persist the new view so cold restart shows the same tiles.
         // ignore: unawaited_futures
@@ -737,6 +749,7 @@ class ConnectionManager extends Service {
           thinking: nextThinking,
           working: nextWorking,
         );
+        _logRoomSnapshot(room: roomId, working: nextWorking);
         roomsDirty = true;
         // ignore: unawaited_futures
         _persistRoomsForPeer(key);
@@ -787,6 +800,13 @@ class ConnectionManager extends Service {
         }
         _roomsByPeer[key] = newList;
         _liveRoomIds[key] = newLive;
+        for (final room in rooms) {
+          _logRoomSnapshot(
+            room: room.roomId,
+            presenceCount: rooms.length,
+            working: room.working,
+          );
+        }
         roomsDirty = true;
         // ignore: unawaited_futures
         _persistRoomsForPeer(key);
@@ -919,7 +939,17 @@ class ConnectionManager extends Service {
     }
     if (roomId != _activeRoomId) return;
     if (_status is! StatusOnline || !isRoomLive(epk, roomId)) {
-      if (!working) _clearRoomWorking(epk, roomId);
+      if (!working) {
+        _logDebug(
+          WorkingConvEvent(
+            ts: DateTime.now(),
+            room: roomId,
+            working: false,
+            reason: 'inactive_or_not_live',
+          ),
+        );
+        _clearRoomWorking(epk, roomId);
+      }
       return;
     }
     final key = toStandardB64(epk);
@@ -928,6 +958,14 @@ class ConnectionManager extends Service {
     final idx = list.indexWhere((r) => r.roomId == roomId);
     if (idx < 0 || list[idx].working == working) return;
     list[idx] = list[idx].copyWith(working: working);
+    _logDebug(
+      WorkingConvEvent(
+        ts: DateTime.now(),
+        room: roomId,
+        working: working,
+        reason: 'mark_room_working',
+      ),
+    );
     _scheduleRoomsEmit();
     // ignore: unawaited_futures
     _persistRoomsForPeer(key);
@@ -1137,6 +1175,14 @@ class ConnectionManager extends Service {
     if (_subscribedEpks.isEmpty) return;
     final link = _controlLink;
     if (link == null) return;
+    _logDebug(
+      ConnHydrateEvent(
+        ts: DateTime.now(),
+        action: 'replay_subscriptions',
+        room: _activeRoomId,
+        snapshotCount: _subscribedEpks.length,
+      ),
+    );
     link.sendControl(subscribePresenceFrame(_subscribedEpks));
     link.sendControl(presenceCheckFrame(_subscribedEpks));
     link.sendControl(subscribeRoomsFrame(_subscribedEpks));
@@ -1167,11 +1213,34 @@ class ConnectionManager extends Service {
       // relay typically kicks the previous WS when our retry authenticates
       // again — that close would otherwise trigger an immediate
       // self-sustaining retry loop.
+      _logDebug(
+        ConnChannelLostEvent(
+          ts: DateTime.now(),
+          peerTail: _peerTail(peer.remoteEpk),
+          room: _activeRoomId,
+          stale: true,
+        ),
+      );
       return;
     }
+    _logDebug(
+      ConnChannelLostEvent(
+        ts: DateTime.now(),
+        peerTail: _peerTail(peer.remoteEpk),
+        room: _activeRoomId,
+        stale: false,
+      ),
+    );
     _cancelPing();
     _reachability.onTransportClosed();
     _scheduleRetry(peer);
+  }
+
+  @visibleForTesting
+  void debugSimulateChannelLost(IChannel ch) {
+    final peer = _activePeer;
+    if (peer == null) return;
+    _onChannelLost(peer, ch);
   }
 
   void _scheduleRetry(PeerRecord peer) {
@@ -1192,7 +1261,7 @@ class ConnectionManager extends Service {
   }
 
   void _startPing(PeerRecord peer, IChannel ch) {
-    _pingTimer = Timer.periodic(const Duration(seconds: 25), (_) async {
+    _pingTimer = Timer.periodic(pingInterval, (_) async {
       if (_status is! StatusOnline) return;
       // Plan-18 follow-up — DECOUPLED Pi-liveness from WS-liveness.
       //
@@ -1243,6 +1312,14 @@ class ConnectionManager extends Service {
     if (live == null || !live.contains(_activeRoomId)) return;
     live.remove(_activeRoomId);
     if (live.isEmpty) _liveRoomIds.remove(key);
+    _logDebug(
+      WorkingConvEvent(
+        ts: DateTime.now(),
+        room: _activeRoomId,
+        working: false,
+        reason: 'ping_missed_room_offline',
+      ),
+    );
     _clearRoomWorking(activeEpk, _activeRoomId);
     if (!_roomsController.isClosed) {
       _roomsController.add(_roomsSnapshot());
@@ -1260,6 +1337,7 @@ class ConnectionManager extends Service {
   }
 
   void _emit(ConnectionStatus s) {
+    _logStatusTransition(s);
     // Plan-18 follow-up — when the connection-status flips ON or OFF
     // StatusOnline, every room's "live" answer changes too (see
     // `isRoomLive` gate). Re-emit the rooms snapshot so subscribers
@@ -1273,6 +1351,65 @@ class ConnectionManager extends Service {
     if (wasOnline != nowOnline && !_roomsController.isClosed) {
       _roomsController.add(_roomsSnapshot());
     }
+  }
+
+  void _logStatusTransition(ConnectionStatus s) {
+    switch (s) {
+      case StatusConnecting():
+        _logDebug(
+          ConnStatusEvent(
+            ts: DateTime.now(),
+            status: 'connecting',
+            peerTail: _peerTail(_activePeer?.remoteEpk),
+            room: _activeRoomId,
+          ),
+        );
+      case StatusOnline():
+        _logDebug(
+          ConnStatusEvent(
+            ts: DateTime.now(),
+            status: 'online',
+            peerTail: _peerTail(_activePeer?.remoteEpk),
+            room: _activeRoomId,
+          ),
+        );
+      case StatusRetrying(:final nextRetry, :final attempt):
+        _logDebug(
+          ConnStatusEvent(
+            ts: DateTime.now(),
+            status: 'retrying',
+            attempt: attempt,
+            delayMs: nextRetry.inMilliseconds,
+            peerTail: _peerTail(_activePeer?.remoteEpk),
+            room: _activeRoomId,
+          ),
+        );
+      case StatusNoPeer():
+      case StatusOffline():
+        break;
+    }
+  }
+
+  void _logRoomSnapshot({
+    required String room,
+    int? presenceCount,
+    bool? working,
+  }) {
+    _logDebug(
+      RoomSnapshotEvent(
+        ts: DateTime.now(),
+        room: room,
+        presenceCount: presenceCount,
+        working: working,
+      ),
+    );
+  }
+
+  void _logDebug(DebugEvent event) => _debugLog?.log(event);
+
+  static String? _peerTail(String? epk) {
+    if (epk == null || epk.isEmpty) return null;
+    return epk.length <= 8 ? epk : epk.substring(epk.length - 8);
   }
 
   static int _idCounter = 0;

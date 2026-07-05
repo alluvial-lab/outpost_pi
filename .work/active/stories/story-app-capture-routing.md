@@ -93,3 +93,100 @@ on duplicate auth, or after ping timeout?") lands as a separate follow-up:
   (A1 ConnectionManager gap, B1 mislabeled tags, B3 persistence-only, E2 routing tests).
 - `app/lib/data/transport/connection_manager.dart` — the reconnect state machine.
 - `app/lib/data/transport/ws_transport.dart`, `app/lib/data/sync/sync_service.dart` — the 15 sites.
+
+## Implementation notes
+
+- Per-file changes:
+  - `app/lib/data/transport/ws_transport.dart`: added optional constructor/static-connect `DebugLog` injection and emitted `WsInEvent` beside each existing `[ws-in]` `debugPrint`; logcat text is unchanged.
+  - `app/lib/data/sync/sync_service.dart`: added optional `DebugLog` injection and emitted `MsgSendEvent`, `MsgEchoEvent`, `MsgFailedEvent`, `SessionGateEvent`, `SessionSyncEvent`, and `ReplayDedupEvent`; `msg-send` persists `_preview(text, image)` only.
+  - `app/lib/data/transport/connection_manager.dart`: added optional `DebugLog` injection and emitted `ConnStatusEvent`, `ConnChannelLostEvent`, `ConnHydrateEvent`, `RoomSnapshotEvent`, and `WorkingConvEvent`; `conn-channel-lost.stale` follows the existing `!identical(cur, ch)` stale-channel branch exactly.
+  - `app/lib/config/dependencies.dart`: production constructors now receive `_injector.get<DebugLog>()`; the `DebugLogImpl` registration from the parallel toggle-UI slice was present and reused.
+  - `app/test/data/debug/debug_capture_routing_test.dart`: added fake-`DebugLog` routing coverage for ws inbound, reconnect/hydrate/room/working transitions, stale vs current channel loss, send/echo/gate/failure/sync/replay-dedup, blocked send, and registry tag coverage.
+- Line-number drift found before edits:
+  - `ws_transport.dart`: design `:106` is current `:107` for the envelope `ct.bytes` debugPrint after formatting/nearby comments; all other listed `[ws-in]` sites matched by surrounding context (`:82`, `:103`, `:113`, `:117-118`, `:127-128`, `:133-134`, `:142-143`).
+  - `sync_service.dart`: listed sites matched by surrounding context (`:212`, `:245-246`, `:260`, `:341-342`, `:425`, `:538-542`, `:610`).
+  - `connection_manager.dart`: listed sites matched before edits (`StatusConnecting :534`, `StatusOnline :547`, `_onControl :566`, `RoomAnnounced :612`, `RoomMetaUpdated :697`, `RoomsSnapshot :743`, `markRoomWorking :914`, `_replaySubscriptions :1136`, `_onChannelLost :1162`, `StatusRetrying :1183`, `_markActiveRoomOffline :1238`). `adopt()` also emits `StatusOnline` and now logs the same `conn-status` shape.
+- Tests added:
+  - `WsTransport routes inbound frame probes through DebugLog` uses a local WebSocket relay and real `WsTransport.connect` with fake `DebugLog`.
+  - `ConnectionManager emits reconnect, hydrate, room snapshot, and working convergence events` uses real `ConnectionManager` with fake storage/channel.
+  - `ConnectionManager distinguishes stale takeover close from real channel loss` asserts stale `conn-channel-lost` does not retry, while current-channel loss does emit retrying.
+  - `SyncService emits send preview, echo, gate, failure, session-sync, and replay-dedup events` asserts exact variants/fields and preview truncation.
+  - `SyncService emits offline held-pending msg-send when channel is unavailable` covers the offline held-pending send path.
+  - `SyncService emits blocked msg-send when session identity is unavailable` covers the missing-session blocked send path.
+  - `every DebugTag has an asserted routing test in this suite` enumerates `DebugTag.values` and requires each tag to have been recorded by a real `_assertEvent` emission assertion.
+- Verification output:
+  - `flutter test test/data/debug/debug_capture_routing_test.dart` → `All tests passed!` (`00:00 +7`).
+  - `flutter test` → `All tests passed!` (`00:33 +656`).
+  - `flutter analyze` → exit 1 with the pre-existing unrelated info noted in `app/CLAUDE.md`: `lib/ui/chat/widgets/input_bar.dart:802:7 deprecated_member_use ('axisAlignment' is deprecated...)`; no new analyzer errors were reported.
+- Correlation-key grep result: `app/lib/data/sync/sync_service.dart` persists the same `UserMessage.id` in `MsgSendEvent`/`MsgEchoEvent`; `pi-extension/src/index.ts:2016-2017` logs `app user_message id=${msg.id}`; `relay/src/handlers/pi_forward.rs:201,219,228` derives/logs `env_id_tail` from `outbound.envelope.id`.
+- Deviations / notes:
+  - `RoomSnapshotEvent` requires `room`, so no event was emitted at the generic `_onControl` function entry; events are emitted in the room-bearing `RoomAnnounced`, `RoomMetaUpdated`, and `RoomsSnapshot` branches.
+  - `MsgSendEvent` has `blocked` but no free-form state field; both blocked send sites set `blocked: true` and the real send sets `blocked: false` with the truncated preview.
+  - A small `@visibleForTesting debugSimulateChannelLost` seam was added to exercise the otherwise race-dependent stale/current `_onChannelLost` branches without mocking the branch logic.
+
+## Review fixes (adversarial review, 2 passes)
+
+Pass 1 found two important issues; both fixed:
+
+- **[I1] `ReplayDedupEvent.dropped` false-negative for within-batch duplicates**
+  (`sync_service.dart` replay-dedup block). The original `dropped` derivation
+  checked only against IDs that pre-existed in the store before `appendAll`.
+  A `SessionHistory` containing the same `eventId` twice would log
+  `dropped:false` for BOTH occurrences (since neither pre-existed), even
+  though `appendAll` skips the second — a false-negative exactly in the
+  collision case the ring log exists to diagnose. Fixed with a mutable
+  `seenEventIds` set seeded from the pre-read, then
+  `final dropped = !seenEventIds.add(event.eventId);` per replay event, so
+  the second within-batch duplicate correctly reports `dropped:true`.
+  Regression test added: `SyncService replay-dedup reports within-batch
+  duplicate eventIds as dropped` — constructs a `SessionHistory` with the
+  SAME `id` AND SAME `ts` (so `serverReplayEventId` produces one eventId
+  for both), asserts first `dropped:false`, second `dropped:true`. This
+  test FAILS under the old logic (both would be `dropped:false`).
+
+- **[I2] registry test was tag-exhaustive but not capture-site-exhaustive**
+  (`debug_capture_routing_test.dart`). The original registry only checked
+  each `DebugTag` had one assertion; deleting specific branch emissions
+  (ws-in missing-room/room-mismatch/control/malformed, RoomMetaUpdated,
+  RoomsSnapshot, _markActiveRoomOffline) would still pass. Replaced with a
+  site-coverage registry: a `requiredSites` list of
+  `(tag, siteName, discriminant)` tuples, where the check filters by tag
+  AND discriminant (so a vacuous discriminant can only match events of
+  the correct tag). Added real coverage for the previously-uncovered
+  branches: a dedicated `WsTransport routes every ws-in dropped/control
+  branch through DebugLog` test (drives real `WsTransport.connect` against
+  a local relay pushing crafted frames for each `WsInboundFrameKind`),
+  and a `ConnectionManager marks the active room offline after 3 missed
+  pings` test (uses `FakeAsync` + an injected short `pingInterval` to
+  advance 3 ping cycles and assert the `WorkingConvEvent` with
+  `reason == 'ping_missed_room_offline'`).
+
+- **Bonus finding (dead-branch removal)**: the implementer had added
+  `WsInEvent` emissions to two UNREACHABLE branches in `ws_transport.dart`:
+  the `envelopeBytes == null` branch under `WsInboundFrameKind.enqueue`
+  (unreachable: `demuxPostAuthInboundFrame` only returns `enqueue` after a
+  successful `_b64Decode`, so `envelopeBytes` is always non-null), and the
+  `control == null` branch under `WsInboundFrameKind.control` (unreachable:
+  the demux only returns `control` when `ControlInbound.tryFromJson`
+  returned non-null). Removed both dead branches, replaced with `!`
+  non-null assertions + invariant comments. The reachable `dropMalformed`
+  path (which catches all decode failures via `try/on Object catch`) is
+  intact.
+
+- **Testability improvement**: `ConnectionManager` gained a real
+  `pingInterval` constructor param (default `const Duration(seconds: 25)`,
+  not a `@visibleForTesting` seam) so the missed-ping →
+  `_markActiveRoomOffline` path is exercisable in `FakeAsync` without
+  real-time waits.
+
+Pass 2 (final) confirmed [I1] test has teeth (fails under old logic) and
+[I2] registry is sound (tag-filtered, non-vacuous discriminants). The
+`RoomAnnounced`/`RoomMetaUpdated` branches emit the same `RoomSnapshotEvent`
+shape, so the registry collapses them into one `room-announced-or-meta-updated`
+site; the per-phase reconnect test (with `events.clear()` between phases) is
+the real proof both branches fire independently.
+
+Final verification (combined tree):
+- `flutter test` → `All tests passed!` (`+659`; +19 over the 640 baseline).
+- `flutter analyze` → clean except the pre-existing `axisAlignment`
+  deprecation in `input_bar.dart:802` (untouched, documented in `app/CLAUDE.md`).
