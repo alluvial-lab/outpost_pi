@@ -1,7 +1,7 @@
 ---
 id: story-app-capture-routing
 kind: story
-stage: implementing
+stage: review
 tags: [app, observability]
 parent: feature-cross-side-observability
 depends_on:
