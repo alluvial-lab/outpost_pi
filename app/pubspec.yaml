@@ -89,8 +89,9 @@ dependencies:
   # Debug ring log — persistent, privacy-scrubbed retroactive capture for
   # intermittent mobile bugs (closes the app-side half of
   # idea-cross-side-logging-for-debug). path_provider gives the on-device
-  # file location; share_plus (added with the export UI) drives the share sheet.
+  # file location; share_plus drives the export share sheet.
   path_provider: ^2.1.5
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:
