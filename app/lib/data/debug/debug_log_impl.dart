@@ -8,27 +8,40 @@ import 'package:path_provider/path_provider.dart';
 
 /// File-backed [DebugLog].
 ///
-/// A bounded in-memory ring (capped at [_maxBytes]) flushed to a daily-rotated
-/// jsonl file in `getApplicationDocumentsDirectory()`, so it survives reboot
-/// and logcat buffer rollover. Each line matches the extension's `audit.jsonl`
-/// shape so a single message id greps across all three sides.
+/// A bounded in-memory ring (capped at [_maxBytes]) written to a jsonl file in
+/// `getApplicationDocumentsDirectory()`, so it survives reboot and logcat
+/// buffer rollover. Each line matches the extension's `audit.jsonl` shape so a
+/// single message id greps across all three sides.
+///
+/// **Snapshot-write model.** The file is an atomic snapshot of the capped
+/// in-memory ring — every flush overwrites the file with the current capped
+/// `_ring` (NOT append-only). This keeps the on-disk retention bounded by the
+/// same cap as the in-memory ring; evicted lines never persist on disk. The
+/// in-memory `_ring` IS the source of truth for pending state — no separate
+/// `_pending` list that could diverge.
 ///
 /// **Flush policy.** Critical events (the [kImmediateFlushTags] set — the
 /// crash-reconnect tail events) flush immediately; routine events debounce
-/// [_flushInterval]. This survives a crash for the lines that matter most.
+/// [_flushInterval]. Flushes are serialized via a [_flushFuture] chain so
+/// batches write in call order. Because [Service.dispose] returns `void`, the
+/// final flush is fire-and-forget. Critical events START a flush immediately
+/// on `log()` and usually survive normal teardown, but crash/process-kill
+/// durability is best-effort until a caller awaits a flush.
 ///
 /// **Cap-on-append.** Truncation happens in [log] immediately after encoding,
 /// not only on flush — the in-memory ring never overshoots between flushes.
+/// Byte accounting is UTF-8 ([utf8.encode]) to match what's written to disk.
 ///
 /// **Export-from-file.** [export] force-flushes, then reads the FILE as the
 /// source of truth (line-by-line, skipping unparseable lines), so it recovers
 /// on-disk state even if the in-memory ring diverged. Works while debug
 /// logging is OFF (reads whatever is on disk).
 ///
-/// **Never throws.** [log]/[export]/[clear]/[dispose] catch `Object, StackTrace`;
-/// the flush timer callback catches internally; failures emit a scrubbed
-/// `debugPrint('[debug-log] …')` and never rethrow. The logger must not break
-/// the app even on platform/quota/permission failure.
+/// **Never throws.** [log]/[export]/[clear]/[dispose] catch `Object,
+/// StackTrace` around the entire public body (including the `_debugEnabled()`
+/// callback and `jsonEncode`); the flush timer callback catches internally;
+/// failures emit a scrubbed `debugPrint('[debug-log] …')` and never rethrow.
+/// The logger must not break the app even on platform/quota/permission failure.
 class DebugLogImpl implements DebugLog {
   /// Ring buffer capacity. 1 MiB covers ~48h of the expanded capture surface
   /// (state-transition lines, NOT per-token streaming) with headroom.
@@ -52,16 +65,23 @@ class DebugLogImpl implements DebugLog {
     DebugTag.roomSnapshot,
   };
 
-  /// Ring of jsonl lines (each already-encoded string).
+  /// Ring of jsonl lines (each already-encoded string). The single source of
+  /// truth for both in-memory state and pending flushes — no separate `_pending`
+  /// list, so the ring and the disk snapshot can't diverge.
   final List<String> _ring = [];
-
-  /// Pending (unflushed) entries, in order.
-  final List<String> _pending = [];
 
   Timer? _flushTimer;
   bool _disposed = false;
   String? _filePath;
-  bool _loaded = false;
+
+  /// Shared load future: concurrent callers (log/export/clear) await the SAME
+  /// load, so a critical `log()` during the first load can't race a half-set
+  /// `_filePath` (review Important — _ensureLoaded reentrancy).
+  Future<void>? _loadFuture;
+
+  /// Serialized flushes: each flush awaits the previous, so batches write in
+  /// call order and never reorder (review Important — concurrent flushes).
+  Future<void>? _flushFuture;
 
   /// Returns whether debug logging is enabled. Injected (reads `Preferences`)
   /// so the hot path does no I/O. When false, [log] is a no-op.
@@ -72,6 +92,7 @@ class DebugLogImpl implements DebugLog {
       _maxBytesOverride = null;
 
   /// Test seam: override the byte cap to exercise truncation cheaply.
+  @visibleForTesting
   DebugLogImpl.withMaxBytesForTest({
     required bool Function() debugEnabled,
     required int maxBytes,
@@ -81,136 +102,182 @@ class DebugLogImpl implements DebugLog {
   int get _maxBytes => _maxBytesOverride ?? _defaultMaxBytes;
   final int? _maxBytesOverride;
 
-  Future<void> _ensureLoaded() async {
-    if (_loaded) return;
-    _loaded = true;
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      _filePath = '${dir.path}/remote_pi_debug.jsonl';
-      // Warm the ring from the existing file so a restart keeps recent history.
-      final file = File(_filePath!);
-      if (await file.exists()) {
-        final lines = await file.readAsLines();
-        for (final line in lines) {
-          if (line.isEmpty) continue;
-          // Skip unparseable lines (corrupt tail from a crash) — never throw.
-          try {
-            jsonDecode(line);
-          } catch (_) {
-            continue;
-          }
-          _ring.add(line);
+  Future<void> _ensureLoaded() {
+    // Concurrent callers share the same load future; _filePath is set only
+    // after resolution, so a concurrent log()/flush() sees a consistent state.
+    if (_loadFuture != null) return _loadFuture!;
+    _loadFuture = _doLoad().catchError((Object e, StackTrace s) {
+      _safeLog('load failed: $e', s);
+      // Allow a retry on a later call if this load failed.
+      _loadFuture = null;
+    });
+    return _loadFuture!;
+  }
+
+  Future<void> _doLoad() async {
+    final dir = await getApplicationDocumentsDirectory();
+    _filePath = '${dir.path}/remote_pi_debug.jsonl';
+    final file = File(_filePath!);
+    if (await file.exists()) {
+      final lines = await file.readAsLines();
+      for (final line in lines) {
+        if (line.isEmpty) continue;
+        // Skip unparseable lines (corrupt tail from a crash) — never throw.
+        try {
+          jsonDecode(line);
+        } catch (_) {
+          continue;
         }
-        _truncate();
+        _ring.add(line);
       }
-    } catch (e, s) {
-      _safeLog('failed to load ring file: $e', s);
+      _truncate();
     }
   }
 
   @override
   void log(DebugEvent event) {
-    if (_disposed) return;
-    if (!_debugEnabled()) return; // no-op when debug logging is OFF
-    String line;
+    // Wrap the whole public body — a throwing _debugEnabled() callback or an
+    // unexpected internal fault must never escape to the caller (review
+    // Important — log() can throw if the callback throws).
     try {
-      line = jsonEncode(event.toJson());
+      if (_disposed) return;
+      if (!_debugEnabled()) return; // no-op when debug logging is OFF
+      final line = jsonEncode(event.toJson());
+      _ring.add(line);
+      _truncate(); // cap-on-append: never overshoot between flushes
+      if (kImmediateFlushTags.contains(event.tag)) {
+        // Critical event: flush now so a crash doesn't lose the diagnostic tail.
+        // ignore: discarded_futures
+        _scheduleFlushNow();
+      } else {
+        _scheduleDebouncedFlush();
+      }
     } catch (e, s) {
-      // Encoding failure (a non-primitive slipped through, etc.) — drop the
-      // entry rather than letting it corrupt the ring or break the caller.
-      _safeLog('encode failed for ${event.tag}: $e', s);
-      return;
-    }
-    _ring.add(line);
-    _truncate(); // cap-on-append: never overshoot between flushes
-    _pending.add(line);
-    if (kImmediateFlushTags.contains(event.tag)) {
-      // Critical event: flush now so a crash doesn't lose the diagnostic tail.
-      // ignore: discarded_futures
-      _flushAndReset();
-    } else {
-      _scheduleFlush();
+      _safeLog('log failed for ${event.tag}: $e', s);
     }
   }
 
   @override
   Future<String?> export() async {
-    await _ensureLoaded();
-    await _flushAndReset();
-    if (_ring.isEmpty) return null;
-    return _ring.join('\n');
+    try {
+      await _ensureLoaded();
+      await _flushNow(); // force-flush so the file is current
+      final path = _filePath;
+      if (path == null) return null;
+      final file = File(path);
+      if (!await file.exists()) return null;
+      // Read the FILE as source of truth, line-by-line, skipping corrupt lines
+      // (review F2 — export-from-file). Recovers on-disk state even if the
+      // in-memory ring diverged.
+      final lines = <String>[];
+      await for (final line in file.openRead().transform(utf8.decoder).transform(const LineSplitter())) {
+        if (line.isEmpty) continue;
+        try {
+          jsonDecode(line);
+        } catch (_) {
+          continue;
+        }
+        lines.add(line);
+      }
+      if (lines.isEmpty) return null;
+      return lines.join('\n');
+    } catch (e, s) {
+      _safeLog('export failed: $e', s);
+      return null;
+    }
   }
 
   @override
   Future<void> clear() async {
-    _ring.clear();
-    _pending.clear();
-    await _ensureLoaded();
-    final path = _filePath;
-    if (path != null) {
-      try {
+    try {
+      _ring.clear();
+      await _ensureLoaded();
+      final path = _filePath;
+      if (path != null) {
         final file = File(path);
         if (await file.exists()) {
           await file.writeAsString('');
         }
-      } catch (e, s) {
-        _safeLog('failed to clear ring file: $e', s);
       }
+      // Cancel any pending flush so a stale snapshot doesn't re-write the file.
+      _flushTimer?.cancel();
+      _flushTimer = null;
+    } catch (e, s) {
+      _safeLog('clear failed: $e', s);
     }
   }
 
   @override
   void dispose() {
-    _disposed = true;
-    _flushTimer?.cancel();
-    _flushTimer = null;
-    // Best-effort final flush. `Service.dispose()` returns `void` (synchronous),
-    // so the flush is fire-and-forget — the OS gives the process a moment to
-    // finish the write on normal teardown; on hard kill the immediate-flush
-    // policy for critical events already put them on disk.
-    // ignore: discarded_futures
-    _flushAndReset();
-  }
-
-  void _scheduleFlush() {
-    if (_flushTimer?.isActive ?? false) return;
-    _flushTimer = Timer(_flushInterval, _flushAndResetSync);
-  }
-
-  void _flushAndResetSync() {
-    // ignore: discarded_futures
-    _flushAndReset();
-  }
-
-  Future<void> _flushAndReset() async {
-    _flushTimer?.cancel();
-    _flushTimer = null;
-    if (_pending.isEmpty) return;
-    final batch = List<String>.of(_pending);
-    _pending.clear();
-    await _ensureLoaded();
-    final path = _filePath;
-    if (path == null) return;
     try {
-      final file = File(path);
-      final sink = file.openWrite(mode: FileMode.append);
-      for (final line in batch) {
-        sink.writeln(line);
-      }
-      await sink.flush();
-      await sink.close();
+      _disposed = true;
+      _flushTimer?.cancel();
+      _flushTimer = null;
+      // Best-effort final flush. `Service.dispose()` returns `void`, so the
+      // flush is fire-and-forget — the OS gives the process a moment to finish
+      // on normal teardown. Critical events already flushed immediately on
+      // `log()`; routine events logged right before teardown may not finish.
+      // ignore: discarded_futures
+      _flushNow();
     } catch (e, s) {
-      _safeLog('flush failed: $e', s);
+      _safeLog('dispose failed: $e', s);
     }
   }
 
-  /// Truncate oldest lines until under [_maxBytes]. Called on append so the
-  /// in-memory ring never overshoots between flushes.
+  void _scheduleDebouncedFlush() {
+    if (_flushTimer?.isActive ?? false) return;
+    _flushTimer = Timer(_flushInterval, () {
+      // ignore: discarded_futures
+      _flushNow();
+    });
+  }
+
+  void _scheduleFlushNow() {
+    // ignore: discarded_futures
+    _flushNow();
+  }
+
+  /// Serialize flushes: each awaits the previous so batches write in call
+  /// order and never reorder. Writes the capped `_ring` as an atomic snapshot
+  /// (overwrite), not append — so on-disk retention is bounded by [_maxBytes].
+  Future<void> _flushNow() async {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    await _ensureLoaded();
+    final path = _filePath;
+    if (path == null) return;
+    // Chain onto any in-flight flush so writes are ordered.
+    final prev = _flushFuture ?? Future<void>.value();
+    final thisFlush = prev.then((_) async {
+      try {
+        final file = File(path);
+        // Snapshot the capped ring. If the ring is empty, leave any existing
+        // file (a clear() already wiped it); only write if there's content.
+        if (_ring.isEmpty) return;
+        final snapshot = '${_ring.join('\n')}\n';
+        await file.writeAsString(snapshot, flush: true);
+      } catch (e, s) {
+        _safeLog('flush failed: $e', s);
+      }
+    });
+    _flushFuture = thisFlush;
+    try {
+      await thisFlush;
+    } finally {
+      // Clear our future only if no later caller chained onto it.
+      if (identical(_flushFuture, thisFlush)) {
+        _flushFuture = null;
+      }
+    }
+  }
+
+  /// Truncate oldest lines until under [_maxBytes], using UTF-8 byte length to
+  /// match what's written to disk (review Nit — byte accounting).
   void _truncate() {
-    var size = _ring.fold<int>(0, (sum, line) => sum + line.length + 1);
+    var size = _ring.fold<int>(0, (sum, line) => sum + utf8.encode(line).length + 1);
     while (size > _maxBytes && _ring.isNotEmpty) {
       final removed = _ring.removeAt(0);
-      size -= removed.length + 1;
+      size -= utf8.encode(removed).length + 1;
     }
   }
 

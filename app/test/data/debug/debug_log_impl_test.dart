@@ -188,6 +188,113 @@ void main() {
     expect(exported, contains('pre-existing'));
     log.dispose();
   });
+
+  test('snapshot-write: on-disk file is capped (no unbounded growth)', () async {
+    // The blocker fix: the file is an atomic snapshot of the capped ring, not
+    // append-only. So evicted lines don't persist on disk.
+    final log = DebugLogImpl.withMaxBytesForTest(
+      debugEnabled: () => true,
+      maxBytes: 500, // tiny cap
+    );
+    for (var i = 0; i < 100; i++) {
+      log.log(MsgSendEvent(ts: DateTime.now(), id: 'msg-$i'));
+    }
+    await log.export(); // force-flush the snapshot
+    final path = '${tempDir.path}/remote_pi_debug.jsonl';
+    final onDisk = await File(path).readAsString();
+    // The file must be under the cap (+slack for newlines), not 100 lines.
+    expect(
+      onDisk.length,
+      lessThanOrEqualTo(500 + 200),
+      reason: 'on-disk file must be capped (snapshot-write, not append-only)',
+    );
+    expect(onDisk, isNot(contains('msg-0'))); // oldest evicted
+    expect(onDisk, contains('msg-99')); // newest retained
+    log.dispose();
+  });
+
+  test('export recovers on-disk state when the in-memory ring diverged',
+      () async {
+    final path = '${tempDir.path}/remote_pi_debug.jsonl';
+    // Log a line, flush it to disk, then SIMULATE ring divergence by writing
+    // an extra line directly to the file that the ring doesn't know about.
+    final log = newLog();
+    log.log(MsgEchoEvent(ts: DateTime.now(), id: 'ring-known'));
+    await log.export(); // flush ring-known to disk
+    log.dispose();
+    // Append a line the ring never saw (simulating a prior-session line that
+    // warm-from-file would have loaded, but we're testing export-from-file).
+    await File(path, ).writeAsString(
+      '{"tag":"msgSend","ts":"2026-07-04T00:00:00.000Z","id":"disk-only"}\n',
+      mode: FileMode.append,
+    );
+    // A fresh instance warms from file (gets both lines), but export reads the
+    // FILE — so even if the ring somehow diverged, export reflects disk truth.
+    final log2 = newLog();
+    final exported = await log2.export();
+    expect(exported, contains('ring-known'));
+    expect(exported, contains('disk-only'));
+    log2.dispose();
+  });
+
+  test('log() catches a throwing _debugEnabled callback (never throws)', () {
+    final log = DebugLogImpl(debugEnabled: () => throw StateError('boom'));
+    // Must not throw — the whole public body is wrapped, including the callback.
+    log.log(MsgSendEvent(ts: DateTime.now(), id: 'msg-1'));
+    expect(true, isTrue); // reached here → no throw
+    log.dispose();
+  });
+
+  test('clear serializes with an in-flight flush (no log resurrection)',
+      () async {
+    // The v2-blocker regression: a stale snapshot write completing AFTER
+    // clear() must not resurrect the wiped logs. clear() awaits the in-flight
+    // _flushFuture before wiping.
+    final path = '${tempDir.path}/remote_pi_debug.jsonl';
+    final log = newLog();
+    // Fire a critical event — triggers an immediate (in-flight) flush.
+    log.log(ConnChannelLostEvent(ts: DateTime.now(), stale: false));
+    // Immediately clear while that flush may still be in flight.
+    await log.clear();
+    // Drain any remaining flush chain.
+    await pumpEventQueue(times: 10);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    // The file must be empty (or absent) — the stale snapshot did not
+    // resurrect the logs.
+    final file = File(path);
+    if (await file.exists()) {
+      final onDisk = await file.readAsString();
+      expect(
+        onDisk,
+        isEmpty,
+        reason: 'clear() must serialize with an in-flight flush; a stale '
+            'snapshot write must not resurrect cleared logs',
+      );
+    }
+    // (If the file was never created, that's also a valid empty state.)
+    expect(await log.export(), isNull);
+    log.dispose();
+  });
+
+  test('concurrent flushes write in call order (serialized)', () async {
+    final path = '${tempDir.path}/remote_pi_debug.jsonl';
+    final log = newLog();
+    // Fire many critical logs back-to-back — each triggers an immediate flush.
+    for (var i = 0; i < 10; i++) {
+      log.log(ConnStatusEvent(ts: DateTime.now(), status: 'retrying', attempt: i));
+    }
+    await log.export(); // drain the flush chain
+    final onDisk = await File(path).readAsString();
+    // The snapshot contains all 10 (under cap); order is call order (the
+    // snapshot is _ring.join, which is append order).
+    final lines = onDisk.trim().split('\n');
+    final attempts = lines
+        .map((l) => (jsonDecode(l) as Map<String, dynamic>)['attempt'] as int?)
+        .where((a) => a != null)
+        .toList();
+    expect(attempts, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    log.dispose();
+  });
 }
 
 /// Mock path_provider so tests use a real temp dir (no Android/iOS plugin).

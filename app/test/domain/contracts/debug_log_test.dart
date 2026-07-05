@@ -1,29 +1,74 @@
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// The allowed keys per [DebugTag] — a POSITIVE allow-list, not just a deny-list
+/// (review B2). A variant's `toJson` may only emit keys in its tag's allow-set
+/// (plus the universal `tag`/`ts`). This is the privacy invariant: if a future
+/// variant adds a `body`/`content`/`payload` field, this test fails because the
+/// key isn't in the allow-set for that tag. (The deny-list below is a backstop
+/// for payload-like names that should never appear in ANY variant.)
+const Map<DebugTag, Set<String>> kAllowedKeys = {
+  DebugTag.wsIn: {'bytes', 'kind', 'stage', 'senderRoom', 'controlType', 'error'},
+  DebugTag.msgSend: {'id', 'blocked', 'preview'},
+  DebugTag.msgEcho: {'id'},
+  DebugTag.msgFailed: {'id', 'code', 'detail'},
+  DebugTag.sessionGate: {'messageType', 'reason', 'sessionIdTail'},
+  DebugTag.sessionSync: {'err'},
+  DebugTag.connStatus: {'status', 'attempt', 'delayMs', 'peerTail', 'room'},
+  DebugTag.connChannelLost: {'stale', 'peerTail', 'room'},
+  DebugTag.connHydrate: {'action', 'room', 'snapshotCount'},
+  DebugTag.roomSnapshot: {'room', 'presenceCount', 'working'},
+  DebugTag.workingConv: {'room', 'working', 'reason'},
+  DebugTag.replayDedup: {'sessionId', 'eventIdTail', 'dropped'},
+};
+
+/// Universal keys every variant emits.
+const Set<String> kUniversalKeys = {'tag', 'ts'};
+
+/// Forbidden in ANY variant — payload-like names that must never reach the
+/// persisted/shared log. Backstop to the per-tag allow-list.
+const Set<String> kForbiddenKeys = {
+  'body', 'image', 'data', 'args', 'result', 'prompt', 'message', 'ct',
+  // payload-like aliases the allow-list must also reject:
+  'content', 'payload', 'summary', 'fullText', 'bodyText', 'raw',
+  'toolOutput', 'imageBytes',
+};
+
+/// Compiler-enforced exhaustiveness: every [DebugEvent] variant MUST be
+/// handled here. If a new variant is added to the sealed class but not listed,
+/// this switch is non-exhaustive and the test fails to COMPILE — which is the
+/// real guard the hand-maintained `expectedTypes` set couldn't provide (review
+/// B2). Returns the variant's tag.
+DebugTag tagOf(DebugEvent event) {
+  return switch (event) {
+    WsInEvent() => DebugTag.wsIn,
+    MsgSendEvent() => DebugTag.msgSend,
+    MsgEchoEvent() => DebugTag.msgEcho,
+    MsgFailedEvent() => DebugTag.msgFailed,
+    SessionGateEvent() => DebugTag.sessionGate,
+    SessionSyncEvent() => DebugTag.sessionSync,
+    ConnStatusEvent() => DebugTag.connStatus,
+    ConnChannelLostEvent() => DebugTag.connChannelLost,
+    ConnHydrateEvent() => DebugTag.connHydrate,
+    RoomSnapshotEvent() => DebugTag.roomSnapshot,
+    WorkingConvEvent() => DebugTag.workingConv,
+    ReplayDedupEvent() => DebugTag.replayDedup,
+  };
+}
+
 /// Registry invariant test — enforces the privacy scrub at the type level
 /// (review B2/E3). Every [DebugEvent] variant serializes through [toJson];
 /// this test asserts:
-/// - NO forbidden key appears in ANY variant's output (body, image, data,
-///   args, result, prompt, message, ct).
+/// - NO forbidden key appears in ANY variant's output (deny-list backstop).
+/// - EVERY emitted key is in that tag's allow-set (positive allow-list).
 /// - ALL string field values are capped to [kMaxFieldValueChars].
 /// - Field values are primitives only (no nested objects / untrusted blobs).
 ///
-/// A new variant that forgets the scrub fails this test at compile time (the
-/// variant isn't covered by the `all variants` switch) and at runtime (its
-/// `toJson` is exercised).
+/// A new variant that forgets the scrub fails to COMPILE (the `tagOf` switch
+/// is non-exhaustive) AND at runtime (its `toJson` is exercised against the
+/// allow-list). A new variant added to `tagOf` but missing from `kAllowedKeys`
+/// fails the allow-list check.
 void main() {
-  const forbiddenKeys = {
-    'body',
-    'image',
-    'data',
-    'args',
-    'result',
-    'prompt',
-    'message',
-    'ct',
-  };
-
   final now = DateTime.utc(2026, 7, 4, 12, 0, 0);
 
   /// Every variant, constructed with deliberately-oversized field values to
@@ -68,42 +113,66 @@ void main() {
     ];
   }
 
-  test('every variant type is covered by allVariants()', () {
-    // Exhaustiveness guard: every variant TYPE present in the sealed class
-    // must appear in the list above. ConnChannelLostEvent appears twice
-    // (stale:true and stale:false) on purpose — both branches of the takeover
-    // proof. If a new variant type is added but not listed, this fails.
-    final expectedTypes = <Type>{
-      WsInEvent,
-      MsgSendEvent,
-      MsgEchoEvent,
-      MsgFailedEvent,
-      SessionGateEvent,
-      SessionSyncEvent,
-      ConnStatusEvent,
-      ConnChannelLostEvent,
-      ConnHydrateEvent,
-      RoomSnapshotEvent,
-      WorkingConvEvent,
-      ReplayDedupEvent,
-    };
-    final seen = <Type>{};
+  test('every variant type is covered by tagOf() (compiler-enforced)', () {
+    // If a new variant is added to the sealed class but not to `tagOf`, this
+    // fails to COMPILE — the real exhaustiveness guard.
     for (final event in allVariants()) {
-      seen.add(event.runtimeType);
+      expect(tagOf(event), event.tag);
     }
-    expect(seen, containsAll(expectedTypes));
   });
 
-  test('no variant emits a forbidden key', () {
+  test('every tag has an allow-list entry (no variant escapes the allow-list)', () {
+    for (final event in allVariants()) {
+      expect(
+        kAllowedKeys.containsKey(event.tag),
+        isTrue,
+        reason:
+            '${event.runtimeType} tag ${event.tag} has no kAllowedKeys entry — '
+            'a new variant must declare its allowed keys or its fields escape '
+            'the privacy invariant',
+      );
+    }
+  });
+
+  test('no variant emits a forbidden key (deny-list backstop)', () {
     for (final event in allVariants()) {
       final json = event.toJson();
       for (final key in json.keys) {
         expect(
-          forbiddenKeys,
+          kForbiddenKeys,
           isNot(contains(key)),
           reason:
               '${event.runtimeType}.toJson emitted forbidden key "$key" — '
               'full payload content must never reach the persisted log',
+        );
+      }
+    }
+  });
+
+  test('every emitted key is in its tag\'s allow-set (positive allow-list)', () {
+    for (final event in allVariants()) {
+      final json = event.toJson();
+      final allowed = kAllowedKeys[event.tag]!;
+      for (final key in json.keys) {
+        expect(
+          kUniversalKeys.contains(key) || allowed.contains(key),
+          isTrue,
+          reason:
+              '${event.runtimeType}.toJson emitted key "$key" not in its '
+              'allow-set ${allowed.union(kUniversalKeys)} — every field must '
+              'be explicitly allowed or it escapes the privacy invariant',
+        );
+      }
+    }
+  });
+
+  test('allow-list and deny-list are disjoint (no allowed payload-like key)', () {
+    for (final entry in kAllowedKeys.entries) {
+      for (final key in entry.value) {
+        expect(
+          kForbiddenKeys,
+          isNot(contains(key)),
+          reason: 'tag ${entry.key} allow-lists forbidden key "$key"',
         );
       }
     }
