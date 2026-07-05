@@ -61,3 +61,34 @@ or capped.
 - `app/lib/data/preferences/preferences.dart` — persisted prefs pattern.
 - `app/lib/config/dependencies.dart` — `addService` disposing registration.
 - `app/lib/ui/settings/settings_page.dart` — section pattern (`_RelaySection`, `_DisplaySection`).
+
+## Implementation notes
+
+- `app/lib/data/preferences/preferences.dart`: added persisted `debugLogging` with default `false`, `prefs.debug_logging` storage, load hydration, setter, and notifications.
+- `app/lib/config/dependencies.dart`: registered `DebugLogImpl` through `addService<DebugLog>` with `debugEnabled: () => prefs.debugLogging`, and injected `DebugLog` into `SettingsViewModel`.
+- `app/lib/ui/settings/viewmodels/settings_viewmodel.dart`: added `isDebugLogging`, `setDebugLogging`, `exportDebugLog`, and `clearDebugLog` delegates.
+- `app/lib/ui/settings/settings_page.dart`: added `_DebugSection` with toggle, jsonl export share-sheet action, clear confirmation, mounted guards, and export privacy warning.
+- `app/pubspec.yaml` / `app/pubspec.lock`: added `share_plus`; `path_provider` was already present.
+- Tests added/extended:
+  - `app/test/data/preferences/preferences_test.dart`: debug toggle default + persistence.
+  - `app/test/ui/settings/settings_viewmodel_test.dart`: toggle persistence and DebugLog export/clear delegation without clearing the toggle.
+  - `app/test/ui/settings/settings_page_test.dart`: UI toggle persistence, export share callback, no-log feedback, and clear confirmation preserving the toggle.
+  - `app/test/data/debug/debug_log_impl_test.dart`: Preferences callback gating and `disposeDependencies()`/`addService` lifecycle flush coverage.
+
+Verification from `app/`:
+
+```text
+flutter test
+00:25 +655: All tests passed!
+```
+
+```text
+flutter analyze
+Analyzing app...
+
+   info • 'axisAlignment' is deprecated and shouldn't be used. Use alignment instead. This property provides full control over both axes, which is an improvement over the old axisAlignment. This feature was deprecated after v3.41.0-1.0.pre. Try replacing the use of the deprecated member with the replacement • lib/ui/chat/widgets/input_bar.dart:802:7 • deprecated_member_use
+
+1 issue found. (ran in 3.5s)
+```
+
+Deviation: `flutter analyze` exits non-zero because of the documented pre-existing `axisAlignment` info in `app/CLAUDE.md`; `input_bar.dart` explicitly says not to change it without a Flutter pin bump, so this story left it untouched.
