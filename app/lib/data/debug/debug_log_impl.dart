@@ -102,6 +102,17 @@ class DebugLogImpl implements DebugLog {
   int get _maxBytes => _maxBytesOverride ?? _defaultMaxBytes;
   final int? _maxBytesOverride;
 
+  /// Test seam: the in-flight flush future (or null if no flush is pending).
+  /// Lets tests prove `clear()` awaits an in-flight flush before wiping.
+  @visibleForTesting
+  Future<void>? get pendingFlush => _flushFuture;
+
+  /// Test seam: delay injected before each snapshot write, so tests can
+  /// deterministically hold a flush in-flight (proving clear() awaits it).
+  /// Null in production.
+  @visibleForTesting
+  Duration? flushDelayForTesting;
+
   Future<void> _ensureLoaded() {
     // Concurrent callers share the same load future; _filePath is set only
     // after resolution, so a concurrent log()/flush() sees a consistent state.
@@ -190,18 +201,28 @@ class DebugLogImpl implements DebugLog {
   @override
   Future<void> clear() async {
     try {
-      _ring.clear();
+      // Cancel the debounced timer so a pending routine flush doesn't fire
+      // after we wipe. (Critical events already triggered immediate flushes
+      // that may be in flight — those are serialized below.)
+      _flushTimer?.cancel();
+      _flushTimer = null;
       await _ensureLoaded();
       final path = _filePath;
+      // Serialize against any in-flight flush: a stale snapshot write captured
+      // before clear() must complete (or be superseded) before we wipe, or it
+      // could resurrect the cleared logs by writing the old snapshot AFTER
+      // clear() emptied the file (review v2 Blocker).
+      final prev = _flushFuture;
+      if (prev != null) {
+        await prev.catchError((Object _, StackTrace _) {});
+      }
+      _ring.clear();
       if (path != null) {
         final file = File(path);
         if (await file.exists()) {
           await file.writeAsString('');
         }
       }
-      // Cancel any pending flush so a stale snapshot doesn't re-write the file.
-      _flushTimer?.cancel();
-      _flushTimer = null;
     } catch (e, s) {
       _safeLog('clear failed: $e', s);
     }
@@ -255,6 +276,10 @@ class DebugLogImpl implements DebugLog {
         // file (a clear() already wiped it); only write if there's content.
         if (_ring.isEmpty) return;
         final snapshot = '${_ring.join('\n')}\n';
+        // Test seam: hold the flush in-flight so tests can prove clear()
+        // awaits it. No-op in production.
+        final delay = flushDelayForTesting;
+        if (delay != null) await Future<void>.delayed(delay);
         await file.writeAsString(snapshot, flush: true);
       } catch (e, s) {
         _safeLog('flush failed: $e', s);
