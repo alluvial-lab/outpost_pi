@@ -1,7 +1,7 @@
 ---
 id: story-app-debug-toggle-ui
 kind: story
-stage: implementing
+stage: review
 tags: [app, observability, ui]
 parent: feature-cross-side-observability
 depends_on:
