@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-05
 ---
 
 # Cross-side observability & session-replacement reproduction (critical path)
@@ -186,6 +186,10 @@ sealed class DebugEvent {
   final DebugTag tag;
   final DateTime ts;
   const DebugEvent(this.tag, this.ts);
+  /// Canonical serializer: every variant serializes through this one method.
+  /// Tests assert no forbidden keys (body, image, data, args, result, prompt,
+  /// message, ct) and that all string fields are capped (review B2/E3).
+  Map<String, Object?> toJson();
 }
 // Variants (one per capture site family):
 //   WsInEvent        {bytes, kind, stage?, senderRoom?, controlType?, error?}
@@ -195,22 +199,32 @@ sealed class DebugEvent {
 //   SessionGateEvent {messageType, reason, sessionIdTail?}
 //   SessionSyncEvent {err}                       // err = short reason, no content
 //   ConnStatusEvent  {status, attempt?, delayMs?, peerTail?, room?}
+//   ConnChannelLostEvent {peerTail?, room?, stale}  // stale=true = replaced
+//     channel's onDone safely ignored (connection_manager.dart:1166-1170);
+//     stale=false = current channel lost → retry started. THIS is the event
+//     that distinguishes duplicate-connection takeover from real channel loss
+//     (the idea-mobile-drop-half-open-tcp question).
 //   ConnHydrateEvent {action, room?, snapshotCount?}
 //   RoomSnapshotEvent{room, presenceCount?, working?}
 //   WorkingConvEvent {room, working, reason}
 //   ReplayDedupEvent {sessionId, eventIdTail, dropped}
 //   ... (one per ConnectionManager/sync transition in the expanded surface)
 
-class DebugLog {
+/// Extends `Service` so `addService<DebugLog>` (the disposing DI path) wires
+/// `dispose()` → flush on app teardown (review C3). `addInstance`/`addOther`
+/// do NOT dispose; the type bound `T extends Service` requires this.
+abstract interface class DebugLog implements Service {
   /// Early no-op when debug mode is OFF (checked via Preferences). When ON,
   /// appends the event to the ring + schedules flush (immediate for critical
   /// events, debounced for routine).
   void log(DebugEvent event);
 
   /// Force-flush, then read the file (source of truth). Null when empty.
+  /// Works while debug logging is OFF (reads whatever is on disk).
   Future<String?> export();
 
-  /// Wipe ring + file.
+  /// Wipe ring + file. Does NOT clear `Preferences.debugLogging` (the toggle
+  /// state is separate from the captured data).
   Future<void> clear();
 }
 ```
@@ -219,6 +233,10 @@ class DebugLog {
 - [ ] `DebugEvent` sealed class + variants in `domain/contracts/`; `DebugTag` enum.
 - [ ] No variant carries full message body / image data / tool args or results.
 - [ ] `MsgSendEvent.preview` is the truncated `_preview`, never full text.
+- [ ] Each variant serializes through the canonical `toJson()`; a registry test
+      asserts no forbidden keys (`body`, `image`, `data`, `args`, `result`,
+      `prompt`, `message`, `ct`) and that all string fields are capped (review B2).
+- [ ] `DebugLog implements Service` (so `addService<DebugLog>` disposes).
 - [ ] No imports of `dart:io`, `path_provider`, or `share_plus` (domain purity).
 - [ ] Exported via `contracts.dart`.
 
@@ -230,11 +248,19 @@ class DebugLog {
 class DebugLogImpl implements DebugLog {
   static const int _maxBytes = 1 << 20; // 1 MiB cap
   static const Duration _flushInterval = Duration(seconds: 2);
+  // log(): if !_debugEnabled() return; encode (typed→jsonl, cap field lengths,
+  //        catch encode errors); append + truncate-on-append; immediate or
+  //        debounced flush per tag.
+  // export(): flushNow(); read file line-by-line; return joined (or null).
+  // clear(): wipe ring + file.
+  // _ensureLoaded(): warm ring from file, skip unparseable lines.
+  // dispose(): flushNow() (best-effort).
   static const Set<DebugTag> _immediateFlushTags = {
     DebugTag.msgSend, DebugTag.msgFailed, DebugTag.sessionGate,
-    DebugTag.connStatus /* retrying/offline/online */, DebugTag.roomSnapshot,
-    DebugTag.lifecyclePause, DebugTag.lifecycleDetach,
+    DebugTag.sessionSync, DebugTag.connStatus, DebugTag.connChannelLost,
+    DebugTag.connHydrate, DebugTag.workingConv, DebugTag.roomSnapshot,
   };
+  // (lifecyclePause/Detach removed — not defined as events in Units 1/4.
   final List<String> _ring = [];
   Timer? _flushTimer;
   String? _filePath;
@@ -321,16 +347,25 @@ persistence-only (it does NOT mirror to logcat — review B3); the existing
 
 **4b — ADD first-class events at `ConnectionManager`** (the A1 gap the review
 flagged — this is what makes the ring log actually diagnose the reconnect
-cluster, not just repack existing breadcrumbs):
+cluster, not just repack existing breadcrumbs). Line numbers verified against
+`app/lib/data/transport/connection_manager.dart` (review v2 E):
 
 | Tag | File:line | Persisted fields |
 |---|---|---|
-| `conn-status` | `connection_manager.dart:520-553` (connect), `:1177-1184` (retry) | `status`, `attempt?`, `delayMs?`, `peerTail?`, `room?` |
-| `conn-channel-lost` | `_onChannelLost` | `peerTail?`, `room?`, `reason` |
-| `conn-hydrate` | `_replaySubscriptions:329-337,1136-1143` | `action`, `room?`, `snapshotCount?` |
-| `room-snapshot` | `_onControl:566-706` | `room`, `presenceCount?`, `working?` |
-| `working-conv` | `markRoomWorking:914-929`, `_markActiveRoomOffline:1194-1252` | `room`, `working`, `reason` |
+| `conn-status` | `:534` (`StatusConnecting`), `:547` (`StatusOnline`), `:1183` (`StatusRetrying` in `_scheduleRetry:1177`) | `status`, `attempt?`, `delayMs?`, `peerTail?`, `room?` (no `StatusOffline` emitted today — leave it out of capture until/unless added) |
+| `conn-channel-lost` | `_onChannelLost:1162-1175`, both branches | `peerTail?`, `room?`, `stale` (stale=true at `:1167` = replaced channel's onDone safely ignored; stale=false at `:1173` = current channel lost → retry started) |
+| `conn-hydrate` | `_replaySubscriptions:1136-1143` (called from `requestResumeHydration:329-337`) | `action`, `room?`, `snapshotCount?` |
+| `room-snapshot` | `_onControl:566`, `RoomAnnounced` case `:612`, `RoomMetaUpdated` case `:697`, `RoomsSnapshot` case `:743` | `room`, `presenceCount?`, `working?` |
+| `working-conv` | `markRoomWorking:914` (guards `:921`, mutation `:938`), `_markActiveRoomOffline:1238` (triggered from `_startPing:1218`) | `room`, `working`, `reason` |
 | `replay-dedup` | `sync_service.dart` replay/backfill | `sessionId`, `eventIdTail`, `dropped` |
+
+The **`conn-channel-lost {stale}` event is the duplicate-connection-takeover
+proof** for the app side — it answers "did my app correctly ignore the stale
+channel's onDone, or did my current channel die and trigger retry?" (the
+self-sustaining-retry-loop footgun the code comment at `:1166-1170` warns about).
+The relay-side half of the same question ("did the relay supersede the old
+conn immediately on duplicate auth, or after ping timeout?") lands as a
+small follow-up: `story-relay-duplicate-auth-supersession-log`.
 
 **Acceptance Criteria**:
 - [ ] All 15 existing sites route through `DebugLog.log`; logcat unchanged.

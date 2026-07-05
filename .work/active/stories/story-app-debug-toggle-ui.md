@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-05
 ---
 
 # App debug log: app-global debug toggle + export/clear UI
@@ -39,9 +39,14 @@ or capped.
 - [ ] Toggle persists across restarts in `Preferences`.
 - [ ] When OFF, `DebugLogImpl.log()` is a no-op (no serialization, no file I/O).
 - [ ] When ON, capture flows; the ring accumulates across sessions.
+- [ ] Toggling OFF preserves existing ring/file (only new capture is gated —
+      review v2 #5).
+- [ ] Export + Clear work while debug logging is OFF (read/wipe whatever is on disk).
+- [ ] Clear wipes ring + file but NOT `Preferences.debugLogging`.
 - [ ] "Export debug log" opens the share sheet with the jsonl file.
 - [ ] Export disabled / shows "no log yet" when `export()` returns null.
-- [ ] "Clear debug log" confirms then wipes ring + file.
+- [ ] UI warns exports may include truncated message previews + diagnostic IDs
+      (review v2 #5 — operator-chosen destinations, but not self-enforcing).
 - [ ] `disposeDependencies()` flushes pending lines (lifecycle test).
 - [ ] `flutter analyze` clean; `flutter test` green (new UI + toggle tests).
 
