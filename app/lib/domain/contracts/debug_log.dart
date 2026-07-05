@@ -31,7 +31,7 @@ enum DebugTag {
 /// Every variant serializes through [toJson]; the registry test asserts no
 /// forbidden keys (`body`, `image`, `data`, `args`, `result`, `prompt`,
 /// `message`, `ct`) and that all string values are capped
-/// ([DebugLogImpl.kMaxFieldValueChars]). Field values are primitives only
+/// ([kMaxFieldValueChars]). Field values are primitives only
 /// (String/int/bool/null) — never nested objects or untrusted blobs.
 sealed class DebugEvent {
   final DebugTag tag;
@@ -39,7 +39,7 @@ sealed class DebugEvent {
   const DebugEvent({required this.tag, required this.ts});
 
   /// Canonical serializer. Implementations MUST clamp string fields to
-  /// [DebugLogImpl.kMaxFieldValueChars] and MUST NOT emit forbidden keys.
+  /// [kMaxFieldValueChars] and MUST NOT emit forbidden keys.
   Map<String, Object?> toJson();
 }
 
