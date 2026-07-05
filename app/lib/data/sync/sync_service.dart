@@ -22,6 +22,7 @@ import 'package:app/data/sync/session_history_replay.dart';
 import 'package:app/data/sync/sync_events.dart';
 import 'package:app/data/sync/session_gate.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/service.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
@@ -36,6 +37,7 @@ class SyncService extends Service {
   final ConnectionManager _conn;
   final LocalBoxes _boxes;
   final TranscriptEventStore _eventStore;
+  final DebugLog? _debugLog;
   final SessionGate _sessionGate = const SessionGate();
 
   StreamSubscription<ConnectionStatus>? _connSub;
@@ -100,8 +102,10 @@ class SyncService extends Service {
     this._conn,
     this._boxes, {
     TranscriptEventStore? transcriptEventStore,
+    DebugLog? debugLog,
     this.pendingSendTimeout = const Duration(seconds: 20),
-  }) : _eventStore = transcriptEventStore ?? HiveTranscriptEventStore(_boxes) {
+  }) : _eventStore = transcriptEventStore ?? HiveTranscriptEventStore(_boxes),
+       _debugLog = debugLog {
     _connSub = _conn.statusStream.listen(_onStatus);
     _roomsSub = _conn.roomsStream.listen((_) => _onRoomsChanged());
     _presenceSub = _conn.presenceStream.listen((_) => _writeRuntime());
@@ -210,6 +214,7 @@ class SyncService extends Service {
     final sessionId = ref?.sessionId;
     if (ref == null || sessionId == null || sessionId.isEmpty) {
       debugPrint('[msg-send] id=$id blocked: session identity unavailable');
+      _logDebug(MsgSendEvent(ts: now, id: id, blocked: true));
       return;
     }
     // Optimistic pending row (#defaults: optimistic + dedupe by id).
@@ -246,6 +251,7 @@ class SyncService extends Service {
         '[msg-send] id=$id (offline → held pending, fails in '
         '${pendingSendTimeout.inSeconds}s)',
       );
+      _logDebug(MsgSendEvent(ts: DateTime.now(), id: id, blocked: true));
       return;
     }
     // Seed an EMPTY streaming buffer so the blinking cursor shows during the
@@ -257,7 +263,16 @@ class SyncService extends Service {
     if (!isSteer) {
       _emitStreaming(StreamingMessage(inReplyTo: id));
     }
-    debugPrint('[msg-send] id=$id text=${_preview(text, image)}');
+    final preview = _preview(text, image);
+    debugPrint('[msg-send] id=$id text=$preview');
+    _logDebug(
+      MsgSendEvent(
+        ts: DateTime.now(),
+        id: id,
+        blocked: false,
+        preview: preview,
+      ),
+    );
     try {
       await ch.send(
         UserMessage(
@@ -341,6 +356,14 @@ class SyncService extends Service {
     debugPrint(
       '[msg-failed] id=$id code=$code detail=${debugDetail ?? message}',
     );
+    _logDebug(
+      MsgFailedEvent(
+        ts: DateTime.now(),
+        id: id,
+        code: code,
+        detail: _shortReason(debugDetail ?? message),
+      ),
+    );
   }
 
   void _cancelAllSendTimers() {
@@ -423,6 +446,7 @@ class SyncService extends Service {
       StackTrace _,
     ) {
       debugPrint('[session-sync] request failed: $err');
+      _logDebug(SessionSyncEvent(ts: DateTime.now(), err: _shortReason(err)));
     });
   }
 
@@ -541,6 +565,14 @@ class SyncService extends Service {
         'msg_session=${_shortSessionId(gate.messageSessionId)} '
         'active_session=${_shortSessionId(gate.expectedSessionId)}',
       );
+      _logDebug(
+        SessionGateEvent(
+          ts: DateTime.now(),
+          messageType: gate.messageType ?? typeOfServerMessage(msg),
+          reason: gate.reason,
+          sessionIdTail: _sessionIdTail(gate.messageSessionId),
+        ),
+      );
       return;
     }
     switch (msg) {
@@ -608,6 +640,7 @@ class SyncService extends Service {
         // Echo dedupes against the optimistic row (same id): confirm it
         // (pending=false) or insert as confirmed (foreign device).
         debugPrint('[msg-echo] id=$id');
+        _logDebug(MsgEchoEvent(ts: DateTime.now(), id: id));
         // Echo arrived → the send landed; disarm the no-echo backstop.
         _pendingSendTimers.remove(id)?.cancel();
         // ignore: discarded_futures
@@ -783,6 +816,23 @@ class SyncService extends Service {
         ? sessionId
         : '…${sessionId.substring(sessionId.length - 8)}';
   }
+
+  static String? _sessionIdTail(String? sessionId) {
+    if (sessionId == null || sessionId.isEmpty) return null;
+    return sessionId.length <= 8
+        ? sessionId
+        : sessionId.substring(sessionId.length - 8);
+  }
+
+  static String _eventIdTail(String eventId) =>
+      eventId.length <= 12 ? eventId : eventId.substring(eventId.length - 12);
+
+  static String _shortReason(Object? raw) {
+    final text = raw == null ? '' : raw.toString();
+    return text.length <= 120 ? text : '${text.substring(0, 120)}…';
+  }
+
+  void _logDebug(DebugEvent event) => _debugLog?.log(event);
 
   /// Plan/32 — persist a compaction as a system row so it renders a system
   /// bubble in the chat and survives a re-sync. Keyed by `ts` when present so
@@ -1032,7 +1082,29 @@ class SyncService extends Service {
       // rejected before any store append observes it.
       if (_isStaleHistory(history.sessionStartedAt)) return;
 
+      // Track every eventId we have seen (pre-existing in the store PLUS each
+      // one as we walk this batch) so a duplicate WITHIN a single replay batch
+      // is reported as dropped, not just duplicates that pre-existed before
+      // appendAll. Set.add returns true when the element was newly added, so
+      // !add(...) == "already seen" == dropped. Without this, two identical
+      // eventIds in one SessionHistory would both log dropped:false even
+      // though appendAll skips the second — a false-negative exactly in the
+      // collision case the ring log exists to diagnose.
+      final seenEventIds = <String>{
+        for (final event in await _eventStore.readSession(key)) event.eventId,
+      };
       final result = await _eventStore.appendAll(key, replayEvents);
+      for (final event in replayEvents) {
+        final dropped = !seenEventIds.add(event.eventId);
+        _logDebug(
+          ReplayDedupEvent(
+            ts: DateTime.now(),
+            sessionId: key.sessionId,
+            eventIdTail: _eventIdTail(event.eventId),
+            dropped: dropped,
+          ),
+        );
+      }
       if (result.appended > 0) {
         final log = await _eventStore.readSession(key);
         final projection = deriveTranscriptProjection(

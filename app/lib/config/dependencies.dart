@@ -114,6 +114,7 @@ Future<void> setupDependencies() async {
     () => ConnectionManager(
       factory: _productionConnectionFactory,
       storage: _injector.get<PairingStorage>(),
+      debugLog: _injector.get<DebugLog>(),
     ),
   );
 
@@ -134,6 +135,7 @@ Future<void> setupDependencies() async {
       _injector.get<ConnectionManager>(),
       _injector.get<LocalBoxes>(),
       transcriptEventStore: _injector.get<TranscriptEventStore>(),
+      debugLog: _injector.get<DebugLog>(),
     ),
   );
   _injector.addRepository<SessionReadRepository>(
@@ -171,6 +173,7 @@ Future<void> setupDependencies() async {
       _injector.get<Preferences>(),
       _injector.get<ConnectionManager>(),
       _injector.get<MeshSyncService>(),
+      _injector.get<DebugLog>(),
     ),
   );
   _injector.addViewModel<PairingViewModel>(
@@ -264,6 +267,7 @@ Future<IChannel> _productionConnectionFactory(
         relayUrl: relayUrl,
         peerPubkey: peer.remoteEpk,
         ed25519Key: ownerKey,
+        debugLog: _injector.get<DebugLog>(),
       ).timeout(
         wsConnectTimeout,
         onTimeout: () => throw TimeoutException(
@@ -298,6 +302,7 @@ Future<PeerTransport> _productionPairingTransportFactory(
     relayUrl: relayUrl,
     peerPubkey: qr.epk,
     ed25519Key: deviceEd25519,
+    debugLog: _injector.get<DebugLog>(),
   );
 }
 
