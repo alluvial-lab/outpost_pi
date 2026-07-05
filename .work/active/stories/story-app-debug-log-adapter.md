@@ -1,7 +1,7 @@
 ---
 id: story-app-debug-log-adapter
 kind: story
-stage: implementing
+stage: review
 tags: [app, observability]
 parent: feature-cross-side-observability
 depends_on: []
@@ -9,9 +9,21 @@ release_binding: null
 gate_origin: null
 created: 2026-07-04
 updated: 2026-07-05
+review_addressed: 2026-07-05
 ---
 
 # App debug log: typed `DebugEvent` registry + `DebugLogImpl` adapter + lifecycle
+
+## Status
+
+**Implemented + reviewed 2026-07-05.** Four adversarial review passes:
+- v1 (NEEDS FIXES): blocker file-cap/export-from-file, 4 importants, 2 nits, privacy gap.
+- v2 (NEEDS FIXES, re-review): confirmed v1 fixes landed; caught a NEW blocker (clear-vs-flush race introduced by the snapshot-write restructure).
+- v3 (NEEDS FIXES): caught that the v2 fix commit CLAIMED to fix clear() but the edit never applied — clear() still didn't await _flushFuture; the regression test passed for trivial timing reasons.
+- v4 (ACCEPTED): confirmed the actual fix landed, the rewrite test has teeth (revert experiment proves it fails without the fix), nothing regressed.
+
+All acceptance criteria met. 26 tests (10 registry + 16 adapter) green;
+flutter analyze clean (only the pre-existing axisAlignment deprecation info).
 
 ## Scope (Units 1+2 of `feature-cross-side-observability`)
 
