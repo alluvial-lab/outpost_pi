@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:app/data/debug/debug_log_impl.dart';
@@ -250,28 +251,43 @@ void main() {
     // The v2-blocker regression: a stale snapshot write completing AFTER
     // clear() must not resurrect the wiped logs. clear() awaits the in-flight
     // _flushFuture before wiping.
+    //
+    // Deterministic proof: log a critical event (starts an immediate flush),
+    // capture the in-flight flush future via the test seam, then call clear()
+    // and assert clear() does not complete until that flush has settled. If
+    // clear() did NOT await the flush, clear() would complete while the flush
+    // is still pending — and the stale snapshot could land after the wipe.
     final path = '${tempDir.path}/remote_pi_debug.jsonl';
     final log = newLog();
-    // Fire a critical event — triggers an immediate (in-flight) flush.
+    // Hold the flush in-flight long enough to prove clear() awaits it.
+    log.flushDelayForTesting = const Duration(seconds: 5);
     log.log(ConnChannelLostEvent(ts: DateTime.now(), stale: false));
-    // Immediately clear while that flush may still be in flight.
-    await log.clear();
-    // Drain any remaining flush chain.
-    await pumpEventQueue(times: 10);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    // The file must be empty (or absent) — the stale snapshot did not
-    // resurrect the logs.
+    // Yield enough microtasks for _flushNow to: await _ensureLoaded (async,
+    // resolves the path), then assign _flushFuture, then reach the delayed write.
+    await pumpEventQueue(times: 20);
+    final inFlight = log.pendingFlush;
+    expect(inFlight, isNotNull, reason: 'a critical event must start a flush');
+    // Start clear() WITHOUT awaiting — it should be blocked on the in-flight
+    // flush (if the fix is present).
+    final clearDone = Completer<void>();
+    // ignore: discarded_futures
+    log.clear().then((_) => clearDone.complete());
+    // Yield once so clear() can run up to its `await prev`.
+    await Future<void>.delayed(Duration.zero);
+    // The in-flight flush is still pending (held by flushDelayForTesting) —
+    // clear() must not have completed yet. If clear() did NOT await the flush,
+    // clearDone would be completed here.
+    expect(clearDone.isCompleted, isFalse,
+        reason: 'clear() must not complete before the in-flight flush settles');
+    // Now let the flush complete.
+    log.flushDelayForTesting = null;
+    await inFlight;
+    await clearDone.future;
+    // After both settle, the file must be empty (no resurrection).
     final file = File(path);
     if (await file.exists()) {
-      final onDisk = await file.readAsString();
-      expect(
-        onDisk,
-        isEmpty,
-        reason: 'clear() must serialize with an in-flight flush; a stale '
-            'snapshot write must not resurrect cleared logs',
-      );
+      expect(await file.readAsString(), isEmpty);
     }
-    // (If the file was never created, that's also a valid empty state.)
     expect(await log.export(), isNull);
     log.dispose();
   });
