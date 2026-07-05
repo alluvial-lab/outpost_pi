@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-05
 ---
 
 # App debug log: emit diagnostic events at the expanded capture surface
@@ -38,25 +38,41 @@ logcat — review B3). Corrected tags (review B1):
 ### 4b — ADD first-class events at `ConnectionManager` (the A1 gap)
 **File**: `app/lib/data/transport/connection_manager.dart`
 
+Line numbers verified against `connection_manager.dart` (review v2 #4):
+
 | Tag | File:line | Persisted fields |
 |---|---|---|
-| `conn-status` | `:520-553` (connect), `:1177-1184` (retry) | `status`, `attempt?`, `delayMs?`, `peerTail?`, `room?` |
-| `conn-channel-lost` | `_onChannelLost` | `peerTail?`, `room?`, `reason` |
-| `conn-hydrate` | `_replaySubscriptions:329-337,1136-1143` | `action`, `room?`, `snapshotCount?` |
-| `room-snapshot` | `_onControl:566-706` | `room`, `presenceCount?`, `working?` |
-| `working-conv` | `markRoomWorking:914-929`, `_markActiveRoomOffline:1194-1252` | `room`, `working`, `reason` |
+| `conn-status` | `:534` (`StatusConnecting`), `:547` (`StatusOnline`), `:1183` (`StatusRetrying` in `_scheduleRetry:1177`) | `status`, `attempt?`, `delayMs?`, `peerTail?`, `room?` (no `StatusOffline` emitted today — leave it out until/unless added) |
+| `conn-channel-lost` | `_onChannelLost:1162-1175`, BOTH branches | `peerTail?`, `room?`, `stale` (stale=true at `:1167` = replaced channel's onDone safely ignored; stale=false at `:1173` = current channel lost → retry started) |
+| `conn-hydrate` | `_replaySubscriptions:1136-1143` (from `requestResumeHydration:329-337`) | `action`, `room?`, `snapshotCount?` |
+| `room-snapshot` | `_onControl:566`, `RoomAnnounced` case `:612`, `RoomMetaUpdated` case `:697`, `RoomsSnapshot` case `:743` | `room`, `presenceCount?`, `working?` |
+| `working-conv` | `markRoomWorking:914` (guards `:921`, mutation `:938`), `_markActiveRoomOffline:1238` (from `_startPing:1218`) | `room`, `working`, `reason` |
 | `replay-dedup` | `sync_service.dart` replay/backfill | `sessionId`, `eventIdTail`, `dropped` |
+
+**The `conn-channel-lost {stale}` event is the duplicate-connection-takeover
+proof** for the app side — it distinguishes "old replaced channel closed,
+safely ignored" from "current channel lost, retry started" (the
+self-sustaining-retry-loop footgun the code comment at `:1166-1170` warns
+about). The relay-side half ("did the relay supersede the old conn immediately
+on duplicate auth, or after ping timeout?") lands as a separate follow-up:
+`story-relay-duplicate-auth-supersession-log`.
 
 ## Acceptance criteria
 
 - [ ] All 15 existing sites route through `DebugLog.log`; logcat unchanged.
 - [ ] `ConnectionManager` emits the 6 new event types at the transitions listed.
+- [ ] `conn-channel-lost` fires on BOTH branches of `_onChannelLost:1162-1175`
+      with `stale=true` (replaced channel ignored) and `stale=false` (current
+      channel lost → retry) — the takeover proof.
 - [ ] No full message body / image data / tool args or results in any event.
 - [ ] `msg-send` persisted line includes the truncated `preview`; NOT full text.
 - [ ] Correlation: `id` in `msg-send`/`msg-echo` matches the extension's
   `app user_message id` and the relay's `env_id_tail` (one-line grep check).
 - [ ] A fake-`DebugLog` test asserts the expected events fire on:
   - a reconnect path (status transitions, hydrate, room snapshot, working conv).
+  - a duplicate-connection takeover (stale `conn-channel-lost` ignored, then
+    fresh `conn-status` online — no spurious retry).
+  - a real channel loss (current `conn-channel-lost` → `conn-status` retrying).
   - a send path (`msg-send` with truncated preview, `msg-echo`).
   - a session-gate drop (`session-gate` with reason).
   - a `msg-failed` and `session-sync` failure.
