@@ -1,7 +1,7 @@
 ---
 id: story-app-debug-log-adapter
 kind: story
-stage: review
+stage: done
 tags: [app, observability]
 parent: feature-cross-side-observability
 depends_on: []
@@ -16,14 +16,24 @@ review_addressed: 2026-07-05
 
 ## Status
 
-**Implemented + reviewed 2026-07-05.** Four adversarial review passes:
-- v1 (NEEDS FIXES): blocker file-cap/export-from-file, 4 importants, 2 nits, privacy gap.
-- v2 (NEEDS FIXES, re-review): confirmed v1 fixes landed; caught a NEW blocker (clear-vs-flush race introduced by the snapshot-write restructure).
-- v3 (NEEDS FIXES): caught that the v2 fix commit CLAIMED to fix clear() but the edit never applied — clear() still didn't await _flushFuture; the regression test passed for trivial timing reasons.
-- v4 (ACCEPTED): confirmed the actual fix landed, the rewrite test has teeth (revert experiment proves it fails without the fix), nothing regressed.
+**Done 2026-07-05.** Verdict: Approve — story verified by 4-pass adversarial
+review (ACCEPTED); fast-lane advance. flutter analyze clean (only the
+pre-existing axisAlignment deprecation info); flutter test 640 passed
+(614 existing + 26 new). Reviews at `.work/reviews/review-story-app-
+debug-log-adapter-v{1..4}-2026-07-05.md`.
 
-All acceptance criteria met. 26 tests (10 registry + 16 adapter) green;
-flutter analyze clean (only the pre-existing axisAlignment deprecation info).
+Four adversarial review passes:
+- v1 (NEEDS FIXES): blocker file-cap/export-from-file, 4 importants, 2 nits, privacy gap.
+- v2 (NEEDS FIXES, re-review): confirmed v1 fixes landed; caught a NEW
+  blocker (clear-vs-flush race introduced by the snapshot-write restructure).
+- v3 (NEEDS FIXES): caught that the v2 fix commit CLAIMED to fix clear() but
+  the edit never applied — clear() still didn't await _flushFuture; the
+  regression test passed for trivial timing reasons.
+- v4 (ACCEPTED): independently verified the actual fix landed (788d298),
+  confirmed the rewritten regression test has teeth (revert experiment: test
+  FAILS without the fix, PASSES with it), full suite 640 passed, analyze clean.
+
+All acceptance criteria met. 26 tests (10 registry + 16 adapter) green.
 
 ## Scope (Units 1+2 of `feature-cross-side-observability`)
 
