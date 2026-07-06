@@ -722,7 +722,10 @@ class _TranscribingStrip extends StatelessWidget {
         SizedBox(
           width: 13,
           height: 13,
-          child: CircularProgressIndicator(strokeWidth: 2, color: colors.accent),
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: colors.accent,
+          ),
         ),
         const SizedBox(width: 10),
         Text(
@@ -799,6 +802,7 @@ class _QuickActionsButtonState extends State<_QuickActionsButton>
       // Pin: Flutter 3.41.7 (CI FLUTTER_VERSION) — SizeTransition has no
       // `alignment`; `axisAlignment` is only deprecated (not removed) on newer
       // channels. Don't "fix the deprecation" without bumping the Flutter pin.
+      // ignore: deprecated_member_use
       axisAlignment: -1.0,
       child: FadeTransition(
         opacity: _fade,
