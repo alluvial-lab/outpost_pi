@@ -29,6 +29,49 @@ replayDedup sessionIds (last 8) in 14:40-14:43 window:
   c12db9c7: 30 events   (14:40:21)
   06c8acbf: 30 events   (spans 07:17 → 14:41)
   f05f3343: 30 events   (the active session)
+
+### Operator clarification (2026-07-06) — the symptom is subagent traffic, not cross-room session content
+
+The operator clarified the report is NOT (primarily) about sibling cwd-room
+sessions leaking in. It is: **when a session's main agent dispatches a
+subagent (in skills/ and starmods/), the subagent's messages and its
+report back to the main agent showed up in the mobile chat.** This is a
+transcript-message delivery issue, not a `room_meta` session-flip.
+
+### Mechanism finding (2026-07-06 static trace)
+
+The SDK fires `message_end` for subagent assistant turns *within the parent
+session* — subagent dispatch is NOT a `session_start` reason (SDK reasons are
+only `startup | reload | new | resume | fork`; `extensions.md:395`). The
+extension's `message_end` handler (`sdk_session_projection.ts:387-425`)
+broadcasts every assistant text block as `agent_message` stamped with
+`sessionId = this.currentRemoteSessionId()` (the parent/main session id),
+gating only on `message.role === "assistant"` and `block.type === "text"` —
+no source/subagent discrimination. So the subagent's report-back is an
+assistant message in the main session, projected as `agent_message` and
+fanout-broadcast to the phone, appearing in chat alongside the main agent's
+own messages.
+
+This is a **correct-session, wrong-content** leak: the session id is right
+(the parent), but the content is subagent-internal traffic the operator does
+not want surfaced in the mobile chat. The relay `cross_room` logging deployed
+in `story-relay-log-room-meta-update-accept-and-drop` does NOT catch this —
+it targets the wrong layer (room-meta routing, not transcript broadcast).
+
+### Two distinct failure modes now in scope
+
+1. **Subagent-content leak (the operator's actual report)** — extension
+   `message_end` broadcasts subagent assistant text to the phone. Needs an
+   extension-side gate (suppress broadcast for subagent-origin assistant
+   messages, or the SDK needs a source/subagent field the projection can
+   filter on). Whether the SDK message carries any subagent/source metadata
+   is UNVERIFIED — the `extensions.md` message shape does not document one,
+   but the runtime `event.message` may carry a field worth checking.
+2. **Cross-room session flip (the original h1/h2 ambiguity, lower priority)**
+   — the `_activeRef` rotation captured in the ring log. May be unrelated to
+   the operator's report; may be a real but separate bug. Keep the refined
+   open question (does the extension send `room_meta_update` for a sibling
+   room?) but treat it as secondary to #1.
 ```
 
 `replayDedup` only fires inside `_replayHistory` (`sync_service.dart:1199`),
