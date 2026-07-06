@@ -593,6 +593,14 @@ class SyncService extends Service {
       case AgentDone(:final inReplyTo):
         final buffered = _streaming?.buffer ?? '';
         if (buffered.isNotEmpty) {
+          // Clear the streaming buffer synchronously so a second flush
+          // (ToolRequest re-flush, or a straggler AgentChunk) cannot
+          // re-commit the same text under a new random eventId. The
+          // projection's later `streaming = null` (from this committed
+          // event) becomes a confirming no-op rather than the only
+          // clearing path — see `story-mobile-assistant-message-duplicated-
+          // live-replay` decision 2.
+          _emitStreaming(null);
           // ignore: discarded_futures
           _appendTranscriptEvent(
             AssistantMessageCommitted(
@@ -681,6 +689,16 @@ class SyncService extends Service {
         // order instead of all text landing after the commands.
         final buffered = _streaming?.buffer ?? '';
         if (buffered.isNotEmpty) {
+          // Clear the streaming buffer synchronously (mirror the AgentDone
+          // flush) so a second ToolRequest before the async projection
+          // resolves cannot re-commit the same buffered text under a new
+          // random eventId (the ×N amplification root cause — see
+          // `story-mobile-assistant-message-duplicated-live-replay` 
+          // decision 2). The committed row holds the flushed text; the
+          // streaming bubble hides until the next AgentChunk for this turn
+          // starts a fresh buffer.
+          final flushInReplyTo = _streaming!.inReplyTo;
+          _emitStreaming(null);
           // ignore: discarded_futures
           _appendTranscriptEvent(
             AssistantMessageCommitted(
@@ -688,7 +706,7 @@ class SyncService extends Service {
               sessionId: _activeTranscriptSessionId(),
               ts: DateTime.now(),
               messageId: 'agent_${uuid7()}',
-              replyTo: _streaming!.inReplyTo,
+              replyTo: flushInReplyTo,
               text: buffered,
             ),
           );
