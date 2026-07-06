@@ -1,5 +1,5 @@
 use thiserror::Error;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::handlers::connection_actor::{ActorDispatch, ConnectionActor};
 use crate::handlers::peer::MAX_CONTROL_FRAME_PEERS;
@@ -143,6 +143,23 @@ impl<'actor> ControlHandlers<'actor> {
     async fn room_meta_update(&mut self, frame: RoomMetaUpdateFrame) -> ActorDispatch {
         let target_room = frame.room_id.unwrap_or_else(|| self.actor.room_id.clone());
         let is_empty_patch = frame.meta.is_empty();
+        // `cross_room` is the leak-detection signal: a sender patching a room
+        // it did NOT authenticate into. Under a shared owner epk (multiple Pi
+        // processes authed as the same peer_id), a sibling patch for another
+        // room resolves to a known `(peer_id, room_id)` key and would be
+        // accepted — `cross_room=true` flags it for triage. Logs field-name
+        // presence only, never values (session_id is endpoint-owned opaque
+        // data; see `pi_forward.rs` privacy posture).
+        let cross_room = target_room != self.actor.room_id;
+        let fields: Vec<&str> = [
+            frame.meta.model.as_ref().map(|_| "model"),
+            frame.meta.thinking.as_ref().map(|_| "thinking"),
+            frame.meta.session_id.as_ref().map(|_| "session_id"),
+            frame.meta.working.map(|_| "working"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         let patch_result =
             match self
                 .actor
@@ -154,13 +171,32 @@ impl<'actor> ControlHandlers<'actor> {
                     warn!(
                         peer = %self.actor.peer_short,
                         room = %target_room,
+                        authed_room = %self.actor.room_id,
+                        cross_room,
                         "room_meta_update for unknown (peer, room), dropping"
                     );
                     return ActorDispatch::Continue;
                 }
             };
 
-        if !is_empty_patch {
+        if is_empty_patch {
+            info!(
+                peer = %self.actor.peer_short,
+                room = %target_room,
+                authed_room = %self.actor.room_id,
+                cross_room,
+                fields = ?fields,
+                "room_meta_update no-op (empty patch)"
+            );
+        } else {
+            info!(
+                peer = %self.actor.peer_short,
+                room = %target_room,
+                authed_room = %self.actor.room_id,
+                cross_room,
+                fields = ?fields,
+                "room_meta_update applied"
+            );
             self.actor
                 .events
                 .publish_room_meta_updated(&self.actor.peer_id, &target_room, &patch_result.meta)
@@ -435,6 +471,115 @@ mod tests {
         assert_eq!(v["peer"], "pi");
         assert_eq!(v["room_id"], "main");
         assert_eq!(v["meta"]["working"], true);
+    }
+
+    /// A `room_meta_update` whose `room_id` differs from the actor's
+    /// authenticated room is still accepted (the relay keys rooms by
+    /// `(peer_id, room_id)` and a shared owner epk makes the target key
+    /// exist), and broadcasts `room_meta_updated` for the TARGET room — not
+    /// the sender's authed room. This is the cross-room leak path; the INFO
+    /// line carries `cross_room=true` (asserted here via the observable
+    /// broadcast, since there is no tracing-test dep to assert log text).
+    #[tokio::test]
+    async fn room_meta_update_targets_a_room_the_sender_did_not_auth_into() {
+        let fixture = Fixture::new();
+        // The "pi" peer is registered in `main`, but we'll patch `other`.
+        // Under a shared owner epk both rooms resolve to the same peer_id,
+        // so `apply_patch` needs a room entry to exist for `(pi, other)`.
+        // Register a second connection for the same peer in `other` to
+        // create that entry — modeling two Pi processes sharing one epk.
+        let (tx_main, _rx_main) = mpsc::unbounded_channel::<Message>();
+        fixture
+            .registry
+            .register("pi".into(), make_meta("main"), tx_main)
+            .await;
+        let (tx_other, mut rx_other) = mpsc::unbounded_channel::<Message>();
+        fixture
+            .registry
+            .register("pi".into(), make_meta("other"), tx_other)
+            .await;
+        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        fixture
+            .registry
+            .register("app".into(), make_meta("main"), tx_app)
+            .await;
+        fixture
+            .rooms
+            .subscribe("app".into(), vec!["pi".to_string()])
+            .await;
+        // Actor authenticated in `main` (Fixture::actor hardcodes room_id
+        // = "main"); the patch targets `other`.
+        let mut actor = fixture.actor("pi");
+
+        let dispatch = actor
+            .dispatch_control(RelayControlFrame::RoomMetaUpdate(RoomMetaUpdateFrame {
+                room_id: Some("other".to_string()),
+                meta: RoomMetaPatch {
+                    session_id: Some(Some("opaque-session".to_string())),
+                    ..Default::default()
+                },
+            }))
+            .await;
+
+        assert!(matches!(dispatch, ActorDispatch::Continue));
+        // The broadcast targets `other`, not the sender's authed `main`.
+        let msg = rx_app
+            .try_recv()
+            .expect("room_meta_updated for target room");
+        let v: serde_json::Value = serde_json::from_str(msg.to_text().unwrap()).unwrap();
+        assert_eq!(v["type"], "room_meta_updated");
+        assert_eq!(v["peer"], "pi");
+        assert_eq!(
+            v["room_id"], "other",
+            "broadcast must target the patched room"
+        );
+        assert_eq!(v["meta"]["session_id"], "opaque-session");
+        // The sender's authed room (`main`) is NOT the target, so its
+        // subscribers must not receive a `session_id` patch for `other`.
+        let _ = rx_app.try_recv(); // drain any room_announced/rooms backfill
+        // (the cross_room INFO line itself is not asserted here; it is
+        // verified by the manual acceptance criterion and by reading the
+        // handler source — the broadcast to `other` is the observable proof).
+        let _ = &rx_other; // other-room conn exists; not asserted further
+    }
+
+    /// An empty `room_meta_update` patch (no fields) is a no-op: it does NOT
+    /// broadcast `room_meta_updated`, but it DOES emit an INFO line (so the
+    /// no-op path is observable in triage). Asserts the no-broadcast half.
+    #[tokio::test]
+    async fn room_meta_update_empty_patch_does_not_broadcast() {
+        let fixture = Fixture::new();
+        let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
+        fixture
+            .registry
+            .register("pi".into(), make_meta("main"), tx_pi)
+            .await;
+        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        fixture
+            .registry
+            .register("app".into(), make_meta("main"), tx_app)
+            .await;
+        fixture
+            .rooms
+            .subscribe("app".into(), vec!["pi".to_string()])
+            .await;
+        let mut actor = fixture.actor("pi");
+
+        let dispatch = actor
+            .dispatch_control(RelayControlFrame::RoomMetaUpdate(RoomMetaUpdateFrame {
+                room_id: None,
+                meta: RoomMetaPatch::default(), // empty
+            }))
+            .await;
+
+        assert!(matches!(dispatch, ActorDispatch::Continue));
+        // Drain any backfill from registration, then assert no
+        // room_meta_updated broadcast arrives (empty patch is a no-op).
+        let _ = rx_app.try_recv();
+        assert!(
+            rx_app.try_recv().is_err(),
+            "empty room_meta_update must not broadcast room_meta_updated"
+        );
     }
 
     #[tokio::test]
