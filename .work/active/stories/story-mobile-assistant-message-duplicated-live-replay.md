@@ -220,3 +220,53 @@ eventIds/messageIds must be replaced with stable, server-derived ids.
 - `.agents/rules/code-design.md` — Single Source of Truth (one assistant-message identity, derived everywhere).
 - Sibling (predecessor that unmasked this): `story-mobile-chat-blank-on-pair-after-pre-pair-work.md`.
 - Related-but-distinct backlog: `idea-mobile-message-duplication-send-timeout.md` (outgoing-message dup, different root cause).
+
+## Scope extension (2026-07-06 instrumented repro — extends to USER messages)
+
+A live repro with the cross-side ring log
+(`story-verify-mobile-dup-and-reorder-reconnect-repro`, done) confirmed the
+SAME event-store identity class applies to **user messages**, not just
+assistant messages:
+
+- **Live `UserInput` echo path** (`sync_service.dart:647-652`): appends
+  `UserMessageConfirmed` with `eventId: 'server:user_confirmed:$id'`
+  (deterministic only over the echoed user id — no session id, no server ts).
+- **Replay `UserInputEvt` path** (`session_history_replay.dart:51-55, 122-127`):
+  `eventId: serverReplayEventId(sessionId, 'user_input', id, ts)` =
+  `server:$sessionId:user_input:$id:$ts`.
+- **They don't match.** For the same foreign user message id
+  `local_d974d2d7-...`, live produces `server:user_confirmed:local_d974...`
+  while replay produces `server:<sessionId>:user_input:local_d974...:<ts>` —
+  the same incompatible-scheme class as the assistant-message root cause,
+  and Hive dedupes by `eventId` as the box key
+  (`transcript_event_store_hive.dart:28-30`).
+
+### Nuance (the user-message projection guard)
+Unlike assistant rows, user-message projection dedupes authoritative rows by
+`ChatMessage.id` (`transcript_projection.dart:126-127, 161-168`), and
+`UserMessageConfirmed` projects to `UserMsg(id: event.clientMessageId, ...)`.
+So a live+replay pair with the EXACT same `clientMessageId` (`local_...`)
+would create two event-store entries but SHOULD collapse to one visible bubble
+in projection. The ring log does NOT prove the specific `local_d974...` echo
+also replayed (none of the 25 `replayDedup dropped:false` tails collide with
+it). So the user-message visible duplicate may require a DIFFERENT
+`clientMessageId` for the same logical text (a distinct dedup surface), OR
+the event-store mismatch is the class and the projection guard is the only
+thing preventing it from being worse.
+
+### Fix scope (extended)
+The deterministic-identity fix (decision (a): extension emits stable identity
+on live frames) should cover **both** assistant AND user messages — the live
+`UserInput` confirmation must derive the same canonical event id as
+`UserInputEvt` replay (`sync_service.dart:648-652` ←
+`session_history_replay.dart:51-55, 122-127`). If the operator-visible
+user-message duplicate persists after the deterministic identity fix,
+investigate a distinct user dedup surface where the same logical user text is
+stored under two different `clientMessageId`s.
+
+### Relationship to the reorder
+The reorder observed in the same repro is a DISTINCT bug (transport
+active-room re-establishment on reconnect) — scoped as
+`story-fix-transport-active-room-reestablishment-on-reconnect`. The two bugs
+are independent: the identity mismatch causes duplicates; the active-room
+transient causes drops + reordering.
