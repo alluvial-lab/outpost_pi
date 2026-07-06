@@ -95,6 +95,21 @@ rejected and the send was lost) — the gate-tolerant disarm fixes both.
       (disarm) and `msgFailed` does not. Decide + document.
 - [ ] `flutter analyze` clean; `flutter test` green.
 
+## Implementation notes
+
+- Chosen fix approach: **(b) gate reject path**. `_onServerMessage` still runs `SessionGate` first for transcript acceptance; if the gate rejects a `UserInput` echo, `SyncService` now checks whether the echo id matches an armed pending-send timer. A match cancels that timer and records the normal echo signal. This avoids double-emitting `MsgEchoEvent` on accepted echoes and keeps the special case localized to the only path that previously skipped the disarm.
+- Per-file changes:
+  - `app/lib/data/sync/sync_service.dart`: added `_disarmGateRejectedUserInputEcho` and `_recordUserInputEcho`; gate-rejected `UserInput` echoes with pending ids now cancel `_pendingSendTimers[id]` and emit `MsgEchoEvent`, then return without appending transcript events. The accepted `UserInput` path uses the shared echo logger and preserves existing transcript-confirm behavior.
+  - `app/test/data/debug/debug_capture_routing_test.dart`: extended `_syncHarness` with configurable rooms debounce and added a real `SyncService` regression that sends against a stale active ref, publishes a resumed session id, delivers a new-session `UserInput` echo before the rooms debounce rebind, and asserts timer disarm + no `send_timeout` failure + no transcript confirmation.
+  - `app/lib/ui/chat/widgets/input_bar.dart`: added a local `deprecated_member_use` ignore next to the existing Flutter-pin comment for `SizeTransition.axisAlignment`, so `flutter analyze` is clean without changing the pinned-channel behavior.
+- Regression test teeth / mental revert: without `_disarmGateRejectedUserInputEcho`, the new test's echo returns from the gate before the accepted `UserInput` case, the 40ms pending timer remains armed, and the later assertion fails because a `MsgFailedEvent(code: send_timeout)` and failed user row appear.
+- Ring-log shape after the fix: `sessionGate(messageType: user_input, reason: session_mismatch)` still fires because transcript acceptance remains session-scoped; `msgEcho(id: <pending id>)` now also fires from the disarm path; `msgFailed(id: <pending id>, code: send_timeout)` does not fire.
+- Transcript gate was **not** weakened: the rejected echo still returns from the gate path and does not append `UserMessageConfirmed`; the regression asserts the stale optimistic row remains pending rather than becoming confirmed.
+- Verification from `app/`:
+  - `../.tools/flutter/bin/flutter analyze` → `Analyzing app...` / `No issues found! (ran in 3.9s)`.
+  - `../.tools/flutter/bin/flutter test` → `00:24 +662: All tests passed!`.
+- Deviations: none for the sync fix. The only adjacent cleanup was the analyzer suppression for the already-documented Flutter-pin deprecation in `input_bar.dart`; no UI behavior changed.
+
 ## Why this is a story, not an inline fix
 
 The fix touches the gate-vs-echo boundary (a subtle correctness area) and has
