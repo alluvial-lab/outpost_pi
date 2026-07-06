@@ -9,6 +9,7 @@ import 'package:app/domain/contracts/service.dart';
 /// registry test (see `story-app-debug-log-adapter` acceptance).
 enum DebugTag {
   wsIn,
+  peerFrame,
   msgSend,
   msgEcho,
   msgFailed,
@@ -71,6 +72,29 @@ final class WsInEvent extends DebugEvent {
     if (stage != null) 'stage': _cap(stage!),
     if (senderRoom != null) 'senderRoom': _cap(senderRoom!),
     if (controlType != null) 'controlType': _cap(controlType!),
+    if (error != null) 'error': _cap(error!),
+  };
+}
+
+/// Peer-channel inner frame drop. No payload — lengths/kinds/reasons only.
+final class PeerFrameEvent extends DebugEvent {
+  final String kind; // unsupported_type / malformed
+  final int bytes;
+  final String? error;
+
+  const PeerFrameEvent({
+    required super.ts,
+    required this.kind,
+    required this.bytes,
+    this.error,
+  }) : super(tag: DebugTag.peerFrame);
+
+  @override
+  Map<String, Object?> toJson() => {
+    'tag': tag.name,
+    'ts': ts.toUtc().toIso8601String(),
+    'kind': _cap(kind),
+    'bytes': bytes,
     if (error != null) 'error': _cap(error!),
   };
 }
