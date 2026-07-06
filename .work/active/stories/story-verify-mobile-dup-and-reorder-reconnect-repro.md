@@ -1,7 +1,8 @@
 ---
 id: story-verify-mobile-dup-and-reorder-reconnect-repro
 kind: story
-stage: drafting
+stage: done
+review_addressed: 2026-07-06
 tags: [app, observability, bug, lifecycle, transcript]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -162,3 +163,64 @@ class applies (just to user messages, not assistant messages).
 - The instrumentation that captured it (done): `feature-cross-side-observability`
   (`connChannelLost`, `connStatus`, `wsIn` room-mismatch, `replayDedup`,
   `msgEcho`).
+
+## Static trace report
+
+### Verdict
+
+`TWO DISTINCT bugs (foreign-echo dup + room-mismatch reorder)`.
+
+- The user-message live echo and replay paths do stamp incompatible transcript `eventId`s, so the identity defect is the same event-store class as `story-mobile-assistant-message-duplicated-live-replay`: live echo uses `server:user_confirmed:$id` while replay uses `server:$sessionId:user_input:$id:$ts` (`app/lib/data/sync/sync_service.dart:647-652`, `app/lib/data/sync/session_history_replay.dart:51-55`, `app/lib/data/sync/session_history_replay.dart:122-127`).
+- The observed reorder/room-mismatch stream is a separate transport-room lifecycle defect: inbound demux drops any envelope whose `senderRoom` differs from the `WsTransport` room (`app/lib/data/transport/ws_transport.dart:107-110`, `app/lib/data/transport/ws_transport.dart:146-158`, `app/lib/data/transport/ws_transport.dart:371-375`).
+- Nuance for the visible duplicate: unlike assistant rows, user-message projection keys the rendered row by `clientMessageId`, so two `UserMessageConfirmed` events for the same `local_...` id should collapse in the materialized transcript (`app/lib/domain/transcript/transcript_projection.dart:126-127`, `app/lib/domain/transcript/transcript_projection.dart:161-168`). The event-store identity mismatch is real, but the ring log does not prove that the specific `local_d974...` echo also replayed as one of the 25 accepted replay events.
+
+### The foreign-echo duplicate attribution
+
+Live `UserInput` echo path:
+
+- `SyncService` handles `UserInput` by recording the echo, cancelling the pending-send timer for that id, and appending a `UserMessageConfirmed` (`app/lib/data/sync/sync_service.dart:635-647`).
+- That live append uses `eventId: 'server:user_confirmed:$id'`, `ts: DateTime.now()`, and `clientMessageId: id` (`app/lib/data/sync/sync_service.dart:648-652`). This scheme is deterministic only over the echoed user id; it does not include the canonical session id or the server/history timestamp.
+
+Replay `UserInputEvt` path:
+
+- `sessionHistoryToTranscriptEvents` maps `UserInputEvt(id, text, image)` to `UserMessageConfirmed` with `clientMessageId: id` (`app/lib/data/sync/session_history_replay.dart:51-60`).
+- The replay `eventId` is `serverReplayEventId(sessionId, 'user_input', id, event.ts)`, and `serverReplayEventId` formats that as `server:$sessionId:$historyType:$stableKey:$ts` (`app/lib/data/sync/session_history_replay.dart:52`, `app/lib/data/sync/session_history_replay.dart:122-127`).
+
+Do they match? No. For the same foreign user message id `local_d974d2d7-94fc-4146-b460-dc0622639e53`, live would produce `server:user_confirmed:local_d974d2d7-94fc-4146-b460-dc0622639e53`, while replay would produce `server:<sessionId>:user_input:local_d974d2d7-94fc-4146-b460-dc0622639e53:<ts>` from the replay helper (`app/lib/data/sync/sync_service.dart:648-652`, `app/lib/data/sync/session_history_replay.dart:122-127`). That is the same event-store identity class as the confirmed assistant story, whose root cause is incompatible live/replay `eventId` schemes and Hive dedup by `eventId` (`.work/active/stories/story-mobile-assistant-message-duplicated-live-replay.md:45-52`, `.work/active/stories/story-mobile-assistant-message-duplicated-live-replay.md:87-103`, `app/lib/data/local/transcript_event_store_hive.dart:28-30`).
+
+However, the rendered user row has an additional same-id guard that assistant rows lacked in the confirmed bug: projection dedupes authoritative messages by `ChatMessage.id` (`app/lib/domain/transcript/transcript_projection.dart:126-127`), and a `UserMessageConfirmed` projects to `UserMsg(id: event.clientMessageId, ...)` (`app/lib/domain/transcript/transcript_projection.dart:161-168`). Therefore a live+replay pair with the exact same `local_d974...` id would create two event-store entries but should not create two visible user bubbles unless another path gave the same logical text a different `clientMessageId`.
+
+### The room-mismatch reorder attribution
+
+The room-mismatch drops are transport-room state, not transcript identity:
+
+- `WsTransport` demuxes every post-auth frame using `transport._activeRoom` (`app/lib/data/transport/ws_transport.dart:107-110`).
+- If an envelope has a non-empty `room` but `senderRoom != activeRoom`, the demux returns `dropRoomMismatch` (`app/lib/data/transport/ws_transport.dart:361-375`), and the transport logs `stage: 'room-mismatch'` with the sender room (`app/lib/data/transport/ws_transport.dart:146-158`).
+- A fresh `WsTransport` starts with `_activeRoom = 'main'`; only `setActiveRoom` changes it (`app/lib/data/transport/ws_transport.dart:275-287`).
+
+Reconnect path:
+
+- A channel loss schedules retry: `_watchChannel` listens for `onError`/`onDone`, `_onChannelLost` logs `stale:false`, cancels ping, marks transport closed, and calls `_scheduleRetry(peer)` (`app/lib/data/transport/connection_manager.dart:1192-1205`, `app/lib/data/transport/connection_manager.dart:1208-1236`). `_scheduleRetry` emits retrying and later calls `_connect(peer)` (`app/lib/data/transport/connection_manager.dart:1246-1260`).
+- `_connect` sets `boundRoom = peer.roomId ?? 'main'` into `_activeRoomId` before connection, but the newly-created transport still has its own default `_activeRoom = 'main'` until the manager propagates it (`app/lib/data/transport/connection_manager.dart:520-545`, `app/lib/data/transport/ws_transport.dart:275-287`).
+- After the factory returns, `_connect` calls `_propagateActiveRoom(_activeRoomId, ch)` before emitting `StatusOnline`, watching the channel/control streams, and replaying subscriptions (`app/lib/data/transport/connection_manager.dart:547-562`). `_propagateActiveRoom` is a dynamic best-effort call to `setActiveRoom`; if the channel does not support it, the default `'main'` remains (`app/lib/data/transport/connection_manager.dart:275-285`). Production wraps `WsTransport` in `PlainPeerChannel`, whose `setActiveRoom` forwards to the underlying transport (`app/lib/config/dependencies.dart:247-285`, `app/lib/data/transport/peer_channel.dart:57-67`).
+- The adopt path is riskier: `adopt(IChannel channel, PeerRecord peer)` emits online, starts ping/watchers, and replays subscriptions without setting `_activeRoomId` from `peer.roomId` and without calling `_propagateActiveRoom` (`app/lib/data/transport/connection_manager.dart:425-451`). Pairing is the only direct caller of `adopt` (`app/lib/ui/pairing/viewmodels/pairing_viewmodel.dart:92-101`).
+
+Ring-log correlation for the transient:
+
+- The manager-side status was already logging room `7ADky8889NJy` at online/hydrate (`debug/8e5-11f1-9243-4d82c1bdd26a.bin:244-245`), but the immediately-following inbound envelopes with `senderRoom: "7ADky8889NJy"` were still dropped as `room-mismatch` (`debug/8e5-11f1-9243-4d82c1bdd26a.bin:251-252`). That combination means the stale/default room is the transport demux room (`WsTransport._activeRoom`), not necessarily `ConnectionManager._activeRoomId`, because the drop predicate compares the envelope room to the transport room (`app/lib/data/transport/ws_transport.dart:107-110`, `app/lib/data/transport/ws_transport.dart:371-375`).
+- The same pattern recurs after the long reconnect: online/hydrate for room `7ADky8889NJy` is logged at `02:46:14` (`debug/8e5-11f1-9243-4d82c1bdd26a.bin:528-529`), followed by room-mismatch drops for `senderRoom: "7ADky8889NJy"` (`debug/8e5-11f1-9243-4d82c1bdd26a.bin:535-570`).
+
+This is distinct from the duplicate identity bug: room-mismatch drops discard live envelopes before transcript handling, and later replay can append the missed events in replay order (`app/lib/data/transport/ws_transport.dart:146-158`, `app/lib/data/sync/sync_service.dart:1095-1133`).
+
+### The replayDedup × local_ echo correlation
+
+- The target foreign echo appears once in the ring log: `msgEcho id=local_d974d2d7-94fc-4146-b460-dc0622639e53` at line 343 (`debug/8e5-11f1-9243-4d82c1bdd26a.bin:343`).
+- The local id's last 12 characters are `dc0622639e53`; its last 11 are `c0622639e53`.
+- The 25 `replayDedup` entries with `dropped:false` are at lines 282-283, 388, 552-567, and 1016-1021, with tails `783305445058`, `783305445103`, `783305711430`, `783305711700`, `783305879133`, `783305879239`, `783305890702`, `783305890710`, `783305890710`, `783305895719`, `783305895726`, `783305902613`, `783305902619`, `783305902619`, `783305916943`, `783305916950`, `783305916950`, `783305939748`, `783305939757`, `783305987014`, `783305987023`, `783306021432`, `783306021440`, `783306021440`, and `783306036673` (`debug/8e5-11f1-9243-4d82c1bdd26a.bin:282-283`, `debug/8e5-11f1-9243-4d82c1bdd26a.bin:388`, `debug/8e5-11f1-9243-4d82c1bdd26a.bin:552-567`, `debug/8e5-11f1-9243-4d82c1bdd26a.bin:1016-1021`). None match `dc0622639e53` or `c0622639e53`.
+- This absence is expected for replay ids because `serverReplayEventId` ends with `:$ts`, and the debug event stores only the last 12 characters of the event id (`app/lib/data/sync/session_history_replay.dart:122-127`, `app/lib/data/sync/sync_service.dart:1117-1122`). The ring log therefore does not show a direct `replayDedup` tail collision for the `local_d974...` echo.
+
+### Recommendation
+
+- Fold the user-message event-store identity mismatch into `story-mobile-assistant-message-duplicated-live-replay`: the deterministic-identity fix should also make live `UserInput` confirmation use the same canonical event id as `UserInputEvt` replay (`app/lib/data/sync/sync_service.dart:648-652`, `app/lib/data/sync/session_history_replay.dart:51-55`, `app/lib/data/sync/session_history_replay.dart:122-127`).
+- Open a separate fix story for transport active-room re-establishment on reconnect/adopt. The fix should eliminate the window/default where `WsTransport._activeRoom` remains `'main'` or otherwise diverges from `ConnectionManager._activeRoomId`, and should cover the `adopt` path that currently does not propagate active room (`app/lib/data/transport/ws_transport.dart:275-287`, `app/lib/data/transport/connection_manager.dart:425-451`, `app/lib/data/transport/connection_manager.dart:547-562`).
+- If the operator-visible duplicate persists after deterministic user-message identity is fixed, investigate a distinct user dedup surface where the same logical user text is stored under two different `clientMessageId`s, because same-id user confirmations should collapse during projection (`app/lib/domain/transcript/transcript_projection.dart:126-127`, `app/lib/domain/transcript/transcript_projection.dart:161-168`).
