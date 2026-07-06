@@ -573,6 +573,7 @@ class SyncService extends Service {
           sessionIdTail: _sessionIdTail(gate.messageSessionId),
         ),
       );
+      _disarmGateRejectedUserInputEcho(msg);
       return;
     }
     switch (msg) {
@@ -639,8 +640,7 @@ class SyncService extends Service {
       ):
         // Echo dedupes against the optimistic row (same id): confirm it
         // (pending=false) or insert as confirmed (foreign device).
-        debugPrint('[msg-echo] id=$id');
-        _logDebug(MsgEchoEvent(ts: DateTime.now(), id: id));
+        _recordUserInputEcho(id);
         // Echo arrived → the send landed; disarm the no-echo backstop.
         _pendingSendTimers.remove(id)?.cancel();
         // ignore: discarded_futures
@@ -808,6 +808,23 @@ class SyncService extends Service {
       case ModelsList():
         break;
     }
+  }
+
+  void _disarmGateRejectedUserInputEcho(ServerMessage msg) {
+    if (msg case UserInput(:final id)) {
+      final timer = _pendingSendTimers.remove(id);
+      if (timer == null) return;
+      timer.cancel();
+      // The session gate still owns transcript acceptance, but a matching
+      // echo id is sufficient to prove local delivery and disarm the no-echo
+      // backstop even when the echo belongs to a freshly-resumed session.
+      _recordUserInputEcho(id);
+    }
+  }
+
+  void _recordUserInputEcho(String id) {
+    debugPrint('[msg-echo] id=$id');
+    _logDebug(MsgEchoEvent(ts: DateTime.now(), id: id));
   }
 
   static String _shortSessionId(String? sessionId) {
