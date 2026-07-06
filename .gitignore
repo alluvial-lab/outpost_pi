@@ -84,6 +84,11 @@ pnpm-debug.log*
 # but never committed; reproduce by re-running the instrumented scenario.
 debug/
 
+# pnpm approve-builds state (allowBuilds: esbuild) — machine-local pnpm
+# config written when pnpm prompts to approve native build scripts. Not repo
+# content; regenerated per-machine.
+pnpm-workspace.yaml
+
 # Test artifacts — pi-extension model-persist test writes a real settings.json
 pi-extension/test/.pi/
 
