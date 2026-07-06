@@ -4,12 +4,14 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:app/data/local/boxes.dart';
+import 'package:app/data/local/records/message_record.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/domain/contracts/debug_log.dart';
+import 'package:app/domain/session_state.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/pairing/pair_request_flow.dart';
 import 'package:app/pairing/storage.dart';
@@ -210,6 +212,7 @@ Future<
 >
 _syncHarness({
   Duration pendingSendTimeout = const Duration(seconds: 20),
+  Duration emitDebounce = Duration.zero,
 }) async {
   final log = _FakeDebugLog();
   final channel = _FakeChannel();
@@ -219,7 +222,7 @@ _syncHarness({
     factory: (_, _) async => channel,
     storage: _FakeStorage(),
     debugLog: log,
-    emitDebounce: Duration.zero,
+    emitDebounce: emitDebounce,
   );
   final sync = SyncService(
     conn,
@@ -741,6 +744,101 @@ void main() {
         DebugTag.replayDedup,
         where: (event) =>
             event.sessionId == s.sessionId && event.dropped == true,
+      );
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
+    'SyncService disarms resumed-session echoes rejected by the transcript gate',
+    () async {
+      final s = await _syncHarness(
+        pendingSendTimeout: const Duration(milliseconds: 40),
+        emitDebounce: const Duration(milliseconds: 200),
+      );
+
+      await s.sync.sendMessage('resume race');
+      await _settle();
+      final sent = s.channel.sent.whereType<UserMessage>().single;
+      final staleRef = s.sync.activeSessionRef!;
+      expect(s.sync.debugPendingSendTimerCount, 1, reason: 'timer armed');
+
+      const resumedSessionId = 'debug-session-0002';
+      s.channel.pushControl(
+        const RoomMetaUpdated(
+          peer: _peerEpk,
+          roomId: 'main',
+          sessionId: resumedSessionId,
+          hasModel: false,
+          hasThinking: false,
+          hasSessionId: true,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      s.channel.pushRaw(
+        UserInput(
+          id: sent.id,
+          sessionId: resumedSessionId,
+          text: 'resume race',
+        ),
+      );
+      await _settle();
+
+      final gate = _assertEvent<SessionGateEvent>(
+        s.log.events,
+        DebugTag.sessionGate,
+        where: (event) =>
+            event.messageType == 'user_input' &&
+            event.reason == 'session_mismatch',
+      );
+      expect(gate.sessionIdTail, 'ion-0002');
+      _assertEvent<MsgEchoEvent>(
+        s.log.events,
+        DebugTag.msgEcho,
+        where: (event) => event.id == sent.id,
+      );
+      expect(
+        s.sync.debugPendingSendTimerCount,
+        0,
+        reason: 'gate-rejected echo still proves delivery and disarms timer',
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await _settle();
+      expect(
+        s.log.events.whereType<MsgFailedEvent>().where(
+          (event) => event.id == sent.id && event.code == 'send_timeout',
+        ),
+        isEmpty,
+        reason: 'the disarmed no-echo timer must not create a failure badge',
+      );
+
+      final box = LocalBoxes().openMsgsBox(staleRef);
+      final rows =
+          ([
+                for (final value in box.values)
+                  MessageRecord.fromJson(
+                    (value as Map).cast<String, dynamic>(),
+                  ),
+              ]..sort((a, b) => a.seq.compareTo(b.seq)))
+              .where((row) => row.id == sent.id)
+              .toList(growable: false);
+      expect(rows, hasLength(1));
+      expect(rows.single.role, MsgRole.user);
+      expect(
+        rows.single.status,
+        isNot(UserMsgStatus.failed),
+        reason: 'the user bubble must not show the not-delivered badge',
+      );
+      expect(
+        rows.single.pending,
+        isTrue,
+        reason:
+            'the gate still rejects transcript acceptance; the stale-session '
+            'echo is not appended as a confirmed row',
       );
 
       s.conn.dispose();
