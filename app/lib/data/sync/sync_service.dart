@@ -711,18 +711,32 @@ class SyncService extends Service {
         :final text,
         :final image,
         :final streamingBehavior,
+        :final ts,
       ):
         // Echo dedupes against the optimistic row (same id): confirm it
         // (pending=false) or insert as confirmed (foreign device).
         _recordUserInputEcho(id);
         // Echo arrived → the send landed; disarm the no-echo backstop.
         _pendingSendTimers.remove(id)?.cancel();
+        // Identity source (a) — user-message follow-up: when the echo carries
+        // the SDK `ts` (from the extension's message_end-driven broadcast),
+        // derive the SAME deterministic eventId as session_history replay
+        // (UserInputEvt) so a live commit + replay collapse to ONE Hive row.
+        // Falls back to the old scheme when `ts` is absent (legacy extension /
+        // the early delivery-time echo). See story-mobile-assistant-message-
+        // duplicated-live-replay user-message follow-up.
+        final userEventId = ts != null
+            ? serverReplayEventId(
+                _activeTranscriptSessionId(), 'user_input', id, ts)
+            : 'server:user_confirmed:$id';
         // ignore: discarded_futures
         _appendTranscriptEvent(
           UserMessageConfirmed(
-            eventId: 'server:user_confirmed:$id',
+            eventId: userEventId,
             sessionId: _activeTranscriptSessionId(),
-            ts: DateTime.now(),
+            ts: ts != null
+                ? DateTime.fromMillisecondsSinceEpoch(ts)
+                : DateTime.now(),
             clientMessageId: id,
             text: text,
             image: image == null
