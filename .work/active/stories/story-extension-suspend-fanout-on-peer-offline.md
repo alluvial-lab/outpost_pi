@@ -1,7 +1,8 @@
 ---
 id: story-extension-suspend-fanout-on-peer-offline
 kind: story
-stage: drafting
+stage: done
+review_addressed: 2026-07-05
 tags: [pi-extension, relay, observability, bug, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on:
