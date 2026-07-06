@@ -1,7 +1,8 @@
 ---
 id: story-add-transport-frame-observability
 kind: story
-stage: implementing
+stage: done
+review_addressed: 2026-07-05
 tags: [app, observability]
 parent: feature-cross-side-observability
 depends_on: [story-app-debug-log-adapter, story-app-capture-routing]
