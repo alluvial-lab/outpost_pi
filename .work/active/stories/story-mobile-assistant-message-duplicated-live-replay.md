@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-04
+updated: 2026-07-05
 confirmed_root_cause: 2026-07-03
 ---
 
@@ -167,6 +167,18 @@ eventIds/messageIds must be replaced with stable, server-derived ids.
    time (so a second `ToolRequest` before the async projection sees an empty
    buffer) or guard against double-flush by tracking the flushed buffer's
    content signature. This is a behavior-preserving lifecycle fix.
+
+   **DONE 2026-07-06.** Both flush sites (`AgentDone` at `sync_service.dart:594`
+   and `ToolRequest` at `:682`) now clear `_streaming` synchronously via
+   `_emitStreaming(null)` at flush time (capturing the buffer + `inReplyTo`
+   into locals first). The projection's later `streaming = null` (from the
+   committed event) becomes a confirming no-op rather than the only clearing
+   path. Regression test `ToolRequest flush is not re-amplified` pins it and
+   was verified to FAIL without the fix (`Actual: 2` — the buffered text
+   committed twice) and pass with it. `flutter test` 665/665 green. The
+   remaining identity-source decision (1) is still open and still blocks the
+   live×replay eventId-mismatch portion of this story (both assistant AND
+   user messages).
 3. **Migration of existing Hive rows.** Existing phones may already have
    duplicate rows persisted with random eventIds. A one-time dedup pass on
    `activate()`/`_loadIndex` (collapse assistant rows that share

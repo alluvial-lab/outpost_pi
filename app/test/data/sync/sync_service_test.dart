@@ -1010,32 +1010,47 @@ void main() {
     s.sync.dispose();
   });
 
+  // Regression for `story-mobile-assistant-message-duplicated-live-replay` decision 2.
+  // The ToolRequest pre-tool flush is fire-and-forget; if a second ToolRequest
+  // arrives before the async projection write resolves, the in-memory
+  // _streaming buffer was not yet cleared, so the SAME buffered text was
+  // re-committed under a new random eventId → ×N duplicate assistant rows
+  // (the ×4-on-first-paragraph amplification). The fix clears the buffer
+  // synchronously at flush time so the second flush sees an empty buffer.
   test(
-    'sequential: text → tool → text renders in chronological order',
+    'ToolRequest flush is not re-amplified: two tool requests before the async '
+    'projection resolves commit the buffered text once',
     () async {
       final s = await setup();
       s.ch.push(UserInput(id: 'u1', text: 'go'));
       await _settle();
-      s.ch.push(AgentChunk(inReplyTo: 'u1', delta: 'let me check'));
-      await _settle(); // 16ms flush settles into the streaming buffer
+      s.ch.push(AgentChunk(inReplyTo: 'u1', delta: 'shared text'));
+      await _settle(); // buffer settles into _streaming
+      // Two tool requests in the SAME sync tick — the async projection from
+      // the first flush has not resolved, so the second flush would re-read
+      // the un-cleared buffer and commit 'shared text' a second time.
       s.ch.push(ToolRequest(toolCallId: 'tc1', tool: 'Read', args: {}));
+      s.ch.push(ToolRequest(toolCallId: 'tc2', tool: 'Grep', args: {}));
       await _settle();
-      s.ch.push(ToolResult(toolCallId: 'tc1', result: {'ok': true}));
-      await _settle();
-      s.ch.push(AgentChunk(inReplyTo: 'u1', delta: 'all done'));
       await _settle();
       s.ch.push(AgentDone(inReplyTo: 'u1'));
       await _settle();
 
-      final m = messages(s.epk);
+      final assistantRows =
+          messages(s.epk).where((r) => r.role == MsgRole.assistant).toList();
+      final shared = assistantRows.where((r) => r.text == 'shared text');
       expect(
-        m.map((r) => r.role),
-        [MsgRole.user, MsgRole.assistant, MsgRole.tool, MsgRole.assistant],
-        reason: 'pre-tool text, then tool, then post-tool text — in order',
+        shared.length,
+        1,
+        reason:
+            'The buffered text must be committed exactly once even when two '
+            'ToolRequests fire before the async projection resolves. Previously '
+            'the second flush re-committed the same buffer under a new random '
+            'eventId (the ×N amplification root cause).',
       );
-      expect(m[1].text, 'let me check');
-      expect(m[2].tool?.tool, 'Read');
-      expect(m[3].text, 'all done');
+      final toolRows =
+          messages(s.epk).where((r) => r.role == MsgRole.tool).toList();
+      expect(toolRows.length, 2, reason: 'both tool calls are recorded');
       s.conn.dispose();
       s.sync.dispose();
     },
