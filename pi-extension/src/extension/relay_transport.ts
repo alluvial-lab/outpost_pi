@@ -1,4 +1,5 @@
 import type { ByeReason, ThinkingLevel } from "../protocol/types.js";
+import type { RelayControlFrame } from "../protocol/generated/protocol.generated.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import {
   REACHABILITY_RELAY_LIVENESS_CHECK_MS,
@@ -50,6 +51,7 @@ export interface RelayTransportDeps {
 export interface RelayTransportAdapter extends Omit<RelayTransportPort, "start" | "createPeerChannel"> {
   start(input: RelayTransportStartInput): Promise<RelayStartResult>;
   createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel;
+  onControlFrame(handler: (frame: RelayControlFrame) => void | Promise<void>): () => void;
   emitRelayState(force?: boolean): void;
   hasPendingReconnect(): boolean;
   currentRelayUrl(): string | null;
@@ -66,6 +68,61 @@ export const RELAY_TRANSPORT_REACHABILITY = {
   livenessTimeoutMs: REACHABILITY_RELAY_LIVENESS_TIMEOUT_MS,
   livenessCheckMs: REACHABILITY_RELAY_LIVENESS_CHECK_MS,
 } as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+export function decodeRelayControlFrame(line: string): RelayControlFrame | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || typeof parsed.type !== "string") return null;
+
+  if (parsed.type === "peer_online") {
+    return typeof parsed.peer === "string" && parsed.peer.length > 0
+      ? { type: "peer_online", peer: parsed.peer }
+      : null;
+  }
+
+  if (parsed.type === "peer_offline") {
+    return typeof parsed.peer === "string" && parsed.peer.length > 0 && typeof parsed.since_ts === "number"
+      ? { type: "peer_offline", peer: parsed.peer, since_ts: parsed.since_ts }
+      : null;
+  }
+
+  if (parsed.type === "presence") {
+    // Fail fast at the boundary: if any state entry is malformed (missing
+    // non-empty `peer`, non-boolean `online`, or a non-number `since_ts`
+    // that isn't null/absent), reject the WHOLE frame rather than silently
+    // dropping the bad entry. Silently dropping could mask a relay bug or a
+    // missed offline/online transition. (Adversarial review I1.)
+    if (!Array.isArray(parsed.states)) return null;
+    const states: Array<{ peer: string; online: boolean; since_ts?: number | null }> = [];
+    for (const state of parsed.states) {
+      if (
+        !isRecord(state) ||
+        typeof state.peer !== "string" ||
+        state.peer.length === 0 ||
+        typeof state.online !== "boolean" ||
+        (state.since_ts !== undefined && state.since_ts !== null && typeof state.since_ts !== "number")
+      ) {
+        return null;
+      }
+      states.push({
+        peer: state.peer,
+        online: state.online,
+        ...(state.since_ts === undefined ? {} : { since_ts: state.since_ts as number | null }),
+      });
+    }
+    return { type: "presence", states };
+  }
+
+  return null;
+}
 
 export function createRelayTransportPort(deps: RelayTransportDeps): RelayTransportAdapter {
   const backoffMs = deps.backoffMs ?? reachabilityBackoffMs;
@@ -85,6 +142,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   let onUnexpectedClose: (() => void) | null = null;
   let onConnected: ((relay: RelayClient) => void | Promise<void>) | null = null;
   const outerMessageHandlers = new Set<(line: string) => void | Promise<void>>();
+  const controlFrameHandlers = new Set<(frame: RelayControlFrame) => void | Promise<void>>();
   type BridgeAttachment = {
     relay: RelayClient;
     relayUrl: string;
@@ -128,13 +186,13 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   }
 
   function bindRelay(next: RelayClient): void {
-    for (const handler of outerMessageHandlers) next.on("message", handler);
+    next.on("message", dispatchRelayMessage);
     next.on("close", onRelayClose);
   }
 
   function unbindRelay(current: RelayClient): void {
     current.off("close", onRelayClose);
-    for (const handler of outerMessageHandlers) current.off("message", handler);
+    current.off("message", dispatchRelayMessage);
   }
 
   function clearReconnectTimer(): void {
@@ -257,11 +315,28 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
 
   function onOuterMessage(handler: (line: string) => void | Promise<void>): () => void {
     outerMessageHandlers.add(handler);
-    relay?.on("message", handler);
     return () => {
       outerMessageHandlers.delete(handler);
-      relay?.off("message", handler);
     };
+  }
+
+  function onControlFrame(handler: (frame: RelayControlFrame) => void | Promise<void>): () => void {
+    controlFrameHandlers.add(handler);
+    return () => {
+      controlFrameHandlers.delete(handler);
+    };
+  }
+
+  function dispatchRelayMessage(line: string): void {
+    const frame = decodeRelayControlFrame(line);
+    if (frame) {
+      for (const handler of controlFrameHandlers) {
+        void handler(frame);
+      }
+    }
+    for (const handler of outerMessageHandlers) {
+      void handler(line);
+    }
   }
 
   function createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel {
@@ -379,6 +454,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     sendRoomMeta,
     onOuterMessage,
     createPeerChannel,
+    onControlFrame,
     attachCrossPcBridge,
     detachCrossPcBridge,
     emitRelayState,

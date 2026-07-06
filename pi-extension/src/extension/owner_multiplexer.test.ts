@@ -33,6 +33,7 @@ function makeMultiplexer() {
   const persisted = vi.fn();
   const ownerAttached = vi.fn();
   const ownerPaired = vi.fn();
+  const fanoutPresenceChanged = vi.fn();
   const deps: OwnerMultiplexerDeps = {
     createChannel: (input) => {
       const channel = new FakeOwnerChannel(input);
@@ -59,6 +60,7 @@ function makeMultiplexer() {
     }),
     onOwnerAttached: ownerAttached,
     onOwnerPaired: ownerPaired,
+    onFanoutPresenceChanged: fanoutPresenceChanged,
   };
   return {
     mux: new OwnerMultiplexer(deps),
@@ -68,6 +70,7 @@ function makeMultiplexer() {
     persisted,
     ownerAttached,
     ownerPaired,
+    fanoutPresenceChanged,
   };
 }
 
@@ -100,6 +103,76 @@ describe("OwnerMultiplexer", () => {
 
     expect(channels[0]!.sent).toEqual([message]);
     expect(channels[1]!.sent).toEqual([message]);
+  });
+
+  test("peer_offline suspends only that peer and peer_online resumes fan-out", () => {
+    const { mux, channels } = makeMultiplexer();
+    const onMessage = vi.fn();
+    mux.attach({ relay: fakeRelay, peerId: "owner-a", onMessage });
+    mux.attach({ relay: fakeRelay, peerId: "owner-b", onMessage });
+
+    expect(mux.markPeerOffline("owner-a", 123)).toBe(true);
+    const droppedForA: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "while offline" };
+    mux.broadcast(droppedForA);
+
+    expect(channels[0]!.sent).toEqual([]);
+    expect(channels[1]!.sent).toEqual([droppedForA]);
+
+    expect(mux.markPeerOnline("owner-a")).toBe(true);
+    const resumed: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "after reconnect" };
+    mux.broadcast(resumed);
+
+    expect(channels[0]!.sent).toEqual([resumed]);
+    expect(channels[1]!.sent).toEqual([droppedForA, resumed]);
+  });
+
+  test("suspend/resume diagnostic is one-shot and not emitted per dropped frame", () => {
+    const { mux, fanoutPresenceChanged } = makeMultiplexer();
+    const onMessage = vi.fn();
+    mux.attach({ relay: fakeRelay, peerId: "owner-a", onMessage });
+
+    const first: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "first" };
+    const second: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "second" };
+
+    mux.markPeerOffline("owner-a", 456);
+    mux.markPeerOffline("owner-a", 789);
+    mux.broadcast(first);
+    mux.broadcast(second);
+    mux.markPeerOnline("owner-a");
+    mux.markPeerOnline("owner-a");
+
+    expect(fanoutPresenceChanged).toHaveBeenCalledTimes(2);
+    expect(fanoutPresenceChanged).toHaveBeenNthCalledWith(1, {
+      peerId: "owner-a",
+      peerShortId: "owner-a".slice(0, 8),
+      state: "suspended",
+      sinceTs: 456,
+    });
+    expect(fanoutPresenceChanged).toHaveBeenNthCalledWith(2, {
+      peerId: "owner-a",
+      peerShortId: "owner-a".slice(0, 8),
+      state: "resumed",
+    });
+  });
+
+  test("reattach during an active turn clears stale offline state and remains a late-attach target", () => {
+    const { mux, channels, fanoutPresenceChanged } = makeMultiplexer();
+    const onMessage = vi.fn();
+    mux.attach({ relay: fakeRelay, peerId: "owner-a", onMessage, turnActive: true });
+    mux.markPeerOffline("owner-a", 123);
+
+    const reattached = mux.attach({ relay: fakeRelay, peerId: "owner-a", onMessage, turnActive: true });
+    const message: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "resumed" };
+    mux.broadcast(message);
+
+    expect(channels[0]!.detached).toBe(true);
+    expect(channels[1]!.sent).toEqual([message]);
+    expect(reattached).toBe(channels[1]);
+    expect(mux.lateAttachEntries()).toEqual([{ peerId: "owner-a", channel: channels[1] }]);
+    expect(fanoutPresenceChanged).toHaveBeenCalledWith(expect.objectContaining({
+      peerId: "owner-a",
+      state: "resumed",
+    }));
   });
 
   test("detaching one owner preserves the other owner channel", () => {
