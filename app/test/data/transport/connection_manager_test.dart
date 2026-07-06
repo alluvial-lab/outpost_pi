@@ -53,6 +53,17 @@ class _FakeChannel implements IChannel, IControlLink {
   void pushControl(ControlInbound frame) => _control.add(frame);
 }
 
+/// A _FakeChannel that records `setActiveRoom` calls so tests can assert the
+/// ConnectionManager propagated the active room down to the transport.
+/// `setActiveRoom` is not part of `IChannel` — `ConnectionManager` reaches
+/// it via dynamic dispatch (`_propagateActiveRoom`), so this fake simply
+/// declares the same method shape `PlainPeerChannel` does.
+class _RecordingChannel extends _FakeChannel {
+  final List<String> setActiveRoomCalls = <String>[];
+
+  void setActiveRoom(String roomId) => setActiveRoomCalls.add(roomId);
+}
+
 Future<({ConnectionManager conn, _FakeChannel channel})> _connected() async {
   final channel = _FakeChannel();
   final conn = ConnectionManager(
@@ -206,6 +217,53 @@ void main() {
       );
       expect(s.conn.isRoomWorking('epk_projection', 'main'), isFalse);
       s.conn.dispose();
+    });
+  });
+
+  // Regression for `story-fix-transport-active-room-reestablishment-on-reconnect`.
+  // `adopt` previously did NOT set `_activeRoomId` from `peer.roomId` nor
+  // propagate it to the channel, so a freshly-paired channel could demux
+  // post-auth frames against the stale `'main'` default and drop real-room
+  // envelopes as `room-mismatch`. It must now mirror `_connect`.
+  group('ConnectionManager adopt binds the active room', () {
+    test('adopt sets activeRoomId from peer.roomId and propagates it', () {
+      const peer = PeerRecord(
+        remoteEpk: 'epk_projection',
+        sessionName: 'Pi',
+        relayUrl: 'ws://localhost',
+        pairedAt: '2026-01-01T00:00:00Z',
+        roomId: '7ADky8889NJy',
+      );
+      final channel = _RecordingChannel();
+      final conn = ConnectionManager(
+        factory: (_, _) async => _FakeChannel(),
+        storage: _FakeStorage(),
+        emitDebounce: Duration.zero,
+      );
+      conn.adopt(channel, peer);
+      expect(conn.activeRoomId, '7ADky8889NJy');
+      expect(channel.setActiveRoomCalls, contains('7ADky8889NJy'));
+      conn.dispose();
+    });
+
+    test('adopt falls back to main when peer.roomId is null', () {
+      const peer = PeerRecord(
+        remoteEpk: 'epk_projection',
+        sessionName: 'Pi',
+        relayUrl: 'ws://localhost',
+        pairedAt: '2026-01-01T00:00:00Z',
+        roomId: null,
+      );
+      final channel = _RecordingChannel();
+      final conn = ConnectionManager(
+        factory: (_, _) async => _FakeChannel(),
+        storage: _FakeStorage(),
+        emitDebounce: Duration.zero,
+      );
+      conn.adopt(channel, peer);
+      expect(conn.activeRoomId, 'main');
+      expect(channel.setActiveRoomCalls, contains('main'));
+      conn.dispose();
     });
   });
 }

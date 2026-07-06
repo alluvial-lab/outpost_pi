@@ -422,6 +422,66 @@ void main() {
     },
   );
 
+  // Regression for `story-fix-transport-active-room-reestablishment-on-reconnect`.
+  // The relay may push envelopes immediately after auth, before the caller
+  // can call `setActiveRoom`. Previously the transport defaulted to 'main'
+  // and demuxed those frames against 'main', dropping any targeting the
+  // real room as `room-mismatch`. Constructing the transport with the real
+  // `activeRoom` from `connect` eliminates that race from frame 1.
+  test(
+    'WsTransport demuxes post-auth frames against the construction activeRoom',
+    () async {
+      final log = _FakeDebugLog();
+      const realRoom = '7ADky8889NJy';
+      final payload = Uint8List.fromList(<int>[5, 6, 7, 8]);
+      final relay = await _startRelayProbeServer(
+        postAuthFrames: <String>[
+          jsonEncode({
+            'peer': 'peer-a',
+            'room': realRoom,
+            'ct': base64.encode(payload),
+          }),
+        ],
+      );
+      final keyPair = await Ed25519().newKeyPair();
+
+      final transport = await WsTransport.connect(
+        relayUrl: relay.uri.toString(),
+        peerPubkey: 'peer-a',
+        ed25519Key: keyPair,
+        activeRoom: realRoom,
+        debugLog: log,
+      );
+      // The first post-auth frame targets `realRoom`; under the old
+      // default-'main' it would be dropped as room-mismatch. With the
+      // construction room it must enqueue and be receivable.
+      expect(await transport.receive(), payload);
+
+      final envelope = _assertEvent<WsInEvent>(
+        log.events,
+        DebugTag.wsIn,
+        where: (event) => event.kind == 'envelope' && event.stage == 'enqueue',
+      );
+      expect(envelope.bytes, payload.length);
+      final mismatch = log.events.whereType<WsInEvent>().where(
+        (event) =>
+            event.kind == 'envelope' && event.stage == 'room-mismatch',
+      );
+      expect(
+        mismatch,
+        isEmpty,
+        reason:
+            'A frame targeting the construction activeRoom must not be '
+            'dropped as room-mismatch. This is the reconnect reorder bug: '
+            'the transport defaulted to \'main\' and dropped real-room '
+            'envelopes pushed before setActiveRoom could run.',
+      );
+
+      await transport.close();
+      await relay.server.close(force: true);
+    },
+  );
+
   test(
     'ConnectionManager marks the active room offline after 3 missed pings',
     () {
