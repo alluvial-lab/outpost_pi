@@ -297,7 +297,7 @@ final class PairRequest extends ClientMessage {
 }
 
 final class UserMessage extends ClientMessage {
-  const UserMessage({required this.id, required this.sessionId, required this.text, this.streamingBehavior, this.images});
+  const UserMessage({required this.id, required this.sessionId, required this.text, this.streamingBehavior, this.images, this.ts});
 
   @override
   String get type => 'user_message';
@@ -307,6 +307,7 @@ final class UserMessage extends ClientMessage {
   final String text;
   final UserMessageStreamingBehavior? streamingBehavior;
   final List<WireImage>? images;
+  final int? ts;
 
   factory UserMessage.fromJson(Map<String, dynamic> json) => UserMessage(
         id: json['id'] as String,
@@ -314,6 +315,7 @@ final class UserMessage extends ClientMessage {
         text: json['text'] as String,
         streamingBehavior: UserMessageStreamingBehavior.fromWire(json['streaming_behavior'] as String?),
         images: (json['images'] as List?)?.map((item) => WireImage.fromJson((item as Map).cast<String, dynamic>())).toList(),
+        ts: (json['ts'] as num?)?.toInt(),
       );
 
   @override
@@ -326,6 +328,8 @@ final class UserMessage extends ClientMessage {
           'streaming_behavior': streamingBehavior.wireValue,
         if (images case final images? when images.isNotEmpty)
           'images': images.map((image) => image.toJson()).toList(),
+        if (ts case final ts?)
+          'ts': ts,
       };
 }
 
@@ -734,7 +738,7 @@ final class PairError extends ServerMessage {
 }
 
 final class UserInput extends ServerMessage {
-  const UserInput({required this.id, this.sessionId = '', required this.text, this.streamingBehavior, this.image});
+  const UserInput({required this.id, this.sessionId = '', required this.text, this.streamingBehavior, this.image, this.ts});
 
   @override
   String get type => 'user_input';
@@ -744,6 +748,7 @@ final class UserInput extends ServerMessage {
   final String text;
   final UserMessageStreamingBehavior? streamingBehavior;
   final WireImage? image;
+  final int? ts;
 
   factory UserInput.fromJson(Map<String, dynamic> json) => UserInput(
         id: json['id'] as String,
@@ -751,6 +756,7 @@ final class UserInput extends ServerMessage {
         text: json['text'] as String,
         streamingBehavior: UserMessageStreamingBehavior.fromWire(json['streaming_behavior'] as String?),
         image: _firstImage(json['images']),
+        ts: (json['ts'] as num?)?.toInt(),
       );
 
   @override
@@ -763,6 +769,8 @@ final class UserInput extends ServerMessage {
           'streaming_behavior': streamingBehavior.wireValue,
         if (image case final image?)
           'images': [image.toJson()],
+        if (ts case final ts?)
+          'ts': ts,
       };
 }
 

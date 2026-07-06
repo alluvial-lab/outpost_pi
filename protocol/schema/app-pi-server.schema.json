@@ -68,7 +68,8 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
         "text": { "type": "string" },
         "images": { "type": "array", "items": { "$ref": "./defs/app-pi-common.schema.json#/$defs/wireImage" } },
-        "streaming_behavior": { "$ref": "./defs/app-pi-common.schema.json#/$defs/streamingBehavior" }
+        "streaming_behavior": { "$ref": "./defs/app-pi-common.schema.json#/$defs/streamingBehavior" },
+        "ts": { "type": "integer", "minimum": 0, "description": "SDK persisted user message timestamp. Optional (compat); when present, new clients derive deterministic transcript event ids matching session_history replay. See story-mobile-assistant-message-duplicated-live-replay user-message follow-up." }
       },
       "additionalProperties": false,
       "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
@@ -82,7 +83,8 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
         "text": { "type": "string" },
         "images": { "type": "array", "items": { "$ref": "./defs/app-pi-common.schema.json#/$defs/wireImage" } },
-        "streaming_behavior": { "$ref": "./defs/app-pi-common.schema.json#/$defs/streamingBehavior" }
+        "streaming_behavior": { "$ref": "./defs/app-pi-common.schema.json#/$defs/streamingBehavior" },
+        "ts": { "type": "integer", "minimum": 0, "description": "SDK persisted user message timestamp. Optional (compat); when present, new clients derive deterministic transcript event ids matching session_history replay." }
       },
       "additionalProperties": false,
       "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
