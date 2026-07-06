@@ -7,9 +7,11 @@ import 'package:app/data/local/boxes.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/protocol/protocol.dart';
+import 'package:app/pairing/pair_request_flow.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:fake_async/fake_async.dart';
@@ -70,6 +72,24 @@ class _FakeStorage extends PairingStorage {
   @override
   Future<List<PersistedRoom>> loadRooms(String epk) async =>
       savedRooms[epk] ?? const <PersistedRoom>[];
+}
+
+class _FakePeerTransport implements PeerTransport {
+  final _frames = StreamController<Uint8List>.broadcast();
+  final List<Uint8List> sent = <Uint8List>[];
+
+  @override
+  Future<void> send(Uint8List data) async => sent.add(data);
+
+  @override
+  Future<Uint8List> receive() => _frames.stream.first;
+
+  void push(Uint8List bytes) => _frames.add(bytes);
+
+  @override
+  Future<void> close() async {
+    if (!_frames.isClosed) await _frames.close();
+  }
 }
 
 class _FakeChannel implements IChannel, IControlLink {
@@ -371,8 +391,7 @@ void main() {
       _assertEvent<WsInEvent>(
         log.events,
         DebugTag.wsIn,
-        where: (event) =>
-            event.kind == 'control' && event.stage == 'accepted',
+        where: (event) => event.kind == 'control' && event.stage == 'accepted',
       );
       // The control-typed-but-malformed frame (presence without states) and
       // the bad-base64 envelope both throw inside demux → dropMalformed →
@@ -392,8 +411,7 @@ void main() {
       _assertEvent<WsInEvent>(
         log.events,
         DebugTag.wsIn,
-        where: (event) =>
-            event.kind == 'malformed' && event.stage == 'dropped',
+        where: (event) => event.kind == 'malformed' && event.stage == 'dropped',
       );
 
       await transport.close();
@@ -751,8 +769,7 @@ void main() {
       // dupId, dupTs) — both events share it (same id + same ts). Compute
       // its tail the same way SyncService._eventIdTail does so the test can
       // match the persisted eventIdTail without hardcoding.
-      final dupEventId =
-          'server:${s.sessionId}:user_input:$dupId:$dupTs';
+      final dupEventId = 'server:${s.sessionId}:user_input:$dupId:$dupTs';
       final expectedTail = dupEventId.length <= 12
           ? dupEventId
           : dupEventId.substring(dupEventId.length - 12);
@@ -852,6 +869,79 @@ void main() {
     },
   );
 
+  test(
+    'PeerChannel logs unsupported server frame types without payload',
+    () async {
+      final log = _FakeDebugLog();
+      final transport = _FakePeerTransport();
+      final channel = PlainPeerChannel(transport: transport, debugLog: log);
+      final received = channel.serverMessages.first;
+      await Future<void>.delayed(Duration.zero);
+
+      final bytes = Uint8List.fromList(
+        utf8.encode(
+          jsonEncode({
+            'type': 'future_server_type',
+            'body': 'full payload must not be logged',
+            'ct': 'ciphertext must not be logged',
+          }),
+        ),
+      );
+      transport.push(bytes);
+
+      final msg = await received;
+      expect(msg, isA<ErrorMessage>());
+      final event = _assertEvent<PeerFrameEvent>(
+        log.events,
+        DebugTag.peerFrame,
+        where: (event) => event.kind == 'unsupported_type',
+      );
+      expect(event.bytes, bytes.length);
+      expect(event.error, isNull);
+      final json = event.toJson();
+      expect(json['kind'], 'unsupported_type');
+      expect(json['bytes'], bytes.length);
+      expect(json.keys, isNot(contains('body')));
+      expect(json.keys, isNot(contains('ct')));
+      expect(json.keys, isNot(contains('message')));
+      expect(json.keys, isNot(contains('data')));
+
+      await channel.close();
+    },
+  );
+
+  test('PeerChannel logs malformed frames without payload', () async {
+    final log = _FakeDebugLog();
+    final transport = _FakePeerTransport();
+    final channel = PlainPeerChannel(transport: transport, debugLog: log);
+    final sub = channel.serverMessages.listen((_) {});
+    await Future<void>.delayed(Duration.zero);
+
+    final bytes = Uint8List.fromList(utf8.encode('{"type":'));
+    transport.push(bytes);
+    await _settle();
+
+    final event = _assertEvent<PeerFrameEvent>(
+      log.events,
+      DebugTag.peerFrame,
+      where: (event) => event.kind == 'malformed',
+    );
+    expect(event.bytes, bytes.length);
+    expect(event.error, isNotNull);
+    expect(event.error!.length, lessThanOrEqualTo(120));
+    expect(event.error, isNot(contains('{"type"')));
+    final json = event.toJson();
+    expect(json['kind'], 'malformed');
+    expect(json['bytes'], bytes.length);
+    expect(json.keys, isNot(contains('body')));
+    expect(json.keys, isNot(contains('ct')));
+    expect(json.keys, isNot(contains('message')));
+    expect(json.keys, isNot(contains('data')));
+
+    await sub.cancel();
+    await channel.close();
+  });
+
   test('every required capture site has an asserted routing test', () {
     // Tag coverage is necessary but not sufficient: a single assertion per
     // tag can pass even if several distinct capture sites (ws-in dropped
@@ -873,11 +963,7 @@ void main() {
       // ws-in branches (Unit 4a) — preauth + enqueue asserted in the probe
       // test; the dropped branches (missing-room/room-mismatch/control/
       // malformed) are asserted in the dedicated dropped-frames test.
-      (
-        DebugTag.wsIn,
-        'preauth',
-        (e) => e is WsInEvent && e.stage == 'preauth',
-      ),
+      (DebugTag.wsIn, 'preauth', (e) => e is WsInEvent && e.stage == 'preauth'),
       (
         DebugTag.wsIn,
         'envelope-enqueue',
@@ -900,13 +986,23 @@ void main() {
       (
         DebugTag.wsIn,
         'control-accepted',
-        (e) =>
-            e is WsInEvent && e.kind == 'control' && e.stage == 'accepted',
+        (e) => e is WsInEvent && e.kind == 'control' && e.stage == 'accepted',
       ),
       (
         DebugTag.wsIn,
         'malformed',
         (e) => e is WsInEvent && e.kind == 'malformed' && e.stage == 'dropped',
+      ),
+      // peer-channel inner frame drops (Unit 6).
+      (
+        DebugTag.peerFrame,
+        'unsupported-type',
+        (e) => e is PeerFrameEvent && e.kind == 'unsupported_type',
+      ),
+      (
+        DebugTag.peerFrame,
+        'malformed',
+        (e) => e is PeerFrameEvent && e.kind == 'malformed',
       ),
       // conn-status branches (Unit 4b).
       (
@@ -987,11 +1083,7 @@ void main() {
         'blocked-no-session',
         (e) => e is MsgSendEvent && e.blocked == true && e.preview == null,
       ),
-      (
-        DebugTag.msgEcho,
-        'echo',
-        (e) => e is MsgEchoEvent && e.id.isNotEmpty,
-      ),
+      (DebugTag.msgEcho, 'echo', (e) => e is MsgEchoEvent && e.id.isNotEmpty),
       (
         DebugTag.msgFailed,
         'send-error',
@@ -1030,9 +1122,7 @@ void main() {
     // fired; the registry backstops that the shape was seen.)
     final recordedEvents = _assertedSiteEvents;
     for (final (tag, siteName, matches) in requiredSites) {
-      final matching = recordedEvents.where(
-        (e) => e.tag == tag && matches(e),
-      );
+      final matching = recordedEvents.where((e) => e.tag == tag && matches(e));
       expect(
         matching,
         isNotEmpty,

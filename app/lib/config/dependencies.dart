@@ -183,6 +183,7 @@ Future<void> setupDependencies() async {
       _injector.get<ConnectionManager>(),
       _injector.get<Preferences>(),
       _injector.get<OwnerIdentityBridge>(),
+      debugLog: _injector.get<DebugLog>(),
     ),
   );
   _injector.addViewModel<OnboardingViewModel>(OnboardingViewModel.new);
@@ -281,7 +282,10 @@ Future<IChannel> _productionConnectionFactory(
     throw _CancelledError();
   }
 
-  return PlainPeerChannel(transport: transport);
+  return PlainPeerChannel(
+    transport: transport,
+    debugLog: _injector.get<DebugLog>(),
+  );
 }
 
 // ---------------------------------------------------------------------------

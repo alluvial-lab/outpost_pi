@@ -4,6 +4,7 @@ import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/data/transport/relay_config.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/pair_request_flow.dart' as pair_flow;
 import 'package:app/pairing/qr_scanner.dart';
@@ -28,6 +29,7 @@ class PairingViewModel extends ViewModel<PairingState> {
   final ConnectionManager _conn;
   final Preferences _prefs;
   final OwnerIdentityBridge _ownerBridge;
+  final DebugLog? _debugLog;
   pair_flow.PeerTransport? _transport;
   PlainPeerChannel? _liveChannel;
 
@@ -36,8 +38,10 @@ class PairingViewModel extends ViewModel<PairingState> {
     this._transportFactory,
     this._conn,
     this._prefs,
-    this._ownerBridge,
-  ) : super(const PairingScanning());
+    this._ownerBridge, {
+    DebugLog? debugLog,
+  }) : _debugLog = debugLog,
+       super(const PairingScanning());
 
   // ---------------------------------------------------------------------------
   // Actions
@@ -84,7 +88,10 @@ class PairingViewModel extends ViewModel<PairingState> {
             ),
           );
 
-      final channel = PlainPeerChannel(transport: transport);
+      final channel = PlainPeerChannel(
+        transport: transport,
+        debugLog: _debugLog,
+      );
       _liveChannel = channel;
       _transport = null; // channel now owns the transport
 
