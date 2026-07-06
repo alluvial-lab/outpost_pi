@@ -1,7 +1,7 @@
 ---
 id: story-relay-log-room-meta-update-accept-and-drop
 kind: story
-stage: review
+stage: done
 tags: [relay, observability, bug]
 parent: null
 depends_on: []
@@ -9,7 +9,8 @@ release_binding: null
 gate_origin: null
 created: 2026-07-06
 updated: 2026-07-06
-implementation_complete: 2026-07-06
+archived_atop: v0.6.0
+git_ref: e5f6bce
 ---
 
 # Log `room_meta_update` accept/drop (with cross-room flag) at INFO
@@ -201,3 +202,25 @@ Notes:
   confirm `cross_room=true` in `docker logs`. Deferred to the operator/
   deploy step — the unit test proves the accept path; the manual step proves
   the live-container surfacing at default `RUST_LOG=info`.
+
+## Review (2026-07-06)
+
+**Verdict**: Approve - story verified by implement; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**:
+- The `cross_room=true` INFO line is asserted transitively (observable
+  broadcast targets the patched room) rather than directly, because there
+  is no `tracing-test` dep. Acceptable for a story; the manual acceptance
+  criterion (rebuild + live repro) covers the live-container surfacing.
+
+**Notes**: Substrate mode, fast lane (story item, green verification).
+Independently re-verified `cargo fmt --check` + `cargo clippy -- -D warnings`
+(0 warnings) + `cargo test` (116 unit + 19 rooms integration, all pass, incl.
+2 new tests). Re-examined the two load-bearing claims rather than
+rubber-stamping implement notes: (1) privacy — grep confirms only
+field-name tokens emitted, no `session_id`/`model`/`thinking` values;
+(2) cross-room test genuinely exercises the path (Fixture::actor hardcodes
+room_id="main", patch targets "other", so cross_room is truly true).
+Archived with body kept (retain-bodies convention), archived_atop=v0.6.0.
