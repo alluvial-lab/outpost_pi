@@ -263,11 +263,17 @@ Future<IChannel> _productionConnectionFactory(
   // `peer.relayUrl` is kept on PeerRecord for legacy QR payloads but is
   // no longer consulted when opening a connection.
   final relayUrl = resolveRelayUrl(_injector.get<Preferences>());
+  // Construct the transport with the real destination room from the start
+  // so post-auth frames are demuxed against the correct room from frame 1 —
+  // the relay can push envelopes before any post-connect setActiveRoom call
+  // could land, which previously dropped them as `room-mismatch` (see
+  // `story-fix-transport-active-room-reestablishment-on-reconnect`).
   final transport =
       await WsTransport.connect(
         relayUrl: relayUrl,
         peerPubkey: peer.remoteEpk,
         ed25519Key: ownerKey,
+        activeRoom: peer.roomId ?? 'main',
         debugLog: _injector.get<DebugLog>(),
       ).timeout(
         wsConnectTimeout,
@@ -301,11 +307,18 @@ Future<PeerTransport> _productionPairingTransportFactory(
   // and the user's configured relay is handled upstream by
   // `pair_request_flow.dart` (raises a `relay_mismatch` error that
   // PairingViewModel surfaces as a "trocar relay?" modal).
+  //
+  // Construct with the QR's room so the pair_request itself is routed
+  // correctly AND post-auth frames are demuxed against the right room
+  // from frame 1. `performPairing`'s own `setActiveRoom` is now a
+  // redundant safety (kept harmless) — see
+  // `story-fix-transport-active-room-reestablishment-on-reconnect`.
   final relayUrl = resolveRelayUrl(_injector.get<Preferences>());
   return WsTransport.connect(
     relayUrl: relayUrl,
     peerPubkey: qr.epk,
     ed25519Key: deviceEd25519,
+    activeRoom: qr.roomId ?? 'main',
     debugLog: _injector.get<DebugLog>(),
   );
 }
