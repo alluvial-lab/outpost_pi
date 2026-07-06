@@ -58,6 +58,51 @@ not want surfaced in the mobile chat. The relay `cross_room` logging deployed
 in `story-relay-log-room-meta-update-accept-and-drop` does NOT catch this —
 it targets the wrong layer (room-meta routing, not transcript broadcast).
 
+### SDK message-shape verification (2026-07-06) — no subagent/source field exists
+
+Checked the SDK type definitions (source of truth, since `extensions.md`
+doesn't document one):
+
+- `MessageEndEvent` (`core/extensions/types.d.ts:550-553`) carries only
+  `{ type, message }`. `message` is `AgentMessage` (a union).
+- `AssistantMessage` (`@earendil-works/pi-ai/dist/types.d.ts:276-288`) fields:
+  `role`, `content`, `api`, `provider`, `model`, `responseModel?`,
+  `responseId?`, `diagnostics?`, `usage`, `stopReason`, `errorMessage?`,
+  `timestamp`. **No `subagent`, `source`, `origin`, or `parentMessageId`
+  field.**
+- `AgentStartEvent` is `{ type: "agent_start" }` and `AgentEndEvent` is
+  `{ type: "agent_end", messages }` (`types.d.ts:517-524`) — **no subagent
+  id, no parent ref, no flag** distinguishing a subagent run from the main
+  agent.
+- The "subagent" concept is entirely internal to the Task tool and is
+  **invisible at the extension event boundary**. There is no field on
+  `event.message`, `event`, or `ctx` that the projection can filter on.
+
+### Implication for the fix
+
+An extension-side gate in `message_end` **cannot** suppress subagent
+assistant messages using SDK-provided metadata, because none exists. Two
+remaining options:
+
+1. **Heuristic/contextual** — the extension tracks `tool_execution_start`/
+  `tool_execution_end` for the Task/subagent tool (`toolName`) and suppresses
+  `agent_message` broadcasts for assistant `message_end`s that fire *between*
+  a subagent tool's `tool_execution_start` and `tool_execution_end`. Fragile
+  (depends on the SDK firing order and on identifying the subagent tool by
+  `toolName`), and the subagent tool may not be a named `tool_execution_*`
+  event at all (it wasn't found in `pi-coding-agent/dist` — it's likely
+  extension/agent-type-provided, so its dispatch shape is unverified).
+2. **Upstream SDK change** — request the SDK expose a `source`/`subagent`
+  field on `AgentStartEvent`/`MessageEndEvent` so extensions can filter.
+  This is the clean fix but is outside this fork's control.
+
+**Open before fixing**: verify the actual runtime firing order — does a
+subagent dispatch fire top-level `message_end` for the subagent's assistant
+messages (leak), or are they folded into the Task tool's `toolResult`
+content (no leak, already filtered by `role === "assistant"`)? Needs a live
+`message_end` payload capture during a subagent dispatch, OR the Task tool's
+source (not in `pi-coding-agent/dist`; locate the providing extension/package).
+
 ### Two distinct failure modes now in scope
 
 1. **Subagent-content leak (the operator's actual report)** — extension
