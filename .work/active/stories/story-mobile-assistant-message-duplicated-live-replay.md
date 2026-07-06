@@ -1,15 +1,16 @@
 ---
 id: story-mobile-assistant-message-duplicated-live-replay
 kind: story
-stage: implementing
+stage: review
 tags: [app, pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-05
+updated: 2026-07-06
 confirmed_root_cause: 2026-07-03
+implemented: 2026-07-06
 ---
 
 # Mobile renders one assistant message N times (live × replay eventId mismatch)
@@ -282,3 +283,205 @@ active-room re-establishment on reconnect) — scoped as
 `story-fix-transport-active-room-reestablishment-on-reconnect`. The two bugs
 are independent: the identity mismatch causes duplicates; the active-room
 transient causes drops + reordering.
+
+## Decision 1 design — identity source (a) [DESIGNED 2026-07-06, NOT YET IMPLEMENTED]
+
+Operator confirmed: route the identity fix through **(a) extension emits
+stable identity on live frames** (single source of truth). Below is the
+verified design before implementing.
+
+### Wire-surface cost (LOWER than originally framed)
+
+The relay forwards app↔Pi traffic as `Outer(OuterEnvelope { peer, room, ct })`
+— the `ct` blob is opaque base64 the relay never decodes
+(`relay/src/protocol/frame.rs:9-19`, `relay/src/protocol/frame.rs:107-131`,
+relay test `no_type_outer_envelope_decodes`). So adding a field to the inner
+`agent_chunk`/`agent_done`/`agent_message` messages requires **NO relay
+change and NO relay-version pairing**. The change is schema + codegen +
+extension (emit) + app (consume) only. The original story's
+"paired wire change" framing overstated the surface: the relay is
+field-agnostic for app↔Pi traffic.
+
+### The granularity mismatch (uncovered during design — DEEPER than the story framed)
+
+The live and replay paths produce **different numbers** of committed
+assistant events for a multi-block turn, not just incompatible eventIds:
+
+- **Replay**: the extension's `appendLegacySdkMessageToTranscript`
+  (`sdk_session_projection.ts:378-404`) creates ONE `assistant_committed`
+  transcript event **per text content block** of the SDK assistant message
+  (`messageId = "sync_${ts}:assistant:${blockIndex}"`), and
+  `projectSessionHistory` emits one `agent_message` event per block
+  (`transcript_projection.ts:77-93`). The app maps each to a separate
+  `AssistantMessageCommitted` (`session_history_replay.dart:61-77`).
+- **Live**: the app accumulates ALL streamed text into ONE `_streaming.buffer`
+  and commits ONE `AssistantMessageCommitted` at `AgentDone` (and flushes one
+  per `ToolRequest` boundary). So a turn with interleaved text+tool batches
+  produces N live committed events but M replay committed events (N≠M).
+
+So identity-source (a) is NOT just "add `ts` to `agent_done`" — it must
+reconcile **granularity** too, or live and replay will still produce
+different event counts even if the overlapping ids match.
+
+### The chosen convergence: make `message_end` the single source of live assistant identity
+
+The extension's `message_end` hook already produces the canonical
+`assistant_committed` transcript events with deterministic ids (the same
+source replay derives from). The clean design makes `message_end` ALSO drive
+a live broadcast carrying that stable identity, so the app's live commit
+path converges with replay by construction.
+
+**Sketch (assistant messages):**
+1. `message_end` (assistant) already calls `appendLegacySdkMessageToTranscript`
+   which produces `assistant_committed` transcript events (one per text block,
+   `messageId = "sync_${ts}:assistant:${blockIndex}"`,
+   `eventId = deterministicTranscriptEventId(sessionId, "assistant_committed", messageId)`).
+2. Have it ALSO broadcast a live `agent_message`-style frame per block,
+   carrying the stable `(ts, message_id, text, in_reply_to, usage)` — the
+   same facts replay derives from. (The existing live `agent_chunk`/`agent_done`
+   streaming frames stay for the streaming bubble, but the COMMITTED row
+   identity comes from this `message_end`-driven broadcast, not from the
+   streamed buffer at `agent_done`.)
+3. App: commit `AssistantMessageCommitted` from this `message_end`-driven
+   frame, deriving `eventId`/`messageId` from the carried `(sessionId, ts,
+   message_id)` to match replay's scheme exactly. The streamed
+   `_streaming.buffer` still drives the streaming UI; the commit identity
+   no longer uses `uuid7()`.
+4. Replay (`AgentMessageEvt`) keeps its existing deterministic scheme — which
+   now MATCHES the live commit because both derive from the same
+   `(sessionId, ts, message_id)`.
+
+**Sub-decisions to pin at implement time:**
+- **Block boundary semantics**: replay produces one committed event per text
+  content block. The live `message_end`-driven broadcast should mirror that
+  (one broadcast per block) so live and replay produce the SAME number of
+  events with matching ids. The app's streamed-buffer accumulation becomes a
+  UI-only concern (the streaming bubble), not a commit-granularity concern.
+- **`ToolRequest` flush**: with `message_end` driving commits, the
+  pre-tool-flush of `_streaming.buffer` at `ToolRequest` becomes redundant
+  for commit identity (the committed row comes from `message_end`, not the
+  buffer). The synchronous-clear fix from decision 2 stays (it prevents
+  re-flush amplification of the streaming buffer) but the flush itself may
+  become a no-op or be removed if `message_end` subsumes it. Decide at
+  implement time.
+- **User messages**: the same class — `user_input` confirmation must derive
+  the same eventId as `UserInputEvt` replay. The extension's
+  `appendLegacySdkMessageToTranscript` user branch already records
+  `clientMessageId` + the matched delivered-user eventId; a live
+  `user_input` echo broadcast carrying the canonical `(sessionId, ts, id)`
+  lets the app's `UserInput` handler derive
+  `server:$sessionId:user_input:$id:$ts` to match replay.
+- **Migration**: existing Hive rows with random eventIds will duplicate
+  against the new deterministic ids until the next full replay. A one-time
+  dedup pass on `activate()` (collapse assistant rows sharing
+  `(replyTo, text, ts)` keeping the deterministic id) may be needed; decide
+  based on whether stale dup rows cause ongoing visible duplication after
+  the fix ships. Acceptable to defer if the next replay clears them.
+- **Backward compatibility**: adding `ts`/`message_id` as OPTIONAL fields to
+  `agent_chunk`/`agent_done`/`agent_message` (schema: `compat` profile) means
+  old apps that ignore them keep working (they'd still produce random ids —
+  the dup persists for them, but no regression). New apps converge.
+
+### Implementation surface (the change, concretely)
+
+1. **Schema** (`protocol/schema/app-pi-server.schema.json`): add optional
+   `ts` (integer) and `message_id` (string) to `agentChunk`/`agentDone`/
+   `agentMessage`. Validate with `pnpm --dir protocol check`.
+2. **Codegen**: regenerate `pi-extension/src/protocol/generated/protocol.generated.ts`
+   (`pnpm generate:protocol`) and `app/lib/protocol/generated/protocol.g.dart`
+   (from the Dart IR fixture — may need updating if the IR is hand-maintained;
+   verify the IR-generation path).
+3. **Extension** (`pi-extension/src/index.ts`): capture the SDK assistant
+   `timestamp` + block index at `message_end`, attach to the live
+   `agent_message`/`agent_done` broadcasts. Test in
+   `sdk_session_projection.test.ts` that the live broadcast's `ts`/`message_id`
+   match what `session_history` emits for the same persisted message.
+4. **App** (`app/lib/data/sync/sync_service.dart`): the live `AgentDone`/
+   `AgentMessage`/`UserInput` commit paths derive `eventId`/`messageId` from
+   the carried stable fields instead of `uuid7()`. The `ToolRequest` flush
+   may be simplified (see sub-decision above).
+5. **Tests**: (a) extension pin that live broadcast identity == replay
+   identity; (b) app: a live commit + replay of the same turn → one row, not
+   two; (c) app: a multi-block turn → live and replay produce the same
+   number of committed rows with matching ids.
+
+### LANDED 2026-07-06 (assistant messages; user messages deferred)
+
+Implemented the assistant-message identity convergence. The user-message
+extension (same class) is deferred to a follow-up — the projection guard
+(`ChatMessage.id` dedup) already mitigates the visible user-message dup, and
+the ring log did not prove a live×replay collision for the specific
+`local_d974...` echo.
+
+**Schema + codegen (additive, backward-compatible):**
+- `protocol/schema/app-pi-server.schema.json` — added optional `ts` to
+  `agentChunk`/`agentDone`/`agentMessage` and `message_id` to `agentMessage`.
+  Old apps/relays ignore the fields (relay forwards `ct` opaquely — no relay
+  change, no version pairing).
+- Regenerated `pi-extension/src/protocol/generated/protocol.generated.ts`
+  and `app/lib/protocol/generated/protocol.g.dart` (the Dart IR fixture
+  `tools/protocol-codegen/fixtures/app_pi_client_dart_ir.json` was updated
+  by hand — it is a committed intermediate, not schema-generated).
+
+**Extension (`pi-extension/src/session/sdk_session_projection.ts`):**
+- `appendLegacySdkMessageToTranscript` (the `message_end` path) now ALSO
+  broadcasts a live `agent_message` per assistant text block, carrying the
+  stable `(ts, message_id, text, in_reply_to)` — the same facts replay
+  derives from. This makes `message_end` the single source of live assistant
+  identity.
+
+**App (`app/lib/data/sync/sync_service.dart`):**
+- `AgentMessage` handler: when `ts` is present, derives
+  `eventId = serverReplayEventId(sessionId, 'agent_message', inReplyTo, ts)`
+  and `messageId = serverReplayMessageId(...)` — matching the replay path
+  exactly. Falls back to the old random-id scheme when `ts` is absent
+  (legacy extension).
+- `AgentDone` handler: skips the buffer-commit when a deterministic
+  `agent_message` already committed the turn's text (tracked via
+  `_agentMessageCommittedThisTurn`), preventing the live×buffer duplicate.
+  Falls back to the buffer-commit when no `agent_message(ts)` arrived.
+  Flag reset on new user turn, cancel/abort, and at `AgentDone` itself.
+
+**Tests:**
+- Extension (`sdk_session_projection.test.ts`): pins that
+  `appendLegacySdkMessageToTranscript` broadcasts a live `agent_message`
+  with `ts`/`message_id` matching what `buildSessionHistoryMessage` emits
+  for the same persisted message.
+- App (`sync_service_test.dart`): `live agent_message(ts) + replay
+  AgentMessageEvt collapse to one row` — a live commit followed by a replay
+  of the same `(inReplyTo, ts)` produces ONE assistant row, not two.
+  **Verified to FAIL without the fix** (`Actual: 2`) and pass with it.
+- Test-harness fix: `_withDefaultSession` in the sync test fake now
+  preserves `ts`/`messageId` on `AgentMessage` (and `ts` on
+  `AgentChunk`/`AgentDone`) — the regeneration had made it drop the new
+  fields.
+
+**Verification:** `flutter analyze` clean; `flutter test` 666/666 green;
+`corepack pnpm typecheck` clean; `corepack pnpm test` 753/753 (3 skipped)
+green; `protocol check` validates 5 fixture families.
+
+### Deferred / follow-up
+- **User-message identity** (same class): the live `UserInput` echo must
+  derive `server:$sessionId:user_input:$id:$ts` to match `UserInputEvt`
+  replay. The extension's `user_input` broadcast would need to carry the
+  SDK `ts`. The projection's `ChatMessage.id` guard mitigates the visible
+  dup for now.
+- **Multi-block granularity**: a turn with multiple assistant text blocks
+  now produces one live `agent_message` broadcast per block (matching
+  replay's one `AgentMessageEvt` per block). The streamed `_streaming.buffer`
+  still drives the streaming UI; the commit granularity is reconciled via
+  the per-block broadcasts. Verify with a multi-block e2e test.
+- **Migration of existing Hive rows**: existing phones may have duplicate
+  rows with random eventIds; they clear on the next full replay after the
+  fix ships. A one-time dedup pass was not added — defer unless stale dup
+  rows cause ongoing visible duplication.
+- **`ToolRequest` flush simplification**: with `message_end` driving
+  commits, the pre-tool-flush of `_streaming.buffer` at `ToolRequest` may
+  become redundant for commit identity (decision 2's synchronous-clear fix
+  stays regardless). Decide at follow-up.
+
+### Out of scope for this design pass
+- The cockpit (Flutter desktop) — it consumes the same protocol but its
+  transcript path is separate; file a follow-up if it duplicates.
+- The `ToolRequest` re-flush amplification fix is DONE (decision 2, landed
+  2026-07-06) and stays regardless of the granularity reconciliation above.

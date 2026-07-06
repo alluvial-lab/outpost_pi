@@ -568,9 +568,12 @@ class ConnectionManager extends Service {
         return;
       }
       _reachability.onRelayConnectionEstablished();
-      // Push down the active room to the WS so the outer envelope
-      // carries it from frame 1 (factory creates a fresh WsTransport
-      // every reconnect — default _activeRoom='main' unless we set).
+      // Push down the active room to the channel. Production WsTransport is
+      // now constructed with the correct room from `connect` (see
+      // story-fix-transport-active-room-reestablishment-on-reconnect), so
+      // this is a no-op there; it remains a safety path for channels adopted
+      // from external flows and for runtime room switches (switchRoom /
+      // _maybeAdoptLegacyRoom).
       _propagateActiveRoom(_activeRoomId, ch);
       _emit(StatusOnline(ch));
       _startPing(peer, ch);

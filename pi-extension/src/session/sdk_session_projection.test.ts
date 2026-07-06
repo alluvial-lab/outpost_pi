@@ -393,3 +393,60 @@ describe("SdkSessionProjection resume backfill", () => {
     expect(projection.buildSessionHistoryMessage("after", undefined).events).toEqual([]);
   });
 });
+
+// Regression for `story-mobile-assistant-message-duplicated-live-replay`
+// decision 1 (identity source (a)). The extension's `message_end`-driven
+// `appendLegacySdkMessageToTranscript` must broadcast a live `agent_message`
+// carrying the stable (ts, message_id) so the app's live commit path derives
+// the SAME deterministic identity as session_history replay.
+describe("SdkSessionProjection live assistant identity (decision 1)", () => {
+  function makeCtx(sessionId: string): ReturnType<typeof makeSessionStartCtx> & {
+    sessionManager: { getSessionId: () => string; buildSessionContext: () => { messages: never[] } };
+  } {
+    return {
+      ...makeSessionStartCtx(),
+      sessionManager: {
+        getSessionId: () => sessionId,
+        buildSessionContext: () => ({ messages: [] as never[] }),
+      },
+    };
+  }
+
+  test("appendLegacySdkMessageToTranscript broadcasts a live agent_message with stable ts + message_id", () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
+    projection.bindApi(makePi());
+    projection.bindSessionContext(makeCtx("session-identity-1"));
+
+    // First, a user message so lastTranscriptUserId is set (replyTo target).
+    projection.appendLegacySdkMessageToTranscript({
+      role: "user",
+      content: "hello",
+      timestamp: 1_000,
+    });
+    // Then an assistant message with one text block at ts 1_001.
+    projection.appendLegacySdkMessageToTranscript({
+      role: "assistant",
+      content: [{ type: "text", text: "hi back" }],
+      timestamp: 1_001,
+    });
+
+    // The live broadcast must carry ts + message_id matching the replay path.
+    const agentMessages = (outputs.broadcast as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[0])
+      .filter((m) => m?.type === "agent_message");
+    expect(agentMessages).toHaveLength(1);
+    const live = agentMessages[0];
+    expect(live.ts).toBe(1_001);
+    expect(live.message_id).toBe("sync_1001:assistant:0");
+    expect(live.text).toBe("hi back");
+
+    // The replay path (session_history) must emit the SAME (ts, text) for
+    // the app to derive a matching deterministic eventId.
+    const history = projection.buildSessionHistoryMessage("req-1", undefined);
+    const replayAgent = history.events.find((e) => e.type === "agent_message");
+    expect(replayAgent).toBeDefined();
+    expect(replayAgent?.ts).toBe(1_001);
+    expect(replayAgent?.text).toBe("hi back");
+  });
+});
