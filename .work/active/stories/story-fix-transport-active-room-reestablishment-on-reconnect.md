@@ -1,7 +1,7 @@
 ---
 id: story-fix-transport-active-room-reestablishment-on-reconnect
 kind: story
-stage: drafting
+stage: review
 tags: [app, bug, lifecycle, transport]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -10,6 +10,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-06
 updated: 2026-07-05
+implemented: 2026-07-06
 ---
 
 # Fix: transport active-room re-establishment on reconnect (the reorder bug)
@@ -80,17 +81,81 @@ start (no default-then-propagate race), and `adopt` is fixed to match `_connect`
 
 ## Acceptance Criteria
 
-- [ ] A reconnect no longer drops envelopes as `room-mismatch` when the
+- [x] A reconnect no longer drops envelopes as `room-mismatch` when the
       `senderRoom` matches the real room (the 209-drop window is eliminated).
-- [ ] `WsTransport` is constructed with the correct `activeRoom` (not
+- [x] `WsTransport` is constructed with the correct `activeRoom` (not
       default `'main'`) on reconnect.
-- [ ] `adopt` sets `_activeRoomId` from `peer.roomId` and propagates it
+- [x] `adopt` sets `_activeRoomId` from `peer.roomId` and propagates it
       (matches `_connect`).
-- [ ] A regression test: simulate a reconnect where envelopes arrive
+- [x] A regression test: simulate a reconnect where envelopes arrive
       immediately after the channel is established → assert they are NOT
       dropped as room-mismatch (would fail under the current default-`'main'`
       behavior).
-- [ ] `flutter analyze` clean; `flutter test` green.
+- [x] `flutter analyze` clean; `flutter test` green.
+
+## Implementation (2026-07-06)
+
+Fix shape chosen: **option (2) + option (3)** — construct the transport with
+the correct room from the start, and fix `adopt` to mirror `_connect`.
+
+### Changes
+
+- `app/lib/data/transport/ws_transport.dart` — `WsTransport._` and
+  `WsTransport.connect` accept an `activeRoom` param (default `'main'`).
+  `_activeRoom` is initialized from it in the constructor, so post-auth
+  frames are demuxed against the correct room from frame 1 — no
+  default-`'main'`-then-propagate race. The `_activeRoom` field is now
+  `final`-ish (set once at construction; `setActiveRoom` still changes it
+  for runtime room switches via `switchRoom`/`_maybeAdoptLegacyRoom`).
+- `app/lib/config/dependencies.dart` — `_productionConnectionFactory`
+  passes `activeRoom: peer.roomId ?? 'main'` to `WsTransport.connect`
+  (the reconnect path); `_productionPairingTransportFactory` passes
+  `activeRoom: qr.roomId ?? 'main'` (the pair path). The `ConnectionFactory`
+  typedef is unchanged — the factories read the room from the `peer`/`qr`
+  they already receive.
+- `app/lib/data/transport/connection_manager.dart` — `adopt` now sets
+  `_activeRoomId` from `peer.roomId ?? 'main'`, resets
+  `_activeRoomExplicitlySet`, and calls `_propagateActiveRoom` before
+  emitting `StatusOnline`, mirroring `_connect`. Production transports are
+  already constructed with the right room (so propagate is a no-op there);
+  for channels adopted from external flows it guarantees the room is
+  correct even if the transport defaulted to `'main'`.
+
+### Tests
+
+- `app/test/data/debug/debug_capture_routing_test.dart` —
+  `WsTransport demuxes post-auth frames against the construction
+  activeRoom`: connects with `activeRoom: '7ADky8889NJy'`, pushes an
+  envelope targeting that room immediately after auth, asserts it
+  enqueues (not room-mismatch) and is receivable. **Verified to fail
+  under the old default-`'main'`** (the frame is dropped as
+  room-mismatch and `receive()` times out) — confirming the test catches
+  the bug.
+- `app/test/data/transport/connection_manager_test.dart` — new group
+  `ConnectionManager adopt binds the active room` with two cases:
+  `adopt` with a `peer.roomId` sets `activeRoomId` and propagates to the
+  channel; `adopt` with `peer.roomId: null` falls back to `'main'`.
+  Uses a new `_RecordingChannel` that records `setActiveRoom` calls
+  (`setActiveRoom` is not part of `IChannel`; the manager reaches it via
+  dynamic dispatch in `_propagateActiveRoom`).
+
+### Verification
+
+- `flutter analyze` (whole `app/`): clean.
+- `flutter test`: green (full suite).
+- Regression test confirmed to fail under the reverted fix (envelope
+  dropped as room-mismatch), then green with the fix restored.
+
+### Why the ring-log "propagation didn't take effect" is consistent
+
+The ring log showed `connStatus online room=7ADky...` (manager's
+`_activeRoomId` correct) immediately followed by `room-mismatch` drops
+for `senderRoom=7ADky...`. That is exactly the default-`'main'`-then-
+propagate race: the manager set `_activeRoomId` before connect, but the
+transport was constructed with the `'main'` default and the relay pushed
+envelopes before `_propagateActiveRoom` ran after the factory returned.
+Constructing the transport with the real room from `connect` removes the
+window entirely — there is no propagation step to race.
 
 ## Out of scope
 

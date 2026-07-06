@@ -425,6 +425,13 @@ class ConnectionManager extends Service {
   // Adopt a channel that was established by an external flow (e.g. the
   // pairing handshake). Skips the factory entirely — the channel is already
   // connected and ready for use.
+  //
+  // Mirrors `_connect`'s room binding: `_activeRoomId` is set from
+  // `peer.roomId` (which pairing always populates) and pushed down to the
+  // channel before any inbound frame can be demuxed. Previously `adopt`
+  // skipped both, so a post-pair envelope targeting the real room could be
+  // dropped as `room-mismatch` by the transport's default `'main'` room —
+  // see `story-fix-transport-active-room-reestablishment-on-reconnect`.
   void adopt(IChannel channel, PeerRecord peer) {
     _cancelRetry();
     _cancelPing();
@@ -444,6 +451,16 @@ class ConnectionManager extends Service {
     }
     _reachability.onRelayConnectionEstablished();
     _activePeer = peer;
+    _activeRoomExplicitlySet = false;
+    final boundRoom = peer.roomId ?? 'main';
+    if (boundRoom != _activeRoomId) {
+      _activeRoomId = boundRoom;
+    }
+    // Push down to the underlying WS transport. Production transports are
+    // constructed with the right room from `connect`, so this is a no-op
+    // there; for channels adopted from external flows (pairing) it ensures
+    // the room is correct even if the transport defaulted to `'main'`.
+    _propagateActiveRoom(_activeRoomId, channel);
     _emit(StatusOnline(channel));
     _startPing(peer, channel);
     _watchChannel(peer, channel);
