@@ -38,7 +38,8 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
         "text": { "type": "string" },
         "images": { "type": "array", "items": { "$ref": "./defs/app-pi-common.schema.json#/$defs/wireImage" } },
-        "streaming_behavior": { "$ref": "./defs/app-pi-common.schema.json#/$defs/streamingBehavior" }
+        "streaming_behavior": { "$ref": "./defs/app-pi-common.schema.json#/$defs/streamingBehavior" },
+        "ts": { "type": "integer", "minimum": 0, "description": "SDK persisted user message timestamp. Optional (compat). Mirrored from the server schema so the shared UserMessage interface includes it; clients never send ts." }
       },
       "additionalProperties": false,
       "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }

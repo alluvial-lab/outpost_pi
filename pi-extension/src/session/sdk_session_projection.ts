@@ -368,6 +368,19 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
         ...(images.length > 0 ? { images } : {}),
         ...(matched ? { eventId: matched.eventId } : {}),
       });
+      // Identity source (a) — user-message follow-up: broadcast a live
+      // `user_input` echo carrying the stable SDK `ts` so the app's live
+      // commit path derives the SAME deterministic eventId as session_history
+      // replay (which emits user_input with this ts). Mirrors the assistant
+      // agent_message broadcast. See story-mobile-assistant-message-
+      // duplicated-live-replay user-message follow-up.
+      this.opts.outputs.broadcast(this.currentSessionMessage({
+        type: "user_input",
+        id: clientMessageId,
+        text,
+        ts,
+        ...(images.length > 0 ? { images } : {}),
+      }));
       return;
     }
 

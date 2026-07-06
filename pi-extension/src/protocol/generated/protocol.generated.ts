@@ -130,6 +130,7 @@ export interface UserMessage {
   readonly text: string;
   readonly images?: Array<WireImage>;
   readonly streaming_behavior?: StreamingBehavior;
+  readonly ts?: number;
 }
 
 export interface QueuedMessageSet {
@@ -273,6 +274,7 @@ export interface UserInput {
   readonly text: string;
   readonly images?: Array<WireImage>;
   readonly streaming_behavior?: StreamingBehavior;
+  readonly ts?: number;
 }
 
 export interface QueuedMessageState {
@@ -756,7 +758,7 @@ function isPairRequest(value: unknown): value is PairRequest {
 }
 
 function isUserMessage(value: unknown): value is UserMessage {
-  return isObjectLike(value, ["type", "id", "session_id", "text", "images", "streaming_behavior"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "user_message") && (Object.hasOwn(record, "id") && isStringWithMinLength(record["id"], 1)) && (record["session_id"] === undefined || isStringWithMinLength(record["session_id"], 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["images"] === undefined || (Array.isArray(record["images"]) && record["images"].every((item) => isObjectLike(item, ["data", "mime"], (record) => ((Object.hasOwn(record, "data") && isStringWithMinLength(record["data"], 1)) && (Object.hasOwn(record, "mime") && isStringWithMinLength(record["mime"], 1))))))) && (record["streaming_behavior"] === undefined || record["streaming_behavior"] === "steer")));
+  return isObjectLike(value, ["type", "id", "session_id", "text", "images", "streaming_behavior", "ts"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "user_message") && (Object.hasOwn(record, "id") && isStringWithMinLength(record["id"], 1)) && (record["session_id"] === undefined || isStringWithMinLength(record["session_id"], 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["images"] === undefined || (Array.isArray(record["images"]) && record["images"].every((item) => isObjectLike(item, ["data", "mime"], (record) => ((Object.hasOwn(record, "data") && isStringWithMinLength(record["data"], 1)) && (Object.hasOwn(record, "mime") && isStringWithMinLength(record["mime"], 1))))))) && (record["streaming_behavior"] === undefined || record["streaming_behavior"] === "steer") && (record["ts"] === undefined || isIntegerAtLeast(record["ts"], 0))));
 }
 
 function isQueuedMessageSet(value: unknown): value is QueuedMessageSet {
@@ -812,7 +814,7 @@ function isPairError(value: unknown): value is PairError {
 }
 
 function isUserInput(value: unknown): value is UserInput {
-  return isObjectLike(value, ["type", "id", "session_id", "text", "images", "streaming_behavior"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "user_input") && (Object.hasOwn(record, "id") && isStringWithMinLength(record["id"], 1)) && (record["session_id"] === undefined || isStringWithMinLength(record["session_id"], 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["images"] === undefined || (Array.isArray(record["images"]) && record["images"].every((item) => isObjectLike(item, ["data", "mime"], (record) => ((Object.hasOwn(record, "data") && isStringWithMinLength(record["data"], 1)) && (Object.hasOwn(record, "mime") && isStringWithMinLength(record["mime"], 1))))))) && (record["streaming_behavior"] === undefined || record["streaming_behavior"] === "steer")));
+  return isObjectLike(value, ["type", "id", "session_id", "text", "images", "streaming_behavior", "ts"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "user_input") && (Object.hasOwn(record, "id") && isStringWithMinLength(record["id"], 1)) && (record["session_id"] === undefined || isStringWithMinLength(record["session_id"], 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["images"] === undefined || (Array.isArray(record["images"]) && record["images"].every((item) => isObjectLike(item, ["data", "mime"], (record) => ((Object.hasOwn(record, "data") && isStringWithMinLength(record["data"], 1)) && (Object.hasOwn(record, "mime") && isStringWithMinLength(record["mime"], 1))))))) && (record["streaming_behavior"] === undefined || record["streaming_behavior"] === "steer") && (record["ts"] === undefined || isIntegerAtLeast(record["ts"], 0))));
 }
 
 function isQueuedMessageState(value: unknown): value is QueuedMessageState {
