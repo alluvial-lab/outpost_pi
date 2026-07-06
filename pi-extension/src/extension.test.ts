@@ -4951,7 +4951,7 @@ describe("cumulative transcript event log", () => {
     expect(firstStable).toEqual(secondStable);
     expect(firstStable["events"]).toEqual([
       { ts: ts + 1, type: "user_input", id: "client-stable-1", text: "stable prompt" },
-      { ts: ts + 2, type: "agent_message", in_reply_to: "client-stable-1", text: "stable reply" },
+      { ts: ts + 2, type: "agent_message", in_reply_to: "client-stable-1", text: "stable reply", message_id: "assistant-stable-1" },
     ]);
   });
 
@@ -5105,7 +5105,7 @@ describe("cumulative transcript event log", () => {
     });
     expect(h.inner["events"]).toEqual([
       { ts: ts + 1, type: "user_input", id: "cli_1", text: "hello" },
-      { ts: ts + 4, type: "agent_message", in_reply_to: "cli_1", text: "done" },
+      { ts: ts + 4, type: "agent_message", in_reply_to: "cli_1", text: "done", message_id: "agent_chunk_1" },
     ]);
   });
 
