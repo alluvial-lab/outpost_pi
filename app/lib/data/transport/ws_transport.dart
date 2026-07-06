@@ -48,13 +48,24 @@ class WsTransport implements PeerTransport, IControlLink {
   final _queue = _MsgQueue();
   final _controlController = StreamController<ControlInbound>.broadcast();
 
-  WsTransport._(this._ws, {DebugLog? debugLog}) : _debugLog = debugLog;
+  WsTransport._(this._ws, {DebugLog? debugLog, String activeRoom = 'main'})
+    : _debugLog = debugLog,
+      _activeRoom = activeRoom;
 
   // Connect, authenticate with relay, and return a ready transport.
+  //
+  // [activeRoom] is the Pi-side destination room envelopes are routed to
+  // AND the room inbound envelopes are demuxed against from the very first
+  // post-auth frame. The relay may push envelopes immediately after auth,
+  // before the caller gets a chance to call `setActiveRoom` — so the room
+  // must be correct from construction, not defaulted to `'main'` and patched
+  // after (see `story-fix-transport-active-room-reestablishment-on-reconnect`
+  // for the room-mismatch-drop ring-log evidence that motivated this).
   static Future<WsTransport> connect({
     required String relayUrl,
     required String peerPubkey, // base64 standard or url — destination peer
     required SimpleKeyPair ed25519Key, // this device's Ed25519 long-term key
+    String activeRoom = 'main',
     DebugLog? debugLog,
   }) async {
     // Plan-18 follow-up — set a WS-level pingInterval (RFC 6455
@@ -70,7 +81,11 @@ class WsTransport implements PeerTransport, IControlLink {
       Uri.parse(toWsRelayUrl(relayUrl)),
       pingInterval: const Duration(seconds: 20),
     );
-    final transport = WsTransport._(ws, debugLog: debugLog);
+    final transport = WsTransport._(
+      ws,
+      debugLog: debugLog,
+      activeRoom: activeRoom,
+    );
 
     final challengeCompleter = Completer<Map<String, dynamic>>();
     bool authDone = false;
@@ -272,11 +287,13 @@ class WsTransport implements PeerTransport, IControlLink {
 
   void _logWsIn(WsInEvent event) => _debugLog?.log(event);
 
-  /// Active target room on the Pi side. Plan 17: set via
-  /// `setActiveRoom`, defaults to 'main' when unset. The outer envelope
-  /// embeds this so the Pi can route the inner message to the right
-  /// per-cwd session.
-  String _activeRoom = 'main';
+  /// Active target room on the Pi side. The outer envelope embeds this so
+  /// the Pi can route the inner message to the right per-cwd session, AND
+  /// the inbound demux compares each envelope's `room` against it. Set from
+  /// construction (see `connect`'s `activeRoom`) so post-auth frames are
+  /// demuxed against the correct room from frame 1; `setActiveRoom` only
+  /// changes it for runtime room switches (`switchRoom`).
+  String _activeRoom;
 
   /// Override the destination room (Pi side). The app remains on the
   /// 'main' room itself (that's what we sent in `hello.room_id`).
