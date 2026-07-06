@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-05
 ---
 
 # Reconnect reproduction & attribution (observation workstream)
@@ -34,6 +34,42 @@ correlation key), attribute the failure to a specific surface, then decide
 whether it's app backoff / relay duplicate-connection cleanup / extension
 peer-offline consumption / send queue / UI projection — or a genuine
 contract gap.
+
+### Code-actionable items (scoped as stories, no live repro needed)
+
+- `idea-extension-pumps-into-dead-app-peer` → `story-extension-suspend-
+  fanout-on-peer-offline` (CONFIRMED gap: the relay emits `peer_offline` but
+  the extension doesn't consume it; `OwnerMultiplexer.broadcast` pumps into
+  the void until turn end). Implementing now.
+- `idea-mobile-user-message-not-delivered-timeout` → `story-verify-resumed-
+  session-echo-gate-rejection` (verify-then-decide: static-trace whether the
+  resumed-session SessionGate race is structurally possible, then fix or
+  re-scope). Static trace in flight.
+
+### Live-repro-only items (instrumentation in place; attribute on next drop test)
+
+These require a physical phone + real wifi↔cellular network drops and cannot
+be reproduced in the dev environment. The cross-side instrumentation
+(`story-app-capture-routing` ring log + `story-relay-duplicate-auth-
+supersession-log` + correlation key) is now in place to attribute them
+deterministically on the next live drop test:
+
+- `idea-mobile-drop-slow-recovery` — ~5 min end-to-end recovery on wifi→5g.
+  The relay supersession log (`story-relay-duplicate-auth-supersession-log`,
+  done) directly addresses this: it confirmed the relay does NOT eagerly
+  close the old duplicate conn, so the supersession→close gap is measurable
+  and the ~5min window is likely relay detection speed, not app backoff.
+  The app ring log's `conn-status` (retrying/delayMs) + `conn-channel-lost`
+  (stale) will confirm on the next repro.
+- `idea-mobile-drop-half-open-tcp` — no clean FIN on network switch;
+  duplicate-connection takeover by ping timeout vs eager supersession.
+  ANSWERED by `story-relay-duplicate-auth-supersession-log`: the relay does
+  NOT eagerly supersede — it waits for ping timeout. Behavior change (eager
+  close) deferred to a follow-up, now that the observation is in place.
+- `idea-mobile-outgoing-message-swallowed` — outgoing user message not
+  delivered, not surfaced. NOT reproduced server-side. The ring log's
+  `msg-send` (with the message id) + the extension's `app user_message id`
+  + the relay's `env_id_tail` will locate the drop on the next repro.
 
 - `idea-mobile-drop-slow-recovery` — ~5 min end-to-end recovery on wifi→5g.
   Unconfirmed contributors (app backoff, wireguard bring-up, app state
