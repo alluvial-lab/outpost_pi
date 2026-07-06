@@ -39,86 +39,92 @@ matched all 3 at some point, OR the gate is being bypassed.
 Across the full ring log, **7 distinct sessions** replayed (390+300+90+60+60+
 30+30 events). The phone sees a firehose of cross-session transcript content.
 
-## Root cause (HYPOTHESIS — needs static trace to confirm)
+## Root cause (CONFIRMED 2026-07-06 via ring-log correlation + static trace)
 
-The operator runs **multiple Pi processes** (one per cwd: `remote_pi`,
-`skills/`, `starmods/`, + a 4th). Each Pi:
-- loads the remote-pi extension,
-- connects to the relay with the SAME owner epk (`l2X/dUc=`) but a DIFFERENT
-  `room_id` (one per cwd: `7ADky8889NJy`, `SF_DCbXsmreE`, `zuMPC-YTtdUD`,
-  `k0H-7lFh371e`),
-- broadcasts `session_history` / `agent_message` / `agent_chunk` frames to
-  attached owners.
+**The bug is app-side auto-adoption/auto-activation.** The ring log proves the
+active session (`_activeRef.sessionId`) changed **5 times in 3 minutes**
+(`c12db9c7 → 06c8acbf → f05f3343 → 96bc2b30 → f05f3343`), each preceded by
+a sibling Pi's `peer_online` control frame + envelopes. The static trace
+confirms the mechanism:
 
-The phone subscribes to presence/rooms for the owner epk and sees all 4
-rooms. The phone's active room is `7ADky8889NJy`. But the phone's
-`hello.room_id` is `'main'` (`ws_transport.dart:250`) — the phone registers
-in `room=main`, NOT in the Pi's cwd-room. So the relay routes Pi→phone
-envelopes by the Pi's send-target room.
+1. **The extension broadcasts cross-room** (no room filter in
+   `OwnerMultiplexer.broadcast` — `owner_multiplexer.ts:450-454`). Each Pi
+   process (one per cwd) broadcasts `session_history`/`agent_message` to ALL
+   attached owners, regardless of which cwd-room the owner is in. So the
+   phone receives frames from all 4 Pis.
+2. **The app auto-activates to sibling sessions** via `_maybeAdoptLegacyRoom`
+   (`connection_manager.dart:1163-1172`): when a `RoomAnnounced`/
+   `RoomsSnapshot` for a sibling room arrives and the active peer has no
+   persisted room (or the legacy discovery fires), it mutates
+   `_activeRoomId = discoveredRoom`. This feeds back into
+   `SyncService._onRoomsChanged` (`sync_service.dart:544-554`), which calls
+   `activate(epk, _activeRoomId)` — changing `_activeRef` to the sibling
+   room's session. Once `_activeRef` matches, the session gate ACCEPTS the
+   sibling's `session_history`, and the transcript content leaks into the
+   active chat.
 
-**The leak path (to confirm):** when a Pi (in cwd-room `SF_DCbXsmreE`, say)
-broadcasts a `session_history` to the phone, it sends to
-`(phone_epk, <phone's room>)`. If the Pi sends to `room=main` (the phone's
-registered room), the relay delivers it. The phone's session gate should
-reject it (`session_id` mismatch with the active `7ADky` session) — BUT the
-`replayDedup` events prove it DIDN'T reject them. Two candidate explanations:
+### The smoking gun (ring-log evidence)
 
-1. **The app is `activate()`-ing to each session as it receives the
-   `session_history`**, because `RoomAnnounced`/`PairOk` from sibling rooms
-   drives `_activeRef` to those sessions. Then the gate accepts (the active
-   ref matches), the replay runs, and the transcript content lands in the
-   active chat's box. Need to trace `_learnSessionFromPairOk` +
-   `_onControl(RoomAnnounced)` + how `activate()` is called from the UI
-   when rooms snapshpt arrives.
-2. **The `session_history` frames from sibling Pis carry the phone's
-   EXPECTED session_id** (because the extension stamps `session_id` from
-   `currentRemoteSessionId()`, and if the phone's `session_sync` request
-   echoed the active session, the sibling Pi might echo it back). Less
-   likely — `buildSessionHistoryMessage` uses the Pi's OWN session id.
+```
+14:40:21.396  ACTIVE SESSION CHANGED TO: c12db9c7   (preceded by peer_online + envelopes)
+14:41:41.085  ACTIVE SESSION CHANGED TO: 06c8acbf   (preceded by peer_online + envelopes)
+14:41:52.016  ACTIVE SESSION CHANGED TO: f05f3343   (the real active session)
+14:43:13.662  ACTIVE SESSION CHANGED TO: 96bc2b30   (preceded by peer_online + envelopes)
+14:43:15.871  ACTIVE SESSION CHANGED TO: f05f3343   (back to the real one)
+```
 
-### Why "skills/ and starmods/ sessions" specifically
+Each session change is driven by an inbound `peer_online` from a sibling Pi
+reconnecting (its presence pushes), followed by that Pi's `session_history`
+broadcast. The app receives these and `_activeRef` flips to the sibling
+session, defeating the session gate.
 
-Those are cwds the operator has open Pi processes in. Each Pi process is a
-separate session in a separate room. The phone is rendering their transcript
-content because the cross-room `session_history` frames are reaching the
-active chat.
+### Why the gate doesn't catch it
+
+The session gate (`session_gate.dart:39-65`) compares
+`SessionHistory.sessionId` to `_activeRef.sessionId`. It's correct — but
+`_activeRef` is being mutated by the rooms-metadata path
+(`_maybeAdoptLegacyRoom` → `_onRoomsChanged` → `activate()`), not by user
+action. So the gate accepts because the active ref already flipped to match.
 
 ## The fix
 
-Depends on the confirmed root cause:
+**Both fixes are needed**, but the app-side is the acceptance bug (the gate
+accepting is what lets the leak through):
 
-- If (1) — the app must NOT `activate()` to a session just because a
-  `RoomAnnounced`/`session_history` from a sibling room arrives while a
-  different chat is open. The active room is a USER choice (which chat the
-  operator opened); sibling room metadata updates should NOT switch the
-  active transcript ref. The gate is correct; the bug is `activate()` being
-  driven by non-user events.
-- If (2) — the extension must NOT broadcast `session_history` to owners who
-  are not in the Pi's own room, OR the relay must NOT deliver cross-room
-  Pi→phone frames when the phone is in `main` and the Pi is in a cwd-room.
-  This connects to `story-mobile-send-timeout-relay-room-main-mismatch`:
-  the phone registering in `room=main` instead of the Pi's cwd-room is the
-  root of BOTH the send-timeout AND this leak.
+1. **App-side (primary, acceptance bug)**: `SyncService._onRoomsChanged`
+   must NOT call `activate()` to a sibling room while a chat is open. The
+   active room is a USER choice (which chat the operator opened); sibling
+   room metadata updates should NOT switch the active transcript ref.
+   `_maybeAdoptLegacyRoom` should only fire when there is no explicitly-
+   chosen active room (cold boot / first pair), not when a sibling room
+   announces while a different chat is open. The gate is correct; the bug
+   is `activate()` being driven by non-user room-metadata events.
+2. **Extension-side (defense in depth)**: `OwnerMultiplexer.broadcast` should
+   filter by room — a Pi in cwd-room `SF_DCbXsmreE` should not broadcast
+   `session_history`/`agent_message` to an owner attached in `7ADky8889NJy`.
+   This requires the multiplexer to track per-owner room (currently flat
+   `channels: Map<peerId, PeerChannelHandle>` with no room dimension,
+   `owner_multiplexer.ts:170-176`). This stops the cross-room frames at the
+   source, so the app never sees them.
 
-**Likely the same root as the send-timeout story**: the phone's
-`hello.room_id = 'main'` (the app's OWN room) is correct for receiving,
-but the Pi sends to the phone's room — if the Pi targets `room=main` (the
-phone's room), all Pis' broadcasts land on the phone regardless of which
-cwd-room the Pi is in. The phone's session gate filters by session_id, so
-non-active sessions should be rejected — UNLESS the app is auto-activating
-to them.
+Fix (1) first — it's the acceptance bug and it's app-only. Fix (2) is a
+follow-up hardening that requires extension ownership-model changes.
 
 ## Acceptance Criteria
 
-- [ ] Static trace: does `_activeRef` change when a `RoomAnnounced` for a
-      SIBLING room arrives while a different chat is open? Cite the path.
-- [ ] Static trace: does the extension broadcast `session_history` to ALL
-      attached owners, or only those in the Pi's cwd-room? Cite
-      `OwnerMultiplexer.broadcast` + `lateAttachTargets`.
-- [ ] Confirm via the ring log: do the `c12db9c7` / `06c8acbf` replayDedup
-      sessions correlate with `RoomAnnounced` events for non-active rooms?
+- [x] Static trace: does `_activeRef` change when a `RoomAnnounced` for a
+      SIBLING room arrives while a different chat is open? **YES** — via
+      `_maybeAdoptLegacyRoom` (`connection_manager.dart:1163-1172`) →
+      `_onRoomsChanged` (`sync_service.dart:544-554`) → `activate()`.
+- [x] Static trace: does the extension broadcast `session_history` to ALL
+      attached owners, or only those in the Pi's cwd-room? **ALL** —
+      `OwnerMultiplexer.broadcast` (`owner_multiplexer.ts:450-454`) has no
+      room filter.
+- [x] Confirm via the ring log: do the leaked replayDedup sessions correlate
+      with `peer_online`/envelopes for non-active rooms? **YES** — each
+      session change is preceded by `peer_online` + envelopes.
 - [ ] Decide fix path: app-side (don't auto-activate on sibling room
-      metadata) vs extension-side (don't broadcast cross-room) vs both.
+      metadata) — **DECIDED: app-side primary, extension-side follow-up.**
 - [ ] A regression test: a `SessionHistory` for a non-active session is
       rejected by the gate (or never arrives) → no `replayDedup`, no
       transcript mutation.
