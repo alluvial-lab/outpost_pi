@@ -53,6 +53,7 @@ import type {
   SessionHistoryEvent,
   ThinkingLevel,
 } from "./protocol/types.js";
+import type { RelayControlFrame } from "./protocol/generated/protocol.generated.js";
 import type { TranscriptEvent } from "./session/transcript_event.js";
 import {
   deterministicTranscriptEventId,
@@ -254,6 +255,7 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
   }),
   onOwnerAttached: ({ peerId, peerName, activeCount }) => {
     _sdkSessionProjection.recordOwnerAttached(peerId);
+    _syncOwnerPresenceSubscription();
     _notify(
       `[remote-pi] Owner attached: peer=${peerId.slice(0, 8)}, name=${peerName} ` +
       `(${activeCount} active)`,
@@ -267,6 +269,23 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
       details: { name: peerName, peerId, pairedAt },
       display: false,
     }, undefined, "paired");
+  },
+  onFanoutPresenceChanged: ({ peerShortId, state, sinceTs }) => {
+    const verb = state === "suspended" ? "suspended" : "resumed";
+    const content = state === "suspended"
+      ? `[remote-pi] Fan-out suspended for app peer=${peerShortId}`
+      : `[remote-pi] Fan-out resumed for app peer=${peerShortId}`;
+    _sendPiMessage({
+      customType: "remote-pi:fanout-presence",
+      content,
+      details: {
+        peer: peerShortId,
+        state: verb,
+        ...(sinceTs === undefined ? {} : { sinceTs }),
+      },
+      display: false,
+    }, undefined, "fanout-presence");
+    _notify(content, state === "suspended" ? "warning" : "info");
   },
 });
 
@@ -282,17 +301,43 @@ const ownerHarness: OwnerMultiplexerTestHarness = {
 };
 
 let _stopOwnerIngress: (() => void) | null = null;
+let _stopOwnerControl: (() => void) | null = null;
 
 function _ensureOwnerIngressListener(): void {
-  if (_stopOwnerIngress) return;
-  _stopOwnerIngress = _relayTransport.onOuterMessage((line) => {
-    void _handleOwnerOuterLine(line);
-  });
+  if (!_stopOwnerIngress) {
+    _stopOwnerIngress = _relayTransport.onOuterMessage((line) => {
+      void _handleOwnerOuterLine(line);
+    });
+  }
+  if (!_stopOwnerControl) {
+    _stopOwnerControl = _relayTransport.onControlFrame((frame) => {
+      _handleRelayControlFrame(frame);
+    });
+  }
 }
 
 function _stopOwnerIngressListener(): void {
   _stopOwnerIngress?.();
+  _stopOwnerControl?.();
   _stopOwnerIngress = null;
+  _stopOwnerControl = null;
+}
+
+function _handleRelayControlFrame(frame: RelayControlFrame): void {
+  if (frame.type === "peer_offline") {
+    _owners.markPeerOffline(frame.peer, frame.since_ts);
+    return;
+  }
+  if (frame.type === "peer_online") {
+    _owners.markPeerOnline(frame.peer);
+    return;
+  }
+  if (frame.type === "presence") {
+    for (const state of frame.states) {
+      if (state.online) _owners.markPeerOnline(state.peer);
+      else _owners.markPeerOffline(state.peer, state.since_ts ?? undefined);
+    }
+  }
 }
 
 async function _handleOwnerOuterLine(line: string): Promise<void> {
@@ -315,6 +360,13 @@ async function _handleOwnerOuterLine(line: string): Promise<void> {
     ),
     onDisconnect: (peerId) => _onPeerDisconnect(peerId),
     sendToPeer: (peerId, message) => _sendOwnerMessageToPeer(peerId, message),
+  });
+}
+
+function _syncOwnerPresenceSubscription(): void {
+  _relayTransport.currentRelayForOwnerChannels()?.sendControl({
+    type: "subscribe_presence",
+    peers: _owners.peerIds(),
   });
 }
 
@@ -1033,6 +1085,8 @@ function _disconnectOwnerForRuntime(appPeerId?: string): void {
   const result = _owners.disconnectOwner(appPeerId);
   if (!result.disconnected) return;
 
+  _syncOwnerPresenceSubscription();
+
   if (result.activeOwnerCount > 0) {
     // Other owners still attached — keep the turn projection so they continue
     // seeing the in-flight agent stream.
@@ -1434,9 +1488,13 @@ function createIndexDeps(): LegacyIndexDeps {
           turnActive: _turnProjection().working,
         });
         _sdkSessionProjection.recordOwnerAttached(input.peerId);
+        _syncOwnerPresenceSubscription();
         return channel;
       },
-      detach: (peerId, reason) => { _owners.detach(peerId, reason); },
+      detach: (peerId, reason) => {
+        _owners.detach(peerId, reason);
+        _syncOwnerPresenceSubscription();
+      },
       broadcast: (message) => _owners.broadcast(message),
       routeFrom: (sender, message) => _owners.routeFrom(sender, message),
       lateAttachTargets: () => _owners.lateAttachTargets(),

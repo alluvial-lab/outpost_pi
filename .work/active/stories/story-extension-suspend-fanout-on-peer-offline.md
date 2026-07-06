@@ -89,3 +89,100 @@ The fan-out suspension has real design decisions: drop-vs-queue semantics, the p
 - Where does per-peer presence state live? `OwnerMultiplexer` (it owns the channels) vs a new presence projection (separation of concerns)?
 - Is the drop-with-signal observable via the extension's `audit.jsonl` (retroactive) or a `debugPrint`/log? The observability feature's ring log is app-side; the extension side is already `audit.jsonl` — prefer that.
 - Does suspending fan-out affect the turn-state machine (the extension might need to mark the turn as "blocked on peer" rather than "streaming")? Or is fire-and-forget-drop sufficient (the turn completes server-side regardless)?
+
+## Implementation notes
+
+### Locked design decisions
+
+- **Presence state owner:** `OwnerMultiplexer` owns per-peer app channel lifetime (`channels`) and now owns the relay-derived `offlinePeerIds` set. A separate presence projection would add another source of truth for the same peer ids; keeping it with the channel registry lets `broadcast`, `detach`, `detachAll`, and `lateAttach` converge in one lifecycle owner.
+- **Per-peer vs per-Owner:** the extension channel model is `Map<peerId, PeerChannelHandle>`, not `Map<owner, Set<channel>>`. A multi-device Owner therefore appears as multiple app peer ids/channels. Relay `peer_offline` is also peer-id scoped and fires on N→0 connections for that peer id, so fan-out suspension is per peer id: an offline phone is skipped while other app peer channels keep receiving frames.
+- **Drop-with-signal:** no queue/buffer is introduced. `OwnerMultiplexer.broadcast` skips offline peer ids and drops those live stream frames; reconnecting apps recover via `session_sync`. The diagnostic uses the extension-side Pi custom message/notification path (`remote-pi:fanout-presence`) because no app-owner `audit.jsonl` writer/debugPrint facility exists; it logs only the peer short id, state, and optional `sinceTs`, never transcript payloads. The signal is emitted once on suspend and once on resume, not per dropped frame.
+- **Resume/lifecycle:** `peer_online` clears the peer's offline state. `attach`/reattach also clears stale offline state so a reconnect/late attach during an active turn cannot stay stuck suspended. `detach`, `detachAll`, and `detachAllForRelayDrop` clear offline flags to avoid stale state across relay/session lifecycle boundaries.
+
+### Files changed
+
+- `pi-extension/src/extension/relay_transport.ts`
+  - Added generated-type-backed decoding for relay presence control frames (`peer_offline`, `peer_online`, and `presence`).
+  - Added `onControlFrame` to the relay transport adapter and dispatches control frames from the single relay message listener, preserving existing outer-envelope listener behavior.
+- `pi-extension/src/extension/owner_multiplexer.ts`
+  - Added `offlinePeerIds`, `markPeerOffline`, `markPeerOnline`, and `isPeerOffline`.
+  - Changed `broadcast` to skip offline peer ids.
+  - Added one-shot suspend/resume diagnostic callback support.
+  - Clears offline state on detach/detachAll/relay-drop and on reattach.
+- `pi-extension/src/index.ts`
+  - Wires relay control frames to `_owners.markPeerOffline` / `_owners.markPeerOnline`.
+  - Subscribes the relay presence stream for attached owner peer ids with `subscribe_presence`.
+  - Emits privacy-preserving `remote-pi:fanout-presence` diagnostics plus UI notify on suspend/resume.
+- `pi-extension/src/extension/owner_multiplexer.test.ts`
+  - Added tests for offline skip/resume, one-shot diagnostics, and late-attach/reattach clearing stale offline state.
+- `pi-extension/src/extension/relay_transport.test.ts`
+  - Added tests for decoding and dispatching `peer_offline`/`peer_online` from the relay message stream.
+
+### Verification
+
+Targeted tests including the required session-replacement harness:
+
+```text
+$ PNPM_HOME=/home/agent/projects/remote_pi/.pnpm-store npm_config_cache=/home/agent/projects/remote_pi/.npm-cache XDG_CACHE_HOME=/home/agent/projects/remote_pi/.xdg-cache corepack pnpm exec vitest run src/extension/owner_multiplexer.test.ts src/extension/relay_transport.test.ts test/sdk-session-replacement.test.ts
+[WARN] The "pnpm" field in package.json is no longer read by pnpm. The following keys were ignored: "pnpm.onlyBuiltDependencies". See https://pnpm.io/settings for the new home of each setting.
+
+ RUN  v4.1.9 /home/agent/projects/remote_pi/pi-extension
+
+
+ Test Files  3 passed (3)
+      Tests  15 passed (15)
+   Start at  19:35:12
+   Duration  1.46s (transform 454ms, setup 0ms, import 930ms, tests 581ms, environment 0ms)
+```
+
+Typecheck:
+
+```text
+$ PNPM_HOME=/home/agent/projects/remote_pi/.pnpm-store npm_config_cache=/home/agent/projects/remote_pi/.npm-cache XDG_CACHE_HOME=/home/agent/projects/remote_pi/.xdg-cache corepack pnpm typecheck
+[WARN] The "pnpm" field in package.json is no longer read by pnpm. The following keys were ignored: "pnpm.onlyBuiltDependencies". See https://pnpm.io/settings for the new home of each setting.
+$ tsc --noEmit
+```
+
+Full test suite:
+
+```text
+$ PNPM_HOME=/home/agent/projects/remote_pi/.pnpm-store npm_config_cache=/home/agent/projects/remote_pi/.npm-cache XDG_CACHE_HOME=/home/agent/projects/remote_pi/.xdg-cache corepack pnpm test
+[WARN] The "pnpm" field in package.json is no longer read by pnpm. The following keys were ignored: "pnpm.onlyBuiltDependencies". See https://pnpm.io/settings for the new home of each setting.
+$ vitest run
+
+ RUN  v4.1.9 /home/agent/projects/remote_pi/pi-extension
+
+
+ Test Files  47 passed (47)
+      Tests  749 passed | 3 skipped (752)
+   Start at  19:35:18
+   Duration  7.59s (transform 3.16s, setup 0ms, import 7.20s, tests 16.00s, environment 5ms)
+```
+
+## Review fixes (adversarial review, 1 pass)
+
+NEEDS FIXES → APPROVED after 1 fix pass (openai-codex/gpt-5.5):
+
+- **[I1] fail-fast violation in `presence` decoding** (`relay_transport.ts`):
+  the original `flatMap(... return [])` silently dropped malformed
+  `presence.states` entries, returning a partial frame instead of rejecting
+  it — could mask a relay bug or a missed offline/online transition. Fixed
+  with a `for...of` loop that `return null`s the WHOLE frame on the first
+  malformed entry (missing non-empty `peer`, non-boolean `online`, or invalid
+  `since_ts`). Regression test: "rejects malformed presence frames (fail-fast
+  at the boundary)" asserts null for non-array states, empty peer, non-boolean
+  online, non-number since_ts — and FAILS under the old flatMap logic (which
+  returned a partial frame).
+
+- **Nit (dispatch-path test)**: added "dispatchRelayMessage still forwards raw
+  control-frame lines to outerMessageHandlers" to prove the subtle preservation
+  of the legacy envelope path (a control frame lacks `ct`, so
+  decodeOuterEnvelope returns null and it's ignored; the line is still
+  forwarded so the path is unchanged).
+
+- **Nit (presence tests)**: added "decodes presence frames and tolerates
+  null/absent since_ts" for valid presence with mixed since_ts shapes.
+
+Final verification: `corepack pnpm test` → 752 passed | 3 skipped (was 749;
++3 new tests). `corepack pnpm typecheck` clean. The session-replacement
+harness still passes.
