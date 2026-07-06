@@ -496,6 +496,12 @@
               "wireName": "delta",
               "dartType": "String",
               "required": true
+            },
+            {
+              "name": "ts",
+              "wireName": "ts",
+              "dartType": "int",
+              "required": false
             }
           ],
           "sessionScoped": true
@@ -522,6 +528,12 @@
               "name": "usage",
               "wireName": "usage",
               "dartType": "Usage",
+              "required": false
+            },
+            {
+              "name": "ts",
+              "wireName": "ts",
+              "dartType": "int",
               "required": false
             }
           ],
@@ -555,6 +567,18 @@
               "name": "usage",
               "wireName": "usage",
               "dartType": "Usage",
+              "required": false
+            },
+            {
+              "name": "ts",
+              "wireName": "ts",
+              "dartType": "int",
+              "required": false
+            },
+            {
+              "name": "messageId",
+              "wireName": "message_id",
+              "dartType": "String",
               "required": false
             }
           ],

@@ -393,6 +393,22 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
             text,
             ...(usage ? { usage } : {}),
           });
+          // Identity-source (a): broadcast a live `agent_message` per text
+          // block carrying the stable (ts, message_id) so the app's live
+          // commit path derives the SAME deterministic eventId as
+          // session_history replay (which emits one agent_message per block
+          // from these same transcript events). This makes `message_end` the
+          // single source of live assistant identity — the app commits from
+          // this frame, not from the streamed buffer at agent_done. See
+          // story-mobile-assistant-message-duplicated-live-replay decision 1.
+          this.opts.outputs.broadcast(this.currentSessionMessage({
+            type: "agent_message",
+            in_reply_to: this.lastTranscriptUserId ?? `sync_${ts}`,
+            text,
+            ts,
+            message_id: messageId,
+            ...(usage ? { usage } : {}),
+          }));
         } else if (block.type === "toolCall") {
           const toolCallId = String(block.id ?? `sync_${ts}:tool:${blockIndex}`);
           this.appendTranscriptEvent({
