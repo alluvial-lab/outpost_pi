@@ -11,6 +11,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-06
 updated: 2026-07-06
+reinvestigated: 2026-07-06
 ---
 
 # Phone user message "not delivered" — relay sees `room=main` while app believes `7ADky...`
@@ -35,23 +36,51 @@ The workstation side concurrently logged:
 [remote-pi] fanout-presence: Pi rejected message: agent session not bound yet
 ```
 
-## Root cause (CONFIRMED via relay logs + ring log)
+## Root cause (RE-INVESTIGATION 2026-07-06: relay evidence does NOT support the stated mechanism)
 
-**The phone's OUTBOUND envelopes carry `room=main`, not the Pi's real
-cwd-room `7ADky8889NJy`.** The relay can't find a Pi registered in
-`room=main`, so it drops every envelope with "dest (peer, room) not found":
+**The relay-drop evidence cited below was misread — the directionality is
+backwards, and the relay shows zero phone-originated drops.** A live
+re-inspection of the relay container (`remote-pi-relay`, up since 02:34 UTC)
+found:
 
-```
-relay WARN: dest (peer, room) not found, dropping from=l2X/dUc= dest=MD/tL3E= room=main bytes=204
-```
+1. **Directionality.** `connection_actor.rs:126-167` (`dispatch_outer`)
+   logs `from` = `self.peer_short` (authenticated **sender**) and `dest` =
+   `env.peer` (destination), `room` = `env.room` (**destination** room). So
+   the cited line `from=l2X/dUc= dest=MD/tL3E= room=main` is **Pi → phone**,
+   not phone → Pi. `l2X/dUc=` is the Pi; `MD/tL3E=` is the phone.
+2. **Zero phone-originated drops.** Across the full relay log there are
+   **0** lines matching `from=MD/tL3E=` (phone as sender). Every drop is
+   `from=l2X/dUc= dest=MD/tL3E= room=main` — the Pi pushing live events to
+   the phone at the phone's OWN room `main` (the phone authenticates with
+   `hello.room_id = 'main'`; `ws_transport.dart:250`). That `room=main` is
+   CORRECT (it's the phone's room), and the drop fires only when the phone
+   is offline (no live conn in `(MD/tL3E=, main)`). It is **not** a routing
+   bug.
+3. **No relay activity at the repro second.** The 14:42:47 UTC repro
+   window (phone authed 14:40:17) has ZERO drop lines AND zero non-firehose
+   relay lines. If the phone's envelope had reached the relay and been
+   dropped for a room mismatch, there would be a `from=MD/tL3E=` drop at
+   ~14:42:47. There is none. So the phone's send either (a) never reached
+   the relay (app-side transport never flushed), or (b) reached the relay
+   and was forwarded successfully (no drop) but the Pi did not echo — a
+   Pi/extension-side issue, NOT a relay room-routing drop.
 
-- `l2X/dUc=` is the Pi's epk tail; `MD/tL3E=` is the phone's epk tail.
-  The Pi authenticated in `room=7ADky8889NJy` (relay log
-  `02:36:31` + reconnect `03:19:38`), NOT `room=main`.
-- The phone's `connStatus` ring-log events report `room=7ADky8889NJy`
-  (the manager's `_activeRoomId` is correct), but the relay sees the
-  phone's outbound envelopes stamped `room=main` — the `WsTransport`'s
-  `_activeRoom` is still the `'main'` default.
+### What this means for the fix
+
+- The reorder fix (`80b04e5`) is still defensible on its own merits
+  (`_activeRoom` defaulting to `'main'` is a real latent bug for the
+  inbound demux and for correctly targeting the Pi's cwd-room), but it is
+  **not** the confirmed cause of this send_timeout — the relay logs do not
+  show the phone→Pi `room=main` drops the story claimed.
+- The "agent session not bound yet" extension symptom remains a separate
+  recoverable condition (see below).
+- **Re-opened question**: what actually consumed the phone's 14:42:47 send
+  for 20s with no echo? Candidates: (a) app-side transport stuck/not
+  flushing (the `msgSend` fired but the WS frame never went out); (b) relay
+  forwarded it and the Pi/extension received it but didn't echo (session
+  not bound, or wrong room targeted silently). Needs the extension's own
+  debug log for the 14:42:47 instant, or a decoded ring-log WS-send event,
+  to distinguish.
 
 ### This is the SEND-side twin of the reorder bug
 
@@ -93,36 +122,39 @@ Two failure layers stacked: the relay dropped the user message (room
 mismatch), AND the extension's fanout-presence notification couldn't be
 injected (session not bound). The operator sees both.
 
-## The fix
+## The fix (REVISED — pending re-confirmation of the actual failure path)
 
-1. **Deploy the reorder fix** (rebuild + sideload the app with `80b04e5`).
-   That eliminates the default-`'main'` outbound stamps on reconnect.
-2. ** Harden the `peer.roomId == null` path**: when `peer.roomId` is null
-   at connect time, the transport should NOT default to sending `'main'`
-   outbound — it should either wait for discovery to establish the room
-   (queue sends) or send to the room the relay reports via
-   `room_announced`/`rooms` snapshot. Currently `peer.roomId ?? 'main'`
-   silently sends to `main`, which the relay can't route.
-3. **The fanout-presence "session not bound"**: the extension should
-   either queue the fanout-presence notification until `messageApi` is
-   bound, or drop it silently (it's a best-effort UI hint, not a delivery
-   contract). Surfacing it as a `console.error` "Pi rejected message" is
-   noisy for a recoverable condition. See
-   `story-extension-suspend-fanout-on-peer-offline` (done) for the
-   fanout-suspend semantics — this is the notification path, not the
-   suspend path.
+1. **Do NOT assume the reorder fix resolves this send_timeout.** The relay
+   logs do not show the phone→Pi `room=main` drops the original story
+   claimed. Deploying `80b04e5` is still worthwhile (latent inbound-demux
+   fix) but must not be credited with fixing this bug without a live repro
+   confirming the symptom is gone.
+2. **Re-confirm the failure path** before fixing: capture the extension's
+   debug log AND a decoded ring-log WS-send event at a fresh repro instant.
+   Distinguish: (a) phone never sent the WS frame (app transport stuck) vs
+   (b) relay forwarded and Pi didn't echo (extension session/echo bug).
+3. **The fanout-presence "session not bound"** remains a separate
+   recoverable condition worth silencing/queuing, but it is NOT the user
+   message being rejected (the user message's actual fate is the open
+   question in #2). See `story-extension-suspend-fanout-on-peer-offline`.
 
-## Acceptance Criteria
+## Acceptance Criteria (REVISED)
 
-- [ ] Deploy: rebuild + sideload the app with the reorder fix; confirm the
-      relay no longer logs `room=main` for the phone's outbound envelopes.
-- [ ] Static trace: when `peer.roomId` is null at connect, what does the
-      transport send outbound? Cite the path. Decide: queue vs. discovery-wait
-      vs. acceptable `'main'` fallback.
-- [ ] The fanout-presence "session not bound" error is either silenced for
-      the recoverable case or queued until bound.
-- [ ] A live repro after the deploy: send a message right after reconnect
-      → echo arrives, no `send_timeout`.
+- [x] **RELAY EVIDENCE RE-CHECKED (2026-07-06)**: the cited
+      `from=l2X/dUc= dest=MD/tL3E= room=main` drop is Pi→phone (correct
+      room=phone's `main`), NOT phone→Pi. Zero `from=MD/tL3E=` drops in
+      the full relay log. Zero relay activity at the 14:42:47 repro second.
+      The stated relay-room-main-drop mechanism is **unsupported**.
+- [ ] Re-confirm the actual failure path at a fresh repro: extension
+      debug log + decoded ring-log WS-send event at the send instant.
+      Decide app-transport-stuck vs Pi-didn't-echo.
+- [ ] Only after the path is re-confirmed: implement the minimal fix and
+      verify with a live repro (send → echo → no `send_timeout`).
+- [ ] Separately: silence/queue the fanout-presence "session not bound"
+      recoverable error (independent of this bug).
+- [ ] Static trace (still useful, lower priority): when `peer.roomId` is
+      null at connect, what does the transport send outbound? Decide queue
+      vs. discovery-wait vs. acceptable `'main'` fallback.
 
 ## Out of scope
 

@@ -10,6 +10,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-06
 updated: 2026-07-06
+reinvestigated: 2026-07-06
 ---
 
 # Mobile chat receives `session_history` from non-active Pi sessions (cross-room leak)
@@ -52,6 +53,39 @@ they all key by `roomId` and only touch the announced room's entry. The relay
 keys rooms by `(peer_epk, room_id)` and does not mis-route
 `room_meta_updated` across rooms. So a sibling Pi's metadata for
 `SF_DCbXsmreE` cannot flip `7ADky`'s `sessionId`.
+
+### NEW structural fact (2026-07-06 live relay inspection)
+
+All 4 dev-VM Pi processes authenticate under the **SAME owner epk** `l2X/dUc=`
+— rooms `SF_DCbXsmreE` (02:35), `7ADky8889NJy` (02:36/03:19/17:53),
+`zuMPC-YTtdUD` (07:03), `k0H-7lFh371e` (07:04/17:10). They share one owner
+keyring (the dev VM's `~/.pi/agent`). The phone (`MD/tL3E=`) is in
+`room=main` only. Two relay-structural consequences the prior traces missed:
+
+1. **`room_meta_update` keys by `(peer_id, room_id)` and drops unknown pairs**
+   (`control.rs:143-167`, `rooms.rs:apply_patch`). A sibling Pi sending
+   `room_meta_update` for room `7ADky` resolves to key `(l2X/dUc=, 7ADky)` —
+   which EXISTS (the 7ADky Pi registered it). So a sibling could stamp a new
+   session_id onto the `7ADky` room entry via the shared peer_id. This is a
+   **candidate leak path the prior static trace missed**: does the extension
+   ever send `room_meta_update` for a room it did NOT register (a sibling
+   room id)? The relay would accept it under the shared peer_id.
+2. **`RoomManager.subscribe` is keyed by peer_id, not room** (`rooms.rs:56`).
+   `subscribers_of("l2X/dUc=")` returns the phone for ALL of that peer's
+   rooms. So the phone RECEIVES `room_meta_updated` frames for all 4 sibling
+   rooms under the one shared peer_id. The app's `RoomMetaUpdated` handler
+   must not auto-activate to a sibling's session from these. This is the
+   delivery-side precondition for the h2 leak.
+
+### The 7ADky Pi did NOT re-auth during the repro window
+
+The `7ADky` Pi's connections authenticated at 02:36:31 and 03:19:38, then
+NOT AGAIN until 17:53:34 — so no reconnect rotation during 14:40-14:43.
+Any session rotation in that window came via `room_meta_update` frames, not
+re-auth. The relay doesn't log `room_meta_update` at INFO, so relay logs
+alone cannot confirm whether `7ADky`'s session_id was rotated by the 7ADky
+Pi's own process (h1, correct) or overwritten by a sibling via the
+shared-peer_id path (h2-leak-variant).
 
 **Two remaining hypotheses:**
 
@@ -123,10 +157,17 @@ distinguish them.
       room filter.
 - [x] Confirm via the ring log: the active session changed 5 times in 3 min
       while the room stayed `7ADky`.
-- [ ] **OPEN**: are the flipped sessions the `7ADky` Pi's own rotations (h1)
-      or sibling Pis' sessions (h2)? Needs decoded `room_meta_updated`/
-      `session_history` wire payloads, or operator confirmation of `/new`
-      activity in the 14:40-14:43 window.
+- [x] **RELAY (2026-07-06 live)**: all 4 dev-VM Pis share one owner epk
+      `l2X/dUc=`; `room_meta_update` keys by `(peer_id, room_id)` and would
+      accept a sibling's patch for room `7ADky` under the shared peer_id;
+      `subscribe` is peer-keyed so the phone receives all 4 rooms' meta. The
+      7ADky Pi did not re-auth during the 14:40-14:43 window.
+- [ ] **OPEN (refined)**: does the extension ever send `room_meta_update`
+      for a room the process did NOT register (a sibling room id)? If yes,
+      the shared-peer_id path overwrites `7ADky`'s session_id — that is the
+      h2 leak mechanism. If no, the rotation is the 7ADky Pi's own (h1).
+      Needs the extension's debug log for the 14:40-14:43 window, OR a decoded
+      ring-log `room_meta_updated` carrying room + session_id + peer.
 - [ ] Decide fix path after the open question is resolved.
 - [ ] A regression test once the root cause is confirmed.
 
