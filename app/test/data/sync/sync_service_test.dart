@@ -55,6 +55,7 @@ class _FakeChannel implements IChannel {
         text: m.text,
         streamingBehavior: m.streamingBehavior,
         image: m.image,
+        ts: m.ts,
       ),
       QueuedMessageState(:final sessionId) when sessionId.isEmpty =>
         QueuedMessageState(sessionId: sid, id: m.id, text: m.text),
@@ -1162,6 +1163,76 @@ void main() {
         assistantRows.map((r) => r.text).toSet(),
         {'first block', 'second block'},
       );
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  // Regression for `story-mobile-assistant-message-duplicated-live-replay`
+  // user-message follow-up (identity source (a), same class extended to user
+  // messages). A live `user_input` echo carrying the SDK `ts` must commit with
+  // the SAME deterministic eventId as the `UserInputEvt` replay path, so a live
+  // commit + replay of the same user message collapse to ONE Hive row (deduped
+  // by eventId) instead of two rows with incompatible schemes.
+  test(
+    'live user_input(ts) + replay UserInputEvt collapse to one row',
+    () async {
+      final s = await setup();
+      // Live user_input echo carrying the SDK ts (the extension's
+      // message_end-driven broadcast).
+      const liveTs = 4000;
+      s.ch.push(const UserInput(
+        id: 'local_user1',
+        text: 'hello from phone',
+        ts: liveTs,
+      ));
+      await _settle();
+      final afterLive =
+          messages(s.epk).where((r) => r.role == MsgRole.user).length;
+      expect(afterLive, 1, reason: 'live user_input commits one row');
+
+      // Replay the SAME user message via session_history. Under the old
+      // scheme this would add a SECOND event-store row (incompatible
+      // eventIds). With deterministic identity it collapses (and the
+      // projection guard dedupes by id regardless).
+      s.ch.push(SessionHistory(
+        inReplyTo: 'sync1',
+        sessionStartedAt: 0,
+        events: const [
+          UserInputEvt(ts: liveTs, id: 'local_user1', text: 'hello from phone'),
+        ],
+        eos: true,
+      ));
+      await _settle();
+
+      final userRows =
+          messages(s.epk).where((r) => r.role == MsgRole.user).toList();
+      expect(
+        userRows.length,
+        1,
+        reason: 'projection dedupes by id regardless',
+      );
+      // The real convergence is in the event store: a live + replay for the
+      // same (id, ts) must collapse to ONE UserMessageConfirmed event, not
+      // two with incompatible eventIds. Pre-fix this was 2 (bloat); post-fix 1.
+      final userConfirmedEvents =
+          (await s.sync.debugTranscriptEventStore.readSession(
+        transcriptKeyFor(s.epk),
+      ))
+          .whereType<UserMessageConfirmed>()
+          .where((e) => e.clientMessageId == 'local_user1')
+          .toList();
+      expect(
+        userConfirmedEvents.length,
+        1,
+        reason:
+            'A live user_input(ts) and a replay UserInputEvt for the same '
+            '(id, ts) must collapse to one event-store row (deduped by '
+            'eventId). Previously the live path used a non-session-scoped '
+            'eventId while replay used server:<sessionId>:user_input:'
+            '<id>:<ts> — both survived as distinct Hive rows.',
+      );
+      expect(userRows.single.text, 'hello from phone');
       s.conn.dispose();
       s.sync.dispose();
     },

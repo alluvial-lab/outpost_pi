@@ -463,9 +463,7 @@ green; `protocol check` validates 5 fixture families.
 ### Deferred / follow-up
 - **User-message identity** (same class): the live `UserInput` echo must
   derive `server:$sessionId:user_input:$id:$ts` to match `UserInputEvt`
-  replay. The extension's `user_input` broadcast would need to carry the
-  SDK `ts`. The projection's `ChatMessage.id` guard mitigates the visible
-  dup for now.
+  replay. **DONE 2026-07-06** — see "User-message identity (landed)" below.
 - **Multi-block granularity**: a turn with multiple assistant text blocks
   now produces one live `agent_message` broadcast per block (matching
   replay's one `AgentMessageEvt` per block). The streamed `_streaming.buffer`
@@ -479,6 +477,57 @@ green; `protocol check` validates 5 fixture families.
   commits, the pre-tool-flush of `_streaming.buffer` at `ToolRequest` may
   become redundant for commit identity (decision 2's synchronous-clear fix
   stays regardless). Decide at follow-up.
+
+### User-message identity (landed 2026-07-06)
+
+Same class as the assistant fix, now extended to user messages. The visible
+user-message dup was already mitigated by the projection's `ChatMessage.id`
+dedup (`transcript_projection.dart:126-127,161-168`), but the event-store had
+TWO rows per message (live echo + replay with incompatible eventIds). This
+lands the convergence so the event-store collapses to one row too.
+
+**Schema + codegen:**
+- `protocol/schema/app-pi-server.schema.json` — added optional `ts` to
+  `userInput` and `userMessage`. Also added `ts` to the ClientMessage
+  `userMessage` in `app-pi-client.schema.json` to resolve a codegen
+  interface-name collision (Client + Server `user_message` share the
+  `UserMessage` interface; without `ts` on both, the codegen emitted the
+  Client's interface and silently skipped the Server's, dropping `ts`).
+- Regenerated TS + Dart protocol types.
+
+**Extension (`sdk_session_projection.ts`):**
+- `appendLegacySdkMessageToTranscript` (user branch, `message_end`-driven)
+  now broadcasts a live `user_input` echo carrying the stable SDK `ts`,
+  mirroring the assistant `agent_message` broadcast.
+
+**App (`sync_service.dart`):**
+- `UserInput` handler: when `ts` is present, derives
+  `eventId = serverReplayEventId(sessionId, 'user_input', id, ts)` to match
+  the replay `UserInputEvt` path. Falls back to `'server:user_confirmed:$id'`
+  when `ts` is absent (legacy extension / the early delivery-time echo).
+
+**Tests:**
+- App: `live user_input(ts) + replay UserInputEvt collapse to one row` —
+  asserts the EVENT-STORE row count (not the projection, which dedupes by
+  id regardless). Verified to FAIL without the fix (`Actual: 2` event-store
+  rows) and pass with it (`1`).
+- Extension: pins that `appendLegacySdkMessageToTranscript` (user branch)
+  broadcasts a live `user_input` with `ts` matching `buildSessionHistoryMessage`'s
+  replay `UserInputEvt`.
+- Test-harness: `_withDefaultSession` now preserves `ts` on `UserInput`.
+
+**Verification:** `flutter analyze` clean; `flutter test` 668/668;
+`pnpm typecheck` clean; `pnpm test` 754/754 (3 skipped); `protocol check`.
+
+**Note on the early delivery-time echo:** the extension's `user_message`
+echo (fired at `_deliverUserMessage` time, before `message_end`) does NOT
+carry `ts` and still produces the old `'server:user_confirmed:$id'` eventId
+on the app side. The `message_end`-driven `user_input` echo (with `ts`)
+fires later and produces the deterministic eventId; Hive dedupes the earlier
+row by `clientMessageId` in projection. The event-store retains the early
+row until the next replay; acceptable (the projection guard prevents a
+visible dup). A future cleanup could suppress the early echo's commit when
+`ts` is expected, mirroring the `AgentDone` skip — deferred.
 
 ### Deep review (2026-07-06) — REJECT → fixed (blocking multi-block collision)
 

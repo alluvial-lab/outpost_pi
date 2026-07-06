@@ -452,4 +452,40 @@ describe("SdkSessionProjection live assistant identity (decision 1)", () => {
     expect(replayAgent?.text).toBe("hi back");
     expect(replayAgent?.message_id).toBe("sync_1001:assistant:0");
   });
+
+  test("appendLegacySdkMessageToTranscript broadcasts a live user_input with stable ts (user-message follow-up)", () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
+    projection.bindApi(makePi());
+    projection.bindSessionContext(makeCtx("session-identity-2"));
+
+    // A user message at ts 5_000.
+    projection.appendLegacySdkMessageToTranscript({
+      role: "user",
+      content: "hello from phone",
+      timestamp: 5_000,
+    });
+
+    // The live broadcast must carry ts matching the replay path so the app
+    // can derive the same deterministic eventId (server:<sid>:user_input:
+    // <id>:<ts>). For an unmatched (foreign) user message, clientMessageId
+    // is sync_<ts>.
+    const userInputs = (outputs.broadcast as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[0])
+      .filter((m) => m?.type === "user_input");
+    expect(userInputs).toHaveLength(1);
+    const live = userInputs[0];
+    expect(live.ts).toBe(5_000);
+    expect(live.text).toBe("hello from phone");
+    expect(live.id).toBe("sync_5000");
+
+    // The replay path must emit the SAME (ts, id) for the app to derive a
+    // matching deterministic eventId.
+    const history = projection.buildSessionHistoryMessage("req-1", undefined);
+    const replayUser = history.events.find((e) => e.type === "user_input");
+    expect(replayUser).toBeDefined();
+    expect(replayUser?.ts).toBe(5_000);
+    expect(replayUser?.id).toBe("sync_5000");
+    expect(replayUser?.text).toBe("hello from phone");
+  });
 });
