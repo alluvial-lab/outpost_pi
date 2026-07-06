@@ -70,6 +70,14 @@ class SyncService extends Service {
   final StringBuffer _chunkBuffer = StringBuffer();
   Timer? _flushTimer;
   StreamingMessage? _streaming;
+  // Identity-source (a): tracks whether a deterministic `agent_message`
+  // (carrying SDK `ts`, from the extension's `message_end`) has committed
+  // the final assistant text for the current turn. When true, the
+  // `AgentDone` buffer-commit is skipped (it would duplicate the
+  // `agent_message` commit under a random eventId). Reset on turn start /
+  // streaming clear. See
+  // story-mobile-assistant-message-duplicated-live-replay decision 1.
+  bool _agentMessageCommittedThisTurn = false;
   final StreamController<StreamingMessage?> _streamingController =
       StreamController<StreamingMessage?>.broadcast();
 
@@ -592,7 +600,17 @@ class SyncService extends Service {
 
       case AgentDone(:final inReplyTo):
         final buffered = _streaming?.buffer ?? '';
-        if (buffered.isNotEmpty) {
+        // Identity-source (a): if a deterministic `agent_message` (from the
+        // extension's `message_end`) already committed the final assistant
+        // text for this turn, skip the buffer-commit — it would duplicate
+        // the `agent_message` commit under a random eventId. The buffer is
+        // cleared (streaming UI hides) regardless. Falls back to the
+        // buffer-commit when no `agent_message` with `ts` arrived (legacy
+        // extension, or a turn whose text only ever streamed). See
+        // story-mobile-assistant-message-duplicated-live-replay decision 1.
+        final committedViaAgentMessage = _agentMessageCommittedThisTurn;
+        _agentMessageCommittedThisTurn = false;
+        if (buffered.isNotEmpty && !committedViaAgentMessage) {
           // Clear the streaming buffer synchronously so a second flush
           // (ToolRequest re-flush, or a straggler AgentChunk) cannot
           // re-commit the same text under a new random eventId. The
@@ -612,6 +630,10 @@ class SyncService extends Service {
               text: buffered,
             ),
           );
+        } else if (buffered.isNotEmpty) {
+          // Deterministic commit already happened via `agent_message`; just
+          // clear the streaming buffer.
+          _emitStreaming(null);
         }
         // ignore: discarded_futures
         _appendTranscriptEvent(
@@ -624,18 +646,53 @@ class SyncService extends Service {
         );
         _setTurnIdle(preview: buffered.isEmpty ? null : buffered);
 
-      case AgentMessage(:final inReplyTo, :final text):
-        // ignore: discarded_futures
-        _appendTranscriptEvent(
-          AssistantMessageCommitted(
-            eventId: 'server:assistant_message:$inReplyTo:${uuid7()}',
-            sessionId: _activeTranscriptSessionId(),
-            ts: DateTime.now(),
-            messageId: 'agent_$inReplyTo',
-            replyTo: inReplyTo,
-            text: text,
-          ),
-        );
+      case AgentMessage(:final inReplyTo, :final text, :final ts, :final usage):
+        // Identity-source (a): derive the SAME deterministic eventId/messageId
+        // as session_history replay (AgentMessageEvt) so a live commit and
+        // a replay of the same assistant message collapse to ONE Hive row
+        // (deduped by eventId). The extension's `message_end`-driven
+        // `agent_message` broadcast carries the SDK `ts` for this. Falls
+        // back to the old random-id scheme only when `ts` is absent (legacy
+        // extension / pre-fix) — see
+        // story-mobile-assistant-message-duplicated-live-replay decision 1.
+        if (ts != null) {
+          final sessionId = _activeTranscriptSessionId();
+          _agentMessageCommittedThisTurn = true;
+          // ignore: discarded_futures
+          _appendTranscriptEvent(
+            AssistantMessageCommitted(
+              eventId: serverReplayEventId(
+                sessionId,
+                'agent_message',
+                inReplyTo,
+                ts,
+              ),
+              sessionId: sessionId,
+              ts: DateTime.fromMillisecondsSinceEpoch(ts),
+              messageId: serverReplayMessageId(
+                sessionId,
+                'agent_message',
+                inReplyTo,
+                ts,
+              ),
+              replyTo: inReplyTo,
+              text: text,
+              usage: usage,
+            ),
+          );
+        } else {
+          // ignore: discarded_futures
+          _appendTranscriptEvent(
+            AssistantMessageCommitted(
+              eventId: 'server:assistant_message:$inReplyTo:${uuid7()}',
+              sessionId: _activeTranscriptSessionId(),
+              ts: DateTime.now(),
+              messageId: 'agent_$inReplyTo',
+              replyTo: inReplyTo,
+              text: text,
+            ),
+          );
+        }
 
       case QueuedMessageState(:final text):
         _setQueuedText(text?.isNotEmpty == true ? text : null);
@@ -670,6 +727,8 @@ class SyncService extends Service {
         if (streamingBehavior == UserMessageStreamingBehavior.steer) {
           _setActivity(SessionActivity.working, preview: text);
         } else {
+          // New user turn → reset the per-turn agent_message-commit flag.
+          _agentMessageCommittedThisTurn = false;
           _setTurnActive(
             status: AppTurnStatus.working,
             preview: text,
@@ -1355,6 +1414,7 @@ class SyncService extends Service {
     _flushTimer?.cancel();
     _flushTimer = null;
     _chunkBuffer.clear();
+    _agentMessageCommittedThisTurn = false;
     _emitStreaming(null);
   }
 
