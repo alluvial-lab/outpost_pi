@@ -8,7 +8,15 @@ import 'package:flutter_test/flutter_test.dart';
 /// key isn't in the allow-set for that tag. (The deny-list below is a backstop
 /// for payload-like names that should never appear in ANY variant.)
 const Map<DebugTag, Set<String>> kAllowedKeys = {
-  DebugTag.wsIn: {'bytes', 'kind', 'stage', 'senderRoom', 'controlType', 'error'},
+  DebugTag.wsIn: {
+    'bytes',
+    'kind',
+    'stage',
+    'senderRoom',
+    'controlType',
+    'error',
+  },
+  DebugTag.peerFrame: {'kind', 'bytes', 'error'},
   DebugTag.msgSend: {'id', 'blocked', 'preview'},
   DebugTag.msgEcho: {'id'},
   DebugTag.msgFailed: {'id', 'code', 'detail'},
@@ -42,6 +50,7 @@ const Set<String> kForbiddenKeys = {
 DebugTag tagOf(DebugEvent event) {
   return switch (event) {
     WsInEvent() => DebugTag.wsIn,
+    PeerFrameEvent() => DebugTag.peerFrame,
     MsgSendEvent() => DebugTag.msgSend,
     MsgEchoEvent() => DebugTag.msgEcho,
     MsgFailedEvent() => DebugTag.msgFailed,
@@ -86,6 +95,7 @@ void main() {
         controlType: huge,
         error: huge,
       ),
+      PeerFrameEvent(ts: now, kind: huge, bytes: 1234, error: huge),
       MsgSendEvent(ts: now, id: huge, blocked: true, preview: huge),
       MsgEchoEvent(ts: now, id: huge),
       MsgFailedEvent(ts: now, id: huge, code: huge, detail: huge),
@@ -109,7 +119,12 @@ void main() {
       ConnHydrateEvent(ts: now, action: huge, room: huge, snapshotCount: 7),
       RoomSnapshotEvent(ts: now, room: huge, presenceCount: 4, working: true),
       WorkingConvEvent(ts: now, room: huge, working: false, reason: huge),
-      ReplayDedupEvent(ts: now, sessionId: huge, eventIdTail: huge, dropped: true),
+      ReplayDedupEvent(
+        ts: now,
+        sessionId: huge,
+        eventIdTail: huge,
+        dropped: true,
+      ),
     ];
   }
 
@@ -121,18 +136,21 @@ void main() {
     }
   });
 
-  test('every tag has an allow-list entry (no variant escapes the allow-list)', () {
-    for (final event in allVariants()) {
-      expect(
-        kAllowedKeys.containsKey(event.tag),
-        isTrue,
-        reason:
-            '${event.runtimeType} tag ${event.tag} has no kAllowedKeys entry — '
-            'a new variant must declare its allowed keys or its fields escape '
-            'the privacy invariant',
-      );
-    }
-  });
+  test(
+    'every tag has an allow-list entry (no variant escapes the allow-list)',
+    () {
+      for (final event in allVariants()) {
+        expect(
+          kAllowedKeys.containsKey(event.tag),
+          isTrue,
+          reason:
+              '${event.runtimeType} tag ${event.tag} has no kAllowedKeys entry — '
+              'a new variant must declare its allowed keys or its fields escape '
+              'the privacy invariant',
+        );
+      }
+    },
+  );
 
   test('no variant emits a forbidden key (deny-list backstop)', () {
     for (final event in allVariants()) {
@@ -149,34 +167,40 @@ void main() {
     }
   });
 
-  test('every emitted key is in its tag\'s allow-set (positive allow-list)', () {
-    for (final event in allVariants()) {
-      final json = event.toJson();
-      final allowed = kAllowedKeys[event.tag]!;
-      for (final key in json.keys) {
-        expect(
-          kUniversalKeys.contains(key) || allowed.contains(key),
-          isTrue,
-          reason:
-              '${event.runtimeType}.toJson emitted key "$key" not in its '
-              'allow-set ${allowed.union(kUniversalKeys)} — every field must '
-              'be explicitly allowed or it escapes the privacy invariant',
-        );
+  test(
+    'every emitted key is in its tag\'s allow-set (positive allow-list)',
+    () {
+      for (final event in allVariants()) {
+        final json = event.toJson();
+        final allowed = kAllowedKeys[event.tag]!;
+        for (final key in json.keys) {
+          expect(
+            kUniversalKeys.contains(key) || allowed.contains(key),
+            isTrue,
+            reason:
+                '${event.runtimeType}.toJson emitted key "$key" not in its '
+                'allow-set ${allowed.union(kUniversalKeys)} — every field must '
+                'be explicitly allowed or it escapes the privacy invariant',
+          );
+        }
       }
-    }
-  });
+    },
+  );
 
-  test('allow-list and deny-list are disjoint (no allowed payload-like key)', () {
-    for (final entry in kAllowedKeys.entries) {
-      for (final key in entry.value) {
-        expect(
-          kForbiddenKeys,
-          isNot(contains(key)),
-          reason: 'tag ${entry.key} allow-lists forbidden key "$key"',
-        );
+  test(
+    'allow-list and deny-list are disjoint (no allowed payload-like key)',
+    () {
+      for (final entry in kAllowedKeys.entries) {
+        for (final key in entry.value) {
+          expect(
+            kForbiddenKeys,
+            isNot(contains(key)),
+            reason: 'tag ${entry.key} allow-lists forbidden key "$key"',
+          );
+        }
       }
-    }
-  });
+    },
+  );
 
   test('all string field values are capped to kMaxFieldValueChars', () {
     for (final event in allVariants()) {
