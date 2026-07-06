@@ -1,7 +1,7 @@
 ---
 id: story-relay-log-room-meta-update-accept-and-drop
 kind: story
-stage: drafting
+stage: review
 tags: [relay, observability, bug]
 parent: null
 depends_on: []
@@ -9,6 +9,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-06
 updated: 2026-07-06
+implementation_complete: 2026-07-06
 ---
 
 # Log `room_meta_update` accept/drop (with cross-room flag) at INFO
@@ -162,3 +163,41 @@ Notes:
 - `.work/active/stories/story-mobile-cross-session-history-leak.md` — Bug 2,
   the investigation this unblocks (the "refined open question" acceptance
   criterion).
+
+## Implementation notes
+
+- **Files changed**: `relay/src/handlers/control.rs` (single file).
+- **Handler**: `room_meta_update` now computes `cross_room =
+  target_room != self.actor.room_id` and a `fields: Vec<&str>` of present
+  field names (never values) before `apply_patch`. The accept branch logs
+  INFO on both the empty-patch no-op and the non-empty broadcast paths;
+  the existing unknown-`(peer,room)` WARN drop was augmented with
+  `authed_room` + `cross_room` for symmetry (cheap, and makes the grep
+  uniform across both branches — the operator-flagged optional decision).
+- **Import**: `use tracing::warn;` → `use tracing::{info, warn};`.
+- **Tests added** (in `control.rs` mod tests):
+  - `room_meta_update_targets_a_room_the_sender_did_not_auth_into` —
+    models the shared-owner-epk topology (two `pi` connections in `main`
+    and `other`), patches `other` from an actor authed in `main`, asserts
+    the broadcast targets `other` (the observable proof of cross-room
+    accept). The `cross_room=true` INFO line itself is not asserted (no
+    `tracing-test` dep); verified by the manual criterion + source read.
+  - `room_meta_update_empty_patch_does_not_broadcast` — asserts an empty
+       patch does not broadcast `room_meta_updated` (the no-op half).
+- **Discrepancies from design**: none. The design's optional
+  "augment the WARN drop branch" was adopted (see handler note) for grep
+  symmetry; all other fields/behavior match the spec exactly.
+- **Adjacent issues parked**: none.
+- **Verification**: `cargo fmt --check` ✓ (after applying fmt),
+  `cargo clippy -- -D warnings` ✓ (0 warnings), `cargo test` ✓
+  (116 unit + 19 rooms integration + others all pass, including the 2
+  new tests).
+- **Privacy**: confirmed no patch field VALUE is logged — only field-name
+  presence in `fields`. `session_id`/`model`/`thinking` values are never
+  emitted, consistent with `pi_forward.rs` posture. `room`/`authed_room`
+  are room ids (already in INFO auth lines at `peer.rs:104,207`).
+- **Manual criterion (not yet run)**: rebuild relay image, swap container,
+  reproduce a cross-room patch from a second Pi process (shared owner epk),
+  confirm `cross_room=true` in `docker logs`. Deferred to the operator/
+  deploy step — the unit test proves the accept path; the manual step proves
+  the live-container surfacing at default `RUST_LOG=info`.
