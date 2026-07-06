@@ -149,3 +149,136 @@ a separate story.
 ## Follow-up (filed separately)
 - `story-session-reload-process-harness` (drafting) — `/reload` exact-process
   behavior if the SDK-seam harness can't cover it.
+
+## Implementation notes
+
+### Harness composition built
+
+- Added `pi-extension/test/support/sdk_session_replacement_harness.ts`.
+- The harness composes a real SDK `ExtensionRunner`, `SessionManager.inMemory()`
+  by default, and real `AgentSessionRuntime.newSession()` / `switchSession()`
+  replacement paths.
+- The only fake is the minimal `AgentSession` shell required by
+  `AgentSessionRuntime`: it exposes `extensionRunner`, `sessionManager`,
+  `sessionFile`, `agent.state.messages`, `dispose()`, and
+  `createReplacedSessionContext()`.
+- `dispose()` calls the real `runner.invalidate()`, so stale assertions are
+  backed by the SDK's `ExtensionRunner.assertActive()` guarded getters/methods,
+  not by a hand-rolled `disposed` flag.
+- `createReplacedSessionContext()` clones the real
+  `runner.createCommandContext()` with property descriptors and attaches
+  `sendUserMessage` / `sendMessage` delivery spies, matching the SDK seam from
+  `AgentSession.createReplacedSessionContext()`.
+- The actual Remote Pi extension factory (`src/index.ts`) is registered into
+  the runner. A tiny probe extension is registered alongside it only to record
+  lifecycle reasons/session ids; app actions and session hooks run through real
+  Remote Pi code.
+- The harness uses the existing test-only `_setDisposedForTest(false)` during
+  `AgentSessionRuntime.setBeforeSessionInvalidate()` to suppress headless
+  relay/mesh auto-start after `session_shutdown`; this does not replace the
+  stale-ctx guard and avoids a fire-and-forget `_cmdRoot` racing test cleanup.
+
+### Per-file changes
+
+- Added `pi-extension/test/support/sdk_session_replacement_harness.ts` — reusable
+  SDK-seam harness and `TestPeerChannel`.
+- Added `pi-extension/test/sdk-session-replacement.test.ts` — durable Unit 7
+  suite covering `/new` and `/resume` session replacement.
+- Deleted `pi-extension/test/spike-extension-runner-headless.test.ts` — the
+  spike findings are subsumed by the durable harness and no duplicate spike
+  suite remains.
+
+### Assertion matrix coverage
+
+1. `session_start:new` rebinds the fresh ctx; actual extension hook sees the new
+   `ExtensionContext` — covered by
+   `direct SDK newSession emits session_start:new on the actual extension and makes the old ctx stale`
+   via lifecycle sequence `startup -> shutdown:new -> start:new` and
+   `_getRemoteSessionIdForTest() === freshSessionId`.
+2. OLD `ExtensionContext` throws stale after replacement — covered by the same
+   test and by
+   `app session_new delegates to runtime newSession({ withSession }) and the replacement callback delivers on the fresh ctx`,
+   both asserting `oldCommandCtx.cwd` throws `/stale after session replacement or reload/`.
+   Revert-experiment teeth: if the fake shell stopped calling `runner.invalidate()`
+   (or the SDK `assertActive()` stale guard stopped firing), these assertions
+   would fail because the old guarded getter would not throw.
+3. App `session_new` action calls `newSession({ withSession })` on the runtime —
+   covered by
+   `app session_new delegates to runtime newSession({ withSession }) and the replacement callback delivers on the fresh ctx`,
+   asserting the real action route records `{ sessionLabel: "initial", hasWithSession: true }`.
+4. `onReplaced` / replacement callback recaptures fresh ctx and subsequent
+   `sendUserMessage` lands fresh — covered by the same app `session_new` test,
+   which routes a `user_message` through the pre-replacement module after
+   `withSession` and observes `sendUserMessage` on `replacement-2`.
+5. Subsequent app actions land on fresh ctx — covered by
+   `subsequent app actions route through the fresh session ctx after app-triggered replacement`,
+   which sends `session_compact` after app-triggered `session_new` and observes
+   the compact call on `replacement-2`.
+6. Resume-style `session_start:resume` backfills persisted history from
+   `SessionManager.buildSessionContext()` — covered by
+   `resume-style session_start backfills history from SessionManager.buildSessionContext`,
+   which uses a temp persisted `SessionManager`, drives real
+   `AgentSessionRuntime.switchSession()`, and verifies `session_sync` returns
+   `user_input` + `agent_message` history.
+
+### Verification output
+
+Commands run from `pi-extension/` with the required sandbox env prefix:
+
+```text
+PNPM_HOME=/home/agent/projects/remote_pi/.pnpm-store npm_config_cache=/home/agent/projects/remote_pi/.npm-cache XDG_CACHE_HOME=/home/agent/projects/remote_pi/.xdg-cache corepack pnpm typecheck
+[WARN] The "pnpm" field in package.json is no longer read by pnpm. The following keys were ignored: "pnpm.onlyBuiltDependencies". See https://pnpm.io/settings for the new home of each setting.
+$ tsc --noEmit
+```
+
+```text
+PNPM_HOME=/home/agent/projects/remote_pi/.pnpm-store npm_config_cache=/home/agent/projects/remote_pi/.npm-cache XDG_CACHE_HOME=/home/agent/projects/remote_pi/.xdg-cache corepack pnpm test
+[WARN] The "pnpm" field in package.json is no longer read by pnpm. The following keys were ignored: "pnpm.onlyBuiltDependencies". See https://pnpm.io/settings for the new home of each setting.
+$ vitest run
+
+ RUN  v4.1.9 /home/agent/projects/remote_pi/pi-extension
+
+
+ Test Files  46 passed (46)
+      Tests  743 passed | 3 skipped (746)
+   Start at  18:41:01
+   Duration  7.69s (transform 3.23s, setup 0ms, import 7.50s, tests 15.92s, environment 6ms)
+```
+
+### Deviations / notes
+
+- No production code was modified and no production testability seam was added.
+- `/reload` remains out of scope per story.
+- Resume backfill requires a real persisted session file, so that test uses a
+  temp persisted `SessionManager`; `/new` paths use in-memory session managers.
+
+## Review fixes (adversarial review, 1 pass)
+
+NEEDS FIXES → APPROVED after 1 fix pass (openai-codex/gpt-5.5):
+
+- **[I1] onReplaced rebind teeth gap** (`sdk-session-replacement.test.ts`): the
+  original suite proved the SDK invalidates the old ctx (`oldCommandCtx.cwd`
+  throws via real `assertActive()`) and that fresh delivery lands on the fresh
+  session, but did NOT prove the extension's `onReplaced`/
+  `_bindReplacementSessionContext()` rebind retained a fresh command-capable
+  ctx. The fresh-delivery assertions could pass via `session_start`/factory
+  rebinding even if the extension's `onReplaced` rebind were broken. Fixed by
+  adding a 5th test: "a second app session_new after replacement proves the
+  fresh ctx is command-capable (onReplaced rebind teeth)" — sends a first
+  `session_new` (rotates id), then a SECOND `session_new`, asserting the second
+  call records `{ sessionLabel: "replacement-2", hasWithSession: true }`
+  (proving it came from the FRESH session's bound command actions, not the
+  initial) AND the session id rotates a second time. If the extension held a
+  stale command ctx after the first replacement, the second `session_new`
+  would either throw stale or route to the old session's handler — recording
+  the wrong label and not rotating the id — so the test fails. This closes the
+  teeth gap.
+
+- **Nits**: removed the unused `importNonce` field. The `modelRegistry` as
+  `{ } as never` was advisory/acceptable (the harness paths exercised by this
+  story don't touch the registry) — left as-is.
+
+Final verification: `corepack pnpm test` → 744 passed | 3 skipped (was 743;
++1 new teeth test). `corepack pnpm typecheck` clean. No production code
+modified (`git diff HEAD -- pi-extension/src/` empty). Spike file deleted
+(subsumed by the durable harness).
