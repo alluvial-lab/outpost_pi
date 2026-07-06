@@ -441,12 +441,15 @@ describe("SdkSessionProjection live assistant identity (decision 1)", () => {
     expect(live.message_id).toBe("sync_1001:assistant:0");
     expect(live.text).toBe("hi back");
 
-    // The replay path (session_history) must emit the SAME (ts, text) for
-    // the app to derive a matching deterministic eventId.
+    // The replay path (session_history) must emit the SAME (ts, text,
+    // message_id) for the app to derive a matching deterministic eventId —
+    // including the block-unique message_id so multi-block assistant messages
+    // do not collide.
     const history = projection.buildSessionHistoryMessage("req-1", undefined);
     const replayAgent = history.events.find((e) => e.type === "agent_message");
     expect(replayAgent).toBeDefined();
     expect(replayAgent?.ts).toBe(1_001);
     expect(replayAgent?.text).toBe("hi back");
+    expect(replayAgent?.message_id).toBe("sync_1001:assistant:0");
   });
 });

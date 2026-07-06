@@ -78,11 +78,18 @@ export function transcriptEventsToSessionHistory(
         if (seenAssistantMessages.has(event.messageId)) break;
         seenAssistantMessages.add(event.messageId);
         const usage = toWireUsage(event.usage);
+        // Identity source (a): carry `message_id` (sync_<ts>:assistant:
+        // <blockIndex>) on the replay event so the app's replay path can use
+        // it as the stable key — multi-block assistant messages (same
+        // in_reply_to+ts, different blocks) must NOT collide on the same
+        // eventId. Mirrors the live agent_message broadcast. See
+        // story-mobile-assistant-message-duplicated-live-replay decision 1.
         out.push({
           ts: event.ts,
           type: "agent_message",
           in_reply_to: event.replyTo,
           text: event.text,
+          message_id: event.messageId,
           ...(usage ? { usage } : {}),
         });
         break;

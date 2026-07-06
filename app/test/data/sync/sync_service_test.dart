@@ -1117,6 +1117,56 @@ void main() {
     },
   );
 
+  // Regression for the multi-block collision the deep review caught.
+  // A single SDK assistant message with MULTIPLE text blocks shares
+  // (in_reply_to, ts) across blocks; the extension emits one agent_message
+  // per block with a distinct message_id (sync_<ts>:assistant:<blockIndex>).
+  // The app must use message_id as the stable key so blocks do NOT collide on
+  // the same eventId (which would drop all but the first block, and then
+  // AgentDone's skip would lose the rest). See
+  // story-mobile-assistant-message-duplicated-live-replay decision 1.
+  test(
+    'multi-block assistant message: live agent_message per block does not collide',
+    () async {
+      final s = await setup();
+      s.ch.push(UserInput(id: 'u1', text: 'go'));
+      await _settle();
+      const liveTs = 3000;
+      // Two text blocks in the same SDK assistant message (same ts).
+      s.ch.push(const AgentMessage(
+        inReplyTo: 'u1',
+        text: 'first block',
+        ts: liveTs,
+        messageId: 'sync_3000:assistant:0',
+      ));
+      s.ch.push(const AgentMessage(
+        inReplyTo: 'u1',
+        text: 'second block',
+        ts: liveTs,
+        messageId: 'sync_3000:assistant:1',
+      ));
+      await _settle();
+
+      final assistantRows =
+          messages(s.epk).where((r) => r.role == MsgRole.assistant).toList();
+      expect(
+        assistantRows.length,
+        2,
+        reason:
+            'Two text blocks with distinct message_ids must both survive '
+            '(distinct eventIds). Previously both derived the same eventId '
+            '(keyed only on inReplyTo+ts) so Hive deduped the second away '
+            '→ message loss.',
+      );
+      expect(
+        assistantRows.map((r) => r.text).toSet(),
+        {'first block', 'second block'},
+      );
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
   test('re-applying an IDENTICAL SessionHistory is idempotent — no box churn, '
       'so the relay re-sending history on every reconnect no longer tears the '
       'list down and rebuilds it (plan/32 flicker fix)', () async {
