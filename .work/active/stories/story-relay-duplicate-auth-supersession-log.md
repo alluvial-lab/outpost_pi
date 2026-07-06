@@ -1,7 +1,8 @@
 ---
 id: story-relay-duplicate-auth-supersession-log
 kind: story
-stage: implementing
+stage: done
+review_addressed: 2026-07-05
 tags: [relay, observability, bug]
 parent: feature-cross-side-observability
 depends_on:
