@@ -97,3 +97,32 @@ no `DebugLog` capture:
 - `app/lib/domain/contracts/debug_log.dart` — the `DebugEvent` registry to extend.
 - `app/lib/config/dependencies.dart` — `PeerChannel` wiring (verify where it's
   constructed; inject `DebugLog` the same way as `WsTransport`).
+
+## Implementation notes
+
+- `app/lib/domain/contracts/debug_log.dart`: added `DebugTag.peerFrame` and `PeerFrameEvent {kind, bytes, error?}` with capped string serialization and no payload-like fields.
+- `app/test/domain/contracts/debug_log_test.dart`: extended the registry exhaustiveness switch, variant fixture, and allow-list for `PeerFrameEvent`; deny-list remains unchanged and rejects `body`/`image`/`data`/`args`/`result`/`prompt`/`message`/`ct`.
+- `app/lib/data/transport/peer_channel.dart`: added optional `DebugLog?` injection and logs `PeerFrameEvent(kind: 'unsupported_type')` for `UnsupportedTypeException` and `PeerFrameEvent(kind: 'malformed')` with a short scrubbed error type for malformed-frame drops. Existing `ErrorMessage` surfacing and malformed silent-drop behavior are unchanged.
+- `app/lib/config/dependencies.dart`: production `PlainPeerChannel` construction in the reconnect factory now passes `_injector.get<DebugLog>()`; `PairingViewModel` registration also passes `DebugLog` so the post-pair adopted `PlainPeerChannel` has the same production observability.
+- `app/lib/ui/pairing/viewmodels/pairing_viewmodel.dart`: accepts optional `DebugLog?` and passes it into the post-pair `PlainPeerChannel`; tests remain source-compatible because the parameter is named/optional.
+- `app/test/data/debug/debug_capture_routing_test.dart`: added fake-transport routing tests for unsupported-type and malformed peer-channel frames, asserting `bytes`/`kind`, scrubbed/short `error`, and no payload-like keys; added `peerFrame` entries to `requiredSites`.
+
+Verification from `app/` with `PUB_CACHE=/home/agent/projects/remote_pi/.pub-cache`:
+
+```text
+../.tools/flutter/bin/flutter test test/domain/contracts/debug_log_test.dart test/data/debug/debug_capture_routing_test.dart test/ui/pairing/pairing_viewmodel_test.dart
+00:01 +29: All tests passed!
+
+../.tools/flutter/bin/flutter test
+00:29 +661: All tests passed!
+
+../.tools/flutter/bin/flutter analyze
+Analyzing app...
+
+   info • 'axisAlignment' is deprecated and shouldn't be used. Use alignment instead. This property provides full control over both axes, which is an improvement over the old axisAlignment. This feature was deprecated after v3.41.0-1.0.pre. Try replacing the use of the deprecated member with the replacement • lib/ui/chat/widgets/input_bar.dart:802:7 • deprecated_member_use
+
+1 issue found. (ran in 3.7s)
+Command exited with code 1
+```
+
+Deviation: `flutter analyze` is not clean because of the pre-existing `axisAlignment` deprecation in `app/lib/ui/chat/widgets/input_bar.dart:802`, which `app/CLAUDE.md` explicitly records as unrelated/pre-existing and the local code comment says not to "fix" without bumping the Flutter pin. This story did not change that file.
