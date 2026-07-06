@@ -79,6 +79,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Ring-log / debug exports — transient binary exports from the app's DebugLog
+# (reconnect repros, capture-routing probes). Cited by work items by filename
+# but never committed; reproduce by re-running the instrumented scenario.
+debug/
+
 # Test artifacts — pi-extension model-persist test writes a real settings.json
 pi-extension/test/.pi/
 
