@@ -1,7 +1,8 @@
 ---
 id: story-fix-resumed-session-echo-gate-rejection
 kind: story
-stage: drafting
+stage: done
+review_addressed: 2026-07-05
 tags: [app, bug, lifecycle, session-replacement]
 parent: feature-reconnect-reproduction
 depends_on:
