@@ -1,7 +1,8 @@
 ---
 id: story-session-replacement-harness
 kind: story
-stage: implementing
+stage: done
+review_addressed: 2026-07-05
 tags: [pi-extension, testing, observability, session-lifecycle]
 parent: feature-cross-side-observability
 depends_on: [story-app-capture-routing]
