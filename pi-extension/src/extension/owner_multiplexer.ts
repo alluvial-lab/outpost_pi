@@ -67,6 +67,13 @@ export interface OwnerPairedEvent {
   pairedAt: string;
 }
 
+export interface OwnerFanoutPresenceEvent {
+  peerId: string;
+  peerShortId: string;
+  state: "suspended" | "resumed";
+  sinceTs?: number;
+}
+
 export interface OwnerMultiplexerDeps {
   createChannel(input: CreateOwnerChannelInput): PeerChannelHandle;
   refreshFooter(): void;
@@ -79,6 +86,7 @@ export interface OwnerMultiplexerDeps {
   makeUnknownPeerError(): UnknownPeerErrorMessage;
   onOwnerAttached(event: OwnerAttachedEvent): void;
   onOwnerPaired(event: OwnerPairedEvent): void;
+  onFanoutPresenceChanged?(event: OwnerFanoutPresenceEvent): void;
 }
 
 interface OwnerOuterEnvelope {
@@ -163,6 +171,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   private readonly channels = new Map<string, PeerChannelHandle>();
   private readonly peerIdsByChannel = new Map<PeerChannelHandle, string>();
   private readonly messageRouters = new Map<PeerChannelHandle, OwnerAttachInput["onMessage"]>();
+  private readonly offlinePeerIds = new Set<string>();
   private peerShort = "";
   private lateAttachPeerIds = new Set<string>();
   private hasGlobalPairings = false;
@@ -223,6 +232,15 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
 
   entries(): readonly { peerId: string; channel: PeerChannel }[] {
     return [...this.channels.entries()].map(([peerId, channel]) => ({ peerId, channel }));
+  }
+
+  private emitFanoutPresenceChanged(peerId: string, state: OwnerFanoutPresenceEvent["state"], sinceTs?: number): void {
+    this.deps.onFanoutPresenceChanged?.({
+      peerId,
+      peerShortId: peerId.slice(0, 8),
+      state,
+      ...(sinceTs === undefined ? {} : { sinceTs }),
+    });
   }
 
   async handleOuterLine(input: OwnerOuterLineInput): Promise<void> {
@@ -333,7 +351,10 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
 
   attach(input: OwnerAttachInput): PeerChannel {
     // Idempotent reattach: tear down the stale per-owner listener before
-    // installing a fresh channel for the same owner peer id.
+    // installing a fresh channel for the same owner peer id. A fresh attach is
+    // also an online signal: clear any stale relay-offline suspension so a
+    // reconnect during an active turn resumes fan-out immediately.
+    const wasOffline = this.offlinePeerIds.has(input.peerId);
     this.detach(input.peerId);
 
     let channel: PeerChannelHandle | null = null;
@@ -352,6 +373,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     this.peerIdsByChannel.set(channel, input.peerId);
     this.messageRouters.set(channel, input.onMessage);
     this.peerShort = input.peerId.slice(0, 8);
+    if (wasOffline) this.emitFanoutPresenceChanged(input.peerId, "resumed");
     if (input.turnActive) this.lateAttachPeerIds.add(input.peerId);
     this.deps.refreshFooter();
     return channel;
@@ -384,6 +406,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     this.peerIdsByChannel.delete(channel);
     this.messageRouters.delete(channel);
     this.lateAttachPeerIds.delete(peerId);
+    this.offlinePeerIds.delete(peerId);
 
     if (this.peerShort === peerId.slice(0, 8)) {
       const next = this.channels.keys().next().value as string | undefined;
@@ -397,6 +420,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       this.detach(peerId, reason);
     }
     this.lateAttachPeerIds.clear();
+    this.offlinePeerIds.clear();
     this.peerShort = "";
     this.deps.refreshFooter();
   }
@@ -405,8 +429,27 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     this.detachAll();
   }
 
+  markPeerOffline(peerId: string, sinceTs?: number): boolean {
+    if (!this.channels.has(peerId) || this.offlinePeerIds.has(peerId)) return false;
+    this.offlinePeerIds.add(peerId);
+    this.emitFanoutPresenceChanged(peerId, "suspended", sinceTs);
+    return true;
+  }
+
+  markPeerOnline(peerId: string): boolean {
+    const wasOffline = this.offlinePeerIds.delete(peerId);
+    if (!wasOffline) return false;
+    this.emitFanoutPresenceChanged(peerId, "resumed");
+    return true;
+  }
+
+  isPeerOffline(peerId: string): boolean {
+    return this.offlinePeerIds.has(peerId);
+  }
+
   broadcast(message: ServerMessage): void {
-    for (const channel of this.channels.values()) {
+    for (const [peerId, channel] of this.channels) {
+      if (this.offlinePeerIds.has(peerId)) continue;
       try { channel.send(message); } catch { /* best-effort per owner channel */ }
     }
   }
