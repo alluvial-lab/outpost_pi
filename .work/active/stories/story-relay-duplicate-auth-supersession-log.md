@@ -1,7 +1,7 @@
 ---
 id: story-relay-duplicate-auth-supersession-log
 kind: story
-stage: drafting
+stage: implementing
 tags: [relay, observability, bug]
 parent: feature-cross-side-observability
 depends_on:
@@ -86,3 +86,20 @@ Without both halves, the bug stays anecdotal — which is why it's a gap today.
   attributes.
 - Review v2: `.work/reviews/review-feature-cross-side-observability-design-v2-2026-07-04.md`
   (the "where proven" question — answer: both sides; this is the relay half).
+
+## Implementation notes
+
+- Design choice: `PeerRegistry::register` now returns a small `PeerRegistration { conn_id, superseded_existing }` struct instead of only `conn_id`. This keeps the supersession fact computed once at the `ConnectionRegistry::insert` boundary where the pre-push `(peer_id, room_id)` occupancy is known, and avoids coupling the registry to relay logging.
+- Per-file changes:
+  - `relay/src/peers/connections.rs`: extended `ConnectionInsert` with `superseded_existing`; `insert()` captures `existing_count` before `entry(...).or_default().push(...)` and sets `superseded_existing = existing_count > 0`.
+  - `relay/src/peers/registry.rs`: added `PeerRegistration`, returns it from `register()`, updated conn-id call sites/tests, and added `register_reports_duplicate_auth_supersession_at_same_key` asserting fresh same-key false, same-peer/different-room false, duplicate same-key true.
+  - `relay/src/handlers/peer.rs`: moved the `authenticated` info log to after registration and added `superseded_existing = registration.superseded_existing`; the log still includes only peer tail, room, addr, and the supersession bool.
+  - `relay/src/peers/presence_state.rs`, `relay/src/peers/rooms.rs`, `relay/src/handlers/connection_actor.rs`: updated tests/call sites for the new registration/insert shapes.
+- Supersession→close-gap finding: the relay does **not** eagerly close/drop the old connection on duplicate auth. `ConnectionRegistry::insert()` only pushes a new `ConnectionEntry { conn_id, tx }` into the existing `Vec` and does not remove or close existing senders. The old connection unregisters only when its own `handle_peer` routing loop exits, then `peer.rs` logs `disconnected`; exits are driven by inbound stream close/error, outbound sink send failure (including registry-delivered messages), or heartbeat ping send failure. Therefore the gap is measurable as the timestamp difference between the new connection's `authenticated superseded_existing=true` line and the old connection's later `disconnected` line, and may be timeout/liveness bounded rather than immediate.
+- Tests added: `peers::registry::tests::register_reports_duplicate_auth_supersession_at_same_key` covers the fresh and duplicate registration facts that the `authenticated` log now uses.
+- Verification output:
+  - `cargo fmt --check` → exit 0, no output.
+  - `cargo clippy -- -D warnings` → `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 1.20s`.
+  - `cargo test` → `test result: ok. 114 passed; 0 failed` for `src/lib.rs`, plus integration suites all passed (`3`, `13`, `9`, `10`, `2`, `19` tests) and doc-tests `0 passed`; no failures.
+  - `cargo build` → `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 4.11s`.
+- Deviations: no relay cleanup behavior change; observation only, per story scope. No payload content, ciphertext, signatures, or envelope bodies were added to logs.

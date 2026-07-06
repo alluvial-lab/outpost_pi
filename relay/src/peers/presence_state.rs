@@ -55,6 +55,7 @@ mod tests {
             conn_id: 1,
             was_offline_before,
             is_first_in_room: true,
+            superseded_existing: false,
         }
     }
 
