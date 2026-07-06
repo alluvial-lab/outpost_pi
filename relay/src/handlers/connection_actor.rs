@@ -532,7 +532,7 @@ mod tests {
             "owner-peer".to_string(),
             "ner-peer".to_string(),
             "main".to_string(),
-            sender_conn,
+            sender_conn.conn_id,
             services,
         );
 

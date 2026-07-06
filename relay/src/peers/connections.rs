@@ -21,6 +21,7 @@ pub(crate) struct ConnectionInsert {
     pub conn_id: u64,
     pub was_offline_before: bool,
     pub is_first_in_room: bool,
+    pub superseded_existing: bool,
 }
 
 #[derive(Debug)]
@@ -62,7 +63,8 @@ impl ConnectionRegistry {
 
         let mut lock = self.senders.lock().unwrap();
         let was_offline_before = !lock.keys().any(|(p, _)| p == peer_id);
-        let is_first_in_room = !lock.contains_key(&key);
+        let existing_count = lock.get(&key).map(|entries| entries.len()).unwrap_or(0);
+        let is_first_in_room = existing_count == 0;
         lock.entry(key)
             .or_default()
             .push(ConnectionEntry { conn_id, tx });
@@ -72,6 +74,7 @@ impl ConnectionRegistry {
             conn_id,
             was_offline_before,
             is_first_in_room,
+            superseded_existing: existing_count > 0,
         }
     }
 

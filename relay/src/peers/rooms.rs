@@ -125,6 +125,7 @@ mod tests {
             conn_id,
             was_offline_before: is_first_in_room,
             is_first_in_room,
+            superseded_existing: !is_first_in_room,
         }
     }
 
