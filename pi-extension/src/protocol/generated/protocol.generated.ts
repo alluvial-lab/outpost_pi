@@ -286,6 +286,7 @@ export interface AgentChunk {
   readonly session_id?: string;
   readonly in_reply_to: string;
   readonly delta: string;
+  readonly ts?: number;
 }
 
 export interface AgentDone {
@@ -293,6 +294,7 @@ export interface AgentDone {
   readonly session_id?: string;
   readonly in_reply_to: string;
   readonly usage?: Usage;
+  readonly ts?: number;
 }
 
 export interface AgentMessage {
@@ -301,6 +303,8 @@ export interface AgentMessage {
   readonly in_reply_to: string;
   readonly text: string;
   readonly usage?: Usage;
+  readonly ts?: number;
+  readonly message_id?: string;
 }
 
 export interface Compaction {
@@ -815,15 +819,15 @@ function isQueuedMessageState(value: unknown): value is QueuedMessageState {
 }
 
 function isAgentChunk(value: unknown): value is AgentChunk {
-  return isObjectLike(value, ["type", "session_id", "in_reply_to", "delta"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "agent_chunk") && (record["session_id"] === undefined || isStringWithMinLength(record["session_id"], 1)) && (Object.hasOwn(record, "in_reply_to") && isStringWithMinLength(record["in_reply_to"], 1)) && (Object.hasOwn(record, "delta") && typeof record["delta"] === "string")));
+  return isObjectLike(value, ["type", "session_id", "in_reply_to", "delta", "ts"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "agent_chunk") && (record["session_id"] === undefined || isStringWithMinLength(record["session_id"], 1)) && (Object.hasOwn(record, "in_reply_to") && isStringWithMinLength(record["in_reply_to"], 1)) && (Object.hasOwn(record, "delta") && typeof record["delta"] === "string") && (record["ts"] === undefined || isIntegerAtLeast(record["ts"], 0))));
 }
 
 function isAgentDone(value: unknown): value is AgentDone {
-  return isObjectLike(value, ["type", "session_id", "in_reply_to", "usage"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "agent_done") && (record["session_id"] === undefined || isStringWithMinLength(record["session_id"], 1)) && (Object.hasOwn(record, "in_reply_to") && isStringWithMinLength(record["in_reply_to"], 1)) && (record["usage"] === undefined || isObjectLike(record["usage"], ["input_tokens", "output_tokens"], (record) => ((Object.hasOwn(record, "input_tokens") && isIntegerAtLeast(record["input_tokens"], 0)) && (Object.hasOwn(record, "output_tokens") && isIntegerAtLeast(record["output_tokens"], 0)))))));
+  return isObjectLike(value, ["type", "session_id", "in_reply_to", "usage", "ts"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "agent_done") && (record["session_id"] === undefined || isStringWithMinLength(record["session_id"], 1)) && (Object.hasOwn(record, "in_reply_to") && isStringWithMinLength(record["in_reply_to"], 1)) && (record["usage"] === undefined || isObjectLike(record["usage"], ["input_tokens", "output_tokens"], (record) => ((Object.hasOwn(record, "input_tokens") && isIntegerAtLeast(record["input_tokens"], 0)) && (Object.hasOwn(record, "output_tokens") && isIntegerAtLeast(record["output_tokens"], 0))))) && (record["ts"] === undefined || isIntegerAtLeast(record["ts"], 0))));
 }
 
 function isAgentMessage(value: unknown): value is AgentMessage {
-  return isObjectLike(value, ["type", "session_id", "in_reply_to", "text", "usage"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "agent_message") && (record["session_id"] === undefined || isStringWithMinLength(record["session_id"], 1)) && (Object.hasOwn(record, "in_reply_to") && isStringWithMinLength(record["in_reply_to"], 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["usage"] === undefined || isObjectLike(record["usage"], ["input_tokens", "output_tokens"], (record) => ((Object.hasOwn(record, "input_tokens") && isIntegerAtLeast(record["input_tokens"], 0)) && (Object.hasOwn(record, "output_tokens") && isIntegerAtLeast(record["output_tokens"], 0)))))));
+  return isObjectLike(value, ["type", "session_id", "in_reply_to", "text", "usage", "ts", "message_id"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "agent_message") && (record["session_id"] === undefined || isStringWithMinLength(record["session_id"], 1)) && (Object.hasOwn(record, "in_reply_to") && isStringWithMinLength(record["in_reply_to"], 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["usage"] === undefined || isObjectLike(record["usage"], ["input_tokens", "output_tokens"], (record) => ((Object.hasOwn(record, "input_tokens") && isIntegerAtLeast(record["input_tokens"], 0)) && (Object.hasOwn(record, "output_tokens") && isIntegerAtLeast(record["output_tokens"], 0))))) && (record["ts"] === undefined || isIntegerAtLeast(record["ts"], 0)) && (record["message_id"] === undefined || typeof record["message_id"] === "string")));
 }
 
 function isCompaction(value: unknown): value is Compaction {

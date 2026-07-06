@@ -62,17 +62,21 @@ class _FakeChannel implements IChannel {
         sessionId: sid,
         inReplyTo: m.inReplyTo,
         delta: m.delta,
+        ts: m.ts,
       ),
       AgentDone(:final sessionId) when sessionId.isEmpty => AgentDone(
         sessionId: sid,
         inReplyTo: m.inReplyTo,
         usage: m.usage,
+        ts: m.ts,
       ),
       AgentMessage(:final sessionId) when sessionId.isEmpty => AgentMessage(
         sessionId: sid,
         inReplyTo: m.inReplyTo,
         text: m.text,
         usage: m.usage,
+        ts: m.ts,
+        messageId: m.messageId,
       ),
       ToolRequest(:final sessionId) when sessionId.isEmpty => ToolRequest(
         sessionId: sid,
@@ -1051,6 +1055,63 @@ void main() {
       final toolRows =
           messages(s.epk).where((r) => r.role == MsgRole.tool).toList();
       expect(toolRows.length, 2, reason: 'both tool calls are recorded');
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  // Regression for `story-mobile-assistant-message-duplicated-live-replay`
+  // decision 1 (identity source (a)). A live `agent_message` carrying the
+  // SDK `ts` must commit with the SAME deterministic eventId as the
+  // `AgentMessageEvt` replay path, so a live commit + a replay of the same
+  // assistant message collapse to ONE Hive row (deduped by eventId) instead
+  // of two rows with incompatible random-vs-deterministic ids.
+  test(
+    'live agent_message(ts) + replay AgentMessageEvt collapse to one row',
+    () async {
+      final s = await setup();
+      s.ch.push(UserInput(id: 'u1', text: 'hi'));
+      await _settle();
+      // Live assistant message carrying the SDK ts (the extension's
+      // message_end-driven broadcast). Commits with a deterministic eventId.
+      const liveTs = 2000;
+      s.ch.push(const AgentMessage(
+        inReplyTo: 'u1',
+        text: 'hello back',
+        ts: liveTs,
+      ));
+      await _settle();
+      final afterLive =
+          messages(s.epk).where((r) => r.role == MsgRole.assistant).length;
+      expect(afterLive, 1, reason: 'live agent_message commits one row');
+
+      // Replay the SAME assistant message via session_history. Under the
+      // old random-id live scheme this would add a SECOND row (incompatible
+      // eventIds). With deterministic identity it must collapse.
+      s.ch.push(SessionHistory(
+        inReplyTo: 'sync1',
+        sessionStartedAt: 0,
+        events: const [
+          UserInputEvt(ts: 1, id: 'u1', text: 'hi'),
+          AgentMessageEvt(ts: liveTs, inReplyTo: 'u1', text: 'hello back'),
+        ],
+        eos: true,
+      ));
+      await _settle();
+
+      final assistantRows =
+          messages(s.epk).where((r) => r.role == MsgRole.assistant).toList();
+      expect(
+        assistantRows.length,
+        1,
+        reason:
+            'A live agent_message(ts) and a replay AgentMessageEvt for the '
+            'same (inReplyTo, ts) must collapse to one row. Previously the '
+            'live path used a random eventId while replay used a '
+            'deterministic one, so both survived as distinct Hive rows '
+            '→ duplicate assistant bubble.',
+      );
+      expect(assistantRows.single.text, 'hello back');
       s.conn.dispose();
       s.sync.dispose();
     },

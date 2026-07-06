@@ -794,7 +794,7 @@ final class QueuedMessageState extends ServerMessage {
 }
 
 final class AgentChunk extends ServerMessage {
-  const AgentChunk({this.sessionId = '', required this.inReplyTo, required this.delta});
+  const AgentChunk({this.sessionId = '', required this.inReplyTo, required this.delta, this.ts});
 
   @override
   String get type => 'agent_chunk';
@@ -802,11 +802,13 @@ final class AgentChunk extends ServerMessage {
   final String sessionId;
   final String inReplyTo;
   final String delta;
+  final int? ts;
 
   factory AgentChunk.fromJson(Map<String, dynamic> json) => AgentChunk(
         sessionId: _sessionIdFromJson(json),
         inReplyTo: json['in_reply_to'] as String,
         delta: json['delta'] as String,
+        ts: (json['ts'] as num?)?.toInt(),
       );
 
   @override
@@ -815,11 +817,13 @@ final class AgentChunk extends ServerMessage {
         'session_id': sessionId,
         'in_reply_to': inReplyTo,
         'delta': delta,
+        if (ts case final ts?)
+          'ts': ts,
       };
 }
 
 final class AgentDone extends ServerMessage {
-  const AgentDone({this.sessionId = '', required this.inReplyTo, this.usage});
+  const AgentDone({this.sessionId = '', required this.inReplyTo, this.usage, this.ts});
 
   @override
   String get type => 'agent_done';
@@ -827,11 +831,13 @@ final class AgentDone extends ServerMessage {
   final String sessionId;
   final String inReplyTo;
   final Usage? usage;
+  final int? ts;
 
   factory AgentDone.fromJson(Map<String, dynamic> json) => AgentDone(
         sessionId: _sessionIdFromJson(json),
         inReplyTo: json['in_reply_to'] as String,
         usage: json['usage'] == null ? null : Usage.fromJson((json['usage'] as Map).cast<String, dynamic>()),
+        ts: (json['ts'] as num?)?.toInt(),
       );
 
   @override
@@ -841,11 +847,13 @@ final class AgentDone extends ServerMessage {
         'in_reply_to': inReplyTo,
         if (usage case final usage?)
           'usage': usage.toJson(),
+        if (ts case final ts?)
+          'ts': ts,
       };
 }
 
 final class AgentMessage extends ServerMessage {
-  const AgentMessage({this.sessionId = '', required this.inReplyTo, required this.text, this.usage});
+  const AgentMessage({this.sessionId = '', required this.inReplyTo, required this.text, this.usage, this.ts, this.messageId});
 
   @override
   String get type => 'agent_message';
@@ -854,12 +862,16 @@ final class AgentMessage extends ServerMessage {
   final String inReplyTo;
   final String text;
   final Usage? usage;
+  final int? ts;
+  final String? messageId;
 
   factory AgentMessage.fromJson(Map<String, dynamic> json) => AgentMessage(
         sessionId: _sessionIdFromJson(json),
         inReplyTo: json['in_reply_to'] as String,
         text: json['text'] as String,
         usage: json['usage'] == null ? null : Usage.fromJson((json['usage'] as Map).cast<String, dynamic>()),
+        ts: (json['ts'] as num?)?.toInt(),
+        messageId: json['message_id'] as String?,
       );
 
   @override
@@ -870,6 +882,10 @@ final class AgentMessage extends ServerMessage {
         'text': text,
         if (usage case final usage?)
           'usage': usage.toJson(),
+        if (ts case final ts?)
+          'ts': ts,
+        if (messageId case final messageId?)
+          'message_id': messageId,
       };
 }
 
