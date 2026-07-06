@@ -1,7 +1,8 @@
 ---
 id: story-verify-resumed-session-echo-gate-rejection
 kind: story
-stage: drafting
+stage: done
+review_addressed: 2026-07-05
 tags: [app, observability, bug, lifecycle, session-replacement]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -149,3 +150,134 @@ to attribute; the static trace can pre-narrow it.
   id, or does the echo disarm compare against something else?
 - Could the gate reject the echo but the disarm STILL happen via a different
   path (making the "not delivered" badge impossible under this hypothesis)?
+
+## Static trace report
+
+### Verdict
+
+`RACE CONFIRMED (structurally possible)`.
+
+The important qualification is that the failing path requires a stale **old**
+`_activeRef`, not a null one, and it requires that the session-id rebind does
+not arrive/activate before the no-echo timeout. A null `_activeRef` blocks the
+send before any optimistic row or timer is armed (`app/lib/data/sync/sync_service.dart:209`,
+`:215-218`). A later successful `activate()` to the new session cancels pending
+send timers as part of the session switch (`sync_service.dart:166-175`,
+`:187-194`), and `_failPendingSend` also no-ops if its captured
+`expectedRef` is no longer active (`sync_service.dart:318`, `:337-339`).
+So the shortest debounce-only stale window can reject an echo, but it only
+produces the visible 20s badge if the stale ref survives until the timeout.
+
+### The echo-vs-gate crux
+
+The echo **does go through `SessionGate`**. `SyncService._onServerMessage` calls
+`_sessionGate.accepts(msg, _activeRef)` before the message switch
+(`app/lib/data/sync/sync_service.dart:549-560`). If the gate rejects, it logs a
+`SessionGateEvent` and returns immediately (`sync_service.dart:561-576`). The
+`UserInput` echo case is below that return (`sync_service.dart:634-645`), so a
+gate-rejected echo never reaches `[msg-echo]`, `MsgEchoEvent`, or
+`_pendingSendTimers.remove(id)?.cancel()` (`sync_service.dart:642-645`).
+
+The wire `user_message` echo is represented as `UserInput`: the generated parser
+maps both `user_input` and `user_message` to `UserInput.fromJson`
+(`app/lib/protocol/generated/protocol.g.dart:648-649`), while `UserInput.type`
+returns `user_input` (`protocol.g.dart:740`). `user_input` and `user_message`
+are both session-scoped server types (`protocol.g.dart:618-621`), and
+`sessionIdOfServerMessage` extracts the `UserInput.sessionId`
+(`protocol.g.dart:1253-1256`). Therefore a resumed-session echo with the new
+session id is rejected as `session_mismatch` when `_activeRef.sessionId` still
+holds the old id; with no active ref it is rejected as `active_session_unknown`;
+and with an empty echo session id it is rejected as `missing_session_id`
+(`app/lib/data/sync/session_gate.dart:39-72`).
+
+### The race window
+
+`ConnectionManager.activeSessionId` is derived only from the active peer's live
+room metadata: it iterates `roomsFor(epk)` and returns the matching
+`RoomInfo.sessionId` for `_activeRoomId` (`app/lib/data/transport/connection_manager.dart:241-246`).
+`SyncService._resolveActiveRef` reads that getter and returns null if the room
+metadata has no non-empty session id (`app/lib/data/sync/sync_service.dart:144-150`).
+`activate()` stores that resolved value directly in `_activeRef`
+(`sync_service.dart:159-175`).
+
+The room metadata can be stale during resume. `room_announced` updates
+`RoomInfo.sessionId` from the incoming `sessionId`, but preserves the previous
+session id if the announce omitted it (`connection_manager.dart:623-660`).
+`room_meta_updated` changes the cached session id only when the meta envelope
+actually contains `session_id`; otherwise it preserves the current value
+(`connection_manager.dart:709-732`). `rooms` snapshots likewise preserve the
+old cached session id when a snapshot room omits `session_id`
+(`connection_manager.dart:756-765`). Thus after `/resume`, the app can continue
+to expose the old id until a control frame carrying the new `session_id` is
+processed.
+
+There is also an explicit propagation gap after a new id is processed.
+Control frames are handled by `ConnectionManager._watchControl` /
+`_onControl` (`connection_manager.dart:568-574`). Room changes only notify
+consumers through `_scheduleRoomsEmit()` (`connection_manager.dart:818-819`),
+which uses the configured 50ms debounce (`connection_manager.dart:157-166`) and
+adds to `_roomsController` later (`connection_manager.dart:835-840`).
+`SyncService` learns about room changes only from that `roomsStream` listener
+(`sync_service.dart:109-110`) and then calls `activate()` from `_onRoomsChanged`
+when the resolved ref differs (`sync_service.dart:535-545`). `ChatViewModel`
+uses the same rooms-stream path to refresh binding (`app/lib/ui/chat/viewmodels/chat_viewmodel.dart:68-70`,
+`:157-160`).
+
+`sendMessage` is callable in that window. The composer is disabled for not-ready,
+offline, revoked, peer-offline, or presence-offline states, but it does not check
+`SyncService.activeSessionRef` or compare the current room session id before
+submitting (`app/lib/ui/chat/chat_page.dart:385-414`, `:436-438`).
+`ChatViewModel.sendMessage` directly delegates to `SyncService.sendMessage`
+(`app/lib/ui/chat/viewmodels/chat_viewmodel.dart:286-288`). `SyncService.sendMessage`
+reads the current `_activeRef` once at send time (`sync_service.dart:204-214`),
+arms the pending-send timer (`sync_service.dart:246`, `:304-311`), and sends the
+client `UserMessage` with that captured session id (`sync_service.dart:277-284`).
+If `_activeRef` is still the old resumed-away id, the send and timer are bound
+to the old ref while the server echo can arrive with the new id and be rejected
+by the gate.
+
+A null active ref is not the same failure: `sendMessage` logs a blocked
+`MsgSendEvent` and returns before appending an optimistic row or arming a timer
+(`sync_service.dart:215-218`).
+
+### Ring-log confirmation signal
+
+If this hypothesis holds on a live repro, the app debug ring should show:
+
+1. `msgSend` for the target id with `blocked:false` (`app/lib/domain/contracts/debug_log.dart:104-121`,
+   emitted at `sync_service.dart:267-274`).
+2. A nearby `sessionGate` event with `messageType:"user_input"` (the generated
+   representation of the `user_message` echo) and `reason:"session_mismatch"`
+   or `"active_session_unknown"` / `"missing_session_id"`
+   (`debug_log.dart:167-185`, emitted at `sync_service.dart:568-575`).
+3. **No** `msgEcho` for that message id (`debug_log.dart:127-137`, normally
+   emitted at `sync_service.dart:642-643`).
+4. If `_activeRef` has not since rotated to the new session and cancelled/invalidated
+   the old timer, a `msgFailed` for the same id with `code:"send_timeout"`
+   about 20s later (`debug_log.dart:143-161`, `_onSendTimeout` at
+   `sync_service.dart:318-325`, `MsgFailedEvent` at `sync_service.dart:359-365`).
+
+Important instrumentation caveat: the current `SessionGateEvent` does **not**
+include the message id or the expected active-session tail; it serializes only
+`messageType`, `reason`, and `sessionIdTail` (`debug_log.dart:167-185`). The
+console `debugPrint` includes message/active session tails but not the message
+id (`sync_service.dart:562-567`). Therefore the cleanest app-only confirmation
+is a single-message repro: `msgSend(id=X)` → `sessionGate(messageType=user_input,
+reason=session_mismatch|active_session_unknown|missing_session_id)` → no
+`msgEcho(id=X)` → `msgFailed(id=X, code=send_timeout)`. With multiple concurrent
+sends, use extension/relay logs to correlate the rejected echo's id.
+
+If the race is only the 50ms rooms-stream debounce after new metadata has already
+reached `ConnectionManager`, expect `sessionGate` and no `msgEcho`, but then an
+immediate rooms rebind may cancel the timer; in that case there may be no
+`msgFailed` for the old id.
+
+### Recommendation
+
+Open a fix story. The safest fix direction is gate-tolerant echo disarm: a
+`UserInput`/`user_message` echo with a matching client message id should be able
+to cancel the no-echo timer before, or independently of, session-scoped transcript
+acceptance. Also consider an `activate`/send guard that waits for the current
+room's canonical `session_id` after resume before arming sends. The fix story
+should explicitly cover the timer-cancel-on-later-activate behavior so the
+observable bug and the silent rejected-echo/lost-send variant are both tested.
