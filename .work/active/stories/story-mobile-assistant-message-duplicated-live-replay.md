@@ -480,6 +480,48 @@ green; `protocol check` validates 5 fixture families.
   become redundant for commit identity (decision 2's synchronous-clear fix
   stays regardless). Decide at follow-up.
 
+### Deep review (2026-07-06) — REJECT → fixed (blocking multi-block collision)
+
+A fresh-context deep review (gpt-5.5, xhigh) caught a BLOCKING message-loss
+bug in the initial landing: for a multi-text-block assistant message, the
+extension correctly emitted one live `agent_message` per block with distinct
+`message_id = sync_${ts}:assistant:${blockIndex}`, but the app's live handler
+derived `eventId = server:$sessionId:agent_message:$inReplyTo:$ts` — which
+does NOT include the block index. So all blocks in the same SDK message
+(same `inReplyTo`, same `ts`) got the SAME eventId, Hive deduped all but the
+first, and `_agentMessageCommittedThisTurn = true` made `AgentDone` skip the
+buffer fallback → remaining blocks' text was LOST.
+
+**Fix (landed same session):**
+- Schema: added optional `message_id` to `historyAgentMessage` (replay event)
+  too, so both live and replay carry the block-unique id.
+- Extension (`transcript_projection.ts`): `projectSessionHistory` now emits
+  `message_id` on the replay `agent_message` event (mirroring the live
+  broadcast).
+- App (`sync_service.dart` + `session_history_replay.dart`): both the live
+  `AgentMessage` handler and the replay `AgentMessageEvt` mapping now use
+  `messageId ?? inReplyTo` as the stable key — so multi-block messages get
+  distinct eventIds per block, while legacy frames without `message_id`
+  fall back to the old `inReplyTo`-keyed scheme.
+- Regression test `multi-block assistant message: live agent_message per
+  block does not collide` — verified to FAIL without the `message_id` stable
+  key (blocks collide → 1 row instead of 2) and pass with it.
+- Extension test strengthened to assert the replay event carries the same
+  `message_id` as the live broadcast.
+
+**Should-fix findings also addressed:**
+- `_agentMessageCommittedThisTurn` is now reset in `_resetTurnState` (covers
+  session switch / reconnect / dispose), not just on new user turn / cancel /
+  `AgentDone`.
+
+**Should-fix findings deferred (low risk, documented):**
+- Ordering race: if `AgentDone` is processed before the deterministic
+  `AgentMessage(ts)`, the app commits the buffer with the legacy random id,
+  then the deterministic `agent_message` adds a second row (the original
+  dup). The Pi SDK guarantees `message_end` before `agent_end`, so this is
+  structurally impossible in production; the app test suite does not pin
+  the ordering. Acceptable until an e2e test covers it.
+
 ### Out of scope for this design pass
 - The cockpit (Flutter desktop) — it consumes the same protocol but its
   transcript path is separate; file a follow-up if it duplicates.

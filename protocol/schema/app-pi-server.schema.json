@@ -328,6 +328,7 @@
         "type": { "const": "agent_message" },
         "in_reply_to": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
         "text": { "type": "string" },
+        "message_id": { "type": "string", "description": "Stable assistant message id (sync_<ts>:assistant:<blockIndex>). Optional (compat); when present, new clients include it in the transcript eventId stable key so multi-block assistant messages (same in_reply_to+ts, different blocks) do not collide. See story-mobile-assistant-message-duplicated-live-replay decision 1." },
         "usage": { "$ref": "./defs/app-pi-common.schema.json#/$defs/usage" }
       },
       "additionalProperties": false
