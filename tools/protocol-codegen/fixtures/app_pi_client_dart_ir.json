@@ -61,6 +61,12 @@
               "wireName": "images",
               "dartType": "List<WireImage>",
               "required": false
+            },
+            {
+              "name": "ts",
+              "wireName": "ts",
+              "dartType": "int",
+              "required": false
             }
           ],
           "sessionScoped": true
@@ -435,6 +441,12 @@
               "required": false,
               "read": "firstImage",
               "write": "firstImageList"
+            },
+            {
+              "name": "ts",
+              "wireName": "ts",
+              "dartType": "int",
+              "required": false
             }
           ],
           "sessionScoped": true
