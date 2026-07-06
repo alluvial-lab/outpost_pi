@@ -1404,7 +1404,7 @@ final class ToolResultEvt extends SessionHistoryEvent {
 }
 
 final class AgentMessageEvt extends SessionHistoryEvent {
-  const AgentMessageEvt({required this.ts, required this.inReplyTo, required this.text});
+  const AgentMessageEvt({required this.ts, required this.inReplyTo, required this.text, this.messageId});
 
   @override
   String get type => 'agent_message';
@@ -1413,11 +1413,13 @@ final class AgentMessageEvt extends SessionHistoryEvent {
   final int ts;
   final String inReplyTo;
   final String text;
+  final String? messageId;
 
   factory AgentMessageEvt.fromJson(Map<String, dynamic> json) => AgentMessageEvt(
         ts: (json['ts'] as num).toInt(),
         inReplyTo: json['in_reply_to'] as String,
         text: json['text'] as String,
+        messageId: json['message_id'] as String?,
       );
 
   @override
@@ -1426,6 +1428,8 @@ final class AgentMessageEvt extends SessionHistoryEvent {
         'ts': ts,
         'in_reply_to': inReplyTo,
         'text': text,
+        if (messageId case final messageId?)
+          'message_id': messageId,
       };
 }
 

@@ -199,6 +199,7 @@ class SyncService extends Service {
     _flushTimer?.cancel();
     _flushTimer = null;
     _chunkBuffer.clear();
+    _agentMessageCommittedThisTurn = false;
     _setQueuedText(null);
     if (clearPendingSendTimers) {
       // Session switch: the previous chat's in-flight sends are no longer ours
@@ -646,7 +647,7 @@ class SyncService extends Service {
         );
         _setTurnIdle(preview: buffered.isEmpty ? null : buffered);
 
-      case AgentMessage(:final inReplyTo, :final text, :final ts, :final usage):
+      case AgentMessage(:final inReplyTo, :final text, :final ts, :final usage, :final messageId):
         // Identity-source (a): derive the SAME deterministic eventId/messageId
         // as session_history replay (AgentMessageEvt) so a live commit and
         // a replay of the same assistant message collapse to ONE Hive row
@@ -658,13 +659,21 @@ class SyncService extends Service {
         if (ts != null) {
           final sessionId = _activeTranscriptSessionId();
           _agentMessageCommittedThisTurn = true;
+          // Identity source (a): use `messageId` (sync_<ts>:assistant:
+          // <blockIndex>) as the stable key when present so multi-block
+          // assistant messages (same in_reply_to+ts, different blocks) do
+          // NOT collide on the same eventId. Falls back to inReplyTo for
+          // legacy live frames without message_id. Mirrors the replay path
+          // (AgentMessageEvt). See story-mobile-assistant-message-
+          // duplicated-live-replay decision 1.
+          final stableKey = messageId ?? inReplyTo;
           // ignore: discarded_futures
           _appendTranscriptEvent(
             AssistantMessageCommitted(
               eventId: serverReplayEventId(
                 sessionId,
                 'agent_message',
-                inReplyTo,
+                stableKey,
                 ts,
               ),
               sessionId: sessionId,
@@ -672,7 +681,7 @@ class SyncService extends Service {
               messageId: serverReplayMessageId(
                 sessionId,
                 'agent_message',
-                inReplyTo,
+                stableKey,
                 ts,
               ),
               replyTo: inReplyTo,

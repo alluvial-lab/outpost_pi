@@ -58,11 +58,18 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
           ? null
           : MessageImage(data: image.data, mime: image.mime),
     ),
-    AgentMessageEvt(:final inReplyTo, :final text) => AssistantMessageCommitted(
+    AgentMessageEvt(:final inReplyTo, :final text, :final messageId) =>
+        AssistantMessageCommitted(
+      // Identity source (a): when the replay event carries `message_id`
+      // (sync_<ts>:assistant:<blockIndex>), use it as the stable key so
+      // multi-block assistant messages (same in_reply_to+ts, different
+      // blocks) do NOT collide on the same eventId. Falls back to inReplyTo
+      // for legacy replay events without message_id. See
+      // story-mobile-assistant-message-duplicated-live-replay decision 1.
       eventId: serverReplayEventId(
         sessionId,
         'agent_message',
-        inReplyTo,
+        messageId ?? inReplyTo,
         event.ts,
       ),
       sessionId: sessionId,
@@ -70,7 +77,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
       messageId: serverReplayMessageId(
         sessionId,
         'agent_message',
-        inReplyTo,
+        messageId ?? inReplyTo,
         event.ts,
       ),
       replyTo: inReplyTo,
