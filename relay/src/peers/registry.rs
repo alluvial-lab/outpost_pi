@@ -53,6 +53,12 @@ use crate::rooms::{RoomManager, RoomMeta, RoomMetaPatch};
 /// - `peer_offline` fires only when the peer transitions from N → 0 total
 ///   connections (asymmetric still: online and offline both gated by real
 ///   state changes, but the offline edge is the authoritative one).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PeerRegistration {
+    pub conn_id: u64,
+    pub superseded_existing: bool,
+}
+
 #[derive(Debug)]
 pub struct PeerRegistry {
     connections: Arc<ConnectionRegistry>,
@@ -131,9 +137,13 @@ impl PeerRegistry {
         peer_id: String,
         room_meta: RoomMeta,
         tx: mpsc::UnboundedSender<Message>,
-    ) -> u64 {
+    ) -> PeerRegistration {
         let room_id = room_meta.room_id.clone();
         let insert = self.connections.insert(&peer_id, &room_id, tx);
+        let registration = PeerRegistration {
+            conn_id: insert.conn_id,
+            superseded_existing: insert.superseded_existing,
+        };
         let announced_meta = self
             .rooms
             .on_connection_inserted(&peer_id, room_meta, &insert);
@@ -154,7 +164,7 @@ impl PeerRegistry {
             .publish_presence_transition(presence_transition)
             .await;
 
-        insert.conn_id
+        registration
     }
 
     /// Removes the connection identified by `conn_id` from the `Vec` at
@@ -289,7 +299,7 @@ mod tests {
         let conn_main = reg.register(peer.clone(), make_meta("main"), tx_main).await;
         let conn_work = reg.register(peer.clone(), make_meta("work"), tx_work).await;
 
-        assert_ne!(conn_main, conn_work);
+        assert_ne!(conn_main.conn_id, conn_work.conn_id);
 
         assert!(forward(
             &reg,
@@ -309,7 +319,7 @@ mod tests {
         ));
         assert_eq!(rx_work.try_recv().unwrap().to_text().unwrap(), "to_work");
 
-        reg.unregister(&peer, "work", conn_work).await;
+        reg.unregister(&peer, "work", conn_work.conn_id).await;
         assert!(!forward(
             &reg,
             &peer,
@@ -364,7 +374,7 @@ mod tests {
 
         let conn1 = reg.register(peer.clone(), make_meta("main"), tx1).await;
         let conn2 = reg.register(peer.clone(), make_meta("main"), tx2).await;
-        assert_ne!(conn1, conn2);
+        assert_ne!(conn1.conn_id, conn2.conn_id);
 
         // Send "from" conn1 → only conn2 receives.
         assert!(forward(
@@ -372,7 +382,7 @@ mod tests {
             &peer,
             "main",
             Message::Text("hi".into()),
-            conn1
+            conn1.conn_id
         ));
         assert!(rx1.try_recv().is_err(), "sender must not echo");
         assert_eq!(rx2.try_recv().unwrap().to_text().unwrap(), "hi");
@@ -383,10 +393,36 @@ mod tests {
             &peer,
             "main",
             Message::Text("hi2".into()),
-            conn2
+            conn2.conn_id
         ));
         assert_eq!(rx1.try_recv().unwrap().to_text().unwrap(), "hi2");
         assert!(rx2.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn register_reports_duplicate_auth_supersession_at_same_key() {
+        let reg = make_registry();
+        let peer = "peer_a".to_string();
+
+        let (tx_first, _rx_first) = mpsc::unbounded_channel::<Message>();
+        let first = reg
+            .register(peer.clone(), make_meta("main"), tx_first)
+            .await;
+        assert!(!first.superseded_existing);
+
+        let (tx_other_room, _rx_other_room) = mpsc::unbounded_channel::<Message>();
+        let other_room = reg
+            .register(peer.clone(), make_meta("work"), tx_other_room)
+            .await;
+        assert!(
+            !other_room.superseded_existing,
+            "same peer in a different room is not duplicate auth at the same key"
+        );
+
+        let (tx_duplicate, _rx_duplicate) = mpsc::unbounded_channel::<Message>();
+        let duplicate = reg.register(peer, make_meta("main"), tx_duplicate).await;
+        assert!(duplicate.superseded_existing);
+        assert_ne!(first.conn_id, duplicate.conn_id);
     }
 
     /// Duplicate connections refresh the canonical `rooms_of` snapshot using
@@ -439,14 +475,14 @@ mod tests {
         assert_eq!(snapshot[0].session_id.as_deref(), Some("sess-2"));
         assert!(snapshot[0].working);
 
-        reg.unregister(&pi, "main", conn1).await;
+        reg.unregister(&pi, "main", conn1.conn_id).await;
         assert!(
             rx_app.try_recv().is_err(),
             "removing a non-last duplicate must not emit room_ended"
         );
         assert_eq!(reg.rooms_of(&pi).len(), 1);
 
-        reg.unregister(&pi, "main", conn2).await;
+        reg.unregister(&pi, "main", conn2.conn_id).await;
         let ended = rx_app
             .try_recv()
             .expect("last duplicate disconnect emits room_ended");
@@ -471,7 +507,7 @@ mod tests {
         let conn2 = reg.register(peer.clone(), make_meta("main"), tx2).await;
         let _conn3 = reg.register(peer.clone(), make_meta("main"), tx3).await;
 
-        reg.unregister(&peer, "main", conn2).await;
+        reg.unregister(&peer, "main", conn2.conn_id).await;
 
         assert!(forward(
             &reg,
@@ -527,7 +563,7 @@ mod tests {
             &peer,
             "main",
             Message::Text("echo".into()),
-            conn
+            conn.conn_id
         ));
         assert!(rx.try_recv().is_err());
 
@@ -552,11 +588,11 @@ mod tests {
         let (tx_b, mut rx_b) = mpsc::unbounded_channel::<Message>();
 
         let conn_a = reg.register(peer.clone(), make_meta("main"), tx_a).await;
-        reg.unregister(&peer, "main", conn_a).await;
+        reg.unregister(&peer, "main", conn_a.conn_id).await;
         let conn_b = reg.register(peer.clone(), make_meta("main"), tx_b).await;
 
         // Stale unregister of conn_a is a no-op.
-        reg.unregister(&peer, "main", conn_a).await;
+        reg.unregister(&peer, "main", conn_a.conn_id).await;
         assert!(forward(
             &reg,
             &peer,
@@ -567,7 +603,7 @@ mod tests {
         assert_eq!(rx_b.try_recv().unwrap().to_text().unwrap(), "alive");
 
         // Correct unregister removes the last conn → entry gone.
-        reg.unregister(&peer, "main", conn_b).await;
+        reg.unregister(&peer, "main", conn_b.conn_id).await;
         assert!(!forward(
             &reg,
             &peer,
@@ -653,13 +689,13 @@ mod tests {
             "second live room must not duplicate peer_online"
         );
 
-        reg.unregister(&pi, "main", conn_main).await;
+        reg.unregister(&pi, "main", conn_main.conn_id).await;
         assert!(
             rx_app.try_recv().is_err(),
             "disconnecting one room while another remains live must not emit peer_offline"
         );
 
-        reg.unregister(&pi, "work", conn_work).await;
+        reg.unregister(&pi, "work", conn_work.conn_id).await;
         let offline = rx_app
             .try_recv()
             .expect("last live room emits peer_offline");
@@ -932,8 +968,7 @@ mod tests {
         assert_eq!(announced["type"], "room_announced");
         assert_eq!(announced["working"], true);
 
-        reg.unregister(&pi, "main", conn).await;
-
+        reg.unregister(&pi, "main", conn.conn_id).await;
         let ended = rx_app.try_recv().expect("subscriber receives room_ended");
         let ended: serde_json::Value = serde_json::from_str(ended.to_text().unwrap()).unwrap();
         assert_eq!(ended["type"], "room_ended");

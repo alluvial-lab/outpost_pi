@@ -96,19 +96,24 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     let room_meta = authenticated.room_meta;
     let room_id = room_meta.room_id.clone();
 
-    info!(peer = %peer_short, room = %room_id, addr = %peer_addr, "authenticated");
-
     let registry = state.registry.clone();
     let rooms = state.rooms.clone();
 
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
-    let conn_id = registry.register(peer_id.clone(), room_meta, tx).await;
+    let registration = registry.register(peer_id.clone(), room_meta, tx).await;
+    info!(
+        peer = %peer_short,
+        room = %room_id,
+        addr = %peer_addr,
+        superseded_existing = registration.superseded_existing,
+        "authenticated"
+    );
 
     let mut actor = ConnectionActor::new(
         peer_id.clone(),
         peer_short.clone(),
         room_id.clone(),
-        conn_id,
+        registration.conn_id,
         ConnectionActorServices {
             registry: registry.clone(),
             presence: state.presence.clone(),
@@ -195,7 +200,9 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
         }
     }
 
-    registry.unregister(&peer_id, &room_id, conn_id).await;
+    registry
+        .unregister(&peer_id, &room_id, registration.conn_id)
+        .await;
     rooms.unsubscribe_all(&peer_id).await;
     info!(peer = %peer_short, room = %room_id, addr = %peer_addr, "disconnected");
 }
