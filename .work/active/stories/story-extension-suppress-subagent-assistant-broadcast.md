@@ -1,7 +1,7 @@
 ---
 id: story-extension-suppress-subagent-assistant-broadcast
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug, transport, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -400,3 +400,15 @@ subagent, and read `/tmp/remote-pi-debug-send.jsonl` — log every outbound
 frame's type + `gateActive` state + which module instance is publishing. That
 settles both the leak story's "why does it work" and the wipe story's root
 cause in one capture.
+
+## Final resolution (2026-07-07) — DONE
+
+Operator-confirmed: dispatching a subagent no longer shows the subagent's reply
+text ("subagent probe ok") NOR the dispatch prompt ("Reply with exactly...")
+in mobile chat. The gate now suppresses both `assistant` (reply text →
+`agent_message`/`agent_chunk`) AND `user` (dispatch prompt → `user_input`)
+messages during the subagent tool-execution window. The `user` suppression was
+added after a live capture showed the dispatch prompt leaking as a chat bubble
+(L9/L10 `user_input` at `gateActive=true`). `toolResult` still passes through
+(legitimate folded result). Regression test covers both. TEMP DEBUG sink
+instrumentation removed (served its purpose).
