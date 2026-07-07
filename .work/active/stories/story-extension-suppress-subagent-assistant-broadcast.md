@@ -369,29 +369,11 @@ dispatch, then read `/tmp/remote-pi-debug-broadcast.jsonl`.
 - `corepack pnpm build` ✓ (dist has 2 functional gate refs + 1 debug-gate-
   reader ref; instrumentation present and env-gated)
 
-### Operator confirmation (2026-07-07) — LEAK FIXED
-
-The operator confirmed that after the two-gate fix was loaded (and after
-confirming `/reload` genuinely re-imports `dist/index.js` — the prior AGENTS.md
-claim that it does not was wrong, now corrected), dispatching a probe
-subagent ("subagent probe ok") NO LONGER shows the subagent's reply text in
-mobile chat. The two-gate fix (message_update + message_end) is confirmed
-working.
-
-The operator also surfaced a SEPARATE, deeper bug that the leak fix
-revealed: dispatching a subagent **wipes the mobile chatlog clean** and shows
-no indication of the subagent running. That is a distinct defect — the child
-subagent's `session_start` publishes a `room_meta_update` with the child's
-fresh session id, which the app's `_onRoomsChanged` → `activate()` interprets
-as a session rotation, clearing in-memory turn state and rebinding to the
-child's empty session box. Tracked in a new story:
-`story-extension-subagent-child-session-start-wipes-mobile-chat`.
-
 ### Next step
 
-This story's leak is resolved (operator-confirmed). The remaining work
-(wipe + no subagent-running indication) is the new story above. This story
-can advance to `done` once the regression test + the sink instrumentation are
-confirmed sufficient — the instrumentation is no longer needed once the
-wipe story's fix lands (the wipe is the only remaining subagent-dispatch
-mobile symptom).
+Operator confirms phone chat stays clean during a subagent dispatch (the
+probe was already sent). If clean, advance this story to `done`. If a leak
+is still observed, restart pi fully (not `/reload`) with
+`REMOTE_PI_DEBUG_BROADCAST=1` and read the sink log — the leaking type will
+be the line with `gateActive=true` and a content preview matching the
+subagent text.
