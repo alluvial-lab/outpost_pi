@@ -26,13 +26,21 @@ Root is primarily planning/orchestration. Code edits normally belong in one subp
 
 Run build/test commands from the owning subproject root unless a command is documented as root-level. Do not make broad cross-subproject edits without saying which boundary is being changed and why.
 
-## Third-party fork posture
+## Fork posture (hard fork)
 
-This is a private fork of a third-party project. Upstream is read-only unless the operator explicitly asks for an upstream PR.
+This is a **hard fork** of `jacobaraujo7/remote_pi`, fully owned by the operator
+(rebrand to Outpost-Pi tracked in `epic-rebrand-to-outpost-pi`). It has
+diverged past upstream rebase; upstream is historical provenance and read-only
+comparison, not a design constraint. See `AGENTS.md` § Repository posture for
+the operative rule.
 
-- Prefer private-carry changes that are well-isolated and easy to rebase.
-- Keep upstream behavior unchanged unless the task explicitly calls for a product/fork divergence.
-- When changing a fork policy, record the current policy and the rejected alternative in the artifact that owns the policy.
+- Design **fork-local by default**: fixes and features live in code we control
+  and ship by rebuilding our own artifacts. Do not gate decisions on upstream
+  absorbability.
+- Upstream behavior is not a constraint to preserve — diverge freely where the
+  product needs it.
+- When changing a fork policy, record the current policy and the rejected
+  alternative in the artifact that owns the policy.
 
 ## Durable vs transient artifacts
 
