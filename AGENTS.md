@@ -155,11 +155,23 @@ sideload the app.
 
 ### Reload vs restart (pi-extension)
 
-`/reload` in the pi TUI re-fires `session_start` against the **already-loaded**
-module instance — it does **not** re-`require` `dist/index.js`. A source edit
-is only picked up by a **full pi process restart** (quit + relaunch), not
-`/reload`. If a fix is in `dist/` but the symptom persists after `/reload`, a
-stale module is still in memory; restart pi.
+`/reload` in the pi TUI **does** re-import `dist/index.js`: the pi extension
+loader (`@earendil-works/pi-coding-agent` `dist/core/extensions/loader.js`)
+loads local-path extensions via `jiti.import(extensionPath, { moduleCache: false })`,
+and `/reload` calls `resourceLoader.reload()` → `clearExtensionCache()`
+(which bumps `extensionCacheGeneration`) → `loadExtensionsCached` →
+`loadExtensionModule`. Because the stale `cacheToken` no longer matches the new
+generation, `isCurrentCacheToken()` returns false and `jiti.import` re-reads the
+file from disk. So a source edit + `corepack pnpm build` + `/reload` is
+sufficient to pick up a `dist/` change; a full pi process restart is **not**
+required for that purpose.
+
+A full restart (quit + relaunch) is still the fallback if `/reload` misbehaves
+(e.g. a handler throws during the reload lifecycle, or state captured across
+the reload boundary goes stale), but it is not the default path for loading a
+`dist/` change. The prior note claiming `/reload` does not re-`require`
+`dist/index.js` was incorrect (it conflated CommonJS `require` cache with
+jiti's `moduleCache: false` import path).
 
 ### Relay container commands
 
