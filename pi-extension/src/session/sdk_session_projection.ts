@@ -139,7 +139,25 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.bindCapabilities(ctx);
   }
 
-  bindSessionContext(ctx: ExtensionContext): void {
+  bindSessionContext(ctx: ExtensionContext, opts?: { subagentChild?: boolean }): void {
+    // A child subagent session re-binds the parent's extensions
+    // (`@gotgenes/pi-subagents` `create-subagent-session.ts:233`), so the
+    // child's `session_start` fires here too. The child carries a FRESH
+    // session id (`SessionManager.newSession` → new uuidv7). If we let the
+    // child's `session_start` run the usual side effects, three things break:
+    //   (a) `issuer.capture(childCtx)` overwrites the parent's session id →
+    //       subsequent parent broadcasts are stamped with the wrong id;
+    //   (b) `captureRemoteSession` publishes `room_meta_update({session_id:
+    //       childId})` → the app's `_onRoomsChanged` → `activate()` rebinds to
+    //       the child's empty session box → mobile chatlog WIPED;
+    //   (c) `backfillTranscriptFromSessionManager(childCtx)` stamps parent-seeded
+    //       history under the child's id into the transcript log.
+    // The `subagentChild` flag (set by index.ts when `subagentGate.isActive()`)
+    // suppresses (a) and (c) here and (b) in the index.ts wrapper. Capability
+    // rebinds (`bindCapabilities`) are still needed for the child's own
+    // message API and do not touch the phone. See
+    // story-extension-subagent-child-session-start-wipes-mobile-chat.
+    const suppressChildSideEffects = opts?.subagentChild === true;
     this.eventCtx = ctx;
     // Capture the fresh session id BEFORE any backfill. `session_start` fires
     // for startup/new/fork/reload/resume, and `clearStaleContexts` does NOT
@@ -148,7 +166,11 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     // leaving them unreachable to `forSession(currentId)` (the blank-history
     // bug). The index.ts wrapper re-captures via `_captureRemoteSession`
     // (idempotent) and publishes room_meta; capturing here is the ordering fix.
-    this.issuer.capture(ctx);
+    // SKIPPED for a child subagent session_start (suppressChildSideEffects) so
+    // the parent's session id is preserved.
+    if (!suppressChildSideEffects) {
+      this.issuer.capture(ctx);
+    }
     // Additive, not replacing: the `session_start` ctx (built by
     // `ExtensionRunner.createContext()` in the SDK) carries ui/cwd/abort/compact
     // but NOT sendMessage/sendUserMessage — only `ExtensionAPI` (the factory
@@ -161,7 +183,11 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     // otherwise the `pi`-armed binding is preserved. `bindReplacementContext`
     // still calls `replaceSessionCapabilities` to drop a stale `pi`.
     this.bindCapabilities(ctx);
-    this.backfillTranscriptFromSessionManager(ctx);
+    // SKIPPED for a child subagent session_start: the child's SessionManager is
+    // separate and would stamp parent-seeded history under the child's id.
+    if (!suppressChildSideEffects) {
+      this.backfillTranscriptFromSessionManager(ctx);
+    }
   }
 
   /**
