@@ -1255,6 +1255,12 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   pi.on("message_update", (event) => {
     const ae = event.assistantMessageEvent;
     if (ae.type !== "text_delta") return;
+    // Subagent-leak gate: the subagent's reply streams token-by-token via
+    // `message_update` (text_delta) BEFORE `message_end` fires. Gate this
+    // path too, or the streaming `agent_chunk`s reach the phone even when
+    // the `message_end` broadcast is suppressed. See
+    // `story-extension-suppress-subagent-assistant-broadcast`.
+    if (subagentGate.isActive()) return;
     const projection = _applyTurnAndPublish({ type: "agent_chunk" });
     const replyTo = projection.replyTo ?? projection.activeTurnId;
     if (_owners.activeCount() === 0 || replyTo === null) return;
