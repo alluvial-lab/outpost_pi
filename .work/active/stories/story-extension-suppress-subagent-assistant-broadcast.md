@@ -299,20 +299,32 @@ capture also shows the child's `session_start` carries the SAME session id as
 the parent (`019f3890`), so `issuer.capture(childCtx)` does not corrupt the
 parent's session id.
 
-### Most likely explanation for the prior "persistent leak"
+### Correction: the prior "stale-module" hypothesis is WRONG — /reload DOES re-import dist
 
-The prior session's evidence for a third path was an operator visual report
-after a "restart" — but there is **no instrumented capture of a post-second-
-fix leak**. The `debug-leakfix.jsonl` capture (19:04-19:06 UTC) predates the
-`message_update` gate (commit `397583b`, 19:06 UTC) and shows the pre-fix
-`message_update` leak. Per `AGENTS.md` (§ Reload vs restart): **`/reload` does
-NOT re-`require` `dist/index.js`** — it re-fires `session_start` against the
-already-loaded module. A source edit is only picked up by a **full pi process
-restart**. The prior "restart" was likely a `/reload`, leaving the stale
-ungated module in memory — which would explain a leak that persists despite
-the dist containing both gates. The regression test below locks the gate
-behavior so a stale-module regression is caught by the suite, not just by
-live repro.
+The prior draft of this section hypothesized that the persistent leak was a
+stale module because `AGENTS.md` claimed `/reload` does not re-`require`
+`dist/index.js`. That claim is **incorrect**. Tracing the pi extension loader
+(`@earendil-works/pi-coding-agent` `dist/core/extensions/loader.js` +
+`dist/core/resource-loader.js`): local-path extensions are loaded via
+`jiti.import(extensionPath, { moduleCache: false })`, and `/reload` calls
+`resourceLoader.reload()` → `clearExtensionCache()` (bumps
+`extensionCacheGeneration`) → `loadExtensionsCached` → `loadExtensionModule`,
+which (stale `cacheToken` → `isCurrentCacheToken` false) re-reads the file
+from disk. So `/reload` DOES pick up a `dist/` change; a full restart is not
+required. `AGENTS.md` (§ Reload vs restart) has been corrected accordingly.
+
+**Implication:** the operator's "full restart" DID load the two-gate fix. So
+if the leak genuinely persisted, it is a REAL third path the static trace
+below does not account for — not a stale module. The static trace shows no
+live `_owners.broadcast` path carries the reply text while the gate is
+active, so either (a) the leak is via a `sender.send` path that bypasses
+`_owners.broadcast` (e.g. a `session_sync`/`session_history` reply replaying
+recorded subagent text — ruled out above for the parent's own log, but a
+child-session recording path is not fully excluded), or (b) the gate is not
+active when expected (an event-ordering edge the captures so far did not
+exhibit). The env-gated sink instrumentation below (logging every
+`_owners.broadcast` type + gate state) plus a `sender.send` instrument will
+settle it on the next live repro.
 
 ### Regression test added (locks the gate at the integration level)
 
