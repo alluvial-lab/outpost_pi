@@ -155,23 +155,23 @@ sideload the app.
 
 ### Reload vs restart (pi-extension)
 
-`/reload` in the pi TUI **does** re-import `dist/index.js`: the pi extension
-loader (`@earendil-works/pi-coding-agent` `dist/core/extensions/loader.js`)
-loads local-path extensions via `jiti.import(extensionPath, { moduleCache: false })`,
-and `/reload` calls `resourceLoader.reload()` → `clearExtensionCache()`
-(which bumps `extensionCacheGeneration`) → `loadExtensionsCached` →
-`loadExtensionModule`. Because the stale `cacheToken` no longer matches the new
-generation, `isCurrentCacheToken()` returns false and `jiti.import` re-reads the
-file from disk. So a source edit + `corepack pnpm build` + `/reload` is
-sufficient to pick up a `dist/` change; a full pi process restart is **not**
-required for that purpose.
+`/reload` in the pi TUI re-fires `session_start` against the **already-loaded**
+module instance — it does **not** re-import `dist/index.js`. A source edit is
+only picked up by a **full pi process restart** (quit + relaunch), not
+`/reload`. If a fix is in `dist/` but the symptom persists after `/reload`, a
+stale module is still in memory; restart pi.
 
-A full restart (quit + relaunch) is still the fallback if `/reload` misbehaves
-(e.g. a handler throws during the reload lifecycle, or state captured across
-the reload boundary goes stale), but it is not the default path for loading a
-`dist/` change. The prior note claiming `/reload` does not re-`require`
-`dist/index.js` was incorrect (it conflated CommonJS `require` cache with
-jiti's `moduleCache: false` import path).
+This was verified empirically (2026-07-07): instrumentation fields added to
+`dist/transport/peer_channel.js` (commit `01006f9`, built 15:17) were absent
+from a capture taken immediately after `/reload`, while earlier fields (commit
+`9a15503`, built 13:35, loaded by the prior full restart) were present. So the
+running process kept the stale module despite `/reload`. A static trace of
+`agent-session.reload()` → `resourceLoader.reload()` → `clearExtensionCache()`
+→ `jiti.import` suggested re-import SHOULD occur, but the harness's `/reload`
+does not re-import the extension module in practice (the in-memory
+`extensionCache` factory is retained, or the harness `/reload` does not invoke
+the full `agent-session.reload()` path). Trust the empirical result, not the
+trace: **full restart to load a `dist/` change**.
 
 ### Relay container commands
 
