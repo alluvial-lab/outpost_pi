@@ -1,7 +1,7 @@
 ---
 id: story-extension-subagent-child-session-start-wipes-mobile-chat
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, app, bug, transport, session, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -300,3 +300,13 @@ card appears. If both hold, advance to `done`.
   `newSession` generates a fresh `createSessionId()` (uuidv7) when no `id`
   option is passed.
 - Parent: `feature-reconnect-reproduction.md`.
+
+## Final resolution (2026-07-07) — DONE
+
+Operator-confirmed: dispatching a subagent no longer wipes the mobile chatlog,
+and the "subagent running" tool card now renders. The fix (suppress
+`captureRemoteSession`'s `room_meta_update({session_id: childId})` +
+`issuer.capture` + `backfillTranscriptFromSessionManager` when
+`subagentGate.isActive()`) was confirmed by live capture: zero
+`room_meta_update({session_id})` fires during the window, and the parent
+session id stays constant throughout. TEMP DEBUG sink instrumentation removed.
