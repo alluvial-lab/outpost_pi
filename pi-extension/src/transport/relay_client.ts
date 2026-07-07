@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
 import { ed25519Sign } from "../pairing/crypto.js";
@@ -6,6 +7,21 @@ import {
   REACHABILITY_RELAY_LIVENESS_CHECK_MS,
   REACHABILITY_RELAY_LIVENESS_TIMEOUT_MS,
 } from "../reachability/reachability_contract.js";
+
+// TEMP DEBUG (subagent-leak/wipe hunt): log EVERY control frame sent to the
+// relay (room_meta_update, etc.) with the subagent-gate state. sendControl is
+// a SEPARATE sink from PeerChannel.send — room_meta_update goes through here,
+// not the per-owner channel — so this catches the chatlog-wipe path the
+// PeerChannel instrumentation misses. Env-gated (REMOTE_PI_DEBUG_SEND=1, same
+// flag) so it is inert in normal runs. Remove after the wipe path is found and
+// gated. See story-extension-subagent-child-session-start-wipes-mobile-chat.
+const _DEBUG_SEND_CTRL = process.env.REMOTE_PI_DEBUG_SEND === "1";
+const _DEBUG_SEND_CTRL_LOG = process.env.REMOTE_PI_DEBUG_SEND_LOG ?? "/tmp/remote-pi-debug-send.jsonl";
+let _subagentGateActiveCtrl: () => boolean = () => false;
+/** TEMP DEBUG: lets index.ts register the live gate-state reader for logging. */
+export function _debugSetSubagentGateReaderCtrl(reader: () => boolean): void {
+  _subagentGateActiveCtrl = reader;
+}
 
 /** Auth-signature domain prefix. MUST match the relay's `RELAY_AUTH_DOMAIN_PREFIX`
  *  (`relay/src/auth/challenge.rs`). The relay verifies the auth signature over
@@ -182,6 +198,20 @@ export class RelayClient extends EventEmitter {
    * don't want them throwing inside SDK event callbacks).
    */
   sendControl(frame: object): void {
+    // TEMP DEBUG (wipe hunt): log every control frame (room_meta_update, etc.)
+    // with gate state. Env-gated so inert unless enabled.
+    if (_DEBUG_SEND_CTRL) {
+      try {
+        const f = frame as { type?: string; meta?: Record<string, unknown> };
+        appendFileSync(_DEBUG_SEND_CTRL_LOG, JSON.stringify({
+          ts: Date.now(),
+          sink: "sendControl",
+          type: f.type ?? "<unknown>",
+          gateActive: _subagentGateActiveCtrl(),
+          meta: f.meta ?? null,
+        }) + "\n");
+      } catch { /* best-effort */ }
+    }
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify(frame));
   }

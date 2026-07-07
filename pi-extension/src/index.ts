@@ -60,7 +60,7 @@ import {
   stringifyToolResult,
   type LegacyAgentMessage,
 } from "./session/transcript_projection.js";
-import { RelayClient, RoomAlreadyOpenError } from "./transport/relay_client.js";
+import { RelayClient, RoomAlreadyOpenError, _debugSetSubagentGateReaderCtrl } from "./transport/relay_client.js";
 import type { PeerChannel, PlainPeerChannel } from "./transport/peer_channel.js";
 import { _debugSetSubagentGateReader } from "./transport/peer_channel.js";
 import { OwnerMultiplexer } from "./extension/owner_multiplexer.js";
@@ -226,6 +226,9 @@ const _relayTransport = createRelayTransportPort({
 // reader so the PeerChannel.send sink can log whether the subagent gate is
 // active for every outbound frame. Remove after the leak path is gated.
 _debugSetSubagentGateReader(() => subagentGate.isActive());
+// TEMP DEBUG (wipe hunt): same gate-state reader for the sendControl sink
+// (room_meta_update path). Remove after the wipe path is gated.
+_debugSetSubagentGateReaderCtrl(() => subagentGate.isActive());
 
 const _owners: OwnerMultiplexer = new OwnerMultiplexer({
   createChannel: (input) => _relayTransport.createPeerChannel({
