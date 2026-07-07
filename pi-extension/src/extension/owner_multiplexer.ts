@@ -1,8 +1,23 @@
+import { appendFileSync } from "node:fs";
 import { decodeClient } from "../protocol/codec.js";
 import type { ByeReason, ClientMessage, PairErrorCode, ServerMessage } from "../protocol/types.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
 import type { RelayClient } from "../transport/relay_client.js";
 import type { AttachOwnerInput, OwnerMultiplexerPort } from "./ports.js";
+
+// TEMP DEBUG (subagent-leak third-path hunt): log every broadcast type that
+// reaches the sink, with the subagent-gate state, so one live repro reveals
+// which message `type` carries the subagent's text during the window. Env-gated
+// (REMOTE_PI_DEBUG_BROADCAST=1) so it is inert in normal runs. Remove after the
+// leak path is found and gated. See
+// story-extension-suppress-subagent-assistant-broadcast.
+const _DEBUG_BROADCAST = process.env.REMOTE_PI_DEBUG_BROADCAST === "1";
+const _DEBUG_BROADCAST_LOG = process.env.REMOTE_PI_DEBUG_BROADCAST_LOG ?? "/tmp/remote-pi-debug-broadcast.jsonl";
+let _subagentGateActive: () => boolean = () => false;
+/** TEMP DEBUG: lets index.ts register the live gate-state reader for logging. */
+export function _debugSetSubagentGateReader(reader: () => boolean): void {
+  _subagentGateActive = reader;
+}
 
 export interface PeerChannelHandle extends PeerChannel {
   detach(): void;
@@ -448,6 +463,21 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   }
 
   broadcast(message: ServerMessage): void {
+    // TEMP DEBUG (subagent-leak third-path hunt): log the type + gate state
+    // for EVERY broadcast reaching the sink. Whichever type appears with
+    // gateActive=true during a subagent dispatch AND carries subagent text is
+    // the ungated path. Env-gated so inert unless enabled. Remove after fix.
+    if (_DEBUG_BROADCAST) {
+      try {
+        appendFileSync(_DEBUG_BROADCAST_LOG, JSON.stringify({
+          ts: Date.now(),
+          type: (message as { type?: string }).type ?? "<unknown>",
+          gateActive: _subagentGateActive(),
+          replyTo: (message as { in_reply_to?: string }).in_reply_to ?? null,
+          preview: _debugPreview(message),
+        }) + "\n");
+      } catch { /* best-effort */ }
+    }
     for (const [peerId, channel] of this.channels) {
       if (this.offlinePeerIds.has(peerId)) continue;
       try { channel.send(message); } catch { /* best-effort per owner channel */ }
@@ -480,6 +510,16 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     this.lateAttachPeerIds.clear();
     return targets;
   }
+}
+
+/** TEMP DEBUG: short text preview of common broadcast payloads, to confirm
+ * whether a leaking message carries subagent text. */
+function _debugPreview(message: ServerMessage): string | null {
+  const m = message as { delta?: string; text?: string; message?: string; result?: unknown; args?: unknown; events?: unknown[] };
+  if (typeof m.delta === "string" && m.delta) return m.delta.slice(0, 80);
+  if (typeof m.text === "string" && m.text) return m.text.slice(0, 80);
+  if (typeof m.message === "string" && m.message) return m.message.slice(0, 80);
+  return null;
 }
 
 export function createOwnerMultiplexerPort(
