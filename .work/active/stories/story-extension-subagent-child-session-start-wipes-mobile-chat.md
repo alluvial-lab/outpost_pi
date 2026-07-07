@@ -1,7 +1,7 @@
 ---
 id: story-extension-subagent-child-session-start-wipes-mobile-chat
 kind: story
-stage: drafting
+stage: review
 tags: [pi-extension, app, bug, transport, session, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -14,26 +14,21 @@ updated: 2026-07-07
 
 # Subagent child `session_start` wipes the mobile chatlog + hides the subagent tool card
 
-> **STATUS (2026-07-07): FIX REVERTED — root cause UNCONFIRMED.** A first fix
-> (commit `34eea81`, gated `bindSessionContext` side effects on
-> `subagentGate.isActive()`) was shipped, dist rebuilt, `/reload`ed, and
-> **STILL WIPED the chatlog**. The `subagentGate`-keyed guard does NOT work
-> because the child subagent session re-evaluates the extension module via a
-> fresh `resourceLoader.reload()` → `clearExtensionCache()` →
-> `jiti.import({moduleCache:false})`, giving the child a **separate module
-> instance** with a **separate `subagentGate` singleton** (depth 0). So the
-> child's `session_start` sees `isActive()===false` and the guard no-ops. The
-> leak "fix" (`message_update`/`message_end` gates) may be working for a
-> DIFFERENT reason than assumed — the module-binding topology is NOT
-> understood. **Do not ship another inline fix.** Capture-first: use
-> `REMOTE_PI_DEBUG_SEND=1` (sink instrumentation in `9a15503`) to log every
-> outbound `room_meta_update` + gate state + which module instance publishes
-> during a subagent dispatch. Then design the fix on verified ground — likely
-> a guard at a layer the child genuinely shares with the parent (the
-> process-global `OwnerMultiplexer`/relay is NOT re-evaluated per child), or
-> detecting the child via `ctx.sessionManager.getSessionId() !== parentKnownId`
-> rather than the gate. The root-cause trace below is preserved as a
-> hypothesis, NOT confirmed.
+> **STATUS (2026-07-07): ROOT CAUSE CONFIRMED by live capture; fix restored.**
+> The earlier revert was based on a misdiagnosis: I thought the `subagentGate`
+> singleton was NOT shared with the child (separate module instance), so the
+> gate-keyed guard would no-op. That was WRONG. A full-restart capture
+> (`/tmp/remote-pi-debug-send.jsonl`, with `session_id` + `sendControl`
+> instrumentation loaded) shows `gateActive=true` during the subagent window —
+> the singleton IS shared — and a single `room_meta_update({session_id:
+> childId})` fires at that moment, which is the wipe. The prior `/reload`
+> captures were on a STALE dist (the `sendControl`/`session_id` fields weren't
+> loaded), which is why they showed no `room_meta_update` and led me astray.
+> `/reload` does NOT re-import `dist/index.js` (empirically confirmed; AGENTS.md
+> corrected back). The fix (gating `captureRemoteSession`'s `publishRoomMeta`
+> + `issuer.capture` + `backfill` on `subagentGate.isActive()`) is restored and
+> the regression test passes. Pending operator manual confirm after a FULL
+> restart.
 
 ## Brief
 
