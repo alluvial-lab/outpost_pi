@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-06
-updated: 2026-07-05
+updated: 2026-07-07
 implemented: 2026-07-06
 ---
 
@@ -163,6 +163,33 @@ window entirely — there is no propagation step to race.
   `story-mobile-assistant-message-duplicated-live-replay` extended to user
   messages (separate fix, same class).
 - The relay (it delivered the envelopes correctly; this is app-side transport).
+
+## Deploy urgency (elevated 2026-07-07 — live quantified evidence)
+
+A fresh live repro (ring log `debug/9c1-11f1-8bca-c9ed4620e936.bin`, 05:00–05:06
+UTC) quantified the inbound-demux drop rate with the fix **not deployed**:
+
+- **8,640** inbound envelope frames dropped as `stage:room-mismatch`
+  (`senderRoom=7ADky8889NJy` ≠ the transport's stuck `_activeRoom='main'`).
+- **2,534** frames enqueued (accepted).
+- → **~77% drop rate** — the phone is throwing away over three quarters of
+  incoming agent output at the demux boundary, because `_activeRoom` is still
+  the `'main'` default instead of the Pi's cwd-room `7ADky`.
+
+This is the **inbound twin** of the bug this story fixes: `dispatch_outer` on
+the relay rewrites each envelope's `room` to the sender's authenticated room
+(`7ADky`), but the phone's `WsTransport` demux compares against `_activeRoom`,
+which defaults to `'main'` and is only patched by the (not-yet-deployed)
+`connect(activeRoom:)` fix. The 77% figure is the user-visible cost of the
+fix not being live — most agent output is silently discarded, which is the
+primary driver of the degraded chat experience.
+
+**Action**: rebuild + sideload the app with this fix (`80b04e5`, in source,
+`stage: review`) and confirm the `room-mismatch` drops fall to zero in a
+fresh ring log. This is the deploy step the fix has been waiting on; the live
+evidence elevates its priority over the still-open subagent-content leak
+(Bug 2 #1), because until the demux stops dropping frames, no agent output —
+main or subagent — reaches the phone reliably.
 
 ## References
 
