@@ -1,13 +1,22 @@
-# AGENTS.md — Remote Pi private fork
+# AGENTS.md — Remote Pi private fork (hard fork, rebrand pending to Outpost-Pi)
 
-This checkout is the operator's private fork of Remote Pi.
+This checkout is a **hard fork** of `jacobaraujo7/remote_pi`, fully owned by the
+operator. It has diverged past the point of upstream rebase (547 commits ahead,
+0 upstream since the fork point as of 2026-07-02); the rebrand to **Outpost-Pi**
+is tracked in `epic-rebrand-to-outpost-pi`. Treat the fork as the product, not
+a set of patches awaiting upstream.
 
 ## Repository posture
 
-- Fork remote: `origin` → `https://github.com/KevounC/remote_pi.git`.
-- Upstream remote: `upstream` → `https://github.com/jacobaraujo7/remote_pi.git` with push disabled.
-- Push private-carry work only to `origin` unless the operator explicitly asks for an upstream PR.
-- Treat upstream as read-only comparison/reference.
+- Design **fork-local by default**: fixes and features live in code we control
+  (`pi-extension/`, `app/`, `relay/`, `cockpit/`, `site/`) and ship by
+  rebuilding our own artifacts. Do not gate decisions on upstream absorbability.
+- Fork remote: `origin` → `https://github.com/KevounC/remote_pi.git` — the only
+  push target.
+- Upstream remote: `upstream` → `https://github.com/jacobaraujo7/remote_pi.git`
+  with push disabled — historical provenance and read-only comparison only,
+  not a design constraint.
+- Push to `origin` unless the operator explicitly asks for an upstream PR.
 
 ## Work tracking
 
