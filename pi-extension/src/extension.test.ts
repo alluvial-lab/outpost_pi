@@ -1167,6 +1167,73 @@ describe("multi-channel broadcast (W2D)", () => {
     expect(recipients).toEqual(new Set(["ownerA__1234567890", "ownerB__abcdefghij"]));
   });
 
+  // Regression: subagent-origin assistant messages must NOT leak to the phone.
+  // The `subagent` tool (`@gotgenes/pi-subagents`) runs in-process and creates
+  // a child AgentSession that re-binds our extension, so the child's
+  // `message_update`/`message_end` fire with our handlers bound and would
+  // broadcast the subagent's reply as agent_chunk/agent_message. A depth
+  // counter keyed on `tool_execution_start("subagent")`/`tool_execution_end`
+  // gates both paths. See story-extension-suppress-subagent-assistant-broadcast.
+  test("subagent window suppresses assistant agent_chunk + agent_message broadcasts", async () => {
+    await _pairForTest("ownerA__1234567890");
+    await _pairAdditionalForTest("ownerB__abcdefghij", "Android");
+    const onInput = captureEventHandler("input");
+    onInput({ source: "terminal", text: "dispatch a subagent" } as unknown as Parameters<typeof onInput>[0]);
+
+    const onToolStart = captureEventHandler("tool_execution_start");
+    const onUpdate = captureEventHandler("message_update");
+    const onMessageEnd = captureEventHandler("message_end");
+
+    // Open the subagent tool-execution window.
+    onToolStart({
+      toolName: "subagent",
+      toolCallId: "call_subagent_1",
+      args: { prompt: "probe" },
+    } as unknown as Parameters<typeof onToolStart>[0]);
+
+    const sendsBeforeUpdate = relayRef.current!.send.mock.calls.length;
+    // Subagent streams its reply token-by-token (the live leak path).
+    onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "subagent probe ok" } } as unknown as Parameters<typeof onUpdate>[0]);
+    const sentUpdate = relayRef.current!.send.mock.calls.slice(sendsBeforeUpdate)
+      .map((c) => c[0] as string).map(decodeSentCt);
+    // No agent_chunk may escape while the subagent gate is active.
+    expect(sentUpdate.filter((d) => d.inner.type === "agent_chunk")).toHaveLength(0);
+
+    const sendsBeforeEnd = relayRef.current!.send.mock.calls.length;
+    // Subagent finalizes its reply (the finalized-text leak path).
+    onMessageEnd({
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "subagent probe ok" }],
+        model: "gpt-5.3-codex-spark",
+        stopReason: "stop",
+        timestamp: Date.now(),
+      },
+    } as unknown as Parameters<typeof onMessageEnd>[0]);
+    const sentEnd = relayRef.current!.send.mock.calls.slice(sendsBeforeEnd)
+      .map((c) => c[0] as string).map(decodeSentCt);
+    // No agent_message may escape while the subagent gate is active.
+    expect(sentEnd.filter((d) => d.inner.type === "agent_message")).toHaveLength(0);
+
+    // Close the window; subsequent assistant messages MUST broadcast again
+    // (regression — the gate must not stick open).
+    const onToolEnd = captureEventHandler("tool_execution_end");
+    onToolEnd({
+      toolName: "subagent",
+      toolCallId: "call_subagent_1",
+      result: { content: [{ type: "text", text: "subagent probe ok" }] },
+      isError: false,
+    } as unknown as Parameters<typeof onToolEnd>[0]);
+
+    const sendsBeforeAfter = relayRef.current!.send.mock.calls.length;
+    onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "main agent reply" } } as unknown as Parameters<typeof onUpdate>[0]);
+    const sentAfter = relayRef.current!.send.mock.calls.slice(sendsBeforeAfter)
+      .map((c) => c[0] as string)
+      .filter((raw) => typeof raw === "string")
+      .map(decodeSentCt);
+    expect(sentAfter.filter((d) => d.inner.type === "agent_chunk").length).toBeGreaterThan(0);
+  });
+
   test("session_sync from owner A → session_history reply only to A", async () => {
     await _pairForTest("ownerA__1234567890");
     await _pairAdditionalForTest("ownerB__abcdefghij", "Android");
