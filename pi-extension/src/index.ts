@@ -60,9 +60,8 @@ import {
   stringifyToolResult,
   type LegacyAgentMessage,
 } from "./session/transcript_projection.js";
-import { RelayClient, RoomAlreadyOpenError, _debugSetSubagentGateReaderCtrl } from "./transport/relay_client.js";
+import { RelayClient, RoomAlreadyOpenError } from "./transport/relay_client.js";
 import type { PeerChannel, PlainPeerChannel } from "./transport/peer_channel.js";
-import { _debugSetSubagentGateReader } from "./transport/peer_channel.js";
 import { OwnerMultiplexer } from "./extension/owner_multiplexer.js";
 import {
   createRemotePiCommandSurfaceHarness,
@@ -221,14 +220,6 @@ const _relayTransport = createRelayTransportPort({
   clearTimer: (timer) => clearTimeout(timer),
   emitRelayState: (snapshot) => _sendRelayStateSnapshot(snapshot),
 });
-
-// TEMP DEBUG (subagent-leak third-path hunt): register the live gate-state
-// reader so the PeerChannel.send sink can log whether the subagent gate is
-// active for every outbound frame. Remove after the leak path is gated.
-_debugSetSubagentGateReader(() => subagentGate.isActive());
-// TEMP DEBUG (wipe hunt): same gate-state reader for the sendControl sink
-// (room_meta_update path). Remove after the wipe path is gated.
-_debugSetSubagentGateReaderCtrl(() => subagentGate.isActive());
 
 const _owners: OwnerMultiplexer = new OwnerMultiplexer({
   createChannel: (input) => _relayTransport.createPeerChannel({
@@ -1346,10 +1337,19 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // messages. Suppress recording/broadcast for assistant messages so they
     // neither reach the phone live (`agent_message`) nor replay later
     // (`session_sync`/`session_history` feed the same transcript event log).
-    // `user`/`toolResult` messages still pass through — the `toolResult` is
-    // the legitimate folded result the main agent consumes. See
-    // `story-extension-suppress-subagent-assistant-broadcast`.
-    const suppressForSubagent = m.role === "assistant" && subagentGate.isActive();
+    // Subagent-leak gate: while a `subagent` tool execution is open, the
+    // child session's `message_end` fires for the subagent's messages.
+    // Suppress recording/broadcast for BOTH `assistant` (the subagent's reply
+    // text → `agent_message` live + `assistant_committed` transcript) AND
+    // `user` (the dispatch prompt forwarded as a user message → `user_input`
+    // live + `user_confirmed` transcript — confirmed leaking by live capture
+    // 2026-07-07: the dispatch prompt rendered as a chat bubble). Neither
+    // should reach the phone live nor replay later (`session_sync`/
+    // `session_history` feed the same transcript event log). `toolResult`
+    // still passes through — it is the legitimate folded result the main
+    // agent consumes. See `story-extension-suppress-subagent-assistant-
+    // broadcast` (assistant) + the dispatch-prompt follow-up noted there.
+    const suppressForSubagent = (m.role === "assistant" || m.role === "user") && subagentGate.isActive();
     if (!suppressForSubagent && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")) {
       _appendLegacySdkMessageToTranscript(m as unknown as LegacyAgentMessage);
     }

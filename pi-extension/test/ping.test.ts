@@ -72,9 +72,6 @@ vi.mock("../src/pairing/qr.js", async (importOriginal) => {
 // Mock RelayClient *after* qr import (so module resolution order is consistent)
 vi.mock("../src/transport/relay_client.js", () => ({
   RelayClient: MockRelay,
-  // TEMP DEBUG (wipe hunt): index.ts top-level registers a gate-state
-  // reader; provide a no-op so the module loads under test.
-  _debugSetSubagentGateReaderCtrl: () => {},
 }));
 
 // ── Import the extension after mocks ──────────────────────────────────────────
