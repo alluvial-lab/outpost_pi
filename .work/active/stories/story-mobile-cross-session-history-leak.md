@@ -145,6 +145,58 @@ TEMP DEBUG instrumentation captured `message_end` only; a second capture
 adding `tool_execution_start`/`tool_execution_end` + `session_start` would
 settle both #1 and #2.
 
+### Second capture resolution (2026-07-07) — fix path #1 CONFIRMED, fork-local, model-independent
+
+A second live capture (TEMP DEBUG instrumentation writing to
+`~/.pi/remote/debug-firings.jsonl`, logging `session_start` +
+`tool_execution_start` + `tool_execution_end` + `message_end` ordering)
+during a `gpt-5.3-codex-spark` subagent dispatch from the `umans-glm-5.2`
+main session. Full firing sequence around the dispatch:
+
+```
+17:43:06 tool_execution_start subagent                          ← parent dispatches subagent
+17:43:07 session_start        startup                  sess=ae1d9dfd  ← CHILD session_start fires
+17:43:07 message_end          user                                  ← subagent's user msg
+17:43:09 message_end          assistant  model=gpt-5.3-codex-spark    ← LEAK: subagent reply
+17:43:09 tool_execution_end   subagent                              ← parent's tool_execution_end
+17:43:09 message_end          toolResult                            ← folded result (correct)
+```
+
+**Fix path #1 (tool-execution window gate) CONFIRMED.** The subagent's
+`message_end` (the leak) fires *between* `tool_execution_start subagent`
+and `tool_execution_end subagent`. So a flag set on `tool_execution_start`
+for `toolName === "subagent"` and cleared on `tool_execution_end` would
+suppress the `agent_message` broadcast in `message_end`. **Model-
+independent** — works for same-model subagents too (the gate keys on the
+toolName, not the model).
+
+**Fix path #2 (session_start detection) is viable but redundant and weaker.**
+The child fires `session_start` with `reason=startup` and the **same
+sessionId `ae1d9dfd`** as the parent — NOT a fresh id. So there is no
+sessionId-change signal to detect mid-execution; path #2 reduces to
+"a second `session_start` fired while a `subagent` tool_execution is open,"
+which is just path #1 with extra steps. Path #1 is strictly better.
+
+**DECIDED fix (fork-local, in `pi-extension/src/index.ts`):**
+- Add a module-level `_inSubagentToolExecution: boolean` flag (or a
+  depth counter, to handle nested subagents).
+- In `tool_execution_start`: if `event.toolName === "subagent"`, set the
+  flag (increment the counter).
+- In `tool_execution_end`: if `event.toolName === "subagent"`, clear the
+  flag (decrement).
+- In `message_end`: when the flag is set (counter > 0), suppress the
+  `agent_message` broadcast (and the `assistant_committed` transcript
+  event?) for assistant messages. **Open sub-question**: should the
+  transcript event also be suppressed, or only the live broadcast? The
+  `session_history`/`session_sync` replay path would re-surface the
+  subagent's assistant text on reconnect if the transcript event is kept —
+  so to fully prevent the leak, the transcript event must be suppressed too
+  (or the app's replay must filter it). Decide at implementation.
+- Caveat: keys on the literal `toolName === "subagent"` from the
+  `@gotgenes/pi-subagents` package. If a different subagent tool is ever
+  used (different package, different toolName), the gate won't catch it —
+  but that's an acceptable fork-local tradeoff documented inline.
+
 ### Two distinct failure modes now in scope
 
 1. **Subagent-content leak (the operator's actual report)** — extension
