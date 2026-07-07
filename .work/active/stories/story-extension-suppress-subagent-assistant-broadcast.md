@@ -369,11 +369,34 @@ dispatch, then read `/tmp/remote-pi-debug-broadcast.jsonl`.
 - `corepack pnpm build` ✓ (dist has 2 functional gate refs + 1 debug-gate-
   reader ref; instrumentation present and env-gated)
 
+### Operator confirmation + topology caveat (2026-07-07)
+
+The operator confirmed (after `/reload`, which DOES re-import dist — see the
+AGENTS.md correction) that dispatching a probe subagent ("subagent probe ok")
+NO LONGER shows the subagent's reply text in mobile chat. So the **symptom**
+is resolved. **But the explanation is now uncertain.** A follow-up fix for a
+separate symptom the leak had masked (dispatching a subagent **wipes the
+mobile chatlog** — see `story-extension-subagent-child-session-start-wipes-
+mobile-chat`) was keyed on the same `subagentGate` singleton and **FAILED
+live**: the child subagent session re-evaluates the extension module via a
+fresh `resourceLoader.reload()` → `clearExtensionCache()` →
+`jiti.import({moduleCache:false})`, giving the child a **separate module
+instance** with a **separate `subagentGate` singleton** (depth 0). If that
+topology holds, the `message_update`/`message_end` gates here should ALSO
+no-op in the child's context — yet the operator sees no text leak. So either
+(a) the leak gates work for a different reason than assumed (e.g. the child's
+re-bound handlers still consult the PARENT's gate instance via some shared
+path not yet identified), or (b) the child's events fire on the parent's
+runner with the parent's gate, while `bindSessionContext` fires on the child's
+re-evaluated module. The module-binding topology is **not understood** and
+must be captured before trusting either fix. Do not advance this story to
+`done` until the capture confirms WHY the text leak is gone.
+
 ### Next step
 
-Operator confirms phone chat stays clean during a subagent dispatch (the
-probe was already sent). If clean, advance this story to `done`. If a leak
-is still observed, restart pi fully (not `/reload`) with
-`REMOTE_PI_DEBUG_BROADCAST=1` and read the sink log — the leaking type will
-be the line with `gateActive=true` and a content preview matching the
-subagent text.
+Do not ship more inline fixes. Capture-first: restart pi with
+`REMOTE_PI_DEBUG_SEND=1` (sink instrumentation from `9a15503`), dispatch a
+subagent, and read `/tmp/remote-pi-debug-send.jsonl` — log every outbound
+frame's type + `gateActive` state + which module instance is publishing. That
+settles both the leak story's "why does it work" and the wipe story's root
+cause in one capture.
