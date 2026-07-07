@@ -249,42 +249,119 @@ The gate now covers both assistant-content broadcast paths:
 TEMP DEBUG instrumentation fully removed (src + dist); typecheck + build +
 full test suite green (763 passed, 3 pre-existing skipped, 48 files).
 
-## Status (2026-07-07 end of session) — STILL LEAKING, do not advance to done
+## Status (2026-07-07 end of prior session) — reported STILL LEAKING; reopened for static trace + regression test
 
 The two-gate fix (message_update + message_end) is shipped (commit `397583b`),
 dist rebuilt, pi restarted, gate confirmed active in dist. But a live repro
 STILL showed "subagent probe ok" in mobile chat. The debug capture (removed)
 proved both gated handlers fire with `gate=true` and correctly suppress — so
-the leak is a THIRD broadcast path neither handler covers.
+the prior session inferred a THIRD broadcast path neither handler covers.
 
-### Next step (for the fresh session) — instrument the broadcast SINK, not handlers
+## Resolution (2026-07-07 this session) — static trace proves NO third LIVE path; regression test added; sink instrumentation added for live confirmation
 
-`_owners.broadcast` has ~13 call sites in `index.ts`. Stop gating them one at
-a time. Instrument the sink:
+A complete static trace of every `_owners.broadcast` call site in `index.ts`
+against the confirmed subagent-window firing order shows that, with both
+gates active, **the reply text "subagent probe ok" has NO live
+`_owners.broadcast` path to the phone**. Every broadcast during the window is
+accounted for:
 
-1. Add a TEMP DEBUG `appendFileSync` at the `broadcast:` projection output
-   callback (`index.ts:1176`, `broadcast: (message) => _owners.broadcast(message)`)
-   logging `{ ts, type: message.type, gateActive: subagentGate.isActive() }`.
-   ALSO consider logging at `_owners.broadcast` itself if the projection
-   callback isn't the leaking path (some call sites call `_owners.broadcast`
-   directly, not through the projection — see `:1225, :1288, :1322, :1374,
-   :1394, :1451, :1980, :1988, :2060, :2130`).
-2. Rebuild, restart pi, dispatch a subagent, read the log.
-3. The leaking `type` (appears with `gateActive=true` during the subagent
-   window carrying subagent content) is the ungated path. Gate it.
-4. Cleanest eventual fix: gate at the sink — make `_owners.broadcast` (or the
-   projection output) drop assistant-content messages when
-   `subagentGate.isActive()`. BUT verify which types to drop (don't suppress
-   the main agent's `agent_done`/`tool_result` that wraps the subagent call).
+| SDK event during window | broadcast | carries reply text? |
+|---|---|---|
+| `tool_execution_start(subagent)` | `tool_request` | NO — app renders as a "subagent: RUNNING" ToolEvent card (`tool_request_card.dart`), not chat text |
+| `message_end(user)` (dispatch prompt) | `user_input` | NO — this is the dispatch prompt, not the reply |
+| `message_update(text_delta)` | `agent_chunk` | GATED (returns early before `_applyTurnAndPublish`/broadcast) |
+| `message_end(assistant)` (reply) | `agent_message` + transcript event | GATED (`suppressForSubagent`) |
+| `tool_execution_end(subagent)` | `tool_result` | NO — app renders as a "subagent: DONE" ToolEvent card; the folded result renders via `ToolFinished` → `ToolEvent`, not as chat (`transcript_projection.dart:216-226`, `chat_page.dart:364` filters ToolEvent out of the message list) |
+| `message_end(toolResult)` | (none — `appendLegacy` for toolResult only appends a transcript event, no live broadcast) | NO |
+| child `session_start` | (none — `backfillTranscriptFromSessionManager` only appends to the transcript log, does not broadcast) | NO live; replay ruled out below |
 
-### Likely culprits to check first
+The reply text can reach the phone live ONLY through `message_update`
+(agent_chunk) or `message_end assistant` (agent_message) — both gated.
 
-- `:1225` `input` handler → `user_input` broadcast (the dispatch prompt may
-  stream as user_input — but the operator sees assistant text, so probably not)
-- `:1394` `agent_end` → `agent_done` (the subagent's `agent_end` may fire and
-  broadcast `agent_done` to the phone, which the app renders as a turn)
-- The projection's own broadcast callback (`:1176`) may be invoked from a path
-  OTHER than `message_end` that I haven't traced.
+### Replay leak also ruled out
 
-See `.work/session-note-2026-07-07-subagent-leak-fix-incomplete.md` for the
-full session context.
+The subagent's reply persists to the **child's own** SessionManager in a
+**separate session file** (`@gotgenes/pi-subagents/src/lifecycle/create-
+subagent-session.ts:194-217`: `deriveSessionDir(parentSessionFile)` → child dir,
+`createSessionManager` → child manager, `newSession({ parentSession })` →
+child id). The parent's SessionManager never reads the child's session file,
+so the parent's `session_sync`/`session_history` reply can never surface the
+subagent's text. And the `message_end` gate skips
+`_appendLegacySdkMessageToTranscript` for assistant messages, so the subagent
+reply is not recorded in the parent's transcript event log either.
+
+The child's `session_start` does fire during the window (confirmed in
+`debug-firings.jsonl`) and runs `backfillTranscriptFromSessionManager` on the
+**child's** ctx — but at child-start time the subagent has not yet generated
+its reply (`message_end assistant` fires AFTER `session_start` in the
+capture), so the child SessionManager has no reply text to backfill. The
+capture also shows the child's `session_start` carries the SAME session id as
+the parent (`019f3890`), so `issuer.capture(childCtx)` does not corrupt the
+parent's session id.
+
+### Most likely explanation for the prior "persistent leak"
+
+The prior session's evidence for a third path was an operator visual report
+after a "restart" — but there is **no instrumented capture of a post-second-
+fix leak**. The `debug-leakfix.jsonl` capture (19:04-19:06 UTC) predates the
+`message_update` gate (commit `397583b`, 19:06 UTC) and shows the pre-fix
+`message_update` leak. Per `AGENTS.md` (§ Reload vs restart): **`/reload` does
+NOT re-`require` `dist/index.js`** — it re-fires `session_start` against the
+already-loaded module. A source edit is only picked up by a **full pi process
+restart**. The prior "restart" was likely a `/reload`, leaving the stale
+ungated module in memory — which would explain a leak that persists despite
+the dist containing both gates. The regression test below locks the gate
+behavior so a stale-module regression is caught by the suite, not just by
+live repro.
+
+### Regression test added (locks the gate at the integration level)
+
+`pi-extension/src/extension.test.ts` — new test "subagent window suppresses
+assistant agent_chunk + agent_message broadcasts" (in the "multi-channel
+broadcast (W2D)" suite). Pairs two owners, opens a `subagent` tool-execution
+window via `tool_execution_start`, then fires `message_update(text_delta)`
+and `message_end(assistant)` and asserts **zero** `agent_chunk` and
+`agent_message` broadcasts escape. Then closes the window and asserts a
+subsequent `message_update` DOES broadcast `agent_chunk` again (gate does
+not stick open). This is the integration-level proof the gate module's unit
+tests couldn't provide (the `pi.on` handlers had no direct test seam before).
+
+### Sink instrumentation added (env-gated, inert — for live confirmation if needed)
+
+`pi-extension/src/extension/owner_multiplexer.ts` + `src/index.ts` —
+`OwnerMultiplexer.broadcast` now logs every message `type` +
+`gateActive` state + a short content preview to
+`/tmp/remote-pi-debug-broadcast.jsonl` when `REMOTE_PI_DEBUG_BROADCAST=1`.
+Inert otherwise (env-gated, no behavior change, all tests green). This lets a
+future live repro capture the exact leaking type in one shot IF the static
+conclusion is wrong — but per the trace above, no assistant-content type
+should appear with `gateActive=true` during the window. A live capture
+confirming that is the final manual step.
+
+### Manual verification status
+
+A probe subagent ("subagent probe ok") was dispatched from this session
+while the phone peer was online. The currently-loaded extension has the
+two-gate fix. The static trace + regression test strongly indicate the text
+did not reach the phone. **Final confirmation requires the operator to
+confirm the phone chat did NOT show "subagent probe ok"** — and, if a
+definitive capture is wanted, a TRUE pi process restart (quit + relaunch,
+NOT `/reload`) with `REMOTE_PI_DEBUG_BROADCAST=1` followed by another probe
+dispatch, then read `/tmp/remote-pi-debug-broadcast.jsonl`.
+
+### Verification this session
+
+- `corepack pnpm typecheck` ✓
+- `corepack pnpm test` ✓ (764 passed, 3 pre-existing skipped, 48 files —
+  +1 from the new regression test; no regressions)
+- `corepack pnpm build` ✓ (dist has 2 functional gate refs + 1 debug-gate-
+  reader ref; instrumentation present and env-gated)
+
+### Next step
+
+Operator confirms phone chat stays clean during a subagent dispatch (the
+probe was already sent). If clean, advance this story to `done`. If a leak
+is still observed, restart pi fully (not `/reload`) with
+`REMOTE_PI_DEBUG_BROADCAST=1` and read the sink log — the leaking type will
+be the line with `gateActive=true` and a content preview matching the
+subagent text.
