@@ -1207,6 +1207,17 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // from routeClientMessage, which already seeded the turn projection — skip to
   // avoid a double turnId.
   pi.on("input", (event) => {
+    // Subagent-leak gate: the subagent's dispatch prompt reaches the child
+    // session via `session.prompt()` (`@gotgenes/pi-subagents`
+    // `subagent-session.ts:120`), which the SDK fires as an `input` event with
+    // `source: "interactive"` (the default — the subagent passes no source).
+    // So the `if (event.source === "extension") return;` guard below does NOT
+    // skip it, and without this gate the dispatch prompt would broadcast as a
+    // `user_input` chat bubble on mobile (confirmed live 2026-07-07: "Reply
+    // with exactly..." was the final visible message). Suppress while a
+    // subagent tool execution is open. See
+    // story-extension-suppress-subagent-assistant-broadcast.
+    if (subagentGate.isActive()) return;
     // Transparent control channel: structured `remote_pi_control` frames are
     // the canonical path; `CTRL_PREFIX` remains an explicit compatibility
     // decoder. Both map to one dispatch path and are SWALLOWED
