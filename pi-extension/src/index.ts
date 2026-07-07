@@ -62,7 +62,8 @@ import {
 } from "./session/transcript_projection.js";
 import { RelayClient, RoomAlreadyOpenError } from "./transport/relay_client.js";
 import type { PeerChannel, PlainPeerChannel } from "./transport/peer_channel.js";
-import { OwnerMultiplexer, _debugSetSubagentGateReader } from "./extension/owner_multiplexer.js";
+import { _debugSetSubagentGateReader } from "./transport/peer_channel.js";
+import { OwnerMultiplexer } from "./extension/owner_multiplexer.js";
 import {
   createRemotePiCommandSurfaceHarness,
   createRemotePiTestHarness,
@@ -222,8 +223,8 @@ const _relayTransport = createRelayTransportPort({
 });
 
 // TEMP DEBUG (subagent-leak third-path hunt): register the live gate-state
-// reader so the broadcast sink can log whether the subagent gate is active.
-// Remove after the leak path is found and gated.
+// reader so the PeerChannel.send sink can log whether the subagent gate is
+// active for every outbound frame. Remove after the leak path is gated.
 _debugSetSubagentGateReader(() => subagentGate.isActive());
 
 const _owners: OwnerMultiplexer = new OwnerMultiplexer({
