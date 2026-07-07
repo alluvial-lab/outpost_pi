@@ -78,30 +78,72 @@ doesn't document one):
   **invisible at the extension event boundary**. There is no field on
   `event.message`, `event`, or `ctx` that the projection can filter on.
 
-### Implication for the fix
+### Tool provider identification (2026-07-07) — @gotgenes/pi-subagents, in-process child session
 
-An extension-side gate in `message_end` **cannot** suppress subagent
-assistant messages using SDK-provided metadata, because none exists. Two
-remaining options:
+The `subagent` tool is **neither pi-native nor part of our `remote-pi`
+extension**. It is provided by the **`@gotgenes/pi-subagents`** package
+(v18.0.1, registered in `~/.pi/agent/settings.json` under `packages`).
+Key findings from its source (`~/.pi/agent/npm/node_modules/@gotgenes/pi-subagents`):
 
-1. **Heuristic/contextual** — the extension tracks `tool_execution_start`/
-  `tool_execution_end` for the Task/subagent tool (`toolName`) and suppresses
-  `agent_message` broadcasts for assistant `message_end`s that fire *between*
-  a subagent tool's `tool_execution_start` and `tool_execution_end`. Fragile
-  (depends on the SDK firing order and on identifying the subagent tool by
-  `toolName`), and the subagent tool may not be a named `tool_execution_*`
-  event at all (it wasn't found in `pi-coding-agent/dist` — it's likely
-  extension/agent-type-provided, so its dispatch shape is unverified).
-2. **Upstream SDK change** — request the SDK expose a `source`/`subagent`
-  field on `AgentStartEvent`/`MessageEndEvent` so extensions can filter.
-  This is the clean fix but is outside this fork's control.
+- The tool name is `"subagent"` (`src/tools/agent-tool.ts:132`,
+  `name: "subagent" as const`).
+- The package is described as "A focused, **in-process** sub-agent core for
+  pi" — the subagent runs **in-process**, sharing the pi process.
+- Critically: `createSubagentSession()` (`src/lifecycle/create-subagent-session.ts`)
+  creates a **child `AgentSession`** via `deps.io.createSession()`, and line 177
+  states **"Children always load the parent's extensions and skills."** The
+  child session calls `session.bindExtensions()` (line 233), which **re-binds
+  the parent's extensions — including our `remote-pi` extension.**
 
-**Open before fixing**: verify the actual runtime firing order — does a
-subagent dispatch fire top-level `message_end` for the subagent's assistant
-messages (leak), or are they folded into the Task tool's `toolResult`
-content (no leak, already filtered by `role === "assistant"`)? Needs a live
-`message_end` payload capture during a subagent dispatch, OR the Task tool's
-source (not in `pi-coding-agent/dist`; locate the providing extension/package).
+**This is the leak mechanism, fully traced:** when the subagent produces an
+assistant message, the **child** session's `message_end` fires, and our
+`remote-pi` extension's `message_end` handler is bound to the *child* session
+too (because the child inherits the parent's extensions). The handler has no
+way to know it's bound to a child session — `event`/`event.message`/`ctx`
+carry no parent/child or subagent marker (verified above). So it broadcasts
+the subagent's assistant text as `agent_message` to the phone.
+
+### Implication for the fix — model-mismatch gate is NOT sufficient (blocking bug)
+
+The operator confirmed they **don't always dispatch cross-model subagents** —
+a same-model subagent would pass a `model`-mismatch gate and still leak. So the
+`model`-proxy gate is a partial mitigation at best, NOT a real fix. This makes
+the leak a **blocking bug**: the extension cannot distinguish subagent-origin
+assistant messages from main-agent ones using any SDK-provided field.
+
+Three real fix paths, in increasing order of cleanness:
+
+1. **`tool_execution_start`/`tool_execution_end` window gate** (extension-side,
+   fork-local, model-independent). The extension ALREADY has a
+   `tool_execution_start` handler (`index.ts:1267`) that fires for every tool
+   with `event.toolName`. When `toolName === "subagent"`, set a flag for the
+   duration of the tool execution; in `message_end`, suppress `agent_message`
+   broadcast while that flag is set. Caveat: this depends on the SDK firing
+   `tool_execution_start` for the `subagent` tool AND on the subagent's
+   `message_end` events firing *between* `tool_execution_start` and
+   `tool_execution_end` for that toolCall — the latter is UNVERIFIED (the
+   subagent runs in a child `AgentSession`, so its `message_end` events may
+   not nest inside the parent's `tool_execution` window). Needs a live
+   verification with `tool_execution_*` + `message_end` ordering captured.
+2. **Detect child-session binding** (extension-side, fork-local). The
+   extension's `session_start` handler fires for the child session too
+   (because `bindExtensions` fires `session_start`). If `session_start` can
+   detect it's a child (e.g. via a `parentSession` reason or ctx field), set a
+   process-global `inSubagentSession` flag and suppress all broadcasts while
+   it's set. Needs verifying whether `session_start` carries a parent/child
+   signal in the subagent case.
+3. **Upstream**: request `@gotgenes/pi-subagents` or pi-core expose a
+   `parentSessionId`/`subagent` marker on `MessageEndEvent`/`AgentStartEvent`.
+   Cleanest but out-of-fork.
+
+**Open before implementing**: verify the SDK firing order — does the
+subagent's `message_end` fire *between* the parent's
+`tool_execution_start("subagent")` and `tool_execution_end("subagent")`?
+If yes, fix path #1 works and is fork-local. If no (child-session events
+fire outside the parent's tool_execution window), path #2 is needed. The
+TEMP DEBUG instrumentation captured `message_end` only; a second capture
+adding `tool_execution_start`/`tool_execution_end` + `session_start` would
+settle both #1 and #2.
 
 ### Two distinct failure modes now in scope
 
