@@ -40,9 +40,6 @@ class MockRoomAlreadyOpenError extends Error {
 vi.mock("./transport/relay_client.js", () => ({
   RelayClient: MockRelay,
   RoomAlreadyOpenError: MockRoomAlreadyOpenError,
-  // TEMP DEBUG (wipe hunt): the index.ts module top-level calls this to register
-  // the gate-state reader; provide a no-op so the module loads under test.
-  _debugSetSubagentGateReaderCtrl: () => {},
 }));
 
 // ── Mock storage ──────────────────────────────────────────────────────────────
@@ -1217,6 +1214,21 @@ describe("multi-channel broadcast (W2D)", () => {
       .map((c) => c[0] as string).map(decodeSentCt);
     // No agent_message may escape while the subagent gate is active.
     expect(sentEnd.filter((d) => d.inner.type === "agent_message")).toHaveLength(0);
+
+    // The subagent's dispatch prompt is forwarded as a user message_end — it
+    // must NOT leak as a live `user_input` chat bubble either (confirmed by
+    // live capture 2026-07-07: the dispatch prompt rendered in mobile chat).
+    const sendsBeforeUser = relayRef.current!.send.mock.calls.length;
+    onMessageEnd({
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "Reply with exactly this text: subagent probe ok" }],
+        timestamp: Date.now(),
+      },
+    } as unknown as Parameters<typeof onMessageEnd>[0]);
+    const sentUser = relayRef.current!.send.mock.calls.slice(sendsBeforeUser)
+      .map((c) => c[0] as string).map(decodeSentCt);
+    expect(sentUser.filter((d) => d.inner.type === "user_input")).toHaveLength(0);
 
     // Close the window; subsequent assistant messages MUST broadcast again
     // (regression — the gate must not stick open).
