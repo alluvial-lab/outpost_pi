@@ -1,6 +1,31 @@
+import { appendFileSync } from "node:fs";
 import { decodeClient } from "../protocol/codec.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
 import type { RelayClient } from "./relay_client.js";
+
+// TEMP DEBUG (subagent-leak third-path hunt): log EVERY ServerMessage frame
+// that leaves for the phone, with the subagent-gate state + a content preview.
+// PeerChannel.send is the true sink — both `OwnerMultiplexer.broadcast` and
+// direct `sender.send` (e.g. session_sync/session_history replies) funnel here —
+// so this single instrumentation captures all outbound paths. Env-gated
+// (REMOTE_PI_DEBUG_SEND=1) so it is inert in normal runs. Remove after the leak
+// path is found and gated. See
+// story-extension-suppress-subagent-assistant-broadcast.
+const _DEBUG_SEND = process.env.REMOTE_PI_DEBUG_SEND === "1";
+const _DEBUG_SEND_LOG = process.env.REMOTE_PI_DEBUG_SEND_LOG ?? "/tmp/remote-pi-debug-send.jsonl";
+let _subagentGateActive: () => boolean = () => false;
+/** TEMP DEBUG: lets index.ts register the live gate-state reader for logging. */
+export function _debugSetSubagentGateReader(reader: () => boolean): void {
+  _subagentGateActive = reader;
+}
+function _debugPreview(msg: ServerMessage): string | null {
+  const m = msg as { delta?: string; text?: string; message?: string; events?: unknown[] };
+  if (typeof m.delta === "string" && m.delta) return m.delta.slice(0, 80);
+  if (typeof m.text === "string" && m.text) return m.text.slice(0, 80);
+  if (typeof m.message === "string" && m.message) return m.message.slice(0, 80);
+  if (Array.isArray(m.events)) return `events[${m.events.length}]`;
+  return null;
+}
 
 /** Sink for ServerMessage outbound to the remote app. */
 export interface PeerChannel {
@@ -71,6 +96,20 @@ export class PlainPeerChannel implements PeerChannel {
 
   send(msg: ServerMessage): void {
     if (this.detached) return;
+    // TEMP DEBUG (subagent-leak third-path hunt): log every outbound frame
+    // with type + gate state + preview. Env-gated so inert unless enabled.
+    if (_DEBUG_SEND) {
+      try {
+        appendFileSync(_DEBUG_SEND_LOG, JSON.stringify({
+          ts: Date.now(),
+          peer: this.remotePeerId,
+          type: (msg as { type?: string }).type ?? "<unknown>",
+          gateActive: _subagentGateActive(),
+          replyTo: (msg as { in_reply_to?: string }).in_reply_to ?? null,
+          preview: _debugPreview(msg),
+        }) + "\n");
+      } catch { /* best-effort */ }
+    }
     const ct = Buffer.from(JSON.stringify(msg)).toString("base64");
     // `room` is the DESTINATION room (the app's auth room, "main") so the
     // relay routes to the app's `(peer, "main")` connection. relay-0.2.0
