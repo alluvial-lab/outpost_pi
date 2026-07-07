@@ -117,6 +117,69 @@ source (not in `pi-coding-agent/dist`; locate the providing extension/package).
    the operator's report; may be a real but separate bug. Keep the refined
    open question (does the extension send `room_meta_update` for a sibling
    room?) but treat it as secondary to #1.
+
+### Live repro resolution (2026-07-07 ring log `9c1-11f1-8bca-c9ed4620e936.bin` + relay cross_room logs)
+
+A live repro during subagent dispatch (my own subagent dispatch from the
+remote_pi session, ~05:04 UTC) captured the session flip in the ring log,
+AND the relay `cross_room` logging (deployed in
+`story-relay-log-room-meta-update-accept-and-drop`) was live to witness it.
+
+**The cross-room leak hypothesis (h2) is RULED OUT.** Ring-log timeline
+(2026-07-07 05:04 UTC):
+
+- 05:03:54 — burst of envelopes + replayDedup for session `...ae1d9dfd`.
+- 05:04:04.885-904 — four `room_meta_updated` controls for room
+  `7ADky8889NJy` arrive at the phone.
+- 05:04:04.902 — session gate REJECTS `user_input` for session `...24d99f47`
+  with `session_mismatch`. The active session flipped `ae1d9dfd` →
+  `24d99f47`.
+- 05:04:09 → 05:06:05 — `24d99f47` is now the active session (11
+  replayDedup events).
+
+Relay `cross_room` logs for the SAME window:
+
+```
+05:04:03.898  room_meta_update applied peer=l2X/dUc= room=7ADky8889NJy
+              authed_room=7ADky8889NJy cross_room=false fields=["session_id"]
+```
+
+**`cross_room=false`** — the `session_id` patch for room `7ADky` came from a
+sender authenticated in room `7ADky` itself (the 7ADky Pi's own process),
+NOT a sibling. And across the entire recent window, **every** `cross_room`
+line is `false` (zero `cross_room=true`). So h2 (sibling overwriting
+`7ADky`'s session via the shared owner epk) is definitively ruled out.
+
+**Confirmed: h1 (the 7ADky Pi's own session rotating).** The `fields=[
+"session_id"]` patch is the 7ADky Pi publishing a new session_id for its own
+room. The rotation happened during my subagent dispatch (the subagent runs in
+this pi session = room `7ADky`). The session flip is the pi process's own
+lifecycle event — a `/new`, session replacement, or the subagent tool's own
+session boundary — NOT a cross-room sibling overwrite.
+
+### What this means for the operator's reported symptom
+
+The subagent-content leak (#1 above) and the session flip (#2) are **two
+different things**, and the live repro confirms #2 is the 7ADky Pi's own
+rotation (correct-ish), not a leak. The operator's report of subagent
+messages appearing in chat is #1 — the `message_end` broadcast of subagent
+assistant text — which the relay `cross_room` logging does NOT and cannot
+catch (it's a correct-session, wrong-content issue at the extension
+projection layer, not a room-routing issue).
+
+### Revised open questions
+
+- **(primary) #1 subagent-content leak**: does a subagent dispatch fire
+  top-level `message_end` for the subagent's assistant messages (leak), or
+  fold them into the Task tool's `toolResult` content (no leak)? Needs a
+  live `message_end` payload capture during a subagent dispatch (the
+  TEMP DEBUG instrumentation in `index.ts` was built but its output goes
+  to the pi process's pty `/dev/pts/1`, which is not file-captured — needs a
+  pi restart with `2>&1 | tee /tmp/pi-debug.log` to read it).
+- **(closed) #2 cross-room session flip**: RULED OUT by `cross_room=false`.
+  The session rotation is the 7ADky Pi's own (h1). Whether that rotation is
+  *expected* (subagent tool creates a child session?) is a separate question
+  for the SDK, but it is NOT a cross-room leak.
 ```
 
 `replayDedup` only fires inside `_replayHistory` (`sync_service.dart:1199`),
