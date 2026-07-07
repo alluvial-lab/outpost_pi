@@ -102,8 +102,10 @@ export class PlainPeerChannel implements PeerChannel {
       try {
         appendFileSync(_DEBUG_SEND_LOG, JSON.stringify({
           ts: Date.now(),
+          sink: "peer",
           peer: this.remotePeerId,
           type: (msg as { type?: string }).type ?? "<unknown>",
+          sessionId: (msg as { session_id?: string }).session_id ?? null,
           gateActive: _subagentGateActive(),
           replyTo: (msg as { in_reply_to?: string }).in_reply_to ?? null,
           preview: _debugPreview(msg),
