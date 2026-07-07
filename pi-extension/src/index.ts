@@ -1531,9 +1531,23 @@ function createIndexDeps(): LegacyIndexDeps {
       },
       bindCommandContext: _rememberCommandCtx,
       bindSessionContext: (ctx) => {
-        _lastEventCtx = ctx;
-        _sdkSessionProjection.bindSessionContext(ctx);
-        _captureRemoteSession(ctx);
+        // A child subagent's `session_start` (fires during a `subagent`
+        // tool-execution window, while `subagentGate.isActive()`) must NOT
+        // propagate session-rotation side effects to the phone: skip the
+        // `_lastEventCtx` overwrite (the child ctx is stale after the window
+        // and would corrupt parent actions), skip `captureRemoteSession` (no
+        // `room_meta_update({session_id: childId})` — that wipes the mobile
+        // chatlog), and tell the projection to skip `issuer.capture` +
+        // `backfillTranscriptFromSessionManager`. See
+        // story-extension-subagent-child-session-start-wipes-mobile-chat.
+        const isSubagentChild = subagentGate.isActive();
+        if (!isSubagentChild) {
+          _lastEventCtx = ctx;
+        }
+        _sdkSessionProjection.bindSessionContext(ctx, { subagentChild: isSubagentChild });
+        if (!isSubagentChild) {
+          _captureRemoteSession(ctx);
+        }
       },
       clearStaleContexts: () => {
         _sdkSessionProjection.clearStaleContexts();
