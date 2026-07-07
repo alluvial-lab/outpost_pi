@@ -1191,6 +1191,17 @@ describe("multi-channel broadcast (W2D)", () => {
       args: { prompt: "probe" },
     } as unknown as Parameters<typeof onToolStart>[0]);
 
+    // The subagent's dispatch prompt reaches the child session via
+    // session.prompt(), which the SDK fires as an `input` event with
+    // source "interactive" (the default). Without gating the input handler,
+    // this leaks the dispatch prompt as a `user_input` chat bubble (confirmed
+    // live 2026-07-07). Assert it is suppressed while the gate is active.
+    const sendsBeforeInput = relayRef.current!.send.mock.calls.length;
+    onInput({ source: "interactive", text: "Reply with exactly this text: subagent probe ok" } as unknown as Parameters<typeof onInput>[0]);
+    const sentInput = relayRef.current!.send.mock.calls.slice(sendsBeforeInput)
+      .map((c) => c[0] as string).map(decodeSentCt);
+    expect(sentInput.filter((d) => d.inner.type === "user_input")).toHaveLength(0);
+
     const sendsBeforeUpdate = relayRef.current!.send.mock.calls.length;
     // Subagent streams its reply token-by-token (the live leak path).
     onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "subagent probe ok" } } as unknown as Parameters<typeof onUpdate>[0]);
