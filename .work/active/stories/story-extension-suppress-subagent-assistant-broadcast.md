@@ -248,3 +248,43 @@ The gate now covers both assistant-content broadcast paths:
 
 TEMP DEBUG instrumentation fully removed (src + dist); typecheck + build +
 full test suite green (763 passed, 3 pre-existing skipped, 48 files).
+
+## Status (2026-07-07 end of session) — STILL LEAKING, do not advance to done
+
+The two-gate fix (message_update + message_end) is shipped (commit `397583b`),
+dist rebuilt, pi restarted, gate confirmed active in dist. But a live repro
+STILL showed "subagent probe ok" in mobile chat. The debug capture (removed)
+proved both gated handlers fire with `gate=true` and correctly suppress — so
+the leak is a THIRD broadcast path neither handler covers.
+
+### Next step (for the fresh session) — instrument the broadcast SINK, not handlers
+
+`_owners.broadcast` has ~13 call sites in `index.ts`. Stop gating them one at
+a time. Instrument the sink:
+
+1. Add a TEMP DEBUG `appendFileSync` at the `broadcast:` projection output
+   callback (`index.ts:1176`, `broadcast: (message) => _owners.broadcast(message)`)
+   logging `{ ts, type: message.type, gateActive: subagentGate.isActive() }`.
+   ALSO consider logging at `_owners.broadcast` itself if the projection
+   callback isn't the leaking path (some call sites call `_owners.broadcast`
+   directly, not through the projection — see `:1225, :1288, :1322, :1374,
+   :1394, :1451, :1980, :1988, :2060, :2130`).
+2. Rebuild, restart pi, dispatch a subagent, read the log.
+3. The leaking `type` (appears with `gateActive=true` during the subagent
+   window carrying subagent content) is the ungated path. Gate it.
+4. Cleanest eventual fix: gate at the sink — make `_owners.broadcast` (or the
+   projection output) drop assistant-content messages when
+   `subagentGate.isActive()`. BUT verify which types to drop (don't suppress
+   the main agent's `agent_done`/`tool_result` that wraps the subagent call).
+
+### Likely culprits to check first
+
+- `:1225` `input` handler → `user_input` broadcast (the dispatch prompt may
+  stream as user_input — but the operator sees assistant text, so probably not)
+- `:1394` `agent_end` → `agent_done` (the subagent's `agent_end` may fire and
+  broadcast `agent_done` to the phone, which the app renders as a turn)
+- The projection's own broadcast callback (`:1176`) may be invoked from a path
+  OTHER than `message_end` that I haven't traced.
+
+See `.work/session-note-2026-07-07-subagent-leak-fix-incomplete.md` for the
+full session context.
