@@ -213,3 +213,38 @@ consumes. Suppressing them risks breaking the turn projection. Gate only
   longer appears in mobile chat — including after a forced reconnect/replay.
   Deferred to the operator (the unit + integration tests prove the gate
   logic; the manual step proves the live-container surfacing).
+
+## Implementation discovery (2026-07-07) — streaming leak path via `message_update`
+
+The first implementation (gating only `message_end`) was insufficient. A live
+capture with TEMP DEBUG instrumentation (file-append to
+`~/.pi/remote/debug-leakfix.jsonl`, logging `message_update` + `message_end` +
+`tool_execution_start`/`end` gate state) during a subagent dispatch revealed
+the subagent's reply streams token-by-token via `message_update` (text_delta →
+`agent_chunk` broadcast) **before** `message_end` fires:
+
+```
+19:04:22 tool_execution_start subagent  gate=true          ← gate ACTIVE (correct)
+19:04:23 message_end user              gate=true           ← suppressed (correct)
+19:04:24 message_update  delta="subagent probe ok" gate=true   ← LEAK (ungated streaming path)
+19:04:24 message_end assistant model=gpt-5.3-codex-spark gate=true   ← suppressed (correct)
+19:04:24 tool_execution_end subagent    gate=true→false
+```
+
+The `message_end` gate worked exactly as designed (`gate=true` throughout, the
+subagent's assistant `message_end` suppressed). But the `message_update`
+handler (`index.ts:1268`) broadcast `agent_chunk` deltas **with the gate
+active** — I had not gated it. The phone received "subagent probe ok" via the
+streaming path, one second before `message_end`.
+
+**Fix applied**: added `if (subagentGate.isActive()) return;` to the
+`message_update` handler, before the `_applyTurnAndPublish` /
+`_owners.broadcast` calls. This suppresses the streaming `agent_chunk`
+deltas during the subagent window, matching the `message_end` suppression.
+
+The gate now covers both assistant-content broadcast paths:
+- `message_update` → `agent_chunk` (streaming deltas) — gated
+- `message_end` → `agent_message` (finalized text) + transcript event — gated
+
+TEMP DEBUG instrumentation fully removed (src + dist); typecheck + build +
+full test suite green (763 passed, 3 pre-existing skipped, 48 files).
