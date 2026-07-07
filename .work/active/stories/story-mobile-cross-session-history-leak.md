@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-06
-updated: 2026-07-06
+updated: 2026-07-07
 reinvestigated: 2026-07-06
 ---
 
@@ -169,13 +169,32 @@ projection layer, not a room-routing issue).
 
 ### Revised open questions
 
-- **(primary) #1 subagent-content leak**: does a subagent dispatch fire
-  top-level `message_end` for the subagent's assistant messages (leak), or
-  fold them into the Task tool's `toolResult` content (no leak)? Needs a
-  live `message_end` payload capture during a subagent dispatch (the
-  TEMP DEBUG instrumentation in `index.ts` was built but its output goes
-  to the pi process's pty `/dev/pts/1`, which is not file-captured — needs a
-  pi restart with `2>&1 | tee /tmp/pi-debug.log` to read it).
+- **(RESOLVED 2026-07-07) #1 subagent-content leak — CONFIRMED**: a
+  subagent dispatch fires top-level `message_end` for the subagent's
+  assistant reply, which the extension broadcasts as `agent_message` to the
+  phone. Live capture via TEMP DEBUG instrumentation (file append to
+  `~/.pi/remote/debug-message-end.jsonl`) during a `gpt-5.3-codex-spark`
+  subagent dispatch from the `umans-glm-5.2` main session:
+  ```
+  17:20:17  assistant  umans-glm-5.2      toolUse  text,toolCall   ← main dispatches subagent (toolCall)
+  17:20:17  user       -                   -        text             ← dispatch prompt as user msg
+  17:20:19  assistant  gpt-5.3-codex-spark  stop     text             ← LEAK: subagent reply → top-level message_end
+  17:20:19  toolResult -                   -        text             ← subagent result also folded into toolResult
+  17:20:29  assistant  umans-glm-5.2      toolUse  text,toolCall   ← main agent continues
+  ```
+  The subagent's reply fires **twice**: once as a top-level `assistant`
+  `message_end` (broadcast to phone — the leak), once as a `toolResult`
+  (correct, already filtered by `role === "assistant"`).
+  **The distinguisher is `message.model`**: the subagent ran on
+  `gpt-5.3-codex-spark`, different from the main `umans-glm-5.2`. So a
+  fix is possible WITHOUT an upstream SDK change — the extension's
+  `message_end` handler can compare `message.model` against the session's
+  active/expected model and suppress broadcast when they differ. Caveat:
+  `model` is a proxy, not a true subagent flag — it breaks if a subagent is
+  dispatched on the SAME model as the parent, or if the user manually
+  switches the main session's model mid-turn. The clean fix remains an
+  upstream SDK `source`/`subagent` field, but the `model`-mismatch gate is
+  a viable fork-local mitigation.
 - **(closed) #2 cross-room session flip**: RULED OUT by `cross_room=false`.
   The session rotation is the 7ADky Pi's own (h1). Whether that rotation is
   *expected* (subagent tool creates a child session?) is a separate question
