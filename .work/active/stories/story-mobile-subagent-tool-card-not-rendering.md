@@ -1,7 +1,7 @@
 ---
 id: story-mobile-subagent-tool-card-not-rendering
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, bug, ui]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -13,6 +13,14 @@ updated: 2026-07-07
 ---
 
 # Mobile does not render the `subagent` tool card
+
+> **RESOLVED (2026-07-07): operator had "Hide tool calls" toggled ON at the
+> app level** (`hideToolCalls` in `preferences.dart`, exposed in settings). It
+> hides ALL tool cards, including the subagent's — not a subagent-specific bug.
+> No code change needed; toggling it off restores the card. The frames were
+> reaching the phone correctly (earlier capture confirmed `tool_request`/
+> `tool_result` sent with the correct parent session id). Closed as
+> operator-config, not a defect.
 
 ## Brief
 
