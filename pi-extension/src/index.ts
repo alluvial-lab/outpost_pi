@@ -100,6 +100,7 @@ import {
   type RelayStateSnapshot,
 } from "./extension/relay_transport.js";
 import { validateClientSession } from "./session/session_gate.js";
+import { subagentGate } from "./session/subagent_gate.js";
 import type { TurnEvent, TurnProjection } from "./session/turn_state.js";
 import {
   handleSessionCompact,
@@ -1265,6 +1266,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // executes; tool_execution_end closes the loop with the result. Together
   // they render a "Tool running… done" timeline in each paired app.
   pi.on("tool_execution_start", (event) => {
+    subagentGate.enter(event.toolName);
     const sessionId = _currentRemoteSessionId();
     const args = _enrichToolArgs(event.toolName, event.args);
     _appendTranscriptEvent({
@@ -1286,6 +1288,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   });
 
   pi.on("tool_execution_end", (event) => {
+    subagentGate.exit(event.toolName);
     // Stringify through the transcript projection helper so live == re-sync.
     const text = stringifyToolResult(event.result);
     const sessionId = _currentRemoteSessionId();
@@ -1323,7 +1326,16 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   pi.on("message_end", (event) => {
     const m = event?.message as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
     if (!m) return;
-    if (m.role === "user" || m.role === "assistant" || m.role === "toolResult") {
+    // Subagent-leak gate: while a `subagent` tool execution is open, the
+    // child session's `message_end` fires for the subagent's assistant
+    // messages. Suppress recording/broadcast for assistant messages so they
+    // neither reach the phone live (`agent_message`) nor replay later
+    // (`session_sync`/`session_history` feed the same transcript event log).
+    // `user`/`toolResult` messages still pass through — the `toolResult` is
+    // the legitimate folded result the main agent consumes. See
+    // `story-extension-suppress-subagent-assistant-broadcast`.
+    const suppressForSubagent = m.role === "assistant" && subagentGate.isActive();
+    if (!suppressForSubagent && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")) {
       _appendLegacySdkMessageToTranscript(m as unknown as LegacyAgentMessage);
     }
     // Forward a failed turn to connected owners. Without this the app just
@@ -1332,7 +1344,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // assistant message with stopReason "error" + an `errorMessage` (pi-ai).
     // `error` is an existing ServerMessage the app already renders — no
     // protocol/app change. `in_reply_to` ties it to the turn the app awaits.
-    if (m.role === "assistant" && m.stopReason === "error") {
+    if (!suppressForSubagent && m.role === "assistant" && m.stopReason === "error") {
       const message = typeof m.errorMessage === "string" && m.errorMessage
         ? m.errorMessage
         : "Provider error";
