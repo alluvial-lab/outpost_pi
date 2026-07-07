@@ -1,7 +1,7 @@
 ---
 id: story-extension-suppress-subagent-assistant-broadcast
 kind: story
-stage: drafting
+stage: review
 tags: [pi-extension, bug, transport, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -171,3 +171,45 @@ consumes. Suppressing them risks breaking the turn projection. Gate only
   (`core/extensions/types.d.ts:405-411,517-524,550-553`;
   `@earendil-works/pi-ai/dist/types.d.ts:276-288`).
 - Parent: `feature-reconnect-reproduction.md`.
+
+## Implementation notes
+
+- **Files changed**:
+  - `pi-extension/src/session/subagent_gate.ts` (new) — pure `SubagentGate`
+    class (depth counter with floor-at-0 + nesting), `SUBAGENT_TOOL_NAME`
+    constant, and a process-singleton `subagentGate`. No SDK imports; fully
+    unit-testable. Inline doc cites `@gotgenes/pi-subagents` provenance and
+    the fork-local tradeoff.
+  - `pi-extension/src/session/subagent_gate.test.ts` (new) — 9 unit tests
+    covering active/inactive, non-subagent-tool no-op, nested subagents,
+    floor-at-0 (stray exit + extra-exits), and reset.
+  - `pi-extension/src/index.ts` — import `subagentGate`; `enter` call at the
+    top of `tool_execution_start`, `exit` at the top of `tool_execution_end`;
+    in `message_end` a `suppressForSubagent` flag (`role === "assistant" &&
+    subagentGate.isActive()`) gates both the `_appendLegacySdkMessageToTranscript`
+    call (suppresses live `agent_message` broadcast AND `assistant_committed`
+    transcript event) and the failed-turn `provider_error` forwarding block.
+    `user`/`toolResult` messages pass through unaffected.
+- **Design decision (extraction)**: the gate is a pure module rather than
+  inline module-level state in `index.ts`, because `index.ts`'s `pi.on`
+  handlers have no direct test seam (the integration harness drives the full
+  factory via MockRelay, not via `pi.on` event emission). Pure extraction
+  follows ports/adapters (gate logic independent of the SDK harness) and
+  makes the nesting/floor invariants directly unit-testable.
+- **Replay-leak sub-question resolved**: suppress the transcript event too
+  (not just the broadcast) — implemented by short-circuiting the
+  `_appendLegacySdkMessageToTranscript` call entirely while the gate is
+  active, so neither the live `agent_message` nor the `assistant_committed`
+  transcript event (which feeds `session_sync`/`session_history` replay) is
+  produced. The subagent's assistant text is never recorded for the session.
+- **Discrepancies from design**: none.
+- **Adjacent issues parked**: none.
+- **Verification**: `corepack pnpm typecheck` ✓, `corepack pnpm build` ✓,
+  `corepack pnpm test` ✓ (763 passed, 3 pre-existing skipped, 48 files —
+  incl. the 9 new gate tests and the 171 extension integration tests, no
+  regressions in the touched handlers).
+- **Manual criterion (not yet run)**: rebuild `dist/` (done), restart pi,
+  dispatch a subagent from the phone, confirm subagent assistant text no
+  longer appears in mobile chat — including after a forced reconnect/replay.
+  Deferred to the operator (the unit + integration tests prove the gate
+  logic; the manual step proves the live-container surfacing).
