@@ -412,3 +412,28 @@ added after a live capture showed the dispatch prompt leaking as a chat bubble
 (L9/L10 `user_input` at `gateActive=true`). `toolResult` still passes through
 (legitimate folded result). Regression test covers both. TEMP DEBUG sink
 instrumentation removed (served its purpose).
+
+## Third leak path found + fixed (2026-07-07) — the `input` handler
+
+After the `user`/`assistant` `message_end` gates were confirmed, the operator
+reported the dispatch prompt ("Reply with exactly...") was STILL the final
+visible message on mobile. Root cause: a THIRD broadcast path. The subagent's
+dispatch prompt reaches the child session via `session.prompt()`
+(`@gotgenes/pi-subagents` `subagent-session.ts:120`), which the SDK fires as
+an `input` event with `source: "interactive"` (the default — the subagent
+passes no `source` option, per `agent-session.js:749-757`). The `input`
+handler in `index.ts` broadcasts `user_input` and its only guard was
+`if (event.source === "extension") return;` — which does NOT skip
+`"interactive"`. So the dispatch prompt leaked as a `user_input` chat bubble.
+
+Fix: added `if (subagentGate.isActive()) return;` at the top of the `input`
+handler (before the control-frame parse and the user_input broadcast),
+symmetric with the `message_update`/`message_end` gates. Regression test
+extended to fire an `input` event during the window and assert zero
+`user_input` escapes.
+
+The gate now covers all three assistant/user-content broadcast paths:
+- `input` → `user_input` (dispatch prompt via session.prompt) — gated
+- `message_update` → `agent_chunk` (streaming reply deltas) — gated
+- `message_end` → `agent_message` (finalized reply) + `user_input` (dispatch
+  prompt as message_end role=user) + transcript events — gated
