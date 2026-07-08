@@ -550,4 +550,23 @@ describe("SdkSessionProjection delivery-path debug events", () => {
     expect(ctx).toHaveLength(1);
     expect(ctx[0]).toMatchObject({ armed: true, via: "slash" });
   });
+
+  test("bindReplacementContext emits message_api_armed { via: withSession } + command_ctx { via: withSession }", () => {
+    const { projection, fake } = makeProjectionWithDebug();
+    // bindReplacementContext is the mobile session_new (withSession) re-arm
+    // path — distinct from the factory /reload re-arm in bindApi. The story
+    // needs this evidence to prove mobile recovery.
+    projection.setSessionIdForTest("session-withsession-1234");
+    projection.bindReplacementContext({
+      sendUserMessage: vi.fn(),
+      sendMessage: vi.fn(),
+      sessionManager: { getSessionId: () => "session-withsession-1234" },
+    } as never);
+    const armed = fake.byTag("message_api_armed");
+    expect(armed).toHaveLength(1);
+    expect(armed[0]).toMatchObject({ tag: "message_api_armed", via: "withSession" });
+    const ctx = fake.byTag("command_ctx");
+    expect(ctx).toHaveLength(1);
+    expect(ctx[0]).toMatchObject({ armed: true, via: "withSession" });
+  });
 });

@@ -17,7 +17,7 @@
  * See `story-extension-delivery-path-ring-log` for the design.
  */
 
-import { mkdirSync, appendFileSync, existsSync, readFileSync, truncateSync } from "node:fs";
+import { mkdirSync, appendFileSync, existsSync, readFileSync, truncateSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -98,6 +98,10 @@ export const noopDeliveryDebugLog: DeliveryDebugLog = { log: () => {} };
  * flush, export reads from the file (source of truth), never throws.
  */
 export class DeliveryDebugLogImpl implements DeliveryDebugLog {
+  /** Dirty (not-yet-flushed) lines. The file is the source of truth; the ring
+   * holds only lines added since the last flush. This separation prevents the
+   * warm-from-file → re-append duplication bug: warmed/persisted lines are
+   * never in the dirty ring, so a flush never re-writes them. */
   private readonly ring: string[] = [];
   private ringBytes = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -106,7 +110,6 @@ export class DeliveryDebugLogImpl implements DeliveryDebugLog {
   constructor(filePath: string) {
     this.filePath = filePath;
     this.ensureDir();
-    this.warmFromFile();
   }
 
   log(event: DeliveryDebugEvent): void {
@@ -163,7 +166,7 @@ export class DeliveryDebugLogImpl implements DeliveryDebugLog {
     for (const [k, v] of Object.entries(event)) {
       if (k === "tag") continue;
       if (FORBIDDEN_KEYS.has(k)) continue; // defensive — the typed variants never carry these
-      record[k] = typeof v === "string" ? tail(v, MAX_FIELD_LEN) : v;
+      record[k] = typeof v === "string" ? truncateField(v, MAX_FIELD_LEN) : v;
     }
     // Assert no forbidden keys leaked (defensive; the type system already forbids them).
     for (const key of Object.keys(record)) {
@@ -199,6 +202,7 @@ export class DeliveryDebugLogImpl implements DeliveryDebugLog {
     try {
       this.ensureDir();
       appendFileSync(this.filePath, batch, "utf8");
+      this.capFile();
     } catch {
       // Lost this batch — never break delivery. The ring will re-accumulate.
     }
@@ -210,17 +214,18 @@ export class DeliveryDebugLogImpl implements DeliveryDebugLog {
     } catch { /* best-effort */ }
   }
 
-  private warmFromFile(): void {
+  /** Keep the persistent file bounded: when it exceeds 2× the ring cap,
+   *  truncate to the most recent `MAX_RING_BYTES` of lines. The file is the
+   *  export source of truth; an unbounded append-only file would grow
+   *  without limit across a long-lived process. Best-effort — never throws. */
+  private capFile(): void {
     try {
       if (!existsSync(this.filePath)) return;
+      if (statSync(this.filePath).size < MAX_RING_BYTES * 2) return;
       const data = readFileSync(this.filePath, "utf8");
-      if (!data) return;
       const lines = data.split("\n").filter((l) => l.length > 0);
-      for (const line of lines) {
-        this.ring.push(line);
-        this.ringBytes += line.length + 1;
-      }
-      this.truncateRing();
+      const keep = lines.slice(-Math.floor(MAX_RING_BYTES / 80)); // ~80 chars/line heuristic
+      writeFileSync(this.filePath, keep.join("\n") + "\n", "utf8");
     } catch { /* best-effort */ }
   }
 }
@@ -250,8 +255,10 @@ export function createDeliveryDebugLog(): DeliveryDebugLog {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Truncate a string to `max` chars, appending an ellipsis if cut. */
-function tail(value: string, max: number): string {
+/** Truncate a string to `max` chars (head-preserving), appending an ellipsis
+ *  if cut. Named `truncateField` (not `tail`) because it keeps the START of the
+ *  value — the meaningful prefix of an error message — rather than the end. */
+function truncateField(value: string, max: number): string {
   if (value.length <= max) return value;
   return value.slice(0, max - 1) + "…";
 }
