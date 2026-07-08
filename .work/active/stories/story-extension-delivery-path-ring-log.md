@@ -1,7 +1,7 @@
 ---
 id: story-extension-delivery-path-ring-log
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, observability, bug]
 parent: feature-cross-side-observability
 depends_on: []
