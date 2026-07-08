@@ -47,6 +47,7 @@ export interface LegacySdkSessionProjectionDeps {
   wakeAgent(...args: Parameters<ExtensionAPI["sendUserMessage"]>): Promise<WakeAgentResult>;
   publishWorking(working: boolean): void;
   handleClientMessage(sender: PeerChannel, message: ClientMessage): void | Promise<void>;
+  onSessionLifecycle?(reason: string, sessionIdTail: string): void;
 }
 
 export interface LegacyCommandSurfaceDeps {
@@ -96,7 +97,7 @@ function createLegacyOwnerMultiplexer(deps: LegacyOwnerMultiplexerDeps): OwnerMu
 }
 
 function createLegacySdkSessionProjection(deps: LegacySdkSessionProjectionDeps): SdkSessionProjectionPort {
-  return {
+  const port: SdkSessionProjectionPort = {
     bindApi: (pi) => deps.bindApi(pi),
     bindCommandContext: (ctx) => deps.bindCommandContext(ctx),
     bindSessionContext: (ctx) => deps.bindSessionContext(ctx),
@@ -106,6 +107,8 @@ function createLegacySdkSessionProjection(deps: LegacySdkSessionProjectionDeps):
     publishWorking: (working) => deps.publishWorking(working),
     handleClientMessage: (sender, message) => deps.handleClientMessage(sender, message),
   };
+  if (deps.onSessionLifecycle) port.onSessionLifecycle = (reason, sessionIdTail) => deps.onSessionLifecycle?.(reason, sessionIdTail);
+  return port;
 }
 
 function createLegacyCommandSurface(deps: LegacyCommandSurfaceDeps): CommandSurfacePort {
