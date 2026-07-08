@@ -9,7 +9,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-03
+updated: 2026-07-08
 reverted_misguided_fix: 2026-07-03
 ---
 
@@ -86,6 +86,48 @@ stale. Options to evaluate at design time:
    entirely — a routing problem) or the same process with a replaced session
    (then option 1 applies). This needs live-process inspection; could not be
    determined from the sandbox.
+
+### Mobile lockout cost (confirmed 2026-07-08, live)
+
+This is not a "one dropped message during the reload dead window" bug — for
+a mobile-only operator it is a **session lockout**. When a session
+replacement (`/new`, `/resume`, `/fork`, `/reload`, daemon respawn) on the
+pi invalidates `messageApi`, the phone cannot deliver any message to that
+session until a `session_start` rebinds a working ctx. The phone's only
+session-control affordance is the quick-action "new session" (`session_new`
+→ `withSession` → `_bindReplacementContext` → rebinds `messageApi` from a
+fresh `ReplacedSessionContext`), which **does** recover delivery — but it
+**starts a fresh session and discards the current conversation.** So the
+mobile recovery choice is "can't send anything" or "blow away the session to
+get delivery back." A workstation `/reload` (factory re-init re-arms a
+working `messageApi`) is the context-preserving recovery, but it is not
+reachable from mobile (parked as `idea-mobile-session-control` §"`/reload`
+button"). The self-heal in option 1 is the real fix — neither `/reload` nor
+`session_new` should be required to recover delivery after a replacement.
+
+### Stuck "not delivered" bubble (folded in 2026-07-08)
+
+The recoverable-wake-failure path (`index.ts:2152-2160`) does `console.warn`
++ returns **without sending anything to the phone.** So a message that hit
+the stale ctx gets no echo and no error; the phone waits the full 20s
+`send_timeout`, then shows a permanent "not delivered" bubble with no retry.
+The operator observed this live: the first message after a `/reload` (sent
+during the dead window) is now stuck as "not delivered" in the mobile chat
+with no way to clear or retry it. This UX gap is part of this story's
+acceptance criteria — the recoverable path must not leave a permanent,
+unretryable "not delivered" scar:
+
+- **AC (stuck bubble):** a recoverable wake failure (stale ctx / null
+  `messageApi`) must either (a) signal the phone to retry after the next
+  `session_start` rebinds, or (b) surface a transient "session replacing —
+  retry" state that clears when delivery is restored — NOT a permanent
+  20s-timeout "not delivered" bubble. The current `console.warn`-and-return
+  is insufficient.
+- This pairs with option 2 (tolerate gracefully): the recoverable signal
+  IS the retry/clear trigger the phone needs. If option 1 (self-heal) lands,
+  the dead window shrinks to near-zero and the stuck bubble becomes rare —
+  but the recoverable path still must not scar permanently for the residual
+  cases.
 
 ## Why this is hard to test in isolation
 
