@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-06
+updated: 2026-07-07
 confirmed_root_cause: 2026-07-03
 implemented: 2026-07-06
 ---
@@ -477,6 +477,47 @@ green; `protocol check` validates 5 fixture families.
   commits, the pre-tool-flush of `_streaming.buffer` at `ToolRequest` may
   become redundant for commit identity (decision 2's synchronous-clear fix
   stays regardless). Decide at follow-up.
+
+### ToolRequest flush duplication (landed 2026-07-08)
+
+**Root cause found post-deploy.** The deferred `ToolRequest` flush
+simplification above was NOT just cosmetic — it was an active duplication
+path the original fix missed. The SDK fires `message_end` (→ extension
+broadcasts `agent_message(ts, message_id)`) BEFORE `tool_execution_start`
+(→ app receives `ToolRequest`), confirmed in `pi-agent-core/dist/agent-loop.js`
+(`streamAssistantResponse` emits `message_end` at L235/248, then
+`executeToolCalls` runs at L117). So the deterministic `agent_message(ts)`
+commit lands first and sets `_agentMessageCommittedThisTurn = true`. But the
+`ToolRequest` handler did NOT check that flag (unlike `AgentDone` which did),
+so it re-committed the same buffered text under a random `uuid7()`
+eventId/messageId → a second Hive row that doesn't match the replay's
+deterministic id → visible dupe on every tool-call turn.
+
+This is the "dupes of SOME messages" the operator saw post-deploy on a fresh
+install: the pre-tool-call narration text specifically (not the final text,
+which `AgentDone`'s guard already covered). A flapping connection makes it
+worse (the `agent_message(ts)` frame can be dropped by the fan-out suspend,
+leaving the flag false so the flush fires), but it dupes even on a stable
+connection because the `ToolRequest` flush never checked the flag.
+
+**Fix:** added the `_agentMessageCommittedThisTurn` guard to the `ToolRequest`
+flush (mirrors `AgentDone`'s skip). The streaming buffer is still cleared
+synchronously (decision 2's fix stays); only the random-uuid commit is
+skipped when a deterministic `agent_message(ts)` already committed. Falls
+back to the buffer-commit for legacy extensions (no `ts` → flag stays false).
+
+**Regression test:** `ToolRequest after agent_message(ts) does not re-commit
+the buffer` — streams text, pushes `AgentMessage(ts)`, then `ToolRequest`,
+asserts the text appears exactly once. Verified to FAIL without the guard
+(`Actual: 2`) and pass with it.
+
+**Remaining gap (deferred ordering risk, unchanged):** if the
+`agent_message(ts)` frame is dropped (flapping connection / fan-out
+suspend) but `ToolRequest` arrives, the flag is false and the buffer-commit
+fires with random uuid → dupes against the replay. This is the same
+deferred risk documented above; the fix covers the common (stable
+connection) case. A full fix would require the extension to re-emit or
+the app to derive deterministic identity from `ToolRequest` itself.
 
 ### User-message identity (landed 2026-07-06)
 
