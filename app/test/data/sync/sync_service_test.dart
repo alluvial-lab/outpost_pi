@@ -1170,6 +1170,129 @@ void main() {
     },
   );
 
+  // Layer 2 of story-mobile-connection-flapping-drops-identity-frames.
+  // The relay's fan-out suspend (story-extension-suspend-fanout-on-peer-
+  // offline) DROPS frames for an offline peer rather than queueing them.
+  // If the deterministic `agent_message(ts)` frame (the single source of
+  // live assistant identity) is dropped during a flap in the
+  // message_end→tool_execution_start window, the ToolRequest/AgentDone
+  // fallback would commit the streamed buffer under a random uuid. That
+  // random-id live row then dupes against the deterministic replay row
+  // that arrives on the reconnect session_sync → visible duplicate bubble.
+  //
+  // Fix: once the app has seen a live agent_message(ts) at least once
+  // (capability latched), a later turn with NO agent_message(ts) at flush
+  // time is treated as a dropped frame, not a legacy extension. The
+  // random-uuid fallback is SUPPRESSED; the reconnect replay fills the row
+  // deterministically. This test simulates the dropped-frame turn by NOT
+  // sending agent_message(ts), then delivering the replay.
+  test(
+    'dropped agent_message(ts) mid-flap: ToolRequest/AgentDone suppress '
+    'random-uuid fallback; replay fills deterministically',
+    () async {
+      final s = await setup();
+      s.ch.push(UserInput(id: 'u1', text: 'go'));
+      await _settle();
+      // Latch the capability: a PRIOR turn delivered agent_message(ts),
+      // proving the extension emits deterministic identity frames.
+      const priorTs = 1000;
+      s.ch.push(const AgentMessage(
+        inReplyTo: 'u1',
+        text: 'prior turn text',
+        ts: priorTs,
+      ));
+      await _settle();
+      s.ch.push(AgentDone(inReplyTo: 'u1'));
+      await _settle();
+
+      // Next turn: the agent_message(ts) frame is DROPPED (flap hit during
+      // message_end→tool_execution_start). Only streaming chunks + the
+      // ToolRequest arrive.
+      s.ch.push(UserInput(id: 'u2', text: 'next'));
+      await _settle();
+      s.ch.push(const AgentChunk(inReplyTo: 'u2', delta: 'narration text'));
+      await _settle();
+      // No agent_message(ts) arrives — it was dropped.
+      s.ch.push(const ToolRequest(toolCallId: 'tc1', tool: 'Read', args: {}));
+      await _settle();
+      s.ch.push(AgentDone(inReplyTo: 'u2'));
+      await _settle();
+
+      // Before the replay: the dropped-frame turn must NOT have committed a
+      // random-uuid row for 'narration text'.
+      final beforeReplay =
+          messages(s.epk).where((r) => r.text == 'narration text');
+      expect(
+        beforeReplay,
+        isEmpty,
+        reason:
+            'The dropped agent_message(ts) frame must not trigger a '
+            'random-uuid fallback commit (it would dupe against the replay).',
+      );
+
+      // Reconnect session_sync delivers the deterministic replay for the
+      // dropped turn.
+      const liveTs = 2000;
+      s.ch.push(SessionHistory(
+        inReplyTo: 'sync1',
+        sessionStartedAt: 0,
+        events: const [
+          UserInputEvt(ts: 1, id: 'u2', text: 'next'),
+          AgentMessageEvt(ts: liveTs, inReplyTo: 'u2', text: 'narration text'),
+        ],
+        eos: true,
+      ));
+      await _settle();
+
+      final narration =
+          messages(s.epk).where((r) => r.text == 'narration text');
+      expect(
+        narration.length,
+        1,
+        reason:
+            'After the replay, the dropped turn renders exactly once '
+            '(deterministic replay row). No random-uuid live row survives '
+            'to dupe against it.',
+      );
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  // Counter-test for the legacy-extension path: an extension that NEVER
+  // sends agent_message(ts) must still get its streamed buffer committed at
+  // AgentDone (the capability flag stays false → fallback is NOT
+  // suppressed). Guards against the Layer 2 fix over-suppressing for legacy
+  // peers.
+  test(
+    'legacy extension (no agent_message(ts) ever): AgentDone still commits '
+    'the streamed buffer',
+    () async {
+      final s = await setup();
+      s.ch.push(UserInput(id: 'u1', text: 'go'));
+      await _settle();
+      // No agent_message(ts) ever arrives — legacy extension.
+      s.ch.push(const AgentChunk(inReplyTo: 'u1', delta: 'hello world'));
+      await _settle();
+      s.ch.push(AgentDone(inReplyTo: 'u1'));
+      await _settle();
+
+      final narration =
+          messages(s.epk).where((r) => r.text == 'hello world');
+      expect(
+        narration.length,
+        1,
+        reason:
+            'A legacy extension that never sends agent_message(ts) must '
+            'still commit the streamed buffer at AgentDone (random-uuid '
+            'fallback). The Layer 2 suppression only applies once the '
+            'capability is latched.',
+      );
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
   // Regression for the multi-block collision the deep review caught.
   // A single SDK assistant message with MULTIPLE text blocks shares
   // (in_reply_to, ts) across blocks; the extension emits one agent_message
