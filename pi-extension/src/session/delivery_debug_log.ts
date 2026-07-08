@@ -63,8 +63,8 @@ const FORBIDDEN_KEYS = new Set([
 
 /** Max encoded bytes per field value — a huge untrusted string can't evict the window. */
 const MAX_FIELD_LEN = 256;
-/** Bounded ring cap (encoded). Drop oldest on append. */
-const MAX_RING_BYTES = 512 * 1024;
+/** Bounded ring cap (encoded). Drop oldest on append. Exported for tests. */
+export const MAX_RING_BYTES = 512 * 1024;
 /** Routine-event flush debounce. */
 const FLUSH_DEBOUNCE_MS = 2_000;
 
@@ -224,8 +224,17 @@ export class DeliveryDebugLogImpl implements DeliveryDebugLog {
       if (statSync(this.filePath).size < MAX_RING_BYTES * 2) return;
       const data = readFileSync(this.filePath, "utf8");
       const lines = data.split("\n").filter((l) => l.length > 0);
-      const keep = lines.slice(-Math.floor(MAX_RING_BYTES / 80)); // ~80 chars/line heuristic
-      writeFileSync(this.filePath, keep.join("\n") + "\n", "utf8");
+      // Keep the most recent lines until their total size is under the cap.
+      // Walks from the end so we preserve the newest diagnostic tail; drops
+      // older lines wholesale (no partial-line truncation).
+      let kept: string[] = [];
+      let keptBytes = 0;
+      for (const line of lines.reverse()) {
+        if (keptBytes + line.length + 1 > MAX_RING_BYTES) break;
+        kept.unshift(line);
+        keptBytes += line.length + 1;
+      }
+      writeFileSync(this.filePath, kept.join("\n") + "\n", "utf8");
     } catch { /* best-effort */ }
   }
 }

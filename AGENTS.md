@@ -210,7 +210,10 @@ Without `REMOTEPI_RELAY_LOG_DIR`, logging is stdout-only (lost on
 scroll/restart — the pre-0.2.2 gap). `RUST_LOG` defaults to `info`; the
 `relay=debug` lift is what surfaces the `env_id_tail` correlation line on
 each cross-PC forward/drop (the app↔pi data-plane path stays
-payload-opaque at INFO with `warn!` on drops).
+payload-opaque at INFO with `warn!` on drops). Rotated `relay.log.YYYY-MM-DD`
+files older than 14 days are pruned on startup (`prune_old_relay_logs`) —
+`tracing-appender` rotates but does not retain, so without the sweep one
+file per day would accumulate without limit in the named volume.
 
 ### App APK build on the dev VM (memory-sensitive)
 
