@@ -9,6 +9,7 @@ import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FakeDeliveryDebugLog } from "./session/delivery_debug_log.test.js";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
@@ -171,6 +172,8 @@ const {
   _resetPendingDeliveryQueueForTest,
   _getPendingDeliveryQueueLengthForTest,
   _drainAfterReplacementForTest,
+  _setDeliveryDebugLogForTest,
+  _getDeliveryDebugLogForTest,
   _handleControl,
   _parseControlFrame,
   CTRL_PREFIX,
@@ -4220,44 +4223,73 @@ describe("session_shutdown teardown", () => {
     _setPiForTest(null);
     _setDisposedForTest(false);
 
-    const sendsBefore = relayRef.current!.send.mock.calls.length;
-    emitClientMessage(peer, {
-      type: "user_message",
-      id: "msg-null-window",
-      session_id: sessionId,
-      text: "hello during reload",
-    });
-
-    await vi.waitFor(() => {
-      const sent = sentToPeerSince(sendsBefore, peer);
-      expect(sent).toContainEqual(expect.objectContaining({
-        inner: expect.objectContaining({
-          type: "error",
-          code: "delivery_pending",
-          in_reply_to: "msg-null-window",
-          session_id: sessionId,
-        }),
-      }));
-    });
-    expect(_getPendingDeliveryQueueLengthForTest()).toBe(1);
-
-    const freshSendUserMessage = vi.fn(async () => undefined);
-    _setPiForTest({
-      sendUserMessage: freshSendUserMessage,
-      sendMessage: vi.fn(async () => undefined),
-    });
-
-    await vi.waitFor(() => expect(freshSendUserMessage).toHaveBeenCalledWith("hello during reload"));
-    await vi.waitFor(() => expect(_getPendingDeliveryQueueLengthForTest()).toBe(0));
-    await vi.waitFor(() => {
-      const sent = sentToPeerSince(sendsBefore, peer);
-      expect(sent.find((d) => d.inner.type === "user_message")?.inner).toMatchObject({
+    // Inject a fake delivery debug log so we can assert the stuck-null
+    // signature: wake_outcome { messageApiArmed: false, recoverable: true }.
+    const debugLog = new FakeDeliveryDebugLog();
+    const prevLog = _setDeliveryDebugLogForTest(debugLog);
+    try {
+      const sendsBefore = relayRef.current!.send.mock.calls.length;
+      emitClientMessage(peer, {
         type: "user_message",
         id: "msg-null-window",
-        text: "hello during reload",
         session_id: sessionId,
+        text: "hello during reload",
       });
-    });
+
+      await vi.waitFor(() => {
+        const sent = sentToPeerSince(sendsBefore, peer);
+        expect(sent).toContainEqual(expect.objectContaining({
+          inner: expect.objectContaining({
+            type: "error",
+            code: "delivery_pending",
+            in_reply_to: "msg-null-window",
+            session_id: sessionId,
+          }),
+        }));
+      });
+      expect(_getPendingDeliveryQueueLengthForTest()).toBe(1);
+
+      // The stuck-null signature: the wake attempt hit a null messageApi and
+      // emitted wake_outcome { messageApiArmed: false, recoverable: true }.
+      const wakeOutcomes = debugLog.byTag("wake_outcome");
+      expect(wakeOutcomes.length).toBeGreaterThanOrEqual(1);
+      expect(wakeOutcomes[0]).toMatchObject({
+        tag: "wake_outcome",
+        id: "msg-null-window",
+        ok: false,
+        recoverable: true,
+        messageApiArmed: false,
+      });
+      // msg_received fired on arrival.
+      expect(debugLog.byTag("msg_received")).toHaveLength(1);
+      // delivery_pending fired when the message was queued.
+      expect(debugLog.byTag("delivery_pending")).toHaveLength(1);
+
+      const freshSendUserMessage = vi.fn(async () => undefined);
+      _setPiForTest({
+        sendUserMessage: freshSendUserMessage,
+        sendMessage: vi.fn(async () => undefined),
+      });
+
+      await vi.waitFor(() => expect(freshSendUserMessage).toHaveBeenCalledWith("hello during reload"));
+      await vi.waitFor(() => expect(_getPendingDeliveryQueueLengthForTest()).toBe(0));
+      await vi.waitFor(() => {
+        const sent = sentToPeerSince(sendsBefore, peer);
+        expect(sent.find((d) => d.inner.type === "user_message")?.inner).toMatchObject({
+          type: "user_message",
+          id: "msg-null-window",
+          text: "hello during reload",
+          session_id: sessionId,
+        });
+      });
+      // After re-arm + drain: message_api_armed { via: "factory" } +
+      // queue_drained + msg_delivered fired.
+      expect(debugLog.byTag("message_api_armed").some((e) => e.via === "factory")).toBe(true);
+      expect(debugLog.byTag("queue_drained")).toHaveLength(1);
+      expect(debugLog.byTag("msg_delivered")).toHaveLength(1);
+    } finally {
+      _setDeliveryDebugLogForTest(prevLog);
+    }
   });
 
   // Review finding (2026-07-08): the `withSession` re-arm path (mobile

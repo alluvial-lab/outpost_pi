@@ -209,6 +209,35 @@ discipline as the app ring log, review B2/C1).
 - Deploy note: enabling the log requires `REMOTE_PI_DEBUG_LOG=1` + a full
   pi process restart (per AGENTS.md, `/reload` does not re-import `dist/`).
 
+## Review outcome (2026-07-08)
+
+Cross-model review (`openai-codex/gpt-5.5`, high): `Request changes` (3
+important, 1 nit). All findings addressed:
+
+1. **Persistent log unbounded + duplicate-on-restart** (important): the
+   adapter warmed old file lines into the dirty ring, so a flush re-appended
+   them → duplicates; the file was never capped. **Fixed:** removed
+   `warmFromFile()` (the dirty ring holds only unflushed lines; the file is
+   the source of truth, read directly by `export()`); added `capFile()`
+   which truncates the file to the most recent ~cap-worth of lines when it
+   exceeds 2× the cap. Test added asserting no duplication across instances.
+2. **withSession re-arm evidence missing** (important): `bindReplacementContext`
+   (the mobile `session_new` path) didn't emit `message_api_armed { via:
+   "withSession" }` / `command_ctx { via: "withSession" }`. **Fixed:** added
+   both emits to `bindReplacementContext`. Projection test added.
+3. **No regression test for the `index.ts` `wake_outcome` stuck-null path**
+   (important): the projection test asserted `wake_outcome` was *not* emitted
+   there, but the actual `index.ts` emission (the stuck-null signature) was
+   untested. **Fixed:** added `_setDeliveryDebugLogForTest`/
+   `_getDeliveryDebugLogForTest` test-only accessors + a
+   `setDeliveryDebugLogForTest` projection method; extended the existing
+   "null messageApi window" test to inject a `FakeDeliveryDebugLog` and
+   assert `wake_outcome { messageApiArmed: false, recoverable: true }` +
+   `msg_received` + `delivery_pending` + (post-re-arm) `message_api_armed`
+   + `queue_drained` + `msg_delivered`.
+4. **`tail()` is head-truncation, not tail** (nit): misleading name.
+   **Fixed:** renamed to `truncateField` with a clarifying comment.
+
 ## Relationship to the stuck-state bug
 
 This log is what makes `story-fix-stale-ctx-messageapi-rearm-on-reload`
