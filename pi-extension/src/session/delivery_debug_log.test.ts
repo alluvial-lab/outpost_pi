@@ -48,14 +48,21 @@ describe("DeliveryDebugLogImpl adapter mechanics", () => {
     expect(exported!).toContain('"messageApiArmed":false');
   });
 
-  test("export reads from the file (source of truth), recovering disk state after re-instantiate", () => {
+  test("export reads from the file (source of truth); a new instance sees prior lines without duplicating", () => {
     const log1 = new DeliveryDebugLogImpl(logPath);
     log1.log({ tag: "message_api_null", reason: "stale" });
     log1.dispose();
-    // New instance warms from the file.
+    // New instance reads the file (source of truth). The dirty ring is empty
+    // (no warm-from-file), so a subsequent flush does NOT re-append the prior
+    // line — no duplication.
     const log2 = new DeliveryDebugLogImpl(logPath);
-    const exported = log2.export();
-    expect(exported).toContain("message_api_null");
+    log2.log({ tag: "message_api_null", reason: "shutdown" });
+    log2.dispose();
+    const exported = log2.export()!;
+    const lines = exported.trim().split("\n");
+    // Two distinct events, no duplicate of the first.
+    expect(lines.filter((l) => l.includes('"reason":"stale"')).length).toBe(1);
+    expect(lines.filter((l) => l.includes('"reason":"shutdown"')).length).toBe(1);
   });
 
   test("clear wipes ring + file", () => {

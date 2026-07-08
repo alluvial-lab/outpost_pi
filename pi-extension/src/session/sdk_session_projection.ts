@@ -303,7 +303,22 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.commandCtx = ctx as unknown as ExtensionCommandContext;
     this.eventCtx = ctx as unknown as ExtensionContext;
     this.replaceSessionCapabilities(ctx);
-    return this.captureRemoteSession(ctx);
+    const sessionId = this.captureRemoteSession(ctx);
+    // The withSession re-arm path (mobile `session_new`). Emits the
+    // `message_api_armed { via: "withSession" }` + `command_ctx { armed:
+    // true, via: "withSession" }` evidence the story needs to prove mobile
+    // recovery (distinct from the factory `/reload` re-arm in `bindApi`).
+    this.opts.outputs.deliveryDebugLog?.log({
+      tag: "message_api_armed",
+      via: "withSession",
+      sessionIdTail: idTail(sessionId),
+    });
+    this.opts.outputs.deliveryDebugLog?.log({
+      tag: "command_ctx",
+      armed: true,
+      via: "withSession",
+    });
+    return sessionId;
   }
 
   clearApiBindings(): void {
@@ -544,6 +559,12 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
 
   getTranscriptEventsForTest(): TranscriptEvent[] {
     return [...this.transcriptLog.entries()];
+  }
+
+  /** Test-only: swap the delivery debug log so projection-side emits route to
+   *  a fake. Mirrors the index.ts `_setDeliveryDebugLogForTest` accessor. */
+  setDeliveryDebugLogForTest(log: DeliveryDebugLog): void {
+    (this.opts.outputs as { deliveryDebugLog?: DeliveryDebugLog }).deliveryDebugLog = log;
   }
 
   buildSessionHistoryMessage(
