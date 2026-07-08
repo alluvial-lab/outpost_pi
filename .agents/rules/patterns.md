@@ -5,6 +5,7 @@
 - typed-wire-decoders — Parse/validate untrusted wire payloads through typed decode helpers before dispatch.
 - subscription-unsubscribe-contract — Return explicit unsubscribe closures for every dynamic event subscription.
 - snapshot-replay-event-mappers — Convert snapshot/legacy replay payloads into canonical transcript event streams before projection.
+- single-source-live-identity — When adding a deterministic-identity live broadcast, remove or guard the legacy broadcast it replaces; otherwise both survive as duplicate Hive rows.
 - reachability-contract-projection — Project the shared reachability state-machine contract into each stack with clamped policy helpers.
 
 Load the `patterns` skill (read `.agents/skills/patterns/<slug>.md`) for full
