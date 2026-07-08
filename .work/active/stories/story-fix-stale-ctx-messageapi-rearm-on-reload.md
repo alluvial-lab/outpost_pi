@@ -1,12 +1,11 @@
 ---
 id: story-fix-stale-ctx-messageapi-rearm-on-reload
 kind: story
-stage: done
+stage: drafting
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 feature_parent: feature-session-stable-message-delivery
 depends_on: []
-review_addressed: 2026-07-08
 release_binding: null
 gate_origin: null
 created: 2026-07-03
@@ -316,3 +315,90 @@ Two cross-model review passes (`openai-codex/gpt-5.5`, deep lane):
 2. **Re-review** returned `Approve` (findings resolved, no blockers/important/nits). Confirmed the drain is safe on empty/double-drain and the test helper faithfully arms both module-level + projection `messageApi`.
 
 Final verification: pi-extension 769/769 pass (was 767; +2 review tests); app analyze clean + sync_service tests pass. Committed as `eab7315` (impl) + `1c96a37` (review fixes).
+
+## CORRECTED root cause (2026-07-08, live ring-log evidence) — the prior "null-window" analysis was wrong
+
+**Reverted `done → drafting`.** The "null-window race" framing above was incorrect.
+Live ring logs (`debug/ae8-*.bin`, `debug/aef-*.bin`, 2026-07-08) plus a fresh TUI
+error ("agent session not bound yet") show the actual failure is a **stuck-null
+`messageApi` after `/new`/`/resume`/`/fork`**, not a transient mid-`/reload` window.
+
+### What the SDK actually does (traced against `@earendil-works/pi-coding-agent`)
+
+The extension factory (`factory(api)` → our `bindApi` port) is invoked by
+`resourceLoader.reload()` → `loadExtensionsCached` → `loadExtension` →
+`factory(api)` (`loader.js:350`). This is the **only** path that re-arms
+`messageApi` with a fresh, non-stale `pi`.
+
+- **`/reload`** (`agent-session.js:1966`) calls `this._resourceLoader.reload()`
+  (line 1972) → re-invokes factories → `bindApi(freshPi)` re-arms `messageApi`.
+  ✅ This is why a workstation `/reload` recovers the stuck-null state.
+- **`/new` / `/resume` / `/fork`** (`agent-session-runtime.js`) call
+  `createRuntime` → `resourceLoader.getExtensions()` (`sdk.js:260`), which
+  returns the **cached** `extensionsResult` — NO `reload()`, NO factory
+  re-invoke. A new `ExtensionRunner` is created with a fresh runtime, but
+  **`bindApi` is never called**, so `messageApi` keeps pointing at the old
+  `pi` bound to the now-stale runtime.
+
+So after `/new`/`/resume`/`/fork`:
+1. The new `ExtensionRunner` invalidates the old runtime (stale).
+2. `messageApi` (still the old `pi`) throws stale on the next `sendUserMessage`.
+3. `wakeAgent`'s catch calls `forget(api)` → `messageApi = null`.
+4. **Nothing re-arms it** — `bindApi` only fires on `/reload`. `messageApi`
+   stays null → every subsequent inbound message gets "agent session not
+   bound yet" (recoverable wake failure) until a `/reload` (the only factory
+   re-invoke) happens.
+
+### Why the shipped queue-and-replay code is NOT this fix (but is kept as companion)
+
+The queue-and-replay tolerance layer (commits `eab7315` + `1c96a37`, split into
+`story-stale-ctx-recoverable-delivery-tolerance`, `stage: done`) does NOT heal
+the stuck-null: it queues the message + sends `delivery_pending` + drains on the
+next `bindApi` — but `bindApi` is the `/reload` the operator must do anyway. So
+even deployed, it would replace the silent 20s timeout with a `delivery_pending`
+bubble (a real UX win — no permanent scar) but the message still wouldn't
+deliver without a workstation `/reload`. It is the **tolerance/mitigation**,
+not the **self-heal**.
+
+### Why a fork-local transparent self-heal is blocked
+
+The only SDK surface carrying a working `sendUserMessage` bound to the live
+session is `AgentSession.createReplacedSessionContext()` (`agent-session.js:2541`),
+handed out **only** inside a `withSession` callback during an SDK-driven
+replacement. The plain `session_start` ctx (`ExtensionRunner.createContext`,
+`runner.js`) exposes `sessionManager`/`modelRegistry`/`ui`/`cwd` but **NOT** the
+`AgentSession` itself — so `createReplacedSessionContext` is unreachable from a
+plain `session_start`. `pi-coding-agent` is the upstream runtime (consumed as
+a dependency, not forked), so this is not editable in-fork.
+
+### Feasible paths (none are a transparent no-loss heal)
+
+1. **Phone-driven `session_new` (`withSession`) — re-arms, but discards the
+   conversation.** `handleSessionNew` → `ctx.newSession({withSession})` → SDK
+   hands a `ReplacedSessionContext` carrying `sendUserMessage` →
+   `_bindReplacementSessionContext` re-arms. Works when the *extension* drives
+   the replacement. This is the mobile-quick-action recovery, not transparent.
+2. **Upstream ask:** expose `sendUserMessage` (or the live `AgentSession` /
+   a `createReplacedSessionContext`-equivalent) on the plain `session_start`
+   ctx, OR make `/new`/`/resume`/`/fork` re-invoke the extension factory (so
+   `bindApi` fires). Either unblocks a fork-local transparent heal.
+3. **Mitigation (shipped):** `delivery_pending` stops the permanent scar; a
+   `/reload` button (parked, `idea-mobile-session-control`) is the
+   context-preserving recovery the operator needs on mobile-only.
+
+### Re-scoped acceptance criteria (the self-heal — OPEN, SDK-blocked)
+
+- [ ] A `/new`/`/resume`/`/fork` on the pi re-arms `messageApi` so the next
+      inbound `user_message` delivers without a workstation `/reload`.
+      Blocked on path (1) verifying the phone `session_new` clears the
+      stuck-null live, OR path (2) an upstream change.
+- [ ] Confirm live: after a `/new`, a mobile message delivers (not
+      "agent session not bound yet").
+- [ ] Regression test against a real SDK `/new`/`/resume` (mocks can't model
+      the runtime-staleness — the lesson from the reverted first fix).
+
+### What's NOT in this story anymore
+
+- The `delivery_pending` tolerance + bounded replay queue + app-side timer
+  disarm — split to `story-stale-ctx-recoverable-delivery-tolerance` (done).
+  Kept in the codebase; correct and reviewed on its own merits.
