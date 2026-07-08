@@ -78,6 +78,20 @@ class SyncService extends Service {
   // streaming clear. See
   // story-mobile-assistant-message-duplicated-live-replay decision 1.
   bool _agentMessageCommittedThisTurn = false;
+
+  // Sticky capability flag: latched `true` the first time a live
+  // `AgentMessage` carrying `ts != null` arrives (the fixed extension's
+  // `message_end`-driven broadcast). Once observed, the extension is known
+  // to emit deterministic `agent_message(ts)` frames for every assistant
+  // turn, so a missing commit at `ToolRequest`/`AgentDone` time means the
+  // frame was DROPPED mid-flap (relay suspend for an offline peer), not that
+  // the extension is a legacy version that never sends one. In that case the
+  // random-uuid fallback must be SUPPRESSED — committing it would produce a
+  // row the reconnect `session_sync` replay cannot collapse (random id vs.
+  // deterministic id → two rows → visible dupe). The replay alone fills the
+  // transcript deterministically on reconnect. See
+  // story-mobile-connection-flapping-drops-identity-frames Layer 2.
+  bool _extensionSendsDeterministicAgentMessage = false;
   final StreamController<StreamingMessage?> _streamingController =
       StreamController<StreamingMessage?>.broadcast();
 
@@ -609,9 +623,24 @@ class SyncService extends Service {
         // buffer-commit when no `agent_message` with `ts` arrived (legacy
         // extension, or a turn whose text only ever streamed). See
         // story-mobile-assistant-message-duplicated-live-replay decision 1.
+        //
+        // Layer 2 (dropped-frame robustness): once the capability flag is
+        // latched (a live agent_message(ts) was seen at least once), a turn
+        // with no agent_message(ts) at flush time means the frame was
+        // DROPPED mid-flap (relay suspend for an offline peer), not a legacy
+        // extension. Committing a random-uuid row there would dupe against
+        // the deterministic replay that arrives on reconnect. Suppress the
+        // commit and clear the buffer; the session_sync replay fills it
+        // deterministically. See story-mobile-connection-flapping-drops-
+        // identity-frames Layer 2.
         final committedViaAgentMessage = _agentMessageCommittedThisTurn;
         _agentMessageCommittedThisTurn = false;
-        if (buffered.isNotEmpty && !committedViaAgentMessage) {
+        final deterministicExpectedButDropped =
+            !committedViaAgentMessage &&
+            _extensionSendsDeterministicAgentMessage;
+        if (buffered.isNotEmpty &&
+            !committedViaAgentMessage &&
+            !deterministicExpectedButDropped) {
           // Clear the streaming buffer synchronously so a second flush
           // (ToolRequest re-flush, or a straggler AgentChunk) cannot
           // re-commit the same text under a new random eventId. The
@@ -632,8 +661,9 @@ class SyncService extends Service {
             ),
           );
         } else if (buffered.isNotEmpty) {
-          // Deterministic commit already happened via `agent_message`; just
-          // clear the streaming buffer.
+          // Deterministic commit already happened via `agent_message`, OR
+          // the deterministic frame was dropped mid-flap and the replay
+          // will fill it — either way, just clear the streaming buffer.
           _emitStreaming(null);
         }
         // ignore: discarded_futures
@@ -659,6 +689,10 @@ class SyncService extends Service {
         if (ts != null) {
           final sessionId = _activeTranscriptSessionId();
           _agentMessageCommittedThisTurn = true;
+          // Latch the capability: this extension emits deterministic
+          // agent_message(ts). Future turns with no agent_message(ts) at
+          // flush time were dropped, not legacy.
+          _extensionSendsDeterministicAgentMessage = true;
           // Identity source (a): use `messageId` (sync_<ts>:assistant:
           // <blockIndex>) as the stable key when present so multi-block
           // assistant messages (same in_reply_to+ts, different blocks) do
@@ -784,10 +818,20 @@ class SyncService extends Service {
           // `agent_message(ts)` arrived (legacy extension / pre-fix). The
           // streaming buffer is cleared regardless so the next text segment
           // starts fresh.
+          //
+          // Layer 2 (dropped-frame robustness): once the capability flag is
+          // latched, a missing commit here means the deterministic
+          // `agent_message(ts)` was DROPPED mid-flap (relay suspend for an
+          // offline peer), not a legacy extension. Suppress the random-uuid
+          // commit so the reconnect `session_sync` replay can fill the row
+          // deterministically (a random-uuid live row would dupe against
+          // the deterministic replay row). See
+          // story-mobile-connection-flapping-drops-identity-frames Layer 2.
           final committedViaAgentMessage = _agentMessageCommittedThisTurn;
           final flushInReplyTo = _streaming!.inReplyTo;
           _emitStreaming(null);
-          if (!committedViaAgentMessage) {
+          if (!committedViaAgentMessage &&
+              !_extensionSendsDeterministicAgentMessage) {
             // ignore: discarded_futures
             _appendTranscriptEvent(
               AssistantMessageCommitted(
