@@ -74,18 +74,68 @@ mobile-platform behavior; the bug is that the system isn't robust to it.
 
 ## Root cause (two layers)
 
-1. **The phone's WebSocket flaps too often.** A relay log sample from
-   2026-07-08 shows ~25 connect/disconnect cycles in ~3 hours of testing,
-   with sessions lasting 1–3 min before dropping. This is abnormal for an
-   actively-used foreground app and suggests the app isn't holding the
-   socket (no foreground service / wake lock, OS suspending the app, or
-   the 20s WS ping interval being too aggressive a liveness probe for
-   mobile).
-2. **The identity fix is not robust to a dropped `agent_message(ts)` frame.**
-   The deterministic-identity design assumes the live `agent_message(ts)`
-   frame always reaches the phone. The fan-out suspend feature deliberately
-   drops it when the peer is briefly offline, breaking that assumption.
-   The fallback (random uuid) then dupes against the replay.
+### Layer 1 — the flapping (CONFIRMED 2026-07-08)
+
+**The app's WS-level ping interval (20s) is tighter than the relay's (25s),
+so the app tears down connections the relay still considers alive.** The
+`IOWebSocketChannel.connect(pingInterval: 20s)` (`ws_transport.dart:82`)
+sends a WS Ping every 20s and closes the socket with `goingAway` if the pong
+isn't received within 20s. The relay sends its own keepalive ping every 25s
+(`relay/src/handlers/peer.rs:130`). On mobile, a momentary network blip
+(cell handoff, wifi roaming, Doze micro-sleep, transient latency) causes a
+missed pong → the app closes the socket → `onDone` → `_onChannelLost` →
+`_scheduleRetry` → reconnect. The relay, still within its own 25s window,
+hasn't noticed the peer is gone — so the reconnect often hits
+`superseded_existing=true` (a duplicate-auth takeover).
+
+**Three overlapping connections in 12 seconds** (relay log 05:18:11 →
+05:18:17 → 05:18:23, each `superseded_existing=true`) confirm a reconnect
+storm: `onAppFrameObserved()` resets the backoff to attempt 0 on any inbound
+frame, so a brief connection that gets a frame or two → reset → 1s retry →
+brief connection → reset → 1s retry. The 1s/2s/5s/10s/30s backoff
+(`reachability.dart`) never ramps because it keeps resetting.
+
+**No foreground service / wake lock** is declared in `AndroidManifest.xml`
+(only `INTERNET`, `ACCESS_NETWORK_STATE`, `RECORD_AUDIO`, `CAMERA`). This
+matters for genuine backgrounding (screen-off / app-switched), but the
+flapping during *active foreground use* is the ping interval, not
+backgrounding — the 9s/6s disconnects are too short for Doze.
+
+### Layer 2 — the identity fix is not robust to a dropped `agent_message(ts)` frame
+
+Even with reduced flapping, a mobile socket will sometimes drop mid-turn. The
+identity fix must not depend on a single frame arriving. Options:
+
+- **(A) Re-emit dropped identity frames on reconnect.** When the phone
+  reconnects and requests `session_sync`, the extension already replays the
+  full transcript via `session_history`. The app's `replayDedup` collapses
+  deterministic-id rows. So if the **live fallback didn't commit a random-uuid
+  row**, the replay alone would render correctly. The fix: when
+  `agent_message(ts)` was dropped (phone was offline at `message_end`), the
+  app should **not** commit the buffer with a random uuid — it should leave
+  the buffer uncommitted and let the reconnect replay fill it
+  deterministically. This means the `ToolRequest`/`AgentDone` fallback needs
+  to know whether a deterministic `agent_message` *should have* arrived
+  (i.e., the extension is the fixed version) vs. a legacy extension that
+  never sends one.
+- **(B) Carry identity on `agent_done` too.** The extension's `agent_end`
+  broadcast (`index.ts:1414`) currently sends `agent_done` without `ts`/
+  `message_id`. If `agent_done` carried the same stable identity as
+  `agent_message`, the app could derive the deterministic eventId from
+  `agent_done` even when `agent_message` was dropped. The schema already has
+  optional `ts` on `agentDone` (added by the identity fix); populate it.
+  This doesn't help the `ToolRequest` flush (which fires before `agent_end`),
+  but it closes the `AgentDone` fallback.
+- **(C) Extension re-broadcasts on `peer_online`.** When the phone
+  reconnects (`peer_online`), the extension could re-broadcast the current
+  turn's `agent_message(ts)` if the turn is still active or recently ended.
+  This is a queue-of-one (the last identity frame), not unbounded queueing,
+  so it doesn't violate the suspend feature's drop-don't-queue design.
+
+**Recommendation:** Layer 1 (increase the WS ping interval) is the primary
+fix — it addresses the root cause (the app tearing down live connections).
+Layer 2 is defense-in-depth and can ship separately. Decide the exact
+Layer 2 option at design time.
 
 ## Fix options (decide at design time)
 
@@ -147,26 +197,35 @@ needs a way to know the extension version; (B) is additive and lower-risk.
 
 ## Acceptance Criteria
 
-- [ ] **Confirm the flapping cause**: is the app requesting a foreground
-      service / wake lock during active turns? If not, that's the primary
-      fix. Check `app/android/app/src/main/AndroidManifest.xml` and any
-      foreground service / wake lock code in `app/lib/`.
-- [ ] **Quantify the flapping**: from the relay logs, measure the
-      connect/disconnect cadence during active foreground use (not
-      backgrounded). Is it every 1-3 min (abnormal) or only on backgrounding
-      (expected)?
-- [ ] **Layer 1 fix**: reduce the flap rate to acceptable (a foreground app
-      in an active turn should not drop the socket). Verify with a relay
-      log: connect/disconnect cycles during a 10-min active turn should be
-      ≤1 (the initial connect).
-- [ ] **Layer 2 fix**: a turn whose `agent_message(ts)` frame is dropped
-      (simulated by killing the socket at `message_end`) does NOT produce a
-      random-uuid fallback row that dupes against the replay. Either the
-      fallback is suppressed (option A) or the identity is recovered from
-      `agent_done` (option B) or re-broadcast (option C).
-- [ ] Regression test: simulate a dropped `agent_message(ts)` mid-turn and
-      assert the final rendered transcript has each assistant paragraph
-      exactly once (no random-uuid dupe row).
+- [x] **Confirm the flapping cause**: the app's WS-level ping interval (20s,
+      `ws_transport.dart:82`) is tighter than the relay's (25s,
+      `relay/src/handlers/peer.rs:130`), so the app tears down connections
+      the relay still considers alive. Mobile network blips → missed pong →
+      `goingAway` close → reconnect storm. Confirmed by relay log showing
+      3 overlapping auths in 12s (`superseded_existing=true`).
+- [x] **No foreground service / wake lock**: `AndroidManifest.xml` declares
+      only INTERNET, ACCESS_NETWORK_STATE, RECORD_AUDIO, CAMERA. The flapping
+      during active foreground use is the ping interval, not backgrounding.
+      (A foreground service is still valuable for genuine backgrounding, but
+      that's a separate concern — the flapping happens in the foreground.)
+- [x] **Layer 1 fix**: increase the WS ping interval to at least match the
+      relay's 25s (preferably longer for mobile tolerance), so the app
+      doesn't tear down connections the relay still considers alive. Verify
+      with a relay log: connect/disconnect cycles during a 10-min active
+      foreground turn should drop significantly.
+  - **DONE 2026-07-08**: bumped `ws_transport.dart:82` from 20s to 45s
+    (deliberately looser than the relay's 25s). 670/670 tests pass, analyze
+    clean. APK rebuilt. Needs sideload + a relay-log verification that the
+    flap rate drops (the 9s/6s disconnects and 3-auths-in-12s storms should
+    stop).
+- [ ] **Layer 2 fix** (defense-in-depth, can ship separately): a turn whose
+      `agent_message(ts)` frame is dropped does NOT produce a random-uuid
+      fallback row that dupes against the replay. Either the fallback is
+      suppressed (option A) or the identity is recovered from `agent_done`
+      (option B) or re-broadcast (option C).
+- [ ] Regression test (Layer 2): simulate a dropped `agent_message(ts)`
+      mid-turn and assert the final rendered transcript has each assistant
+      paragraph exactly once.
 - [ ] `flutter analyze` + `flutter test` clean; `corepack pnpm typecheck` +
       `corepack pnpm test` clean (whichever side the fix lands on).
 
