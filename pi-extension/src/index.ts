@@ -90,6 +90,7 @@ import { createLegacyIndexPorts, type LegacyIndexDeps } from "./extension/legacy
 import type { CommandSurfacePort, WakeAgentResult } from "./extension/ports.js";
 import { SdkSessionProjection } from "./session/sdk_session_projection.js";
 import { createDeliveryDebugLog, idTail } from "./session/delivery_debug_log.js";
+import type { DeliveryDebugLog } from "./session/delivery_debug_log.js";
 import { roomIdFor } from "./rooms.js";
 import { registerAgentTools } from "./session/tools.js";
 import { formatPeerInventory } from "./session/peer_inventory.js";
@@ -710,6 +711,22 @@ export function _setMessageBufferForTest(msgs: unknown[]): void {
   _sdkSessionProjection.setLegacyMessageBufferForTest(msgs);
 }
 
+/** Test-only: swap the delivery debug log for a fake, so a test can assert
+ *  the expected events fire on a deliver / null-window / re-arm path.
+ *  Also re-binds it on the projection so projection-side emits route to the
+ *  fake. Returns the previous log so a test can restore it. */
+export function _setDeliveryDebugLogForTest(log: DeliveryDebugLog): DeliveryDebugLog {
+  const prev = _deliveryDebugLog;
+  _deliveryDebugLog = log;
+  _sdkSessionProjection.setDeliveryDebugLogForTest(log);
+  return prev;
+}
+
+/** Test-only: the current delivery debug log (for restore after a test). */
+export function _getDeliveryDebugLogForTest(): DeliveryDebugLog {
+  return _deliveryDebugLog;
+}
+
 export function _setTranscriptEventsForTest(events: TranscriptEvent[]): void {
   _sdkSessionProjection.setTranscriptEventsForTest(events);
 }
@@ -1199,7 +1216,7 @@ function _isAgentMessageApi(value: unknown): value is AgentMessageApi {
   return typeof candidate.sendMessage === "function" && typeof candidate.sendUserMessage === "function";
 }
 
-const _deliveryDebugLog = createDeliveryDebugLog();
+let _deliveryDebugLog = createDeliveryDebugLog();
 
 const _sdkSessionProjection: SdkSessionProjection = new SdkSessionProjection({
   outputs: {
