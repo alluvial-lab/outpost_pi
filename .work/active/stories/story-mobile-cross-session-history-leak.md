@@ -1,7 +1,7 @@
 ---
 id: story-mobile-cross-session-history-leak
 kind: story
-stage: review
+stage: done
 tags: [app, pi-extension, relay, bug, transport, session]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -11,6 +11,11 @@ gate_origin: null
 created: 2026-07-06
 updated: 2026-07-08
 reinvestigated: 2026-07-06
+review_addressed: 2026-07-08
+closed_as_superseded: 2026-07-08
+resolved_by:
+  - story-extension-suppress-subagent-assistant-broadcast
+  - story-extension-subagent-child-session-start-wipes-mobile-chat
 ---
 
 # Mobile chat receives `session_history` from non-active Pi sessions (cross-room leak)
