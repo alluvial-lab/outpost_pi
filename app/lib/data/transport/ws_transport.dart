@@ -75,11 +75,24 @@ class WsTransport implements PeerTransport, IControlLink {
     // letting it silently linger until the next user action. The
     // protocol-level Ping/Pong handled by ConnectionManager covers
     // app↔Pi liveness; this one covers app↔relay TCP liveness.
+    //
+    // Mobile-tuned (story-mobile-connection-flapping-drops-identity-frames):
+    // 45s, deliberately LOOSER than the relay's own 25s keepalive
+    // (`relay/src/handlers/peer.rs:130`). The previous 20s was TIGHTER than
+    // the relay's 25s, so the app tore down connections the relay still
+    // considered alive — a single missed pong (mobile network blip: cell
+    // handoff, wifi roaming, Doze micro-sleep, transient latency) closed the
+    // socket → onDone → _onChannelLost → reconnect storm. The reconnect's
+    // `onAppFrameObserved()` resets the backoff to 1s on any inbound frame,
+    // so brief connections kept the backoff from ramping → 3 overlapping
+    // auths in 12s (superseded_existing=true). 45s gives mobile latency
+    // tolerance while still detecting a genuinely dead connection within a
+    // reasonable window; the relay's 25s keepalive governs NAT idle timers.
     // Accept http(s) URLs in the user-facing form but always speak
     // ws(s) on the wire — IOWebSocketChannel rejects http schemes.
     final WebSocketChannel ws = IOWebSocketChannel.connect(
       Uri.parse(toWsRelayUrl(relayUrl)),
-      pingInterval: const Duration(seconds: 20),
+      pingInterval: const Duration(seconds: 45),
     );
     final transport = WsTransport._(
       ws,
