@@ -1,7 +1,7 @@
 ---
 id: story-mobile-connection-flapping-drops-identity-frames
 kind: story
-stage: drafting
+stage: review
 tags: [app, pi-extension, bug, lifecycle, transport]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -10,7 +10,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-08
-updated: 2026-07-07
+updated: 2026-07-08
 ---
 
 # Mobile connection flapping drops the deterministic identity frame → dupes
@@ -195,6 +195,42 @@ Decide the exact Layer 2 option at design time; (A) is cleanest (no new wire
 fields, just "don't commit random uuids when deterministic is expected") but
 needs a way to know the extension version; (B) is additive and lower-risk.
 
+## Design decision (2026-07-08) — Layer 2 option (A): suppress the random-uuid fallback when deterministic identity was expected
+
+**Chosen: (A).** A sticky capability flag latched `true` the first time a
+live `AgentMessage` with `ts != null` arrives (the fixed extension's
+`message_end`-driven broadcast). Once latched, a turn that reaches
+`ToolRequest`/`AgentDone` flush with `_agentMessageCommittedThisTurn == false`
+means the deterministic `agent_message(ts)` frame was **dropped** mid-flap
+(relay suspend for an offline peer), NOT a legacy extension that never sends
+one. Suppress the random-uuid `AssistantMessageCommitted` commit in that case
+and clear the streaming buffer; the reconnect `session_sync` replay fills the
+row deterministically (a random-uuid live row would dupe against it — random
+id vs deterministic id, no `replayDedup` collapse).
+
+**Why (A) over (B) and (C):**
+- **(B) carry identity on `agent_done`** is flawed for this case. The
+  `agent_end` handler has no access to the `message_end` `ts` (it would
+  stamp `Date.now()` at agent_end time, which is NOT the replay's `ts`), so
+  even populating `agent_done.ts` would not produce a dedup-collapsing
+  eventId. It also does not cover the `ToolRequest` flush path (which fires
+  before `agent_end`). It would only close the `AgentDone` fallback, and
+  weakly. (A) closes both paths with no wire change.
+- **(C) re-broadcast on `peer_online`** adds an extension-side queue-of-one
+  and a new code path; (A) is strictly simpler (app-side suppression, no
+  extension change, the replay already does the backfill).
+- **(A) vs extension-version probing:** the story noted (A) "needs a way to
+  know the extension version." The sticky capability flag IS that probe — the
+  first observed `agent_message(ts)` is the version signal, no wire
+  capability field needed. Legacy extensions never send `ts`, so the flag
+  stays false and the fallback remains intact (verified by counter-test).
+
+**Behavior preservation:** for a legacy extension that never sends
+`agent_message(ts)`, the flag stays false → the random-uuid fallback
+commits exactly as before (covered by a regression/counter-test). The fix is
+strictly additive: it only changes behavior once the fixed extension has been
+observed at least once.
+
 ## Acceptance Criteria
 
 - [x] **Confirm the flapping cause**: the app's WS-level ping interval (20s,
@@ -218,16 +254,28 @@ needs a way to know the extension version; (B) is additive and lower-risk.
     clean. APK rebuilt. Needs sideload + a relay-log verification that the
     flap rate drops (the 9s/6s disconnects and 3-auths-in-12s storms should
     stop).
-- [ ] **Layer 2 fix** (defense-in-depth, can ship separately): a turn whose
+- [x] **Layer 2 fix** (defense-in-depth, can ship separately): a turn whose
       `agent_message(ts)` frame is dropped does NOT produce a random-uuid
       fallback row that dupes against the replay. Either the fallback is
       suppressed (option A) or the identity is recovered from `agent_done`
       (option B) or re-broadcast (option C).
-- [ ] Regression test (Layer 2): simulate a dropped `agent_message(ts)`
+  - **DONE 2026-07-08**: option (A) — sticky `_extensionSendsDeterministicAgentMessage`
+    capability flag latched on first `AgentMessage(ts != null)`; suppresses the
+    random-uuid fallback in `AgentDone` and `ToolRequest` when latched but no
+    commit arrived this turn. Buffer is cleared; reconnect replay fills.
+- [x] Regression test (Layer 2): simulate a dropped `agent_message(ts)`
       mid-turn and assert the final rendered transcript has each assistant
       paragraph exactly once.
-- [ ] `flutter analyze` + `flutter test` clean; `corepack pnpm typecheck` +
+  - **DONE 2026-07-08**: added `dropped agent_message(ts) mid-flap: ToolRequest/
+    AgentDone suppress random-uuid fallback; replay fills deterministically` +
+    counter-test `legacy extension (no agent_message(ts) ever): AgentDone still
+    commits the streamed buffer`. Both pass.
+- [x] `flutter analyze` + `flutter test` clean; `corepack pnpm typecheck` +
       `corepack pnpm test` clean (whichever side the fix lands on).
+  - **DONE 2026-07-08**: `flutter analyze` clean (0 issues); `flutter test
+    test/data/sync/sync_service_test.dart` 69/69 pass (app-side only — no
+    extension change). Layer 1 relay-log verification still pending a live
+    phone session.
 
 ## Out of scope
 
@@ -266,3 +314,43 @@ needs a way to know the extension version; (B) is additive and lower-risk.
   background WebSocket continuity for correctness."
 - `.agents/skills/flutter-mobile/SKILL.md` — Android background restrictions,
   `AppLifecycleListener`.
+
+## Implementation notes
+
+- **Files changed:**
+  - `app/lib/data/sync/sync_service.dart` — added
+    `_extensionSendsDeterministicAgentMessage` sticky capability flag; latch
+    it in the `AgentMessage(ts != null)` branch; suppress the random-uuid
+    `AssistantMessageCommitted` fallback in both the `AgentDone` and
+    `ToolRequest` flush paths when the flag is latched but
+    `_agentMessageCommittedThisTurn` is false.
+  - `app/test/data/sync/sync_service_test.dart` — added the dropped-frame
+    regression test + the legacy-extension counter-test.
+- **Tests added:**
+  - `dropped agent_message(ts) mid-flap: ToolRequest/AgentDone suppress
+    random-uuid fallback; replay fills deterministically`
+  - `legacy extension (no agent_message(ts) ever): AgentDone still commits
+    the streamed buffer`
+- **Verification:** `flutter analyze` (0 issues); `flutter test
+  test/data/sync/sync_service_test.dart` (69/69 pass, including the 2 new).
+- **Discrepancies from design:** none. The design's concern that option (A)
+  "needs a way to know the extension version" is resolved by the sticky
+  capability flag itself (first observed `agent_message(ts)` = the version
+  signal); no wire capability field was needed.
+- **Edge cases handled:**
+  - Legacy extension (never sends `ts`): flag stays false → fallback
+    commits as before (counter-test).
+  - First-ever turn is the dropped one: flag is not yet latched → fallback
+    commits (random uuid). This is correct for a brand-new pairing whose very
+    first turn drops — there's no prior evidence the extension sends `ts`, so
+    we can't distinguish legacy from dropped. The dupe risk is one turn on a
+    fresh pairing; subsequent turns are protected. Acceptable.
+  - Buffer UI: on suppression the streaming buffer clears (UI hides the
+    in-flight text) until the reconnect replay backfills. Reconnect
+    `requestSync` is guaranteed on every reconnect (`_onlineActivated` →
+    200ms debounce → `SessionSync`), so the gap is brief.
+- **Adjacent issues parked:** none.
+- **Still open (NOT this story's Layer 2):** Layer 1 live verification
+  (relay-log flap rate after the 45s ping sideload) needs a live phone
+  session; the phone was offline at review time. The Layer 2 code fix does
+  not depend on that verification.
