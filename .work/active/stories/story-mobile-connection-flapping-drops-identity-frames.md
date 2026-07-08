@@ -1,7 +1,7 @@
 ---
 id: story-mobile-connection-flapping-drops-identity-frames
 kind: story
-stage: review
+stage: done
 tags: [app, pi-extension, bug, lifecycle, transport]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -11,6 +11,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-08
 updated: 2026-07-08
+review_addressed: 2026-07-08
 ---
 
 # Mobile connection flapping drops the deterministic identity frame → dupes
