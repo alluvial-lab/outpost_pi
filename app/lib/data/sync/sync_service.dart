@@ -771,27 +771,35 @@ class SyncService extends Service {
         // order instead of all text landing after the commands.
         final buffered = _streaming?.buffer ?? '';
         if (buffered.isNotEmpty) {
-          // Clear the streaming buffer synchronously (mirror the AgentDone
-          // flush) so a second ToolRequest before the async projection
-          // resolves cannot re-commit the same buffered text under a new
-          // random eventId (the ×N amplification root cause — see
-          // `story-mobile-assistant-message-duplicated-live-replay` 
-          // decision 2). The committed row holds the flushed text; the
-          // streaming bubble hides until the next AgentChunk for this turn
-          // starts a fresh buffer.
+          // Identity-source (a) guard: if a deterministic `agent_message`
+          // (from the extension's `message_end`) already committed this
+          // turn's assistant text, skip the buffer-commit — it would
+          // duplicate the `agent_message` commit under a random eventId
+          // (the live×replay eventId mismatch root cause — see
+          // `story-mobile-assistant-message-duplicated-live-replay`
+          // decision 1). The SDK fires `message_end` (→ `agent_message`
+          // broadcast) BEFORE `tool_execution_start`, so the deterministic
+          // commit lands first; this guard mirrors the `AgentDone` handler's
+          // skip. Falls back to the buffer-commit only when no
+          // `agent_message(ts)` arrived (legacy extension / pre-fix). The
+          // streaming buffer is cleared regardless so the next text segment
+          // starts fresh.
+          final committedViaAgentMessage = _agentMessageCommittedThisTurn;
           final flushInReplyTo = _streaming!.inReplyTo;
           _emitStreaming(null);
-          // ignore: discarded_futures
-          _appendTranscriptEvent(
-            AssistantMessageCommitted(
-              eventId: 'server:assistant_committed:$toolCallId:${uuid7()}',
-              sessionId: _activeTranscriptSessionId(),
-              ts: DateTime.now(),
-              messageId: 'agent_${uuid7()}',
-              replyTo: flushInReplyTo,
-              text: buffered,
-            ),
-          );
+          if (!committedViaAgentMessage) {
+            // ignore: discarded_futures
+            _appendTranscriptEvent(
+              AssistantMessageCommitted(
+                eventId: 'server:assistant_committed:$toolCallId:${uuid7()}',
+                sessionId: _activeTranscriptSessionId(),
+                ts: DateTime.now(),
+                messageId: 'agent_${uuid7()}',
+                replyTo: flushInReplyTo,
+                text: buffered,
+              ),
+            );
+          }
         }
         // ignore: discarded_futures
         _appendTranscriptEvent(
