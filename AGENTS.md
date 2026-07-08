@@ -126,7 +126,13 @@ and the pi-extension is registered as a **local-path** extension (not npm).
   (container). Image built from `relay/` source (`docker build -t
   remote-pi-relay:<version> relay/`); the persistent `mesh_versions` SQLite DB
   lives in the named volume `remote-pi-data:/data`. Do NOT confuse with the
-  upstream image `jacobmoura7/remote-pi-relay:latest` (stale).
+  upstream image `jacobmoura7/remote-pi-relay:latest` (stale). The live
+  container runs `remote-pi-relay:0.2.2` with the retroactive file log
+  enabled: `REMOTEPI_RELAY_LOG_DIR=/data/logs` (daily-rotated `relay.log`
+  in the volume) + `RUST_LOG=info,relay=debug` (lifts the cross-PC
+  `pi_envelope` forward-path `debug!` carrying `env_id_tail` — the
+  cross-side correlation key that joins the phone's `msg-send id` and the
+  extension's `app user_message id`).
 - **pi-extension** — registered in `~/.pi/agent/settings.json` as the local path
   `/home/agent/projects/remote_pi/pi-extension`, loading `dist/index.js` (the
   `package.json` `main`). npm publishes `0.5.3`; ignore — the local path is
@@ -177,13 +183,27 @@ trace: **full restart to load a `dist/` change**.
 
 ```bash
 # build from current fork source
-docker build -t remote-pi-relay:0.2.0 relay/
-# run (reproduces the live container's config: port 3300→3000, named volume)
+docker build -t remote-pi-relay:0.2.2 relay/
+# run (reproduces the live container's config: port 3300→3000, named volume,
+# retroactive file log + cross-side debug correlation)
 docker run -d --name remote-pi-relay -p 3300:3000 \
-  -v remote-pi-data:/data --restart unless-stopped remote-pi-relay:0.2.0
+  -v remote-pi-data:/data \
+  -e REMOTEPI_RELAY_PORT=3000 \
+  -e REMOTEPI_MESH_DB_PATH=/data/mesh.db \
+  -e REMOTEPI_RELAY_LOG_DIR=/data/logs \
+  -e RUST_LOG="info,relay=debug" \
+  --restart unless-stopped remote-pi-relay:0.2.2
 # rebuild from updated source + swap in
 docker stop remote-pi-relay && docker rm remote-pi-relay  # then build + run
+# read the persistent relay log (survives scroll/restart; daily-rotated)
+docker exec remote-pi-relay tail -f /data/logs/relay.log.$(date -u +%F)
 ```
+
+Without `REMOTEPI_RELAY_LOG_DIR`, logging is stdout-only (lost on
+scroll/restart — the pre-0.2.2 gap). `RUST_LOG` defaults to `info`; the
+`relay=debug` lift is what surfaces the `env_id_tail` correlation line on
+each cross-PC forward/drop (the app↔pi data-plane path stays
+payload-opaque at INFO with `warn!` on drops).
 
 ### App APK build on the dev VM (memory-sensitive)
 
