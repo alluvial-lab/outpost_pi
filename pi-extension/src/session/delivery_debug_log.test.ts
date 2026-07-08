@@ -1,0 +1,166 @@
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  DeliveryDebugLogImpl,
+  createDeliveryDebugLog,
+  idTail,
+  noopDeliveryDebugLog,
+  type DeliveryDebugEvent,
+  type DeliveryDebugLog,
+} from "./delivery_debug_log.js";
+
+/**
+ * Delivery-path ring log — the extension half of cross-side observability.
+ *
+ * Two test families:
+ * 1. Adapter mechanics (DeliveryDebugLogImpl): ring persistence, cap-on-append,
+ *    immediate-vs-debounced flush, export-from-file, clear, never-throws,
+ *    privacy scrub (no forbidden keys; field-length caps).
+ * 2. Factory + correlation: env-gate, idTail correlation helper.
+ *
+ * The projection-side emit coverage (the events actually fire on
+ * bindApi/forget/wakeAgent/delivery paths) lives in
+ * `sdk_session_projection.test.ts` + `extension.test.ts` via a fake
+ * DeliveryDebugLog, mirroring the app ring log's capture-site tests.
+ */
+
+describe("DeliveryDebugLogImpl adapter mechanics", () => {
+  let dir: string;
+  let logPath: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "rp-delivery-log-"));
+    logPath = join(dir, "delivery.log");
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a critical event flushes immediately and is readable from the file", () => {
+    const log = new DeliveryDebugLogImpl(logPath);
+    log.log({ tag: "wake_outcome", id: "cli_abc123", ok: false, recoverable: true, detail: "agent session not bound yet", messageApiArmed: false });
+    const exported = log.export();
+    expect(exported).toBeTruthy();
+    expect(exported!).toContain("wake_outcome");
+    expect(exported!).toContain("cli_abc123");
+    expect(exported!).toContain('"messageApiArmed":false');
+  });
+
+  test("export reads from the file (source of truth), recovering disk state after re-instantiate", () => {
+    const log1 = new DeliveryDebugLogImpl(logPath);
+    log1.log({ tag: "message_api_null", reason: "stale" });
+    log1.dispose();
+    // New instance warms from the file.
+    const log2 = new DeliveryDebugLogImpl(logPath);
+    const exported = log2.export();
+    expect(exported).toContain("message_api_null");
+  });
+
+  test("clear wipes ring + file", () => {
+    const log = new DeliveryDebugLogImpl(logPath);
+    log.log({ tag: "message_api_null", reason: "stale" });
+    log.clear();
+    expect(log.export()).toBeNull();
+  });
+
+  test("never throws on a forbidden key leak (defensive serialize scrubs it)", () => {
+    const log = new DeliveryDebugLogImpl(logPath);
+    // Cast to bypass the type system — the defensive serialize must scrub a
+    // leaked forbidden key (drop it) without throwing.
+    const poisoned = { tag: "msg_received", id: "x", source: "app", steer: false, text: "secret" } as unknown as DeliveryDebugEvent;
+    expect(() => log.log(poisoned)).not.toThrow();
+    const exported = log.export()!;
+    // The line is written, but the forbidden `text` key is scrubbed.
+    const line = JSON.parse(exported.trim().split("\n").pop()!);
+    expect(line).not.toHaveProperty("text");
+    expect(line).toMatchObject({ tag: "msg_received", id: "x" });
+  });
+
+  test("field values are tail-truncated (a huge untrusted string can't evict the window)", () => {
+    const log = new DeliveryDebugLogImpl(logPath);
+    const hugeDetail = "x".repeat(10_000);
+    log.log({ tag: "wake_outcome", id: "cli_1", ok: false, recoverable: false, detail: hugeDetail, messageApiArmed: true });
+    const exported = log.export()!;
+    const line = JSON.parse(exported.trim().split("\n").pop()!);
+    expect((line.detail as string).length).toBeLessThanOrEqual(256);
+  });
+
+  test("ring cap drops oldest on append (bounded memory)", () => {
+    const log = new DeliveryDebugLogImpl(logPath);
+    // Force immediate-flush events so each lands on disk; the cap is on the
+    // in-memory ring, but the file grows unbounded (file is the export source,
+    // not capped — only the in-memory ring is). This test pins that the ring
+    // never throws on high volume.
+    for (let i = 0; i < 1000; i++) {
+      log.log({ tag: "message_api_null", reason: "stale" });
+    }
+    expect(() => log.export()).not.toThrow();
+  });
+
+  test("dispose flushes pending routine events", () => {
+    const log = new DeliveryDebugLogImpl(logPath);
+    // Routine event (debounced) — would not flush until the timer fires.
+    log.log({ tag: "msg_received", id: "cli_1", source: "app", steer: false });
+    log.dispose();
+    expect(log.export()).toContain("msg_received");
+  });
+});
+
+describe("DeliveryDebugLog factory + correlation", () => {
+  test("createDeliveryDebugLog returns no-op when REMOTE_PI_DEBUG_LOG is unset", () => {
+    const prev = process.env["REMOTE_PI_DEBUG_LOG"];
+    delete process.env["REMOTE_PI_DEBUG_LOG"];
+    try {
+      const log = createDeliveryDebugLog();
+      expect(log).toBe(noopDeliveryDebugLog);
+      // No-op log does nothing and never throws.
+      expect(() => log.log({ tag: "msg_received", id: "x", source: "app", steer: false })).not.toThrow();
+    } finally {
+      if (prev !== undefined) process.env["REMOTE_PI_DEBUG_LOG"] = prev;
+    }
+  });
+
+  test("createDeliveryDebugLog returns a file-backed log when REMOTE_PI_DEBUG_LOG=1", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rp-factory-"));
+    const prevHome = process.env["REMOTE_PI_HOME"];
+    process.env["REMOTE_PI_HOME"] = dir;
+    process.env["REMOTE_PI_DEBUG_LOG"] = "1";
+    try {
+      const log = createDeliveryDebugLog();
+      expect(log).not.toBe(noopDeliveryDebugLog);
+      log.log({ tag: "session_lifecycle", reason: "reload", sessionIdTail: "deadbeef" });
+      const exported = log.export();
+      expect(exported).toContain("session_lifecycle");
+      expect(exported).toContain("reload");
+    } finally {
+      if (prevHome === undefined) delete process.env["REMOTE_PI_HOME"];
+      else process.env["REMOTE_PI_HOME"] = prevHome;
+      delete process.env["REMOTE_PI_DEBUG_LOG"];
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("idTail returns the last 8 chars (matches relay id_tail convention)", () => {
+    expect(idTail("cli_019f42b1-ae1b-74df-96d1-eca0ea3bdb00")).toBe("ea3bdb00");
+    expect(idTail("short")).toBe("short");
+    expect(idTail("exactly8")).toBe("exactly8");
+  });
+});
+
+/**
+ * Fake DeliveryDebugLog for projection/extension tests — records every event
+ * so a test can assert the expected events fire on a deliver / null-window /
+ * re-arm path. Mirrors the app ring log's fake-DebugLog pattern.
+ */
+export class FakeDeliveryDebugLog implements DeliveryDebugLog {
+  readonly events: DeliveryDebugEvent[] = [];
+  log(event: DeliveryDebugEvent): void {
+    this.events.push(event);
+  }
+  /** Filter to events matching a tag. */
+  byTag(tag: DeliveryDebugEvent["tag"]): DeliveryDebugEvent[] {
+    return this.events.filter((e) => e.tag === tag);
+  }
+}

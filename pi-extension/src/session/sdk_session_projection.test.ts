@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { SdkSessionProjection, isAgentMessageApi } from "./sdk_session_projection.js";
 import type { LegacyAgentMessage } from "./transcript_projection.js";
+import { FakeDeliveryDebugLog } from "./delivery_debug_log.test.js";
 
 /**
  * Regression coverage for the pair-code QR-not-rendering bug.
@@ -487,5 +488,66 @@ describe("SdkSessionProjection live assistant identity (decision 1)", () => {
     expect(replayUser?.ts).toBe(5_000);
     expect(replayUser?.id).toBe("sync_5000");
     expect(replayUser?.text).toBe("hello from phone");
+  });
+});
+
+describe("SdkSessionProjection delivery-path debug events", () => {
+  function makeProjectionWithDebug() {
+    const fake = new FakeDeliveryDebugLog();
+    const outputs = { ...makeOutputs(), deliveryDebugLog: fake };
+    const projection = new SdkSessionProjection({ outputs });
+    return { projection, fake };
+  }
+
+  test("bindApi emits message_api_armed { via: factory }", () => {
+    const { projection, fake } = makeProjectionWithDebug();
+    projection.bindApi(makePi() as never);
+    const armed = fake.byTag("message_api_armed");
+    expect(armed).toHaveLength(1);
+    expect(armed[0]).toMatchObject({ tag: "message_api_armed", via: "factory" });
+  });
+
+  test("clearStaleContexts emits message_api_null { reason: shutdown } + command_ctx { armed: false }", () => {
+    const { projection, fake } = makeProjectionWithDebug();
+    projection.clearStaleContexts();
+    expect(fake.byTag("message_api_null")).toHaveLength(1);
+    expect(fake.byTag("message_api_null")[0]).toMatchObject({ reason: "shutdown" });
+    expect(fake.byTag("command_ctx")).toHaveLength(1);
+    expect(fake.byTag("command_ctx")[0]).toMatchObject({ armed: false });
+  });
+
+  test("wakeAgent with null messageApi emits the stuck-null signature (messageApiArmed: false, recoverable)", async () => {
+    const { projection, fake } = makeProjectionWithDebug();
+    // No bindApi → messageApi is null.
+    const result = await projection.wakeAgent("hello" as never);
+    expect(result.ok).toBe(false);
+    expect(result.recoverable).toBe(true);
+    // The projection's wakeAgent does not emit wake_outcome (the caller in
+    // index.ts does, where the message id is available). The null state is
+    // observable via messageApiBinding() === null — the caller asserts that.
+    expect(projection.messageApiBinding()).toBeNull();
+    // Sanity: no wake_outcome emitted from the projection itself.
+    expect(fake.byTag("wake_outcome")).toHaveLength(0);
+  });
+
+  test("wakeAgent with a stale ctx forgets the api and emits message_api_null { reason: stale }", async () => {
+    const { projection, fake } = makeProjectionWithDebug();
+    const pi = makePi();
+    pi.sendUserMessage.mockRejectedValueOnce(new Error("This extension ctx is stale after session replacement or reload"));
+    projection.bindApi(pi as never);
+    const result = await projection.wakeAgent("hello" as never);
+    expect(result.ok).toBe(false);
+    expect(result.recoverable).toBe(true);
+    expect(projection.messageApiBinding()).toBeNull();
+    expect(fake.byTag("message_api_null")).toHaveLength(1);
+    expect(fake.byTag("message_api_null")[0]).toMatchObject({ reason: "stale" });
+  });
+
+  test("bindCommandContext emits command_ctx { armed: true, via: slash }", () => {
+    const { projection, fake } = makeProjectionWithDebug();
+    projection.bindCommandContext({} as never);
+    const ctx = fake.byTag("command_ctx");
+    expect(ctx).toHaveLength(1);
+    expect(ctx[0]).toMatchObject({ armed: true, via: "slash" });
   });
 });
