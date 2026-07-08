@@ -6,6 +6,12 @@ use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 
+/// Max age (in days) of rotated relay log files to keep. Older files are
+/// deleted on startup so `/data/logs/relay.log.YYYY-MM-DD` can't grow the
+/// named volume without limit (`tracing-appender` rotates but does not
+/// retain — without this sweep, one file per day accumulates indefinitely).
+const RELAY_LOG_RETENTION_DAYS: u64 = 14;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _log_guard = init_tracing();
@@ -120,6 +126,7 @@ fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
             .with(file_layer)
             .init();
         info!(log_dir = %log_dir, "relay file logging enabled (daily rotation)");
+        prune_old_relay_logs(&log_dir);
         Some(file_guard)
     } else {
         tracing_subscriber::registry()
@@ -127,5 +134,53 @@ fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
             .with(stdout_layer)
             .init();
         None
+    }
+}
+
+/// Delete rotated `relay.log.YYYY-MM-DD` files older than
+/// `RELAY_LOG_RETENTION_DAYS`. `tracing-appender`'s `rolling::daily` rotates
+/// but does not retain, so without this sweep one file per day accumulates
+/// in the named volume without limit. Best-effort: a failure to read the dir
+/// or delete a file is logged at `warn!` and skipped, never fatal — logging
+/// must not break the relay.
+fn prune_old_relay_logs(log_dir: &str) {
+    let entries = match std::fs::read_dir(log_dir) {
+        Ok(e) => e,
+        Err(err) => {
+            tracing::warn!(%err, log_dir, "failed to read relay log dir for retention sweep");
+            return;
+        }
+    };
+    let cutoff = std::time::SystemTime::now()
+        - std::time::Duration::from_secs(60 * 60 * 24 * RELAY_LOG_RETENTION_DAYS);
+    let mut pruned = 0u32;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n,
+            None => continue,
+        };
+        // Only touch rotated files matching the appender's naming scheme.
+        if !name.starts_with("relay.log.") {
+            continue;
+        }
+        let modified = match entry.metadata().and_then(|m| m.modified()) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if modified < cutoff {
+            if let Err(err) = std::fs::remove_file(&path) {
+                tracing::warn!(%err, ?path, "failed to prune old relay log file");
+            } else {
+                pruned += 1;
+            }
+        }
+    }
+    if pruned > 0 {
+        info!(
+            pruned,
+            retention_days = RELAY_LOG_RETENTION_DAYS,
+            "pruned old rotated relay log files"
+        );
     }
 }
