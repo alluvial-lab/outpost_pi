@@ -1,11 +1,12 @@
 ---
 id: story-fix-stale-ctx-messageapi-rearm-on-reload
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 feature_parent: feature-session-stable-message-delivery
 depends_on: []
+review_addressed: 2026-07-08
 release_binding: null
 gate_origin: null
 created: 2026-07-03
@@ -304,3 +305,14 @@ new `delivery_pending` ServerMessage and update `PROTOCOL.md`.
 - Discrepancies from design: Dart protocol generation used the existing committed Dart IR fixture, so the generator/fixture were extended to emit a typed `KnownErrorCode.deliveryPending` enum while keeping `ErrorMessage.code` as an open string.
 - Edge cases handled: queue is bounded to 2 entries with oldest-drop failure, queued entries fail on TTL or second session replacement, recoverable wake failures send `delivery_pending` instead of silence, app does not discard streaming/turn state for `delivery_pending`, and eventual echo still uses the existing dedupe path.
 - Verification: `cd pi-extension && corepack pnpm generate:protocol && corepack pnpm typecheck && corepack pnpm test`; `cd app && flutter analyze && flutter test test/data/sync/sync_service_test.dart`; `node --check tools/protocol-codegen/bin/protocol-codegen.mjs`.
+
+## Review outcome (2026-07-08)
+
+Two cross-model review passes (`openai-codex/gpt-5.5`, deep lane):
+
+1. **Deep review** returned `Request changes` (2 important, no blockers):
+   - `withSession` re-arm path (`_bindReplacementSessionContext`, the mobile `session_new` recovery) re-armed `_messageApi` but did NOT drain the pending queue → a queued message would sit until TTL → `internal_error` despite a valid API. **Fixed:** added `_drainPendingDeliveryQueue()` to `_bindReplacementSessionContext`. Test added.
+   - Bounded-queue overflow (max-2 drop) was untested. **Fixed:** test added (3 messages → oldest dropped as `internal_error`, 2 remain queued).
+2. **Re-review** returned `Approve` (findings resolved, no blockers/important/nits). Confirmed the drain is safe on empty/double-drain and the test helper faithfully arms both module-level + projection `messageApi`.
+
+Final verification: pi-extension 769/769 pass (was 767; +2 review tests); app analyze clean + sync_service tests pass. Committed as `eab7315` (impl) + `1c96a37` (review fixes).
