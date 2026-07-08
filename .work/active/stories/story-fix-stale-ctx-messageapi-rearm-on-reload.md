@@ -1,7 +1,7 @@
 ---
 id: story-fix-stale-ctx-messageapi-rearm-on-reload
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 feature_parent: feature-session-stable-message-delivery
@@ -297,3 +297,10 @@ new `delivery_pending` ServerMessage and update `PROTOCOL.md`.
 3. Integration: `/reload` then phone-message-in-window → assert delivery to
    the new session (the feature's mandatory integration test; may be a stretch
    goal if the SDK harness is too hard — ship the unit test + honest note).
+
+## Implementation notes
+- Files changed: `protocol/schema/defs/app-pi-common.schema.json`, `pi-extension/src/index.ts`, `pi-extension/src/extension.test.ts`, `pi-extension/src/protocol/generated/protocol.generated.ts`, `app/lib/data/sync/sync_service.dart`, `app/test/data/sync/sync_service_test.dart`, `app/lib/protocol/generated/protocol.g.dart`, `tools/protocol-codegen/bin/protocol-codegen.mjs`, `tools/protocol-codegen/fixtures/app_pi_client_dart_ir.json`, `PROTOCOL.md`.
+- Tests added: pi-extension regression coverage for stale/null `messageApi` queuing, TTL expiry to `internal_error`, and bindApi replay delivery; app regression coverage for `delivery_pending` extending the no-echo window and later failing if no replay echo arrives.
+- Discrepancies from design: Dart protocol generation used the existing committed Dart IR fixture, so the generator/fixture were extended to emit a typed `KnownErrorCode.deliveryPending` enum while keeping `ErrorMessage.code` as an open string.
+- Edge cases handled: queue is bounded to 2 entries with oldest-drop failure, queued entries fail on TTL or second session replacement, recoverable wake failures send `delivery_pending` instead of silence, app does not discard streaming/turn state for `delivery_pending`, and eventual echo still uses the existing dedupe path.
+- Verification: `cd pi-extension && corepack pnpm generate:protocol && corepack pnpm typecheck && corepack pnpm test`; `cd app && flutter analyze && flutter test test/data/sync/sync_service_test.dart`; `node --check tools/protocol-codegen/bin/protocol-codegen.mjs`.

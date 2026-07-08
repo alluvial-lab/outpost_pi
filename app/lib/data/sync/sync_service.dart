@@ -117,6 +117,7 @@ class SyncService extends Service {
   // replace the bubble with a visible failure row. The real delivery fix lives
   // in the relay/Pi path; this is the app-side backstop. Per-message (`id`)
   // timers are cancelled on echo, user-cancel, session switch, and dispose.
+  final Duration deliveryPendingEchoTimeout;
   final Duration pendingSendTimeout;
   final Map<String, Timer> _pendingSendTimers = {};
 
@@ -126,6 +127,7 @@ class SyncService extends Service {
     TranscriptEventStore? transcriptEventStore,
     DebugLog? debugLog,
     this.pendingSendTimeout = const Duration(seconds: 20),
+    this.deliveryPendingEchoTimeout = const Duration(seconds: 60),
   }) : _eventStore = transcriptEventStore ?? HiveTranscriptEventStore(_boxes),
        _debugLog = debugLog {
     _connSub = _conn.statusStream.listen(_onStatus);
@@ -362,6 +364,32 @@ class SyncService extends Service {
       message:
           'Message was not confirmed by the Pi. It may not have been delivered.',
       debugDetail: 'no echo in ${pendingSendTimeout.inSeconds}s',
+      expectedRef: expectedRef,
+    );
+  }
+
+  void _handleDeliveryPending(String? id) {
+    if (id == null) return;
+    final existing = _pendingSendTimers.remove(id);
+    if (existing == null) return;
+    existing.cancel();
+    final ref = _activeRef;
+    if (ref == null) return;
+    _pendingSendTimers[id] = Timer(
+      deliveryPendingEchoTimeout,
+      () => _onDeliveryPendingTimeout(id, ref),
+    );
+  }
+
+  void _onDeliveryPendingTimeout(String id, RemoteSessionRef expectedRef) {
+    // ignore: discarded_futures
+    _failPendingSend(
+      id,
+      code: 'send_timeout',
+      message:
+          'Message was not confirmed by the Pi. It may not have been delivered.',
+      debugDetail:
+          'no echo after delivery_pending in ${deliveryPendingEchoTimeout.inSeconds}s',
       expectedRef: expectedRef,
     );
   }
@@ -928,6 +956,10 @@ class SyncService extends Service {
         _replayHistory(msg);
 
       case ErrorMessage(:final inReplyTo, :final code, :final message):
+        if (code == 'delivery_pending') {
+          _handleDeliveryPending(inReplyTo);
+          break;
+        }
         if (code.contains('unknown_peer')) {
           if (!_eventController.isClosed) {
             _eventController.add(const PairingRevoked());
