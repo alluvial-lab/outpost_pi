@@ -810,6 +810,18 @@ export function _getPendingDeliveryQueueLengthForTest(): number {
   return _pendingDeliveryQueue.length;
 }
 
+/** Test-only: simulate the `withSession` (mobile `session_new`) re-arm path
+ * draining the pending delivery queue, without driving the full SDK
+ * replacement. Mirrors what `_bindReplacementSessionContext` does after
+ * re-arming `_messageApi` from a fresh replacement context: arm the
+ * projection's messageApi (so `wakeAgent` sees it) then drain. */
+export function _drainAfterReplacementForTest(freshMessageApi: unknown): void {
+  _pi = freshMessageApi as typeof _pi;
+  _messageApi = _isAgentMessageApi(freshMessageApi) ? freshMessageApi : null;
+  if (_messageApi) _sdkSessionProjection.bindApi(_messageApi as never);
+  _drainPendingDeliveryQueue();
+}
+
 /**
  * Persist a model change to the PROJECT settings (`<cwd>/.pi/settings.json`) so
  * a model picked from the app survives a Pi/daemon restart. `pi.setModel` only
@@ -1651,6 +1663,14 @@ function _bindReplacementSessionContext(freshCtx: ActionCtx): void {
   _pi = null;
   _sdkSessionProjection.bindReplacementContext(freshCtx);
   _messageApi = _sdkSessionProjection.messageApiBinding();
+  // Drain any inbound messages queued during the null window — mirrors the
+  // factory `bindApi` drain. `session_new` (the mobile quick-action) re-arms
+  // through this path via `withSession`, so this is the mobile-lockout
+  // recovery drain. Without it, a message queued during a `session_new`-
+  // driven replacement would sit until TTL → `internal_error` despite a
+  // valid message API now being available.
+  // See story-fix-stale-ctx-messageapi-rearm-on-reload review finding.
+  _drainPendingDeliveryQueue();
 }
 
 function _registerRemotePiCommands(pi: ExtensionAPI): void {

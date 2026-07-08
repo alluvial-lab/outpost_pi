@@ -170,6 +170,7 @@ const {
   _resetCwdLockForTest,
   _resetPendingDeliveryQueueForTest,
   _getPendingDeliveryQueueLengthForTest,
+  _drainAfterReplacementForTest,
   _handleControl,
   _parseControlFrame,
   CTRL_PREFIX,
@@ -4257,6 +4258,98 @@ describe("session_shutdown teardown", () => {
         session_id: sessionId,
       });
     });
+  });
+
+  // Review finding (2026-07-08): the `withSession` re-arm path (mobile
+  // `session_new`) re-arms `_messageApi` via `_bindReplacementSessionContext`
+  // but did NOT drain the pending delivery queue. A message queued during a
+  // `session_new`-driven replacement would sit until TTL → `internal_error`
+  // despite a valid message API now being available. This is the mobile-
+  // lockout recovery drain.
+  test("withSession re-arm (mobile session_new) drains the pending delivery queue", async () => {
+    const peer = "owner-withsession-drain";
+    await _pairForTest(peer);
+    const sessionId = currentSessionIdFromSends();
+    _setPiForTest(null);
+    _setDisposedForTest(false);
+
+    const sendsBefore = relayRef.current!.send.mock.calls.length;
+    emitClientMessage(peer, {
+      type: "user_message",
+      id: "msg-withsession",
+      session_id: sessionId,
+      text: "hello during session_new",
+    });
+
+    await vi.waitFor(() => {
+      const sent = sentToPeerSince(sendsBefore, peer);
+      expect(sent).toContainEqual(expect.objectContaining({
+        inner: expect.objectContaining({
+          type: "error",
+          code: "delivery_pending",
+          in_reply_to: "msg-withsession",
+        }),
+      }));
+    });
+    expect(_getPendingDeliveryQueueLengthForTest()).toBe(1);
+
+    // Simulate the `withSession` re-arm (mobile session_new) — a fresh working
+    // messageApi is bound and the queue must drain, delivering the message.
+    const freshSendUserMessage = vi.fn(async () => undefined);
+    _drainAfterReplacementForTest({
+      sendUserMessage: freshSendUserMessage,
+      sendMessage: vi.fn(async () => undefined),
+    });
+
+    await vi.waitFor(() => expect(freshSendUserMessage).toHaveBeenCalledWith("hello during session_new"));
+    await vi.waitFor(() => expect(_getPendingDeliveryQueueLengthForTest()).toBe(0));
+  });
+
+  // Review finding (2026-07-08): the bounded-queue overflow (max 2) drops the
+  // oldest entry and surfaces `internal_error` to the dropped message, but no
+  // test covered it. Three recoverable messages: the first gets dropped with
+  // `internal_error`, the latter two remain queued.
+  test("bounded replay queue overflow drops oldest as internal_error", async () => {
+    vi.useFakeTimers();
+    try {
+      _setPiForTest(null);
+      _setDisposedForTest(false);
+      const sessionId = "019f17a6-9143-7be1-825b-183b42c3e684";
+      _setRemoteSessionIdForTest(sessionId);
+
+      const sent: unknown[] = [];
+      const fakeSender = { send: (msg: unknown) => { sent.push(msg); } } as Parameters<typeof _routeClientMessageFrom>[0];
+      // Enqueue 3 messages; the max is 2, so the 1st is dropped when the 3rd lands.
+      for (const id of ["msg-overflow-1", "msg-overflow-2", "msg-overflow-3"]) {
+        _routeClientMessageFrom(
+          fakeSender,
+          { type: "user_message", id, session_id: sessionId, text: "hello" },
+          { abort: vi.fn() },
+        );
+        await vi.advanceTimersByTimeAsync(0);
+      }
+
+      // The dropped (oldest) message must get an internal_error, not delivery_pending.
+      expect(sent.some((m) =>
+        typeof m === "object" && m !== null &&
+        (m as { type?: string }).type === "error" &&
+        (m as { code?: string }).code === "internal_error" &&
+        (m as { in_reply_to?: string }).in_reply_to === "msg-overflow-1",
+      )).toBe(true);
+      // The two remaining queued messages each got a delivery_pending on
+      // enqueue (the dropped one did too, before being dropped — so total
+      // delivery_pending count is 3). The invariant is that msg-2 and msg-3
+      // are still queued, and only msg-1 was dropped to internal_error.
+      const droppedInternalErrors = sent.filter((m) =>
+        typeof m === "object" && m !== null &&
+        (m as { code?: string }).code === "internal_error",
+      );
+      expect(droppedInternalErrors).toHaveLength(1);
+      expect(_getPendingDeliveryQueueLengthForTest()).toBe(2);
+    } finally {
+      _resetPendingDeliveryQueueForTest();
+      vi.useRealTimers();
+    }
   });
 
   test("known-peer reconnect resolving after session_shutdown does not attach a ghost owner", async () => {
