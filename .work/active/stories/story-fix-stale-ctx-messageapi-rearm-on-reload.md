@@ -1,7 +1,7 @@
 ---
 id: story-fix-stale-ctx-messageapi-rearm-on-reload
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 feature_parent: feature-session-stable-message-delivery
@@ -164,3 +164,136 @@ wrong and is reverted.
 - `pi-extension/src/index.ts:1859-1873` — `_wakeAgent` (error surfacing).
 - `pi-extension/src/index.ts:1966-1975` — `_sendDeliveryError`.
 - Reverted: the `factoryApi` field and `bindSessionContext` re-arm block.
+
+## Design (2026-07-08) — the null-window race, confirmed by live evidence
+
+### Root cause confirmed: hypothesis (A) — the null-window race
+
+The feature's SDK investigation left two hypotheses; today's live evidence
+settles it. After a TUI `/reload`, the operator's **first** phone message hit
+`stale after session replacement`, but the **second** delivered fine. That
+pattern is the signature of a transient null window, not a persistently-broken
+binding.
+
+The `/reload` ordering (SDK `agent-session.js:1966-1985` + our
+`composition_root.ts:60-76`):
+
+1. `session_shutdown` event → our `disposeRuntimePorts` → `clearStaleContexts()`
+   → **`_messageApi = null; _pi = null`** (null window OPENS).
+2. `await this._resourceLoader.reload()` → `loadExtensionsCached` → `factory(api)`
+   → our `bindApi(freshPi)` → **`_messageApi = freshPi`** (null window CLOSES).
+3. `_buildRuntime` → new `ExtensionRunner`.
+4. `session_start` event → `bindSessionContext(ctx)`.
+
+The null window is between (1) and (2). Both are `await`ed sequentially inside
+the SDK's `reload()`, but the phone's relay WebSocket is a separate async
+path: a `user_message` arriving on the socket between (1) and (2) is processed
+with `_messageApi === null` → `wakeAgent` returns `not bound yet` (recoverable)
+→ `_deliverUserMessage`'s recoverable path `console.warn`s + returns without
+telling the phone → the phone's 20s `send_timeout` scars it as a permanent
+"not delivered" bubble.
+
+**The re-arm already works** (message 2 proved it: `bindApi` re-arms a fresh,
+non-stale `pi` bound to the new runtime). The bug is purely the unguarded null
+window + the recoverable path's failure to tell the phone to retry.
+
+### Architectural choice: queue-and-replay on the null window (not re-arm)
+
+The feature evaluated re-capture-via-`withSession` (option 1) and graceful
+tolerance (option 2). The live evidence rules out option 1 as the fix for
+*this* symptom: `bindApi` already re-arms correctly — there is no re-arm bug to
+fix. The gap is the window, and the right fix is **option 2 (tolerance) done
+properly**: when `wakeAgent` returns recoverable (null `messageApi` during the
+null window OR a genuinely-stale ctx), the extension must not silently drop the
+message — it must **queue it for replay once `bindApi` re-arms**, and tell the
+phone a transient state so it doesn't scar a permanent "not delivered."
+
+This is a queue-of-N-bounded-by-time, not unbounded queueing, and it does NOT
+violate the fan-out suspend feature's drop-don't-queue design (that's for
+*outbound* fan-out to offline peers; this is *inbound* delivery to the local
+agent, a different surface).
+
+### Implementation units
+
+#### Unit 1: inbound message replay queue during the null window
+**File**: `pi-extension/src/index.ts` (`_deliverUserMessage` ~L2125, `_wakeAgent` ~L1983)
+
+When `_wakeAgent` returns `{ok:false, recoverable:true}` (null `messageApi` /
+stale ctx), instead of `console.warn` + return:
+- Stash the message (`{sender, msg, content, shouldSteer}`) in a bounded replay
+  queue (max 1–2 messages, TTL ~5s — the null window is sub-second; 5s covers a
+  slow `_resourceLoader.reload()`).
+- Return a **transient recoverable signal** to the phone (not silence): a
+  `delivery_pending` wire event (or reuse the existing `error` with a
+  recoverable code) so the phone shows "delivering…" / clears the pending
+  bubble's send-timer, rather than scarring "not delivered."
+- On the next `bindApi` (null-window close), drain the queue: re-attempt
+  `_wakeAgent` for each stashed message. If it succeeds, the normal echo path
+  fires; if it still fails (genuinely broken, not just the window), surface a
+  real `internal_error`.
+
+**Acceptance Criteria**:
+- [ ] A `user_message` arriving during the `/reload` null window
+      (`_messageApi === null`) is queued, not dropped.
+- [ ] The phone receives a transient `delivery_pending` (or equivalent
+      recoverable) signal, NOT a 20s `send_timeout` → permanent "not
+      delivered" bubble.
+- [ ] On `bindApi` re-arm, the queued message is delivered to the new
+      session's agent (echo fires).
+- [ ] A genuinely-stale ctx that does NOT recover within the TTL surfaces a
+      real `internal_error` (no infinite queue).
+- [ ] Regression test: deliver a `user_message` to a projection with null
+      `messageApi` → assert the message is queued + a `delivery_pending` is
+      sent + `bindApi` drains the queue and delivers.
+
+#### Unit 2: phone-side `delivery_pending` handling (clears the stuck bubble)
+**File**: `app/lib/data/sync/sync_service.dart` (the `send_timeout` path ~L361)
+
+The phone's `send_timeout` (20s no-echo) is what scars the permanent "not
+delivered" bubble. On a `delivery_pending` signal from the extension:
+- Disarm (or extend) the send-timer for that message — it's not lost, it's
+  pending.
+- Show a transient "delivering…" state (or no-op if the existing pending
+  bubble already conveys this).
+- When the echo finally arrives (after the queue drains), confirm the row as
+  normal.
+
+**Acceptance Criteria**:
+- [ ] A `delivery_pending` signal disarms the 20s `send_timeout` for that
+      message (no permanent "not delivered" scar).
+- [ ] The eventual echo confirms the row (no dupe).
+- [ ] If no echo arrives within an extended window (e.g. 60s — the queue TTL
+      + drain), THEN surface "not delivered" (genuine failure).
+
+### Wire shape (decide at implement time)
+
+Prefer reusing the existing `error` ServerMessage with a new recoverable code
+(e.g. `code: "delivery_pending"`) over adding a new ServerMessage variant —
+minimizes protocol surface. The app's `ErrorMessage` handler already exists;
+add a `delivery_pending` case that disarms the send-timer instead of scarring.
+If the existing `error` shape can't carry a non-error semantics cleanly, add a
+new `delivery_pending` ServerMessage and update `PROTOCOL.md`.
+
+### Pre-mortem risks
+
+- **Queue grows unbounded under a flap storm.** Mitigated by max-1–2 + TTL;
+  if `bindApi` doesn't re-arm within 5s, surface `internal_error` and stop
+  queueing. The null window is sub-second; 5s is generous.
+- **Replayed message lands on the WRONG session.** The queue drains on
+  `bindApi`, which fires for the NEW session. The message's `session_id` was
+  stamped for the OLD session. The session-gate may reject it as
+  `session_mismatch`. Mitigation: re-stamp the queued message's `session_id`
+  to the new session at drain time, OR deliver via the new session's
+  `sendUserMessage` directly (which doesn't carry a session_id). Verify the
+  gate's behavior on a drain-time delivery.
+- **Masking a genuinely-broken ctx.** The TTL + `internal_error` fallback
+  ensures a real failure still surfaces. The split is: recoverable + recovers
+  within TTL → queued; recoverable + TTL expires → `internal_error`.
+
+### Implementation order
+1. Unit 1 (extension replay queue + `delivery_pending` signal + regression
+   test).
+2. Unit 2 (phone-side `delivery_pending` → disarm send-timer).
+3. Integration: `/reload` then phone-message-in-window → assert delivery to
+   the new session (the feature's mandatory integration test; may be a stretch
+   goal if the SDK harness is too hard — ship the unit test + honest note).
