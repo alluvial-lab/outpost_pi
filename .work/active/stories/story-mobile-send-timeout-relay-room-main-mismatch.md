@@ -10,7 +10,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-06
-updated: 2026-07-06
+updated: 2026-07-07
 reinvestigated: 2026-07-06
 ---
 
@@ -145,16 +145,30 @@ injected (session not bound). The operator sees both.
       room=phone's `main`), NOT phone→Pi. Zero `from=MD/tL3E=` drops in
       the full relay log. Zero relay activity at the 14:42:47 repro second.
       The stated relay-room-main-drop mechanism is **unsupported**.
-- [ ] Re-confirm the actual failure path at a fresh repro: extension
-      debug log + decoded ring-log WS-send event at the send instant.
-      Decide app-transport-stuck vs Pi-didn't-echo.
-- [ ] Only after the path is re-confirmed: implement the minimal fix and
-      verify with a live repro (send → echo → no `send_timeout`).
-- [ ] Separately: silence/queue the fanout-presence "session not bound"
-      recoverable error (independent of this bug).
-- [ ] Static trace (still useful, lower priority): when `peer.roomId` is
-      null at connect, what does the transport send outbound? Decide queue
-      vs. discovery-wait vs. acceptable `'main'` fallback.
+- [x] **DOMINANT ROOT CAUSE CONFIRMED (2026-07-07)**: the 77% inbound
+      demux drop rate (ring log `9c1-...bin`, 05:00–05:06 UTC, already
+      cited in `story-fix-transport-active-room-reestablishment-on-reconnect`)
+      proves `WsTransport._activeRoom` was stuck at `'main'` in production.
+      `send()` stamps `room: _activeRoom` (`ws_transport.dart:312`) — the
+      SAME field the inbound demux compares against (`ws_transport.dart:388`).
+      So the outbound send was routing to `'main'` too. The fix `80b04e5`
+      (construct `WsTransport` with the correct room from frame 1) covers
+      BOTH directions. The "zero phone-originated relay drops" for the
+      14:42 repro is consistent with that specific instance being
+      half-open TCP (phone wrote to a dead socket the relay never saw —
+      tracked in `idea-mobile-drop-half-open-tcp`), but the `room=main`
+      bug is the dominant, confirmed, high-frequency cause the fix
+      addresses. If `send_timeout` persists after deploy, investigate
+      half-open TCP next.
+- [x] **FIX IN SOURCE** (`80b04e5`, `stage: review`): constructs
+      `WsTransport` with `activeRoom: peer.roomId ?? 'main'` at connect
+      (`dependencies.dart:276,321`), eliminating the default-`'main'`
+      race for both send and inbound demux.
+- [ ] **DEPLOY + VERIFY**: rebuild + sideload the app APK; confirm a
+      fresh ring log shows zero `room-mismatch` drops AND no
+      `send_timeout` on a normal send.
+- [x] Separately: silence/queue the fanout-presence "session not bound"
+      recoverable error — DONE in `story-extension-suspend-fanout-on-peer-offline`.
 
 ## Out of scope
 
