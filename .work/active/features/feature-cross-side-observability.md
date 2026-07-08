@@ -1,14 +1,15 @@
 ---
 id: feature-cross-side-observability
 kind: feature
-stage: implementing
+stage: done
 tags: [pi-extension, app, relay, observability, testing]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-05
+updated: 2026-07-08
+completed: 2026-07-08
 ---
 
 # Cross-side observability & session-replacement reproduction (critical path)
@@ -84,6 +85,45 @@ one-line fixes.
 - The `#2` stale-error repro (becomes reproducible instead of anecdotal).
 - Rapid diagnosis of future boundary bugs (the instrumentation that would have
   caught this session's wrong premises earlier).
+
+## Completion (2026-07-08)
+
+All units landed and reviewed. The three legs of cross-side correlation are
+now present and (relay + extension) deployed/live:
+
+- **Phone ring log** (Units 1–4: `story-app-debug-log-adapter`,
+  `story-app-debug-toggle-ui`, `story-app-capture-routing`) — done.
+- **Relay file sink + correlation** (Unit 5: `story-relay-retroactive-file-
+  logging`) — done + deployed on `remote-pi-relay:0.2.2` with
+  `REMOTEPI_RELAY_LOG_DIR=/data/logs` + `RUST_LOG=info,relay=debug`.
+- **Extension delivery-path log** (`story-extension-delivery-path-ring-log`,
+  the missing third leg the original Units 1–4 didn't cover — the extension
+  half was never decomposed) — done + `dist/` built; live after a pi restart
+  with `REMOTE_PI_DEBUG_LOG=1`.
+- **Transport-frame observability** (Unit 6: `story-add-transport-frame-
+  observability`) — done (collapsed to a small delta after Unit 4 shipped).
+- **Session-replacement harness** (Unit 7: `story-session-replacement-
+  harness`) — done (spike verdict: `ExtensionRunner` is partially feasible
+  headless; the real replacement lives in `AgentSessionRuntime`; landed an
+  alternate verification plan per the pre-mortem, not just an xfail).
+- Companion stories: `story-extension-suspend-fanout-on-peer-offline`,
+  `story-relay-duplicate-auth-supersession-log`,
+  `story-verify-mobile-dup-and-reorder-reconnect-repro`,
+  `story-verify-resumed-session-echo-gate-rejection` — all done.
+
+The feature corrected its own framing along the way: the original brief
+claimed "the extension side is already retroactively diagnosable
+(`audit.jsonl`)" — `audit.jsonl` records cross-PC mesh routing, NOT the
+phone→Pi delivery path the stuck-state bug lives on. The extension
+delivery-path log (`story-extension-delivery-path-ring-log`) closed that gap.
+
+The feature's purpose — making the boundary bug class diagnosable from
+evidence instead of inference — is met. The open bug stories under
+`feature-session-stable-message-delivery` / `epic-remote-session-resilience-
+refactor` (notably the SDK-blocked self-heal
+`story-fix-stale-ctx-messageapi-rearm-on-reload`) can now be reproduced and
+attributed from three correlated logs (phone `msg-send id` ↔ relay
+`env_id_tail` ↔ extension `app user_message id` + `messageApi` binding state).
 
 ## Out of scope
 
