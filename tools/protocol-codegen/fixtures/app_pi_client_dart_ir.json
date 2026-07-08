@@ -1,5 +1,16 @@
 {
   "includeAppPiSharedTypes": true,
+  "knownErrorCodes": [
+    "tool_approval_required",
+    "invalid_message",
+    "unsupported_type",
+    "too_large",
+    "rate_limited",
+    "timeout",
+    "internal_error",
+    "session_mismatch",
+    "delivery_pending"
+  ],
   "unions": [
     {
       "name": "ClientMessage",

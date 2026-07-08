@@ -168,6 +168,8 @@ const {
   _hasMeshNodeForTest,
   _getLockedNameForTest,
   _resetCwdLockForTest,
+  _resetPendingDeliveryQueueForTest,
+  _getPendingDeliveryQueueLengthForTest,
   _handleControl,
   _parseControlFrame,
   CTRL_PREFIX,
@@ -3981,6 +3983,7 @@ describe("session_shutdown teardown", () => {
     relayInstances.length = 0;
     _defaultConnectImpl = async () => undefined;
     _setDisposedForTest(false); // shared module — clear the per-instance flag
+    _resetPendingDeliveryQueueForTest();
     const stop = captureHandler("remote-pi stop");
     await stop("", makeMockCtx());
   });
@@ -4136,13 +4139,11 @@ describe("session_shutdown teardown", () => {
     expect(JSON.stringify(sent)).not.toContain(staleMessage);
   });
 
-  test("stale wakeAgent on a non-disposed session tolerates (no visible internal_error)", async () => {
-    // Regression for the recoverable-tolerance fix: when the session gate
-    // PASSES (same session_id) but the bound messageApi is stale, the phone
-    // must NOT receive a permanent `internal_error: Agent rejected incoming
-    // message`. The stale failure is recoverable — another pi may have handled
-    // it (cross-process fanout) or the next session_start rebinds and the
-    // phone retries. Real (non-stale) delivery failures still surface.
+  test("stale wakeAgent on a non-disposed session queues and signals delivery_pending", async () => {
+    // Regression for the null-window/stale-ctx tolerance fix: when the session
+    // gate PASSES (same session_id) but the bound messageApi is stale, the
+    // phone must receive a transient `delivery_pending` signal, not a permanent
+    // `internal_error: Agent rejected incoming message` scar.
     const staleMessage = "This extension ctx is stale after session replacement or reload.";
     _setPiForTest({
       sendUserMessage: vi.fn(() => { throw new Error(staleMessage); }),
@@ -4153,23 +4154,109 @@ describe("session_shutdown teardown", () => {
     _setRemoteSessionIdForTest(sessionId);
 
     const sent: unknown[] = [];
-    await _routeClientMessageFrom(
+    _routeClientMessageFrom(
       { send: (msg: unknown) => { sent.push(msg); } } as Parameters<typeof _routeClientMessageFrom>[0],
       { type: "user_message", id: "msg-stale", session_id: sessionId, text: "hello" },
       { abort: vi.fn() },
     );
-    // Allow the async _deliverUserMessage to settle.
-    await vi.waitFor(() => expect(sent.length === 0 || sent.every((m) =>
-      !(typeof m === "object" && m !== null &&
-        (m as { type?: string }).type === "error" &&
-        (m as { code?: string }).code === "internal_error"))).toBe(true));
+    await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
+      type: "error",
+      code: "delivery_pending",
+      in_reply_to: "msg-stale",
+      session_id: sessionId,
+    })));
 
-    // No internal_error was surfaced to the phone for the stale wake.
+    expect(_getPendingDeliveryQueueLengthForTest()).toBe(1);
     expect(sent.find((m) =>
       typeof m === "object" && m !== null &&
       (m as { type?: string }).type === "error" &&
       (m as { code?: string }).code === "internal_error" &&
       JSON.stringify(m).includes("Agent rejected incoming message"))).toBeUndefined();
+    _resetPendingDeliveryQueueForTest();
+  });
+
+  test("queued null-window delivery expires as internal_error if bindApi never re-arms", async () => {
+    vi.useFakeTimers();
+    try {
+      _setPiForTest(null);
+      _setDisposedForTest(false);
+      const sessionId = "019f17a6-9143-7be1-825b-183b42c3e683";
+      _setRemoteSessionIdForTest(sessionId);
+
+      const sent: unknown[] = [];
+      _routeClientMessageFrom(
+        { send: (msg: unknown) => { sent.push(msg); } } as Parameters<typeof _routeClientMessageFrom>[0],
+        { type: "user_message", id: "msg-ttl", session_id: sessionId, text: "hello" },
+        { abort: vi.fn() },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sent.some((m) =>
+        typeof m === "object" && m !== null &&
+        (m as { type?: string }).type === "error" &&
+        (m as { code?: string }).code === "delivery_pending" &&
+        (m as { in_reply_to?: string }).in_reply_to === "msg-ttl",
+      )).toBe(true);
+      expect(_getPendingDeliveryQueueLengthForTest()).toBe(1);
+
+      vi.advanceTimersByTime(5_000);
+      expect(sent.some((m) =>
+        typeof m === "object" && m !== null &&
+        (m as { type?: string }).type === "error" &&
+        (m as { code?: string }).code === "internal_error" &&
+        (m as { in_reply_to?: string }).in_reply_to === "msg-ttl",
+      )).toBe(true);
+      expect(_getPendingDeliveryQueueLengthForTest()).toBe(0);
+    } finally {
+      _resetPendingDeliveryQueueForTest();
+      vi.useRealTimers();
+    }
+  });
+
+  test("null messageApi window queues user_message and bindApi replay delivers it", async () => {
+    const peer = "owner-null-window-replay";
+    await _pairForTest(peer);
+    const sessionId = currentSessionIdFromSends();
+    _setPiForTest(null);
+    _setDisposedForTest(false);
+
+    const sendsBefore = relayRef.current!.send.mock.calls.length;
+    emitClientMessage(peer, {
+      type: "user_message",
+      id: "msg-null-window",
+      session_id: sessionId,
+      text: "hello during reload",
+    });
+
+    await vi.waitFor(() => {
+      const sent = sentToPeerSince(sendsBefore, peer);
+      expect(sent).toContainEqual(expect.objectContaining({
+        inner: expect.objectContaining({
+          type: "error",
+          code: "delivery_pending",
+          in_reply_to: "msg-null-window",
+          session_id: sessionId,
+        }),
+      }));
+    });
+    expect(_getPendingDeliveryQueueLengthForTest()).toBe(1);
+
+    const freshSendUserMessage = vi.fn(async () => undefined);
+    _setPiForTest({
+      sendUserMessage: freshSendUserMessage,
+      sendMessage: vi.fn(async () => undefined),
+    });
+
+    await vi.waitFor(() => expect(freshSendUserMessage).toHaveBeenCalledWith("hello during reload"));
+    await vi.waitFor(() => expect(_getPendingDeliveryQueueLengthForTest()).toBe(0));
+    await vi.waitFor(() => {
+      const sent = sentToPeerSince(sendsBefore, peer);
+      expect(sent.find((d) => d.inner.type === "user_message")?.inner).toMatchObject({
+        type: "user_message",
+        id: "msg-null-window",
+        text: "hello during reload",
+        session_id: sessionId,
+      });
+    });
   });
 
   test("known-peer reconnect resolving after session_shutdown does not attach a ghost owner", async () => {

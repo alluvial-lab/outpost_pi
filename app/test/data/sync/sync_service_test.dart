@@ -153,7 +153,10 @@ void main() {
       String sessionId,
     })
   >
-  setup({Duration pendingSendTimeout = const Duration(seconds: 20)}) async {
+  setup({
+    Duration pendingSendTimeout = const Duration(seconds: 20),
+    Duration deliveryPendingEchoTimeout = const Duration(seconds: 60),
+  }) async {
     final ch = _FakeChannel();
     final conn = ConnectionManager(
       factory: (_, _) async => ch,
@@ -164,6 +167,7 @@ void main() {
       conn,
       boxes,
       pendingSendTimeout: pendingSendTimeout,
+      deliveryPendingEchoTimeout: deliveryPendingEchoTimeout,
     );
     final epk = 'epk_sync_${++_counter}';
     final sessionId = 'session_$_counter';
@@ -2656,7 +2660,85 @@ void main() {
     );
 
     test(
-      '(c) timers are cancelled on session switch and on dispose (no leak)',
+      '(c) delivery_pending extends the no-echo window without scarring the row',
+      () async {
+        final s = await setup(
+          pendingSendTimeout: short,
+          deliveryPendingEchoTimeout: const Duration(milliseconds: 220),
+        );
+        await s.sync.sendMessage('hello during reload');
+        await _settle();
+        final id = s.ch.sent.whereType<UserMessage>().last.id;
+        expect(s.sync.debugPendingSendTimerCount, 1, reason: 'timer armed');
+
+        s.ch.push(
+          ErrorMessage(
+            sessionId: s.sessionId,
+            inReplyTo: id,
+            code: 'delivery_pending',
+            message: 'session replacing — message queued for replay',
+          ),
+        );
+        await _settle();
+        expect(
+          s.sync.debugPendingSendTimerCount,
+          1,
+          reason: 'original timer was replaced by the extended pending timer',
+        );
+
+        // Wait past the original 60 ms timeout. The transient signal must not
+        // turn into a permanent failed bubble while the extension replay queue
+        // still has time to drain.
+        await Future<void>.delayed(const Duration(milliseconds: 140));
+        await _settle();
+        expect(messages(s.epk), hasLength(1));
+        expect(messages(s.epk).single.pending, isTrue);
+        expect(messages(s.epk).single.status, UserMsgStatus.pending);
+        expect(s.sync.streaming, isNotNull, reason: 'turn remains pending');
+
+        s.ch.push(UserInput(id: id, text: 'hello during reload'));
+        await _settle();
+        expect(messages(s.epk), hasLength(1), reason: 'echo dedupes');
+        expect(messages(s.epk).single.pending, isFalse);
+        expect(s.sync.debugPendingSendTimerCount, 0);
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
+
+    test(
+      '(d) delivery_pending still fails if no replay echo arrives',
+      () async {
+        final s = await setup(
+          pendingSendTimeout: short,
+          deliveryPendingEchoTimeout: const Duration(milliseconds: 80),
+        );
+        await s.sync.sendMessage('lost during reload');
+        await _settle();
+        final id = s.ch.sent.whereType<UserMessage>().last.id;
+        s.ch.push(
+          ErrorMessage(
+            sessionId: s.sessionId,
+            inReplyTo: id,
+            code: 'delivery_pending',
+            message: 'session replacing — message queued for replay',
+          ),
+        );
+        await _settle();
+
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        await _settle();
+        expect(messages(s.epk), hasLength(1));
+        expect(messages(s.epk).single.role, MsgRole.user);
+        expect(messages(s.epk).single.status, UserMsgStatus.failed);
+        expect(s.sync.debugPendingSendTimerCount, 0);
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
+
+    test(
+      '(e) timers are cancelled on session switch and on dispose (no leak)',
       () async {
         // Session switch path.
         final s = await setup(pendingSendTimeout: short);
@@ -2691,7 +2773,7 @@ void main() {
     );
 
     test(
-      '(d) an offline (held-pending) send becomes a visible error too',
+      '(f) an offline (held-pending) send becomes a visible error too',
       () async {
         // A canonical session was known, then the channel dropped →
         // sendMessage takes the offline path while keeping the session-scoped
@@ -2728,7 +2810,7 @@ void main() {
     );
 
     test(
-      '(e) returning to a session fails a bubble already past the window',
+      '(g) returning to a session fails a bubble already past the window',
       () async {
         // Quick exit then return: the live timer is cancelled on switch-away,
         // but _loadIndex re-arms on return using the saved ts → an already-stale
@@ -2773,7 +2855,7 @@ void main() {
       },
     );
 
-    test('(f) immediate channel send failures become visible errors', () async {
+    test('(h) immediate channel send failures become visible errors', () async {
       final s = await setup(pendingSendTimeout: short);
       s.ch.sendFailure = StateError('socket closed');
 
