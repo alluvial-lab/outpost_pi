@@ -1,7 +1,9 @@
 ---
 id: story-fix-transport-active-room-reestablishment-on-reconnect
 kind: story
-stage: review
+stage: done
+updated: 2026-07-07
+verified_live: 2026-07-08
 tags: [app, bug, lifecycle, transport]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -205,3 +207,22 @@ main or subagent — reaches the phone reliably.
   - `app/lib/config/dependencies.dart:247-285` — `PlainPeerChannel` wrapping.
   - `app/lib/data/transport/peer_channel.dart:57-67` — `setActiveRoom` forward.
 - `.agents/skills/mobile-remote-coding/SKILL.md` — reconnect state machine.
+
+## Review (2026-07-08)
+
+**Verdict**: Approve - story verified by implement + verified live on phone; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fast-lane review. Implementation record shows green verification
+(`flutter analyze` clean; `flutter test` green full suite; regression test
+confirmed to fail under the reverted fix — envelope dropped as room-mismatch
+— then green with the fix restored). Additionally verified **live on the
+operator's phone** this session: zero `room-mismatch` drops on the relay
+(was 77% pre-fix — 8,640 dropped frames in one capture), correct room
+`7ADky8889NJy` on all frames, and sends echo within ~1s (no 20s
+`send_timeout`). The `_activeRoom`-stuck-at-`'main'` root cause is closed
+for both the inbound demux (this story) and the send path
+(`story-mobile-send-timeout-relay-room-main-mismatch`, the send-side twin).
