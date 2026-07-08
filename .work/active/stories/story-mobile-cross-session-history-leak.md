@@ -459,10 +459,16 @@ open ACs are answered by that work, not by code written here:
    `cross_room` logging (deployed in `story-relay-log-room-meta-update-
    accept-and-drop`) confirmed `cross_room=false` for every `room_meta_update`
    in the repro window: the `7ADky` session_id patches came from the 7ADky
-   Pi's own process (h1 — its own session rotation via `/new`/subagent
-   boundaries), NOT a sibling overwriting via the shared owner epk. There is
-   no cross-room leak to fix; the rotation is correct reconnect-hydration
-   behavior.
+   Pi's own process (h1 — its own session rotation), NOT a sibling
+   overwriting via the shared owner epk. There is no cross-room leak to fix.
+   The own-process rotation in the subagent case was itself a real bug — a
+   child subagent `session_start` publishing a child `session_id` for the
+   parent's room, which wiped the mobile chatlog — and that is resolved by
+   `story-extension-subagent-child-session-start-wipes-mobile-chat` (done,
+   operator-confirmed fixed). So thread #2's supersession chain is: relay
+   logging rules out the cross-room sibling overwrite (h2), and the child-
+   session wipe story fixes the genuine own-process rotation symptom the
+   operator saw.
 
 **Remaining open ACs:**
 - "does the extension send `room_meta_update` for a sibling room?" — answered
