@@ -212,6 +212,14 @@ story's design originally specified, not `sendMessage`). The
 `owner_multiplexer` still emits `onFanoutPresenceChanged` (the callback
 contract is unchanged); only the `index.ts` handler's side effect changed.
 
+**Follow-up fix (same day):** `console.warn` was ALSO unsuitable — pi
+surfaces extension `console.warn` to the TUI as a notification
+(`runner.js:297`), so the spam persisted after the first fix. Made the
+handler fully silent (`void` the args, no output at all). Fan-out
+suspend/resume fires on every mobile connection flap (normal mobile
+behavior), so any TUI output is too noisy. If diagnostics are ever needed
+they should go to a debug log file, not the TUI.
+
 **Verification:** `corepack pnpm typecheck` clean; `corepack pnpm test` →
 765 passed | 3 skipped (was 752; the delta is unrelated test growth). The
 `owner_multiplexer.test.ts` one-shot diagnostic tests still pass (they
