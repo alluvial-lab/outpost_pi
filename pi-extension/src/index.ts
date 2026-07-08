@@ -89,6 +89,7 @@ import { createRemotePiExtensionRuntime, registerLifecycleHooks } from "./extens
 import { createLegacyIndexPorts, type LegacyIndexDeps } from "./extension/legacy_ports.js";
 import type { CommandSurfacePort, WakeAgentResult } from "./extension/ports.js";
 import { SdkSessionProjection } from "./session/sdk_session_projection.js";
+import { createDeliveryDebugLog, idTail } from "./session/delivery_debug_log.js";
 import { roomIdFor } from "./rooms.js";
 import { registerAgentTools } from "./session/tools.js";
 import { formatPeerInventory } from "./session/peer_inventory.js";
@@ -1198,6 +1199,8 @@ function _isAgentMessageApi(value: unknown): value is AgentMessageApi {
   return typeof candidate.sendMessage === "function" && typeof candidate.sendUserMessage === "function";
 }
 
+const _deliveryDebugLog = createDeliveryDebugLog();
+
 const _sdkSessionProjection: SdkSessionProjection = new SdkSessionProjection({
   outputs: {
     broadcast: (message) => _owners.broadcast(message),
@@ -1207,6 +1210,7 @@ const _sdkSessionProjection: SdkSessionProjection = new SdkSessionProjection({
     lateAttachTargets: () => _owners.entries(),
     handleClientMessage: (sender, message) => _routeClientMessageFrom(sender as PlainPeerChannel, message, _lastEventCtx ?? _lastCtx ?? _noopCtx),
     onStaleMessageApi: (api) => _forgetStaleMessageApi(api),
+    deliveryDebugLog: _deliveryDebugLog,
   },
 });
 
@@ -1618,6 +1622,13 @@ function createIndexDeps(): LegacyIndexDeps {
       wakeAgent: (...args) => _sdkSessionProjection.wakeAgent(...args),
       publishWorking: _publishWorking,
       handleClientMessage: (sender, message) => _sdkSessionProjection.handleClientMessage(sender, message),
+      onSessionLifecycle: (reason: string, sessionIdTail: string) => {
+        _deliveryDebugLog.log({
+          tag: "session_lifecycle",
+          reason: reason as "startup" | "reload" | "new" | "resume" | "fork" | "quit",
+          sessionIdTail,
+        });
+      },
     },
     commands: {
       register: (boundPi, runtime) => { createLegacyCommandSurface().register(boundPi, runtime); },
@@ -2212,6 +2223,14 @@ async function _attemptUserDelivery(prepared: PreparedUserDelivery): Promise<Wak
     prepared.label,
     prepared.shouldSteer ? "steer" : undefined,
   );
+  _deliveryDebugLog.log({
+    tag: "wake_outcome",
+    id: prepared.msg.id,
+    ok: wake.ok,
+    recoverable: wake.recoverable ?? false,
+    detail: wake.detail ?? "",
+    messageApiArmed: _sdkSessionProjection.messageApiBinding() !== null,
+  });
   if (!wake.ok) {
     turnSeed.rollback();
     if (turnSeed.seeded) {
@@ -2220,6 +2239,11 @@ async function _attemptUserDelivery(prepared: PreparedUserDelivery): Promise<Wak
     return wake;
   }
   _confirmUserDelivery(prepared.msg, prepared.shouldSteer);
+  _deliveryDebugLog.log({
+    tag: "msg_delivered",
+    id: prepared.msg.id,
+    sessionIdTail: idTail(_currentRemoteSessionId()),
+  });
   return wake;
 }
 
@@ -2252,6 +2276,7 @@ function _enqueuePendingDelivery(prepared: PreparedUserDelivery, enqueuedAt = Da
     if (dropped) {
       clearTimeout(dropped.timeout);
       console.warn(`[remote-pi] dropping queued delivery id=${dropped.msg.id}: replay queue full`);
+      _deliveryDebugLog.log({ tag: "queue_dropped", id: dropped.msg.id, reason: "replay queue full" });
       _sendDeliveryError(dropped.sender, dropped.msg.id, "agent session did not re-arm before the replay queue filled");
     }
   }
@@ -2263,6 +2288,12 @@ function _enqueuePendingDelivery(prepared: PreparedUserDelivery, enqueuedAt = Da
     timeout: _schedulePendingDeliveryTimeout(queueId, prepared, enqueuedAt),
   };
   _pendingDeliveryQueue.push(entry);
+  _deliveryDebugLog.log({
+    tag: "delivery_pending",
+    id: prepared.msg.id,
+    queueLen: _pendingDeliveryQueue.length,
+    ttlMs: kPendingDeliveryTtlMs,
+  });
 }
 
 function _schedulePendingDeliveryTimeout(
@@ -2276,6 +2307,7 @@ function _schedulePendingDeliveryTimeout(
     const index = _pendingDeliveryQueue.findIndex((entry) => entry.queueId === queueId);
     if (index < 0) return;
     _pendingDeliveryQueue.splice(index, 1);
+    _deliveryDebugLog.log({ tag: "queue_dropped", id: prepared.msg.id, reason: "ttl expired" });
     _sendDeliveryError(prepared.sender, prepared.msg.id, "agent session did not re-arm before queued delivery expired");
   }, remaining);
 }
@@ -2285,6 +2317,7 @@ function _failPendingDeliveryQueue(detail: string): void {
   for (const entry of entries) {
     clearTimeout(entry.timeout);
     console.warn(`[remote-pi] failing queued delivery id=${entry.msg.id}: ${detail}`);
+    _deliveryDebugLog.log({ tag: "queue_dropped", id: entry.msg.id, reason: detail });
     _sendDeliveryError(entry.sender, entry.msg.id, detail);
   }
 }
@@ -2296,6 +2329,7 @@ function _drainPendingDeliveryQueue(): void {
     clearTimeout(entry.timeout);
     void (async () => {
       const wake = await _attemptUserDelivery(entry);
+      _deliveryDebugLog.log({ tag: "queue_drained", id: entry.msg.id, wakeOk: wake.ok });
       if (wake.ok) return;
       const detail = wake.detail ?? "agent session not bound yet";
       if (!wake.recoverable) {
@@ -2320,6 +2354,12 @@ async function _deliverUserMessage(
   mode: "auto" | "normal" = "auto",
 ): Promise<void> {
   const prepared = _prepareUserDelivery(msg, sender, mode);
+  _deliveryDebugLog.log({
+    tag: "msg_received",
+    id: msg.id,
+    source: mode === "normal" ? "queued" : "app",
+    steer: prepared.shouldSteer,
+  });
   const wake = await _attemptUserDelivery(prepared);
   if (wake.ok) return;
   if (wake.recoverable) {

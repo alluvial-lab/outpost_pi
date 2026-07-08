@@ -115,6 +115,11 @@ export interface SdkSessionProjectionPort {
   wakeAgent(...args: Parameters<ExtensionAPI["sendUserMessage"]>): Promise<WakeAgentResult>;
   publishWorking(working: boolean): void;
   handleClientMessage(sender: PeerChannel, message: ClientMessage): void | Promise<void>;
+  /** Delivery-path debug: session lifecycle transition (the precursor that
+   * opens the null window). `reason` is the SDK event reason
+   * (startup/reload/new/resume/fork/quit). Optional — no-op when the debug
+   * log is disabled. */
+  onSessionLifecycle?(reason: string, sessionIdTail: string): void;
 }
 
 export interface RemotePiRuntime {

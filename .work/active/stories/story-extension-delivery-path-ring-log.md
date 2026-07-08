@@ -1,7 +1,7 @@
 ---
 id: story-extension-delivery-path-ring-log
 kind: story
-stage: drafting
+stage: review
 tags: [pi-extension, observability, bug]
 parent: feature-cross-side-observability
 depends_on: []
@@ -171,6 +171,43 @@ discipline as the app ring log, review B2/C1).
 - Transport-frame observability (Unit 6 — parked follow-on).
 - Changing the app or relay log formats (both already ship the `id`
   correlation key this log joins to).
+
+## Implementation notes
+
+- Files changed: `pi-extension/src/session/delivery_debug_log.ts` (new —
+  typed `DeliveryDebugEvent` registry + `DeliveryDebugLog` port +
+  `DeliveryDebugLogImpl` adapter + factory), `delivery_debug_log.test.ts`
+  (new — adapter mechanics + factory + correlation + `FakeDeliveryDebugLog`
+  helper), `sdk_session_projection.ts` (emit from `bindApi`/
+  `bindCommandContext`/`clearStaleContexts`/`forget`; `deliveryDebugLog?`
+  on `SdkSessionProjectionOutputs`), `sdk_session_projection.test.ts`
+  (projection-side emit coverage via `FakeDeliveryDebugLog`), `index.ts`
+  (instantiate `_deliveryDebugLog`; emit `msg_received`/`wake_outcome`/
+  `msg_delivered`/`delivery_pending`/`queue_drained`/`queue_dropped`/
+  `session_lifecycle` from the delivery + hook paths), `extension/ports.ts`
+  (`onSessionLifecycle?` on `SdkSessionProjectionPort`),
+  `extension/composition_root.ts` (emit `session_lifecycle` from the
+  `session_start`/`session_shutdown` hooks where the event `reason` lives).
+- Tests added: `delivery_debug_log.test.ts` (10 — adapter persistence,
+  cap, immediate/debounced flush, export-from-file, clear, privacy scrub,
+  env-gate, `idTail`); `sdk_session_projection.test.ts` (+6 — `bindApi`/
+  `clearStaleContexts`/`wakeAgent`-null/`wakeAgent`-stale/`bindCommandContext`
+  emit the expected events).
+- Discrepancies from design: (1) `wake_outcome` is emitted from
+  `index.ts`'s `_attemptUserDelivery` (which has both the message `id` and
+  the `wake` result), not from the projection's `wakeAgent` (which takes
+  `...args` and doesn't know the id) — the caller has the richer context.
+  (2) `session_lifecycle` is emitted from `composition_root.ts` (where the
+  SDK event `reason` is available) via a new optional `onSessionLifecycle`
+  port method, rather than from the projection's `bindSessionContext`/
+  `clearStaleContexts` (which don't receive the reason). Both are cleaner
+  than the design's suggested sites and preserve the correlation key.
+- Adjacent issues parked: none.
+- Verification: `corepack pnpm typecheck` clean; targeted tests green.
+  Full `corepack pnpm test` pending (known env UDS/cwd-lock flakes noted
+  in the skill — will run scoped to the touched files + the extension test).
+- Deploy note: enabling the log requires `REMOTE_PI_DEBUG_LOG=1` + a full
+  pi process restart (per AGENTS.md, `/reload` does not re-import `dist/`).
 
 ## Relationship to the stuck-state bug
 
