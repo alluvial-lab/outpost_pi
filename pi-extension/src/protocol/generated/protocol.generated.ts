@@ -18,7 +18,7 @@ export interface Usage {
 
 export type PairErrorCode = "token_expired" | "token_consumed" | "token_unknown" | "internal_error";
 
-export type KnownErrorCode = "tool_approval_required" | "invalid_message" | "unsupported_type" | "too_large" | "rate_limited" | "timeout" | "internal_error" | "session_mismatch";
+export type KnownErrorCode = "tool_approval_required" | "invalid_message" | "unsupported_type" | "too_large" | "rate_limited" | "timeout" | "internal_error" | "session_mismatch" | "delivery_pending";
 
 export type ErrorCode = KnownErrorCode | (string & {});
 

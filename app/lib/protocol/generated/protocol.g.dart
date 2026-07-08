@@ -38,6 +38,28 @@ enum UserMessageStreamingBehavior {
 
 enum ApproveDecision { allow, deny }
 
+enum KnownErrorCode {
+  toolApprovalRequired('tool_approval_required'),
+  invalidMessage('invalid_message'),
+  unsupportedType('unsupported_type'),
+  tooLarge('too_large'),
+  rateLimited('rate_limited'),
+  timeout('timeout'),
+  internalError('internal_error'),
+  sessionMismatch('session_mismatch'),
+  deliveryPending('delivery_pending');
+
+  const KnownErrorCode(this.wire);
+  final String wire;
+
+  static KnownErrorCode? fromWire(String raw) {
+    for (final code in values) {
+      if (code.wire == raw) return code;
+    }
+    return null;
+  }
+}
+
 enum ActionName {
   sessionNew('session_new'),
   sessionCompact('session_compact'),
