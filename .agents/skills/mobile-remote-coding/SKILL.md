@@ -43,6 +43,7 @@ Remote Pi already has the pieces: `ConnectionStatus`, canonical presence/room sn
 - On attach/reconnect/resume/session switch, request an authoritative snapshot before trusting cached UI state.
 - Event deltas may update the UI optimistically, but a later snapshot must be able to correct them.
 - Sequence, dedupe, or otherwise make deltas idempotent when adding new message families.
+- Transcript message identity must have a single live source. The extension's `message_end` hook is the canonical source of live `agent_message`/`user_input` identity (it has the SDK `ts` + block index the replay path derives from). When adding a deterministic-identity broadcast, remove or guard every legacy broadcast that stamps a different id scheme — otherwise both survive as duplicate Hive rows. See the `single-source-live-identity` pattern.
 - Treat absence explicitly. If a field is absent in an open-ended metadata envelope, decide whether to preserve the old value or clear it; document that choice in code/tests.
 - Do not leave boolean state sticky. Every `working: true` path needs false convergence for success, error, abort/cancel, disconnect/reconnect, and session replacement.
 

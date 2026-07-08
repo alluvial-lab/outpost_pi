@@ -200,6 +200,7 @@ Practical rule: foreground/resume should re-check relay/session state; backgroun
 - Applying package-doc examples from newer `go_router`/Flutter versions without checking local pins.
 - Updating UI directly from `data/` streams instead of ViewModels/read repositories.
 - Writing partial event patches into UI state without an authoritative snapshot recovery path.
+- Broadcasting a transcript message type (e.g. `user_input`, `agent_message`) from more than one hook with different id schemes — both survive as duplicate Hive rows. See the `single-source-live-identity` pattern: `message_end` owns live identity; remove or guard every legacy broadcast it replaces.
 - Letting stream subscriptions, timers, or pending send timers survive session switch or dispose.
 - Logging message bodies, key material, or image payloads while debugging transport.
 
@@ -212,4 +213,5 @@ Practical rule: foreground/resume should re-check relay/session state; backgroun
 - [ ] Can `working` converge false after agent done, error, cancel, timeout, reconnect, app background/resume, and session switch?
 - [ ] Are stream subscriptions/timers cancelled on dispose and session switch?
 - [ ] Are hot widgets using `select` or narrow ViewModel fields instead of broad rebuilds?
+- [ ] If touching transcript identity (live `agent_message`/`user_input` broadcasts, `session_history` replay), does every broadcast site stamp the same deterministic `(sessionId, stableKey, ts)` as `message_end`? (See `single-source-live-identity` pattern — a legacy broadcast with a random id is a dupe source.)
 - [ ] Did `flutter analyze`, `flutter test`, and relevant build smoke pass?
