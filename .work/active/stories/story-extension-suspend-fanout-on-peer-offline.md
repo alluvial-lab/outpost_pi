@@ -10,7 +10,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-07
 ---
 
 # Extension: suspend outbound fan-out for a gone app peer (consume `peer_offline`)
@@ -187,3 +187,32 @@ NEEDS FIXES → APPROVED after 1 fix pass (openai-codex/gpt-5.5):
 Final verification: `corepack pnpm test` → 752 passed | 3 skipped (was 749;
 +3 new tests). `corepack pnpm typecheck` clean. The session-replacement
 harness still passes.
+
+## Post-deploy fix: stop injecting fan-out telemetry into the agent context (2026-07-08)
+
+**Regression found in production.** The `onFanoutPresenceChanged`
+callback called `_sendPiMessage({ customType: "remote-pi:fanout-presence",
+content, display: false })`, which routes through the SDK's
+`sendCustomMessage` → `appendCustomMessageEntry` and adds the fan-out text
+to the agent's conversation as a `custom` message. `display: false` only
+suppresses the TUI bubble render — it does NOT keep the message out of
+the agent's context. So the agent saw "[remote-pi] Fan-out suspended for
+app peer=..." as part of its conversation and responded to it ("Re: the
+repeated my/xN94M fan-out suspensions..."), disrupting work. The
+`_notify` call also spammed the TUI footer with a Warning per flap.
+
+A flapping mobile connection (the phone backgrounding/suspending the
+WebSocket every 1-3 min, normal mobile behavior) made this constant —
+every suspend/resume cycle injected two messages into the agent context.
+
+**Fix:** removed the `_sendPiMessage` and `_notify` calls entirely.
+Fan-out suspend/resume is relay-transport telemetry, not agent-facing
+content — it now emits a `console.warn` only (the log/audit channel the
+story's design originally specified, not `sendMessage`). The
+`owner_multiplexer` still emits `onFanoutPresenceChanged` (the callback
+contract is unchanged); only the `index.ts` handler's side effect changed.
+
+**Verification:** `corepack pnpm typecheck` clean; `corepack pnpm test` →
+765 passed | 3 skipped (was 752; the delta is unrelated test growth). The
+`owner_multiplexer.test.ts` one-shot diagnostic tests still pass (they
+assert the callback is invoked, not what `index.ts` does with it).
