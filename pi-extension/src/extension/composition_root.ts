@@ -54,11 +54,15 @@ export function registerLifecycleHooks(
 ): void {
   pi.on("session_start", (_event: unknown, ctx: ExtensionContext) => {
     ports.session.bindSessionContext(ctx);
+    const reason = (isSessionEvent(_event) ? _event.reason : undefined) ?? "startup";
+    ports.session.onSessionLifecycle?.(reason, sessionIdTail(ctx));
     if (!epoch.isCurrent()) return;
     void ports.commands.ensureStarted?.(ctx);
   });
 
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", async (_event?: unknown) => {
+    const reason = (isSessionEvent(_event) ? _event.reason : undefined) ?? "quit";
+    ports.session.onSessionLifecycle?.(reason, "");
     await disposeRuntimePorts(ports, epoch);
   });
 }
@@ -82,4 +86,22 @@ export function createRemotePiExtensionFactory(
     const runtime = createRemotePiExtensionRuntime(pi, createPorts());
     runtime.register();
   };
+}
+
+// ── Delivery-path debug helpers ─────────────────────────────────────────────
+
+/** Narrow an unknown SDK session event to its `reason` field. The SDK's
+ *  `SessionStartEvent`/`SessionShutdownEvent` carry `reason`; the event is
+ *  typed `unknown` here because the SDK type isn't imported at this layer. */
+function isSessionEvent(event: unknown): event is { reason?: string } {
+  return typeof event === "object" && event !== null && "reason" in event
+    && typeof (event as { reason?: unknown }).reason === "string";
+}
+
+/** Tail of the session id from a session ctx (for correlation; matches the
+ *  relay's `id_tail` convention). Empty when no session id is resolvable. */
+function sessionIdTail(ctx: ExtensionContext): string {
+  const sm = (ctx as { sessionManager?: { getSessionId?: () => string } }).sessionManager;
+  const id = sm?.getSessionId?.();
+  return id ? (id.length <= 8 ? id : id.slice(-8)) : "";
 }

@@ -139,6 +139,13 @@ and the pi-extension is registered as a **local-path** extension (not npm).
   authoritative. `dist/` is gitignored and **not rebuilt automatically**; a
   source edit requires `corepack pnpm build` (or `./node_modules/.bin/tsc` to
   bypass the corepack deps-status RO-cache check) before it's live.
+  **Delivery-path debug log:** set `REMOTE_PI_DEBUG_LOG=1` in the pi
+  process's environment to enable a bounded ring + file at
+  `~/.pi/remote/debug/delivery.log` capturing the `messageApi`/`commandCtx`
+  lifecycle, `wakeAgent` outcomes, the replay queue, and `session_start`/
+  `session_shutdown` reasons — all keyed by the message `id` that joins the
+  phone's `msg-send` and the relay's `env_id_tail`. Default off (no-op). Needs
+  a full pi restart to take effect (not `/reload`).
 - **app** — Flutter mobile; sideloaded via `adb install <apk>` to a phone on a
   workstation (the VM has no phone attached).
 
