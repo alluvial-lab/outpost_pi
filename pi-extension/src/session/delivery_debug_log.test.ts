@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   DeliveryDebugLogImpl,
   createDeliveryDebugLog,
   idTail,
+  MAX_RING_BYTES,
   noopDeliveryDebugLog,
   type DeliveryDebugEvent,
   type DeliveryDebugLog,
@@ -104,6 +105,21 @@ describe("DeliveryDebugLogImpl adapter mechanics", () => {
       log.log({ tag: "message_api_null", reason: "stale" });
     }
     expect(() => log.export()).not.toThrow();
+  });
+
+  test("capFile bounds the persistent file to ~MAX_RING_BYTES when it exceeds 2x", () => {
+    const log = new DeliveryDebugLogImpl(logPath);
+    // Write enough immediate-flush events to push the file past 2x the cap
+    // (1 MiB). Each line is ~90 bytes; need ~24k lines for 2 MiB.
+    for (let i = 0; i < 24_000; i++) {
+      log.log({ tag: "message_api_null", reason: "stale" });
+    }
+    log.dispose();
+    const size = existsSync(logPath) ? statSync(logPath).size : 0;
+    // After capFile, the file should be at most ~MAX_RING_BYTES (512 KiB) +
+    // one line of slack. Generously assert < 1 MiB (2x cap) to allow for the
+    // keep-until-over heuristic.
+    expect(size).toBeLessThan(MAX_RING_BYTES * 2);
   });
 
   test("dispose flushes pending routine events", () => {
