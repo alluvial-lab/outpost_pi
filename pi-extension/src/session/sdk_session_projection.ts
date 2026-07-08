@@ -7,6 +7,8 @@ import type { ClientMessage, ServerMessage, ThinkingLevel, SessionHistoryEvent }
 import type { PeerChannel } from "../transport/peer_channel.js";
 import type { SdkSessionProjectionPort, WakeAgentResult } from "../extension/ports.js";
 import type { ActionCtx, ActionPi, SdkModelLike } from "../actions/handlers.js";
+import type { DeliveryDebugLog } from "./delivery_debug_log.js";
+import { idTail } from "./delivery_debug_log.js";
 import { RemoteSessionIssuer, type RemoteSessionId } from "./remote_session.js";
 import type { TranscriptEvent } from "./transcript_event.js";
 import { TranscriptEventLog } from "./transcript_event_log.js";
@@ -58,6 +60,11 @@ export interface SdkSessionProjectionOutputs {
   lateAttachTargets(): readonly { peerId: string; channel: PeerChannel }[];
   handleClientMessage(sender: PeerChannel, message: ClientMessage): void | Promise<void>;
   onStaleMessageApi?(api: AgentMessageApi): void;
+  /** Delivery-path debug log (the extension half of cross-side observability).
+   * Optional — a no-op when `REMOTE_PI_DEBUG_LOG` is unset. The projection
+   * emits `message_api_armed`/`message_api_null`/`wake_outcome`/`command_ctx`
+   * from its own state transitions. See `delivery_debug_log.ts`. */
+  deliveryDebugLog?: DeliveryDebugLog;
 }
 
 export interface SeededUserTurn {
@@ -132,11 +139,21 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
 
   bindApi(pi: ExtensionAPI): void {
     this.bindCapabilities(pi);
+    this.opts.outputs.deliveryDebugLog?.log({
+      tag: "message_api_armed",
+      via: "factory",
+      sessionIdTail: this.issuer.current() ?? "unknown",
+    });
   }
 
   bindCommandContext(ctx: ExtensionCommandContext): void {
     this.commandCtx = ctx;
     this.bindCapabilities(ctx);
+    this.opts.outputs.deliveryDebugLog?.log({
+      tag: "command_ctx",
+      armed: true,
+      via: "slash",
+    });
   }
 
   bindSessionContext(ctx: ExtensionContext, opts?: { subagentChild?: boolean }): void {
@@ -300,6 +317,15 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.eventCtx = null;
     this.messageApi = null;
     this.actionApi = null;
+    this.opts.outputs.deliveryDebugLog?.log({
+      tag: "message_api_null",
+      reason: "shutdown",
+    });
+    this.opts.outputs.deliveryDebugLog?.log({
+      tag: "command_ctx",
+      armed: false,
+      via: "slash",
+    });
   }
 
   captureRemoteSession(ctx: unknown): RemoteSessionId {
@@ -770,6 +796,10 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.messageApi = null;
     if (api === this.actionApi) this.actionApi = null;
     this.opts.outputs.onStaleMessageApi?.(api);
+    this.opts.outputs.deliveryDebugLog?.log({
+      tag: "message_api_null",
+      reason: "stale",
+    });
   }
 
   private forgetActionApi(api: FreshActionApi): void {
