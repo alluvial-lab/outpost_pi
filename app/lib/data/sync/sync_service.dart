@@ -195,6 +195,13 @@ class SyncService extends Service {
     _activeEpk = epk;
     _activeRoomId = room;
     _activeRef = nextRef;
+    // Capability is per-active-session, not process-global: a prior peer that
+    // sent deterministic agent_message(ts) must not cause a later legacy
+    // peer's AgentDone/ToolRequest fallback to be suppressed (which would
+    // lose real text). Re-latch on the first agent_message(ts) from THIS
+    // session. See story-mobile-connection-flapping-drops-identity-frames
+    // Layer 2 review finding.
+    _extensionSendsDeterministicAgentMessage = false;
     _indexLoaded = false;
     _idToSeq.clear();
     _nextSeq = 0;
@@ -202,6 +209,15 @@ class SyncService extends Service {
     if (nextRef != null) {
       await _loadIndex(nextRef);
       await _materializeTranscriptProjectionForRef(nextRef);
+    }
+    // If a session_sync was requested while no ref was bound yet (online edge
+    // before the session id was known), drain it now that activate() has one.
+    // Without this, a suppressed-row turn whose reconnect fired before the
+    // ref was known would never get its replay backfill. See
+    // story-mobile-connection-flapping-drops-identity-frames Layer 2 review
+    // finding (reconnect backfill guarantee).
+    if (_pendingSyncRequest && nextRef != null) {
+      requestSync();
     }
     _writeRuntime();
   }
