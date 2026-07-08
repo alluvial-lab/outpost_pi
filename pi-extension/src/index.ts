@@ -272,23 +272,22 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
     }, undefined, "paired");
   },
   onFanoutPresenceChanged: ({ peerShortId, state, sinceTs }) => {
-    const verb = state === "suspended" ? "suspended" : "resumed";
-    // Operational telemetry only — do NOT inject into the agent's message
-    // context. A prior version called `_sendPiMessage({ customType:
-    // "remote-pi:fanout-presence", ... })`, which routed through the SDK's
-    // `sendCustomMessage` → `appendCustomMessageEntry`, adding the
-    // fan-out text to the agent's conversation as a `custom` message.
-    // The agent then saw "[remote-pi] Fan-out suspended for app peer=..."
-    // as part of its context and responded to it, disrupting work.
-    // `display: false` only suppresses the TUI bubble render; it does NOT
-    // keep the message out of the agent's context. Fan-out suspend/resume
-    // is relay-transport telemetry, not agent-facing content. Log it only.
-    // See `story-extension-suspend-fanout-on-peer-offline` (the diagnostic
-    // was specified as audit/log, not sendMessage).
-    console.warn(
-      `[remote-pi] Fan-out ${verb} for app peer=${peerShortId}` +
-      (sinceTs === undefined ? "" : ` since=${sinceTs}`),
-    );
+    // Operational telemetry only — do NOT emit anything to the TUI or the
+    // agent's message context. A prior version called `_sendPiMessage` (which
+    // injected the fan-out text into the agent's conversation as a `custom`
+    // message — the agent then responded to it) AND `_notify` (which spammed
+    // the TUI footer with a Warning per flap). `display: false` only
+    // suppresses the TUI bubble render; it does NOT keep the message out of
+    // the agent's context. `console.warn` is ALSO unsuitable: pi surfaces
+    // extension `console.warn` to the TUI as a notification (runner.js:297),
+    // so the spam persisted. Fan-out suspend/resume fires on every mobile
+    // connection flap (normal mobile behavior), so any TUI output is too
+    // noisy. Silent is correct — the suspend/resume is a purely internal
+    // transport state; the app rehydrates via session_sync on reconnect, and
+    // the operator does not need to see every flap. If diagnostics are ever
+    // needed, they should go to a debug log file, not the TUI. See
+    // `story-extension-suspend-fanout-on-peer-offline` (post-deploy fix).
+    void peerShortId; void state; void sinceTs;
   },
 });
 
