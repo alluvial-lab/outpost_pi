@@ -238,6 +238,22 @@ Os replies (`action_ok` / `models_list`) só confirmam dispatch. Efeitos visíve
 - Modelo trocado → evento `model_select` broadcast pra todos os owners conectados
 - Nova sessão → `pair_ok` (ou equivalente) com novo `session_started_at`
 
+### Códigos `error` conhecidos (app↔Pi)
+
+`error.code` é string aberta: clientes devem tolerar códigos novos. Códigos conhecidos:
+
+| Código | Semântica |
+|---|---|
+| `tool_approval_required` | Ação bloqueada aguardando aprovação de ferramenta |
+| `invalid_message` | Mensagem malformada ou inválida no boundary |
+| `unsupported_type` | Tipo de mensagem não suportado |
+| `too_large` | Payload excede limite aceito |
+| `rate_limited` | Remetente temporariamente limitado |
+| `timeout` | Operação excedeu janela de espera |
+| `internal_error` | Falha permanente no processamento local |
+| `session_mismatch` | Mensagem pertence a outra sessão remota |
+| `delivery_pending` | Sinal transitório: a mensagem entrou durante troca de sessão e foi enfileirada para replay; o app mantém o balão pendente e aguarda o echo ou timeout estendido |
+
 ### Por que ações tipadas em vez de picker genérico
 
 O SDK `@mariozechner/pi-coding-agent` não expõe API genérica de invocação dos slash commands builtin (`/compact`, `/model`, `/fork`, `/copy`, etc.) — apenas alguns têm equivalente em `ExtensionContextActions`. Tentar espelhar o picker do TUI exigiria mirror manual da lista builtin + matriz de invocabilidade + UX de chip canonizado, com vários comandos sendo só hint informativo. Vocabulário tipado é mais simples, mais honesto, e cobre 100% das ações que fazem sentido em mobile. Padrão validado pelo adapter `pi-telegram` (mesmo abordagem: vocabulário curado, sem picker genérico).
