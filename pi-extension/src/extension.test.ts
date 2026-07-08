@@ -2475,7 +2475,7 @@ describe("user_input mirroring", () => {
     await stop("", makeMockCtx());
   });
 
-  test("interactive input → user_input emitted + _currentTurnId set", async () => {
+  test("interactive input → NO user_input broadcast (message_end owns the deterministic echo)", async () => {
     await _pairForTest("peer-A");
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
@@ -2484,11 +2484,12 @@ describe("user_input mirroring", () => {
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const userInputs = sent.map(decodeSentCt).filter((d) => d.inner.type === "user_input");
-    expect(userInputs).toHaveLength(1);
-    expect(userInputs[0]!.peer).toBe("peer-A");
-    expect(userInputs[0]!.inner).toMatchObject({ type: "user_input", text: "listar arquivos" });
-    expect(typeof userInputs[0]!.inner["id"]).toBe("string");
-    expect((userInputs[0]!.inner["id"] as string).startsWith("local_")).toBe(true);
+    // The input handler no longer broadcasts user_input — message_end does
+    // (with the stable SDK ts + deterministic id). The earlier broadcast used
+    // a different id (local_<uuid>) and no ts, causing a duplicate user bubble
+    // on mobile for workstation-typed messages. The turn projection is still
+    // seeded (verified via _currentTurnId below).
+    expect(userInputs).toHaveLength(0);
   });
 
   test("extension input → NO user_input emitted (routeClientMessage already handles app turns)", async () => {
@@ -2503,7 +2504,7 @@ describe("user_input mirroring", () => {
     expect(userInputs).toHaveLength(0);
   });
 
-  test("rpc input → user_input emitted (same as interactive)", async () => {
+  test("rpc input → NO user_input broadcast (same as interactive — message_end owns it)", async () => {
     await _pairForTest("peer-C");
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
@@ -2512,8 +2513,10 @@ describe("user_input mirroring", () => {
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const userInputs = sent.map(decodeSentCt).filter((d) => d.inner.type === "user_input");
-    expect(userInputs).toHaveLength(1);
-    expect(userInputs[0]!.inner).toMatchObject({ type: "user_input", text: "remoto via RPC" });
+    // Same as interactive: the input handler no longer broadcasts user_input.
+    // message_end (which fires for the user prompt before agent streaming)
+    // owns the deterministic-identity broadcast.
+    expect(userInputs).toHaveLength(0);
   });
 
   test("subsequent agent_chunk reuses turnId set by local input", async () => {
@@ -2522,9 +2525,12 @@ describe("user_input mirroring", () => {
     const onInput = captureEventHandler("input");
     onInput({ type: "input", text: "ola", source: "interactive" });
 
-    const sentInputs = relayRef.current!.send.mock.calls.map((c) => c[0] as string);
-    const userInputs = sentInputs.map(decodeSentCt).filter((d) => d.inner.type === "user_input");
-    const turnId = userInputs[0]!.inner["id"] as string;
+    // The input handler seeds the turn projection (local_input) with a
+    // turnId. The input handler no longer broadcasts user_input (message_end
+    // owns the deterministic-identity broadcast), so capture the turnId from
+    // the turn projection directly.
+    const turnId = _getCurrentTurnIdForTest();
+    expect(turnId, "turn projection seeded by local_input").toBeTruthy();
 
     const onMsgUpdate = captureEventHandler("message_update");
     onMsgUpdate({

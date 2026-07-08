@@ -1118,6 +1118,58 @@ void main() {
     },
   );
 
+  // Regression for the ToolRequest-flush duplication. The SDK fires
+  // `message_end` (→ extension broadcasts `agent_message(ts)`) BEFORE
+  // `tool_execution_start` (→ app receives `ToolRequest`). So the
+  // deterministic `agent_message(ts)` commit lands first and sets
+  // `_agentMessageCommittedThisTurn`. The `ToolRequest` handler must NOT
+  // re-commit the streaming buffer under a random eventId — that would
+  // duplicate the text as a second row (random-uuid live row + deterministic
+  // replay row = the visible dupe). Mirrors the `AgentDone` skip. See
+  // story-mobile-assistant-message-duplicated-live-replay decision 1.
+  test(
+    'ToolRequest after agent_message(ts) does not re-commit the buffer',
+    () async {
+      final s = await setup();
+      s.ch.push(UserInput(id: 'u1', text: 'go'));
+      await _settle();
+      // Stream some text into the buffer.
+      s.ch.push(const AgentChunk(inReplyTo: 'u1', delta: 'narration text'));
+      await _settle();
+      // Live agent_message(ts) from message_end — commits deterministically.
+      const liveTs = 2000;
+      s.ch.push(const AgentMessage(
+        inReplyTo: 'u1',
+        text: 'narration text',
+        ts: liveTs,
+      ));
+      await _settle();
+      // ToolRequest arrives AFTER the deterministic commit. Under the old
+      // code this re-committed the buffer with a random uuid → second row.
+      s.ch.push(const ToolRequest(toolCallId: 'tc1', tool: 'Read', args: {}));
+      await _settle();
+      s.ch.push(AgentDone(inReplyTo: 'u1'));
+      await _settle();
+
+      final assistantRows = messages(s.epk)
+          .where((r) => r.role == MsgRole.assistant)
+          .toList();
+      final narration =
+          assistantRows.where((r) => r.text == 'narration text');
+      expect(
+        narration.length,
+        1,
+        reason:
+            'The buffered text must be committed exactly once. The '
+            'deterministic agent_message(ts) commit from message_end lands '
+            'before ToolRequest; the ToolRequest flush must not re-commit '
+            'the same text under a random eventId (the live×replay dupe).',
+      );
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
   // Regression for the multi-block collision the deep review caught.
   // A single SDK assistant message with MULTIPLE text blocks shares
   // (in_reply_to, ts) across blocks; the extension emits one agent_message
@@ -1233,6 +1285,67 @@ void main() {
             '<id>:<ts> — both survived as distinct Hive rows.',
       );
       expect(userRows.single.text, 'hello from phone');
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  // Regression for the workstation-user-message dupe (2026-07-08). A message
+  // typed in the Pi TUI used to produce TWO live user_input broadcasts: one
+  // from the input handler (id=local_<uuid>, no ts) and one from message_end
+  // (id=sync_<ts>, with ts). Different ids → different eventIds → two rows →
+  // duplicate user bubble. The extension fix removed the input-handler
+  // broadcast (message_end owns it) and aligned the message_end id with the
+  // turn projection's turnId. This test pins the app side: a single
+  // UserInput(ts) with a local_-prefixed id (the workstation case) commits
+  // one row, and a replay collapses.
+  test(
+    'workstation user message: single UserInput(ts) + replay collapse to one row',
+    () async {
+      final s = await setup();
+      // The message_end-driven user_input for a workstation-typed message.
+      // id is the turnId (local_-prefixed), ts is the SDK timestamp.
+      const liveTs = 5000;
+      s.ch.push(const UserInput(
+        id: 'local_workstation_turn',
+        text: 'restarted pi and loaded the apk',
+        ts: liveTs,
+      ));
+      await _settle();
+      final afterLive =
+          messages(s.epk).where((r) => r.role == MsgRole.user).length;
+      expect(afterLive, 1, reason: 'single user_input commits one row');
+
+      // Replay the same message via session_history — must collapse.
+      s.ch.push(SessionHistory(
+        inReplyTo: 'sync1',
+        sessionStartedAt: 0,
+        events: const [
+          UserInputEvt(
+              ts: liveTs,
+              id: 'local_workstation_turn',
+              text: 'restarted pi and loaded the apk'),
+        ],
+        eos: true,
+      ));
+      await _settle();
+
+      final userConfirmedEvents =
+          (await s.sync.debugTranscriptEventStore.readSession(
+        transcriptKeyFor(s.epk),
+      ))
+          .whereType<UserMessageConfirmed>()
+          .where((e) => e.clientMessageId == 'local_workstation_turn')
+          .toList();
+      expect(
+        userConfirmedEvents.length,
+        1,
+        reason:
+            'A workstation user message (single UserInput(ts)) and its replay '
+            'must collapse to one event-store row. Previously the input handler '
+            'broadcast a second user_input with a different id (local_<uuid>) '
+            'and no ts, causing a duplicate user bubble on mobile.',
+      );
       s.conn.dispose();
       s.sync.dispose();
     },
