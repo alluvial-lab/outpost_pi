@@ -1,16 +1,17 @@
 ---
 id: story-relay-retroactive-file-logging
 kind: story
-stage: review
+stage: done
 tags: [relay, observability, bug]
 parent: feature-cross-side-observability
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-08
 implemented: 2026-07-04
 review_addressed: 2026-07-04
+deployed: 2026-07-08
 ---
 
 # Relay: retroactive file logging + forward-path correlation key
@@ -99,8 +100,21 @@ empty, short, exactly-8, normal-UUID, non-ASCII-long, and non-ASCII-short.
 - The phone-side ring log (`story-app-persistent-ring-log`).
 - Extension-side level toggle (the extension's `audit.jsonl` is already
   retroactive; a level toggle is a separate, lower-leverage slice).
-- Changing the live container's launch config (the deploy step wires the env
-  var / volume; this story delivers the capability).
+
+## Deploy (2026-07-08)
+
+The live container now runs the file sink — the "out of scope" deploy step
+above is complete. Rebuilt `remote-pi-relay:0.2.2` from current `relay/` source
+(commit `155fbe0` + `f009448` supersession log + `e5f6bce` room_meta
+`cross_room` log, all of which landed after the prior `0.2.0` image was built)
+and restarted with `REMOTEPI_RELAY_LOG_DIR=/data/logs` + `RUST_LOG=info,relay=debug`.
+Verified at runtime: the file `relay.log.<date>` is created, startup emits
+`relay file logging enabled`, and `authenticated {superseded_existing }` /
+`room_meta_update { cross_room }` lines are captured live. The `debug!`
+forward-path `env_id_tail` correlation line emits only on cross-PC
+`pi_envelope` frames (app↔pi data-plane stays payload-opaque at INFO).
+`AGENTS.md` § Deployment reflects the current image tag, env vars, and the
+`docker exec ... tail` read command.
 
 ## References
 
