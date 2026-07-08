@@ -1,7 +1,7 @@
 ---
 id: story-mobile-cross-session-history-leak
 kind: story
-stage: drafting
+stage: review
 tags: [app, pi-extension, relay, bug, transport, session]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-06
-updated: 2026-07-07
+updated: 2026-07-08
 reinvestigated: 2026-07-06
 ---
 
@@ -440,6 +440,42 @@ distinguish them.
 - The send-timeout / `room=main` outbound bug — separate story
   (`story-mobile-send-timeout-relay-room-main-mismatch`), likely same root.
 - The dup/reorder identity fixes (landed).
+
+## Supersession decision (2026-07-08) — close as resolved-by-supersession
+
+This story's two threads were both resolved by other work, and the remaining
+open ACs are answered by that work, not by code written here:
+
+1. **Subagent-content leak (the operator's actual report) — RESOLVED by
+   `story-extension-suppress-subagent-assistant-broadcast` (done, verified
+   live 2026-07-08).** That story implemented fix path #1 (the
+   `tool_execution_start`/`tool_execution_end` window gate for
+   `toolName === "subagent"`) which this story's investigation traced and
+   confirmed as the viable fork-local, model-independent fix. The leak is
+   closed at the extension projection layer (suppress both the live
+   `agent_message` broadcast and the `assistant_committed` transcript event
+   while a subagent tool execution is open).
+2. **Cross-room session flip (h2) — RULED OUT as a leak.** The relay
+   `cross_room` logging (deployed in `story-relay-log-room-meta-update-
+   accept-and-drop`) confirmed `cross_room=false` for every `room_meta_update`
+   in the repro window: the `7ADky` session_id patches came from the 7ADky
+   Pi's own process (h1 — its own session rotation via `/new`/subagent
+   boundaries), NOT a sibling overwriting via the shared owner epk. There is
+   no cross-room leak to fix; the rotation is correct reconnect-hydration
+   behavior.
+
+**Remaining open ACs:**
+- "does the extension send `room_meta_update` for a sibling room?" — answered
+  NO by the `cross_room=false` evidence (a sibling patch would have shown
+  `cross_room=true`); it is the 7ADky Pi's own.
+- "decide fix path" — decided: no code fix needed here. The reported symptom
+  routes to the subagent story (done); the cross-room hypothesis is closed.
+- "regression test" — covered by the subagent story's tests.
+
+This item is at `stage: review` for a review pass to confirm the
+supersession reasoning before advancing to `done`. No code change is in this
+story's diff — it is a closeout decision grounded in the two done stories'
+evidence.
 
 ## References
 
