@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-session-control
 created: 2026-06-29
-updated: 2026-06-29
+updated: 2026-07-08
 tags: [app, pi-extension]
 ---
 
@@ -24,6 +24,18 @@ Random thoughts from operator use of the mobile app.
   user has no mobile-native way to reload the extension/sessions and pick up new
   or updated extensions. Worth treating a mobile `/reload` affordance as the
   high-value slice of any slash-command surface work.
+  - **Updated motivation (2026-07-08):** `/reload` is also the recovery path
+    for the stale-ctx lockout (`story-fix-stale-ctx-messageapi-rearm-on-
+    reload`). When a session replacement invalidates the extension's
+    `messageApi`, mobile-only operators cannot `/reload` to rebind it — the
+    only phone-side affordance is `session_new` (quick actions), which
+    *does* rebind via `withSession` but **discards the current conversation**.
+    A `/reload` button in the same quick-actions menu as `/new` would give a
+    context-preserving recovery: re-fire `session_start` against the loaded
+    module (factory re-init re-arms a working `messageApi`) without starting
+    a fresh session. This is distinct from the full process-restart in
+    `idea-mobile-restart-pi-session-affordance` (which picks up a rebuilt
+    `dist/`); `/reload` is the lighter, in-process rebind.
 - **New messages don't auto-scroll the chat to the bottom.** When a new message
   arrives (or is sent), the chat window stays at its current scroll position
   instead of scrolling down to show the latest message, so the user has to
