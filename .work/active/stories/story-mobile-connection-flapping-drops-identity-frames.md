@@ -354,3 +354,27 @@ observed at least once.
   (relay-log flap rate after the 45s ping sideload) needs a live phone
   session; the phone was offline at review time. The Layer 2 code fix does
   not depend on that verification.
+
+## Review findings (2026-07-08, cross-model `openai-codex/gpt-5.5`)
+
+Standard-lane code review returned `Request changes` with 1 blocker + 1
+important, both addressed:
+
+- **Blocker (resolved): capability flag was process-global.**
+  `_extensionSendsDeterministicAgentMessage` was latched once for the whole
+  `SyncService` and never reset. If peer A (fixed extension) latched it,
+  then the app switched to a legacy peer B, B's `AgentDone`/`ToolRequest`
+  fallback would be wrongly suppressed → real text lost. The design claim
+  "legacy extensions keep the fallback" was only true per-peer, not globally.
+  **Fix:** reset the flag in `activate()` on a genuine session switch, so the
+  capability is per-active-session (re-latched on the first
+  `agent_message(ts)` from THIS session). Regression test added:
+  `capability flag is per-session: prior fixed peer does not suppress a later
+  legacy peer's fallback`.
+- **Important (resolved): reconnect backfill not unconditional.**
+  `requestSync()` parks a pending request when `_activeRef` is null, but
+  `activate()` did not drain it after binding a ref — so a suppressed-row
+  turn whose reconnect fired before the session id was known would never
+  get its replay backfill. **Fix:** drain `_pendingSyncRequest` in
+  `activate()` after a non-null ref binds. The implementation notes' claim
+  "guaranteed on every reconnect" is now accurate.
