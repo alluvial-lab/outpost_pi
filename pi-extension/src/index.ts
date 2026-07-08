@@ -273,20 +273,22 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
   },
   onFanoutPresenceChanged: ({ peerShortId, state, sinceTs }) => {
     const verb = state === "suspended" ? "suspended" : "resumed";
-    const content = state === "suspended"
-      ? `[remote-pi] Fan-out suspended for app peer=${peerShortId}`
-      : `[remote-pi] Fan-out resumed for app peer=${peerShortId}`;
-    _sendPiMessage({
-      customType: "remote-pi:fanout-presence",
-      content,
-      details: {
-        peer: peerShortId,
-        state: verb,
-        ...(sinceTs === undefined ? {} : { sinceTs }),
-      },
-      display: false,
-    }, undefined, "fanout-presence");
-    _notify(content, state === "suspended" ? "warning" : "info");
+    // Operational telemetry only — do NOT inject into the agent's message
+    // context. A prior version called `_sendPiMessage({ customType:
+    // "remote-pi:fanout-presence", ... })`, which routed through the SDK's
+    // `sendCustomMessage` → `appendCustomMessageEntry`, adding the
+    // fan-out text to the agent's conversation as a `custom` message.
+    // The agent then saw "[remote-pi] Fan-out suspended for app peer=..."
+    // as part of its context and responded to it, disrupting work.
+    // `display: false` only suppresses the TUI bubble render; it does NOT
+    // keep the message out of the agent's context. Fan-out suspend/resume
+    // is relay-transport telemetry, not agent-facing content. Log it only.
+    // See `story-extension-suspend-fanout-on-peer-offline` (the diagnostic
+    // was specified as audit/log, not sendMessage).
+    console.warn(
+      `[remote-pi] Fan-out ${verb} for app peer=${peerShortId}` +
+      (sinceTs === undefined ? "" : ` since=${sinceTs}`),
+    );
   },
 });
 
@@ -1232,8 +1234,20 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     const before = _turnProjection();
     const turnId = before.replyTo ?? before.activeTurnId ?? `local_${randomUUID()}`;
     _applyTurnAndPublish({ type: "local_input", turnId, replyTo: turnId, source: "local" });
-    if (_owners.activeCount() === 0) return;
-    _owners.broadcast(_withCurrentSession({ type: "user_input", id: turnId, text: event.text }));
+    // Do NOT broadcast a `user_input` frame here. The SDK fires `message_end`
+    // for the user prompt milliseconds later (before `runLoop`/agent streaming —
+    // `pi-agent-core/dist/agent-loop.js:48-54`), and `appendLegacySdkMessageToTranscript`
+    // broadcasts a `user_input` with the stable SDK `ts` + `id = clientMessageId`
+    // from there. This earlier broadcast used a different `id` (`turnId` =
+    // `local_<uuid>`) and no `ts`, so the app committed it under
+    // `'server:user_confirmed:$turnId'` — a SECOND row that didn't collapse
+    // with the `message_end`-driven deterministic row → duplicate user bubble
+    // for workstation-typed messages (confirmed 2026-07-08: operator saw their
+    // own TUI-typed message doubled on mobile). The turn projection is still
+    // seeded above so `message_end`'s `lastTranscriptUserId` / replyTo resolves.
+    // See story-mobile-assistant-message-duplicated-live-replay (user-message
+    // identity, the deferred early-echo suppression — now applied to the
+    // `input`-handler path too).
     return undefined;
   });
 

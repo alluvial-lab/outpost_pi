@@ -404,6 +404,15 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
       // replay (which emits user_input with this ts). Mirrors the assistant
       // agent_message broadcast. See story-mobile-assistant-message-
       // duplicated-live-replay user-message follow-up.
+      //
+      // The `id` here is the transcript `clientMessageId` (sync_<ts> for
+      // workstation-typed, the app's cli_/local_ id for phone-originated).
+      // This differs from the `agent_chunk` in_reply_to (the turn projection's
+      // turnId), but that is a reply-threading concern, not a duplication
+      // concern — the dupe was caused by the input handler's SEPARATE
+      // user_input broadcast (now removed), not by this id. The app's
+      // UserInput handler keys the row by this id and derives the eventId
+      // from (sessionId, id, ts), so a single broadcast commits one row.
       this.opts.outputs.broadcast(this.currentSessionMessage({
         type: "user_input",
         id: clientMessageId,

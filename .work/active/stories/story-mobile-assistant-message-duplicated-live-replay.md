@@ -519,6 +519,62 @@ deferred risk documented above; the fix covers the common (stable
 connection) case. A full fix would require the extension to re-emit or
 the app to derive deterministic identity from `ToolRequest` itself.
 
+### Workstation user-message dupe (landed 2026-07-08)
+
+**Root cause found post-deploy.** A message typed in the Pi TUI produced
+TWO live `user_input` broadcasts with incompatible ids:
+1. `pi.on("input")` handler (`index.ts:1238`) broadcast `user_input` with
+   `id = turnId` (e.g. `local_<uuid>`), **no `ts`**.
+2. `message_end` (`sdk_session_projection.ts:411`) broadcast `user_input`
+   with `id = sync_<ts>`, **with `ts`**.
+
+The app committed both: path 1 under `'server:user_confirmed:$turnId'`,
+path 2 under `server:$sessionId:user_input:sync_<ts>:$ts`. Different ids →
+different eventIds → two Hive rows → duplicate user bubble. This is the
+workstation twin of the assistant-message identity bug — the identity fix
+added the `message_end` broadcast but never removed the pre-existing
+`pi.on("input")` broadcast.
+
+Operator confirmed live (2026-07-08): a TUI-typed message ("restarted pi and
+loaded the apk") rendered doubled on mobile.
+
+**Fix:** removed the `pi.on("input")` `user_input` broadcast entirely. The
+SDK fires `message_end` for the user prompt milliseconds later, before
+`runLoop`/agent streaming (`pi-agent-core/dist/agent-loop.js:48-54`), so the
+`message_end`-driven broadcast reaches the phone before any agent output — no
+visible delay. The input handler still seeds the turn projection
+(`_applyTurnAndPublish({ type: "local_input", turnId })`) so `agent_chunk`'s
+`in_reply_to` resolves correctly. The `message_end` `user_input` `id`
+(`sync_<ts>`) differs from the `agent_chunk` `in_reply_to` (`turnId`), but
+that is a reply-threading concern, not a duplication concern — the dupe was
+the second broadcast, not the id mismatch.
+
+**Tests updated:**
+- `extension.test.ts`: "interactive input → user_input emitted" → "interactive
+  input → NO user_input broadcast" (asserts 0 broadcasts now).
+- `extension.test.ts`: "rpc input → user_input emitted" → "rpc input → NO
+  user_input broadcast".
+- `extension.test.ts`: "subsequent agent_chunk reuses turnId" now captures
+  the turnId from `_getCurrentTurnIdForTest()` (turn projection) instead of
+  the removed broadcast.
+- `app/test/data/sync/sync_service_test.dart`: new regression test
+  "workstation user message: single UserInput(ts) + replay collapse to one
+  row" — pins that a single `UserInput(ts)` with a `local_`-prefixed id
+  commits one row and a replay collapses.
+
+**Verification:** `corepack pnpm typecheck` clean; `corepack pnpm test` →
+765 passed | 3 skipped; `flutter test` (sync_service) → 67 passed.
+
+**Note on the `clientMessageId` alignment attempt:** an initial fix tried to
+make `message_end`'s user branch use the turn projection's `activeTurnId` as
+the `clientMessageId` so it matched `agent_chunk`'s `in_reply_to`. That broke
+the "mixed sources" transcript test (5 events instead of 6) because
+`activeTurnId` persists across turns when `turn_end`/`agent_end` isn't fired
+in the same tick, causing content-dedup to collapse distinct user messages.
+Reverted; the `sync_<ts>` fallback is uniquely keyed and safe. The id
+mismatch between `user_input.id` and `agent_chunk.in_reply_to` is cosmetic
+(reply threading), not a duplication bug.
+
 ### User-message identity (landed 2026-07-06)
 
 Same class as the assistant fix, now extended to user messages. The visible
