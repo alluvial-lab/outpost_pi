@@ -1,7 +1,9 @@
 ---
 id: story-mobile-assistant-message-duplicated-live-replay
 kind: story
-stage: review
+stage: done
+updated: 2026-07-07
+verified_live: 2026-07-08
 tags: [app, pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
@@ -673,3 +675,28 @@ buffer fallback → remaining blocks' text was LOST.
   transcript path is separate; file a follow-up if it duplicates.
 - The `ToolRequest` re-flush amplification fix is DONE (decision 2, landed
   2026-07-06) and stays regardless of the granularity reconciliation above.
+
+## Review (2026-07-08)
+
+**Verdict**: Approve - story verified by implement + verified live on phone; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fast-lane review. Implementation records show green verification
+(`flutter analyze` clean; `flutter test` 666→670 green across the multiple
+landed sub-fixes; `corepack pnpm typecheck` clean; `corepack pnpm test`
+765 passed | 3 skipped). Regression tests confirmed to FAIL without each
+fix and pass with it. Additionally verified **live on the operator's phone**
+this session: pre-tool narration text appears once (the `ToolRequest` flush
+guard), workstation-typed messages appear once (the `input`-handler
+broadcast removal), and the post-tool summary renders once on
+close/reopen (the identity convergence). The live×replay eventId mismatch
+root cause is closed. The recurring failure mode (adding a deterministic
+broadcast without removing the legacy one) was generalized into the
+`single-source-live-identity` pattern for durability. Remaining edge case
+(dropped `agent_message(ts)` during a connection flap → random-uuid
+fallback → dupe against replay) is tracked in
+`story-mobile-connection-flapping-drops-identity-frames` (Layer 2); the
+ping-interval fix (Layer 1) reduced flap frequency dramatically.
