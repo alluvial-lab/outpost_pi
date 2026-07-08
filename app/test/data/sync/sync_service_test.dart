@@ -1293,6 +1293,84 @@ void main() {
     },
   );
 
+  // Mixed-peer regression (review finding on Layer 2): the capability flag
+  // is per-active-session, NOT process-global. A peer A that sent
+  // agent_message(ts) (latching the flag) must NOT suppress the random-uuid
+  // fallback for a later legacy peer B on a different session. activate()
+  // resets the flag, so B's streamed buffer commits at AgentDone.
+  test(
+    'capability flag is per-session: prior fixed peer does not suppress '
+    'a later legacy peer\'s fallback',
+    () async {
+      final s = await setup();
+      // Peer A: fixed extension — latches the capability flag.
+      s.ch.push(UserInput(id: 'u1', text: 'go'));
+      await _settle();
+      const priorTs = 1000;
+      s.ch.push(const AgentMessage(
+        inReplyTo: 'u1',
+        text: 'peer A deterministic text',
+        ts: priorTs,
+      ));
+      await _settle();
+      s.ch.push(AgentDone(inReplyTo: 'u1'));
+      await _settle();
+
+      // Switch to peer B (a different session). adopt a channel for epkB so
+      // conn.activePeer == epkB (frames are not origin-gated), push a PairOk
+      // to bind epkB's session id, then activate() — which must reset the
+      // capability flag.
+      const epkB = 'epk_legacy_peer_zzz';
+      _sessionByEpk[epkB] = 'session-legacy-peer';
+      final chB = _FakeChannel();
+      chB.defaultSessionId = 'session-legacy-peer';
+      s.conn.adopt(
+        chB,
+        PeerRecord(
+          remoteEpk: epkB,
+          sessionName: 'Pi',
+          relayUrl: 'ws://localhost',
+          pairedAt: '2026-01-01T00:00:00Z',
+        ),
+      );
+      await _settle();
+      chB.pushRaw(
+        PairOk(
+          inReplyTo: 'pairB',
+          sessionName: 'Pi',
+          sessionStartedAt: DateTime.now().millisecondsSinceEpoch,
+          roomId: 'main',
+          sessionId: 'session-legacy-peer',
+        ),
+      );
+      await _settle(); // ConnectionManager learns epkB's active session id
+      await s.sync.activate(epkB, 'main');
+      await _settle();
+
+      // Peer B: legacy extension — only streams chunks, never agent_message(ts).
+      chB.push(UserInput(id: 'u2', text: 'next'));
+      await _settle();
+      chB.push(const AgentChunk(inReplyTo: 'u2', delta: 'peer B streamed text'));
+      await _settle();
+      chB.push(AgentDone(inReplyTo: 'u2'));
+      await _settle();
+
+      final narration =
+          messages(epkB).where((r) => r.text == 'peer B streamed text');
+      expect(
+        narration.length,
+        1,
+        reason:
+            'After activate() to a new session, the capability flag must be '
+            'reset so a legacy peer (no agent_message(ts)) still commits its '
+            'streamed buffer at AgentDone. If the flag leaked from peer A, '
+            'this text would be wrongly suppressed (lost).',
+      );
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
   // Regression for the multi-block collision the deep review caught.
   // A single SDK assistant message with MULTIPLE text blocks shares
   // (in_reply_to, ts) across blocks; the extension emits one agent_message
