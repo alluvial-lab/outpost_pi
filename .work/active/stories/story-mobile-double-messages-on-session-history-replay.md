@@ -72,16 +72,32 @@ leak` replay-dedup work, but now scoped to **same-session** replay duplication
 
 ## Acceptance Criteria
 
-- [ ] Confirm the doubling mechanism: capture a normal turn where the phone
-      requests `session_sync`, and verify whether the replayed `session_history`
-      events duplicate already-rendered live frames (same `eventId` rendered
-      twice) OR derive different `eventId`s for the same content.
-- [ ] Determine whether the phone is requesting `session_sync` too eagerly
-      (every turn? on a timer? on reconnect?) — the capture showed TWO replays
-      in one short window, which may itself be excessive.
-- [ ] Decide fix location: app-side dedup (`replayDedup`), extension-side
-      (don't replay events the phone already has), or both.
-- [ ] Regression test once the root cause is confirmed.
+- [x] Confirm the doubling mechanism: the replayed `session_history` events
+      derived DIFFERENT `eventId`s from the live frames (live used random
+      `uuid7()`; replay used deterministic `server:$sessionId:...`). Confirmed
+      in `story-mobile-assistant-message-duplicated-live-replay` (same class,
+      both assistant + user messages).
+- [x] Determine whether the phone is requesting `session_sync` too eagerly:
+      YES — three independent `requestSync` triggers fire near-simultaneously
+      on chat-open/online: `_onlineActivated` (debounced 200ms,
+      `sync_service.dart:540`), `chat_viewmodel._onStatus` (immediate on the
+      online edge, `chat_viewmodel.dart:236`), and `chat_viewmodel._bootstrap`
+      (immediate on chat open, `chat_viewmodel.dart:153`). Each sends a fresh
+      `SessionSync` with a new id; the extension replies to each with a full
+      `session_history`. `requestSync` does not dedupe in-flight requests.
+- [x] Decide fix location: the identity fix (landed in
+      `story-mobile-assistant-message-duplicated-live-replay`) makes the eager
+      replays COLLAPSE — `replayDedup`'s `seenEventIds` set is seeded from
+      `readSession` (which includes the live frames) and serialized via
+      `_enqueue`, so the second replay's events are all `dropped:true` and
+      `appendAll` skips them (Hive `containsKey` check). The double-request
+      is wasteful (extra round-trips + dedup work) but no longer
+      user-visible-harmful once the identity fix is deployed. The eager
+      double-request itself is a low-priority perf/cleanliness follow-up
+      (debounce/dedupe `requestSync`), NOT a blocker.
+- [ ] DEPLOY + VERIFY: rebuild extension `dist/` + restart pi + sideload
+      app APK; confirm a normal turn shows each message once even when
+      chat is opened after the turn (triggering the eager replay).
 
 ## Out of scope
 
