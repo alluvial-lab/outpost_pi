@@ -793,7 +793,21 @@ export function _setPiForTest(pi: unknown): void {
   _pi = pi as typeof _pi;
   _messageApi = _isAgentMessageApi(pi) ? pi : null;
   _sdkSessionProjection.clearApiBindings();
-  if (_pi) _sdkSessionProjection.bindApi(_pi);
+  if (_pi) {
+    _sdkSessionProjection.bindApi(_pi);
+    _drainPendingDeliveryQueue();
+  }
+}
+
+/** Test-only: clear replay queue/timers between focused lifecycle tests. */
+export function _resetPendingDeliveryQueueForTest(): void {
+  for (const entry of _pendingDeliveryQueue) clearTimeout(entry.timeout);
+  _pendingDeliveryQueue = [];
+}
+
+/** Test-only: expose bounded replay queue depth for regression assertions. */
+export function _getPendingDeliveryQueueLengthForTest(): number {
+  return _pendingDeliveryQueue.length;
 }
 
 /**
@@ -1555,6 +1569,7 @@ function createIndexDeps(): LegacyIndexDeps {
         _pi = boundPi;
         _messageApi = boundPi;
         _sdkSessionProjection.bindApi(boundPi);
+        _drainPendingDeliveryQueue();
       },
       bindCommandContext: _rememberCommandCtx,
       bindSessionContext: (ctx) => {
@@ -1578,6 +1593,9 @@ function createIndexDeps(): LegacyIndexDeps {
         }
       },
       clearStaleContexts: () => {
+        if (_pendingDeliveryQueue.length > 0) {
+          _failPendingDeliveryQueue("session replaced again before queued message replayed");
+        }
         _sdkSessionProjection.clearStaleContexts();
         _lastCtx = null;
         _lastEventCtx = null;
@@ -1990,16 +2008,7 @@ async function _wakeAgent(
     : await _sdkSessionProjection.wakeAgent(content);
   if (!wake.ok) {
     const detail = wake.detail ?? "agent session not bound yet";
-    if (wake.recoverable) {
-      // Stale ctx or the null-messageApi window after a replacement. The
-      // message wasn't delivered to THIS pi's agent, but it's recoverable:
-      // a sibling pi may have handled it (cross-process fanout to the same
-      // owner_pk+room), or the next session_start rebinds a working api and
-      // the phone retries. Log for operator/dev visibility but do NOT surface
-      // a permanent internal_error that breaks the phone.
-      console.warn(`[remote-pi] ${label}: recoverable wake failure (not delivered to this pi): ${detail}`);
-      return wake;
-    }
+    if (wake.recoverable) return wake;
     console.error(`[remote-pi] ${label}: agent rejected incoming message: ${detail}`);
     _notify(`[remote-pi] failed to process incoming message: ${detail}`, "error");
     return wake;
@@ -2097,6 +2106,26 @@ function _abortCurrentTurn(
 
 type UserClientMessage = Extract<ClientMessage, { type: "user_message" }>;
 
+type PreparedUserDelivery = {
+  sender: PlainPeerChannel | null;
+  msg: UserClientMessage;
+  content: Parameters<ExtensionAPI["sendUserMessage"]>[0];
+  shouldSteer: boolean;
+  source: "app" | "queued";
+  label: string;
+};
+
+type PendingDeliveryEntry = PreparedUserDelivery & {
+  queueId: number;
+  enqueuedAt: number;
+  timeout: ReturnType<typeof setTimeout>;
+};
+
+const kPendingDeliveryQueueMax = 2;
+const kPendingDeliveryTtlMs = 5_000;
+let _pendingDeliveryQueue: PendingDeliveryEntry[] = [];
+let _nextPendingDeliveryQueueId = 1;
+
 function _sendDeliveryError(sender: PlainPeerChannel | null, inReplyTo: string, detail: string): void {
   const error: ServerMessage = _withCurrentSession({
     type: "error",
@@ -2108,25 +2137,25 @@ function _sendDeliveryError(sender: PlainPeerChannel | null, inReplyTo: string, 
   else _owners.broadcast(error);
 }
 
-async function _deliverUserMessage(
+function _sendDeliveryPending(sender: PlainPeerChannel | null, inReplyTo: string): void {
+  const pending: ServerMessage = _withCurrentSession({
+    type: "error",
+    code: "delivery_pending",
+    in_reply_to: inReplyTo,
+    message: "session replacing — message queued for replay",
+  });
+  if (sender) sender.send(pending);
+  else _owners.broadcast(pending);
+}
+
+function _prepareUserDelivery(
   msg: UserClientMessage,
   sender: PlainPeerChannel | null,
-  mode: "auto" | "normal" = "auto",
-): Promise<void> {
+  mode: "auto" | "normal",
+): PreparedUserDelivery {
   const requestedSteer = mode === "auto" && msg.streaming_behavior === "steer";
   const inferredBusySteer = mode === "auto" && !requestedSteer && _myRoomMeta?.working === true;
   const shouldSteer = requestedSteer || inferredBusySteer;
-  // A reconnecting app can correctly send `steer` while our projection has no
-  // turn id (for example, the turn started while no owner was attached).
-  // Also be defensive for clients that send a plain user_message while the
-  // room is already working. Tell the SDK this is steering; otherwise it
-  // rejects the message as a normal busy prompt. Seed the projection so
-  // later chunks/done have a target instead of being dropped.
-  const turnSeed = _sdkSessionProjection.seedUserMessageTurn({
-    turnId: msg.id,
-    source: mode === "normal" ? "queued" : "app",
-    shouldSteer,
-  });
   const content: Parameters<ExtensionAPI["sendUserMessage"]>[0] =
     msg.images && msg.images.length > 0
       ? [
@@ -2134,28 +2163,47 @@ async function _deliverUserMessage(
           { type: "text" as const, text: msg.text },
         ]
       : msg.text;
-  const wake = await _wakeAgent(
+  return {
+    sender,
+    msg,
     content,
-    msg.images && msg.images.length > 0
+    shouldSteer,
+    source: mode === "normal" ? "queued" : "app",
+    label: msg.images && msg.images.length > 0
       ? `app user_message id=${msg.id} (+${msg.images.length} image)`
       : `app user_message id=${msg.id}`,
-    shouldSteer ? "steer" : undefined,
+  };
+}
+
+async function _attemptUserDelivery(prepared: PreparedUserDelivery): Promise<WakeAgentResult> {
+  // A reconnecting app can correctly send `steer` while our projection has no
+  // turn id (for example, the turn started while no owner was attached).
+  // Also be defensive for clients that send a plain user_message while the
+  // room is already working. Tell the SDK this is steering; otherwise it
+  // rejects the message as a normal busy prompt. Seed the projection so
+  // later chunks/done have a target instead of being dropped.
+  const turnSeed = _sdkSessionProjection.seedUserMessageTurn({
+    turnId: prepared.msg.id,
+    source: prepared.source,
+    shouldSteer: prepared.shouldSteer,
+  });
+  const wake = await _wakeAgent(
+    prepared.content,
+    prepared.label,
+    prepared.shouldSteer ? "steer" : undefined,
   );
   if (!wake.ok) {
     turnSeed.rollback();
     if (turnSeed.seeded) {
-      _applyTurnAndPublish({ type: "delivery_error", turnId: msg.id });
+      _applyTurnAndPublish({ type: "delivery_error", turnId: prepared.msg.id });
     }
-    // Recoverable (stale ctx / null-messageApi window): do NOT surface a
-    // permanent internal_error. A sibling pi may have handled this message
-    // (cross-process fanout), or the next session_start rebinds and the phone
-    // retries. The phone's existing send-timeout will surface "not delivered"
-    // if nothing ever handles it — accurate, not a permanent broken state.
-    if (!wake.recoverable) {
-      _sendDeliveryError(sender, msg.id, wake.detail ?? "agent session not bound yet");
-    }
-    return;
+    return wake;
   }
+  _confirmUserDelivery(prepared.msg, prepared.shouldSteer);
+  return wake;
+}
+
+function _confirmUserDelivery(msg: UserClientMessage, shouldSteer: boolean): void {
   const sessionId = _currentRemoteSessionId();
   const eventId = deterministicTranscriptEventId(sessionId, "user_confirmed", msg.id);
   _appendUserConfirmedTranscriptEvent({
@@ -2176,6 +2224,90 @@ async function _deliverUserMessage(
     ...(shouldSteer ? { streaming_behavior: "steer" as const } : {}),
   });
   _owners.broadcast(echo);
+}
+
+function _enqueuePendingDelivery(prepared: PreparedUserDelivery, enqueuedAt = Date.now()): void {
+  if (_pendingDeliveryQueue.length >= kPendingDeliveryQueueMax) {
+    const dropped = _pendingDeliveryQueue.shift();
+    if (dropped) {
+      clearTimeout(dropped.timeout);
+      console.warn(`[remote-pi] dropping queued delivery id=${dropped.msg.id}: replay queue full`);
+      _sendDeliveryError(dropped.sender, dropped.msg.id, "agent session did not re-arm before the replay queue filled");
+    }
+  }
+  const queueId = _nextPendingDeliveryQueueId++;
+  const entry: PendingDeliveryEntry = {
+    ...prepared,
+    queueId,
+    enqueuedAt,
+    timeout: _schedulePendingDeliveryTimeout(queueId, prepared, enqueuedAt),
+  };
+  _pendingDeliveryQueue.push(entry);
+}
+
+function _schedulePendingDeliveryTimeout(
+  queueId: number,
+  prepared: PreparedUserDelivery,
+  enqueuedAt: number,
+): ReturnType<typeof setTimeout> {
+  const elapsed = Date.now() - enqueuedAt;
+  const remaining = Math.max(0, kPendingDeliveryTtlMs - elapsed);
+  return setTimeout(() => {
+    const index = _pendingDeliveryQueue.findIndex((entry) => entry.queueId === queueId);
+    if (index < 0) return;
+    _pendingDeliveryQueue.splice(index, 1);
+    _sendDeliveryError(prepared.sender, prepared.msg.id, "agent session did not re-arm before queued delivery expired");
+  }, remaining);
+}
+
+function _failPendingDeliveryQueue(detail: string): void {
+  const entries = _pendingDeliveryQueue.splice(0);
+  for (const entry of entries) {
+    clearTimeout(entry.timeout);
+    console.warn(`[remote-pi] failing queued delivery id=${entry.msg.id}: ${detail}`);
+    _sendDeliveryError(entry.sender, entry.msg.id, detail);
+  }
+}
+
+function _drainPendingDeliveryQueue(): void {
+  if (_pendingDeliveryQueue.length === 0) return;
+  const entries = _pendingDeliveryQueue.splice(0);
+  for (const entry of entries) {
+    clearTimeout(entry.timeout);
+    void (async () => {
+      const wake = await _attemptUserDelivery(entry);
+      if (wake.ok) return;
+      const detail = wake.detail ?? "agent session not bound yet";
+      if (!wake.recoverable) {
+        _sendDeliveryError(entry.sender, entry.msg.id, detail);
+        return;
+      }
+      if (Date.now() - entry.enqueuedAt >= kPendingDeliveryTtlMs) {
+        _sendDeliveryError(entry.sender, entry.msg.id, detail);
+        return;
+      }
+      _enqueuePendingDelivery(entry, entry.enqueuedAt);
+    })().catch((err: unknown) => {
+      const detail = err instanceof Error ? err.message : String(err);
+      _sendDeliveryError(entry.sender, entry.msg.id, detail);
+    });
+  }
+}
+
+async function _deliverUserMessage(
+  msg: UserClientMessage,
+  sender: PlainPeerChannel | null,
+  mode: "auto" | "normal" = "auto",
+): Promise<void> {
+  const prepared = _prepareUserDelivery(msg, sender, mode);
+  const wake = await _attemptUserDelivery(prepared);
+  if (wake.ok) return;
+  if (wake.recoverable) {
+    _enqueuePendingDelivery(prepared);
+    _sendDeliveryPending(sender, msg.id);
+    return;
+  }
+  _sendDeliveryError(sender, msg.id, wake.detail ?? "agent session not bound yet");
 }
 
 function _maybeDrainQueuedMessage(): void {

@@ -37,7 +37,8 @@
         "rate_limited",
         "timeout",
         "internal_error",
-        "session_mismatch"
+        "session_mismatch",
+        "delivery_pending"
       ]
     },
     "errorCode": {

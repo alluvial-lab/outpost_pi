@@ -498,7 +498,24 @@ function emitUnion(union) {
   return lines.join('\n');
 }
 
-function emitDartSharedTypes() {
+function dartEnumCaseName(value) {
+  const words = value.split(/[^a-zA-Z0-9]+/).filter(Boolean);
+  if (words.length === 0) return 'unknown';
+  return words.map((word, index) => {
+    const lower = word.toLowerCase();
+    if (index === 0) return lower;
+    return `${lower.slice(0, 1).toUpperCase()}${lower.slice(1)}`;
+  }).join('');
+}
+
+function emitDartKnownErrorCodeEnum(values) {
+  if (!Array.isArray(values) || values.length === 0) return '';
+  const cases = values.map((value) => `  ${dartEnumCaseName(value)}('${value}')`).join(',\n');
+  return `enum KnownErrorCode {\n${cases};\n\n  const KnownErrorCode(this.wire);\n  final String wire;\n\n  static KnownErrorCode? fromWire(String raw) {\n    for (final code in values) {\n      if (code.wire == raw) return code;\n    }\n    return null;\n  }\n}\n`;
+}
+
+function emitDartSharedTypes(schema) {
+  const knownErrorCodeEnum = emitDartKnownErrorCodeEnum(schema.knownErrorCodes);
   return String.raw`
 final class WireImage {
   const WireImage({required this.data, required this.mime});
@@ -536,6 +553,7 @@ enum UserMessageStreamingBehavior {
 
 enum ApproveDecision { allow, deny }
 
+${knownErrorCodeEnum}
 enum ActionName {
   sessionNew('session_new'),
   sessionCompact('session_compact'),
@@ -709,7 +727,7 @@ function emitDart(schema) {
   sections.push('// ignore_for_file: use_null_aware_elements');
   sections.push('');
   if (schema.includeAppPiSharedTypes === true) {
-    sections.push(emitDartSharedTypes());
+    sections.push(emitDartSharedTypes(schema));
     sections.push('');
   }
   sections.push('class UnsupportedTypeException implements Exception {');
