@@ -1,7 +1,7 @@
 ---
 id: idea-extension-pumps-into-dead-app-peer
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-09
 tags: [pi-extension, relay, bug, lifecycle]
 ---
 
@@ -68,3 +68,23 @@ outbound fan-out for that owner instead of pumping until turn end.
 
 Distinct from `idea-mobile-drop-slow-recovery` (recovery latency) — this one
 is about wasted work during the dead window.
+
+## Resolution (2026-07-09)
+
+The open question is **answered: yes, the signal reaches the extension.**
+`peer_offline` / `peer_online` are consumed at `pi-extension/src/index.ts:331-342`
+→ `OwnerMultiplexer.markPeerOffline` / `markPeerOnline`
+(`owner_multiplexer.ts:432-443`), and fan-out *is* suspended for a known-offline
+peer (`broadcast()` at `:450` skips `offlinePeerIds`).
+
+So the "pumps into a dead peer" symptom is narrower than originally thought:
+the extension suspends correctly **once it knows** the peer is gone. The
+remaining gap is the **detection-lag window** — frames sent *before*
+`peer_offline` arrives (the relay already has no route, the extension hasn't
+been told). That window is now tracked at
+`idea-outbound-delivery-detection-lag-window` (backlog), and the
+known-offline buffering counterpart is scoped as
+`feature-outbound-buffer-on-peer-offline` (active, drafting).
+
+This item is retained as the symptom record; no separate promotion needed —
+the two child items above cover both windows.
