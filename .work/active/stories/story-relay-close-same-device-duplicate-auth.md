@@ -1,7 +1,7 @@
 ---
 id: story-relay-close-same-device-duplicate-auth
 kind: story
-stage: review
+stage: done
 tags: [relay, app, pi-extension, bug, lifecycle]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []
@@ -287,6 +287,65 @@ Verified no call site relied on implicit copy (`peer.rs` only reads fields).
 (verified via `git stash`). It is a pre-existing flaky test unrelated to the
 relay hello / `device_id` change. Not fixed in-session per testing-integrity
 rule (don't silently fix unrelated bugs mid-pass).
+
+## Review findings (2026-07-10, cross-model fresh-context review)
+
+Reviewed by `openai-codex/gpt-5.6-sol` in fresh context. Verdict: Request
+changes → all findings addressed in-session.
+
+### Blocker (fixed): same-device reconnect could wipe the replacement conn's subscriptions
+
+`handle_peer` teardown called `rooms.unsubscribe_all(&peer_id)`
+unconditionally — and subscriptions are **peer-scoped**, not conn-scoped.
+Before this change the old conn lingered ~25s (ping timeout), so its teardown
+happened well after the new conn re-established subscriptions (race
+practically invisible). The same-device close makes teardown **immediate**,
+widening the race: the old handler's `unsubscribe_all` could wipe the new
+conn's freshly-replayed `subscribe_rooms` state.
+
+**Fix:** `unregister` now returns `ConnectionRemove` (was `()`); `handle_peer`
+gates `rooms.unsubscribe_all` on `remove.peer_offlined` (true only on the
+N→0 transition — mirrors the existing presence-transition guard in
+`registry_event_publisher`, which already gated `presence.unsubscribe_all`
+inside `BecameOffline`). Added integration test
+`same_device_reconnect_preserves_room_subscriptions` proving the
+subscription survives a same-device reconnect.
+
+### Important (fixed): empty `device_id` bypasses schema `minLength: 1`
+
+Serde accepts `device_id: ""` for a required `String` (it only rejects
+*missing* fields). Two malformed clients with empty ids would be treated as
+the same device and close each other.
+
+**Fix:** `parse_hello_bootstrap` rejects empty `device_id` with a new
+`AuthError::InvalidDeviceId` (fail fast at the boundary). Added tests for
+both empty and missing `device_id`.
+
+### Important (fixed): `DeviceId.get()` was not single-flight
+
+Concurrent first calls could both read an empty store, generate different
+ids, race their writes, and return different values — defeating same-device
+replacement.
+
+**Fix:** `DeviceId.get()` now caches the in-flight `Future` so concurrent
+first calls share one generation. Added a concurrent-call test with a
+slow store.
+
+### Important (acknowledged, not fixed): codegen emitter hardcodes requiredness
+
+The Rust emitter (`emitRustControl`) checks that a property exists in the
+schema but hardcodes the field as a required `String` — it does not derive
+requiredness from the schema's `required` array. This is a pre-existing
+codegen-design limitation affecting all `hello` fields, not introduced by
+this change. A full emitter refactor to derive requiredness from the schema
+is out of scope for this story; filed as a follow-up consideration.
+
+### Nit (acknowledged): clone comment overstates scope
+
+The `deviceIdFromPublicKey` doc says a cloned Pi-key means "only one should
+be live," but replacement is scoped to the same `(peer, room)` — a clone
+using a different room can still coexist. The comment is accurate for the
+same-room case but could be clearer. Left as-is (minor).
 
 ## Tests
 

@@ -183,7 +183,12 @@ impl PeerRegistry {
     /// `peer_offline` is also broadcast.
     ///
     /// Stale `conn_id`s (already removed, or never registered there) are no-ops.
-    pub async fn unregister(&self, peer_id: &str, room_id: &str, conn_id: u64) {
+    pub async fn unregister(
+        &self,
+        peer_id: &str,
+        room_id: &str,
+        conn_id: u64,
+    ) -> ConnectionRemove {
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -203,6 +208,8 @@ impl PeerRegistry {
                 .publish_presence_transition(presence_transition)
                 .await;
         }
+
+        remove
     }
 
     /// Returns one `RoomMeta` per distinct live room of `peer_id`.
