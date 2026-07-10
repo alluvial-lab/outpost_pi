@@ -11,6 +11,7 @@ pub const HELLO_TIMEOUT_MS: u64 = 5_000;
 pub struct AuthenticatedPeer {
     pub verifying_key: VerifyingKey,
     pub peer_id: String,
+    pub device_id: String,
     pub room_meta: RoomMeta,
 }
 
@@ -49,6 +50,7 @@ pub fn parse_hello_bootstrap(line: &str, now_ms: i64) -> Result<AuthenticatedPee
     match msg {
         ClientAuthMsg::Hello {
             pubkey,
+            device_id,
             room_id,
             room_meta,
         } => {
@@ -63,6 +65,7 @@ pub fn parse_hello_bootstrap(line: &str, now_ms: i64) -> Result<AuthenticatedPee
             Ok(AuthenticatedPeer {
                 verifying_key,
                 peer_id,
+                device_id,
                 room_meta: RoomMeta {
                     room_id,
                     name: meta.name,

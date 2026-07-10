@@ -56,6 +56,7 @@ mod tests {
             was_offline_before,
             is_first_in_room: true,
             superseded_existing: false,
+            superseded_same_device_conn_ids: Vec::new(),
         }
     }
 
