@@ -39,7 +39,7 @@ import {
   type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 import { qrSession } from "./pairing/qr.js";
-import type { Ed25519Keypair } from "./pairing/crypto.js";
+import { deviceIdFromPublicKey, type Ed25519Keypair } from "./pairing/crypto.js";
 import {
   addPeer,
   getOrCreateEd25519Keypair,
@@ -214,7 +214,7 @@ export function _parseControlFrame(text: string): ParsedControlFrame | null {
 let _myRoomId: string | null = null;   // this Pi's room id (derived from cwd)
 
 const _relayTransport = createRelayTransportPort({
-  createRelay: (url, keypair) => new RelayClient(url, keypair),
+  createRelay: (url, keypair) => new RelayClient(url, keypair, deviceIdFromPublicKey(keypair.publicKey)),
   toWebSocketUrl,
   backoffMs: reachabilityBackoffMs,
   now: () => Date.now(),

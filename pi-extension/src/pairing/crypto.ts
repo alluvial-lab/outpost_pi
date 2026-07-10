@@ -33,3 +33,22 @@ export function ed25519Verify(
 ): boolean {
   return ed.verify(sig, msg, pk);
 }
+
+/**
+ * Derives a stable per-PC `device_id` from the Pi-key's public key (SHA-256,
+ * base16, first 32 chars). Used in the relay `hello` frame so the relay can
+ * close prior conn(s) from the same device on duplicate auth (a reconnect)
+ * without waiting for ping timeout — see
+ * `story-relay-close-same-device-duplicate-auth`.
+ *
+ * Deterministic derivation (vs. a separate persisted random id) needs no
+ * extra storage: the Pi-key is already the per-PC identity, and a reconnect
+ * on the same PC presents the same key → same `device_id`. Two PCs with
+ * different Pi-keys get different `device_id`s. A copied Pi-key on a second
+ * PC (a clone attack, `PROTOCOL.md` Wave E3) would present the same
+ * `device_id` and close the prior conn — which is the desired behavior for
+ * a clone (only one should be live).
+ */
+export function deviceIdFromPublicKey(publicKey: Uint8Array): string {
+  return createHash("sha256").update(publicKey).digest("hex").slice(0, 32);
+}

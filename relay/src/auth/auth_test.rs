@@ -19,12 +19,13 @@ fn hello_bootstrap_defaults_and_room_meta() {
     let sk = SigningKey::generate(&mut rand::thread_rng());
     let pubkey = B64.encode(sk.verifying_key().to_bytes());
     let line = format!(
-        r#"{{"type":"hello","pubkey":"{}","room_id":"work","room_meta":{{"name":"Desk","cwd":"/repo","session_id":"sess-1","model":"m","thinking":"high","working":true}}}}"#,
+        r#"{{"type":"hello","pubkey":"{}","device_id":"dev-1","room_id":"work","room_meta":{{"name":"Desk","cwd":"/repo","session_id":"sess-1","model":"m","thinking":"high","working":true}}}}"#,
         pubkey
     );
 
     let peer = parse_hello_bootstrap(&line, 1234).unwrap();
     assert_eq!(peer.peer_id, pubkey);
+    assert_eq!(peer.device_id, "dev-1");
     assert_eq!(peer.room_meta.room_id, "work");
     assert_eq!(peer.room_meta.name.as_deref(), Some("Desk"));
     assert_eq!(peer.room_meta.cwd.as_deref(), Some("/repo"));
@@ -39,9 +40,10 @@ fn hello_bootstrap_defaults_and_room_meta() {
 fn hello_bootstrap_defaults_main_and_not_working() {
     let sk = SigningKey::generate(&mut rand::thread_rng());
     let pubkey = B64.encode(sk.verifying_key().to_bytes());
-    let line = format!(r#"{{"type":"hello","pubkey":"{}"}}"#, pubkey);
+    let line = format!(r#"{{"type":"hello","pubkey":"{}","device_id":"dev-1"}}"#, pubkey);
 
     let peer = parse_hello_bootstrap(&line, 77).unwrap();
+    assert_eq!(peer.device_id, "dev-1");
     assert_eq!(peer.room_meta.room_id, "main");
     assert!(!peer.room_meta.working);
     assert_eq!(peer.room_meta.started_at, 77);

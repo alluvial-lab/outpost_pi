@@ -78,7 +78,7 @@ async fn invalid_sig_closes_ws() {
 
     // send hello
     ws.send(Message::text(
-        json!({"type": "hello", "pubkey": B64.encode(vk.to_bytes())}).to_string(),
+        json!({"type": "hello", "pubkey": B64.encode(vk.to_bytes()), "device_id": "test-device"}).to_string(),
     ))
     .await
     .unwrap();

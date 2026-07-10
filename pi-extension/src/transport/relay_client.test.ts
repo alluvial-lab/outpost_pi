@@ -63,19 +63,20 @@ describe("RelayClient", () => {
   });
 
   test("connect: sends hello with correct Ed25519 pubkey", async () => {
-    const client = new RelayClient("ws://localhost:9999", keypair);
+    const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
     await connectWithAuth(client);
 
     const ws = currentWs();
-    const hello = JSON.parse(ws.sent[0]) as { type: string; pubkey: string };
+    const hello = JSON.parse(ws.sent[0]) as { type: string; pubkey: string; device_id: string };
     expect(hello.type).toBe("hello");
     expect(hello.pubkey).toBe(Buffer.from(keypair.publicKey).toString("base64"));
+    expect(hello.device_id).toBe("test-device");
 
     client.close();
   });
 
   test("connect: sends auth with 64-byte Ed25519 signature", async () => {
-    const client = new RelayClient("ws://localhost:9999", keypair);
+    const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
     await connectWithAuth(client);
 
     const ws = currentWs();
@@ -87,7 +88,7 @@ describe("RelayClient", () => {
   });
 
   test("connect: auth messages (hello + auth) are exactly 2 sends", async () => {
-    const client = new RelayClient("ws://localhost:9999", keypair);
+    const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
     await connectWithAuth(client);
 
     // hello + auth = 2 sends during auth phase only
@@ -96,7 +97,7 @@ describe("RelayClient", () => {
   });
 
   test("connect: challenge message NOT forwarded as public 'message' event", async () => {
-    const client = new RelayClient("ws://localhost:9999", keypair);
+    const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
     const received: string[] = [];
     client.on("message", (line) => received.push(line));
 
@@ -108,7 +109,7 @@ describe("RelayClient", () => {
   });
 
   test("connect: post-auth outer envelopes are forwarded as 'message' events", async () => {
-    const client = new RelayClient("ws://localhost:9999", keypair);
+    const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
     const received: string[] = [];
     client.on("message", (line) => received.push(line));
 
@@ -122,7 +123,7 @@ describe("RelayClient", () => {
   });
 
   test("send: writes raw line to the WebSocket", async () => {
-    const client = new RelayClient("ws://localhost:9999", keypair);
+    const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
     await connectWithAuth(client);
 
     const ws = currentWs();
@@ -148,7 +149,7 @@ describe("RelayClient", () => {
   test("liveness: force-closes (→ reconnect) after silence past the timeout", async () => {
     vi.useFakeTimers();
     try {
-      const client = new RelayClient("ws://localhost:9999", keypair);
+      const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
       await connectFake(client);
       let closed = false;
       client.on("close", () => { closed = true; });
@@ -164,7 +165,7 @@ describe("RelayClient", () => {
   test("liveness: relay's ~25s pings keep it alive (no spurious close)", async () => {
     vi.useFakeTimers();
     try {
-      const client = new RelayClient("ws://localhost:9999", keypair);
+      const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
       await connectFake(client);
       let closed = false;
       client.on("close", () => { closed = true; });
