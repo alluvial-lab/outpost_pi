@@ -39,6 +39,7 @@ export interface LegacyOwnerMultiplexerDeps {
 }
 
 export interface LegacySdkSessionProjectionDeps {
+  setRoomId?(roomId: string | null): void;
   bindApi(pi: ExtensionAPI): void;
   bindCommandContext(ctx: ExtensionCommandContext): void;
   bindSessionContext(ctx: ExtensionContext): void;
@@ -98,6 +99,7 @@ function createLegacyOwnerMultiplexer(deps: LegacyOwnerMultiplexerDeps): OwnerMu
 
 function createLegacySdkSessionProjection(deps: LegacySdkSessionProjectionDeps): SdkSessionProjectionPort {
   const port: SdkSessionProjectionPort = {
+    setRoomId: (roomId) => deps.setRoomId?.(roomId),
     bindApi: (pi) => deps.bindApi(pi),
     bindCommandContext: (ctx) => deps.bindCommandContext(ctx),
     bindSessionContext: (ctx) => deps.bindSessionContext(ctx),
