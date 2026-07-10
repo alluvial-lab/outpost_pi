@@ -45,16 +45,16 @@ export type DeliveryDebugTag = (typeof DELIVERY_DEBUG_TAG)[number];
  * Mirrors the app ring log's `DebugEvent` discipline.
  */
 export type DeliveryDebugEvent =
-  | { tag: "msg_received"; id: string; source: "app" | "queued"; steer: boolean }
-  | { tag: "wake_outcome"; id: string; ok: boolean; recoverable: boolean; detail: string; messageApiArmed: boolean }
-  | { tag: "msg_delivered"; id: string; sessionIdTail: string }
-  | { tag: "delivery_pending"; id: string; queueLen: number; ttlMs: number }
-  | { tag: "queue_drained"; id: string; wakeOk: boolean }
-  | { tag: "queue_dropped"; id: string; reason: string }
-  | { tag: "message_api_armed"; via: "factory" | "withSession"; sessionIdTail: string }
-  | { tag: "message_api_null"; reason: "stale" | "shutdown" | "replacement" }
-  | { tag: "session_lifecycle"; reason: "startup" | "reload" | "new" | "resume" | "fork" | "quit"; sessionIdTail: string }
-  | { tag: "command_ctx"; armed: boolean; via: "slash" | "withSession" };
+  | { tag: "msg_received"; id: string; source: "app" | "queued"; steer: boolean; roomId?: string }
+  | { tag: "wake_outcome"; id: string; ok: boolean; recoverable: boolean; detail: string; messageApiArmed: boolean; roomId?: string }
+  | { tag: "msg_delivered"; id: string; sessionIdTail: string; roomId?: string }
+  | { tag: "delivery_pending"; id: string; queueLen: number; ttlMs: number; roomId?: string }
+  | { tag: "queue_drained"; id: string; wakeOk: boolean; roomId?: string }
+  | { tag: "queue_dropped"; id: string; reason: string; roomId?: string }
+  | { tag: "message_api_armed"; via: "factory" | "withSession"; sessionIdTail: string; roomId?: string }
+  | { tag: "message_api_null"; reason: "stale" | "shutdown" | "replacement"; roomId?: string }
+  | { tag: "session_lifecycle"; reason: "startup" | "reload" | "new" | "resume" | "fork" | "quit"; sessionIdTail: string; roomId?: string }
+  | { tag: "command_ctx"; armed: boolean; via: "slash" | "withSession"; roomId?: string };
 
 /** Fields that must NEVER appear in a serialized event (privacy scrub). */
 const FORBIDDEN_KEYS = new Set([

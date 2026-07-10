@@ -1,7 +1,7 @@
 ---
 id: story-delivery-log-room-id-correlation
 kind: story
-stage: drafting
+stage: done
 tags: [pi-extension, observability, bug]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []

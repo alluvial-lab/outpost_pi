@@ -405,7 +405,7 @@ const _pairingCoordinator = new PairingCoordinator({
   relayUrl: () => _relayTransport.currentRelayUrl(),
   setRelayUrl: () => { /* relay URL ownership lives in relay_transport.ts */ },
   roomId: () => _myRoomId,
-  setRoomId: (roomId) => { _myRoomId = roomId; },
+  setRoomId: (roomId) => { _myRoomId = roomId; _sdkSessionProjection.setRoomId(roomId); },
   roomMeta: () => _myRoomMeta,
   setRoomMeta: (meta) => { _myRoomMeta = meta as typeof _myRoomMeta; },
   sessionStartedAt: () => _sdkSessionProjection.sessionStartedAtValue(),
@@ -1644,6 +1644,7 @@ function createIndexDeps(): LegacyIndexDeps {
           tag: "session_lifecycle",
           reason: reason as "startup" | "reload" | "new" | "resume" | "fork" | "quit",
           sessionIdTail,
+          roomId: _myRoomId ?? undefined,
         });
       },
     },
@@ -1929,6 +1930,7 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
   }
 
   _myRoomId = roomId;
+  _sdkSessionProjection.setRoomId(roomId);
   _state = "started";
   _sdkSessionProjection.ensureSessionStarted();
   _refreshFooter(ctx);
@@ -2247,6 +2249,7 @@ async function _attemptUserDelivery(prepared: PreparedUserDelivery): Promise<Wak
     recoverable: wake.recoverable ?? false,
     detail: wake.detail ?? "",
     messageApiArmed: _sdkSessionProjection.messageApiBinding() !== null,
+    roomId: _myRoomId ?? undefined,
   });
   if (!wake.ok) {
     turnSeed.rollback();
@@ -2260,6 +2263,7 @@ async function _attemptUserDelivery(prepared: PreparedUserDelivery): Promise<Wak
     tag: "msg_delivered",
     id: prepared.msg.id,
     sessionIdTail: idTail(_currentRemoteSessionId()),
+    roomId: _myRoomId ?? undefined,
   });
   return wake;
 }
@@ -2293,7 +2297,7 @@ function _enqueuePendingDelivery(prepared: PreparedUserDelivery, enqueuedAt = Da
     if (dropped) {
       clearTimeout(dropped.timeout);
       console.warn(`[remote-pi] dropping queued delivery id=${dropped.msg.id}: replay queue full`);
-      _deliveryDebugLog.log({ tag: "queue_dropped", id: dropped.msg.id, reason: "replay queue full" });
+      _deliveryDebugLog.log({ tag: "queue_dropped", id: dropped.msg.id, reason: "replay queue full", roomId: _myRoomId ?? undefined });
       _sendDeliveryError(dropped.sender, dropped.msg.id, "agent session did not re-arm before the replay queue filled");
     }
   }
@@ -2310,6 +2314,7 @@ function _enqueuePendingDelivery(prepared: PreparedUserDelivery, enqueuedAt = Da
     id: prepared.msg.id,
     queueLen: _pendingDeliveryQueue.length,
     ttlMs: kPendingDeliveryTtlMs,
+    roomId: _myRoomId ?? undefined,
   });
 }
 
@@ -2324,7 +2329,7 @@ function _schedulePendingDeliveryTimeout(
     const index = _pendingDeliveryQueue.findIndex((entry) => entry.queueId === queueId);
     if (index < 0) return;
     _pendingDeliveryQueue.splice(index, 1);
-    _deliveryDebugLog.log({ tag: "queue_dropped", id: prepared.msg.id, reason: "ttl expired" });
+    _deliveryDebugLog.log({ tag: "queue_dropped", id: prepared.msg.id, reason: "ttl expired", roomId: _myRoomId ?? undefined });
     _sendDeliveryError(prepared.sender, prepared.msg.id, "agent session did not re-arm before queued delivery expired");
   }, remaining);
 }
@@ -2334,7 +2339,7 @@ function _failPendingDeliveryQueue(detail: string): void {
   for (const entry of entries) {
     clearTimeout(entry.timeout);
     console.warn(`[remote-pi] failing queued delivery id=${entry.msg.id}: ${detail}`);
-    _deliveryDebugLog.log({ tag: "queue_dropped", id: entry.msg.id, reason: detail });
+    _deliveryDebugLog.log({ tag: "queue_dropped", id: entry.msg.id, reason: detail, roomId: _myRoomId ?? undefined });
     _sendDeliveryError(entry.sender, entry.msg.id, detail);
   }
 }
@@ -2346,7 +2351,7 @@ function _drainPendingDeliveryQueue(): void {
     clearTimeout(entry.timeout);
     void (async () => {
       const wake = await _attemptUserDelivery(entry);
-      _deliveryDebugLog.log({ tag: "queue_drained", id: entry.msg.id, wakeOk: wake.ok });
+      _deliveryDebugLog.log({ tag: "queue_drained", id: entry.msg.id, wakeOk: wake.ok, roomId: _myRoomId ?? undefined });
       if (wake.ok) return;
       const detail = wake.detail ?? "agent session not bound yet";
       if (!wake.recoverable) {
@@ -2376,6 +2381,7 @@ async function _deliverUserMessage(
     id: msg.id,
     source: mode === "normal" ? "queued" : "app",
     steer: prepared.shouldSteer,
+    roomId: _myRoomId ?? undefined,
   });
   const wake = await _attemptUserDelivery(prepared);
   if (wake.ok) return;
