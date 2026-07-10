@@ -1,7 +1,7 @@
 ---
 id: story-relay-close-same-device-duplicate-auth
 kind: story
-stage: drafting
+stage: implementing
 tags: [relay, app, pi-extension, bug, lifecycle]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []
@@ -9,6 +9,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-10
 updated: 2026-07-10
+designed: 2026-07-10
 supersedes: story-relay-close-old-conn-on-duplicate-auth
 ---
 
@@ -71,9 +72,37 @@ while leaving genuine second-device conns alive.
 
 ## Design
 
+### Codegen pipeline (verified 2026-07-10)
+
+The protocol has a real single-source-of-truth codegen pipeline. Confirmed
+by running both checks green at baseline:
+
+- **Schema source:** `protocol/schema/relay-control.schema.json` — the `hello`
+  def is the single source of truth for the wire shape.
+- **Rust generation:** `cd protocol && node --import tsx scripts/list-types.ts
+  | node ../tools/protocol-codegen/bin/protocol-codegen.mjs --target rust
+  --schema - --out-dir ../relay/src/protocol/generated --check` → emits
+  `relay/src/protocol/generated/control.rs` (`ClientAuthMsg::Hello`).
+  Baseline check: **pass**.
+- **TS generation:** `cd pi-extension && node --import tsx
+  ../tools/protocol-codegen/src/index.ts --target ts --out
+  src/protocol/generated/protocol.generated.ts --check` → emits
+  `pi-extension/src/protocol/generated/protocol.generated.ts`
+  (`RelayControlFrameHello`). Baseline check: **pass**.
+- **Schema validation:** `cd protocol && node --import tsx
+  scripts/check-fixtures.ts` → "Validated 5 protocol schema fixture
+  families." Baseline: **pass**.
+- **Dart generation is NOT involved.** The app's `protocol.g.dart` only
+  covers `ClientMessage`/`ServerMessage` (app↔Pi data frames); the
+  `relayControl` family (hello/auth/presence/rooms) is **not** in the Dart
+  IR fixture (`tools/protocol-codegen/fixtures/app_pi_client_dart_ir.json`).
+  The app builds its hello as a **raw map** (`ws_transport.dart:261`), not a
+  generated type. So adding `device_id` to the app is a one-line map edit,
+  not a codegen step.
+
 ### Wire change: required `device_id` on the hello frame
 
-Add `device_id` as a **required** field to the `hello` frame in
+Add `device_id` as a **required** field to the `hello` def in
 `protocol/schema/relay-control.schema.json`:
 
 ```jsonc
@@ -91,8 +120,10 @@ Add `device_id` as a **required** field to the `hello` frame in
 }
 ```
 
-Regenerate via `protocol/package.json` `generate:rust` (and the dart target).
-Both the app and the extension send hellos, so both emit `device_id`.
+Then regenerate Rust + TS (commands above; drop `--check` to write). The
+generated `ClientAuthMsg::Hello` gains a `device_id: String` field (required,
+no `#[serde(default)]`); the generated `RelayControlFrameHello` gains
+`readonly device_id: string`.
 
 ### App: generate + persist a per-install `device_id`
 
@@ -105,20 +136,31 @@ The app has no per-install identifier today. Add one:
   `device_id`). Secure storage is cleared on uninstall, which is correct — a
   reinstall is a new device identity.
 - Send in the hello frame (`app/lib/data/transport/ws_transport.dart:261`):
-  add `'device_id': deviceId` to the hello map.
+  add `'device_id': deviceId` to the raw hello map. (No Dart codegen — the
+  app's hello is a hand-built map, not a generated type.)
 
 ### Extension: generate + persist a per-install `device_id`
 
 The extension also sends a hello (`pi-extension/src/transport/relay_client.ts`,
-`HelloMsg` at line 31). The Pi-key is per-PC, so duplicate-auth-at-same-key is
-always same-PC-reconnect (a clone with a copied Pi-key is an attack, not a
-legitimate second device — `PROTOCOL.md` Wave E3). But for a uniform relay
-rule, the extension sends a `device_id` too:
+hand-written `HelloMsg` at line 31, constructed at `_authenticate` line 221).
+The Pi-key is per-PC, so duplicate-auth-at-same-key is always same-PC-reconnect
+(a clone with a copied Pi-key is an attack, not a legitimate second device —
+`PROTOCOL.md` Wave E3). But for a uniform relay rule, the extension sends a
+`device_id` too:
 
-- Generate a UUID v4 on first launch, persisted alongside the Pi-key
-  (`pi-extension/src/pairing/storage.ts` or the local config).
-- Add `device_id` to `HelloMsg` and send it in `_authenticate`
-  (`relay_client.ts:223`).
+- Generate a UUID v4 on first launch, persisted alongside the Pi-key in
+  `~/.pi/remote/identity.json`. The existing `SerializedKeypair { pk, sk }`
+  (`pi-extension/src/pairing/storage.ts:144`) gains an optional `device_id`
+  field — old files without it get one generated on next load (the
+  `getOrCreateEd25519Keypair` path already handles "read existing or
+  generate"). Keyring-stored identities carry it in the same serialized
+  payload.
+- Add `device_id: string` to the hand-written `HelloMsg` interface
+  (`relay_client.ts:31`) and send it in `_authenticate`
+  (`relay_client.ts:221`, the `hello` map). Also update the generated
+  `RelayControlFrameHello` consumer if the extension references it anywhere
+  (it currently uses the hand-written `HelloMsg`, not the generated type —
+  verify no drift).
 
 ### Relay: close prior same-device conn(s) on duplicate auth
 
@@ -145,7 +187,8 @@ The close mechanism is safe because:
   `stale_unregister_is_noop` test enshrines this path).
 
 In `relay/src/peers/registry.rs`:
-- `register()` passes `device_id` through to `insert()`.
+- `register()` signature gains `device_id: String`, passed through to
+  `insert()`.
 - `PeerRegistration` may expose `superseded_same_device_conn_ids` for logging.
 
 In `relay/src/handlers/peer.rs`:
@@ -167,9 +210,8 @@ semantics. Note it is required (greenfield; no legacy peers).
 
 ## Acceptance Criteria
 
-- [ ] `device_id` added as a **required** field to the `hello` frame in
-  `protocol/schema/relay-control.schema.json`; codegen regenerated for Rust +
-  Dart + TS.
+- [ ] `device_id` added as a **required** field to the `hello` def in
+  `protocol/schema/relay-control.schema.json`; Rust + TS codegen regenerated.
 - [ ] App generates + persists a per-install `device_id` and sends it in hello.
 - [ ] Extension generates + persists a per-install `device_id` and sends it in
   hello.
@@ -190,7 +232,10 @@ semantics. Note it is required (greenfield; no legacy peers).
 - [ ] `flutter analyze` + `flutter test` green (app).
 - [ ] `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
   green (pi-extension).
-- [ ] Schema check green: `cd protocol && corepack pnpm check`.
+- [ ] Schema check green: `cd protocol && node --import tsx
+  scripts/check-fixtures.ts`.
+- [ ] Codegen check green: Rust `--check` + TS `--check` (no hand-edits to
+  generated files).
 
 ## Tests
 
@@ -229,13 +274,15 @@ Add to `relay/src/peers/registry.rs` tests:
 - `relay/src/protocol/generated/control.rs` — `ClientAuthMsg::Hello`.
 - `protocol/schema/relay-control.schema.json` — `hello` def (single source of
   truth).
-- `protocol/package.json` — `generate:rust` / `generate:rust:check`.
-- `app/lib/data/transport/ws_transport.dart:261` — app hello construction.
+- `protocol/scripts/list-types.ts` + `protocol/scripts/check-fixtures.ts`.
+- `tools/protocol-codegen/bin/protocol-codegen.mjs` (Rust target) +
+  `tools/protocol-codegen/src/index.ts` (TS target).
+- `app/lib/data/transport/ws_transport.dart:261` — app hello construction (raw map).
 - `app/lib/data/preferences/preferences.dart` — `FlutterSecureStorage` pattern.
 - `pi-extension/src/transport/relay_client.ts:31` — extension `HelloMsg` +
-  `_authenticate` hello construction.
-- `pi-extension/src/pairing/storage.ts` — Pi-key persistence (model for
-  `device_id` persistence).
+  `_authenticate` hello construction (line 221).
+- `pi-extension/src/pairing/storage.ts:144` — `SerializedKeypair` (model for
+  `device_id` persistence alongside the Pi-key).
 - `PROTOCOL.md` — auth handshake (lines 48-54), clone-detection roadmap (E3).
 - Supersedes `story-relay-close-old-conn-on-duplicate-auth` (source-IP
   discriminator was unsound; see that story's closing note).
