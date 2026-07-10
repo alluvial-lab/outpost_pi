@@ -1,14 +1,14 @@
 ---
 id: story-peer-channel-room-required
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-10
 ---
 
 # /remote-pi pair: pairing succeeds but post-pair traffic dropped (relay rejects frame missing `room`)

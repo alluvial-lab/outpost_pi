@@ -1,14 +1,14 @@
 ---
 id: story-fix-stale-ctx-wrapactionctx-crash
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-03
+updated: 2026-07-10
 implemented: 2026-07-03
 ---
 
