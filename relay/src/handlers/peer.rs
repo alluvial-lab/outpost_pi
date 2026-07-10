@@ -211,9 +211,17 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
         }
     }
 
-    registry
+    // Only clear this peer's room/presence subscriptions when the peer has
+    // NO remaining live connections. Subscriptions are peer-scoped (not
+    // conn-scoped), so an unconditional `unsubscribe_all` on a same-device
+    // reconnect would wipe the replacement connection's freshly-replayed
+    // subscriptions. `peer_offlined` is true only on the N→0 transition
+    // (mirrors the presence-transition guard in `remove`).
+    let remove = registry
         .unregister(&peer_id, &room_id, registration.conn_id)
         .await;
-    rooms.unsubscribe_all(&peer_id).await;
+    if remove.peer_offlined {
+        rooms.unsubscribe_all(&peer_id).await;
+    }
     info!(peer = %peer_short, room = %room_id, addr = %peer_addr, "disconnected");
 }

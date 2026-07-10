@@ -96,6 +96,64 @@ async fn peer_disconnects_pushes_room_ended() {
     );
 }
 
+/// Same-device reconnect must NOT wipe the replacement connection's room
+/// subscriptions. Before the `peer_offlined` guard on `unsubscribe_all`, the
+/// old conn's teardown (triggered immediately by the same-device close)
+/// would call `rooms.unsubscribe_all(&peer_id)` unconditionally — wiping the
+/// new conn's freshly-replayed `subscribe_rooms` state. This test reproduces
+/// that scenario: Pi subscribes, reconnects from the same device, and the
+/// subscription must survive the old conn's teardown (verified by the
+/// replacement conn's `room_meta_update` still reaching the subscriber).
+#[tokio::test]
+async fn same_device_reconnect_preserves_room_subscriptions() {
+    let port = start_relay().await;
+    let sk_pi = random_key();
+    use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+    let peer_pi = B64.encode(sk_pi.verifying_key().to_bytes());
+
+    // Pi connects (device "dev-a") and the app subscribes to Pi's room events.
+    let (mut ws_pi_1, _) = connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
+    let (mut ws_app, _) = connect_and_auth(port).await;
+    ws_app
+        .send(Message::text(
+            json!({"type": "subscribe_rooms", "peers": [&peer_pi]}).to_string(),
+        ))
+        .await
+        .unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
+
+    // Drain the initial room_announced from the first conn.
+    let _ = tokio::time::timeout(tokio::time::Duration::from_millis(200), ws_app.next()).await;
+
+    // Same device reconnects at the same key → relay closes the prior conn.
+    // The old conn's handle_peer teardown runs (unregister + conditional
+    // unsubscribe_all). If it wrongly wipes the subscription, the
+    // room_meta_update below won't reach the app.
+    let (mut ws_pi_2, _) = connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    // The replacement conn sends a room_meta_update. The app's subscription
+    // must still be live to receive it.
+    ws_pi_2
+        .send(Message::text(
+            json!({"type": "room_meta_update", "room_id": "work", "meta": {"working": true}})
+                .to_string(),
+        ))
+        .await
+        .unwrap();
+
+    let msg = tokio::time::timeout(tokio::time::Duration::from_secs(1), ws_app.next())
+        .await
+        .expect("subscription survived reconnect — room_meta_updated must arrive")
+        .unwrap()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(msg.to_text().unwrap()).unwrap();
+    assert_eq!(v["type"], "room_meta_updated", "got: {v}");
+    assert_eq!(v["meta"]["working"], true);
+    drop(ws_pi_1);
+    drop(ws_pi_2);
+}
+
 /// Oversized `subscribe_rooms` frames are dropped instead of installing a
 /// subscription that could fan out through the relay's unbounded channels.
 #[tokio::test]
