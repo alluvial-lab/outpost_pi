@@ -1,14 +1,14 @@
 ---
 id: story-mobile-chat-blank-on-pair-after-pre-pair-work
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, app, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-03
+updated: 2026-07-10
 implemented: 2026-07-03
 review_addressed: 2026-07-03
 confirmed_root_cause: 2026-07-03
