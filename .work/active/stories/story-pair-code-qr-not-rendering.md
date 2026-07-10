@@ -1,14 +1,14 @@
 ---
 id: story-pair-code-qr-not-rendering
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-10
 ---
 
 # /remote-pi pair shows "QR ready" but no QR code / pairing code printed
