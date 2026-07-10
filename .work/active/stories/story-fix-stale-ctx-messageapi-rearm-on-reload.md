@@ -523,3 +523,118 @@ The upstream ask (path 2) is the real fix. File it as an upstream issue
 against `@earendil-works/pi-coding-agent` with the structural-stale evidence
 above — the `state.staleMessage` never-cleared + the plain-ctx-missing-
 `sendUserMessage` are the two concrete SDK gaps.
+
+## Fork-local redesign (2026-07-10) — the cancel-and-re-drive pattern
+
+Re-investigated whether the extension can fit the SDK's `withSession` model
+for **uncommanded** replacements (operator `/new`/`/resume`/`/fork` in the
+TUI), without an upstream change. There IS a fork-local path.
+
+### The SDK surface that makes it possible
+
+`ExtensionRunner.emit()` (`runner.js:522`) fires `session_before_switch`
+**before** `/new`/`/resume`/`/fork` (`agent-session-runtime.js:145,126`),
+passing `(event, ctx)` to registered handlers. The handler can return
+`{cancel: true}` to **abort** the replacement (`emitBeforeSwitch` →
+`beforeResult.cancelled` → early return, no replacement runs).
+
+Critically, the `ctx` handed to the `session_before_switch` handler is built
+by `createCommandContext()` (`runner.js:485`) — it carries `ctx.newSession({
+withSession})` (line 496), and `ctx.newSession` calls `this.assertActive()`
+on the **current** (pre-replacement) runner, which is **still valid** at
+`session_before_switch` time. So the handler can drive its own replacement.
+
+### The pattern: cancel the uncommanded replacement, re-drive with `withSession`
+
+```
+pi.on("session_before_switch", (event, ctx) => {
+  if (event.reason === "new" || event.reason === "resume" /* || fork */) {
+    if (_reDrivingReplacement) return;   // our own re-drive — let it through
+    _reDrivingReplacement = true;
+    // Cancel the uncommanded replacement (no withSession → no working ctx).
+    // Re-issue it WITH a withSession that captures a ReplacedSessionContext.
+    void ctx.newSession({
+      withSession: (replacedCtx) => {
+        _sdkSessionProjection.bindReplacementContext(replacedCtx);  // re-arms messageApi
+        _reDrivingReplacement = false;
+      },
+    });
+    return { cancel: true };
+  }
+});
+```
+
+The re-driven `ctx.newSession({withSession})` runs the FULL replacement
+(`createRuntime` → new runner → `finishSessionReplacement(withSession)` →
+`withSession(replacedCtx)`), and `replacedCtx.sendUserMessage` bypasses
+`runtime.assertActive()` (binds directly to `AgentSession.sendUserMessage`).
+So `messageApi` is re-armed with a working, non-stale surface — without a
+`/reload`.
+
+### Re-entrancy guard (the one real risk)
+
+The re-driven `ctx.newSession` fires `session_before_switch` **again**. The
+handler MUST let it through (return undefined / `{cancel:false}`) or it
+infinite-loops. A module-level `_reDrivingReplacement` flag, set before
+`ctx.newSession` and cleared in the `withSession` callback, gates it. The
+flag is synchronous-set / async-cleared, but `session_before_switch` for
+the re-drive fires synchronously inside `ctx.newSession` (before the
+`await createRuntime`), so the flag is still set when it's checked — correct
+ordering.
+
+### What this does NOT preserve (open questions for design)
+
+- **`/resume` semantics.** `/resume` switches to an *existing* session
+  (different `sessionManager`/`sessionFile`), not a fresh one. The
+  cancel-and-re-drive must pass the **same target** the operator chose, or
+  it resumes the wrong session. `session_before_switch` carries
+  `targetSessionFile` — the re-drive must forward it. `ctx.newSession` may
+  not be the right re-drive for `/resume` (it's `ctx.navigateTree` /
+  `switchSession`); verify the per-reason re-drive call.
+- **`/fork` semantics.** `/fork` takes an `entryId`. The re-drive must
+  forward it via `ctx.fork(entryId, {withSession})`.
+- **The `setup` option.** `newSession` supports `options.setup` (line 161);
+  an uncommanded `/new` may carry it. The re-drive must forward any options
+  the original carried — but `session_before_switch`'s `event` may not
+  expose them. Verify what's on the event.
+- **TUI state.** Cancelling + re-driving may disrupt the TUI's own
+  `/new`-flow state (loading animation, status container — see
+  `interactive-mode.js:1153-1164`). The re-drive happens inside the
+  handler, before the TUI's `newSession` action returns — verify the TUI
+  doesn't double-render or lose state.
+
+### Why this is a redesign, not a patch
+
+This changes the extension from a **passive** `session_start` listener (which
+the prior reverted fix assumed) to an **active** `session_before_switch`
+interceptor that owns the replacement flow. It's a real architectural shift:
+the extension becomes responsible for re-driving replacements so it can
+inject a `withSession` and capture a working `messageApi`. The
+`bindSessionContext` / `bindApi` / `clearStaleContexts` ports stay, but the
+**re-arm trigger** moves from `bindApi` (factory, `/reload`-only) to
+`bindReplacementContext` (withSession, every replacement).
+
+### Acceptance criteria (re-scoped to the redesign)
+
+- [ ] A `session_before_switch` handler intercepts uncommanded
+      `/new`/`/resume`/`/fork`, cancels, and re-drives with a `withSession`
+      that re-arms `messageApi` from a `ReplacedSessionContext`.
+- [ ] Re-entrancy guard prevents the infinite loop.
+- [ ] `/resume` and `/fork` forward their target/entryId (not just `/new`).
+- [ ] After the re-drive, an inbound `user_message` delivers to the new
+      session WITHOUT a workstation `/reload`.
+- [ ] Regression test against a real SDK `/new`/`/resume` (mocks can't model
+      the runtime-staleness — the lesson from the reverted first fix). If
+      the harness is infeasible, an honest xfail + the `delivery_pending`
+      tolerance as the shipped mitigation.
+- [ ] No regression to the mobile `session_new` quick-action (which already
+      drives `withSession` — the interceptor must not double-cancel it).
+
+### Implementation order
+
+1. Spike: register a `session_before_switch` handler, log the events +
+   payload for `/new`/`/resume`/`/fork` to confirm what's on the event and
+   whether the cancel-and-re-drive is clean (no TUI disruption, no loop).
+2. If the spike confirms, implement the re-drive + re-entrancy guard +
+   `bindReplacementContext` re-arm.
+3. Integration test (the mandatory non-mock test).
