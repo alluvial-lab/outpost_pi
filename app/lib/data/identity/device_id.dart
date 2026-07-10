@@ -20,26 +20,44 @@ class DeviceId {
 
   final FlutterSecureStorage _store;
   String? _cached;
+  Future<String>? _inflight;
 
   DeviceId([FlutterSecureStorage? store])
     : _store = store ?? const FlutterSecureStorage();
 
   /// Returns the per-install device id, generating + persisting one on first
-  /// call. Idempotent — repeated calls return the same value.
-  Future<String> get() async {
+  /// call. Idempotent — repeated calls return the same value. Concurrent
+  /// first calls share a single in-flight Future so they cannot race their
+  /// writes and return different ids.
+  Future<String> get() {
     final cached = _cached;
-    if (cached != null) return cached;
+    if (cached != null) return Future.value(cached);
 
-    final stored = await _store.read(key: _key);
-    if (stored != null && stored.isNotEmpty) {
-      _cached = stored;
-      return stored;
+    // Single-flight: if a first-time generation is already running, await it
+    // instead of starting a second one that could write a different id.
+    final inflight = _inflight;
+    if (inflight != null) return inflight;
+
+    final future = _loadOrGenerate();
+    _inflight = future;
+    return future;
+  }
+
+  Future<String> _loadOrGenerate() async {
+    try {
+      final stored = await _store.read(key: _key);
+      if (stored != null && stored.isNotEmpty) {
+        _cached = stored;
+        return stored;
+      }
+
+      final generated = _generate();
+      await _store.write(key: _key, value: generated);
+      _cached = generated;
+      return generated;
+    } finally {
+      _inflight = null;
     }
-
-    final generated = _generate();
-    await _store.write(key: _key, value: generated);
-    _cached = generated;
-    return generated;
   }
 
   /// Cryptographically-random 128-bit id, base16-encoded (32 chars). Not a

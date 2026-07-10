@@ -21,6 +21,8 @@ pub enum AuthError {
     NoHello,
     #[error("invalid pubkey: {0}")]
     InvalidPubkey(String),
+    #[error("empty device_id")]
+    InvalidDeviceId,
     #[error("base64 decode error: {0}")]
     Base64(#[from] base64::DecodeError),
     #[error("invalid signature")]
@@ -54,6 +56,9 @@ pub fn parse_hello_bootstrap(line: &str, now_ms: i64) -> Result<AuthenticatedPee
             room_id,
             room_meta,
         } => {
+            if device_id.is_empty() {
+                return Err(AuthError::InvalidDeviceId);
+            }
             let bytes = B64.decode(&pubkey)?;
             let arr: [u8; 32] = bytes
                 .try_into()
