@@ -86,6 +86,16 @@ describe("DeliveryDebugLogImpl adapter mechanics", () => {
     expect(line).toMatchObject({ tag: "msg_received", id: "x" });
   });
 
+  test("roomId appears in serialized events when set and is absent when omitted", () => {
+    const log = new DeliveryDebugLogImpl(logPath);
+    log.log({ tag: "msg_delivered", id: "cli_1", sessionIdTail: "abc12345", roomId: "SF_DCbXsmreE" });
+    log.log({ tag: "msg_delivered", id: "cli_2", sessionIdTail: "def67890" });
+    const exported = log.export()!;
+    const lines = exported.trim().split("\n").map((l) => JSON.parse(l));
+    expect(lines[0]).toMatchObject({ tag: "msg_delivered", roomId: "SF_DCbXsmreE" });
+    expect(lines[1]).not.toHaveProperty("roomId");
+  });
+
   test("field values are tail-truncated (a huge untrusted string can't evict the window)", () => {
     const log = new DeliveryDebugLogImpl(logPath);
     const hugeDetail = "x".repeat(10_000);

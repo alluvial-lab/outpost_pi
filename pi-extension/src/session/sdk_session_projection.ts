@@ -134,8 +134,15 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   private messageApi: AgentMessageApi | null = null;
   private actionApi: FreshActionApi | null = null;
   private turn: TurnSnapshot = initialTurnSnapshot();
+  private roomId: string | null = null;
 
   constructor(private readonly opts: SdkSessionProjectionOptions) {}
+
+  /** Set the room id for delivery-log correlation. Called when `_myRoomId` is
+   *  bound (the projection is constructed before the room is known). */
+  setRoomId(roomId: string | null): void {
+    this.roomId = roomId;
+  }
 
   bindApi(pi: ExtensionAPI): void {
     this.bindCapabilities(pi);
@@ -143,6 +150,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
       tag: "message_api_armed",
       via: "factory",
       sessionIdTail: this.issuer.current() ?? "unknown",
+      roomId: this.roomId ?? undefined,
     });
   }
 
@@ -153,6 +161,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
       tag: "command_ctx",
       armed: true,
       via: "slash",
+      roomId: this.roomId ?? undefined,
     });
   }
 
@@ -312,11 +321,13 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
       tag: "message_api_armed",
       via: "withSession",
       sessionIdTail: idTail(sessionId),
+      roomId: this.roomId ?? undefined,
     });
     this.opts.outputs.deliveryDebugLog?.log({
       tag: "command_ctx",
       armed: true,
       via: "withSession",
+      roomId: this.roomId ?? undefined,
     });
     return sessionId;
   }
@@ -335,6 +346,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.opts.outputs.deliveryDebugLog?.log({
       tag: "message_api_null",
       reason: "shutdown",
+      roomId: this.roomId ?? undefined,
     });
     this.opts.outputs.deliveryDebugLog?.log({
       tag: "command_ctx",
@@ -820,6 +832,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.opts.outputs.deliveryDebugLog?.log({
       tag: "message_api_null",
       reason: "stale",
+      roomId: this.roomId ?? undefined,
     });
   }
 
