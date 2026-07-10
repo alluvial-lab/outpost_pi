@@ -51,6 +51,61 @@ class _FakeSecureStorage implements FlutterSecureStorage {
   dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
+/// A store that delays reads so concurrent first-time `get()` calls overlap
+/// (exercises the single-flight path in `DeviceId`).
+class _SlowSecureStorage implements FlutterSecureStorage {
+  final Map<String, String> _store = {};
+
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 10));
+    return _store[key];
+  }
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 10));
+    if (value == null) {
+      _store.remove(key);
+    } else {
+      _store[key] = value;
+    }
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    _store.remove(key);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
+}
+
 void main() {
   group('DeviceId', () {
     test('generates a non-empty id on first access', () async {
@@ -89,6 +144,20 @@ void main() {
       final idB = await DeviceId(_FakeSecureStorage()).get();
 
       expect(idA, isNot(idB));
+    });
+
+    test('concurrent first calls return the same id (single-flight)', () async {
+      // A slow store so both reads race before either completes.
+      final store = _SlowSecureStorage();
+      final deviceId = DeviceId(store);
+
+      final results = await Future.wait([
+        deviceId.get(),
+        deviceId.get(),
+        deviceId.get(),
+      ]);
+
+      expect(results.toSet().length, 1, reason: 'all concurrent calls must agree');
     });
   });
 }
