@@ -49,6 +49,34 @@ fn hello_bootstrap_defaults_main_and_not_working() {
     assert_eq!(peer.room_meta.started_at, 77);
 }
 
+/// Hello with an empty `device_id` is rejected at the auth boundary — two
+/// malformed clients with empty ids would otherwise be treated as the same
+/// device and close each other on duplicate auth.
+#[test]
+fn hello_with_empty_device_id_is_rejected() {
+    let sk = SigningKey::generate(&mut rand::thread_rng());
+    let pubkey = B64.encode(sk.verifying_key().to_bytes());
+    let line = format!(
+        r#"{{"type":"hello","pubkey":"{}","device_id":"","room_id":"main"}}"#,
+        pubkey
+    );
+
+    let err = parse_hello_bootstrap(&line, 0).unwrap_err();
+    assert!(matches!(err, AuthError::InvalidDeviceId), "got {err:?}");
+}
+
+/// Hello missing `device_id` entirely is rejected by serde (required field).
+#[test]
+fn hello_missing_device_id_is_rejected() {
+    let sk = SigningKey::generate(&mut rand::thread_rng());
+    let pubkey = B64.encode(sk.verifying_key().to_bytes());
+    let line = format!(r#"{{"type":"hello","pubkey":"{}","room_id":"main"}}"#, pubkey);
+
+    let err = parse_hello_bootstrap(&line, 0).unwrap_err();
+    // serde rejects a missing required field as a Json error.
+    assert!(matches!(err, AuthError::Json(_)), "got {err:?}");
+}
+
 /// Valid key pair but signature covers wrong bytes → InvalidSig.
 #[test]
 fn sig_invalida() {

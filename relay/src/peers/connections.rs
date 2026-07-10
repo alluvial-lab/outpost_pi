@@ -32,7 +32,7 @@ pub(crate) struct ConnectionInsert {
 }
 
 #[derive(Debug)]
-pub(crate) struct ConnectionRemove {
+pub struct ConnectionRemove {
     pub peer_id: String,
     pub removed_connection: bool,
     pub room_emptied: bool,
