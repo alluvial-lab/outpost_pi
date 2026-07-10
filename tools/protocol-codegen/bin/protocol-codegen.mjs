@@ -831,10 +831,12 @@ function emitRustControl(entries, schemaPath) {
     if (hasType('hello')) {
       const helloSchema = schemasByType.get('hello');
       if (!schemaHasProperty(helloSchema, 'pubkey')) throw new Error('hello schema must declare pubkey');
+      if (!schemaHasProperty(helloSchema, 'device_id')) throw new Error('hello schema must declare device_id');
       if (!schemaHasProperty(helloSchema, 'room_id')) throw new Error('hello schema must declare room_id');
       if (!schemaHasProperty(helloSchema, 'room_meta')) throw new Error('hello schema must declare room_meta');
       lines.push('    Hello {');
       lines.push('        pubkey: String,');
+      lines.push('        device_id: String,');
       lines.push('        #[serde(default = "default_room")]');
       lines.push('        room_id: String,');
       lines.push('        #[serde(default)]');

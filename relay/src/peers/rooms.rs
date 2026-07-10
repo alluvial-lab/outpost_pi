@@ -126,6 +126,7 @@ mod tests {
             was_offline_before: is_first_in_room,
             is_first_in_room,
             superseded_existing: !is_first_in_room,
+            superseded_same_device_conn_ids: Vec::new(),
         }
     }
 

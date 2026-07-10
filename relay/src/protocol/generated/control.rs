@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 pub enum ClientAuthMsg {
     Hello {
         pubkey: String,
+        device_id: String,
         #[serde(default = "default_room")]
         room_id: String,
         #[serde(default)]
