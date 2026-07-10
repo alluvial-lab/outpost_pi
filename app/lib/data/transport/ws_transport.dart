@@ -65,6 +65,7 @@ class WsTransport implements PeerTransport, IControlLink {
     required String relayUrl,
     required String peerPubkey, // base64 standard or url — destination peer
     required SimpleKeyPair ed25519Key, // this device's Ed25519 long-term key
+    required String deviceId, // per-install id — relay closes prior same-device conns on reconnect
     String activeRoom = 'main',
     DebugLog? debugLog,
   }) async {
@@ -260,6 +261,7 @@ class WsTransport implements PeerTransport, IControlLink {
         jsonEncode({
           'type': 'hello',
           'pubkey': base64.encode(pub.bytes),
+          'device_id': deviceId,
           'room_id': 'main',
         }),
       );

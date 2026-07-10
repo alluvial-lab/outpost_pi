@@ -436,6 +436,7 @@ export type RelayControlType = (typeof relayControlTypes)[number];
 export interface RelayControlFrameHello {
   readonly type: "hello";
   readonly pubkey: string;
+  readonly device_id: string;
   readonly room_id?: string;
   readonly room_meta?: {
   readonly name?: string;

@@ -1,6 +1,7 @@
 mod common;
 use common::{
-    connect_and_auth, connect_and_auth_with_key, connect_and_auth_with_room, start_relay,
+    connect_and_auth, connect_and_auth_with_key, connect_and_auth_with_room,
+    connect_and_auth_with_room_and_device, start_relay,
 };
 
 use ed25519_dalek::SigningKey;
@@ -267,8 +268,8 @@ async fn duplicate_room_connection_accepted_and_both_receive_broadcast() {
     let peer_pi = B64.encode(sk_pi.verifying_key().to_bytes());
 
     // Two conns at the same (peer, room) — both must complete the handshake.
-    let (mut ws_pi_1, _) = connect_and_auth_with_room(port, &sk_pi, "work").await;
-    let (mut ws_pi_2, _) = connect_and_auth_with_room(port, &sk_pi, "work").await;
+    let (mut ws_pi_1, _) = connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
+    let (mut ws_pi_2, _) = connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-b").await;
 
     // A third party (the "app") sends a message to (peer_pi, "work").
     let (mut ws_app, _) = connect_and_auth(port).await;
@@ -329,6 +330,7 @@ async fn room_announced_includes_model_from_hello() {
             json!({
                 "type": "hello",
                 "pubkey": B64.encode(vk.to_bytes()),
+                "device_id": "test-device",
                 "room_id": "work",
                 "room_meta": {"name": "my-proj", "model": "claude-opus-4-7"},
             })
@@ -676,6 +678,7 @@ async fn room_announced_and_rooms_check_include_thinking_from_hello() {
             json!({
                 "type": "hello",
                 "pubkey": B64.encode(vk.to_bytes()),
+                "device_id": "test-device",
                 "room_id": "main",
                 "room_meta": {
                     "name": "deep-think",
@@ -911,6 +914,7 @@ async fn room_announced_and_rooms_check_include_working_from_hello() {
             json!({
                 "type": "hello",
                 "pubkey": B64.encode(vk.to_bytes()),
+                "device_id": "test-device",
                 "room_id": "main",
                 "room_meta": {
                     "name": "busy-room",

@@ -53,10 +53,14 @@ use crate::rooms::{RoomManager, RoomMeta, RoomMetaPatch};
 /// - `peer_offline` fires only when the peer transitions from N → 0 total
 ///   connections (asymmetric still: online and offline both gated by real
 ///   state changes, but the offline edge is the authoritative one).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeerRegistration {
     pub conn_id: u64,
     pub superseded_existing: bool,
+    /// `conn_id`s of prior same-device conns closed by this register (see
+    /// [`PeerRegistry::register`]). Empty unless this was a same-device
+    /// duplicate auth.
+    pub superseded_same_device_conn_ids: Vec<u64>,
 }
 
 #[derive(Debug)]
@@ -132,18 +136,20 @@ impl PeerRegistry {
     /// room (to avoid spamming metadata churn). `peer_online` fires only
     /// when `was_offline_before == true` — i.e. on a real offline→online
     /// transition, not on every register. See struct-level docs.
+    ///
+    /// When a new conn authenticates from the same `device_id` as an existing
+    /// conn at the same key, the prior conn is closed immediately (its `tx`
+    /// is dropped) — this is a reconnect, not a genuine second device, so the
+    /// old half-open socket tears down without waiting for ping timeout.
     pub async fn register(
         &self,
         peer_id: String,
         room_meta: RoomMeta,
+        device_id: String,
         tx: mpsc::UnboundedSender<Message>,
     ) -> PeerRegistration {
         let room_id = room_meta.room_id.clone();
-        let insert = self.connections.insert(&peer_id, &room_id, tx);
-        let registration = PeerRegistration {
-            conn_id: insert.conn_id,
-            superseded_existing: insert.superseded_existing,
-        };
+        let insert = self.connections.insert(&peer_id, &room_id, &device_id, tx);
         let announced_meta = self
             .rooms
             .on_connection_inserted(&peer_id, room_meta, &insert);
@@ -164,7 +170,11 @@ impl PeerRegistry {
             .publish_presence_transition(presence_transition)
             .await;
 
-        registration
+        PeerRegistration {
+            conn_id: insert.conn_id,
+            superseded_existing: insert.superseded_existing,
+            superseded_same_device_conn_ids: insert.superseded_same_device_conn_ids,
+        }
     }
 
     /// Removes the connection identified by `conn_id` from the `Vec` at
@@ -296,8 +306,8 @@ mod tests {
         let (tx_main, mut rx_main) = mpsc::unbounded_channel::<Message>();
         let (tx_work, mut rx_work) = mpsc::unbounded_channel::<Message>();
 
-        let conn_main = reg.register(peer.clone(), make_meta("main"), tx_main).await;
-        let conn_work = reg.register(peer.clone(), make_meta("work"), tx_work).await;
+        let conn_main = reg.register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx_main).await;
+        let conn_work = reg.register(peer.clone(), make_meta("work"), "dev-a".to_string(), tx_work).await;
 
         assert_ne!(conn_main.conn_id, conn_work.conn_id);
 
@@ -345,8 +355,8 @@ mod tests {
         let (tx_main, mut rx_main) = mpsc::unbounded_channel::<Message>();
         let (tx_work, mut rx_work) = mpsc::unbounded_channel::<Message>();
 
-        let _ = reg.register(peer.clone(), make_meta("main"), tx_main).await;
-        let _ = reg.register(peer.clone(), make_meta("work"), tx_work).await;
+        let _ = reg.register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx_main).await;
+        let _ = reg.register(peer.clone(), make_meta("work"), "dev-a".to_string(), tx_work).await;
 
         assert!(forward(
             &reg,
@@ -372,9 +382,17 @@ mod tests {
         let (tx1, mut rx1) = mpsc::unbounded_channel::<Message>();
         let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
 
-        let conn1 = reg.register(peer.clone(), make_meta("main"), tx1).await;
-        let conn2 = reg.register(peer.clone(), make_meta("main"), tx2).await;
+        let conn1 = reg.register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx1).await;
+        let conn2 = reg.register(peer.clone(), make_meta("main"), "dev-b".to_string(), tx2).await;
         assert_ne!(conn1.conn_id, conn2.conn_id);
+        assert!(
+            conn1.superseded_same_device_conn_ids.is_empty(),
+            "different device must not close the prior conn"
+        );
+        assert!(
+            conn2.superseded_same_device_conn_ids.is_empty(),
+            "different device must not close the prior conn"
+        );
 
         // Send "from" conn1 → only conn2 receives.
         assert!(forward(
@@ -406,13 +424,13 @@ mod tests {
 
         let (tx_first, _rx_first) = mpsc::unbounded_channel::<Message>();
         let first = reg
-            .register(peer.clone(), make_meta("main"), tx_first)
+            .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx_first)
             .await;
         assert!(!first.superseded_existing);
 
         let (tx_other_room, _rx_other_room) = mpsc::unbounded_channel::<Message>();
         let other_room = reg
-            .register(peer.clone(), make_meta("work"), tx_other_room)
+            .register(peer.clone(), make_meta("work"), "dev-a".to_string(), tx_other_room)
             .await;
         assert!(
             !other_room.superseded_existing,
@@ -420,9 +438,160 @@ mod tests {
         );
 
         let (tx_duplicate, _rx_duplicate) = mpsc::unbounded_channel::<Message>();
-        let duplicate = reg.register(peer, make_meta("main"), tx_duplicate).await;
+        let duplicate = reg.register(peer, make_meta("main"), "dev-a".to_string(), tx_duplicate).await;
         assert!(duplicate.superseded_existing);
         assert_ne!(first.conn_id, duplicate.conn_id);
+        assert_eq!(
+            duplicate.superseded_same_device_conn_ids, vec![first.conn_id],
+            "same-device duplicate auth at the same key must close the prior conn"
+        );
+        assert!(
+            other_room.superseded_same_device_conn_ids.is_empty(),
+            "different room must not close anything"
+        );
+    }
+
+    /// A duplicate auth at the same `(peer, room)` key **from the same
+    /// `device_id`** closes the prior conn's `tx`: the old socket tears down
+    /// immediately instead of waiting for the 25 s WS ping to time it out. This
+    /// is the mobile reconnect case (wifi→cellular leaves the old TCP path
+    /// half-open — no FIN/RST reaches the relay).
+    #[tokio::test]
+    async fn same_device_duplicate_auth_closes_prior_conn() {
+        let reg = make_registry();
+        let peer = "peer_a".to_string();
+
+        let (tx1, mut rx1) = mpsc::unbounded_channel::<Message>();
+        let conn1 = reg
+            .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx1)
+            .await;
+        assert!(conn1.superseded_same_device_conn_ids.is_empty());
+
+        // Same device reconnects at the same key → closes conn1.
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
+        let conn2 = reg
+            .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx2)
+            .await;
+        assert_eq!(
+            conn2.superseded_same_device_conn_ids,
+            vec![conn1.conn_id],
+            "same-device duplicate auth must close the prior conn"
+        );
+
+        // conn1's receiver ends (the dropped tx closed the channel).
+        assert!(
+            rx1.recv().await.is_none(),
+            "prior conn's channel must be closed (tx dropped)"
+        );
+
+        // send_to_room routes only to the new conn — no fan-out to the closed one.
+        assert!(forward(
+            &reg,
+            &peer,
+            "main",
+            Message::Text("after".into()),
+            EXTERNAL
+        ));
+        assert_eq!(rx2.try_recv().unwrap().to_text().unwrap(), "after");
+        assert!(
+            rx2.try_recv().is_err(),
+            "only the new conn receives (no second copy)"
+        );
+    }
+
+    /// The multi-device case: two devices of the same Owner (shared Ed25519
+    /// key via iCloud Keychain / Block Store) at the same `(peer, room)` key
+    /// with **different** `device_id`s must both stay alive. The second auth
+    /// must NOT close the first device's conn.
+    #[tokio::test]
+    async fn different_device_duplicate_auth_keeps_both_conns() {
+        let reg = make_registry();
+        let peer = "peer_a".to_string();
+
+        let (tx1, mut rx1) = mpsc::unbounded_channel::<Message>();
+        let conn1 = reg
+            .register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx1)
+            .await;
+        assert!(conn1.superseded_same_device_conn_ids.is_empty());
+
+        // Different device at the same key → genuine second device, NOT a reconnect.
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
+        let conn2 = reg
+            .register(peer.clone(), make_meta("main"), "dev-b".to_string(), tx2)
+            .await;
+        assert!(
+            conn2.superseded_same_device_conn_ids.is_empty(),
+            "different device must not close the prior conn"
+        );
+
+        // Both conns still receive forwarded frames (multi-device fan-out).
+        assert!(forward(
+            &reg,
+            &peer,
+            "main",
+            Message::Text("both".into()),
+            EXTERNAL
+        ));
+        assert_eq!(rx1.try_recv().unwrap().to_text().unwrap(), "both");
+        assert_eq!(rx2.try_recv().unwrap().to_text().unwrap(), "both");
+    }
+
+    /// A same-device reconnect that closes the prior conn must not break
+    /// `peer_offline` / `room_ended` semantics: the old conn's later
+    /// `unregister` is a stale no-op (entry already removed), and the new
+    /// conn's normal disconnect still emits the correct transitions.
+    #[tokio::test]
+    async fn same_device_close_then_normal_disconnect_emits_correct_transitions() {
+        let presence = Arc::new(PresenceManager::new());
+        let rooms = Arc::new(RoomManager::new());
+        let metrics = Arc::new(FirehoseMetrics::new());
+        let reg = PeerRegistry::new(presence.clone(), rooms, metrics);
+
+        let pi = "pi".to_string();
+        let app = "app".to_string();
+
+        let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
+        let _ = reg
+            .register(app.clone(), make_meta("main"), "app-dev".to_string(), tx_app)
+            .await;
+        presence.subscribe(app.clone(), vec![pi.clone()]).await;
+
+        // First Pi conn → peer_online.
+        let (tx_pi_1, _rx_pi_1) = mpsc::unbounded_channel::<Message>();
+        let conn1 = reg
+            .register(pi.clone(), make_meta("main"), "pi-dev".to_string(), tx_pi_1)
+            .await;
+        let online = rx_app.try_recv().unwrap();
+        let online: serde_json::Value =
+            serde_json::from_str(online.to_text().unwrap()).unwrap();
+        assert_eq!(online["type"], "peer_online");
+
+        // Same-device reconnect → closes conn1, no new peer_online (still online).
+        let (tx_pi_2, _rx_pi_2) = mpsc::unbounded_channel::<Message>();
+        let conn2 = reg
+            .register(pi.clone(), make_meta("main"), "pi-dev".to_string(), tx_pi_2)
+            .await;
+        assert_eq!(conn2.superseded_same_device_conn_ids, vec![conn1.conn_id]);
+        assert!(
+            rx_app.try_recv().is_err(),
+            "same-device reconnect must not re-emit peer_online"
+        );
+
+        // Stale unregister of the closed conn1 → no-op, no peer_offline.
+        reg.unregister(&pi, "main", conn1.conn_id).await;
+        assert!(
+            rx_app.try_recv().is_err(),
+            "stale unregister of closed conn must not emit peer_offline"
+        );
+
+        // Normal disconnect of the live conn2 → peer_offline (the presence
+        // subscriber sees the offline transition; room_ended goes to room
+        // subscribers, which this test doesn't set up).
+        reg.unregister(&pi, "main", conn2.conn_id).await;
+        let offline = rx_app.try_recv().expect("last conn emits peer_offline");
+        let offline: serde_json::Value =
+            serde_json::from_str(offline.to_text().unwrap()).unwrap();
+        assert_eq!(offline["type"], "peer_offline");
     }
 
     /// Duplicate connections refresh the canonical `rooms_of` snapshot using
@@ -440,14 +609,14 @@ mod tests {
         let app = "app".to_string();
 
         let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
-        let _ = reg.register(app.clone(), make_meta("main"), tx_app).await;
+        let _ = reg.register(app.clone(), make_meta("main"), "dev-a".to_string(), tx_app).await;
         rooms.subscribe(app.clone(), vec![pi.clone()]).await;
 
         let mut first_meta = make_meta("main");
         first_meta.model = Some("old-model".to_string());
         first_meta.working = false;
         let (tx_pi_1, _rx_pi_1) = mpsc::unbounded_channel::<Message>();
-        let conn1 = reg.register(pi.clone(), first_meta, tx_pi_1).await;
+        let conn1 = reg.register(pi.clone(), first_meta, "dev-a".to_string(), tx_pi_1).await;
 
         let announced = rx_app
             .try_recv()
@@ -463,7 +632,7 @@ mod tests {
         refreshed_meta.session_id = Some("sess-2".to_string());
         refreshed_meta.working = true;
         let (tx_pi_2, _rx_pi_2) = mpsc::unbounded_channel::<Message>();
-        let conn2 = reg.register(pi.clone(), refreshed_meta, tx_pi_2).await;
+        let conn2 = reg.register(pi.clone(), refreshed_meta, "dev-b".to_string(), tx_pi_2).await;
 
         assert!(
             rx_app.try_recv().is_err(),
@@ -503,9 +672,9 @@ mod tests {
         let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
         let (tx3, mut rx3) = mpsc::unbounded_channel::<Message>();
 
-        let _conn1 = reg.register(peer.clone(), make_meta("main"), tx1).await;
-        let conn2 = reg.register(peer.clone(), make_meta("main"), tx2).await;
-        let _conn3 = reg.register(peer.clone(), make_meta("main"), tx3).await;
+        let _conn1 = reg.register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx1).await;
+        let conn2 = reg.register(peer.clone(), make_meta("main"), "dev-b".to_string(), tx2).await;
+        let _conn3 = reg.register(peer.clone(), make_meta("main"), "dev-c".to_string(), tx3).await;
 
         reg.unregister(&peer, "main", conn2.conn_id).await;
 
@@ -534,8 +703,8 @@ mod tests {
         let (tx1, mut rx1) = mpsc::unbounded_channel::<Message>();
         let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
 
-        let _ = reg.register(peer.clone(), make_meta("main"), tx1).await;
-        let _ = reg.register(peer.clone(), make_meta("main"), tx2).await;
+        let _ = reg.register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx1).await;
+        let _ = reg.register(peer.clone(), make_meta("main"), "dev-b".to_string(), tx2).await;
 
         assert!(forward(
             &reg,
@@ -556,7 +725,7 @@ mod tests {
         let peer = "peer_a".to_string();
 
         let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
-        let conn = reg.register(peer.clone(), make_meta("main"), tx).await;
+        let conn = reg.register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx).await;
 
         assert!(!forward(
             &reg,
@@ -587,9 +756,9 @@ mod tests {
         let (tx_a, _) = mpsc::unbounded_channel::<Message>();
         let (tx_b, mut rx_b) = mpsc::unbounded_channel::<Message>();
 
-        let conn_a = reg.register(peer.clone(), make_meta("main"), tx_a).await;
+        let conn_a = reg.register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx_a).await;
         reg.unregister(&peer, "main", conn_a.conn_id).await;
-        let conn_b = reg.register(peer.clone(), make_meta("main"), tx_b).await;
+        let conn_b = reg.register(peer.clone(), make_meta("main"), "dev-a".to_string(), tx_b).await;
 
         // Stale unregister of conn_a is a no-op.
         reg.unregister(&peer, "main", conn_a.conn_id).await;
@@ -629,12 +798,12 @@ mod tests {
 
         // App is online and subscribes to Pi's presence.
         let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
-        let _ = reg.register(app.clone(), make_meta("main"), tx_app).await;
+        let _ = reg.register(app.clone(), make_meta("main"), "dev-a".to_string(), tx_app).await;
         presence.subscribe(app.clone(), vec![pi.clone()]).await;
 
         // First Pi conn → real offline→online → app receives peer_online.
         let (tx_pi_1, _) = mpsc::unbounded_channel::<Message>();
-        let _ = reg.register(pi.clone(), make_meta("main"), tx_pi_1).await;
+        let _ = reg.register(pi.clone(), make_meta("main"), "dev-a".to_string(), tx_pi_1).await;
         let m1 = rx_app.try_recv().unwrap();
         let v1: serde_json::Value = serde_json::from_str(m1.to_text().unwrap()).unwrap();
         assert_eq!(v1["type"], "peer_online");
@@ -642,7 +811,7 @@ mod tests {
 
         // Second conn from the same Pi (no transition) → no extra peer_online.
         let (tx_pi_2, _) = mpsc::unbounded_channel::<Message>();
-        let _ = reg.register(pi.clone(), make_meta("work"), tx_pi_2).await;
+        let _ = reg.register(pi.clone(), make_meta("work"), "dev-a".to_string(), tx_pi_2).await;
         assert!(
             rx_app.try_recv().is_err(),
             "second register at already-online peer must NOT emit peer_online"
@@ -668,12 +837,12 @@ mod tests {
         let app = "app".to_string();
 
         let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
-        let _ = reg.register(app.clone(), make_meta("main"), tx_app).await;
+        let _ = reg.register(app.clone(), make_meta("main"), "dev-a".to_string(), tx_app).await;
         presence.subscribe(app.clone(), vec![pi.clone()]).await;
 
         let (tx_pi_main, _) = mpsc::unbounded_channel::<Message>();
         let conn_main = reg
-            .register(pi.clone(), make_meta("main"), tx_pi_main)
+            .register(pi.clone(), make_meta("main"), "dev-a".to_string(), tx_pi_main)
             .await;
         let first_online = rx_app.try_recv().expect("first pi room emits online");
         let first_online: serde_json::Value =
@@ -682,7 +851,7 @@ mod tests {
 
         let (tx_pi_work, _) = mpsc::unbounded_channel::<Message>();
         let conn_work = reg
-            .register(pi.clone(), make_meta("work"), tx_pi_work)
+            .register(pi.clone(), make_meta("work"), "dev-a".to_string(), tx_pi_work)
             .await;
         assert!(
             rx_app.try_recv().is_err(),
@@ -721,10 +890,10 @@ mod tests {
         // `room_announced` backfill and its channel only carries the
         // `room_meta_updated` pushes the tests assert on.
         let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
-        let _ = reg.register(pi.clone(), make_meta("main"), tx_pi).await;
+        let _ = reg.register(pi.clone(), make_meta("main"), "dev-a".to_string(), tx_pi).await;
 
         let (tx_app, rx_app) = mpsc::unbounded_channel::<Message>();
-        let _ = reg.register(app.clone(), make_meta("main"), tx_app).await;
+        let _ = reg.register(app.clone(), make_meta("main"), "dev-a".to_string(), tx_app).await;
         rooms.subscribe(app.clone(), vec![pi.clone()]).await;
 
         (reg, pi, rx_app)
@@ -897,7 +1066,7 @@ mod tests {
         let reg = make_registry();
         let pi = "pi".to_string();
         let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
-        let _ = reg.register(pi.clone(), make_meta("main"), tx_pi).await;
+        let _ = reg.register(pi.clone(), make_meta("main"), "dev-a".to_string(), tx_pi).await;
 
         let rooms_snapshot = reg.rooms_of(&pi);
         assert_eq!(rooms_snapshot.len(), 1);
@@ -949,13 +1118,13 @@ mod tests {
         let app = "app".to_string();
 
         let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
-        let _ = reg.register(app.clone(), make_meta("main"), tx_app).await;
+        let _ = reg.register(app.clone(), make_meta("main"), "dev-a".to_string(), tx_app).await;
         rooms.subscribe(app.clone(), vec![pi.clone()]).await;
 
         let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
         let mut meta = make_meta("main");
         meta.working = true;
-        let conn = reg.register(pi.clone(), meta, tx_pi).await;
+        let conn = reg.register(pi.clone(), meta, "dev-a".to_string(), tx_pi).await;
         let rooms_snapshot = reg.rooms_of(&pi);
         assert_eq!(rooms_snapshot.len(), 1);
         assert_eq!(rooms_snapshot[0].working, true);

@@ -87,10 +87,11 @@
     },
     "hello": {
       "type": "object",
-      "required": ["type", "pubkey"],
+      "required": ["type", "pubkey", "device_id"],
       "properties": {
         "type": { "const": "hello" },
         "pubkey": { "$ref": "#/$defs/peerId" },
+        "device_id": { "type": "string", "minLength": 1 },
         "room_id": { "$ref": "#/$defs/roomId" },
         "room_meta": { "$ref": "#/$defs/helloRoomMeta" }
       },

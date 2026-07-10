@@ -54,11 +54,24 @@ pub async fn start_relay() -> u16 {
 }
 
 /// Connects using a caller-supplied key and room_id, completes the full auth handshake.
-/// Returns (ws_stream, peer_id_b64).
+/// Returns (ws_stream, peer_id_b64). Uses a default `device_id` of "test-device".
 pub async fn connect_and_auth_with_room(
     port: u16,
     sk: &SigningKey,
     room_id: &str,
+) -> (WsStream, String) {
+    connect_and_auth_with_room_and_device(port, sk, room_id, "test-device").await
+}
+
+/// Connects using a caller-supplied key, room_id, AND device_id. Two conns
+/// at the same `(peer, room)` key with the same `device_id` will close the
+/// prior one (same-device reconnect); use distinct `device_id`s to model
+/// genuine multi-device coexistence.
+pub async fn connect_and_auth_with_room_and_device(
+    port: u16,
+    sk: &SigningKey,
+    room_id: &str,
+    device_id: &str,
 ) -> (WsStream, String) {
     let url = format!("ws://127.0.0.1:{port}");
     let (mut ws, _) = connect_async(&url).await.unwrap();
@@ -67,7 +80,7 @@ pub async fn connect_and_auth_with_room(
     let pubkey_b64 = B64.encode(vk.to_bytes());
 
     ws.send(Message::text(
-        json!({"type": "hello", "pubkey": pubkey_b64, "room_id": room_id}).to_string(),
+        json!({"type": "hello", "pubkey": pubkey_b64, "device_id": device_id, "room_id": room_id}).to_string(),
     ))
     .await
     .unwrap();

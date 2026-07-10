@@ -31,6 +31,7 @@ const LIVENESS_CHECK_MS = REACHABILITY_RELAY_LIVENESS_CHECK_MS;
 interface HelloMsg {
   type: "hello";
   pubkey: string;
+  device_id: string;
   room_id?: string;
   room_meta?: RoomMeta;
 }
@@ -104,6 +105,7 @@ export class RelayClient extends EventEmitter {
   constructor(
     private readonly url: string,
     private readonly keypair: Ed25519Keypair,
+    private readonly deviceId: string,
   ) {
     super();
   }
@@ -218,7 +220,7 @@ export class RelayClient extends EventEmitter {
 
   private async _authenticate(ws: WebSocket, opts: ConnectOptions): Promise<void> {
     const pubkeyB64 = Buffer.from(this.keypair.publicKey).toString("base64");
-    const hello: HelloMsg = { type: "hello", pubkey: pubkeyB64 };
+    const hello: HelloMsg = { type: "hello", pubkey: pubkeyB64, device_id: this.deviceId };
     if (opts.roomId) hello.room_id = opts.roomId;
     if (opts.roomMeta) hello.room_meta = opts.roomMeta;
     this._rawSend(ws, JSON.stringify(hello));

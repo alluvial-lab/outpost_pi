@@ -713,10 +713,10 @@ mod tests {
         let (tx_main, mut rx_main) = tokio::sync::mpsc::unbounded_channel::<Message>();
         let (tx_work, mut rx_work) = tokio::sync::mpsc::unbounded_channel::<Message>();
         let _ = registry
-            .register("pi_b".to_string(), room_meta("main"), tx_main)
+            .register("pi_b".to_string(), room_meta("main"), "dev-a".to_string(), tx_main)
             .await;
         let _ = registry
-            .register("pi_b".to_string(), room_meta("work"), tx_work)
+            .register("pi_b".to_string(), room_meta("work"), "dev-a".to_string(), tx_work)
             .await;
 
         let store = MeshStore::open_in_memory().unwrap();
@@ -756,7 +756,7 @@ mod tests {
         let registry = make_registry();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
         let _ = registry
-            .register("pi_b".to_string(), room_meta("main"), tx)
+            .register("pi_b".to_string(), room_meta("main"), "dev-a".to_string(), tx)
             .await;
 
         let store = MeshStore::open_in_memory().unwrap();

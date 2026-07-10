@@ -51,6 +51,12 @@ Atualizada em 2026-06-09.
 │                    `remote-pi-relay-auth-v1\n` ++ nonce (domain-      │
 │                    separated prefix) — evita signing-oracle do owner- │
 │                    key cross-protocol. Relay verifica o mesmo.       │
+│                    Hello frame carrega `device_id` (per-install):     │
+│                    relay fecha conn(s) anterior(s) do MESMO device   │
+│                    em duplicate auth (reconnect wifi→cellular deixa   │
+│                    TCP half-open) — recovery imediato, sem esperar    │
+│                    ping timeout (25s). Devices diferentes do mesmo   │
+│                    Owner (shared key via Keychain) coexistem.         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
