@@ -407,12 +407,12 @@ mod tests {
         let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("app".into(), make_meta("main"), tx_app)
+            .register("app".into(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
         let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("pi".into(), make_meta("main"), tx_pi)
+            .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_pi)
             .await;
         let mut actor = fixture.actor("app");
 
@@ -441,12 +441,12 @@ mod tests {
         let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("pi".into(), make_meta("main"), tx_pi)
+            .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_pi)
             .await;
         let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("app".into(), make_meta("main"), tx_app)
+            .register("app".into(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
         fixture
             .rooms
@@ -491,17 +491,17 @@ mod tests {
         let (tx_main, _rx_main) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("pi".into(), make_meta("main"), tx_main)
+            .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_main)
             .await;
         let (tx_other, mut rx_other) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("pi".into(), make_meta("other"), tx_other)
+            .register("pi".into(), make_meta("other"), "dev-a".to_string(), tx_other)
             .await;
         let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("app".into(), make_meta("main"), tx_app)
+            .register("app".into(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
         fixture
             .rooms
@@ -552,12 +552,12 @@ mod tests {
         let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("pi".into(), make_meta("main"), tx_pi)
+            .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_pi)
             .await;
         let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("app".into(), make_meta("main"), tx_app)
+            .register("app".into(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
         fixture
             .rooms
@@ -606,7 +606,7 @@ mod tests {
         let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("pi".into(), make_meta("main"), tx_pi)
+            .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_pi)
             .await;
         let mut actor = fixture.actor("app");
         let frame = || RelayControlFrame::RoomsCheck {

@@ -6,7 +6,7 @@ import type { PiForwardClient } from "../transport/pi_forward_client.js";
 import { RelayClient } from "../transport/relay_client.js";
 import { attachCrossPcBridge } from "./bridge.js";
 import { getOrCreateEd25519Keypair } from "../pairing/storage.js";
-import type { Ed25519Keypair } from "./../pairing/crypto.js";
+import { deviceIdFromPublicKey, type Ed25519Keypair } from "./../pairing/crypto.js";
 import { roomIdFor } from "../rooms.js";
 import { toWebSocketUrl } from "../config.js";
 import {
@@ -213,7 +213,7 @@ export class MeshNode {
       const roomName = params.sessionName ?? this.peer_.name();
       const roomId = roomIdFor(params.cwd!, roomName);
       const roomMeta = { name: roomName, cwd: params.cwd! };
-      const r = new RelayClient(toWebSocketUrl(params.relayUrl), this.keypair);
+      const r = new RelayClient(toWebSocketUrl(params.relayUrl), this.keypair, deviceIdFromPublicKey(this.keypair.publicKey));
       try {
         await r.connect({ roomId, roomMeta });
       } catch (err) {

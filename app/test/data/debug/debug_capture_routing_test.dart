@@ -311,6 +311,7 @@ void main() {
       relayUrl: relay.uri.toString(),
       peerPubkey: 'peer-a',
       ed25519Key: keyPair,
+      deviceId: 'test-device',
       debugLog: log,
     );
     expect(await transport.receive(), payload);
@@ -370,6 +371,7 @@ void main() {
         relayUrl: relay.uri.toString(),
         peerPubkey: 'peer-a',
         ed25519Key: keyPair,
+      deviceId: 'test-device',
         debugLog: log,
       );
       // Receive the one enqueueable frame — there is none in this batch
@@ -449,6 +451,7 @@ void main() {
         relayUrl: relay.uri.toString(),
         peerPubkey: 'peer-a',
         ed25519Key: keyPair,
+      deviceId: 'test-device',
         activeRoom: realRoom,
         debugLog: log,
       );
