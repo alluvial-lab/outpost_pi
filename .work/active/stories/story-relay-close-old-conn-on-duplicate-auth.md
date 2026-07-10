@@ -1,7 +1,7 @@
 ---
 id: story-relay-close-old-conn-on-duplicate-auth
 kind: story
-stage: implementing
+stage: done
 tags: [relay, bug, lifecycle]
 parent: null
 depends_on: []
@@ -9,9 +9,28 @@ release_binding: null
 gate_origin: null
 created: 2026-07-02
 updated: 2026-07-10
+superseded_by: story-relay-close-same-device-duplicate-auth
 ---
 
 # Relay: close the old conn(s) at a key when a duplicate authenticates
+
+> **SUPERSEDED (2026-07-10) — design was unsound; not implemented.**
+>
+> The proposed source-IP discriminator (step 3, option (a)) is backwards: a
+> mobile network switch *changes* the source IP by definition (the story's
+> own evidence records `192.168.40.136` → `192.168.11.2`), so "same source IP"
+> would not fire in exactly the case being fixed, while two genuine devices
+> on the same wifi would share a NAT egress IP and be wrongly treated as one
+> device. No sound in-scope discriminator exists at auth time (the hello frame
+> carries only `pubkey`/`room_id`/`room_meta`; no `device_id`), and
+> multi-device-same-room is a real supported case, so unconditional close
+> would kill a legitimate second device.
+>
+> The sound fix requires a wire change: add an optional `device_id` to the
+> hello frame so the relay can close prior conns **from the same device** on
+> duplicate auth. Tracked in
+> `story-relay-close-same-device-duplicate-auth` (supersedes this item).
+> No code was written against this story.
 
 ## Brief
 
