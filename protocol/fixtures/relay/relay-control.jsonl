@@ -1,4 +1,4 @@
-{"type":"hello","pubkey":"pi-pubkey-base64","room_id":"main","room_meta":{"name":"main","cwd":"/repo","session_id":"sess-1","model":"gpt-5.5","thinking":"high","working":false}}
+{"type":"hello","pubkey":"pi-pubkey-base64","device_id":"device-uuid-1","room_id":"main","room_meta":{"name":"main","cwd":"/repo","session_id":"sess-1","model":"gpt-5.5","thinking":"high","working":false}}
 {"type":"challenge","nonce":"nonce-base64"}
 {"type":"auth","sig":"signature-base64"}
 {"peer":"dest-peer","room":"main","ct":"eyJ0eXBlIjoicGluZyJ9"}

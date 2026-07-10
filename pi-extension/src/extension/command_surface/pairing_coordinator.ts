@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
-import type { Ed25519Keypair } from "../../pairing/crypto.js";
+import { deviceIdFromPublicKey, type Ed25519Keypair } from "../../pairing/crypto.js";
 import { buildQRUri, clampPairTtlMs, qrSession, renderQRAscii, TOKEN_TTL_MS } from "../../pairing/qr.js";
 import {
   addPeer,
@@ -248,7 +248,7 @@ export class PairingCoordinator {
 
     ctx.ui.notify(`[remote-pi] Connecting to relay ${relayUrl} (source: ${source}, room: ${roomId})…`, "info");
 
-    const relay = new RelayClient(toWebSocketUrl(relayUrl), edKp);
+    const relay = new RelayClient(toWebSocketUrl(relayUrl), edKp, deviceIdFromPublicKey(edKp.publicKey));
     try {
       await relay.connect({ roomId, roomMeta });
     } catch (err) {

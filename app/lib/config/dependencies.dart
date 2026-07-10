@@ -15,6 +15,7 @@ import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart'; // IChannel
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/peer_channel.dart';
+import 'package:app/data/identity/device_id.dart';
 import 'package:app/data/images/image_picker_service.dart';
 import 'package:app/data/transport/relay_config.dart';
 import 'package:app/data/transport/ws_transport.dart';
@@ -89,6 +90,11 @@ Future<void> setupDependencies() async {
     _injector.get<PairingStorage>(),
   );
   _injector.addInstance<OwnerIdentityBridge>(ownerBridge);
+
+  // Per-install device id for the relay hello frame — lets the relay close
+  // prior same-device conns on reconnect (see
+  // story-relay-close-same-device-duplicate-auth).
+  _injector.addInstance<DeviceId>(DeviceId());
 
   // Plan 24 — mesh_versions HTTP client + sync service. Base URL is
   // the user-configured relay verbatim (always http(s):// per the
@@ -273,6 +279,7 @@ Future<IChannel> _productionConnectionFactory(
         relayUrl: relayUrl,
         peerPubkey: peer.remoteEpk,
         ed25519Key: ownerKey,
+        deviceId: await _injector.get<DeviceId>().get(),
         activeRoom: peer.roomId ?? 'main',
         debugLog: _injector.get<DebugLog>(),
       ).timeout(
@@ -318,6 +325,7 @@ Future<PeerTransport> _productionPairingTransportFactory(
     relayUrl: relayUrl,
     peerPubkey: qr.epk,
     ed25519Key: deviceEd25519,
+    deviceId: await _injector.get<DeviceId>().get(),
     activeRoom: qr.roomId ?? 'main',
     debugLog: _injector.get<DebugLog>(),
   );

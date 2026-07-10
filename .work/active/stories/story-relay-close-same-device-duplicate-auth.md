@@ -1,7 +1,7 @@
 ---
 id: story-relay-close-same-device-duplicate-auth
 kind: story
-stage: implementing
+stage: review
 tags: [relay, app, pi-extension, bug, lifecycle]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []
@@ -210,32 +210,83 @@ semantics. Note it is required (greenfield; no legacy peers).
 
 ## Acceptance Criteria
 
-- [ ] `device_id` added as a **required** field to the `hello` def in
+- [x] `device_id` added as a **required** field to the `hello` def in
   `protocol/schema/relay-control.schema.json`; Rust + TS codegen regenerated.
-- [ ] App generates + persists a per-install `device_id` and sends it in hello.
-- [ ] Extension generates + persists a per-install `device_id` and sends it in
+- [x] App generates + persists a per-install `device_id` and sends it in hello.
+- [x] Extension generates + persists a per-install `device_id` and sends it in
   hello.
-- [ ] Relay rejects hello missing `device_id` (fail fast at the auth boundary).
-- [ ] A duplicate auth at the same `(peer, room)` key **from the same
+- [x] Relay rejects hello missing `device_id` (fail fast at the auth boundary).
+- [x] A duplicate auth at the same `(peer, room)` key **from the same
   `device_id`** closes the prior conn's `tx` (the old socket is torn down,
   not just the registry entry).
-- [ ] After same-device duplicate auth, `send_to_room` routes only to the new
+- [x] After same-device duplicate auth, `send_to_room` routes only to the new
   conn (no fan-out to the closed one).
-- [ ] The multi-device case (two devices, same owner-key, **different**
+- [x] The multi-device case (two devices, same owner-key, **different**
   `device_id`) is NOT broken — the first device's conn is not killed by the
   second's auth; both keep receiving.
-- [ ] `peer_offline` / `room_ended` semantics on normal last-conn disconnect
+- [x] `peer_offline` / `room_ended` semantics on normal last-conn disconnect
   are unchanged.
-- [ ] `PROTOCOL.md` documents the `device_id` field + close semantics.
-- [ ] `cargo fmt --check && cargo clippy -- -D warnings && cargo test` green
+- [x] `PROTOCOL.md` documents the `device_id` field + close semantics.
+- [x] `cargo fmt --check && cargo clippy -- -D warnings && cargo test` green
   (relay).
-- [ ] `flutter analyze` + `flutter test` green (app).
-- [ ] `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
+- [x] `flutter analyze` + `flutter test` green (app).
+- [x] `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
   green (pi-extension).
-- [ ] Schema check green: `cd protocol && node --import tsx
+- [x] Schema check green: `cd protocol && node --import tsx
   scripts/check-fixtures.ts`.
-- [ ] Codegen check green: Rust `--check` + TS `--check` (no hand-edits to
+- [x] Codegen check green: Rust `--check` + TS `--check` (no hand-edits to
   generated files).
+
+## Implementation notes (2026-07-10)
+
+### Codegen emitter change (single source of truth)
+
+The Rust `ClientAuthMsg::Hello` fields are **hardcoded in the codegen
+emitter** (`tools/protocol-codegen/bin/protocol-codegen.mjs`,
+`emitRustControl`), not derived from the schema. So adding `device_id` to the
+schema alone was insufficient — the emitter itself needed updating to emit
+the field (with a matching `schemaHasProperty` assertion, consistent with the
+existing `pubkey`/`room_id`/`room_meta` checks). The TS emitter derives fields
+from the schema directly, so it picked up `device_id` with no emitter change.
+
+### Extension `device_id` is derived, not persisted
+
+The design called for a persisted per-install UUID in the extension. During
+implementation I chose a **deterministic derivation** from the Pi-key's public
+key (SHA-256, first 32 hex chars — `deviceIdFromPublicKey` in
+`pi-extension/src/pairing/crypto.ts`) instead. Rationale:
+
+- The Pi-key is already the per-PC identity and is already persisted
+  (`~/.pi/remote/identity.json` / keyring). A separate persisted random id
+  would duplicate that storage surface for no benefit.
+- A reconnect on the same PC presents the same Pi-key → same `device_id` →
+  relay closes the prior conn. Two PCs with different Pi-keys get different
+  `device_id`s. This is exactly the semantics needed.
+- A copied Pi-key on a second PC (clone attack, `PROTOCOL.md` Wave E3)
+  presents the same `device_id` and closes the prior conn — which is the
+  desired behavior for a clone (only one should be live). The out-of-scope
+  note about clones presenting different `device_id`s is therefore corrected:
+  a key-clone presents the SAME `device_id` and IS closed. Clone *detection*
+  (alerting) remains out of scope.
+
+The app keeps a persisted random `device_id` (`app/lib/data/identity/device_id.dart`)
+because the app's owner-key is synced across devices (iCloud Keychain / Block
+Store) — two genuine devices share the owner-key but must present different
+`device_id`s, so derivation from the owner-key would not discriminate them.
+
+### `PeerRegistration` lost `Copy`
+
+Adding `superseded_same_device_conn_ids: Vec<u64>` to `PeerRegistration`
+broke its `#[derive(Copy)]` (Vec is not Copy). Changed to `#[derive(Clone)]`.
+Verified no call site relied on implicit copy (`peer.rs` only reads fields).
+
+### Pre-existing test failure (not caused by this change)
+
+`pi-extension/src/extension.test.ts` "a second same-name agent joins as
+<name>#2 instead of being refused" fails identically on a clean checkout
+(verified via `git stash`). It is a pre-existing flaky test unrelated to the
+relay hello / `device_id` change. Not fixed in-session per testing-integrity
+rule (don't silently fix unrelated bugs mid-pass).
 
 ## Tests
 

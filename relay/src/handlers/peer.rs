@@ -92,6 +92,7 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     }
 
     let peer_id = authenticated.peer_id;
+    let device_id = authenticated.device_id;
     let peer_short = peer_id[peer_id.len().saturating_sub(8)..].to_string();
     let room_meta = authenticated.room_meta;
     let room_id = room_meta.room_id.clone();
@@ -100,7 +101,17 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     let rooms = state.rooms.clone();
 
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
-    let registration = registry.register(peer_id.clone(), room_meta, tx).await;
+    let registration = registry
+        .register(peer_id.clone(), room_meta, device_id.clone(), tx)
+        .await;
+    if !registration.superseded_same_device_conn_ids.is_empty() {
+        info!(
+            peer = %peer_short,
+            room = %room_id,
+            closed = registration.superseded_same_device_conn_ids.len(),
+            "duplicate auth from same device; closed prior conn(s)"
+        );
+    }
     info!(
         peer = %peer_short,
         room = %room_id,

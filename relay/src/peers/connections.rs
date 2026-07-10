@@ -12,6 +12,7 @@ pub(crate) type RoomKey = (String, String); // (peer_id, room_id)
 #[derive(Debug)]
 pub(crate) struct ConnectionEntry {
     pub conn_id: u64,
+    pub device_id: String,
     pub tx: mpsc::UnboundedSender<Message>,
 }
 
@@ -22,6 +23,12 @@ pub(crate) struct ConnectionInsert {
     pub was_offline_before: bool,
     pub is_first_in_room: bool,
     pub superseded_existing: bool,
+    /// `conn_id`s of prior connections at the same key that were closed
+    /// because the new conn authenticated from the same `device_id` (a
+    /// reconnect, not a genuine second device). Their `tx` senders were
+    /// dropped, so their `handle_peer` tasks end and their sockets tear down
+    /// immediately — no ping-timeout window.
+    pub superseded_same_device_conn_ids: Vec<u64>,
 }
 
 #[derive(Debug)]
@@ -56,6 +63,7 @@ impl ConnectionRegistry {
         &self,
         peer_id: &str,
         room_id: &str,
+        device_id: &str,
         tx: mpsc::UnboundedSender<Message>,
     ) -> ConnectionInsert {
         let key = (peer_id.to_string(), room_id.to_string());
@@ -65,9 +73,39 @@ impl ConnectionRegistry {
         let was_offline_before = !lock.keys().any(|(p, _)| p == peer_id);
         let existing_count = lock.get(&key).map(|entries| entries.len()).unwrap_or(0);
         let is_first_in_room = existing_count == 0;
+
+        // Close prior conn(s) from the SAME device at this key: this is a
+        // reconnect (the old TCP path is typically half-open — no FIN/RST
+        // reached the relay), so dropping the old `tx` tears down the old
+        // socket immediately instead of waiting for the 25 s WS ping to time
+        // it out. Entries with a DIFFERENT `device_id` (a genuine second
+        // device of the same Owner) are left alive — multi-device-same-room
+        // is a supported case.
+        let mut superseded_same_device_conn_ids = Vec::new();
+        if let Some(entries) = lock.get_mut(&key) {
+            let before = entries.len();
+            entries.retain(|entry| {
+                if entry.device_id == device_id {
+                    superseded_same_device_conn_ids.push(entry.conn_id);
+                    false // drop: closing the old conn's `tx`
+                } else {
+                    true
+                }
+            });
+            debug_assert_eq!(
+                entries.len() + superseded_same_device_conn_ids.len(),
+                before,
+                "retain only removes matching-device entries"
+            );
+        }
+
         lock.entry(key)
             .or_default()
-            .push(ConnectionEntry { conn_id, tx });
+            .push(ConnectionEntry {
+                conn_id,
+                device_id: device_id.to_string(),
+                tx,
+            });
 
         ConnectionInsert {
             peer_id: peer_id.to_string(),
@@ -75,6 +113,7 @@ impl ConnectionRegistry {
             was_offline_before,
             is_first_in_room,
             superseded_existing: existing_count > 0,
+            superseded_same_device_conn_ids,
         }
     }
 
