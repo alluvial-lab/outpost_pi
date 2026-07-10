@@ -9,7 +9,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-08
+updated: 2026-07-10
 reverted_misguided_fix: 2026-07-03
 ---
 
@@ -402,3 +402,124 @@ a dependency, not forked), so this is not editable in-fork.
 - The `delivery_pending` tolerance + bounded replay queue + app-side timer
   disarm — split to `story-stale-ctx-recoverable-delivery-tolerance` (done).
   Kept in the codebase; correct and reviewed on its own merits.
+
+## SDK deep-dive (2026-07-10) — the structural-stale root cause, verified
+
+Re-traced the SDK source (`@earendil-works/pi-coding-agent@0.79.10`, under
+`dist/`) to verify the "SDK-blocked" conclusion and found the deeper reason
+the factory-`pi` re-arm can NEVER work after a non-`reload` replacement —
+even if the upstream "re-invoke factory on `/new`" ask landed.
+
+### The shared-runtime stale flag is never cleared
+
+The extension `runtime` is created **once** by `createExtensionRuntime()`
+(`loader.js:115`) and **cached** in `extensionsResult` (`resource-loader.js:166`,
+`getExtensions()` returns `this.extensionsResult` — the same object every call).
+`/new`/`/resume`/`/fork` call `getExtensions()` (cached), NOT `reload()` (which
+re-runs `loadExtensions` → fresh runtime). So all non-`reload` replacements
+**reuse the same `runtime` object** with the same closure-captured `state`.
+
+`runtime` has (`loader.js:119-145`):
+```js
+const state = {};
+const assertActive = () => { if (state.staleMessage) throw new Error(state.staleMessage); };
+const runtime = {
+  ...
+  assertActive,
+  invalidate: (message) => { state.staleMessage ??= message ?? "...stale..."; },
+};
+```
+
+`state.staleMessage` is set by `invalidate()` (with `??=` — only-if-not-already-
+set) and **NEVER CLEARED**. There is no `clearStale()` / `state.staleMessage =
+null` anywhere in the SDK (`rg 'staleMessage'` across `loader.js` + `runner.js`
+shows only reads + the `??=` set).
+
+When `/new` runs (`agent-session-runtime.js:117-134`):
+1. The old `ExtensionRunner` is invalidated → `runner.invalidate()` → sets
+   `runner.staleMessage` AND calls `runtime.invalidate()` → sets
+   `state.staleMessage`.
+2. A **new** `ExtensionRunner` is created with the **same cached `runtime`**
+   (`agent-session.js:1931`). The new runner's own `staleMessage` is `undefined`
+   (so the new runner's ctx works), but `runtime.state.staleMessage` is **still
+   set** from step 1.
+3. The new runner's `bindCore` mutates `runtime.sendUserMessage =
+   newActions.sendUserMessage` (the new session's) — but `assertActive()` still
+   throws because `state.staleMessage` is set.
+
+### Consequence: the factory `pi` is structurally permanently stale
+
+The factory `pi` (`createExtensionAPI`, `loader.js:212-219`) routes
+`sendUserMessage` through `runtime.assertActive()` **then**
+`runtime.sendUserMessage()`:
+```js
+sendUserMessage(content, options) {
+    runtime.assertActive();          // ← throws: state.staleMessage is set
+    runtime.sendUserMessage(content, options);
+}
+```
+
+So after the FIRST `/new`/`/resume`/`/fork`, the factory `pi` throws stale on
+**every** `sendUserMessage` — forever, until a `/reload` creates a fresh
+runtime (the only path that clears `state.staleMessage`). Re-arming
+`messageApi` from the factory `pi` (the reverted fix's approach, or the
+upstream "re-invoke factory" ask) **cannot work** — the `pi` is stale at the
+runtime level, not the binding level.
+
+### The only working surface: `ReplacedSessionContext`
+
+`AgentSession.createReplacedSessionContext()` (`agent-session.js:2529-2534`)
+bypasses `runtime.assertActive()` entirely — it binds `sendUserMessage`
+directly to `this.sendUserMessage` (the `AgentSession`'s own method,
+`agent-session.js:1020`, which goes straight to `this.prompt()` with NO
+`assertActive` guard):
+```js
+createReplacedSessionContext() {
+    const context = Object.defineProperties({}, ...createCommandContext());
+    context.sendUserMessage = (content, options) => this.sendUserMessage(content, options);
+    return context;
+}
+```
+
+This ctx is handed out **only** inside the `withSession` callback during an
+SDK-driven replacement (`agent-session-runtime.js:117-122`). The plain
+`session_start` ctx (`ExtensionRunner.createContext()`, `runner.js:411-475`)
+exposes `ui`/`cwd`/`sessionManager`/`modelRegistry`/`abort`/`compact` but
+**NOT** `sendUserMessage` and **NOT** the `AgentSession` — so
+`createReplacedSessionContext` is unreachable from a plain `session_start`.
+`ctx.sessionManager` is the history manager (`SessionManager`), not a handle
+to the live `AgentSession`.
+
+### Why this confirms the story's "SDK-blocked" conclusion (and sharpens it)
+
+The story's two feasible paths stand, with the structural-stale finding
+sharpening path (2):
+
+1. **Phone-driven `session_new` (`withSession`)** — re-arms from a
+   `ReplacedSessionContext`, but discards the conversation. Mobile quick-action
+   recovery, not transparent.
+2. **Upstream ask** — but it's now TWO asks, not one:
+   - (a) make `/new`/`/resume`/`/fork` re-invoke the extension factory (so
+     `bindApi` fires), AND
+   - (b) **clear `runtime.state.staleMessage` on the new runner** (without
+     this, the re-invoked factory hands back a `pi` that still throws stale —
+     the `??=` set from the old runner's invalidation persists).
+   - OR: expose `sendUserMessage` (or the live `AgentSession` / a
+     `createReplacedSessionContext`-equivalent) on the plain `session_start`
+     ctx. This is the cleaner ask — it sidesteps the stale-flag entirely by
+     giving the extension a non-`assertActive`-guarded surface.
+
+### What this means for the fork
+
+The self-heal is genuinely SDK-blocked — there is no fork-local code change
+that can obtain a working `sendUserMessage` after an uncommanded
+`/new`/`/resume`/`/fork`. The shipped `delivery_pending` tolerance (done,
+`story-stale-ctx-recoverable-delivery-tolerance`) remains the correct
+fork-local mitigation: it stops the permanent scar and queues for replay on
+the next `/reload` (the only factory re-invoke). A mobile `/reload` button
+(parked `idea-mobile-session-control`) is the context-preserving recovery.
+
+The upstream ask (path 2) is the real fix. File it as an upstream issue
+against `@earendil-works/pi-coding-agent` with the structural-stale evidence
+above — the `state.staleMessage` never-cleared + the plain-ctx-missing-
+`sendUserMessage` are the two concrete SDK gaps.
