@@ -446,6 +446,44 @@ describe("production index pending-delivery queue across SDK replacement", () =>
     }
   });
 
+  test("a stuck replacement (successor never re-arms) expires a queued message at the absolute deadline, not forever", async () => {
+    // If successor creation failed and the SDK propagated the error while RPC
+    // mode stayed alive, the coordinator is permanently REPLACING. The renewed
+    // TTL must NOT loop forever: an absolute deadline caps the wait and
+    // surfaces a real internal_error. Matches the app-side 60s fallback.
+    const harness = await createProductionHarness();
+    const restoreTtl = harness.currentModule._setPendingDeliveryTtlForTest(50);
+    const restoreDeadline = harness.currentModule._setPendingDeliveryAbsoluteDeadlineForTest(120);
+    const sessionId = harness.currentRemoteSessionId();
+    const paused = await harness.beginPausedNewSession();
+
+    try {
+      expect(getRemotePiRuntimeCoordinator().isReplacing()).toBe(true);
+      const channel = harness.routeCurrent(userMessage("stuck-gap", sessionId, "survive until deadline"));
+      await channel.waitForMessage(deliveryPendingFor("stuck-gap"));
+
+      // Past the short TTL (50ms) but before the absolute deadline (120ms):
+      // renewed, no internal_error yet.
+      await new Promise<void>((resolve) => setTimeout(resolve, 80));
+      expect(getRemotePiRuntimeCoordinator().isReplacing()).toBe(true);
+      expect(internalErrorFor(channel, "stuck-gap")).toBe(false);
+      expect(harness.pendingDeliveryCount()).toBe(1);
+
+      // Past the absolute deadline: expires to internal_error (not renewed
+      // forever). The replacement is still stuck (never completed).
+      await channel.waitForMessage((message) => message.type === "error"
+        && message.code === "internal_error"
+        && message.in_reply_to === "stuck-gap");
+      expect(getRemotePiRuntimeCoordinator().isReplacing()).toBe(true);
+      expect(harness.pendingDeliveryCount()).toBe(0);
+      expect(harness.deliveries.filter((delivery) => delivery.content === "survive until deadline")).toHaveLength(0);
+    } finally {
+      restoreDeadline();
+      restoreTtl();
+      if (getRemotePiRuntimeCoordinator().isReplacing()) await paused.complete();
+    }
+  });
+
   test("a queued message outside replacement still expires to internal_error", async () => {
     const harness = await createProductionHarness();
     const restoreTtl = harness.currentModule._setPendingDeliveryTtlForTest(50);
