@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeDeliveryDebugLog } from "./session/delivery_debug_log.test.js";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { createEventBus, type ExtensionAPI, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { resetRemotePiRuntimeCoordinatorForTest } from "./extension/runtime_coordinator.js";
 
 // ── Mock RelayClient ──────────────────────────────────────────────────────────
 
@@ -187,6 +188,8 @@ const { createRelayTransportPort } = await import("./extension/relay_transport.j
 function makeMockPi(): { pi: ExtensionAPI; registeredCommands: string[] } {
   const registeredCommands: string[] = [];
   const pi = {
+    __remotePiTestHarness: true,
+    events: createEventBus(),
     on: () => undefined,
     registerCommand(name: string, _opts: unknown) { registeredCommands.push(name); },
     registerTool: () => undefined, registerShortcut: () => undefined,
@@ -204,8 +207,11 @@ function makeMockCtx(cwd = "/home/user/projects/remote_pi") {
 type CmdHandler = (args: string, ctx: ReturnType<typeof makeMockCtx>) => Promise<void>;
 
 function captureHandler(commandName: string): CmdHandler {
+  resetRemotePiRuntimeCoordinatorForTest();
   let captured: CmdHandler | undefined;
   const pi = {
+    __remotePiTestHarness: true,
+    events: createEventBus(),
     on: () => undefined,
     registerCommand(name: string, opts: { handler: CmdHandler }) {
       if (name === commandName) captured = opts.handler;
@@ -1024,12 +1030,17 @@ void _getActivePeerCountForTest;
 // ── user_input mirroring (local terminal / RPC) ───────────────────────────────
 
 type AnyEvent = { type: string; [k: string]: unknown };
-type EventHandler = (event: AnyEvent) => unknown;
+type EventHandler = (event: AnyEvent, ctx?: unknown) => unknown;
 
 function captureEventHandler(eventName: string): EventHandler {
+  resetRemotePiRuntimeCoordinatorForTest();
   let captured: EventHandler | undefined;
   const pi = {
-    on(e: string, h: EventHandler) { if (e === eventName) captured = h; },
+    __remotePiTestHarness: true,
+    events: createEventBus(),
+    on(e: string, h: EventHandler) {
+      if (e === eventName) captured = h;
+    },
     registerCommand: () => undefined,
     registerTool: () => undefined, registerShortcut: () => undefined,
     registerFlag: () => undefined, getFlag: () => undefined,
