@@ -1,7 +1,7 @@
 ---
 id: story-foreign-session-user-message-tolerance
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, app, bug]
 parent: feature-session-stable-message-delivery
 depends_on:

@@ -1,7 +1,7 @@
 ---
 id: feature-session-stable-message-delivery
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on:
