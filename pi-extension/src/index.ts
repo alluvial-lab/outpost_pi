@@ -2200,6 +2200,14 @@ type PendingDeliveryEntry = PreparedUserDelivery & {
 
 const kPendingDeliveryQueueMax = 2;
 let _pendingDeliveryTtlMs = 5_000;
+/** Absolute cap on how long a queued message waits across renewals during a
+ *  slow/stuck replacement, after which it expires to `internal_error` even
+ *  while `REPLACING`. Bounds the renew loop so a replacement whose successor
+ *  creation failed (SDK propagates the error; RPC mode stays alive) cannot
+ *  renew a queued message forever. Matches the app-side
+ *  `deliveryPendingEchoTimeout` (60s) fallback so both sides give up together. */
+const kPendingDeliveryAbsoluteDeadlineMs = 60_000;
+let _pendingDeliveryAbsoluteDeadlineMs = kPendingDeliveryAbsoluteDeadlineMs;
 let _pendingDeliveryQueue: PendingDeliveryEntry[] = [];
 let _nextPendingDeliveryQueueId = 1;
 
@@ -2207,6 +2215,12 @@ let _nextPendingDeliveryQueueId = 1;
 export function _setPendingDeliveryTtlForTest(ms: number): () => void {
   _pendingDeliveryTtlMs = ms;
   return () => { _pendingDeliveryTtlMs = 5_000; };
+}
+
+/** @internal test override for the absolute renewal deadline. */
+export function _setPendingDeliveryAbsoluteDeadlineForTest(ms: number): () => void {
+  _pendingDeliveryAbsoluteDeadlineMs = ms;
+  return () => { _pendingDeliveryAbsoluteDeadlineMs = kPendingDeliveryAbsoluteDeadlineMs; };
 }
 
 function _sendDeliveryError(sender: PlainPeerChannel | null, inReplyTo: string, detail: string): void {
@@ -2368,6 +2382,17 @@ function _schedulePendingDeliveryTimeout(
     // `quit` path fails the queue via clearStaleContexts; bounded capacity
     // limits growth. See feature-session-stable-message-delivery gap-window gate.
     if (getRemotePiRuntimeCoordinator().isReplacing()) {
+      // Absolute deadline: if the replacement has been stuck longer than the
+      // cap (successor creation failed and the SDK propagated the error while
+      // RPC mode stayed alive, leaving the coordinator permanently REPLACING),
+      // stop renewing and surface a real internal_error. Bounds the renew
+      // loop. Matches the app-side deliveryPendingEchoTimeout (60s).
+      if (Date.now() - entry.enqueuedAt >= _pendingDeliveryAbsoluteDeadlineMs) {
+        _pendingDeliveryQueue.splice(index, 1);
+        _deliveryDebugLog.log({ tag: "queue_dropped", id: prepared.msg.id, reason: "absolute deadline exceeded during stuck replacement", roomId: _myRoomId ?? undefined });
+        _sendDeliveryError(prepared.sender, prepared.msg.id, "agent session did not re-arm before queued delivery expired");
+        return;
+      }
       _deliveryDebugLog.log({ tag: "queue_renewed", id: prepared.msg.id, reason: "replacement in progress", roomId: _myRoomId ?? undefined });
       entry.timeout = _schedulePendingDeliveryTimeout(queueId, prepared, Date.now());
       return;
