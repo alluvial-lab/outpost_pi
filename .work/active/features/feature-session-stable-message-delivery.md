@@ -110,7 +110,11 @@ evidence:
   never a permanent `internal_error` that strands the phone. (The pending-
   delivery TTL renews during an active `REPLACING` coordinator state so a slow
   successor does not expire a queued message; the 5-second failure threshold
-  still applies to broken bindings outside replacement.)
+  still applies to broken bindings outside replacement. An absolute deadline
+  (60s, matching the app-side `deliveryPendingEchoTimeout`) caps the renew loop
+  so a replacement whose successor creation failed and propagated — leaving
+  the coordinator permanently `REPLACING` in RPC mode — cannot renew a queued
+  message forever.)
 - **No regression** to the pair-code QR / `sendPiMessage` path (the additive-
   bind contract in `sdk_session_projection.ts:148-167` must hold).
 
