@@ -3101,4 +3101,128 @@ void main() {
       s.conn.dispose();
     });
   });
+
+  // Foreign-session / replacement-race tolerance for `session_mismatch`.
+  // See story-foreign-session-user-message-tolerance.
+  group('session_mismatch tolerance', () {
+    test(
+      'foreign duplicate Pi mismatch reply is dropped without a warning row',
+      () async {
+        final s = await setup();
+        await s.sync.sendMessage('hello duplicate pi');
+        await _settle();
+        final sentId = s.ch.sent.whereType<UserMessage>().last.id;
+
+        // A duplicate/idle Pi with a DIFFERENT session id rejects the
+        // fanned-out message. Its error carries the rejecting Pi's session,
+        // which differs from the app's active ref → SessionGate drops it.
+        s.ch.push(
+          ErrorMessage(
+            inReplyTo: sentId,
+            code: 'session_mismatch',
+            message: 'Session-scoped command targets a stale session',
+            sessionId: 'session_foreign_duplicate',
+          ),
+        );
+        await _settle();
+
+        final assistantTexts = messages(s.epk)
+            .where((m) => m.role == MsgRole.assistant)
+            .map((m) => m.text);
+        expect(assistantTexts, isNot(contains(startsWith('⚠ session_mismatch'))));
+        expect(assistantTexts, isEmpty);
+        // Active session is unchanged; no sync targets the foreign id.
+        expect(s.sync.activeSessionRef?.sessionId, s.sessionId);
+        expect(
+          s.ch.sent.whereType<SessionSync>(),
+          everyElement(
+            predicate<SessionSync>((m) => m.sessionId != 'session_foreign_duplicate'),
+          ),
+        );
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
+
+    test(
+      'accepted current-session mismatch reply renders no warning row either',
+      () async {
+        // The narrow race: room metadata rebinds the app to the rejecting
+        // Pi's session BEFORE its mismatch error arrives, so SessionGate
+        // accepts the error. It must still not render a ⚠ row.
+        final s = await setup();
+        await s.sync.sendMessage('hello race window');
+        await _settle();
+        final sentId = s.ch.sent.whereType<UserMessage>().last.id;
+
+        // Push the mismatch error after the app is bound to THIS session —
+        // the gate accepts it because session_id matches.
+        s.ch.push(
+          ErrorMessage(
+            inReplyTo: sentId,
+            code: 'session_mismatch',
+            message: 'Session-scoped command targets a stale session',
+            sessionId: s.sessionId,
+          ),
+        );
+        await _settle();
+
+        final assistantTexts = messages(s.epk)
+            .where((m) => m.role == MsgRole.assistant)
+            .map((m) => m.text);
+        expect(assistantTexts, isNot(contains(startsWith('⚠ session_mismatch'))));
+        expect(assistantTexts, isEmpty);
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
+
+    test(
+      'canonical room-metadata session rotation triggers session_sync for the new session',
+      () async {
+        final s = await setup();
+        final oldSession = s.sessionId;
+
+        // Rotate to a new canonical session id via room metadata (PairOk).
+        const rotatedSession = 'session-rotated-for-resync';
+        _sessionByEpk[s.epk] = rotatedSession;
+        s.ch.defaultSessionId = rotatedSession;
+        s.ch.pushRaw(
+          PairOk(
+            inReplyTo: 'pair-rotated-resync',
+            sessionName: 'Pi',
+            sessionStartedAt: DateTime.now().millisecondsSinceEpoch,
+            roomId: 'main',
+            sessionId: rotatedSession,
+          ),
+        );
+        await _settle();
+        await _settle();
+
+        // The newly canonical session must receive a session_sync.
+        expect(s.sync.activeSessionRef?.sessionId, rotatedSession);
+        final rotatedSyncs = s.ch.sent
+            .whereType<SessionSync>()
+            .where((m) => m.sessionId == rotatedSession);
+        expect(rotatedSyncs, isNotEmpty);
+        // No sync targets the stale old session id after rotation.
+        final oldSyncsAfterRotation = s.ch.sent
+            .whereType<SessionSync>()
+            .where((m) => m.sessionId == oldSession);
+        // The initial setup sync (old session) may have happened before
+        // rotation; the guarantee is that no NEW sync targets oldSession
+        // after the rotation settles. Assert the rotated sync exists and
+        // is the last one.
+        expect(
+          s.ch.sent.whereType<SessionSync>().last.sessionId,
+          rotatedSession,
+        );
+        // (oldSyncsAfterRotation may be non-empty from setup's initial sync;
+        // the load-bearing assertion is the rotated sync above.)
+        expect(oldSyncsAfterRotation.length, lessThanOrEqualTo(1));
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
+  });
 }

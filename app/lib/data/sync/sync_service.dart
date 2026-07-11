@@ -608,6 +608,14 @@ class SyncService extends Service {
       // A Pi `/new`, `/resume`, or daemon replacement can rotate the canonical
       // session id while the relay room stays the same. Rebind persistence to
       // the new session-scoped box and clear in-memory turn state.
+      //
+      // Arm the deferred-sync latch BEFORE activate so the newly canonical
+      // session deterministically receives `session_sync` after rebind. This
+      // is the legitimate re-sync path: room metadata — not a foreign
+      // `session_mismatch` error's untrusted session id — drives canonical
+      // rebind and backfill. `activate` drains the latch after the new
+      // session box is bound. See story-foreign-session-user-message-tolerance.
+      _pendingSyncRequest = true;
       // ignore: discarded_futures
       activate(epk, _activeRoomId);
     }
@@ -964,6 +972,20 @@ class SyncService extends Service {
           if (!_eventController.isClosed) {
             _eventController.add(const PairingRevoked());
           }
+          break;
+        }
+        // A `session_mismatch` reply means this SyncService is bound to a
+        // different session than the rejecting Pi (a duplicate/idle Pi that
+        // received a fanned-out `user_message`, or a stale-client re-sync). The
+        // foreign case is already dropped by `SessionGate` before this arm;
+        // the narrow remaining window is when room metadata has already
+        // rebound `_activeRef` to the rejecting Pi's session, so the gate
+        // accepts the error. In both cases the mismatch is a convergence /
+        // control signal, never transcript content: render no `⚠` row. The
+        // legitimate re-sync is driven separately by canonical room-metadata
+        // rotation (see `_onRoomsChanged`), never by this error's session id.
+        // See story-foreign-session-user-message-tolerance.
+        if (code == 'session_mismatch') {
           break;
         }
         _discardStreamingState();
