@@ -182,11 +182,12 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     //       room_meta_update at gateActive=true is the wipe);
     //   (c) `backfillTranscriptFromSessionManager(childCtx)` stamps parent-seeded
     //       history under the child's id into the transcript log.
-    // The `subagentChild` flag (set by index.ts when `subagentGate.isActive()`)
-    // suppresses (a) and (c) here and (b) in the index.ts wrapper. Capability
-    // rebinds (`bindCapabilities`) are still needed for the child's own
-    // message API and do not touch the phone. See
-    // story-extension-subagent-child-session-start-wipes-mobile-chat.
+    // The `subagentChild` option preserves that suppression for explicit
+    // projection callers and focused tests. The production composition root
+    // now denies real children during coordinator activation, before its
+    // session-context port can reach this method, so index.ts always takes the
+    // full owner-binding path. Capability rebinds (`bindCapabilities`) remain
+    // available to explicit child callers and do not touch the phone.
     const suppressChildSideEffects = opts?.subagentChild === true;
     this.eventCtx = ctx;
     // Capture the fresh session id BEFORE any backfill. `session_start` fires
