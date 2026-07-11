@@ -22,7 +22,7 @@ type CoordinatorState =
 type Activation =
   | { status: "activated" }
   | { status: "duplicate" }
-  | { status: "denied"; reason: "child" | "fallback-child" | "satellite" | "disposed" };
+  | { status: "denied"; reason: "child" | "satellite" | "disposed" };
 
 /**
  * Process-scoped authority for Remote Pi's phone-facing SDK binding.
@@ -72,7 +72,6 @@ export class RemotePiRuntimeCoordinator {
     lease: FactoryLease,
     sessionId: string,
     api: ExtensionAPI,
-    fallbackChildActive = false,
   ): Activation {
     const disposition = this.leases.get(lease);
     if (this.state.kind === "DISPOSED") return { status: "denied", reason: "disposed" };
@@ -84,10 +83,6 @@ export class RemotePiRuntimeCoordinator {
     if (this.childSessionIds.has(sessionId)) {
       this.rejectCandidate(lease);
       return { status: "denied", reason: "child" };
-    }
-    if (fallbackChildActive) {
-      this.rejectCandidate(lease);
-      return { status: "denied", reason: "fallback-child" };
     }
     if (this.state.kind === "ACTIVE" && this.state.owner === lease) {
       // A same-factory replacement is safe only for the current owner. Modern

@@ -1,8 +1,8 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   createEventBus,
   createExtensionRuntime,
@@ -20,6 +20,27 @@ import {
 import { createRemotePiExtensionRuntime, type RemotePiRuntime } from "../extension/composition_root.js";
 import type { RemotePiRuntimePorts } from "../extension/ports.js";
 import { RemotePiRuntimeCoordinator } from "../extension/runtime_coordinator.js";
+import { subagentGate } from "./subagent_gate.js";
+import {
+  SdkSessionReplacementHarness,
+  TestPeerChannel,
+} from "../../test/support/sdk_session_replacement_harness.js";
+import type { ClientMessage, ServerMessage } from "../protocol/types.js";
+
+/**
+ * Test split:
+ * - The coordinator-contract cases use the installed SDK loader/runtime with
+ *   deterministic ports. They prove lease authority, child lifecycle events,
+ *   and the SDK's real runtime.assertActive() staleness guard in isolation.
+ * - The replacement-gap cases use SdkSessionReplacementHarness, which loads
+ *   the real src/index.js factory. They therefore exercise the production
+ *   process-global pending-delivery queue and its exact-once drain behavior.
+ *
+ * We intentionally do not instantiate @gotgenes/pi-subagents' private child
+ * AgentSession graph. Child authority is covered through its documented
+ * synchronous EventBus contract; production queue behavior is covered through
+ * the real Remote Pi factory and AgentSessionRuntime replacement lifecycle.
+ */
 
 /**
  * This suite deliberately uses the installed SDK's private loader entrypoint.
@@ -191,6 +212,43 @@ class RealSdkHarness {
   }
 }
 
+const productionHarnesses: SdkSessionReplacementHarness[] = [];
+const productionCwds: string[] = [];
+
+afterEach(async () => {
+  subagentGate.reset();
+  for (const harness of productionHarnesses.splice(0).reverse()) {
+    await harness.dispose().catch(() => undefined);
+  }
+  for (const cwd of productionCwds.splice(0).reverse()) {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+async function createProductionHarness(): Promise<SdkSessionReplacementHarness> {
+  const cwd = mkdtempSync(join(tmpdir(), "remote-pi-production-queue-"));
+  productionCwds.push(cwd);
+  const harness = await SdkSessionReplacementHarness.create({ cwd });
+  productionHarnesses.push(harness);
+  return harness;
+}
+
+function userMessage(id: string, sessionId: string, text: string): ClientMessage {
+  return { type: "user_message", id, session_id: sessionId, text };
+}
+
+function deliveryPendingFor(id: string): (message: ServerMessage) => boolean {
+  return (message) => message.type === "error"
+    && message.code === "delivery_pending"
+    && message.in_reply_to === id;
+}
+
+function internalErrorFor(channel: TestPeerChannel, id: string): boolean {
+  return channel.sent.some((message) => message.type === "error"
+    && message.code === "internal_error"
+    && message.in_reply_to === id);
+}
+
 describe("RemotePiRuntimeCoordinator with the real Pi SDK factory/runtime", () => {
   test("stock /new replacement publishes a fresh API and delivers once", async () => {
     const h = new RealSdkHarness();
@@ -253,6 +311,29 @@ describe("RemotePiRuntimeCoordinator with the real Pi SDK factory/runtime", () =
     expect(h.coordinator.snapshot()).toMatchObject({ kind: "ACTIVE", sessionId: parent.sessionId });
   });
 
+  test("an active content-suppression gate cannot deny a legitimate successor", async () => {
+    const h = new RealSdkHarness();
+    const parent = await h.create("parent-old");
+    await h.start(parent);
+    await h.shutdown(parent, "new");
+    h.phoneSend("queued-while-subagent-tool-open");
+
+    h.eventBus.emit("subagents:child:session-created", { sessionId: "known-child-session" });
+    subagentGate.enter("subagent");
+    try {
+      expect(subagentGate.isActive()).toBe(true);
+      const successor = await h.create("parent-new");
+      await h.start(successor, "new");
+      expect(h.coordinator.snapshot()).toMatchObject({ kind: "ACTIVE", sessionId: successor.sessionId });
+      expect(h.deliveries).toEqual([{
+        label: "parent-new",
+        content: "queued-while-subagent-tool-open",
+      }]);
+    } finally {
+      subagentGate.exit("subagent");
+    }
+  });
+
   test("a child during the replacement gap cannot reserve the successor lease", async () => {
     const h = new RealSdkHarness();
     const parent = await h.create("parent-old");
@@ -304,5 +385,71 @@ describe("RemotePiRuntimeCoordinator with the real Pi SDK factory/runtime", () =
     await h.start(successor, "new");
     expect(h.deliveries).toEqual([{ label: "successor", content: "queued-once" }]);
     expect(h.queued).toHaveLength(0);
+  });
+});
+
+describe("production index pending-delivery queue across SDK replacement", () => {
+  test("a replacement-gap message reports pending and drains exactly once to the successor", async () => {
+    const harness = await createProductionHarness();
+    const sessionId = harness.currentRemoteSessionId();
+    const paused = await harness.beginPausedNewSession();
+    const channel = harness.routeCurrent(userMessage("gap-message", sessionId, "during replacement"));
+
+    await channel.waitForMessage(deliveryPendingFor("gap-message"));
+    expect(internalErrorFor(channel, "gap-message")).toBe(false);
+    expect(harness.pendingDeliveryCount()).toBe(1);
+
+    await paused.complete();
+    await harness.waitForDelivery((delivery) =>
+      delivery.sessionLabel === "replacement-2"
+      && delivery.method === "sendUserMessage"
+      && delivery.content === "during replacement",
+    );
+    expect(harness.deliveries.filter((delivery) => delivery.content === "during replacement")).toHaveLength(1);
+    expect(harness.pendingDeliveryCount()).toBe(0);
+    expect(internalErrorFor(channel, "gap-message")).toBe(false);
+  });
+
+  test("duplicate session_start(new) cannot double-drain the production queue", async () => {
+    const harness = await createProductionHarness();
+    const sessionId = harness.currentRemoteSessionId();
+    const paused = await harness.beginPausedNewSession();
+    const channel = harness.routeCurrent(userMessage("duplicate-start", sessionId, "deliver once"));
+
+    await channel.waitForMessage(deliveryPendingFor("duplicate-start"));
+    await paused.complete();
+    await harness.currentRunner.emit({ type: "session_start", reason: "new" });
+    await harness.waitForDelivery((delivery) => delivery.content === "deliver once");
+
+    expect(harness.deliveries.filter((delivery) => delivery.content === "deliver once")).toHaveLength(1);
+    expect(harness.pendingDeliveryCount()).toBe(0);
+    expect(internalErrorFor(channel, "duplicate-start")).toBe(false);
+  });
+
+  test("stale predecessor teardown cannot clear or fail a queued production message", async () => {
+    const harness = await createProductionHarness();
+    const firstReplacement = await harness.beginPausedNewSession();
+    const stalePredecessor = firstReplacement.predecessor;
+    await firstReplacement.complete();
+
+    const currentSessionId = harness.currentRemoteSessionId();
+    const secondReplacement = await harness.beginPausedNewSession();
+    const channel = harness.routeCurrent(userMessage("teardown-sentinel", currentSessionId, "survive stale quit"));
+    await channel.waitForMessage(deliveryPendingFor("teardown-sentinel"));
+    expect(harness.pendingDeliveryCount()).toBe(1);
+
+    await harness.emitStaleShutdown(stalePredecessor, "quit");
+    expect(harness.pendingDeliveryCount()).toBe(1);
+    expect(internalErrorFor(channel, "teardown-sentinel")).toBe(false);
+
+    await secondReplacement.complete();
+    await harness.waitForDelivery((delivery) =>
+      delivery.sessionLabel === "replacement-3"
+      && delivery.method === "sendUserMessage"
+      && delivery.content === "survive stale quit",
+    );
+    expect(harness.deliveries.filter((delivery) => delivery.content === "survive stale quit")).toHaveLength(1);
+    expect(harness.pendingDeliveryCount()).toBe(0);
+    expect(internalErrorFor(channel, "teardown-sentinel")).toBe(false);
   });
 });
