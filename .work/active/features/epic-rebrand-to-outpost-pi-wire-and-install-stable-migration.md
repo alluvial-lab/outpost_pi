@@ -291,6 +291,50 @@ batched for the single breaking release)
 
 ---
 
+### Unit 8: Storage, keyring, launchd, URI-scheme & env-var identifiers
+**Files**:
+- `app/lib/pairing/storage.dart` (lines 7-8: `_kPeersService`/`_kRoomsService`)
+- `pi-extension/src/pairing/storage.ts` (lines 26-27: `NEW_SERVICE`/`OLD_SERVICE`), `pi-extension/src/pairing/storage.test.ts` (lines 87-88)
+- `app/packages/outpost_pi_identity/android/.../BlockStoreStore.kt` (line 113: `BLOB_KEY`), `app/packages/outpost_pi_identity/ios/Classes/KeychainSyncStore.swift` (line 25: `service`)
+- `pi-extension/src/daemon/install.ts` (lines 108, 111: plist path + `LAUNCHD_LABEL`), `pi-extension/service-templates/launchd.plist.template` (line 7), `pi-extension/src/extension.test.ts` (line 333), `cockpit/lib/app/core/data/setup/environment_probe_impl.dart` (line 70), `pi-extension/docs/daemon.md`
+- `app/lib/pairing/qr_scanner.dart` (lines 4, 45), `app/lib/ui/pairing/viewmodels/pairing_viewmodel.dart` (line 55), `app/lib/ui/pairing/widgets/paste_qr_sheet.dart` (lines 10, 144, 168), `app/test/pairing/qr_scanner_test.dart`
+- All `REMOTE_PI_*` / `REMOTEPI_*` env vars: extension readers (`storage.ts` line 271, etc.), cockpit emitters (`workspace_projection.dart`, `ephemeral_pi_rpc.dart`, `supervisor_client_impl.dart`)
+**Story**: `…-storage-keyring-daemon-env` (depends on `…-regen-generated`; parallel with Units 3-6)
+
+Per the locked hard-cutover decision (operator confirmed 2026-07-11), these
+internal stability boundaries rename destructively — no migration/read-old
+path. The existing `dev.remotepi.mac`→`dev.remotepi.pi` migration code in
+`storage.ts` is **removed** (the rebrand supersedes it; the migration was
+from a name the fork no longer carries).
+
+- Hive box names: `dev.remotepi.peers`/`dev.remotepi.rooms` →
+  `dev.outpostpi.peers`/`dev.outpostpi.rooms` (phone loses persisted pairing
+  data — accepted, single operator re-pairs)
+- Keyring services: `dev.remotepi.pi` → `dev.outpostpi.pi`; **remove the
+  `dev.remotepi.mac` OLD_SERVICE migration** (line 27) and the read-old
+  branch in `storage.ts` — the rebrand is the new floor, no legacy read
+- Owner identity: `dev.remotepi.owner.identity` →
+  `dev.outpostpi.owner.identity` (BlockStore `BLOB_KEY` + iOS Keychain
+  `service` together — owner identity is re-derived on next pairing)
+- launchd: `dev.remotepi.supervisord` → `dev.outpostpi.supervisord` (label +
+  plist filename). **Old daemon under the old label is NOT auto-cleaned** —
+  the install path documents the manual `launchctl bootout` step for the old
+  label. (See Risks.)
+- URI scheme: `remotepi://` → `outpostpi://` (qr_scanner, paste_qr_sheet,
+  tests; existing QR codes stop scanning — accepted, operator regenerates)
+- Env vars: `REMOTE_PI_*` → `OUTPOST_PI_*`, `REMOTEPI_*` → `OUTPOSTPI_*`
+  (the AGENTS.md relay-container `docker run` command updates to the new
+  `OUTPOSTPI_RELAY_PORT` etc.)
+
+**Acceptance Criteria**:
+- [ ] `corepack pnpm --dir pi-extension test` green (storage.test.ts updated
+      to new service names, mac-migration test removed)
+- [ ] `flutter analyze` + `flutter test` (in `app/`) green (qr_scanner,
+      paste_qr_sheet, storage tests updated)
+- [ ] `grep -rn 'dev\.remotepi\|REMOTE_PI_\|REMOTEPI_\|remotepi://' app/ pi-extension/src/ cockpit/lib/` returns nothing (excluding `.dart_tool/`, `build/`, `dist/`)
+
+---
+
 ### Unit 7: Version reset to 0.1.0 + durable docs roll-forward
 **Files**: `pi-extension/package.json`, `app/pubspec.yaml`,
 `relay/Cargo.toml`, `cockpit/pubspec.yaml` (site + rp-s3 already 0.1.0, hold),
@@ -326,7 +370,8 @@ unit)
    - `…-extension-emitters` (Unit 4)
    - `…-cockpit-consumers` (Unit 5)
    - `…-app-install-and-plugin` (Unit 6)
-4. `…-version-and-docs` (Unit 7) — the release-binding unit; depends on 1-6
+   - `…-storage-keyring-daemon-env` (Unit 8)
+4. `…-version-and-docs` (Unit 7) — the release-binding unit; depends on 1-6 + 8
 
 ## Testing
 
@@ -369,10 +414,18 @@ unit)
   no path back to `work.jacobmoura.remotepi` without another phone uninstall.
   This is accepted per the locked strategic decision; flagged here as the
   highest-irreversibility risk. No mitigation — it's the intended cutover.
-- **Cross-slice collision with mechanical-rename.** The mechanical-rename
-  feature's exclusion list must keep it off `remote-pi-relay-auth`,
-  `remote-pi-ctrl`, `remote_pi_control`, `remote-pi:` customTypes,
-  `jacobmoura.remotepi`, `x-remote-pi`, and the LICENSE copyright line. If it
-  touches any, this feature's units will conflict at merge. Mitigation: this
-  feature lands first (it owns the wire-stable literals); the mechanical
-  rename's exclusion list is defined relative to this feature's replacements.
+- **Orphaned launchd daemon under the old label.** Renaming `LAUNCHD_LABEL`
+  to `dev.outpostpi.supervisord` means an old daemon registered under
+  `dev.remotepi.supervisord` keeps running (launchd labels are the identity,
+  not the binary). The new install path writes the new label but does not
+  `launchctl bootout` the old one. Mitigation: the AGENTS.md / daemon docs
+  roll-forward (Unit 7) documents the manual `launchctl bootout
+  gui/$(id -u)/dev.remotepi.supervisord` cleanup step for operators who had
+  the daemon installed pre-rebrand. Single operator, one-time cleanup.
+- **Storage/keyring/launchd cutover is destructive.** Per the locked decision
+  (operator confirmed hard cutover), the phone loses persisted Hive pairing
+  data, the Pi loses its keyring identity, and the launchd daemon is
+  orphaned under the old label. This means a full re-pair after the 0.1.0
+  upgrade. Accepted; flagged as the highest-data-loss risk. The alternative
+  (migration code reading old-if-new-empty) was rejected as over-engineering
+  for a single-operator fork.
