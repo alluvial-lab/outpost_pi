@@ -5751,16 +5751,11 @@ describe("model meta", () => {
     expect(updates[0]!.room_id).toMatch(/^[A-Za-z0-9_-]{12}$/);
   });
 
-  // Regression: a child subagent's `session_start` (fired during a `subagent`
-  // tool-execution window) must NOT publish a `room_meta_update` carrying the
-  // child's fresh session id — that wipes the mobile chatlog (the app's
-  // `_onRoomsChanged` → `activate()` rebinds to the child's empty session box)
-  // and the parent's subsequent frames get stamped with the child id → dropped
-  // as session_mismatch (no tool card). Confirmed by live capture
-  // 2026-07-07: a single room_meta_update({session_id: childId}) at
-  // gateActive=true is the wipe. See story-extension-subagent-child-session-
-  // start-wipes-mobile-chat.
-  test("subagent child session_start must not publish room_meta_update with the child session id", async () => {
+  // The subagent gate suppresses content only. This isolated same-owner fixture
+  // bypasses child-factory activation, so a second session_start represents a
+  // coordinator-approved successor and must bind even while the tool window is
+  // open. Real child denial is covered by runtime_coordinator integration tests.
+  test("subagent content gate does not suppress an approved successor session binding", async () => {
     captureHandler("remote-pi");
     await _connectForTest(makeMockCtx("/tmp/remote-pi-subagent-session-start"));
 
@@ -5768,46 +5763,38 @@ describe("model meta", () => {
     const onSessionStart = captureEventHandler("session_start");
     const onToolEnd = captureEventHandler("tool_execution_end");
 
-    // Establish the parent's session id.
     onSessionStart({ type: "session_start", reason: "startup" }, {
       ...makeMockCtx("/tmp/remote-pi-subagent-session-start"),
       sessionManager: { getSessionId: () => "parent-session-id" },
     } as unknown as Parameters<typeof onSessionStart>[1]);
     expect(_getRemoteSessionIdForTest()).toBe("parent-session-id");
 
-    // Open the subagent tool-execution window (gate becomes active).
     onToolStart({
       toolName: "subagent",
       toolCallId: "call_subagent_1",
       args: { prompt: "probe" },
     } as unknown as Parameters<typeof onToolStart>[0]);
 
-    // The child subagent fires its own session_start with a FRESH session id
-    // (@gotgenes/pi-subagents creates a new SessionManager via newSession()).
-    const ctrlBeforeChild = relayRef.current!.sendControl.mock.calls.length;
-    onSessionStart({ type: "session_start", reason: "startup" }, {
+    const ctrlBeforeSuccessor = relayRef.current!.sendControl.mock.calls.length;
+    onSessionStart({ type: "session_start", reason: "new" }, {
       ...makeMockCtx("/tmp/remote-pi-subagent-session-start"),
-      sessionManager: { getSessionId: () => "child-fresh-session-id" },
+      sessionManager: { getSessionId: () => "successor-session-id" },
     } as unknown as Parameters<typeof onSessionStart>[1]);
 
-    // No room_meta_update carrying the child's session id may escape.
-    const childUpdates = relayRef.current!.sendControl.mock.calls
-      .slice(ctrlBeforeChild)
+    const successorUpdates = relayRef.current!.sendControl.mock.calls
+      .slice(ctrlBeforeSuccessor)
       .map((c) => c[0] as { type: string; meta?: { session_id?: string } })
-      .filter((f) => f.type === "room_meta_update" && f.meta?.session_id);
-    expect(childUpdates).toHaveLength(0);
+      .filter((f) => f.type === "room_meta_update" && f.meta?.session_id === "successor-session-id");
+    expect(successorUpdates).toHaveLength(1);
+    expect(_getRemoteSessionIdForTest()).toBe("successor-session-id");
 
-    // The parent's session id must NOT have been overwritten by the child's.
-    expect(_getRemoteSessionIdForTest()).toBe("parent-session-id");
-
-    // Close the window; the parent's id is still current.
     onToolEnd({
       toolName: "subagent",
       toolCallId: "call_subagent_1",
       result: { content: [{ type: "text", text: "done" }] },
       isError: false,
     } as unknown as Parameters<typeof onToolEnd>[0]);
-    expect(_getRemoteSessionIdForTest()).toBe("parent-session-id");
+    expect(_getRemoteSessionIdForTest()).toBe("successor-session-id");
   });
 
   test("plan/32: pi.on('turn_end') publishes working=false via room_meta_update", async () => {

@@ -389,6 +389,26 @@ describe("RemotePiRuntimeCoordinator with the real Pi SDK factory/runtime", () =
 });
 
 describe("production index pending-delivery queue across SDK replacement", () => {
+  test("an active content-suppression gate cannot suppress successor session binding", async () => {
+    const harness = await createProductionHarness();
+    // createProductionHarness resets the module registry before loading the
+    // production index, so resolve the gate from that same registry instance.
+    const { subagentGate: productionSubagentGate } = await import("./subagent_gate.js");
+    const parentSessionId = harness.currentRemoteSessionId();
+
+    productionSubagentGate.enter("subagent");
+    try {
+      const paused = await harness.beginPausedNewSession();
+      await paused.complete();
+
+      const successorSessionId = harness.currentRemoteSessionId();
+      expect(successorSessionId).not.toBe(parentSessionId);
+      expect(successorSessionId).toBe(harness.currentSession.sessionManager.getSessionId());
+    } finally {
+      productionSubagentGate.exit("subagent");
+    }
+  });
+
   test("a replacement-gap message reports pending and drains exactly once to the successor", async () => {
     const harness = await createProductionHarness();
     const sessionId = harness.currentRemoteSessionId();
