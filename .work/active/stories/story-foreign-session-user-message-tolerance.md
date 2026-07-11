@@ -1,7 +1,7 @@
 ---
 id: story-foreign-session-user-message-tolerance
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, app, bug]
 parent: feature-session-stable-message-delivery
 depends_on:
@@ -334,3 +334,38 @@ commands are rejected before SDK delivery.
 
 Single-stride app implementation; no child stories spawned. The story is ready
 for `implement-orchestrator` at `stage: implementing`.
+
+## Implementation notes
+
+- Files changed:
+  - `app/lib/data/sync/sync_service.dart` — two edits: (1) `_onRoomsChanged`
+    arms `_pendingSyncRequest = true` before `activate(...)` on a canonical
+    session-id rotation, so the newly bound session deterministically receives
+    `session_sync` (the legitimate re-sync path); (2) the `ErrorMessage` arm
+    breaks early on `code == 'session_mismatch'` — it is a convergence/control
+    signal, never transcript content, so no `⚠` row is rendered. Other error
+    codes (`internal_error`, `unknown_peer`, `delivery_pending`, future codes)
+    retain the existing visible/revoked/pending behavior unchanged.
+  - `app/test/data/sync/sync_service_test.dart` — added a `session_mismatch
+    tolerance` group with 3 regression tests: (1) foreign duplicate-Pi
+    mismatch reply dropped without a warning row (proves the existing inbound
+    `SessionGate` catches it — confirmed by the `[session-gate] drop` debug
+    line); (2) accepted current-session mismatch reply (the narrow metadata-
+    rebound race window) also renders no warning row; (3) canonical room-
+    metadata session rotation triggers `session_sync` for the new session id,
+    never targeting the stale old id.
+  - `PROTOCOL.md` — refined the `session_mismatch` error-code semantics: the
+    Pi rejects fail-closed and returns its current `session_id`; the app treats
+    the reply as a convergence/control signal (not visible transcript content);
+    canonical room/session metadata — not the error payload — drives rebind +
+    `session_sync`.
+- Wire-shape decision: **app-side only**. The extension's fail-closed
+  rejection and wire shape are unchanged; no pi-extension or relay change.
+  The fix reuses the app's existing `SessionGate` (single source of truth for
+  inbound session filtering) and the existing `_pendingSyncRequest` latch
+  (single source of truth for deferred sync) — no new state machine.
+- Discrepancies from design: none.
+- Verification: `flutter analyze` clean; `flutter test
+  test/data/sync/sync_service_test.dart test/data/sync/session_gate_test.dart`
+  → 80/80 passed (77 existing + 3 new); the existing `internal_error` visible-
+  warning test still passes (suppression cannot broaden).
