@@ -31,6 +31,7 @@ type RemotePiIndexModule = {
   _getPendingDeliveryQueueLengthForTest: () => number;
   _resetPendingDeliveryQueueForTest: () => void;
   _setPendingDeliveryTtlForTest: (ms: number) => () => void;
+  _setPendingDeliveryAbsoluteDeadlineForTest: (ms: number) => () => void;
   _setPiForTest: (pi: unknown) => void;
   _setDisposedForTest?: (value: boolean) => void;
   _resetCwdLockForTest?: () => void;
