@@ -88,12 +88,7 @@ export function registerLifecycleHooks(
   pi.on("session_start", (_event: unknown, ctx: ExtensionContext) => {
     const reason = sessionReason(_event, "startup");
     const sessionId = sessionIdFrom(ctx);
-    const activation = coordinator.activate(
-      lease,
-      sessionId,
-      pi,
-      ports.session.isOwnershipFallbackBlocked?.() === true,
-    );
+    const activation = coordinator.activate(lease, sessionId, pi);
     if (activation.status !== "activated") return;
 
     // Publish the factory-local API only after the ownership claim succeeds.
