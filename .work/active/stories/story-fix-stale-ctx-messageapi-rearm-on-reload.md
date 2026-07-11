@@ -1,7 +1,7 @@
 ---
 id: story-fix-stale-ctx-messageapi-rearm-on-reload
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug, lifecycle]
 parent: epic-remote-session-resilience-refactor
 feature_parent: feature-session-stable-message-delivery
