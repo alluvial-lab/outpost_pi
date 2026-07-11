@@ -1,7 +1,7 @@
 ---
 id: story-evidence-stale-ctx-repro-2026-07-09
 kind: story
-stage: drafting
+stage: done
 tags: [pi-extension, bug, observability, research]
 parent: epic-remote-session-resilience-refactor
 feature_parent: feature-session-stable-message-delivery
@@ -9,7 +9,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-11
 evidence_capture: 2026-07-09
 ---
 
@@ -170,3 +170,29 @@ the UX and didn't.
   this capture possible, though it wasn't enabled on the failing processes).
 - `SESSION-NOTE-2026-07-08-observability-complete-deployed-stale-ctx-
   disambiguated.md` (handoff note — the disambiguation + what's live).
+
+## Closure (2026-07-11)
+
+Superseded by the verified root-cause correction. This evidence capture's open
+questions — whether the `delivery_pending` tolerance layer fires on a real
+stuck-state repro, and what the actual root cause is — are now answered:
+
+- The "critical open question" (does the tolerance layer cover the stuck
+  state?) is resolved: the tolerance layer (`story-stale-ctx-recoverable-
+  delivery-tolerance`) is a *mitigation* (keeps the phone from seeing a
+  permanent `internal_error`), NOT the root-cause fix. The stuck state's
+  actual cause is the child-`AgentSession`-factory overwriting the parent's
+  `messageApi` — verified 2026-07-11 via real-SDK probes + the live delivery
+  log + four parallel deep investigations (see the feature's "Corrected root
+  cause" section).
+- The "Next steps" (enable debug logging, reproduce with logs on, restart
+  Patchbay) were investigative scaffolding toward that root cause, which is
+  now fixed by `story-fix-stale-ctx-messageapi-rearm-on-reload` (the
+  `RemotePiRuntimeCoordinator`).
+- Its finding that the tolerance layer "did NOT fire on either repro" remains
+  a valid observation about the tolerance layer's scope, now correctly
+  framed: tolerance ≠ root-cause fix.
+
+No further action on this evidence item. The durable conclusions live in
+`feature-session-stable-message-delivery.md` (corrected root cause) and the
+coordinator story.
