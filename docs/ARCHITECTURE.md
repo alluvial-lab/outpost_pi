@@ -1,4 +1,4 @@
-# Remote Pi — Architecture
+# Outpost-Pi — Architecture
 
 How the system is organized: components, data flow, the wire protocol shape,
 the session/room model, and lifecycle. Current truth. For the security/trust
@@ -179,7 +179,7 @@ Cross-PC wraps it in `pi_envelope` / `pi_envelope_in` frames carrying the
 ### Cockpit↔pi control RPC
 
 A separate transport: Pi custom events carrying a NUL-prefixed string
-(`\x00remote-pi-ctrl:<method>:<args...>`). Folded into the generated schema
+(`\x00outpost-pi-ctrl:<method>:<args...>`). Folded into the generated schema
 by `epic-bold-generated-protocol-cockpit-control-rpc` to retire the magic
 prefix.
 
@@ -226,7 +226,7 @@ adopted by all three.
 
 ## Lifecycle and convergence
 
-Remote Pi's highest-risk defects are lifecycle and state-convergence bugs.
+Outpost-Pi's highest-risk defects are lifecycle and state-convergence bugs.
 Invariants every surface must hold:
 
 - **Pi SDK context is session-scoped.** It is invalid after session
