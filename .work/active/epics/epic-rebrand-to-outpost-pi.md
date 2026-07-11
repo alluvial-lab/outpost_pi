@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi
 kind: epic
-stage: drafting
+stage: implementing
 tags: [rebrand, fork-posture, pi-extension, app, relay, cockpit, site, docs]
 parent: null
 depends_on: []
@@ -106,19 +106,62 @@ needs its own name now.
 - This is a separable workstream from the rename itself and can proceed in
   parallel or as a follow-up.
 
-## Ordering (name decision is now made; this is the execution order)
+## Decomposition
 
-1. ~~Pick a name~~ → **Outpost-Pi** (done).
-2. Mechanical rename of code-internal strings (class 1, excluding
-   wire/install-stable discriminators).
-3. Migrate wire/install-stable identifiers carefully (class 2): protocol
-   discriminators need a version-paired migration; Android applicationId
-   change forces reinstall — gate on a release boundary.
-4. Provenance (class 3): LICENSE keeps Jacob Moura copyright + adds operator
-   line; add NOTICE; update README credit.
-5. External surfaces (class 4): npm publish target, GitHub repo, homepage,
-   branding.
-6. EN-first pass (separable, parallel-able with 2–5).
+Split by the four identifier classes the epic already named, each becoming
+one child feature. The slices are intentionally disjoint so they can proceed
+in parallel: the mechanical rename's exclusion list is the contract that
+keeps it off the wire-stable literals the migration feature owns. The
+breaking slice (wire + install-stable + version reset) is the only one
+gated on a release boundary — everything else is non-breaking. External
+surfaces (class 4) move to a follow-up epic per the locked strategic
+decision.
+
+### Child features
+
+- `epic-rebrand-to-outpost-pi-mechanical-rename` — code-internal
+  `remote_pi`/`remote-pi` strings → `outpost-pi`/`Outpost-Pi` (~1,613 occ /
+  ~240 files across all 5 subprojects); excludes wire-stable literals —
+  depends on: `[]`
+- `epic-rebrand-to-outpost-pi-wire-and-install-stable-migration` — the
+  breaking 0.1.0 slice: auth string → `outpost-pi-relay-auth-v1`, control-RPC
+  discriminator → `outpost-pi-ctrl`, applicationId/bundle →
+  `dev.kevoun.outpostpi`, version reset to 0.1.0 across all manifests;
+  hard-cutover, version-paired release — depends on: `[]` (coordinate at
+  release time with the mechanical rename; no hard type dependency)
+- `epic-rebrand-to-outpost-pi-provenance` — root LICENSE (extend MIT to whole
+  repo, keep Jacob Moura copyright + add operator line), root NOTICE, README
+  credit; no code behavior change — depends on: `[]`
+- `epic-rebrand-to-outpost-pi-en-first` — PT → EN in shipped product
+  (cockpit-heavy, ~186 files); `scripts/` operator glue explicitly excluded —
+  depends on: `[]`
+
+### Decomposition risks
+
+- **Cross-slice string collision.** The mechanical rename and the wire-stable
+  migration both touch `remote-pi*` literals. The risk is the mechanical
+  rename accidentally rewriting a wire-stable constant (`remote-pi-relay-auth`,
+  `remote-pi-ctrl`, `jacobmoura.remotepi`) out of sequence, creating a
+  half-migrated wire surface. Mitigation: the mechanical-rename feature's
+  exclusion list is the explicit contract; the design pass should use a
+  scripted replacement with the exclusion list and verify zero unintended
+  wire-stable edits via grep.
+- **Release-time coordination despite no hard dependency.** The mechanical
+  rename and the wire-stable migration have no `depends_on` edge and can
+  develop in parallel, but they must ship in the same 0.1.0 release or the
+  released artifact is inconsistently named (cosmetic strings say
+  Outpost-Pi but wire/applicationId still say remote-pi, or vice versa).
+  This is a release-binding concern, handled at `/agile-workflow:release-deploy`
+  time, not a `depends_on` edge.
+- **applicationId change is irreversible on the phone.** After the first
+  0.1.0 sideload there is no path back to `work.jacobmoura.remotepi` without
+  another uninstall. The wire-stable migration feature's design pass must
+  verify the chosen `dev.kevoun.outpostpi` identifier before shipping.
+- **AGENTS.md / PROTOCOL.md / CHANGELOG.md drift.** These durable docs
+  reference the old auth string and old paired versions. They must be rolled
+  forward in-place to the new `outpost-pi-relay-auth-v1` and `0.1.0` pairing
+  as part of the wire-stable migration (rolling-foundation: current truth,
+  no migration prose).
 
 ## Relationship to other work
 
