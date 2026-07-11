@@ -19,7 +19,10 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createRemotePiExtensionRuntime, type RemotePiRuntime } from "../extension/composition_root.js";
 import type { RemotePiRuntimePorts } from "../extension/ports.js";
-import { RemotePiRuntimeCoordinator } from "../extension/runtime_coordinator.js";
+import {
+  getRemotePiRuntimeCoordinator,
+  resetRemotePiRuntimeCoordinatorForTest,
+} from "../extension/runtime_coordinator.js";
 import { subagentGate } from "./subagent_gate.js";
 import {
   SdkSessionReplacementHarness,
@@ -76,7 +79,6 @@ interface Instance {
 }
 
 class RealSdkHarness {
-  readonly coordinator = new RemotePiRuntimeCoordinator();
   readonly eventBus = createEventBus();
   readonly deliveries: Array<{ label: string; content: unknown }> = [];
   readonly queued: unknown[] = [];
@@ -85,6 +87,10 @@ class RealSdkHarness {
   meshCloses = 0;
   private boundApi: ExtensionAPI | null = null;
   private bindingLabel = "";
+
+  constructor() {
+    resetRemotePiRuntimeCoordinatorForTest();
+  }
 
   async create(label: string): Promise<Instance> {
     const cwd = mkdtempSync(join(tmpdir(), `remote-pi-${label}-`));
@@ -97,7 +103,7 @@ class RealSdkHarness {
       remoteRuntime = createRemotePiExtensionRuntime(
         factoryApi,
         this.ports(label),
-        this.coordinator,
+        getRemotePiRuntimeCoordinator(),
       );
       remoteRuntime.registerLifecycle();
     };
@@ -288,7 +294,7 @@ describe("RemotePiRuntimeCoordinator with the real Pi SDK factory/runtime", () =
 
     h.phoneSend("still-parent");
     expect(h.deliveries).toEqual([{ label: "parent", content: "still-parent" }]);
-    expect(h.coordinator.snapshot()).toMatchObject({ kind: "ACTIVE", sessionId: parent.sessionId, childCount: 0 });
+    expect(getRemotePiRuntimeCoordinator().snapshot()).toMatchObject({ kind: "ACTIVE", sessionId: parent.sessionId, childCount: 0 });
   });
 
   test("four parallel children with out-of-order disposal cannot change owner", async () => {
@@ -308,7 +314,7 @@ describe("RemotePiRuntimeCoordinator with the real Pi SDK factory/runtime", () =
 
     h.phoneSend("owner-stable");
     expect(h.deliveries).toEqual([{ label: "parent", content: "owner-stable" }]);
-    expect(h.coordinator.snapshot()).toMatchObject({ kind: "ACTIVE", sessionId: parent.sessionId });
+    expect(getRemotePiRuntimeCoordinator().snapshot()).toMatchObject({ kind: "ACTIVE", sessionId: parent.sessionId });
   });
 
   test("an active content-suppression gate cannot deny a legitimate successor", async () => {
@@ -324,7 +330,7 @@ describe("RemotePiRuntimeCoordinator with the real Pi SDK factory/runtime", () =
       expect(subagentGate.isActive()).toBe(true);
       const successor = await h.create("parent-new");
       await h.start(successor, "new");
-      expect(h.coordinator.snapshot()).toMatchObject({ kind: "ACTIVE", sessionId: successor.sessionId });
+      expect(getRemotePiRuntimeCoordinator().snapshot()).toMatchObject({ kind: "ACTIVE", sessionId: successor.sessionId });
       expect(h.deliveries).toEqual([{
         label: "parent-new",
         content: "queued-while-subagent-tool-open",
@@ -406,6 +412,62 @@ describe("production index pending-delivery queue across SDK replacement", () =>
       expect(successorSessionId).toBe(harness.currentSession.sessionManager.getSessionId());
     } finally {
       productionSubagentGate.exit("subagent");
+    }
+  });
+
+  test("a queued message during a slow replacement does not expire and delivers once the successor re-arms", async () => {
+    const harness = await createProductionHarness();
+    const restoreTtl = harness.currentModule._setPendingDeliveryTtlForTest(50);
+    const sessionId = harness.currentRemoteSessionId();
+    const paused = await harness.beginPausedNewSession();
+
+    try {
+      expect(getRemotePiRuntimeCoordinator().isReplacing()).toBe(true);
+      const channel = harness.routeCurrent(userMessage("slow-gap", sessionId, "survive slow replacement"));
+      await channel.waitForMessage(deliveryPendingFor("slow-gap"));
+
+      await new Promise<void>((resolve) => setTimeout(resolve, 120));
+      expect(getRemotePiRuntimeCoordinator().isReplacing()).toBe(true);
+      expect(internalErrorFor(channel, "slow-gap")).toBe(false);
+      expect(harness.pendingDeliveryCount()).toBe(1);
+
+      await paused.complete();
+      await harness.waitForDelivery((delivery) =>
+        delivery.sessionLabel === "replacement-2"
+        && delivery.method === "sendUserMessage"
+        && delivery.content === "survive slow replacement",
+      );
+      expect(harness.deliveries.filter((delivery) => delivery.content === "survive slow replacement")).toHaveLength(1);
+      expect(harness.pendingDeliveryCount()).toBe(0);
+      expect(internalErrorFor(channel, "slow-gap")).toBe(false);
+    } finally {
+      restoreTtl();
+      if (getRemotePiRuntimeCoordinator().isReplacing()) await paused.complete();
+    }
+  });
+
+  test("a queued message outside replacement still expires to internal_error", async () => {
+    const harness = await createProductionHarness();
+    const restoreTtl = harness.currentModule._setPendingDeliveryTtlForTest(50);
+
+    try {
+      expect(getRemotePiRuntimeCoordinator().isReplacing()).toBe(false);
+      harness.currentModule._setPiForTest(null);
+      const channel = harness.routeCurrent(userMessage(
+        "broken-binding",
+        harness.currentRemoteSessionId(),
+        "expire without successor",
+      ));
+
+      await channel.waitForMessage(deliveryPendingFor("broken-binding"));
+      await channel.waitForMessage((message) => message.type === "error"
+        && message.code === "internal_error"
+        && message.in_reply_to === "broken-binding");
+      expect(getRemotePiRuntimeCoordinator().isReplacing()).toBe(false);
+      expect(harness.pendingDeliveryCount()).toBe(0);
+      expect(harness.deliveries.filter((delivery) => delivery.content === "expire without successor")).toHaveLength(0);
+    } finally {
+      restoreTtl();
     }
   });
 

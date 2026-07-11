@@ -31,6 +31,7 @@ export const DELIVERY_DEBUG_TAG = [
   "delivery_pending",
   "queue_drained",
   "queue_dropped",
+  "queue_renewed",
   "message_api_armed",
   "message_api_null",
   "session_lifecycle",
@@ -51,6 +52,7 @@ export type DeliveryDebugEvent =
   | { tag: "delivery_pending"; id: string; queueLen: number; ttlMs: number; roomId?: string }
   | { tag: "queue_drained"; id: string; wakeOk: boolean; roomId?: string }
   | { tag: "queue_dropped"; id: string; reason: string; roomId?: string }
+  | { tag: "queue_renewed"; id: string; reason: string; roomId?: string }
   | { tag: "message_api_armed"; via: "factory" | "withSession"; sessionIdTail: string; roomId?: string }
   | { tag: "message_api_null"; reason: "stale" | "shutdown" | "replacement"; roomId?: string }
   | { tag: "session_lifecycle"; reason: "startup" | "reload" | "new" | "resume" | "fork" | "quit"; sessionIdTail: string; roomId?: string }
