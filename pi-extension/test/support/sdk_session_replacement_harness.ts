@@ -28,6 +28,8 @@ type RemotePiIndexModule = {
     ctx: Pick<ExtensionCommandContext, "abort">,
   ) => void;
   _getRemoteSessionIdForTest: () => string | null;
+  _getPendingDeliveryQueueLengthForTest: () => number;
+  _resetPendingDeliveryQueueForTest: () => void;
   _setDisposedForTest?: (value: boolean) => void;
   _resetCwdLockForTest?: () => void;
 };
@@ -99,9 +101,10 @@ export class TestPeerChannel {
   }
 }
 
-type HarnessSession = {
+export type HarnessSession = {
   label: string;
   indexModule: RemotePiIndexModule;
+  extension: Extension;
   extensionRunner: ExtensionRunner;
   sessionManager: SessionManager;
   sessionFile: string | undefined;
@@ -125,6 +128,10 @@ export class SdkSessionReplacementHarness {
 
   private host!: AgentSessionRuntime;
   private sequence = 0;
+  private replacementGate: {
+    entered: Deferred;
+    release: Deferred;
+  } | null = null;
 
   private constructor(
     private readonly cwd: string,
@@ -182,12 +189,59 @@ export class SdkSessionReplacementHarness {
   }
 
   routeFromModule(module: RemotePiIndexModule, msg: ClientMessage, channel = new TestPeerChannel()): TestPeerChannel {
-    module._routeClientMessageFrom(channel, msg, this.currentRunner.createCommandContext());
+    // Resolve abort lazily so user-message routing remains available during the
+    // intentional gap where the predecessor runner is stale and the successor
+    // runner does not exist yet.
+    module._routeClientMessageFrom(channel, msg, {
+      abort: () => this.currentRunner.createCommandContext().abort(),
+    });
     return channel;
   }
 
   routeCurrent(msg: ClientMessage, channel = new TestPeerChannel()): TestPeerChannel {
     return this.routeFromModule(this.currentModule, msg, channel);
+  }
+
+  pendingDeliveryCount(): number {
+    return this.currentModule._getPendingDeliveryQueueLengthForTest();
+  }
+
+  /**
+   * Start a real SDK `/new` replacement and pause after the predecessor has
+   * shut down and become stale, but before the successor factory is loaded.
+   * This exposes the production replacement gap without replacing the SDK's
+   * lifecycle implementation with a test double.
+   */
+  async beginPausedNewSession(): Promise<{
+    predecessor: HarnessSession;
+    complete(): Promise<void>;
+  }> {
+    if (this.replacementGate) throw new Error("a replacement is already paused");
+    const predecessor = this.currentSession;
+    const gate = { entered: deferred(), release: deferred() };
+    this.replacementGate = gate;
+    const replacement = this.host.newSession();
+    await gate.entered.promise;
+    return {
+      predecessor,
+      complete: async () => {
+        gate.release.resolve();
+        await replacement;
+      },
+    };
+  }
+
+  /**
+   * Invoke a predecessor's actual registered shutdown callback after its SDK
+   * runner is stale. ExtensionRunner correctly refuses to emit on an invalid
+   * runtime, so this narrow helper calls the retained production callback to
+   * verify its lease-token guard and process-global queue effects.
+   */
+  async emitStaleShutdown(session: HarnessSession, reason: SessionShutdownEvent["reason"]): Promise<void> {
+    const handlers = session.extension.handlers.get("session_shutdown") ?? [];
+    for (const handler of handlers) {
+      await handler({ type: "session_shutdown", reason }, undefined as never);
+    }
   }
 
   waitForDelivery(
@@ -219,6 +273,7 @@ export class SdkSessionReplacementHarness {
 
   async dispose(): Promise<void> {
     for (const session of [this.currentSession]) {
+      session.indexModule._resetPendingDeliveryQueueForTest();
       session.indexModule._resetCwdLockForTest?.();
     }
     await this.host.dispose();
@@ -260,6 +315,12 @@ export class SdkSessionReplacementHarness {
     sessionManager: SessionManager;
     sessionStartEvent?: SessionStartEvent;
   }) {
+    if (options.sessionStartEvent && options.sessionStartEvent.reason !== "startup" && this.replacementGate) {
+      const gate = this.replacementGate;
+      gate.entered.resolve();
+      await gate.release.promise;
+      this.replacementGate = null;
+    }
     this.sequence += 1;
     const label = this.sequence === 1 ? "initial" : `replacement-${this.sequence}`;
     const { extension, runtime, indexModule } = await this.loadRemotePiExtension(label, options.cwd);
@@ -275,7 +336,7 @@ export class SdkSessionReplacementHarness {
       this.makeContextActions(label, options.cwd),
     );
     this.bindCommandActions(runner, label);
-    const session = this.makeFakeSession(label, runner, options.sessionManager, indexModule);
+    const session = this.makeFakeSession(label, extension, runner, options.sessionManager, indexModule);
     if (options.sessionStartEvent) await runner.emit(options.sessionStartEvent);
     return {
       session,
@@ -396,6 +457,7 @@ export class SdkSessionReplacementHarness {
 
   private makeFakeSession(
     label: string,
+    extension: Extension,
     runner: ExtensionRunner,
     sessionManager: SessionManager,
     indexModule: RemotePiIndexModule,
@@ -403,6 +465,7 @@ export class SdkSessionReplacementHarness {
     return {
       label,
       indexModule,
+      extension,
       extensionRunner: runner,
       sessionManager,
       sessionFile: sessionManager.getSessionFile(),
@@ -428,6 +491,17 @@ export class SdkSessionReplacementHarness {
       },
     };
   }
+}
+
+type Deferred = {
+  promise: Promise<void>;
+  resolve(): void;
+};
+
+function deferred(): Deferred {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
 }
 
 function createExtensionShell(extensionPath: string): Extension {

@@ -114,8 +114,6 @@ export interface SdkSessionProjectionPort {
   bindCommandContext(ctx: ExtensionCommandContext): void;
   bindSessionContext(ctx: ExtensionContext): void;
   clearStaleContexts(reason?: "startup" | "reload" | "new" | "resume" | "fork" | "quit"): void;
-  /** Supporting child signal only; the coordinator's child-session registry is authoritative. */
-  isOwnershipFallbackBlocked?(): boolean;
   sendPiMessage(...args: Parameters<ExtensionAPI["sendMessage"]>): boolean;
   wakeAgent(...args: Parameters<ExtensionAPI["sendUserMessage"]>): Promise<WakeAgentResult>;
   publishWorking(working: boolean): void;
