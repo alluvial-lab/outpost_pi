@@ -1,7 +1,7 @@
 ---
 id: feature-session-stable-message-delivery
 kind: feature
-stage: done
+stage: review
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on:
@@ -130,6 +130,14 @@ read-only-FS cwd-lock env flake / 3 skip); app `flutter analyze` clean + 80/80
 sync tests pass. No wire-shape or protocol-metadata change from the
 coordinator; the foreign-session fix is app-side only (extension/relay
 contracts unchanged; `PROTOCOL.md` refined to pin `session_mismatch` semantics).
+
+Feature-review Blocker fix: pending-delivery TTL expiry now renews only while
+the process-scoped coordinator is `REPLACING`, so slow successor startup cannot
+strand the phone with `internal_error`. The original 5-second failure threshold
+still applies to broken bindings outside replacement; terminal quit still
+fails the bounded queue explicitly. Fix verification: coordinator integration
+14/14; full pi-extension suite 827 passed / 1 documented cwd-lock environment
+flake / 3 skipped; typecheck and build clean.
 
 ## References
 
