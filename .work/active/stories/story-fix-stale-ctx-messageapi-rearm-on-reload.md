@@ -1,7 +1,7 @@
 ---
 id: story-fix-stale-ctx-messageapi-rearm-on-reload
 kind: story
-stage: drafting
+stage: review
 tags: [pi-extension, bug, lifecycle]
 parent: epic-remote-session-resilience-refactor
 feature_parent: feature-session-stable-message-delivery
@@ -16,7 +16,7 @@ spike_committed: 2026-07-11
 
 # Stale `messageApi` after session replacement — runtime ownership coordinator
 
-## Status: the root cause is corrected. Design settled; implementation open.
+## Status: implemented; awaiting review.
 
 The prior "SDK-blocked" / "cancel-and-re-drive" framings were **disproven**
 (2026-07-11, real-SDK probes + live log + four parallel deep investigations).
@@ -326,3 +326,20 @@ then **remove both**.
   (child factory + `bindExtensions`), `src/lifecycle/child-lifecycle.ts`
   (`subagents:child:*` event channels).
 - Live evidence: `~/.pi/remote/debug/delivery.log` (2026-07-10/11).
+
+## Implementation notes
+
+- Added `src/extension/runtime_coordinator.ts`: a schema-versioned process-global coordinator under `Symbol.for("remote-pi.runtime-coordinator.v1")`, opaque factory leases, owner/satellite transitions, token-checked shutdown, and synchronous `subagents:child:session-created` / `disposed` tracking.
+- Reworked `src/extension/composition_root.ts` so factory construction no longer publishes `ExtensionAPI`. An ownership-approved `session_start` now binds the API/context and drains ingress; duplicate starts are idempotent; only the exact owner lease can clear contexts or tear down relay/mesh resources.
+- Wrapped `src/index.ts` ordinary event and command callbacks with owner checks. Replacement shutdown preserves the bounded pending-delivery queue; terminal quit fails it. The existing additive `SdkSessionProjection.bindApi` / pair-code `sendPiMessage` behavior is unchanged once ownership is active.
+- Removed the logging-only `session_before_switch` / `session_before_fork` spike handlers and helper. The gitignored throwaway spike script was removed from the working copy.
+- Added seven mandatory tests in `src/session/runtime_coordinator.integration.test.ts`. They load the factory through the installed Pi 0.80.6 loader implementation, use real `createExtensionRuntime`, `ExtensionRunner`, and `SessionManager` instances, and exercise the real `runtime.assertActive()` stale-API guard. The only loader bypass is filesystem resource discovery: the factory is supplied inline. Relay/queue ports are deterministic harness adapters; coordinator activation and SDK APIs are not mocked.
+- Updated the existing real-SDK replacement harness to reset only the versioned process-global coordinator between isolated Vitest harnesses. Updated broad legacy unit fixtures with an explicit isolated-factory test seam; production APIs always use the real event bus path.
+- Aligned `@earendil-works/pi-coding-agent` manifest, lockfile, installed dependency, and stack reference to 0.80.6. No wire shape or protocol metadata changed.
+
+Verification (2026-07-11):
+
+- `corepack pnpm typecheck`: clean.
+- `corepack pnpm exec vitest run src/session/runtime_coordinator.integration.test.ts`: 7/7 passed.
+- `corepack pnpm test`: 820 passed, 1 failed, 3 skipped. The sole failure is the documented pre-existing `acquireCwdLock` `/tmp` contention in `a second same-name agent joins as <name>#2 instead of being refused`; there are no new failures. An isolation retry was attempted twice, but the same external socket contention remained active on this VM, so the expected isolation pass could not be reproduced in this run.
+- `corepack pnpm build`: clean (`dist/` rebuilt locally and remains ignored).

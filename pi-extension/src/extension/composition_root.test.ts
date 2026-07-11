@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { RemotePiRuntimePorts } from "./ports.js";
 import { createRemotePiExtensionRuntime } from "./composition_root.js";
+import { RemotePiRuntimeCoordinator } from "./runtime_coordinator.js";
 
 function ports(): RemotePiRuntimePorts {
   return {
@@ -47,6 +48,7 @@ function piWithHandlers(): {
 } {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const pi = {
+    events: createEventBus(),
     on: vi.fn((name: string, handler: (...args: unknown[]) => unknown) => {
       handlers.set(name, handler);
     }),
@@ -54,58 +56,61 @@ function piWithHandlers(): {
   return { pi, handlers };
 }
 
+function context(sessionId: string): ExtensionContext {
+  return {
+    sessionManager: { getSessionId: () => sessionId },
+    ui: {},
+  } as unknown as ExtensionContext;
+}
+
 describe("composition root runtime", () => {
-  test("register binds the Pi API and lifecycle hooks before command registration", () => {
+  test("register defers API publication until an approved session_start", () => {
     const p = ports();
-    const { pi } = piWithHandlers();
-    const runtime = createRemotePiExtensionRuntime(pi, p);
+    const { pi, handlers } = piWithHandlers();
+    const runtime = createRemotePiExtensionRuntime(pi, p, new RemotePiRuntimeCoordinator());
 
     runtime.register();
 
-    expect(p.session.bindApi).toHaveBeenCalledWith(pi);
+    expect(p.session.bindApi).not.toHaveBeenCalled();
     expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
     expect(pi.on).toHaveBeenCalledWith("session_shutdown", expect.any(Function));
     expect(p.commands.register).toHaveBeenCalledWith(pi, runtime);
-    const bindOrder = vi.mocked(p.session.bindApi).mock.invocationCallOrder[0]!;
-    const hookOrder = vi.mocked(pi.on).mock.invocationCallOrder[0]!;
-    const registerOrder = vi.mocked(p.commands.register).mock.invocationCallOrder[0]!;
-    expect(bindOrder).toBeLessThan(hookOrder);
-    expect(hookOrder).toBeLessThan(registerOrder);
+
+    handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
+    expect(p.session.bindApi).toHaveBeenCalledWith(pi);
+    expect(p.session.bindSessionContext).toHaveBeenCalledOnce();
   });
 
-  test("session_start binds fresh context and only restarts while epoch is current", () => {
+  test("duplicate session_start is idempotent and a disposed epoch does not restart", () => {
     const p = ports();
     const { pi, handlers } = piWithHandlers();
-    const runtime = createRemotePiExtensionRuntime(pi, p);
+    const runtime = createRemotePiExtensionRuntime(pi, p, new RemotePiRuntimeCoordinator());
     runtime.register();
+    const ctx = context("parent");
 
-    const ctx = { ui: {} } as ExtensionContext;
-    handlers.get("session_start")?.({ type: "session_start" }, ctx);
-
-    expect(p.session.bindSessionContext).toHaveBeenCalledWith(ctx);
-    expect(p.commands.ensureStarted).toHaveBeenCalledWith(ctx);
+    handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, ctx);
+    handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, ctx);
+    expect(p.session.bindApi).toHaveBeenCalledOnce();
+    expect(p.session.bindSessionContext).toHaveBeenCalledOnce();
+    expect(p.commands.ensureStarted).toHaveBeenCalledOnce();
 
     runtime.epoch.dispose();
-    const staleCtx = { ui: {} } as ExtensionContext;
-    handlers.get("session_start")?.({ type: "session_start" }, staleCtx);
-
-    expect(p.session.bindSessionContext).toHaveBeenCalledWith(staleCtx);
-    expect(p.commands.ensureStarted).toHaveBeenCalledTimes(1);
+    handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, context("replacement"));
+    expect(p.commands.ensureStarted).toHaveBeenCalledOnce();
   });
 
-  test("session_shutdown marks epoch before clearing resources and closing mesh", async () => {
+  test("owner session_shutdown marks epoch before clearing resources and closing mesh", async () => {
     const p = ports();
     const { pi, handlers } = piWithHandlers();
-    const runtime = createRemotePiExtensionRuntime(pi, p);
+    const runtime = createRemotePiExtensionRuntime(pi, p, new RemotePiRuntimeCoordinator());
     runtime.register();
+    handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
 
-    expect(runtime.epoch.isCurrent()).toBe(true);
-    await handlers.get("session_shutdown")?.({ type: "session_shutdown" });
+    await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" });
 
     expect(runtime.epoch.disposed).toBe(true);
-    expect(runtime.epoch.isCurrent()).toBe(false);
     expect(p.commands.prepareSessionShutdown).toHaveBeenCalledOnce();
-    expect(p.session.clearStaleContexts).toHaveBeenCalledOnce();
+    expect(p.session.clearStaleContexts).toHaveBeenCalledWith("new");
     expect(p.relay.detachCrossPcBridge).toHaveBeenCalledOnce();
     expect(p.relay.stop).toHaveBeenCalledOnce();
     expect(p.commands.closeMesh).toHaveBeenCalledOnce();
@@ -118,19 +123,24 @@ describe("composition root runtime", () => {
     expect(stopOrder).toBeLessThan(closeMeshOrder);
   });
 
-  test("dispose uses the same ordered shutdown path", async () => {
-    const p = ports();
-    const runtime = createRemotePiExtensionRuntime(piWithHandlers().pi, p);
+  test("satellite shutdown cannot tear down owner resources", async () => {
+    const coordinator = new RemotePiRuntimeCoordinator();
+    const ownerPorts = ports();
+    const ownerPi = piWithHandlers();
+    const owner = createRemotePiExtensionRuntime(ownerPi.pi, ownerPorts, coordinator);
+    owner.register();
+    ownerPi.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
 
-    expect(runtime.epoch.isCurrent()).toBe(true);
-    await runtime.dispose();
+    const satellitePorts = ports();
+    const satellitePi = piWithHandlers();
+    const satellite = createRemotePiExtensionRuntime(satellitePi.pi, satellitePorts, coordinator);
+    satellite.register();
+    satellitePi.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("child"));
+    await satellitePi.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" });
 
-    expect(runtime.epoch.disposed).toBe(true);
-    expect(runtime.epoch.isCurrent()).toBe(false);
-    expect(p.commands.prepareSessionShutdown).toHaveBeenCalledOnce();
-    expect(p.session.clearStaleContexts).toHaveBeenCalledOnce();
-    expect(p.relay.detachCrossPcBridge).toHaveBeenCalledOnce();
-    expect(p.relay.stop).toHaveBeenCalledOnce();
-    expect(p.commands.closeMesh).toHaveBeenCalledOnce();
+    expect(satellitePorts.session.clearStaleContexts).not.toHaveBeenCalled();
+    expect(satellitePorts.relay.stop).not.toHaveBeenCalled();
+    expect(satellitePorts.commands.closeMesh).not.toHaveBeenCalled();
+    expect(owner.isOwner()).toBe(true);
   });
 });

@@ -7,7 +7,7 @@ updated: 2026-06-27
 # Pi Extension TypeScript Reference
 
 > Local scope: `pi-extension/`
-> Versions: Node >=20, TypeScript 6.x, `@earendil-works/pi-coding-agent` 0.79.x, `ws` 8.x, Vitest 4.x
+> Versions: Node >=20, TypeScript 6.x, `@earendil-works/pi-coding-agent` 0.80.x, `ws` 8.x, Vitest 4.x
 > Canonical local docs: `pi-extension/CLAUDE.md`, `PROTOCOL.md`, Pi docs at `/home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md` [pi-docs-extensions]{1}
 > Source basis: `pi-extension/package.json`, `src/index.ts`, `src/actions/handlers.ts`, `src/transport/relay_client.ts`, `src/pairing/storage.ts`, `src/protocol/{types,codec}.ts`, `src/session/*`, and matching tests. [remote-pi-package-config]{1} [remote-pi-index-lifecycle]{1}
 
