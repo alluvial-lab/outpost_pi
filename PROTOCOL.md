@@ -257,7 +257,7 @@ Os replies (`action_ok` / `models_list`) só confirmam dispatch. Efeitos visíve
 | `rate_limited` | Remetente temporariamente limitado |
 | `timeout` | Operação excedeu janela de espera |
 | `internal_error` | Falha permanente no processamento local |
-| `session_mismatch` | Mensagem pertence a outra sessão remota |
+| `session_mismatch` | Mensagem pertence a outra sessão remota. O Pi rejeita com fail-closed e retorna seu `session_id` atual; o app trata a resposta como sinal de convergência/controle (não como conteúdo de transcrita visível) — a rebind canônica e o `session_sync` são acionados pela rotação de metadados de sala, nunca pelo `session_id` do erro |
 | `delivery_pending` | Sinal transitório: a mensagem entrou durante troca de sessão e foi enfileirada para replay; o app mantém o balão pendente e aguarda o echo ou timeout estendido |
 
 ### Por que ações tipadas em vez de picker genérico
