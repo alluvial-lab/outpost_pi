@@ -18,6 +18,21 @@ spike_committed: 2026-07-11
 
 ## Status: implemented; awaiting review.
 
+## Known environment flake (NOT a regression — do not re-investigate)
+
+The test `a second same-name agent joins as <name>#2 instead of being refused`
+in `src/extension.test.ts` (~line 4729) fails on `acquireCwdLock` on this dev
+VM sandbox. Root cause is environmental, not code: `~/.pi/remote/locks/` is
+mounted **read-only** (`EROFS`) in this sandbox, so the UDS `server.listen()`
+bind always fails and stale `.sock` files from prior runs cannot be cleaned.
+Verified: the failure reproduces identically on the baseline commit `c585b45`
+(before this story's changes) and via a direct `acquireCwdLock(...)` probe
+independent of the test. It is unrelated to message delivery or the
+coordinator. Run-to-run variance in *how many* mesh-acquisition tests trip
+the same read-only `~/.pi/remote/` state explains why a review pass may see 1–4
+such failures. Redirect with `REMOTE_PI_HOME` to a writable dir to exercise
+the real lock path; the default sandbox path cannot bind.
+
 The prior "SDK-blocked" / "cancel-and-re-drive" framings were **disproven**
 (2026-07-11, real-SDK probes + live log + four parallel deep investigations).
 The actual defect is a **Remote Pi lifecycle ownership bug**, and it has a
@@ -343,3 +358,11 @@ Verification (2026-07-11):
 - `corepack pnpm exec vitest run src/session/runtime_coordinator.integration.test.ts`: 7/7 passed.
 - `corepack pnpm test`: 820 passed, 1 failed, 3 skipped. The sole failure is the documented pre-existing `acquireCwdLock` `/tmp` contention in `a second same-name agent joins as <name>#2 instead of being refused`; there are no new failures. An isolation retry was attempted twice, but the same external socket contention remained active on this VM, so the expected isolation pass could not be reproduced in this run.
 - `corepack pnpm build`: clean (`dist/` rebuilt locally and remains ignored).
+
+## Implementation notes (review fixes)
+
+- Removed `subagentGate.isActive()` from runtime ownership entirely: coordinator activation now derives authority only from the child-session registry, lease disposition, and live-owner guard. Removed the ownership-fallback method from the session port, legacy adapter, and `index.ts` wiring while retaining the gate's content-suppression uses.
+- Added a regression with a real active `SubagentGate` window and a separately registered child session ID; a legitimate replacement session still claims ownership and drains pending ingress.
+- Split lifecycle evidence honestly: coordinator/child authority remains covered with the real SDK loader, `ExtensionRunner`, runtime staleness guard, and EventBus contract; replacement-gap, duplicate-start, and stale-predecessor teardown now also run through `SdkSessionReplacementHarness`, the real `src/index.js` factory, `AgentSessionRuntime`, and production `_pendingDeliveryQueue`. No `@gotgenes/pi-subagents` dependency or private child-session graph was added.
+- Production-queue assertions prove `delivery_pending` (never premature `internal_error`), queue survival across non-terminal replacement and stale teardown, exact-once successor delivery, and idempotent duplicate `session_start(new)` drain.
+- Review-fix verification (2026-07-11): direct `tsc --noEmit` clean; focused integration suite 11/11 passed; full direct Vitest run 821 passed, 4 failed, 3 skipped, with all four failures in the documented read-only cwd-lock/mesh-acquisition cluster in `src/extension.test.ts` and no new failures; direct `tsc` build clean.

@@ -1670,7 +1670,6 @@ function createIndexDeps(): LegacyIndexDeps {
         _messageApi = null;
         _pi = null;
       },
-      isOwnershipFallbackBlocked: () => subagentGate.isActive(),
       sendPiMessage: (...args) => _sendPiMessage(...args),
       wakeAgent: (...args) => _sdkSessionProjection.wakeAgent(...args),
       publishWorking: _publishWorking,
