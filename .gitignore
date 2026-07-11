@@ -101,3 +101,9 @@ pi-extension/test/.pi/
 # key material, local .pi/, pairing state, or secrets)
 *.key
 *.pem
+
+# Throwaway spike / verification scripts — not durable repo content. Cited by
+# work items by filename; reproduce by re-running. (e.g.
+# pi-extension/spike-session-before-switch.mjs for
+# story-fix-stale-ctx-messageapi-rearm-on-reload.)
+**/spike-*.mjs
