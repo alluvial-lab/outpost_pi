@@ -9,7 +9,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-10
+updated: 2026-07-11
 reverted_misguided_fix: 2026-07-03
 ---
 
@@ -638,3 +638,159 @@ inject a `withSession` and capture a working `messageApi`. The
 2. If the spike confirms, implement the re-drive + re-entrancy guard +
    `bindReplacementContext` re-arm.
 3. Integration test (the mandatory non-mock test).
+
+## Spike result (2026-07-11) — the cancel-and-re-drive premise is FALSE
+
+**The spike disproves the "Fork-local redesign" section above.** The
+`session_before_switch` handler ctx does NOT carry `ctx.newSession` (or any
+command-action method), so the cancel-and-re-drive pattern is impossible as
+written. This was confirmed both statically and empirically against the real
+SDK `emit()` path.
+
+### What was shipped (logging-only spike, NOT the fix)
+
+A logging-only `session_before_switch` + `session_before_fork` handler was
+registered in `pi-extension/src/index.ts` (right before
+`registerLifecycleHooks`). It `console.warn`s the event payload
+(`type`/`reason`/`targetSessionFile`/`entryId`/`position`) and probes the
+handler ctx for the command-action methods the redesign needs
+(`newSession`/`fork`/`switchSession`/`navigateTree`/`reload`/`waitForIdle`/
+`getSystemPromptOptions`/`sendUserMessage`/`sendMessage`). It does **not** cancel
+or re-drive. A `_spikeLogSessionBeforeSwitch` module helper backs it. Both are
+guarded by a clear "SPIKE" comment block and marked for removal once the story
+resolves. `typecheck`/`test`/`build` all pass (the 1 test failure is the
+pre-existing sandbox cwd-lock/UDS env issue — confirmed identical on clean
+`main` via `git stash`).
+
+### Static finding (verified against installed SDK 0.79.10 compiled JS)
+
+`ExtensionRunner.emit()` (`runner.js:522-523`) builds the handler ctx via
+`this.createContext()` — **NOT** `createCommandContext()`:
+
+```js
+async emit(event) {
+    const ctx = this.createContext();   // ← runner.js:523
+    ...
+}
+```
+
+`createContext()` (`runner.js:411-475`) exposes only the **base**
+`ExtensionContext`: `ui`/`mode`/`hasUI`/`cwd`/`sessionManager`/`modelRegistry`/
+`model`/`isIdle`/`isProjectTrusted`/`signal`/`abort`/`hasPendingMessages`/
+`shutdown`/`getContextUsage`/`compact`/`getSystemPrompt`. It has **NO**
+`newSession`/`fork`/`switchSession`/`navigateTree`/`reload`/`waitForIdle`/
+`getSystemPromptOptions` — those command-action methods are added **only** in
+`createCommandContext()` (`runner.js:481-512`), which is used for slash-command
+execution, never for event emission. Since **every** `session_before_*` event
+is delivered through `emit()`, every such handler receives the plain ctx.
+
+This directly contradicts the redesign section's claim: *"the ctx handed to the
+`session_before_switch` handler is built by `createCommandContext()`
+(runner.js:485) — it carries `ctx.newSession({withSession})` (line 496)"*. That
+claim is false; `ctx.newSession` is not on the event ctx.
+
+### Empirical confirmation (real SDK `emit()` path, not a mock)
+
+A throwaway script (`pi-extension/spike-session-before-switch.mjs`, **not
+committed** — gitignored throwaway) exercised the **real** `ExtensionRunner` +
+`createExtensionRuntime()` + real `SessionManager`, fed it a hand-built
+`Extension` with a probe handler, and called `runner.emit({type:
+"session_before_switch", reason: "new"})`. Output:
+
+```
+=== session_before_switch (reason: 'new') ===
+emit() returned: {"cancel":true}              ← cancel works (abort the replacement)
+handler observed event: { type: 'session_before_switch', reason: 'new' }
+handler observed ctx.commandActions: {
+  newSession: false, fork: false, switchSession: false,
+  navigateTree: false, reload: false, waitForIdle: false,
+  getSystemPromptOptions: false,
+  sendUserMessage: false, sendMessage: false,   ← no message API either
+  compact: true, abort: true,                   ← base ctx IS present
+  hasUI: 'boolean', sessionManager: 'object', modelRegistry: 'object'
+}
+>>> ctx carries command-action methods? NONE
+
+=== session_before_switch (reason: 'resume') ===
+handler observed event: { type: 'session_before_switch', reason: 'resume',
+  targetSessionFile: '/tmp/pi-spike-.../sessions/target.jsonl' }   ← target IS carried
+
+=== session_before_fork ===
+handler observed event: { type: 'session_before_fork', entryId: 'entry-1',
+  position: 'before' }   ← fork is a SEPARATE event with its own payload
+```
+
+So the spike confirmed four things the redesign needed verified:
+1. **The event fires** for `/new` (`reason: "new"`) and `/resume`
+   (`reason: "resume"`, with `targetSessionFile`). ✅
+2. **`/fork` is a separate event** — `session_before_fork` with
+   `{type, entryId, position}`, NOT `session_before_switch` (whose `reason`
+   is only `"new" | "resume"`). A fork-interceptor must register
+   `session_before_fork`. ✅
+3. **Cancel works** — returning `{cancel: true}` aborts the replacement
+   (`emit()` returns `{cancel: true}`, and `emitBeforeSwitch` maps
+   `result?.cancel === true` → `{cancelled: true}` → early return, no
+   replacement runs). ✅
+4. **`ctx.newSession` is ABSENT** — the handler ctx carries
+   `compact`/`abort`/`sessionManager`/`modelRegistry` (base `ExtensionContext`)
+   but NONE of `newSession`/`fork`/`switchSession`/`navigateTree`/`reload`/
+   `waitForIdle`/`getSystemPromptOptions`/`sendUserMessage`/`sendMessage`. ❌
+
+### Consequence: the cancel-and-re-drive redesign is impossible as written
+
+Point 4 kills the redesign. The pattern requires the handler to call
+`ctx.newSession({withSession: ...})` to re-drive the replacement with a
+`withSession` callback. But `ctx.newSession` does not exist on the
+`session_before_switch` ctx — `emit()` builds it from `createContext()`, not
+`createCommandContext()`. There is no way for an event handler to re-drive a
+replacement; only a slash-command ctx (from `createCommandContext()`) carries
+`newSession`/`fork`/`switchSession`, and those are not handed to event
+handlers. The re-entrancy-guard discussion in the redesign section is moot.
+
+### What this leaves on the table
+
+The spike does **not** re-open the self-heal — it removes one candidate path.
+The story's prior "SDK-blocked" conclusion (the "CORRECTED root cause" and
+"SDK deep-dive" sections) stands: there is no fork-local surface to obtain a
+working `sendUserMessage` after an uncommanded `/new`/`/resume`/`/fork`. The
+cancel-and-re-drive was the last fork-local candidate; it is now disproven.
+
+Remaining options (unchanged from the "Feasible paths" section):
+1. **Phone-driven `session_new` (`withSession`)** — re-arms but discards the
+   conversation. Mobile quick-action recovery, not transparent. Already works.
+2. **Upstream ask** — expose `sendUserMessage` / the live `AgentSession` / a
+   `createReplacedSessionContext`-equivalent on the plain `session_start` ctx,
+   OR (sharpened) on the `session_before_switch` ctx so the extension can
+   re-drive with `withSession`. The cleanest ask: hand event handlers a
+   `createCommandContext()`-equivalent ctx (or at minimum `newSession`/
+   `fork`/`switchSession` with `withSession` support) so an interceptor can
+   re-drive a replacement and capture a `ReplacedSessionContext`.
+3. **Mitigation (shipped):** `delivery_pending` tolerance + a mobile `/reload`
+   button (parked `idea-mobile-session-control`) for context-preserving
+   recovery.
+
+### Operator action requested
+
+The redesign path is disproven; do NOT implement the cancel-and-re-drive.
+Either:
+- (a) file the upstream ask (option 2, sharpened above) against
+  `@earendil-works/pi-coding-agent` with the `emit()`→`createContext()` vs
+  `createCommandContext()` evidence as the concrete gap; or
+- (b) accept the shipped `delivery_pending` mitigation + mobile `/reload`
+  button as the fork-local ceiling and close the self-heal AC as SDK-blocked.
+
+The logging-only spike handlers in `index.ts` can stay until the operator
+confirms the live `/new`/`/resume`/`/fork` payload matches the empirical
+finding (the static + script evidence is strong, but a live TUI capture is
+the final confirmation per the story's testing-integrity lesson). Then remove
+them and the `spike-session-before-switch.mjs` script.
+
+### Spike artifacts
+- `pi-extension/src/index.ts` — logging-only `session_before_switch` +
+  `session_before_fork` handlers + `_spikeLogSessionBeforeSwitch` helper
+  (guarded, marked for removal).
+- `pi-extension/spike-session-before-switch.mjs` — throwaway real-SDK
+  verification script (gitignored, not committed).
+- Verification: `corepack pnpm typecheck` ✅; `corepack pnpm test` 813/813
+  (1 pre-existing sandbox cwd-lock failure, confirmed identical on clean
+  `main`); `corepack pnpm build` ✅; spike script run ✅.
