@@ -85,7 +85,7 @@ import { probeListPeers } from "./extension/probe_list_peers.js";
 export { probeListPeers } from "./extension/probe_list_peers.js";
 export { restartSupervisorCommand as _restartSupervisorCommand } from "./extension/command_surface/supervisor_restart.js";
 export type { RestartStep } from "./extension/command_surface/supervisor_restart.js";
-import { createRemotePiExtensionRuntime, registerLifecycleHooks } from "./extension/composition_root.js";
+import { createRemotePiExtensionRuntime } from "./extension/composition_root.js";
 import { createLegacyIndexPorts, type LegacyIndexDeps } from "./extension/legacy_ports.js";
 import type { CommandSurfacePort, WakeAgentResult } from "./extension/ports.js";
 import { SdkSessionProjection } from "./session/sdk_session_projection.js";
@@ -1083,42 +1083,6 @@ function _controlCtx(): Pick<ExtensionContext, "ui" | "cwd"> {
   } as unknown as Pick<ExtensionContext, "ui" | "cwd">;
 }
 
-/** SPIKE helper (story-fix-stale-ctx-messageapi-rearm-on-reload).
- *  Logs the session_before_switch / session_before_fork event payload and
- *  probes the handler ctx for the command-action methods the cancel-and-re-drive
- *  redesign needs. Logging-only; no cancel, no re-drive. Remove with the spike
- *  handlers above. */
-function _spikeLogSessionBeforeSwitch(
-  eventName: "session_before_switch" | "session_before_fork",
-  event: unknown,
-  ctx: unknown,
-): void {
-  const ev = event as Record<string, unknown>;
-  const cmdCtx = ctx as Record<string, unknown>;
-  // Probe whether the event-ctx carries the command-action methods. Static
-  // analysis says no (emit() uses createContext(), not createCommandContext()).
-  const commandActions = {
-    newSession: typeof cmdCtx?.newSession === "function",
-    fork: typeof cmdCtx?.fork === "function",
-    switchSession: typeof cmdCtx?.switchSession === "function",
-    navigateTree: typeof cmdCtx?.navigateTree === "function",
-    reload: typeof cmdCtx?.reload === "function",
-    // And whether a non-assertActive-guarded sendUserMessage is reachable.
-    sendUserMessage: typeof cmdCtx?.sendUserMessage === "function",
-  };
-  console.warn(
-    `[remote-pi spike] ${eventName} ` +
-      `event=${JSON.stringify({
-        type: ev?.type,
-        reason: ev?.reason,
-        targetSessionFile: ev?.targetSessionFile,
-        entryId: ev?.entryId,
-        position: ev?.position,
-      })} ` +
-      `ctx.commandActions=${JSON.stringify(commandActions)}`,
-  );
-}
-
 /**
  * `ui.notify` for headless contexts (daemon auto-init + control channel). There
  * is no TUI, and the RPC client (Cockpit) already gets everything it needs via
@@ -1270,7 +1234,41 @@ const _sdkSessionProjection: SdkSessionProjection = new SdkSessionProjection({
 const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   const legacyPorts = createLegacyIndexPorts(createIndexDeps());
   const legacyRuntime = createRemotePiExtensionRuntime(pi, legacyPorts);
-  legacyRuntime.ports.session.bindApi(pi);
+  // Every ordinary SDK event is factory-local. Satellite/child factories still
+  // register a complete extension surface, but their callbacks cannot mutate
+  // the phone-facing process singleton.
+  const ownerPi = new Proxy(pi, {
+    get(target, property, receiver) {
+      if (property === "on") {
+        return (event: string, handler: (...args: unknown[]) => unknown) => {
+          const register = target.on as unknown as (
+            name: string,
+            callback: (...args: unknown[]) => unknown,
+          ) => void;
+          register(event, (...args: unknown[]) => {
+            if (!legacyRuntime.isOwner()) return undefined;
+            return handler(...args);
+          });
+        };
+      }
+      if (property === "registerCommand") {
+        return (name: string, options: { handler: (...args: unknown[]) => unknown }) => {
+          const register = target.registerCommand as unknown as (
+            commandName: string,
+            commandOptions: { handler: (...args: unknown[]) => unknown },
+          ) => void;
+          register(name, {
+            ...options,
+            handler: (...args: unknown[]) => {
+              if (!legacyRuntime.isOwner()) return undefined;
+              return options.handler(...args);
+            },
+          });
+        };
+      }
+      return Reflect.get(target, property, receiver) as unknown;
+    },
+  });
 
   // Plano 19: ensure ~/.pi/remote/{sessions,skills}/ exist. The command
   // surface deploys the agent-network skill when it registers.
@@ -1278,7 +1276,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     ensureGlobalDirs();
   } catch { /* best-effort init */ }
 
-  pi.on("resources_discover", () => ({ skillPaths: [skillsDir()] }));
+  ownerPi.on("resources_discover", () => ({ skillPaths: [skillsDir()] }));
 
   // Tool calls execute without prompting the remote user. The Pi SDK has no
   // native `requiresApproval` per tool, and a hardcoded gate (Bash/Edit/Write)
@@ -1290,7 +1288,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // connected owner. 'extension' source is our own sendUserMessage call
   // from routeClientMessage, which already seeded the turn projection — skip to
   // avoid a double turnId.
-  pi.on("input", (event) => {
+  ownerPi.on("input", (event) => {
     // Subagent-leak gate: the subagent's dispatch prompt reaches the child
     // session via `session.prompt()` (`@gotgenes/pi-subagents`
     // `subagent-session.ts:120`), which the SDK fires as an `input` event with
@@ -1337,7 +1335,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // SDK fires model_select on settings load + every user switch. We cache the
   // friendly name and broadcast a room_meta_update so the relay can fan it
   // out to subscribed apps without needing a new pair.
-  pi.on("model_select", (event) => {
+  ownerPi.on("model_select", (event) => {
     const m = event?.model as { name?: string; id?: string } | undefined;
     const modelName = m?.name ?? m?.id;
     if (!modelName) return;
@@ -1352,14 +1350,14 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // of starting null. SDK fires `thinking_level_select` on settings load
   // AND on every user toggle (matching `model_select`'s behavior), so
   // late-pairing apps see the current level via `room_meta_updated`.
-  pi.on("thinking_level_select", (event) => {
+  ownerPi.on("thinking_level_select", (event) => {
     const level = event?.level as ThinkingLevel | undefined;
     if (!level) return;
     _currentThinking = level;
     _publishRoomMetaPatch({ thinking: level });
   });
 
-  pi.on("message_update", (event) => {
+  ownerPi.on("message_update", (event) => {
     const ae = event.assistantMessageEvent;
     if (ae.type !== "text_delta") return;
     // Subagent-leak gate: the subagent's reply streams token-by-token via
@@ -1378,7 +1376,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // only, NOT approval). tool_execution_start fires before the tool
   // executes; tool_execution_end closes the loop with the result. Together
   // they render a "Tool running… done" timeline in each paired app.
-  pi.on("tool_execution_start", (event) => {
+  ownerPi.on("tool_execution_start", (event) => {
     subagentGate.enter(event.toolName);
     const sessionId = _currentRemoteSessionId();
     const args = _enrichToolArgs(event.toolName, event.args);
@@ -1400,7 +1398,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     }));
   });
 
-  pi.on("tool_execution_end", (event) => {
+  ownerPi.on("tool_execution_end", (event) => {
     subagentGate.exit(event.toolName);
     // Stringify through the transcript projection helper so live == re-sync.
     const text = stringifyToolResult(event.result);
@@ -1436,7 +1434,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // session_sync can replay every turn — including turns initiated from the Pi
   // terminal (source:"interactive") or RPC. Previous impl overwrote on
   // `agent_end` and lost everything but the last turn (see diagnostics 14, 15).
-  pi.on("message_end", (event) => {
+  ownerPi.on("message_end", (event) => {
     const m = event?.message as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
     if (!m) return;
     // Subagent-leak gate: while a `subagent` tool execution is open, the
@@ -1491,7 +1489,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     }
   });
 
-  pi.on("agent_end", () => {
+  ownerPi.on("agent_end", () => {
     // Message content is fed by `message_end`; here we record the terminal
     // assistant_done boundary and finalize the outbound turn signal.
     const before = _turnProjection();
@@ -1517,7 +1515,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // longer notify it of turn lifecycle. Working state is still published as
   // room_meta over the relay (plan/32) below — that's independent of the
   // broker and drives the app's working indicator.
-  pi.on("turn_start", (_event, ctx) => {
+  ownerPi.on("turn_start", (_event, ctx) => {
     const fallbackTurnId = _turnProjection().replyTo ?? _turnProjection().activeTurnId ?? `local_${randomUUID()}`;
     _applyTurnAndPublish({ type: "turn_start", fallbackTurnId });
     // Late model hydration: if the model was still unknown at connect (resolved
@@ -1532,7 +1530,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     }
     // Plan/32 Part B: room_meta.working is published by the turn projection diff.
   });
-  pi.on("turn_end", () => {
+  ownerPi.on("turn_end", () => {
     const before = _turnProjection();
     const after = _applyTurnAndPublish({ type: "turn_end" });
     if (!before.working && !after.working) _publishWorking(false);
@@ -1543,10 +1541,10 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // Plan/32: compaction feedback. compact() doesn't run a turn, so bracket it
   // with working=true/false here. Returning void = no veto → default
   // compaction proceeds.
-  pi.on("session_before_compact", () => {
+  ownerPi.on("session_before_compact", () => {
     _applyTurnAndPublish({ type: "compaction_start", turnId: `compact_${randomUUID()}` });
   });
-  pi.on("session_compact", (event) => {
+  ownerPi.on("session_compact", (event) => {
     const entry = event?.compactionEntry as { summary?: unknown; tokensBefore?: unknown } | undefined;
     const summary = typeof entry?.summary === "string" ? entry.summary : "";
     const tokensBefore = typeof entry?.tokensBefore === "number" ? entry.tokensBefore : 0;
@@ -1572,46 +1570,13 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     _maybeSendLateAttachSessionSync();
   });
 
-  // ── SPIKE: session_before_switch / session_before_fork observability ───────
-  // Story: story-fix-stale-ctx-messageapi-rearm-on-reload.
-  //
-  // Logging-only handler. Do NOT cancel or re-drive yet. Goal: empirically
-  // confirm what's on the event payload (reason, targetSessionFile, entryId,
-  // position) and — critically — whether the ctx handed to the handler carries
-  // the command-action methods (newSession / fork / switchSession /
-  // navigateTree / reload) that the cancel-and-re-drive redesign path needs.
-  //
-  // Static analysis of the installed SDK (@earendil-works/pi-coding-agent
-  // 0.79.10) says it does NOT: ExtensionRunner.emit() (runner.js:522) builds
-  // the ctx via this.createContext() (runner.js:411), which exposes only
-  // ui/cwd/sessionManager/modelRegistry/model/compact/abort/isIdle/... —
-  // NOT newSession/fork/switchSession/navigateTree/reload. Those live only on
-  // createCommandContext() (runner.js:481), used for slash-command execution.
-  // This handler records the runtime truth so the operator can confirm on a
-  // live /new//resume//fork whether the redesign's cancel-and-re-drive is even
-  // possible from this ctx, or whether a different approach is required.
-  //
-  // Also note: /fork fires the SEPARATE session_before_fork event
-  // ({type, entryId, position}), NOT session_before_switch whose `reason` is
-  // only "new" | "resume". Both are registered here.
-  //
-  // Remove this whole block (and _spikeLogSessionBeforeSwitch) once the spike
-  // is confirmed and the real fix (or the honest SDK-blocked note) lands.
-  pi.on("session_before_switch", (event, ctx) => {
-    _spikeLogSessionBeforeSwitch("session_before_switch", event, ctx);
-  });
-  pi.on("session_before_fork", (event, ctx) => {
-    _spikeLogSessionBeforeSwitch("session_before_fork", event, ctx);
-  });
-
-  // Re-capture the freshest base ctx on every session replacement and tear down
-  // outgoing session resources through the composition-root ports. The bound
-  // legacy port methods preserve the stale-context and in-flight connect guards
-  // that previously lived inline here.
-  registerLifecycleHooks(pi, legacyRuntime.ports, legacyRuntime.epoch);
+  // Ownership is claimed at session_start and released at session_shutdown.
+  // Only the exact owner lease may publish/clear process-global SDK state or
+  // tear down relay/mesh resources.
+  legacyRuntime.registerLifecycle();
 
   // ── Commands ──────────────────────────────────────────────────────────────
-  legacyRuntime.ports.commands.register(pi, legacyRuntime);
+  legacyRuntime.ports.commands.register(ownerPi, legacyRuntime);
 
 };
 
@@ -1693,9 +1658,11 @@ function createIndexDeps(): LegacyIndexDeps {
           _captureRemoteSession(ctx);
         }
       },
-      clearStaleContexts: () => {
-        if (_pendingDeliveryQueue.length > 0) {
-          _failPendingDeliveryQueue("session replaced again before queued message replayed");
+      clearStaleContexts: (reason) => {
+        // Replacement gaps preserve bounded ingress; the successor owner's
+        // bindApi drains it exactly once. A terminal quit has no successor.
+        if (reason === "quit" && _pendingDeliveryQueue.length > 0) {
+          _failPendingDeliveryQueue("session closed before queued message replayed");
         }
         _sdkSessionProjection.clearStaleContexts();
         _lastCtx = null;
@@ -1703,6 +1670,7 @@ function createIndexDeps(): LegacyIndexDeps {
         _messageApi = null;
         _pi = null;
       },
+      isOwnershipFallbackBlocked: () => subagentGate.isActive(),
       sendPiMessage: (...args) => _sendPiMessage(...args),
       wakeAgent: (...args) => _sdkSessionProjection.wakeAgent(...args),
       publishWorking: _publishWorking,
