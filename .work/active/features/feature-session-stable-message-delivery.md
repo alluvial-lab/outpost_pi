@@ -1,7 +1,7 @@
 ---
 id: feature-session-stable-message-delivery
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on:
@@ -102,6 +102,34 @@ evidence:
   — adjacent UX concern, separate.
 - Crash-class siblings (`resolveRemoteSessionId`, `wrapActionCtx`) — already
   fixed and deployed; unguarded getter reads, a different problem.
+
+## Implementation summary (2026-07-11)
+
+All children are terminal-or-review:
+
+- `story-fix-stale-ctx-messageapi-rearm-on-reload` — **done**. The
+  `RemotePiRuntimeCoordinator` closes the root cause: child `AgentSession`
+  factories can no longer overwrite the parent's `messageApi`; a legitimate
+  successor re-arms even during a subagent tool window; queued ingress drains
+  exactly once. 12 real-SDK integration tests + 3 production-queue tests.
+  Cross-model reviewed (3 passes: block → fix → block → fix → approve).
+- `story-foreign-session-user-message-tolerance` — **review**. App-side
+  convergence: the cross-pi duplicate case is already filtered by the app's
+  inbound `SessionGate`; the narrow metadata-rebind race is closed by
+  suppressing accepted `session_mismatch` as a control signal + arming the
+  deferred-sync latch on canonical room-metadata rotation. 3 regression tests.
+- `story-stale-ctx-recoverable-delivery-tolerance` — **done** (deployed
+  mitigation; kept).
+- `feature-session-stable-message-delivery-stale-wake-tolerance` — **done**
+  (same-session stale-wake tolerance; kept).
+- `story-evidence-stale-ctx-repro-2026-07-09` — **done** (evidence capture,
+  superseded by the verified root-cause correction).
+
+Verification: pi-extension typecheck/test/build clean (825 pass / 1 documented
+read-only-FS cwd-lock env flake / 3 skip); app `flutter analyze` clean + 80/80
+sync tests pass. No wire-shape or protocol-metadata change from the
+coordinator; the foreign-session fix is app-side only (extension/relay
+contracts unchanged; `PROTOCOL.md` refined to pin `session_mismatch` semantics).
 
 ## References
 
