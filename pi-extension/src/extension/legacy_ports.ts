@@ -43,7 +43,8 @@ export interface LegacySdkSessionProjectionDeps {
   bindApi(pi: ExtensionAPI): void;
   bindCommandContext(ctx: ExtensionCommandContext): void;
   bindSessionContext(ctx: ExtensionContext): void;
-  clearStaleContexts(): void;
+  clearStaleContexts(reason?: "startup" | "reload" | "new" | "resume" | "fork" | "quit"): void;
+  isOwnershipFallbackBlocked?(): boolean;
   sendPiMessage(...args: Parameters<ExtensionAPI["sendMessage"]>): boolean;
   wakeAgent(...args: Parameters<ExtensionAPI["sendUserMessage"]>): Promise<WakeAgentResult>;
   publishWorking(working: boolean): void;
@@ -103,7 +104,8 @@ function createLegacySdkSessionProjection(deps: LegacySdkSessionProjectionDeps):
     bindApi: (pi) => deps.bindApi(pi),
     bindCommandContext: (ctx) => deps.bindCommandContext(ctx),
     bindSessionContext: (ctx) => deps.bindSessionContext(ctx),
-    clearStaleContexts: () => deps.clearStaleContexts(),
+    clearStaleContexts: (reason) => deps.clearStaleContexts(reason),
+    isOwnershipFallbackBlocked: () => deps.isOwnershipFallbackBlocked?.() === true,
     sendPiMessage: (...args) => deps.sendPiMessage(...args),
     wakeAgent: (...args) => deps.wakeAgent(...args),
     publishWorking: (working) => deps.publishWorking(working),
