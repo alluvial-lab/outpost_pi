@@ -174,25 +174,33 @@ the UX and didn't.
 ## Closure (2026-07-11)
 
 Superseded by the verified root-cause correction. This evidence capture's open
-questions — whether the `delivery_pending` tolerance layer fires on a real
-stuck-state repro, and what the actual root cause is — are now answered:
+questions are PARTIALLY answered:
 
 - The "critical open question" (does the tolerance layer cover the stuck
-  state?) is resolved: the tolerance layer (`story-stale-ctx-recoverable-
-  delivery-tolerance`) is a *mitigation* (keeps the phone from seeing a
-  permanent `internal_error`), NOT the root-cause fix. The stuck state's
-  actual cause is the child-`AgentSession`-factory overwriting the parent's
-  `messageApi` — verified 2026-07-11 via real-SDK probes + the live delivery
-  log + four parallel deep investigations (see the feature's "Corrected root
-  cause" section).
+  state?) is resolved at the root-cause level: the stuck state's actual cause
+  is the child-`AgentSession`-factory overwriting the parent's `messageApi` —
+  verified 2026-07-11 via real-SDK probes + the live delivery log + four
+  parallel deep investigations (see the feature's "Corrected root cause"
+  section). That root cause is now fixed by the `RemotePiRuntimeCoordinator`
+  (`story-fix-stale-ctx-messageapi-rearm-on-reload`, done).
 - The "Next steps" (enable debug logging, reproduce with logs on, restart
   Patchbay) were investigative scaffolding toward that root cause, which is
-  now fixed by `story-fix-stale-ctx-messageapi-rearm-on-reload` (the
-  `RemotePiRuntimeCoordinator`).
-- Its finding that the tolerance layer "did NOT fire on either repro" remains
-  a valid observation about the tolerance layer's scope, now correctly
-  framed: tolerance ≠ root-cause fix.
+  now fixed.
 
-No further action on this evidence item. The durable conclusions live in
-`feature-session-stable-message-delivery.md` (corrected root cause) and the
-coordinator story.
+**Distinct question left open:** this capture observed that the
+`delivery_pending` tolerance signal did NOT fire on either repro (neither
+process had `REMOTE_PI_DEBUG_LOG=1`). Finding the root cause does NOT explain
+*why* the tolerance signal didn't fire on those specific repros — that is a
+separate question about the tolerance-path's live behavior, distinct from the
+root-cause investigation. It remains unresolved: the tolerance layer is a
+mitigation (keeps the phone from a permanent `internal_error` during transient
+gaps), and whether it fired correctly on those two repros was never
+re-verified with instrumentation on. The coordinator root-cause fix makes this
+less load-bearing (the stuck state shouldn't recur), but the tolerance-path
+live-behavior question is not closed by the root-cause fix. If the operator
+re-observes a stuck state with `REMOTE_PI_DEBUG_LOG=1` after the coordinator
+is live, re-open this.
+
+No further action on this evidence item as a root-cause investigation. The
+durable conclusions live in `feature-session-stable-message-delivery.md`
+(corrected root cause) and the coordinator story.
