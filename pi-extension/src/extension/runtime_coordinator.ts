@@ -118,6 +118,11 @@ export class RemotePiRuntimeCoordinator {
     return this.state.kind === "ACTIVE" && this.state.owner === lease;
   }
 
+  /** True while a replacement is in progress (successor expected to re-arm). */
+  isReplacing(): boolean {
+    return this.state.kind === "REPLACING";
+  }
+
   /** Read-only diagnostics used by lifecycle integration tests. */
   snapshot(): Readonly<{ kind: CoordinatorState["kind"]; sessionId?: string; childCount: number }> {
     return {
@@ -152,7 +157,8 @@ function isCoordinator(value: unknown): value is RemotePiRuntimeCoordinator {
     && candidate.schemaVersion === COORDINATOR_VERSION
     && typeof candidate.acquireFactory === "function"
     && typeof candidate.activate === "function"
-    && typeof candidate.beginShutdown === "function";
+    && typeof candidate.beginShutdown === "function"
+    && typeof candidate.isReplacing === "function";
 }
 
 export function getRemotePiRuntimeCoordinator(): RemotePiRuntimeCoordinator {
