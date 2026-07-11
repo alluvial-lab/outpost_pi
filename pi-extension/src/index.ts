@@ -86,6 +86,7 @@ export { probeListPeers } from "./extension/probe_list_peers.js";
 export { restartSupervisorCommand as _restartSupervisorCommand } from "./extension/command_surface/supervisor_restart.js";
 export type { RestartStep } from "./extension/command_surface/supervisor_restart.js";
 import { createRemotePiExtensionRuntime } from "./extension/composition_root.js";
+import { getRemotePiRuntimeCoordinator } from "./extension/runtime_coordinator.js";
 import { createLegacyIndexPorts, type LegacyIndexDeps } from "./extension/legacy_ports.js";
 import type { CommandSurfacePort, WakeAgentResult } from "./extension/ports.js";
 import { SdkSessionProjection } from "./session/sdk_session_projection.js";
@@ -2198,9 +2199,15 @@ type PendingDeliveryEntry = PreparedUserDelivery & {
 };
 
 const kPendingDeliveryQueueMax = 2;
-const kPendingDeliveryTtlMs = 5_000;
+let _pendingDeliveryTtlMs = 5_000;
 let _pendingDeliveryQueue: PendingDeliveryEntry[] = [];
 let _nextPendingDeliveryQueueId = 1;
+
+/** @internal test override for the pending-delivery TTL. */
+export function _setPendingDeliveryTtlForTest(ms: number): () => void {
+  _pendingDeliveryTtlMs = ms;
+  return () => { _pendingDeliveryTtlMs = 5_000; };
+}
 
 function _sendDeliveryError(sender: PlainPeerChannel | null, inReplyTo: string, detail: string): void {
   const error: ServerMessage = _withCurrentSession({
@@ -2339,7 +2346,7 @@ function _enqueuePendingDelivery(prepared: PreparedUserDelivery, enqueuedAt = Da
     tag: "delivery_pending",
     id: prepared.msg.id,
     queueLen: _pendingDeliveryQueue.length,
-    ttlMs: kPendingDeliveryTtlMs,
+    ttlMs: _pendingDeliveryTtlMs,
     roomId: _myRoomId ?? undefined,
   });
 }
@@ -2350,10 +2357,21 @@ function _schedulePendingDeliveryTimeout(
   enqueuedAt: number,
 ): ReturnType<typeof setTimeout> {
   const elapsed = Date.now() - enqueuedAt;
-  const remaining = Math.max(0, kPendingDeliveryTtlMs - elapsed);
+  const remaining = Math.max(0, _pendingDeliveryTtlMs - elapsed);
   return setTimeout(() => {
     const index = _pendingDeliveryQueue.findIndex((entry) => entry.queueId === queueId);
     if (index < 0) return;
+    const entry = _pendingDeliveryQueue[index]!;
+    // A replacement is in progress — a successor will re-arm and drain the
+    // queue. Do not expire to internal_error; renew the TTL window so the
+    // message survives the (possibly >5s) replacement gap. The terminal
+    // `quit` path fails the queue via clearStaleContexts; bounded capacity
+    // limits growth. See feature-session-stable-message-delivery gap-window gate.
+    if (getRemotePiRuntimeCoordinator().isReplacing()) {
+      _deliveryDebugLog.log({ tag: "queue_renewed", id: prepared.msg.id, reason: "replacement in progress", roomId: _myRoomId ?? undefined });
+      entry.timeout = _schedulePendingDeliveryTimeout(queueId, prepared, Date.now());
+      return;
+    }
     _pendingDeliveryQueue.splice(index, 1);
     _deliveryDebugLog.log({ tag: "queue_dropped", id: prepared.msg.id, reason: "ttl expired", roomId: _myRoomId ?? undefined });
     _sendDeliveryError(prepared.sender, prepared.msg.id, "agent session did not re-arm before queued delivery expired");
@@ -2384,7 +2402,7 @@ function _drainPendingDeliveryQueue(): void {
         _sendDeliveryError(entry.sender, entry.msg.id, detail);
         return;
       }
-      if (Date.now() - entry.enqueuedAt >= kPendingDeliveryTtlMs) {
+      if (Date.now() - entry.enqueuedAt >= _pendingDeliveryTtlMs) {
         _sendDeliveryError(entry.sender, entry.msg.id, detail);
         return;
       }
