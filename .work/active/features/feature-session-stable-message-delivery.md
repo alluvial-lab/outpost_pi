@@ -85,14 +85,32 @@ evidence:
 
 ## What must ship with the fix
 
-- **A real integration test** against the installed host SDK that drives an
-  actual session replacement (and an actual child `AgentSession`) and asserts
-  delivery reaches the correct (parent) session, never a disposed child.
+- **Real-SDK integration tests** that drive an actual session replacement and
+  assert delivery reaches the correct (parent) session, never a disposed
+  child, and that the child-factory collision cannot steal ownership.
   Mock-based tests cannot model `runtime.assertActive()` staleness or the
   child-factory collision — the non-negotiable gate.
+
+  Coverage split (honest): the child-`AgentSession`-creation path is covered
+  at the coordinator-contract level rather than via a live `bindExtensions()`
+  drive of `@gotgenes/pi-subagents`. That package is not a `pi-extension`
+  dependency (it's installed in the pi agent dir, not the project `node_modules`),
+  and `createSubagentSession` requires assembling a heavy `SubagentSessionIO`
+  graph (model registry, assembler, env detection, real `AgentSession`
+  creation) that would couple tests to third-party internals. Instead the tests
+  drive the real SDK loader/runtime (`createExtensionRuntime`, `ExtensionRunner`,
+  `SessionManager`) and exercise the real `runtime.assertActive()` stale guard
+  (`runner.invalidate()` + `toThrow(/stale/i)`), and emit real
+  `subagents:child:session-created` / `disposed` events on a real `EventBus` to
+  prove the coordinator denies child ownership. This is the core mechanism mocks
+  cannot model; the one bypass (filesystem resource discovery: the factory is
+  supplied inline) does not affect the ctx under test.
 - **Clear gap-window semantics:** between a replacement and the rebind, an
   inbound message is queued and delivered exactly once to the new session —
-  never a permanent `internal_error` that strands the phone.
+  never a permanent `internal_error` that strands the phone. (The pending-
+  delivery TTL renews during an active `REPLACING` coordinator state so a slow
+  successor does not expire a queued message; the 5-second failure threshold
+  still applies to broken bindings outside replacement.)
 - **No regression** to the pair-code QR / `sendPiMessage` path (the additive-
   bind contract in `sdk_session_projection.ts:148-167` must hold).
 
@@ -105,7 +123,7 @@ evidence:
 
 ## Implementation summary (2026-07-11)
 
-All children are terminal-or-review:
+All children are done:
 
 - `story-fix-stale-ctx-messageapi-rearm-on-reload` — **done**. The
   `RemotePiRuntimeCoordinator` closes the root cause: child `AgentSession`
@@ -113,31 +131,35 @@ All children are terminal-or-review:
   successor re-arms even during a subagent tool window; queued ingress drains
   exactly once. 12 real-SDK integration tests + 3 production-queue tests.
   Cross-model reviewed (3 passes: block → fix → block → fix → approve).
-- `story-foreign-session-user-message-tolerance` — **review**. App-side
+- `story-foreign-session-user-message-tolerance` — **done**. App-side
   convergence: the cross-pi duplicate case is already filtered by the app's
   inbound `SessionGate`; the narrow metadata-rebind race is closed by
   suppressing accepted `session_mismatch` as a control signal + arming the
   deferred-sync latch on canonical room-metadata rotation. 3 regression tests.
+  Cross-model reviewed (approved; nits addressed).
 - `story-stale-ctx-recoverable-delivery-tolerance` — **done** (deployed
   mitigation; kept).
 - `feature-session-stable-message-delivery-stale-wake-tolerance` — **done**
   (same-session stale-wake tolerance; kept).
-- `story-evidence-stale-ctx-repro-2026-07-09` — **done** (evidence capture,
-  superseded by the verified root-cause correction).
+- `story-evidence-stale-ctx-repro-2026-07-09` — **done** (evidence capture;
+  root-cause question superseded by the verified coordinator fix — see its
+  closure note; the distinct tolerance-signal question remains open and
+  tracked below).
 
-Verification: pi-extension typecheck/test/build clean (825 pass / 1 documented
+Feature-level review (fresh-context, cross-model) found one substantive gap
+and it is fixed: the pending-delivery TTL now renews while the process-scoped
+coordinator is `REPLACING`, so a slow successor cannot expire a queued message
+  to `internal_error`. The original 5-second failure threshold still applies to
+  broken bindings outside replacement; terminal `quit` still fails the bounded
+  queue explicitly. Fix verification: coordinator integration 14/14; full
+  pi-extension suite 827 passed / 1 documented read-only-FS cwd-lock
+  environment flake / 3 skipped; typecheck and build clean.
+
+Verification: pi-extension typecheck/test/build clean (827 pass / 1 documented
 read-only-FS cwd-lock env flake / 3 skip); app `flutter analyze` clean + 80/80
 sync tests pass. No wire-shape or protocol-metadata change from the
 coordinator; the foreign-session fix is app-side only (extension/relay
 contracts unchanged; `PROTOCOL.md` refined to pin `session_mismatch` semantics).
-
-Feature-review Blocker fix: pending-delivery TTL expiry now renews only while
-the process-scoped coordinator is `REPLACING`, so slow successor startup cannot
-strand the phone with `internal_error`. The original 5-second failure threshold
-still applies to broken bindings outside replacement; terminal quit still
-fails the bounded queue explicitly. Fix verification: coordinator integration
-14/14; full pi-extension suite 827 passed / 1 documented cwd-lock environment
-flake / 3 skipped; typecheck and build clean.
 
 ## References
 
