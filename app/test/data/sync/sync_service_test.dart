@@ -3139,6 +3139,9 @@ void main() {
             predicate<SessionSync>((m) => m.sessionId != 'session_foreign_duplicate'),
           ),
         );
+        // The foreign mismatch must not disturb the pending send's timer —
+        // it stays armed for its normal echo/timeout owner to resolve.
+        expect(s.sync.debugPendingSendTimerCount, 1);
         s.conn.dispose();
         s.sync.dispose();
       },
@@ -3181,7 +3184,10 @@ void main() {
       'canonical room-metadata session rotation triggers session_sync for the new session',
       () async {
         final s = await setup();
-        final oldSession = s.sessionId;
+
+        // Snapshot the sent-message count before rotation so we can assert
+        // that every sync sent AFTER rotation targets the new session.
+        final sentBeforeRotation = s.ch.sent.length;
 
         // Rotate to a new canonical session id via room metadata (PairOk).
         const rotatedSession = 'session-rotated-for-resync';
@@ -3201,25 +3207,18 @@ void main() {
 
         // The newly canonical session must receive a session_sync.
         expect(s.sync.activeSessionRef?.sessionId, rotatedSession);
-        final rotatedSyncs = s.ch.sent
-            .whereType<SessionSync>()
-            .where((m) => m.sessionId == rotatedSession);
-        expect(rotatedSyncs, isNotEmpty);
-        // No sync targets the stale old session id after rotation.
-        final oldSyncsAfterRotation = s.ch.sent
-            .whereType<SessionSync>()
-            .where((m) => m.sessionId == oldSession);
-        // The initial setup sync (old session) may have happened before
-        // rotation; the guarantee is that no NEW sync targets oldSession
-        // after the rotation settles. Assert the rotated sync exists and
-        // is the last one.
+        final syncsAfterRotation = s.ch.sent
+            .skip(sentBeforeRotation)
+            .whereType<SessionSync>();
+        expect(syncsAfterRotation, isNotEmpty);
+        // Every sync sent after the rotation targets the new session — never
+        // the stale old id.
         expect(
-          s.ch.sent.whereType<SessionSync>().last.sessionId,
-          rotatedSession,
+          syncsAfterRotation,
+          everyElement(
+            predicate<SessionSync>((m) => m.sessionId == rotatedSession),
+          ),
         );
-        // (oldSyncsAfterRotation may be non-empty from setup's initial sync;
-        // the load-bearing assertion is the rotated sync above.)
-        expect(oldSyncsAfterRotation.length, lessThanOrEqualTo(1));
         s.conn.dispose();
         s.sync.dispose();
       },

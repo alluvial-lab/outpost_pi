@@ -974,10 +974,7 @@ class SyncService extends Service {
           }
           break;
         }
-        // A `session_mismatch` reply means this SyncService is bound to a
-        // different session than the rejecting Pi (a duplicate/idle Pi that
-        // received a fanned-out `user_message`, or a stale-client re-sync). The
-        // foreign case is already dropped by `SessionGate` before this arm;
+        // The foreign case is already dropped by `SessionGate` before this arm;
         // the narrow remaining window is when room metadata has already
         // rebound `_activeRef` to the rejecting Pi's session, so the gate
         // accepts the error. In both cases the mismatch is a convergence /
