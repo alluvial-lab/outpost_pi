@@ -1083,6 +1083,42 @@ function _controlCtx(): Pick<ExtensionContext, "ui" | "cwd"> {
   } as unknown as Pick<ExtensionContext, "ui" | "cwd">;
 }
 
+/** SPIKE helper (story-fix-stale-ctx-messageapi-rearm-on-reload).
+ *  Logs the session_before_switch / session_before_fork event payload and
+ *  probes the handler ctx for the command-action methods the cancel-and-re-drive
+ *  redesign needs. Logging-only; no cancel, no re-drive. Remove with the spike
+ *  handlers above. */
+function _spikeLogSessionBeforeSwitch(
+  eventName: "session_before_switch" | "session_before_fork",
+  event: unknown,
+  ctx: unknown,
+): void {
+  const ev = event as Record<string, unknown>;
+  const cmdCtx = ctx as Record<string, unknown>;
+  // Probe whether the event-ctx carries the command-action methods. Static
+  // analysis says no (emit() uses createContext(), not createCommandContext()).
+  const commandActions = {
+    newSession: typeof cmdCtx?.newSession === "function",
+    fork: typeof cmdCtx?.fork === "function",
+    switchSession: typeof cmdCtx?.switchSession === "function",
+    navigateTree: typeof cmdCtx?.navigateTree === "function",
+    reload: typeof cmdCtx?.reload === "function",
+    // And whether a non-assertActive-guarded sendUserMessage is reachable.
+    sendUserMessage: typeof cmdCtx?.sendUserMessage === "function",
+  };
+  console.warn(
+    `[remote-pi spike] ${eventName} ` +
+      `event=${JSON.stringify({
+        type: ev?.type,
+        reason: ev?.reason,
+        targetSessionFile: ev?.targetSessionFile,
+        entryId: ev?.entryId,
+        position: ev?.position,
+      })} ` +
+      `ctx.commandActions=${JSON.stringify(commandActions)}`,
+  );
+}
+
 /**
  * `ui.notify` for headless contexts (daemon auto-init + control channel). There
  * is no TUI, and the RPC client (Cockpit) already gets everything it needs via
@@ -1534,6 +1570,38 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     _applyTurnAndPublish({ type: "turn_end" });
     _publishWorking(false);
     _maybeSendLateAttachSessionSync();
+  });
+
+  // ── SPIKE: session_before_switch / session_before_fork observability ───────
+  // Story: story-fix-stale-ctx-messageapi-rearm-on-reload.
+  //
+  // Logging-only handler. Do NOT cancel or re-drive yet. Goal: empirically
+  // confirm what's on the event payload (reason, targetSessionFile, entryId,
+  // position) and — critically — whether the ctx handed to the handler carries
+  // the command-action methods (newSession / fork / switchSession /
+  // navigateTree / reload) that the cancel-and-re-drive redesign path needs.
+  //
+  // Static analysis of the installed SDK (@earendil-works/pi-coding-agent
+  // 0.79.10) says it does NOT: ExtensionRunner.emit() (runner.js:522) builds
+  // the ctx via this.createContext() (runner.js:411), which exposes only
+  // ui/cwd/sessionManager/modelRegistry/model/compact/abort/isIdle/... —
+  // NOT newSession/fork/switchSession/navigateTree/reload. Those live only on
+  // createCommandContext() (runner.js:481), used for slash-command execution.
+  // This handler records the runtime truth so the operator can confirm on a
+  // live /new//resume//fork whether the redesign's cancel-and-re-drive is even
+  // possible from this ctx, or whether a different approach is required.
+  //
+  // Also note: /fork fires the SEPARATE session_before_fork event
+  // ({type, entryId, position}), NOT session_before_switch whose `reason` is
+  // only "new" | "resume". Both are registered here.
+  //
+  // Remove this whole block (and _spikeLogSessionBeforeSwitch) once the spike
+  // is confirmed and the real fix (or the honest SDK-blocked note) lands.
+  pi.on("session_before_switch", (event, ctx) => {
+    _spikeLogSessionBeforeSwitch("session_before_switch", event, ctx);
+  });
+  pi.on("session_before_fork", (event, ctx) => {
+    _spikeLogSessionBeforeSwitch("session_before_fork", event, ctx);
   });
 
   // Re-capture the freshest base ctx on every session replacement and tear down
