@@ -9,6 +9,7 @@ depends_on:
   - epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-extension-emitters
   - epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-cockpit-consumers
   - epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-app-install-and-plugin
+  - epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-storage-keyring-daemon-env
 release_binding: null
 gate_origin: null
 created: 2026-07-11
