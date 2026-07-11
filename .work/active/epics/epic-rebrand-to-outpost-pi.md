@@ -1,8 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi
+kind: epic
+stage: drafting
+tags: [rebrand, fork-posture, pi-extension, app, relay, cockpit, site, docs]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
 created: 2026-07-02
-updated: 2026-07-03
-tags: [rebrand, fork-posture, epic]
+updated: 2026-07-11
 ---
 
 # Rebrand the fork: remote_pi → Outpost-Pi
@@ -142,12 +148,92 @@ needs its own name now.
   rebrands but credits its origin is legitimate; one that hides it isn't,
   regardless of license.
 
-## Not yet scoped (for `/agile-workflow:scope`)
+## Strategic decisions (locked 2026-07-11)
 
-This epic deliberately does not: decompose into features/stories, assign
-`depends_on` chains, or sequence the identifier classes against release
-boundaries. That's scope's job when the operator is ready to turn this into
-tracked work.
+These directional choices were resolved at scope time and set the frame for
+`/agile-workflow:epic-design` decomposition and the foundation-doc
+roll-forward.
+
+- **Versioning — Outpost-Pi 0.1.0 across all subprojects.** The rebrand is
+  the inception of Outpost-Pi as a named product and the natural reset point
+  to align all subprojects at a pre-1.0 0.x line. The product is *not* a
+  stable v1: v0.6.0 shipped with the `/remote-pi pair` flow broken, a
+  fundamental session-replacement lifecycle bug was only just fixed
+  (`feature-session-stable-message-delivery`), and the phone side is still
+  observability-blind with unreproduced reconnect-cluster bugs. Cutting 1.0
+  would overstate stability; 0.x honestly signals "expect breaking changes."
+  App (1.2.0+7) and cockpit (1.5.1+9) bump *down* to 0.1.0; semver does not
+  forbid this and the rebrand is the natural reset moment. Extension
+  (0.6.0) and relay (0.2.2) reset to 0.1.0; site and rp-s3 stay 0.1.0. The
+  547-commit history stays in git + NOTICE as provenance, not a
+  version-number claim.
+- **Paired-wire story — `app-0.1.0 ↔ relay-0.1.0 ↔ extension-0.1.0`.**
+  All three ship together as one breaking release; mixed versions break (same
+  discipline as the existing `app-v1.2.0 ↔ relay-0.2.0` and
+  `relay-0.2.0 ↔ extension-0.6.0` pairings).
+- **Auth domain string — rename in place to `outpost-pi-relay-auth-v1\n`,
+  keep v1.** The literal is renamed but the version suffix stays `v1`. Bumping
+  to `v2` would be semver noise; the wire boundary moved with the version
+  reset to 0.1.0, which is the honest signal that the compatibility surface
+  broke. The renamed constant appears in app (`ws_transport.dart`),
+  extension (`relay_client.ts`), relay (`challenge.rs`), and docs.
+- **Cockpit↔pi control RPC discriminator — also renamed, same release.** The
+  NUL-prefixed control string `\x00remote-pi-ctrl:<method>:<args...>` is a
+  third wire-stable identifier (schema-defined in
+  `protocol/schema/cockpit-control.schema.json`, emitted by the extension
+  `CTRL_PREFIX` constant, consumed by cockpit). It is renamed to
+  `\x00outpost-pi-ctrl:...` on the same hard-cutover release. This is the
+  cockpit↔extension control path, distinct from the app↔relay↔extension
+  auth pairing, but governed by the same no-dual-accept rule.
+- **Backwards compatibility — hard cutover.** The new relay accepts *only*
+  the new auth string; old app/extension versions are rejected immediately.
+  The fork is single-operator with one phone, so coordination cost is low and
+  a dual-accept transition window adds complexity without benefit. No
+  dual-auth window, no deprecated-but-accepted path.
+- **Application / bundle identifiers — `dev.kevoun.outpostpi`.**
+  - Android app `applicationId`: `work.jacobmoura.remotepi` →
+    `dev.kevoun.outpostpi`
+  - iOS `PRODUCT_BUNDLE_IDENTIFIER`: `work.jacobmoura.remotepi.app` →
+    `dev.kevoun.outpostpi.app`
+  - `remote_pi_identity` plugin Android namespace:
+    `dev.remotepi.identity` → `dev.kevoun.outpostpi.identity`
+  - `kevoun.com` is the org identifier (reverse-DNS convention; the domain
+    is never resolved at runtime — purely a uniqueness identifier). Using
+    the operator's own domain is cleaner than retaining the upstream
+    `work.jacobmoura.*` being moved away from.
+  - Phone-side consequence is a one-time uninstall + reinstall (existing
+    install cannot upgrade in place: `INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
+    Single operator, single phone, one-time cost.
+- **External surfaces (class 4) — deferred to a follow-up epic.** GitHub
+  repo rename (`remote_pi` → `outpost-pi`), npm publish target
+  (`outpost-pi`), homepage, branding assets, and site/marketing copy are
+  *not* part of this epic. This epic ships the code rename + provenance +
+  wire/applicationId migration. External identity moves separately. The
+  extension is registered local-path in `~/.pi/agent/settings.json`, so npm
+  publishing is decoupled from the code rename landing.
+- **EN-first — separable, parallel-able workstream.** Replacing Portuguese
+  with English (bulk in `cockpit/`, ~186 files with accented Latin) is a
+  distinct workstream from the rename. It can proceed in parallel or as a
+  follow-up. `scripts/` operator-glue shell comments are explicitly left
+  untouched (operator-facing automation glue, not shipped product).
+
+## Decomposition (for `/agile-workflow:epic-design`)
+
+Not yet decomposed into features/stories with `depends_on` chains. The natural
+seam is the four identifier classes, sequenced against the 0.1.0 release
+boundary:
+
+1. **Mechanical rename** (class 1, code-internal strings) — the bulk
+   (~1,822 occurrences / 264 files), safe, non-breaking.
+2. **Wire + install-stable migration** (class 2) — the breaking slice: auth
+   string rename, applicationId/bundle id, version reset to 0.1.0. Gated on
+   the paired release.
+3. **Provenance** (class 3) — LICENSE + NOTICE + README credit; root LICENSE
+   extended MIT to the whole repo.
+4. **EN-first** (parallel) — Portuguese → English in shipped product,
+   cockpit-heavy.
+
+External surfaces (class 4) move to a follow-up epic.
 
 ## References
 
