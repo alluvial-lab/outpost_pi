@@ -1639,24 +1639,15 @@ function createIndexDeps(): LegacyIndexDeps {
       },
       bindCommandContext: _rememberCommandCtx,
       bindSessionContext: (ctx) => {
-        // A child subagent's `session_start` (fires during a `subagent`
-        // tool-execution window, while `subagentGate.isActive()`) must NOT
-        // propagate session-rotation side effects to the phone: skip the
-        // `_lastEventCtx` overwrite (the child ctx is stale after the window
-        // and would corrupt parent actions), skip `captureRemoteSession` (no
-        // `room_meta_update({session_id: childId})` — that wipes the mobile
-        // chatlog; confirmed by live capture 2026-07-07), and tell the
-        // projection to skip `issuer.capture` + `backfillTranscriptFromSession-
-        // Manager`. See story-extension-subagent-child-session-start-wipes-
-        // mobile-chat.
-        const isSubagentChild = subagentGate.isActive();
-        if (!isSubagentChild) {
-          _lastEventCtx = ctx;
-        }
-        _sdkSessionProjection.bindSessionContext(ctx, { subagentChild: isSubagentChild });
-        if (!isSubagentChild) {
-          _captureRemoteSession(ctx);
-        }
+        // The runtime coordinator is the single ownership authority. A real
+        // child/satellite is denied during activation and returns before this
+        // port is called, so every context reaching here belongs to the
+        // approved owner and must be captured fully. `subagentGate` remains
+        // content-suppression evidence only; using it here would suppress a
+        // legitimate successor that starts while a subagent tool is open.
+        _lastEventCtx = ctx;
+        _sdkSessionProjection.bindSessionContext(ctx);
+        _captureRemoteSession(ctx);
       },
       clearStaleContexts: (reason) => {
         // Replacement gaps preserve bounded ingress; the successor owner's
