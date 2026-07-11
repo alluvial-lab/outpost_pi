@@ -18,6 +18,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { vi, type Mock } from "vitest";
 import type { ClientMessage, ServerMessage } from "../../src/protocol/types.js";
+import { resetRemotePiRuntimeCoordinatorForTest } from "../../src/extension/runtime_coordinator.js";
 
 type RemotePiIndexModule = {
   default: ExtensionFactory;
@@ -134,6 +135,7 @@ export class SdkSessionReplacementHarness {
 
   static async create(options: SdkSessionReplacementHarnessOptions): Promise<SdkSessionReplacementHarness> {
     const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd);
+    resetRemotePiRuntimeCoordinatorForTest();
     vi.resetModules();
     const harness = new SdkSessionReplacementHarness(
       options.cwd,
