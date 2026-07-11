@@ -1,4 +1,4 @@
-# Remote Pi — Specification
+# Outpost-Pi — Specification
 
 Technical boundaries, hard constraints, external interfaces, and the trust
 model. Current truth, not history. Cross-check any version-sensitive fact
@@ -8,7 +8,7 @@ against the package files in the relevant subproject before relying on it.
 
 | Component | Language / runtime | Entry manifest | Builds to |
 |---|---|---|---|
-| `pi-extension/` | Node.js + TypeScript (ESM) | `pi-extension/package.json` | `dist/` — Pi extension + `remote-pi` + `pi-supervisord` CLIs |
+| `pi-extension/` | Node.js + TypeScript (ESM) | `pi-extension/package.json` | `dist/` — Pi extension + `outpost-pi` + `pi-supervisord` CLIs |
 | `app/` | Flutter / Dart (mobile) | `app/pubspec.yaml` | Android APK (primary); iOS buildable |
 | `relay/` | Rust (edition 2024), axum 0.7, tokio, rusqlite | `relay/Cargo.toml` | single Rust binary |
 | `cockpit/` | Flutter / Dart (desktop) | `cockpit/pubspec.yaml` | macOS / Windows / Linux desktop |
