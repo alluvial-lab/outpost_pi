@@ -1,16 +1,19 @@
-# Remote Pi — Vision
+# Outpost-Pi — Vision
 
-Remote Pi is the mobile remote control and cross-PC agent mesh for the
+Outpost-Pi is the mobile remote control and cross-PC agent mesh for the
 [Pi coding agent](https://github.com/earendil-works/pi). Pair a phone via QR
 over a relay, drive a Pi session from your pocket, watch tool calls stream in
 real time, and let multiple Pi instances on your own PCs talk to each other
 through a structured request/reply mesh.
 
+Outpost-Pi is the continuation of the `remote_pi` project (see Provenance
+below); the rebrand to Outpost-Pi is the fork's own name as a named product.
+
 ## Why this exists
 
 Pi is the most relevant open-source competitor to Claude Code. It has a public
-RPC and SDK — and, until Remote Pi, **no dedicated mobile app**. The only
-existing mobile path was `TelePI`, a Telegram bot. Remote Pi fills that gap
+RPC and SDK — and, until Outpost-Pi, **no dedicated mobile app**. The only
+existing mobile path was `TelePI`, a Telegram bot. Outpost-Pi fills that gap
 with a first-class, open-source, quality-first mobile control surface and a
 local agent mesh that no competing harness offers.
 
@@ -58,13 +61,20 @@ A developer who runs Pi as their coding agent and wants to:
   typed vocabulary mapped to the Pi SDK's public API — not a mirror of the
   TUI's built-in command list.
 
-## Fork posture
+## Fork posture & provenance
 
-This checkout (`KevounC/remote_pi`) is a **private fork** of
-`jacobaraujo7/remote_pi`. Upstream is read-only comparison/reference. Work
-here is private-carry hardening plus fork-owned reconception (the bold-refactor
-arc): well-isolated, easy to rebase, and not pushed upstream. The bold
-refactor is fork-local — no upstream-compatibility constraints apply.
+This checkout (`KevounC/remote_pi`) is a **hard fork** of
+`jacobaraujo7/remote_pi`, rebranded **Outpost-Pi**. It has diverged past
+upstream rebase (547 commits ahead, 0 upstream since the fork point as of
+2026-07-02); the fork is the product, not a set of patches awaiting upstream.
+Upstream remote (`jacobaraujo7/remote_pi`) is historical provenance and
+read-only comparison, not a design constraint.
+
+**Provenance is preserved.** Outpost-Pi is built on Jacob Moura's
+`remote_pi`, MIT-licensed. The rebrand credits its origin in the LICENSE,
+NOTICE, and README — it does not scrub the upstream author. See the
+`epic-rebrand-to-outpost-pi` epic and `docs/DECISIONS.md` for the locked
+naming, versioning, and identifier decisions.
 
 The bold refactor is a fork-owned reconception of the absorbed codebase. It
 is not a product divergence in scope — the product is still "mobile remote
