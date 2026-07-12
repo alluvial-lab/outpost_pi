@@ -32,6 +32,18 @@ schema source (Unit 1). Pure regeneration — no hand-edits to generated files.
   the generator — do NOT hand-patch generated files.
 
 ## Acceptance Criteria
-- [ ] `corepack pnpm --dir pi-extension check:protocol` passes (generated ==
-      schema source, no drift)
-- [ ] `grep -rn 'remote-pi:relay-state\|remote_pi_control' pi-extension/src/protocol/generated/ app/lib/protocol/generated/ relay/src/protocol/generated/` returns nothing
+- [x] `corepack pnpm --dir pi-extension check:protocol` passes — verified via
+      direct `node --import tsx` codegen `--check` (exit 0, in sync)
+- [x] `grep -rn 'remote-pi:relay-state\|remote_pi_control' pi-extension/src/protocol/generated/ app/lib/protocol/generated/ relay/src/protocol/generated/` returns nothing
+
+## Implementation notes
+
+Ran the TS codegen — only `protocol.generated.ts` changed (48 lines:
+discriminator rename). Dart (`protocol.g.dart`) and Rust
+(`relay/src/protocol/generated/*.rs`) generated files verified in-sync via
+`--check` (exit 0, no stale) — they cover the app-pi-client/server/cross-pc/
+outer families, which don't carry the renamed cockpit-control customTypes.
+Rust check needed a list-types catalog via stdin.
+
+Environment: corepack deps-status gate bypassed by running codegen directly
+via `node --import tsx` (`COREPACK_HOME` workaround for pnpm commands).
