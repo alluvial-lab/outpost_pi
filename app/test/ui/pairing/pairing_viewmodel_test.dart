@@ -17,7 +17,7 @@ import 'package:app/ui/pairing/viewmodels/pairing_viewmodel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:remote_pi_identity/remote_pi_identity.dart';
+import 'package:outpost_pi_identity/outpost_pi_identity.dart';
 
 // ---------------------------------------------------------------------------
 // Test infrastructure
@@ -139,7 +139,7 @@ Future<OwnerIdentityBridge> _bootedBridge(PairingStorage storage) async {
 }
 
 const _qrUri =
-    'remotepi://pair?t=AAAAAAAAAAAAAAAAAAAAAA&'
+    'outpostpi://pair?t=AAAAAAAAAAAAAAAAAAAAAA&'
     'epk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&'
     'r=ws%3A%2F%2Flocalhost&n=test+session';
 

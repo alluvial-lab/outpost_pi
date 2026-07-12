@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:app/pairing/storage.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart' show ChangeNotifier;
-import 'package:remote_pi_identity/remote_pi_identity.dart';
+import 'package:outpost_pi_identity/outpost_pi_identity.dart';
 
 /// Outcome of a `bridge.boot()` call. The router uses this to decide
 /// between "show sync-required gate" and "boot normally".
@@ -30,7 +30,7 @@ final class IdentityReady extends OwnerIdentityBootResult {
   const IdentityReady(this.identity, {required this.generated});
 }
 
-/// Bridge between the `remote_pi_identity` plugin and the rest of the
+/// Bridge between the `outpost_pi_identity` plugin and the rest of the
 /// app. Responsibilities:
 ///
 /// - Boot-time decision: sync available? identity present?

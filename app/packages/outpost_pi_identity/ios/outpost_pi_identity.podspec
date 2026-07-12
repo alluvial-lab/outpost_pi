@@ -1,5 +1,5 @@
 Pod::Spec.new do |s|
-  s.name             = 'remote_pi_identity'
+  s.name             = 'outpost_pi_identity'
   s.version          = '0.2.0'
   s.summary          = 'Owner-key Ed25519 identity synced via iCloud Keychain.'
   s.description      = <<-DESC
