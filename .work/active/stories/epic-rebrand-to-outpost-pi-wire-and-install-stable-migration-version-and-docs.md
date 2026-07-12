@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-version-and-docs
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, release]
 parent: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration
 depends_on:
@@ -13,7 +13,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # Version reset to 0.1.0 + durable-docs roll-forward
@@ -49,9 +49,23 @@ that lands before the release.
     records the rebrand + version reset)
 
 ## Acceptance Criteria
-- [ ] All four subproject manifests read `0.1.0` (site/rp-s3 hold at 0.1.0)
-- [ ] `AGENTS.md` paired-wire table reflects `app-0.1.0 ↔ relay-0.1.0 ↔
+- [x] All four subproject manifests read `0.1.0` (site/rp-s3 hold at 0.1.0)
+- [x] `AGENTS.md` paired-wire table reflects `app-0.1.0 ↔ relay-0.1.0 ↔
       extension-0.1.0` and `outpost-pi-relay-auth-v1`; no stale
-      `remote-pi-relay-auth-v1` or old version refs in that section
-- [ ] `PROTOCOL.md` carries `outpost-pi-relay-auth-v1` as current truth
-- [ ] `CHANGELOG.md` has a `0.1.0` entry recording the Outpost-Pi rebrand
+      `remote-pi-relay-auth-v1` or old version refs in that section. Also
+      rolled forward the relay-container commands (image tag, OUTPOSTPI_* env
+      vars) and the pi-extension debug-log env var (OUTPOST_PI_DEBUG_LOG).
+- [x] `PROTOCOL.md` carries `outpost-pi-relay-auth-v1` as current truth
+- [x] `CHANGELOG.md` has a `0.1.0` entry recording the Outpost-Pi rebrand
+
+## Implementation notes
+
+Rolled forward in-place per rolling-foundation (current truth, no migration
+prose) except CHANGELOG (which is historical — entries accumulate). Version
+reset: pi-extension 0.6.0→0.1.0, app 1.2.0+7→0.1.0+0, relay 0.2.2→0.1.0,
+cockpit 1.5.1+9→0.1.0+0, site/rp-s3 hold at 0.1.0. AGENTS.md paired-wire
+section rewritten for the 0.1.0 pairing + the new cockpit-control
+      discriminator pairing + the storage/keyring/launchd cutover (incl. the
+      manual launchctl bootout cleanup note for the old daemon label).
+Relay-container commands updated to outpost-pi-relay:0.1.0 + OUTPOSTPI_*
+env vars. PROTOCOL.md auth string updated. CHANGELOG 0.1.0 entry added.
