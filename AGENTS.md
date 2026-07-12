@@ -122,24 +122,26 @@ and the pi-extension is registered as a **local-path** extension (not npm).
 
 ### Component locations and how they load
 
-- **relay** — Docker container `remote-pi-relay` on `:3300` (host) → `:3000`
+- **relay** — Docker container `outpost-pi-relay` on `:3300` (host) → `:3000`
   (container). Image built from `relay/` source (`docker build -t
-  remote-pi-relay:<version> relay/`); the persistent `mesh_versions` SQLite DB
+  outpost-pi-relay:<version> relay/`); the persistent `mesh_versions` SQLite DB
   lives in the named volume `remote-pi-data:/data`. Do NOT confuse with the
   upstream image `jacobmoura7/remote-pi-relay:latest` (stale). The live
-  container runs `remote-pi-relay:0.2.2` with the retroactive file log
-  enabled: `REMOTEPI_RELAY_LOG_DIR=/data/logs` (daily-rotated `relay.log`
+  container runs `outpost-pi-relay:0.1.0` with the retroactive file log
+  enabled: `OUTPOSTPI_RELAY_LOG_DIR=/data/logs` (daily-rotated `relay.log`
   in the volume) + `RUST_LOG=info,relay=debug` (lifts the cross-PC
   `pi_envelope` forward-path `debug!` carrying `env_id_tail` — the
   cross-side correlation key that joins the phone's `msg-send id` and the
   extension's `app user_message id`).
 - **pi-extension** — registered in `~/.pi/agent/settings.json` as the local path
   `/home/agent/projects/remote_pi/pi-extension`, loading `dist/index.js` (the
-  `package.json` `main`). npm publishes `0.5.3`; ignore — the local path is
-  authoritative. `dist/` is gitignored and **not rebuilt automatically**; a
-  source edit requires `corepack pnpm build` (or `./node_modules/.bin/tsc` to
-  bypass the corepack deps-status RO-cache check) before it's live.
-  **Delivery-path debug log:** set `REMOTE_PI_DEBUG_LOG=1` in the pi
+  `package.json` `main`). The local path is authoritative. `dist/` is gitignored
+  and **not rebuilt automatically**; a source edit requires
+  `corepack pnpm build` (or `./node_modules/.bin/tsc` to bypass the corepack
+  deps-status RO-cache check) before it's live. **Note:** `corepack pnpm` in
+  this sandbox needs `COREPACK_HOME=<writable dir>` + `--store-dir <writable
+  store>` because `/home/agent/.local-state` is read-only.
+  **Delivery-path debug log:** set `OUTPOST_PI_DEBUG_LOG=1` in the pi
   process's environment to enable a bounded ring + file at
   `~/.pi/remote/debug/delivery.log` capturing the `messageApi`/`commandCtx`
   lifecycle, `wakeAgent` outcomes, the replay queue, and `session_start`/
@@ -151,17 +153,30 @@ and the pi-extension is registered as a **local-path** extension (not npm).
 
 ### Paired wire changes (deploy together)
 
-relay-0.2.0 introduced two wire changes that are **version-paired** — mixed
-versions break:
-- **Auth domain-separation** (`app-v1.2.0` ↔ `relay-0.2.0`): app signs
-  `remote-pi-relay-auth-v1\n` ++ nonce; relay verifies the same. Old app +
-  new relay (or vice versa) fails the WS handshake.
-- **`to_room` required** (`relay-0.2.0` ↔ `extension-0.6.0` sender): the
+The 0.1.0 Outpost-Pi rebrand release introduced wire-stable identifier
+renames that are **version-paired** — mixed versions break:
+- **Auth domain-separation** (`app-0.1.0` ↔ `relay-0.1.0`): app signs
+  `outpost-pi-relay-auth-v1\n` ++ nonce; relay verifies the same. Hard
+  cutover — old `remote-pi-relay-auth-v1` signatures are rejected. Old app
+  + new relay (or vice versa) fails the WS handshake.
+- **`to_room` required** (`relay-0.1.0` ↔ `extension-0.1.0` sender): the
   relay rejects `pi_envelope` frames with empty/missing `to_room` as
   `bad_envelope`. The sender-side room-targeting (targeting the sibling's
   actual room, not the temporary `"main"` default) is deferred to design —
   see `story-to-room-sender-side-room-targeting`. It only affects **cross-PC
   agent mesh** (Pi↔Pi `agent_send`); the app↔pi path is unaffected.
+- **Cockpit control-RPC discriminator** (`extension-0.1.0` ↔ `cockpit-0.1.0`):
+  the NUL-prefixed control string is now `\x00outpost-pi-ctrl:` and the
+  structured type is `outpost_pi_control`. Hard cutover — old cockpit + new
+  extension (or vice versa) break the control channel.
+- **Storage/keyring/launchd identifiers** (hard cutover, destructive): Hive
+  box names (`dev.outpostpi.*`), keyring service (`dev.outpostpi.pi`), owner
+  identity (`dev.outpostpi.owner.identity`), launchd label
+  (`dev.outpostpi.supervisord`), QR URI scheme (`outpostpi://`), and env
+  vars (`OUTPOST_PI_*`/`OUTPOSTPI_*`) all renamed. The phone loses persisted
+  pairing data and re-pairs; the old launchd daemon is orphaned under the
+  old label and must be manually cleaned (`launchctl bootout
+  gui/$(id -u)/dev.remotepi.supervisord`).
 
 Safe deploy order: **relay first**, then reload/restart the extension, then
 sideload the app.
@@ -190,24 +205,24 @@ trace: **full restart to load a `dist/` change**.
 
 ```bash
 # build from current fork source
-docker build -t remote-pi-relay:0.2.2 relay/
+docker build -t outpost-pi-relay:0.1.0 relay/
 # run (reproduces the live container's config: port 3300→3000, named volume,
 # retroactive file log + cross-side debug correlation)
-docker run -d --name remote-pi-relay -p 3300:3000 \
+docker run -d --name outpost-pi-relay -p 3300:3000 \
   -v remote-pi-data:/data \
-  -e REMOTEPI_RELAY_PORT=3000 \
-  -e REMOTEPI_MESH_DB_PATH=/data/mesh.db \
-  -e REMOTEPI_RELAY_LOG_DIR=/data/logs \
+  -e OUTPOSTPI_RELAY_PORT=3000 \
+  -e OUTPOSTPI_MESH_DB_PATH=/data/mesh.db \
+  -e OUTPOSTPI_RELAY_LOG_DIR=/data/logs \
   -e RUST_LOG="info,relay=debug" \
-  --restart unless-stopped remote-pi-relay:0.2.2
+  --restart unless-stopped outpost-pi-relay:0.1.0
 # rebuild from updated source + swap in
-docker stop remote-pi-relay && docker rm remote-pi-relay  # then build + run
+docker stop outpost-pi-relay && docker rm outpost-pi-relay  # then build + run
 # read the persistent relay log (survives scroll/restart; daily-rotated)
-docker exec remote-pi-relay tail -f /data/logs/relay.log.$(date -u +%F)
+docker exec outpost-pi-relay tail -f /data/logs/relay.log.$(date -u +%F)
 ```
 
-Without `REMOTEPI_RELAY_LOG_DIR`, logging is stdout-only (lost on
-scroll/restart — the pre-0.2.2 gap). `RUST_LOG` defaults to `info`; the
+Without `OUTPOSTPI_RELAY_LOG_DIR`, logging is stdout-only (lost on
+scroll/restart — the pre-0.1.0 gap). `RUST_LOG` defaults to `info`; the
 `relay=debug` lift is what surfaces the `env_id_tail` correlation line on
 each cross-PC forward/drop (the app↔pi data-plane path stays
 payload-opaque at INFO with `warn!` on drops). Rotated `relay.log.YYYY-MM-DD`

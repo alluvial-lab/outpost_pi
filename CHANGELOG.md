@@ -1,11 +1,54 @@
 # Changelog
 
-All notable changes to Remote Pi are documented in this file.
+All notable changes to Outpost-Pi are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
+
+---
+
+## [v0.1.0] — 2026-07-12
+
+**Outpost-Pi** — the rebrand release. This fork of `jacobaraujo7/remote_pi`
+gets its own name and identity. All subprojects reset to `0.1.0` (the
+product is pre-1.0; see `docs/VISION.md` Fork posture).
+
+### Rebrand (mechanical rename)
+- Renamed all code-internal `remote_pi`/`remote-pi`/`Remote Pi` strings to
+  `outpost_pi`/`outpost-pi`/`Outpost-Pi` across pi-extension, app, relay,
+  cockpit, and site (~1,800 occurrences).
+- npm package `remote-pi` → `outpost-pi`; CLI `remote-pi` → `outpost-pi`.
+- Provenance preserved: root LICENSE extends MIT to the whole repo (keeps
+  `Copyright (c) 2026 Jacob Moura` + adds the operator line); root NOTICE
+  credits `remote_pi` / Jacob Moura as the foundation.
+
+### Wire-stable identifier migration (hard cutover, breaking)
+Version-paired: `app-0.1.0` ↔ `relay-0.1.0` ↔ `extension-0.1.0`.
+- **Auth domain string**: `remote-pi-relay-auth-v1` →
+  `outpost-pi-relay-auth-v1`. Old signatures rejected (no dual-accept).
+- **Cockpit control-RPC discriminator**: `\x00remote-pi-ctrl:` →
+  `\x00outpost-pi-ctrl:`; structured type `remote_pi_control` →
+  `outpost_pi_control`; all five `customType` events `remote-pi:*` →
+  `outpost-pi:*`.
+- **Protocol schema**: vendor key `x-remote-pi` → `x-outpost-pi`; `$id`
+  URIs `remote-pi.dev` → `kevoun.com`.
+- **Install identifiers**: Android `applicationId` → `dev.kevoun.outpostpi`,
+  iOS bundle id → `dev.kevoun.outpostpi.app` (forces phone reinstall).
+- **Storage/keyring/launchd** (destructive): Hive boxes → `dev.outpostpi.*`,
+  keyring → `dev.outpostpi.pi` (mac→pi migration removed), owner identity →
+  `dev.outpostpi.owner.identity`, launchd label → `dev.outpostpi.supervisord`
+  (old daemon orphaned — manual `launchctl bootout` cleanup), QR URI scheme
+  → `outpostpi://`, env vars → `OUTPOST_PI_*`/`OUTPOSTPI_*`.
+- **Identity plugin**: `remote_pi_identity` → `outpost_pi_identity` (full
+  rename: directory, pubspec, Dart lib, Kotlin class, package path).
+
+### Breaking changes
+- Mixed pre-0.1.0 + 0.1.0 versions break pairing (WS handshake, control
+  channel). Deploy relay → extension (full restart, not `/reload`) → app.
+- Phone requires uninstall + reinstall (applicationId changed).
+- Phone loses persisted pairing data (Hive box names changed).
 
 ---
 
