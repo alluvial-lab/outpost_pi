@@ -224,6 +224,14 @@ docker stop outpost-pi-relay && docker rm outpost-pi-relay  # then build + run
 docker exec outpost-pi-relay tail -f /data/logs/relay.log.$(date -u +%F)
 ```
 
+**First 0.1.0 relay cutover:** on a host still running the pre-rebrand
+container `remote-pi-relay` on port 3300, `docker run -p 3300:3000` fails
+(port occupied). Stop and remove the old container first:
+```bash
+docker stop remote-pi-relay && docker rm remote-pi-relay
+# then build + run outpost-pi-relay:0.1.0 as above
+```
+
 Without `OUTPOSTPI_RELAY_LOG_DIR`, logging is stdout-only (lost on
 scroll/restart — the pre-0.1.0 gap). `RUST_LOG` defaults to `info`; the
 `relay=debug` lift is what surfaces the `env_id_tail` correlation line on
@@ -256,8 +264,12 @@ copy the APK to the workstation and install with `adb` (USB debugging on):
 ```bash
 scp app/build/app/outputs/flutter-apk/app-release.apk <workstation>:~/app.apk
 # on the workstation:
-adb install -r ~/app.apk   # -r keeps data; INSTALL_FAILED_UPDATE_INCOMPATIBLE →
-                            # adb uninstall work.jacobmoura.remotepi && adb install
+# First 0.1.0 sideload: the applicationId changed (work.jacobmoura.remotepi →
+# dev.kevoun.outpostpi), so `adb install -r` installs ALONGSIDE the old app
+# (no INSTALL_FAILED_UPDATE_INCOMPATIBLE). Uninstall the old package first:
+adb uninstall work.jacobmoura.remotepi
+adb install ~/app.apk
+# Subsequent 0.1.x updates: `adb install -r ~/app.apk` (-r keeps data)
 ```
 The app's `pubspec.yaml` version is NOT bumped by `release-deploy`; bump it
 manually before building when shipping a new version.
