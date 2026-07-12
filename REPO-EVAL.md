@@ -1,8 +1,8 @@
-# Repository Evaluation: Remote Pi
+# Repository Evaluation: Outpost-Pi
 
 ## Summary
 
-Remote Pi is a polyglot monorepo for a mobile/desktop remote-control surface around the Pi coding agent: Flutter mobile app, TypeScript Pi extension, Rust relay, Flutter desktop cockpit, Next site, and a small Rust download server. The codebase has strong local test assets, explicit agent/reference docs, and thoughtful lifecycle/state-machine work, but it is held back by manual cross-language protocol mirroring, stale security documentation, no routine CI test gate, and several large convergence files.
+Outpost-Pi is a polyglot monorepo for a mobile/desktop remote-control surface around the Pi coding agent: Flutter mobile app, TypeScript Pi extension, Rust relay, Flutter desktop cockpit, Next site, and a small Rust download server. The codebase has strong local test assets, explicit agent/reference docs, and thoughtful lifecycle/state-machine work, but it is held back by manual cross-language protocol mirroring, stale security documentation, no routine CI test gate, and several large convergence files.
 
 Verified roots: `pi-extension/`, `app/`, `relay/`, `cockpit/`, `site/`, and `rp-s3/`. Major tracked source is roughly 100k lines excluding generated/build/dependency dirs, with regex-counted test declarations around 678 TS test/describe calls, 592 app Dart test/group/widget calls, 158 cockpit Dart test/group/widget calls, and 85 Rust relay test attributes.
 

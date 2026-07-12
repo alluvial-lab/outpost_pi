@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-storage-keyring-daemon-env
 kind: story
-stage: implementing
+stage: done
 tags: [rebrand, app, pi-extension, cockpit, lifecycle]
 parent: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration
 depends_on:
