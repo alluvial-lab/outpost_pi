@@ -9,7 +9,7 @@ import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 
 /// Sessão **efêmera e dedicada** de `pi --mode rpc --no-session` para comandos
 /// pontuais do outpost-pi (pareamento, revoke). Roda numa pasta temporária única
-/// (evita colisão de cwd-lock) com `REMOTE_PI_DIRECT_CONFIG` de pareamento — o
+/// (evita colisão de cwd-lock) com `OUTPOST_PI_DIRECT_CONFIG` de pareamento — o
 /// que faz `localConfigExists` virar true e o `/outpost-pi <cmd>` auto-ligar o
 /// relay. Carrega a extensão outpost-pi (SEM `--no-extensions`).
 ///
@@ -41,7 +41,7 @@ class EphemeralPiRpc {
     final env = <String, String>{
       // bin do `node` na PATH (shim `pi` usa `#!/usr/bin/env node`).
       ...await envWithNodeOnPath(),
-      'REMOTE_PI_DIRECT_CONFIG': jsonEncode(<String, dynamic>{
+      'OUTPOST_PI_DIRECT_CONFIG': jsonEncode(<String, dynamic>{
         'agent_name': _randomName(),
         'workspace': 'pareamento',
       }),

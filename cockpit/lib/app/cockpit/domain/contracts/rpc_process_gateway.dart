@@ -34,7 +34,7 @@ abstract class RpcProcessGateway implements Service {
   ///
   /// [environment] é **fundido** com o ambiente do processo pai — variáveis
   /// ausentes aqui são herdadas normalmente. Use para injetar
-  /// `REMOTE_PI_DIRECT_CONFIG` sem perder PATH/HOME/etc.
+  /// `OUTPOST_PI_DIRECT_CONFIG` sem perder PATH/HOME/etc.
   ///
   /// [sessionId] (opcional) é o ID da sessão a restaurar (basename do `.jsonl`
   /// sem extensão). Quando presente, passa `--session <id>` ao pi para que ele
