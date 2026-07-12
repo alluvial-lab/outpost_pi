@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-mechanical-rename
 kind: feature
-stage: implementing
+stage: done
 tags: [rebrand, pi-extension, app, relay, cockpit, site, docs]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # Mechanical rename: code-internal `remote_pi`/`remote-pi` strings → `outpost-pi`
@@ -201,3 +201,23 @@ release.
   converge at 0.1.0; until then the file's `$id` says `kevoun.com` while
   the filename may still say `remote-pi` (cosmetic drift, not a break —
   `$ref` is filesystem-relative, not `$id`-relative).
+
+## Review (2026-07-12)
+
+**Verdict**: Approve with comments
+
+**Blockers**: none
+**Important**: branding SVG assets (`branding/banner.svg`) still contain
+"Remote Pi" text — filed as `rebrand-branding-assets-redraw` (backlog). These
+are image assets needing a redraw, not a sed replace. Defer to the
+external-surfaces follow-up epic.
+**Nits**: cockpit/CHANGELOG.md historical entries retain "Remote Pi" —
+correct (changelog is historical).
+
+**Notes**: Deep-lane review (feature scope). Verified: auth string
+consistently renamed across all three languages; zero `remote-pi-relay-auth`
+in source (only intentional test fixture + AGENTS.md cutover description);
+plugin imports all correctly updated to `package:outpost_pi_identity/...`.
+Review caught and fixed current-truth stragglers: root CLAUDE.md, REPO-EVAL.md,
+.gitignore comments, example Info.plist display name, podspec description,
+branding/README.md. Historical changelog entries correctly left as-is.

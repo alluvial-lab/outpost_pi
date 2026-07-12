@@ -1,4 +1,4 @@
-# Branding — Remote Pi
+# Branding — Outpost-Pi
 
 Identidade visual oficial. Fonte de verdade: arquivos SVG (escaláveis).
 PNGs derivados gerados via ferramenta externa quando necessário.

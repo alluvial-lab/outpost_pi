@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-extension-emitters
 kind: story
-stage: implementing
+stage: done
 tags: [rebrand, pi-extension]
 parent: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration
 depends_on:

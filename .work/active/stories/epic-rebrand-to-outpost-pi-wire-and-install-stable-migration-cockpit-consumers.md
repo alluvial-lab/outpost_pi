@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-cockpit-consumers
 kind: story
-stage: implementing
+stage: done
 tags: [rebrand, cockpit]
 parent: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration
 depends_on:
