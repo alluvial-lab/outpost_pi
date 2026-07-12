@@ -163,6 +163,34 @@ describe("getOrCreateEd25519Keypair — keyring path", () => {
     expect(backend.deletes.length).toBe(0);
   });
 
+  test("legacy keyring identity (dev.remotepi.mac) is ignored after the destructive Outpost-Pi cutover", async () => {
+    // The rebrand removed the mac→pi migration (hard cutover, no read-old
+    // path). This pins that a legacy entry is neither read nor adopted: the
+    // lookup only touches dev.outpostpi.pi and mints a fresh identity there.
+    const backend = new InMemoryBackend();
+    const legacyIdentity = JSON.stringify({
+      pk: Buffer.from(new Uint8Array(32).fill(9)).toString("base64"),
+      sk: Buffer.from(new Uint8Array(64).fill(9)).toString("base64"),
+    });
+    backend.store.set(`dev.remotepi.mac|${ACCOUNT}`, legacyIdentity);
+    _setKeyStoreBackendForTest(backend);
+
+    const kp = await getOrCreateEd25519Keypair();
+
+    // Only the new service was read — the legacy mac service was never probed.
+    expect(backend.reads.map((r) => r.service)).toEqual([NEW_SERVICE]);
+    // A fresh identity was generated + written to the new service.
+    expect(backend.writes).toContainEqual(
+      expect.objectContaining({ service: NEW_SERVICE, account: ACCOUNT }),
+    );
+    // The generated key is NOT the legacy key.
+    expect(Buffer.from(kp.publicKey).toString("base64")).not.toBe(
+      Buffer.from(new Uint8Array(32).fill(9)).toString("base64"),
+    );
+    // The legacy entry was never deleted (no migration cleanup path).
+    expect(backend.deletes).toEqual([]);
+  });
+
   test("idempotent across two calls — second call returns same key without write", async () => {
     const backend = new InMemoryBackend();
     _setKeyStoreBackendForTest(backend);
