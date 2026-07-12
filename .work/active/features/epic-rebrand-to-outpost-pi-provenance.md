@@ -5,7 +5,7 @@ stage: done
 tags: [rebrand, docs, legal]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-11
 updated: 2026-07-12
