@@ -16,7 +16,7 @@ const RELAY_LOG_RETENTION_DAYS: u64 = 14;
 async fn main() -> anyhow::Result<()> {
     let _log_guard = init_tracing();
 
-    let port: u16 = std::env::var("REMOTEPI_RELAY_PORT")
+    let port: u16 = std::env::var("OUTPOSTPI_RELAY_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(3000);
@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     // Default puts the SQLite file (and any transient -journal) under data/,
     // so bare-metal `cargo run` doesn't litter the project root.
     let db_path =
-        std::env::var("REMOTEPI_MESH_DB_PATH").unwrap_or_else(|_| "data/mesh.db".to_string());
+        std::env::var("OUTPOSTPI_MESH_DB_PATH").unwrap_or_else(|_| "data/mesh.db".to_string());
 
     let mesh = Arc::new(
         relay::MeshStore::open(&db_path)
@@ -98,7 +98,7 @@ async fn main() -> anyhow::Result<()> {
 /// stdout only — matching the prior `tracing_subscriber::fmt::init()` behavior,
 /// so bare-metal `cargo run` is unchanged.
 ///
-/// When `REMOTEPI_RELAY_LOG_DIR` is set, additionally fans out to a
+/// When `OUTPOSTPI_RELAY_LOG_DIR` is set, additionally fans out to a
 /// non-blocking daily-rotated file appender in that directory, so relay logs
 /// survive stdout scroll/restart and become retroactively diagnosable (closes
 /// the relay-side half of `idea-cross-side-logging-for-debug`). The returned
@@ -116,7 +116,7 @@ fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let stdout_layer = fmt::layer().with_writer(std::io::stdout);
 
-    if let Ok(log_dir) = std::env::var("REMOTEPI_RELAY_LOG_DIR") {
+    if let Ok(log_dir) = std::env::var("OUTPOSTPI_RELAY_LOG_DIR") {
         let file_appender = tracing_appender::rolling::daily(&log_dir, "relay.log");
         let (file_writer, file_guard) = tracing_appender::non_blocking(file_appender);
         let file_layer = fmt::layer().with_writer(file_writer);
