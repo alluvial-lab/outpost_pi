@@ -48,7 +48,7 @@ Atualizada em 2026-06-09.
 │  Trust             Ed25519 challenge-response                       │
 │                    Owner-sig em mesh_versions                       │
 │                    Auth handshake: app assina                         │
-│                    `remote-pi-relay-auth-v1\n` ++ nonce (domain-      │
+│                    `outpost-pi-relay-auth-v1\n` ++ nonce (domain-      │
 │                    separated prefix) — evita signing-oracle do owner- │
 │                    key cross-protocol. Relay verifica o mesmo.       │
 │                    Hello frame carrega `device_id` (per-install):     │
