@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 // QR URI format:
-//   remotepi://pair?t=<base64url>&epk=<base64url>&n=<name>[&r=<url>][&rm=<roomId>]
+//   outpostpi://pair?t=<base64url>&epk=<base64url>&n=<name>[&r=<url>][&rm=<roomId>]
 //
 // Fields:
 //   t   — token efêmero (16 bytes, base64url), single-use, valid 60s
@@ -42,7 +42,7 @@ class QrPairPayload {
   static QrPairPayload? tryParse(String raw) {
     try {
       final uri = Uri.parse(raw);
-      if (uri.scheme != 'remotepi' || uri.host != 'pair') return null;
+      if (uri.scheme != 'outpostpi' || uri.host != 'pair') return null;
       final t = uri.queryParameters['t'];
       final epk = uri.queryParameters['epk'];
       final r = uri.queryParameters['r']; // legacy/optional

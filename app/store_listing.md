@@ -3,8 +3,8 @@
 Reference copy for both store listings. Keep in sync when metadata changes.
 Google Play section is at the bottom; most copy is shared.
 
-- **iOS Bundle ID:** `work.jacobmoura.remotepi.app` (the plain `work.jacobmoura.remotepi` is reserved by another Apple team)
-- **Android applicationId:** `work.jacobmoura.remotepi` (separate Play namespace — no conflict)
+- **iOS Bundle ID:** `dev.kevoun.outpostpi.app`
+- **Android applicationId:** `dev.kevoun.outpostpi`
 - **Apple Team:** `U843T2P7A2`
 - **Min iOS:** 18.0 · **Min Android:** API 34 (Android 14)
 - **Platforms:** iPhone **+ iPad** (universal — iPad 13" screenshots required)
@@ -182,9 +182,9 @@ above. (A direct .mp4 can also be uploaded to the attachment field.)
 
 Reuses the same brand voice and the **no-E2E copy rule** above.
 
-- **applicationId:** `work.jacobmoura.remotepi` (Play namespace is independent of
+- **applicationId:** `dev.kevoun.outpostpi` (Play namespace is independent of
   Apple — the iOS rename does NOT apply here; this ID is fine on Play)
-- **Min SDK:** API 34 (Android 14) — intentional, `remote_pi_identity` needs
+- **Min SDK:** API 34 (Android 14) — intentional, `outpost_pi_identity` needs
   Block Store. **Target SDK:** Flutter default (verify it meets Play's current
   minimum target — API 35 for new apps).
 - **Signing:** already configured. Upload key in `android/signing/remotepi-release.jks`

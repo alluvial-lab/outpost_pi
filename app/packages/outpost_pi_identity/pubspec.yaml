@@ -1,4 +1,4 @@
-name: remote_pi_identity
+name: outpost_pi_identity
 description: >-
   Owner-key Ed25519 identity synced across devices of the same human via
   platform-native key sync (iCloud Keychain on iOS, Block Store on Android).
@@ -22,7 +22,7 @@ flutter:
   plugin:
     platforms:
       android:
-        package: dev.remotepi.identity
-        pluginClass: RemotePiIdentityPlugin
+        package: dev.kevoun.outpostpi.identity
+        pluginClass: OutpostPiIdentityPlugin
       ios:
-        pluginClass: RemotePiIdentityPlugin
+        pluginClass: OutpostPiIdentityPlugin

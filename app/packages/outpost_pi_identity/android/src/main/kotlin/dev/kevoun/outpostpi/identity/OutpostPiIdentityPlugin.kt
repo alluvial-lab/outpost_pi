@@ -1,4 +1,4 @@
-package dev.remotepi.identity
+package dev.kevoun.outpostpi.identity
 
 import android.content.Context
 import android.os.Handler
@@ -13,8 +13,8 @@ import java.util.concurrent.Executors
  * Bridges the Dart `OwnerIdentityStore` API to Block Store.
  *
  * Channels:
- *  - Method: `remote_pi_identity` (load / save / delete / isSyncAvailable)
- *  - Event:  `remote_pi_identity/events` (blob updates)
+ *  - Method: `outpost_pi_identity` (load / save / delete / isSyncAvailable)
+ *  - Event:  `outpost_pi_identity/events` (blob updates)
  *
  * All Block Store calls run on a single-threaded background executor —
  * `Tasks.await()` is synchronous and we don't want to pin the Flutter
@@ -22,7 +22,7 @@ import java.util.concurrent.Executors
  * before invoking the Dart-side callbacks (MethodChannel.Result and
  * EventChannel.EventSink both require main-thread access).
  */
-class RemotePiIdentityPlugin :
+class OutpostPiIdentityPlugin :
     FlutterPlugin,
     MethodChannel.MethodCallHandler,
     EventChannel.StreamHandler {
@@ -41,10 +41,10 @@ class RemotePiIdentityPlugin :
         val context: Context = binding.applicationContext
         store = BlockStoreStore(context)
 
-        methodChannel = MethodChannel(binding.binaryMessenger, "remote_pi_identity")
+        methodChannel = MethodChannel(binding.binaryMessenger, "outpost_pi_identity")
         methodChannel.setMethodCallHandler(this)
 
-        eventChannel = EventChannel(binding.binaryMessenger, "remote_pi_identity/events")
+        eventChannel = EventChannel(binding.binaryMessenger, "outpost_pi_identity/events")
         eventChannel.setStreamHandler(this)
     }
 

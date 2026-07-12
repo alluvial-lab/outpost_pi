@@ -31,7 +31,7 @@ import '../../pairing/pair_request_flow.dart';
 /// cross-protocol signing oracle. MUST stay byte-for-byte identical to the
 /// relay's `RELAY_AUTH_DOMAIN_PREFIX` (relay/src/auth/challenge.rs).
 final List<int> relayAuthDomainPrefix = utf8.encode(
-  'remote-pi-relay-auth-v1\n',
+  'outpost-pi-relay-auth-v1\n',
 );
 
 class WsTransportError implements Exception {

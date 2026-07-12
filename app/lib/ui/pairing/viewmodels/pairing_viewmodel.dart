@@ -52,7 +52,7 @@ class PairingViewModel extends ViewModel<PairingState> {
     if (state is PairingConnecting) return;
 
     final qr = QrPairPayload.tryParse(rawUri);
-    if (qr == null) return; // not a remotepi:// QR — ignore silently
+    if (qr == null) return; // not an outpostpi:// QR — ignore silently
 
     emit(PairingConnecting(sessionName: qr.sessionName));
 
