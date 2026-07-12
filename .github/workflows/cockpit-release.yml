@@ -129,8 +129,8 @@ jobs:
           STAGE=$(mktemp -d)
           cp -R "$APP" "$STAGE/"
           ln -s /Applications "$STAGE/Applications"
-          DMG="dist/RemotePiCockpit-${VERSION}-macos-universal.dmg"
-          hdiutil create -volname "Remote Pi Cockpit" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+          DMG="dist/OutpostPiCockpit-${VERSION}-macos-universal.dmg"
+          hdiutil create -volname "Outpost-Pi Cockpit" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
           rm -rf "$STAGE"
           codesign --force --timestamp --sign "$SIGN_ID" "$DMG"
           notarize "$DMG"
@@ -175,7 +175,7 @@ jobs:
           EXE=$(find dist -name "*.exe" | head -1)
           test -n "$EXE"
           mkdir -p out
-          mv "$EXE" "out/RemotePiCockpit-Setup-${VERSION}-windows-x64.exe"
+          mv "$EXE" "out/OutpostPiCockpit-Setup-${VERSION}-windows-x64.exe"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -239,21 +239,21 @@ jobs:
           DEB=$(find dist -name "*.deb" | head -1); test -n "$DEB"
           RPM=$(find dist -name "*.rpm" | head -1); test -n "$RPM"
           mkdir -p out
-          mv "$DEB" "out/remote-pi-cockpit_${VERSION}_${{ matrix.deb_arch }}.deb"
-          mv "$RPM" "out/remote-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm"
+          mv "$DEB" "out/outpost-pi-cockpit_${VERSION}_${{ matrix.deb_arch }}.deb"
+          mv "$RPM" "out/outpost-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm"
 
       - name: Smoke test .deb (instala no próprio runner)
         run: |
-          sudo apt-get install -y "./out/remote-pi-cockpit_${VERSION}_${{ matrix.deb_arch }}.deb"
-          dpkg -L remote-pi-cockpit | grep -m1 "\.desktop$"
+          sudo apt-get install -y "./out/outpost-pi-cockpit_${VERSION}_${{ matrix.deb_arch }}.deb"
+          dpkg -L outpost-pi-cockpit | grep -m1 "\.desktop$"
 
       - name: Smoke test .rpm (container fedora:40)
         run: |
           # rpm -qpl consulta o ARQUIVO (o nome interno do pacote não é
-          # remote-pi-cockpit — o maker do Fastforge usa o nome do pubspec).
+          # outpost-pi-cockpit — o maker do Fastforge usa o nome do pubspec).
           docker run --rm -v "$PWD/out:/out:ro" fedora:40 bash -c \
-            "dnf install -y /out/remote-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm \
-             && rpm -qpl /out/remote-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm | grep -m1 '\.desktop$'"
+            "dnf install -y /out/outpost-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm \
+             && rpm -qpl /out/outpost-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm | grep -m1 '\.desktop$'"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -307,7 +307,7 @@ jobs:
           fi
           # Notas: primeira seção do CHANGELOG; fallback genérico.
           NOTES=$(awk '/^## /{n++} n==1' ../cockpit/CHANGELOG.md | tail -n +2 | sed '/^$/d' | head -20)
-          [ -n "$NOTES" ] || NOTES="Remote Pi Cockpit ${VERSION}"
+          [ -n "$NOTES" ] || NOTES="Outpost-Pi Cockpit ${VERSION}"
           jq -n --arg version "$VERSION" --arg date "$(date -u +%F)" \
             --arg notes "$NOTES" --slurpfile artifacts artifacts.ndjson \
             '{version:$version, date:$date, notes:$notes, artifacts:$artifacts}' \
@@ -337,7 +337,7 @@ jobs:
           cd release
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
           ZIP="Cockpit-${VERSION}-macos.zip"
-          EXE="RemotePiCockpit-Setup-${VERSION}-windows-x64.exe"
+          EXE="OutpostPiCockpit-Setup-${VERSION}-windows-x64.exe"
           test -f "$ZIP"; test -f "$EXE"
           MAC_SIG=$(sign "$ZIP"); MAC_LEN=$(stat -c%s "$ZIP")
           WIN_SIG=$(sign "$EXE"); WIN_LEN=$(stat -c%s "$EXE")
@@ -348,7 +348,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
             <channel>
-              <title>Remote Pi Cockpit</title>
+              <title>Outpost-Pi Cockpit</title>
               <item>
                 <title>${VERSION}</title>
                 <pubDate>${PUBDATE}</pubDate>
@@ -368,7 +368,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
             <channel>
-              <title>Remote Pi Cockpit</title>
+              <title>Outpost-Pi Cockpit</title>
               <item>
                 <title>${VERSION}</title>
                 <pubDate>${PUBDATE}</pubDate>
@@ -400,7 +400,7 @@ jobs:
             gh release upload "$RELEASE_TAG" release/* --clobber
           else
             gh release create "$RELEASE_TAG" release/* \
-              --title "Remote Pi Cockpit ${VERSION}" \
+              --title "Outpost-Pi Cockpit ${VERSION}" \
               --notes-file "$NOTES_FILE" \
               --latest=false
           fi
