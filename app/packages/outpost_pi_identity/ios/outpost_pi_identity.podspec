@@ -3,7 +3,7 @@ Pod::Spec.new do |s|
   s.version          = '0.2.0'
   s.summary          = 'Owner-key Ed25519 identity synced via iCloud Keychain.'
   s.description      = <<-DESC
-Owner-key Ed25519 identity for Remote Pi, persisted as a generic-password
+Owner-key Ed25519 identity for Outpost-Pi, persisted as a generic-password
 Keychain item with kSecAttrSynchronizable=true so it propagates between
 devices of the same Apple ID via iCloud Keychain.
                        DESC

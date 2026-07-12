@@ -1,6 +1,6 @@
-# Remote Pi — Orquestrador
+# Outpost-Pi — Orquestrador
 
-Você está na **raiz** do monorepo Remote Pi. Esta pasta é exclusivamente para **planejamento**.
+Você está na **raiz** do monorepo Outpost-Pi. Esta pasta é exclusivamente para **planejamento**.
 
 Antes de planejar, implementar ou revisar, leia também `AGENTS.md` e as regras agent-neutral em `.agents/rules/`. Elas são a superfície canônica compartilhada entre Claude, Pi, Codex e outros agentes; este arquivo mantém a persona/orquestração Claude/cmux.
 
@@ -283,7 +283,7 @@ de **Definition of Done** de cada plano:
 done=$(grep -h "^- \[x\]" plan/*.md | wc -l | tr -d ' ')
 total=$(grep -hE "^- \[(x| )\]" plan/*.md | wc -l | tr -d ' ')
 pct=$(LC_NUMERIC=C awk "BEGIN { printf \"%.3f\", $done / $total }")  # LC_NUMERIC=C evita vírgula em locales BR
-cmux set-progress "$pct" --label "Remote Pi · $done/$total tasks"
+cmux set-progress "$pct" --label "Outpost-Pi · $done/$total tasks"
 ```
 
 **Quando atualizar**:
