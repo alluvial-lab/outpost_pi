@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://remote-pi.dev/schemas/defs/app-pi-common.schema.json",
+  "$id": "https://kevoun.com/schemas/defs/app-pi-common.schema.json",
   "title": "Remote Pi app↔Pi shared message definitions",
   "$defs": {
     "messageId": { "type": "string", "minLength": 1 },
