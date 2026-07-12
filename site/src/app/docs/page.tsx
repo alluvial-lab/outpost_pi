@@ -13,20 +13,20 @@ import { RevealController } from "@/components/landing/reveal-controller";
 export const metadata: Metadata = {
   title: "Docs",
   description:
-    "Reference for Remote Pi: the relay, protocol & security, the full command reference, configuration files, and troubleshooting.",
+    "Reference for Outpost-Pi: the relay, protocol & security, the full command reference, configuration files, and troubleshooting.",
 };
 
-const GITHUB_URL = "https://github.com/jacobaraujo7/remote_pi";
+const GITHUB_URL = "https://github.com/jacobaraujo7/outpost_pi";
 const PI_URL = "https://github.com/earendil-works/pi";
 const RELAY_README_URL =
-  "https://github.com/jacobaraujo7/remote_pi/blob/main/relay/README.md";
-const ISSUES_URL = "https://github.com/jacobaraujo7/remote_pi/issues";
+  "https://github.com/jacobaraujo7/outpost_pi/blob/main/relay/README.md";
+const ISSUES_URL = "https://github.com/jacobaraujo7/outpost_pi/issues";
 
 const DOCS_TOC: TocItem[] = [
   { id: "quick-start", label: "Quick start" },
   { id: "what-it-does", label: "What it does" },
   { id: "install", label: "Install" },
-  { id: "using-remote-pi", label: <>Using <InlineCode>/remote-pi</InlineCode></> },
+  { id: "using-outpost-pi", label: <>Using <InlineCode>/outpost-pi</InlineCode></> },
   { id: "pairing", label: "Pairing a mobile device" },
   { id: "quick-actions", label: "Quick actions from the phone" },
   { id: "agent-network", label: "Agent network" },
@@ -71,7 +71,7 @@ export default function DocsPage() {
         <div className="wrap">
           <header className="page-head reveal">
             <span className="eyebrow">Documentation</span>
-            <h1>Remote Pi docs</h1>
+            <h1>Outpost-Pi docs</h1>
             <div className="meta-line">
               <span>Last updated: 2026-05-31</span>
               <span>License: MIT</span>
@@ -90,7 +90,7 @@ export default function DocsPage() {
               >
                 Pi coding agent
               </a>
-              ; <InlineCode>/remote-pi</InlineCode> wires everything up. To{" "}
+              ; <InlineCode>/outpost-pi</InlineCode> wires everything up. To{" "}
               <strong className="text-fg">learn by doing</strong>, start with
               the{" "}
               <Link href="/tutorials" className="text-accent underline">
@@ -128,7 +128,7 @@ export default function DocsPage() {
 
       <DocsSection id="what-it-does" title="What it does">
         <p>
-          Remote Pi adds two independent layers on top of Pi. The{" "}
+          Outpost-Pi adds two independent layers on top of Pi. The{" "}
           <strong className="text-fg">agent network</strong> lets agents
           discover and message each other — over a local socket on one machine,
           or through the relay across PCs. The{" "}
@@ -160,10 +160,10 @@ export default function DocsPage() {
 
       <DocsSection id="install" title="Install">
         <p>
-          Requirements: Node 20+ and Pi (the host coding agent). Remote Pi
+          Requirements: Node 20+ and Pi (the host coding agent). Outpost-Pi
           installs as a Pi plugin with{" "}
-          <InlineCode>pi install npm:remote-pi</InlineCode>, which self-registers
-          the <InlineCode>/remote-pi</InlineCode> slash command and deploys the
+          <InlineCode>pi install npm:outpost-pi</InlineCode>, which self-registers
+          the <InlineCode>/outpost-pi</InlineCode> slash command and deploys the
           agent-network skill. The complete setup — wizard, pairing, first
           command — is in the tutorial.
         </p>
@@ -180,13 +180,13 @@ export default function DocsPage() {
         </p>
       </DocsSection>
 
-      <DocsSection id="using-remote-pi" title="Using /remote-pi">
+      <DocsSection id="using-outpost-pi" title="Using /outpost-pi">
         <p>
-          <InlineCode>/remote-pi</InlineCode> is the everyday entry point. The
+          <InlineCode>/outpost-pi</InlineCode> is the everyday entry point. The
           first run opens a short wizard (agent name, whether to use the relay)
           that creates the per-folder config; later runs join the local mesh and
           start the relay automatically. Re-run the wizard with{" "}
-          <InlineCode>/remote-pi setup</InlineCode>. Every subcommand is in the{" "}
+          <InlineCode>/outpost-pi setup</InlineCode>. Every subcommand is in the{" "}
           <a href="#commands" className="text-accent underline">
             command reference
           </a>
@@ -203,12 +203,12 @@ export default function DocsPage() {
 
       <DocsSection id="pairing" title="Pairing a mobile device">
         <p>
-          <InlineCode>/remote-pi pair</InlineCode> prints a QR (and a copy-paste
-          URI); scan it with the Remote Pi app. Pairing is{" "}
+          <InlineCode>/outpost-pi pair</InlineCode> prints a QR (and a copy-paste
+          URI); scan it with the Outpost-Pi app. Pairing is{" "}
           <strong className="text-fg">per machine</strong> — once a device is
           paired, every Pi process on that machine accepts it. Manage devices
-          with <InlineCode>/remote-pi devices</InlineCode> and{" "}
-          <InlineCode>/remote-pi revoke &lt;shortid&gt;</InlineCode> (see the{" "}
+          with <InlineCode>/outpost-pi devices</InlineCode> and{" "}
+          <InlineCode>/outpost-pi revoke &lt;shortid&gt;</InlineCode> (see the{" "}
           <a href="#commands" className="text-accent underline">
             command reference
           </a>
@@ -283,10 +283,10 @@ export default function DocsPage() {
       <DocsSection id="daemon-mode" title="Daemon mode">
         <p>
           Promote a folder to a 24/7 background agent: run{" "}
-          <InlineCode>/remote-pi install</InlineCode> once per machine to install
+          <InlineCode>/outpost-pi install</InlineCode> once per machine to install
           the supervisor (launchd on macOS,{" "}
           <InlineCode>systemd --user</InlineCode> on Linux) and link the CLI,
-          then <InlineCode>remote-pi create &lt;folder&gt; --name &quot;…&quot;</InlineCode>{" "}
+          then <InlineCode>outpost-pi create &lt;folder&gt; --name &quot;…&quot;</InlineCode>{" "}
           to register and start a daemon. One supervisor per machine, N daemons
           under it. Every command is in the{" "}
           <a href="#commands" className="text-accent underline">
@@ -311,7 +311,7 @@ export default function DocsPage() {
 
       <DocsSection id="relay" title="The relay">
         <p>
-          The relay is the only network-touching piece of Remote Pi. In the
+          The relay is the only network-touching piece of Outpost-Pi. In the
           current MVP it sees both message payloads (forwarded but never logged
           or inspected by the community operator) and connection metadata: which
           keypair is online, which room/cwd identifiers exist, message timing,
@@ -389,16 +389,16 @@ export default function DocsPage() {
           </p>
           <CodeBlock
             code={`docker run -d \\
-  --name remote-pi-relay \\
+  --name outpost-pi-relay \\
   -p 3000:3000 \\
-  -v remote-pi-data:/data \\
+  -v outpost-pi-data:/data \\
   --restart unless-stopped \\
-  jacobmoura7/remote-pi-relay`}
+  jacobmoura7/outpost-pi-relay`}
             label="On your relay host"
             language="bash"
           />
           <p>
-            The <InlineCode>-v remote-pi-data:/data</InlineCode> mount is
+            The <InlineCode>-v outpost-pi-data:/data</InlineCode> mount is
             required — that&apos;s where the relay keeps{" "}
             <InlineCode>mesh.db</InlineCode> (the Owner-signed mesh blobs).
             Skip the volume and the table is wiped on every container restart,
@@ -422,7 +422,7 @@ export default function DocsPage() {
         <DocsSubsection id="point-pi" title="Pointing Pi at your own relay">
           <p>Once your relay is reachable, tell the extension:</p>
           <CodeBlock
-            code="/remote-pi set-relay https://relay.yourdomain.tld"
+            code="/outpost-pi set-relay https://relay.yourdomain.tld"
             label="In Pi"
             language="text"
           />
@@ -452,10 +452,10 @@ export default function DocsPage() {
             </li>
           </ol>
           <p>Verify the active URL and its source with:</p>
-          <CodeBlock code="/remote-pi config" label="In Pi" language="text" />
+          <CodeBlock code="/outpost-pi config" label="In Pi" language="text" />
           <p>
-            To switch URLs while connected: <InlineCode>/remote-pi stop</InlineCode>{" "}
-            then <InlineCode>/remote-pi</InlineCode> again. The mobile app has
+            To switch URLs while connected: <InlineCode>/outpost-pi stop</InlineCode>{" "}
+            then <InlineCode>/outpost-pi</InlineCode> again. The mobile app has
             its own relay-URL setting in its preferences pane — keep both
             pointing at the same relay.
           </p>
@@ -501,9 +501,9 @@ export default function DocsPage() {
       <DocsSection id="commands" title="Command reference">
         <p>
           Every command works as a Pi slash command (interactive) and as a
-          shell-level <InlineCode>remote-pi &lt;subcommand&gt;</InlineCode>{" "}
+          shell-level <InlineCode>outpost-pi &lt;subcommand&gt;</InlineCode>{" "}
           when the package is installed globally (
-          <InlineCode>npm install -g remote-pi</InlineCode>).
+          <InlineCode>npm install -g outpost-pi</InlineCode>).
         </p>
 
         <DocsSubsection
@@ -514,39 +514,39 @@ export default function DocsPage() {
             headers={["Command", "Description"]}
             rows={[
               [
-                <InlineCode key="c">/remote-pi</InlineCode>,
+                <InlineCode key="c">/outpost-pi</InlineCode>,
                 "Connect (join local mesh + start relay), or run setup on first use",
               ],
               [
-                <InlineCode key="c">/remote-pi setup</InlineCode>,
+                <InlineCode key="c">/outpost-pi setup</InlineCode>,
                 "Run the setup wizard and update local config",
               ],
               [
-                <InlineCode key="c">/remote-pi status</InlineCode>,
+                <InlineCode key="c">/outpost-pi status</InlineCode>,
                 "Show local mesh + relay status",
               ],
               [
-                <InlineCode key="c">/remote-pi peers</InlineCode>,
+                <InlineCode key="c">/outpost-pi peers</InlineCode>,
                 "List local and cross-PC mesh peers, grouped by PC label",
               ],
               [
-                <InlineCode key="c">/remote-pi stop</InlineCode>,
+                <InlineCode key="c">/outpost-pi stop</InlineCode>,
                 <>Stop everything for <em>this</em> terminal (mesh + relay)</>,
               ],
               [
-                <InlineCode key="c">/remote-pi pair [--ttl &lt;seconds&gt;]</InlineCode>,
+                <InlineCode key="c">/outpost-pi pair [--ttl &lt;seconds&gt;]</InlineCode>,
                 "Show QR + copy-paste pairing URI for a new mobile device (QR valid 60s by default; --ttl clamps to 10–600s)",
               ],
               [
-                <InlineCode key="c">/remote-pi devices</InlineCode>,
+                <InlineCode key="c">/outpost-pi devices</InlineCode>,
                 "List paired mobile devices (online/offline per device)",
               ],
               [
-                <InlineCode key="c">/remote-pi revoke &lt;shortid&gt;</InlineCode>,
+                <InlineCode key="c">/outpost-pi revoke &lt;shortid&gt;</InlineCode>,
                 "Revoke a paired device by its shortid (brings the relay up first, like pair, to notify the device)",
               ],
               [
-                <InlineCode key="c">/remote-pi set-relay &lt;url&gt;</InlineCode>,
+                <InlineCode key="c">/outpost-pi set-relay &lt;url&gt;</InlineCode>,
                 "Persist a new relay URL (http:// or https://)",
               ],
             ]}
@@ -565,52 +565,52 @@ export default function DocsPage() {
             headers={["Command", "Description"]}
             rows={[
               [
-                <InlineCode key="c">/remote-pi create &lt;cwd&gt; [--name X]</InlineCode>,
+                <InlineCode key="c">/outpost-pi create &lt;cwd&gt; [--name X]</InlineCode>,
                 "Register a folder as a daemon (starts it when the supervisor is running)",
               ],
               [
-                <InlineCode key="c">/remote-pi remove &lt;id&gt;</InlineCode>,
+                <InlineCode key="c">/outpost-pi remove &lt;id&gt;</InlineCode>,
                 "Unregister a daemon (local config preserved)",
               ],
               [
-                <InlineCode key="c">/remote-pi daemons</InlineCode>,
+                <InlineCode key="c">/outpost-pi daemons</InlineCode>,
                 "List registered daemons + state",
               ],
               [
-                <InlineCode key="c">/remote-pi daemon start [&lt;id&gt;]</InlineCode>,
+                <InlineCode key="c">/outpost-pi daemon start [&lt;id&gt;]</InlineCode>,
                 "Start one daemon by id, or every registered daemon with no id",
               ],
               [
-                <InlineCode key="c">/remote-pi daemon stop [&lt;id&gt;]</InlineCode>,
+                <InlineCode key="c">/outpost-pi daemon stop [&lt;id&gt;]</InlineCode>,
                 <>
                   Stop one daemon by id, or every running daemon with no id (
-                  <InlineCode>/remote-pi stop</InlineCode> stops only the local
+                  <InlineCode>/outpost-pi stop</InlineCode> stops only the local
                   terminal)
                 </>,
               ],
               [
-                <InlineCode key="c">/remote-pi daemon restart [&lt;id&gt;]</InlineCode>,
+                <InlineCode key="c">/outpost-pi daemon restart [&lt;id&gt;]</InlineCode>,
                 "Restart one daemon by id, or every daemon with no id",
               ],
               [
-                <InlineCode key="c">/remote-pi daemon status</InlineCode>,
+                <InlineCode key="c">/outpost-pi daemon status</InlineCode>,
                 "Detailed runtime status (pid, uptime, restart count)",
               ],
               [
-                <InlineCode key="c">/remote-pi daemon send &lt;id&gt; &quot;&lt;text&gt;&quot;</InlineCode>,
+                <InlineCode key="c">/outpost-pi daemon send &lt;id&gt; &quot;&lt;text&gt;&quot;</InlineCode>,
                 "Send a prompt to a specific daemon",
               ],
               [
-                <InlineCode key="c">/remote-pi install</InlineCode>,
+                <InlineCode key="c">/outpost-pi install</InlineCode>,
                 <>
                   Install <InlineCode>pi-supervisord</InlineCode> as a system
                   service <strong className="text-fg">and</strong> symlink the{" "}
-                  <InlineCode>remote-pi</InlineCode> CLI into{" "}
+                  <InlineCode>outpost-pi</InlineCode> CLI into{" "}
                   <InlineCode>~/.local/bin/</InlineCode>
                 </>,
               ],
               [
-                <InlineCode key="c">/remote-pi uninstall</InlineCode>,
+                <InlineCode key="c">/outpost-pi uninstall</InlineCode>,
                 <>
                   Remove the system service <strong className="text-fg">and</strong>{" "}
                   the <InlineCode>~/.local/bin</InlineCode> symlinks (daemon
@@ -632,7 +632,7 @@ export default function DocsPage() {
             <a href="#daemon-mode" className="text-accent underline">
               Daemon mode
             </a>{" "}
-            / <InlineCode>/remote-pi install</InlineCode>) — otherwise{" "}
+            / <InlineCode>/outpost-pi install</InlineCode>) — otherwise{" "}
             <InlineCode>cron add</InlineCode> warns instead of scheduling. See
             the{" "}
             <Link href="/tutorials/daemon#cron" className="text-accent underline">
@@ -645,34 +645,34 @@ export default function DocsPage() {
             rows={[
               [
                 <InlineCode key="c">
-                  /remote-pi cron add &lt;id&gt; &quot;&lt;expr&gt;&quot;
+                  /outpost-pi cron add &lt;id&gt; &quot;&lt;expr&gt;&quot;
                   &quot;&lt;prompt&gt;&quot; [--tz Area/City] [--wake]
                   [--no-skip-busy] [--catchup]
                 </InlineCode>,
                 "Schedule a recurring prompt to a daemon (5-field cron expression; runs must be ≥60s apart)",
               ],
               [
-                <InlineCode key="c">/remote-pi cron list</InlineCode>,
+                <InlineCode key="c">/outpost-pi cron list</InlineCode>,
                 "List jobs: schedule, enabled, last run / status, next run",
               ],
               [
-                <InlineCode key="c">/remote-pi cron run &lt;jobId&gt;</InlineCode>,
+                <InlineCode key="c">/outpost-pi cron run &lt;jobId&gt;</InlineCode>,
                 "Fire a job now, ignoring its schedule",
               ],
               [
-                <InlineCode key="c">/remote-pi cron enable &lt;jobId&gt;</InlineCode>,
+                <InlineCode key="c">/outpost-pi cron enable &lt;jobId&gt;</InlineCode>,
                 "Resume a paused job",
               ],
               [
-                <InlineCode key="c">/remote-pi cron disable &lt;jobId&gt;</InlineCode>,
+                <InlineCode key="c">/outpost-pi cron disable &lt;jobId&gt;</InlineCode>,
                 "Pause a job without deleting it",
               ],
               [
-                <InlineCode key="c">/remote-pi cron remove &lt;jobId&gt;</InlineCode>,
+                <InlineCode key="c">/outpost-pi cron remove &lt;jobId&gt;</InlineCode>,
                 "Delete a job",
               ],
               [
-                <InlineCode key="c">/remote-pi cron log [&lt;jobId&gt;] [--tail N]</InlineCode>,
+                <InlineCode key="c">/outpost-pi cron log [&lt;jobId&gt;] [--tail N]</InlineCode>,
                 <>
                   Tail the fire / skip audit log (default N = 20), optionally for
                   one job
@@ -749,7 +749,7 @@ export default function DocsPage() {
           headers={["Path", "Scope", "What's in it"]}
           rows={[
             [
-              <InlineCode key="p">&lt;cwd&gt;/.pi/remote-pi/config.json</InlineCode>,
+              <InlineCode key="p">&lt;cwd&gt;/.pi/outpost-pi/config.json</InlineCode>,
               "Per-directory",
               <>
                 <InlineCode>agent_name</InlineCode>,{" "}
@@ -820,9 +820,9 @@ export default function DocsPage() {
           <InlineCode>REMOTE_PI_DIRECT_CONFIG</InlineCode> environment variable
           at spawn (a fixed <InlineCode>assistent</InlineCode> workspace with
           the relay on), so a daemon folder needs no{" "}
-          <InlineCode>.pi/remote-pi/</InlineCode> of its own. You can set the
+          <InlineCode>.pi/outpost-pi/</InlineCode> of its own. You can set the
           same variable yourself to override{" "}
-          <InlineCode>&lt;cwd&gt;/.pi/remote-pi/config.json</InlineCode> for a
+          <InlineCode>&lt;cwd&gt;/.pi/outpost-pi/config.json</InlineCode> for a
           single run — an escape hatch for CI, ops, and the Cockpit desktop
           client:
         </p>
@@ -838,7 +838,7 @@ export default function DocsPage() {
           <p>
             The icon reflects whether <em>any</em> device has been paired on
             this machine, not whether one is connected right now. If you really
-            have a paired device in <InlineCode>/remote-pi devices</InlineCode>,
+            have a paired device in <InlineCode>/outpost-pi devices</InlineCode>,
             restart Pi — the cache may be stale (fixed in current release;
             report a bug if it recurs).
           </p>
@@ -859,7 +859,7 @@ export default function DocsPage() {
           <ul className="ml-6 list-disc space-y-2">
             <li>
               <strong className="text-fg">Receiver crashed or never processed.</strong>{" "}
-              Run <InlineCode>/remote-pi peers</InlineCode> to see whether the
+              Run <InlineCode>/outpost-pi peers</InlineCode> to see whether the
               peer is still online.
             </li>
             <li>
@@ -893,7 +893,7 @@ export default function DocsPage() {
           <p>
             A cwd lock allows{" "}
             <strong className="text-fg">one Pi process per directory</strong>.
-            If you try to run <InlineCode>/remote-pi</InlineCode> in a second
+            If you try to run <InlineCode>/outpost-pi</InlineCode> in a second
             terminal that&apos;s already in the same folder, the second start
             is rejected (and the relay, separately, refuses a duplicate room
             with <InlineCode>RoomAlreadyOpenError</InlineCode>).
@@ -921,7 +921,7 @@ export default function DocsPage() {
           <li>
             Homepage:{" "}
             <Link href="/" className="text-accent underline">
-              remote-pi.jacobmoura.work
+              outpost-pi.jacobmoura.work
             </Link>
           </li>
           <li>
@@ -933,7 +933,7 @@ export default function DocsPage() {
           <li>
             Source:{" "}
             <a className="text-accent underline" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
-              github.com/jacobaraujo7/remote_pi
+              github.com/jacobaraujo7/outpost_pi
             </a>
           </li>
           <li>
@@ -962,7 +962,7 @@ export default function DocsPage() {
           <li>
             Issues / bugs:{" "}
             <a className="text-accent underline" href={ISSUES_URL} target="_blank" rel="noopener noreferrer">
-              github.com/jacobaraujo7/remote_pi/issues
+              github.com/jacobaraujo7/outpost_pi/issues
             </a>
           </li>
         </ul>

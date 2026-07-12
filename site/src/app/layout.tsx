@@ -25,21 +25,21 @@ const mono = JetBrains_Mono({
   display: "swap",
 });
 
-const siteTagline = "Remote Pi — Your coding agents, in your pocket";
+const siteTagline = "Outpost-Pi — Your coding agents, in your pocket";
 const siteDescription =
   "Pair your phone once, then drive any Pi coding agent from it — keep a fleet running 24/7 and link every machine into one mesh. Open source, self-hostable.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://remote-pi.jacobmoura.work"),
+  metadataBase: new URL("https://outpost-pi.jacobmoura.work"),
   title: {
     default: siteTagline,
-    template: "%s · Remote Pi",
+    template: "%s · Outpost-Pi",
   },
   description: siteDescription,
-  applicationName: "Remote Pi",
+  applicationName: "Outpost-Pi",
   authors: [{ name: "Flutterando", url: "https://flutterando.com.br" }],
   keywords: [
-    "Remote Pi",
+    "Outpost-Pi",
     "coding agents",
     "Pi coding agent",
     "mobile agent control",
@@ -49,10 +49,10 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     type: "website",
-    url: "https://remote-pi.jacobmoura.work",
+    url: "https://outpost-pi.jacobmoura.work",
     title: siteTagline,
     description: siteDescription,
-    siteName: "Remote Pi",
+    siteName: "Outpost-Pi",
   },
   twitter: {
     card: "summary_large_image",

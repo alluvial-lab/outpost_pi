@@ -8,10 +8,10 @@ import { IconDownload, IconGithub, IconArrow } from "@/components/landing/icons"
 export const metadata: Metadata = {
   title: "Cockpit",
   description:
-    "Remote Pi Cockpit — a desktop command center for Pi. Run a fleet of AI agents and real terminals side by side, each in its own folder, in one window.",
+    "Outpost-Pi Cockpit — a desktop command center for Pi. Run a fleet of AI agents and real terminals side by side, each in its own folder, in one window.",
 };
 
-const GITHUB_URL = "https://github.com/jacobaraujo7/remote_pi";
+const GITHUB_URL = "https://github.com/jacobaraujo7/outpost_pi";
 
 /* requires-Pi line shown next to each download CTA (honest onboarding note) */
 function RequiresPi() {
@@ -67,7 +67,7 @@ export default function CockpitPage() {
         <div className="wrap">
           {/* ---------------- HERO ---------------- */}
           <header className="page-head reveal" style={{ maxWidth: 820 }}>
-            <span className="eyebrow">Remote Pi Cockpit</span>
+            <span className="eyebrow">Outpost-Pi Cockpit</span>
             <h1>Run a fleet of agents, side by side.</h1>
             <p className="lede">
               Cockpit is a desktop command center for Pi. Open your projects and
@@ -96,7 +96,7 @@ export default function CockpitPage() {
           <div className="ck-shot reveal">
             <Image
               src="/cockpit-hero.png"
-              alt="Remote Pi Cockpit showing three AI agents and a terminal running side by side across panes, with a workspace sidebar and file tree."
+              alt="Outpost-Pi Cockpit showing three AI agents and a terminal running side by side across panes, with a workspace sidebar and file tree."
               width={1550}
               height={904}
               priority
@@ -179,7 +179,7 @@ export default function CockpitPage() {
               <span className="eyebrow">Always on</span>
               <h2>Agents that outlive the window.</h2>
               <p>
-                The same always-on layer behind Remote Pi — now with a desk. Keep
+                The same always-on layer behind Outpost-Pi — now with a desk. Keep
                 agents working around the clock and put them on a schedule,
                 managed right in the app.
               </p>
@@ -219,18 +219,18 @@ export default function CockpitPage() {
               <span className="eyebrow">Mesh</span>
               <h2>Your agents can talk to each other — across machines.</h2>
               <p>
-                Cockpit&apos;s onboarding sets up the <code>remote-pi</code>{" "}
+                Cockpit&apos;s onboarding sets up the <code>outpost-pi</code>{" "}
                 extension, which hands every agent the mesh tools. So an agent in
                 one pane can reach another — in the next pane, or paired in from a
-                different machine — and they collaborate over the Remote Pi mesh.
+                different machine — and they collaborate over the Outpost-Pi mesh.
                 That&apos;s exactly what the screenshot up top is doing.
               </p>
             </div>
             <div className="reveal" style={{ marginTop: 24, maxWidth: 760 }}>
               <Callout title="What this is — and isn't">
                 <p>
-                  The mesh is a capability of the Remote Pi ecosystem — Pi plus
-                  the <code>remote-pi</code> extension — shown off inside Cockpit,
+                  The mesh is a capability of the Outpost-Pi ecosystem — Pi plus
+                  the <code>outpost-pi</code> extension — shown off inside Cockpit,
                   not a separate feature of the app. Cockpit doesn&apos;t draw a
                   network map, and you don&apos;t drive its panes from your phone:
                   the agents themselves do the talking.

@@ -6,7 +6,7 @@ import { RevealController } from "@/components/landing/reveal-controller";
 export const metadata: Metadata = {
   title: "Tutorials",
   description:
-    "Hands-on guides for Remote Pi: get started with the app, run a local mesh, route across PCs, and keep an agent alive 24/7.",
+    "Hands-on guides for Outpost-Pi: get started with the app, run a local mesh, route across PCs, and keep an agent alive 24/7.",
 };
 
 type Step = {
@@ -24,7 +24,7 @@ const STEPS: Step[] = [
     tag: "01 / 04",
     title: "Getting started",
     href: "/tutorials/getting-started",
-    desc: "Install Remote Pi, pair your phone, and drive your first agent from the app.",
+    desc: "Install Outpost-Pi, pair your phone, and drive your first agent from the app.",
   },
   {
     n: "2",
@@ -55,7 +55,7 @@ const EXTRAS: Step[] = [
     tag: "extra",
     title: "An agent team in Cockpit",
     href: "/tutorials/cockpit-team",
-    desc: "Run an orchestrator, backend, and frontend as three panes in Cockpit — each its own folder and AGENTS.md, talking over the remote-pi mesh.",
+    desc: "Run an orchestrator, backend, and frontend as three panes in Cockpit — each its own folder and AGENTS.md, talking over the outpost-pi mesh.",
   },
   {
     star: true,
@@ -89,7 +89,7 @@ export default function TutorialsIndexPage() {
         <div className="wrap">
           <header className="page-head reveal">
             <span className="eyebrow">Tutorials</span>
-            <h1>Learn Remote Pi by doing.</h1>
+            <h1>Learn Outpost-Pi by doing.</h1>
             <p className="lede">
               Four hands-on guides, in order. Start with the app, then add
               agents, cross-PC routing, and a 24/7 supervisor as you need them.
