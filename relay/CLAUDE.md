@@ -1,4 +1,4 @@
-# Remote Pi — Relay (Rust)
+# Outpost-Pi — Relay (Rust)
 
 Servidor WebSocket **stateless** que pareia conexões por `peer_id` e roteia
 ciphertext entre app e pi-extension. **Nunca decifra payload.**
