@@ -44,7 +44,7 @@ function localDefName(ref: string): string | undefined {
 }
 
 function extractProfileRequired(schema: JsonObject): Record<string, string[]> | undefined {
-  const metadata = asObject(schema["x-remote-pi"]);
+  const metadata = asObject(schema["x-outpost-pi"]);
   const required = asObject(metadata?.profileRequired);
   if (!required) return undefined;
   return Object.fromEntries(
@@ -69,7 +69,7 @@ function entryFromDefinition(
     typeof customTypeSchema?.const === "string" ? customTypeSchema.const : undefined;
 
   const profileRequired = extractProfileRequired(schema);
-  const fixtureOptional = asObject(schema["x-remote-pi"])?.fixtureOptional === true;
+  const fixtureOptional = asObject(schema["x-outpost-pi"])?.fixtureOptional === true;
 
   if (typeConst) {
     return [

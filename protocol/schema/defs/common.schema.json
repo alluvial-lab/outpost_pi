@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://remote-pi.dev/schemas/defs/common.schema.json",
+  "$id": "https://kevoun.com/schemas/defs/common.schema.json",
   "title": "Remote Pi common schema definitions",
   "$defs": {
     "uuid": {
@@ -10,7 +10,7 @@
     "sessionId": {
       "type": "string",
       "minLength": 1,
-      "x-remote-pi": {
+      "x-outpost-pi": {
         "opaque": true,
         "profileRequired": ["canonical-session"]
       }
@@ -18,7 +18,7 @@
     "turnId": {
       "type": "string",
       "minLength": 1,
-      "x-remote-pi": {
+      "x-outpost-pi": {
         "opaque": true,
         "profileRequired": ["canonical-session"]
       }

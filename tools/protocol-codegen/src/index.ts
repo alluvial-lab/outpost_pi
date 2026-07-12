@@ -2,74 +2,74 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export interface RemotePiManifestFamily {
+export interface OutpostPiManifestFamily {
   id: string;
   transport: string;
   schema: string;
   description?: string;
 }
 
-export interface RemotePiManifest {
+export interface OutpostPiManifest {
   schemaVersion?: number;
   source?: string;
   discriminator?: string;
   profiles?: string[];
-  families: RemotePiManifestFamily[];
+  families: OutpostPiManifestFamily[];
   manifestPath?: string;
   protocolRoot?: string;
 }
 
-export interface BuildRemotePiIrOptions {
+export interface BuildOutpostPiIrOptions {
   profile?: string;
   manifestPath?: string;
   protocolRoot?: string;
 }
 
-export interface RemotePiIrField {
+export interface OutpostPiIrField {
   name: string;
   required: boolean;
   tsType: string;
 }
 
-export interface RemotePiIrVariant {
+export interface OutpostPiIrVariant {
   type: string;
   discriminator: string;
   interfaceName: string;
   schemaRef: string;
-  fields: RemotePiIrField[];
+  fields: OutpostPiIrField[];
   validationFunctionName: string;
   validationFunctionBody: string;
 }
 
-export interface RemotePiIrFamily {
+export interface OutpostPiIrFamily {
   id: string;
   transport: string;
   schemaPath: string;
   unionName: string;
-  variants: RemotePiIrVariant[];
+  variants: OutpostPiIrVariant[];
 }
 
-export interface RemotePiIrSharedType {
+export interface OutpostPiIrSharedType {
   name: string;
   declaration: string;
 }
 
-export interface RemotePiIrNestedRegistry {
+export interface OutpostPiIrNestedRegistry {
   constName: string;
   typeName: string;
   unionName: string;
   predicateName: string;
   validatorsName: string;
-  variants: RemotePiIrVariant[];
+  variants: OutpostPiIrVariant[];
 }
 
-export interface RemotePiIr {
+export interface OutpostPiIr {
   schemaVersion: number;
   source: string;
   profile: string;
-  sharedTypes: RemotePiIrSharedType[];
-  families: RemotePiIrFamily[];
-  nestedRegistries: RemotePiIrNestedRegistry[];
+  sharedTypes: OutpostPiIrSharedType[];
+  families: OutpostPiIrFamily[];
+  nestedRegistries: OutpostPiIrNestedRegistry[];
 }
 
 export interface EmitTypeScriptProtocolOptions {
@@ -129,7 +129,7 @@ function protocolRootForManifestPath(manifestPath: string): string {
   return manifestDir.endsWith("schema") ? dirname(manifestDir) : manifestDir;
 }
 
-export async function loadRemotePiManifest(manifestPath: string): Promise<RemotePiManifest> {
+export async function loadOutpostPiManifest(manifestPath: string): Promise<OutpostPiManifest> {
   const absoluteManifestPath = resolve(manifestPath);
   const manifest = asObject(await readJsonFile<unknown>(absoluteManifestPath), manifestPath);
   const families = asArray(manifest.families, "manifest.families").map((family, index) => {
@@ -228,7 +228,7 @@ async function dereferenceSchema(schema: unknown, contextPath: string, protocolR
   return { schema: current, path: currentPath };
 }
 
-function placeholderDiagnostic(family: RemotePiManifestFamily): ProtocolCodegenError {
+function placeholderDiagnostic(family: OutpostPiManifestFamily): ProtocolCodegenError {
   return new ProtocolCodegenError(
     `schema family placeholder: ${family.id} (${family.schema}) does not define concrete ${"oneOf"} variants with a type/customType discriminator`,
   );
@@ -478,13 +478,13 @@ async function tsTypeForSchema(
   }
 }
 
-async function fieldsForVariant(schemaInput: unknown, contextPath: string, protocolRoot: string, cache: DocumentCache, profile: string): Promise<RemotePiIrField[]> {
+async function fieldsForVariant(schemaInput: unknown, contextPath: string, protocolRoot: string, cache: DocumentCache, profile: string): Promise<OutpostPiIrField[]> {
   const { schema, path } = await dereferenceSchema(schemaInput, contextPath, protocolRoot, cache);
   const object = asObject(schema, "variant schema");
   const properties = asObject(object.properties, "variant.properties");
   const required = requiredNamesForSchema(object, profile);
   const variantType = discriminatorValues(object)[0]?.type;
-  const fields: RemotePiIrField[] = [];
+  const fields: OutpostPiIrField[] = [];
   for (const [name, propertySchema] of Object.entries(properties)) {
     const inferredType = await tsTypeForSchema(propertySchema, path, protocolRoot, cache, [name], profile);
     fields.push({
@@ -496,7 +496,7 @@ async function fieldsForVariant(schemaInput: unknown, contextPath: string, proto
   return fields;
 }
 
-function emitInterfaceDeclaration(name: string, fields: RemotePiIrField[]): string {
+function emitInterfaceDeclaration(name: string, fields: OutpostPiIrField[]): string {
   const lines = [`export interface ${name} {`];
   for (const field of fields) {
     const optional = field.required ? "" : "?";
@@ -506,14 +506,14 @@ function emitInterfaceDeclaration(name: string, fields: RemotePiIrField[]): stri
   return lines.join("\n");
 }
 
-async function declarationForObjectType(name: string, schemaInput: unknown, contextPath: string, protocolRoot: string, cache: DocumentCache, profile: string): Promise<RemotePiIrSharedType> {
+async function declarationForObjectType(name: string, schemaInput: unknown, contextPath: string, protocolRoot: string, cache: DocumentCache, profile: string): Promise<OutpostPiIrSharedType> {
   return {
     name,
     declaration: emitInterfaceDeclaration(name, await fieldsForVariant(schemaInput, contextPath, protocolRoot, cache, profile)),
   };
 }
 
-async function declarationForAliasType(name: string, schemaInput: unknown, contextPath: string, protocolRoot: string, cache: DocumentCache, profile: string): Promise<RemotePiIrSharedType> {
+async function declarationForAliasType(name: string, schemaInput: unknown, contextPath: string, protocolRoot: string, cache: DocumentCache, profile: string): Promise<OutpostPiIrSharedType> {
   return {
     name,
     declaration: `export type ${name} = ${await tsTypeForSchema(schemaInput, contextPath, protocolRoot, cache, [name], profile)};`,
@@ -532,13 +532,13 @@ function discriminatorValues(schema: JsonObject): Array<{ discriminator: string;
   return [];
 }
 
-async function variantsForFamily(family: RemotePiManifestFamily, familySchemaPath: string, protocolRoot: string, cache: DocumentCache, profile: string): Promise<RemotePiIrVariant[]> {
+async function variantsForFamily(family: OutpostPiManifestFamily, familySchemaPath: string, protocolRoot: string, cache: DocumentCache, profile: string): Promise<OutpostPiIrVariant[]> {
   const root = await readDocument(familySchemaPath, cache);
   const oneOf = Array.isArray(root.oneOf) ? root.oneOf : undefined;
   if (!oneOf || oneOf.length === 0) throw placeholderDiagnostic(family);
 
   const unionName = unionNameForFamily(family.id);
-  const variants: RemotePiIrVariant[] = [];
+  const variants: OutpostPiIrVariant[] = [];
   const seenTypes = new Set<string>();
   for (const [index, option] of oneOf.entries()) {
     const optionObject = isObject(option) ? option : undefined;
@@ -577,7 +577,7 @@ function optionalObject(value: unknown): JsonObject | undefined {
   return isObject(value) ? value : undefined;
 }
 
-async function appPiCommonSharedTypes(protocolRoot: string, cache: DocumentCache, profile: string): Promise<RemotePiIrSharedType[]> {
+async function appPiCommonSharedTypes(protocolRoot: string, cache: DocumentCache, profile: string): Promise<OutpostPiIrSharedType[]> {
   const commonPath = join(protocolRoot, "schema", "defs", "app-pi-common.schema.json");
   let defs: JsonObject;
   try {
@@ -586,7 +586,7 @@ async function appPiCommonSharedTypes(protocolRoot: string, cache: DocumentCache
     return [];
   }
 
-  const shared: RemotePiIrSharedType[] = [];
+  const shared: OutpostPiIrSharedType[] = [];
   shared.push(await declarationForAliasType("StreamingBehavior", defs.streamingBehavior, commonPath, protocolRoot, cache, profile));
   shared.push(await declarationForObjectType("WireImage", defs.wireImage, commonPath, protocolRoot, cache, profile));
   shared.push(await declarationForObjectType("Usage", defs.usage, commonPath, protocolRoot, cache, profile));
@@ -603,7 +603,7 @@ async function appPiServerSharedTypes(
   protocolRoot: string,
   cache: DocumentCache,
   profile: string,
-): Promise<{ sharedTypes: RemotePiIrSharedType[]; nestedRegistries: RemotePiIrNestedRegistry[] }> {
+): Promise<{ sharedTypes: OutpostPiIrSharedType[]; nestedRegistries: OutpostPiIrNestedRegistry[] }> {
   const serverPath = join(protocolRoot, "schema", "app-pi-server.schema.json");
   let defs: JsonObject;
   try {
@@ -612,8 +612,8 @@ async function appPiServerSharedTypes(
     return { sharedTypes: [], nestedRegistries: [] };
   }
 
-  const shared: RemotePiIrSharedType[] = [];
-  const nestedRegistries: RemotePiIrNestedRegistry[] = [];
+  const shared: OutpostPiIrSharedType[] = [];
+  const nestedRegistries: OutpostPiIrNestedRegistry[] = [];
   const bye = optionalObject(defs.bye);
   const byeProperties = optionalObject(bye?.properties);
   if (byeProperties?.reason) {
@@ -623,7 +623,7 @@ async function appPiServerSharedTypes(
   const sessionHistoryEvent = optionalObject(defs.sessionHistoryEvent);
   const oneOf = Array.isArray(sessionHistoryEvent?.oneOf) ? sessionHistoryEvent.oneOf : [];
   const historyVariants: string[] = [];
-  const historyEventVariants: RemotePiIrVariant[] = [];
+  const historyEventVariants: OutpostPiIrVariant[] = [];
   for (const [index, option] of oneOf.entries()) {
     const optionObject = optionalObject(option);
     const ref = typeof optionObject?.$ref === "string" ? optionObject.$ref : undefined;
@@ -672,7 +672,7 @@ async function sharedTypesForProtocol(
   protocolRoot: string,
   cache: DocumentCache,
   profile: string,
-): Promise<{ sharedTypes: RemotePiIrSharedType[]; nestedRegistries: RemotePiIrNestedRegistry[] }> {
+): Promise<{ sharedTypes: OutpostPiIrSharedType[]; nestedRegistries: OutpostPiIrNestedRegistry[] }> {
   const server = await appPiServerSharedTypes(protocolRoot, cache, profile);
   const shared = [...(await appPiCommonSharedTypes(protocolRoot, cache, profile)), ...server.sharedTypes];
   const seen = new Set<string>();
@@ -686,11 +686,11 @@ async function sharedTypesForProtocol(
   };
 }
 
-export async function buildRemotePiIr(manifest: RemotePiManifest, options: BuildRemotePiIrOptions = {}): Promise<RemotePiIr> {
+export async function buildOutpostPiIr(manifest: OutpostPiManifest, options: BuildOutpostPiIrOptions = {}): Promise<OutpostPiIr> {
   const protocolRoot = resolve(options.protocolRoot ?? manifest.protocolRoot ?? (options.manifestPath ? protocolRootForManifestPath(options.manifestPath) : process.cwd()));
   const profile = options.profile ?? "compat";
   const cache: DocumentCache = { documents: new Map() };
-  const families: RemotePiIrFamily[] = [];
+  const families: OutpostPiIrFamily[] = [];
   for (const family of manifest.families) {
     const schemaPath = isAbsolute(family.schema) ? family.schema : join(protocolRoot, family.schema);
     const variants = await variantsForFamily(family, schemaPath, protocolRoot, cache, profile);
@@ -721,7 +721,7 @@ function familyTypeName(familyId: string): string {
   return `${pascalCase(familyId)}Type`;
 }
 
-function emitInterface(variant: RemotePiIrVariant): string {
+function emitInterface(variant: OutpostPiIrVariant): string {
   return emitInterfaceDeclaration(variant.interfaceName, variant.fields);
 }
 
@@ -732,7 +732,7 @@ interface PublicFamilyRegistry {
   predicateName: string;
 }
 
-function publicRegistryForFamily(family: RemotePiIrFamily): PublicFamilyRegistry | undefined {
+function publicRegistryForFamily(family: OutpostPiIrFamily): PublicFamilyRegistry | undefined {
   switch (family.unionName) {
     case "ClientMessage":
       return {
@@ -753,7 +753,7 @@ function publicRegistryForFamily(family: RemotePiIrFamily): PublicFamilyRegistry
   }
 }
 
-function emitRegistryConst(constName: string, variants: RemotePiIrVariant[]): string[] {
+function emitRegistryConst(constName: string, variants: OutpostPiIrVariant[]): string[] {
   const lines = [`export const ${constName} = [`];
   for (const variant of variants) lines.push(`  ${literal(variant.type)},`);
   lines.push("] as const;");
@@ -799,12 +799,12 @@ function isFiniteNumberAtLeast(value: unknown, minimum: number): value is number
 }`;
 }
 
-function emitValidatorFunction(variant: RemotePiIrVariant): string {
+function emitValidatorFunction(variant: OutpostPiIrVariant): string {
   return `function ${variant.validationFunctionName}(value: unknown): value is ${variant.interfaceName} {\n${variant.validationFunctionBody}\n}`;
 }
 
 function emitValidatorRegistry(
-  registry: { constName: string; typeName: string; unionName: string; predicateName: string; validatorsName: string; variants: RemotePiIrVariant[] },
+  registry: { constName: string; typeName: string; unionName: string; predicateName: string; validatorsName: string; variants: OutpostPiIrVariant[] },
   discriminator: string,
 ): string[] {
   const sections: string[] = [];
@@ -821,7 +821,7 @@ function emitValidatorRegistry(
   return sections;
 }
 
-export function renderTypeScriptProtocol(ir: RemotePiIr): string {
+export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
   const sections: string[] = [];
   sections.push("// GENERATED CODE - DO NOT EDIT BY HAND.");
   sections.push("// Source: protocol/schema/manifest.json via protocol-codegen IR.");
@@ -935,7 +935,7 @@ export function renderTypeScriptProtocol(ir: RemotePiIr): string {
   return `${sections.join("\n").trimEnd()}\n`;
 }
 
-export async function emitTypeScriptProtocol(ir: RemotePiIr, options: EmitTypeScriptProtocolOptions): Promise<string> {
+export async function emitTypeScriptProtocol(ir: OutpostPiIr, options: EmitTypeScriptProtocolOptions): Promise<string> {
   const output = renderTypeScriptProtocol(ir);
   if (options.outFile) {
     if (options.check) {
@@ -970,11 +970,11 @@ function defaultManifestCandidates(schemaPath?: string): string[] {
   return unique(candidates.map((candidate) => resolve(candidate)));
 }
 
-async function loadDefaultManifest(schemaPath?: string): Promise<RemotePiManifest> {
+async function loadDefaultManifest(schemaPath?: string): Promise<OutpostPiManifest> {
   let lastError: unknown;
   for (const candidate of defaultManifestCandidates(schemaPath)) {
     try {
-      return await loadRemotePiManifest(candidate);
+      return await loadOutpostPiManifest(candidate);
     } catch (error) {
       lastError = error;
     }
@@ -997,18 +997,18 @@ function isCatalog(value: unknown): value is CatalogEntry[] {
   return Array.isArray(value) && value.every((entry) => isObject(entry) && typeof entry.family === "string" && typeof entry.type === "string" && typeof entry.schemaRef === "string");
 }
 
-export async function buildRemotePiIrFromSchemaInput(schemaPath: string, options: BuildRemotePiIrOptions = {}): Promise<RemotePiIr> {
+export async function buildOutpostPiIrFromSchemaInput(schemaPath: string, options: BuildOutpostPiIrOptions = {}): Promise<OutpostPiIr> {
   const input = await readSchemaInput(schemaPath);
   if (isCatalog(input)) {
     const manifest = await loadDefaultManifest(schemaPath);
-    return buildRemotePiIr(manifest, { ...options, protocolRoot: manifest.protocolRoot });
+    return buildOutpostPiIr(manifest, { ...options, protocolRoot: manifest.protocolRoot });
   }
   if (isObject(input) && Array.isArray(input.families)) {
     const manifestPath = schemaPath === "-" ? undefined : resolve(schemaPath);
-    const manifest = input as RemotePiManifest;
+    const manifest = input as OutpostPiManifest;
     manifest.manifestPath = manifestPath;
     manifest.protocolRoot = options.protocolRoot ?? (manifestPath ? protocolRootForManifestPath(manifestPath) : process.cwd());
-    return buildRemotePiIr(manifest, options);
+    return buildOutpostPiIr(manifest, options);
   }
   throw new ProtocolCodegenError("TypeScript target expects a list-types catalog or protocol manifest JSON schema input");
 }
@@ -1037,10 +1037,10 @@ function parseCliArgs(argv: string[]): Map<string, string> {
   return args;
 }
 
-async function buildCliIr(schemaPath: string | undefined): Promise<RemotePiIr> {
-  if (schemaPath) return buildRemotePiIrFromSchemaInput(schemaPath, { profile: "compat" });
+async function buildCliIr(schemaPath: string | undefined): Promise<OutpostPiIr> {
+  if (schemaPath) return buildOutpostPiIrFromSchemaInput(schemaPath, { profile: "compat" });
   const manifest = await loadDefaultManifest();
-  return buildRemotePiIr(manifest, { profile: "compat", protocolRoot: manifest.protocolRoot });
+  return buildOutpostPiIr(manifest, { profile: "compat", protocolRoot: manifest.protocolRoot });
 }
 
 async function main(argv: string[]): Promise<void> {

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://remote-pi.dev/schemas/cross-pc.schema.json",
+  "$id": "https://kevoun.com/schemas/cross-pc.schema.json",
   "title": "Remote Pi cross-PC forwarding frames",
   "oneOf": [
     { "$ref": "#/$defs/piEnvelope" },
@@ -47,7 +47,7 @@
         "envelope": { "$ref": "#/$defs/agentEnvelope" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "relayOpaque": ["envelope.body"] }
+      "x-outpost-pi": { "relayOpaque": ["envelope.body"] }
     },
     "piEnvelopeIn": {
       "type": "object",
@@ -64,14 +64,14 @@
         }
       },
       "additionalProperties": false,
-      "x-remote-pi": {
+      "x-outpost-pi": {
         "fromPcGroundTruth": true,
         "brokerOwnsPrefixAntiSpoof": true,
         "relayOpaque": ["envelope.body"]
       }
     }
   },
-  "x-remote-pi": {
+  "x-outpost-pi": {
     "family": "crossPc",
     "transport": "relay-jsonl",
     "discriminator": "type"
