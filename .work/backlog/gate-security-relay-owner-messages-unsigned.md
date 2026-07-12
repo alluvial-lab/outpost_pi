@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-12
 ---
 
 # Relay-routed owner messages lack end-to-end authentication
@@ -20,12 +20,16 @@ High
 Authentication & Authorization / Cryptography / Data Protection
 
 ## Location
-`pi-extension/src/transport/peer_channel.ts:67`
+`pi-extension/src/transport/peer_channel.ts:72`
 
 ## Evidence
 ```ts
 const ct = Buffer.from(JSON.stringify(msg)).toString("base64");
-const outer: OuterEnvelope = { peer: this.remotePeerId, ct };
+const outer: OuterEnvelope = {
+  peer: this.remotePeerId,
+  room: APP_DESTINATION_ROOM,
+  ct,
+};
 ```
 
 Additional ingress evidence: `pi-extension/src/extension/owner_multiplexer.ts:244` trusts `outer.peer` for known-owner reattachment, and `pi-extension/src/transport/peer_channel.ts:111` decodes `outer.ct` without a message signature or MAC.
