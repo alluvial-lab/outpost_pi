@@ -198,7 +198,7 @@ export class PairingCoordinator {
           "[outpost-pi] Could not read this machine's identity: the system " +
           "keychain is locked or access was denied. Unlock it (open the app / " +
           "log in) and run /outpost-pi again. Your pairing is NOT lost. " +
-          "(Set REMOTE_PI_ALLOW_FILE_IDENTITY=1 only for headless hosts.)",
+          "(Set OUTPOST_PI_ALLOW_FILE_IDENTITY=1 only for headless hosts.)",
           "error",
         );
         return;
@@ -323,7 +323,7 @@ export class PairingCoordinator {
     const qrUri = buildQRUri(token, edKp.publicKey, sessionName, roomId);
     const qrAscii = renderQRAscii(qrUri);
     this.deps.sendPiMessage({
-      customType: "remote-pi:pair-code",
+      customType: "outpost-pi:pair-code",
       content:
         `📱 Scan to pair:\n\n${qrAscii}\n` +
         `📋 Or copy this pairing code (camera-less devices):\n\n${qrUri}`,
@@ -556,7 +556,7 @@ export class PairingCoordinator {
         }
         const short = ownerEpk.slice(0, 8);
         this.deps.sendPiMessage({
-          customType: "remote-pi:mesh-revoked",
+          customType: "outpost-pi:mesh-revoked",
           content:
             `🔒 Revoked by Owner ${short}…\n\n` +
             `The mobile app for this Owner removed this PC from the mesh. ` +

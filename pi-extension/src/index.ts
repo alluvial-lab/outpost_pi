@@ -157,7 +157,7 @@ let _state: RemoteState = "idle";
 /** Relay connectivity as seen by an RPC client (Cockpit). Derived by the relay
  *  transport adapter: "disconnected" = relay off (idle); "connected" = live
  *  WS; "reconnecting" = was on, WS dropped, retrying. Surfaced via the
- *  `remote-pi:relay-state` custom message (see `_emitRelayState`). */
+ *  `outpost-pi:relay-state` custom message (see `_emitRelayState`). */
 export type RelayConnectivity = "connected" | "reconnecting" | "disconnected";
 
 /** Sentinel prefix for a transparent control message an RPC client sends on the
@@ -165,9 +165,9 @@ export type RelayConnectivity = "connected" | "reconnecting" | "disconnected";
  *  and swallows it (`action:"handled"`) so it never becomes an LLM turn or a
  *  transcript entry. Starts with NUL so it can't collide with real user input
  *  and doesn't begin with "/" (which would route to the command parser). */
-export const CTRL_PREFIX = "\x00remote-pi-ctrl:";
+export const CTRL_PREFIX = "\x00outpost-pi-ctrl:";
 
-const STRUCTURED_CONTROL_TYPE = "remote_pi_control";
+const STRUCTURED_CONTROL_TYPE = "outpost_pi_control";
 const STRUCTURED_CONTROL_COMMANDS = {
   relay_on: "relay:on",
   relay_off: "relay:off",
@@ -268,7 +268,7 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
   },
   onOwnerPaired: ({ peerId, peerName, pairedAt }) => {
     _sendPiMessage({
-      customType: "remote-pi:paired",
+      customType: "outpost-pi:paired",
       content: `Paired with ${peerName}`,
       details: { name: peerName, peerId, pairedAt },
       display: false,
@@ -436,7 +436,7 @@ const _pairingCoordinator = new PairingCoordinator({
   },
   onOwnerPaired: ({ peerId, peerName, pairedAt }) => {
     _sendPiMessage({
-      customType: "remote-pi:paired",
+      customType: "outpost-pi:paired",
       content: `Paired with ${peerName}`,
       details: { name: peerName, peerId, pairedAt },
       display: false,
@@ -1047,7 +1047,7 @@ function _relayStatus(): RelayConnectivity {
 }
 
 /**
- * Ask the relay transport to emit the `remote-pi:relay-state` custom message.
+ * Ask the relay transport to emit the `outpost-pi:relay-state` custom message.
  * The transport owns the dedupe and snapshot shape; index only bridges to Pi's
  * message API.
  */
@@ -1062,7 +1062,7 @@ function _sendRelayStateSnapshot(snapshot: RelayStateSnapshot): void {
   // publishes its own fresh state once bound.
   if (!_sdkSessionProjection.messageApiBinding()) return;
   _sendPiMessage({
-    customType: "remote-pi:relay-state",
+    customType: "outpost-pi:relay-state",
     content: `Relay ${snapshot.status}`,
     details: {
       status: snapshot.status,
@@ -1087,7 +1087,7 @@ function _controlCtx(): Pick<ExtensionContext, "ui" | "cwd"> {
 /**
  * `ui.notify` for headless contexts (daemon auto-init + control channel). There
  * is no TUI, and the RPC client (Cockpit) already gets everything it needs via
- * structured events (`remote-pi:relay-state`, `remote-pi:name-assigned`,
+ * structured events (`outpost-pi:relay-state`, `outpost-pi:name-assigned`,
  * room_meta) — so routine INFO chatter would just pollute the client's captured
  * stderr. We drop info and forward only warnings/errors (kept for the
  * supervisor's journal / genuine failures). The interactive Pi keeps its normal
@@ -1301,7 +1301,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // subagent tool execution is open. See
     // story-extension-suppress-subagent-assistant-broadcast.
     if (subagentGate.isActive()) return;
-    // Transparent control channel: structured `remote_pi_control` frames are
+    // Transparent control channel: structured `outpost_pi_control` frames are
     // the canonical path; `CTRL_PREFIX` remains an explicit compatibility
     // decoder. Both map to one dispatch path and are SWALLOWED
     // (`action:"handled"`) so they never reach the LLM or the transcript.
@@ -1884,7 +1884,7 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
         "[outpost-pi] Could not read this machine's identity: the system " +
         "keychain is locked or access was denied. Unlock it (open the app / " +
         "log in) and run /outpost-pi again. Your pairing is NOT lost. " +
-        "(Set REMOTE_PI_ALLOW_FILE_IDENTITY=1 only for headless hosts.)",
+        "(Set OUTPOST_PI_ALLOW_FILE_IDENTITY=1 only for headless hosts.)",
         "error",
       );
       return;
@@ -2563,7 +2563,7 @@ export function _routeClientMessageFrom(
       break;
     case "session_new": {
       const actionCtx = _sdkSessionProjection.freshCommandActionCtx();
-      if (process.env["REMOTE_PI_DAEMON"] === "1" && !actionCtx?.newSession) {
+      if (process.env["OUTPOST_PI_DAEMON"] === "1" && !actionCtx?.newSession) {
         // Headless RPC daemon has no ExtensionCommandContext, so ctx.newSession
         // is unavailable. Ack, rotate outpost-pi's session-scoped replay state,
         // then exit with a private code; the supervisor restarts once without

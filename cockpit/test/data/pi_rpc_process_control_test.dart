@@ -15,11 +15,11 @@ void main() {
 
         expect(prompt['type'], 'prompt');
         expect(prompt['message'], isA<String>());
-        expect(prompt['message'], isNot(contains('\u0000remote-pi-ctrl:')));
+        expect(prompt['message'], isNot(contains('\u0000outpost-pi-ctrl:')));
 
         final envelope = jsonDecode(prompt['message'] as String);
         expect(envelope, <String, Object>{
-          'type': 'remote_pi_control',
+          'type': 'outpost_pi_control',
           'command': 'relay_status',
         });
       },
@@ -32,7 +32,7 @@ void main() {
 
       final envelope = jsonDecode(prompt['message'] as String);
       expect(envelope, <String, Object>{
-        'type': 'remote_pi_control',
+        'type': 'outpost_pi_control',
         'command': 'rename',
         'name': 'desk-agent',
       });
