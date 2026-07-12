@@ -6,7 +6,7 @@ import 'package:cockpit/app/core/env.dart';
 import 'package:cockpit/app/cockpit/data/adapters/rpc_data_mapper.dart';
 import 'package:cockpit/app/cockpit/data/adapters/rpc_event_mapper.dart';
 import 'package:cockpit/app/core/data/rpc/jsonl_line_splitter.dart';
-import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
+import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/rpc_process_gateway.dart';
 import 'package:cockpit/app/cockpit/domain/entities/agent_snapshot.dart';
 import 'package:cockpit/app/cockpit/domain/entities/context_usage.dart';

@@ -104,9 +104,9 @@ abstract class RpcProcessGateway implements Service {
   /// `get_session_stats` — uso da janela de contexto (pode ser `null`).
   Future<Result<ContextUsage?, RpcError>> sessionStats();
 
-  /// Envia um comando do overlay Remote Pi diretamente no stdin, sem envolver
+  /// Envia um comando do overlay Outpost-Pi diretamente no stdin, sem envolver
   /// o LLM nem aparecer no transcript. O domínio passa um valor alinhado ao
   /// schema `cockpit-control`; a serialização de transporte fica no adapter.
-  /// Respostas chegam como eventos customizados `remote-pi:*` no stdout.
+  /// Respostas chegam como eventos customizados `outpost-pi:*` no stdout.
   Future<Result<void, RpcError>> sendControl(PiControlCommand command);
 }

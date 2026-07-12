@@ -5,13 +5,13 @@ import 'dart:math';
 
 import 'package:cockpit/app/core/env.dart';
 import 'package:cockpit/app/core/data/rpc/jsonl_line_splitter.dart';
-import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
+import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 
 /// Sessão **efêmera e dedicada** de `pi --mode rpc --no-session` para comandos
-/// pontuais do remote-pi (pareamento, revoke). Roda numa pasta temporária única
+/// pontuais do outpost-pi (pareamento, revoke). Roda numa pasta temporária única
 /// (evita colisão de cwd-lock) com `REMOTE_PI_DIRECT_CONFIG` de pareamento — o
-/// que faz `localConfigExists` virar true e o `/remote-pi <cmd>` auto-ligar o
-/// relay. Carrega a extensão remote-pi (SEM `--no-extensions`).
+/// que faz `localConfigExists` virar true e o `/outpost-pi <cmd>` auto-ligar o
+/// relay. Carrega a extensão outpost-pi (SEM `--no-extensions`).
 ///
 /// Não interpreta o protocolo: entrega cada objeto JSON do stdout via [onLine];
 /// quem usa decide o que é resposta/evento. [dispose] mata o processo (sem
@@ -35,7 +35,7 @@ class EphemeralPiRpc {
     required void Function(Map<String, dynamic> json) onLine,
     void Function(int code)? onExit,
   }) async {
-    final dir = await Directory.systemTemp.createTemp('remote-pi-rpc-');
+    final dir = await Directory.systemTemp.createTemp('outpost-pi-rpc-');
     _tempDir = dir;
 
     final env = <String, String>{
@@ -105,7 +105,7 @@ class EphemeralPiRpc {
   }
 
   /// `--mode rpc --no-session` (sem persistir sessão), SEM `--no-extensions`
-  /// (precisamos da extensão remote-pi pros slash commands).
+  /// (precisamos da extensão outpost-pi pros slash commands).
   List<String> _args() => <String>[
     '--mode',
     'rpc',

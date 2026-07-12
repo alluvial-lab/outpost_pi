@@ -22,7 +22,7 @@ core/
 │   ├── entities/      # app_settings (preferências); pair_event
 │   ├── exceptions/    # relay_error
 │   └── result.dart    # Result<T, E>
-├── data/              # utils compartilhados: jsonl_line_splitter, remote_pi_resolver,
+├── data/              # utils compartilhados: jsonl_line_splitter, outpost_pi_resolver,
 │   │                  #   hive_settings_store
 │   └── relay/         # ephemeral_pi_rpc + pairing/revoke gateway impls
 └── ui/

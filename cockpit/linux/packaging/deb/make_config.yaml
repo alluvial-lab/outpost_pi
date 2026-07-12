@@ -2,9 +2,9 @@
 # (ubuntu-24.04) e `linux-arm64` (ubuntu-24.04-arm) do CI. A arquitetura é
 # detectada pelo Fastforge (uname -m) no runner.
 #
-# Artefato resultante: remote-pi-cockpit_<versão>_<arch>.deb
-display_name: Remote Pi Cockpit
-package_name: remote-pi-cockpit
+# Artefato resultante: outpost-pi-cockpit_<versão>_<arch>.deb
+display_name: Outpost-Pi Cockpit
+package_name: outpost-pi-cockpit
 # Installed-Size do pacote .deb, em KB (campo obrigatório do maker do Fastforge).
 # Estimativa do bundle Flutter Linux release (~150 MB); recalibrar com
 # `du -sk build/linux/*/release/bundle` quando houver build Linux real.
@@ -23,13 +23,13 @@ dependencies:
   # Plano 46 — preview de A/V via media_kit (libmpv). No Linux usamos a libmpv
   # do sistema (em macOS/Windows é embarcada pelo media_kit_libs_video).
   - libmpv2
-generic_name: Remote Pi Cockpit
+generic_name: Outpost-Pi Cockpit
 categories:
   - Development
   - IDE
 keywords:
   - pi
-  - remote-pi
+  - outpost-pi
   - agent
   - cockpit
 startup_notify: true

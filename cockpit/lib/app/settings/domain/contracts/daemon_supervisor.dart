@@ -6,7 +6,7 @@ import 'package:cockpit/app/core/domain/result.dart';
 /// `pi-supervisord`).
 ///
 /// Lista/controla via o UDS de controle do supervisor
-/// (`~/.pi/remote/supervisor.sock`); cria via o CLI `remote-pi create` (que
+/// (`~/.pi/remote/supervisor.sock`); cria via o CLI `outpost-pi create` (que
 /// escreve o config local + registra + sobe). Contrato no domínio; a impl
 /// (socket/Process) mora em `data/`.
 ///
@@ -31,7 +31,7 @@ abstract class DaemonSupervisor {
   /// Remove o daemon (para o processo + tira do registry).
   Future<Result<void, DaemonError>> unregister(String id);
 
-  /// Registra um novo daemon para [cwd] (`remote-pi create <cwd> [--name]`).
+  /// Registra um novo daemon para [cwd] (`outpost-pi create <cwd> [--name]`).
   Future<Result<void, DaemonError>> create(String cwd, {String? name});
 
   /// Renomeia o agente: atualiza `name` no registry global
@@ -42,7 +42,7 @@ abstract class DaemonSupervisor {
   /// Reinicia o **processo do supervisor** (`pi-supervisord`) — não os daemons.
   /// Necessário pra recarregar código novo do pi-extension (Node não faz
   /// hot-reload). Reinicia todos os daemons junto. Delega ao CLI
-  /// `remote-pi restart-supervisor`, que trata o detalhe por SO
+  /// `outpost-pi restart-supervisor`, que trata o detalhe por SO
   /// (launchctl/systemctl/serviço do Windows).
   Future<Result<void, DaemonError>> restartSupervisor();
 }

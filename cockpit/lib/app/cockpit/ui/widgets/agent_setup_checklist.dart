@@ -6,7 +6,7 @@ import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Checklist do ambiente de **agente** (pi + extensão remote-pi + supervisor),
+/// Checklist do ambiente de **agente** (pi + extensão outpost-pi + supervisor),
 /// exibido inline numa aba de agente vazia quando o usuário escolhe "New agent"
 /// e o ambiente ainda não está pronto. Antes era a tela de onboarding do boot;
 /// agora dispara sob demanda (decisão: Cockpit como multiplexador não exige o
@@ -120,7 +120,7 @@ class _AgentSetupChecklistState extends State<AgentSetupChecklist>
                 ),
                 _StepCard(
                   index: 2,
-                  title: 'remote-pi extension on Pi',
+                  title: 'outpost-pi extension on Pi',
                   description: 'Registered in ~/.pi/agent/settings.json.',
                   status: vm.extension,
                   onRecheck: vm.recheckExtension,
@@ -128,7 +128,7 @@ class _AgentSetupChecklistState extends State<AgentSetupChecklist>
                     label: 'Install',
                     onTap: () => _install(
                       context,
-                      title: 'Install remote-pi extension',
+                      title: 'Install outpost-pi extension',
                       runner: vm.installExtension,
                     ),
                   ),
@@ -136,7 +136,7 @@ class _AgentSetupChecklistState extends State<AgentSetupChecklist>
                 _StepCard(
                   index: 3,
                   title: 'Supervisor installed',
-                  description: 'pi-supervisord service (remote-pi install).',
+                  description: 'pi-supervisord service (outpost-pi install).',
                   status: vm.supervisor,
                   onRecheck: vm.recheckSupervisor,
                   // Sem a extensão não há index.js pra rodar o instalador.
