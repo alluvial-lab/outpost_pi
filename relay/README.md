@@ -92,8 +92,8 @@ state at the next mutation.
 
 | Variable | Default | Description |
 |---|---|---|
-| `REMOTEPI_RELAY_PORT` | `3000` | TCP port that serves the WebSocket upgrade, `/health`, and `/mesh/*` (all on the same port) |
-| `REMOTEPI_MESH_DB_PATH` | `/data/mesh.db` in Docker · `data/mesh.db` (cwd-relative) for bare-metal builds | Path to the SQLite database that stores signed membership versions. The parent directory is created automatically on first boot. The Docker image presets this to `/data/mesh.db` and declares `/data` as a volume — see the volume note above |
+| `OUTPOSTPI_RELAY_PORT` | `3000` | TCP port that serves the WebSocket upgrade, `/health`, and `/mesh/*` (all on the same port) |
+| `OUTPOSTPI_MESH_DB_PATH` | `/data/mesh.db` in Docker · `data/mesh.db` (cwd-relative) for bare-metal builds | Path to the SQLite database that stores signed membership versions. The parent directory is created automatically on first boot. The Docker image presets this to `/data/mesh.db` and declares `/data` as a volume — see the volume note above |
 | `RUST_LOG` | _(none)_ | Log level filter — e.g. `info`, `debug`, `warn` |
 
 Example with a custom port and logging (volume mount is the same):
@@ -103,7 +103,7 @@ docker run -d \
   --name outpost-pi-relay \
   -p 8080:8080 \
   -v outpost-pi-data:/data \
-  -e REMOTEPI_RELAY_PORT=8080 \
+  -e OUTPOSTPI_RELAY_PORT=8080 \
   -e RUST_LOG=info \
   --restart unless-stopped \
   jacobmoura7/outpost-pi-relay
@@ -122,7 +122,7 @@ Bodies are capped at 500 KB. The relay never decides membership — it only
 stores what was signed by the Owner. A compromised relay can deny service but
 cannot forge membership without the Owner private key.
 
-**Self-hosting note**: the SQLite database at `REMOTEPI_MESH_DB_PATH`
+**Self-hosting note**: the SQLite database at `OUTPOSTPI_MESH_DB_PATH`
 (`/data/mesh.db` inside the official Docker image) is your operational
 responsibility — make sure `/data` is on a persistent volume and back it up
 alongside any other server state. If you lose it, clients re-publish their
@@ -131,7 +131,7 @@ current view at their next mutation.
 **Storage layout**: SQLite runs in the default rollback-journal mode (NOT
 WAL), so only `mesh.db` persists. During a write transaction a transient
 `mesh.db-journal` may appear in the same directory and is deleted on commit.
-Both files live under `REMOTEPI_MESH_DB_PATH`'s parent directory — typically
+Both files live under `OUTPOSTPI_MESH_DB_PATH`'s parent directory — typically
 `/data/` in Docker or `data/` next to the binary on bare metal. The directory
 is created automatically on first boot.
 
@@ -157,7 +157,7 @@ cargo build --release
 ```
 
 ```bash
-REMOTEPI_RELAY_PORT=8080 RUST_LOG=info ./target/release/relay
+OUTPOSTPI_RELAY_PORT=8080 RUST_LOG=info ./target/release/relay
 ```
 
 ## Running tests
