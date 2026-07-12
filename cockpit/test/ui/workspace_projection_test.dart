@@ -158,7 +158,7 @@ void main() {
     );
     expect(rpcFactory.lastGateway?.spawnSessionId, '/sessions/a1.jsonl');
     expect(
-      rpcFactory.lastGateway?.spawnEnvironment?['REMOTE_PI_DIRECT_CONFIG'],
+      rpcFactory.lastGateway?.spawnEnvironment?['OUTPOST_PI_DIRECT_CONFIG'],
       contains('"auto_start_relay":true'),
     );
     expect(
