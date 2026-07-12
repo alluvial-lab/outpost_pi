@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-const LOCAL_DIR = ".pi/remote-pi";
+const LOCAL_DIR = ".pi/outpost-pi";
 const LOCAL_FILE = "config.json";
 
 /**
@@ -16,7 +16,7 @@ const DIRECT_CONFIG_ENV = "REMOTE_PI_DIRECT_CONFIG";
 export interface LocalConfig {
   agent_name?: string;
   /**
-   * If true (default), `/remote-pi` with no args auto-joins the local UDS
+   * If true (default), `/outpost-pi` with no args auto-joins the local UDS
    * mesh and starts the relay on a fresh terminal. The field name is
    * historical (plano 21); the UX wording was reworked to "use the relay
    * on this terminal to connect to the remote mesh (mobile + PCs)". Legacy
@@ -109,7 +109,7 @@ function directConfig(): LocalConfig | null {
 
 /**
  * True when a local config is available for this cwd — either inline via
- * `REMOTE_PI_DIRECT_CONFIG` or as `<cwd>/.pi/remote-pi/config.json` on disk.
+ * `REMOTE_PI_DIRECT_CONFIG` or as `<cwd>/.pi/outpost-pi/config.json` on disk.
  */
 export function localConfigExists(cwd: string): boolean {
   return directConfig() !== null || existsSync(pathFor(cwd));

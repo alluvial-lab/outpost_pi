@@ -31,18 +31,18 @@ export class CronCommands {
         case "run":     return await this.runJob(rest.trim(), ctx);
         case "log":     return await this.log(rest, ctx);
         default:
-          ctx.ui.notify("[remote-pi] Usage: /remote-pi cron <add|list|remove|enable|disable|run|log>", "warning");
+          ctx.ui.notify("[outpost-pi] Usage: /outpost-pi cron <add|list|remove|enable|disable|run|log>", "warning");
       }
     } catch (err) {
       if (err instanceof SupervisorOfflineError) {
         ctx.ui.notify(
-          "[remote-pi] Cron needs the supervisor running. Run `remote-pi install` " +
+          "[outpost-pi] Cron needs the supervisor running. Run `outpost-pi install` " +
           "(or start `pi-supervisord`).",
           "warning",
         );
         return;
       }
-      ctx.ui.notify(`[remote-pi] cron ${sub || "list"} failed: ${String(err)}`, "error");
+      ctx.ui.notify(`[outpost-pi] cron ${sub || "list"} failed: ${String(err)}`, "error");
     }
   }
 
@@ -64,7 +64,7 @@ export class CronCommands {
     const [daemonId, schedule, prompt] = pos;
     if (!daemonId || !schedule || !prompt) {
       ctx.ui.notify(
-        '[remote-pi] Usage: /remote-pi cron add <daemonId> "<cron-expr>" "<prompt>" ' +
+        '[outpost-pi] Usage: /outpost-pi cron add <daemonId> "<cron-expr>" "<prompt>" ' +
         "[--tz Area/City] [--wake] [--no-skip-busy] [--catchup]",
         "warning",
       );
@@ -79,7 +79,7 @@ export class CronCommands {
     if (catchup) req.catchup = true;
     const data = await callSupervisor(req);
     ctx.ui.notify(
-      `[remote-pi] Cron ${data.job.id} added → daemon ${daemonId}: "${schedule}"` +
+      `[outpost-pi] Cron ${data.job.id} added → daemon ${daemonId}: "${schedule}"` +
       `${tz ? ` (${tz})` : ""}. Next run: ${data.job.next_run ?? "?"}`,
       "info",
     );
@@ -88,14 +88,14 @@ export class CronCommands {
   private async list(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
     const data = await callSupervisor({ op: "cron_list" });
     if (data.jobs.length === 0) {
-      ctx.ui.notify("[remote-pi] No cron jobs.", "info");
+      ctx.ui.notify("[outpost-pi] No cron jobs.", "info");
       return;
     }
     const lines = data.jobs.map((j) =>
       `${j.enabled ? "✓" : "✗"} ${j.id}  "${j.schedule}"${j.tz ? ` (${j.tz})` : ""}  → ${j.daemon_id}  ` +
       `next:${j.next_run ?? "?"}  last:${j.last_status ?? "—"}${j.last_run ? `@${j.last_run}` : ""}`,
     );
-    ctx.ui.notify(`[remote-pi] Cron jobs (${data.jobs.length}):\n${lines.join("\n")}`, "info");
+    ctx.ui.notify(`[outpost-pi] Cron jobs (${data.jobs.length}):\n${lines.join("\n")}`, "info");
   }
 
   private async mutate(
@@ -104,16 +104,16 @@ export class CronCommands {
     ctx: Pick<ExtensionContext, "ui">,
   ): Promise<void> {
     if (!jobId) {
-      ctx.ui.notify(`[remote-pi] Usage: /remote-pi cron ${req.op === "cron_remove" ? "remove" : "enable|disable"} <jobId>`, "warning");
+      ctx.ui.notify(`[outpost-pi] Usage: /outpost-pi cron ${req.op === "cron_remove" ? "remove" : "enable|disable"} <jobId>`, "warning");
       return;
     }
     if (req.op === "cron_remove") {
       const data = await callSupervisor(req);
-      ctx.ui.notify(data.removed ? `[remote-pi] Cron ${jobId} removed.` : `[remote-pi] No cron job ${jobId}.`, data.removed ? "info" : "warning");
+      ctx.ui.notify(data.removed ? `[outpost-pi] Cron ${jobId} removed.` : `[outpost-pi] No cron job ${jobId}.`, data.removed ? "info" : "warning");
     } else {
       const data = await callSupervisor(req);
       ctx.ui.notify(
-        data.updated ? `[remote-pi] Cron ${jobId} ${data.enabled ? "enabled" : "disabled"}.` : `[remote-pi] No cron job ${jobId}.`,
+        data.updated ? `[outpost-pi] Cron ${jobId} ${data.enabled ? "enabled" : "disabled"}.` : `[outpost-pi] No cron job ${jobId}.`,
         data.updated ? "info" : "warning",
       );
     }
@@ -121,11 +121,11 @@ export class CronCommands {
 
   private async runJob(jobId: string, ctx: Pick<ExtensionContext, "ui">): Promise<void> {
     if (!jobId) {
-      ctx.ui.notify("[remote-pi] Usage: /remote-pi cron run <jobId>", "warning");
+      ctx.ui.notify("[outpost-pi] Usage: /outpost-pi cron run <jobId>", "warning");
       return;
     }
     const data = await callSupervisor({ op: "cron_run", job_id: jobId });
-    ctx.ui.notify(`[remote-pi] Cron ${jobId} fired now → ${data.result}`, "info");
+    ctx.ui.notify(`[outpost-pi] Cron ${jobId} fired now → ${data.result}`, "info");
   }
 
   private async log(rest: string, ctx: Pick<ExtensionContext, "ui">): Promise<void> {
@@ -141,12 +141,12 @@ export class CronCommands {
     if (jobId) req.job_id = jobId;
     const data = await callSupervisor(req);
     if (data.entries.length === 0) {
-      ctx.ui.notify("[remote-pi] No cron log entries.", "info");
+      ctx.ui.notify("[outpost-pi] No cron log entries.", "info");
       return;
     }
     const lines = data.entries.map((e) =>
       `${new Date(e.ts).toISOString()}  ${e.fired ? "▶" : "∅"} ${e.result}  ${e.job_id} → ${e.daemon_id}  ${e.prompt_preview}`,
     );
-    ctx.ui.notify(`[remote-pi] Cron log (last ${data.entries.length}):\n${lines.join("\n")}`, "info");
+    ctx.ui.notify(`[outpost-pi] Cron log (last ${data.entries.length}):\n${lines.join("\n")}`, "info");
   }
 }

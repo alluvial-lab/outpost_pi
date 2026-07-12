@@ -22,13 +22,13 @@ import { formatPeerInventory } from "../../session/peer_inventory.js";
 import { runSetupWizard, type WizardUI } from "../../session/setup_wizard.js";
 import { ControlCommands } from "./control_commands.js";
 
-export type RemotePiUi = {
+export type OutpostPiUi = {
   setStatus?: (key: string, value: string | undefined) => void;
   setTitle?: (title: string) => void;
   notify?: (message: string, type?: "info" | "warning" | "error") => void;
 };
 
-export type RemotePiUiContext = { ui?: RemotePiUi } | null | undefined;
+export type OutpostPiUiContext = { ui?: OutpostPiUi } | null | undefined;
 
 type MeshEnvelope = { id: string; from: string; re: string | null; body: unknown };
 
@@ -43,14 +43,14 @@ export interface LocalMeshCommandsDeps {
   readonly status: (ctx: Pick<ExtensionContext, "ui">) => void;
   readonly controlCtx: () => Pick<ExtensionContext, "ui" | "cwd">;
   readonly emitRelayState: (force?: boolean) => void;
-  readonly refreshFooter: (ctx?: RemotePiUiContext) => void;
+  readonly refreshFooter: (ctx?: OutpostPiUiContext) => void;
   readonly refreshSessionPeerCount: (peer: MeshNode, ctx?: Pick<ExtensionContext, "ui"> | null) => void;
   readonly deliverMeshMessage: (env: MeshEnvelope) => void;
   readonly attachBridgeIfReady: () => void;
   readonly notify: (
     msg: string,
     type?: "info" | "warning" | "error",
-    ctx?: RemotePiUiContext,
+    ctx?: OutpostPiUiContext,
   ) => void;
   readonly sendPiMessage: (
     message: Parameters<ExtensionAPI["sendMessage"]>[0],
@@ -80,11 +80,11 @@ export class LocalMeshCommands {
   }
 
   /**
-   * Root handler for `/remote-pi`. On first run (no local config) drops into
+   * Root handler for `/outpost-pi`. On first run (no local config) drops into
    * the wizard; on subsequent runs auto-joins the local mesh + starts the
    * relay (if opted in during setup), then prints the status.
    *
-   * `/remote-pi` is intentionally the only command users need day-to-day:
+   * `/outpost-pi` is intentionally the only command users need day-to-day:
    * idempotent connect + status display.
    */
   async root(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
@@ -107,7 +107,7 @@ export class LocalMeshCommands {
     // broker's `_uniqueName` suffix scheme) instead of being turned away. The
     // suffix N matches the broker's (`#2`-based) so lock + mesh name line up. The
     // lock is a UDS socket (kernel auto-releases on exit/crash) bound for THIS
-    // process's lifetime; repeat `/remote-pi` calls are idempotent.
+    // process's lifetime; repeat `/outpost-pi` calls are idempotent.
     if (this.cwdLock === null) {
       for (let n = 1; n <= 1000; n++) {
         const candidate = n === 1 ? requestedName : `${requestedName}#${n}`;
@@ -116,7 +116,7 @@ export class LocalMeshCommands {
       }
       if (this.cwdLock === null) {
         ctx.ui.notify(
-          `[remote-pi] Could not start: too many agents named "${requestedName}" already running in this folder.`,
+          `[outpost-pi] Could not start: too many agents named "${requestedName}" already running in this folder.`,
           "warning",
         );
         return;
@@ -136,12 +136,12 @@ export class LocalMeshCommands {
         use_relay: true,
       });
       if (!newConfig) {
-        ctx.ui.notify("[remote-pi] Setup cancelled.", "info");
+        ctx.ui.notify("[outpost-pi] Setup cancelled.", "info");
         return;
       }
       saveLocalConfig(cwd, newConfig);
       ctx.ui.notify(
-        `[remote-pi] Config saved to ${cwd}/.pi/remote-pi/config.json`,
+        `[outpost-pi] Config saved to ${cwd}/.pi/outpost-pi/config.json`,
         "info",
       );
       await this.join(ctx);
@@ -167,7 +167,7 @@ export class LocalMeshCommands {
   }
 
   /**
-   * `/remote-pi setup` — re-run the wizard. Defaults pre-fill from the
+   * `/outpost-pi setup` — re-run the wizard. Defaults pre-fill from the
    * existing config so it doubles as an "edit" flow.
    */
   async setup(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
@@ -175,7 +175,7 @@ export class LocalMeshCommands {
     const cwd = "cwd" in ctx ? (ctx as ExtensionCommandContext).cwd : process.cwd();
     const ui = ctx.ui as unknown as WizardUI;
     if (typeof ui.select !== "function") {
-      ctx.ui.notify("[remote-pi] Setup requires an interactive UI.", "warning");
+      ctx.ui.notify("[outpost-pi] Setup requires an interactive UI.", "warning");
       return;
     }
     const current = loadLocalConfig(cwd);
@@ -185,18 +185,18 @@ export class LocalMeshCommands {
       use_relay: effectiveAutoStartRelay(current),
     });
     if (!newConfig) {
-      ctx.ui.notify("[remote-pi] Setup cancelled.", "info");
+      ctx.ui.notify("[outpost-pi] Setup cancelled.", "info");
       return;
     }
     saveLocalConfig(cwd, newConfig);
     ctx.ui.notify(
-      "[remote-pi] Config updated. Run /remote-pi to apply now.",
+      "[outpost-pi] Config updated. Run /outpost-pi to apply now.",
       "info",
     );
   }
 
   /**
-   * Plan/25 Wave D: `/remote-pi peers`.
+   * Plan/25 Wave D: `/outpost-pi peers`.
    *
    * Queries the local broker for the aggregated peer inventory (`list_peers`
    * returns locals + cross-PC entries prefixed with `<pc_label>:`). Formats
@@ -206,7 +206,7 @@ export class LocalMeshCommands {
   async peers(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
     const meshNode = this.deps.meshNode();
     if (!meshNode) {
-      ctx.ui.notify("[remote-pi] Not on the local mesh. Run /remote-pi to join.", "warning");
+      ctx.ui.notify("[outpost-pi] Not on the local mesh. Run /outpost-pi to join.", "warning");
       return;
     }
     let peers: string[];
@@ -214,26 +214,26 @@ export class LocalMeshCommands {
       const reply = await meshNode.request("broker", { type: "list_peers" }, 2000);
       peers = (reply.body as { peers?: string[] } | null)?.peers ?? [];
     } catch (err) {
-      ctx.ui.notify(`[remote-pi] peers list failed: ${String(err)}`, "error");
+      ctx.ui.notify(`[outpost-pi] peers list failed: ${String(err)}`, "error");
       return;
     }
     // Exclude self from the printed list — `list_peers` returns every peer
     // registered with the broker including the caller, which is noise here.
     const selfName = meshNode.name();
-    ctx.ui.notify(`[remote-pi] peers:\n${formatPeerInventory(peers, selfName)}`, "info");
+    ctx.ui.notify(`[outpost-pi] peers:\n${formatPeerInventory(peers, selfName)}`, "info");
   }
 
   /**
-   * `/remote-pi stop` — full teardown. Leaves the local UDS mesh AND closes
+   * `/outpost-pi stop` — full teardown. Leaves the local UDS mesh AND closes
    * the relay. Safe when one or both are already off. To resume, run
-   * `/remote-pi` again.
+   * `/outpost-pi` again.
    */
   async stop(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
     const meshNode = this.deps.meshNode();
     const meshUp = meshNode !== null;
     const relayUp = this.deps.getState() !== "idle";
     if (!meshUp && !relayUp) {
-      ctx.ui.notify("[remote-pi] Already stopped — nothing to do.", "info");
+      ctx.ui.notify("[outpost-pi] Already stopped — nothing to do.", "info");
       return;
     }
 
@@ -247,7 +247,7 @@ export class LocalMeshCommands {
 
     if (relayUp) this.deps.stopRelay("peer_stop");
 
-    ctx.ui.notify("[remote-pi] Stopped (mesh + relay disconnected).", "info");
+    ctx.ui.notify("[outpost-pi] Stopped (mesh + relay disconnected).", "info");
     this.deps.refreshFooter(ctx);
   }
 
@@ -272,7 +272,7 @@ export class LocalMeshCommands {
     const agentName = this.lockedName ?? requestedName;
 
     if (this.deps.meshNode()) {
-      ctx.ui.notify("[remote-pi] Already on the local mesh.", "warning");
+      ctx.ui.notify("[outpost-pi] Already on the local mesh.", "warning");
       return;
     }
 
@@ -382,7 +382,7 @@ export class LocalMeshCommands {
         display: false,
       }, undefined, "name-assigned");
       ctx.ui.notify(
-        `[remote-pi] Joined local mesh as "${assigned}" (${peer.currentRole()})`,
+        `[outpost-pi] Joined local mesh as "${assigned}" (${peer.currentRole()})`,
         "info",
       );
       this.deps.refreshFooter(ctx);
@@ -391,7 +391,7 @@ export class LocalMeshCommands {
       // again from relay start).
       this.deps.attachBridgeIfReady();
     } catch (err) {
-      this.deps.notify(`[remote-pi] join failed: ${String(err)}`, "error", ctx);
+      this.deps.notify(`[outpost-pi] join failed: ${String(err)}`, "error", ctx);
     }
   }
 

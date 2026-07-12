@@ -30,21 +30,21 @@ describe("updateFooter — footer slots ('local' rendering)", () => {
       relayOn: false,
     };
     updateFooter(ctx, state);
-    const sessionSlot = ctx.statusCalls.find((c) => c.key === "remote-pi:session");
+    const sessionSlot = ctx.statusCalls.find((c) => c.key === "outpost-pi:session");
     expect(sessionSlot?.value).toBe("📡 local (3)");
   });
 
   test("session slot cleared when not joined", () => {
     const ctx = makeMockCtx();
     updateFooter(ctx, { relayOn: false });
-    const sessionSlot = ctx.statusCalls.find((c) => c.key === "remote-pi:session");
+    const sessionSlot = ctx.statusCalls.find((c) => c.key === "outpost-pi:session");
     expect(sessionSlot?.value).toBeUndefined();
   });
 
   test("singular peer count keeps numeric form (no pluralization in footer)", () => {
     const ctx = makeMockCtx();
     updateFooter(ctx, { session: "local", peerCount: 1, relayOn: false });
-    const sessionSlot = ctx.statusCalls.find((c) => c.key === "remote-pi:session");
+    const sessionSlot = ctx.statusCalls.find((c) => c.key === "outpost-pi:session");
     expect(sessionSlot?.value).toBe("📡 local (1)");
   });
 });

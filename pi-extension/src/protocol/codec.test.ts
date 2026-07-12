@@ -8,8 +8,8 @@ import {
   SERVER_MESSAGE_TYPES,
 } from "./generated/protocol.generated.js";
 import {
-  buildRemotePiIr,
-  loadRemotePiManifest,
+  buildOutpostPiIr,
+  loadOutpostPiManifest,
 } from "../../../tools/protocol-codegen/src/index.ts";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -42,8 +42,8 @@ function captureDecodeError(fn: () => unknown): DecodeError {
 }
 
 async function schemaTypeSet(familyId: "appPiClient" | "appPiServer"): Promise<Set<string>> {
-  const manifest = await loadRemotePiManifest(join(repoRoot, "protocol", "schema", "manifest.json"));
-  const ir = await buildRemotePiIr(manifest, { profile: "compat", protocolRoot: manifest.protocolRoot });
+  const manifest = await loadOutpostPiManifest(join(repoRoot, "protocol", "schema", "manifest.json"));
+  const ir = await buildOutpostPiIr(manifest, { profile: "compat", protocolRoot: manifest.protocolRoot });
   const family = ir.families.find((candidate) => candidate.id === familyId);
   if (!family) throw new Error(`Missing protocol schema family: ${familyId}`);
   return new Set(family.variants.map((variant) => variant.type));

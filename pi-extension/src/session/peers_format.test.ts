@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { formatPeerInventory } from "./peer_inventory.js";
 
 /**
- * Pure-function tests for the `/remote-pi peers` output formatter (plan/25
+ * Pure-function tests for the `/outpost-pi peers` output formatter (plan/25
  * Wave D). The formatter is exported from `index.ts` so it can be exercised
  * without booting the full extension.
  */

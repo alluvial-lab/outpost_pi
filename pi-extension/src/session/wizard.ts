@@ -1,7 +1,7 @@
 import { listSessions, sessionHasSock } from "./global_config.js";
 
 /**
- * Minimal wizard for `/remote-pi join` with no argument.
+ * Minimal wizard for `/outpost-pi join` with no argument.
  *
  * The Pi SDK `ExtensionUIContext.select` accepts a title and string options
  * and returns the chosen option. Wizard offers existing sessions + an "explicit

@@ -462,7 +462,7 @@ describe("ACK protocol (plan/25 Wave 0)", () => {
 
     const env = {
       from: "casa:sess-3", to: "orq", id: "01976000-0000-7000-8000-aaaaaaaaaaac",
-      re: null, body: { task: "remote ping" },
+      re: null, body: { task: "Outpost-Ping" },
     };
     expect(broker.injectFromRemote(env)).toBe("received");
     await wait(40);
@@ -502,7 +502,7 @@ describe("ACK protocol (plan/25 Wave 0)", () => {
     await orq.leave(); await a.leave(); await b.leave();
   });
 
-  // ── `remote-pi peers` observer probe (read-only roster) ─────────────────────
+  // ── `outpost-pi peers` observer probe (read-only roster) ─────────────────────
 
   test("unregistered list_peers probe returns the roster without joining", async () => {
     const sock = tmpSock();
@@ -608,7 +608,7 @@ describe("plan/38 — address encoder + name migration (pure)", () => {
   test("migrateAgentName strips a frozen #N and the legacy parent/folder shape", () => {
     expect(migrateAgentName("backend")).toBe("backend");
     expect(migrateAgentName("backend#2")).toBe("backend");       // frozen runtime suffix
-    expect(migrateAgentName("Projects/remote_pi")).toBe("remote_pi");  // legacy parent/folder
+    expect(migrateAgentName("Projects/outpost_pi")).toBe("outpost_pi");  // legacy parent/folder
     expect(migrateAgentName("myapp/backend#3")).toBe("backend");  // both at once
     expect(migrateAgentName("")).toBeUndefined();
     expect(migrateAgentName("#2")).toBeUndefined();

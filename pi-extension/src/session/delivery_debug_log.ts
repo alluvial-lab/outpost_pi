@@ -253,7 +253,7 @@ export function createDeliveryDebugLog(): DeliveryDebugLog {
   if (process.env["REMOTE_PI_DEBUG_LOG"] !== "1") return noopDeliveryDebugLog;
   const root = process.env["REMOTE_PI_HOME"] || homedir();
   // When REMOTE_PI_HOME is unset, root is homedir(); place under ~/.pi/remote/
-  // to match the rest of remote-pi's state (global_config.ts HOME_PI_REMOTE).
+  // to match the rest of outpost-pi's state (global_config.ts HOME_PI_REMOTE).
   const base = process.env["REMOTE_PI_HOME"] ? root : join(homedir(), ".pi", "remote");
   const filePath = join(base, "debug", "delivery.log");
   try {

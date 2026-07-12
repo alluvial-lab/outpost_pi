@@ -1,9 +1,9 @@
 import type { EventBus, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const COORDINATOR_VERSION = 1 as const;
-const COORDINATOR_SYMBOL = Symbol.for("remote-pi.runtime-coordinator.v1");
-const COORDINATOR_MARKER = Symbol.for("remote-pi.runtime-coordinator.schema");
-const LEASE_BRAND: unique symbol = Symbol("remote-pi.factory-lease");
+const COORDINATOR_SYMBOL = Symbol.for("outpost-pi.runtime-coordinator.v1");
+const COORDINATOR_MARKER = Symbol.for("outpost-pi.runtime-coordinator.schema");
+const LEASE_BRAND: unique symbol = Symbol("outpost-pi.factory-lease");
 
 export type SessionLifecycleReason = "startup" | "reload" | "new" | "resume" | "fork" | "quit";
 
@@ -25,14 +25,14 @@ type Activation =
   | { status: "denied"; reason: "child" | "satellite" | "disposed" };
 
 /**
- * Process-scoped authority for Remote Pi's phone-facing SDK binding.
+ * Process-scoped authority for Outpost-Pi's phone-facing SDK binding.
  *
  * Extension factories are also invoked for in-process child AgentSessions. A
  * factory therefore receives only an opaque lease; it gains authority over
  * process-global ingress/resources if its session_start is accepted. All
  * destructive lifecycle operations validate that exact lease.
  */
-export class RemotePiRuntimeCoordinator {
+export class OutpostPiRuntimeCoordinator {
   readonly schemaVersion = COORDINATOR_VERSION;
   readonly [COORDINATOR_MARKER] = COORDINATOR_VERSION;
   private state: CoordinatorState = { kind: "UNOWNED" };
@@ -150,9 +150,9 @@ function childSessionId(payload: unknown): string | null {
   return typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
 }
 
-function isCoordinator(value: unknown): value is RemotePiRuntimeCoordinator {
+function isCoordinator(value: unknown): value is OutpostPiRuntimeCoordinator {
   if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<RemotePiRuntimeCoordinator> & { [COORDINATOR_MARKER]?: unknown };
+  const candidate = value as Partial<OutpostPiRuntimeCoordinator> & { [COORDINATOR_MARKER]?: unknown };
   return candidate[COORDINATOR_MARKER] === COORDINATOR_VERSION
     && candidate.schemaVersion === COORDINATOR_VERSION
     && typeof candidate.acquireFactory === "function"
@@ -161,22 +161,22 @@ function isCoordinator(value: unknown): value is RemotePiRuntimeCoordinator {
     && typeof candidate.isReplacing === "function";
 }
 
-export function getRemotePiRuntimeCoordinator(): RemotePiRuntimeCoordinator {
+export function getOutpostPiRuntimeCoordinator(): OutpostPiRuntimeCoordinator {
   const globals = globalThis as typeof globalThis & { [COORDINATOR_SYMBOL]?: unknown };
   const existing = globals[COORDINATOR_SYMBOL];
   if (existing !== undefined) {
     if (!isCoordinator(existing)) {
-      throw new Error("remote-pi runtime coordinator global has an incompatible schema");
+      throw new Error("outpost-pi runtime coordinator global has an incompatible schema");
     }
     return existing;
   }
-  const coordinator = new RemotePiRuntimeCoordinator();
+  const coordinator = new OutpostPiRuntimeCoordinator();
   globals[COORDINATOR_SYMBOL] = coordinator;
   return coordinator;
 }
 
 /** Reset process-global ownership between isolated extension-factory tests. */
-export function resetRemotePiRuntimeCoordinatorForTest(): void {
+export function resetOutpostPiRuntimeCoordinatorForTest(): void {
   const globals = globalThis as typeof globalThis & { [COORDINATOR_SYMBOL]?: unknown };
   delete globals[COORDINATOR_SYMBOL];
 }

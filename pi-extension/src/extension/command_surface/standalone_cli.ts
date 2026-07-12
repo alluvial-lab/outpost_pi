@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { RemotePiCommandSurfaceHarness } from "../testing.js";
+import type { OutpostPiCommandSurfaceHarness } from "../testing.js";
 import {
   isValidRelayUrl,
   isWebSocketScheme,
@@ -38,7 +38,7 @@ interface StoredPeer {
 }
 
 export interface StandaloneCliAdapterDeps {
-  readonly commandSurface: RemotePiCommandSurfaceHarness;
+  readonly commandSurface: OutpostPiCommandSurfaceHarness;
   readonly listPeers: () => Promise<StoredPeer[]>;
   readonly removePeer: (remoteEpk: string) => Promise<boolean>;
   readonly saveRelayConfig: (url: string) => void;
@@ -59,7 +59,7 @@ export function createStandaloneCliDeps(input: StandaloneCliAdapterDeps): Standa
   return {
     devices: async () => {
       const peers = await input.listPeers();
-      if (peers.length === 0) { console.log("[remote-pi] No peers"); }
+      if (peers.length === 0) { console.log("[outpost-pi] No peers"); }
       else { for (const p of peers) console.log(`• ${p.remote_epk.slice(0, 8)} — ${p.name}`); }
     },
     revoke: async (shortid) => {
@@ -80,9 +80,9 @@ export function createStandaloneCliDeps(input: StandaloneCliAdapterDeps): Standa
     probePeers: async () => {
       const peers = await input.probeListPeers();
       if (peers === null) {
-        console.log("[remote-pi] Mesh offline — no agent is running on this machine.");
+        console.log("[outpost-pi] Mesh offline — no agent is running on this machine.");
       } else {
-        console.log(`[remote-pi] peers:\n${input.formatPeerInventory(peers)}`);
+        console.log(`[outpost-pi] peers:\n${input.formatPeerInventory(peers)}`);
       }
     },
     launchClaude: input.launchClaude,
@@ -99,7 +99,7 @@ export function isDirectRun(importMetaUrl: string, argv1: string | undefined): b
   }
 }
 
-export async function runStandaloneRemotePiCli(
+export async function runStandaloneOutpostPiCli(
   argv: readonly string[],
   deps: StandaloneCliDeps,
 ): Promise<void> {
@@ -143,7 +143,7 @@ export async function runStandaloneRemotePiCli(
     else if (op === "status") { await deps.daemon.status(stubCtx); }
     else if (op === "send") { await deps.daemon.send(rest, stubCtx); }
     else {
-      console.log("Usage: remote-pi daemon <start|stop|restart [<id>]|status|send <id> \"<text>\">");
+      console.log("Usage: outpost-pi daemon <start|stop|restart [<id>]|status|send <id> \"<text>\">");
     }
   } else if (subcmd === "cron") {
     const joined = quoteArgsWithSpaces(cliArgs);
@@ -177,7 +177,7 @@ function consoleUiCtx(): UiCtx {
 
 function remotePiCliHelpText(): string {
   return [
-    "Usage: remote-pi <command>",
+    "Usage: outpost-pi <command>",
     "",
     "Daemon registry:",
     "  create <cwd> [--name \"Name\"]   Register a folder as a daemon",
@@ -212,7 +212,7 @@ function remotePiCliHelpText(): string {
 }
 
 export async function launchClaudeCli(args: string[], entrypointUrl: string): Promise<void> {
-  // Contract: `remote-pi claude [cwd] [claude-flags...]`. The optional cwd is
+  // Contract: `outpost-pi claude [cwd] [claude-flags...]`. The optional cwd is
   // ONLY the leading positional (first token, not a flag); everything after it
   // is forwarded verbatim to the `claude` binary (e.g. `--resume`, `-c`,
   // `-p "prompt"`). Restricting cwd to the leading token avoids mistaking a
@@ -224,7 +224,7 @@ export async function launchClaudeCli(args: string[], entrypointUrl: string): Pr
   // Wizard when no local config exists
   if (!localConfigExists(targetCwd)) {
     const suggested = defaultAgentName(targetCwd);
-    process.stdout.write(`\n[remote-pi] No config found for ${targetCwd}\n`);
+    process.stdout.write(`\n[outpost-pi] No config found for ${targetCwd}\n`);
     process.stdout.write("Let's set up this agent.\n\n");
 
     const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -233,7 +233,7 @@ export async function launchClaudeCli(args: string[], entrypointUrl: string): Pr
     );
 
     saveLocalConfig(targetCwd, { agent_name: agentName, auto_start_relay: true });
-    process.stdout.write(`[remote-pi] Config saved: agent="${agentName}"\n\n`);
+    process.stdout.write(`[outpost-pi] Config saved: agent="${agentName}"\n\n`);
   }
 
   // Resolve mesh server script path (dist/mcp/mesh_server.js)
@@ -242,14 +242,14 @@ export async function launchClaudeCli(args: string[], entrypointUrl: string): Pr
   const meshServerPath = resolve(distRoot, "mcp/mesh_server.js");
 
   if (!existsSync(meshServerPath)) {
-    console.log(`[remote-pi] mesh server not found at ${meshServerPath}. Run pnpm build first.`);
+    console.log(`[outpost-pi] mesh server not found at ${meshServerPath}. Run pnpm build first.`);
     process.exit(1);
   }
 
   const absCwd = resolve(targetCwd);
-  const SERVER_NAME = "remote-pi-mesh";
+  const SERVER_NAME = "outpost-pi-mesh";
 
-  // The mesh MCP must be visible ONLY inside a `remote-pi claude` session — a
+  // The mesh MCP must be visible ONLY inside a `outpost-pi claude` session — a
   // plain `claude` in the same repo must NOT inherit it. Remove the legacy
   // local-scope entry left by older builds, then load the server ephemerally
   // through --mcp-config for this launched Claude process only.
@@ -257,7 +257,7 @@ export async function launchClaudeCli(args: string[], entrypointUrl: string): Pr
     cwd: absCwd, stdio: "ignore", shell: false,
   });
 
-  const mcpConfigPath = join(tmpdir(), `remote-pi-mesh-mcp-${process.pid}.json`);
+  const mcpConfigPath = join(tmpdir(), `outpost-pi-mesh-mcp-${process.pid}.json`);
   writeFileSync(mcpConfigPath, JSON.stringify({
     mcpServers: {
       [SERVER_NAME]: { command: process.execPath, args: [meshServerPath] },

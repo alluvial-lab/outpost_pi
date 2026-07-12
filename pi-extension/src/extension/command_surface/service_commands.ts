@@ -9,7 +9,7 @@ export class ServiceCommands {
     try {
       const result = installService();
       const sections = [
-        `[remote-pi] Supervisor service installed (${result.platform}).`,
+        `[outpost-pi] Supervisor service installed (${result.platform}).`,
         `  Unit: ${result.unitPath}`,
         `  Steps:\n${result.log.map((l) => "    " + l).join("\n")}`,
       ];
@@ -24,13 +24,13 @@ export class ServiceCommands {
           if (process.platform === "win32") {
             sections.push(
               `  ⚠ ${link.binDir} was just added to your user PATH (it wasn't there yet).`,
-              `    Open a NEW terminal and run \`remote-pi daemons\` to verify.`,
+              `    Open a NEW terminal and run \`outpost-pi daemons\` to verify.`,
             );
           } else {
             sections.push(
               `  ⚠ ${link.binDir} is not on $PATH yet. Add this line to ~/.zshrc / ~/.bashrc:`,
               `      export PATH="$HOME/.local/bin:$PATH"`,
-              `    Then open a new terminal and run \`remote-pi daemons\` to verify.`,
+              `    Then open a new terminal and run \`outpost-pi daemons\` to verify.`,
             );
           }
         }
@@ -38,7 +38,7 @@ export class ServiceCommands {
       ctx.ui.notify(sections.join("\n"), "info");
       return true;
     } catch (err) {
-      ctx.ui.notify(`[remote-pi] install failed: ${String(err)}`, "error");
+      ctx.ui.notify(`[outpost-pi] install failed: ${String(err)}`, "error");
       return false;
     }
   }
@@ -48,7 +48,7 @@ export class ServiceCommands {
     try {
       const result = uninstallService();
       const sections = [
-        `[remote-pi] Supervisor service uninstalled (${result.platform}).`,
+        `[outpost-pi] Supervisor service uninstalled (${result.platform}).`,
         `  Unit: ${result.unitPath} (${result.removed ? "removed" : "not present"})`,
         `  Steps:\n${result.log.map((l) => "    " + l).join("\n")}`,
         `  Note: daemons registry (~/.pi/remote/daemons.json) kept — re-install restores everything.`,
@@ -64,7 +64,7 @@ export class ServiceCommands {
       }
       ctx.ui.notify(sections.join("\n"), "info");
     } catch (err) {
-      ctx.ui.notify(`[remote-pi] uninstall failed: ${String(err)}`, "error");
+      ctx.ui.notify(`[outpost-pi] uninstall failed: ${String(err)}`, "error");
     }
   }
 }

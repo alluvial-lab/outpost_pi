@@ -134,7 +134,7 @@ describe("runSetupWizard (2 prompts + confirm)", () => {
     expect(
       ui.notifies.some((n) =>
         n.msg.includes("relay forwards encrypted messages") ||
-        n.msg.includes("Remote Pi mobile app"),
+        n.msg.includes("Outpost-Pi mobile app"),
       ),
     ).toBe(true);
     // No daemon-context notify — daemon mode was removed from the wizard.
@@ -160,7 +160,7 @@ describe("localConfig integration with the wizard", () => {
     });
   });
 
-  test("/remote-pi setup with existing config: wizard uses current as defaults", async () => {
+  test("/outpost-pi setup with existing config: wizard uses current as defaults", async () => {
     // Simulates the data flow without invoking the real handler.
     const cwd = tmpCwd();
     saveLocalConfig(cwd, {
@@ -187,9 +187,9 @@ describe("localConfig integration with the wizard", () => {
 
   test("legacy config without auto_start_relay → treated as true", () => {
     const cwd = tmpCwd();
-    const cfgPath = join(cwd, ".pi", "remote-pi", "config.json");
+    const cfgPath = join(cwd, ".pi", "outpost-pi", "config.json");
     const { mkdirSync, writeFileSync } = require("node:fs") as typeof import("node:fs");
-    mkdirSync(join(cwd, ".pi", "remote-pi"), { recursive: true });
+    mkdirSync(join(cwd, ".pi", "outpost-pi"), { recursive: true });
     writeFileSync(
       cfgPath,
       JSON.stringify({ agent_name: "legacy" }, null, 2),
@@ -213,9 +213,9 @@ describe("localConfig integration with the wizard", () => {
     // local UDS mesh is always a single fixed session — the field has no
     // meaning. Load should ignore it without error and not persist it back.
     const cwd = tmpCwd();
-    const cfgPath = join(cwd, ".pi", "remote-pi", "config.json");
+    const cfgPath = join(cwd, ".pi", "outpost-pi", "config.json");
     const { mkdirSync, writeFileSync } = require("node:fs") as typeof import("node:fs");
-    mkdirSync(join(cwd, ".pi", "remote-pi"), { recursive: true });
+    mkdirSync(join(cwd, ".pi", "outpost-pi"), { recursive: true });
     writeFileSync(
       cfgPath,
       JSON.stringify({
@@ -236,7 +236,7 @@ describe("defaultAgentName", () => {
   // plan/38 decision D: the name is the LEAF only — the cwd now travels as its
   // own address axis, so the old `parent/folder` prefix is gone.
   test("returns the leaf (basename) of the cwd", () => {
-    expect(defaultAgentName("/Users/jacob/Projects/remote_pi")).toBe("remote_pi");
+    expect(defaultAgentName("/Users/jacob/Projects/outpost_pi")).toBe("outpost_pi");
     expect(defaultAgentName("/home/dev/myapp/backend")).toBe("backend");
     expect(defaultAgentName("/foo")).toBe("foo");
   });

@@ -5,7 +5,7 @@ export interface CommandCompletion {
   label: string;
 }
 
-export interface RemotePiCommandSpec {
+export interface OutpostPiCommandSpec {
   readonly suffix: string;
   readonly description: string;
   readonly completionValues?: readonly string[];
@@ -13,19 +13,19 @@ export interface RemotePiCommandSpec {
   readonly run: (args: string, ctx: ExtensionCommandContext) => void | Promise<void>;
 }
 
-export function registerRemotePiCommands(
+export function registerOutpostPiCommands(
   pi: ExtensionAPI,
-  specs: readonly RemotePiCommandSpec[],
+  specs: readonly OutpostPiCommandSpec[],
   rootRun: (args: string, ctx: ExtensionCommandContext) => void | Promise<void>,
 ): void {
-  pi.registerCommand("remote-pi", {
+  pi.registerCommand("outpost-pi", {
     description: "Connect (join local mesh + start relay), or run setup on first use",
     getArgumentCompletions: async (prefix) => completeRoot(prefix, specs),
     handler: async (args, ctx) => rootRun(args.trim(), ctx),
   });
 
   for (const spec of specs) {
-    pi.registerCommand(`remote-pi ${spec.suffix}`, {
+    pi.registerCommand(`outpost-pi ${spec.suffix}`, {
       description: spec.description,
       ...(spec.complete ? { getArgumentCompletions: spec.complete } : {}),
       handler: async (args, ctx) => spec.run(args.trim(), ctx),
@@ -35,7 +35,7 @@ export function registerRemotePiCommands(
 
 async function completeRoot(
   prefix: string,
-  specs: readonly RemotePiCommandSpec[],
+  specs: readonly OutpostPiCommandSpec[],
 ): Promise<CommandCompletion[]> {
   const matchingSpec = specs.find(
     (spec) => prefix === spec.suffix || prefix.startsWith(`${spec.suffix} `),

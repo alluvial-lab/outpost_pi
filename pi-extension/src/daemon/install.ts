@@ -13,14 +13,14 @@ import { fileURLToPath } from "node:url";
  *   - **macOS**: writes `~/Library/LaunchAgents/dev.remotepi.supervisord.plist`
  *     and runs `launchctl bootstrap gui/<uid> <plist>` (modern API) with a
  *     fallback to `launchctl load` for older macOS.
- *   - **Linux**: writes `~/.config/systemd/user/remote-pi-supervisord.service`
+ *   - **Linux**: writes `~/.config/systemd/user/outpost-pi-supervisord.service`
  *     and runs `systemctl --user daemon-reload && systemctl --user enable
- *     --now remote-pi-supervisord.service`.
+ *     --now outpost-pi-supervisord.service`.
  *
  * Uninstall reverses both. Idempotent — re-running install over an existing
  * unit refreshes it (paths could have changed if user moved node_modules).
  *
- * **What does NOT happen here**: the actual `npm install -g remote-pi` step.
+ * **What does NOT happen here**: the actual `npm install -g outpost-pi` step.
  * The user has to make the supervisor bin reachable on disk before install
  * can wire up the service. The `findSupervisorScript` resolver detects
  * common cases (npm global, pnpm global, local dev clone) and yields a
@@ -61,14 +61,14 @@ export function findSupervisorScript(): string {
 
 /**
  * Absolute path to the extension's CLI entry (`dist/index.js`). This is
- * the file we symlink to `~/.local/bin/remote-pi` so the user can run
- * `remote-pi <subcommand>` from any shell after installing the extension
- * through Pi (`pi install npm:remote-pi`).
+ * the file we symlink to `~/.local/bin/outpost-pi` so the user can run
+ * `outpost-pi <subcommand>` from any shell after installing the extension
+ * through Pi (`pi install npm:outpost-pi`).
  *
  * Same resolution strategy as `findSupervisorScript`: from
  * `dist/daemon/install.js` → `dist/index.js`.
  */
-export function findRemotePiScript(): string {
+export function findOutpostPiScript(): string {
   const here = fileURLToPath(import.meta.url);          // dist/daemon/install.js
   const daemonDir = dirname(here);                       // dist/daemon
   const distRoot = dirname(daemonDir);                   // dist
@@ -78,7 +78,7 @@ export function findRemotePiScript(): string {
 export function findNodeBinary(): string {
   // `process.execPath` is always absolute and points at the current Node
   // binary. Embedding it in the service unit means the user gets the
-  // exact same Node version they invoked `remote-pi install` with — no
+  // exact same Node version they invoked `outpost-pi install` with — no
   // PATH ambiguity at boot time.
   return process.execPath;
 }
@@ -101,7 +101,7 @@ export function findTemplate(name: "systemd" | "launchd" | "taskscheduler" | "vb
 // ── Service paths ──────────────────────────────────────────────────────────
 
 export function systemdUnitPath(): string {
-  return join(homedir(), ".config", "systemd", "user", "remote-pi-supervisord.service");
+  return join(homedir(), ".config", "systemd", "user", "outpost-pi-supervisord.service");
 }
 
 export function launchdPlistPath(): string {
@@ -110,13 +110,13 @@ export function launchdPlistPath(): string {
 
 export const LAUNCHD_LABEL = "dev.remotepi.supervisord";
 /** systemd --user unit name (with `.service`) for the supervisor. */
-export const SYSTEMD_UNIT = "remote-pi-supervisord.service";
+export const SYSTEMD_UNIT = "outpost-pi-supervisord.service";
 /** Windows Task Scheduler task name (plan/40). */
-export const WINDOWS_TASK_NAME = "RemotePiSupervisor";
+export const WINDOWS_TASK_NAME = "OutpostPiSupervisor";
 
 /** Path of the rendered Task Scheduler XML (input to `schtasks /Create /XML`). */
 export function taskXmlPath(): string {
-  return join(homedir(), ".pi", "remote", "RemotePiSupervisor.xml");
+  return join(homedir(), ".pi", "remote", "OutpostPiSupervisor.xml");
 }
 
 /**
@@ -125,7 +125,7 @@ export function taskXmlPath(): string {
  * wrapper is what keeps the supervisor from flashing a console window.
  */
 export function vbsLauncherPath(): string {
-  return join(homedir(), ".pi", "remote", "RemotePiSupervisorLauncher.vbs");
+  return join(homedir(), ".pi", "remote", "OutpostPiSupervisorLauncher.vbs");
 }
 
 /**
@@ -208,7 +208,7 @@ export function installService(vars: RenderVars = defaultRenderVars()): InstallR
   if (!existsSync(vars.supervisor)) {
     throw new Error(
       `supervisor script not found at ${vars.supervisor}. ` +
-      "Run `pnpm build` (dev) or `npm install -g remote-pi` (prod) first.",
+      "Run `pnpm build` (dev) or `npm install -g outpost-pi` (prod) first.",
     );
   }
 
@@ -244,7 +244,7 @@ export function installService(vars: RenderVars = defaultRenderVars()): InstallR
     log.push(`activated via launchctl bootstrap gui/${uid}`);
   } else if (plat === "linux") {
     _exec("systemctl", ["--user", "daemon-reload"], log);
-    _exec("systemctl", ["--user", "enable", "--now", "remote-pi-supervisord.service"], log);
+    _exec("systemctl", ["--user", "enable", "--now", "outpost-pi-supervisord.service"], log);
     log.push("activated via systemctl --user enable --now");
   } else {
     // windows — Task Scheduler (plan/40). The action runs `wscript.exe
@@ -259,7 +259,7 @@ export function installService(vars: RenderVars = defaultRenderVars()): InstallR
     // Only `schtasks /Create` modifies the root task store → that single op
     // needs admin (elevate it via UAC). `/End` (stop a prior instance) and
     // `/Run` (start it) act on a task we already own and work un-elevated — the
-    // very ops `remote-pi restart-supervisor` runs without elevation. Keeping
+    // very ops `outpost-pi restart-supervisor` runs without elevation. Keeping
     // them un-elevated narrows the admin surface to the one operation that
     // truly requires it.
     _tryExec("schtasks", ["/End", "/TN", WINDOWS_TASK_NAME], log);
@@ -296,7 +296,7 @@ export function uninstallService(): UninstallResult {
     _tryExec("launchctl", ["unload", unitPath], log);
     log.push("deactivated via launchctl bootout");
   } else if (plat === "linux") {
-    _tryExec("systemctl", ["--user", "disable", "--now", "remote-pi-supervisord.service"], log);
+    _tryExec("systemctl", ["--user", "disable", "--now", "outpost-pi-supervisord.service"], log);
     log.push("deactivated via systemctl --user disable --now");
   } else {
     // windows — Task Scheduler (plan/40): stop + delete the task. Only
@@ -393,7 +393,7 @@ function _readIfExists(p: string): string {
  * output is appended to `log` either way.
  */
 function _execElevatedWindows(lines: string[], log: string[]): void {
-  const base = join(tmpdir(), `remote-pi-elevate-${process.pid}`);
+  const base = join(tmpdir(), `outpost-pi-elevate-${process.pid}`);
   const cmdPath = `${base}.cmd`;
   const logFile = `${base}.log`;
   writeFileSync(cmdPath, buildElevatedCmd(lines, logFile));
@@ -426,13 +426,13 @@ function _execElevatedWindows(lines: string[], log: string[]): void {
 
 // ── CLI bin linking (plan/27) ─────────────────────────────────────────────────
 //
-// When the user installs Remote Pi through Pi (`pi install npm:remote-pi`),
+// When the user installs Outpost-Pi through Pi (`pi install npm:outpost-pi`),
 // the extension's `bin` entries in package.json never reach `$PATH` — Pi's
-// installer ignores them. Without `npm install -g remote-pi` a second time,
-// the user can't run `remote-pi daemon …` from a shell.
+// installer ignores them. Without `npm install -g outpost-pi` a second time,
+// the user can't run `outpost-pi daemon …` from a shell.
 //
 // `linkCliBinaries` writes two symlinks into `~/.local/bin/`:
-//   - `remote-pi`     → `<extensionRoot>/dist/index.js`
+//   - `outpost-pi`     → `<extensionRoot>/dist/index.js`
 //   - `pi-supervisord`→ `<extensionRoot>/dist/bin/supervisord.js`
 //
 // Both targets get `chmod +x` (tsc doesn't preserve the executable bit;
@@ -441,8 +441,8 @@ function _execElevatedWindows(lines: string[], log: string[]): void {
 //
 // This step is opt-in and runs ONLY when the slash-command path triggers
 // `_cmdInstall` — i.e., the user is inside Pi's TUI. The CLI-mode path
-// (`remote-pi install` invoked from a shell because the user did
-// `npm install -g remote-pi`) MUST NOT symlink — the user already has
+// (`outpost-pi install` invoked from a shell because the user did
+// `npm install -g outpost-pi`) MUST NOT symlink — the user already has
 // working bins from npm-global, and stomping them with our symlinks
 // would point them at the *Pi-extension copy* instead of the npm-global
 // copy, which is a different file tree and would diverge on upgrades.
@@ -473,7 +473,7 @@ export function isOnPath(dir: string, envPath: string = process.env["PATH"] ?? "
 }
 
 /**
- * Create (or refresh) the `remote-pi` + `pi-supervisord` symlinks in
+ * Create (or refresh) the `outpost-pi` + `pi-supervisord` symlinks in
  * `~/.local/bin/`. Idempotent — replaces stale links pointing at old
  * extension paths (Pi can reinstall the extension to a different hash dir
  * on upgrades, so this MUST overwrite).
@@ -490,7 +490,7 @@ export function linkCliBinaries(
   const binDir = userLocalBinDir(home);
 
   // Windows (plan/40): no POSIX symlinks. Installing via Pi (`pi install
-  // npm:remote-pi`) never reaches PATH, so write real `.cmd` shims into
+  // npm:outpost-pi`) never reaches PATH, so write real `.cmd` shims into
   // `~/.local/bin` and add that dir to the user's PATH (HKCU — no admin).
   if (platform() === "win32") {
     return _linkCliBinariesWindows(home, binDir, paths, opts);
@@ -501,11 +501,11 @@ export function linkCliBinaries(
   mkdirSync(binDir, { recursive: true });
   log.push(`ensured ${binDir}`);
 
-  const remotePi = paths.remotePi ?? findRemotePiScript();
+  const remotePi = paths.remotePi ?? findOutpostPiScript();
   const supervisord = paths.supervisord ?? findSupervisorScript();
   if (!existsSync(remotePi)) {
     throw new Error(
-      `remote-pi script not found at ${remotePi}. ` +
+      `outpost-pi script not found at ${remotePi}. ` +
       "Run `pnpm build` (dev) or reinstall the extension.",
     );
   }
@@ -524,7 +524,7 @@ export function linkCliBinaries(
   try { chmodSync(supervisord, 0o755); } catch { /* best-effort */ }
 
   const links: LinkBinariesResult["links"] = [
-    { name: "remote-pi",     path: join(binDir, "remote-pi"),      target: remotePi },
+    { name: "outpost-pi",     path: join(binDir, "outpost-pi"),      target: remotePi },
     { name: "pi-supervisord", path: join(binDir, "pi-supervisord"), target: supervisord },
   ];
   for (const link of links) {
@@ -544,7 +544,7 @@ export function linkCliBinaries(
 }
 
 /**
- * Windows variant of `linkCliBinaries`: writes `remote-pi.cmd` +
+ * Windows variant of `linkCliBinaries`: writes `outpost-pi.cmd` +
  * `pi-supervisord.cmd` shims into `~/.local/bin` and ensures that dir is on the
  * user's PATH (User scope — no admin). `opts.node` overrides the node binary
  * (tests); `opts.mutatePath === false` skips the real PATH mutation (tests).
@@ -561,11 +561,11 @@ function _linkCliBinariesWindows(
   log.push(`ensured ${binDir}`);
 
   const node = opts.node ?? findNodeBinary();
-  const remotePi = paths.remotePi ?? findRemotePiScript();
+  const remotePi = paths.remotePi ?? findOutpostPiScript();
   const supervisord = paths.supervisord ?? findSupervisorScript();
   if (!existsSync(remotePi)) {
     throw new Error(
-      `remote-pi script not found at ${remotePi}. ` +
+      `outpost-pi script not found at ${remotePi}. ` +
       "Run `pnpm build` (dev) or reinstall the extension.",
     );
   }
@@ -577,7 +577,7 @@ function _linkCliBinariesWindows(
   }
 
   const links: LinkBinariesResult["links"] = [
-    { name: "remote-pi.cmd",      path: join(binDir, "remote-pi.cmd"),      target: remotePi },
+    { name: "outpost-pi.cmd",      path: join(binDir, "outpost-pi.cmd"),      target: remotePi },
     { name: "pi-supervisord.cmd", path: join(binDir, "pi-supervisord.cmd"), target: supervisord },
   ];
   for (const link of links) {
@@ -589,7 +589,7 @@ function _linkCliBinariesWindows(
   if (!onPath && opts.mutatePath !== false) {
     try {
       _addUserPath(binDir);
-      log.push(`added ${binDir} to your user PATH — open a NEW terminal for \`remote-pi\` to resolve.`);
+      log.push(`added ${binDir} to your user PATH — open a NEW terminal for \`outpost-pi\` to resolve.`);
     } catch (e) {
       log.push(
         `WARNING: ${binDir} is not on PATH and auto-add failed (${String(e)}). ` +
@@ -643,8 +643,8 @@ export function unlinkCliBinaries(home: string = homedir()): UnlinkBinariesResul
   // Windows shims are `.cmd` files (linkCliBinaries writes those); POSIX uses
   // extensionless symlinks. Match what was actually created on this platform.
   const names = platform() === "win32"
-    ? ["remote-pi.cmd", "pi-supervisord.cmd"]
-    : ["remote-pi", "pi-supervisord"];
+    ? ["outpost-pi.cmd", "pi-supervisord.cmd"]
+    : ["outpost-pi", "pi-supervisord"];
   const removed: UnlinkBinariesResult["removed"] = [];
 
   for (const name of names) {

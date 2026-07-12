@@ -10,13 +10,13 @@ import { defaultAgentName } from "../session/local_config.js";
  *
  * Schema rationale (decision Q in plan/26): the registry stores **only**
  * `cwd` per entry. Everything else (agent_name, auto_start_relay, etc.)
- * is the cwd's local config at `<cwd>/.pi/remote-pi/config.json` — single
+ * is the cwd's local config at `<cwd>/.pi/outpost-pi/config.json` — single
  * source of truth, no duplication. The daemon `id` is *derived* from cwd
  * via `daemonIdForCwd`, never persisted.
  *
  * Cwds are always normalized to an **absolute realpath** before storage.
- * A user typing `/remote-pi create ~/Movies` or `/remote-pi create .`
- * results in the same entry as `/remote-pi create /Users/x/Movies` — no
+ * A user typing `/outpost-pi create ~/Movies` or `/outpost-pi create .`
+ * results in the same entry as `/outpost-pi create /Users/x/Movies` — no
  * surprise duplicates, symlinks collapse correctly.
  */
 
@@ -33,7 +33,7 @@ export interface DaemonEntry {
   /**
    * Display name (mesh `agent_name`). Persisted here because the supervisor
    * now injects the daemon's config via `REMOTE_PI_DIRECT_CONFIG` at spawn
-   * instead of reading a per-cwd `.pi/remote-pi/config.json`. Legacy entries
+   * instead of reading a per-cwd `.pi/outpost-pi/config.json`. Legacy entries
    * (cwd only) fall back to `defaultAgentName(cwd)`.
    */
   name?: string;
@@ -48,7 +48,7 @@ export interface DaemonRegistry {
  * components against `process.cwd()`, and runs `realpath` to canonicalize
  * symlinks. Throws if the resulting path doesn't exist on disk.
  *
- * `/remote-pi create` always stores normalized paths so two registrations
+ * `/outpost-pi create` always stores normalized paths so two registrations
  * of the same logical folder via different aliases produce a single entry.
  */
 export function normalizeCwd(input: string): string {

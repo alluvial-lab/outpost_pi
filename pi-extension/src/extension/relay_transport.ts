@@ -254,7 +254,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   }
 
   async function start(input: RelayTransportStartInput): Promise<RelayStartResult> {
-    if (!input.keypair) throw new Error("remote-pi identity not loaded");
+    if (!input.keypair) throw new Error("outpost-pi identity not loaded");
     stopping = false;
     clearReconnectTimer();
     const nextRelay = deps.createRelay(deps.toWebSocketUrl(input.relayUrl), input.keypair);

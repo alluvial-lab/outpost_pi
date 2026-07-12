@@ -1,17 +1,17 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { RemotePiRuntimePorts, RuntimeEpoch } from "./ports.js";
+import type { OutpostPiRuntimePorts, RuntimeEpoch } from "./ports.js";
 import {
-  getRemotePiRuntimeCoordinator,
+  getOutpostPiRuntimeCoordinator,
   type FactoryLease,
-  type RemotePiRuntimeCoordinator,
+  type OutpostPiRuntimeCoordinator,
   type SessionLifecycleReason,
 } from "./runtime_coordinator.js";
 
 let nextEpochId = 1;
 
-export interface RemotePiRuntime {
+export interface OutpostPiRuntime {
   readonly epoch: RuntimeEpoch;
-  readonly ports: RemotePiRuntimePorts;
+  readonly ports: OutpostPiRuntimePorts;
   readonly lease: FactoryLease;
   register(): void;
   registerLifecycle(): void;
@@ -36,11 +36,11 @@ export function createRuntimeEpoch(): RuntimeEpoch {
   };
 }
 
-export function createRemotePiExtensionRuntime(
+export function createOutpostPiExtensionRuntime(
   pi: ExtensionAPI,
-  ports: RemotePiRuntimePorts,
-  coordinator: RemotePiRuntimeCoordinator = getRemotePiRuntimeCoordinator(),
-): RemotePiRuntime {
+  ports: OutpostPiRuntimePorts,
+  coordinator: OutpostPiRuntimeCoordinator = getOutpostPiRuntimeCoordinator(),
+): OutpostPiRuntime {
   const epoch = createRuntimeEpoch();
   const lease = coordinator.acquireFactory();
   const eventBus = (pi as Partial<ExtensionAPI>).events;
@@ -56,7 +56,7 @@ export function createRemotePiExtensionRuntime(
     coordinator.activate(lease, "test-harness", pi);
     ports.session.bindApi(pi);
   }
-  const runtime: RemotePiRuntime = {
+  const runtime: OutpostPiRuntime = {
     epoch,
     ports,
     lease,
@@ -80,9 +80,9 @@ export function createRemotePiExtensionRuntime(
 
 export function registerLifecycleHooks(
   pi: ExtensionAPI,
-  ports: RemotePiRuntimePorts,
+  ports: OutpostPiRuntimePorts,
   epoch: RuntimeEpoch,
-  coordinator: RemotePiRuntimeCoordinator,
+  coordinator: OutpostPiRuntimeCoordinator,
   lease: FactoryLease,
 ): void {
   pi.on("session_start", (_event: unknown, ctx: ExtensionContext) => {
@@ -109,7 +109,7 @@ export function registerLifecycleHooks(
 }
 
 async function disposeRuntimePorts(
-  ports: RemotePiRuntimePorts,
+  ports: OutpostPiRuntimePorts,
   epoch: RuntimeEpoch,
   reason: SessionLifecycleReason,
 ): Promise<void> {
@@ -121,11 +121,11 @@ async function disposeRuntimePorts(
   await ports.commands.closeMesh?.();
 }
 
-export function createRemotePiExtensionFactory(
-  createPorts: () => RemotePiRuntimePorts,
+export function createOutpostPiExtensionFactory(
+  createPorts: () => OutpostPiRuntimePorts,
 ): ExtensionFactory {
   return (pi: ExtensionAPI) => {
-    const runtime = createRemotePiExtensionRuntime(pi, createPorts());
+    const runtime = createOutpostPiExtensionRuntime(pi, createPorts());
     runtime.register();
   };
 }
