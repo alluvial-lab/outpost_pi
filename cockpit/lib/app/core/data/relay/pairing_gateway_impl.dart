@@ -20,7 +20,7 @@ class PairingGatewayFactoryImpl implements PairingGatewayFactory {
 /// Implementação do [PairingGateway] sobre uma sessão [EphemeralPiRpc].
 ///
 /// Dispara `/outpost-pi pair` e traduz as mensagens `role: "custom"` do stdout
-/// (`remote-pi:pair-code` / `remote-pi:paired`) em [PairEvent]. Cada pair-code
+/// (`outpost-pi:pair-code` / `outpost-pi:paired`) em [PairEvent]. Cada pair-code
 /// chega como DOIS eventos (`message_start` + `message_end`) com payload igual,
 /// então deduplicamos por assinatura.
 class PairingGatewayImpl implements PairingGateway {
@@ -89,7 +89,7 @@ class PairingGatewayImpl implements PairingGateway {
     if (!_seen.add(signature)) return; // dedup message_start/message_end
 
     switch (customType) {
-      case 'remote-pi:pair-code':
+      case 'outpost-pi:pair-code':
         final uri = details['uri'];
         if (uri is! String || uri.isEmpty) return;
         _gotCode = true;
@@ -103,7 +103,7 @@ class PairingGatewayImpl implements PairingGateway {
             name: details['name']?.toString(),
           ),
         );
-      case 'remote-pi:paired':
+      case 'outpost-pi:paired':
         _emit(PairDevicePaired(name: details['name']?.toString()));
     }
   }

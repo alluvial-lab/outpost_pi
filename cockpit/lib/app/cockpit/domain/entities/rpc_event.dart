@@ -171,11 +171,11 @@ enum RelayStatus { connected, reconnecting, disconnected }
 
 /// Canonical custom event names from `protocol/schema/cockpit-control.schema.json`.
 enum RpcControlOverlayEventType {
-  relayState('remote-pi:relay-state'),
-  nameAssigned('remote-pi:name-assigned'),
-  pairCode('remote-pi:pair-code'),
-  paired('remote-pi:paired'),
-  meshRevoked('remote-pi:mesh-revoked');
+  relayState('outpost-pi:relay-state'),
+  nameAssigned('outpost-pi:name-assigned'),
+  pairCode('outpost-pi:pair-code'),
+  paired('outpost-pi:paired'),
+  meshRevoked('outpost-pi:mesh-revoked');
 
   const RpcControlOverlayEventType(this.wire);
 
@@ -189,7 +189,7 @@ enum RpcControlOverlayEventType {
   }
 }
 
-/// `message_start` com `role:"custom"` e `customType:"remote-pi:relay-state"`.
+/// `message_start` com `role:"custom"` e `customType:"outpost-pi:relay-state"`.
 ///
 /// Emitido em toda transição do relay (liga, queda → reconnecting, desliga,
 /// reconexão) e em resposta ao controle `relay:status`.
@@ -207,7 +207,7 @@ final class RpcRelayState extends RpcEvent {
   final String? room;
 }
 
-/// `message_start` com `role:"custom"` e `customType:"remote-pi:name-assigned"`.
+/// `message_start` com `role:"custom"` e `customType:"outpost-pi:name-assigned"`.
 ///
 /// Emitido pelo broker ao entrar no mesh: o broker pode ter atribuído um nome
 /// diferente do pedido (`agent_name`) para evitar colisão (ex.: "Proj" → "Proj#2").
@@ -229,7 +229,7 @@ final class RpcNameAssigned extends RpcEvent {
   final bool changed;
 }
 
-/// `message_start` com `customType:"remote-pi:pair-code"`.
+/// `message_start` com `customType:"outpost-pi:pair-code"`.
 ///
 /// Carrega os dados estruturados para o Cockpit renderizar/copiar o QR sem
 /// raspar o texto de display do Pi.
@@ -249,7 +249,7 @@ final class RpcPairCode extends RpcEvent {
   final String name;
 }
 
-/// `message_start` com `customType:"remote-pi:paired"`.
+/// `message_start` com `customType:"outpost-pi:paired"`.
 final class RpcPaired extends RpcEvent {
   const RpcPaired({
     required this.name,
@@ -262,7 +262,7 @@ final class RpcPaired extends RpcEvent {
   final int pairedAt;
 }
 
-/// `message_start` com `customType:"remote-pi:mesh-revoked"`.
+/// `message_start` com `customType:"outpost-pi:mesh-revoked"`.
 final class RpcMeshRevoked extends RpcEvent {
   const RpcMeshRevoked({this.details});
 
