@@ -381,7 +381,7 @@ class PiRpcProcess implements RpcProcessGateway {
     return _dataMapper.transcriptEvents(response['data'], sessionId: sessionId);
   });
 
-  static const _controlEnvelopeType = 'remote_pi_control';
+  static const _controlEnvelopeType = 'outpost_pi_control';
 
   @override
   Future<Result<void, RpcError>> sendControl(PiControlCommand command) async {

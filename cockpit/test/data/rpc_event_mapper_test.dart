@@ -8,7 +8,7 @@ void main() {
   group('RpcEventMapper cockpit control overlay', () {
     test('maps existing relay-state payload without changing fields', () {
       final event = mapper.fromJson(
-        _customMessage('remote-pi:relay-state', <String, Object?>{
+        _customMessage('outpost-pi:relay-state', <String, Object?>{
           'status': 'connected',
           'connected': true,
           'relayUrl': 'https://relay.example',
@@ -26,7 +26,7 @@ void main() {
 
     test('maps existing name-assigned payload without changing fields', () {
       final event = mapper.fromJson(
-        _customMessage('remote-pi:name-assigned', <String, Object?>{
+        _customMessage('outpost-pi:name-assigned', <String, Object?>{
           'requested': 'desk-agent',
           'assigned': 'desk-agent#2',
           'changed': true,
@@ -42,7 +42,7 @@ void main() {
 
     test('maps pair-code, paired, and mesh-revoked schema neighbors', () {
       final pairCode = mapper.fromJson(
-        _customMessage('remote-pi:pair-code', <String, Object?>{
+        _customMessage('outpost-pi:pair-code', <String, Object?>{
           'uri': 'outpost-pi://pair?token=abc',
           'token': 'abc',
           'expiresAt': 1760000000000,
@@ -59,7 +59,7 @@ void main() {
       expect(pairCodeEvent.name, 'desk-agent');
 
       final paired = mapper.fromJson(
-        _customMessage('remote-pi:paired', <String, Object?>{
+        _customMessage('outpost-pi:paired', <String, Object?>{
           'name': 'Phone',
           'peerId': 'owner-peer',
           'pairedAt': 1760000000001,
@@ -72,7 +72,7 @@ void main() {
       expect(pairedEvent.pairedAt, 1760000000001);
 
       final pairedWithoutSchemaDetails = mapper.fromJson(
-        _customMessage('remote-pi:paired', <String, Object?>{}),
+        _customMessage('outpost-pi:paired', <String, Object?>{}),
       );
       expect(pairedWithoutSchemaDetails, isA<RpcUnknown>());
       expect(
@@ -81,7 +81,7 @@ void main() {
       );
 
       final meshRevoked = mapper.fromJson(
-        _customMessage('remote-pi:mesh-revoked', null),
+        _customMessage('outpost-pi:mesh-revoked', null),
       );
       expect(meshRevoked, isA<RpcMeshRevoked>());
       expect((meshRevoked as RpcMeshRevoked).details, isNull);

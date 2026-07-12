@@ -374,7 +374,7 @@ export class LocalMeshCommands {
       // name (wizard / explicit `agent_name`) already lives in config or re-derives
       // from `basename(cwd)`; the event above carries the live `#N` for the UI.
       this.deps.sendPiMessage({
-        customType: "remote-pi:name-assigned",
+        customType: "outpost-pi:name-assigned",
         content: assigned === requestedName
           ? `Mesh name: ${assigned}`
           : `Mesh name reassigned: "${requestedName}" → "${assigned}" (collision)`,

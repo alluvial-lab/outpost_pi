@@ -75,7 +75,7 @@ export class ControlCommands {
    *      name = a new room. We cycle the relay (idle → start) so the room
    *      follows; the app re-keys the conversation onto the new tile (the
    *      inherent cost of room-per-name). Skipped when the relay was off.
-   * Finally re-emits `remote-pi:name-assigned` so the Cockpit updates its label.
+   * Finally re-emits `outpost-pi:name-assigned` so the Cockpit updates its label.
    *
    * The explicit name IS persisted (decision E only skips the runtime `#N`).
    */
@@ -107,7 +107,7 @@ export class ControlCommands {
     if (wasStarted && !this.deps.isDisposed()) await this.deps.startRelay(ctx);  // relay back up → roomIdFor(cwd, assigned)
 
     this.deps.sendPiMessage({
-      customType: "remote-pi:name-assigned",
+      customType: "outpost-pi:name-assigned",
       content: assigned === newName
         ? `Mesh name: ${assigned}`
         : `Mesh name reassigned: "${newName}" → "${assigned}" (collision)`,
