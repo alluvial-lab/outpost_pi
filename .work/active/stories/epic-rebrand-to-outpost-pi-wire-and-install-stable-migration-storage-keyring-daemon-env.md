@@ -6,7 +6,7 @@ tags: [rebrand, app, pi-extension, cockpit, lifecycle]
 parent: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration
 depends_on:
   - epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-regen-generated
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-11
 updated: 2026-07-12

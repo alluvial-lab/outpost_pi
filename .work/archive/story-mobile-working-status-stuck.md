@@ -5,7 +5,7 @@ stage: drafting
 tags: [pi-extension, app, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 status: superseded
 superseded_by: epic-bold-turn-state-machine-projection-consumers

@@ -5,7 +5,7 @@ stage: drafting
 tags: [app, pi-extension, relay, bug, security]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 status: superseded
 superseded_by: epic-bold-canonical-session-wire-discriminator
