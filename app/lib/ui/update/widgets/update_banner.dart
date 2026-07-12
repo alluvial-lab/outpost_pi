@@ -11,7 +11,7 @@ import 'package:provider/provider.dart';
 /// indisponível) — o gate Android-only vive no [UpdateBannerViewModel.enabled].
 ///
 /// Dispara o check silencioso no primeiro mount (= startup da Home). Tocar
-/// baixa o `RemotePi.apk` direto; o X dispensa (persistido por versão).
+/// baixa o `OutpostPi.apk` direto; o X dispensa (persistido por versão).
 class UpdateBanner extends StatefulWidget {
   const UpdateBanner({super.key});
 

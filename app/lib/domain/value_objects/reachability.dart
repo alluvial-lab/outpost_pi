@@ -1,6 +1,6 @@
 library;
 
-/// Canonical Remote Pi reachability states shared across app, extension, and relay.
+/// Canonical Outpost-Pi reachability states shared across app, extension, and relay.
 ///
 /// This is a pure domain projection of `protocol/schema/reachability.json`.
 /// App transport adapters map their richer runtime objects onto this enum in a
