@@ -365,7 +365,7 @@ fn id_tail(id: &str) -> String {
 /// `peer_short` / `dest_tail` convention (`peer.rs`, `connection_actor.rs`):
 /// peer ids are Ed25519-pubkey-derived and ASCII by construction, so a tail is
 /// sufficient to identify a peer in logs without logging the full key. The
-/// new persistent file sink (when `REMOTEPI_RELAY_LOG_DIR` is set) makes
+/// new persistent file sink (when `OUTPOSTPI_RELAY_LOG_DIR` is set) makes
 /// tail-only logging the consistent choice across INFO and DEBUG lines.
 fn peer_tail(peer_id: &str) -> String {
     let len = peer_id.len();
