@@ -1,7 +1,7 @@
 ---
 id: feature-targeting-delivery-contract
 kind: feature
-stage: drafting
+stage: done
 tags: [pi-extension, app, relay, docs]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []

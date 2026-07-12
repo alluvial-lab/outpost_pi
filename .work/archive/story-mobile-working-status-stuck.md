@@ -1,7 +1,7 @@
 ---
 id: story-mobile-working-status-stuck
 kind: story
-stage: drafting
+stage: done
 tags: [pi-extension, app, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: []

@@ -1,7 +1,7 @@
 ---
 id: feature-session-replacement-harness-and-observability
 kind: feature
-stage: drafting
+stage: done
 tags: [pi-extension, app, testing, observability]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []
