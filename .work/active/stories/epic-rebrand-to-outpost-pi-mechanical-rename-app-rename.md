@@ -25,7 +25,20 @@ the debug-log filename `remote_pi_debug.jsonl` → `outpost_pi_debug.jsonl`
   bundle id, the `remote_pi_identity` plugin.
 
 ## Acceptance Criteria
-- [ ] `flutter analyze` (in `app/`) clean
-- [ ] `flutter test` (in `app/`) green
-- [ ] Verification grep: remaining `remote-pi|remote_pi|Remote Pi|RemotePi` in
+- [x] `flutter analyze` (in `app/`) clean
+- [x] `flutter test` (in `app/`) green
+- [x] Verification grep: remaining `remote-pi|remote_pi|Remote Pi|RemotePi` in
       `app/` are only excluded wire-stable literals
+
+## Implementation notes
+
+- Renamed app-visible copy, the app widget (`OutpostPiApp`), command/update labels,
+  session default (`outpost_pi`), debug export filename (`outpost_pi_debug.jsonl`),
+  store listing, and wireframe asset (`Outpost-Pi.html`). Existing debug logs are
+  intentionally not migrated.
+- Preserved the auth-domain literal and all `remote_pi_identity` package references.
+  The verification grep reports only those exclusions.
+- Verified with `flutter analyze` (`No issues found`) and `flutter test` (`All tests
+  passed`, 683 tests). One preceding full-suite attempt exposed an unrelated flaky
+  `sync_service_test` session-sync assertion; its focused rerun passed, and the
+  subsequent full rerun passed.

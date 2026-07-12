@@ -1,4 +1,4 @@
-// Remote Pi — three iPhone screens
+// Outpost-Pi — three iPhone screens
 // Dark terminal-iOS aesthetic. Cyan #00d4ff used sparingly.
 
 const RP_BG = '#000';
@@ -218,7 +218,7 @@ function QRGlyph({ paired, accent }) {
 // SCREEN 2 — Sessions ------------------------------------------------------
 function ScreenSessions({ accent, onOpenSession }) {
   const sessions = [
-    { id: 'protocol', title: 'remote_pi · feature/protocol', model: 'opus-4.7', when: '2 minutes ago', active: true, unread: true, locked: true },
+    { id: 'protocol', title: 'outpost_pi · feature/protocol', model: 'opus-4.7', when: '2 minutes ago', active: true, unread: true, locked: true },
     { id: 'rust', title: 'explore-rust', model: 'haiku', when: 'yesterday', active: false, unread: false, locked: true },
     { id: 'site', title: 'site refactor', model: 'opus', when: '3 days ago', active: false, unread: false, locked: true },
   ];
@@ -233,7 +233,7 @@ function ScreenSessions({ accent, onOpenSession }) {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '14px 22px 0',
       }}>
-        <div style={{ fontFamily: RP_SANS, fontSize: 28, fontWeight: 700, letterSpacing: -0.6 }}>Remote Pi</div>
+        <div style={{ fontFamily: RP_SANS, fontSize: 28, fontWeight: 700, letterSpacing: -0.6 }}>Outpost-Pi</div>
         <div style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <IconGear color="#b5b5b5" />
         </div>
@@ -341,7 +341,7 @@ function ScreenChat({ accent, decision, onDecide, onBack }) {
           <div style={{
             fontFamily: RP_MONO, fontSize: 13, color: '#fff', letterSpacing: -0.2,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>remote_pi · feature/protocol</div>
+          }}>outpost_pi · feature/protocol</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
             <IconLock size={9} color={RP_MUTED} />
             <span style={{ fontFamily: RP_MONO, fontSize: 10, color: RP_MUTED, letterSpacing: 0.3 }}>E2E</span>
