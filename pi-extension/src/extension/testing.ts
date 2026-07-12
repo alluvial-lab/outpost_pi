@@ -31,20 +31,20 @@ export function createOwnerMultiplexerTestHarness(
   };
 }
 
-export interface RemotePiTestHarness {
+export interface OutpostPiTestHarness {
   connect(ctx: unknown): Promise<void>;
   stop(ctx: unknown): Promise<void>;
   state(): "idle" | "started" | "paired";
   routeClientMessage(message: ClientMessage, ctx: Pick<ExtensionContext, "abort">): void;
 }
 
-export function createRemotePiTestHarness(
-  deps: RemotePiTestHarness,
-): RemotePiTestHarness {
+export function createOutpostPiTestHarness(
+  deps: OutpostPiTestHarness,
+): OutpostPiTestHarness {
   return deps;
 }
 
-export interface RemotePiCommandSurfaceHarness {
+export interface OutpostPiCommandSurfaceHarness {
   connect(ctx: unknown): Promise<void>;
   stop(ctx: unknown): Promise<void>;
   state(): "idle" | "started" | "paired";
@@ -53,8 +53,8 @@ export interface RemotePiCommandSurfaceHarness {
   restartSupervisorCommand(platform: NodeJS.Platform, uid: number): RestartStep[] | null;
 }
 
-export function createRemotePiCommandSurfaceHarness(
-  deps: RemotePiCommandSurfaceHarness,
-): RemotePiCommandSurfaceHarness {
+export function createOutpostPiCommandSurfaceHarness(
+  deps: OutpostPiCommandSurfaceHarness,
+): OutpostPiCommandSurfaceHarness {
   return deps;
 }

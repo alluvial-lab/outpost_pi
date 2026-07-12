@@ -1,11 +1,11 @@
 ---
 name: agent-network
-description: Use when the remote-pi mesh tools (`list_peers`, `agent_send`, and — on Claude — `get_messages`) are available. You are an agent (a Claude session or a Pi coding agent) connected to the remote-pi agent mesh over a local broker. This skill teaches how to discover who's online (`list_peers`), how to send messages with a delivery ACK (`agent_send`), how incoming messages reach you (via `get_messages` on Claude, or delivered into your turn on Pi), how to reply (echo `re`), and how peer addresses work — `<cwd>@<name>` locally (echo verbatim, never compose), with a `<pc>:` prefix cross-PC.
+description: Use when the outpost-pi mesh tools (`list_peers`, `agent_send`, and — on Claude — `get_messages`) are available. You are an agent (a Claude session or a Pi coding agent) connected to the outpost-pi agent mesh over a local broker. This skill teaches how to discover who's online (`list_peers`), how to send messages with a delivery ACK (`agent_send`), how incoming messages reach you (via `get_messages` on Claude, or delivered into your turn on Pi), how to reply (echo `re`), and how peer addresses work — `<cwd>@<name>` locally (echo verbatim, never compose), with a `<pc>:` prefix cross-PC.
 ---
 
-# Agent Network (remote-pi mesh)
+# Agent Network (outpost-pi mesh)
 
-You are connected to the **remote-pi agent mesh**. Other agents — other Claude
+You are connected to the **outpost-pi agent mesh**. Other agents — other Claude
 sessions, Pi coding agents on this machine, and agents on the Owner's other PCs
 (reached through the relay) — can send you messages, and you can send messages
 to them.

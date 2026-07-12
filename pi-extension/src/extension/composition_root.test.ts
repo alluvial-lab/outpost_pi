@@ -1,10 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 import { createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { RemotePiRuntimePorts } from "./ports.js";
-import { createRemotePiExtensionRuntime } from "./composition_root.js";
-import { RemotePiRuntimeCoordinator } from "./runtime_coordinator.js";
+import type { OutpostPiRuntimePorts } from "./ports.js";
+import { createOutpostPiExtensionRuntime } from "./composition_root.js";
+import { OutpostPiRuntimeCoordinator } from "./runtime_coordinator.js";
 
-function ports(): RemotePiRuntimePorts {
+function ports(): OutpostPiRuntimePorts {
   return {
     relay: {
       status: () => "disconnected",
@@ -67,7 +67,7 @@ describe("composition root runtime", () => {
   test("register defers API publication until an approved session_start", () => {
     const p = ports();
     const { pi, handlers } = piWithHandlers();
-    const runtime = createRemotePiExtensionRuntime(pi, p, new RemotePiRuntimeCoordinator());
+    const runtime = createOutpostPiExtensionRuntime(pi, p, new OutpostPiRuntimeCoordinator());
 
     runtime.register();
 
@@ -84,7 +84,7 @@ describe("composition root runtime", () => {
   test("duplicate session_start is idempotent and a disposed epoch does not restart", () => {
     const p = ports();
     const { pi, handlers } = piWithHandlers();
-    const runtime = createRemotePiExtensionRuntime(pi, p, new RemotePiRuntimeCoordinator());
+    const runtime = createOutpostPiExtensionRuntime(pi, p, new OutpostPiRuntimeCoordinator());
     runtime.register();
     const ctx = context("parent");
 
@@ -102,7 +102,7 @@ describe("composition root runtime", () => {
   test("owner session_shutdown marks epoch before clearing resources and closing mesh", async () => {
     const p = ports();
     const { pi, handlers } = piWithHandlers();
-    const runtime = createRemotePiExtensionRuntime(pi, p, new RemotePiRuntimeCoordinator());
+    const runtime = createOutpostPiExtensionRuntime(pi, p, new OutpostPiRuntimeCoordinator());
     runtime.register();
     handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
 
@@ -124,16 +124,16 @@ describe("composition root runtime", () => {
   });
 
   test("satellite shutdown cannot tear down owner resources", async () => {
-    const coordinator = new RemotePiRuntimeCoordinator();
+    const coordinator = new OutpostPiRuntimeCoordinator();
     const ownerPorts = ports();
     const ownerPi = piWithHandlers();
-    const owner = createRemotePiExtensionRuntime(ownerPi.pi, ownerPorts, coordinator);
+    const owner = createOutpostPiExtensionRuntime(ownerPi.pi, ownerPorts, coordinator);
     owner.register();
     ownerPi.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
 
     const satellitePorts = ports();
     const satellitePi = piWithHandlers();
-    const satellite = createRemotePiExtensionRuntime(satellitePi.pi, satellitePorts, coordinator);
+    const satellite = createOutpostPiExtensionRuntime(satellitePi.pi, satellitePorts, coordinator);
     satellite.register();
     satellitePi.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("child"));
     await satellitePi.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" });

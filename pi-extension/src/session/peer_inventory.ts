@@ -1,5 +1,5 @@
 /**
- * Plan/25 Wave D — pure formatter for the `/remote-pi peers` output.
+ * Plan/25 Wave D — pure formatter for the `/outpost-pi peers` output.
  *
  * Lives in its own module so it can be unit-tested without booting the full
  * extension (no keychain access, no relay client, no mocks needed). The

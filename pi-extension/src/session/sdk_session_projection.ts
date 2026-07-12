@@ -171,7 +171,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     // child's `session_start` fires here too. The child carries a FRESH
     // session id (`SessionManager.newSession` → new uuidv7). If we let the
     // child's `session_start` run the usual side effects, three things break
-    // (confirmed by live capture 2026-07-07, /tmp/remote-pi-debug-send.jsonl):
+    // (confirmed by live capture 2026-07-07, /tmp/outpost-pi-debug-send.jsonl):
     //   (a) `issuer.capture(childCtx)` overwrites the parent's session id →
     //       subsequent parent broadcasts are stamped with the CHILD id
     //       (capture showed parent frames after the window carrying the

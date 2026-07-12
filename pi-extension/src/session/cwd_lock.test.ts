@@ -83,7 +83,7 @@ describe("acquireCwdLock", () => {
   // path via real broker crashes in `src/session/leader_election.test.ts`)
   // to cover the OS primitive, and trust that `acquireCwdLock` composes
   // it correctly. Manual repro: `kill -9` a Pi process holding the lock,
-  // then run `/remote-pi` again — acquires cleanly.
+  // then run `/outpost-pi` again — acquires cleanly.
 
   test("same cwd, DIFFERENT names → independent locks (multi-agent per folder)", async () => {
     const cwd = tmpCwd();

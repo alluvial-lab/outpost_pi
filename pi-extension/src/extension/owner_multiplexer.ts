@@ -152,7 +152,7 @@ function pairErrorForStatus(status: Exclude<PairTokenStatus, "ok">): { code: Pai
     : status === "consumed" ? "token_consumed"
     : "token_unknown";
   const message =
-    code === "token_expired" ? "Ephemeral token expired. Generate a new QR with /remote-pi pair."
+    code === "token_expired" ? "Ephemeral token expired. Generate a new QR with /outpost-pi pair."
     : code === "token_consumed" ? "Token already consumed by another pair_request."
     : "Token was not issued by this Pi.";
   return { code, message };
