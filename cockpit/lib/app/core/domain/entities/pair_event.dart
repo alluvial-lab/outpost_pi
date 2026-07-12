@@ -8,7 +8,7 @@ sealed class PairEvent {
   const PairEvent();
 }
 
-/// `remote-pi:pair-code` — o código de pareamento (re)gerado. A [uri] é o que
+/// `outpost-pi:pair-code` — o código de pareamento (re)gerado. A [uri] é o que
 /// vira QR Code; os demais campos servem pro botão "copiar dados". Reemitido
 /// periodicamente (o código se renova) — basta atualizar o QR.
 final class PairCodeReady extends PairEvent {
@@ -27,7 +27,7 @@ final class PairCodeReady extends PairEvent {
   final String? name;
 }
 
-/// `remote-pi:paired` — um aparelho leu o QR e pareou. Encerra o fluxo.
+/// `outpost-pi:paired` — um aparelho leu o QR e pareou. Encerra o fluxo.
 final class PairDevicePaired extends PairEvent {
   const PairDevicePaired({this.name});
   final String? name;

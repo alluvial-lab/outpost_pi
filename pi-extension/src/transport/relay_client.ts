@@ -11,7 +11,7 @@ import {
  *  (`relay/src/auth/challenge.rs`). The relay verifies the auth signature over
  *  `prefix ++ nonce`; signing the bare nonce is rejected as `invalid signature`
  *  and makes the extension a signing oracle under the long-term identity key. */
-const RELAY_AUTH_DOMAIN_PREFIX = Buffer.from("remote-pi-relay-auth-v1\n", "utf8");
+const RELAY_AUTH_DOMAIN_PREFIX = Buffer.from("outpost-pi-relay-auth-v1\n", "utf8");
 
 const AUTH_TIMEOUT_MS = 5_000;
 
