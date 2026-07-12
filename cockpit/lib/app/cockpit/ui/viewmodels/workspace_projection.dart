@@ -392,12 +392,12 @@ final class WorkspaceProjection {
     Project project,
   ) {
     return {
-      'REMOTE_PI_DIRECT_CONFIG': jsonEncode(<String, dynamic>{
+      'OUTPOST_PI_DIRECT_CONFIG': jsonEncode(<String, dynamic>{
         'agent_name': session.title,
         'workspace': project.name,
         'auto_start_relay': session.autoStartRelay,
       }),
-      'REMOTE_PI_DAEMON': '1',
+      'OUTPOST_PI_DAEMON': '1',
     };
   }
 

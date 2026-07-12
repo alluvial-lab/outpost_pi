@@ -40,7 +40,7 @@ export type RelayResolution = { url: string; source: "env" | "config" | "default
  * Resolves the effective relay URL in **canonical http(s):// form**.
  *
  * Precedence:
- *   1. `REMOTE_PI_RELAY` env var (ops/CI escape hatch)
+ *   1. `OUTPOST_PI_RELAY` env var (ops/CI escape hatch)
  *   2. `~/.pi/remote/config.json` `relay` field (set via /outpost-pi set-relay)
  *   3. `kDefaultRelayUrl` (community default)
  *
@@ -49,7 +49,7 @@ export type RelayResolution = { url: string; source: "env" | "config" | "default
  * http(s)://, and the transport layer converts to ws(s):// at WS-open time.
  */
 export function resolveRelayUrl(): RelayResolution {
-  const env = process.env["REMOTE_PI_RELAY"];
+  const env = process.env["OUTPOST_PI_RELAY"];
   if (env && env.length > 0) return { url: toHttpUrl(env), source: "env" };
   const cfg = loadConfig();
   if (cfg.relay && cfg.relay.length > 0) return { url: toHttpUrl(cfg.relay), source: "config" };

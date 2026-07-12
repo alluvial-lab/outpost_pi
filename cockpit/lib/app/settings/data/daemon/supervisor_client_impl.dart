@@ -126,7 +126,7 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
     String name,
   ) async {
     // O nome é a fonte da verdade no registry global `~/.pi/remote/daemons.json`
-    // (`{cwd, name}`) — o supervisor o injeta no spawn via REMOTE_PI_DIRECT_CONFIG.
+    // (`{cwd, name}`) — o supervisor o injeta no spawn via OUTPOST_PI_DIRECT_CONFIG.
     // Não há config local por-pasta nem op/CLI de rename, então editamos o
     // registry direto; o `restart{id}` (no VM) respawna com o nome novo.
     final home = _home;

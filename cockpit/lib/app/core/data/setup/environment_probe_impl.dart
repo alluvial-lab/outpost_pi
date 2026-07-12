@@ -67,7 +67,7 @@ class EnvironmentProbeImpl implements EnvironmentProbe {
       // Sinal primário: o serviço foi instalado por `outpost-pi install`.
       if (Platform.isMacOS) {
         final plist = File(
-          '$home/Library/LaunchAgents/dev.remotepi.supervisord.plist',
+          '$home/Library/LaunchAgents/dev.outpostpi.supervisord.plist',
         );
         if (await plist.exists()) return true;
       } else if (Platform.isLinux) {
