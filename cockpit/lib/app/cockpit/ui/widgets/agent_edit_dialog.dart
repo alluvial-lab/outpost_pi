@@ -87,7 +87,7 @@ class _AgentEditDialogState extends State<_AgentEditDialog> {
               ),
               const SizedBox(height: 16),
 
-              _SectionTitle('Relay (remote-pi)'),
+              _SectionTitle('Relay (outpost-pi)'),
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

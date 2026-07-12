@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:cockpit/app/core/env.dart';
-import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
+import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/environment_installer.dart';
 import 'package:cockpit/app/cockpit/domain/entities/install_result.dart';
 
@@ -17,7 +17,7 @@ class EnvironmentInstallerImpl implements EnvironmentInstaller {
     try {
       final result = await Process.run(
         _config.executable,
-        const ['install', 'npm:remote-pi'],
+        const ['install', 'npm:outpost-pi'],
         runInShell: Platform.isWindows,
         environment: await envWithNodeOnPath(),
       );
@@ -30,10 +30,10 @@ class EnvironmentInstallerImpl implements EnvironmentInstaller {
 
   @override
   Future<InstallResult> installSupervisor() async {
-    final indexJs = await resolveRemotePiIndexJs();
+    final indexJs = await resolveOutpostPiIndexJs();
     if (indexJs == null) {
       return const InstallResult.failure(
-        'Could not find the remote-pi extension\'s index.js. '
+        'Could not find the outpost-pi extension\'s index.js. '
         'Install the extension before installing the supervisor.',
       );
     }

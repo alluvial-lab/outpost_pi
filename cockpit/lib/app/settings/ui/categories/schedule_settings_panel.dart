@@ -158,7 +158,7 @@ class _ScheduleSettingsPanelState extends State<ScheduleSettingsPanel> {
       return SettingsMessageCard(
         child: Text(
           'Supervisor offline. Schedules need pi-supervisord running '
-          '(`remote-pi install`).',
+          '(`outpost-pi install`).',
           style: context.typo.body.copyWith(
             fontSize: 13.5,
             color: colors.text3,

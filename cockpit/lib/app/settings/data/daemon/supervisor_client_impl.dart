@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cockpit/app/settings/data/daemon/win_named_pipe.dart';
-import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
+import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 import 'package:cockpit/app/settings/domain/contracts/cron_gateway.dart';
 import 'package:cockpit/app/settings/domain/contracts/daemon_supervisor.dart';
 import 'package:cockpit/app/settings/domain/entities/cron_job.dart';
@@ -15,7 +15,7 @@ import 'package:cockpit/app/core/domain/result.dart';
 ///
 /// **Controle** via o UDS `~/.pi/remote/supervisor.sock` (JSON-por-linha, 1 req
 /// → 1 reply → close; espelha `pi-extension/src/daemon/client.ts`). **Criação**
-/// via shell-out `remote-pi create` (faz o write do config local + registra +
+/// via shell-out `outpost-pi create` (faz o write do config local + registra +
 /// sobe — o op `register` do UDS não escreve config). Cron (plan/39) usa as ops
 /// `cron_*` no mesmo socket.
 class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
@@ -97,7 +97,7 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
       ]);
       if (result == null) {
         return const Failure(
-          DaemonError('Could not find remote-pi (install the extension).'),
+          DaemonError('Could not find outpost-pi (install the extension).'),
         );
       }
       if (result.exitCode != 0) {
@@ -171,25 +171,25 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
 
   @override
   Future<Result<void, DaemonError>> restartSupervisor() async {
-    // Delega ao CLI `remote-pi restart-supervisor` — ele cuida do detalhe por
+    // Delega ao CLI `outpost-pi restart-supervisor` — ele cuida do detalhe por
     // plataforma (launchctl no macOS, systemctl no Linux, serviço no Windows).
-    // Centraliza a lógica de SO no remote-pi em vez de duplicá-la aqui.
+    // Centraliza a lógica de SO no outpost-pi em vez de duplicá-la aqui.
     try {
       final result = await _runCli(const ['restart-supervisor']);
       if (result == null) {
         return const Failure(
-          DaemonError('Could not find remote-pi (install the extension).'),
+          DaemonError('Could not find outpost-pi (install the extension).'),
         );
       }
       final out = (result.stdout as String? ?? '');
       final err = (result.stderr as String? ?? '');
       // O CLI imprime o help e sai 0 quando o comando não existe — não dá pra
       // confiar só no exitCode. Detecta o banner de uso e trata como indisponível.
-      if ('$out\n$err'.contains('Usage: remote-pi')) {
+      if ('$out\n$err'.contains('Usage: outpost-pi')) {
         return const Failure(
           DaemonError(
-            'This remote-pi does not have the `restart-supervisor` command yet. '
-            'Update remote-pi.',
+            'This outpost-pi does not have the `restart-supervisor` command yet. '
+            'Update outpost-pi.',
           ),
         );
       }
@@ -435,11 +435,11 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
 
   // ---- CLI resolution -------------------------------------------------------
 
-  /// Como invocar o `remote-pi`: binário no POSIX, `node <index.js>` no Windows.
+  /// Como invocar o `outpost-pi`: binário no POSIX, `node <index.js>` no Windows.
   Future<({String exe, List<String> prefixArgs})?> _cli() =>
-      _resolvedCli ??= resolveRemotePiCommand();
+      _resolvedCli ??= resolveOutpostPiCommand();
 
-  /// Roda o `remote-pi <args>` resolvido por plataforma, com o `node` na PATH
+  /// Roda o `outpost-pi <args>` resolvido por plataforma, com o `node` na PATH
   /// (shim usa `#!/usr/bin/env node`) e `runInShell` no Windows.
   Future<ProcessResult?> _runCli(List<String> args) async {
     final cmd = await _cli();

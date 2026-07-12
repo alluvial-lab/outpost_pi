@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 /// Tokens de cor do Cockpit — espelham `tokens.css` do design (dark pro-tool,
-/// accent azul Remote Pi). Lidos via `context.colors.<token>`.
+/// accent azul Outpost-Pi). Lidos via `context.colors.<token>`.
 @immutable
 class AppColors {
   const AppColors({

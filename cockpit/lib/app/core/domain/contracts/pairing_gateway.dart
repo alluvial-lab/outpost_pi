@@ -2,9 +2,9 @@ import 'package:cockpit/app/core/domain/entities/pair_event.dart';
 
 /// Uma sessão **efêmera** de pareamento de aparelho.
 ///
-/// Sobe um `pi --mode rpc --no-session` (com a extensão remote-pi), injeta um
-/// `REMOTE_PI_DIRECT_CONFIG` de pareamento e dispara `/remote-pi pair`. Os
-/// eventos custom do remote-pi chegam tipados por [events]; [cancel] mata o
+/// Sobe um `pi --mode rpc --no-session` (com a extensão outpost-pi), injeta um
+/// `REMOTE_PI_DIRECT_CONFIG` de pareamento e dispara `/outpost-pi pair`. Os
+/// eventos custom do outpost-pi chegam tipados por [events]; [cancel] mata o
 /// processo (sem órfão) e limpa a pasta temporária.
 ///
 /// Uma instância = uma tentativa de pareamento (processo próprio). Contrato no

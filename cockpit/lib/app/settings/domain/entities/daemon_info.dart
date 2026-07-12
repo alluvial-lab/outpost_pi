@@ -11,7 +11,7 @@ DaemonState daemonStateFromWire(String? raw) => switch (raw) {
 
 /// Um "Daemon Agent" — um `pi --mode rpc` que roda 24/7 sob o `pi-supervisord`.
 ///
-/// Espelha o `DaemonInfo` do control protocol do remote-pi
+/// Espelha o `DaemonInfo` do control protocol do outpost-pi
 /// (`pi-extension/src/daemon/control_protocol.ts`). O `id` é derivado do cwd
 /// (sha256[0..8]); `name`/cwd vêm do registry + config local.
 class DaemonInfo {
