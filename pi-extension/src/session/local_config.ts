@@ -7,11 +7,11 @@ const LOCAL_FILE = "config.json";
 /**
  * Escape hatch: when set, carries the WHOLE local config as inline JSON,
  * bypassing the on-disk `config.json`. For CI/ops/daemons that inject config
- * via env instead of writing a file — mirrors `REMOTE_PI_RELAY` for the relay
+ * via env instead of writing a file — mirrors `OUTPOST_PI_RELAY` for the relay
  * URL. Takes precedence over the file; an unset/empty/unparseable value falls
  * back to the file (never fatal).
  */
-const DIRECT_CONFIG_ENV = "REMOTE_PI_DIRECT_CONFIG";
+const DIRECT_CONFIG_ENV = "OUTPOST_PI_DIRECT_CONFIG";
 
 export interface LocalConfig {
   agent_name?: string;
@@ -100,7 +100,7 @@ function parseLocalConfig(raw: string): LocalConfig | null {
   return cfg;
 }
 
-/** Inline config from `REMOTE_PI_DIRECT_CONFIG`, when set + parseable; else null. */
+/** Inline config from `OUTPOST_PI_DIRECT_CONFIG`, when set + parseable; else null. */
 function directConfig(): LocalConfig | null {
   const raw = process.env[DIRECT_CONFIG_ENV];
   if (!raw || raw.trim().length === 0) return null;
@@ -109,14 +109,14 @@ function directConfig(): LocalConfig | null {
 
 /**
  * True when a local config is available for this cwd — either inline via
- * `REMOTE_PI_DIRECT_CONFIG` or as `<cwd>/.pi/outpost-pi/config.json` on disk.
+ * `OUTPOST_PI_DIRECT_CONFIG` or as `<cwd>/.pi/outpost-pi/config.json` on disk.
  */
 export function localConfigExists(cwd: string): boolean {
   return directConfig() !== null || existsSync(pathFor(cwd));
 }
 
 export function loadLocalConfig(cwd: string): LocalConfig {
-  // Precedence: inline `REMOTE_PI_DIRECT_CONFIG` env wins over the file. An
+  // Precedence: inline `OUTPOST_PI_DIRECT_CONFIG` env wins over the file. An
   // unset/empty/malformed env falls through to the on-disk config.json.
   const direct = directConfig();
   if (direct) return direct;

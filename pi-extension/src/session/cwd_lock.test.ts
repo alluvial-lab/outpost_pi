@@ -22,11 +22,11 @@ let testHome: string;
 
 beforeEach(() => {
   testHome = mkdtempSync("/tmp/rp-cwdlock-");
-  process.env["REMOTE_PI_HOME"] = testHome;
+  process.env["OUTPOST_PI_HOME"] = testHome;
 });
 
 afterEach(() => {
-  delete process.env["REMOTE_PI_HOME"];
+  delete process.env["OUTPOST_PI_HOME"];
   try { rmSync(testHome, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 

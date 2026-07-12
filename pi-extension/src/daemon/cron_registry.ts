@@ -51,7 +51,7 @@ export interface CronRegistry {
 }
 
 function cronPath(): string {
-  const root = process.env["REMOTE_PI_HOME"] || homedir();
+  const root = process.env["OUTPOST_PI_HOME"] || homedir();
   return join(root, ".pi", "remote", "cron.json");
 }
 

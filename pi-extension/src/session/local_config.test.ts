@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadLocalConfig, localConfigExists, saveLocalConfig } from "./local_config.js";
 
-const ENV = "REMOTE_PI_DIRECT_CONFIG";
+const ENV = "OUTPOST_PI_DIRECT_CONFIG";
 
 function makeCwd(): string {
   return mkdtempSync(join(tmpdir(), "rp-localcfg-"));
@@ -17,7 +17,7 @@ function writeFileConfig(cwd: string, obj: unknown): void {
   writeFileSync(join(dir, "config.json"), JSON.stringify(obj));
 }
 
-describe("loadLocalConfig — file vs REMOTE_PI_DIRECT_CONFIG", () => {
+describe("loadLocalConfig — file vs OUTPOST_PI_DIRECT_CONFIG", () => {
   let cwd: string;
 
   beforeEach(() => {

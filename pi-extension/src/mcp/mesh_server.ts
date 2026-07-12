@@ -11,7 +11,7 @@
  *
  * Launched by `outpost-pi claude` (registers this in Claude's local MCP
  * scope). Args: [--cwd <path>] [--name <agentName>] [--no-bridge]
- * Env: REMOTE_PI_MCP_CWD, REMOTE_PI_MCP_NAME
+ * Env: OUTPOST_PI_MCP_CWD, OUTPOST_PI_MCP_NAME
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -33,9 +33,9 @@ const _argv = process.argv.slice(2);
 // monorepo subproject (app/, relay/, …) into one identity + one lock. The
 // `outpost-pi claude` launcher therefore registers us WITHOUT a baked `--cwd`,
 // so one shared local-scope entry self-identifies per session. `--cwd` and
-// REMOTE_PI_MCP_CWD remain as explicit overrides (tests / manual launches).
-let _cwd = process.env["REMOTE_PI_MCP_CWD"] ?? process.cwd();
-let _nameOverride = process.env["REMOTE_PI_MCP_NAME"];
+// OUTPOST_PI_MCP_CWD remain as explicit overrides (tests / manual launches).
+let _cwd = process.env["OUTPOST_PI_MCP_CWD"] ?? process.cwd();
+let _nameOverride = process.env["OUTPOST_PI_MCP_NAME"];
 let _bridgeEnabled = true;
 
 for (let i = 0; i < _argv.length; i++) {

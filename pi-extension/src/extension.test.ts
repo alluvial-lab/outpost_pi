@@ -330,7 +330,7 @@ describe("extension default export", () => {
 
   test("restart-supervisor maps to the right OS command sequence per platform", () => {
     expect(_restartSupervisorCommand("darwin", 501)).toEqual([
-      { cmd: "launchctl", args: ["kickstart", "-k", "gui/501/dev.remotepi.supervisord"] },
+      { cmd: "launchctl", args: ["kickstart", "-k", "gui/501/dev.outpostpi.supervisord"] },
     ]);
     expect(_restartSupervisorCommand("linux", 1000)).toEqual([
       { cmd: "systemctl", args: ["--user", "restart", "outpost-pi-supervisord.service"] },

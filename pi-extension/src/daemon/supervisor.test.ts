@@ -15,7 +15,7 @@ import {
 
 /**
  * Supervisor integration tests. We spin up a real `Supervisor` against a
- * scratch `REMOTE_PI_HOME`, connect to its UDS, send requests, and
+ * scratch `OUTPOST_PI_HOME`, connect to its UDS, send requests, and
  * inspect replies.
  *
  * `extensionPath` points at a non-existent path so the children's spawn
@@ -48,7 +48,7 @@ async function ask<R = ControlReply<unknown>>(req: ControlRequest): Promise<R> {
 
 beforeEach(async () => {
   testHome = mkdtempSync(join(tmpdir(), "pi-sv-"));
-  process.env["REMOTE_PI_HOME"] = testHome;
+  process.env["OUTPOST_PI_HOME"] = testHome;
   supervisor = new Supervisor({
     // Point at a non-existent extension. The supervisor will try to
     // spawn `<piBin> --mode rpc -e <path>` and the child exits immediately —
@@ -70,7 +70,7 @@ afterEach(async () => {
     await supervisor.stop();
     supervisor = null;
   }
-  delete process.env["REMOTE_PI_HOME"];
+  delete process.env["OUTPOST_PI_HOME"];
   try { rmSync(testHome, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 
