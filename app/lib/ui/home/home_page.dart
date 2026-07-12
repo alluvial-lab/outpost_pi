@@ -134,7 +134,7 @@ class HomePage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Remote Pi',
+                          'Outpost-Pi',
                           style: brandTextStyle(
                             fontSize: 32,
                             fontWeight: FontWeight.w700,
@@ -163,7 +163,7 @@ class HomePage extends StatelessWidget {
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        'Remote Pi',
+                        'Outpost-Pi',
                         style: brandTextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -192,7 +192,7 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  /// Subtitle line under "Remote Pi": ● Relay · [Connected|Awaiting pairing|Offline].
+  /// Subtitle line under "Outpost-Pi": ● Relay · [Connected|Awaiting pairing|Offline].
   /// Reflects the app→relay WS state (not per-Pi presence) so the
   /// user always knows whether the app itself is reachable.
   ///
@@ -575,7 +575,7 @@ class HomePage extends StatelessWidget {
       : peer.remoteEpk.substring(0, 8);
 
   /// Plan/24-fix-title: the peer/room label we already know here, so the
-  /// Chat AppBar doesn't show '—' / 'Remote Pi' until the ChatViewModel
+  /// Chat AppBar doesn't show '—' / 'Outpost-Pi' until the ChatViewModel
   /// loads the PeerRecord + the first room_meta_updated arrives. Prefers
   /// room.name (per-cwd title) → cwd tail → nickname → sessionName.
   static String _titleFor(PeerRecord peer, RoomInfo room) {

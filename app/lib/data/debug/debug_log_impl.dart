@@ -127,7 +127,7 @@ class DebugLogImpl implements DebugLog {
 
   Future<void> _doLoad() async {
     final dir = await getApplicationDocumentsDirectory();
-    _filePath = '${dir.path}/remote_pi_debug.jsonl';
+    _filePath = '${dir.path}/outpost_pi_debug.jsonl';
     final file = File(_filePath!);
     if (await file.exists()) {
       final lines = await file.readAsLines();

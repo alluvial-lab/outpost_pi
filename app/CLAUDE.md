@@ -1,6 +1,6 @@
-# Remote Pi — App (Flutter)
+# Outpost-Pi — App (Flutter)
 
-Cliente mobile (iOS + Android) do Remote Pi. Pareia via QR, lista sessões do Pi,
+Cliente mobile (iOS + Android) do Outpost-Pi. Pareia via QR, lista sessões do Pi,
 chat com streaming, approval cards para tool calls.
 
 Antes de editar ou revisar `app/`, leia também a referência agent-neutral
@@ -30,11 +30,11 @@ então `pub get` online funciona (ou `--offline` se o cache já estiver povoado)
 
 ```bash
 cd app
-export PUB_CACHE=~/projects/remote_pi/.pub-cache
-~/projects/remote_pi/.tools/flutter/bin/flutter pub get
-~/projects/remote_pi/.tools/flutter/bin/flutter analyze              # deve passar zero issues
-~/projects/remote_pi/.tools/flutter/bin/flutter test
-~/projects/remote_pi/.tools/flutter/bin/flutter build apk --debug    # ou --no-codesign ios
+export PUB_CACHE=~/projects/outpost_pi/.pub-cache
+~/projects/outpost_pi/.tools/flutter/bin/flutter pub get
+~/projects/outpost_pi/.tools/flutter/bin/flutter analyze              # deve passar zero issues
+~/projects/outpost_pi/.tools/flutter/bin/flutter test
+~/projects/outpost_pi/.tools/flutter/bin/flutter build apk --debug    # ou --no-codesign ios
 ```
 
 - `dart format .` — formata (ou `~/.tools/flutter/bin/cache/dart-sdk/bin/dart format .`)

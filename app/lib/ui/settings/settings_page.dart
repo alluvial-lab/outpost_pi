@@ -25,12 +25,12 @@ Future<void> shareDebugLog(String jsonl) async {
     [
       XFile.fromData(
         bytes,
-        name: 'remote_pi_debug.jsonl',
+        name: 'outpost_pi_debug.jsonl',
         mimeType: 'application/x-ndjson',
       ),
     ],
-    subject: 'Remote Pi debug log',
-    text: 'Remote Pi debug log',
+    subject: 'Outpost-Pi debug log',
+    text: 'Outpost-Pi debug log',
   );
 }
 

@@ -56,7 +56,7 @@ UpdateInfo _info(
               platform: 'android',
               arch: 'universal',
               format: 'apk',
-              url: 'https://example.com/RemotePi.apk',
+              url: 'https://example.com/OutpostPi.apk',
               sha256: '',
               size: 0,
             ),
@@ -167,7 +167,7 @@ void main() {
       final vm = _vm(_FakeChecker(_info('1.2.0')), opener: opener);
       await vm.check();
       await vm.download();
-      expect(opener.opened, ['https://example.com/RemotePi.apk']);
+      expect(opener.opened, ['https://example.com/OutpostPi.apk']);
     });
 
     test('falls back to the download page when no apk artifact', () async {
@@ -179,7 +179,7 @@ void main() {
             platform: 'macos',
             arch: 'universal',
             format: 'dmg',
-            url: 'https://example.com/RemotePi.dmg',
+            url: 'https://example.com/OutpostPi.dmg',
             sha256: '',
             size: 0,
           ),
@@ -188,7 +188,7 @@ void main() {
       final vm = _vm(_FakeChecker(info), opener: opener);
       await vm.check();
       await vm.download();
-      expect(opener.opened, ['https://remote-pi.jacobmoura.work/download']);
+      expect(opener.opened, ['https://outpost-pi.jacobmoura.work/download']);
     });
   });
 }

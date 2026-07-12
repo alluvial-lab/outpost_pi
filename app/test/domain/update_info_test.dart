@@ -13,7 +13,7 @@ void main() {
           "notes": "Bug fixes",
           "artifacts": [
             { "platform": "android", "arch": "universal", "format": "apk",
-              "url": "https://example.com/RemotePi.apk",
+              "url": "https://example.com/OutpostPi.apk",
               "sha256": "abc", "size": 1234 }
           ]
         }
@@ -27,7 +27,7 @@ void main() {
       expect(a.platform, 'android');
       expect(a.format, 'apk');
       expect(a.arch, 'universal');
-      expect(a.url, 'https://example.com/RemotePi.apk');
+      expect(a.url, 'https://example.com/OutpostPi.apk');
       expect(a.sha256, 'abc');
       expect(a.size, 1234);
     });
@@ -93,7 +93,7 @@ void main() {
           'platform': 'android',
           'arch': 'universal',
           'format': 'apk',
-          'url': 'https://x/RemotePi.apk',
+          'url': 'https://x/OutpostPi.apk',
         },
       ]);
       final a = info.artifactFor(
@@ -102,7 +102,7 @@ void main() {
         arch: 'universal',
       );
       expect(a, isNotNull);
-      expect(a!.url, 'https://x/RemotePi.apk');
+      expect(a!.url, 'https://x/OutpostPi.apk');
     });
 
     test('returns null when no compatible artifact (e.g. only macos/dmg)', () {
@@ -111,7 +111,7 @@ void main() {
           'platform': 'macos',
           'arch': 'universal',
           'format': 'dmg',
-          'url': 'https://x/RemotePi.dmg',
+          'url': 'https://x/OutpostPi.dmg',
         },
       ]);
       final a = info.artifactFor(

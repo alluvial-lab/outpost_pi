@@ -224,9 +224,9 @@ void main() {
           transport: app,
           storage: storage,
           deviceName: 'phone',
-          currentRelayUrl: 'wss://relay.remote-pi.dev',
+          currentRelayUrl: 'wss://relay.outpost-pi.dev',
         );
-        expect(result.peer.relayUrl, 'wss://relay.remote-pi.dev',
+        expect(result.peer.relayUrl, 'wss://relay.outpost-pi.dev',
             reason: 'when QR lacks r=, persist currentRelayUrl');
       },
     );
