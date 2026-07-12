@@ -43,7 +43,7 @@ void main() {
     test('maps pair-code, paired, and mesh-revoked schema neighbors', () {
       final pairCode = mapper.fromJson(
         _customMessage('remote-pi:pair-code', <String, Object?>{
-          'uri': 'remote-pi://pair?token=abc',
+          'uri': 'outpost-pi://pair?token=abc',
           'token': 'abc',
           'expiresAt': 1760000000000,
           'roomId': 'main',
@@ -52,7 +52,7 @@ void main() {
       );
       expect(pairCode, isA<RpcPairCode>());
       final pairCodeEvent = pairCode as RpcPairCode;
-      expect(pairCodeEvent.uri, 'remote-pi://pair?token=abc');
+      expect(pairCodeEvent.uri, 'outpost-pi://pair?token=abc');
       expect(pairCodeEvent.token, 'abc');
       expect(pairCodeEvent.expiresAt, 1760000000000);
       expect(pairCodeEvent.roomId, 'main');
@@ -89,7 +89,7 @@ void main() {
 
     test('keeps unknown custom event types isolated as RpcUnknown', () {
       final event = mapper.fromJson(
-        _customMessage('remote-pi:future-event', <String, Object?>{
+        _customMessage('outpost-pi:future-event', <String, Object?>{
           'newField': 'kept raw by pi but ignored by cockpit',
         }),
       );
@@ -97,7 +97,7 @@ void main() {
       expect(event, isA<RpcUnknown>());
       expect(
         (event as RpcUnknown).type,
-        'message_start:custom:remote-pi:future-event',
+        'message_start:custom:outpost-pi:future-event',
       );
     });
   });

@@ -48,11 +48,11 @@ class EnvironmentProbeImpl implements EnvironmentProbe {
       if (json is! Map) return false;
       final packages = json['packages'];
       if (packages is! List) return false;
-      // Casa tanto o spec de produção (`npm:remote-pi` / `remote-pi`) quanto o
+      // Casa tanto o spec de produção (`npm:outpost-pi` / `outpost-pi`) quanto o
       // dev (caminho local terminando em `pi-extension`).
       return packages.whereType<String>().any((p) {
         final low = p.toLowerCase();
-        return low.contains('remote-pi') || low.endsWith('pi-extension');
+        return low.contains('outpost-pi') || low.endsWith('pi-extension');
       });
     } catch (_) {
       return false;
@@ -64,7 +64,7 @@ class EnvironmentProbeImpl implements EnvironmentProbe {
     final home = _home;
     if (home == null) return false;
     try {
-      // Sinal primário: o serviço foi instalado por `remote-pi install`.
+      // Sinal primário: o serviço foi instalado por `outpost-pi install`.
       if (Platform.isMacOS) {
         final plist = File(
           '$home/Library/LaunchAgents/dev.remotepi.supervisord.plist',
@@ -72,26 +72,26 @@ class EnvironmentProbeImpl implements EnvironmentProbe {
         if (await plist.exists()) return true;
       } else if (Platform.isLinux) {
         final unit = File(
-          '$home/.config/systemd/user/remote-pi-supervisord.service',
+          '$home/.config/systemd/user/outpost-pi-supervisord.service',
         );
         if (await unit.exists()) return true;
       } else if (Platform.isWindows) {
         // Windows: o supervisor roda como uma Scheduled Task
-        // (`RemotePiSupervisor`) criada por `remote-pi install`. A task é a
+        // (`OutpostPiSupervisor`) criada por `outpost-pi install`. A task é a
         // fonte de verdade — sobrevive a reboot e ao uninstall do .vbs.
         // Query não precisa de elevação; só o /Create precisava.
         try {
           final task = await Process.run('schtasks', const [
             '/Query',
             '/TN',
-            'RemotePiSupervisor',
+            'OutpostPiSupervisor',
           ], runInShell: true);
           if (task.exitCode == 0) return true;
         } catch (_) {
           // schtasks indisponível → cai pro check de arquivo abaixo.
         }
         // Secundário: o launcher VBS escrito no install (em ~/.pi/remote/).
-        final vbs = File('$home/.pi/remote/RemotePiSupervisorLauncher.vbs');
+        final vbs = File('$home/.pi/remote/OutpostPiSupervisorLauncher.vbs');
         return vbs.exists();
       }
       // Fallback: o binário existe em algum prefixo de usuário conhecido.

@@ -86,7 +86,7 @@ ColorScheme _schemeFrom(AppColors c, Brightness brightness) {
     cardForeground: c.text,
     popover: c.panel,
     popoverForeground: c.text,
-    // "primary" = a marca (azul Remote Pi). Texto sobre o azul: branco nos dois.
+    // "primary" = a marca (azul Outpost-Pi). Texto sobre o azul: branco nos dois.
     primary: c.accent,
     primaryForeground: Colors.white,
     // "secondary" = superfície neutra de botão secundário.

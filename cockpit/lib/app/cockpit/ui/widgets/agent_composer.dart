@@ -299,11 +299,11 @@ class _AgentComposerState extends State<AgentComposer> {
     PiCommand(name: 'compact', description: 'Compacts the agent context'),
   ];
 
-  /// Embutidos + comandos das extensions, **suprimindo os `/remote-pi`**.
+  /// Embutidos + comandos das extensions, **suprimindo os `/outpost-pi`**.
   List<PiCommand> get _allCommands => <PiCommand>[
     ..._builtins,
     ...widget.session.projection.controls.commands.where(
-      (c) => c.name != 'remote-pi' && !c.name.startsWith('remote-pi '),
+      (c) => c.name != 'outpost-pi' && !c.name.startsWith('outpost-pi '),
     ),
   ];
 

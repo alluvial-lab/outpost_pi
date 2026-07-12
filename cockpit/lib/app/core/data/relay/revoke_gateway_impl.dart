@@ -19,10 +19,10 @@ class RevokeGatewayFactoryImpl implements RevokeGatewayFactory {
 
 /// Implementação do [RevokeGateway] sobre uma sessão [EphemeralPiRpc].
 ///
-/// Comando one-shot: manda `/remote-pi revoke <shortId>` e espera o `notify` de
-/// confirmação. O remote-pi não emite custom event no revoke (diferente do
+/// Comando one-shot: manda `/outpost-pi revoke <shortId>` e espera o `notify` de
+/// confirmação. O outpost-pi não emite custom event no revoke (diferente do
 /// pair) — sinaliza por `extension_ui_request`/`notify`:
-/// - sucesso → `[remote-pi] Revoked: <name> …` (info)
+/// - sucesso → `[outpost-pi] Revoked: <name> …` (info)
 /// - falha   → warning (`No peer matching`, `Revoke requires the relay`, …)
 class RevokeGatewayImpl implements RevokeGateway {
   RevokeGatewayImpl(this._config);
@@ -44,7 +44,7 @@ class RevokeGatewayImpl implements RevokeGateway {
     try {
       final command = jsonEncode(<String, dynamic>{
         'type': 'prompt',
-        'message': '/remote-pi revoke $shortId',
+        'message': '/outpost-pi revoke $shortId',
       });
       await rpc.start(
         prompt: command,
@@ -93,13 +93,13 @@ class RevokeGatewayImpl implements RevokeGateway {
       finish(const Success(null));
       return;
     }
-    // Warnings do remote-pi durante o revoke = falha (peer inexistente, relay
+    // Warnings do outpost-pi durante o revoke = falha (peer inexistente, relay
     // off, shortid ambíguo, setup pendente…).
-    if (json['notifyType'] == 'warning' && message.contains('remote-pi')) {
+    if (json['notifyType'] == 'warning' && message.contains('outpost-pi')) {
       finish(Failure(RelayError(_clean(message))));
     }
   }
 
   String _clean(String message) =>
-      message.replaceFirst('[remote-pi] ', '').trim();
+      message.replaceFirst('[outpost-pi] ', '').trim();
 }

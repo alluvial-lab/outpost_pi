@@ -8,7 +8,7 @@ import 'package:cockpit/app/core/utils/executable_resolver.dart';
 ///   `~/.pi/agent/sessions/<cwd>/`, e o Cockpit reanexa via `switch_session`.
 /// - `noExtensions = false`: o pi **carrega as extensions** do usuário — sem
 ///   isso `get_commands` vem vazio (todo slash command vem de extension). A
-///   malha/relay **não** inicia sozinha; só se você invocar `/remote-pi`.
+///   malha/relay **não** inicia sozinha; só se você invocar `/outpost-pi`.
 ///
 /// Provider/model e o path do binário são resolvidos no boot e podem ser
 /// sobrescritos por `--dart-define` (compile-time):

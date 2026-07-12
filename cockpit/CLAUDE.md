@@ -1,8 +1,8 @@
-# Remote Pi — Cockpit (Flutter Desktop)
+# Outpost-Pi — Cockpit (Flutter Desktop)
 
 Antes de editar ou revisar `cockpit/`, leia a referência de stack em [`../.agents/skills/flutter-desktop-cockpit/SKILL.md`](../.agents/skills/flutter-desktop-cockpit/SKILL.md).
 
-Cliente **desktop** (macOS first) do Remote Pi. GUI multi-pane sobre o motor do
+Cliente **desktop** (macOS first) do Outpost-Pi. GUI multi-pane sobre o motor do
 Pi: projetos à esquerda, agentes no centro, árvore de arquivos à direita. Cada
 agente é um `pi --mode rpc` que o app spawna e dirige **localmente** — sem relay,
 sem pareamento, sem crypto. É a contraparte local do `app/` (que é o gateway
@@ -25,7 +25,7 @@ Decisões fechadas (plano 37, 2026-06-05; revisadas no bold-refactor):
 | # | Decisão |
 |---|---|
 | **A** | Código mora aqui em `cockpit/` (não dentro de `app/`). Reuso futuro com `app/` via `packages/pi_core` — **ainda não extraído** |
-| **B** | Spawna `pi --mode rpc` **com extensions** (remote-pi carregado p/ command discovery + controle). `noSession`/`noExtensions` defaultam a `false` (ver `lib/app/core/env.dart`) |
+| **B** | Spawna `pi --mode rpc` **com extensions** (outpost-pi carregado p/ command discovery + controle). `noSession`/`noExtensions` defaultam a `false` (ver `lib/app/core/env.dart`) |
 | **C** | Spawn **próprio** — não reusa o supervisor do plano 26 (que é fire-and-forget sem streaming) |
 
 ## Stack
@@ -62,12 +62,12 @@ para o porquê.
 
 ```bash
 cd cockpit
-export PUB_CACHE=~/projects/remote_pi/.pub-cache
-~/projects/remote_pi/.tools/flutter/bin/flutter pub get --offline   # cockpit precisa de --offline
-~/projects/remote_pi/.tools/flutter/bin/flutter analyze              # deve passar zero issues
-~/projects/remote_pi/.tools/flutter/bin/flutter test
-~/projects/remote_pi/.tools/flutter/bin/flutter run -d macos
-~/projects/remote_pi/.tools/flutter/bin/flutter build macos
+export PUB_CACHE=~/projects/outpost_pi/.pub-cache
+~/projects/outpost_pi/.tools/flutter/bin/flutter pub get --offline   # cockpit precisa de --offline
+~/projects/outpost_pi/.tools/flutter/bin/flutter analyze              # deve passar zero issues
+~/projects/outpost_pi/.tools/flutter/bin/flutter test
+~/projects/outpost_pi/.tools/flutter/bin/flutter run -d macos
+~/projects/outpost_pi/.tools/flutter/bin/flutter build macos
 ```
 
 - `dart format .` — formata (ou `~/.tools/flutter/bin/cache/dart-sdk/bin/dart format .`)

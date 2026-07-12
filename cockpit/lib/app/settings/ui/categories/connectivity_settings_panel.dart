@@ -21,7 +21,7 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
   void initState() {
     super.initState();
     // Carrega relay + aparelhos quando a aba abre (lazy — não roda o shell-out
-    // do `remote-pi` se o usuário só visita Aparência).
+    // do `outpost-pi` se o usuário só visita Aparência).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<ConnectivityViewModel>().load();
     });

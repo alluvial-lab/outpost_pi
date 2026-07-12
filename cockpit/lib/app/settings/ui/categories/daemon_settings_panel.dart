@@ -200,7 +200,7 @@ class _DaemonSettingsPanelState extends State<DaemonSettingsPanel> {
             const SizedBox(height: 6),
             Text(
               'pi-supervisord is not running. Install it with '
-              '`remote-pi install` to manage 24/7 agents.',
+              '`outpost-pi install` to manage 24/7 agents.',
               style: context.typo.label.copyWith(color: colors.text3),
             ),
           ],

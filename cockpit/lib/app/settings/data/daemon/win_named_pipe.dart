@@ -7,12 +7,12 @@ import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart';
 
 /// Nome do named pipe do supervisor no Windows. Espelha
-/// `pi-extension/src/session/ipc.ts`: `\\.\pipe\remote-pi-supervisor-<user>`,
+/// `pi-extension/src/session/ipc.ts`: `\\.\pipe\outpost-pi-supervisor-<user>`,
 /// com o username sanitizado (`[^A-Za-z0-9_.-]` → `_`).
 String supervisorPipeName() {
   final raw = Platform.environment['USERNAME'] ?? 'user';
   final user = raw.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
-  return r'\\.\pipe\remote-pi-supervisor-' + (user.isEmpty ? 'user' : user);
+  return r'\\.\pipe\outpost-pi-supervisor-' + (user.isEmpty ? 'user' : user);
 }
 
 /// Faz uma transação completa num named pipe do Windows: conecta, escreve
