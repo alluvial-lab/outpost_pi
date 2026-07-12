@@ -246,7 +246,7 @@ class RpcEventMapper {
   }
 
   /// Valor inicial do campo: `placeholder.defaultValue`, `defaultValue` ou
-  /// `prefill`. Cobre o `ui.input(title, {defaultValue})` do remote-pi.
+  /// `prefill`. Cobre o `ui.input(title, {defaultValue})` do outpost-pi.
   String? _defaultValue(Map<String, dynamic> json) {
     final p = json['placeholder'];
     if (p is Map && p['defaultValue'] is String) {

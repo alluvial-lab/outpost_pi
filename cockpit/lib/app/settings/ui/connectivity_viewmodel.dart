@@ -13,7 +13,7 @@ enum ConnLoad { idle, loading, ready, error }
 enum HealthState { unknown, checking, healthy, unhealthy }
 
 /// Estado da aba **Conectividade** das Configurações: relay global (ler/definir)
-/// + aparelhos pareados (listar) via [RelayGateway] (CLI `remote-pi`). Pareamento
+/// + aparelhos pareados (listar) via [RelayGateway] (CLI `outpost-pi`). Pareamento
 /// e revoke sobem um `pi --mode rpc` efêmero via [PairingGatewayFactory] /
 /// [RevokeGatewayFactory] (cada dialog cria sua instância). Carregado sob demanda.
 class ConnectivityViewModel extends ChangeNotifier {

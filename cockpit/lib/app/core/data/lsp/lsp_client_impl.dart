@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:cockpit/app/core/data/lsp/lsp_codec.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_process_registry.dart';
-import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
+import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 import 'package:cockpit/app/core/domain/contracts/lsp_client.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 import 'package:cockpit/app/core/domain/exceptions/lsp_error.dart';

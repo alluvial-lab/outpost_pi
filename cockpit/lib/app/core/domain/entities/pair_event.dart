@@ -1,5 +1,5 @@
-/// Eventos de uma sessão de pareamento (`/remote-pi pair`), já tipados a partir
-/// das mensagens custom do remote-pi no stream do `pi --mode rpc`.
+/// Eventos de uma sessão de pareamento (`/outpost-pi pair`), já tipados a partir
+/// das mensagens custom do outpost-pi no stream do `pi --mode rpc`.
 ///
 /// O wire é uma mensagem `role: "custom"` (em `message_start`/`message_end`) com
 /// `customType` + `details` — traduzida em `data/` para estes tipos. A `ui/`
