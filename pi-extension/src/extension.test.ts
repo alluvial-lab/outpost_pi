@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { FakeDeliveryDebugLog } from "./session/delivery_debug_log.test.js";
 import { fileURLToPath } from "node:url";
 import { createEventBus, type ExtensionAPI, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { resetRemotePiRuntimeCoordinatorForTest } from "./extension/runtime_coordinator.js";
+import { resetOutpostPiRuntimeCoordinatorForTest } from "./extension/runtime_coordinator.js";
 
 // ── Mock RelayClient ──────────────────────────────────────────────────────────
 
@@ -179,7 +179,7 @@ const {
   _parseControlFrame,
   CTRL_PREFIX,
 } = await import("./index.js");
-const { runStandaloneRemotePiCli } = await import("./extension/command_surface/standalone_cli.js");
+const { runStandaloneOutpostPiCli } = await import("./extension/command_surface/standalone_cli.js");
 const { acquireCwdLock } = await import("./session/cwd_lock.js");
 const { createRelayTransportPort } = await import("./extension/relay_transport.js");
 
@@ -200,14 +200,14 @@ function makeMockPi(): { pi: ExtensionAPI; registeredCommands: string[] } {
   return { pi, registeredCommands };
 }
 
-function makeMockCtx(cwd = "/home/user/projects/remote_pi") {
+function makeMockCtx(cwd = "/home/user/projects/outpost_pi") {
   return { ui: { notify: vi.fn() }, cwd, abort: vi.fn() };
 }
 
 type CmdHandler = (args: string, ctx: ReturnType<typeof makeMockCtx>) => Promise<void>;
 
 function captureHandler(commandName: string): CmdHandler {
-  resetRemotePiRuntimeCoordinatorForTest();
+  resetOutpostPiRuntimeCoordinatorForTest();
   let captured: CmdHandler | undefined;
   const pi = {
     __remotePiTestHarness: true,
@@ -302,30 +302,30 @@ describe("extension default export", () => {
     const { pi, registeredCommands } = makeMockPi();
     (extension as ExtensionFactory)(pi);
     // Local session (plan/25)
-    expect(registeredCommands).toContain("remote-pi");
-    expect(registeredCommands).toContain("remote-pi setup");
-    expect(registeredCommands).toContain("remote-pi status");
-    expect(registeredCommands).toContain("remote-pi stop");
-    expect(registeredCommands).toContain("remote-pi pair");
-    expect(registeredCommands).toContain("remote-pi devices");
-    expect(registeredCommands).toContain("remote-pi revoke");
-    expect(registeredCommands).toContain("remote-pi set-relay");
+    expect(registeredCommands).toContain("outpost-pi");
+    expect(registeredCommands).toContain("outpost-pi setup");
+    expect(registeredCommands).toContain("outpost-pi status");
+    expect(registeredCommands).toContain("outpost-pi stop");
+    expect(registeredCommands).toContain("outpost-pi pair");
+    expect(registeredCommands).toContain("outpost-pi devices");
+    expect(registeredCommands).toContain("outpost-pi revoke");
+    expect(registeredCommands).toContain("outpost-pi set-relay");
     // Daemon registry (plan/26 W1)
-    expect(registeredCommands).toContain("remote-pi create");
-    expect(registeredCommands).toContain("remote-pi remove");
+    expect(registeredCommands).toContain("outpost-pi create");
+    expect(registeredCommands).toContain("outpost-pi remove");
     // Fleet ops (plan/26 W2) — use `daemon` prefix to avoid clashing with
-    // /remote-pi stop (local) since both have very different semantics.
-    expect(registeredCommands).toContain("remote-pi daemons");
-    expect(registeredCommands).toContain("remote-pi daemon start");
-    expect(registeredCommands).toContain("remote-pi daemon stop");
-    expect(registeredCommands).toContain("remote-pi daemon restart");
-    expect(registeredCommands).toContain("remote-pi daemon status");
-    expect(registeredCommands).toContain("remote-pi daemon send");
+    // /outpost-pi stop (local) since both have very different semantics.
+    expect(registeredCommands).toContain("outpost-pi daemons");
+    expect(registeredCommands).toContain("outpost-pi daemon start");
+    expect(registeredCommands).toContain("outpost-pi daemon stop");
+    expect(registeredCommands).toContain("outpost-pi daemon restart");
+    expect(registeredCommands).toContain("outpost-pi daemon status");
+    expect(registeredCommands).toContain("outpost-pi daemon send");
     // Service install (plan/26 W3) — systemd / launchd
-    expect(registeredCommands).toContain("remote-pi install");
-    expect(registeredCommands).toContain("remote-pi uninstall");
+    expect(registeredCommands).toContain("outpost-pi install");
+    expect(registeredCommands).toContain("outpost-pi uninstall");
     // Cross-PC peer inventory (plan/25 W D)
-    expect(registeredCommands).toContain("remote-pi peers");
+    expect(registeredCommands).toContain("outpost-pi peers");
   });
 
   test("restart-supervisor maps to the right OS command sequence per platform", () => {
@@ -333,12 +333,12 @@ describe("extension default export", () => {
       { cmd: "launchctl", args: ["kickstart", "-k", "gui/501/dev.remotepi.supervisord"] },
     ]);
     expect(_restartSupervisorCommand("linux", 1000)).toEqual([
-      { cmd: "systemctl", args: ["--user", "restart", "remote-pi-supervisord.service"] },
+      { cmd: "systemctl", args: ["--user", "restart", "outpost-pi-supervisord.service"] },
     ]);
     // Windows (plan/40): End (ignorable) then Run, via Task Scheduler.
     expect(_restartSupervisorCommand("win32", 0)).toEqual([
-      { cmd: "schtasks", args: ["/End", "/TN", "RemotePiSupervisor"], ignoreFailure: true },
-      { cmd: "schtasks", args: ["/Run", "/TN", "RemotePiSupervisor"] },
+      { cmd: "schtasks", args: ["/End", "/TN", "OutpostPiSupervisor"], ignoreFailure: true },
+      { cmd: "schtasks", args: ["/Run", "/TN", "OutpostPiSupervisor"] },
     ]);
     // Truly unsupported platform → null (caller exits non-zero).
     expect(_restartSupervisorCommand("aix", 0)).toBeNull();
@@ -351,17 +351,17 @@ describe("extension default export", () => {
     // + 1 cross-PC inventory (plan-25 W D) + 1 cron (plan-39).
     expect(registeredCommands).toHaveLength(20);
     for (const removed of [
-      "remote-pi join", "remote-pi leave", "remote-pi rename", "remote-pi sessions",
-      "remote-pi relay", "remote-pi relay start", "remote-pi relay stop",
-      "remote-pi relay status", "remote-pi relay url",
-      "remote-pi config", "remote-pi start", "remote-pi list", "remote-pi add-relay",
+      "outpost-pi join", "outpost-pi leave", "outpost-pi rename", "outpost-pi sessions",
+      "outpost-pi relay", "outpost-pi relay start", "outpost-pi relay stop",
+      "outpost-pi relay status", "outpost-pi relay url",
+      "outpost-pi config", "outpost-pi start", "outpost-pi list", "outpost-pi add-relay",
     ]) {
       expect(registeredCommands).not.toContain(removed);
     }
   });
 });
 
-describe("standalone remote-pi CLI dispatcher", () => {
+describe("standalone outpost-pi CLI dispatcher", () => {
   test("routes published CLI subcommands through injected command handlers", async () => {
     const logs = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const deps = {
@@ -389,23 +389,23 @@ describe("standalone remote-pi CLI dispatcher", () => {
     };
 
     try {
-      await runStandaloneRemotePiCli(["node", "remote-pi", "devices"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "revoke", "abcd1234"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "set-relay", "https://relay.example.test"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "create", "/tmp/agent dir", "--name", "Tmp Agent"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "remove", "daemon-a"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "daemons"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "daemon", "start", "daemon-a"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "daemon", "stop", "daemon-a"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "daemon", "restart", "daemon-a"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "daemon", "status"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "daemon", "send", "daemon-a", "hello world"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "cron", "list"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "peers"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "claude", "/tmp/project", "--resume"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "install"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "uninstall"], deps);
-      await runStandaloneRemotePiCli(["node", "remote-pi", "restart-supervisor"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "devices"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "revoke", "abcd1234"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "set-relay", "https://relay.example.test"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "create", "/tmp/agent dir", "--name", "Tmp Agent"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "remove", "daemon-a"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "daemons"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "daemon", "start", "daemon-a"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "daemon", "stop", "daemon-a"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "daemon", "restart", "daemon-a"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "daemon", "status"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "daemon", "send", "daemon-a", "hello world"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "cron", "list"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "peers"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "claude", "/tmp/project", "--resume"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "install"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "uninstall"], deps);
+      await runStandaloneOutpostPiCli(["node", "outpost-pi", "restart-supervisor"], deps);
     } finally {
       logs.mockRestore();
     }
@@ -450,12 +450,12 @@ describe("state machine + pair_request flow", () => {
       },
     );
     // Force idle via stop
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
   test("start: idle → started", async () => {
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await remotePiTestHarness.connect(makeMockCtx());
     expect(remotePiTestHarness.state()).toBe("started");
     expect(_getState()).toBe(remotePiTestHarness.state());
@@ -468,10 +468,10 @@ describe("state machine + pair_request flow", () => {
     // (config never exists → first-time path) but writable on Windows (a config
     // could exist → wrong auto-bootstrap path, slow real-socket work).
     const cwd = mkdtempSync(join(tmpdir(), "pi-ext-cwd-"));
-    const pair = captureHandler("remote-pi pair");
+    const pair = captureHandler("outpost-pi pair");
     const ctx = makeMockCtx(cwd);
     await pair("", ctx);
-    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Run /remote-pi"), "warning");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Run /outpost-pi"), "warning");
     expect(_getState()).toBe("idle");
     rmSync(cwd, { recursive: true, force: true });
   });
@@ -480,7 +480,7 @@ describe("state machine + pair_request flow", () => {
     _tokenStatus = "ok";
     const APP_PEER_ID = "valid-app-peer-base64";
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
     expect(_getState()).toBe("started");
 
@@ -538,7 +538,7 @@ describe("state machine + pair_request flow", () => {
     _tokenStatus = "ok";
     const APP_PEER_ID = "cross-room-pair-peer";
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
     expect(_getState()).toBe("started");
 
@@ -567,11 +567,11 @@ describe("state machine + pair_request flow", () => {
     _setSessionStartedAtForTest(null);
     const APP_PEER_ID = "sdk-session-peer";
     const ctx = {
-      ...makeMockCtx("/tmp/remote-pi-sdk-session-capture"),
+      ...makeMockCtx("/tmp/outpost-pi-sdk-session-capture"),
       sessionManager: { getSessionId: () => "sdk-session-captured" },
     };
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(ctx);
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
       type: "pair_request",
@@ -593,7 +593,7 @@ describe("state machine + pair_request flow", () => {
     _tokenStatus = "expired";
     const APP_PEER_ID = "stale-token-peer";
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
@@ -634,7 +634,7 @@ describe("state machine + pair_request flow", () => {
     const APP_PEER_A = "peer-a";
     const APP_PEER_B = "peer-b";
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
     // First pair_request from peer A → ok
@@ -666,7 +666,7 @@ describe("state machine + pair_request flow", () => {
     _tokenStatus = "ok";
     const APP_PEER_ID = "already-paired";
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
     // First pair_request → paired
@@ -697,7 +697,7 @@ describe("state machine + pair_request flow", () => {
       paired_at: new Date().toISOString(),
     });
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
     expect(_getState()).toBe("started");
     expect(relayRef.current!.listenerCount("message")).toBe(1);
@@ -716,7 +716,7 @@ describe("state machine + pair_request flow", () => {
   });
 
   test("unknown peer non-pair message → state stays started, no peer added", async () => {
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
     relayRef.current!.emit("message", makeInnerLine("unknown-peer", {
@@ -729,7 +729,7 @@ describe("state machine + pair_request flow", () => {
   });
 
   test("unknown peer + user_message → relay receives error{unknown_peer}", async () => {
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
     relayRef.current!.emit("message", makeInnerLine("revoked-peer", {
@@ -755,7 +755,7 @@ describe("state machine + pair_request flow", () => {
     // respond with pair_ok or pair_error, never with the generic
     // error{unknown_peer}. Use token_unknown to keep peer unknown afterwards.
     _tokenStatus = "unknown";
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
     relayRef.current!.emit("message", makeInnerLine("stranger", {
@@ -779,7 +779,7 @@ describe("state machine + pair_request flow", () => {
     _tokenStatus = "ok";
     const APP_PEER_ID = "disco-peer";
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
@@ -849,9 +849,9 @@ describe("contract fixtures: pair_*", () => {
   });
 });
 
-// ── /remote-pi revoke <shortid> ───────────────────────────────────────────────
+// ── /outpost-pi revoke <shortid> ───────────────────────────────────────────────
 
-describe("/remote-pi revoke", () => {
+describe("/outpost-pi revoke", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     _knownPeers.length = 0;
@@ -867,19 +867,19 @@ describe("/remote-pi revoke", () => {
         return _tokenStatus;
       },
     );
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
   test("empty arg → usage warning", async () => {
     _knownPeers.push({ name: "Phone", remote_epk: "abcd1234efghIJKL", paired_at: "now" });
 
-    const revoke = captureHandler("remote-pi revoke");
+    const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
     await revoke("", ctx);
 
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("Usage: /remote-pi revoke"),
+      expect.stringContaining("Usage: /outpost-pi revoke"),
       "warning",
     );
     expect(_removedPeers).toHaveLength(0);
@@ -892,7 +892,7 @@ describe("/remote-pi revoke", () => {
     // config on every OS, so revoke bails (mirrors pair) rather than editing
     // the file offline. (Fresh tmpdir — see the "pair without start" test.)
     const cwd = mkdtempSync(join(tmpdir(), "pi-ext-cwd-"));
-    const revoke = captureHandler("remote-pi revoke");
+    const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx(cwd);
     await revoke("aaaa1111", ctx);
 
@@ -910,10 +910,10 @@ describe("/remote-pi revoke", () => {
     _knownPeers.push({ name: "Phone B", remote_epk: "bbbb2222yyyy",   paired_at: "now" });
 
     // Revoke now requires the relay (mirrors pair) — bring it up first.
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
-    const revoke = captureHandler("remote-pi revoke");
+    const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
     await revoke("aaaa1111", ctx);
 
@@ -928,10 +928,10 @@ describe("/remote-pi revoke", () => {
   test("unknown shortid → no peer matching warning, peers untouched", async () => {
     _knownPeers.push({ name: "Phone", remote_epk: "cccc3333", paired_at: "now" });
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
-    const revoke = captureHandler("remote-pi revoke");
+    const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
     await revoke("ffffffff", ctx);
 
@@ -947,10 +947,10 @@ describe("/remote-pi revoke", () => {
     _knownPeers.push({ name: "A", remote_epk: "prefix01_AAAA", paired_at: "now" });
     _knownPeers.push({ name: "B", remote_epk: "prefix02_BBBB", paired_at: "now" });
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
-    const revoke = captureHandler("remote-pi revoke");
+    const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
     await revoke("prefix", ctx);
 
@@ -969,7 +969,7 @@ describe("/remote-pi revoke", () => {
     _tokenStatus = "ok";
     const ACTIVE_PEER = "activepeer_xxxx";
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
     relayRef.current!.emit("message", JSON.stringify({
@@ -980,7 +980,7 @@ describe("/remote-pi revoke", () => {
     }));
     await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
 
-    const revoke = captureHandler("remote-pi revoke");
+    const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
     await revoke("activepe", ctx);
 
@@ -1010,7 +1010,7 @@ describe("/remote-pi revoke", () => {
     }));
     await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
 
-    const devices = captureHandler("remote-pi devices");
+    const devices = captureHandler("outpost-pi devices");
     const ctx = makeMockCtx();
     await devices("", ctx);
 
@@ -1033,7 +1033,7 @@ type AnyEvent = { type: string; [k: string]: unknown };
 type EventHandler = (event: AnyEvent, ctx?: unknown) => unknown;
 
 function captureEventHandler(eventName: string): EventHandler {
-  resetRemotePiRuntimeCoordinatorForTest();
+  resetOutpostPiRuntimeCoordinatorForTest();
   let captured: EventHandler | undefined;
   const pi = {
     __remotePiTestHarness: true,
@@ -1053,7 +1053,7 @@ function captureEventHandler(eventName: string): EventHandler {
 }
 
 async function _pairForTest(appPeerId: string): Promise<void> {
-  captureHandler("remote-pi");
+  captureHandler("outpost-pi");
   await _connectForTest(makeMockCtx());
   relayRef.current!.emit("message", JSON.stringify({
     peer: appPeerId,
@@ -1083,7 +1083,7 @@ async function _pairForTestWithCtx(
   appPeerId: string,
   connectCtx: { ui: { notify: ReturnType<typeof vi.fn> }; cwd?: string; abort?: ReturnType<typeof vi.fn> },
 ): Promise<void> {
-  captureHandler("remote-pi");
+  captureHandler("outpost-pi");
   await _connectForTest(connectCtx);
   relayRef.current!.emit("message", JSON.stringify({
     peer: appPeerId,
@@ -1118,7 +1118,7 @@ describe("multi-channel broadcast (W2D)", () => {
     (qr.qrSession.consumeToken as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (token: string) => { _consumeCalls.push(token); return _tokenStatus; },
     );
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
@@ -1130,13 +1130,13 @@ describe("multi-channel broadcast (W2D)", () => {
     expect(_hasActivePeerForTest("ownerB__abcdefghij")).toBe(true);
   });
 
-  test("/remote-pi pair without config (idle, first-time) → warns + no QR", async () => {
+  test("/outpost-pi pair without config (idle, first-time) → warns + no QR", async () => {
     // Isolated empty cwd → no local config on every OS, so we expect the
     // focused first-time message instead of an auto-bootstrap. (Fresh tmpdir —
     // see the "pair without start" test for the cross-platform rationale.)
     expect(_getState()).toBe("idle");
     const cwd = mkdtempSync(join(tmpdir(), "pi-ext-cwd-"));
-    const pair = captureHandler("remote-pi pair");
+    const pair = captureHandler("outpost-pi pair");
     const ctx = makeMockCtx(cwd);
     await pair("", ctx);
 
@@ -1146,12 +1146,12 @@ describe("multi-channel broadcast (W2D)", () => {
     rmSync(cwd, { recursive: true, force: true });
   });
 
-  test("/remote-pi pair generates QR even when an owner is already attached", async () => {
+  test("/outpost-pi pair generates QR even when an owner is already attached", async () => {
     await _pairForTest("ownerA__1234567890");
     expect(_getActivePeerCountForTest()).toBe(1);
 
     // QR generation must succeed (no "Already paired" rejection).
-    const pair = captureHandler("remote-pi pair");
+    const pair = captureHandler("outpost-pi pair");
     const ctx = makeMockCtx();
     await pair("", ctx);
 
@@ -1306,7 +1306,7 @@ describe("multi-channel broadcast (W2D)", () => {
     await _pairAdditionalForTest("ownerB__abcdefghij", "Android");
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
-    const revoke = captureHandler("remote-pi revoke");
+    const revoke = captureHandler("outpost-pi revoke");
     await revoke("ownerA__", makeMockCtx());
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore)
@@ -1324,12 +1324,12 @@ describe("multi-channel broadcast (W2D)", () => {
   test("footer snapshot shows active owner and paired relay after pairing", async () => {
     const ctx = {
       ui: { notify: vi.fn(), setStatus: vi.fn(), setTitle: vi.fn() },
-      cwd: "/home/user/projects/remote_pi",
+      cwd: "/home/user/projects/outpost_pi",
       abort: vi.fn(),
     };
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(ctx as ReturnType<typeof makeMockCtx> & typeof ctx);
-    const status = captureHandler("remote-pi status");
+    const status = captureHandler("outpost-pi status");
     await status("", ctx as ReturnType<typeof makeMockCtx> & typeof ctx);
     ctx.ui.setStatus.mockClear();
 
@@ -1345,10 +1345,10 @@ describe("multi-channel broadcast (W2D)", () => {
       { timeout: 2000 },
     );
     await vi.waitFor(
-      () => expect(ctx.ui.setStatus).toHaveBeenCalledWith("remote-pi:peer-active", "📱 footer-o"),
+      () => expect(ctx.ui.setStatus).toHaveBeenCalledWith("outpost-pi:peer-active", "📱 footer-o"),
       { timeout: 2000 },
     );
-    expect(ctx.ui.setStatus).toHaveBeenCalledWith("remote-pi:relay", "🟢 relay");
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("outpost-pi:relay", "🟢 relay");
   });
 
   // ── Source-of-truth rebroadcast (plan/24 W2D fix) ──────────────────────────
@@ -1606,7 +1606,7 @@ describe("multi-channel broadcast (W2D)", () => {
   });
 
   test("cancel acknowledgement projects working=false and null cancel target through router", async () => {
-    await _pairForTestWithCtx("owner-cancel-converge", makeMockCtx("/tmp/remote-pi-cancel-converge"));
+    await _pairForTestWithCtx("owner-cancel-converge", makeMockCtx("/tmp/outpost-pi-cancel-converge"));
     const sessionId = currentSessionIdFromSends();
     const onTurnStart = captureEventHandler("turn_start");
     onTurnStart({ type: "turn_start", turnIndex: 0, timestamp: 0 });
@@ -1835,10 +1835,10 @@ describe("multi-channel broadcast (W2D)", () => {
     const freshSendUserMessage = vi.fn(async () => undefined);
     const freshSendMessage = vi.fn(async () => undefined);
     const ctx = {
-      ...makeMockCtx("/tmp/remote-pi-session-new-fresh-message-api"),
+      ...makeMockCtx("/tmp/outpost-pi-session-new-fresh-message-api"),
       newSession: vi.fn(async (opts?: { withSession?: (freshCtx: unknown) => Promise<void> }) => {
         await opts?.withSession?.({
-          ...makeMockCtx("/tmp/remote-pi-session-new-fresh-message-api"),
+          ...makeMockCtx("/tmp/outpost-pi-session-new-fresh-message-api"),
           newSession: vi.fn(),
           sessionManager: { getSessionId: () => "fresh-sdk-session-after-new" },
           sendUserMessage: freshSendUserMessage,
@@ -1847,7 +1847,7 @@ describe("multi-channel broadcast (W2D)", () => {
         return { cancelled: false };
       }),
     };
-    const status = captureHandler("remote-pi status");
+    const status = captureHandler("outpost-pi status");
     await status("", ctx);
 
     relayRef.current!.emit("message", JSON.stringify({
@@ -1912,10 +1912,10 @@ describe("multi-channel broadcast (W2D)", () => {
 
     const freshSendUserMessage = vi.fn(async () => { throw new Error("fresh async rejected"); });
     const ctx = {
-      ...makeMockCtx("/tmp/remote-pi-session-new-async-message-api-reject"),
+      ...makeMockCtx("/tmp/outpost-pi-session-new-async-message-api-reject"),
       newSession: vi.fn(async (opts?: { withSession?: (freshCtx: unknown) => Promise<void> }) => {
         await opts?.withSession?.({
-          ...makeMockCtx("/tmp/remote-pi-session-new-async-message-api-reject"),
+          ...makeMockCtx("/tmp/outpost-pi-session-new-async-message-api-reject"),
           newSession: vi.fn(),
           sendUserMessage: freshSendUserMessage,
           sendMessage: vi.fn(async () => undefined),
@@ -1923,7 +1923,7 @@ describe("multi-channel broadcast (W2D)", () => {
         return { cancelled: false };
       }),
     };
-    const status = captureHandler("remote-pi status");
+    const status = captureHandler("outpost-pi status");
     await status("", ctx);
 
     relayRef.current!.emit("message", JSON.stringify({
@@ -1990,10 +1990,10 @@ describe("multi-channel broadcast (W2D)", () => {
     const freshSetModel = vi.fn(async () => true);
     const freshSetThinkingLevel = vi.fn();
     const ctx = {
-      ...makeMockCtx("/tmp/remote-pi-session-new-fresh-action-api"),
+      ...makeMockCtx("/tmp/outpost-pi-session-new-fresh-action-api"),
       newSession: vi.fn(async (opts?: { withSession?: (freshCtx: unknown) => Promise<void> }) => {
         await opts?.withSession?.({
-          ...makeMockCtx("/tmp/remote-pi-session-new-fresh-action-api"),
+          ...makeMockCtx("/tmp/outpost-pi-session-new-fresh-action-api"),
           newSession: vi.fn(),
           sessionManager: { getSessionId: () => "fresh-action-session-after-new" },
           sendUserMessage: vi.fn(async () => undefined),
@@ -2012,7 +2012,7 @@ describe("multi-channel broadcast (W2D)", () => {
         return { cancelled: false };
       }),
     };
-    const status = captureHandler("remote-pi status");
+    const status = captureHandler("outpost-pi status");
     await status("", ctx);
 
     emitClientMessage(peer, { type: "session_new", id: "fresh-action-new", session_id: sessionId });
@@ -2062,10 +2062,10 @@ describe("multi-channel broadcast (W2D)", () => {
     });
 
     const ctx = {
-      ...makeMockCtx("/tmp/remote-pi-session-new-no-action-api"),
+      ...makeMockCtx("/tmp/outpost-pi-session-new-no-action-api"),
       newSession: vi.fn(async (opts?: { withSession?: (freshCtx: unknown) => Promise<void> }) => {
         await opts?.withSession?.({
-          ...makeMockCtx("/tmp/remote-pi-session-new-no-action-api"),
+          ...makeMockCtx("/tmp/outpost-pi-session-new-no-action-api"),
           newSession: vi.fn(),
           sessionManager: { getSessionId: () => "fresh-no-action-session" },
           sendUserMessage: vi.fn(async () => undefined),
@@ -2074,7 +2074,7 @@ describe("multi-channel broadcast (W2D)", () => {
         return { cancelled: false };
       }),
     };
-    const status = captureHandler("remote-pi status");
+    const status = captureHandler("outpost-pi status");
     await status("", ctx);
 
     emitClientMessage(peer, { type: "session_new", id: "no-action-new", session_id: sessionId });
@@ -2140,7 +2140,7 @@ describe("multi-channel broadcast (W2D)", () => {
       const freshSetModel = vi.fn(async () => true);
       const freshSetThinkingLevel = vi.fn();
       onSessionStart({ type: "session_start", reason }, {
-        ...makeMockCtx(`/tmp/remote-pi-session-start-${reason}`),
+        ...makeMockCtx(`/tmp/outpost-pi-session-start-${reason}`),
         sessionManager: { getSessionId: () => `fresh-${reason}-session` },
         sendUserMessage: freshSendUserMessage,
         sendMessage: vi.fn(async () => undefined),
@@ -2215,13 +2215,13 @@ describe("multi-channel broadcast (W2D)", () => {
     const staleCompact = vi.fn(() => { throw new Error("stale compact must not run"); });
     await _pairForTestWithCtx(peer, {
       ui: { notify: vi.fn() },
-      cwd: "/tmp/remote-pi-stale-compact-cancel",
+      cwd: "/tmp/outpost-pi-stale-compact-cancel",
       abort: staleAbort,
     });
-    const status = captureHandler("remote-pi status");
+    const status = captureHandler("outpost-pi status");
     await status("", {
       ui: { notify: vi.fn() },
-      cwd: "/tmp/remote-pi-stale-compact-cancel",
+      cwd: "/tmp/outpost-pi-stale-compact-cancel",
       abort: staleAbort,
       compact: staleCompact,
     } as unknown as ReturnType<typeof makeMockCtx>);
@@ -2488,7 +2488,7 @@ describe("user_input mirroring", () => {
         return _tokenStatus;
       },
     );
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
@@ -2573,8 +2573,8 @@ describe("user_input mirroring", () => {
       remote_epk: peer,
       paired_at: new Date().toISOString(),
     });
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-late-attach"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-late-attach"));
     expect(_getState()).toBe("started");
 
     const onTurnStart = captureEventHandler("turn_start");
@@ -2652,8 +2652,8 @@ describe("user_input mirroring", () => {
       remote_epk: peer,
       paired_at: new Date().toISOString(),
     });
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-late-sync"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-late-sync"));
     _setMessageBufferForTest([]);
     _setTranscriptEventsForTest([]);
 
@@ -2775,7 +2775,7 @@ describe("tool visibility", () => {
         return _tokenStatus;
       },
     );
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
@@ -2805,7 +2805,7 @@ describe("tool visibility", () => {
 
   test("tool_execution_start enriches edit args with numbered context hunks", async () => {
     await _pairForTest("peer-edit");
-    const cwd = mkdtempSync(join(tmpdir(), "remote-pi-edit-"));
+    const cwd = mkdtempSync(join(tmpdir(), "outpost-pi-edit-"));
     const file = join(cwd, "sample.dart");
     writeFileSync(
       file,
@@ -2865,7 +2865,7 @@ describe("tool visibility", () => {
 
   test("tool_execution_start keeps unchanged edit lines as context", async () => {
     await _pairForTest("peer-edit-context");
-    const cwd = mkdtempSync(join(tmpdir(), "remote-pi-edit-context-"));
+    const cwd = mkdtempSync(join(tmpdir(), "outpost-pi-edit-context-"));
     const file = join(cwd, "README.md");
     writeFileSync(
       file,
@@ -3038,33 +3038,33 @@ describe("tool visibility", () => {
   });
 });
 
-// ── /remote-pi set-relay + /remote-pi config ──────────────────────────────────
+// ── /outpost-pi set-relay + /outpost-pi config ──────────────────────────────────
 
-describe("/remote-pi set-relay + config", () => {
+describe("/outpost-pi set-relay + config", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     _savedRelayUrl = null;
     _setRelayCalls.length = 0;
     delete process.env["REMOTE_PI_RELAY"];
     relayRef.current = null;
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
   test("set-relay empty arg → usage warning, nothing saved", async () => {
-    const setRelay = captureHandler("remote-pi set-relay");
+    const setRelay = captureHandler("outpost-pi set-relay");
     const ctx = makeMockCtx();
     await setRelay("", ctx);
 
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("Usage: /remote-pi set-relay"),
+      expect.stringContaining("Usage: /outpost-pi set-relay"),
       "warning",
     );
     expect(_setRelayCalls).toHaveLength(0);
   });
 
   test("set-relay stores http:// as-is (canonical scheme)", async () => {
-    const setRelay = captureHandler("remote-pi set-relay");
+    const setRelay = captureHandler("outpost-pi set-relay");
     const ctx = makeMockCtx();
     await setRelay("http://foo:3000", ctx);
 
@@ -3076,7 +3076,7 @@ describe("/remote-pi set-relay + config", () => {
   });
 
   test("set-relay stores https:// as-is (canonical scheme)", async () => {
-    const setRelay = captureHandler("remote-pi set-relay");
+    const setRelay = captureHandler("outpost-pi set-relay");
     const ctx = makeMockCtx();
     await setRelay("https://relay.example.tld", ctx);
 
@@ -3088,7 +3088,7 @@ describe("/remote-pi set-relay + config", () => {
   });
 
   test("set-relay rejects ws:// scheme with conversion hint", async () => {
-    const setRelay = captureHandler("remote-pi set-relay");
+    const setRelay = captureHandler("outpost-pi set-relay");
     const ctx = makeMockCtx();
     await setRelay("ws://foo:3000", ctx);
 
@@ -3100,7 +3100,7 @@ describe("/remote-pi set-relay + config", () => {
   });
 
   test("set-relay rejects wss:// scheme with conversion hint", async () => {
-    const setRelay = captureHandler("remote-pi set-relay");
+    const setRelay = captureHandler("outpost-pi set-relay");
     const ctx = makeMockCtx();
     await setRelay("wss://relay.example.tld", ctx);
 
@@ -3112,7 +3112,7 @@ describe("/remote-pi set-relay + config", () => {
   });
 
   test("set-relay rejects malformed URL", async () => {
-    const setRelay = captureHandler("remote-pi set-relay");
+    const setRelay = captureHandler("outpost-pi set-relay");
     const ctx = makeMockCtx();
     await setRelay("not a url at all", ctx);
 
@@ -3124,7 +3124,7 @@ describe("/remote-pi set-relay + config", () => {
   });
 
   test("set-relay persists http:// URL via saveConfig (canonical form)", async () => {
-    const setRelay = captureHandler("remote-pi set-relay");
+    const setRelay = captureHandler("outpost-pi set-relay");
     const ctx = makeMockCtx();
     await setRelay("http://192.168.1.10:3000", ctx);
 
@@ -3153,11 +3153,11 @@ describe("/remote-pi set-relay + config", () => {
     delete process.env["REMOTE_PI_RELAY"];
   });
 
-  test("/remote-pi status shows the saved URL after set-relay", async () => {
-    const setRelay = captureHandler("remote-pi set-relay");
+  test("/outpost-pi status shows the saved URL after set-relay", async () => {
+    const setRelay = captureHandler("outpost-pi set-relay");
     await setRelay("http://10.0.0.5:4000", makeMockCtx());
 
-    const status = captureHandler("remote-pi status");
+    const status = captureHandler("outpost-pi status");
     const ctx = makeMockCtx();
     await status("", ctx);
 
@@ -3165,8 +3165,8 @@ describe("/remote-pi set-relay + config", () => {
     expect(text).toContain("http://10.0.0.5:4000");
   });
 
-  test("/remote-pi status shows the default URL when nothing set", async () => {
-    const status = captureHandler("remote-pi status");
+  test("/outpost-pi status shows the default URL when nothing set", async () => {
+    const status = captureHandler("outpost-pi status");
     const ctx = makeMockCtx();
     await status("", ctx);
 
@@ -3174,10 +3174,10 @@ describe("/remote-pi set-relay + config", () => {
     expect(text).toContain("https://relay-rp1.jacobmoura.work");
   });
 
-  test("/remote-pi status reflects env override (canonicalized to https://)", async () => {
+  test("/outpost-pi status reflects env override (canonicalized to https://)", async () => {
     // Env var with wss:// is coerced back to https:// by resolveRelayUrl.
     process.env["REMOTE_PI_RELAY"] = "wss://from-env.test";
-    const status = captureHandler("remote-pi status");
+    const status = captureHandler("outpost-pi status");
     const ctx = makeMockCtx();
     await status("", ctx);
 
@@ -3187,10 +3187,10 @@ describe("/remote-pi set-relay + config", () => {
   });
 
   test("saved URL is used by _cmdStart on next connect (http:// stored as-is)", async () => {
-    const setRelay = captureHandler("remote-pi set-relay");
+    const setRelay = captureHandler("outpost-pi set-relay");
     await setRelay("http://10.0.0.5:4000", makeMockCtx());
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     const ctx = makeMockCtx();
     await _connectForTest(ctx);
 
@@ -3228,8 +3228,8 @@ describe("routeClientMessage cancel handling", () => {
         return _tokenStatus;
       },
     );
-    const stop = captureHandler("remote-pi stop");
-    await stop("", { ui: { notify: vi.fn() }, cwd: "/tmp/remote-pi-cancel-reset" } as ReturnType<typeof makeMockCtx>);
+    const stop = captureHandler("outpost-pi stop");
+    await stop("", { ui: { notify: vi.fn() }, cwd: "/tmp/outpost-pi-cancel-reset" } as ReturnType<typeof makeMockCtx>);
   });
 
   test("cancel uses freshest session_start ctx and ignores stale _lastCtx abort", async () => {
@@ -3238,13 +3238,13 @@ describe("routeClientMessage cancel handling", () => {
 
     await _pairForTestWithCtx("owner-cancel-1", {
       ui: { notify: vi.fn() },
-      cwd: "/tmp/remote-pi-cancel-stale",
+      cwd: "/tmp/outpost-pi-cancel-stale",
     });
 
-    const status = captureHandler("remote-pi status");
+    const status = captureHandler("outpost-pi status");
     await status("", {
       ui: { notify: vi.fn() },
-      cwd: "/tmp/remote-pi-cancel-stale",
+      cwd: "/tmp/outpost-pi-cancel-stale",
       abort: staleAbort,
     });
 
@@ -3288,7 +3288,7 @@ describe("routeClientMessage cancel handling", () => {
 
     await _pairForTestWithCtx("owner-cancel-nopi", {
       ui: { notify: vi.fn() },
-      cwd: "/tmp/remote-pi-cancel-nopi",
+      cwd: "/tmp/outpost-pi-cancel-nopi",
     });
 
     const onSessionStart = captureEventHandler("session_start");
@@ -3329,7 +3329,7 @@ describe("routeClientMessage cancel handling", () => {
   test("cancel with no real abort context returns error and does not send cancelled", async () => {
     await _pairForTestWithCtx("owner-cancel-2", {
       ui: { notify: vi.fn() },
-      cwd: "/tmp/remote-pi-cancel-nonreal",
+      cwd: "/tmp/outpost-pi-cancel-nonreal",
       // Intentionally omit abort: the router must not claim success.
     } as unknown as { ui: { notify: ReturnType<typeof vi.fn> }; cwd: string });
 
@@ -3372,7 +3372,7 @@ describe("routeClientMessage cancel handling", () => {
 
     await _pairForTestWithCtx("owner-cancel-3", {
       ui: { notify: vi.fn() },
-      cwd: "/tmp/remote-pi-cancel-throw",
+      cwd: "/tmp/outpost-pi-cancel-throw",
       abort: aborting,
     });
 
@@ -3479,7 +3479,7 @@ describe("rooms wiring", () => {
         return _tokenStatus;
       },
     );
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
@@ -3489,15 +3489,15 @@ describe("rooms wiring", () => {
       capturedOpts.push(opts);
     };
 
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-test-room"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-test-room"));
 
     expect(capturedOpts).toHaveLength(1);
     const opts = capturedOpts[0] as { roomId?: string; roomMeta?: { name: string; cwd: string } };
     expect(opts.roomId).toBeTruthy();
     expect(opts.roomId).toMatch(/^[A-Za-z0-9_-]{12}$/);
-    expect(opts.roomMeta?.cwd).toBe("/tmp/remote-pi-test-room");
-    expect(opts.roomMeta?.name).toContain("remote-pi-test-room");
+    expect(opts.roomMeta?.cwd).toBe("/tmp/outpost-pi-test-room");
+    expect(opts.roomMeta?.name).toContain("outpost-pi-test-room");
   });
 
   test("_cmdStart with different cwds uses different roomIds", async () => {
@@ -3506,13 +3506,13 @@ describe("rooms wiring", () => {
       capturedOpts.push(opts as { roomId?: string });
     };
 
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-A"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-A"));
 
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
 
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-B"));
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-B"));
 
     expect(capturedOpts).toHaveLength(2);
     expect(capturedOpts[0]!.roomId).not.toBe(capturedOpts[1]!.roomId);
@@ -3523,8 +3523,8 @@ describe("rooms wiring", () => {
       throw new MockRoomAlreadyOpenError("AbCdEfGhIjKl");
     };
 
-    captureHandler("remote-pi");
-    const ctx = makeMockCtx("/tmp/remote-pi-dup");
+    captureHandler("outpost-pi");
+    const ctx = makeMockCtx("/tmp/outpost-pi-dup");
     await _connectForTest(ctx);
 
     expect(ctx.ui.notify).toHaveBeenCalledWith(
@@ -3535,8 +3535,8 @@ describe("rooms wiring", () => {
   });
 
   test("PeerChannel outer envelope carries `room` (relay-0.2.0 requires it for routing)", async () => {
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-room-test"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-room-test"));
 
     relayRef.current!.emit("message", JSON.stringify({
       peer: "peer-room-test",
@@ -3591,7 +3591,7 @@ describe("session sync", () => {
         return _tokenStatus;
       },
     );
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
     _setMessageBufferForTest([]);
     _setSessionStartedAtForTest(null);
@@ -3923,15 +3923,15 @@ describe("bye on teardown", () => {
         return _tokenStatus;
       },
     );
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
-  test("paired + /remote-pi stop → channel.send sees bye{peer_stop} BEFORE detach", async () => {
+  test("paired + /outpost-pi stop → channel.send sees bye{peer_stop} BEFORE detach", async () => {
     await _pairForTest("peer-bye-1");
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
@@ -3946,13 +3946,13 @@ describe("bye on teardown", () => {
     expect(_getState()).toBe("idle");
   });
 
-  test("started (no peer paired) + /remote-pi stop → no bye sent (channel is null)", async () => {
-    captureHandler("remote-pi");
+  test("started (no peer paired) + /outpost-pi stop → no bye sent (channel is null)", async () => {
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
     expect(_getState()).toBe("started");
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
@@ -3968,7 +3968,7 @@ describe("bye on teardown", () => {
     await _pairForTest(ACTIVE);
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
-    const revoke = captureHandler("remote-pi revoke");
+    const revoke = captureHandler("outpost-pi revoke");
     await revoke(ACTIVE.slice(0, 8), makeMockCtx());
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
@@ -3999,7 +3999,7 @@ describe("session_shutdown teardown", () => {
     _defaultConnectImpl = async () => undefined;
     _setDisposedForTest(false); // shared module — clear the per-instance flag
     _resetPendingDeliveryQueueForTest();
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
@@ -4015,7 +4015,7 @@ describe("session_shutdown teardown", () => {
   });
 
   test("firing session_shutdown while started tears down mesh bridge + relay → idle", async () => {
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
     expect(_getState()).toBe("started");
     const relay = relayRef.current!;
@@ -4080,7 +4080,7 @@ describe("session_shutdown teardown", () => {
     // _cmdJoin connects-then-leaves (no lingering mesh node) AND _cmdStart's
     // post-connect `_disposed` guard closes the relay instead of promoting it
     // to a ghost that holds the room.
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
     expect(_hasMeshNodeForTest()).toBe(false);
     expect(_getState()).toBe("idle");                 // relay never became "started"
@@ -4095,7 +4095,7 @@ describe("session_shutdown teardown", () => {
   // connecting as a ghost that holds the room — and the replacement instance is
   // then refused with `room_already_open`, never entering the cross-PC mesh.
   test("session_shutdown DURING _cmdStart's relay.connect() closes the relay (no ghost holds the room)", async () => {
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
 
     // Park relay.connect() until we release it — emulates the RTT window.
     let releaseConnect!: () => void;
@@ -4396,7 +4396,7 @@ describe("session_shutdown teardown", () => {
   });
 
   test("known-peer reconnect resolving after session_shutdown does not attach a ghost owner", async () => {
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
     expect(_getState()).toBe("started");
     const relay = relayRef.current!;
@@ -4429,7 +4429,7 @@ describe("session_shutdown teardown", () => {
   });
 
   test("pair_request resolving after session_shutdown does not attach or reply from the stale relay", async () => {
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
     expect(_getState()).toBe("started");
     const relay = relayRef.current!;
@@ -4465,7 +4465,7 @@ describe("session_shutdown teardown", () => {
 
   test("after a clean reset, connect works again (flag is per-instance, not sticky)", async () => {
     // beforeEach already reset _disposed → a fresh connect must join the mesh.
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
     expect(_hasMeshNodeForTest()).toBe(true);
   });
@@ -4488,7 +4488,7 @@ describe("remote-pi:name-assigned event", () => {
     _defaultConnectImpl = async () => undefined;
     _setDisposedForTest(false);
     _resetCwdLockForTest();
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
@@ -4504,12 +4504,12 @@ describe("remote-pi:name-assigned event", () => {
       registerMessageRenderer: () => undefined,
       sendMessage, sendUserMessage: () => undefined,
     } as unknown as ExtensionAPI;
-    captureHandler("remote-pi");   // factory side-effects (matches other connect tests)
+    captureHandler("outpost-pi");   // factory side-effects (matches other connect tests)
     _setPiForTest(spyPi);          // …then route sendMessage through the spy
     expect(_hasMeshNodeForTest()).toBe(false);
 
     const ctx = makeMockCtx(
-      `/tmp/remote-pi-name-assigned-${process.pid}-${Date.now()}`,
+      `/tmp/outpost-pi-name-assigned-${process.pid}-${Date.now()}`,
     );
     await _connectForTest(ctx);
     expect(_hasMeshNodeForTest()).toBe(true); // join succeeded → emit ran
@@ -4556,7 +4556,7 @@ describe("relay control channel + relay-state event", () => {
     _defaultConnectImpl = async () => undefined;
     _setDisposedForTest(false);
     _resetCwdLockForTest();
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
@@ -4571,7 +4571,7 @@ describe("relay control channel + relay-state event", () => {
 
   test("legacy CTRL_PREFIX input dispatches relay status through the control path", async () => {
     const sendMessage = vi.fn();
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     const input = captureEventHandler("input");
     _setPiForTest(makeSpyPi(sendMessage));
 
@@ -4584,7 +4584,7 @@ describe("relay control channel + relay-state event", () => {
 
   test("structured remote_pi_control input is swallowed and dispatches relay status", async () => {
     const sendMessage = vi.fn();
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     const input = captureEventHandler("input");
     _setPiForTest(makeSpyPi(sendMessage));
     const payload = JSON.stringify({ type: "remote_pi_control", command: "relay_status" });
@@ -4622,7 +4622,7 @@ describe("relay control channel + relay-state event", () => {
 
   test("relay:status emits remote-pi:relay-state 'disconnected' while idle", async () => {
     const sendMessage = vi.fn();
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     _setPiForTest(makeSpyPi(sendMessage));
     expect(_getState()).toBe("idle");
 
@@ -4636,7 +4636,7 @@ describe("relay control channel + relay-state event", () => {
 
   test("relay:on → relay up + 'connected'; relay:off → relay down + 'disconnected'", async () => {
     const sendMessage = vi.fn();
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     _setPiForTest(makeSpyPi(sendMessage));
 
     await _handleControl("relay:on");
@@ -4650,7 +4650,7 @@ describe("relay control channel + relay-state event", () => {
   });
 
   test("relay:toggle flips idle → started → idle", async () => {
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     _setPiForTest(makeSpyPi(vi.fn()));
     expect(_getState()).toBe("idle");
     await _handleControl("relay:toggle");
@@ -4661,7 +4661,7 @@ describe("relay control channel + relay-state event", () => {
 
   test("rename:<name> renames live (broker re-register + relay swap), process/session survive", async () => {
     const sendMessage = vi.fn();
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     _setPiForTest(makeSpyPi(sendMessage));
     await _connectForTest(makeMockCtx());
     expect(_getState()).toBe("started");
@@ -4685,13 +4685,13 @@ describe("relay control channel + relay-state event", () => {
     // Clean up: rename churns the real UDS broker (leave+rejoin) and leaves the
     // mesh/relay live — tear down so it can't leak into later tests (an orphaned
     // broker socket makes a subsequent bind flaky).
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
     _resetCwdLockForTest();
   });
 
   test("empty rename is a no-op", async () => {
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     _setPiForTest(makeSpyPi(vi.fn()));
     await expect(_handleControl("rename:")).resolves.toBeUndefined();
   });
@@ -4712,7 +4712,7 @@ describe("same-folder same-name → #N suffix (no refusal)", () => {
     _defaultConnectImpl = async () => undefined;
     _setDisposedForTest(false);
     _resetCwdLockForTest();
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
@@ -4724,12 +4724,12 @@ describe("same-folder same-name → #N suffix (no refusal)", () => {
       agent_name: "Backoffice",
       auto_start_relay: false, // keep the test off the relay
     });
-    const cwd = "/home/user/projects/remote_pi";
+    const cwd = "/home/user/projects/outpost_pi";
     // Simulate the first agent already holding (cwd, "Backoffice").
     const first = await acquireCwdLock(cwd, "Backoffice");
     expect(first.ok).toBe(true);
     try {
-      const root = captureHandler("remote-pi");
+      const root = captureHandler("outpost-pi");
       await root("", makeMockCtx(cwd));
       // Lock seeker skipped the taken base name and reserved the #2 variant…
       expect(_getLockedNameForTest()).toBe("Backoffice#2");
@@ -4766,14 +4766,14 @@ describe("relay reconnect", () => {
         return _tokenStatus;
       },
     );
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
   test("relay close schedules reconnect; advancing past 1s triggers a new connect", async () => {
     vi.useFakeTimers();
     try {
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       await _connectForTest(makeMockCtx());
       expect(relayInstances).toHaveLength(1);
       expect(_getState()).toBe("started");
@@ -4911,7 +4911,7 @@ describe("relay reconnect", () => {
   test("backoff progression 1s, 2s, 5s, 10s, 30s, 30s (capped) when connects keep failing", async () => {
     vi.useFakeTimers();
     try {
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       await _connectForTest(makeMockCtx());
       expect(relayInstances).toHaveLength(1);
 
@@ -4931,17 +4931,17 @@ describe("relay reconnect", () => {
     }
   });
 
-  test("/remote-pi stop during reconnect cancels the timer and no new RelayClient is created", async () => {
+  test("/outpost-pi stop during reconnect cancels the timer and no new RelayClient is created", async () => {
     vi.useFakeTimers();
     try {
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       await _connectForTest(makeMockCtx());
       expect(relayInstances).toHaveLength(1);
 
       relayInstances[0]!.emit("close");
       expect(_hasPendingReconnect()).toBe(true);
 
-      const stop = captureHandler("remote-pi stop");
+      const stop = captureHandler("outpost-pi stop");
       await stop("", makeMockCtx());
       expect(_hasPendingReconnect()).toBe(false);
       expect(_getState()).toBe("idle");
@@ -4964,7 +4964,7 @@ describe("relay reconnect", () => {
         paired_at: new Date().toISOString(),
       });
 
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       await _connectForTest(makeMockCtx());
       relayInstances[0]!.emit("message", makeInnerLine(APP_PEER_ID, {
         type: "ping", id: "before-drop",
@@ -5006,10 +5006,10 @@ describe("relay reconnect", () => {
       _setSessionStartedAtForTest(null);
       const sessionTs = 1_700_000_000_000;
       const ctx = {
-        ...makeMockCtx("/tmp/remote-pi-reconnect-session-preserve"),
+        ...makeMockCtx("/tmp/outpost-pi-reconnect-session-preserve"),
         sessionManager: { getSessionId: () => "sdk-session-preserve" },
       };
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       await _connectForTest(ctx);
       relayInstances[0]!.emit("message", makeInnerLine(APP_PEER_ID, {
         type: "pair_request", id: "req-preserve", token: "test-token", device_name: "Phone",
@@ -5070,7 +5070,7 @@ describe("relay reconnect", () => {
   test("reconnect that succeeds clears attempt counter (next close starts at 1s again)", async () => {
     vi.useFakeTimers();
     try {
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       await _connectForTest(makeMockCtx());
 
       // First close → reconnect after 1s (succeeds)
@@ -5115,7 +5115,7 @@ describe("cumulative transcript event log", () => {
         return _tokenStatus;
       },
     );
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
     _setMessageBufferForTest([]);
     _setSessionStartedAtForTest(null);
@@ -5525,8 +5525,8 @@ describe("cumulative transcript event log", () => {
   });
 
   test("_cmdStart preserves transcript events across stop/start cycle (Pi session outlives relay)", async () => {
-    // Simulates: user runs /remote-pi start, exchanges messages, /remote-pi
-    // stop, types in terminal (message_end fires while idle), /remote-pi
+    // Simulates: user runs /outpost-pi start, exchanges messages, /outpost-pi
+    // stop, types in terminal (message_end fires while idle), /outpost-pi
     // start again. The terminal turns must NOT be wiped by the second start.
     _setMessageBufferForTest([
       { role: "user", content: "old", timestamp: 1 },
@@ -5534,14 +5534,14 @@ describe("cumulative transcript event log", () => {
     ]);
     expect(_getTranscriptEventsForTest()).toHaveLength(2);
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
     expect(_getTranscriptEventsForTest()).toHaveLength(2);  // PRESERVED
   });
 
-  test("_goIdle preserves transcript events + sessionStartedAt across /remote-pi stop", async () => {
-    captureHandler("remote-pi");
+  test("_goIdle preserves transcript events + sessionStartedAt across /outpost-pi stop", async () => {
+    captureHandler("outpost-pi");
     await _connectForTest(makeMockCtx());
 
     const onMsgEnd = captureEventHandler("message_end");
@@ -5549,7 +5549,7 @@ describe("cumulative transcript event log", () => {
     onMsgEnd({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "y" }], timestamp: 200 } });
     expect(_getTranscriptEventsForTest()).toHaveLength(2);
 
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
     expect(_getState()).toBe("idle");
     expect(_getTranscriptEventsForTest()).toHaveLength(2);  // PRESERVED across stop
@@ -5567,7 +5567,7 @@ describe("cumulative transcript event log", () => {
   test("_onRelayClose preserves transcript events (regression — log must survive reconnect)", async () => {
     vi.useFakeTimers();
     try {
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       await _connectForTest(makeMockCtx());
 
       const onMsgEnd = captureEventHandler("message_end");
@@ -5614,7 +5614,7 @@ describe("model meta", () => {
         return _tokenStatus;
       },
     );
-    const stop = captureHandler("remote-pi stop");
+    const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
   });
 
@@ -5624,10 +5624,10 @@ describe("model meta", () => {
       capturedOpts.push(opts as { roomMeta?: { model?: string; name?: string; cwd?: string } });
     };
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     const ctx = {
       ui: { notify: vi.fn() },
-      cwd: "/tmp/remote-pi-model-test",
+      cwd: "/tmp/outpost-pi-model-test",
       abort: vi.fn(),
       model: { id: "claude-sonnet-4-5", name: "claude-sonnet-4.5" },
     } as unknown as ReturnType<typeof makeMockCtx>;
@@ -5636,7 +5636,7 @@ describe("model meta", () => {
     expect(capturedOpts).toHaveLength(1);
     expect(capturedOpts[0]!.roomMeta?.model).toBe("claude-sonnet-4.5");
     expect(capturedOpts[0]!.roomMeta?.name).toBeTruthy();
-    expect(capturedOpts[0]!.roomMeta?.cwd).toBe("/tmp/remote-pi-model-test");
+    expect(capturedOpts[0]!.roomMeta?.cwd).toBe("/tmp/outpost-pi-model-test");
   });
 
   test("hello carries `model` from getModel() when ctx.model is absent (daemon path)", async () => {
@@ -5645,13 +5645,13 @@ describe("model meta", () => {
       capturedOpts.push(opts as { roomMeta?: { model?: string } });
     };
 
-    captureHandler("remote-pi");
+    captureHandler("outpost-pi");
     // A headless daemon never fires model_select and has no `ctx.model`, but
     // its session resolved a default model that getModel() exposes — the fix
     // seeds room_meta from there so the app no longer shows "unknown".
     const ctx = {
       ui: { notify: vi.fn() },
-      cwd: "/tmp/remote-pi-daemon-model",
+      cwd: "/tmp/outpost-pi-daemon-model",
       abort: vi.fn(),
       getModel: () => ({ id: "claude-opus-4-8", name: "claude-opus-4.8" }),
     } as unknown as ReturnType<typeof makeMockCtx>;
@@ -5673,8 +5673,8 @@ describe("model meta", () => {
         capturedOpts.push(opts as { roomMeta?: { model?: string } });
       };
 
-      captureHandler("remote-pi");
-      await _connectForTest(makeMockCtx("/tmp/remote-pi-no-model"));
+      captureHandler("outpost-pi");
+      await _connectForTest(makeMockCtx("/tmp/outpost-pi-no-model"));
 
       expect(capturedOpts).toHaveLength(1);
       expect(capturedOpts[0]!.roomMeta?.model).toBeUndefined();
@@ -5702,7 +5702,7 @@ describe("model meta", () => {
         capturedOpts.push(opts as { roomMeta?: { model?: string } });
       };
 
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       await _connectForTest(makeMockCtx(cwd));  // ctx has no model/getModel
 
       expect(capturedOpts).toHaveLength(1);
@@ -5716,8 +5716,8 @@ describe("model meta", () => {
   });
 
   test("pi.on('model_select') fires room_meta_update via relay.sendControl", async () => {
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-model-switch"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-model-switch"));
 
     const onModelSelect = captureEventHandler("model_select");
     onModelSelect({
@@ -5737,8 +5737,8 @@ describe("model meta", () => {
   });
 
   test("plan/32: pi.on('turn_start') publishes working=true via room_meta_update", async () => {
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-working-on"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-working-on"));
 
     const onTurnStart = captureEventHandler("turn_start");
     onTurnStart({ type: "turn_start", turnIndex: 0, timestamp: 0 });
@@ -5756,15 +5756,15 @@ describe("model meta", () => {
   // coordinator-approved successor and must bind even while the tool window is
   // open. Real child denial is covered by runtime_coordinator integration tests.
   test("subagent content gate does not suppress an approved successor session binding", async () => {
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-subagent-session-start"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-subagent-session-start"));
 
     const onToolStart = captureEventHandler("tool_execution_start");
     const onSessionStart = captureEventHandler("session_start");
     const onToolEnd = captureEventHandler("tool_execution_end");
 
     onSessionStart({ type: "session_start", reason: "startup" }, {
-      ...makeMockCtx("/tmp/remote-pi-subagent-session-start"),
+      ...makeMockCtx("/tmp/outpost-pi-subagent-session-start"),
       sessionManager: { getSessionId: () => "parent-session-id" },
     } as unknown as Parameters<typeof onSessionStart>[1]);
     expect(_getRemoteSessionIdForTest()).toBe("parent-session-id");
@@ -5777,7 +5777,7 @@ describe("model meta", () => {
 
     const ctrlBeforeSuccessor = relayRef.current!.sendControl.mock.calls.length;
     onSessionStart({ type: "session_start", reason: "new" }, {
-      ...makeMockCtx("/tmp/remote-pi-subagent-session-start"),
+      ...makeMockCtx("/tmp/outpost-pi-subagent-session-start"),
       sessionManager: { getSessionId: () => "successor-session-id" },
     } as unknown as Parameters<typeof onSessionStart>[1]);
 
@@ -5798,8 +5798,8 @@ describe("model meta", () => {
   });
 
   test("plan/32: pi.on('turn_end') publishes working=false via room_meta_update", async () => {
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-working-off"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-working-off"));
 
     const onTurnEnd = captureEventHandler("turn_end");
     onTurnEnd({ type: "turn_end", turnIndex: 0 });
@@ -5812,8 +5812,8 @@ describe("model meta", () => {
   });
 
   test("plan/32: pi.on('session_before_compact') publishes working=true", async () => {
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-compact-working"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-compact-working"));
 
     const onBefore = captureEventHandler("session_before_compact");
     onBefore({ type: "session_before_compact" });
@@ -5826,8 +5826,8 @@ describe("model meta", () => {
   });
 
   test("model_select with no model.name falls back to model.id", async () => {
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-model-fallback"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-model-fallback"));
 
     const onModelSelect = captureEventHandler("model_select");
     onModelSelect({
@@ -5843,8 +5843,8 @@ describe("model meta", () => {
   });
 
   test("model_select with no model (undefined) is silently ignored", async () => {
-    captureHandler("remote-pi");
-    await _connectForTest(makeMockCtx("/tmp/remote-pi-model-noop"));
+    captureHandler("outpost-pi");
+    await _connectForTest(makeMockCtx("/tmp/outpost-pi-model-noop"));
 
     const sendControlBefore = relayRef.current!.sendControl.mock.calls.length;
     const onModelSelect = captureEventHandler("model_select");
@@ -5861,10 +5861,10 @@ describe("model meta", () => {
         capturedOpts.push(opts as typeof capturedOpts[number]);
       };
 
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       const ctx = {
         ui: { notify: vi.fn() },
-        cwd: "/tmp/remote-pi-reconnect-room",
+        cwd: "/tmp/outpost-pi-reconnect-room",
         abort: vi.fn(),
         model: { id: "claude-sonnet-4-5", name: "claude-sonnet-4.5" },
       } as unknown as ReturnType<typeof makeMockCtx>;
@@ -5883,7 +5883,7 @@ describe("model meta", () => {
       // bucketed it as a default-room peer.)
       expect(capturedOpts).toHaveLength(2);
       expect(capturedOpts[1]!.roomId).toBe(initialRoomId);
-      expect(capturedOpts[1]!.roomMeta?.cwd).toBe("/tmp/remote-pi-reconnect-room");
+      expect(capturedOpts[1]!.roomMeta?.cwd).toBe("/tmp/outpost-pi-reconnect-room");
       expect(capturedOpts[1]!.roomMeta?.model).toBe("claude-sonnet-4.5");
     } finally {
       vi.useRealTimers();
@@ -5898,10 +5898,10 @@ describe("model meta", () => {
         capturedOpts.push(opts as { roomMeta?: { model?: string } });
       };
 
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       const ctx = {
         ui: { notify: vi.fn() },
-        cwd: "/tmp/remote-pi-reconnect-model",
+        cwd: "/tmp/outpost-pi-reconnect-model",
         abort: vi.fn(),
         model: { id: "claude-sonnet-4-5", name: "claude-sonnet-4.5" },
       } as unknown as ReturnType<typeof makeMockCtx>;
@@ -5934,10 +5934,10 @@ describe("model meta", () => {
         capturedOpts.push(opts as { roomMeta?: { model?: string; working?: boolean } });
       };
 
-      captureHandler("remote-pi");
+      captureHandler("outpost-pi");
       const ctx = {
         ui: { notify: vi.fn() },
-        cwd: "/tmp/remote-pi-reconnect-working-cache",
+        cwd: "/tmp/outpost-pi-reconnect-working-cache",
         abort: vi.fn(),
         model: { id: "claude-sonnet-4-5", name: "claude-sonnet-4.5" },
       } as unknown as ReturnType<typeof makeMockCtx>;

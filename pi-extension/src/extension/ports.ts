@@ -125,19 +125,19 @@ export interface SdkSessionProjectionPort {
   onSessionLifecycle?(reason: string, sessionIdTail: string): void;
 }
 
-export interface RemotePiRuntime {
+export interface OutpostPiRuntime {
   readonly epoch: RuntimeEpoch;
-  readonly ports: RemotePiRuntimePorts;
+  readonly ports: OutpostPiRuntimePorts;
 }
 
 export interface CommandSurfacePort {
-  register(pi: ExtensionAPI, runtime: RemotePiRuntime): void;
+  register(pi: ExtensionAPI, runtime: OutpostPiRuntime): void;
   ensureStarted?(ctx: ExtensionContext): void | Promise<void>;
   prepareSessionShutdown?(): void;
   closeMesh?(): Promise<void>;
 }
 
-export interface RemotePiRuntimePorts {
+export interface OutpostPiRuntimePorts {
   relay: RelayTransportPort;
   owners: OwnerMultiplexerPort;
   session: SdkSessionProjectionPort;

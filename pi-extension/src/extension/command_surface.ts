@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { CommandSurfacePort, RemotePiRuntime } from "./ports.js";
+import type { CommandSurfacePort, OutpostPiRuntime } from "./ports.js";
 
 export interface CommandSurfaceDeps {
   readonly registerAgentTools: (pi: ExtensionAPI) => void;
@@ -13,7 +13,7 @@ export interface CommandSurfaceDeps {
 export class CommandSurface implements CommandSurfacePort {
   constructor(private readonly deps: CommandSurfaceDeps) {}
 
-  register(pi: ExtensionAPI, _runtime: RemotePiRuntime): void {
+  register(pi: ExtensionAPI, _runtime: OutpostPiRuntime): void {
     this.deps.deployAgentNetworkSkill();
     this.deps.refreshPairingsCache();
     this.deps.registerAgentTools(pi);

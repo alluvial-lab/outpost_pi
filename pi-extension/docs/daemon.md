@@ -6,17 +6,17 @@ likely causes and how to fix.
 
 ---
 
-## 1. `remote-pi install` fails
+## 1. `outpost-pi install` fails
 
 ### "supervisor script not found"
 
 ```
-[remote-pi] install failed: Error: supervisor script not found at
+[outpost-pi] install failed: Error: supervisor script not found at
 /Users/x/dist/bin/supervisord.js. Run `pnpm build` (dev) or
-`npm install -g remote-pi` (prod) first.
+`npm install -g outpost-pi` (prod) first.
 ```
 
-You're running `remote-pi install` from a dev clone where `dist/` doesn't
+You're running `outpost-pi install` from a dev clone where `dist/` doesn't
 exist yet, or from a partial install.
 
 ```bash
@@ -24,9 +24,9 @@ exist yet, or from a partial install.
 cd pi-extension && pnpm build
 
 # Production install:
-npm install -g remote-pi      # or pnpm install -g remote-pi
+npm install -g outpost-pi      # or pnpm install -g outpost-pi
 which pi-supervisord          # confirm bin is on PATH
-remote-pi install
+outpost-pi install
 ```
 
 ### "launchctl: bootstrap … already running"
@@ -39,7 +39,7 @@ the new one. If it still fails:
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/dev.remotepi.supervisord.plist
 launchctl unload ~/Library/LaunchAgents/dev.remotepi.supervisord.plist 2>/dev/null
 rm ~/Library/LaunchAgents/dev.remotepi.supervisord.plist
-remote-pi install
+outpost-pi install
 ```
 
 ### "systemctl --user … No such file or directory"
@@ -51,7 +51,7 @@ the unit survives logout:
 ```bash
 loginctl enable-linger $USER
 systemctl --user daemon-reload
-remote-pi install
+outpost-pi install
 ```
 
 ---
@@ -62,8 +62,8 @@ remote-pi install
 
 ```bash
 # Linux
-systemctl --user status remote-pi-supervisord
-journalctl --user -u remote-pi-supervisord -n 50
+systemctl --user status outpost-pi-supervisord
+journalctl --user -u outpost-pi-supervisord -n 50
 
 # macOS
 launchctl list | grep remotepi
@@ -73,16 +73,16 @@ tail -100 ~/.pi/remote/supervisord.log
 ### Common failures
 
 - **`pi: command not found`** in the log — Pi's binary isn't on the
-  PATH that the unit inherited. `remote-pi install` captures
+  PATH that the unit inherited. `outpost-pi install` captures
   `process.env.PATH` at install time; if you installed Pi *after*
-  running install, re-run `remote-pi install` to refresh.
+  running install, re-run `outpost-pi install` to refresh.
 - **`Cannot find module …`** — the path baked into the unit doesn't
   match where `dist/bin/supervisord.js` actually lives. Happens if you
   uninstalled then reinstalled the package to a different location.
-  Fix: `remote-pi uninstall && remote-pi install`.
+  Fix: `outpost-pi uninstall && outpost-pi install`.
 - **Permission denied on UDS** — `~/.pi/remote/` exists with wrong
   perms (rare; only happens if you ran `pi` as `sudo` once). Delete
-  the dir and let it re-create: `rm -rf ~/.pi/remote && remote-pi install`.
+  the dir and let it re-create: `rm -rf ~/.pi/remote && outpost-pi install`.
 
 ### Run the supervisor in the foreground for debugging
 
@@ -91,17 +91,17 @@ errors live:
 
 ```bash
 pi-supervisord
-# or: node /path/to/remote-pi/dist/bin/supervisord.js
+# or: node /path/to/outpost-pi/dist/bin/supervisord.js
 ```
 
 Ctrl-C to stop. If that works but the service doesn't, the problem is
-in the unit/plist environment (PATH, HOME) — re-run `remote-pi install`.
+in the unit/plist environment (PATH, HOME) — re-run `outpost-pi install`.
 
 ---
 
 ## 3. A specific daemon stays `crashed`
 
-`remote-pi daemon status` shows one row with `state=crashed` and a
+`outpost-pi daemon status` shows one row with `state=crashed` and a
 restart count near 4 (the supervisor gives up after exponential
 backoff: 1s, 5s, 30s, 5min).
 
@@ -111,7 +111,7 @@ The supervisor forwards each daemon's stderr with a `[<cwd>]` prefix:
 
 ```bash
 # Linux
-journalctl --user -u remote-pi-supervisord -f | grep '\[/Users/x/Movies\]'
+journalctl --user -u outpost-pi-supervisord -f | grep '\[/Users/x/Movies\]'
 
 # macOS
 tail -f ~/.pi/remote/supervisord.log | grep '\[/Users/x/Movies\]'
@@ -123,14 +123,14 @@ Reproduce the failure with full visibility:
 
 ```bash
 cd /Users/x/Movies
-REMOTE_PI_DAEMON=1 pi --mode rpc -e $(npm root -g)/remote-pi/dist/index.js
+REMOTE_PI_DAEMON=1 pi --mode rpc -e $(npm root -g)/outpost-pi/dist/index.js
 ```
 
 Common reasons a daemon won't start:
 
 - **Local config missing.** `cd` into the daemon's folder and check
-  `.pi/remote-pi/config.json` exists with `auto_start_relay: true`.
-  Recreate via `remote-pi create <cwd>` (it provisions a default config
+  `.pi/outpost-pi/config.json` exists with `auto_start_relay: true`.
+  Recreate via `outpost-pi create <cwd>` (it provisions a default config
   when missing).
 - **Pi extension config drift.** Pi's own settings (model, API keys)
   reset → daemon fails to authenticate to the provider. Run
@@ -144,7 +144,7 @@ Common reasons a daemon won't start:
 After fixing the underlying problem, kick the supervisor:
 
 ```bash
-remote-pi daemon restart      # bounces every daemon
+outpost-pi daemon restart      # bounces every daemon
 ```
 
 ---
@@ -156,14 +156,14 @@ Most common cause: the daemon never started OR it crashed past the
 retry budget.
 
 ```bash
-remote-pi daemon status       # is state running?
-remote-pi daemon start        # spawn any that aren't running
+outpost-pi daemon status       # is state running?
+outpost-pi daemon start        # spawn any that aren't running
 # Then retry send.
 ```
 
 If `daemon start` shows `started=0, already_running=N`, the supervisor
 isn't actually spawning. Possible reasons:
-- Registry empty: `remote-pi daemons` to verify.
+- Registry empty: `outpost-pi daemons` to verify.
 - Child crashes faster than the status check: `daemon status` immediately
   after start may still show `running` for a few seconds before the
   exit event marks it crashed. Re-check 2-3 seconds later.
@@ -182,35 +182,35 @@ The daemon is up but the app doesn't see it.
 ```bash
 cd <daemon-cwd>
 pi
-> /remote-pi devices         # confirm the device is listed
-> /remote-pi stop            # stop interactive session — daemon takes over
-remote-pi daemon restart
+> /outpost-pi devices         # confirm the device is listed
+> /outpost-pi stop            # stop interactive session — daemon takes over
+outpost-pi daemon restart
 ```
 
 ### Confirm the relay URL matches
 
-The daemon uses the cwd's local config (`<cwd>/.pi/remote-pi/config.json`
+The daemon uses the cwd's local config (`<cwd>/.pi/outpost-pi/config.json`
 agent_name + `~/.pi/remote/config.json` relay). Verify with:
 
 ```bash
 cd <daemon-cwd>
 pi
-> /remote-pi status
+> /outpost-pi status
 ```
 
 The relay line should match what the mobile app is connecting to. If
 not, update the relay URL and bounce the daemon:
 
 ```bash
-remote-pi set-relay https://relay.example.tld
-remote-pi daemon restart
+outpost-pi set-relay https://relay.example.tld
+outpost-pi daemon restart
 ```
 
 ---
 
 ## 6. Registry corrupted / partial
 
-Symptom: `remote-pi daemons` errors out or shows nothing despite
+Symptom: `outpost-pi daemons` errors out or shows nothing despite
 having created entries.
 
 ```bash
@@ -233,9 +233,9 @@ and re-create:
 
 ```bash
 rm ~/.pi/remote/daemons.json
-remote-pi create ~/Movies --name "Video Editor"
-remote-pi create ~/Projects/backend --name "Backend"
-remote-pi daemon restart
+outpost-pi create ~/Movies --name "Video Editor"
+outpost-pi create ~/Projects/backend --name "Backend"
+outpost-pi daemon restart
 ```
 
 ---
@@ -245,16 +245,16 @@ remote-pi daemon restart
 When you suspect everything is misconfigured:
 
 ```bash
-remote-pi uninstall              # removes service, keeps registry
+outpost-pi uninstall              # removes service, keeps registry
 rm -rf ~/.pi/remote               # nukes registry + paired devices + keys
-npm uninstall -g remote-pi
-npm install -g remote-pi
-remote-pi install
+npm uninstall -g outpost-pi
+npm install -g outpost-pi
+outpost-pi install
 # Then re-pair + re-create daemons from scratch.
 ```
 
 This is the "nuke everything" path. After this, the only state left is
-each cwd's `<cwd>/.pi/remote-pi/config.json` — which you can either
+each cwd's `<cwd>/.pi/outpost-pi/config.json` — which you can either
 keep (re-create restores the daemon) or delete (full reset).
 
 ---
@@ -269,7 +269,7 @@ ls -la ~/.pi/remote/supervisor.sock
 echo '{"op":"list"}' | nc -U ~/.pi/remote/supervisor.sock
 
 # Where are the daemon configs?
-find ~/Projects -name "config.json" -path "*/.pi/remote-pi/*" 2>/dev/null
+find ~/Projects -name "config.json" -path "*/.pi/outpost-pi/*" 2>/dev/null
 
 # Where are the cwd locks?
 ls ~/.pi/remote/locks/
@@ -278,12 +278,12 @@ ls ~/.pi/remote/locks/
 cat ~/.pi/remote/peers.json
 
 # What Pi binary is the supervisor about to spawn?
-remote-pi install --dry-run      # (not implemented; check ~/Library/LaunchAgents or systemd unit manually)
+outpost-pi install --dry-run      # (not implemented; check ~/Library/LaunchAgents or systemd unit manually)
 
 # Quick liveness check
-remote-pi daemon status
+outpost-pi daemon status
 ```
 
 If after walking the list you're still stuck, file an issue with the
-output of `remote-pi daemon status`, the recent supervisor log, and
+output of `outpost-pi daemon status`, the recent supervisor log, and
 the contents of `~/.pi/remote/daemons.json`.

@@ -24,7 +24,7 @@ export function restartSupervisor(): void {
   const steps = restartSupervisorCommand(process.platform, uid);
   if (!steps) {
     console.error(
-      `[remote-pi] restart-supervisor is not supported on '${process.platform}' yet. ` +
+      `[outpost-pi] restart-supervisor is not supported on '${process.platform}' yet. ` +
       "Restart pi-supervisord manually.",
     );
     process.exit(1);
@@ -33,14 +33,14 @@ export function restartSupervisor(): void {
     const r = spawnSync(step.cmd, step.args, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
     if (r.error) {
       if (step.ignoreFailure) continue;
-      console.error(`[remote-pi] restart-supervisor failed: ${step.cmd} not runnable (${r.error.message}). Is the service installed? Run \`remote-pi install\`.`);
+      console.error(`[outpost-pi] restart-supervisor failed: ${step.cmd} not runnable (${r.error.message}). Is the service installed? Run \`outpost-pi install\`.`);
       process.exit(1);
     }
     if (r.status !== 0 && !step.ignoreFailure) {
       const detail = (r.stderr || r.stdout || "").trim();
-      console.error(`[remote-pi] restart-supervisor failed (${step.cmd} exited ${r.status})${detail ? `: ${detail}` : ""}.`);
+      console.error(`[outpost-pi] restart-supervisor failed (${step.cmd} exited ${r.status})${detail ? `: ${detail}` : ""}.`);
       process.exit(r.status === null ? 1 : r.status);
     }
   }
-  console.log("[remote-pi] Supervisor restarted.");
+  console.log("[outpost-pi] Supervisor restarted.");
 }
