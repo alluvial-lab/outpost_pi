@@ -21,7 +21,7 @@
 
 | Platform | Status |
 |---|---|
-| Google Play (Android) | [Get it on Google Play](https://play.google.com/store/apps/details?id=work.jacobmoura.remotepi) |
+| Google Play (Android) | _Coming soon — 0.1.0 is sideload-only (new applicationId)_ |
 | App Store (iOS) | [Download on the App Store](https://apps.apple.com/app/outpost-pi-coding-agent/id6773499691) |
 | APK (sideload, Android) | [GitHub Releases](https://github.com/jacobaraujo7/outpost_pi/releases) |
 
