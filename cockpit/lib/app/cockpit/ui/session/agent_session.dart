@@ -90,10 +90,10 @@ class AgentSession extends PaneItem {
   /// persistência deve usar este marcador, não o estado do processo.
   final bool isPlaceholder;
 
-  /// Conectar ao relay ao iniciar (injetado em `REMOTE_PI_DIRECT_CONFIG`).
+  /// Conectar ao relay ao iniciar (injetado em `OUTPOST_PI_DIRECT_CONFIG`).
   bool autoStartRelay;
 
-  /// Estado atual da conexão do relay (atualizado por `remote-pi:relay-state`).
+  /// Estado atual da conexão do relay (atualizado por `outpost-pi:relay-state`).
   RelayStatus relayStatus = RelayStatus.disconnected;
 
   /// ID do modelo que o usuário escolheu para este agente (ex: `'claude-sonnet-4-6'`).
@@ -229,7 +229,7 @@ class AgentSession extends PaneItem {
   /// Sobe o `pi --mode rpc` na [workingDirectory] e começa a ouvir o stream.
   ///
   /// [environment] é fundido com o ambiente do processo pai — use para injetar
-  /// `REMOTE_PI_DIRECT_CONFIG` sem perder PATH/HOME. Se `null`, herda tudo.
+  /// `OUTPOST_PI_DIRECT_CONFIG` sem perder PATH/HOME. Se `null`, herda tudo.
   ///
   /// [restoreSessionPath] (opcional) é o caminho completo do `.jsonl` a
   /// restaurar. Quando presente, passa `--session <id>` ao pi para que ele

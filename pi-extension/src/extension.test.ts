@@ -105,7 +105,7 @@ vi.mock("./config.js", async (importOriginal) => {
       if (patch.relay !== undefined) _savedRelayUrl = patch.relay;
     }),
     resolveRelayUrl: vi.fn().mockImplementation(() => {
-      const env = process.env["REMOTE_PI_RELAY"];
+      const env = process.env["OUTPOST_PI_RELAY"];
       if (env && env.length > 0) return { url: orig.toHttpUrl(env), source: "env" as const };
       if (_savedRelayUrl && _savedRelayUrl.length > 0) {
         return { url: orig.toHttpUrl(_savedRelayUrl), source: "config" as const };
@@ -3045,7 +3045,7 @@ describe("/outpost-pi set-relay + config", () => {
     vi.clearAllMocks();
     _savedRelayUrl = null;
     _setRelayCalls.length = 0;
-    delete process.env["REMOTE_PI_RELAY"];
+    delete process.env["OUTPOST_PI_RELAY"];
     relayRef.current = null;
     const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
@@ -3148,9 +3148,9 @@ describe("/outpost-pi set-relay + config", () => {
     expect(resolveRelayUrl()).toEqual({ url: "http://config.test", source: "config" });
 
     // 3) Env set → env wins over config. Same defensive coercion.
-    process.env["REMOTE_PI_RELAY"] = "wss://env.test";
+    process.env["OUTPOST_PI_RELAY"] = "wss://env.test";
     expect(resolveRelayUrl()).toEqual({ url: "https://env.test", source: "env" });
-    delete process.env["REMOTE_PI_RELAY"];
+    delete process.env["OUTPOST_PI_RELAY"];
   });
 
   test("/outpost-pi status shows the saved URL after set-relay", async () => {
@@ -3176,14 +3176,14 @@ describe("/outpost-pi set-relay + config", () => {
 
   test("/outpost-pi status reflects env override (canonicalized to https://)", async () => {
     // Env var with wss:// is coerced back to https:// by resolveRelayUrl.
-    process.env["REMOTE_PI_RELAY"] = "wss://from-env.test";
+    process.env["OUTPOST_PI_RELAY"] = "wss://from-env.test";
     const status = captureHandler("outpost-pi status");
     const ctx = makeMockCtx();
     await status("", ctx);
 
     const text = (ctx.ui.notify.mock.calls[0]![0]) as string;
     expect(text).toContain("https://from-env.test");
-    delete process.env["REMOTE_PI_RELAY"];
+    delete process.env["OUTPOST_PI_RELAY"];
   });
 
   test("saved URL is used by _cmdStart on next connect (http:// stored as-is)", async () => {
@@ -3429,7 +3429,7 @@ describe("QR payload (no r field, with rm)", () => {
     const { buildQRUri } = await import("./pairing/qr.js");
     const epk = Buffer.alloc(32, 0x42);
     const uri = buildQRUri("token-abc", epk, "feature/x");
-    expect(uri.startsWith("remotepi://pair?")).toBe(true);
+    expect(uri.startsWith("outpostpi://pair?")).toBe(true);
     const url = new URL(uri.replace("remotepi:", "https:"));
     expect(url.searchParams.get("t")).toBe("token-abc");
     expect(url.searchParams.get("epk")).toBeTruthy();
@@ -3471,7 +3471,7 @@ describe("rooms wiring", () => {
     relayRef.current = null;
     relayInstances.length = 0;
     _defaultConnectImpl = async () => undefined;
-    delete process.env["REMOTE_PI_RELAY"];
+    delete process.env["OUTPOST_PI_RELAY"];
     const qr = await import("./pairing/qr.js");
     (qr.qrSession.consumeToken as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       (token: string) => {
@@ -3621,7 +3621,7 @@ describe("session sync", () => {
   });
 
   test("no limit in request → server uses env default (30)", async () => {
-    delete process.env["REMOTE_PI_SYNC_LIMIT"];
+    delete process.env["OUTPOST_PI_SYNC_LIMIT"];
     await _pairForTest("peer-ss-mirror-1");
 
     const sessionTs = 1_700_000_000_000;
@@ -3650,7 +3650,7 @@ describe("session sync", () => {
   });
 
   test("client limit < env → server respects client limit + truncated true if overflow", async () => {
-    delete process.env["REMOTE_PI_SYNC_LIMIT"];  // default 30
+    delete process.env["OUTPOST_PI_SYNC_LIMIT"];  // default 30
     await _pairForTest("peer-ss-mirror-2");
 
     const ts = 1_700_000_000_000;
@@ -3680,7 +3680,7 @@ describe("session sync", () => {
   });
 
   test("client limit > env → server clamps to env", async () => {
-    process.env["REMOTE_PI_SYNC_LIMIT"] = "5";
+    process.env["OUTPOST_PI_SYNC_LIMIT"] = "5";
     await _pairForTest("peer-ss-mirror-3");
 
     const ts = 1_700_000_000_000;
@@ -3707,11 +3707,11 @@ describe("session sync", () => {
     expect(events[4]!.ts).toBe(ts + 9);
     expect(h.inner["truncated"]).toBe(true);
 
-    delete process.env["REMOTE_PI_SYNC_LIMIT"];
+    delete process.env["OUTPOST_PI_SYNC_LIMIT"];
   });
 
   test("transcript log with 5 events → returns 5, truncated:false", async () => {
-    delete process.env["REMOTE_PI_SYNC_LIMIT"];
+    delete process.env["OUTPOST_PI_SYNC_LIMIT"];
     await _pairForTest("peer-ss-mirror-4");
 
     const ts = 1_700_000_000_000;
@@ -3738,7 +3738,7 @@ describe("session sync", () => {
   });
 
   test("transcript log with 50 events + env=30 → returns 30, truncated:true", async () => {
-    delete process.env["REMOTE_PI_SYNC_LIMIT"];  // default 30
+    delete process.env["OUTPOST_PI_SYNC_LIMIT"];  // default 30
     await _pairForTest("peer-ss-mirror-5");
 
     const ts = 1_700_000_000_000;
@@ -3767,8 +3767,8 @@ describe("session sync", () => {
     expect(h.inner["truncated"]).toBe(true);
   });
 
-  test("REMOTE_PI_SYNC_LIMIT=10 → server respects env override", async () => {
-    process.env["REMOTE_PI_SYNC_LIMIT"] = "10";
+  test("OUTPOST_PI_SYNC_LIMIT=10 → server respects env override", async () => {
+    process.env["OUTPOST_PI_SYNC_LIMIT"] = "10";
     await _pairForTest("peer-ss-mirror-6");
 
     const ts = 1_700_000_000_000;
@@ -3793,7 +3793,7 @@ describe("session sync", () => {
     expect((h.inner["events"] as unknown[]).length).toBe(10);
     expect(h.inner["truncated"]).toBe(true);
 
-    delete process.env["REMOTE_PI_SYNC_LIMIT"];
+    delete process.env["OUTPOST_PI_SYNC_LIMIT"];
   });
 
   test("mapping: assistant with TextContent + ToolCall → 2 events", () => {
@@ -4471,9 +4471,9 @@ describe("session_shutdown teardown", () => {
   });
 });
 
-// ── remote-pi:name-assigned event (Cockpit consumes the effective name) ────────
+// ── outpost-pi:name-assigned event (Cockpit consumes the effective name) ────────
 
-describe("remote-pi:name-assigned event", () => {
+describe("outpost-pi:name-assigned event", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     _knownPeers.length = 0;
@@ -4495,7 +4495,7 @@ describe("remote-pi:name-assigned event", () => {
   // Contract for the Cockpit: on join the extension emits a pure-data
   // (display:false) custom message carrying the requested + effective mesh
   // name, so the client can rename the agent when the broker appended a `#N`.
-  test("join emits remote-pi:name-assigned with requested + assigned + changed", async () => {
+  test("join emits outpost-pi:name-assigned with requested + assigned + changed", async () => {
     const sendMessage = vi.fn();
     const spyPi = {
       on: () => undefined, registerCommand: () => undefined,
@@ -4516,7 +4516,7 @@ describe("remote-pi:name-assigned event", () => {
 
     const ev = sendMessage.mock.calls
       .map((c) => c[0] as { customType?: string; display?: boolean; details?: Record<string, unknown> })
-      .find((m) => m?.customType === "remote-pi:name-assigned");
+      .find((m) => m?.customType === "outpost-pi:name-assigned");
     expect(ev).toBeDefined();
     expect(ev!.display).toBe(false);
     expect(ev!.details).toMatchObject({ changed: false });
@@ -4542,7 +4542,7 @@ describe("relay control channel + relay-state event", () => {
     sendMessage.mock.calls
       .map((c) => c[0] as { customType?: string; display?: boolean; details?: Record<string, unknown> })
       .reverse()
-      .find((m) => m?.customType === "remote-pi:relay-state");
+      .find((m) => m?.customType === "outpost-pi:relay-state");
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -4582,12 +4582,12 @@ describe("relay control channel + relay-state event", () => {
     expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "disconnected", connected: false });
   });
 
-  test("structured remote_pi_control input is swallowed and dispatches relay status", async () => {
+  test("structured outpost_pi_control input is swallowed and dispatches relay status", async () => {
     const sendMessage = vi.fn();
     captureHandler("outpost-pi");
     const input = captureEventHandler("input");
     _setPiForTest(makeSpyPi(sendMessage));
-    const payload = JSON.stringify({ type: "remote_pi_control", command: "relay_status" });
+    const payload = JSON.stringify({ type: "outpost_pi_control", command: "relay_status" });
 
     const result = input({ type: "input", text: payload, source: "rpc" });
 
@@ -4596,9 +4596,9 @@ describe("relay control channel + relay-state event", () => {
     expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "disconnected", connected: false });
   });
 
-  test("structured remote_pi_control rename parses to the legacy command path", () => {
+  test("structured outpost_pi_control rename parses to the legacy command path", () => {
     expect(_parseControlFrame(JSON.stringify({
-      type: "remote_pi_control",
+      type: "outpost_pi_control",
       command: "rename",
       name: "Renamed",
     }))).toEqual({ command: "rename:Renamed" });
@@ -4608,10 +4608,10 @@ describe("relay control channel + relay-state event", () => {
     const input = captureEventHandler("input");
     expect(input({
       type: "input",
-      text: JSON.stringify({ type: "remote_pi_control", command: "relay_bounce" }),
+      text: JSON.stringify({ type: "outpost_pi_control", command: "relay_bounce" }),
       source: "rpc",
     })).toBeUndefined();
-    expect(input({ type: "input", text: '{"type":"remote_pi_control"', source: "rpc" })).toBeUndefined();
+    expect(input({ type: "input", text: '{"type":"outpost_pi_control"', source: "rpc" })).toBeUndefined();
   });
 
   test("a normal (non-control) input is NOT swallowed", () => {
@@ -4620,7 +4620,7 @@ describe("relay control channel + relay-state event", () => {
     expect(result).toBeUndefined();
   });
 
-  test("relay:status emits remote-pi:relay-state 'disconnected' while idle", async () => {
+  test("relay:status emits outpost-pi:relay-state 'disconnected' while idle", async () => {
     const sendMessage = vi.fn();
     captureHandler("outpost-pi");
     _setPiForTest(makeSpyPi(sendMessage));
@@ -4673,11 +4673,11 @@ describe("relay control channel + relay-state event", () => {
     // The mesh node + relay survive (no process restart); relay back up.
     expect(_hasMeshNodeForTest()).toBe(true);
     expect(_getState()).toBe("started");
-    // Cockpit is told the new effective name via remote-pi:name-assigned.
+    // Cockpit is told the new effective name via outpost-pi:name-assigned.
     const ev = sendMessage.mock.calls
       .map((c) => c[0] as { customType?: string; display?: boolean; details?: Record<string, unknown> })
       .reverse()
-      .find((m) => m?.customType === "remote-pi:name-assigned");
+      .find((m) => m?.customType === "outpost-pi:name-assigned");
     expect(ev).toBeDefined();
     expect(ev!.display).toBe(false);
     expect(ev!.details).toMatchObject({ requested: "Renamed", assigned: "Renamed", changed: false });
@@ -4720,7 +4720,7 @@ describe("same-folder same-name → #N suffix (no refusal)", () => {
   // second "Backoffice" must NOT be refused — it comes up as "Backoffice#2"
   // (and the name-assigned event reports the change), matching the broker.
   test("a second same-name agent joins as <name>#2 instead of being refused", async () => {
-    process.env["REMOTE_PI_DIRECT_CONFIG"] = JSON.stringify({
+    process.env["OUTPOST_PI_DIRECT_CONFIG"] = JSON.stringify({
       agent_name: "Backoffice",
       auto_start_relay: false, // keep the test off the relay
     });
@@ -4737,7 +4737,7 @@ describe("same-folder same-name → #N suffix (no refusal)", () => {
       expect(_hasMeshNodeForTest()).toBe(true);
     } finally {
       if (first.ok) first.release();
-      delete process.env["REMOTE_PI_DIRECT_CONFIG"];
+      delete process.env["OUTPOST_PI_DIRECT_CONFIG"];
       _resetCwdLockForTest();
     }
   });
@@ -5605,7 +5605,7 @@ describe("model meta", () => {
     relayInstances.length = 0;
     _defaultConnectImpl = async () => undefined;
     _setDisposedForTest(false);
-    delete process.env["REMOTE_PI_RELAY"];
+    delete process.env["OUTPOST_PI_RELAY"];
     _setCurrentModelForTest(undefined);
     const qr = await import("./pairing/qr.js");
     (qr.qrSession.consumeToken as unknown as ReturnType<typeof vi.fn>).mockImplementation(

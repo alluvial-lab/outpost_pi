@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # Cockpit control-path consumers
@@ -41,6 +41,12 @@ update the cockpit tests.
   84): update the `_customMessage('remote-pi:...')` literals
 
 ## Acceptance Criteria
-- [ ] `flutter analyze` (in `cockpit/`) clean
+- [x] `flutter analyze` (in `cockpit/`) clean
 - [ ] `flutter test` (in `cockpit/`) green
-- [ ] `grep -rn 'remote_pi_control\|remote-pi:relay-state\|remote-pi:name-assigned\|remote-pi:pair-code\|remote-pi:paired\|remote-pi:mesh-revoked' cockpit/lib/ cockpit/test/` returns nothing
+- [x] `grep -rn 'remote_pi_control\|remote-pi:relay-state\|remote-pi:name-assigned\|remote-pi:pair-code\|remote-pi:paired\|remote-pi:mesh-revoked' cockpit/lib/ cockpit/test/` returns nothing
+
+## Implementation notes
+
+- Renamed cockpit control envelopes and all five control-overlay custom event discriminators to the `outpost_pi_control` / `outpost-pi:` namespace, including pairing consumers and their documentation.
+- Updated control serialization and event-mapper test fixtures; the legacy control-prefix assertion now uses `outpost-pi-ctrl`.
+- `flutter analyze --no-pub` passed in `cockpit/`. `flutter test` could not resolve dependencies because the default `/home/agent/.pub-cache` is read-only (OS error 30); this is the known sandbox environment issue.
