@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://remote-pi.dev/schemas/defs/agent-envelope.schema.json",
+  "$id": "https://kevoun.com/schemas/defs/agent-envelope.schema.json",
   "title": "Remote Pi generic agent envelope",
   "$defs": {
     "agentAddress": { "type": "string", "minLength": 1 },
@@ -30,7 +30,7 @@
         "body": true
       },
       "additionalProperties": false,
-      "x-remote-pi": {
+      "x-outpost-pi": {
         "relayOpaque": ["body"],
         "idSemantics": "uuid-v7-string"
       }

@@ -1154,13 +1154,13 @@ function rustTypeForRoomMetaField(fieldName, fieldSchema) {
 }
 
 function nullableStringPatchFields(patchSchema) {
-  const metadata = requireObject(patchSchema['x-remote-pi'] ?? {}, 'roomMetaPatch.x-remote-pi');
+  const metadata = requireObject(patchSchema['x-outpost-pi'] ?? {}, 'roomMetaPatch.x-outpost-pi');
   const semantics = requireObject(metadata.mergePatchSemantics ?? {}, 'roomMetaPatch.mergePatchSemantics');
   return new Set(requireArray(semantics.nullableStrings ?? [], 'roomMetaPatch.nullableStrings').map(String));
 }
 
 function nonNullableBoolPatchFields(patchSchema) {
-  const metadata = requireObject(patchSchema['x-remote-pi'] ?? {}, 'roomMetaPatch.x-remote-pi');
+  const metadata = requireObject(patchSchema['x-outpost-pi'] ?? {}, 'roomMetaPatch.x-outpost-pi');
   const semantics = requireObject(metadata.mergePatchSemantics ?? {}, 'roomMetaPatch.mergePatchSemantics');
   return new Set(requireArray(semantics.nonNullableBooleans ?? [], 'roomMetaPatch.nonNullableBooleans').map(String));
 }
@@ -1473,8 +1473,8 @@ async function main() {
 
   if (target === 'ts') {
     if (!schemaPath || (!outDir && !outPath)) throw new Error(usage());
-    const { buildRemotePiIrFromSchemaInput, emitTypeScriptProtocol } = await import('../src/index.ts');
-    const ir = await buildRemotePiIrFromSchemaInput(schemaPath, { profile: 'compat' });
+    const { buildOutpostPiIrFromSchemaInput, emitTypeScriptProtocol } = await import('../src/index.ts');
+    const ir = await buildOutpostPiIrFromSchemaInput(schemaPath, { profile: 'compat' });
     const outFile = outPath ?? join(outDir, 'protocol.generated.ts');
     await emitTypeScriptProtocol(ir, { outFile, check });
     return;

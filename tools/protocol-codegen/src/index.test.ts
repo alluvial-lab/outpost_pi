@@ -6,9 +6,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  buildRemotePiIr,
+  buildOutpostPiIr,
   emitTypeScriptProtocol,
-  loadRemotePiManifest,
+  loadOutpostPiManifest,
   renderTypeScriptProtocol,
 } from "./index.ts";
 
@@ -82,8 +82,8 @@ test("minimal manifest schema emits deterministic TypeScript output", async () =
     },
   });
 
-  const manifest = await loadRemotePiManifest(join(protocolRoot, "schema", "manifest.json"));
-  const ir = await buildRemotePiIr(manifest, { profile: "compat" });
+  const manifest = await loadOutpostPiManifest(join(protocolRoot, "schema", "manifest.json"));
+  const ir = await buildOutpostPiIr(manifest, { profile: "compat" });
   const first = renderTypeScriptProtocol(ir);
   const second = renderTypeScriptProtocol(ir);
 
@@ -103,8 +103,8 @@ test("minimal manifest schema emits deterministic TypeScript output", async () =
 
 test("real Remote Pi schema emits generated app/Pi unions and shared value types", async () => {
   const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-  const manifest = await loadRemotePiManifest(join(repoRoot, "protocol", "schema", "manifest.json"));
-  const ir = await buildRemotePiIr(manifest, { profile: "compat" });
+  const manifest = await loadOutpostPiManifest(join(repoRoot, "protocol", "schema", "manifest.json"));
+  const ir = await buildOutpostPiIr(manifest, { profile: "compat" });
   const output = renderTypeScriptProtocol(ir);
 
   assert.match(output, /export interface WireImage \{\n  readonly data: string;\n  readonly mime: string;\n\}/);
@@ -141,8 +141,8 @@ test("real Remote Pi schema emits generated app/Pi unions and shared value types
 
 test("real Remote Pi generated validators accept current app/Pi variants and reject malformed objects", async () => {
   const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-  const manifest = await loadRemotePiManifest(join(repoRoot, "protocol", "schema", "manifest.json"));
-  const ir = await buildRemotePiIr(manifest, { profile: "compat" });
+  const manifest = await loadOutpostPiManifest(join(repoRoot, "protocol", "schema", "manifest.json"));
+  const ir = await buildOutpostPiIr(manifest, { profile: "compat" });
   const generated = await importGeneratedProtocol(renderTypeScriptProtocol(ir));
 
   assert.deepEqual(generated.SERVER_MESSAGE_TYPES, [
@@ -233,11 +233,11 @@ test("placeholder schema families fail with a clear diagnostic", async () => {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     oneOf: [],
     $defs: {},
-    "x-remote-pi": { family: "appPiClient" },
+    "x-outpost-pi": { family: "appPiClient" },
   });
-  const manifest = await loadRemotePiManifest(join(protocolRoot, "schema", "manifest.json"));
+  const manifest = await loadOutpostPiManifest(join(protocolRoot, "schema", "manifest.json"));
   await assert.rejects(
-    () => buildRemotePiIr(manifest, { profile: "compat" }),
+    () => buildOutpostPiIr(manifest, { profile: "compat" }),
     /schema family placeholder: appPiClient \(schema\/minimal\.schema\.json\)/,
   );
 });
@@ -255,8 +255,8 @@ test("emitTypeScriptProtocol check detects stale generated output", async () => 
       },
     },
   });
-  const manifest = await loadRemotePiManifest(join(protocolRoot, "schema", "manifest.json"));
-  const ir = await buildRemotePiIr(manifest, { profile: "compat" });
+  const manifest = await loadOutpostPiManifest(join(protocolRoot, "schema", "manifest.json"));
+  const ir = await buildOutpostPiIr(manifest, { profile: "compat" });
   const outFile = join(protocolRoot, "generated", "protocol.generated.ts");
 
   await emitTypeScriptProtocol(ir, { outFile });

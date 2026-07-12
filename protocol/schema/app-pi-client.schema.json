@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://remote-pi.dev/schemas/app-pi-client.schema.json",
+  "$id": "https://kevoun.com/schemas/app-pi-client.schema.json",
   "title": "Remote Pi app-to-Pi client messages",
   "oneOf": [
     { "$ref": "#/$defs/pairRequest" },
@@ -42,7 +42,7 @@
         "ts": { "type": "integer", "minimum": 0, "description": "SDK persisted user message timestamp. Optional (compat). Mirrored from the server schema so the shared UserMessage interface includes it; clients never send ts." }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
     },
     "queuedMessageSet": {
       "type": "object",
@@ -54,7 +54,7 @@
         "text": { "type": "string" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "queuedMessageClear": {
       "type": "object",
@@ -65,7 +65,7 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "approveTool": {
       "type": "object",
@@ -78,7 +78,7 @@
         "decision": { "$ref": "./defs/app-pi-common.schema.json#/$defs/approveDecision" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "cancel": {
       "type": "object",
@@ -90,7 +90,7 @@
         "target_id": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "ping": {
       "type": "object",
@@ -111,7 +111,7 @@
         "limit": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "sessionNew": {
       "type": "object",
@@ -122,7 +122,7 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "sessionCompact": {
       "type": "object",
@@ -133,7 +133,7 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "modelSet": {
       "type": "object",
@@ -146,7 +146,7 @@
         "model_id": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "thinkingSet": {
       "type": "object",
@@ -158,7 +158,7 @@
         "level": { "$ref": "./defs/app-pi-common.schema.json#/$defs/thinkingLevel" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "listModels": {
       "type": "object",
@@ -169,10 +169,10 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     }
   },
-  "x-remote-pi": {
+  "x-outpost-pi": {
     "family": "appPiClient",
     "transport": "relay-jsonl",
     "discriminator": "type",

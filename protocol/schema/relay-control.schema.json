@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://remote-pi.dev/schemas/relay-control.schema.json",
+  "$id": "https://kevoun.com/schemas/relay-control.schema.json",
   "title": "Remote Pi relay auth, presence, rooms, and control frames",
   "oneOf": [
     { "$ref": "./relay-outer.schema.json" },
@@ -45,7 +45,7 @@
         "started_at": { "$ref": "#/$defs/epochMillis" }
       },
       "additionalProperties": false,
-      "x-remote-pi": {
+      "x-outpost-pi": {
         "sessionIdCarriedOnly": true,
         "relayDoesNotRouteBy": ["session_id"]
       }
@@ -64,7 +64,7 @@
         "working": { "type": "boolean" }
       },
       "additionalProperties": false,
-      "x-remote-pi": {
+      "x-outpost-pi": {
         "mergePatchSemantics": {
           "absent": "preserve current value",
           "nullableStrings": ["model", "thinking", "session_id"],
@@ -83,7 +83,7 @@
         "working": { "type": "boolean" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "initialRoomMeta": true }
+      "x-outpost-pi": { "initialRoomMeta": true }
     },
     "hello": {
       "type": "object",
@@ -212,7 +212,7 @@
         "started_at": { "$ref": "#/$defs/epochMillis" }
       },
       "additionalProperties": false,
-      "x-remote-pi": {
+      "x-outpost-pi": {
         "sessionIdCarriedOnly": true,
         "relayDoesNotRouteBy": ["session_id"]
       }
@@ -239,7 +239,7 @@
       "additionalProperties": false
     }
   },
-  "x-remote-pi": {
+  "x-outpost-pi": {
     "family": "relayControl",
     "transport": "relay-jsonl",
     "discriminator": "type",

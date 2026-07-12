@@ -60,7 +60,7 @@ const ajv = new Ajv2020({
   strictSchema: true,
 });
 addFormats(ajv);
-ajv.addKeyword({ keyword: "x-remote-pi", metaSchema: {} });
+ajv.addKeyword({ keyword: "x-outpost-pi", metaSchema: {} });
 
 for (const schemaPath of collectSchemaFiles(schemaRoot)) {
   const schema = readJson<Record<string, unknown>>(schemaPath);
@@ -73,7 +73,7 @@ const manifest = readJson<Manifest>(join(schemaRoot, "manifest.json"));
 const errors: string[] = [];
 
 for (const family of manifest.families) {
-  const validate = ajv.getSchema(`https://remote-pi.dev/schemas/${family.schema.replace(/^schema\//, "")}`);
+  const validate = ajv.getSchema(`https://kevoun.com/schemas/${family.schema.replace(/^schema\//, "")}`);
   if (!validate) {
     errors.push(`${family.id}: schema ${family.schema} did not compile`);
     continue;
