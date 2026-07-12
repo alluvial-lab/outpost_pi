@@ -1,8 +1,8 @@
 import 'package:cockpit/app/core/domain/contracts/environment_probe.dart';
 import 'package:flutter/foundation.dart';
 
-/// Decide se as abas que dependem do ambiente remote-pi (Conectividade, Daemon
-/// Agents, Agendamentos) aparecem nas Configurações. Sem a extensão remote-pi e
+/// Decide se as abas que dependem do ambiente outpost-pi (Conectividade, Daemon
+/// Agents, Agendamentos) aparecem nas Configurações. Sem a extensão outpost-pi e
 /// o supervisor instalados não há o que configurar, então essas abas ficam
 /// ocultas — o ambiente é instalado pelo checklist da aba de agente.
 ///
@@ -15,7 +15,7 @@ class SettingsEnvGate extends ChangeNotifier {
   bool _remoteReady = false;
   bool _disposed = false;
 
-  /// `true` quando extensão remote-pi **e** supervisor estão instalados.
+  /// `true` quando extensão outpost-pi **e** supervisor estão instalados.
   bool get remoteReady => _remoteReady;
 
   /// Re-sonda o ambiente. Chamado ao montar a tela (e pode ser re-chamado se o

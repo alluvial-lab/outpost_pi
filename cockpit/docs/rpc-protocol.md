@@ -9,7 +9,7 @@ e conferido contra a doc oficial do SDK em
 > O Cockpit spawna `pi --mode rpc` **com extensions carregadas** (decisão B
 > revisada): `noSession`/`noExtensions` defaultam a `false` (ver
 > `lib/app/core/env.dart` → `spawnArgs`). As extensions ficam ativas para expor
-> os slash commands (`get_commands`) e o controle remote-pi (relay/mesh/crypto)
+> os slash commands (`get_commands`) e o controle outpost-pi (relay/mesh/crypto)
 > via overlay de controle. Quando `noSession: true` o pi não persiste a
 > sessão; `noExtensions: true` desliga as extensions (raramente usado).
 
@@ -31,11 +31,11 @@ em `\n` (em vez do `LineSplitter` do Dart).
 
 ## Comandos que o Cockpit envia (stdin)
 
-O Cockpit usa o protocolo RPC JSONL do Pi e, para o overlay Remote Pi, o schema
+O Cockpit usa o protocolo RPC JSONL do Pi e, para o overlay Outpost-Pi, o schema
 `protocol/schema/cockpit-control.schema.json`. O schema cobre a família
 `remote_pi_control` e os eventos customizados `remote-pi:*`; o transporte RPC
 continua sendo uma linha `prompt` quando o comando precisa passar pelo hook de
-input da extensão Remote Pi.
+input da extensão Outpost-Pi.
 
 ### `prompt` — manda um prompt do usuário  ✅ usado
 
@@ -64,11 +64,11 @@ que se passe `streamingBehavior`:
 O MVP **desabilita o composer enquanto ocupado** (mais simples que enfileirar),
 então não passa `streamingBehavior`. O gateway suporta `steerIfBusy` para o futuro.
 
-### Overlay `remote_pi_control` — controle Remote Pi  ✅ usado
+### Overlay `remote_pi_control` — controle Outpost-Pi  ✅ usado
 
 Relay/rename não são prompts para o LLM. O Cockpit serializa um envelope de
 controle schema-compatible e o carrega como string no mesmo comando `prompt` que
-o Pi RPC já expõe; a extensão Remote Pi intercepta o texto, executa a ação e
+o Pi RPC já expõe; a extensão Outpost-Pi intercepta o texto, executa a ação e
 engole o input para não poluir o transcript.
 
 ```json

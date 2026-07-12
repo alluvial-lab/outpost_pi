@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 enum RevokeStage { running, done, failed }
 
 /// Estado do dialog de revoke. Sobe um `pi --mode rpc` efêmero (via a
-/// [RevokeGateway]) e manda `/remote-pi revoke <shortId>`. One-shot: roda no
+/// [RevokeGateway]) e manda `/outpost-pi revoke <shortId>`. One-shot: roda no
 /// [run] e reporta done/failed.
 class RevokeController extends ChangeNotifier {
   RevokeController(this._gateway);
