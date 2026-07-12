@@ -85,7 +85,7 @@ export function buildQRUri(
     n: sessionName.slice(0, 80),
   });
   if (roomId) params.set("rm", roomId);
-  return `remotepi://pair?${params.toString()}`;
+  return `outpostpi://pair?${params.toString()}`;
 }
 
 /**

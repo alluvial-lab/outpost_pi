@@ -20,10 +20,10 @@ import { defaultAgentName } from "../session/local_config.js";
  * surprise duplicates, symlinks collapse correctly.
  */
 
-/** Resolved at call time so tests can override via `REMOTE_PI_HOME`. The
+/** Resolved at call time so tests can override via `OUTPOST_PI_HOME`. The
  *  prod path is always `~/.pi/remote/daemons.json`. */
 function registryPathInternal(): string {
-  const root = process.env["REMOTE_PI_HOME"] || homedir();
+  const root = process.env["OUTPOST_PI_HOME"] || homedir();
   return join(root, ".pi", "remote", "daemons.json");
 }
 
@@ -32,7 +32,7 @@ export interface DaemonEntry {
   cwd: string;
   /**
    * Display name (mesh `agent_name`). Persisted here because the supervisor
-   * now injects the daemon's config via `REMOTE_PI_DIRECT_CONFIG` at spawn
+   * now injects the daemon's config via `OUTPOST_PI_DIRECT_CONFIG` at spawn
    * instead of reading a per-cwd `.pi/outpost-pi/config.json`. Legacy entries
    * (cwd only) fall back to `defaultAgentName(cwd)`.
    */

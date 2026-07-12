@@ -14,17 +14,9 @@ import { generateEd25519Keypair, type Ed25519Keypair } from "./crypto.js";
  * VPS without GNOME Keyring/KWallet running) we fall back to a
  * file-backed store at `~/.pi/remote/identity.json` with `0o600`
  * permissions and the parent dir at `0o700`.
- *
- * **Migration**: previous builds used `keytar` against service
- * `dev.remotepi.mac`. This module reads from the old service if the new
- * service is empty, copies the entry to the new service `dev.remotepi.pi`,
- * and deletes the old one. Both keytar and `@napi-rs/keyring` address the
- * same OS-level credential store on every supported platform, so the read
- * succeeds without keeping the deprecated `keytar` dependency.
  */
 
-const NEW_SERVICE = "dev.remotepi.pi";  // platform-neutral
-const OLD_SERVICE = "dev.remotepi.mac"; // legacy keytar service (pre-2026-05-25)
+const NEW_SERVICE = "dev.outpostpi.pi";  // platform-neutral
 const ACCOUNT = "longterm-ed25519";
 
 /**
@@ -49,7 +41,7 @@ export class KeyringUnavailableError extends Error {
       "Platform keyring is unreadable and no file-backed identity exists. " +
       "Refusing to generate a NEW identity (that would break existing " +
       "pairing). Unlock your keychain / start your secret service and retry. " +
-      "Set REMOTE_PI_ALLOW_FILE_IDENTITY=1 to force a file-backed identity. " +
+      "Set OUTPOST_PI_ALLOW_FILE_IDENTITY=1 to force a file-backed identity. " +
       `Cause: ${String(cause)}`,
     );
     this.name = "KeyringUnavailableError";
@@ -192,22 +184,20 @@ async function _writeKeypairToFile(kp: Ed25519Keypair): Promise<void> {
 /**
  * Returns the Pi-secret Ed25519 keypair, generating + persisting one on
  * first call. Resolution order:
- *   1. New keyring service `dev.remotepi.pi` (read retried — a transiently
+ *   1. Keyring service `dev.outpostpi.pi` (read retried — a transiently
  *      locked Keychain throws; we don't treat that as "no key")
- *   2. Old keyring service `dev.remotepi.mac` (migrate → step 1, delete old)
- *   3. File `~/.pi/remote/identity.json` (use if present — never regenerate
+ *   2. File `~/.pi/remote/identity.json` (use if present — never regenerate
  *      over an existing one)
- *   4. Generate a fresh keypair, BUT only when it's safe to: either both
- *      keyring reads succeeded and returned nothing (genuine first run), or
- *      the keyring is genuinely unavailable on a platform without a core one
- *      (headless Linux). On macOS/Windows a persistent read failure with no
- *      file identity throws `KeyringUnavailableError` instead of minting a new
- *      key — generating there silently breaks existing pairing (the "lost
- *      pairing after idle" bug). `REMOTE_PI_ALLOW_FILE_IDENTITY=1` opts back
- *      into a file identity for headless macOS/Windows hosts.
+ *   3. Generate a fresh keypair, BUT only when it's safe to: the keyring read
+ *      succeeded and returned nothing (genuine first run), or the keyring is
+ *      genuinely unavailable on a platform without a core one (headless
+ *      Linux). On macOS/Windows a persistent read failure with no file identity
+ *      throws `KeyringUnavailableError` instead of minting a new key —
+ *      generating there silently breaks existing pairing (the "lost pairing
+ *      after idle" bug). `OUTPOST_PI_ALLOW_FILE_IDENTITY=1` opts back into a
+ *      file identity for headless macOS/Windows hosts.
  *
- * Idempotent: subsequent calls return the same identity. The migration
- * runs at most once per machine (the old entry is deleted after copy).
+ * Idempotent: subsequent calls return the same identity.
  */
 export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
   const backend = _getBackend();
@@ -224,21 +214,10 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
       const existing = await backend.read(NEW_SERVICE, ACCOUNT);
       if (existing) return _deserialize(existing);
 
-      const legacy = await backend.read(OLD_SERVICE, ACCOUNT);
-      if (legacy) {
-        const kp = _deserialize(legacy);
-        await backend.write(NEW_SERVICE, ACCOUNT, legacy);
-        await backend.delete(OLD_SERVICE, ACCOUNT);
-        // Silent migration: writing the chat surface would be premature
-        // (Pi SDK isn't bound yet at this point in boot) and console
-        // output bleeds outside the TUI. The presence of an entry under
-        // NEW_SERVICE is itself the audit signal — re-running migration
-        // is idempotent and harmless.
-        return kp;
-      }
-
-      // Both reads SUCCEEDED and returned nothing → genuine first run on a
-      // working keyring. Generate and save to the new service.
+      // A successful empty read is a genuine first run on a working keyring.
+      // The Outpost-Pi hard cutover deliberately does not inspect legacy
+      // Remote Pi/keytar services.
+      // Generate and save to the new service.
       const fresh = generateEd25519Keypair();
       await backend.write(NEW_SERVICE, ACCOUNT, _serialize(fresh));
       return fresh;
@@ -268,7 +247,7 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
   //    a week idle, and the new key then masks the real Keychain identity via
   //    the file. So we FAIL LOUD instead, unless the operator explicitly
   //    opts into a file identity.
-  const forceFile = process.env.REMOTE_PI_ALLOW_FILE_IDENTITY === "1";
+  const forceFile = process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY === "1";
   if (_keyringExpectedAvailable() && !forceFile) {
     throw new KeyringUnavailableError(keyringError);
   }
