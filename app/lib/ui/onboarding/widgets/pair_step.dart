@@ -105,7 +105,7 @@ class _PairStepState extends State<PairStep> {
               borderRadius: const BorderRadius.all(Radius.circular(6)),
             ),
             child: Text(
-              '/remote-pi pair',
+              '/outpost-pi pair',
               style: TextStyle(
                 fontFamily: kMonoFamily,
                 fontSize: 13,

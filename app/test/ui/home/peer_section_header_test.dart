@@ -48,8 +48,8 @@ void main() {
 
     testWidgets('falls back to sessionName when no nickname is set',
         (tester) async {
-      await _pump(tester, _peer(sessionName: 'remote_pi · main'));
-      expect(find.text('REMOTE_PI · MAIN'), findsOneWidget);
+      await _pump(tester, _peer(sessionName: 'outpost_pi · main'));
+      expect(find.text('OUTPOST_PI · MAIN'), findsOneWidget);
       expect(find.textContaining('via '), findsNothing);
     });
   });

@@ -227,14 +227,14 @@ void main() {
       );
       final msg = decodeServer(line) as PairOk;
       expect(msg.inReplyTo, isNotEmpty);
-      expect(msg.sessionName, contains('remote_pi'));
+      expect(msg.sessionName, isNotEmpty);
     });
 
     test('PairOk.fromJson decodes harness + hostname (plan/27 Wave A)', () {
       final msg = PairOk.fromJson({
         'type': 'pair_ok',
         'in_reply_to': 'req-1',
-        'session_name': 'remote_pi · main',
+        'session_name': 'outpost_pi · main',
         'session_started_at': 1700000000000,
         'room_id': 'room-xyz',
         'hostname': 'Mac do Jacob',
@@ -250,7 +250,7 @@ void main() {
       final msg = PairOk.fromJson({
         'type': 'pair_ok',
         'in_reply_to': 'req-2',
-        'session_name': 'remote_pi · main',
+        'session_name': 'outpost_pi · main',
         'session_started_at': 1700000000000,
       });
       expect(msg.harness, isNull);

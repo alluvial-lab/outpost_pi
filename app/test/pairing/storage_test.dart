@@ -111,14 +111,14 @@ void main() {
     test('nickname round-trips through toJson/fromJson', () {
       const record = PeerRecord(
         remoteEpk: 'pk1',
-        sessionName: 'remote_pi · main',
+        sessionName: 'outpost_pi · main',
         relayUrl: 'ws://x',
         pairedAt: '2026-01-01T00:00:00Z',
         nickname: 'Mac de casa',
       );
       final restored = PeerRecord.fromJson(record.toJson());
       expect(restored.nickname, 'Mac de casa');
-      expect(restored.sessionName, 'remote_pi · main');
+      expect(restored.sessionName, 'outpost_pi · main');
     });
 
     test('legacy record without nickname field → fromJson returns null', () {

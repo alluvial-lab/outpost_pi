@@ -8,7 +8,7 @@
 ///   "notes": "…",
 ///   "artifacts": [
 ///     { "platform": "android", "arch": "universal", "format": "apk",
-///       "url": "…/RemotePi.apk", "sha256": "…", "size": 0 }
+///       "url": "…/OutpostPi.apk", "sha256": "…", "size": 0 }
 ///   ]
 /// }
 /// ```
