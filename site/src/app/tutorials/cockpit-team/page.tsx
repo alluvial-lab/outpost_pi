@@ -9,13 +9,13 @@ import { RevealController } from "@/components/landing/reveal-controller";
 export const metadata: Metadata = {
   title: "An agent team in Cockpit",
   description:
-    "Use Cockpit's multiplexer to run an orchestrator, a backend, and a frontend agent side by side — each in its own folder with its own AGENTS.md, coordinating over the remote-pi mesh.",
+    "Use Cockpit's multiplexer to run an orchestrator, a backend, and a frontend agent side by side — each in its own folder with its own AGENTS.md, coordinating over the outpost-pi mesh.",
 };
 
 /* ---- example AGENTS.md files (one per folder) ---- */
 const ORCHESTRATOR_MD = `# Orchestrator
 
-You coordinate two teammates over the Remote Pi mesh: \`backend\` and
+You coordinate two teammates over the Outpost-Pi mesh: \`backend\` and
 \`frontend\`. You don't write app code yourself — you split the work,
 delegate it, and integrate the results.
 
@@ -31,7 +31,7 @@ Keep each message small and explicit: say what you want and what
 
 const BACKEND_MD = `# Backend
 
-You own the server and API in this folder. On the Remote Pi mesh you are
+You own the server and API in this folder. On the Outpost-Pi mesh you are
 the peer named \`backend\`.
 
 ## How you work
@@ -45,7 +45,7 @@ the peer named \`backend\`.
 
 const FRONTEND_MD = `# Frontend
 
-You own the UI in this folder. On the Remote Pi mesh you are the peer
+You own the UI in this folder. On the Outpost-Pi mesh you are the peer
 named \`frontend\`.
 
 ## How you work
@@ -78,7 +78,7 @@ export default function CockpitTeamTutorial() {
                 <strong className="text-fg">backend</strong>, and a{" "}
                 <strong className="text-fg">frontend</strong> — each with its own{" "}
                 <InlineCode>AGENTS.md</InlineCode>, all talking to each other over
-                the <InlineCode>remote-pi</InlineCode> mesh.
+                the <InlineCode>outpost-pi</InlineCode> mesh.
               </p>
             </header>
 
@@ -105,7 +105,7 @@ export default function CockpitTeamTutorial() {
                   >
                     Getting started
                   </Link>{" "}
-                  (install Pi + the <InlineCode>remote-pi</InlineCode> extension)
+                  (install Pi + the <InlineCode>outpost-pi</InlineCode> extension)
                   and{" "}
                   <Link
                     href="/tutorials/mesh-local"
@@ -128,11 +128,11 @@ export default function CockpitTeamTutorial() {
                     </Link>
                     . On first launch its onboarding checks for{" "}
                     <InlineCode>pi</InlineCode>, the{" "}
-                    <InlineCode>remote-pi</InlineCode> extension, and the
+                    <InlineCode>outpost-pi</InlineCode> extension, and the
                     supervisor, and helps you install anything missing.
                   </li>
                   <li>
-                    The <InlineCode>remote-pi</InlineCode> extension is what hands
+                    The <InlineCode>outpost-pi</InlineCode> extension is what hands
                     every agent the mesh tools, so make sure onboarding is green
                     before you build the team.
                   </li>
@@ -201,7 +201,7 @@ export default function CockpitTeamTutorial() {
                 </p>
                 <Callout variant="tip" title="Name them to match">
                   When an agent asks for a name (or in its{" "}
-                  <InlineCode>/remote-pi</InlineCode> wizard), use{" "}
+                  <InlineCode>/outpost-pi</InlineCode> wizard), use{" "}
                   <InlineCode>orchestrator</InlineCode>,{" "}
                   <InlineCode>backend</InlineCode>, and{" "}
                   <InlineCode>frontend</InlineCode>. Those are the names teammates
@@ -218,7 +218,7 @@ export default function CockpitTeamTutorial() {
                   pane&apos;s composer, run the slash command once.
                 </p>
                 <CodeBlock
-                  code="/remote-pi"
+                  code="/outpost-pi"
                   label="each pane · composer"
                   language="text"
                 />
@@ -244,7 +244,7 @@ export default function CockpitTeamTutorial() {
                 />
                 <p>
                   If a teammate is missing from the roster, run{" "}
-                  <InlineCode>/remote-pi</InlineCode> in its pane and check again.
+                  <InlineCode>/outpost-pi</InlineCode> in its pane and check again.
                 </p>
               </DocsSection>
 

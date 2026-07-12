@@ -1,8 +1,8 @@
-# Remote Pi — Site (NextJS)
+# Outpost-Pi — Site (NextJS)
 
 Antes de editar ou revisar `site/`, leia a referência de stack em [`../.agents/skills/next-site/SKILL.md`](../.agents/skills/next-site/SKILL.md).
 
-Landing page institucional do Remote Pi. Apresenta projeto, links pro GitHub,
+Landing page institucional do Outpost-Pi. Apresenta projeto, links pro GitHub,
 documentação do MVP. **Apenas apresentação — não tem lógica de produto.**
 
 ## Stack
@@ -39,8 +39,8 @@ documentação do MVP. **Apenas apresentação — não tem lógica de produto.*
 
 ## Publicação (deploy)
 
-O site roda em produção (`remote-pi.jacobmoura.work`) como **imagem Docker** no
-Docker Hub: `jacobmoura7/remote-pi-site`. O host de produção puxa a tag
+O site roda em produção (`outpost-pi.jacobmoura.work`) como **imagem Docker** no
+Docker Hub: `jacobmoura7/outpost-pi-site`. O host de produção puxa a tag
 `:latest` — então **publicar = buildar e dar push da imagem**.
 
 ```bash
