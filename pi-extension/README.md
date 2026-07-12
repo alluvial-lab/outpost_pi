@@ -301,7 +301,7 @@ self-hosting docs: paste the URL your reverse proxy exposes.
 This writes `~/.pi/remote/config.json` with `{ "relay": "..." }`. Resolution
 order (highest precedence first):
 
-1. `REMOTE_PI_RELAY` environment variable (CI / one-off overrides)
+1. `OUTPOST_PI_RELAY` environment variable (CI / one-off overrides)
 2. `~/.pi/remote/config.json`
 3. The built-in default (`https://relay-rp1.jacobmoura.work`)
 
@@ -555,7 +555,7 @@ with a `[<cwd>]` prefix, so a single log stream shows every agent.
 Override the relay for a single run without persisting:
 
 ```bash
-REMOTE_PI_RELAY=https://staging.example.tld pi
+OUTPOST_PI_RELAY=https://staging.example.tld pi
 ```
 
 ---

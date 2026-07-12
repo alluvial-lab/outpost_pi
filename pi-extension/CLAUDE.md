@@ -46,7 +46,7 @@ Veja [`../.agents/skills/pi-extension-typescript/SKILL.md`](../.agents/skills/pi
 
 Ordem de resolução (precedência):
 
-1. `process.env.REMOTE_PI_RELAY` — escape hatch pra CI/ops
+1. `process.env.OUTPOST_PI_RELAY` — escape hatch pra CI/ops
 2. `~/.pi/remote/config.json` (`{ "relay": "..." }`) — persistido via
    `/outpost-pi set-relay <url>`
 3. `kDefaultRelayUrl` (`https://relay-rp1.jacobmoura.work`) — produção
