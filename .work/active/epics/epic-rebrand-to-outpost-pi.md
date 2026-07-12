@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi
 kind: epic
-stage: implementing
+stage: review
 tags: [rebrand, fork-posture, pi-extension, app, relay, cockpit, site, docs]
 parent: null
 depends_on: []
@@ -290,3 +290,31 @@ External surfaces (class 4) move to a follow-up epic.
   Patchbay-readiness via the state-conflation refactor.
 - `idea-mobile-conflates-transport-and-agent-state` — parent finding whose
   fix is the backend-swap enabler.
+
+## Epic review (2026-07-12)
+
+**Verdict**: Approve — rebrand core scope complete; en-first deferred
+
+**Summary**: The Outpost-Pi rebrand is implemented and reviewed. 3 of 4 child
+features are done (mechanical-rename, wire-stable migration, provenance);
+en-first (PT→EN) remains at drafting as an explicitly separable, deferrable
+workstream per the locked strategic decision. The rebrand's core scope —
+name, wire-stable identifiers, install identifiers, storage/keyring/launchd,
+provenance, version reset to 0.1.0, durable docs — is complete and reviewed.
+
+**Blockers**: none (all 3 deep-review blockers fixed inline)
+**Important**: 4 backlog items filed (README acknowledgements, branding SVG
+redraw, cross-client auth test, site download links) — none blocking the
+0.1.0 code release; the first two are ethical/visual, the latter two are
+deferred to the external-surfaces follow-up epic.
+
+**Deferred**: en-first feature (PT→EN translation, cockpit-heavy). External
+surfaces (GitHub repo rename, npm publish, branding) — follow-up epic.
+
+**Notes**: Deep-lane epic review. The fresh-context reviewer (gpt-5.6-sol)
+found real issues the implementation missed (build-number semantics,
+half-renamed fixture, stale agent-skill reference, deploy-runbook ambiguity)
+— all fixed. 54 commits ahead of origin/main, tree clean. Ready for release
+cut once the operator confirms the deploy order (relay → Pi restart → app →
+cockpit) and accepts the destructive cutover (phone reinstall + re-pair +
+old-daemon cleanup).
