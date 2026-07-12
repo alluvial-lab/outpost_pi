@@ -36,7 +36,7 @@ export interface CronLogEntry {
 const PREVIEW_LEN = 80;
 
 function logPath(): string {
-  const root = process.env["REMOTE_PI_HOME"] || homedir();
+  const root = process.env["OUTPOST_PI_HOME"] || homedir();
   return join(root, ".pi", "remote", "cron.jsonl");
 }
 

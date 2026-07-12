@@ -20,7 +20,7 @@ import { ipcAddress, usesNamedPipe } from "./ipc.js";
  *     and "claim", which an explicit PID file would have.
  *
  * Lock files live in `<root>/.pi/remote/locks/<roomId>.sock` (where `roomId`
- * is `sha256(realpath(cwd))[:12]` and `<root>` is `$REMOTE_PI_HOME` or the
+ * is `sha256(realpath(cwd))[:12]` and `<root>` is `$OUTPOST_PI_HOME` or the
  * home dir), NOT inside the cwd itself, to dodge:
  *   - The 104/108-char path-length limit on UDS sockets on macOS/Linux.
  *   - Symlinked cwds (realpath canonicalization happens in `roomIdFor`).
@@ -34,9 +34,9 @@ import { ipcAddress, usesNamedPipe } from "./ipc.js";
 
 /** Resolved at call time (not module load) so tests can redirect the lock
  *  dir away from the developer's real `~/.pi/remote/locks` via
- *  `REMOTE_PI_HOME` — same override the daemon registry honors. */
+ *  `OUTPOST_PI_HOME` — same override the daemon registry honors. */
 function locksDir(): string {
-  const root = process.env["REMOTE_PI_HOME"] || homedir();
+  const root = process.env["OUTPOST_PI_HOME"] || homedir();
   return join(root, ".pi", "remote", "locks");
 }
 
