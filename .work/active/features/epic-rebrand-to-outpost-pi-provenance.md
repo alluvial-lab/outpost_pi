@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-provenance
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, docs, legal]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
@@ -81,3 +81,21 @@ provenance record.
   crediting `remote_pi` / Jacob Moura. README editing remains owned by the
   sibling README story and was intentionally not performed here.
 - Preserved `pi-extension/LICENSE` unchanged.
+
+## Review (2026-07-12)
+
+**Verdict**: Approve with comments
+
+**Blockers**: none
+**Important**: README acknowledgements section missing — filed as
+`rebrand-readme-acknowledgements-section` (backlog). The epic's ethical bar
+included README credit; LICENSE + NOTICE satisfy the legal floor and the
+NOTICE credits the origin, but the README "Based on" section was deferred to
+the mechanical-rename story which didn't add it. Small one-line fix.
+**Nits**: none
+
+**Notes**: Deep-lane review (feature scope). LICENSE content verified: standard
+MIT, both copyright lines correct (Jacob Moura + Kevoun from git author
+history). NOTICE concise and credits origin. pi-extension/LICENSE confirmed
+unchanged. The README gap is the only above-nit finding; it's tracked, not
+blocking.

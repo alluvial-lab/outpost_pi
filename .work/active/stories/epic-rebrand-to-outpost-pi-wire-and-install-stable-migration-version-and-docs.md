@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-version-and-docs
 kind: story
-stage: review
+stage: done
 tags: [rebrand, docs, release]
 parent: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration
 depends_on:
