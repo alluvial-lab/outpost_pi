@@ -3,7 +3,7 @@ import UIKit
 import XCTest
 
 
-@testable import remote_pi_identity
+@testable import outpost_pi_identity
 
 // This demonstrates a simple unit test of the Swift portion of this plugin's implementation.
 //
@@ -12,7 +12,7 @@ import XCTest
 class RunnerTests: XCTestCase {
 
   func testGetPlatformVersion() {
-    let plugin = RemotePiIdentityPlugin()
+    let plugin = OutpostPiIdentityPlugin()
 
     let call = FlutterMethodCall(methodName: "getPlatformVersion", arguments: [])
 

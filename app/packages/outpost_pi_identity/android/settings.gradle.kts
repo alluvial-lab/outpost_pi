@@ -1,1 +1,1 @@
-rootProject.name = 'remote_pi_identity'
+rootProject.name = 'outpost_pi_identity'
