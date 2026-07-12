@@ -24,7 +24,7 @@ class ChatPage extends StatelessWidget {
   /// Plan/24-fix-title: optional title hint passed via `go_router`
   /// `extra` from the Home tile. Used as the peer-label fallback in
   /// the AppBar so the user sees the right name *immediately* on
-  /// navigation, instead of "—" / "Remote Pi" until the PeerRecord
+  /// navigation, instead of "—" / "Outpost-Pi" until the PeerRecord
   /// is loaded by the ViewModel and the first `room_meta_updated`
   /// arrives.
   final String? initialTitle;
@@ -313,11 +313,11 @@ class ChatPage extends StatelessWidget {
       return _inferSessionName(state.messages);
     }
     // Plan/24-fix-title: Home knows the peer label before /chat
-    // mounts; use it instead of the generic 'Remote Pi' placeholder
+    // mounts; use it instead of the generic 'Outpost-Pi' placeholder
     // while we wait for the first room_meta_updated to populate
     // `room.name`.
     if (initialTitle != null && initialTitle.isNotEmpty) return initialTitle;
-    return 'Remote Pi';
+    return 'Outpost-Pi';
   }
 
   static String _peerDisplayName(PeerRecord? peer, String? fallback) {
@@ -530,7 +530,7 @@ class ChatPage extends StatelessWidget {
     for (final m in msgs) {
       if (m is UserMsg) return m.text.substring(0, m.text.length.clamp(0, 32));
     }
-    return 'Remote Pi';
+    return 'Outpost-Pi';
   }
 }
 

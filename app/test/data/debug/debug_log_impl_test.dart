@@ -82,7 +82,7 @@ void main() {
   test(
     'log persists to the ring file and survives restart (warm-from-file)',
     () async {
-      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      final path = '${tempDir.path}/outpost_pi_debug.jsonl';
       final log1 = newLog();
       log1.log(MsgSendEvent(ts: DateTime.utc(2026, 7, 4), id: 'msg-1'));
       await disposeAndDrain(log1); // final flush
@@ -102,7 +102,7 @@ void main() {
   );
 
   test('warm-from-file skips corrupt lines without throwing', () async {
-    final path = '${tempDir.path}/remote_pi_debug.jsonl';
+    final path = '${tempDir.path}/outpost_pi_debug.jsonl';
     // Write a mix of valid + corrupt lines.
     await File(path).writeAsString(
       'not valid json\n'
@@ -162,7 +162,7 @@ void main() {
   test(
     'critical events flush immediately (survive a simulated crash)',
     () async {
-      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      final path = '${tempDir.path}/outpost_pi_debug.jsonl';
       final log = newLog();
       log.log(ConnChannelLostEvent(ts: DateTime.now(), stale: false));
       await disposeAndDrain(log); // the immediate flush + dispose re-flush
@@ -186,7 +186,7 @@ void main() {
   });
 
   test('dispose flushes pending lines (lifecycle — review C3)', () async {
-    final path = '${tempDir.path}/remote_pi_debug.jsonl';
+    final path = '${tempDir.path}/outpost_pi_debug.jsonl';
     final log = newLog();
     // A routine (non-critical) event: stays pending until the debounce fires.
     log.log(
@@ -201,7 +201,7 @@ void main() {
   test(
     'disposeDependencies flushes DebugLogImpl registered via addService',
     () async {
-      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      final path = '${tempDir.path}/outpost_pi_debug.jsonl';
       final prefs = Preferences(_FakeSecureStorage());
       await prefs.setDebugLogging(true);
       injector.addService<DebugLog>(
@@ -238,7 +238,7 @@ void main() {
   test(
     'export reads from the file (source of truth) after a forced flush',
     () async {
-      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      final path = '${tempDir.path}/outpost_pi_debug.jsonl';
       // Pre-write a line directly to the file (simulating a prior session).
       await File(path).writeAsString(
         '{"tag":"msgEcho","ts":"2026-07-04T00:00:00.000Z","id":"pre-existing"}\n',
@@ -264,7 +264,7 @@ void main() {
         log.log(MsgSendEvent(ts: DateTime.now(), id: 'msg-$i'));
       }
       await log.export(); // force-flush the snapshot
-      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      final path = '${tempDir.path}/outpost_pi_debug.jsonl';
       final onDisk = await File(path).readAsString();
       // The file must be under the cap (+slack for newlines), not 100 lines.
       expect(
@@ -281,7 +281,7 @@ void main() {
   test(
     'export recovers on-disk state when the in-memory ring diverged',
     () async {
-      final path = '${tempDir.path}/remote_pi_debug.jsonl';
+      final path = '${tempDir.path}/outpost_pi_debug.jsonl';
       // Log a line, flush it to disk, then SIMULATE ring divergence by writing
       // an extra line directly to the file that the ring doesn't know about.
       final log = newLog();
@@ -322,7 +322,7 @@ void main() {
     // and assert clear() does not complete until that flush has settled. If
     // clear() did NOT await the flush, clear() would complete while the flush
     // is still pending — and the stale snapshot could land after the wipe.
-    final path = '${tempDir.path}/remote_pi_debug.jsonl';
+    final path = '${tempDir.path}/outpost_pi_debug.jsonl';
     final log = newLog();
     // Hold the flush in-flight long enough to prove clear() awaits it.
     log.flushDelayForTesting = const Duration(seconds: 5);
@@ -361,7 +361,7 @@ void main() {
   });
 
   test('concurrent flushes write in call order (serialized)', () async {
-    final path = '${tempDir.path}/remote_pi_debug.jsonl';
+    final path = '${tempDir.path}/outpost_pi_debug.jsonl';
     final log = newLog();
     // Fire many critical logs back-to-back — each triggers an immediate flush.
     for (var i = 0; i < 10; i++) {

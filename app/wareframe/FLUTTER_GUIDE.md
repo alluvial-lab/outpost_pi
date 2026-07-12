@@ -1,4 +1,4 @@
-# Remote Pi UI — Flutter Implementation Guide
+# Outpost-Pi UI — Flutter Implementation Guide
 
 Document for implementing the three screens (`ScreenPair`, `ScreenSessions`, `ScreenChat`) and shared components from `screens.jsx`.
 
@@ -544,7 +544,7 @@ Scaffold(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Remote Pi', style: titleTextStyle),
+                Text('Outpost-Pi', style: titleTextStyle),
                 IconButton(
                   onPressed: _handleSettings,
                   icon: GearIcon(),
@@ -786,7 +786,7 @@ Scaffold(
         children: [
           RemoteStatusBar(),
           ChatTopBar(
-            title: 'remote_pi · feature/protocol',
+            title: 'outpost_pi · feature/protocol',
             onBack: () => Navigator.pop(context),
             accent: accent,
           ),

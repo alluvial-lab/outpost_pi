@@ -1,4 +1,4 @@
-# Store Listings — Remote Pi (App Store + Google Play)
+# Store Listings — Outpost-Pi (App Store + Google Play)
 
 Reference copy for both store listings. Keep in sync when metadata changes.
 Google Play section is at the bottom; most copy is shared.
@@ -19,12 +19,12 @@ Google Play section is at the bottom; most copy is shared.
 
 **App Name** (24/30)
 ```
-Remote Pi: Coding Agents
+Outpost-Pi: Coding Agents
 ```
 
-> The on-device name (`CFBundleDisplayName`) stays "Remote Pi" — independent of
-> the store name, which must be globally unique. "Remote Pi" exact is taken by a
-> live app (Ten Fifty Ventures LLC, `com.luisartola.RemotePi`).
+> The on-device name (`CFBundleDisplayName`) stays "Outpost-Pi" — independent of
+> the store name, which must be globally unique. "Outpost-Pi" exact is taken by a
+> live app (Ten Fifty Ventures LLC, `com.luisartola.OutpostPi`).
 
 **Subtitle** (≤30) — pick one:
 ```
@@ -45,7 +45,7 @@ ssh,terminal,developer,cli,ai,assistant,claude,devtools,server,pairing,self-host
 
 ## Description (≤4000)
 ```
-Remote Pi turns your iPhone into the control surface for the AI coding agents running on every machine you work from.
+Outpost-Pi turns your iPhone into the control surface for the AI coding agents running on every machine you work from.
 
 Pair your phone once by scanning a QR code on your Mac. From then on your devices form a mesh: the agents on your machines talk to each other, and your phone is the trusted key that authorizes new peers and lets you step in from anywhere.
 
@@ -60,24 +60,24 @@ YOUR PHONE IS JUST THE AUTHENTICATOR
 You don't run the heavy work on your phone. The agents live on your computers; your phone holds the cryptographic identity that vouches for new devices and gives you a window into what's happening. Pairing uses Ed25519 device keys over TLS.
 
 WORKS WITH THE HARNESS YOU USE
-Remote Pi rides alongside the coding-agent setup you already run on your machines instead of replacing it.
+Outpost-Pi rides alongside the coding-agent setup you already run on your machines instead of replacing it.
 
 OPEN SOURCE & SELF-HOSTABLE
-Remote Pi is open source. Start with the public relay, or point the app at your own self-hosted relay so the connection between your devices runs on infrastructure you control.
+Outpost-Pi is open source. Start with the public relay, or point the app at your own self-hosted relay so the connection between your devices runs on infrastructure you control.
 
 Built for developers who want their agents within reach — on the couch, on the move, or away from the desk.
 ```
 
 ## What's New (1.0.1)
 ```
-First public release of Remote Pi. Pair your phone with your machines, watch your coding agents work in real time, and approve their tool calls from anywhere. Feedback is very welcome.
+First public release of Outpost-Pi. Pair your phone with your machines, watch your coding agents work in real time, and approve their tool calls from anywhere. Feedback is very welcome.
 ```
 
 ## URLs
 ```
-Support URL:        https://remote-pi.jacobmoura.work
-Marketing URL:      https://remote-pi.jacobmoura.work
-Privacy Policy URL: https://remote-pi.jacobmoura.work/privacy
+Support URL:        https://outpost-pi.jacobmoura.work
+Marketing URL:      https://outpost-pi.jacobmoura.work
+Privacy Policy URL: https://outpost-pi.jacobmoura.work/privacy
 ```
 
 ## Classification
@@ -121,7 +121,7 @@ routes ephemeral traffic.
 
 ## App Review Information
 
-> **Why this matters:** Remote Pi is a *companion* app — it can't show full
+> **Why this matters:** Outpost-Pi is a *companion* app — it can't show full
 > functionality without a paired machine, and each pairing code is **single-use
 > and expires in 60 s** (see `lib/pairing/qr_scanner.dart`). A static code in the
 > notes would be dead by the time a reviewer tries it. The accepted solution for
@@ -143,7 +143,7 @@ Email:              jacobaraujo7@gmail.com
 ### Reviewer Notes (paste into App Review Information → Notes)
 ```
 ABOUT THE APP
-Remote Pi is a companion app for developers. It does not work standalone: it pairs with a coding-agent "harness" running on your own computer (Mac/Linux) and lets you monitor those agents and approve their actions from your phone. There is no user account and no sign-in.
+Outpost-Pi is a companion app for developers. It does not work standalone: it pairs with a coding-agent "harness" running on your own computer (Mac/Linux) and lets you monitor those agents and approve their actions from your phone. There is no user account and no sign-in.
 
 WHY A DEMO VIDEO IS PROVIDED
 Pairing requires a live companion machine, and each pairing code is single-use and expires after 60 seconds (a security measure). A static code in these notes would expire before review. The video here — [PUBLIC VIDEO LINK] — shows the complete flow end to end on a physical iPhone: pairing, the live session list across machines, streaming agent output, and approving a tool call.
@@ -202,8 +202,8 @@ Reuses the same brand voice and the **no-E2E copy rule** above.
 
 **App title** (≤30) — Play does **not** require a globally-unique name, so either works:
 ```
-Remote Pi: Coding Agents     (matches App Store)
-Remote Pi                    (plain — available on Play)
+Outpost-Pi: Coding Agents     (matches App Store)
+Outpost-Pi                    (plain — available on Play)
 ```
 
 **Short description** (≤80)
@@ -214,7 +214,7 @@ Watch and approve your AI coding agents on every machine, from your phone.
 **Full description** (≤4000) — Android-adapted ("phone"/"computer" instead of
 "iPhone"/"Mac"). Bullets render fine on Play.
 ```
-Remote Pi turns your phone into the control surface for the AI coding agents running on every machine you work from.
+Outpost-Pi turns your phone into the control surface for the AI coding agents running on every machine you work from.
 
 Pair your phone once by scanning a QR code on your computer. From then on your devices form a mesh: the agents on your machines talk to each other, and your phone is the trusted key that authorizes new peers and lets you step in from anywhere.
 
@@ -229,15 +229,15 @@ YOUR PHONE IS JUST THE AUTHENTICATOR
 You don't run the heavy work on your phone. The agents live on your computers; your phone holds the cryptographic identity that vouches for new devices and gives you a window into what's happening. Pairing uses Ed25519 device keys over TLS.
 
 WORKS WITH THE HARNESS YOU USE
-Remote Pi rides alongside the coding-agent setup you already run on your machines instead of replacing it.
+Outpost-Pi rides alongside the coding-agent setup you already run on your machines instead of replacing it.
 
 OPEN SOURCE & SELF-HOSTABLE
-Remote Pi is open source. Start with the public relay, or point the app at your own self-hosted relay so the connection between your devices runs on infrastructure you control.
+Outpost-Pi is open source. Start with the public relay, or point the app at your own self-hosted relay so the connection between your devices runs on infrastructure you control.
 
 Built for developers who want their agents within reach — on the couch, on the move, or away from the desk.
 ```
 
-**Privacy Policy URL** (required): `https://remote-pi.jacobmoura.work/privacy`
+**Privacy Policy URL** (required): `https://outpost-pi.jacobmoura.work/privacy`
 
 **Category:** Tools (primary). **Tags:** developer tools, productivity.
 **Contains ads:** No. **In-app purchases:** No.

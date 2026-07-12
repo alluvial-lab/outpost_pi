@@ -43,17 +43,18 @@ void main() async {
   // Eagerly construct the SSOT writer so it's consuming the channel from boot
   // (messages can arrive before the chat screen mounts).
   injector.get<SyncService>();
-  runApp(const RemotePiApp());
+  runApp(const OutpostPiApp());
 }
 
-class RemotePiApp extends StatefulWidget {
-  const RemotePiApp({super.key});
+class OutpostPiApp extends StatefulWidget {
+  const OutpostPiApp({super.key});
 
   @override
-  State<RemotePiApp> createState() => _RemotePiAppState();
+  State<OutpostPiApp> createState() => _OutpostPiAppState();
 }
 
-class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
+class _OutpostPiAppState extends State<OutpostPiApp>
+    with WidgetsBindingObserver {
   late final _router = buildRouter(
     injector.get<PairingStorage>(),
     injector.get<ConnectionManager>(),
@@ -127,7 +128,7 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
       // [Preferences] → this Consumer rebuilds → MaterialApp swaps theme.
       child: Consumer<Preferences>(
         builder: (context, prefs, _) => MaterialApp.router(
-          title: 'Remote Pi',
+          title: 'Outpost-Pi',
           theme: buildLightTheme(),
           darkTheme: buildDarkTheme(),
           themeMode: prefs.themeMode,
