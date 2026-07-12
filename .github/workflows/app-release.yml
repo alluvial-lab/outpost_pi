@@ -1,7 +1,7 @@
-# Release Android do app Remote Pi (app/).
+# Release Android do app Outpost-Pi (app/).
 #
 # Trigger: tag `app-v<versão>` (a versão DEVE bater com app/pubspec.yaml).
-# Produz: GitHub Release com `RemotePi.apk` assinado (keystore release) +
+# Produz: GitHub Release com `OutpostPi.apk` assinado (keystore release) +
 # SHA256SUMS. Sem lojas — distribuição direta do APK.
 #
 # Guarda anti-debug: o Gradle do app cai silenciosamente pras debug keys se o
@@ -107,14 +107,14 @@ jobs:
         run: |
           VERSION="${{ steps.v.outputs.version }}"
           mkdir -p out
-          cp build/app/outputs/flutter-apk/app-release.apk out/RemotePi.apk
-          (cd out && sha256sum RemotePi.apk > SHA256SUMS)
+          cp build/app/outputs/flutter-apk/app-release.apk out/OutpostPi.apk
+          (cd out && sha256sum OutpostPi.apk > SHA256SUMS)
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
           jq -n --arg version "$VERSION" --arg date "$(date -u +%F)" \
-            --arg notes "Remote Pi (app) ${VERSION}" \
-            --arg url "$BASE/RemotePi.apk" \
-            --arg sha256 "$(sha256sum out/RemotePi.apk | cut -d' ' -f1)" \
-            --argjson size "$(stat -c%s out/RemotePi.apk)" \
+            --arg notes "Outpost-Pi (app) ${VERSION}" \
+            --arg url "$BASE/OutpostPi.apk" \
+            --arg sha256 "$(sha256sum out/OutpostPi.apk | cut -d' ' -f1)" \
+            --argjson size "$(stat -c%s out/OutpostPi.apk)" \
             '{version:$version, date:$date, notes:$notes, artifacts:[
                {platform:"android", arch:"universal", format:"apk",
                 url:$url, sha256:$sha256, size:$size}]}' \
@@ -125,7 +125,7 @@ jobs:
         run: |
           VERSION="${{ steps.v.outputs.version }}"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" out/RemotePi.apk out/SHA256SUMS out/latest.json --clobber
+            gh release upload "$RELEASE_TAG" out/OutpostPi.apk out/SHA256SUMS out/latest.json --clobber
           else
             NOTES_FILE=$(mktemp)
             {
@@ -134,8 +134,8 @@ jobs:
               echo "---"
               echo "**Publicação no site (gate manual):** baixe o \`latest.json\` desta release e coloque em \`/Users/flutterando/app/data/\` no host do rp-s3 — só então o site e o aviso in-app passam a ofertar esta versão."
             } > "$NOTES_FILE"
-            gh release create "$RELEASE_TAG" out/RemotePi.apk out/SHA256SUMS out/latest.json \
-              --title "Remote Pi (app) ${VERSION}" \
+            gh release create "$RELEASE_TAG" out/OutpostPi.apk out/SHA256SUMS out/latest.json \
+              --title "Outpost-Pi (app) ${VERSION}" \
               --notes-file "$NOTES_FILE" \
               --latest=false
           fi
@@ -143,11 +143,11 @@ jobs:
       - name: Resumo
         run: |
           {
-            echo "## Remote Pi app ${{ steps.v.outputs.version }} — APK publicado"
+            echo "## Outpost-Pi app ${{ steps.v.outputs.version }} — APK publicado"
             echo ""
             echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
             echo ""
-            echo "Asset: \`RemotePi.apk\` (assinado com o keystore release, verificado no job)."
+            echo "Asset: \`OutpostPi.apk\` (assinado com o keystore release, verificado no job)."
             echo ""
             echo "**Próximo passo (manual):** baixar o \`latest.json\` da release e"
             echo "colocar no rp-s3 (\`/Users/flutterando/app/data/\`) pra ir ao ar no site e no aviso in-app."

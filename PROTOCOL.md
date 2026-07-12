@@ -1,6 +1,6 @@
-# Remote Pi — Protocol & Security
+# Outpost-Pi — Protocol & Security
 
-Documentação canônica do protocolo Remote Pi e do modelo de proteção.
+Documentação canônica do protocolo Outpost-Pi e do modelo de proteção.
 Atualizada em 2026-06-09.
 
 ---
@@ -407,7 +407,7 @@ Curto prazo:
 - Wave E3: detecção de clone server-side (alerta quando 2 WS mesma Pi-pubkey de IPs diferentes)
 
 Médio prazo:
-- **Wrappers de harness** (`remote-pi claude`, `remote-pi opencode`): outros agentes coding plugam no broker UDS local via wrapper, ganham mesh sem reimplementar protocolo
+- **Wrappers de harness** (`outpost-pi claude`, `outpost-pi opencode`): outros agentes coding plugam no broker UDS local via wrapper, ganham mesh sem reimplementar protocolo
 - E2E cifragem do payload (Curve25519 + ChaCha20-Poly1305 entre App ↔ Pi; opcional cross-PC)
 
 Longo prazo:
