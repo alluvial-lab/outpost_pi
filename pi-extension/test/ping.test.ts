@@ -109,7 +109,7 @@ function decodeSentCt(raw: string): { peer: string; inner: Record<string, unknow
  */
 async function pairUp(): Promise<void> {
   // Bring just the relay up (no UDS mesh — this test is relay-focused).
-  // The 2026-05-23 surface cleanup removed `remote-pi relay start`; the
+  // The 2026-05-23 surface cleanup removed `outpost-pi relay start`; the
   // equivalent for tests is `_startRelayForTest`.
   const pi = {
     on: () => undefined,

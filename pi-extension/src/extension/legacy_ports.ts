@@ -9,8 +9,8 @@ import type {
   RelayStartInput,
   RelayStartResult,
   RelayTransportPort,
-  RemotePiRuntime,
-  RemotePiRuntimePorts,
+  OutpostPiRuntime,
+  OutpostPiRuntimePorts,
   SdkSessionProjectionPort,
   WakeAgentResult,
 } from "./ports.js";
@@ -52,7 +52,7 @@ export interface LegacySdkSessionProjectionDeps {
 }
 
 export interface LegacyCommandSurfaceDeps {
-  register(pi: ExtensionAPI, runtime: RemotePiRuntime): void;
+  register(pi: ExtensionAPI, runtime: OutpostPiRuntime): void;
   ensureStarted?(ctx: ExtensionContext): void | Promise<void>;
   prepareSessionShutdown?(): void;
   closeMesh?(): Promise<void>;
@@ -65,7 +65,7 @@ export interface LegacyIndexDeps {
   commands: LegacyCommandSurfaceDeps;
 }
 
-export function createLegacyIndexPorts(deps: LegacyIndexDeps): RemotePiRuntimePorts {
+export function createLegacyIndexPorts(deps: LegacyIndexDeps): OutpostPiRuntimePorts {
   return {
     relay: createLegacyRelayTransport(deps.relay),
     owners: createLegacyOwnerMultiplexer(deps.owners),

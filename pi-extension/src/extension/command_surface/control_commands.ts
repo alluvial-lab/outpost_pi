@@ -101,7 +101,7 @@ export class ControlCommands {
     try {
       assigned = await meshNode.rename(newName);  // broker soft rejoin
     } catch (err) {
-      this.deps.notify(`[remote-pi] rename failed: ${String(err)}`, "error", ctx);
+      this.deps.notify(`[outpost-pi] rename failed: ${String(err)}`, "error", ctx);
     }
 
     if (wasStarted && !this.deps.isDisposed()) await this.deps.startRelay(ctx);  // relay back up → roomIdFor(cwd, assigned)

@@ -7,7 +7,7 @@ import { removeStaleSock, tryBind, tryConnect } from "./leader_election.js";
 import { ipcAddress, usesNamedPipe } from "./ipc.js";
 
 /**
- * Per-cwd singleton lock for `/remote-pi`. At most one Pi process per
+ * Per-cwd singleton lock for `/outpost-pi`. At most one Pi process per
  * working directory may hold the lock; the second attempt is refused.
  *
  * Why a UDS bind instead of a PID lock file:
@@ -29,7 +29,7 @@ import { ipcAddress, usesNamedPipe } from "./ipc.js";
  * Caller workflow:
  *   const lock = await acquireCwdLock(cwd);
  *   if (!lock.ok) { ui.notify("Já tem um agente rodando nessa pasta."); return; }
- *   // …run /remote-pi normally; lock auto-releases on process exit
+ *   // …run /outpost-pi normally; lock auto-releases on process exit
  */
 
 /** Resolved at call time (not module load) so tests can redirect the lock

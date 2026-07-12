@@ -18,17 +18,17 @@ describe("ipcAddress", () => {
 
   test("Windows → per-user named pipe", () => {
     expect(ipcAddress("supervisor", "/ignored.sock", "win32", "jacob"))
-      .toBe("\\\\.\\pipe\\remote-pi-supervisor-jacob");
+      .toBe("\\\\.\\pipe\\outpost-pi-supervisor-jacob");
     expect(ipcAddress("broker-local", "/ignored.sock", "win32", "alice"))
-      .toBe("\\\\.\\pipe\\remote-pi-broker-local-alice");
+      .toBe("\\\\.\\pipe\\outpost-pi-broker-local-alice");
   });
 
   test("Windows → sanitizes unsafe chars in suffix + user", () => {
     expect(ipcAddress("broker local", "/x", "win32", "DOMAIN\\user"))
-      .toBe("\\\\.\\pipe\\remote-pi-broker_local-DOMAIN_user");
+      .toBe("\\\\.\\pipe\\outpost-pi-broker_local-DOMAIN_user");
   });
 
   test("Windows → falls back to 'user' when username is empty", () => {
-    expect(ipcAddress("supervisor", "/x", "win32", "")).toBe("\\\\.\\pipe\\remote-pi-supervisor-user");
+    expect(ipcAddress("supervisor", "/x", "win32", "")).toBe("\\\\.\\pipe\\outpost-pi-supervisor-user");
   });
 });

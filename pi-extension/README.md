@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jacobaraujo7/remote_pi/main/branding/logo-full.svg" width="160" alt="Remote Pi logo" />
+  <img src="https://raw.githubusercontent.com/jacobaraujo7/outpost_pi/main/branding/logo-full.svg" width="160" alt="Outpost-Pi logo" />
 </p>
 
-<h1 align="center">Remote Pi</h1>
+<h1 align="center">Outpost-Pi</h1>
 
 > Extend the [Pi coding agent](https://github.com/earendil-works/pi) with two
 > superpowers: agents that talk to each other on the same machine, and a mobile
 > app that drives Pi from your phone.
 
-**Homepage:** <https://remote-pi.jacobmoura.work>
+**Homepage:** <https://outpost-pi.jacobmoura.work>
 
-`/remote-pi` is a single slash command that wires both at once. Run it; the
+`/outpost-pi` is a single slash command that wires both at once. Run it; the
 first time it asks a couple of questions and you are done.
 
 ## Protocol & Security
@@ -27,22 +27,22 @@ document — this README only covers user-facing setup.
 Install the extension (one-time):
 
 ```bash
-pi install npm:remote-pi
+pi install npm:outpost-pi
 ```
 
 Then in any Pi terminal:
 
 ```text
-/remote-pi
+/outpost-pi
 ```
 
 The first run shows a short interactive wizard (agent name, default session,
-whether to auto-start the relay). On every following run, `/remote-pi` joins
+whether to auto-start the relay). On every following run, `/outpost-pi` joins
 the local agent session and starts the relay automatically — no extra typing.
 
 ### Try the agent network in 30 seconds
 
-Open **two** Pi terminals in the same directory and run `/remote-pi` in each.
+Open **two** Pi terminals in the same directory and run `/outpost-pi` in each.
 Both join the same session. Now just talk to the LLM — it has the tools.
 
 In terminal A (say it ended up named `agent-A`):
@@ -72,7 +72,7 @@ wizard's default is the directory name plus a `#N` suffix on collision.)
 
 ## What it does
 
-Remote Pi adds two independent layers on top of Pi. You can use either, or
+Outpost-Pi adds two independent layers on top of Pi. You can use either, or
 both:
 
 ### 1) Agent network (local, same machine)
@@ -107,7 +107,7 @@ The relay sees plaintext envelopes at rest and in forwarding — see
 **Get the app** — all current download options (Google Play, App Store, and
 direct builds while public releases roll out):
 
-<https://remote-pi.jacobmoura.work/#get-the-app>
+<https://outpost-pi.jacobmoura.work/#get-the-app>
 
 ---
 
@@ -161,16 +161,16 @@ plaintext envelope contents. Text-only messages are unaffected.
 Requirements: Node 20+, Pi (the host coding agent).
 
 ```bash
-pi install npm:remote-pi
+pi install npm:outpost-pi
 ```
 
-The extension self-registers the `/remote-pi` slash command and deploys an
+The extension self-registers the `/outpost-pi` slash command and deploys an
 agent skill that teaches the LLM how to use `agent_send` / `agent_request`.
 
 To verify:
 
 ```text
-/remote-pi config
+/outpost-pi config
 ```
 
 It should print the effective relay URL and where it came from
@@ -178,19 +178,19 @@ It should print the effective relay URL and where it came from
 
 ---
 
-## Using `/remote-pi`
+## Using `/outpost-pi`
 
 The bare command is the everyday entry point:
 
 ```text
-/remote-pi
+/outpost-pi
 ```
 
 Behavior depends on whether there's a local config for this directory:
 
 | State | What happens |
 |---|---|
-| First run (no `.pi/remote-pi/config.json`) | Interactive wizard → saves config → joins agent session → starts relay (if you opted in) |
+| First run (no `.pi/outpost-pi/config.json`) | Interactive wizard → saves config → joins agent session → starts relay (if you opted in) |
 | Returning user, auto-start enabled | Joins agent session + starts relay automatically, then prints status |
 | Returning user, auto-start disabled | Prints status only; join/relay must be run manually |
 
@@ -201,35 +201,35 @@ The wizard asks three questions:
 2. **Default session** — the name of the agent-network room for this
    directory. Multiple terminals in the same directory join the same session.
 3. **Auto-start relay (for mobile app access)?** — `Yes` if you want
-   `/remote-pi` to also connect to the relay so the mobile app can reach this
+   `/outpost-pi` to also connect to the relay so the mobile app can reach this
    Pi. `No` for local-only use (agent network without mobile access).
 
-Re-run the wizard later with `/remote-pi setup`.
+Re-run the wizard later with `/outpost-pi setup`.
 
 ---
 
 ## Pairing a mobile device
 
-Once the relay is up (`/remote-pi relay status` shows `started` or `paired`):
+Once the relay is up (`/outpost-pi relay status` shows `started` or `paired`):
 
 ```text
-/remote-pi pair
+/outpost-pi pair
 ```
 
-A QR code is printed in the terminal. Scan it with the Remote Pi mobile app.
+A QR code is printed in the terminal. Scan it with the Outpost-Pi mobile app.
 Pairing is **per machine** — once a device is paired, every Pi process on
 this machine accepts it (it lives in `~/.pi/remote/peers.json`).
 
 To list paired devices:
 
 ```text
-/remote-pi devices
+/outpost-pi devices
 ```
 
 To remove one:
 
 ```text
-/remote-pi revoke <shortid>
+/outpost-pi revoke <shortid>
 ```
 
 The shortid is the first 8 chars shown by `devices`.
@@ -238,7 +238,7 @@ The shortid is the first 8 chars shown by `devices`.
 
 ## The relay
 
-The relay is the only network-touching piece of Remote Pi. It forwards
+The relay is the only network-touching piece of Outpost-Pi. It forwards
 authenticated WebSocket envelopes over TLS, but there is **no app-layer E2E
 encryption** in the current implementation. The relay can see plaintext envelope
 contents while forwarding, plus connection metadata: which keypair is online,
@@ -271,15 +271,15 @@ keypair authentication, layering a VPN on top means **only your devices** can
 even reach the WebSocket port — defense in depth.
 
 Quick Docker outline (see the
-[relay README](https://github.com/jacobaraujo7/remote_pi/blob/main/relay/README.md#self-hosted-relay-recommended-for-privacy)
+[relay README](https://github.com/jacobaraujo7/outpost_pi/blob/main/relay/README.md#self-hosted-relay-recommended-for-privacy)
 for the full setup, environment variables, and reverse-proxy guidance):
 
 ```bash
 docker run -d \
-  --name remote-pi-relay \
+  --name outpost-pi-relay \
   -p 3000:3000 \
   --restart unless-stopped \
-  ghcr.io/jacobaraujo7/remote-pi-relay:latest
+  ghcr.io/jacobaraujo7/outpost-pi-relay:latest
 ```
 
 Bind the container to your VPN interface, terminate TLS in a reverse proxy,
@@ -290,7 +290,7 @@ and point both your Pi and your phone at the resulting `https://…` URL.
 Once your relay is reachable, tell the extension:
 
 ```text
-/remote-pi relay url https://relay.yourdomain.tld
+/outpost-pi relay url https://relay.yourdomain.tld
 ```
 
 The URL **must** be `http://` or `https://` — `ws://` / `wss://` are
@@ -308,11 +308,11 @@ order (highest precedence first):
 Verify the active URL and its source with:
 
 ```text
-/remote-pi config
+/outpost-pi config
 ```
 
-If you change the URL while connected, run `/remote-pi relay stop` then
-`/remote-pi relay start` (or `/remote-pi relay` to toggle).
+If you change the URL while connected, run `/outpost-pi relay stop` then
+`/outpost-pi relay start` (or `/outpost-pi relay` to toggle).
 
 The mobile app has its own relay-URL setting in its preferences pane — keep
 both pointing at the same relay.
@@ -350,10 +350,10 @@ Useful commands:
 
 | Command | What it does |
 |---|---|
-| `/remote-pi join [name]` | Join (or create) a session — only needed manually if `auto_start_relay=false` |
-| `/remote-pi leave` | Leave the current session |
-| `/remote-pi sessions` | List local sessions and which are live |
-| `/remote-pi rename <new>` | Rename this agent in the current session |
+| `/outpost-pi join [name]` | Join (or create) a session — only needed manually if `auto_start_relay=false` |
+| `/outpost-pi leave` | Leave the current session |
+| `/outpost-pi sessions` | List local sessions and which are live |
+| `/outpost-pi rename <new>` | Rename this agent in the current session |
 
 Name collisions inside a session get a numeric suffix automatically
 (`backend`, `backend#2`, `backend#3`). The broker assigns it and returns the
@@ -367,43 +367,43 @@ real name to the peer.
 
 | Command | Description |
 |---|---|
-| `/remote-pi` | Connect (join local mesh + start relay), or run setup on first use |
-| `/remote-pi setup` | Run the setup wizard and update local config |
-| `/remote-pi status` | Show local mesh + relay status |
-| `/remote-pi stop` | Stop everything for **this** terminal (mesh + relay) |
-| `/remote-pi pair` | Show QR code + copy-paste pairing URI for a new mobile device |
-| `/remote-pi devices` | List paired mobile devices (online/offline per device) |
-| `/remote-pi revoke <shortid>` | Revoke a paired device by its shortid |
-| `/remote-pi set-relay <url>` | Persist a new relay URL (http:// or https://) |
+| `/outpost-pi` | Connect (join local mesh + start relay), or run setup on first use |
+| `/outpost-pi setup` | Run the setup wizard and update local config |
+| `/outpost-pi status` | Show local mesh + relay status |
+| `/outpost-pi stop` | Stop everything for **this** terminal (mesh + relay) |
+| `/outpost-pi pair` | Show QR code + copy-paste pairing URI for a new mobile device |
+| `/outpost-pi devices` | List paired mobile devices (online/offline per device) |
+| `/outpost-pi revoke <shortid>` | Revoke a paired device by its shortid |
+| `/outpost-pi set-relay <url>` | Persist a new relay URL (http:// or https://) |
 
 ### Daemon fleet (one supervisor, N background Pis — see [Daemon mode](#daemon-mode))
 
 | Command | Description |
 |---|---|
-| `/remote-pi create <cwd> [--name X]` | Register a folder as a daemon |
-| `/remote-pi remove <id>` | Unregister a daemon (local config preserved) |
-| `/remote-pi daemons` | List registered daemons + state |
-| `/remote-pi daemon start` | Start every registered daemon |
-| `/remote-pi daemon stop` | Stop every running daemon (`/remote-pi stop` stops only the local terminal) |
-| `/remote-pi daemon restart` | Stop + start all daemons |
-| `/remote-pi daemon status` | Detailed runtime status (pid, uptime, restart count) |
-| `/remote-pi daemon send <id> "<text>"` | Send a prompt to a specific daemon |
-| `/remote-pi cron add <id> "<expr>" "<prompt>"` | Schedule a recurring prompt (`--tz`, `--wake`, `--no-skip-busy`, `--catchup`) |
-| `/remote-pi cron list` | List scheduled jobs (schedule, enabled, next run, last status) |
-| `/remote-pi cron run <jobId>` | Fire a job now (ignores its schedule) |
-| `/remote-pi cron enable\|disable <jobId>` | Toggle a job on/off |
-| `/remote-pi cron remove <jobId>` | Delete a job |
-| `/remote-pi cron log [<jobId>] [--tail N]` | Read the fire/skip audit log |
-| `/remote-pi install` | Install `pi-supervisord` as a system service |
-| `/remote-pi uninstall` | Remove the system service (registry preserved) |
+| `/outpost-pi create <cwd> [--name X]` | Register a folder as a daemon |
+| `/outpost-pi remove <id>` | Unregister a daemon (local config preserved) |
+| `/outpost-pi daemons` | List registered daemons + state |
+| `/outpost-pi daemon start` | Start every registered daemon |
+| `/outpost-pi daemon stop` | Stop every running daemon (`/outpost-pi stop` stops only the local terminal) |
+| `/outpost-pi daemon restart` | Stop + start all daemons |
+| `/outpost-pi daemon status` | Detailed runtime status (pid, uptime, restart count) |
+| `/outpost-pi daemon send <id> "<text>"` | Send a prompt to a specific daemon |
+| `/outpost-pi cron add <id> "<expr>" "<prompt>"` | Schedule a recurring prompt (`--tz`, `--wake`, `--no-skip-busy`, `--catchup`) |
+| `/outpost-pi cron list` | List scheduled jobs (schedule, enabled, next run, last status) |
+| `/outpost-pi cron run <jobId>` | Fire a job now (ignores its schedule) |
+| `/outpost-pi cron enable\|disable <jobId>` | Toggle a job on/off |
+| `/outpost-pi cron remove <jobId>` | Delete a job |
+| `/outpost-pi cron log [<jobId>] [--tail N]` | Read the fire/skip audit log |
+| `/outpost-pi install` | Install `pi-supervisord` as a system service |
+| `/outpost-pi uninstall` | Remove the system service (registry preserved) |
 
 All commands above work both as Pi slash commands (interactive) and as
-shell-level `remote-pi <subcommand>` when the package is installed
-globally (`npm install -g remote-pi`).
+shell-level `outpost-pi <subcommand>` when the package is installed
+globally (`npm install -g outpost-pi`).
 
 ### Scheduled prompts (`cron`)
 
-`remote-pi cron` schedules **recurring prompts** to daemons through the
+`outpost-pi cron` schedules **recurring prompts** to daemons through the
 supervisor — e.g. a daily "summarise new PRs". Output flows fire-and-forget to
 the mesh/app like any prompt; the cron layer only audits the dispatch.
 
@@ -411,22 +411,22 @@ the mesh/app like any prompt; the cron layer only audits the dispatch.
   field is supported), with an optional IANA timezone via `--tz`:
 
   ```sh
-  remote-pi cron add a1b2c3d4 "0 9 * * *" "Summarise new PRs" --tz America/Sao_Paulo
+  outpost-pi cron add a1b2c3d4 "0 9 * * *" "Summarise new PRs" --tz America/Sao_Paulo
   ```
 
 - **Minimum interval is 60s** — more frequent schedules are rejected (guards
   token cost + pileup). A fire is **skipped when the daemon is mid-turn**
   (`--no-skip-busy` to override); `--wake` starts a stopped daemon first;
   `--catchup` runs once on supervisor start if the previous run was missed.
-- **Prerequisite**: the supervisor must run as a service (`remote-pi install`).
+- **Prerequisite**: the supervisor must run as a service (`outpost-pi install`).
   Without it there is no scheduler, and `cron` commands say so instead of
   silently pretending to schedule.
 - **Audit**: every fire **and** every skip appends one line to
   `~/.pi/remote/cron.jsonl` with a `result` of `delivered`,
   `woke_and_delivered`, `deliver_failed`, `skipped_busy`, `skipped_down`, or
-  `skipped_disabled` — read it with `remote-pi cron log`.
+  `skipped_disabled` — read it with `outpost-pi cron log`.
 
-Step-by-step walkthrough: the [daemon tutorial](https://remote-pi.jacobmoura.work/tutorials/daemon).
+Step-by-step walkthrough: the [daemon tutorial](https://outpost-pi.jacobmoura.work/tutorials/daemon).
 
 ### Footer + title
 
@@ -453,20 +453,20 @@ See [`docs/daemon.md`](./docs/daemon.md) for troubleshooting.
 ### One-time setup
 
 ```bash
-# Install the package globally so `remote-pi` and `pi-supervisord`
-# are on your PATH (`pi install npm:remote-pi` alone makes the Pi
+# Install the package globally so `outpost-pi` and `pi-supervisord`
+# are on your PATH (`pi install npm:outpost-pi` alone makes the Pi
 # extension available but does NOT expose the CLI binaries — see
 # https://docs.npmjs.com/cli/v10/configuring-npm/package-json#bin).
-npm install -g remote-pi
+npm install -g outpost-pi
 
 # Install the supervisor as a user-level system service. Linux uses
 # systemd --user; macOS uses launchd LaunchAgent. Both auto-start at
 # login and survive reboots.
-remote-pi install
+outpost-pi install
 ```
 
 The `install` command:
-- Writes `~/.config/systemd/user/remote-pi-supervisord.service` (Linux)
+- Writes `~/.config/systemd/user/outpost-pi-supervisord.service` (Linux)
   or `~/Library/LaunchAgents/dev.remotepi.supervisord.plist` (macOS)
 - Activates it via `systemctl --user enable --now` or `launchctl bootstrap`
 - The supervisor starts immediately and re-starts on every login
@@ -478,25 +478,25 @@ For each agent you want to keep alive 24/7:
 ```bash
 # 1. Configure the agent interactively first (one time).
 cd ~/Movies
-pi                                 # /remote-pi → setup wizard, /remote-pi pair, etc
+pi                                 # /outpost-pi → setup wizard, /outpost-pi pair, etc
 
 # 2. Promote to a daemon. The id is derived from the cwd
 #    (sha256(realpath)[:8]), stable across machines.
-remote-pi create ~/Movies --name "Video Editor"
+outpost-pi create ~/Movies --name "Video Editor"
 # → Daemon registered: id=4e39152d name="Video Editor" cwd=/Users/x/Movies
 
 # 3. Start it (supervisor spawns `pi --mode rpc` for this folder).
-remote-pi daemon start
+outpost-pi daemon start
 ```
 
 Now you can:
 
 ```bash
-remote-pi daemons                  # list + state
-remote-pi daemon status            # uptime, pid, restart count
-remote-pi daemon send 4e39152d "Cut the first 30 seconds of latest clip"
-remote-pi daemon stop              # stop all
-remote-pi daemon restart           # restart all
+outpost-pi daemons                  # list + state
+outpost-pi daemon status            # uptime, pid, restart count
+outpost-pi daemon send 4e39152d "Cut the first 30 seconds of latest clip"
+outpost-pi daemon stop              # stop all
+outpost-pi daemon restart           # restart all
 ```
 
 The agent receives the prompt as if a user typed it; its response flows
@@ -507,8 +507,8 @@ via the local UDS mesh.
 ### Removing or uninstalling
 
 ```bash
-remote-pi remove <id>              # unregister one daemon (config preserved)
-remote-pi uninstall                # remove the supervisor service (registry kept)
+outpost-pi remove <id>              # unregister one daemon (config preserved)
+outpost-pi uninstall                # remove the supervisor service (registry kept)
 ```
 
 `uninstall` is reversible — re-running `install` later brings every
@@ -519,7 +519,7 @@ registered daemon back. To wipe the registry entirely, `rm
 
 | Platform | Command |
 |---|---|
-| Linux | `journalctl --user -u remote-pi-supervisord -f` |
+| Linux | `journalctl --user -u outpost-pi-supervisord -f` |
 | macOS | `tail -f ~/.pi/remote/supervisord.log` |
 
 Each spawned daemon's stderr is forwarded into the supervisor's log
@@ -546,7 +546,7 @@ with a `[<cwd>]` prefix, so a single log stream shows every agent.
 
 | Path | Scope | What's in it |
 |---|---|---|
-| `<cwd>/.pi/remote-pi/config.json` | Per-directory | `agent_name`, `session_name`, `auto_start_relay` |
+| `<cwd>/.pi/outpost-pi/config.json` | Per-directory | `agent_name`, `session_name`, `auto_start_relay` |
 | `~/.pi/remote/config.json` | Per-user | `relay` URL |
 | `~/.pi/remote/peers.json` | Per-machine | Paired mobile devices |
 | `~/.pi/remote/sessions/<name>/` | Per-session | Broker socket + `audit.jsonl` |
@@ -565,7 +565,7 @@ REMOTE_PI_RELAY=https://staging.example.tld pi
 **Footer says `🟡 relay waiting for pairing` even though I paired a device.**
 The icon reflects whether *any* device has been paired on this machine, not
 whether one is connected right now. If you really have a paired device in
-`/remote-pi devices`, restart Pi — the cache may be stale (fixed in current
+`/outpost-pi devices`, restart Pi — the cache may be stale (fixed in current
 release; report a bug if it recurs).
 
 **Mobile app times out connecting.** Verify the same relay URL is configured
@@ -587,24 +587,24 @@ other terminal first.
 ## Branding
 
 Official brand assets live in
-[`/branding`](https://github.com/jacobaraujo7/remote_pi/tree/main/branding) —
+[`/branding`](https://github.com/jacobaraujo7/outpost_pi/tree/main/branding) —
 SVG sources for the logo (full, foreground, background, monochrome) plus a
 banner. See the
-[branding README](https://github.com/jacobaraujo7/remote_pi/blob/main/branding/README.md)
+[branding README](https://github.com/jacobaraujo7/outpost_pi/blob/main/branding/README.md)
 for palette and export sizes.
 
 <table>
   <tr>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/jacobaraujo7/remote_pi/main/branding/logo-full.svg" width="96" alt="logo-full" /><br/>
+      <img src="https://raw.githubusercontent.com/jacobaraujo7/outpost_pi/main/branding/logo-full.svg" width="96" alt="logo-full" /><br/>
       <sub><code>logo-full</code></sub>
     </td>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/jacobaraujo7/remote_pi/main/branding/logo-foreground.svg" width="96" alt="logo-foreground" /><br/>
+      <img src="https://raw.githubusercontent.com/jacobaraujo7/outpost_pi/main/branding/logo-foreground.svg" width="96" alt="logo-foreground" /><br/>
       <sub><code>logo-foreground</code></sub>
     </td>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/jacobaraujo7/remote_pi/main/branding/logo-monochrome.svg" width="96" alt="logo-monochrome" /><br/>
+      <img src="https://raw.githubusercontent.com/jacobaraujo7/outpost_pi/main/branding/logo-monochrome.svg" width="96" alt="logo-monochrome" /><br/>
       <sub><code>logo-monochrome</code></sub>
     </td>
   </tr>
@@ -614,11 +614,11 @@ for palette and export sizes.
 
 ## Links
 
-- Homepage: <https://remote-pi.jacobmoura.work>
-- Source: <https://github.com/jacobaraujo7/remote_pi>
+- Homepage: <https://outpost-pi.jacobmoura.work>
+- Source: <https://github.com/jacobaraujo7/outpost_pi>
 - Pi coding agent: <https://github.com/earendil-works/pi>
-- Relay (self-hosting guide): <https://github.com/jacobaraujo7/remote_pi/blob/main/relay/README.md>
-- Issues / bugs: <https://github.com/jacobaraujo7/remote_pi/issues>
+- Relay (self-hosting guide): <https://github.com/jacobaraujo7/outpost_pi/blob/main/relay/README.md>
+- Issues / bugs: <https://github.com/jacobaraujo7/outpost_pi/issues>
 
 ---
 

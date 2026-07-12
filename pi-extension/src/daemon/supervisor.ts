@@ -40,7 +40,7 @@ import { appendCronLog, readCronLog, type CronResult } from "./cron_log.js";
  *     (1s, 5s, 30s, 5min). Give up after 4 attempts to avoid log spam
  *     when the agent is misconfigured.
  *   - Listen on `~/.pi/remote/supervisor.sock` for `ControlRequest`s from
- *     the `remote-pi` CLI. Each connection: 1 request → 1 reply → close.
+ *     the `outpost-pi` CLI. Each connection: 1 request → 1 reply → close.
  *   - Graceful shutdown on SIGTERM/SIGINT: stop all children + unlink
  *     the UDS file so a next supervisor can bind cleanly.
  *
@@ -69,7 +69,7 @@ export class SupervisorAlreadyRunningError extends Error {
   constructor(public readonly sockPath: string) {
     super(
       `Another pi-supervisord is already running (UDS held at ${sockPath}). ` +
-      "Refusing to start a second instance. Use `remote-pi daemon …` to control it, " +
+      "Refusing to start a second instance. Use `outpost-pi daemon …` to control it, " +
       "or stop the running one first.",
     );
     this.name = "SupervisorAlreadyRunningError";
@@ -94,7 +94,7 @@ function _probeSupervisor(path: string): Promise<boolean> {
 }
 
 export interface SupervisorOptions {
-  /** Absolute path to remote-pi's dist/index.js — passed as -e to each
+  /** Absolute path to outpost-pi's dist/index.js — passed as -e to each
    *  spawned `pi`. Defaults to the location relative to where this file
    *  is bundled (so the supervisor finds itself). */
   extensionPath: string;
@@ -294,7 +294,7 @@ export class Supervisor {
 
   /** Spawn a single registered daemon by id. Idempotent: a daemon already
    *  running returns `started: false`. Unknown id → ok:false. This is what
-   *  `/remote-pi create` calls so a freshly-registered folder boots its Pi
+   *  `/outpost-pi create` calls so a freshly-registered folder boots its Pi
    *  immediately instead of waiting for the next supervisor restart. */
   private _opStart(id: string): ControlReply<unknown> {
     const entry = listDaemons().find((d) => d.id === id);
@@ -482,7 +482,7 @@ export class Supervisor {
       const cron = new Cron(job.schedule, opts, () => { void this.fireJob(job.id); });
       this.cronJobs.set(job.id, cron);
     } catch (e) {
-      process.stderr.write(`[remote-pi-supervisord] cron schedule failed for ${job.id}: ${String(e)}\n`);
+      process.stderr.write(`[outpost-pi-supervisord] cron schedule failed for ${job.id}: ${String(e)}\n`);
     }
   }
 
@@ -612,13 +612,13 @@ export class Supervisor {
     // we give up and stay in `crashed`.
     if (slot.restartAttempt >= RESTART_BACKOFFS_MS.length) {
       process.stderr.write(
-        `[remote-pi-supervisord] giving up restart for ${id} after ${slot.restartAttempt} attempts\n`,
+        `[outpost-pi-supervisord] giving up restart for ${id} after ${slot.restartAttempt} attempts\n`,
       );
       return;
     }
     const delay = RESTART_BACKOFFS_MS[slot.restartAttempt]!;
     process.stderr.write(
-      `[remote-pi-supervisord] scheduling restart of ${id} in ${delay}ms (attempt ${slot.restartAttempt + 1})\n`,
+      `[outpost-pi-supervisord] scheduling restart of ${id} in ${delay}ms (attempt ${slot.restartAttempt + 1})\n`,
     );
     slot.restartTimer = setTimeout(() => {
       slot.restartTimer = null;
