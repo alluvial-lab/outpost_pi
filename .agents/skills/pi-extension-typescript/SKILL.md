@@ -182,7 +182,7 @@ The app may debounce or render transitions, but the extension must not leave dur
 
 - Use `ws` only in the extension; `RelayClient` opens with `new WebSocket(toWebSocketUrl(relayUrl))`.
 - Persist canonical relay URLs as HTTP(S); convert configured HTTP(S) relay URLs to WS(S) only at transport open.
-- Relay URL precedence: `REMOTE_PI_RELAY` env, `~/.pi/remote/config.json`, then default relay URL.
+- Relay URL precedence: `OUTPOST_PI_RELAY` env, `~/.pi/remote/config.json`, then default relay URL.
 - Validate user-facing relay URLs; reject empty/malformed `ws://`/`wss://` in slash command input if the command expects HTTP(S).
 - Relay auth flow is `hello { pubkey, room_id?, room_meta? }` → `challenge { nonce }` → `auth { sig }`. [remote-pi-relay-client]{1}
 - Liveness watchdog closes after roughly 70 seconds of no inbound activity; relay pings are expected to keep it alive. [remote-pi-relay-client]{1}
@@ -192,8 +192,7 @@ The app may debounce or render transitions, but the extension must not leave dur
 
 ## Pairing, protocol, and key storage notes
 
-- Pairing storage uses `@napi-rs/keyring` when available: service `dev.remotepi.pi`, account `longterm-ed25519`. [remote-pi-pairing-storage]{1}
-- Legacy keyring service `dev.remotepi.mac` may be migrated; do not strand existing users by blindly regenerating identity. [remote-pi-pairing-storage]{1}
+- Pairing storage uses `@napi-rs/keyring` when available: service `dev.outpostpi.pi`, account `longterm-ed25519`. [remote-pi-pairing-storage]{1}
 - Headless Linux/no secret-service fallback is `~/.pi/remote/identity.json` with file mode `0600` and directory mode `0700`. [remote-pi-pairing-storage]{1}
 - Transient keyring failures should retry rather than generating a new identity. [remote-pi-pairing-storage]{1}
 - Peer records live in `~/.pi/remote/peers.json`; relay config in `~/.pi/remote/config.json`; local per-cwd config in `<cwd>/.pi/remote-pi/config.json`. [remote-pi-pairing-storage]{1}

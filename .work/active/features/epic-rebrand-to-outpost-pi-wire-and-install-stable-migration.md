@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration
 kind: feature
-stage: implementing
+stage: done
 tags: [rebrand, pi-extension, app, relay, cockpit, security, lifecycle]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
@@ -429,3 +429,27 @@ unit)
   upgrade. Accepted; flagged as the highest-data-loss risk. The alternative
   (migration code reading old-if-new-empty) was rejected as over-engineering
   for a single-operator fork.
+
+## Review (2026-07-12)
+
+**Verdict**: Approve with comments (3 blockers fixed inline, 4 important filed as backlog)
+
+**Blockers (all fixed inline)**:
+- Build number `+0` invalid for Android versionCode / iOS / Sparkle → `+1` (app + cockpit)
+- Download links pointed to old Play listing (`work.jacobmoura.remotepi`) → README marked "coming soon"; site links filed as `rebrand-site-download-links-old-appid`
+- Deploy runbook said "reload/restart" → corrected to "full Pi process restart" + added Cockpit to the paired deployment
+
+**Important (filed as backlog)**:
+- `rebrand-cross-client-auth-contract-test` — no cross-component test pins the 3 duplicated auth constants; a future half-rename stays locally green
+- `rebrand-site-download-links-old-appid` — site Play Store links still point to old appid (deferred to external-surfaces epic)
+
+**Important (fixed inline)**:
+- QR fixture `remote-pi://` → `outpostpi://` (half-renamed; fixture validated)
+- cockpit/docs/rpc-protocol.md `remote-pi:*` → `outpost-pi:*` (partial rename missed by sed)
+- `.agents/skills/pi-extension-typescript/SKILL.md` — rolled forward to OUTPOST_PI_RELAY / dev.outpostpi.pi; removed the legacy mac migration line (rebrand removed that code)
+- daemon.md — fixed `grep remotepi` → `grep outpostpi`; added old-label cleanup section
+- AGENTS.md sideload cleanup — `dev.remotepi.app` (nonexistent) → `work.jacobmoura.remotepi` (the actual old applicationId)
+
+**Nits**: none
+
+**Notes**: Deep-lane review (fresh-context, gpt-5.6-sol, Phase 1 completeness). The reviewer found real correctness/release issues the implementation missed — build number semantics, half-renamed fixture, stale agent-skill reference contradicting the removed migration code, deploy-runbook ambiguity. All blockers fixed; remaining important findings tracked. The hard-cutover test, schema/codegen/emitter consistency, and keyring-migration removal verified good.
