@@ -178,8 +178,11 @@ renames that are **version-paired** — mixed versions break:
   old label and must be manually cleaned (`launchctl bootout
   gui/$(id -u)/dev.remotepi.supervisord`).
 
-Safe deploy order: **relay first**, then reload/restart the extension, then
-sideload the app.
+Safe deploy order: **relay first**, then **full Pi process restart**
+(not `/reload` — see below), then sideload the app, then upgrade Cockpit.
+Cockpit 0.1.0 is part of the paired deployment because its control channel
+(`\x00outpost-pi-ctrl:` / `outpost_pi_control` / `outpost-pi:*` events) is
+also hard-cutover — old Cockpit + new extension break the control channel.
 
 ### Reload vs restart (pi-extension)
 
@@ -254,7 +257,7 @@ copy the APK to the workstation and install with `adb` (USB debugging on):
 scp app/build/app/outputs/flutter-apk/app-release.apk <workstation>:~/app.apk
 # on the workstation:
 adb install -r ~/app.apk   # -r keeps data; INSTALL_FAILED_UPDATE_INCOMPATIBLE →
-                            # adb uninstall dev.remotepi.app && adb install
+                            # adb uninstall work.jacobmoura.remotepi && adb install
 ```
 The app's `pubspec.yaml` version is NOT bumped by `release-deploy`; bump it
 manually before building when shipping a new version.

@@ -33,7 +33,7 @@ em `\n` (em vez do `LineSplitter` do Dart).
 
 O Cockpit usa o protocolo RPC JSONL do Pi e, para o overlay Outpost-Pi, o schema
 `protocol/schema/cockpit-control.schema.json`. O schema cobre a família
-`outpost_pi_control` e os eventos customizados `remote-pi:*`; o transporte RPC
+`outpost_pi_control` e os eventos customizados `outpost-pi:*`; o transporte RPC
 continua sendo uma linha `prompt` quando o comando precisa passar pelo hook de
 input da extensão Outpost-Pi.
 
