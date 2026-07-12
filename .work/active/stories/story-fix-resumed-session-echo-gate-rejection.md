@@ -7,7 +7,7 @@ tags: [app, bug, lifecycle, session-replacement]
 parent: feature-reconnect-reproduction
 depends_on:
   - story-verify-resumed-session-echo-gate-rejection
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-05
 updated: 2026-07-05
