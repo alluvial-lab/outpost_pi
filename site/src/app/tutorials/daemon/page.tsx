@@ -53,7 +53,7 @@ export default function DaemonTutorial() {
 
         <DocsSection id="install" title="1. Install the supervisor (once per machine)">
           <p>From inside Pi:</p>
-          <CodeBlock code="/remote-pi install" label="In Pi" language="text" />
+          <CodeBlock code="/outpost-pi install" label="In Pi" language="text" />
           <p>That single command does two things:</p>
           <ul className="ml-6 list-disc space-y-2">
             <li>
@@ -63,7 +63,7 @@ export default function DaemonTutorial() {
               login and after reboot.
             </li>
             <li>
-              Symlinks the <InlineCode>remote-pi</InlineCode> and{" "}
+              Symlinks the <InlineCode>outpost-pi</InlineCode> and{" "}
               <InlineCode>pi-supervisord</InlineCode> CLIs into{" "}
               <InlineCode>~/.local/bin/</InlineCode> so you can manage daemons
               from any shell. If that directory isn&apos;t on your{" "}
@@ -83,13 +83,13 @@ export default function DaemonTutorial() {
             registers any folder and the supervisor injects the daemon&apos;s
             config at spawn (a fixed <InlineCode>assistent</InlineCode>{" "}
             workspace, relay on), so the folder needs no{" "}
-            <InlineCode>.pi/remote-pi/</InlineCode> of its own. To reach the
+            <InlineCode>.pi/outpost-pi/</InlineCode> of its own. To reach the
             daemon from your phone, just make sure this machine has been paired
             once — pairing is per-machine, so any earlier{" "}
-            <InlineCode>/remote-pi pair</InlineCode> on it counts. Then register:
+            <InlineCode>/outpost-pi pair</InlineCode> on it counts. Then register:
           </p>
           <CodeBlock
-            code={`remote-pi create ~/Movies --name "Video Editor"
+            code={`outpost-pi create ~/Movies --name "Video Editor"
 # → Daemon registered: id=4e39152d name="Video Editor" cwd=/Users/you/Movies · started`}
             label="Shell"
             language="bash"
@@ -114,17 +114,17 @@ export default function DaemonTutorial() {
         <DocsSection id="fleet" title="3. Manage the fleet">
           <p>
             Every command works as a Pi slash command (
-            <InlineCode>/remote-pi …</InlineCode>) and, once the CLI is linked,
-            as a plain shell command (<InlineCode>remote-pi …</InlineCode>):
+            <InlineCode>/outpost-pi …</InlineCode>) and, once the CLI is linked,
+            as a plain shell command (<InlineCode>outpost-pi …</InlineCode>):
           </p>
           <CodeBlock
-            code={`remote-pi daemons                  # list registered daemons + state
-remote-pi daemon status            # pid, uptime, restart count
-remote-pi daemon send 4e39152d "Cut the first 30s of the latest clip"
-remote-pi daemon restart 4e39152d  # restart one daemon by id
-remote-pi daemon restart           # ...or the whole fleet (no id)
-remote-pi daemon stop 4e39152d     # stop one
-remote-pi daemon stop              # stop all`}
+            code={`outpost-pi daemons                  # list registered daemons + state
+outpost-pi daemon status            # pid, uptime, restart count
+outpost-pi daemon send 4e39152d "Cut the first 30s of the latest clip"
+outpost-pi daemon restart 4e39152d  # restart one daemon by id
+outpost-pi daemon restart           # ...or the whole fleet (no id)
+outpost-pi daemon stop 4e39152d     # stop one
+outpost-pi daemon stop              # stop all`}
             label="Fleet commands"
             language="bash"
           />
@@ -137,7 +137,7 @@ remote-pi daemon stop              # stop all`}
           <DocsSubsection title="Where the logs are">
             <CodeBlock
               code={`# Linux
-journalctl --user -u remote-pi-supervisord -f
+journalctl --user -u outpost-pi-supervisord -f
 
 # macOS
 tail -f ~/.pi/remote/supervisord.log`}
@@ -166,7 +166,7 @@ tail -f ~/.pi/remote/supervisord.log`}
           >
             The scheduler runs <em>inside</em> the supervisor, so it only fires
             when the supervisor is installed as a user service. Run{" "}
-            <InlineCode>/remote-pi install</InlineCode> (step 1) first — without
+            <InlineCode>/outpost-pi install</InlineCode> (step 1) first — without
             it, <InlineCode>cron add</InlineCode> warns instead of pretending to
             schedule. It is the same launchd / systemd service that keeps your
             daemons alive; there is no second scheduler.
@@ -178,7 +178,7 @@ tail -f ~/.pi/remote/supervisord.log`}
           </p>
           <CodeBlock
             code={`# every weekday at 9am, São Paulo time
-remote-pi cron add 4e39152d "0 9 * * 1-5" "Summarize the new PRs" --tz America/Sao_Paulo
+outpost-pi cron add 4e39152d "0 9 * * 1-5" "Summarize the new PRs" --tz America/Sao_Paulo
 # → Cron j_ab12 added → daemon 4e39152d: "0 9 * * 1-5" (America/Sao_Paulo). Next run: …`}
             label="Schedule a prompt"
             language="bash"
@@ -218,11 +218,11 @@ remote-pi cron add 4e39152d "0 9 * * 1-5" "Summarize the new PRs" --tz America/S
             ). Inspect, test, and audit the fleet&apos;s schedule:
           </p>
           <CodeBlock
-            code={`remote-pi cron list                # schedule, enabled, last run/status, next run
-remote-pi cron run j_ab12          # fire one now, ignoring its schedule
-remote-pi cron disable j_ab12      # pause without deleting (enable to resume)
-remote-pi cron log --tail 20       # recent fires AND skips
-remote-pi cron remove j_ab12       # delete the job`}
+            code={`outpost-pi cron list                # schedule, enabled, last run/status, next run
+outpost-pi cron run j_ab12          # fire one now, ignoring its schedule
+outpost-pi cron disable j_ab12      # pause without deleting (enable to resume)
+outpost-pi cron log --tail 20       # recent fires AND skips
+outpost-pi cron remove j_ab12       # delete the job`}
             label="Inspect & audit"
             language="bash"
           />
@@ -243,14 +243,14 @@ remote-pi cron remove j_ab12       # delete the job`}
 
         <DocsSection id="cleanup" title="Removing a daemon">
           <CodeBlock
-            code={`remote-pi remove <id>              # unregister one daemon (folder config kept)
-remote-pi uninstall                # remove the supervisor service (registry kept)`}
+            code={`outpost-pi remove <id>              # unregister one daemon (folder config kept)
+outpost-pi uninstall                # remove the supervisor service (registry kept)`}
             label="Cleanup"
             language="bash"
           />
           <p>
             <InlineCode>uninstall</InlineCode> is reversible — re-running{" "}
-            <InlineCode>/remote-pi install</InlineCode> later brings every
+            <InlineCode>/outpost-pi install</InlineCode> later brings every
             registered daemon back. Full flags and paths are in the{" "}
             <Link href="/docs#daemon-mode" className="text-accent underline">
               reference docs

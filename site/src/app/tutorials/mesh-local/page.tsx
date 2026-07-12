@@ -32,7 +32,7 @@ export default function MeshLocalTutorial() {
             <article className="prose">
               <DocsSection id="how" title="How local discovery works">
           <p>
-            Every agent that runs <InlineCode>/remote-pi</InlineCode> on a
+            Every agent that runs <InlineCode>/outpost-pi</InlineCode> on a
             machine joins the same local session, named{" "}
             <InlineCode>local</InlineCode>. They meet through a Unix domain
             socket — a local broker at{" "}
@@ -57,11 +57,11 @@ export default function MeshLocalTutorial() {
             </Link>{" "}
             guide. Open a second terminal in a{" "}
             <strong className="text-fg">different</strong> folder and start
-            Remote Pi there too:
+            Outpost-Pi there too:
           </p>
           <CodeBlock
             code={`cd ~/code/service-b
-pi            # then run /remote-pi and answer the wizard`}
+pi            # then run /outpost-pi and answer the wizard`}
             label="Second terminal"
             language="bash"
           />
