@@ -1,5 +1,5 @@
-name: remote_pi_identity_example
-description: "Demonstrates how to use the remote_pi_identity plugin."
+name: outpost_pi_identity_example
+description: "Demonstrates how to use the outpost_pi_identity plugin."
 publish_to: 'none'
 
 environment:
@@ -10,7 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
 
-  remote_pi_identity:
+  outpost_pi_identity:
     path: ../
 
   cryptography: ^2.9.0

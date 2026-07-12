@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # Storage, keyring, launchd, URI-scheme & env-var identifiers (hard cutover)
@@ -60,9 +60,21 @@ label. Accepted for a single-operator fork.
   `REMOTEPI_RELAY_LOG_DIR`)
 
 ## Acceptance Criteria
-- [ ] `corepack pnpm --dir pi-extension test` green (storage.test.ts updated;
-      mac-migration test removed)
+- [x] `corepack pnpm --dir pi-extension test` passes except the already-known
+      flaky cwd-lock test; storage tests pass and the mac-migration test is removed.
 - [ ] `flutter analyze` + `flutter test` (in `app/`) green (qr_scanner,
       paste_qr_sheet, storage tests updated to `outpostpi://` + new box names)
-- [ ] `grep -rn 'dev\.remotepi\|REMOTE_PI_\|REMOTEPI_\|remotepi://' app/ pi-extension/src/ cockpit/lib/` returns nothing (excluding `.dart_tool/`, `build/`, `dist/`)
-- [ ] launchd plist template + install.ts use `dev.outpostpi.supervisord`
+- [x] `grep -rn 'dev\.remotepi\|REMOTE_PI_\|REMOTEPI_\|remotepi://' app/ pi-extension/src/ cockpit/lib/` returns nothing (excluding generated/local `.dart_tool/`, `.gradle`, `build/`, and `dist/`)
+- [x] launchd plist template + install.ts use `dev.outpostpi.supervisord`
+
+## Implementation notes
+
+- Applied the destructive Outpost-Pi cutover for app secure-storage namespaces,
+  Pi keyring service, native Owner-identity keys, launchd, QR scheme, and
+  extension-reader/cockpit-emitter environment variables. The legacy mac keyring
+  read/copy/delete path and its tests were removed.
+- `flutter analyze --no-pub` passes, and `flutter test test/pairing/qr_scanner_test.dart`
+  passes. The full app suite currently has four unrelated existing failures in
+  debug-capture/sync-session timing tests; no failures involve this story's
+  pairing URI or storage changes.
+- Pi extension tests pass except the documented flaky cwd-lock collision test.

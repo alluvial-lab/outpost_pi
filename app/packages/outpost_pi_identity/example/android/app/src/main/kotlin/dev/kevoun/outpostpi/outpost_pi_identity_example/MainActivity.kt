@@ -1,4 +1,4 @@
-package dev.remotepi.remote_pi_identity_example
+package dev.kevoun.outpostpi.outpost_pi_identity_example
 
 import io.flutter.embedding.android.FlutterActivity
 
