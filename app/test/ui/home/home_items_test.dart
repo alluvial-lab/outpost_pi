@@ -78,7 +78,7 @@ void main() {
         room: const RoomInfo(
           roomId: 'r1',
           startedAt: 1,
-          cwd: '/Users/jacob/projects/remote_pi/app',
+          cwd: '/Users/jacob/projects/outpost_pi/app',
         ),
       );
       expect(cwdRoom.displayName, 'app');
