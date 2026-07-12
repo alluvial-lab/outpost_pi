@@ -25,7 +25,7 @@ COPY --from=builder /app/target/release/relay /usr/local/bin/relay
 
 # Persistent state — mesh_versions SQLite lives here.
 # Mount a host directory or a named volume at /data to keep it across container
-# restarts (e.g. `-v remote-pi-data:/data`). Without a mount, /data is ephemeral.
+# restarts (e.g. `-v outpost-pi-data:/data`). Without a mount, /data is ephemeral.
 RUN mkdir -p /data
 VOLUME ["/data"]
 
