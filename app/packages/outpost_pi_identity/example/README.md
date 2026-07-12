@@ -1,6 +1,6 @@
-# remote_pi_identity_example
+# outpost_pi_identity_example
 
-Demonstrates how to use the remote_pi_identity plugin.
+Demonstrates how to use the outpost_pi_identity plugin.
 
 ## Getting Started
 

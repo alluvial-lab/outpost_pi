@@ -4,18 +4,18 @@ import UIKit
 /// Flutter plugin that bridges the Dart `OwnerIdentityStore` API to the
 /// iOS Keychain via [KeychainSyncStore].
 ///
-/// Method channel: `remote_pi_identity`
+/// Method channel: `outpost_pi_identity`
 ///   - `load` → returns `FlutterStandardTypedData(bytes:)` or nil
 ///   - `save({ blob: Uint8List })` → void
 ///   - `delete` → void (idempotent)
 ///   - `isSyncAvailable` → Bool
 ///
-/// Event channel: `remote_pi_identity/events`
+/// Event channel: `outpost_pi_identity/events`
 ///   - Emits the blob whenever it changes. iOS triggers come from two
 ///     sources combined: `NSUbiquitousKeyValueStore` external-change
 ///     notifications and a foreground-poll fallback (Keychain itself
 ///     has no change observer). De-dup is done by comparing bytes.
-public class RemotePiIdentityPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
+public class OutpostPiIdentityPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     private let store = KeychainSyncStore()
     private var eventSink: FlutterEventSink?
     private var lastEmittedBlob: Data?
@@ -23,15 +23,15 @@ public class RemotePiIdentityPlugin: NSObject, FlutterPlugin, FlutterStreamHandl
     private var iCloudObserver: NSObjectProtocol?
 
     public static func register(with registrar: FlutterPluginRegistrar) {
-        let instance = RemotePiIdentityPlugin()
+        let instance = OutpostPiIdentityPlugin()
         let method = FlutterMethodChannel(
-            name: "remote_pi_identity",
+            name: "outpost_pi_identity",
             binaryMessenger: registrar.messenger()
         )
         registrar.addMethodCallDelegate(instance, channel: method)
 
         let event = FlutterEventChannel(
-            name: "remote_pi_identity/events",
+            name: "outpost_pi_identity/events",
             binaryMessenger: registrar.messenger()
         )
         event.setStreamHandler(instance)

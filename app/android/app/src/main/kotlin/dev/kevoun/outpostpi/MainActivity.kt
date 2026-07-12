@@ -1,4 +1,4 @@
-package work.jacobmoura.remotepi
+package dev.kevoun.outpostpi
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -29,7 +29,7 @@ Initial release — Wave 1 of `plan/23-owner-key-sync.md`.
 - `OwnerIdentityStore` abstract interface with sealed
   `IdentityStoreError` (`SyncUnavailable`, `PlatformFailure`).
 - `MethodChannelOwnerIdentityStore` — production impl over
-  `remote_pi_identity` method channel + `remote_pi_identity/events`
+  `outpost_pi_identity` method channel + `outpost_pi_identity/events`
   event channel.
 - `InMemoryOwnerIdentityStore` — fake for tests.
 - iOS impl: `kSecClassGenericPassword` with

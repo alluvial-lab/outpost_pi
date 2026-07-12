@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:remote_pi_identity/remote_pi_identity.dart';
+import 'package:outpost_pi_identity/outpost_pi_identity.dart';
 
 Uint8List _bytes(int seed) =>
     Uint8List.fromList(List.generate(32, (i) => (i * 7 + seed) & 0xff));

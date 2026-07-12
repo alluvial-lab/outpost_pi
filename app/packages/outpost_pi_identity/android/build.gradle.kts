@@ -1,4 +1,4 @@
-group = "dev.remotepi.identity"
+group = "dev.kevoun.outpostpi.identity"
 version = "0.2.0"
 
 buildscript {
@@ -27,7 +27,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.remotepi.identity"
+    namespace = "dev.kevoun.outpostpi.identity"
 
     compileSdk = 36
 

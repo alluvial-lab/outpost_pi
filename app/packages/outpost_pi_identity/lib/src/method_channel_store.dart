@@ -8,16 +8,16 @@ import 'owner_identity_store.dart';
 /// Production [OwnerIdentityStore] that proxies to the native iOS /
 /// Android implementations via Flutter MethodChannel + EventChannel.
 ///
-/// Method channel: `remote_pi_identity`
-/// Event channel:  `remote_pi_identity/events`
+/// Method channel: `outpost_pi_identity`
+/// Event channel:  `outpost_pi_identity/events`
 ///
 /// Native side returns raw bytes (`Uint8List`) for the blob; the Dart
 /// side does (de)serialization via [OwnerIdentity.toBlob] / [fromBlob],
 /// so the native code stays dumb (it only knows "here's a blob, store
 /// it / read it / watch it").
 class MethodChannelOwnerIdentityStore implements OwnerIdentityStore {
-  static const _methodChannel = MethodChannel('remote_pi_identity');
-  static const _eventChannel = EventChannel('remote_pi_identity/events');
+  static const _methodChannel = MethodChannel('outpost_pi_identity');
+  static const _eventChannel = EventChannel('outpost_pi_identity/events');
 
   Stream<OwnerIdentity>? _watch;
 

@@ -8,7 +8,7 @@ void main() {
     const sessionName = 'test+session';
 
     test('parses legacy QR with relay (r=) param', () {
-      final raw = 'remotepi://pair?t=$goodToken&epk=$goodEpk&'
+      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&'
           'r=ws%3A%2F%2Flocalhost&n=$sessionName';
       final qr = QrPairPayload.tryParse(raw);
       expect(qr, isNotNull);
@@ -21,7 +21,7 @@ void main() {
 
     test('parses new QR WITHOUT r= param — relayUrl is null', () {
       final raw =
-          'remotepi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
+          'outpostpi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
       final qr = QrPairPayload.tryParse(raw);
       expect(qr, isNotNull);
       expect(qr!.token, goodToken);
@@ -33,16 +33,16 @@ void main() {
 
     test('rejects when t is missing or wrong length', () {
       final missingT =
-          'remotepi://pair?epk=$goodEpk&n=$sessionName';
+          'outpostpi://pair?epk=$goodEpk&n=$sessionName';
       expect(QrPairPayload.tryParse(missingT), isNull);
 
-      final badT = 'remotepi://pair?t=AAAA&epk=$goodEpk&n=$sessionName';
+      final badT = 'outpostpi://pair?t=AAAA&epk=$goodEpk&n=$sessionName';
       expect(QrPairPayload.tryParse(badT), isNull);
     });
 
     test('rejects when epk has wrong byte length', () {
       final raw =
-          'remotepi://pair?t=$goodToken&epk=AAAAAAAAA&n=$sessionName';
+          'outpostpi://pair?t=$goodToken&epk=AAAAAAAAA&n=$sessionName';
       expect(QrPairPayload.tryParse(raw), isNull);
     });
 
@@ -53,7 +53,7 @@ void main() {
     });
 
     test('empty r= is treated as null (not the empty string)', () {
-      final raw = 'remotepi://pair?t=$goodToken&epk=$goodEpk&'
+      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&'
           'r=&n=$sessionName';
       final qr = QrPairPayload.tryParse(raw);
       expect(qr, isNotNull);
@@ -64,7 +64,7 @@ void main() {
       'parses QR with `rm` (room id) — plan 17 fix lets the app target '
       'the Pi\'s cwd-session at pair_request time',
       () {
-        final raw = 'remotepi://pair?t=$goodToken&epk=$goodEpk&'
+        final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&'
             'rm=abc123def456&n=$sessionName';
         final qr = QrPairPayload.tryParse(raw);
         expect(qr, isNotNull);
@@ -73,14 +73,14 @@ void main() {
     );
 
     test('QR without `rm` (legacy) leaves roomId null', () {
-      final raw = 'remotepi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
+      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
       final qr = QrPairPayload.tryParse(raw);
       expect(qr, isNotNull);
       expect(qr!.roomId, isNull);
     });
 
     test('empty rm= is treated as null', () {
-      final raw = 'remotepi://pair?t=$goodToken&epk=$goodEpk&'
+      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&'
           'rm=&n=$sessionName';
       final qr = QrPairPayload.tryParse(raw);
       expect(qr, isNotNull);

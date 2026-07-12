@@ -1,10 +1,10 @@
-# remote_pi_identity
+# outpost_pi_identity
 
 Owner-key Ed25519 identity synced across devices of the same human via
 platform-native key sync — **iCloud Keychain** on iOS, **Block Store**
 on Android.
 
-Internal plugin for the Remote Pi monorepo. Not published to pub.dev.
+Internal plugin for the Outpost-Pi monorepo. Not published to pub.dev.
 
 ## Scope
 
@@ -56,7 +56,7 @@ through the iCloud / Google Backup pipelines.
 ## Quick start
 
 ```dart
-import 'package:remote_pi_identity/remote_pi_identity.dart';
+import 'package:outpost_pi_identity/outpost_pi_identity.dart';
 
 final store = MethodChannelOwnerIdentityStore();
 
@@ -86,7 +86,7 @@ covering generate / load / watch / delete / `isSyncAvailable`.
 ## API
 
 The package surface lives in
-[`lib/remote_pi_identity.dart`](lib/remote_pi_identity.dart):
+[`lib/outpost_pi_identity.dart`](lib/outpost_pi_identity.dart):
 
 ```dart
 class OwnerIdentity {
@@ -135,19 +135,19 @@ Errors come back as a sealed `IdentityStoreError`:
 ## Layout
 
 ```
-remote_pi_identity/
+outpost_pi_identity/
 ├── lib/
-│   ├── remote_pi_identity.dart    # public barrel
+│   ├── outpost_pi_identity.dart    # public barrel
 │   └── src/
 │       ├── owner_identity.dart    # 64-byte OwnerIdentity (pk||sk)
 │       ├── owner_identity_store.dart  # abstract interface + errors
 │       ├── method_channel_store.dart  # production impl (iOS/Android)
 │       └── in_memory_store.dart       # test / fake impl
 ├── ios/Classes/
-│   ├── RemotePiIdentityPlugin.swift
+│   ├── OutpostPiIdentityPlugin.swift
 │   └── KeychainSyncStore.swift
-├── android/src/main/kotlin/dev/remotepi/identity/
-│   ├── RemotePiIdentityPlugin.kt
+├── android/src/main/kotlin/dev/kevoun/outpostpi/identity/
+│   ├── OutpostPiIdentityPlugin.kt
 │   └── BlockStoreStore.kt
 ├── example/                       # demo app
 └── test/                          # serialization + in-memory tests
@@ -155,8 +155,8 @@ remote_pi_identity/
 
 ## Channels (for native debugging)
 
-- Method channel: `remote_pi_identity`
-- Event channel:  `remote_pi_identity/events`
+- Method channel: `outpost_pi_identity`
+- Event channel:  `outpost_pi_identity/events`
 
 The Dart side passes the serialized 64-byte blob as `Uint8List`; the
 native side stores/retrieves bytes without inspecting them.
