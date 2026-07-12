@@ -7,11 +7,11 @@ provenance: source-direct
 
 # Remote Pi pairing storage
 
-Paraphrased summary: Pairing storage owns the long-term Pi identity and paired peer records. It prefers OS keyring storage for the Ed25519 identity, migrates a legacy service name when present, falls back to a chmod-protected file on headless/no-keyring systems, and stores paired peers under the user's Pi remote directory.
+Paraphrased summary: Pairing storage owns the long-term Pi identity and paired peer records. It prefers OS keyring storage for the Ed25519 identity, falls back to a chmod-protected file on headless/no-keyring systems, and stores paired peers under the user's Pi remote directory.
 
 ## Key passages
 
-- The primary keyring service/account is `dev.remotepi.pi` / `longterm-ed25519`; the file contains a legacy service path for migration from `dev.remotepi.mac`.
+- The primary keyring service/account is `dev.outpostpi.pi` / `longterm-ed25519`. (The pre-rebrand `dev.remotepi.mac` → `dev.remotepi.pi` migration was removed in the 0.1.0 Outpost-Pi rebrand — hard cutover, no legacy read path.)
 - Headless/no-secret-service fallback writes `~/.pi/remote/identity.json` with restrictive permissions; the parent remote directory is also created with restrictive permissions.
 - Transient keyring read/write failures are retried rather than immediately regenerating identity.
 - Paired peers are stored in `~/.pi/remote/peers.json`; helper functions add/list/remove peers and preserve global pairing state across extension sessions.
