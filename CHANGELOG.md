@@ -46,9 +46,32 @@ Version-paired: `app-0.1.0` ↔ `relay-0.1.0` ↔ `extension-0.1.0`.
 
 ### Breaking changes
 - Mixed pre-0.1.0 + 0.1.0 versions break pairing (WS handshake, control
-  channel). Deploy relay → extension (full restart, not `/reload`) → app.
+  channel). Deploy relay → extension (full restart, not `/reload`) → app →
+  cockpit.
 - Phone requires uninstall + reinstall (applicationId changed).
 - Phone loses persisted pairing data (Hive box names changed).
+- Old launchd daemon orphaned under `dev.remotepi.supervisord` — manual
+  `launchctl bootout` cleanup required (see AGENTS.md).
+
+### Bug fixes & resilience (prior unbound work, now released)
+- **Session-stable message delivery**: fixed phone→Pi delivery breaking
+  after session replacement (root cause: process-global singletons clobbered
+  by in-process child AgentSession factories). Added bounded replay queue
+  surviving session-replacement windows.
+- **Cross-side observability**: retroactive relay file logging, extension
+  delivery-path ring log, app debug-log adapter + capture routing, delivery
+  log room-id correlation.
+- **Duplicate-auth handling**: relay closes old/same-device connections on
+  duplicate auth; supersession logging.
+- **Mobile fixes**: chat-blank-on-pair, pair-code QR rendering, pair-request
+  cross-room drops, mobile connection flapping, cross-session history leak,
+  double-messages on session-history replay, subagent tool-card rendering,
+  subagent child-session chatlog wipe.
+- **Stale-context fixes**: MessageApi rearm on reload, WrapActionCtx crash,
+  recoverable delivery tolerance, foreign-session user-message tolerance,
+  resumed-session echo gate rejection.
+- **Transport**: active-room reestablishment on reconnect, peer-channel
+  room-required, outbound fanout suspend on peer offline.
 
 ---
 
