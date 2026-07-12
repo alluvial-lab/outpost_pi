@@ -1,7 +1,15 @@
 [package]
-name = "relay"
+name = "outpost-pi-relay"
+description = "Outpost-Pi WebSocket relay"
 version = "0.2.2"
 edition = "2024"
+
+[lib]
+name = "relay"
+
+[[bin]]
+name = "relay"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.102"

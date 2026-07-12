@@ -1,6 +1,6 @@
-# Remote Pi — Relay
+# Outpost-Pi — Relay
 
-A lightweight WebSocket relay server that connects the **Remote Pi** mobile app to
+A lightweight WebSocket relay server that connects the **Outpost-Pi** mobile app to
 `pi-extension` processes running on your Operational System. It handles peer routing and presence
 tracking without ever reading message content.
 
@@ -64,11 +64,11 @@ party can observe your traffic.
 
 ```bash
 docker run -d \
-  --name remote-pi-relay \
+  --name outpost-pi-relay \
   -p 3000:3000 \
-  -v remote-pi-data:/data \
+  -v outpost-pi-data:/data \
   --restart unless-stopped \
-  jacobmoura7/remote-pi-relay
+  jacobmoura7/outpost-pi-relay
 ```
 
 The relay listens on a **single port** (`3000` by default) and serves three
@@ -83,7 +83,7 @@ if you put it behind a TLS-terminating reverse proxy such as Caddy or nginx).
 
 **`/data` volume**: the relay stores its SQLite database (signed membership
 versions) at `/data/mesh.db` inside the container. Mount a named volume (as in
-the example above) or a host directory (`-v /srv/remote-pi:/data`) so the state
+the example above) or a host directory (`-v /srv/outpost-pi:/data`) so the state
 survives `docker rm` and image upgrades. Without a mount, the database is
 recreated empty each time the container starts and clients re-publish their
 state at the next mutation.
@@ -100,13 +100,13 @@ Example with a custom port and logging (volume mount is the same):
 
 ```bash
 docker run -d \
-  --name remote-pi-relay \
+  --name outpost-pi-relay \
   -p 8080:8080 \
-  -v remote-pi-data:/data \
+  -v outpost-pi-data:/data \
   -e REMOTEPI_RELAY_PORT=8080 \
   -e RUST_LOG=info \
   --restart unless-stopped \
-  jacobmoura7/remote-pi-relay
+  jacobmoura7/outpost-pi-relay
 ```
 
 ### Mesh membership endpoint
