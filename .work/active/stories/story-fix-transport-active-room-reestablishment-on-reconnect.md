@@ -8,7 +8,7 @@ tags: [app, bug, lifecycle, transport]
 parent: feature-reconnect-reproduction
 depends_on:
   - story-verify-mobile-dup-and-reorder-reconnect-repro
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-06
 updated: 2026-07-07

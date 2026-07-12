@@ -5,7 +5,7 @@ stage: drafting
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: [story-stale-extension-runtime-audit]
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 status: superseded
 superseded_by: epic-bold-split-pi-extension-index-sdk-session-projection-module

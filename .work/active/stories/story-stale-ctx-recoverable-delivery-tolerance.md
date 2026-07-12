@@ -6,7 +6,7 @@ tags: [pi-extension, app, bug, transport]
 parent: epic-remote-session-resilience-refactor
 feature_parent: feature-session-stable-message-delivery
 depends_on: []
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-08
 updated: 2026-07-08

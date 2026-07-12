@@ -7,7 +7,7 @@ parent: feature-reconnect-reproduction
 depends_on:
   - story-extension-suspend-fanout-on-peer-offline
   - story-mobile-assistant-message-duplicated-live-replay
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-08
 updated: 2026-07-08
