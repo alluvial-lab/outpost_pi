@@ -2,13 +2,14 @@
 id: epic-rebrand-to-outpost-pi-en-first
 kind: feature
 stage: drafting
-tags: [rebrand, cockpit, app, docs, i18n]
-parent: epic-rebrand-to-outpost-pi
+tags: [rebrand, cockpit, app, docs, i18n, follow-up]
+parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-12
+follow_up_of: epic-rebrand-to-outpost-pi
 ---
 
 # EN-first pass: replace Portuguese with English in shipped product
