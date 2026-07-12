@@ -11,7 +11,7 @@ type InstallTab = {
   note: ReactNode;
 };
 
-const CURL = "curl -fsSL https://remote-pi.jacobmoura.work/install.sh | bash";
+const CURL = "curl -fsSL https://outpost-pi.jacobmoura.work/install.sh | bash";
 
 const INSTALL_TABS: Record<string, InstallTab> = {
   "No Pi yet": {
@@ -29,15 +29,15 @@ const INSTALL_TABS: Record<string, InstallTab> = {
   "Already have Pi": {
     label: "bash + Pi",
     lines: [
-      { p: "$", c: "pi install npm:remote-pi" },
-      { p: "›", c: "/remote-pi" },
-      { p: "›", c: "/remote-pi pair" },
+      { p: "$", c: "pi install npm:outpost-pi" },
+      { p: "›", c: "/outpost-pi" },
+      { p: "›", c: "/outpost-pi pair" },
     ],
-    copy: "pi install npm:remote-pi",
+    copy: "pi install npm:outpost-pi",
     note: (
       <>
-        Run the first line in your shell; the <code>/remote-pi</code> lines run
-        inside <b>Pi</b>. The first <code>/remote-pi</code> is a quick setup
+        Run the first line in your shell; the <code>/outpost-pi</code> lines run
+        inside <b>Pi</b>. The first <code>/outpost-pi</code> is a quick setup
         wizard (name + relay), then <b>pair</b> shows a QR you scan with the app.
       </>
     ),
@@ -69,7 +69,7 @@ export function Install() {
         </div>
 
         <div className="install-card reveal">
-          <div className="tabs" role="tablist" aria-label="Install Remote Pi">
+          <div className="tabs" role="tablist" aria-label="Install Outpost-Pi">
             {tabs.map((t) => (
               <button
                 key={t}

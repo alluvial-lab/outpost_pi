@@ -6,7 +6,7 @@ import { Callout } from "@/components/callout";
 import { Pager } from "@/components/pager";
 import { RevealController } from "@/components/landing/reveal-controller";
 
-const GITHUB_URL = "https://github.com/jacobaraujo7/remote_pi";
+const GITHUB_URL = "https://github.com/jacobaraujo7/outpost_pi";
 
 export const metadata: Metadata = {
   title: "Remote mesh",
@@ -43,7 +43,7 @@ export default function MeshRemoteTutorial() {
           </p>
           <ul className="ml-6 list-disc space-y-2">
             <li>
-              On each machine, run <InlineCode>/remote-pi</InlineCode> and answer{" "}
+              On each machine, run <InlineCode>/outpost-pi</InlineCode> and answer{" "}
               <strong className="text-fg">Yes</strong> to using the relay.
             </li>
             <li>

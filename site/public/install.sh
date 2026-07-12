@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Remote Pi — zero-to-running bootstrap installer
+# Outpost-Pi — zero-to-running bootstrap installer
 # ================================================
 #
-#   curl -fsSL https://remote-pi.jacobmoura.work/install.sh | bash
+#   curl -fsSL https://outpost-pi.jacobmoura.work/install.sh | bash
 #
 # What it does (all user-space, NO sudo, idempotent):
 #   1. Node      — uses the system Node if it's >= 20.6.0; otherwise installs
@@ -11,10 +11,10 @@
 #   2. Pi        — installs the Pi coding agent (npm package
 #                  @earendil-works/pi-coding-agent) into a user-space prefix
 #                  (~/.local) so `pi` lands on ~/.local/bin without root.
-#   3. remote-pi — installs this plugin into Pi (`pi install npm:remote-pi`).
-#   4. CLI link  — symlinks the `remote-pi` CLI into ~/.local/bin.
+#   3. outpost-pi — installs this plugin into Pi (`pi install npm:outpost-pi`).
+#   4. CLI link  — symlinks the `outpost-pi` CLI into ~/.local/bin.
 #   5. Supervisor— installs the per-user service (launchd GUI agent on macOS,
-#                  `systemd --user` on Linux) via `remote-pi install`.
+#                  `systemd --user` on Linux) via `outpost-pi install`.
 #   6. Stops.    — does NOT pair. Prints the next step (pair your phone).
 #
 # OS support: macOS and native Linux. Windows is asked to use WSL and exits
@@ -30,12 +30,12 @@ set -euo pipefail
 MIN_NODE="20.6.0"               # Pi requires Node >= 20.6.0
 NODE_LTS="22"                   # what we install via nvm when Node is missing
 PI_PKG="@earendil-works/pi-coding-agent"
-PLUGIN_SPEC="npm:remote-pi"
-PLUGIN_NAME="remote-pi"
+PLUGIN_SPEC="npm:outpost-pi"
+PLUGIN_NAME="outpost-pi"
 USER_PREFIX="$HOME/.local"      # user-space npm global prefix (sudo-free)
 LOCAL_BIN="$USER_PREFIX/bin"
 
-# Resolved at runtime by ensure_plugin() — `pi install npm:remote-pi` runs
+# Resolved at runtime by ensure_plugin() — `pi install npm:outpost-pi` runs
 # `npm install -g`, so the plugin lands under `npm root -g`, NOT in
 # ~/.pi/agent/npm. We can't hardcode it: it depends on the effective npm
 # prefix (nvm dir, ~/.local, a user .npmrc, …). Always ask `npm root -g`.
@@ -77,7 +77,7 @@ OS="$(detect_os)"
 
 if [ "$OS" = "windows" ]; then
   cat <<EOF
-${BOLD}Remote Pi${RST} doesn't run natively on Windows.
+${BOLD}Outpost-Pi${RST} doesn't run natively on Windows.
 
 Please use ${BOLD}WSL${RST} (Windows Subsystem for Linux) and re-run this
 installer inside your WSL shell — it's treated as Linux and works the same:
@@ -86,7 +86,7 @@ installer inside your WSL shell — it's treated as Linux and works the same:
   wsl --install
 
   ${DIM}# then, inside the WSL (Ubuntu) shell:${RST}
-  curl -fsSL https://remote-pi.jacobmoura.work/install.sh | bash
+  curl -fsSL https://outpost-pi.jacobmoura.work/install.sh | bash
 
 EOF
   exit 0
@@ -96,7 +96,7 @@ if [ "$OS" = "unknown" ]; then
   die "unsupported platform '$(uname -s 2>/dev/null)'. Only macOS and Linux are supported."
 fi
 
-printf '%s\n' "${BOLD}Remote Pi installer${RST} ${DIM}(${OS}, user-space, no sudo)${RST}"
+printf '%s\n' "${BOLD}Outpost-Pi installer${RST} ${DIM}(${OS}, user-space, no sudo)${RST}"
 echo
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ persist_path_in_rc() {
     return 0
   fi
   {
-    printf '\n# Added by Remote Pi installer\n%s\n' "$line"
+    printf '\n# Added by Outpost-Pi installer\n%s\n' "$line"
   } >> "$rc"
   warn "added ~/.local/bin to PATH in $rc — open a new shell or 'source $rc'"
 }
@@ -269,7 +269,7 @@ ensure_pi() {
   record "Pi:         ${v:-installed} (${PI_PKG})"
 }
 
-# ── 3. remote-pi plugin ──────────────────────────────────────────────────────
+# ── 3. outpost-pi plugin ──────────────────────────────────────────────────────
 
 # Locate the plugin's compiled entry. Pi's install path CHANGED across versions:
 #   • Pi >= 0.78 (@earendil-works): installs into ~/.pi/agent/npm/node_modules/
@@ -277,9 +277,9 @@ ensure_pi() {
 # We check both, current-behavior first, and use whichever exists. Sets the
 # global PLUGIN_DIST. Returns 1 if neither is found.
 plugin_dist_candidates() {
-  printf '%s\n' "$HOME/.pi/agent/npm/node_modules/remote-pi/dist/index.js"
+  printf '%s\n' "$HOME/.pi/agent/npm/node_modules/outpost-pi/dist/index.js"
   local root; root="$(npm_global_root)"
-  [ -n "$root" ] && printf '%s\n' "$root/remote-pi/dist/index.js"
+  [ -n "$root" ] && printf '%s\n' "$root/outpost-pi/dist/index.js"
 }
 
 resolve_plugin_dist() {
@@ -292,11 +292,11 @@ resolve_plugin_dist() {
 }
 
 ensure_plugin() {
-  step "Installing the remote-pi plugin into Pi"
+  step "Installing the outpost-pi plugin into Pi"
 
   if resolve_plugin_dist; then
     ok "plugin already installed ($(dirname "$(dirname "$PLUGIN_DIST")")) — skipping"
-    record "Plugin:     remote-pi (pre-existing)"
+    record "Plugin:     outpost-pi (pre-existing)"
     return 0
   fi
 
@@ -306,27 +306,27 @@ ensure_plugin() {
   # Pi may install into ~/.pi/agent/npm (>= 0.78) or `npm root -g` (0.73).
   # resolve_plugin_dist() checks both — never a single hardcoded path.
   if ! resolve_plugin_dist; then
-    die "plugin install ran but remote-pi/dist/index.js was not found.
+    die "plugin install ran but outpost-pi/dist/index.js was not found.
     Looked in:
-      $HOME/.pi/agent/npm/node_modules/remote-pi/dist/index.js
-      $(npm_global_root)/remote-pi/dist/index.js
+      $HOME/.pi/agent/npm/node_modules/outpost-pi/dist/index.js
+      $(npm_global_root)/outpost-pi/dist/index.js
     Check the 'pi install $PLUGIN_SPEC' output above."
   fi
   local pkg_json; pkg_json="$(dirname "$(dirname "$PLUGIN_DIST")")/package.json"
   local v; v="$(node -p "require('$pkg_json').version" 2>/dev/null || true)"
-  ok "installed remote-pi plugin${v:+ v$v} → $PLUGIN_DIST"
-  record "Plugin:     remote-pi${v:+ v$v}"
+  ok "installed outpost-pi plugin${v:+ v$v} → $PLUGIN_DIST"
+  record "Plugin:     outpost-pi${v:+ v$v}"
 }
 
-# ── 4. Link the remote-pi CLI into ~/.local/bin ──────────────────────────────
+# ── 4. Link the outpost-pi CLI into ~/.local/bin ──────────────────────────────
 #
-# `pi install npm:remote-pi` makes the slash command available inside Pi, but it
-# does NOT put the `remote-pi` CLI on $PATH. We symlink it ourselves (the same
-# thing `/remote-pi install` does from inside Pi's TUI, which we can't run from a
+# `pi install npm:outpost-pi` makes the slash command available inside Pi, but it
+# does NOT put the `outpost-pi` CLI on $PATH. We symlink it ourselves (the same
+# thing `/outpost-pi install` does from inside Pi's TUI, which we can't run from a
 # headless installer).
 
 link_cli() {
-  step "Linking the remote-pi CLI into $LOCAL_BIN"
+  step "Linking the outpost-pi CLI into $LOCAL_BIN"
   mkdir -p "$LOCAL_BIN"
   local target="$PLUGIN_DIST"
   local link="$LOCAL_BIN/$PLUGIN_NAME"
@@ -344,20 +344,20 @@ link_cli() {
 
 # ── 5. Supervisor (per-user service) ─────────────────────────────────────────
 #
-# `remote-pi install` writes a launchd GUI agent (macOS) or `systemd --user`
+# `outpost-pi install` writes a launchd GUI agent (macOS) or `systemd --user`
 # unit (Linux) and activates it. It's idempotent (re-running refreshes the
 # unit) and never asks for sudo — it only touches per-user paths.
 
 install_supervisor() {
   step "Installing the user supervisor service ($OS)"
   # Run via the CLI we just linked. PATH already includes ~/.local/bin.
-  if remote-pi install; then
+  if outpost-pi install; then
     ok "supervisor installed and activated"
     record "Supervisor: installed (${OS})"
   else
     warn "supervisor install reported an error — see the output above"
-    warn "you can re-run it any time with:  remote-pi install"
-    record "Supervisor: FAILED — re-run 'remote-pi install'"
+    warn "you can re-run it any time with:  outpost-pi install"
+    record "Supervisor: FAILED — re-run 'outpost-pi install'"
   fi
 }
 
@@ -365,7 +365,7 @@ install_supervisor() {
 
 print_next_steps() {
   echo
-  printf '%s\n' "${GRN}${BOLD}Remote Pi is installed.${RST} Here's what's on disk:"
+  printf '%s\n' "${GRN}${BOLD}Outpost-Pi is installed.${RST} Here's what's on disk:"
   echo
   local entry
   for entry in "${SUMMARY[@]}"; do
@@ -375,22 +375,22 @@ print_next_steps() {
   printf '%s\n' "${BOLD}Next step — pair your phone:${RST}"
   cat <<EOF
 
-    1. Install the ${BOLD}Remote Pi${RST} app on your phone.
-    2. In any terminal, open Pi and start Remote Pi:
+    1. Install the ${BOLD}Outpost-Pi${RST} app on your phone.
+    2. In any terminal, open Pi and start Outpost-Pi:
 
          ${BOLD}pi${RST}
-         ${BOLD}/remote-pi${RST}
+         ${BOLD}/outpost-pi${RST}
 
        (the first run shows a short wizard, then prints a QR code)
     3. Scan the QR with the app to pair.
 
-    Manage the always-on daemon later with ${BOLD}remote-pi${RST} (now on your PATH).
-    Docs: ${DIM}https://remote-pi.jacobmoura.work${RST}
+    Manage the always-on daemon later with ${BOLD}outpost-pi${RST} (now on your PATH).
+    Docs: ${DIM}https://outpost-pi.jacobmoura.work${RST}
 
 EOF
   case ":$PATH:" in
     *":$LOCAL_BIN:"*) : ;;
-    *) warn "Open a new shell (or 'source' your shell rc) so 'pi' and 'remote-pi' are on PATH." ;;
+    *) warn "Open a new shell (or 'source' your shell rc) so 'pi' and 'outpost-pi' are on PATH." ;;
   esac
 }
 
