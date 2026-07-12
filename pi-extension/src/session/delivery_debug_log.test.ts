@@ -142,24 +142,24 @@ describe("DeliveryDebugLogImpl adapter mechanics", () => {
 });
 
 describe("DeliveryDebugLog factory + correlation", () => {
-  test("createDeliveryDebugLog returns no-op when REMOTE_PI_DEBUG_LOG is unset", () => {
-    const prev = process.env["REMOTE_PI_DEBUG_LOG"];
-    delete process.env["REMOTE_PI_DEBUG_LOG"];
+  test("createDeliveryDebugLog returns no-op when OUTPOST_PI_DEBUG_LOG is unset", () => {
+    const prev = process.env["OUTPOST_PI_DEBUG_LOG"];
+    delete process.env["OUTPOST_PI_DEBUG_LOG"];
     try {
       const log = createDeliveryDebugLog();
       expect(log).toBe(noopDeliveryDebugLog);
       // No-op log does nothing and never throws.
       expect(() => log.log({ tag: "msg_received", id: "x", source: "app", steer: false })).not.toThrow();
     } finally {
-      if (prev !== undefined) process.env["REMOTE_PI_DEBUG_LOG"] = prev;
+      if (prev !== undefined) process.env["OUTPOST_PI_DEBUG_LOG"] = prev;
     }
   });
 
-  test("createDeliveryDebugLog returns a file-backed log when REMOTE_PI_DEBUG_LOG=1", () => {
+  test("createDeliveryDebugLog returns a file-backed log when OUTPOST_PI_DEBUG_LOG=1", () => {
     const dir = mkdtempSync(join(tmpdir(), "rp-factory-"));
-    const prevHome = process.env["REMOTE_PI_HOME"];
-    process.env["REMOTE_PI_HOME"] = dir;
-    process.env["REMOTE_PI_DEBUG_LOG"] = "1";
+    const prevHome = process.env["OUTPOST_PI_HOME"];
+    process.env["OUTPOST_PI_HOME"] = dir;
+    process.env["OUTPOST_PI_DEBUG_LOG"] = "1";
     try {
       const log = createDeliveryDebugLog();
       expect(log).not.toBe(noopDeliveryDebugLog);
@@ -168,9 +168,9 @@ describe("DeliveryDebugLog factory + correlation", () => {
       expect(exported).toContain("session_lifecycle");
       expect(exported).toContain("reload");
     } finally {
-      if (prevHome === undefined) delete process.env["REMOTE_PI_HOME"];
-      else process.env["REMOTE_PI_HOME"] = prevHome;
-      delete process.env["REMOTE_PI_DEBUG_LOG"];
+      if (prevHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = prevHome;
+      delete process.env["OUTPOST_PI_DEBUG_LOG"];
       rmSync(dir, { recursive: true, force: true });
     }
   });

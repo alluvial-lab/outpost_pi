@@ -58,7 +58,7 @@ const SUPERVISOR_SOCK_NAME = "supervisor.sock";
 const RESTART_BACKOFFS_MS = [1_000, 5_000, 30_000, 5 * 60_000];
 
 function supervisorSockPath(): string {
-  const root = process.env["REMOTE_PI_HOME"] || homedir();
+  const root = process.env["OUTPOST_PI_HOME"] || homedir();
   // POSIX → ~/.pi/remote/supervisor.sock; Windows → per-user named pipe (plan/40).
   return ipcAddress("supervisor", join(root, ".pi", "remote", SUPERVISOR_SOCK_NAME));
 }
@@ -568,7 +568,7 @@ export class Supervisor {
       if (existing.child.state === "running") void existing.child.stop();
     }
 
-    // Build the daemon's config and inject it via REMOTE_PI_DIRECT_CONFIG —
+    // Build the daemon's config and inject it via OUTPOST_PI_DIRECT_CONFIG —
     // no per-cwd config file needed. The daemon scopes by (cwd, name) like any
     // agent (plan/38); relay on.
     const config: LocalConfig = {

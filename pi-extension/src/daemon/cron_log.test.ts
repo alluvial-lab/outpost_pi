@@ -8,10 +8,10 @@ let home: string;
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "pi-cronlog-"));
-  process.env["REMOTE_PI_HOME"] = home;
+  process.env["OUTPOST_PI_HOME"] = home;
 });
 afterEach(() => {
-  delete process.env["REMOTE_PI_HOME"];
+  delete process.env["OUTPOST_PI_HOME"];
   try { rmSync(home, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 

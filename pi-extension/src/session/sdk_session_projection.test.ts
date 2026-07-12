@@ -69,7 +69,7 @@ describe("SdkSessionProjection messageApi binding across session_start", () => {
 
     // The pi-armed binding must survive (this is what pair-code relies on).
     expect(projection.messageApiBinding()).toBe(pi);
-    expect(projection.sendPiMessage({ customType: "remote-pi:pair-code", content: "qr", display: true }))
+    expect(projection.sendPiMessage({ customType: "outpost-pi:pair-code", content: "qr", display: true }))
       .toBe(true);
     expect(pi.sendMessage).toHaveBeenCalledTimes(1);
   });
