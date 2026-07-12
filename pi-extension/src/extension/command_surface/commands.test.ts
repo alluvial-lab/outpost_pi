@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { registerRemotePiCommands, type RemotePiCommandSpec } from "./commands.js";
+import { registerOutpostPiCommands, type OutpostPiCommandSpec } from "./commands.js";
 
 function fakePi() {
   const commands = new Map<string, { getArgumentCompletions?: (prefix: string) => Promise<Array<{ value: string; label: string }>>; handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }>();
@@ -12,13 +12,13 @@ function fakePi() {
   return { pi, commands };
 }
 
-describe("registerRemotePiCommands", () => {
+describe("registerOutpostPiCommands", () => {
   test("derives root and nested registrations from one spec table", async () => {
     const { pi, commands } = fakePi();
     const setup = vi.fn();
     const revoke = vi.fn();
     const root = vi.fn();
-    const specs: RemotePiCommandSpec[] = [
+    const specs: OutpostPiCommandSpec[] = [
       { suffix: "setup", description: "Setup", run: setup },
       {
         suffix: "revoke",
@@ -34,22 +34,22 @@ describe("registerRemotePiCommands", () => {
       },
     ];
 
-    registerRemotePiCommands(pi, specs, root);
+    registerOutpostPiCommands(pi, specs, root);
 
     expect([...commands.keys()]).toEqual([
-      "remote-pi",
-      "remote-pi setup",
-      "remote-pi revoke",
-      "remote-pi cron",
+      "outpost-pi",
+      "outpost-pi setup",
+      "outpost-pi revoke",
+      "outpost-pi cron",
     ]);
-    await commands.get("remote-pi setup")!.handler("", {} as ExtensionCommandContext);
+    await commands.get("outpost-pi setup")!.handler("", {} as ExtensionCommandContext);
     expect(setup).toHaveBeenCalledOnce();
-    await commands.get("remote-pi")!.handler("unknown", {} as ExtensionCommandContext);
+    await commands.get("outpost-pi")!.handler("unknown", {} as ExtensionCommandContext);
     expect(root).toHaveBeenCalledWith("unknown", expect.anything());
-    await expect(commands.get("remote-pi")!.getArgumentCompletions!("cron ")).resolves.toEqual([
+    await expect(commands.get("outpost-pi")!.getArgumentCompletions!("cron ")).resolves.toEqual([
       { value: "cron add", label: "cron add" },
     ]);
-    await expect(commands.get("remote-pi")!.getArgumentCompletions!("revoke ")).resolves.toEqual([
+    await expect(commands.get("outpost-pi")!.getArgumentCompletions!("revoke ")).resolves.toEqual([
       { value: "revoke abc", label: "revoke abc" },
     ]);
   });

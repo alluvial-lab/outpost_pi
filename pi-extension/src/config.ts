@@ -14,20 +14,20 @@ const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
  */
 export const kDefaultRelayUrl = "https://relay-rp1.jacobmoura.work";
 
-export type RemotePiConfig = { relay?: string };
+export type OutpostPiConfig = { relay?: string };
 
-export function loadConfig(): RemotePiConfig {
+export function loadConfig(): OutpostPiConfig {
   try {
     const raw = fs.readFileSync(CONFIG_FILE, "utf8");
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== "object") return {};
-    return parsed as RemotePiConfig;
+    return parsed as OutpostPiConfig;
   } catch {
     return {};
   }
 }
 
-export function saveConfig(patch: Partial<RemotePiConfig>): void {
+export function saveConfig(patch: Partial<OutpostPiConfig>): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const current = loadConfig();
   const next = { ...current, ...patch };
@@ -41,7 +41,7 @@ export type RelayResolution = { url: string; source: "env" | "config" | "default
  *
  * Precedence:
  *   1. `REMOTE_PI_RELAY` env var (ops/CI escape hatch)
- *   2. `~/.pi/remote/config.json` `relay` field (set via /remote-pi set-relay)
+ *   2. `~/.pi/remote/config.json` `relay` field (set via /outpost-pi set-relay)
  *   3. `kDefaultRelayUrl` (community default)
  *
  * Any ws(s):// values found (legacy configs or env overrides) are coerced
@@ -57,8 +57,8 @@ export function resolveRelayUrl(): RelayResolution {
 }
 
 /**
- * Strict validator for **user-provided** relay URLs (via `/remote-pi
- * set-relay` or `/remote-pi relay url`).
+ * Strict validator for **user-provided** relay URLs (via `/outpost-pi
+ * set-relay` or `/outpost-pi relay url`).
  *
  * Only accepts `http://` and `https://`. `ws://`/`wss://` are deliberately
  * **rejected** — the canonical form stored in config is http(s):// and the

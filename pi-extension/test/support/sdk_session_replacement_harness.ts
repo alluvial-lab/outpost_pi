@@ -18,9 +18,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { vi, type Mock } from "vitest";
 import type { ClientMessage, ServerMessage } from "../../src/protocol/types.js";
-import { resetRemotePiRuntimeCoordinatorForTest } from "../../src/extension/runtime_coordinator.js";
+import { resetOutpostPiRuntimeCoordinatorForTest } from "../../src/extension/runtime_coordinator.js";
 
-type RemotePiIndexModule = {
+type OutpostPiIndexModule = {
   default: ExtensionFactory;
   _routeClientMessageFrom: (
     sender: { send(msg: ServerMessage): void },
@@ -106,7 +106,7 @@ export class TestPeerChannel {
 
 export type HarnessSession = {
   label: string;
-  indexModule: RemotePiIndexModule;
+  indexModule: OutpostPiIndexModule;
   extension: Extension;
   extensionRunner: ExtensionRunner;
   sessionManager: SessionManager;
@@ -145,7 +145,7 @@ export class SdkSessionReplacementHarness {
 
   static async create(options: SdkSessionReplacementHarnessOptions): Promise<SdkSessionReplacementHarness> {
     const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd);
-    resetRemotePiRuntimeCoordinatorForTest();
+    resetOutpostPiRuntimeCoordinatorForTest();
     vi.resetModules();
     const harness = new SdkSessionReplacementHarness(
       options.cwd,
@@ -169,13 +169,13 @@ export class SdkSessionReplacementHarness {
     return this.currentSession.extensionRunner;
   }
 
-  get currentModule(): RemotePiIndexModule {
+  get currentModule(): OutpostPiIndexModule {
     return this.currentSession.indexModule;
   }
 
   currentRemoteSessionId(): string {
     const sessionId = this.currentModule._getRemoteSessionIdForTest();
-    if (!sessionId) throw new Error("Remote Pi extension has not captured a session id");
+    if (!sessionId) throw new Error("Outpost-Pi extension has not captured a session id");
     return sessionId;
   }
 
@@ -185,13 +185,13 @@ export class SdkSessionReplacementHarness {
 
   async primeCommandContext(): Promise<ExtensionCommandContext> {
     const ctx = this.createCommandContext();
-    const command = this.currentRunner.getCommand("remote-pi");
-    if (!command) throw new Error("Remote Pi command was not registered");
+    const command = this.currentRunner.getCommand("outpost-pi");
+    if (!command) throw new Error("Outpost-Pi command was not registered");
     await command.handler("status", ctx);
     return ctx;
   }
 
-  routeFromModule(module: RemotePiIndexModule, msg: ClientMessage, channel = new TestPeerChannel()): TestPeerChannel {
+  routeFromModule(module: OutpostPiIndexModule, msg: ClientMessage, channel = new TestPeerChannel()): TestPeerChannel {
     // Resolve abort lazily so user-message routing remains available during the
     // intentional gap where the predecessor runner is stale and the successor
     // runner does not exist yet.
@@ -296,7 +296,7 @@ export class SdkSessionReplacementHarness {
     );
     this.rebind(initial.session as HarnessSession);
     this.host.setBeforeSessionInvalidate(() => {
-      // The real Remote Pi session_shutdown hook marks the extension disposed.
+      // The real Outpost-Pi session_shutdown hook marks the extension disposed.
       // In a headless unit harness there is no relay/mesh process to restart, so
       // reset only that test-exposed auto-start flag before the SDK invalidates
       // the old runner. This keeps the replacement test focused on ctx staleness
@@ -326,7 +326,7 @@ export class SdkSessionReplacementHarness {
     }
     this.sequence += 1;
     const label = this.sequence === 1 ? "initial" : `replacement-${this.sequence}`;
-    const { extension, runtime, indexModule } = await this.loadRemotePiExtension(label, options.cwd);
+    const { extension, runtime, indexModule } = await this.loadOutpostPiExtension(label, options.cwd);
     const runner = new ExtensionRunner(
       [extension, this.makeProbeExtension()],
       runtime,
@@ -348,15 +348,15 @@ export class SdkSessionReplacementHarness {
     };
   }
 
-  private async loadRemotePiExtension(label: string, cwd: string): Promise<{
+  private async loadOutpostPiExtension(label: string, cwd: string): Promise<{
     extension: Extension;
     runtime: ExtensionRuntime;
-    indexModule: RemotePiIndexModule;
+    indexModule: OutpostPiIndexModule;
   }> {
     const runtime = createExtensionRuntime();
-    const extension = createExtensionShell(`<remote-pi-session-harness:${label}>`);
+    const extension = createExtensionShell(`<outpost-pi-session-harness:${label}>`);
     const eventBus = createEventBus();
-    const module = await import("../../src/index.js") as RemotePiIndexModule;
+    const module = await import("../../src/index.js") as OutpostPiIndexModule;
     await module.default(createHarnessExtensionApi(extension, runtime, cwd, eventBus) as ExtensionAPI);
     return { extension, runtime, indexModule: module };
   }
@@ -463,7 +463,7 @@ export class SdkSessionReplacementHarness {
     extension: Extension,
     runner: ExtensionRunner,
     sessionManager: SessionManager,
-    indexModule: RemotePiIndexModule,
+    indexModule: OutpostPiIndexModule,
   ): HarnessSession {
     return {
       label,

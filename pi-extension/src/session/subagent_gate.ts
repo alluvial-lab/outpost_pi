@@ -6,7 +6,7 @@
  * in-process and creates a child `AgentSession` that **re-binds the parent's
  * extensions** (see `@gotgenes/pi-subagents/src/lifecycle/create-subagent-
  * session.ts:177,233`). So the child session's `message_end` fires with our
- * `remote-pi` extension bound to it, broadcasting the subagent's assistant
+ * `outpost-pi` extension bound to it, broadcasting the subagent's assistant
  * text to the phone as `agent_message` — a correct-session, wrong-content
  * leak. The SDK exposes no parent/child or subagent marker on `MessageEndEvent`
  * / `AssistantMessage` / `ctx`, so the extension cannot filter on metadata.

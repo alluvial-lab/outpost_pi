@@ -25,7 +25,7 @@ afterEach(async () => {
 });
 
 function makeTempCwd(): string {
-  const cwd = mkdtempSync(join(tmpdir(), "remote-pi-session-harness-"));
+  const cwd = mkdtempSync(join(tmpdir(), "outpost-pi-session-harness-"));
   cleanupPaths.push(cwd);
   return cwd;
 }
@@ -68,7 +68,7 @@ describe("SDK session replacement harness", () => {
     expect(result).toEqual({ cancelled: false });
     expect(freshSessionId).toBeDefined();
     expect(freshSessionId).not.toBe(oldSessionId);
-    // The actual Remote Pi session_start hook captured the fresh ExtensionContext.
+    // The actual Outpost-Pi session_start hook captured the fresh ExtensionContext.
     expect(harness.currentModule._getRemoteSessionIdForTest()).toBe(freshSessionId);
     expect(harness.lifecycleEvents.map((event) => `${event.type}:${event.reason}`)).toEqual([
       "session_start:startup",
@@ -183,7 +183,7 @@ describe("SDK session replacement harness", () => {
   test("resume-style session_start backfills history from SessionManager.buildSessionContext", async () => {
     const cwd = makeTempCwd();
     const harness = await makeHarness(cwd);
-    const sessionDir = mkdtempSync(join(tmpdir(), "remote-pi-session-harness-sessions-"));
+    const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-session-harness-sessions-"));
     cleanupPaths.push(sessionDir);
     const persisted = SessionManager.create(cwd, sessionDir);
     persisted.appendMessage({ role: "user", content: "hello before pairing" } as never);
