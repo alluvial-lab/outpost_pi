@@ -29,12 +29,12 @@ COPY --from=builder /app/target/release/relay /usr/local/bin/relay
 RUN mkdir -p /data
 VOLUME ["/data"]
 
-ENV REMOTEPI_RELAY_PORT=3000
-ENV REMOTEPI_MESH_DB_PATH=/data/mesh.db
+ENV OUTPOSTPI_RELAY_PORT=3000
+ENV OUTPOSTPI_MESH_DB_PATH=/data/mesh.db
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -sf http://localhost:${REMOTEPI_RELAY_PORT}/health
+  CMD curl -sf http://localhost:${OUTPOSTPI_RELAY_PORT}/health
 
 CMD ["relay"]
