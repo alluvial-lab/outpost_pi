@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-mechanical-rename-root-and-docs-rename
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs]
 parent: epic-rebrand-to-outpost-pi-mechanical-rename
 depends_on: []
@@ -30,7 +30,13 @@ by the wire-stable feature's version-and-docs story), `docs/` prose.
   unless they reference a renamed product identifier that breaks a runtime path)
 
 ## Acceptance Criteria
-- [ ] `.github/workflows` references updated to `OutpostPi*` artifact names
-- [ ] Root README uses `Outpost-Pi` wordmark
-- [ ] `PROTOCOL.md` title is `Outpost-Pi` (auth-domain section left for wire-stable)
-- [ ] Verification grep + manual review of the diff
+- [x] `.github/workflows` references updated to `OutpostPi*` artifact names
+- [x] Root README uses `Outpost-Pi` wordmark
+- [x] `PROTOCOL.md` title is `Outpost-Pi` (auth-domain section left for wire-stable)
+- [x] Verification grep + manual review of the diff
+
+## Implementation notes
+
+- Renamed README copy, URLs, install/command examples, release artifacts, and shared-doc prose to the Outpost-Pi forms in the feature replacement table.
+- Kept `PROTOCOL.md`'s `remote-pi-relay-auth-v1` auth-domain literal unchanged. The remaining `remote_pi` references in `docs/VISION.md` and `docs/DECISIONS.md` identify the historical fork/upstream; `\x00remote-pi-ctrl:` remains the excluded control-RPC discriminator.
+- Ran the requested grep verification and `git diff --check`; manually reviewed the scoped diff. No build gate applies to this documentation/workflow-only story.

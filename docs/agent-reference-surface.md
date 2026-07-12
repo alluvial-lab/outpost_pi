@@ -1,13 +1,13 @@
 # Agent reference surface pattern
 
-Remote Pi is moving from ad-hoc `CLAUDE.md` guidance toward a platform-style reference surface for agentic coding. The model is SNC `platform/`: project instructions tell agents which reference to load, and each stack/library reference carries quick API facts, commands, gotchas, and anti-patterns close to the codebase.
+Outpost-Pi is moving from ad-hoc `CLAUDE.md` guidance toward a platform-style reference surface for agentic coding. The model is SNC `platform/`: project instructions tell agents which reference to load, and each stack/library reference carries quick API facts, commands, gotchas, and anti-patterns close to the codebase.
 
 ## Source pattern studied
 
 - `/home/agent/SNC/platform/AGENTS.md` — indexes build/test commands, tech references, research/work bands, coding conventions, and agent commands.
 - `/home/agent/SNC/platform/.claude/skills/hono-v4/SKILL.md` — versioned framework reference with imports, API snippets, validation/openapi patterns, gotchas, and anti-patterns.
 - `/home/agent/SNC/platform/.claude/skills/drizzle-v0/SKILL.md`, `zod-v4/SKILL.md`, and scan-rule skills — same convention applied to library APIs and review lenses.
-- `/home/agent/projects/remote_pi/AGENTS.md` and subproject `CLAUDE.md` files — current Remote Pi guidance is useful but mostly persona/orchestration prose, not API-reference substrate.
+- `/home/agent/projects/remote_pi/AGENTS.md` and subproject `CLAUDE.md` files — current Outpost-Pi guidance is useful but mostly persona/orchestration prose, not API-reference substrate.
 
 ## Recommendation
 
@@ -70,7 +70,7 @@ Short examples of the APIs agents actually touch in this repo. Prefer verified c
 - Logging/observability style.
 - Config/secrets handling.
 
-## Remote Pi lifecycle/protocol gotchas
+## Outpost-Pi lifecycle/protocol gotchas
 
 - Session replacement (`/new`, `/resume`, reload) behavior.
 - Reconnect hydration and stale event handling.
