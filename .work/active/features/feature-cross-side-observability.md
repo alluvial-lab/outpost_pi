@@ -5,7 +5,7 @@ stage: done
 tags: [pi-extension, app, relay, observability, testing]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-04
 updated: 2026-07-08

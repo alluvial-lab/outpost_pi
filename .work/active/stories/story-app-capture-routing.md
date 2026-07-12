@@ -7,7 +7,7 @@ tags: [app, observability]
 parent: feature-cross-side-observability
 depends_on:
   - story-app-debug-log-adapter
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-04
 updated: 2026-07-05

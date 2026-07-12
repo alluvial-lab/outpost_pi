@@ -6,7 +6,7 @@ tags: [pi-extension, app, bug]
 parent: feature-session-stable-message-delivery
 depends_on:
   - feature-session-stable-message-delivery-stale-wake-tolerance
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-04
 updated: 2026-07-11
