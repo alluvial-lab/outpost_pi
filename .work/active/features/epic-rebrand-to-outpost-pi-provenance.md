@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-provenance
 kind: feature
-stage: drafting
+stage: review
 tags: [rebrand, docs, legal]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # Provenance: LICENSE, NOTICE, and authorship credit
@@ -69,3 +69,15 @@ provenance record.
 - The existing `pi-extension/LICENSE` is preserved as-is (it already
   carries the correct MIT + Jacob Moura copyright); the new root LICENSE
   extends the same license to the rest of the repo rather than replacing it.
+
+## Implementation notes
+
+- Added root `LICENSE` with the exact existing MIT permission text, retaining
+  `Copyright (c) 2026 Jacob Moura` and adding `Copyright (c) 2026 Kevoun`, the
+  operator name found in the repository's git author history.
+- Added root `NOTICE` crediting `remote_pi` and Jacob Moura as the foundation,
+  and noting the Outpost-Pi rebrand with MIT provenance preserved.
+- The root README should add an "Acknowledgements" or "Based on" section
+  crediting `remote_pi` / Jacob Moura. README editing remains owned by the
+  sibling README story and was intentionally not performed here.
+- Preserved `pi-extension/LICENSE` unchanged.
