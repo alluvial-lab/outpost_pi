@@ -49,8 +49,8 @@ dependencies:
 
   # Owner-key sync (plan 23) — Ed25519 keypair persisted in iCloud
   # Keychain / Android Block Store. Local path dep, not pub.dev.
-  remote_pi_identity:
-    path: packages/remote_pi_identity
+  outpost_pi_identity:
+    path: packages/outpost_pi_identity
 
   # Plan 24 — HTTP client for the mesh_versions endpoint on the relay.
   dio: ^5.7.0

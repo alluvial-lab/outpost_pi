@@ -1,9 +1,6 @@
-/// Owner-key synchronized identity for Remote Pi via platform-native
-/// key sync (iCloud Keychain on iOS, Block Store on Android).
-///
-/// See `package:remote_pi_identity/remote_pi_identity.dart` for the
-/// public surface; see README for platform requirements and known
-/// limitations.
+// Owner-key synchronized identity for Outpost-Pi via platform-native key sync
+// (iCloud Keychain on iOS, Block Store on Android). See the README for platform
+// requirements and known limitations.
 library;
 
 export 'src/in_memory_store.dart' show InMemoryOwnerIdentityStore;

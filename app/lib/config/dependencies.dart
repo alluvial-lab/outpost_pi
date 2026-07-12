@@ -46,7 +46,7 @@ import 'package:app/ui/update/viewmodels/update_banner_viewmodel.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
-import 'package:remote_pi_identity/remote_pi_identity.dart';
+import 'package:outpost_pi_identity/outpost_pi_identity.dart';
 
 final _injector = CustomInjector();
 
