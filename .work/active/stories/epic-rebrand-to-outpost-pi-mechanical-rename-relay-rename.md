@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-mechanical-rename-relay-rename
 kind: story
-stage: implementing
+stage: done
 tags: [rebrand, relay]
 parent: epic-rebrand-to-outpost-pi-mechanical-rename
 depends_on: []

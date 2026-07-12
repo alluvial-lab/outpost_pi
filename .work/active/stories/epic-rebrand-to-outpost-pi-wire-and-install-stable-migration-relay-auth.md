@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration-relay-auth
 kind: story
-stage: implementing
+stage: done
 tags: [rebrand, relay, security]
 parent: epic-rebrand-to-outpost-pi-wire-and-install-stable-migration
 depends_on:
