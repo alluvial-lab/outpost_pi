@@ -442,7 +442,7 @@ export default function DocsPage() {
           </p>
           <ol className="ml-6 list-decimal space-y-2">
             <li>
-              <InlineCode>REMOTE_PI_RELAY</InlineCode> environment variable
+              <InlineCode>OUTPOST_PI_RELAY</InlineCode> environment variable
               (CI / one-off overrides)
             </li>
             <li><InlineCode>~/.pi/remote/config.json</InlineCode></li>
@@ -803,7 +803,7 @@ export default function DocsPage() {
         />
         <p>Override the relay for a single run without persisting:</p>
         <CodeBlock
-          code="REMOTE_PI_RELAY=https://staging.example.tld pi"
+          code="OUTPOST_PI_RELAY=https://staging.example.tld pi"
           label="Shell"
           language="bash"
         />
@@ -817,7 +817,7 @@ export default function DocsPage() {
         <p className="text-sm">
           Daemons don&apos;t read the per-directory file at all — the supervisor
           injects their whole config inline via the{" "}
-          <InlineCode>REMOTE_PI_DIRECT_CONFIG</InlineCode> environment variable
+          <InlineCode>OUTPOST_PI_DIRECT_CONFIG</InlineCode> environment variable
           at spawn (a fixed <InlineCode>assistent</InlineCode> workspace with
           the relay on), so a daemon folder needs no{" "}
           <InlineCode>.pi/outpost-pi/</InlineCode> of its own. You can set the
@@ -827,7 +827,7 @@ export default function DocsPage() {
           client:
         </p>
         <CodeBlock
-          code={`REMOTE_PI_DIRECT_CONFIG='{"agent_name":"ci","auto_start_relay":true}' pi`}
+          code={`OUTPOST_PI_DIRECT_CONFIG='{"agent_name":"ci","auto_start_relay":true}' pi`}
           label="Shell"
           language="bash"
         />
