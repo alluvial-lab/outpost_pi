@@ -110,3 +110,33 @@ fn sig_valida() {
 
     verify_auth(&nonce, &vk, &line).unwrap();
 }
+
+/// The Outpost-Pi auth domain is a hard cutover: the legacy Remote Pi domain
+/// is not accepted as a compatibility fallback.
+#[test]
+fn auth_domain_prefix_hard_cutover_rejects_legacy_signature() {
+    let nonce = [7u8; 32];
+    let sk = SigningKey::generate(&mut rand::thread_rng());
+    let vk = sk.verifying_key();
+
+    let mut legacy_signed = b"remote-pi-relay-auth-v1\n".to_vec();
+    legacy_signed.extend_from_slice(&nonce);
+    let legacy_sig = sk.sign(&legacy_signed);
+    let legacy_line = format!(
+        r#"{{"type":"auth","sig":"{}"}}"#,
+        B64.encode(legacy_sig.to_bytes())
+    );
+
+    let err = verify_auth(&nonce, &vk, &legacy_line).unwrap_err();
+    assert!(matches!(err, AuthError::InvalidSig));
+
+    let mut current_signed = b"outpost-pi-relay-auth-v1\n".to_vec();
+    current_signed.extend_from_slice(&nonce);
+    let current_sig = sk.sign(&current_signed);
+    let current_line = format!(
+        r#"{{"type":"auth","sig":"{}"}}"#,
+        B64.encode(current_sig.to_bytes())
+    );
+
+    verify_auth(&nonce, &vk, &current_line).unwrap();
+}

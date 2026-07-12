@@ -102,9 +102,9 @@ pub fn challenge_line(nonce_b64: &str) -> String {
 /// bare nonce, so the peer's long-term key cannot be abused as a cross-protocol
 /// signing oracle (a malicious relay cannot harvest signatures on
 /// attacker-chosen bytes that some other protocol would accept). MUST stay
-/// byte-for-byte identical to the app's `relayAuthDomainPrefix`
-/// (app/lib/data/transport/ws_transport.dart).
-pub const RELAY_AUTH_DOMAIN_PREFIX: &[u8] = b"remote-pi-relay-auth-v1\n";
+/// byte-for-byte identical to the app's `relayAuthDomainPrefix` in
+/// `app/lib/data/transport/ws_transport.dart`.
+pub const RELAY_AUTH_DOMAIN_PREFIX: &[u8] = b"outpost-pi-relay-auth-v1\n";
 
 pub fn verify_auth(nonce: &[u8; 32], vk: &VerifyingKey, line: &str) -> Result<(), AuthError> {
     let msg: ClientAuthMsg = serde_json::from_str(line)?;
