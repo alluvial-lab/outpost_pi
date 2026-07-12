@@ -18,7 +18,7 @@ import {
 } from "@/components/landing/icons";
 import type { ReactNode } from "react";
 
-const GITHUB_URL = "https://github.com/jacobaraujo7/remote_pi";
+const GITHUB_URL = "https://github.com/jacobaraujo7/outpost_pi";
 const PROTOCOL_URL = `${GITHUB_URL}/blob/main/PROTOCOL.md`;
 
 /* ---------------- Pillars ---------------- */
@@ -129,7 +129,7 @@ const STORES: Store[] = [
     top: "Download on the",
     name: "App Store",
     sub: "iOS · iPhone & iPad",
-    href: "https://apps.apple.com/app/remote-pi-coding-agent/id6773499691",
+    href: "https://apps.apple.com/app/outpost-pi-coding-agent/id6773499691",
     external: true,
   },
   {
