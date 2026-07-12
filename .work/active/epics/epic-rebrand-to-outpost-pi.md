@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-11
+updated: 2026-07-12
 ---
 
 # Rebrand the fork: remote_pi → Outpost-Pi
@@ -133,8 +133,9 @@ decision.
   repo, keep Jacob Moura copyright + add operator line), root NOTICE, README
   credit; no code behavior change — depends on: `[]`
 - `epic-rebrand-to-outpost-pi-en-first` — PT → EN in shipped product
-  (cockpit-heavy, ~186 files); `scripts/` operator glue explicitly excluded —
-  depends on: `[]`
+  (cockpit-heavy, ~186 files); `scripts/` operator glue explicitly excluded.
+  **Scoped out to follow-up** (`.work/backlog/`) — separable from the rename,
+  does not block 0.1.0.
 
 ### Decomposition risks
 
@@ -293,23 +294,24 @@ External surfaces (class 4) move to a follow-up epic.
 
 ## Epic review (2026-07-12)
 
-**Verdict**: Approve — rebrand core scope complete; en-first deferred
+**Verdict**: Approve — rebrand core scope complete
 
-**Summary**: The Outpost-Pi rebrand is implemented and reviewed. 3 of 4 child
-features are done (mechanical-rename, wire-stable migration, provenance);
-en-first (PT→EN) remains at drafting as an explicitly separable, deferrable
-workstream per the locked strategic decision. The rebrand's core scope —
-name, wire-stable identifiers, install identifiers, storage/keyring/launchd,
-provenance, version reset to 0.1.0, durable docs — is complete and reviewed.
+**Summary**: The Outpost-Pi rebrand is implemented and reviewed. All 3 in-scope
+child features are done (mechanical-rename, wire-stable migration, provenance).
+The en-first feature (PT→EN) was scoped out to a follow-up
+(`.work/backlog/epic-rebrand-to-outpost-pi-en-first.md`) — it was always framed
+as separable from the rename and doesn't block the 0.1.0 release. The
+rebrand's core scope — name, wire-stable identifiers, install identifiers,
+storage/keyring/launchd, provenance, version reset to 0.1.0, durable docs —
+is complete and review-converged.
 
-**Blockers**: none (all 3 deep-review blockers fixed inline)
-**Important**: 4 backlog items filed (README acknowledgements, branding SVG
-redraw, cross-client auth test, site download links) — none blocking the
-0.1.0 code release; the first two are ethical/visual, the latter two are
-deferred to the external-surfaces follow-up epic.
+**Blockers**: none (all deep-review blockers fixed inline across 2 phases)
+**Important**: 5 backlog items filed (README acknowledgements, branding SVG
+redraw, cross-client auth test, site download links, WinSparkle marketing-version
+comparison) — none blocking the 0.1.0 code release.
 
-**Deferred**: en-first feature (PT→EN translation, cockpit-heavy). External
-surfaces (GitHub repo rename, npm publish, branding) — follow-up epic.
+**Scoped out (follow-up)**: en-first feature (PT→EN translation, cockpit-heavy).
+External surfaces (GitHub repo rename, npm publish, branding) — follow-up epic.
 
 **Notes**: Deep-lane epic review. The fresh-context reviewer (gpt-5.6-sol)
 found real issues the implementation missed (build-number semantics,
