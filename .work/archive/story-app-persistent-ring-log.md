@@ -4,7 +4,7 @@ status: superseded
 superseded_by: story-app-debug-log-adapter, story-app-debug-toggle-ui, story-app-capture-routing
 superseded_date: 2026-07-04
 kind: story
-stage: implementing
+stage: done
 tags: [app, observability, bug]
 parent: feature-cross-side-observability
 depends_on: []
