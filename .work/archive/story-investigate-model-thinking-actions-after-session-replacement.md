@@ -1,7 +1,7 @@
 ---
 id: story-investigate-model-thinking-actions-after-session-replacement
 kind: story
-stage: drafting
+stage: done
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: [story-stale-extension-runtime-audit]
