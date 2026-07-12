@@ -10,7 +10,7 @@ import { defaultAgentName, loadLocalConfig, type LocalConfig } from "../session/
  * supervisor.
  *
  * Lifecycle:
- *   - `spawn()` boots the child with the daemon's cwd + `REMOTE_PI_DAEMON=1`
+ *   - `spawn()` boots the child with the daemon's cwd + `OUTPOST_PI_DAEMON=1`
  *     env so the extension knows to skip the interactive wizard.
  *   - `sendPrompt(text)` writes a Pi RPC `prompt` command to stdin.
  *   - The child's stdout (Pi RPC events) is currently consumed line-by-line
@@ -32,10 +32,10 @@ export interface RpcChildOptions {
    *  config the extension reads. */
   cwd: string;
   /** Additional env vars merged on top of `process.env` + the mandatory
-   *  `REMOTE_PI_DAEMON=1`. */
+   *  `OUTPOST_PI_DAEMON=1`. */
   env?: NodeJS.ProcessEnv;
   /**
-   * Daemon config injected into the child via `REMOTE_PI_DIRECT_CONFIG`
+   * Daemon config injected into the child via `OUTPOST_PI_DIRECT_CONFIG`
    * (JSON inline) instead of a per-cwd `.pi/outpost-pi/config.json` file. The
    * supervisor builds this from the registry. When set, the child reads it
    * env-first (see `loadLocalConfig`) and no config file is needed. Also the
@@ -271,9 +271,9 @@ export class RpcChild extends EventEmitter {
       ...this.opts.env,
       // Mandatory daemon marker — `_cmdRoot` in index.ts can use this to
       // bail early if local config is missing (no wizard in RPC mode).
-      REMOTE_PI_DAEMON: "1",
+      OUTPOST_PI_DAEMON: "1",
       // Inject the daemon config inline so the child needs no config file.
-      ...(this.opts.config ? { REMOTE_PI_DIRECT_CONFIG: JSON.stringify(this.opts.config) } : {}),
+      ...(this.opts.config ? { OUTPOST_PI_DIRECT_CONFIG: JSON.stringify(this.opts.config) } : {}),
     };
 
     const child = spawn(piTarget.command, args, {

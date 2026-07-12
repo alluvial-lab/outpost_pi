@@ -38,7 +38,7 @@ const {
 } = storage;
 import type { KeyStoreBackend } from "./storage.js";
 
-// ── In-memory backend for migration / round-trip tests ──────────────────────
+// ── In-memory backend for round-trip tests ──────────────────────────────────
 
 class InMemoryBackend implements KeyStoreBackend {
   readonly store = new Map<string, string>();
@@ -84,8 +84,7 @@ class InMemoryBackend implements KeyStoreBackend {
   }
 }
 
-const NEW_SERVICE = "dev.remotepi.pi";
-const OLD_SERVICE = "dev.remotepi.mac";
+const NEW_SERVICE = "dev.outpostpi.pi";
 const ACCOUNT = "longterm-ed25519";
 const POSIX_MODES_SUPPORTED = process.platform !== "win32";
 
@@ -112,8 +111,8 @@ const TABLET_PEER = {
 };
 
 beforeEach(async () => {
-  // Silence the migration / fallback console output during tests so the
-  // vitest output isn't polluted.
+  // Silence fallback console output during tests so the vitest output isn't
+  // polluted.
   vi.spyOn(console, "info").mockImplementation(() => undefined);
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -127,7 +126,7 @@ afterEach(() => {
   _setKeyStoreBackendForTest(null);
   _setKeyringExpectedForTest(null);
   _setKeyringRetryForTest(null);
-  delete process.env.REMOTE_PI_ALLOW_FILE_IDENTITY;
+  delete process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY;
   vi.restoreAllMocks();
 });
 
@@ -175,55 +174,6 @@ describe("getOrCreateEd25519Keypair — keyring path", () => {
       Buffer.from(second.publicKey).toString("base64"),
     );
     expect(backend.writes.length).toBe(1);  // only the first call wrote
-  });
-});
-
-// ── Migration path (legacy keytar service) ──────────────────────────────────
-
-describe("getOrCreateEd25519Keypair — keytar migration (plan/27 E1)", () => {
-  test("legacy entry → copies to new service + deletes old", async () => {
-    const backend = new InMemoryBackend();
-    const legacy = JSON.stringify({
-      pk: Buffer.from(new Uint8Array(32).fill(7)).toString("base64"),
-      sk: Buffer.from(new Uint8Array(64).fill(8)).toString("base64"),
-    });
-    backend.store.set(`${OLD_SERVICE}|${ACCOUNT}`, legacy);
-    _setKeyStoreBackendForTest(backend);
-
-    const kp = await getOrCreateEd25519Keypair();
-
-    // Preserved identity
-    expect(Buffer.from(kp.publicKey).toString("base64")).toBe(
-      Buffer.from(new Uint8Array(32).fill(7)).toString("base64"),
-    );
-    // New entry was written
-    expect(backend.store.get(`${NEW_SERVICE}|${ACCOUNT}`)).toBe(legacy);
-    // Old entry was deleted
-    expect(backend.store.has(`${OLD_SERVICE}|${ACCOUNT}`)).toBe(false);
-    expect(backend.deletes.find((d) => d.service === OLD_SERVICE)).toBeDefined();
-  });
-
-  test("new entry already present → does NOT touch legacy entry", async () => {
-    const backend = new InMemoryBackend();
-    const newVal = JSON.stringify({
-      pk: Buffer.from(new Uint8Array(32).fill(3)).toString("base64"),
-      sk: Buffer.from(new Uint8Array(64).fill(4)).toString("base64"),
-    });
-    const stale = JSON.stringify({
-      pk: Buffer.from(new Uint8Array(32).fill(9)).toString("base64"),
-      sk: Buffer.from(new Uint8Array(64).fill(9)).toString("base64"),
-    });
-    backend.store.set(`${NEW_SERVICE}|${ACCOUNT}`, newVal);
-    backend.store.set(`${OLD_SERVICE}|${ACCOUNT}`, stale);
-    _setKeyStoreBackendForTest(backend);
-
-    const kp = await getOrCreateEd25519Keypair();
-    expect(Buffer.from(kp.publicKey).toString("base64")).toBe(
-      Buffer.from(new Uint8Array(32).fill(3)).toString("base64"),
-    );
-    // Legacy entry untouched (we never even read it)
-    expect(backend.store.get(`${OLD_SERVICE}|${ACCOUNT}`)).toBe(stale);
-    expect(backend.deletes.length).toBe(0);
   });
 });
 
@@ -366,12 +316,12 @@ describe("getOrCreateEd25519Keypair — locked keyring does NOT regenerate", () 
     );
   });
 
-  test("REMOTE_PI_ALLOW_FILE_IDENTITY=1 opts into file identity even on a core-keyring platform", async () => {
+  test("OUTPOST_PI_ALLOW_FILE_IDENTITY=1 opts into file identity even on a core-keyring platform", async () => {
     const backend = new InMemoryBackend();
     backend.failAll("read");
     _setKeyStoreBackendForTest(backend);
     _setKeyringExpectedForTest(true);
-    process.env.REMOTE_PI_ALLOW_FILE_IDENTITY = "1";
+    process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY = "1";
 
     const kp = await getOrCreateEd25519Keypair();
     expect(kp.publicKey.length).toBe(32);

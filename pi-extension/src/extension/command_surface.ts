@@ -18,7 +18,7 @@ export class CommandSurface implements CommandSurfacePort {
     this.deps.refreshPairingsCache();
     this.deps.registerAgentTools(pi);
     this.deps.registerCommands(pi);
-    if (process.env["REMOTE_PI_DAEMON"] === "1") this.deps.startDaemonMode();
+    if (process.env["OUTPOST_PI_DAEMON"] === "1") this.deps.startDaemonMode();
   }
 }
 

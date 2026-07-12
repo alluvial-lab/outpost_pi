@@ -21,16 +21,16 @@ let testHome: string;
 
 beforeEach(() => {
   testHome = mkdtempSync(join(tmpdir(), "pi-regtest-"));
-  process.env["REMOTE_PI_HOME"] = testHome;
+  process.env["OUTPOST_PI_HOME"] = testHome;
 });
 
 afterEach(() => {
-  delete process.env["REMOTE_PI_HOME"];
+  delete process.env["OUTPOST_PI_HOME"];
   try { rmSync(testHome, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 
 describe("registryPath", () => {
-  test("honors REMOTE_PI_HOME env override", () => {
+  test("honors OUTPOST_PI_HOME env override", () => {
     expect(registryPath()).toBe(join(testHome, ".pi", "remote", "daemons.json"));
   });
 });

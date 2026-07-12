@@ -61,7 +61,7 @@ export interface SdkSessionProjectionOutputs {
   handleClientMessage(sender: PeerChannel, message: ClientMessage): void | Promise<void>;
   onStaleMessageApi?(api: AgentMessageApi): void;
   /** Delivery-path debug log (the extension half of cross-side observability).
-   * Optional — a no-op when `REMOTE_PI_DEBUG_LOG` is unset. The projection
+   * Optional — a no-op when `OUTPOST_PI_DEBUG_LOG` is unset. The projection
    * emits `message_api_armed`/`message_api_null`/`wake_outcome`/`command_ctx`
    * from its own state transitions. See `delivery_debug_log.ts`. */
   deliveryDebugLog?: DeliveryDebugLog;
@@ -79,7 +79,7 @@ export interface SdkSessionProjectionOptions {
 const SYNC_LIMIT_DEFAULT = 30;
 
 function syncLimit(): number {
-  const raw = process.env["REMOTE_PI_SYNC_LIMIT"];
+  const raw = process.env["OUTPOST_PI_SYNC_LIMIT"];
   const parsed = raw ? parseInt(raw, 10) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : SYNC_LIMIT_DEFAULT;
 }

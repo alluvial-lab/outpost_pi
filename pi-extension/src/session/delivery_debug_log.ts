@@ -9,7 +9,7 @@
  * phone→Pi delivery path the stuck-state bug lives on.
  *
  * This module is the missing third leg: a bounded in-memory ring + file,
- * gated behind `REMOTE_PI_DEBUG_LOG=1`, capturing the delivery-path state
+ * gated behind `OUTPOST_PI_DEBUG_LOG=1`, capturing the delivery-path state
  * transitions keyed by the same message `id` the phone (`msg-send`) and relay
  * (`env_id_tail`) use. Privacy: routing metadata + message `id` + outcome
  * reasons only — never message text, images, tool args, or `ct`.
@@ -89,7 +89,7 @@ export interface DeliveryDebugLog {
   log(event: DeliveryDebugEvent): void;
 }
 
-/** No-op implementation (default when `REMOTE_PI_DEBUG_LOG` is unset). */
+/** No-op implementation (default when `OUTPOST_PI_DEBUG_LOG` is unset). */
 export const noopDeliveryDebugLog: DeliveryDebugLog = { log: () => {} };
 
 // ── Adapter ─────────────────────────────────────────────────────────────────
@@ -244,17 +244,17 @@ export class DeliveryDebugLogImpl implements DeliveryDebugLog {
 // ── Factory ─────────────────────────────────────────────────────────────────
 
 /**
- * Resolve the delivery debug log from the env. `REMOTE_PI_DEBUG_LOG=1` enables
- * a file-backed ring at `<REMOTE_PI_HOME | ~/.pi/remote>/debug/delivery.log`;
+ * Resolve the delivery debug log from the env. `OUTPOST_PI_DEBUG_LOG=1` enables
+ * a file-backed ring at `<OUTPOST_PI_HOME | ~/.pi/remote>/debug/delivery.log`;
  * otherwise a no-op. Called once at module init (the extension is a
  * long-lived process; the log lives for its lifetime).
  */
 export function createDeliveryDebugLog(): DeliveryDebugLog {
-  if (process.env["REMOTE_PI_DEBUG_LOG"] !== "1") return noopDeliveryDebugLog;
-  const root = process.env["REMOTE_PI_HOME"] || homedir();
-  // When REMOTE_PI_HOME is unset, root is homedir(); place under ~/.pi/remote/
+  if (process.env["OUTPOST_PI_DEBUG_LOG"] !== "1") return noopDeliveryDebugLog;
+  const root = process.env["OUTPOST_PI_HOME"] || homedir();
+  // When OUTPOST_PI_HOME is unset, root is homedir(); place under ~/.pi/remote/
   // to match the rest of outpost-pi's state (global_config.ts HOME_PI_REMOTE).
-  const base = process.env["REMOTE_PI_HOME"] ? root : join(homedir(), ".pi", "remote");
+  const base = process.env["OUTPOST_PI_HOME"] ? root : join(homedir(), ".pi", "remote");
   const filePath = join(base, "debug", "delivery.log");
   try {
     return new DeliveryDebugLogImpl(filePath);
