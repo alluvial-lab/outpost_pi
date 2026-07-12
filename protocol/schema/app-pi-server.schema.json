@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://remote-pi.dev/schemas/app-pi-server.schema.json",
+  "$id": "https://kevoun.com/schemas/app-pi-server.schema.json",
   "title": "Remote Pi Pi-to-app server messages",
   "oneOf": [
     { "$ref": "#/$defs/pairOk" },
@@ -72,7 +72,7 @@
         "ts": { "type": "integer", "minimum": 0, "description": "SDK persisted user message timestamp. Optional (compat); when present, new clients derive deterministic transcript event ids matching session_history replay. See story-mobile-assistant-message-duplicated-live-replay user-message follow-up." }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
     },
     "userMessage": {
       "type": "object",
@@ -87,7 +87,7 @@
         "ts": { "type": "integer", "minimum": 0, "description": "SDK persisted user message timestamp. Optional (compat); when present, new clients derive deterministic transcript event ids matching session_history replay." }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
     },
     "queuedMessageState": {
       "type": "object",
@@ -99,7 +99,7 @@
         "text": { "type": "string" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "agentChunk": {
       "type": "object",
@@ -112,7 +112,7 @@
         "ts": { "type": "integer", "minimum": 0, "description": "SDK persisted assistant message timestamp. Optional (compat): old clients ignore; new clients use it to derive deterministic transcript event ids matching session_history replay. See story-mobile-assistant-message-duplicated-live-replay decision 1." }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
     },
     "agentDone": {
       "type": "object",
@@ -125,7 +125,7 @@
         "ts": { "type": "integer", "minimum": 0, "description": "SDK persisted assistant message timestamp for the finalized turn. Optional (compat); new clients derive deterministic transcript event ids from it to match session_history replay." }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
     },
     "agentMessage": {
       "type": "object",
@@ -140,7 +140,7 @@
         "message_id": { "type": "string", "description": "Stable assistant message id (sync_<ts>:assistant:<blockIndex>). Optional (compat); new clients use it as the transcript messageId so live and replay commits collapse to one row." }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"], "turn-state": ["turn_id"] } }
     },
     "compaction": {
       "type": "object",
@@ -153,7 +153,7 @@
         "ts": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "toolRequest": {
       "type": "object",
@@ -166,7 +166,7 @@
         "args": { "$ref": "./defs/common.schema.json#/$defs/openJson" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "toolResult": {
       "type": "object",
@@ -179,7 +179,7 @@
         "error": { "type": "string" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "error": {
       "type": "object",
@@ -192,7 +192,7 @@
         "message": { "type": "string" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "knownCodesRef": "./defs/app-pi-common.schema.json#/$defs/knownErrorCode", "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "knownCodesRef": "./defs/app-pi-common.schema.json#/$defs/knownErrorCode", "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "cancelled": {
       "type": "object",
@@ -204,7 +204,7 @@
         "target_id": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "pong": {
       "type": "object",
@@ -237,7 +237,7 @@
         "truncated": { "type": "boolean" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "actionOk": {
       "type": "object",
@@ -249,7 +249,7 @@
         "action": { "$ref": "./defs/app-pi-common.schema.json#/$defs/actionName" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "actionError": {
       "type": "object",
@@ -262,7 +262,7 @@
         "error": { "type": "string" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "modelsList": {
       "type": "object",
@@ -275,7 +275,7 @@
         "current": { "$ref": "./defs/app-pi-common.schema.json#/$defs/wireModel" }
       },
       "additionalProperties": false,
-      "x-remote-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
     "sessionHistoryEvent": {
       "oneOf": [
@@ -347,7 +347,7 @@
       "additionalProperties": false
     }
   },
-  "x-remote-pi": {
+  "x-outpost-pi": {
     "family": "appPiServer",
     "transport": "relay-jsonl",
     "discriminator": "type",
