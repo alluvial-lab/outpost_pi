@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="branding/logo-full.svg" width="140" alt="Remote Pi logo" />
+  <img src="branding/logo-full.svg" width="140" alt="Outpost-Pi logo" />
 </p>
 
-<h1 align="center">Remote Pi</h1>
+<h1 align="center">Outpost-Pi</h1>
 
 <p align="center">
   Control your <a href="https://github.com/earendil-works/pi">Pi coding agent</a> from your phone.
@@ -13,24 +13,24 @@
 
 ## Links
 
-- **Official site** — <https://remote-pi.jacobmoura.work>
-- **Package documentation** — <https://pi.dev/packages/remote-pi?name=remote-pi>
-- **GitHub** — <https://github.com/jacobaraujo7/remote_pi>
+- **Official site** — <https://outpost-pi.jacobmoura.work>
+- **Package documentation** — <https://pi.dev/packages/outpost-pi?name=outpost-pi>
+- **GitHub** — <https://github.com/jacobaraujo7/outpost_pi>
 
 ### Downloads
 
 | Platform | Status |
 |---|---|
 | Google Play (Android) | [Get it on Google Play](https://play.google.com/store/apps/details?id=work.jacobmoura.remotepi) |
-| App Store (iOS) | [Download on the App Store](https://apps.apple.com/app/remote-pi-coding-agent/id6773499691) |
-| APK (sideload, Android) | [GitHub Releases](https://github.com/jacobaraujo7/remote_pi/releases) |
+| App Store (iOS) | [Download on the App Store](https://apps.apple.com/app/outpost-pi-coding-agent/id6773499691) |
+| APK (sideload, Android) | [GitHub Releases](https://github.com/jacobaraujo7/outpost_pi/releases) |
 
 ## What's in this repo
 
 | Package | Stack | Role |
 |---|---|---|
 | [`app/`](./app) | Flutter (iOS / Android) | Mobile client |
-| [`pi-extension/`](./pi-extension) | Node + TypeScript | Pi extension exposing `/remote-pi` |
+| [`pi-extension/`](./pi-extension) | Node + TypeScript | Pi extension exposing `/outpost-pi` |
 | [`relay/`](./relay) | Rust + Tokio | Stateless WebSocket relay |
 | [`site/`](./site) | NextJS | Landing page + legal pages |
 
@@ -89,17 +89,17 @@ Full security trade-offs and the self-hosting guide live in
 Install the Pi extension in any project where Pi runs:
 
 ```bash
-pi install npm:remote-pi
+pi install npm:outpost-pi
 ```
 
 Then in the Pi chat, run:
 
 ```
-/remote-pi
+/outpost-pi
 ```
 
 The setup wizard walks you through agent name, session name, and relay choice,
-then prints a QR code. Scan it with the Remote Pi mobile app and you're paired.
+then prints a QR code. Scan it with the Outpost-Pi mobile app and you're paired.
 
 ## Status
 

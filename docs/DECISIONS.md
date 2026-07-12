@@ -1,4 +1,4 @@
-# Remote Pi — Decisions
+# Outpost-Pi — Decisions
 
 The rolling-foundation decisions registry. Locked product, architecture, and
 operating decisions — current truth, not history. When a decision changes,
@@ -31,8 +31,8 @@ resolved they move here.
   Pi-only. Not Claude Code (has official Remote Control), not OpenCode (has
   5+ community mobile apps), not Goose/Aider (small market). Pi is the most
   relevant open-source competitor to Claude Code, has public RPC + SDK, and had
-  no dedicated mobile app — the niche Remote Pi fills.
-- **Not MuxAgent**: it covers multi-harness commercial. Remote Pi is Pi-only,
+  no dedicated mobile app — the niche Outpost-Pi fills.
+- **Not MuxAgent**: it covers multi-harness commercial. Outpost-Pi is Pi-only,
   open source, quality-first.
 
 ## Fork posture (locked)
@@ -56,7 +56,7 @@ resolved they move here.
 | Decision | Current truth |
 |---|---|
 | **Daemon is GA, first-class** | A substantial `pi-extension/src/daemon/` module ships: `supervisor`, `supervisord` CLI, `cron_registry`/`cron_log`, `rpc_child`, `install`, `registry`, `id`, `client`. The MVP-era "no daemon" scoping was explicitly revisited and shipped. (Originally an MVP-scoping decision; superseded by the daemon-mode plan that shipped.) |
-| **Extension, not wrapper** | Pi has a TypeScript extension API. The extension consumes the Pi SDK directly — no wrapper process. (Future harness support — Claude Code, OpenCode — would come via wrappers like `remote-pi claude`, not by re-targeting the extension.) |
+| **Extension, not wrapper** | Pi has a TypeScript extension API. The extension consumes the Pi SDK directly — no wrapper process. (Future harness support — Claude Code, OpenCode — would come via wrappers like `outpost-pi claude`, not by re-targeting the extension.) |
 | **Auto-start relay is optional** | Config `auto_start_relay=true` connects to the relay automatically when Pi opens. Daemon config forces this on. |
 | **Relay: stateless routing + narrow mesh-membership persistence** | The relay is stateless for message routing — no per-session state, no offline queue, no at-least-once delivery. It has a narrow persistence layer: the SQLite-backed `MeshStore` (the Owner-signed `mesh_versions` cartulary, LWW + monotonic-version anti-rollback) plus ephemeral in-memory `PeerRegistry`, `PresenceManager`, `RoomManager`, and `FirehoseMetrics`. (The MVP-era "relay stateless, no persistence" line is superseded — mesh membership is persisted.) |
 | **Relay is open-source + self-hostable** | Credibility commitment. A paranoid user runs their own. The public relay is not a single point of compromise for an operator who self-hosts. |
@@ -121,7 +121,7 @@ resolved they move here.
 
 | Decision | Current truth |
 |---|---|
-| **Mobile app: dual distribution** | iOS = App Store. Android = Play Store (AAB) + direct APK (`RemotePi.apk` on GitHub Release `app-v*`, linked from site `/download`). Store-ready artifacts verified at `1.1.0+5`. CI covers only the direct APK. |
+| **Mobile app: dual distribution** | iOS = App Store. Android = Play Store (AAB) + direct APK (`OutpostPi.apk` on GitHub Release `app-v*`, linked from site `/download`). Store-ready artifacts verified at `1.1.0+5`. CI covers only the direct APK. |
 | **Cockpit: out of stores** | Notarized DMG (macOS) + unsigned EXE (Windows, SmartScreen documented) + deb/rpm (Linux x64+arm64) via GitHub Release `cockpit-v*`. |
 | **Binary hosting** | GitHub Release assets (product-prefixed tags; monorepo as pure storage). VPS without SSH → `rp-s3` serves only `latest.json` per product; operator positions the manifest manually = publication gate. |
 | **Self-update** | Cockpit macOS/Windows self-update via Sparkle/WinSparkle (`auto_updater`): background download, "restart to install" card, swap + relaunch. Linux stays manual-notify. The rp-s3 manual publication gate still applies (now also covers `appcast-{macos,windows}.xml`). Site `/download` and in-app card read `latest.json` as fallback. |
