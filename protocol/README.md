@@ -1,4 +1,4 @@
-# Remote Pi protocol schema
+# Outpost-Pi protocol schema
 
 `protocol/schema/` is the canonical schema source for generated protocol work. It is intentionally a repo-root package because the wire spans the Pi extension, mobile app, relay, cockpit control overlay, and future code generators.
 
