@@ -6,7 +6,7 @@ tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on:
   - story-fix-stale-ctx-messageapi-rearm-on-reload
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-03
 updated: 2026-07-11
