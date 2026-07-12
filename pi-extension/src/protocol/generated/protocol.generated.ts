@@ -619,12 +619,12 @@ export type CrossPcFrame =
 
 export const cockpitControlTypes = [
   "prompt",
-  "remote_pi_control",
-  "remote-pi:relay-state",
-  "remote-pi:name-assigned",
-  "remote-pi:pair-code",
-  "remote-pi:paired",
-  "remote-pi:mesh-revoked",
+  "outpost_pi_control",
+  "outpost-pi:relay-state",
+  "outpost-pi:name-assigned",
+  "outpost-pi:pair-code",
+  "outpost-pi:paired",
+  "outpost-pi:mesh-revoked",
 ] as const;
 export type CockpitControlType = (typeof cockpitControlTypes)[number];
 
@@ -633,47 +633,47 @@ export interface CockpitControlFramePrompt {
   readonly message: string;
 }
 
-export interface CockpitControlFrameRemotePiControl {
-  readonly type: "remote_pi_control";
+export interface CockpitControlFrameOutpostPiControl {
+  readonly type: "outpost_pi_control";
   readonly command: "relay_on" | "relay_off" | "relay_toggle" | "relay_status" | "rename";
   readonly name?: string;
 }
 
-export interface CockpitControlFrameRemotePiRelayState {
+export interface CockpitControlFrameOutpostPiRelayState {
   readonly role: "custom";
-  readonly customType: "remote-pi:relay-state" | "remote-pi:name-assigned" | "remote-pi:pair-code" | "remote-pi:paired" | "remote-pi:mesh-revoked";
+  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:pair-code" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
   readonly content: string;
   readonly details?: unknown;
   readonly display?: boolean;
 }
 
-export interface CockpitControlFrameRemotePiNameAssigned {
+export interface CockpitControlFrameOutpostPiNameAssigned {
   readonly role: "custom";
-  readonly customType: "remote-pi:relay-state" | "remote-pi:name-assigned" | "remote-pi:pair-code" | "remote-pi:paired" | "remote-pi:mesh-revoked";
+  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:pair-code" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
   readonly content: string;
   readonly details?: unknown;
   readonly display?: boolean;
 }
 
-export interface CockpitControlFrameRemotePiPairCode {
+export interface CockpitControlFrameOutpostPiPairCode {
   readonly role: "custom";
-  readonly customType: "remote-pi:relay-state" | "remote-pi:name-assigned" | "remote-pi:pair-code" | "remote-pi:paired" | "remote-pi:mesh-revoked";
+  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:pair-code" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
   readonly content: string;
   readonly details?: unknown;
   readonly display?: boolean;
 }
 
-export interface CockpitControlFrameRemotePiPaired {
+export interface CockpitControlFrameOutpostPiPaired {
   readonly role: "custom";
-  readonly customType: "remote-pi:relay-state" | "remote-pi:name-assigned" | "remote-pi:pair-code" | "remote-pi:paired" | "remote-pi:mesh-revoked";
+  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:pair-code" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
   readonly content: string;
   readonly details?: unknown;
   readonly display?: boolean;
 }
 
-export interface CockpitControlFrameRemotePiMeshRevoked {
+export interface CockpitControlFrameOutpostPiMeshRevoked {
   readonly role: "custom";
-  readonly customType: "remote-pi:relay-state" | "remote-pi:name-assigned" | "remote-pi:pair-code" | "remote-pi:paired" | "remote-pi:mesh-revoked";
+  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:pair-code" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
   readonly content: string;
   readonly details?: unknown;
   readonly display?: boolean;
@@ -681,12 +681,12 @@ export interface CockpitControlFrameRemotePiMeshRevoked {
 
 export type CockpitControlFrame =
   | CockpitControlFramePrompt
-  | CockpitControlFrameRemotePiControl
-  | CockpitControlFrameRemotePiRelayState
-  | CockpitControlFrameRemotePiNameAssigned
-  | CockpitControlFrameRemotePiPairCode
-  | CockpitControlFrameRemotePiPaired
-  | CockpitControlFrameRemotePiMeshRevoked;
+  | CockpitControlFrameOutpostPiControl
+  | CockpitControlFrameOutpostPiRelayState
+  | CockpitControlFrameOutpostPiNameAssigned
+  | CockpitControlFrameOutpostPiPairCode
+  | CockpitControlFrameOutpostPiPaired
+  | CockpitControlFrameOutpostPiMeshRevoked;
 
 export const SESSION_HISTORY_EVENT_TYPES = [
   "user_input",
