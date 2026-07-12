@@ -7,10 +7,10 @@ import { RevealController } from "@/components/landing/reveal-controller";
 export const metadata: Metadata = {
   title: "Why Pi",
   description:
-    "Deciding how to run an always-on coding agent? remote-pi keeps Pi alive 24/7 and puts it in your pocket. Here's when that's the right shape — and when an all-in-one platform isn't.",
+    "Deciding how to run an always-on coding agent? outpost-pi keeps Pi alive 24/7 and puts it in your pocket. Here's when that's the right shape — and when an all-in-one platform isn't.",
 };
 
-const GITHUB_URL = "https://github.com/jacobaraujo7/remote_pi";
+const GITHUB_URL = "https://github.com/jacobaraujo7/outpost_pi";
 
 const highlights = [
   {
@@ -54,7 +54,7 @@ export default function WhyPage() {
             <span className="eyebrow">Why Pi</span>
             <h1>An always-on agent you assemble yourself.</h1>
             <p className="lede">
-              remote-pi turns Pi into a background agent that never logs off —
+              outpost-pi turns Pi into a background agent that never logs off —
               and a phone in your pocket that drives it. This page is about that
               choice: keeping a coding agent alive 24/7, and whether building it
               up from something small is the shape you want.
@@ -98,7 +98,7 @@ export default function WhyPage() {
               won&apos;t pretend otherwise.
             </p>
             <p>
-              remote-pi makes a different bet. It starts from Pi — a lightweight
+              outpost-pi makes a different bet. It starts from Pi — a lightweight
               coding agent — and adds just the always-on layer: a supervisor
               that keeps it running and a phone that drives it. Everything else,
               you assemble. The trade is real: less out of the box, more
@@ -108,11 +108,11 @@ export default function WhyPage() {
               Want a complete, all-in-one platform, ready out of the box?
               OpenClaw and Hermes Agent are great places to start. Want a
               lightweight coding agent you assemble, keep alive 24/7, and
-              control from your phone? That&apos;s Pi with remote-pi.
+              control from your phone? That&apos;s Pi with outpost-pi.
             </Callout>
             <p style={{ fontSize: 14 }}>
               One note on scope: this comparison is about the{" "}
-              <em>always-on layer</em> — remote-pi&apos;s daemon mode — not
+              <em>always-on layer</em> — outpost-pi&apos;s daemon mode — not
               coding agents in general. It&apos;s the part where keeping an agent
               alive and reachable is the whole job, and where OpenClaw and Hermes
               Agent shine too.
