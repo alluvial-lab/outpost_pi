@@ -66,7 +66,7 @@ systemctl --user status outpost-pi-supervisord
 journalctl --user -u outpost-pi-supervisord -n 50
 
 # macOS
-launchctl list | grep remotepi
+launchctl list | grep outpostpi
 tail -100 ~/.pi/remote/supervisord.log
 ```
 
@@ -287,3 +287,16 @@ outpost-pi daemon status
 If after walking the list you're still stuck, file an issue with the
 output of `outpost-pi daemon status`, the recent supervisor log, and
 the contents of `~/.pi/remote/daemons.json`.
+
+## One-time old-label cleanup (pre-0.1.0 daemon)
+
+If you ran the daemon under the pre-rebrand label (`dev.remotepi.supervisord`),
+it is **orphaned** after the 0.1.0 upgrade — the new install writes
+`dev.outpostpi.supervisord` but does not auto-remove the old label. Clean it
+up once:
+
+```bash
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/dev.remotepi.supervisord.plist 2>/dev/null
+launchctl unload ~/Library/LaunchAgents/dev.remotepi.supervisord.plist 2>/dev/null
+rm -f ~/Library/LaunchAgents/dev.remotepi.supervisord.plist
+```
