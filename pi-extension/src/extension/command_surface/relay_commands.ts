@@ -14,28 +14,28 @@ export class RelayCommands {
     const raw = arg.trim();
     if (!raw) {
       ctx.ui.notify(
-        "[remote-pi] Usage: /remote-pi set-relay <http:// or https:// url>",
+        "[outpost-pi] Usage: /outpost-pi set-relay <http:// or https:// url>",
         "warning",
       );
       return;
     }
     if (isWebSocketScheme(raw)) {
       ctx.ui.notify(
-        "[remote-pi] Use http:// or https://. The extension converts to WebSocket automatically.",
+        "[outpost-pi] Use http:// or https://. The extension converts to WebSocket automatically.",
         "error",
       );
       return;
     }
     if (!isValidRelayUrl(raw)) {
       ctx.ui.notify(
-        `[remote-pi] Invalid URL: ${raw}. Must start with http:// or https://`,
+        `[outpost-pi] Invalid URL: ${raw}. Must start with http:// or https://`,
         "error",
       );
       return;
     }
     saveConfig({ relay: raw });
     ctx.ui.notify(
-      `[remote-pi] Relay set to ${raw}. Run /remote-pi start (or restart) to apply.`,
+      `[outpost-pi] Relay set to ${raw}. Run /outpost-pi start (or restart) to apply.`,
       "info",
     );
   }

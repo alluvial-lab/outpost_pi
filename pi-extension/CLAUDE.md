@@ -1,10 +1,10 @@
-# Remote Pi — Pi Extension (Node + TypeScript)
+# Outpost-Pi — Pi Extension (Node + TypeScript)
 
 Extensão para o [Pi coding agent](https://github.com/earendil-works/pi) que
-adiciona o slash command `/remote-pi`. Embarca o SDK do Pi
+adiciona o slash command `/outpost-pi`. Embarca o SDK do Pi
 (`@earendil-works/pi-coding-agent`) e expõe via WebSocket pro relay.
 
-Faz parte da **mesh de agentes coding cross-PC** do Remote Pi: cada PC
+Faz parte da **mesh de agentes coding cross-PC** do Outpost-Pi: cada PC
 roda esta extensão (Node daemon) com uma Pi-key Ed25519 no keyring do
 sistema; o celular é autenticador inicial via QR; entre PCs irmãos do
 mesmo Owner, broker UDS local + relay forward Pi-to-Pi via WS roteiam
@@ -30,10 +30,10 @@ Sempre prefixe com env repo-local:
 
 ```bash
 cd pi-extension
-export PNPM_HOME=~/projects/remote_pi/.pnpm-store
-export npm_config_cache=~/projects/remote_pi/.npm-cache
-export XDG_CACHE_HOME=~/projects/remote_pi/.xdg-cache
-corepack pnpm install --store-dir ~/projects/remote_pi/.pnpm-store   # se faltar node_modules
+export PNPM_HOME=~/projects/outpost_pi/.pnpm-store
+export npm_config_cache=~/projects/outpost_pi/.npm-cache
+export XDG_CACHE_HOME=~/projects/outpost_pi/.xdg-cache
+corepack pnpm install --store-dir ~/projects/outpost_pi/.pnpm-store   # se faltar node_modules
 corepack pnpm typecheck   # tsc --noEmit, deve passar zero erros
 corepack pnpm build      # tsc -> dist/
 corepack pnpm dev        # tsx src/index.ts
@@ -48,16 +48,16 @@ Ordem de resolução (precedência):
 
 1. `process.env.REMOTE_PI_RELAY` — escape hatch pra CI/ops
 2. `~/.pi/remote/config.json` (`{ "relay": "..." }`) — persistido via
-   `/remote-pi set-relay <url>`
+   `/outpost-pi set-relay <url>`
 3. `kDefaultRelayUrl` (`https://relay-rp1.jacobmoura.work`) — produção
 
 Slash commands:
 
-- `/remote-pi set-relay <http://… | https://…>` — grava URL em
+- `/outpost-pi set-relay <http://… | https://…>` — grava URL em
   `~/.pi/remote/config.json`. Validação rejeita `ws://`, `wss://`,
   string vazia e URLs malformadas (a extensão converte http(s)→ws(s)
   internamente ao abrir o WebSocket).
-- `/remote-pi config` — mostra a URL efetiva atual + de qual fonte vem
+- `/outpost-pi config` — mostra a URL efetiva atual + de qual fonte vem
   (`env`/`config`/`default`).
 
 `_cmdStart` chama `resolveRelayUrl()` e exibe o `source` no notify

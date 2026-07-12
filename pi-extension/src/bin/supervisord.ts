@@ -10,28 +10,28 @@
  *
  * Once running, it:
  *   - Reads `~/.pi/remote/daemons.json`
- *   - Spawns `pi --mode rpc -e <remote-pi/dist/index.js>` per entry
+ *   - Spawns `pi --mode rpc -e <outpost-pi/dist/index.js>` per entry
  *   - Listens on `~/.pi/remote/supervisor.sock` for CLI control requests
  *   - Restarts crashed children with exponential backoff
  *
- * Exits cleanly on SIGTERM/SIGINT (used by `remote-pi uninstall`).
+ * Exits cleanly on SIGTERM/SIGINT (used by `outpost-pi uninstall`).
  */
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Supervisor, SupervisorAlreadyRunningError } from "../daemon/supervisor.js";
 
-const HELP_TEXT = `pi-supervisord — Remote Pi daemon supervisor
+const HELP_TEXT = `pi-supervisord — Outpost-Pi daemon supervisor
 
 Usage: pi-supervisord
 
 Runs the long-lived supervisor: reads ~/.pi/remote/daemons.json, spawns one
 \`pi --mode rpc\` child per entry, and listens on ~/.pi/remote/supervisor.sock
-for control requests from the \`remote-pi\` CLI.
+for control requests from the \`outpost-pi\` CLI.
 
 This binary takes NO arguments — it is normally launched by systemd/launchd
-(via \`remote-pi install\`), not by hand. Manage the fleet with:
-  remote-pi daemon start | stop | restart | status
-  remote-pi daemons
+(via \`outpost-pi install\`), not by hand. Manage the fleet with:
+  outpost-pi daemon start | stop | restart | status
+  outpost-pi daemons
 
 Options:
   -h, --help      Show this help and exit
@@ -49,7 +49,7 @@ async function main(): Promise<void> {
     return;
   }
   if (args.includes("-v") || args.includes("--version")) {
-    process.stdout.write("pi-supervisord (remote-pi)\n");
+    process.stdout.write("pi-supervisord (outpost-pi)\n");
     return;
   }
   if (args.length > 0) {

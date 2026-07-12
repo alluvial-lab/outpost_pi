@@ -2,9 +2,9 @@
  * Footer renderer for the Pi TUI. Three status slots + window title.
  *
  * Slot keys (intentionally namespaced so other extensions don't collide):
- *   - remote-pi:session   — current local session + peer count
- *   - remote-pi:relay     — relay state (off / on / paired)
- *   - remote-pi:peer-active — active mobile device, if paired
+ *   - outpost-pi:session   — current local session + peer count
+ *   - outpost-pi:relay     — relay state (off / on / paired)
+ *   - outpost-pi:peer-active — active mobile device, if paired
  */
 export interface FooterContext {
   ui: {
@@ -31,9 +31,9 @@ export interface FooterState {
   agentName?: string;
 }
 
-const K_SESSION = "remote-pi:session";
-const K_RELAY = "remote-pi:relay";
-const K_PEER = "remote-pi:peer-active";
+const K_SESSION = "outpost-pi:session";
+const K_RELAY = "outpost-pi:relay";
+const K_PEER = "outpost-pi:peer-active";
 
 export function updateFooter(ctx: FooterContext, state: FooterState): void {
   if (state.session) {

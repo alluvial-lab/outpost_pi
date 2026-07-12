@@ -1,6 +1,6 @@
 [Unit]
-Description=Remote Pi daemon supervisor (plan/26)
-Documentation=https://remote-pi.jacobmoura.work
+Description=Outpost-Pi daemon supervisor (plan/26)
+Documentation=https://outpost-pi.jacobmoura.work
 After=default.target
 
 [Service]

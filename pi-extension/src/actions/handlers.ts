@@ -95,7 +95,7 @@ export interface ActionCtx {
   /**
    * Live session registry from Pi's extension ctx. Includes providers/models
    * registered dynamically via `pi.registerProvider(...)`, unlike the fallback
-   * disk-backed registry remote-pi can build on its own.
+   * disk-backed registry outpost-pi can build on its own.
    */
   modelRegistry?: ActionModelRegistry;
 }
@@ -254,7 +254,7 @@ export async function handleModelSet(
   await runAsync(sender, msg, "model_set", async () => {
     // Prefer Pi's LIVE session registry when available so the app sees models
     // registered dynamically by extensions via `pi.registerProvider(...)`.
-    // Fall back to remote-pi's own disk-backed registry when no ctx exists.
+    // Fall back to outpost-pi's own disk-backed registry when no ctx exists.
     const liveReg = ctx?.modelRegistry ?? reg;
     // Refresh first so a model just-added via `/login` is visible.
     liveReg.refresh();
@@ -285,7 +285,7 @@ export function handleListModels(
   try {
     // Prefer Pi's LIVE session registry when available so the app sees models
     // registered dynamically by extensions via `pi.registerProvider(...)`.
-    // Fall back to remote-pi's own disk-backed registry when no ctx exists.
+    // Fall back to outpost-pi's own disk-backed registry when no ctx exists.
     const liveReg = ctx?.modelRegistry ?? reg;
     liveReg.refresh();
     const models = liveReg.getAvailable().map(wireFromModel);

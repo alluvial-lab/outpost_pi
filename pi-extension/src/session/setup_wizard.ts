@@ -35,7 +35,7 @@ const CANCEL_TOKEN = "__cancel__";
  *   Final: review + confirm "Save and activate?" yes/no
  *
  * Daemon mode (run agents 24/7 via systemd/launchd) is intentionally NOT in
- * the wizard — it's an explicit, separate opt-in via `/remote-pi install`.
+ * the wizard — it's an explicit, separate opt-in via `/outpost-pi install`.
  *
  * The local UDS mesh is always single per machine ("local" session) — no
  * session question. All Pis on the same machine see each other through
@@ -53,7 +53,7 @@ export async function runSetupWizard(
   if (agent_name === null) return null;
 
   ui.notify?.(
-    "The relay forwards encrypted messages to the Remote Pi mobile app and other PCs in your mesh. Skip this if you only want a local-only mesh on this machine.",
+    "The relay forwards encrypted messages to the Outpost-Pi mobile app and other PCs in your mesh. Skip this if you only want a local-only mesh on this machine.",
     "info",
   );
   const useRelayChoice = await ui.select(

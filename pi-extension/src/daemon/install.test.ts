@@ -13,7 +13,7 @@ import {
   detectPlatform,
   findNodeBinary,
   findSupervisorScript,
-  findRemotePiScript,
+  findOutpostPiScript,
   findTemplate,
   isOnPath,
   launchdPlistPath,
@@ -115,7 +115,7 @@ describe("renderTemplate", () => {
     home: "/Users/x",
     user: "jacob",
     path: "/usr/local/bin:/usr/bin:/bin",
-    vbs: "/Users/x/.pi/remote/RemotePiSupervisorLauncher.vbs",
+    vbs: "/Users/x/.pi/remote/OutpostPiSupervisorLauncher.vbs",
     logPath: "/Users/x/.pi/remote/supervisord.log",
   };
 
@@ -182,8 +182,8 @@ describe("vbsLauncherPath", () => {
   test("is absolute and ends with the launcher .vbs under ~/.pi/remote", () => {
     const p = vbsLauncherPath();
     expect(isAbsolute(p)).toBe(true);
-    expect(p.endsWith("RemotePiSupervisorLauncher.vbs")).toBe(true);
-    expect(p.endsWith(join(".pi", "remote", "RemotePiSupervisorLauncher.vbs"))).toBe(true);
+    expect(p.endsWith("OutpostPiSupervisorLauncher.vbs")).toBe(true);
+    expect(p.endsWith(join(".pi", "remote", "OutpostPiSupervisorLauncher.vbs"))).toBe(true);
   });
 });
 
@@ -200,17 +200,17 @@ describe("buildElevatedCmd", () => {
   test("redirects schtasks lines to the log but leaves control-flow bare", () => {
     const out = buildElevatedCmd(
       [
-        "schtasks /End /TN RemotePiSupervisor",
-        "schtasks /Create /XML \"x.xml\" /TN RemotePiSupervisor /F",
+        "schtasks /End /TN OutpostPiSupervisor",
+        "schtasks /Create /XML \"x.xml\" /TN OutpostPiSupervisor /F",
         "if errorlevel 1 exit /b 1",
-        "schtasks /Run /TN RemotePiSupervisor",
+        "schtasks /Run /TN OutpostPiSupervisor",
       ],
       "C:\\Temp\\out.log",
     );
     expect(out.startsWith("@echo off\r\n")).toBe(true);
     // schtasks lines get the redirect…
-    expect(out).toContain('schtasks /End /TN RemotePiSupervisor >> "C:\\Temp\\out.log" 2>&1');
-    expect(out).toContain('schtasks /Run /TN RemotePiSupervisor >> "C:\\Temp\\out.log" 2>&1');
+    expect(out).toContain('schtasks /End /TN OutpostPiSupervisor >> "C:\\Temp\\out.log" 2>&1');
+    expect(out).toContain('schtasks /Run /TN OutpostPiSupervisor >> "C:\\Temp\\out.log" 2>&1');
     // …control flow does NOT (redirecting it would swallow the exit code).
     expect(out).toContain("if errorlevel 1 exit /b 1\r\n");
     expect(out).not.toContain('exit /b 1 >> ');
@@ -220,7 +220,7 @@ describe("buildElevatedCmd", () => {
 // systemd/launchd paths are POSIX-only (Windows uses Task Scheduler — plan/40).
 describe.skipIf(posixOnly)("paths", () => {
   test("systemdUnitPath lives under ~/.config/systemd/user/", () => {
-    expect(systemdUnitPath()).toMatch(/\.config\/systemd\/user\/remote-pi-supervisord\.service$/);
+    expect(systemdUnitPath()).toMatch(/\.config\/systemd\/user\/outpost-pi-supervisord\.service$/);
   });
 
   test("launchdPlistPath lives under ~/Library/LaunchAgents/", () => {
@@ -241,9 +241,9 @@ describe("defaultRenderVars", () => {
 
 // ── CLI bin linking (plan/27) ────────────────────────────────────────────────
 
-describe("findRemotePiScript", () => {
+describe("findOutpostPiScript", () => {
   test("resolves to dist/index.js sibling of supervisord", () => {
-    const p = findRemotePiScript();
+    const p = findOutpostPiScript();
     expect(basename(p)).toBe("index.js");
     // Same dist root as supervisord: dirname(index.js) === dirname(dist/bin).
     expect(dirname(p)).toBe(dirname(dirname(findSupervisorScript())));
@@ -295,7 +295,7 @@ describe.skipIf(posixOnly)("linkCliBinaries / unlinkCliBinaries", () => {
     expect(result.links).toHaveLength(2);
 
     const names = result.links.map((l) => l.name).sort();
-    expect(names).toEqual(["pi-supervisord", "remote-pi"]);
+    expect(names).toEqual(["outpost-pi", "pi-supervisord"]);
 
     for (const link of result.links) {
       expect(lstatSync(link.path).isSymbolicLink()).toBe(true);
@@ -317,13 +317,13 @@ describe.skipIf(posixOnly)("linkCliBinaries / unlinkCliBinaries", () => {
     const binDir = join(tmpHome, ".local", "bin");
     mkdirSync(binDir, { recursive: true });
     // Write a fake stale symlink first
-    const stale = join(binDir, "remote-pi");
+    const stale = join(binDir, "outpost-pi");
     writeFileSync(join(tmpHome, "fake-old.js"), "// old\n");
     require("node:fs").symlinkSync(join(tmpHome, "fake-old.js"), stale);
     expect(readlinkSync(stale)).toBe(join(tmpHome, "fake-old.js"));
 
     const result = linkCliBinaries(tmpHome, fakePaths);
-    const pi = result.links.find((l) => l.name === "remote-pi")!;
+    const pi = result.links.find((l) => l.name === "outpost-pi")!;
     expect(readlinkSync(pi.path)).toBe(pi.target);
     expect(readlinkSync(pi.path)).not.toBe(join(tmpHome, "fake-old.js"));
   });
@@ -386,11 +386,11 @@ describe.skipIf(!posixOnly)("linkCliBinaries / unlinkCliBinaries (Windows .cmd s
     rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  test("link writes remote-pi.cmd + pi-supervisord.cmd pointing at node + targets", () => {
+  test("link writes outpost-pi.cmd + pi-supervisord.cmd pointing at node + targets", () => {
     const result = linkCliBinaries(tmpHome, fakePaths, { node, mutatePath: false });
     expect(result.binDir).toBe(join(tmpHome, ".local", "bin"));
     const names = result.links.map((l) => l.name).sort();
-    expect(names).toEqual(["pi-supervisord.cmd", "remote-pi.cmd"]);
+    expect(names).toEqual(["pi-supervisord.cmd", "outpost-pi.cmd"]);
     for (const link of result.links) {
       expect(existsSync(link.path)).toBe(true);
       const content = readFileSync(link.path, "utf8");

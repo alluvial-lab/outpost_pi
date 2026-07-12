@@ -82,7 +82,7 @@ export interface RelayClientEvents {
 }
 
 /**
- * Thin WebSocket client for the Remote Pi relay.
+ * Thin WebSocket client for the Outpost-Pi relay.
  *
  * Lifecycle:
  *   const relay = new RelayClient(url, ed25519Keypair)

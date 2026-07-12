@@ -274,7 +274,7 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
   }
 
   console.warn(
-    "[remote-pi] keyring unavailable; using file-backed identity at " +
+    "[outpost-pi] keyring unavailable; using file-backed identity at " +
     `${IDENTITY_FILE}. ${String(keyringError)}`,
   );
   const fresh = generateEd25519Keypair();

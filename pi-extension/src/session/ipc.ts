@@ -33,7 +33,7 @@ function safe(s: string): string {
 
 /**
  * Resolve a local-IPC address. On Windows returns a per-user named pipe
- * (`\\.\pipe\remote-pi-<suffix>-<user>`); on POSIX returns `filePath` (the
+ * (`\\.\pipe\outpost-pi-<suffix>-<user>`); on POSIX returns `filePath` (the
  * filesystem UDS path) unchanged.
  */
 export function ipcAddress(
@@ -44,7 +44,7 @@ export function ipcAddress(
 ): string {
   if (plat === "win32") {
     const u = safe((user ?? userInfo().username) || "user");
-    return `\\\\.\\pipe\\remote-pi-${safe(suffix)}-${u}`;
+    return `\\\\.\\pipe\\outpost-pi-${safe(suffix)}-${u}`;
   }
   return filePath;
 }

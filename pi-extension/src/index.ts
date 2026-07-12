@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * pi-extension — remote-pi slash commands + AgentBridge wiring
+ * pi-extension — outpost-pi slash commands + AgentBridge wiring
  *
  * Exported as ExtensionFactory (default export) to be loaded by Pi SDK:
  *   pi -e $(pwd)/dist/index.js
  *
  * State machine:  idle → started → paired
- *   /remote-pi start   connects to relay (idle → started)
- *   /remote-pi pair    shows QR for new peers (started, async → paired via auto-listener)
- *   /remote-pi stop    closes everything (any → idle)
+ *   /outpost-pi start   connects to relay (idle → started)
+ *   /outpost-pi pair    shows QR for new peers (started, async → paired via auto-listener)
+ *   /outpost-pi stop    closes everything (any → idle)
  *
  * Pairing (post plano 06 — sem Noise XX):
  *   App envia inner `pair_request` (id, token, device_name) sobre canal opaco.
@@ -64,14 +64,14 @@ import { RelayClient, RoomAlreadyOpenError } from "./transport/relay_client.js";
 import type { PeerChannel, PlainPeerChannel } from "./transport/peer_channel.js";
 import { OwnerMultiplexer } from "./extension/owner_multiplexer.js";
 import {
-  createRemotePiCommandSurfaceHarness,
-  createRemotePiTestHarness,
+  createOutpostPiCommandSurfaceHarness,
+  createOutpostPiTestHarness,
   type OwnerMultiplexerTestHarness,
-  type RemotePiCommandSurfaceHarness,
-  type RemotePiTestHarness,
+  type OutpostPiCommandSurfaceHarness,
+  type OutpostPiTestHarness,
 } from "./extension/testing.js";
 import { createCommandSurface } from "./extension/command_surface.js";
-import { registerRemotePiCommands, type RemotePiCommandSpec } from "./extension/command_surface/commands.js";
+import { registerOutpostPiCommands, type OutpostPiCommandSpec } from "./extension/command_surface/commands.js";
 import { LocalMeshCommands } from "./extension/command_surface/local_mesh_commands.js";
 import { DaemonCommands } from "./extension/command_surface/daemon_commands.js";
 import { CronCommands } from "./extension/command_surface/cron_commands.js";
@@ -80,13 +80,13 @@ import { PairingCoordinator } from "./extension/command_surface/pairing_coordina
 import { RelayCommands } from "./extension/command_surface/relay_commands.js";
 import { ServiceCommands } from "./extension/command_surface/service_commands.js";
 import { restartSupervisor, restartSupervisorCommand } from "./extension/command_surface/supervisor_restart.js";
-import { createStandaloneCliDeps, isDirectRun, launchClaudeCli, runStandaloneRemotePiCli } from "./extension/command_surface/standalone_cli.js";
+import { createStandaloneCliDeps, isDirectRun, launchClaudeCli, runStandaloneOutpostPiCli } from "./extension/command_surface/standalone_cli.js";
 import { probeListPeers } from "./extension/probe_list_peers.js";
 export { probeListPeers } from "./extension/probe_list_peers.js";
 export { restartSupervisorCommand as _restartSupervisorCommand } from "./extension/command_surface/supervisor_restart.js";
 export type { RestartStep } from "./extension/command_surface/supervisor_restart.js";
-import { createRemotePiExtensionRuntime } from "./extension/composition_root.js";
-import { getRemotePiRuntimeCoordinator } from "./extension/runtime_coordinator.js";
+import { createOutpostPiExtensionRuntime } from "./extension/composition_root.js";
+import { getOutpostPiRuntimeCoordinator } from "./extension/runtime_coordinator.js";
 import { createLegacyIndexPorts, type LegacyIndexDeps } from "./extension/legacy_ports.js";
 import type { CommandSurfacePort, WakeAgentResult } from "./extension/ports.js";
 import { SdkSessionProjection } from "./session/sdk_session_projection.js";
@@ -261,7 +261,7 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
     _sdkSessionProjection.recordOwnerAttached(peerId);
     _syncOwnerPresenceSubscription();
     _notify(
-      `[remote-pi] Owner attached: peer=${peerId.slice(0, 8)}, name=${peerName} ` +
+      `[outpost-pi] Owner attached: peer=${peerId.slice(0, 8)}, name=${peerName} ` +
       `(${activeCount} active)`,
       "info",
     );
@@ -429,7 +429,7 @@ const _pairingCoordinator = new PairingCoordinator({
   onOwnerAttached: ({ peerId, peerName, activeCount }) => {
     _sdkSessionProjection.recordOwnerAttached(peerId);
     _notify(
-      `[remote-pi] Owner attached: peer=${peerId.slice(0, 8)}, name=${peerName} ` +
+      `[outpost-pi] Owner attached: peer=${peerId.slice(0, 8)}, name=${peerName} ` +
       `(${activeCount} active)`,
       "info",
     );
@@ -552,13 +552,13 @@ function _attachBridgeIfReady(): void {
   });
 }
 
-type RemotePiUi = {
+type OutpostPiUi = {
   setStatus?: (k: string, v: string | undefined) => void;
   setTitle?: (t: string) => void;
   notify?: (msg: string, type?: "info" | "warning" | "error") => void;
 };
 
-type RemotePiUiContext = { ui?: RemotePiUi } | null | undefined;
+type OutpostPiUiContext = { ui?: OutpostPiUi } | null | undefined;
 
 /**
  * Safely resolve a ctx.ui reference. Pi intentionally throws when an extension
@@ -572,7 +572,7 @@ function _isStaleContextError(err: unknown): boolean {
   return message.includes("stale after session replacement or reload");
 }
 
-function _safeUi(ctx?: RemotePiUiContext): RemotePiUi | undefined {
+function _safeUi(ctx?: OutpostPiUiContext): OutpostPiUi | undefined {
   if (!ctx) return undefined;
   try {
     return ctx.ui;
@@ -585,7 +585,7 @@ function _safeUi(ctx?: RemotePiUiContext): RemotePiUi | undefined {
   }
 }
 
-function _currentUi(preferred?: RemotePiUiContext): RemotePiUi | undefined {
+function _currentUi(preferred?: OutpostPiUiContext): OutpostPiUi | undefined {
   return _safeUi(preferred) ?? _safeUi(_lastEventCtx) ?? _safeUi(_lastCtx);
 }
 
@@ -599,7 +599,7 @@ function _currentCwd(): string {
   }
 }
 
-function _notify(msg: string, type: "info" | "warning" | "error" = "info", ctx?: RemotePiUiContext): void {
+function _notify(msg: string, type: "info" | "warning" | "error" = "info", ctx?: OutpostPiUiContext): void {
   const ui = _currentUi(ctx);
   if (typeof ui?.notify !== "function") return;
   try {
@@ -629,12 +629,12 @@ function _sendPiMessage(
   label = "sendMessage",
 ): boolean {
   const delivered = _sdkSessionProjection.sendPiMessage(message, options);
-  if (!delivered) console.error(`[remote-pi] ${label}: Pi rejected message: agent session not bound yet`);
+  if (!delivered) console.error(`[outpost-pi] ${label}: Pi rejected message: agent session not bound yet`);
   return delivered;
 }
 
 /** Refreshes the Pi TUI footer slots from current module state. Safe no-op when ctx lacks ui or is stale. */
-function _refreshFooter(ctx?: RemotePiUiContext): void {
+function _refreshFooter(ctx?: OutpostPiUiContext): void {
   const ui = _currentUi(ctx);
   if (!ui || typeof ui.setStatus !== "function" || typeof ui.setTitle !== "function") return;
   const ownerSnapshot = _owners.snapshot();
@@ -644,7 +644,7 @@ function _refreshFooter(ctx?: RemotePiUiContext): void {
     relayOn: _state !== "idle",
     // `devicePaired` now reflects "any owner currently attached" — picks one
     // shortid representatively (multi-owner UX detail surfaces in the
-    // `/remote-pi status` line, not the footer slot).
+    // `/outpost-pi status` line, not the footer slot).
     devicePaired: ownerSnapshot.activeOwnerCount > 0 ? ownerSnapshot.lastOwnerShortId : undefined,
     hasPairings: ownerSnapshot.hasGlobalPairings,
     agentName: _meshNode?.name(),
@@ -660,7 +660,7 @@ function _refreshFooter(ctx?: RemotePiUiContext): void {
 // command/test surfaces.
 
 /**
- * Test-only: emulate what `/remote-pi` does on the returning-user path
+ * Test-only: emulate what `/outpost-pi` does on the returning-user path
  * (join the local mesh, then start the relay) without touching the FS for
  * a `localConfigExists()` lookup. Lets tests bring the relay up without
  * mocking the wizard or the local config storage.
@@ -675,7 +675,7 @@ async function connectForTest(ctx: unknown): Promise<void> {
   await _cmdStart(real);
 }
 
-/** Test-only: tear everything down (mirrors `/remote-pi stop`). */
+/** Test-only: tear everything down (mirrors `/outpost-pi stop`). */
 async function stopForTest(ctx: unknown): Promise<void> {
   await _cmdStop(ctx as Parameters<typeof _cmdStop>[0]);
 }
@@ -699,7 +699,7 @@ export function _resetCwdLockForTest(): void {
 
 /**
  * Test-only: relay-only startup, no UDS mesh join. Replaces the old
- * `remote-pi relay start` handler that some tests captured to bring up
+ * `outpost-pi relay start` handler that some tests captured to bring up
  * the relay in isolation (e.g. ping/pong tests that don't care about the
  * agent-network broker).
  */
@@ -911,7 +911,7 @@ function getStateForTest(): "idle" | "started" | "paired" {
   return _owners.activeCount() > 0 ? "paired" : "started";
 }
 
-export const commandSurfaceHarness: RemotePiCommandSurfaceHarness = createRemotePiCommandSurfaceHarness({
+export const commandSurfaceHarness: OutpostPiCommandSurfaceHarness = createOutpostPiCommandSurfaceHarness({
   connect: (ctx) => connectForTest(ctx),
   stop: (ctx) => stopForTest(ctx),
   state: () => getStateForTest(),
@@ -948,7 +948,7 @@ function _broadcastQueuedMessageState(): void {
  *   1. Broker-assigned name (when this Pi is on the local UDS mesh) — may
  *      carry a `#N` suffix from a name collision. Matches what other
  *      agents see, so the mobile UI shows the exact same string.
- *   2. `agent_name` from `<cwd>/.pi/remote-pi/config.json` — set by the
+ *   2. `agent_name` from `<cwd>/.pi/outpost-pi/config.json` — set by the
  *      wizard on first run; this is "the name the user configured".
  *   3. `defaultAgentName(cwd)` (parent/folder) — fallback when no config
  *      exists yet and the mesh hasn't been joined.
@@ -991,12 +991,12 @@ function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): void {
   _publishWorking(false);
 
   // Cancel any pending reconnect attempt and close the live relay. Critical:
-  // /remote-pi stop must win the race against a scheduled reconnect.
+  // /outpost-pi stop must win the race against a scheduled reconnect.
   _relayTransport.stop(byeReason);
 
   // Stop the mesh poller — it's bound to the relay-up lifecycle so a new
   // relay start will spin up a fresh instance (with potentially a new relay
-  // URL if the user changed it via /remote-pi relay url).
+  // URL if the user changed it via /outpost-pi relay url).
   _pairingCoordinator.stopSelfRevoke();
 
   // Preserve projection-owned sessionStartedAt + transcript events across
@@ -1020,7 +1020,7 @@ function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): void {
  * the prior peer here; we just go back to `started` and wait.
  */
 function _onRelayClose(): void {
-  if (_state === "idle") return;  // already torn down (e.g. /remote-pi stop)
+  if (_state === "idle") return;  // already torn down (e.g. /outpost-pi stop)
 
   // Keep owner ingress subscribed through the relay transport so the fresh
   // reconnect socket can reattach known peers from their first post-reconnect
@@ -1145,7 +1145,7 @@ function _disconnectOwnerForRuntime(appPeerId?: string): void {
   // same turn can still receive chunks/done; the reducer clears only on terminal events.
   if (!_turnProjection().working) _resetTurnSnapshot();
   _refreshFooter();
-  _notify("[remote-pi] All app peers disconnected, listening for reconnect", "info");
+  _notify("[outpost-pi] All app peers disconnected, listening for reconnect", "info");
   // Auto-listener stays up — same listener catches the reconnect on any peer.
 }
 
@@ -1234,7 +1234,7 @@ const _sdkSessionProjection: SdkSessionProjection = new SdkSessionProjection({
 
 const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   const legacyPorts = createLegacyIndexPorts(createIndexDeps());
-  const legacyRuntime = createRemotePiExtensionRuntime(pi, legacyPorts);
+  const legacyRuntime = createOutpostPiExtensionRuntime(pi, legacyPorts);
   // Every ordinary SDK event is factory-local. Satellite/child factories still
   // register a complete extension surface, but their callbacks cannot mutate
   // the phone-facing process singleton.
@@ -1703,7 +1703,7 @@ function createLegacyCommandSurface(): CommandSurfacePort {
     deployAgentNetworkSkill: _deployAgentNetworkSkill,
     refreshPairingsCache: () => { void _owners.refreshPairingsCache(); },
     registerAgentTools: (pi) => registerAgentTools(pi, () => _meshNode?.peer() ?? null),
-    registerCommands: _registerRemotePiCommands,
+    registerCommands: _registerOutpostPiCommands,
     startDaemonMode: _startDaemonMode,
   });
 }
@@ -1729,7 +1729,7 @@ function _bindReplacementSessionContext(freshCtx: ActionCtx): void {
   _drainPendingDeliveryQueue();
 }
 
-function _registerRemotePiCommands(pi: ExtensionAPI): void {
+function _registerOutpostPiCommands(pi: ExtensionAPI): void {
   const runWithCtx = (
     run: (args: string, ctx: ExtensionCommandContext) => void | Promise<void>,
   ) => async (args: string, ctx: ExtensionCommandContext) => {
@@ -1737,7 +1737,7 @@ function _registerRemotePiCommands(pi: ExtensionAPI): void {
     return run(args, ctx);
   };
 
-  const specs: RemotePiCommandSpec[] = [
+  const specs: OutpostPiCommandSpec[] = [
     { suffix: "setup", description: "Run the setup wizard and update local config", run: runWithCtx(async (_args, ctx) => { await _cmdSetup(ctx); }) },
     { suffix: "status", description: "Show local mesh + relay status", run: runWithCtx((_args, ctx) => { _cmdStatus(ctx); }) },
     { suffix: "stop", description: "Stop everything (leave local mesh + disconnect relay)", run: runWithCtx(async (_args, ctx) => { await _cmdStop(ctx); }) },
@@ -1755,11 +1755,11 @@ function _registerRemotePiCommands(pi: ExtensionAPI): void {
     { suffix: "daemon status", description: "Show fleet runtime status (pid, uptime, restarts)", run: runWithCtx(async (_args, ctx) => { await _daemonCommands.status(ctx); }) },
     { suffix: "daemon send", description: "Send a prompt to a daemon: `daemon send <id> \"<text>\"`", run: runWithCtx(async (args, ctx) => { await _daemonCommands.send(args, ctx); }) },
     { suffix: "cron", completionValues: ["cron", "cron add", "cron list", "cron remove", "cron enable", "cron disable", "cron run", "cron log"], description: "Schedule recurring prompts to daemons: `cron <add|list|remove|enable|disable|run|log>`", run: runWithCtx(async (args, ctx) => { await _cronCommands.run(args, ctx); }) },
-    { suffix: "install", description: "Install pi-supervisord as a system service + link the remote-pi CLI (systemd/launchd/Task Scheduler; Windows prompts for admin)", run: runWithCtx((_args, ctx) => { _serviceCommands.install(ctx, { linkCli: true }); }) },
+    { suffix: "install", description: "Install pi-supervisord as a system service + link the outpost-pi CLI (systemd/launchd/Task Scheduler; Windows prompts for admin)", run: runWithCtx((_args, ctx) => { _serviceCommands.install(ctx, { linkCli: true }); }) },
     { suffix: "uninstall", description: "Remove the pi-supervisord system service + the CLI shims (daemons registry preserved; Windows prompts for admin)", run: runWithCtx((_args, ctx) => { _serviceCommands.uninstall(ctx, { linkCli: true }); }) },
   ];
 
-  registerRemotePiCommands(
+  registerOutpostPiCommands(
     pi,
     specs,
     async (sub, ctx) => {
@@ -1811,7 +1811,7 @@ const _localMeshCommands = new LocalMeshCommands({
 // ── Command implementations ───────────────────────────────────────────────────
 
 /**
- * `/remote-pi status` — full state snapshot. Two lines: local mesh + relay.
+ * `/outpost-pi status` — full state snapshot. Two lines: local mesh + relay.
  *
  * Always callable; safe when nothing is up (renders the off variants).
  * Reuses the same icons as the footer so terminal + status output stay
@@ -1834,7 +1834,7 @@ function _cmdStatus(ctx: Pick<ExtensionContext, "ui">): void {
   // Relay line — paired state is derived from OwnerMultiplexer snapshot.
   let relayLine: string;
   if (_state === "idle") {
-    relayLine = `⚪ Relay: off (${relayUrl}) — run /remote-pi to start`;
+    relayLine = `⚪ Relay: off (${relayUrl}) — run /outpost-pi to start`;
   } else if (ownerSnapshot.activeOwnerCount > 0) {
     const count = ownerSnapshot.activeOwnerCount;
     const shortids = ownerSnapshot.ownerShortIds.join(", ");
@@ -1845,7 +1845,7 @@ function _cmdStatus(ctx: Pick<ExtensionContext, "ui">): void {
       : `🟡 Relay: on, waiting for first pairing (${relayUrl})`;
   }
 
-  ctx.ui.notify(`[remote-pi]\n  ${meshLine}\n  ${relayLine}`, "info");
+  ctx.ui.notify(`[outpost-pi]\n  ${meshLine}\n  ${relayLine}`, "info");
 }
 
 async function _cmdPeers(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
@@ -1871,7 +1871,7 @@ function _pairingCoordinatorInternals(): PairingCoordinatorRelayInternals {
 
 async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
   if (_state !== "idle") {
-    ctx.ui.notify("[remote-pi] Already started.", "warning");
+    ctx.ui.notify("[outpost-pi] Already started.", "warning");
     return;
   }
 
@@ -1881,9 +1881,9 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
   } catch (err) {
     if (err instanceof KeyringUnavailableError) {
       ctx.ui.notify(
-        "[remote-pi] Could not read this machine's identity: the system " +
+        "[outpost-pi] Could not read this machine's identity: the system " +
         "keychain is locked or access was denied. Unlock it (open the app / " +
-        "log in) and run /remote-pi again. Your pairing is NOT lost. " +
+        "log in) and run /outpost-pi again. Your pairing is NOT lost. " +
         "(Set REMOTE_PI_ALLOW_FILE_IDENTITY=1 only for headless hosts.)",
         "error",
       );
@@ -1922,7 +1922,7 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
 
   try {
     _currentThinking = _pi?.getThinkingLevel() as ThinkingLevel | undefined;
-  } catch { /* defensive — never block /remote-pi start on this */ }
+  } catch { /* defensive — never block /outpost-pi start on this */ }
 
   const sessionId = _currentRemoteSessionId(ctx);
   const roomMeta = { name: sessionName, cwd, session_id: sessionId } as NonNullable<typeof _myRoomMeta>;
@@ -1931,7 +1931,7 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
   if (_currentThinking) roomMeta.thinking = _currentThinking;
   _myRoomMeta = roomMeta;
 
-  ctx.ui.notify(`[remote-pi] Connecting to relay ${relayUrl} (source: ${source}, room: ${roomId})…`, "info");
+  ctx.ui.notify(`[outpost-pi] Connecting to relay ${relayUrl} (source: ${source}, room: ${roomId})…`, "info");
 
   try {
     _ensureOwnerIngressListener();
@@ -1947,12 +1947,12 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
     if (err instanceof RelayStartAbortedError) return;
     if (err instanceof RoomAlreadyOpenError) {
       ctx.ui.notify(
-        "[remote-pi] Already running in this cwd. Stop the other terminal first.",
+        "[outpost-pi] Already running in this cwd. Stop the other terminal first.",
         "error",
       );
       return;
     }
-    _notify(`[remote-pi] relay connect failed: ${String(err)}`, "error", ctx);
+    _notify(`[outpost-pi] relay connect failed: ${String(err)}`, "error", ctx);
     return;
   }
 
@@ -1965,7 +1965,7 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
   _pairingCoordinatorInternals().ensureSelfRevoke(relayUrl, edKp);
   _attachBridgeIfReady();
   _emitRelayState();
-  ctx.ui.notify(`[remote-pi] state: started (peer=${myShort}) — Connected to relay ${relayUrl}`, "info");
+  ctx.ui.notify(`[outpost-pi] state: started (peer=${myShort}) — Connected to relay ${relayUrl}`, "info");
 }
 
 async function _cmdStart(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
@@ -1973,7 +1973,7 @@ async function _cmdStart(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<voi
 }
 
 /**
- * `/remote-pi pair` — always generates a fresh QR when the relay is up.
+ * `/outpost-pi pair` — always generates a fresh QR when the relay is up.
  *
  * The coordinator owns QR token issuance, relay auto-listening, known-peer
  * reconnect, and pair_request handling so owner/session attachment flows
@@ -2086,8 +2086,8 @@ async function _wakeAgent(
   if (!wake.ok) {
     const detail = wake.detail ?? "agent session not bound yet";
     if (wake.recoverable) return wake;
-    console.error(`[remote-pi] ${label}: agent rejected incoming message: ${detail}`);
-    _notify(`[remote-pi] failed to process incoming message: ${detail}`, "error");
+    console.error(`[outpost-pi] ${label}: agent rejected incoming message: ${detail}`);
+    _notify(`[outpost-pi] failed to process incoming message: ${detail}`, "error");
     return wake;
   }
   return wake;
@@ -2123,7 +2123,7 @@ function _deliverMeshMessageToAgent(
 
   const label = `agent-network message from "${env.from}"`;
   if (!_pi) {
-    console.error(`[remote-pi] ${label}: agent session not bound yet — message dropped`);
+    console.error(`[outpost-pi] ${label}: agent session not bound yet — message dropped`);
     return;
   }
   const header = `[agent-network] message from "${env.from}" (id=${env.id}${env.re ? `, re=${env.re}` : ""}):`;
@@ -2131,11 +2131,11 @@ function _deliverMeshMessageToAgent(
     ? "(This is a reply to a previous message of yours.)"
     : `(If a reply is expected, call agent_send with to="${env.from}" and re="${env.id}".)`;
   const ok = _sendPiMessage(
-    { customType: "remote-pi:mesh-message", content: `${header}\n${bodyText}\n\n${footer}`, display: true },
+    { customType: "outpost-pi:mesh-message", content: `${header}\n${bodyText}\n\n${footer}`, display: true },
     { triggerTurn: true },
     label,
   );
-  if (!ok) _notify("[remote-pi] failed to process incoming mesh message", "error");
+  if (!ok) _notify("[outpost-pi] failed to process incoming mesh message", "error");
 }
 
 async function _cmdJoin(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
@@ -2343,7 +2343,7 @@ function _enqueuePendingDelivery(prepared: PreparedUserDelivery, enqueuedAt = Da
     const dropped = _pendingDeliveryQueue.shift();
     if (dropped) {
       clearTimeout(dropped.timeout);
-      console.warn(`[remote-pi] dropping queued delivery id=${dropped.msg.id}: replay queue full`);
+      console.warn(`[outpost-pi] dropping queued delivery id=${dropped.msg.id}: replay queue full`);
       _deliveryDebugLog.log({ tag: "queue_dropped", id: dropped.msg.id, reason: "replay queue full", roomId: _myRoomId ?? undefined });
       _sendDeliveryError(dropped.sender, dropped.msg.id, "agent session did not re-arm before the replay queue filled");
     }
@@ -2381,7 +2381,7 @@ function _schedulePendingDeliveryTimeout(
     // message survives the (possibly >5s) replacement gap. The terminal
     // `quit` path fails the queue via clearStaleContexts; bounded capacity
     // limits growth. See feature-session-stable-message-delivery gap-window gate.
-    if (getRemotePiRuntimeCoordinator().isReplacing()) {
+    if (getOutpostPiRuntimeCoordinator().isReplacing()) {
       // Absolute deadline: if the replacement has been stuck longer than the
       // cap (successor creation failed and the SDK propagated the error while
       // RPC mode stayed alive, leaving the coordinator permanently REPLACING),
@@ -2407,7 +2407,7 @@ function _failPendingDeliveryQueue(detail: string): void {
   const entries = _pendingDeliveryQueue.splice(0);
   for (const entry of entries) {
     clearTimeout(entry.timeout);
-    console.warn(`[remote-pi] failing queued delivery id=${entry.msg.id}: ${detail}`);
+    console.warn(`[outpost-pi] failing queued delivery id=${entry.msg.id}: ${detail}`);
     _deliveryDebugLog.log({ tag: "queue_dropped", id: entry.msg.id, reason: detail, roomId: _myRoomId ?? undefined });
     _sendDeliveryError(entry.sender, entry.msg.id, detail);
   }
@@ -2565,7 +2565,7 @@ export function _routeClientMessageFrom(
       const actionCtx = _sdkSessionProjection.freshCommandActionCtx();
       if (process.env["REMOTE_PI_DAEMON"] === "1" && !actionCtx?.newSession) {
         // Headless RPC daemon has no ExtensionCommandContext, so ctx.newSession
-        // is unavailable. Ack, rotate remote-pi's session-scoped replay state,
+        // is unavailable. Ack, rotate outpost-pi's session-scoped replay state,
         // then exit with a private code; the supervisor restarts once without
         // --continue, which creates a fresh Pi session. Later restarts resume
         // that fresh session.
@@ -2591,7 +2591,7 @@ export function _routeClientMessageFrom(
         },
       ).then((created) => {
         // Pi-side reset is durable only here: handleSessionNew swaps the SDK
-        // session, but the Remote Pi session clock and transcript event log live
+        // session, but the Outpost-Pi session clock and transcript event log live
         // in SdkSessionProjection. Rotate them and fan out an empty history as a
         // compatibility notification for every owner, not just the sender.
         if (created) _resetSessionForNew(msg.id);
@@ -2639,7 +2639,7 @@ const routeClientMessageForTest = (
   ctx: Pick<ExtensionContext, "abort">,
 ): void => ownerHarness.fallbackRoute(msg, ctx);
 
-export const remotePiTestHarness: RemotePiTestHarness = createRemotePiTestHarness({
+export const remotePiTestHarness: OutpostPiTestHarness = createOutpostPiTestHarness({
   connect: (ctx) => connectForTest(ctx),
   stop: (ctx) => stopForTest(ctx),
   state: () => getStateForTest(),
@@ -2855,7 +2855,7 @@ export function _mapAgentMessagesToEvents(
 // ── Standalone CLI ────────────────────────────────────────────────────────────
 
 if (isDirectRun(import.meta.url, process.argv[1])) {
-  await runStandaloneRemotePiCli(process.argv, createStandaloneCliDeps({
+  await runStandaloneOutpostPiCli(process.argv, createStandaloneCliDeps({
     commandSurface: commandSurfaceHarness,
     listPeers: () => listPeers(),
     removePeer: (remoteEpk) => removePeer(remoteEpk),

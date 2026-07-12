@@ -29,11 +29,11 @@ export type PairingCoordinatorState = "idle" | "started";
 type PairRequest = Extract<ClientMessage, { type: "pair_request" }>;
 type PairTokenStatus = "ok" | "expired" | "consumed" | "unknown";
 
-type RemotePiUi = {
+type OutpostPiUi = {
   notify?: (message: string, type?: "info" | "warning" | "error") => void;
 };
 
-type RemotePiUiContext = { ui?: RemotePiUi } | null | undefined;
+type OutpostPiUiContext = { ui?: OutpostPiUi } | null | undefined;
 
 interface OuterEnvelope {
   peer: string;
@@ -74,8 +74,8 @@ export interface PairingCoordinatorDeps {
   onPeerDisconnect(peerId: string): void;
   handleClientMessage(sender: PeerChannel, message: ClientMessage): void | Promise<void>;
   joinLocalMesh(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void>;
-  refreshFooter(ctx?: RemotePiUiContext): void;
-  notify(message: string, type?: "info" | "warning" | "error", ctx?: RemotePiUiContext): void;
+  refreshFooter(ctx?: OutpostPiUiContext): void;
+  notify(message: string, type?: "info" | "warning" | "error", ctx?: OutpostPiUiContext): void;
   sendPiMessage(
     message: Parameters<ExtensionAPI["sendMessage"]>[0],
     options?: Parameters<ExtensionAPI["sendMessage"]>[1],
@@ -134,7 +134,7 @@ function pairErrorForStatus(status: Exclude<PairTokenStatus, "ok">): { code: Pai
     : status === "consumed" ? "token_consumed"
     : "token_unknown";
   const message =
-    code === "token_expired" ? "Ephemeral token expired. Generate a new QR with /remote-pi pair."
+    code === "token_expired" ? "Ephemeral token expired. Generate a new QR with /outpost-pi pair."
     : code === "token_consumed" ? "Token already consumed by another pair_request."
     : "Token was not issued by this Pi.";
   return { code, message };
@@ -185,7 +185,7 @@ export class PairingCoordinator {
 
   async startRelay(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
     if (this.deps.getState() !== "idle") {
-      ctx.ui.notify("[remote-pi] Already started.", "warning");
+      ctx.ui.notify("[outpost-pi] Already started.", "warning");
       return;
     }
 
@@ -195,9 +195,9 @@ export class PairingCoordinator {
     } catch (err) {
       if (err instanceof KeyringUnavailableError) {
         ctx.ui.notify(
-          "[remote-pi] Could not read this machine's identity: the system " +
+          "[outpost-pi] Could not read this machine's identity: the system " +
           "keychain is locked or access was denied. Unlock it (open the app / " +
-          "log in) and run /remote-pi again. Your pairing is NOT lost. " +
+          "log in) and run /outpost-pi again. Your pairing is NOT lost. " +
           "(Set REMOTE_PI_ALLOW_FILE_IDENTITY=1 only for headless hosts.)",
           "error",
         );
@@ -236,7 +236,7 @@ export class PairingCoordinator {
 
     try {
       this.deps.setCurrentThinking(this.deps.currentThinkingLevel());
-    } catch { /* defensive — never block /remote-pi start on this */ }
+    } catch { /* defensive — never block /outpost-pi start on this */ }
 
     const sessionId = this.deps.currentRemoteSessionId(ctx);
     const roomMeta: RoomMeta = { name: sessionName, cwd, session_id: sessionId };
@@ -246,7 +246,7 @@ export class PairingCoordinator {
     if (thinking) roomMeta.thinking = thinking;
     this.deps.setRoomMeta(roomMeta);
 
-    ctx.ui.notify(`[remote-pi] Connecting to relay ${relayUrl} (source: ${source}, room: ${roomId})…`, "info");
+    ctx.ui.notify(`[outpost-pi] Connecting to relay ${relayUrl} (source: ${source}, room: ${roomId})…`, "info");
 
     const relay = new RelayClient(toWebSocketUrl(relayUrl), edKp, deviceIdFromPublicKey(edKp.publicKey));
     try {
@@ -254,12 +254,12 @@ export class PairingCoordinator {
     } catch (err) {
       if (err instanceof RoomAlreadyOpenError) {
         ctx.ui.notify(
-          "[remote-pi] Already running in this cwd. Stop the other terminal first.",
+          "[outpost-pi] Already running in this cwd. Stop the other terminal first.",
           "error",
         );
         return;
       }
-      this.deps.notify(`[remote-pi] relay connect failed: ${String(err)}`, "error", ctx);
+      this.deps.notify(`[outpost-pi] relay connect failed: ${String(err)}`, "error", ctx);
       return;
     }
 
@@ -281,7 +281,7 @@ export class PairingCoordinator {
     this.ensureSelfRevoke(relayUrl, edKp);
     this.deps.attachBridgeIfReady();
     this.deps.emitRelayState();
-    ctx.ui.notify(`[remote-pi] state: started (peer=${myShort}) — Connected to relay ${relayUrl}`, "info");
+    ctx.ui.notify(`[outpost-pi] state: started (peer=${myShort}) — Connected to relay ${relayUrl}`, "info");
   }
 
   async showPairQr(ctx: Pick<ExtensionContext, "ui" | "cwd">, args = ""): Promise<void> {
@@ -290,12 +290,12 @@ export class PairingCoordinator {
     if (this.deps.getState() === "idle") {
       if (!localConfigExists(cwd)) {
         ctx.ui.notify(
-          "[remote-pi] First-time setup needed. Run /remote-pi to configure, then /remote-pi pair.",
+          "[outpost-pi] First-time setup needed. Run /outpost-pi to configure, then /outpost-pi pair.",
           "warning",
         );
         return;
       }
-      ctx.ui.notify("[remote-pi] Starting mesh + relay before pairing…", "info");
+      ctx.ui.notify("[outpost-pi] Starting mesh + relay before pairing…", "info");
       await this.deps.joinLocalMesh(ctx);
       if (this.deps.getState() === "idle") await this.startRelay(ctx);
     }
@@ -303,8 +303,8 @@ export class PairingCoordinator {
     const relay = this.deps.relay();
     if (this.deps.getState() === "idle" || !relay) {
       ctx.ui.notify(
-        "[remote-pi] Pair requires the relay to be connected. " +
-        "Run /remote-pi to start it (or fix your relay URL via /remote-pi set-relay).",
+        "[outpost-pi] Pair requires the relay to be connected. " +
+        "Run /outpost-pi to start it (or fix your relay URL via /outpost-pi set-relay).",
         "warning",
       );
       return;
@@ -312,7 +312,7 @@ export class PairingCoordinator {
 
     const edKp = this.cachedEd25519;
     if (!edKp) {
-      ctx.ui.notify("[remote-pi] Identity is not loaded yet. Run /remote-pi to reconnect, then pair.", "warning");
+      ctx.ui.notify("[outpost-pi] Identity is not loaded yet. Run /outpost-pi to reconnect, then pair.", "warning");
       return;
     }
     const sessionName = this.deps.displayName(cwd);
@@ -332,7 +332,7 @@ export class PairingCoordinator {
     }, undefined, "pair-code");
 
     ctx.ui.notify(
-      `[remote-pi] QR ready — valid until ${new Date(expiresAt).toLocaleTimeString()}. ` +
+      `[outpost-pi] QR ready — valid until ${new Date(expiresAt).toLocaleTimeString()}. ` +
       `Scan with the app, or copy the pairing code printed above.`,
       "info",
     );
@@ -341,7 +341,7 @@ export class PairingCoordinator {
   async listDevices(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
     const peers = await listPeers();
     if (peers.length === 0) {
-      ctx.ui.notify("[remote-pi] No paired devices.", "info");
+      ctx.ui.notify("[outpost-pi] No paired devices.", "info");
       return;
     }
     const lines = peers.map((p) => {
@@ -349,14 +349,14 @@ export class PairingCoordinator {
       const tag = this.deps.ownerHas(p.remote_epk) ? " 🟢 online" : " ⚪ offline";
       return `• ${shortid} — ${p.name}${tag}`;
     }).join("\n");
-    ctx.ui.notify(`[remote-pi] Paired devices:\n${lines}`, "info");
+    ctx.ui.notify(`[outpost-pi] Paired devices:\n${lines}`, "info");
   }
 
   async revokeDevice(arg: string, ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
     const shortid = arg.trim();
     if (!shortid) {
       ctx.ui.notify(
-        "[remote-pi] Usage: /remote-pi revoke <shortid>. Run /remote-pi list to see shortids.",
+        "[outpost-pi] Usage: /outpost-pi revoke <shortid>. Run /outpost-pi list to see shortids.",
         "warning",
       );
       return;
@@ -366,19 +366,19 @@ export class PairingCoordinator {
     if (this.deps.getState() === "idle") {
       if (!localConfigExists(cwd)) {
         ctx.ui.notify(
-          "[remote-pi] First-time setup needed. Run /remote-pi to configure, then /remote-pi revoke.",
+          "[outpost-pi] First-time setup needed. Run /outpost-pi to configure, then /outpost-pi revoke.",
           "warning",
         );
         return;
       }
-      ctx.ui.notify("[remote-pi] Starting mesh + relay before revoking…", "info");
+      ctx.ui.notify("[outpost-pi] Starting mesh + relay before revoking…", "info");
       await this.deps.joinLocalMesh(ctx);
       if (this.deps.getState() === "idle") await this.startRelay(ctx);
     }
     if (this.deps.getState() === "idle" || !this.deps.relay()) {
       ctx.ui.notify(
-        "[remote-pi] Revoke requires the relay to be connected. " +
-        "Run /remote-pi to start it (or fix your relay URL via /remote-pi set-relay).",
+        "[outpost-pi] Revoke requires the relay to be connected. " +
+        "Run /outpost-pi to start it (or fix your relay URL via /outpost-pi set-relay).",
         "warning",
       );
       return;
@@ -389,7 +389,7 @@ export class PairingCoordinator {
 
     if (matches.length === 0) {
       ctx.ui.notify(
-        `[remote-pi] No peer matching '${shortid}'. Run /remote-pi list to see shortids.`,
+        `[outpost-pi] No peer matching '${shortid}'. Run /outpost-pi list to see shortids.`,
         "warning",
       );
       return;
@@ -398,7 +398,7 @@ export class PairingCoordinator {
     if (matches.length > 1) {
       const collisions = matches.map((p) => p.remote_epk.slice(0, 8)).join(", ");
       ctx.ui.notify(
-        `[remote-pi] Ambiguous shortid — ${matches.length} matches: ${collisions}. Use mais chars.`,
+        `[outpost-pi] Ambiguous shortid — ${matches.length} matches: ${collisions}. Use mais chars.`,
         "warning",
       );
       return;
@@ -413,7 +413,7 @@ export class PairingCoordinator {
     }
 
     ctx.ui.notify(
-      `[remote-pi] Revoked: ${peer.name} (${peer.remote_epk.slice(0, 8)}…)`,
+      `[outpost-pi] Revoked: ${peer.name} (${peer.remote_epk.slice(0, 8)}…)`,
       "info",
     );
   }
@@ -560,7 +560,7 @@ export class PairingCoordinator {
           content:
             `🔒 Revoked by Owner ${short}…\n\n` +
             `The mobile app for this Owner removed this PC from the mesh. ` +
-            `Re-pair via /remote-pi pair if this was unexpected.`,
+            `Re-pair via /outpost-pi pair if this was unexpected.`,
           display: true,
         }, undefined, "mesh-revoked");
       },

@@ -1,12 +1,12 @@
 {
-  "name": "remote-pi",
+  "name": "outpost-pi",
   "version": "0.6.0",
   "description": "Mobile remote control and local agent mesh for the Pi coding agent. Pair your phone via QR over a relay, watch tool calls in real time, run multi-Pi sessions over a local Unix Domain Socket broker, and let agents talk to each other through structured request/reply.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "remote-pi": "dist/index.js",
+    "outpost-pi": "dist/index.js",
     "pi-supervisord": "dist/bin/supervisord.js"
   },
   "scripts": {
@@ -37,18 +37,18 @@
     "extensions": [
       "./dist"
     ],
-    "image": "https://raw.githubusercontent.com/jacobaraujo7/remote_pi/main/branding/banner.png"
+    "image": "https://raw.githubusercontent.com/jacobaraujo7/outpost_pi/main/branding/banner.png"
   },
   "author": "Jacob Moura <jacobmoura7@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jacobaraujo7/remote_pi.git",
+    "url": "git+https://github.com/jacobaraujo7/outpost_pi.git",
     "directory": "pi-extension"
   },
-  "homepage": "https://remote-pi.jacobmoura.work",
+  "homepage": "https://outpost-pi.jacobmoura.work",
   "bugs": {
-    "url": "https://github.com/jacobaraujo7/remote_pi/issues"
+    "url": "https://github.com/jacobaraujo7/outpost_pi/issues"
   },
   "files": [
     "dist",
