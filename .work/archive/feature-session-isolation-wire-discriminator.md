@@ -1,7 +1,7 @@
 ---
 id: feature-session-isolation-wire-discriminator
 kind: feature
-stage: drafting
+stage: done
 tags: [app, pi-extension, relay, bug, security]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
