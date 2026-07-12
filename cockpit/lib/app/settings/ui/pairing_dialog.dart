@@ -6,7 +6,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Dialog de pareamento: mostra os passos + QR Code do `/remote-pi pair`. Fecha
+/// Dialog de pareamento: mostra os passos + QR Code do `/outpost-pi pair`. Fecha
 /// sozinho (retornando `true`) quando um aparelho parear — quem abriu recarrega
 /// a lista. Recebe o [PairingController] por construtor (quem abre é dono do
 /// ciclo de vida → descarta ao fechar).
@@ -121,7 +121,7 @@ class _PairingDialogState extends State<PairingDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _step(context, 1, 'Open the Remote Pi app on your phone.'),
+        _step(context, 1, 'Open the Outpost-Pi app on your phone.'),
         _step(context, 2, 'Tap add / pair device.'),
         _step(context, 3, 'Point the camera at the QR below.'),
         const SizedBox(height: 18),

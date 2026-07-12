@@ -19,7 +19,7 @@ class PairingGatewayFactoryImpl implements PairingGatewayFactory {
 
 /// Implementação do [PairingGateway] sobre uma sessão [EphemeralPiRpc].
 ///
-/// Dispara `/remote-pi pair` e traduz as mensagens `role: "custom"` do stdout
+/// Dispara `/outpost-pi pair` e traduz as mensagens `role: "custom"` do stdout
 /// (`remote-pi:pair-code` / `remote-pi:paired`) em [PairEvent]. Cada pair-code
 /// chega como DOIS eventos (`message_start` + `message_end`) com payload igual,
 /// então deduplicamos por assinatura.
@@ -46,17 +46,17 @@ class PairingGatewayImpl implements PairingGateway {
     try {
       final command = jsonEncode(<String, dynamic>{
         'type': 'prompt',
-        'message': '/remote-pi pair --ttl ${ttl.inSeconds}',
+        'message': '/outpost-pi pair --ttl ${ttl.inSeconds}',
       });
       await _rpc.start(prompt: command, onLine: _onLine, onExit: _onExit);
 
-      // O `/remote-pi pair` sobe o relay sozinho — dá uns segundos pra conexão
+      // O `/outpost-pi pair` sobe o relay sozinho — dá uns segundos pra conexão
       // antes de desistir (sem pair-code = extensão ausente ou relay off).
       _bootTimeout = Timer(const Duration(seconds: 30), () {
         if (!_gotCode) {
           _emit(
             const PairFailed(
-              'Could not start pairing. Check that the remote-pi extension is '
+              'Could not start pairing. Check that the outpost-pi extension is '
               'installed and that a relay is configured.',
             ),
           );

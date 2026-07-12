@@ -4,7 +4,7 @@ import 'package:cockpit/app/core/domain/contracts/environment_probe.dart';
 import 'package:cockpit/app/core/domain/entities/setup_check.dart';
 import 'package:flutter/foundation.dart';
 
-/// Estado das 3 checagens do ambiente de **agente** (pi + extensão remote-pi +
+/// Estado das 3 checagens do ambiente de **agente** (pi + extensão outpost-pi +
 /// supervisor) + ações de re-checagem/instalação.
 ///
 /// Gate de "Create agent" = [agentReady] (o trio satisfeito; `notApplicable`
@@ -50,7 +50,7 @@ class SetupViewModel extends ChangeNotifier {
         await _env.supervisorInstalled() ? CheckStatus.ok : CheckStatus.missing,
   );
 
-  /// Botão "Instalar" do passo da extensão: roda `pi install npm:remote-pi` e,
+  /// Botão "Instalar" do passo da extensão: roda `pi install npm:outpost-pi` e,
   /// em caso de sucesso, re-checa a extensão (e o supervisor, agora possível).
   Future<InstallResult> installExtension() async {
     final result = await _installer.installExtension();

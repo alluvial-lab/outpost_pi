@@ -25,7 +25,22 @@ titles, and prose to `Outpost-Pi`/`outpost-pi`.
   path `dev.remotepi.supervisord` (Unit 8), generated protocol files.
 
 ## Acceptance Criteria
-- [ ] `flutter analyze` (in `cockpit/`) clean
-- [ ] `flutter test` (in `cockpit/`) green
-- [ ] Verification grep: remaining `remote-pi|remote_pi|Remote Pi|RemotePi` in
+- [x] `flutter analyze` (in `cockpit/`) clean
+- [x] `flutter test` (in `cockpit/`) green
+- [x] Verification grep: remaining `remote-pi|remote_pi|Remote Pi|RemotePi` in
       `cockpit/` are only excluded wire-stable literals
+
+## Implementation notes
+
+- Applied the `Outpost-Pi`/`outpost-pi` mechanical rename across the Cockpit's
+  user-facing UI, CLI/process integration, packaging metadata, documentation,
+  comments, and tests; renamed `remote_pi_resolver.dart` to
+  `outpost_pi_resolver.dart` and its public helpers accordingly.
+- Preserved the wire-stable control type, control-prefix and custom-event
+  literals, their tests and explanatory comments, the `REMOTE_PI_*` variable,
+  and the `dev.remotepi.supervisord` launchd probe. Generated protocol files
+  and historical `CHANGELOG.md` entries were left untouched.
+- Verification from `cockpit/` with `PUB_CACHE=/home/agent/projects/remote_pi/.pub-cache`:
+  `flutter analyze` completed with no issues; `flutter test` completed with
+  237 passing tests. The final tracked-file grep leaves only the documented
+  wire-stable literals (plus excluded historical changelog entries).

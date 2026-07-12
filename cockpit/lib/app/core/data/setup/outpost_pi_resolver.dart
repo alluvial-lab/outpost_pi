@@ -3,21 +3,21 @@ import 'dart:io';
 
 import 'package:cockpit/app/core/utils/executable_resolver.dart';
 
-/// Helpers de resolução do `remote-pi` — compartilhados entre o instalador do
+/// Helpers de resolução do `outpost-pi` — compartilhados entre o instalador do
 /// supervisor e o gateway de relay/pareamento.
 ///
-/// No POSIX o `remote-pi` é um binário no PATH/prefixos conhecidos. No Windows
+/// No POSIX o `outpost-pi` é um binário no PATH/prefixos conhecidos. No Windows
 /// **não** está no PATH: invocamos `node <dist/index.js>` da extensão, resolvido
 /// a partir do `packages[]` em `~/.pi/agent/settings.json`.
 
 /// `~/` do usuário: Windows não seta `HOME`, o equivalente é `USERPROFILE`.
-String? remotePiHome() =>
+String? outpostPiHome() =>
     Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
 
-/// Caminho absoluto do `dist/index.js` da extensão remote-pi (via `packages[]`
+/// Caminho absoluto do `dist/index.js` da extensão outpost-pi (via `packages[]`
 /// do `~/.pi/agent/settings.json`), ou `null` se não der pra achar.
-Future<String?> resolveRemotePiIndexJs() async {
-  final home = remotePiHome();
+Future<String?> resolveOutpostPiIndexJs() async {
+  final home = outpostPiHome();
   if (home == null) return null;
   try {
     final file = File('$home/.pi/agent/settings.json');
@@ -29,14 +29,14 @@ Future<String?> resolveRemotePiIndexJs() async {
 
     final spec = packages.whereType<String>().firstWhere((p) {
       final low = p.toLowerCase();
-      return low.contains('remote-pi') || low.endsWith('pi-extension');
+      return low.contains('outpost-pi') || low.endsWith('pi-extension');
     }, orElse: () => '');
     if (spec.isEmpty) return null;
 
     final String pkgRoot;
     if (!spec.contains('/') && !spec.contains(r'\')) {
-      // Spec do npm (`npm:remote-pi` / `remote-pi`) → node_modules do pi.
-      pkgRoot = '$home/.pi/agent/npm/node_modules/remote-pi';
+      // Spec do npm (`npm:outpost-pi` / `outpost-pi`) → node_modules do pi.
+      pkgRoot = '$home/.pi/agent/npm/node_modules/outpost-pi';
     } else {
       // Caminho local (possivelmente relativo a ~/.pi/agent/, com `../`).
       final clean = spec.startsWith('npm:') ? spec.substring(4) : spec;
@@ -60,7 +60,7 @@ Future<String> resolveNode() => resolveExecutable(
 );
 
 /// Diretório onde o `node` resolvido mora (geralmente o mesmo bin do `pi`/`npm`/
-/// `remote-pi`). `null` se o node não foi resolvido pra um caminho.
+/// `outpost-pi`). `null` se o node não foi resolvido pra um caminho.
 Future<String?> resolveNodeBinDir() async {
   final node = await resolveNode();
   final idx = node.lastIndexOf(RegExp(r'[/\\]'));
@@ -68,7 +68,7 @@ Future<String?> resolveNodeBinDir() async {
 }
 
 /// Environment do processo com o bin do `node` **prefixado** na PATH. Necessário
-/// pra rodar shims `pi`/`remote-pi`, cujo shebang `#!/usr/bin/env node` precisa
+/// pra rodar shims `pi`/`outpost-pi`, cujo shebang `#!/usr/bin/env node` precisa
 /// achar o `node` — que em setups nvm/Homebrew não está na PATH herdada pelo app
 /// GUI (erro `/usr/bin/env: 'node': No such file or directory`).
 Future<Map<String, String>> envWithNodeOnPath() async {
@@ -88,24 +88,24 @@ Future<Map<String, String>> envWithNodeOnPath() async {
   return env;
 }
 
-/// Como invocar o `remote-pi`: o executável + os args de prefixo. No POSIX é o
-/// binário `remote-pi` (prefixo vazio); no Windows é `node <index.js>`. Devolve
+/// Como invocar o `outpost-pi`: o executável + os args de prefixo. No POSIX é o
+/// binário `outpost-pi` (prefixo vazio); no Windows é `node <index.js>`. Devolve
 /// `null` se o Windows não conseguir localizar o `index.js` da extensão.
 Future<({String exe, List<String> prefixArgs})?>
-resolveRemotePiCommand() async {
+resolveOutpostPiCommand() async {
   if (Platform.isWindows) {
-    final indexJs = await resolveRemotePiIndexJs();
+    final indexJs = await resolveOutpostPiIndexJs();
     if (indexJs == null) return null;
     final node = await resolveNode();
     return (exe: node, prefixArgs: <String>[indexJs]);
   }
   final exe = await resolveExecutable(
-    'remote-pi',
+    'outpost-pi',
     unixCandidates: const [
-      '/opt/homebrew/bin/remote-pi',
-      '/usr/local/bin/remote-pi',
+      '/opt/homebrew/bin/outpost-pi',
+      '/usr/local/bin/outpost-pi',
     ],
-    unixHomeRelative: const ['.local/bin/remote-pi'],
+    unixHomeRelative: const ['.local/bin/outpost-pi'],
   );
   return (exe: exe, prefixArgs: const <String>[]);
 }

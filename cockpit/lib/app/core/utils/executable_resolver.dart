@@ -1,6 +1,6 @@
 import 'dart:io';
 
-/// Resolve o caminho de um executável (`pi`, `node`, `remote-pi`, …) de forma
+/// Resolve o caminho de um executável (`pi`, `node`, `outpost-pi`, …) de forma
 /// robusta — apps GUI não herdam a PATH do shell.
 ///
 /// Estratégia preferida:
