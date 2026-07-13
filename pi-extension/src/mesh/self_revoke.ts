@@ -146,6 +146,18 @@ export class SelfRevoke {
    *  if one relay times out or one envelope is malformed. */
   async checkOnce(): Promise<void> {
     const owners = await this.storage.listOwnerPubkeys();
+    const ownerSet = new Set(owners);
+    // Reconcile membersByOwner against the authoritative owner set: prune
+    // entries for Owners no longer in peers.json. This covers removal paths
+    // that bypass _checkOwner (interactive unpair at pairing_coordinator,
+    // removePeer called directly) and is defense-in-depth for the
+    // self-revoke path (where _checkOwner also deletes on revoke). Without
+    // this, a stale membersByOwner entry for a removed Owner keeps its
+    // siblings in the union forever → onMembersChanged never fires a
+    // shrink → setSiblings never evicts → pi_envelope not_authorized loop.
+    for (const cached of this.membersByOwner.keys()) {
+      if (!ownerSet.has(cached)) this.membersByOwner.delete(cached);
+    }
     for (const ownerEpk of owners) {
       try {
         await this._checkOwner(ownerEpk);
@@ -272,15 +284,17 @@ export class SelfRevoke {
       `(received v${header.version}, since=${since ?? "<none>"}, ` +
       `members=${header.members.length})`,
     );
-    await this.storage.removePeer(ownerEpk);
-    // Drop the revoked Owner's captured member list so its (now-stale)
-    // siblings don't leak into `_computeSiblingUnion` on later sweeps.
-    // After removePeer, listOwnerPubkeys() no longer returns this Owner, so
-    // _checkOwner won't refresh its entry — without this delete the stale
-    // members persist in-memory forever, keeping revoked siblings in the
-    // union and preventing onMembersChanged → setSiblings from evicting
-    // them (the pi_envelope not_authorized loop).
+    // Invalidate the in-memory member cache for this Owner BEFORE
+    // persistence, so the union computation at the end of THIS sweep sees
+    // the eviction and fires onMembersChanged immediately — independent of
+    // whether removePeer succeeds. The siblings must leave the union as
+    // soon as the signed revocation is verified, not be gated on a file
+    // write that could throw (disk full, permissions). (checkOnce also
+    // reconciles membersByOwner against listOwnerPubkeys at the top of each
+    // sweep as belt-and-suspenders for removal paths that bypass
+    // _checkOwner.)
     this.membersByOwner.delete(ownerEpk);
+    await this.storage.removePeer(ownerEpk);
     if (this.onRevoke) await this.onRevoke(ownerEpk);
   }
 }
