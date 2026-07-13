@@ -82,6 +82,7 @@ Map<String, Object?> _payloadOf(TranscriptEvent event) {
         'client_message_id': event.clientMessageId,
         'text': event.text,
         if (event.image != null) 'image': _imageToJson(event.image!),
+        if (event.held) 'held': true,
       },
     UserMessageConfirmed() => {
         ...base,
@@ -151,6 +152,7 @@ TranscriptEvent _eventFromParts(
         clientMessageId: _requireString(payload, 'client_message_id'),
         text: _requireString(payload, 'text'),
         image: _optionalImage(payload['image']),
+        held: payload['held'] == true,
       ),
     'user_confirmed' => UserMessageConfirmed(
         eventId: eventId,
