@@ -1,7 +1,7 @@
 ---
 id: story-app-reattempt-held-pending-on-reconnect
 kind: story
-stage: drafting
+stage: implementing
 tags: [app, bug, lifecycle, transport]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -110,6 +110,69 @@ that produces two visible rows would be a regression.
   assert dedupe collapses it to one row.
 - A held-pending message re-sent on reconnect when the room is STILL offline
   → assert it's held again (not spammed).
+
+## Design investigation (2026-07-13)
+
+### The distinguishing-rows problem
+
+The transcript events do NOT record whether a message was sent to the channel
+or held pending. `UserMessageSubmitted` is written for BOTH paths (sent-to-
+channel AND held-pending); `UserMessageFailed` carries only `code`/`message`.
+So at reconnect time, a `failed` row could be either:
+- **held-pending, never sent** (option 1's path — the gap this story closes), or
+- **sent into a live socket, timed out** (option 2's window — late-confirmation
+  already handles it).
+
+Only the former should be re-sent. Three approaches:
+
+1. **Add a `held` flag to `UserMessageSubmitted`.** Clean, but a schema change
+   to the durable event log (`transcript_event_record.dart` `_payloadOf`/
+   `_kindOf` + backward-compat for old rows). Correctly distinguishes the two
+   cases.
+2. **Re-send all `failed` rows, rely on dedupe.** No schema change, but re-sends
+   messages that already landed (wasteful) and depends on agent-invocation
+   idempotency (see below).
+3. **Re-send `pending` rows only.** Safest minimal change, but does NOT cover
+   the capture scenario: the room was offline ~57s before reconnect (well past
+   the 20s `send_timeout`), so a held-pending message would already be
+   `failed`, not `pending`, at reconnect. Option 3 leaves the gap open.
+
+**Lean: option 1 (`held` flag).** It's the only approach that both closes the
+ gap AND avoids relying on agent-invocation idempotency for re-sent messages
+ that already landed. The schema change is small (one optional field,
+ backward-compat default false).
+
+### The idempotency question (LOAD-BEARING — must verify before implementing)
+
+If option 2 (re-send all failed) is chosen, a re-sent message that already
+landed and triggered an agent turn must NOT trigger a second turn. The
+projection dedupes by `id` (`seenUserIds` in `transcript_projection.ts`, and
+the app's `confirmedUsers` collapse), but that's *display* dedupe — whether
+the **agent invocation** is idempotent by `clientMessageId` is unverified.
+
+If option 1 (`held` flag) is chosen, this question is sidestepped: only
+never-sent messages are re-sent, so there's no risk of a double turn (the
+first send never happened). **This is another reason to prefer option 1.**
+
+### Bounding re-attempts
+
+Re-sending on every reconnect could loop if the Pi is persistently
+unreachable (room keeps going offline). Cap: re-send a held-pending message
+at most once (track an `attempted` count, or clear the `held` flag after the
+re-send so a subsequent failure doesn't re-trigger). The `held` flag from
+option 1 doubles as the re-send guard: clear it after the re-send attempt.
+
+### Resolved: the id-reuse question
+
+Verified: `sendMessage` generates a fresh `id = _newId()` (`sync_service.dart:252`).
+For the re-send to dedupe correctly, it MUST reuse the original `id` from the
+held-pending `UserMessageSubmitted` event — otherwise the echo/replay (keyed
+by `clientMessageId`) won't collapse it, and the Pi would see it as a new
+message (risking a second agent turn). So the re-send path needs a variant
+that accepts the original `id` rather than generating a new one. This is the
+trickiest implementation detail but is feasible — extract the channel-write
++ echo-arm logic into a helper that takes `id` as a parameter, called by both
+`sendMessage` (fresh id) and the reconnect re-send (original id).
 
 ## Acceptance
 
