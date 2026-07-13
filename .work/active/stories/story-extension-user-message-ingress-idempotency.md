@@ -1,7 +1,7 @@
 ---
 id: story-extension-user-message-ingress-idempotency
 kind: story
-stage: drafting
+stage: review
 tags: [pi-extension, bug, lifecycle, security]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []
@@ -9,6 +9,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-13
 updated: 2026-07-13
+implemented: 2026-07-13
 unblocks: story-app-reattempt-held-pending-on-reconnect
 ---
 
