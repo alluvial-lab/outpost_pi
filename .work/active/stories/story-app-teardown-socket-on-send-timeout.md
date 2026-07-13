@@ -1,7 +1,7 @@
 ---
 id: story-app-teardown-socket-on-send-timeout
 kind: story
-stage: implementing
+stage: drafting
 tags: [app, bug, lifecycle, transport]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -74,121 +74,118 @@ closes the old slot on the new auth, and the app's `_onChannelLost` →
 > half-open investigation applies: a static trace that "explains" the
 > behavior can still be wrong about the mechanism — verify the actual path.
 
-## Design (locked in 2026-07-13)
+## Design (locked in 2026-07-13) — REVISED after implementation attempt
 
-### The corroborating signal already exists: `delivery_pending`
+> **Blocker (2026-07-13).** The implementation attempt uncovered a real
+> conflict with a deliberate, tested recovery semantic. The premise that
+> "tear down on every `send_timeout`" is safe is **wrong** as stated. The
+> story is back at `stage: drafting` pending a design decision (below).
 
-The open question was unconditional-vs-corroborated teardown. Resolved by
-reading the echo path: the protocol already distinguishes "Pi never
-acknowledged" from "Pi acknowledged but is slow."
+### The conflict: `send_timeout` is a SOFT, recoverable failure by design
 
-- `_onSendTimeout` (20s, `sync_service.dart:381`) fires when the Pi sent
-  **no acknowledgment at all** — neither an echo nor a `delivery_pending`.
-  The message never round-tripped → **dead socket → tear down.**
-- `_onDeliveryPendingTimeout` (60s, `sync_service.dart:404`) fires only
-  after the Pi sent an `ErrorMessage` with `code: 'delivery_pending'`
-  (`sync_service.dart:987`), which re-arms the timer to 60s. That frame
-  *did* round-trip (app→relay→Pi→relay→app), so the socket is proven alive
-  and the Pi is just slow → **do NOT tear down.**
+The transcript-event-log epic
+(`epic-bold-transcript-event-log-hydration-replay-step-2`, app-v1.2.0,
+`c567ab3`) explicitly built and tested a **late-confirmation** path: a
+message that hit `send_timeout` can still be **confirmed** by a later
+`SessionHistory` replay (or `UserInput` echo), flipping the row from
+`failed` → `confirmed`. The rationale (from that story, line 78): "Pending
+timeouts become `UserMessageFailed` events; a later `UserMessageConfirmed`
+from replay wins in projection and suppresses stale failure UI." This is
+*exactly* the original half-open symptom's recovery: a message that arrives
+minutes late gets reconciled to "confirmed" instead of leaving a stale
+failure.
 
-So the decision is: **tear down on the 20s `_onSendTimeout` path only;
-never on the 60s `_onDeliveryPendingTimeout` path.** The corroboration is
-already wired into the protocol — no new signal needed. This avoids
-spurious reconnects when the Pi is genuinely busy (the 60s path proves the
-socket is healthy) while catching the dead-socket case the 20s path
-represents.
+Tearing down the socket on `send_timeout` severs the channel that
+**same-connection** late frames arrive on. `_onStatus` cancels `_msgSub` on
+any non-online status (`sync_service.dart:590`), so after teardown emits
+`StatusRetrying`, a late `SessionHistory`/`UserInput` pushed on the old
+channel is dropped.
 
-### Where the teardown hooks in
+### What the implementation attempt broke
 
-`_onSendTimeout` (`sync_service.dart:381`) currently calls `_failPendingSend`
-which marks the row failed and unwinds turn state. Option 2 adds: after
-failing the message, **signal the transport to tear down the suspect
-socket.** The message still fails visibly (the `send_timeout` badge is
-honest — the round-trip did break); the teardown is about the *next* send.
+The test `late authoritative history replay after timeout confirms and
+removes failure` (`sync_service_test.dart:1944`) failed: after `send_timeout`,
+a `SessionHistory` push no longer confirms the row (stays `failed`). Its
+sibling `late authoritative echo after timeout confirms and removes failure`
+(`:1907`) has a weaker assertion (`.pending, isFalse` rather than
+`.status == confirmed`) that **masks** the same breakage — a latent test-
+integrity gap, not a reason to dismiss the finding.
 
-The seam is `ConnectionManager` (the transport owns the socket lifecycle,
-not `SyncService`). `SyncService` holds `final ConnectionManager _conn`
-(`sync_service.dart:37`). `ConnectionManager` has the private
-`_onChannelLost` (`connection_manager.dart:1228`) and a
-`@visibleForTesting debugSimulateChannelLost` (`:1260`), but **no public
-force-reconnect**. Add one:
+### Why the conflict is real, not a test artifact
 
-```dart
-/// Force-teardown the active channel and enter the retry path. Used when a
-/// higher layer (SyncService send-timeout) has independent evidence the
-/// socket is dead even though WS-liveness hasn't surfaced it yet. Safe now
-/// that the relay closes the prior same-device conn on re-auth (v0.1.0,
-/// story-relay-close-same-device-duplicate-auth) — the reconnect won't hit
-/// `room_already_open` (the failure Plan-18's decoupling worked around; that
-/// rationale is obsolete, see the design-question section above).
-void forceReconnectForSuspectedDeadSocket() {
-  final peer = _activePeer;
-  final ch = (_status is StatusOnline) ? (_status as StatusOnline).channel : null;
-  if (peer == null || ch == null) return; // nothing live to tear down
-  _onChannelLost(peer, ch);
-}
-```
+In **production**, late-confirmation works *across* a reconnect: teardown →
+reconnect → `_onlineActivated` → `requestSync` → `SessionSync` → Pi responds
+with `SessionHistory` → `_replayHistory` confirms the timed-out message. So
+the recovery isn't broken in production — but the teardown adds **churn and
+false positives** when the Pi is genuinely slow (socket fine, echo delayed
+beyond 20s): a healthy socket gets torn down, and same-connection late
+frames get dropped until reconnect.
 
-`_onChannelLost` already does the right thing: cancels ping, fires
-`connChannelLost stale:false`, calls `_scheduleRetry` → `_connect`. The
-relay's same-device supersession closes the old slot on the new auth, so
-the reconnect succeeds cleanly (verified: no `room_already_open` in relay
-source; no auth-side rate limit; the only `Close` on a new conn is
-auth-failure at `peer.rs:90`, which won't happen on a legitimate
-reconnect).
+`send_timeout` alone **cannot distinguish** "half-open dead socket" (the
+capture's test 4) from "Pi slow but socket alive" (the late-confirmation
+tests). Both present as "no echo in 20s."
 
-In `SyncService._onSendTimeout`, after `_failPendingSend`:
+### The deeper finding: option 1 + late-confirmation may already fix the
+### user symptom
 
-```dart
-void _onSendTimeout(String id, RemoteSessionRef expectedRef) {
-  _failPendingSend(
-    id,
-    code: 'send_timeout',
-    message: 'Message was not confirmed by the Pi. It may not have been delivered.',
-    debugDetail: 'no echo in ${pendingSendTimeout.inSeconds}s',
-    expectedRef: expectedRef,
-  );
-  // Half-open socket teardown (option 2): a 20s send_timeout with no
-  // delivery_pending means the message never round-tripped — the socket's
-  // app→relay direction is dead even though WS-liveness hasn't surfaced it.
-  // Tear down so the next send goes to a fresh connection instead of the
-  // same dead buffer. NOT called from _onDeliveryPendingTimeout (60s): that
-  // path means delivery_pending round-tripped, so the socket is alive.
-  _conn.forceReconnectForSuspectedDeadSocket();
-}
-```
+Re-examining what option 2 actually adds: option 1 (gate `sendMessage` on
+`isRoomLive`) already prevents sends into a socket *proven* dead (3 missed
+pongs). The window option 2 closes is `send_timeout` firing *before* 3
+missed pongs (test 4: sent 00:08:10, timeout 00:08:30, room-offline not
+until 00:09:15). In that window the message WAS written to the dead buffer
+— but **late-confirmation already reconciles it**: when the dead buffer
+flushes on reconnect (minutes late), `requestSync` → `SessionHistory`
+confirms the row. The user sees a temporary `send_timeout` badge that flips
+to delivered. The message is not lost; the failure is not stale.
 
-### What NOT to do
+So option 2's marginal benefit is **sooner teardown so the *next* send
+doesn't hit the same dead buffer** — but option 1 already catches the next
+send once the room flips offline (test 5 in the capture was held pending by
+option 1). The window where a second send walks into a still-"live" dead
+socket is narrow (the 45s between `send_timeout` and `ping_missed_room_offline`
+in the capture), and even then late-confirmation reconciles it.
+
+## Design decision needed (the question for the operator)
+
+Given the above, the options are:
+
+1. **Drop option 2.** Option 1 + late-confirmation already fix the
+   user-visible symptom (message loss + stale failure). Option 2's marginal
+   benefit (narrower dead-buffer window) doesn't justify the churn and the
+   false-positive teardowns when the Pi is slow. **Close this story as
+   superseded by the option-1 + late-confirmation analysis.**
+
+2. **Corroborated teardown.** Tear down on `send_timeout` ONLY when there's
+   independent dead-socket evidence — e.g. the room is *also* not live
+   (option 1's signal), or a second consecutive `send_timeout`. But "room
+   not live" is the case option 1 already handles (holds pending), so this
+   reduces to: tear down when `send_timeout` fires AND `isRoomLive` is false
+   — which is redundant with option 1's held-pending path (the message was
+   never written to the channel, so there's no dead buffer to tear down
+   for). A second-consecutive-timeout gate is plausible but adds state and
+   still churns on genuine double-slowness.
+
+3. **Tear down + update the late-confirmation tests to model reconnect.**
+   Accept the churn, update the two late-confirmation tests to reconnect
+   before pushing the late frame (models the production post-teardown
+   flow). This is the original design, but it accepts false-positive
+   teardowns when the Pi is slow and weakens the same-connection recovery.
+
+**Lean: option 1 (drop).** The analysis shows option 1 + late-confirmation
+already fix the symptom this story was meant to close. Forcing teardown
+through (option 3) trades a narrow dead-buffer window for churn and
+false positives, and weakens a deliberate recovery semantic. But this is
+an operator decision because it reverses the story's original premise.
+
+### What NOT to do (unchanged)
 
 - Do **not** re-attempt the timed-out message automatically as part of this
-  story. That's option 4 (re-attempt on reconnect), filed separately. Option
-  2 is purely "tear down so the next send is healthy." Mixing them couples
-  two concerns and makes the test surface ambiguous. The timed-out message
-  stays failed; if the operator wants auto-retry, that's option 4.
-- Do **not** tear down from `_onDeliveryPendingTimeout` (the 60s path). That
-  path fires only after `delivery_pending` round-tripped, proving the socket
-  is alive.
-- Do **not** re-evaluate the Plan-18 decoupling itself in this story (should
-  3-missed-pong now tear down the WS too?). That's a larger question; this
-  story only adds the `send_timeout` teardown. The finding that Plan-18's
-  rationale is obsolete is recorded in this story body for a future story
-  to pick up.
+  story. That's option 4 (re-attempt on reconnect), filed separately.
+- Do **not** re-evaluate the Plan-18 decoupling itself in this story. The
+  finding that Plan-18's rationale is obsolete (below) stands and is
+  recorded for a future story.
 
-### Test plan
-
-A failing test reproducing the window option 1 does *not* cover: send a
-message into a socket that is `StatusOnline` AND whose room is still live
-(`isRoomLive` true — the 3-missed-pong threshold hasn't fired) → advance the
-20s `send_timeout` → assert the transport tears down the socket
-(`StatusRetrying` emitted / `connChannelLost` fired), not just the message
-row failing while `StatusOnline` persists.
-
-A second test asserts the 60s path does NOT tear down: deliver a
-`delivery_pending` ErrorMessage for the pending id → advance to the 60s
-`_onDeliveryPendingTimeout` → assert the message fails but the transport
-stays `StatusOnline` (no `StatusRetrying`).
-
-### Plan-18 obsolescence note (for a future story)
+### Plan-18 obsolescence note (for a future story — UNCHANGED, still valid)
 
 The Plan-18 decoupling comment (`connection_manager.dart:1286-1304`) states
 its rationale: tearing down on missed pongs caused `room_already_open`
@@ -197,10 +194,8 @@ rationale is now obsolete — `room_already_open` is gone from relay source,
 and same-device supersession (`story-relay-close-same-device-duplicate-auth`,
 v0.1.0) actively closes the prior conn on re-auth. A future story could
 re-evaluate whether 3-missed-pong should now tear down the WS too (re-coupling
-Pi-liveness to WS-liveness), which would make option 2's send-timeout
-teardown redundant for the post-75s case. This story does not do that — it
-only closes the pre-75s window. Filed as a follow-up consideration in the
-story body, not a separate item (acceptable for a single-stride fix).
+Pi-liveness to WS-liveness). This story does not do that. The finding is
+recorded here for provenance regardless of how the option-2 decision resolves.
 
 ## Acceptance
 
