@@ -1,7 +1,7 @@
 ---
 id: story-extension-stale-sibling-evict-on-owner-revocation
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug, lifecycle, security]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []
@@ -9,7 +9,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-12
 updated: 2026-07-13
-implemented: 2026-07-13
+reviewed: 2026-07-13
 root_cause_confirmed: 2026-07-13
 ---
 
