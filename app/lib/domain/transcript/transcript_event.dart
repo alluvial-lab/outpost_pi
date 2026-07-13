@@ -25,11 +25,22 @@ final class UserMessageSubmitted extends TranscriptEvent {
     required this.clientMessageId,
     required this.text,
     this.image,
+    this.held = false,
   });
 
   final String clientMessageId;
   final String text;
   final MessageImage? image;
+
+  /// `true` when this message was held pending (never written to the
+  /// channel) because the room was offline at send time (option-1 guard or
+  /// the offline branch). The reconnect re-send path
+  /// (story-app-reattempt-held-pending-on-reconnect) re-sends only held
+  /// messages that are still pending/failed, so they actually reach the Pi
+  /// instead of leaving a permanent failure badge. `false` (default) for
+  /// messages that were written to the channel — those are handled by the
+  /// late-confirmation path (SessionHistory replay) if they time out.
+  final bool held;
 }
 
 final class UserMessageConfirmed extends TranscriptEvent {
