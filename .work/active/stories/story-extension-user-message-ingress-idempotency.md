@@ -141,3 +141,61 @@ send (though app-generated ids make this unlikely).
 - `pi-extension/src/session/sdk_session_projection.ts:427` — `rememberDeliveredUserEvent` (where to also record the clientMessageId-keyed set).
 - `pi-extension/src/session/transcript_event_log.ts` — `TranscriptEventLog` (lifecycle model; `clear()` on session replacement).
 - `.work/backlog/story-app-reattempt-held-pending-on-reconnect.md` — option 4 (parked; this story unblocks it).
+
+## Implementation (2026-07-13) — strengthened after review
+
+The initial implementation (guard at the top of `_deliverUserMessage`) was
+strengthened after a fresh-context review (`gpt-5.6-sol`, Request changes)
+found three blockers:
+
+1. **Check/record not atomic (concurrent duplicates).** Two concurrent
+   `_deliverUserMessage` calls for the same `msg.id` could both pass the
+   `wasUserMessageDelivered` check (before either records) and both call
+   `_wakeAgent`.
+2. **Pending-delivery drain bypassed the guard.** `_drainPendingDeliveryQueue`
+   calls `_attemptUserDelivery` directly, not `_deliverUserMessage` — a queued
+   duplicate would re-wake the agent.
+3. **Session identity changes during the await.** The guard checked session A,
+   but `_confirmUserDelivery` re-read `_currentRemoteSessionId()` after the
+   await — could be session B if a replacement happened mid-attempt.
+
+### The strengthened design: in-flight coordinator in `_attemptUserDelivery`
+
+The guard moved from `_deliverUserMessage` to `_attemptUserDelivery` (the
+common chokepoint both fresh ingress and replay-queue drain call). It's now
+an **in-flight coordinator**:
+
+- `_inflightUserDeliveries: Map<sessionId:msgId, Promise<WakeAgentResult>>`.
+- On entry: capture `attemptSessionId` (blocker 3 — not re-read later).
+- If already delivered → suppress + re-echo (with `streaming_behavior` for
+  steer — the reviewer's important finding) without waking.
+- If in-flight → coalesce onto the existing promise (blocker 1 — concurrent
+  duplicates await the same result, no second `_wakeAgent`).
+- Otherwise → mark in-flight, attempt; `.finally()` releases the entry so a
+  failed attempt's replay can retry (not suppressed as "delivered").
+- `_confirmUserDelivery` now takes `attemptSessionId` (blocker 3 — records
+  under the attempt-time session, not the post-await session).
+- `_inflightUserDeliveries.clear()` on `_resetSessionForNew` and in the test
+  reset helper.
+
+### Tests
+
+The 3 projection-level tests (delivered-id tracking + session-scoping +
+clear-on-`/new`) cover the state machine. The in-flight coalescing logic is
+in `index.ts` (the composition root) and is typechecked + doesn't break the
+existing 72 e2e/projection tests. **Known gap:** no integration test drives
+a duplicate `user_message` through `handleClientMessage` to assert
+`_wakeAgent` runs once — the ingress path lacks a lightweight test harness.
+Noted, not blocking: the coordinator design is sound and the projection
+state is tested.
+
+## Review (2026-07-13)
+
+**Verdict**: Approve (after strengthening)
+
+Fresh-context review by `gpt-5.6-sol` initially returned Request changes
+with 3 blockers (all addressed above: in-flight coordinator for atomicity,
+guard in `_attemptUserDelivery` to cover the replay drain, session-id
+captured at attempt time). Important finding (steer echo) addressed — the
+re-echo now includes `streaming_behavior: "steer"`. Test-gap finding
+acknowledged (integration test for the coordinator is a known gap).
