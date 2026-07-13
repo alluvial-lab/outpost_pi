@@ -127,6 +127,12 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   private sessionStartedAt: number | null = null;
   private readonly transcriptLog = new TranscriptEventLog();
   private readonly deliveredUserEventIds = new Map<string, { clientMessageId: string; eventId: string }[]>();
+  /** Ingress idempotency guard (story-extension-user-message-ingress-
+   *  idempotency): `clientMessageId`s already delivered in each session, so a
+   *  duplicate `user_message` frame (reconnect flush, relay fan-out, app
+   *  re-send) does NOT re-invoke the agent. Keyed by sessionId, cleared on
+   *  session replacement (same lifecycle as `transcriptLog`). */
+  private readonly deliveredUserMessageIds = new Map<string, Set<string>>();
   private lastTranscriptUserId: string | null = null;
   private epoch = 0;
   private commandCtx: ExtensionCommandContext | null = null;
@@ -434,6 +440,21 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     const existing = this.deliveredUserEventIds.get(key) ?? [];
     existing.push({ clientMessageId, eventId });
     this.deliveredUserEventIds.set(key, existing);
+  }
+
+  /** Ingress idempotency guard (story-extension-user-message-ingress-
+   *  idempotency): was `clientMessageId` already delivered in `sessionId`?
+   *  Checked at the top of `_deliverUserMessage` so a duplicate frame does
+   *  not re-invoke the agent. */
+  wasUserMessageDelivered(sessionId: string, clientMessageId: string): boolean {
+    return this.deliveredUserMessageIds.get(sessionId)?.has(clientMessageId) ?? false;
+  }
+
+  /** Record that `clientMessageId` was delivered in `sessionId`. Called from
+   *  `_confirmUserDelivery` after the agent accepts the message, so a later
+   *  duplicate frame is suppressed. */
+  recordDeliveredUserMessageId(sessionId: string, clientMessageId: string): void {
+    (this.deliveredUserMessageIds.get(sessionId) ?? this.deliveredUserMessageIds.set(sessionId, new Set<string>()).get(sessionId)!).add(clientMessageId);
   }
 
   appendLegacySdkMessageToTranscript(message: LegacyAgentMessage): void {
@@ -934,6 +955,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   private clearTranscriptOnly(): void {
     this.transcriptLog.clear();
     this.deliveredUserEventIds.clear();
+    this.deliveredUserMessageIds.clear();
     this.lastTranscriptUserId = null;
   }
 
