@@ -279,7 +279,14 @@ that test, not a regression from the fix.
 - Option 3 (tighten WS `pingInterval` 45s→15–20s) — secondary; helps the
   `onDone` path detect a fully-dead socket sooner.
 - Option 4 (re-attempt timed-out messages on reconnect) — UX safety net so
-  the `send_timeout` badge doesn't coexist with the message landing.
+  the `send_timeout` badge doesn't coexist with the message landing. **PARKED
+  2026-07-13** at `.work/backlog/story-app-reattempt-held-pending-on-reconnect.md`
+  after a fresh-context review (Block) found the Pi does not dedupe agent
+  invocations by `clientMessageId` — re-sending a message that already landed
+  would trigger a second agent turn. Safe re-send requires Pi-side
+  `user_message` ingress idempotency (`pi-extension/src/index.ts:2525`),
+  which doesn't exist. That's a latent risk for ALL re-delivery scenarios,
+  worth filing independently. See the parked story for the full analysis.
 
 ## Reproduction
 
