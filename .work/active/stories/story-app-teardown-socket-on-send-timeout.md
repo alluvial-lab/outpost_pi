@@ -1,7 +1,7 @@
 ---
 id: story-app-teardown-socket-on-send-timeout
 kind: story
-stage: drafting
+stage: implementing
 tags: [app, bug, lifecycle, transport]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -74,7 +74,29 @@ closes the old slot on the new auth, and the app's `_onChannelLost` →
 > half-open investigation applies: a static trace that "explains" the
 > behavior can still be wrong about the mechanism — verify the actual path.
 
-## Design (to lock in during the design pass)
+## Design (locked in 2026-07-13)
+
+### The corroborating signal already exists: `delivery_pending`
+
+The open question was unconditional-vs-corroborated teardown. Resolved by
+reading the echo path: the protocol already distinguishes "Pi never
+acknowledged" from "Pi acknowledged but is slow."
+
+- `_onSendTimeout` (20s, `sync_service.dart:381`) fires when the Pi sent
+  **no acknowledgment at all** — neither an echo nor a `delivery_pending`.
+  The message never round-tripped → **dead socket → tear down.**
+- `_onDeliveryPendingTimeout` (60s, `sync_service.dart:404`) fires only
+  after the Pi sent an `ErrorMessage` with `code: 'delivery_pending'`
+  (`sync_service.dart:987`), which re-arms the timer to 60s. That frame
+  *did* round-trip (app→relay→Pi→relay→app), so the socket is proven alive
+  and the Pi is just slow → **do NOT tear down.**
+
+So the decision is: **tear down on the 20s `_onSendTimeout` path only;
+never on the 60s `_onDeliveryPendingTimeout` path.** The corroboration is
+already wired into the protocol — no new signal needed. This avoids
+spurious reconnects when the Pi is genuinely busy (the 60s path proves the
+socket is healthy) while catching the dead-socket case the 20s path
+represents.
 
 ### Where the teardown hooks in
 
@@ -85,11 +107,56 @@ socket.** The message still fails visibly (the `send_timeout` badge is
 honest — the round-trip did break); the teardown is about the *next* send.
 
 The seam is `ConnectionManager` (the transport owns the socket lifecycle,
-not `SyncService`). `SyncService` holds `_conn` (a `ConnectionManager`); it
-needs a method like `_conn.forceReconnectForSuspectedDeadSocket()` that
-calls `_onChannelLost` on the active channel. `_onChannelLost`
-(`connection_manager.dart:1228`) already does the right thing: cancels ping,
-fires `connChannelLost`, calls `_scheduleRetry` → `_connect`.
+not `SyncService`). `SyncService` holds `final ConnectionManager _conn`
+(`sync_service.dart:37`). `ConnectionManager` has the private
+`_onChannelLost` (`connection_manager.dart:1228`) and a
+`@visibleForTesting debugSimulateChannelLost` (`:1260`), but **no public
+force-reconnect**. Add one:
+
+```dart
+/// Force-teardown the active channel and enter the retry path. Used when a
+/// higher layer (SyncService send-timeout) has independent evidence the
+/// socket is dead even though WS-liveness hasn't surfaced it yet. Safe now
+/// that the relay closes the prior same-device conn on re-auth (v0.1.0,
+/// story-relay-close-same-device-duplicate-auth) — the reconnect won't hit
+/// `room_already_open` (the failure Plan-18's decoupling worked around; that
+/// rationale is obsolete, see the design-question section above).
+void forceReconnectForSuspectedDeadSocket() {
+  final peer = _activePeer;
+  final ch = (_status is StatusOnline) ? (_status as StatusOnline).channel : null;
+  if (peer == null || ch == null) return; // nothing live to tear down
+  _onChannelLost(peer, ch);
+}
+```
+
+`_onChannelLost` already does the right thing: cancels ping, fires
+`connChannelLost stale:false`, calls `_scheduleRetry` → `_connect`. The
+relay's same-device supersession closes the old slot on the new auth, so
+the reconnect succeeds cleanly (verified: no `room_already_open` in relay
+source; no auth-side rate limit; the only `Close` on a new conn is
+auth-failure at `peer.rs:90`, which won't happen on a legitimate
+reconnect).
+
+In `SyncService._onSendTimeout`, after `_failPendingSend`:
+
+```dart
+void _onSendTimeout(String id, RemoteSessionRef expectedRef) {
+  _failPendingSend(
+    id,
+    code: 'send_timeout',
+    message: 'Message was not confirmed by the Pi. It may not have been delivered.',
+    debugDetail: 'no echo in ${pendingSendTimeout.inSeconds}s',
+    expectedRef: expectedRef,
+  );
+  // Half-open socket teardown (option 2): a 20s send_timeout with no
+  // delivery_pending means the message never round-tripped — the socket's
+  // app→relay direction is dead even though WS-liveness hasn't surfaced it.
+  // Tear down so the next send goes to a fresh connection instead of the
+  // same dead buffer. NOT called from _onDeliveryPendingTimeout (60s): that
+  // path means delivery_pending round-tripped, so the socket is alive.
+  _conn.forceReconnectForSuspectedDeadSocket();
+}
+```
 
 ### What NOT to do
 
@@ -98,25 +165,42 @@ fires `connChannelLost`, calls `_scheduleRetry` → `_connect`.
   2 is purely "tear down so the next send is healthy." Mixing them couples
   two concerns and makes the test surface ambiguous. The timed-out message
   stays failed; if the operator wants auto-retry, that's option 4.
-- Do **not** tear down on *every* `send_timeout`. A `send_timeout` can also
-  fire when the Pi is genuinely busy (slow echo) but the socket is healthy.
-  The design must decide: tear down unconditionally (simplest, may cause
-  occasional unnecessary reconnects when the Pi is just slow), or only when
-  there's corroborating signal (e.g. room already marked offline, or a
-  second consecutive timeout). **Lean: tear down unconditionally** — a
-  20s echo miss is a strong enough signal, and a clean reconnect is cheap
-  now that supersession exists. But confirm in design.
+- Do **not** tear down from `_onDeliveryPendingTimeout` (the 60s path). That
+  path fires only after `delivery_pending` round-tripped, proving the socket
+  is alive.
+- Do **not** re-evaluate the Plan-18 decoupling itself in this story (should
+  3-missed-pong now tear down the WS too?). That's a larger question; this
+  story only adds the `send_timeout` teardown. The finding that Plan-18's
+  rationale is obsolete is recorded in this story body for a future story
+  to pick up.
 
 ### Test plan
 
-A failing test reproducing the window: send a message into a socket whose
-app→relay direction is dead but whose room is *not yet* marked offline (the
-3-missed-pong threshold hasn't fired) → `send_timeout` fires → assert the
-transport tears down the socket (`_onChannelLost` / `StatusRetrying`
-emitted), not just the message row failing while `StatusOnline` persists.
+A failing test reproducing the window option 1 does *not* cover: send a
+message into a socket that is `StatusOnline` AND whose room is still live
+(`isRoomLive` true — the 3-missed-pong threshold hasn't fired) → advance the
+20s `send_timeout` → assert the transport tears down the socket
+(`StatusRetrying` emitted / `connChannelLost` fired), not just the message
+row failing while `StatusOnline` persists.
 
-This is the case option 1 does *not* cover (option 1 only gates on
-`isRoomLive`, which is still true in this window).
+A second test asserts the 60s path does NOT tear down: deliver a
+`delivery_pending` ErrorMessage for the pending id → advance to the 60s
+`_onDeliveryPendingTimeout` → assert the message fails but the transport
+stays `StatusOnline` (no `StatusRetrying`).
+
+### Plan-18 obsolescence note (for a future story)
+
+The Plan-18 decoupling comment (`connection_manager.dart:1286-1304`) states
+its rationale: tearing down on missed pongs caused `room_already_open`
+reconnect failures because the relay held the slot on half-open TCP. That
+rationale is now obsolete — `room_already_open` is gone from relay source,
+and same-device supersession (`story-relay-close-same-device-duplicate-auth`,
+v0.1.0) actively closes the prior conn on re-auth. A future story could
+re-evaluate whether 3-missed-pong should now tear down the WS too (re-coupling
+Pi-liveness to WS-liveness), which would make option 2's send-timeout
+teardown redundant for the post-75s case. This story does not do that — it
+only closes the pre-75s window. Filed as a follow-up consideration in the
+story body, not a separate item (acceptable for a single-stride fix).
 
 ## Acceptance
 
