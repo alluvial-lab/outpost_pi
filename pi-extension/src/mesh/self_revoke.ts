@@ -273,6 +273,14 @@ export class SelfRevoke {
       `members=${header.members.length})`,
     );
     await this.storage.removePeer(ownerEpk);
+    // Drop the revoked Owner's captured member list so its (now-stale)
+    // siblings don't leak into `_computeSiblingUnion` on later sweeps.
+    // After removePeer, listOwnerPubkeys() no longer returns this Owner, so
+    // _checkOwner won't refresh its entry — without this delete the stale
+    // members persist in-memory forever, keeping revoked siblings in the
+    // union and preventing onMembersChanged → setSiblings from evicting
+    // them (the pi_envelope not_authorized loop).
+    this.membersByOwner.delete(ownerEpk);
     if (this.onRevoke) await this.onRevoke(ownerEpk);
   }
 }
