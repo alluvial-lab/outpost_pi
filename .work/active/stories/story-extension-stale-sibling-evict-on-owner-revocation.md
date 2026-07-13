@@ -1,15 +1,15 @@
 ---
 id: story-extension-stale-sibling-evict-on-owner-revocation
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension, bug, lifecycle, security]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-12
-updated: 2026-07-12
-root_cause_confirmed: 2026-07-12
+updated: 2026-07-13
+root_cause_confirmed: 2026-07-13
 ---
 
 # Extension keeps spamming a revoked sibling Pi epk → `pi_envelope not_authorized` loop
@@ -44,35 +44,88 @@ relay rejects every one:
 The frames are paired (two `env_id_tail`s per burst, ~2 min apart), which
 looks like a **replay/delivery queue** retrying against the dead sibling.
 
-## Root cause (preliminary — to confirm in `pi-extension/src`)
+## Root cause (VERIFIED 2026-07-13 against `pi-extension/src`)
 
-The cross-PC agent-mesh transport holds an **in-memory peer/sibling list**
-plus a **delivery/replay queue** keyed by sibling epk. On Owner revocation +
-re-pair, neither is evicted:
+The original hypothesis was close but imprecise. The sibling cache
+(`BrokerRemote.siblingByLabel` / `siblingByPubkey`) **is** evicted on
+`setSiblings` — that method clears and rebuilds the maps
+(`broker_remote.ts:219-237`). And `setSiblings` **is** wired to fire on
+membership changes: `SelfRevoke.onMembersChanged` →
+`pairing_coordinator.ts:568` → `this.deps.setSiblings(siblings)`. So the
+eviction mechanism exists and is wired.
 
-1. The stale sibling epk `DXdj…dUc=` remains in the peer list.
-2. Any queued outbound `pi_envelope`s targeting it are not drained/cancelled.
-3. The transport keeps retrying them every ~2 min, each hitting `not_authorized`.
+The bug is a **stale-state leak in `SelfRevoke.membersByOwner`**
+(`self_revoke.ts:106`). `membersByOwner` is a `Map<ownerEpk, members[]>`
+that captures each Owner's member list during `_checkOwner`. It is only
+ever `.set()` (line 250) — **it is never deleted from.** When an Owner
+revokes this Pi:
 
-This is adjacent to — but distinct from — `story-to-room-sender-side-room-
-targeting` (which fixes the `to_room: "main"` default so cross-PC envelopes
-reach a *live* sibling room). That story makes delivery work for **current**
-siblings; this story makes the transport **stop** targeting siblings that no
-longer exist.
+1. Sweep N: `_checkOwner(revokedOwner)` runs. `membersByOwner.set(revokedOwner,
+   newMembers)` captures the smaller list (line 250, *before* the revocation
+   check). Then `stillMember` is false → `storage.removePeer(ownerEpk)`
+   removes the Owner from `peers.json`, and `onRevoke` fires.
+2. Sweep N+1: `listOwnerPubkeys()` reads `peers.json` — the revoked Owner is
+   gone, so `_checkOwner` is **not called** for it. But `membersByOwner`
+   **still holds the stale entry** from sweep N.
+3. `_computeSiblingUnion()` (line 181) iterates `membersByOwner.values()` —
+   **including the stale revoked-Owner entry** — so the revoked Owner's
+   *other* members (the old sibling epks) persist in the sibling union
+   forever.
+4. `_siblingSetChanged` never sees a removal for those siblings →
+   `onMembersChanged` never fires a shrink → `setSiblings` never evicts
+   them → `BrokerRemote.siblingByPubkey` keeps the stale epk →
+   `pi_envelope` keeps targeting it → `not_authorized` loop.
 
-## Scope
+This matches the capture exactly: the old sibling epk `l2X/dUc=` (this PC's
+prior epk under the 5 revoked Owners) persists because `membersByOwner`
+retains the revoked Owners' member lists. A full pi restart clears it
+because `membersByOwner` is in-memory (not persisted) — confirming the
+workaround and the in-memory nature.
 
-- Locate the cross-PC transport's sibling peer cache and delivery/replay
-  queue in `pi-extension/src` (likely `transport/peer_channel.ts`,
-  `transport/broker_remote.ts`, or the mesh module).
-- On Owner revocation / mesh-version advance / re-pair, **evict** any sibling
-  epk no longer present in the new mesh's member list, and **drain/cancel**
-  queued envelopes targeting evicted siblings (surface a terminal
-  transport_error to the sender rather than infinite retry).
+### The fix
+
+In `_checkOwner`, after `storage.removePeer(ownerEpk)` succeeds, **delete
+the Owner's entry from `membersByOwner`**:
+
+```ts
+await this.storage.removePeer(ownerEpk);
+this.membersByOwner.delete(ownerEpk);  // ← the fix
+if (this.onRevoke) await this.onRevoke(ownerEpk);
+```
+
+Then the next `_computeSiblingUnion` / `_siblingSetChanged` (which run at
+the end of `checkOnce`, after the per-owner loop) will detect the shrinkage
+and fire `onMembersChanged` → `setSiblings` evicts the stale siblings from
+`BrokerRemote`. No new eviction mechanism needed — the existing one was
+just being fed stale input.
+
+### Why the existing test didn't catch it
+
+`onMembersChanged fires when sibling set changes across sweeps`
+(`self_revoke.test.ts:232`) tests sibling-set **growth** (A → A,B) across
+sweeps where the Owner stays paired. It never tests the **revocation-then-
+shrink** scenario (Owner revokes this Pi → its siblings must leave the
+union). That's the missing coverage. The new test models exactly that:
+Owner has siblings [me, A] → revoke → next sweep `listOwnerPubkeys` omits
+the Owner → assert `onMembersChanged` fires with an **empty** sibling set
+(A evicted), not the stale `[A]`.
+
+## Scope (refined after verification)
+
+- **The fix is a one-liner** in `SelfRevoke._checkOwner` (`self_revoke.ts`):
+  after `storage.removePeer(ownerEpk)`, `this.membersByOwner.delete(ownerEpk)`.
+  This stops the stale revoked-Owner member list from leaking into
+  `_computeSiblingUnion`, so the existing `onMembersChanged` → `setSiblings`
+  eviction path fires correctly.
+- Add a test modeling revocation-then-shrink: Owner with siblings [me, A] →
+  revoke → next sweep omits the Owner from `listOwnerPubkeys` → assert
+  `onMembersChanged` fires with an empty sibling set (A evicted), not the
+  stale `[A]`.
 - Cross-check `relay-revocation-cache-window` (relay-side positive cache TTL)
   — that is the *relay* half of revocation convergence; this is the
   *extension* half. Both are needed for prompt revocation; they do not
-  overlap.
+  overlap. (Not in scope for this story — the extension half is the
+  `membersByOwner` leak.)
 
 ## Reproduction
 
