@@ -395,6 +395,50 @@ describe("SdkSessionProjection resume backfill", () => {
   });
 });
 
+describe("SdkSessionProjection user_message ingress idempotency guard", () => {
+  // story-extension-user-message-ingress-idempotency: a duplicate
+  // user_message frame (reconnect flush, relay fan-out, app re-send) must
+  // not re-invoke the agent. The guard is a clientMessageId-keyed Set per
+  // session, cleared on session replacement.
+  test("wasUserMessageDelivered is false before recording, true after", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    projection.bindSessionContext(makeSessionStartCtx());
+    const sessionId = projection.currentRemoteSessionId();
+    expect(projection.wasUserMessageDelivered(sessionId, "msg-1")).toBe(false);
+    projection.recordDeliveredUserMessageId(sessionId, "msg-1");
+    expect(projection.wasUserMessageDelivered(sessionId, "msg-1")).toBe(true);
+    // A different id is still undelivered.
+    expect(projection.wasUserMessageDelivered(sessionId, "msg-2")).toBe(false);
+  });
+
+  test("the guard is session-scoped — a different session is not suppressed", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    projection.bindSessionContext(makeSessionStartCtx());
+    const sessionId = projection.currentRemoteSessionId();
+    projection.recordDeliveredUserMessageId(sessionId, "msg-1");
+    expect(projection.wasUserMessageDelivered(sessionId, "msg-1")).toBe(true);
+    // A different session (e.g. after /new) must not see the prior session's ids.
+    expect(projection.wasUserMessageDelivered("other-session", "msg-1")).toBe(false);
+  });
+
+  test("resetSessionForNew clears the delivered-id set (no false suppression after /new)", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    projection.bindApi(makePi());
+    projection.bindSessionContext(makeSessionStartCtx());
+    const sessionId = projection.currentRemoteSessionId();
+    projection.recordDeliveredUserMessageId(sessionId, "msg-1");
+    expect(projection.wasUserMessageDelivered(sessionId, "msg-1")).toBe(true);
+
+    projection.resetSessionForNew("new-ack");
+
+    // After /new, the set is cleared. A fresh send with the same id (unlikely
+    // — the app generates fresh ids — but defensive) is not falsely suppressed.
+    expect(projection.wasUserMessageDelivered(sessionId, "msg-1")).toBe(false);
+  });
+});
+
 // Regression for `story-mobile-assistant-message-duplicated-live-replay`
 // decision 1 (identity source (a)). The extension's `message_end`-driven
 // `appendLegacySdkMessageToTranscript` must broadcast a live `agent_message`
