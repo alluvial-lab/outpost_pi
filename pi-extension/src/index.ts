@@ -2328,6 +2328,10 @@ function _confirmUserDelivery(msg: UserClientMessage, shouldSteer: boolean): voi
     eventId,
   });
   _rememberDeliveredUserEvent(msg.text, msg.images, msg.id, eventId);
+  // Record the clientMessageId for the ingress idempotency guard
+  // (story-extension-user-message-ingress-idempotency) so a later duplicate
+  // frame is suppressed before _wakeAgent.
+  _sdkSessionProjection.recordDeliveredUserMessageId(sessionId, msg.id);
   const echo: ServerMessage = _withCurrentSession({
     type: "user_message",
     id: msg.id,
@@ -2444,6 +2448,31 @@ async function _deliverUserMessage(
   sender: PlainPeerChannel | null,
   mode: "auto" | "normal" = "auto",
 ): Promise<void> {
+  // Ingress idempotency guard (story-extension-user-message-ingress-
+  // idempotency): if this `clientMessageId` was already delivered in the
+  // current session, do NOT re-invoke the agent — a duplicate frame (reconnect
+  // flush, relay fan-out, app re-send) would double-execute the turn. The
+  // transcript/UI dedupes by id, but that's display-only; _wakeAgent runs
+  // before the dedupe. Re-emit the echo so the app's optimistic bubble
+  // confirms (idempotent), then return without waking.
+  const sessionId = _currentRemoteSessionId();
+  if (sessionId && _sdkSessionProjection.wasUserMessageDelivered(sessionId, msg.id)) {
+    const echo: ServerMessage = _withCurrentSession({
+      type: "user_message",
+      id: msg.id,
+      text: msg.text,
+      ...(msg.images && msg.images.length > 0 ? { images: msg.images } : {}),
+    });
+    _owners.broadcast(echo);
+    _deliveryDebugLog.log({
+      tag: "ingress_dedupe",
+      id: msg.id,
+      source: mode === "normal" ? "queued" : "app",
+      sessionIdTail: idTail(sessionId),
+      roomId: _myRoomId ?? undefined,
+    });
+    return;
+  }
   const prepared = _prepareUserDelivery(msg, sender, mode);
   _deliveryDebugLog.log({
     tag: "msg_received",

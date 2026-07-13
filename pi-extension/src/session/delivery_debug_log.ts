@@ -36,6 +36,7 @@ export const DELIVERY_DEBUG_TAG = [
   "message_api_null",
   "session_lifecycle",
   "command_ctx",
+  "ingress_dedupe",
 ] as const;
 export type DeliveryDebugTag = (typeof DELIVERY_DEBUG_TAG)[number];
 
@@ -56,7 +57,8 @@ export type DeliveryDebugEvent =
   | { tag: "message_api_armed"; via: "factory" | "withSession"; sessionIdTail: string; roomId?: string }
   | { tag: "message_api_null"; reason: "stale" | "shutdown" | "replacement"; roomId?: string }
   | { tag: "session_lifecycle"; reason: "startup" | "reload" | "new" | "resume" | "fork" | "quit"; sessionIdTail: string; roomId?: string }
-  | { tag: "command_ctx"; armed: boolean; via: "slash" | "withSession"; roomId?: string };
+  | { tag: "command_ctx"; armed: boolean; via: "slash" | "withSession"; roomId?: string }
+  | { tag: "ingress_dedupe"; id: string; source: "app" | "queued"; sessionIdTail: string; roomId?: string };
 
 /** Fields that must NEVER appear in a serialized event (privacy scrub). */
 const FORBIDDEN_KEYS = new Set([
