@@ -822,6 +822,7 @@ export function _setPiForTest(pi: unknown): void {
 export function _resetPendingDeliveryQueueForTest(): void {
   for (const entry of _pendingDeliveryQueue) clearTimeout(entry.timeout);
   _pendingDeliveryQueue = [];
+  _inflightUserDeliveries.clear();
 }
 
 /** Test-only: expose bounded replay queue depth for regression assertions. */
@@ -2211,6 +2212,14 @@ let _pendingDeliveryAbsoluteDeadlineMs = kPendingDeliveryAbsoluteDeadlineMs;
 let _pendingDeliveryQueue: PendingDeliveryEntry[] = [];
 let _nextPendingDeliveryQueueId = 1;
 
+/** In-flight user-message delivery attempts, keyed by `${sessionId}:${msg.id}`
+ *  (story-extension-user-message-ingress-idempotency). A duplicate frame that
+ *  arrives while the first attempt is pending coalesces onto the same promise
+ *  (no second `_wakeAgent`). On success the id is recorded as delivered, so a
+ *  later duplicate is suppressed + re-echoed without waking. On failure the
+ *  entry is released so a replay-queue re-attempt can retry. */
+const _inflightUserDeliveries = new Map<string, Promise<WakeAgentResult>>();
+
 /** @internal test override for the pending-delivery TTL. */
 export function _setPendingDeliveryTtlForTest(ms: number): () => void {
   _pendingDeliveryTtlMs = ms;
@@ -2273,6 +2282,47 @@ function _prepareUserDelivery(
 }
 
 async function _attemptUserDelivery(prepared: PreparedUserDelivery): Promise<WakeAgentResult> {
+  // Ingress idempotency coordinator (story-extension-user-message-ingress-
+  // idempotency). Capture the session id at attempt time (not at record time)
+  // so a replacement mid-attempt doesn't misattribute the delivery.
+  const attemptSessionId = _currentRemoteSessionId();
+  const dedupeKey = `${attemptSessionId}:${prepared.msg.id}`;
+
+  // Already delivered? Suppress + re-echo (idempotent confirmation) without
+  // re-invoking the agent. Covers sequential duplicates (reconnect flush,
+  // relay fan-out, app re-send) that arrive after the first attempt succeeded.
+  if (_sdkSessionProjection.wasUserMessageDelivered(attemptSessionId, prepared.msg.id)) {
+    const echo: ServerMessage = _withCurrentSession({
+      type: "user_message",
+      id: prepared.msg.id,
+      text: prepared.msg.text,
+      ...(prepared.msg.images && prepared.msg.images.length > 0 ? { images: prepared.msg.images } : {}),
+      ...(prepared.shouldSteer ? { streaming_behavior: "steer" as const } : {}),
+    });
+    _owners.broadcast(echo);
+    _deliveryDebugLog.log({
+      tag: "ingress_dedupe",
+      id: prepared.msg.id,
+      source: prepared.source,
+      sessionIdTail: idTail(attemptSessionId),
+      roomId: _myRoomId ?? undefined,
+    });
+    return { ok: true };
+  }
+
+  // In-flight? Coalesce onto the existing attempt — a concurrent duplicate
+  // awaits the same promise instead of calling _wakeAgent a second time.
+  const existing = _inflightUserDeliveries.get(dedupeKey);
+  if (existing) return existing;
+
+  const attempt = _attemptUserDeliveryOnce(prepared, attemptSessionId).finally(() => {
+    _inflightUserDeliveries.delete(dedupeKey);
+  });
+  _inflightUserDeliveries.set(dedupeKey, attempt);
+  return attempt;
+}
+
+async function _attemptUserDeliveryOnce(prepared: PreparedUserDelivery, attemptSessionId: string): Promise<WakeAgentResult> {
   // A reconnecting app can correctly send `steer` while our projection has no
   // turn id (for example, the turn started while no owner was attached).
   // Also be defensive for clients that send a plain user_message while the
@@ -2305,7 +2355,7 @@ async function _attemptUserDelivery(prepared: PreparedUserDelivery): Promise<Wak
     }
     return wake;
   }
-  _confirmUserDelivery(prepared.msg, prepared.shouldSteer);
+  _confirmUserDelivery(prepared.msg, prepared.shouldSteer, attemptSessionId);
   _deliveryDebugLog.log({
     tag: "msg_delivered",
     id: prepared.msg.id,
@@ -2315,8 +2365,8 @@ async function _attemptUserDelivery(prepared: PreparedUserDelivery): Promise<Wak
   return wake;
 }
 
-function _confirmUserDelivery(msg: UserClientMessage, shouldSteer: boolean): void {
-  const sessionId = _currentRemoteSessionId();
+function _confirmUserDelivery(msg: UserClientMessage, shouldSteer: boolean, attemptSessionId: string): void {
+  const sessionId = attemptSessionId;
   const eventId = deterministicTranscriptEventId(sessionId, "user_confirmed", msg.id);
   _appendUserConfirmedTranscriptEvent({
     sessionId,
@@ -2448,31 +2498,6 @@ async function _deliverUserMessage(
   sender: PlainPeerChannel | null,
   mode: "auto" | "normal" = "auto",
 ): Promise<void> {
-  // Ingress idempotency guard (story-extension-user-message-ingress-
-  // idempotency): if this `clientMessageId` was already delivered in the
-  // current session, do NOT re-invoke the agent — a duplicate frame (reconnect
-  // flush, relay fan-out, app re-send) would double-execute the turn. The
-  // transcript/UI dedupes by id, but that's display-only; _wakeAgent runs
-  // before the dedupe. Re-emit the echo so the app's optimistic bubble
-  // confirms (idempotent), then return without waking.
-  const sessionId = _currentRemoteSessionId();
-  if (sessionId && _sdkSessionProjection.wasUserMessageDelivered(sessionId, msg.id)) {
-    const echo: ServerMessage = _withCurrentSession({
-      type: "user_message",
-      id: msg.id,
-      text: msg.text,
-      ...(msg.images && msg.images.length > 0 ? { images: msg.images } : {}),
-    });
-    _owners.broadcast(echo);
-    _deliveryDebugLog.log({
-      tag: "ingress_dedupe",
-      id: msg.id,
-      source: mode === "normal" ? "queued" : "app",
-      sessionIdTail: idTail(sessionId),
-      roomId: _myRoomId ?? undefined,
-    });
-    return;
-  }
   const prepared = _prepareUserDelivery(msg, sender, mode);
   _deliveryDebugLog.log({
     tag: "msg_received",
@@ -2724,6 +2749,11 @@ function _resetSessionForNew(inReplyTo: string): void {
   _publishWorking(false);
   _broadcastQueuedMessageState();
   _sdkSessionProjection.resetSessionForNew(inReplyTo);
+  // Clear in-flight delivery attempts so a stale entry from the prior
+  // session doesn't coalesce a fresh send in the new session. (The dedupe
+  // key is sessionId-scoped, so this is belt-and-suspenders, but clearing
+  // avoids lingering promises from a replaced session.)
+  _inflightUserDeliveries.clear();
 }
 
 type ToolArgs = Record<string, unknown>;
