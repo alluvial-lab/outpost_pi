@@ -23,9 +23,11 @@ import 'package:app/protocol/protocol.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 
-class _FakeChannel implements IChannel {
+class _FakeChannel implements IChannel, IControlLink {
   final _ctrl = StreamController<ServerMessage>.broadcast();
+  final _controlCtrl = StreamController<ControlInbound>.broadcast();
   final List<ClientMessage> sent = [];
+  final List<Map<String, dynamic>> sentControl = [];
   Object? sendFailure;
   String defaultSessionId = '';
 
@@ -39,7 +41,22 @@ class _FakeChannel implements IChannel {
   }
 
   @override
-  Future<void> close() => _ctrl.close();
+  Future<void> close() async {
+    if (!_ctrl.isClosed) await _ctrl.close();
+    if (!_controlCtrl.isClosed) await _controlCtrl.close();
+  }
+
+  @override
+  Stream<ControlInbound> get controlFrames => _controlCtrl.stream;
+
+  @override
+  void sendControl(Map<String, dynamic> json) {
+    sentControl.add(json);
+  }
+
+  void pushControl(ControlInbound c) {
+    if (!_controlCtrl.isClosed) _controlCtrl.add(c);
+  }
 
   void push(ServerMessage m) => _ctrl.add(_withDefaultSession(m));
 
@@ -2874,6 +2891,66 @@ void main() {
       s.conn.dispose();
       s.sync.dispose();
     });
+
+    test(
+      '(i) half-open socket: room marked offline holds the send pending '
+      'instead of writing into a dead WS',
+      () async {
+        // Reproduces story-app-half-open-socket-swallows-sends-arrives-late:
+        // the capture showed the app send into a WS that was StatusOnline
+        // but whose room was already proven unreachable (3 missed pongs →
+        // _markActiveRoomOffline, equivalent here to a RoomEnded push).
+        // The message then sat in the dead send buffer and arrived at the
+        // PC minutes late, after the 20s echo timeout had already marked
+        // the row failed. The fix gates sendMessage on isRoomLive: when
+        // the room is not live, hold the message pending (same as the
+        // offline branch) rather than writing into the dead socket.
+        final s = await setup(pendingSendTimeout: short);
+        expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
+        expect(s.conn.status, isA<StatusOnline>(), reason: 'WS online');
+
+        // A control RoomEnded for the active room marks it offline while
+        // the WS stays StatusOnline (the half-open state). The rooms emit
+        // is debounced; poll the live-set getter directly (robust across
+        // suite ordering) instead of awaiting roomsStream.first.
+        s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 0));
+        for (var i = 0; i < 50 && s.conn.isRoomLive(s.epk, 'main'); i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 4));
+        }
+        expect(s.conn.isRoomLive(s.epk, 'main'), isFalse);
+        expect(s.conn.status, isA<StatusOnline>(), reason: 'WS still online');
+
+        // Send into the half-open socket: must be held pending, NOT written
+        // to the channel.
+        await s.sync.sendMessage('into the dead socket');
+        await _settle();
+
+        expect(
+          s.ch.sent.whereType<UserMessage>(),
+          isEmpty,
+          reason: 'must not write into a socket whose room is proven offline',
+        );
+        final rows = messages(s.epk);
+        expect(rows, hasLength(1), reason: 'held-pending row written');
+        expect(rows.single.pending, isTrue);
+        expect(rows.single.text, 'into the dead socket');
+        expect(
+          s.sync.debugPendingSendTimerCount,
+          1,
+          reason: 'timeout armed for the held-pending row',
+        );
+        // Await the short send timeout so it fires and fails the held row
+        // BEFORE dispose — otherwise the pending timer fires into a disposed
+        // SyncService mid-suite and contaminates later tests (the shared
+        // Hive box + process-wide timer queue outlive a single test).
+        await Future<void>.delayed(const Duration(milliseconds: 140));
+        await _settle();
+        expect(messages(s.epk).single.status, UserMsgStatus.failed);
+        expect(s.sync.debugPendingSendTimerCount, 0);
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
   });
 
   group('turn projection convergence', () {
@@ -3202,6 +3279,8 @@ void main() {
             sessionId: rotatedSession,
           ),
         );
+        await _settle();
+        await _settle();
         await _settle();
         await _settle();
 

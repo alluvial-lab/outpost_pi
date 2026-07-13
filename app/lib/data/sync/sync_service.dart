@@ -295,6 +295,26 @@ class SyncService extends Service {
       _logDebug(MsgSendEvent(ts: DateTime.now(), id: id, blocked: true));
       return;
     }
+    // Half-open socket guard (story-app-half-open-socket-swallows-sends-
+    // arrives-late): the WS may be StatusOnline while the active room has
+    // been proven unreachable (3 missed protocol pongs →
+    // `_markActiveRoomOffline` removed it from `_liveRoomIds`, or a
+    // `RoomEnded` push). Sending into that socket writes bytes that won't
+    // reach the Pi until a reconnect flushes them — minutes late, after the
+    // 20s echo timeout has already marked the row failed. Gate on room
+    // liveness, not just WS StatusOnline: if the room isn't live, hold the
+    // message pending exactly like the offline branch so it fails visibly
+    // (or re-attempts on the next healthy connection) instead of vanishing
+    // into a dead send buffer.
+    final activeEpk = _activeEpk;
+    if (activeEpk != null && !_conn.isRoomLive(activeEpk, _activeRoomId)) {
+      debugPrint(
+        '[msg-send] id=$id (room offline → held pending, fails in '
+        '${pendingSendTimeout.inSeconds}s)',
+      );
+      _logDebug(MsgSendEvent(ts: DateTime.now(), id: id, blocked: true));
+      return;
+    }
     // Seed an EMPTY streaming buffer so the blinking cursor shows during the
     // "thinking" gap before the first agent_chunk (pre-31 behavior). In-memory
     // only (#7) — never written to the DB. agent_chunk appends; agent_done
