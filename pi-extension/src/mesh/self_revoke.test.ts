@@ -287,8 +287,12 @@ describe("SelfRevoke lifecycle", () => {
     // keeping the revoked sibling in the union forever. onMembersChanged
     // never fires a shrink → setSiblings never evicts → not_authorized loop.
     //
-    // The fix: delete membersByOwner[ownerEpk] on revocation so the next
-    // sweep's union computation drops the stale siblings.
+    // The fix: delete membersByOwner[ownerEpk] BEFORE removePeer in
+    // _checkOwner, so the union computation at the end of the SAME sweep
+    // sees the eviction and fires onMembersChanged immediately — independent
+    // of persistence. (checkOnce also reconciles membersByOwner against
+    // listOwnerPubkeys at the top of each sweep for removal paths that
+    // bypass _checkOwner.)
     const ownerKp = generateEd25519Keypair();
     const myKp = generateEd25519Keypair();
     const siblingA = generateEd25519Keypair();
@@ -330,24 +334,123 @@ describe("SelfRevoke lifecycle", () => {
     const first = onMembersChanged.mock.calls[0]![0] as { pcPubkey: string }[];
     expect(first.map((s) => s.pcPubkey)).toEqual([aEpk]);
 
-    // 2nd sweep: this Pi is revoked from the Owner. onRevoke fires.
-    // membersByOwner[owner] is set to [A] (the new member list) then the
-    // Owner is removePeer'd. Without the fix, membersByOwner retains [A].
+    // 2nd sweep: this Pi is revoked. The delete happens BEFORE removePeer,
+    // so the union computation at the end of THIS sweep sees the eviction →
+    // onMembersChanged fires with [] immediately (same-sweep convergence).
+    // Without the fix, membersByOwner retains the stale [A] entry and
+    // onMembersChanged does NOT fire a shrink → setSiblings never evicts A.
     await revoker.checkOnce();
     expect(onRevoke).toHaveBeenCalledWith(ownerEpk);
+    expect(onMembersChanged).toHaveBeenCalledTimes(2);
+    const afterRevoke = onMembersChanged.mock.calls[1]![0] as { pcPubkey: string }[];
+    expect(afterRevoke).toEqual(
+      [],
+      "revoked Owner's siblings must be evicted same-sweep, not retained stale",
+    );
 
-    // 3rd sweep: listOwnerPubkeys omits the revoked Owner. Without the fix,
-    // _computeSiblingUnion still iterates the stale membersByOwner[owner]
-    // entry → sibling A stays in the union → onMembersChanged does NOT fire
-    // a shrink → setSiblings never evicts A → the not_authorized loop.
-    // With the fix, membersByOwner[owner] was deleted → the union is empty
-    // → onMembersChanged fires with [] → setSiblings evicts A.
+    // 3rd sweep: listOwnerPubkeys omits the revoked Owner. The reconcile at
+    // the top of checkOnce prunes any residual entry (belt-and-suspenders).
+    // Union is still empty → onMembersChanged does NOT fire again.
+    await revoker.checkOnce();
+    expect(onMembersChanged).toHaveBeenCalledTimes(2);
+  });
+
+  test("onMembersChanged evicts even when removePeer throws (in-memory invalidation is independent of persistence)", async () => {
+    // The delete must happen BEFORE removePeer so a failed persistence
+    // (disk full, permissions) doesn't leave stale siblings in the union.
+    const ownerKp = generateEd25519Keypair();
+    const myKp = generateEd25519Keypair();
+    const siblingA = generateEd25519Keypair();
+    const ownerEpk = Buffer.from(ownerKp.publicKey).toString("base64");
+    const myEpk = Buffer.from(myKp.publicKey).toString("base64");
+    const aEpk = Buffer.from(siblingA.publicKey).toString("base64");
+
+    const env1 = makeEnvelope(ownerKp, 1, [myEpk, aEpk]);
+    const env2 = makeEnvelope(ownerKp, 2, [aEpk]); // me revoked
+
+    const get = vi.fn()
+      .mockResolvedValueOnce(env1)
+      .mockResolvedValueOnce(env2);
+    const storage: SelfRevokeStorage = {
+      listOwnerPubkeys: vi.fn().mockResolvedValue([ownerEpk]),
+      removePeer: vi.fn().mockRejectedValue(new Error("EACCES: permission denied")),
+    };
+    const onMembersChanged = vi.fn();
+    const onRevoke = vi.fn().mockResolvedValue(undefined);
+    const revoker = new SelfRevoke({
+      client: { get } as unknown as MeshClient,
+      storage,
+      myPubkey: myKp.publicKey,
+      onMembersChanged,
+      onRevoke,
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+    });
+
+    // 1st sweep: A discovered.
+    await revoker.checkOnce();
+    expect(onMembersChanged).toHaveBeenCalledTimes(1);
+
+    // 2nd sweep: revoke, but removePeer THROWS. The per-owner catch logs
+    // the error. The delete already happened (before removePeer), so the
+    // union is empty → onMembersChanged fires [] despite persistence failing.
     await revoker.checkOnce();
     expect(onMembersChanged).toHaveBeenCalledTimes(2);
     const afterRevoke = onMembersChanged.mock.calls[1]![0] as { pcPubkey: string }[];
     expect(afterRevoke).toEqual(
       [],
-      "revoked Owner's siblings must be evicted from the union, not retained stale",
+      "in-memory eviction must not be gated on removePeer succeeding",
+    );
+  });
+
+  test("onMembersChanged evicts siblings when an Owner is removed outside SelfRevoke (interactive unpair)", async () => {
+    // The reconcile at the top of checkOnce prunes membersByOwner entries
+    // for Owners no longer in listOwnerPubkeys — covers removal paths that
+    // bypass _checkOwner (pairing_coordinator's interactive unpair calls
+    // removePeer directly, without touching SelfRevoke state).
+    const ownerKp = generateEd25519Keypair();
+    const myKp = generateEd25519Keypair();
+    const siblingA = generateEd25519Keypair();
+    const ownerEpk = Buffer.from(ownerKp.publicKey).toString("base64");
+    const myEpk = Buffer.from(myKp.publicKey).toString("base64");
+    const aEpk = Buffer.from(siblingA.publicKey).toString("base64");
+
+    const env1 = makeEnvelope(ownerKp, 1, [myEpk, aEpk]);
+
+    const get = vi.fn().mockResolvedValue(env1);
+    // 1st sweep: Owner present. 2nd sweep: Owner removed externally
+    // (interactive unpair) — listOwnerPubkeys no longer returns it.
+    const owners = vi.fn()
+      .mockResolvedValueOnce([ownerEpk])
+      .mockResolvedValueOnce([]);
+    const storage: SelfRevokeStorage = {
+      listOwnerPubkeys: owners,
+      removePeer: vi.fn().mockResolvedValue(true),
+    };
+    const onMembersChanged = vi.fn();
+    const revoker = new SelfRevoke({
+      client: { get } as unknown as MeshClient,
+      storage,
+      myPubkey: myKp.publicKey,
+      onMembersChanged,
+    });
+
+    // 1st sweep: A discovered.
+    await revoker.checkOnce();
+    expect(onMembersChanged).toHaveBeenCalledTimes(1);
+    expect(
+      (onMembersChanged.mock.calls[0]![0] as { pcPubkey: string }[]).map((s) => s.pcPubkey),
+    ).toEqual([aEpk]);
+
+    // 2nd sweep: Owner gone from listOwnerPubkeys (removed externally).
+    // The reconcile prunes membersByOwner[owner] → union empty →
+    // onMembersChanged fires [] → setSiblings evicts A. Without the
+    // reconcile, the stale entry keeps A in the union forever.
+    await revoker.checkOnce();
+    expect(onMembersChanged).toHaveBeenCalledTimes(2);
+    const afterRemove = onMembersChanged.mock.calls[1]![0] as { pcPubkey: string }[];
+    expect(afterRemove).toEqual(
+      [],
+      "externally-removed Owner's siblings must be pruned by the reconcile",
     );
   });
 

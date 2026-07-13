@@ -144,3 +144,60 @@ list (workaround), confirming the state is in-memory and not persisted.
   sibling's new epk (if it re-paired under the same Owner) or surface a
   terminal `transport_error` to the sender.
 - A unit/integration test simulating revocation mid-queue.
+
+## Implementation (2026-07-13)
+
+The fix evolved through a fresh-context review (`openai-codex/gpt-5.6-sol`).
+The initial one-liner (`membersByOwner.delete` after `removePeer`) was
+strengthened to address two review findings:
+
+1. **In-memory invalidation independent of persistence.** The `delete` now
+   happens **before** `removePeer`, so the union computation at the end of
+   the same sweep sees the eviction and fires `onMembersChanged` immediately
+   — even if `removePeer` throws (disk full, permissions). The siblings
+   leave the union as soon as the signed revocation is verified, not gated
+   on a file write.
+2. **Reconcile against the authoritative owner set.** `checkOnce` now prunes
+   `membersByOwner` entries for Owners no longer in `listOwnerPubkeys()` at
+   the top of each sweep. This covers removal paths that bypass
+   `_checkOwner` — the interactive unpair at `pairing_coordinator.ts:408`
+   calls `removePeer` directly without touching `SelfRevoke` state, which
+   would otherwise leave a stale `membersByOwner` entry.
+
+### Tests (3 new, all TDD-verified)
+
+- `onMembersChanged evicts siblings when their Owner revokes us` — the
+  original capture scenario; asserts same-sweep convergence (fires `[]` at
+  the end of the revoke sweep, not the next).
+- `onMembersChanged evicts even when removePeer throws` — the delete-before-
+  removePeer guarantee; fails on the weaker delete-after version.
+- `onMembersChanged evicts siblings when an Owner is removed outside
+  SelfRevoke` — the reconcile guarantee; fails without the reconcile.
+
+All 3 fail on the weaker (delete-after, no-reconcile) version and pass on
+the shipped version. 12/12 self_revoke tests pass; typecheck clean.
+
+### Known limitation (not addressed — pre-existing)
+
+If `removePeer` throws, `lastSeenVersion` has already advanced, so the next
+sweep's `client.get(hash, since=advancedVersion)` returns 304 → `_checkOwner`
+returns early without retrying `removePeer`. The in-memory eviction still
+happens (the delete is before removePeer), so the *symptom* is fixed, but
+the Owner lingers in `peers.json` until the next mesh-version bump triggers
+a non-304 response. This is a pre-existing persistence-retry concern
+outside this story's scope; the in-memory fix is correct regardless.
+
+## Review (2026-07-13)
+
+**Verdict**: Approve (after strengthening)
+
+Fresh-context review by `openai-codex/gpt-5.6-sol` initially returned
+Request changes with two important findings (both addressed above):
+- Owners removed outside `SelfRevoke` still leak stale siblings → addressed
+  by the reconcile in `checkOnce`.
+- A `removePeer` exception makes revocation non-retryable and skips the
+  delete → addressed by moving the delete before `removePeer`.
+
+The reviewer also noted the test should assert same-sweep convergence
+rather than waiting for a third sweep → addressed (the test now asserts
+`onMembersChanged([])` immediately after the revoke sweep).
