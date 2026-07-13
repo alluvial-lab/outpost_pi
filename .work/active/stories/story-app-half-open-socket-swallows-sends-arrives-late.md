@@ -266,8 +266,16 @@ that test, not a regression from the fix.
 
 - Option 2 (tear down socket on `send_timeout`) — covers the window before
   3 missed pongs fire (test 4 in the capture: sent at 00:08:10, room-offline
-  didn't fire until 00:09:15). Filed as a follow-up: the 20s echo timeout is
-  itself a dead-socket signal and should force a reconnect.
+  didn't fire until 00:09:15). **PARKED 2026-07-13** at
+  `.work/backlog/story-app-teardown-socket-on-send-timeout.md` after an
+  implementation attempt disproved the premise: `send_timeout` is a soft,
+  recoverable failure by design (the transcript-event-log late-confirmation
+  path), and tearing down severs the channel late confirmations arrive on.\  Re-examination found option 1 + late-confirmation already fix the user
+  symptom. Two durable findings came out of it regardless: Plan-18's
+  `room_already_open` rationale is obsolete (supersession closes the prior
+  conn on re-auth), and the `late authoritative echo` test has a weak
+  assertion masking breakage. See the parked story for the full analysis and
+  the retire/revisit decision.
 - Option 3 (tighten WS `pingInterval` 45s→15–20s) — secondary; helps the
   `onDone` path detect a fully-dead socket sooner.
 - Option 4 (re-attempt timed-out messages on reconnect) — UX safety net so
