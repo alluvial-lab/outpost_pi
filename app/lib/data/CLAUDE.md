@@ -1,33 +1,33 @@
-# Camada `data/`
+# `data/` Layer
 
-## Propósito
+## Purpose
 
-Traduzir contratos de `domain/` em chamadas para integrações externas
-(rede, banco, plataforma), aplicando caches, mapeadores e repositórios
-especializados. Esta camada é a fronteira entre regras de negócio puras e o
-mundo bagunçado de I/O.
+Translate `domain/` contracts into calls to external integrations (network,
+database, platform), applying caches, mappers, and specialized repositories.
+This layer is the boundary between pure business rules and the messy world of
+I/O.
 
-## Deve fazer
+## Must do
 
-1. **Implementar contratos do domínio** — cada interface declarada em
-   `domain/repositories/` ou `domain/services/` tem sua implementação concreta
-   aqui.
-2. **Traduzir DTOs** — adapters/mappers convertem modelos de transporte
-   (JSON, rows do banco) em entidades de domínio e vice-versa.
-3. **Orquestrar fontes múltiplas** — combinar cache local, API remota,
-   storage, expondo uma API simples aos use cases.
-4. **Propagar falhas contextualizadas** — capturar exceções técnicas das
-   integrações e convertê-las em erros compreensíveis pelo domínio.
+1. **Implement domain contracts** — every interface declared in
+   `domain/repositories/` or `domain/services/` has its concrete implementation
+   here.
+2. **Translate DTOs** — adapters/mappers convert transport models (JSON,
+   database rows) into domain entities and vice versa.
+3. **Orchestrate multiple sources** — combine local cache, remote API, and
+   storage while exposing a simple API to use cases.
+4. **Propagate contextualized failures** — capture technical exceptions from
+   integrations and convert them into errors the domain can understand.
 
-   Padrão obrigatório em APIs (`data/apis/`):
+   Required API pattern (`data/apis/`):
 
    ```dart
    try {
-     // chamada de rede / IO
+     // network / IO call
    } on DioException catch (e, s) {
      return Failure(
        AppException.create(
-         'Mensagem contextualizada.',
+         'Contextualized message.',
          stackTrace: s,
          originalError: e,
        ),
@@ -35,7 +35,7 @@ mundo bagunçado de I/O.
    } catch (e, s) {
      return Failure(
        AppException.fatal(
-         'Erro inesperado.',
+         'Unexpected error.',
          stackTrace: s,
          originalError: e,
        ),
@@ -43,46 +43,46 @@ mundo bagunçado de I/O.
    }
    ```
 
-   Regras:
-   - `DioException` (erro de rede/HTTP) → `AppException.create(...)`
-   - Erro genérico/inesperado → **sempre** `AppException.fatal(...)`
-   - Stack trace: use o `s` capturado, evite `StackTrace.current` dentro do
+   Rules:
+   - `DioException` (network/HTTP error) → `AppException.create(...)`
+   - Generic/unexpected error → **always** `AppException.fatal(...)`
+   - Stack trace: use the captured `s`; avoid `StackTrace.current` inside
      `catch`
-   - Contrato inválido / dados ausentes → preferir
-     `Failure(AppException.create('...'))` para mensagens legíveis e
-     rastreamento consistente pelo observer global
+   - Invalid contract / absent data → prefer
+     `Failure(AppException.create('...'))` for readable messages and
+     consistent tracking by the global observer
 
-5. **Manter contratos explícitos** — interfaces vivem no domínio,
-   implementações moram aqui (nunca o contrário).
+5. **Keep contracts explicit** — interfaces live in the domain and
+   implementations live here (never the reverse).
 
-## Não deve fazer
+## Must not do
 
-1. **Implementar regras de negócio** — decisões de domínio (validações,
-   cálculos, políticas) permanecem em `domain/`.
-2. **Consumir UI** — nenhum import de `ui/`, `widget`, `BuildContext`.
-3. **Acessar `auto_injector` direto** fora do setup — instâncias são
-   fornecidas via `config/dependencies.dart`.
-4. **Duplicar lógica de infraestrutura** — clientes HTTP, WebSocket, mDNS
-   ficam encapsulados em `data/services/`, não espalhados.
+1. **Implement business rules** — domain decisions (validations, calculations,
+   policies) remain in `domain/`.
+2. **Consume UI** — no imports of `ui/`, `widget`, or `BuildContext`.
+3. **Access `auto_injector` directly** outside setup — instances are supplied
+   through `config/dependencies.dart`.
+4. **Duplicate infrastructure logic** — HTTP, WebSocket, and mDNS clients are
+   encapsulated in `data/services/`, not scattered throughout the codebase.
 
-## Estrutura sugerida
+## Suggested structure
 
 ```
 data/
-├── adapters/         # mappers DTO ↔ entidade (por agregado)
-├── apis/             # clients HTTP (cada um implementa um contrato)
-├── repositories/     # implementações de repositórios do domínio
-├── services/         # implementações de serviços do domínio (mDNS, WS, ...)
-└── usecases/         # implementações de use cases que dependem de IO
+├── adapters/         # DTO ↔ entity mappers (by aggregate)
+├── apis/             # HTTP clients (each implements a contract)
+├── repositories/     # domain repository implementations
+├── services/         # domain service implementations (mDNS, WS, ...)
+└── usecases/         # use-case implementations that depend on IO
 ```
 
-## Vocabulário
+## Vocabulary
 
-- **Repository** — implementação concreta que satisfaz um contrato do domínio
-  usando fontes de dados.
-- **Data Source** — fonte específica (remota, local, cache) usada por um
-  repositório.
-- **Adapter / Mapper** — objeto que converte DTOs de serviço em entidades
-  de domínio.
-- **Sync Strategy** — política que define quando buscar remoto, servir cache,
-  ou mesclar resultados.
+- **Repository** — concrete implementation that satisfies a domain contract
+  using data sources.
+- **Data Source** — specific source (remote, local, cache) used by a
+  repository.
+- **Adapter / Mapper** — object that converts service DTOs into domain
+  entities.
+- **Sync Strategy** — policy defining when to fetch remotely, serve cache, or
+  merge results.
