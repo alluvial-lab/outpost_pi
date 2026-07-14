@@ -1,7 +1,7 @@
 ---
 id: story-app-reattempt-held-pending-on-reconnect
 kind: story
-stage: implementing
+stage: review
 tags: [app, bug, lifecycle, transport]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -9,7 +9,6 @@ release_binding: null
 gate_origin: null
 created: 2026-07-13
 updated: 2026-07-13
-implemented: 2026-07-13
 follow_up_of: story-app-half-open-socket-swallows-sends-arrives-late
 ---
 
