@@ -1,6 +1,6 @@
 # Agent Discipline
 
-These rules bind every agent working in this private fork, regardless of harness. Claude-specific files remain useful guidance, but the canonical agent-neutral surface is `AGENTS.md`, `.agents/rules/`, `.agents/skills/`, `.work/`, and durable docs.
+These rules bind every agent working in the Outpost-Pi product, regardless of harness. Claude-specific files remain useful guidance, but the canonical agent-neutral surface is `AGENTS.md`, `.agents/rules/`, `.agents/skills/`, `.work/`, and durable docs.
 
 ## Startup checklist
 
@@ -26,21 +26,12 @@ Root is primarily planning/orchestration. Code edits normally belong in one subp
 
 Run build/test commands from the owning subproject root unless a command is documented as root-level. Do not make broad cross-subproject edits without saying which boundary is being changed and why.
 
-## Fork posture (hard fork)
+## Provenance
 
-This is a **hard fork** of `jacobaraujo7/remote_pi`, fully owned by the operator
-(rebrand to Outpost-Pi tracked in `epic-rebrand-to-outpost-pi`). It has
-diverged past upstream rebase; upstream is historical provenance and read-only
-comparison, not a design constraint. See `AGENTS.md` § Repository posture for
-the operative rule.
-
-- Design **fork-local by default**: fixes and features live in code we control
-  and ship by rebuilding our own artifacts. Do not gate decisions on upstream
-  absorbability.
-- Upstream behavior is not a constraint to preserve — diverge freely where the
-  product needs it.
-- When changing a fork policy, record the current policy and the rejected
-  alternative in the artifact that owns the policy.
+Outpost-Pi is derived from Jacob Moura's `remote_pi` (MIT-licensed); the
+LICENSE and NOTICE preserve that attribution. The product is owned and shipped
+by the operator across `pi-extension/`, `app/`, `relay/`, `cockpit/`, and
+`site/`. Provenance is a factual license matter, not a design constraint.
 
 ## Durable vs transient artifacts
 

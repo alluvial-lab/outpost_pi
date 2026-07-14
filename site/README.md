@@ -1,6 +1,6 @@
 # Outpost-Pi — Site
 
-Landing page for [Outpost-Pi](https://github.com/jacobaraujo7/outpost_pi) — the
+Landing page for [Outpost-Pi](https://github.com/KevounC/outpost_pi) — the
 project that lets you control a Pi coding agent from your phone over a
 TLS-protected relay connection with Ed25519 pairing authentication. Payloads are
 not end-to-end encrypted at the application layer in the current MVP.
