@@ -1,7 +1,7 @@
-# Remote Pi work conventions
+# Outpost-Pi work conventions
 
-This `.work/` tier tracks private-fork work that is specific to `KevounC/remote_pi`.
-Use it for bugs, follow-up slices, and product/ops ideas that belong with the fork's code rather than in the SNC root queue.
+This `.work/` tier tracks Outpost-Pi product and ops work.
+Use it for bugs, follow-up slices, and product/ops ideas that belong with the codebase rather than in the SNC root queue.
 
 Before advancing work items, read `AGENTS.md` and `.agents/rules/*.md`. The rule surface is agent-neutral; `.work/` is the queue, not the place to preserve lasting design/routing policy.
 
