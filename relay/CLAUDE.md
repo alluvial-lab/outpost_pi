@@ -1,54 +1,54 @@
 # Outpost-Pi — Relay (Rust)
 
-Servidor WebSocket **stateless** que pareia conexões por `peer_id` e roteia
-ciphertext entre app e pi-extension. **Nunca decifra payload.**
+**Stateless** WebSocket server that pairs connections by `peer_id` and routes
+ciphertext between the app and pi-extension. **It never decrypts payloads.**
 
 Before editing or reviewing relay code, read the agent-neutral Rust relay reference at `../.agents/skills/rust-relay/SKILL.md`.
 
 ## Stack
 
-- Rust 1.94+ (edição 2024)
+- Rust 1.94+ (2024 edition)
 - Runtime: `tokio` (full features)
 - WebSocket: `tokio-tungstenite`
-- Serialização: `serde` + `serde_json`
-- Logging: `tracing` + `tracing-subscriber` (NÃO usar `println!`)
+- Serialization: `serde` + `serde_json`
+- Logging: `tracing` + `tracing-subscriber` (**do not** use `println!`)
 
-## Comandos
+## Commands
 
-- `cargo build` — build dev
-- `cargo build --release` — build otimizado
-- `cargo run` — roda local
-- `RUST_LOG=info cargo run` — com logs visíveis
-- `cargo clippy -- -D warnings` — lint estrito (deve passar antes de commit)
-- `cargo fmt` — formata
-- `cargo test` — testes
+- `cargo build` — development build
+- `cargo build --release` — optimized build
+- `cargo run` — run locally
+- `RUST_LOG=info cargo run` — run with visible logs
+- `cargo clippy -- -D warnings` — strict lint (must pass before commit)
+- `cargo fmt` — format
+- `cargo test` — tests
 
-## Convenções
+## Conventions
 
-- **Erros**: `anyhow::Result<()>` no `main`, `thiserror::Error` em libs internas
-- **Async**: tudo via `tokio::spawn` / `tokio::select!`, nada de `std::thread`
-- **Logging**: spans com `tracing::info_span!` em handlers, `info!`/`warn!`/`error!`
-- **Sem `unwrap()`** em código de produção. Use `?` e propague
-- **Sem `clone()` desnecessário** — passe `&` quando possível
+- **Errors**: `anyhow::Result<()>` in `main`, `thiserror::Error` in internal libraries
+- **Async**: everything through `tokio::spawn` / `tokio::select!`, no `std::thread`
+- **Logging**: `tracing::info_span!` spans in handlers; `info!`/`warn!`/`error!`
+- **No `unwrap()`** in production code. Use `?` and propagate.
+- **No unnecessary `clone()`** — pass `&` where possible
 
-## Política de segurança
+## Security policy
 
-- Relay **NUNCA** decifra payload — todo conteúdo é ciphertext opaco
-- Apenas metadados visíveis: `peer_id`, tamanho, timestamp
-- Logs **NÃO** podem conter payload, mesmo cifrado
-- Rate limit por `peer_id` e por IP de origem
+- Relay **NEVER** decrypts payloads — all content is opaque ciphertext
+- Only metadata is visible: `peer_id`, size, timestamp
+- Logs **MUST NOT** contain payloads, even encrypted ones
+- Rate limit by `peer_id` and source IP
 
-## NÃO fazer
+## Must not do
 
-- Não usar `println!` (use `tracing`)
-- Não usar `.unwrap()` ou `.expect()` em paths de produção
-- Não logar conteúdo de mensagens
-- Não adicionar persistência de payload — relay é stateless
-- Não comitar `target/` (já no .gitignore raiz)
+- Do not use `println!` (use `tracing`)
+- Do not use `.unwrap()` or `.expect()` on production paths
+- Do not log message contents
+- Do not add payload persistence — the relay is stateless
+- Do not commit `target/` (already in the root `.gitignore`)
 
-## Modo orquestrado
+## Orchestrated mode
 
-Se receber um prompt começando com `[ORCH:<task-id>]`, leia
-`../.orchestration/INSTRUCTIONS.md` antes de qualquer outra ação. Esse marker
-indica que outro agente está coordenando o trabalho e tem regras específicas
-(onde escrever resultado, não comitar, etc).
+If you receive a prompt beginning with `[ORCH:<task-id>]`, read
+`../.orchestration/INSTRUCTIONS.md` before taking any other action. This marker
+indicates that another agent is coordinating the work and has specific rules
+(where to write the result, do not commit, and so on).
