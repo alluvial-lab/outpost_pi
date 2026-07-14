@@ -1,22 +1,17 @@
-# AGENTS.md — Remote Pi private fork (hard fork, rebrand pending to Outpost-Pi)
+# AGENTS.md — Outpost-Pi
 
-This checkout is a **hard fork** of `jacobaraujo7/remote_pi`, fully owned by the
-operator. It has diverged past the point of upstream rebase (547 commits ahead,
-0 upstream since the fork point as of 2026-07-02); the rebrand to **Outpost-Pi**
-is tracked in `epic-rebrand-to-outpost-pi`. Treat the fork as the product, not
-a set of patches awaiting upstream.
+**Outpost-Pi** is a multi-surface product owned and shipped by the operator.
+The codebase spans five subprojects — `pi-extension/`, `app/`, `relay/`,
+`cockpit/`, `site/`; design changes freely across all of them and ship by
+rebuilding our own artifacts.
 
-## Repository posture
+## Repository scope
 
-- Design **fork-local by default**: fixes and features live in code we control
-  (`pi-extension/`, `app/`, `relay/`, `cockpit/`, `site/`) and ship by
-  rebuilding our own artifacts. Do not gate decisions on upstream absorbability.
-- Fork remote: `origin` → `https://github.com/KevounC/remote_pi.git` — the only
-  push target.
-- Upstream remote: `upstream` → `https://github.com/jacobaraujo7/remote_pi.git`
-  with push disabled — historical provenance and read-only comparison only,
-  not a design constraint.
-- Push to `origin` unless the operator explicitly asks for an upstream PR.
+- `origin` → `https://github.com/KevounC/outpost_pi.git` — the only push
+  target.
+- Provenance: Outpost-Pi is derived from Jacob Moura's `remote_pi`
+  (MIT-licensed); the LICENSE and NOTICE preserve that attribution as a
+  factual license matter, not a design constraint.
 
 ## Work tracking
 
@@ -34,7 +29,7 @@ Do **not** park Remote Pi code/product bugs in the SNC root `.work/` queue. SNC 
 
 Before designing, implementing, or reviewing, read the agent-neutral rules in `.agents/rules/`:
 
-- `.agents/rules/agent-discipline.md` — startup checklist, cwd/subproject boundaries, fork posture, durable-vs-transient artifacts.
+- `.agents/rules/agent-discipline.md` — startup checklist, cwd/subproject boundaries, provenance, durable-vs-transient artifacts.
 - `.agents/rules/code-design.md` — ports/adapters, single source of truth, generated/inferred contracts, fail-fast boundaries, lifecycle ownership.
 - `.agents/rules/documentation-discipline.md` — current-state docs, inline self-defense, link/reference hygiene, README audience.
 - `.agents/rules/testing-integrity.md` — no gaming tests, failure triage, subproject verification commands.
@@ -125,8 +120,7 @@ and the pi-extension is registered as a **local-path** extension (not npm).
 - **relay** — Docker container `outpost-pi-relay` on `:3300` (host) → `:3000`
   (container). Image built from `relay/` source (`docker build -t
   outpost-pi-relay:<version> relay/`); the persistent `mesh_versions` SQLite DB
-  lives in the named volume `remote-pi-data:/data`. Do NOT confuse with the
-  upstream image `jacobmoura7/remote-pi-relay:latest` (stale). The live
+  lives in the named volume `remote-pi-data:/data`. The live
   container runs `outpost-pi-relay:0.1.0` with the retroactive file log
   enabled: `OUTPOSTPI_RELAY_LOG_DIR=/data/logs` (daily-rotated `relay.log`
   in the volume) + `RUST_LOG=info,relay=debug` (lifts the cross-PC
