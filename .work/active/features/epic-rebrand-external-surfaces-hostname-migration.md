@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-external-surfaces-hostname-migration
 kind: feature
-stage: implementing
+stage: review
 tags: [rebrand, pi-extension, app, cockpit, site, docs]
 parent: epic-rebrand-external-surfaces
 depends_on: []
