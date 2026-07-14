@@ -1,7 +1,7 @@
 ---
 id: story-app-reattempt-held-pending-on-reconnect
 kind: story
-stage: review
+stage: done
 tags: [app, bug, lifecycle, transport]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -9,6 +9,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-13
 updated: 2026-07-13
+reviewed: 2026-07-14
 follow_up_of: story-app-half-open-socket-swallows-sends-arrives-late
 ---
 
@@ -132,3 +133,26 @@ risk for all re-delivery scenarios), not just a dependency for option 4.
 - `app/lib/data/sync/session_history_replay.dart:51` — `UserInputEvt` → `UserMessageConfirmed` (late-confirmation; only works if the Pi has the msg).
 - `.work/backlog/story-app-teardown-socket-on-send-timeout.md` — option 2 (parked); documents why options 2/3 are redundant.
 - `story-app-half-open-socket-swallows-sends-arrives-late.md` — option 1 (shipped); options 2–4 filed in its body.
+
+## Review (2026-07-14)
+
+**Verdict**: Approve (after strengthening)
+
+Fresh-context review by `gpt-5.6-sol` initially returned Block with three
+findings:
+
+- **Blocker 1 (genuine, fixed):** `_resentHeldPendingIds` was added before the
+  send and never removed on failure — a failed re-send was permanently
+  suppressed. Fixed by removing the id in the catch block so failures are
+  retryable. New test (iii) proves the retry.
+- **Blocker 2 (misread, not an issue):** Reviewer claimed `_activeRef != ref`
+  misses room switches. Verified false: `RemoteSessionRef` includes
+  `peerEpk`+`roomId`+`sessionId` (all three fields), so the equality check
+  IS the generation check — it catches room/session/peer switches.
+- **Blocker 3 (pre-existing, out of scope):** `held`/`ch` captured before the
+  async transcript append. This is a pre-existing TOCTOU in `sendMessage`'s
+  send path, not introduced by this change.
+
+The reviewer's own direct-answer analysis confirmed the self-retrigger loop
+is now harmless (Pi-side idempotency re-echoes without re-waking), so the
+in-flight guard's only value is avoiding redundant traffic.
