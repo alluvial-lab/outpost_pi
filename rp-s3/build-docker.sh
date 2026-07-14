@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build the rp-s3 Docker image locally.
+# Build the dormant rp-s3 Docker image locally; this script does not deploy it.
 # Version is read from Cargo.toml — bump `version = "..."` there before running.
 #
 # Usage:
 #   ./build-docker.sh
 #
 # Always tags `:v<cargo-version>` and `:latest`. Builds for the host platform
-# and loads into the local Docker daemon (no registry push) — the image is
-# project-local, built from rp-s3/ source.
+# and loads into the local Docker daemon (no registry push or deployment) — the
+# image is project-local, built from rp-s3/ source.
 #
 # Requirements:
 #   docker (buildx bundled with modern Docker).
@@ -44,4 +44,4 @@ docker build \
   --tag "$IMAGE:latest" \
   .
 
-echo "✓ Built $IMAGE:$TAG and $IMAGE:latest (local)"
+echo "✓ Built $IMAGE:$TAG and $IMAGE:latest (local; dormant server not deployed)"
