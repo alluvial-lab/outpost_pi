@@ -1,0 +1,46 @@
+---
+id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-domain-validation-tests
+kind: story
+stage: implementing
+tags: [rebrand, docs, i18n, cockpit]
+parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-domain
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-07-14
+updated: 2026-07-14
+---
+
+# Translate cockpit domain validation, value objects, and tests
+
+## Scope
+
+Translate Portuguese comment prose to English in:
+
+- `cockpit/lib/app/cockpit/domain/validators/worktree_name_validator.dart`
+- `cockpit/lib/app/cockpit/domain/value_objects/semver.dart`
+- `cockpit/lib/app/cockpit/domain/value_objects/update_target.dart`
+
+Translate Portuguese test descriptions, comments, and natural-language fixture
+prose through deliberate review (not blind replacement) in:
+
+- `cockpit/test/domain/worktree_name_validator_test.dart`
+- `cockpit/test/domain/update_info_test.dart`
+- `cockpit/test/domain/semver_test.dart`
+- `cockpit/test/domain/workspace_pane_test.dart`
+
+Tests are Skip-tier for dartdoc: translate their user-visible test output and
+prose, but do not add API documentation. Preserve validation order and error
+enums, semver behavior, and every assertion. A natural-language fixture value
+may be translated only with its same-file expectation updated to the equivalent
+English value; protocol-like fixture keys and values remain unchanged.
+
+## Acceptance criteria
+
+- [ ] Portuguese comments in the three production files are idiomatic English dartdoc/non-doc commentary with contract meaning preserved.
+- [ ] Portuguese test/group descriptions, comments, and natural-language fixture prose in the four listed tests are idiomatic English and still describe the asserted behavior.
+- [ ] No production executable code, runtime string, public signature, validator ordering, semver behavior, or value-object semantics change.
+- [ ] No assertion is weakened, deleted, skipped, or broadened; fixture-value translation remains behavior-neutral and paired with its exact expectation.
+- [ ] Tests receive no gap-fill dartdoc, consistent with the Skip tier.
+- [ ] A targeted accented-Latin grep reports no matches in the seven owned files, and a manual lexical review catches unaccented Portuguese residue.
+- [ ] `dart format` is run on the owned files; the four targeted domain tests pass, then from `cockpit/`, `flutter analyze` and `flutter test` pass (or an exact environment failure is reported without weakening tests).
