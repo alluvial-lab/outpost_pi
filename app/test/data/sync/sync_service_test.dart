@@ -2951,6 +2951,96 @@ void main() {
         s.sync.dispose();
       },
     );
+
+    test(
+      '(ii) held-pending message is re-sent on reconnect after timing out '
+      '(option 4)',
+      () async {
+        // Reproduces story-app-reattempt-held-pending-on-reconnect:
+        // option 1's held-pending guard says it 're-attempts on the next
+        // healthy connection' but the re-attempt was never implemented. A
+        // message held because the room was offline (never written to the
+        // channel) just failed at send_timeout and stayed failed — even
+        // though re-sending on reconnect would deliver it. Late-confirmation
+        // (SessionHistory replay) can't help because the message never
+        // reached the Pi. Safe now that the Pi dedupes user_message by
+        // (session_id, msg.id) — a re-sent message that already landed is
+        // re-echoed without re-waking the agent.
+        const short = Duration(milliseconds: 60);
+        final s = await setup(pendingSendTimeout: short);
+        expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
+
+        // Mark the room offline (the half-open state) so the send is held.
+        s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 0));
+        for (var i = 0; i < 50 && s.conn.isRoomLive(s.epk, 'main'); i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 4));
+        }
+        expect(s.conn.isRoomLive(s.epk, 'main'), isFalse);
+        expect(s.conn.status, isA<StatusOnline>(), reason: 'WS still online');
+
+        // Send into the offline room: held pending (NOT written to channel).
+        await s.sync.sendMessage('held and later re-sent');
+        await _settle();
+        expect(
+          s.ch.sent.whereType<UserMessage>(),
+          isEmpty,
+          reason: 'held pending — not written to the dead socket',
+        );
+        final rows = messages(s.epk);
+        expect(rows, hasLength(1));
+        expect(rows.single.pending, isTrue);
+
+        // Wait for the short send_timeout to fire → row fails.
+        await Future<void>.delayed(const Duration(milliseconds: 140));
+        await _settle();
+        expect(messages(s.epk).single.status, UserMsgStatus.failed);
+
+        // Reconnect with a fresh, healthy channel (room live again).
+        final reconnect = _FakeChannel()..defaultSessionId = s.sessionId;
+        s.conn.adopt(
+          reconnect,
+          PeerRecord(
+            remoteEpk: s.epk,
+            sessionName: 'Pi',
+            relayUrl: 'ws://localhost',
+            pairedAt: '2026-01-01T00:00:00Z',
+          ),
+        );
+        // The relay re-announces the room on reconnect, re-marking it live
+        // (RoomEnded had removed it from _liveRoomIds). Without this, the
+        // re-send guard (isRoomLive) would still see the room as offline.
+        reconnect.pushControl(
+          RoomAnnounced(
+            peer: s.epk,
+            roomId: 'main',
+            startedAt: 1,
+            sessionId: s.sessionId,
+          ),
+        );
+        await _settle();
+        expect(s.conn.isRoomLive(s.epk, 'main'), isTrue,
+            reason: 'room re-announced on reconnect');
+        await _settle();
+
+        // The held-pending message is re-sent on the new channel (with the
+        // ORIGINAL id so the echo dedupes). Without option 4, nothing is
+        // re-sent and the row stays failed forever.
+        final resent = reconnect.sent.whereType<UserMessage>();
+        expect(
+          resent,
+          hasLength(1),
+          reason: 'held-pending message re-sent on reconnect',
+        );
+        expect(resent.single.text, 'held and later re-sent');
+        expect(
+          resent.single.id,
+          rows.single.id,
+          reason: 're-send reuses the original id so echo/replay dedupes',
+        );
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
   });
 
   group('turn projection convergence', () {

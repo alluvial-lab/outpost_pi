@@ -121,6 +121,13 @@ class SyncService extends Service {
   final Duration pendingSendTimeout;
   final Map<String, Timer> _pendingSendTimers = {};
 
+  /// Ids of held-pending messages already re-sent on reconnect this session
+  /// (story-app-reattempt-held-pending-on-reconnect). Prevents the
+  /// self-retrigger loop: the re-send's own `working:true` room_meta update
+  /// re-fires `_onRoomsChanged`, but each id is re-sent at most once per
+  /// session. Cleared on session switch (the `_activeRef` change path).
+  final Set<String> _resentHeldPendingIds = {};
+
   SyncService(
     this._conn,
     this._boxes, {
@@ -258,6 +265,17 @@ class SyncService extends Service {
       _logDebug(MsgSendEvent(ts: now, id: id, blocked: true));
       return;
     }
+    // Compute whether this send will be held pending (never written to the
+    // channel) because the connection is offline or the active room is not
+    // live. Recorded on the UserMessageSubmitted event so the reconnect
+    // re-send path (story-app-reattempt-held-pending-on-reconnect) knows
+    // which failed/pending rows to re-send. Messages that WERE written to
+    // the channel are left to the late-confirmation path (SessionHistory
+    // replay) if they time out.
+    final ch = _conn.channel;
+    final activeEpk = _activeEpk;
+    final held = ch == null ||
+        (activeEpk != null && !_conn.isRoomLive(activeEpk, _activeRoomId));
     // Optimistic pending row (#defaults: optimistic + dedupe by id).
     if (epk != null) {
       await _appendTranscriptEvent(
@@ -268,6 +286,7 @@ class SyncService extends Service {
           clientMessageId: id,
           text: text,
           image: image,
+          held: held,
         ),
         preserveTurnState: isSteer,
       );
@@ -286,11 +305,10 @@ class SyncService extends Service {
       // forever.
       _armSendTimeout(id, now);
     }
-    final ch = _conn.channel;
-    if (ch == null) {
+    if (held) {
       debugPrint(
-        '[msg-send] id=$id (offline → held pending, fails in '
-        '${pendingSendTimeout.inSeconds}s)',
+        '[msg-send] id=$id (held pending — offline or room not live; fails in '
+        '${pendingSendTimeout.inSeconds}s, re-sent on reconnect)',
       );
       _logDebug(MsgSendEvent(ts: DateTime.now(), id: id, blocked: true));
       return;
@@ -306,15 +324,9 @@ class SyncService extends Service {
     // message pending exactly like the offline branch so it fails visibly
     // (or re-attempts on the next healthy connection) instead of vanishing
     // into a dead send buffer.
-    final activeEpk = _activeEpk;
-    if (activeEpk != null && !_conn.isRoomLive(activeEpk, _activeRoomId)) {
-      debugPrint(
-        '[msg-send] id=$id (room offline → held pending, fails in '
-        '${pendingSendTimeout.inSeconds}s)',
-      );
-      _logDebug(MsgSendEvent(ts: DateTime.now(), id: id, blocked: true));
-      return;
-    }
+    // (The `held` flag above already captures this; the branch above returns
+    // before reaching here. This comment is retained for the option-1
+    // provenance.)
     // Seed an EMPTY streaming buffer so the blinking cursor shows during the
     // "thinking" gap before the first agent_chunk (pre-31 behavior). In-memory
     // only (#7) — never written to the DB. agent_chunk appends; agent_done
@@ -636,8 +648,86 @@ class SyncService extends Service {
       // rebind and backfill. `activate` drains the latch after the new
       // session box is bound. See story-foreign-session-user-message-tolerance.
       _pendingSyncRequest = true;
+      // Clear the re-send guard on session switch — a new session's held
+      // messages are eligible for re-send (different session, different ids).
+      _resentHeldPendingIds.clear();
       // ignore: discarded_futures
       activate(epk, _activeRoomId);
+    }
+    // Re-send messages held pending (option-1 guard / offline branch) that
+    // were never written to the channel. This fires on room-snapshot changes
+    // — including a RoomAnnounced that re-marks the active room live after a
+    // reconnect — so the re-send happens once the room is actually reachable,
+    // not just when the WS comes up. (story-app-reattempt-held-pending-on-
+    // reconnect.) The method's internal isRoomLive guard makes this a no-op
+    // when the room is still offline. Safe now that the Pi dedupes
+    // user_message by (session_id, msg.id) — a re-sent message that already
+    // landed is re-echoed without re-waking the agent.
+    // ignore: discarded_futures
+    _resendHeldPendingMessages();
+  }
+
+  /// Re-send messages whose `UserMessageSubmitted` event has `held: true`
+  /// (never written to the channel because the room was offline at send
+  /// time) and that are still pending or failed (not confirmed). Reuses the
+  /// ORIGINAL `clientMessageId` so the echo/replay dedupes by id. Each id
+  /// is re-sent at most once per session (`_resentHeldPendingIds`) to
+  /// prevent the self-retrigger loop (the re-send's own `working:true`
+  /// room_meta update re-fires `_onRoomsChanged`).
+  Future<void> _resendHeldPendingMessages() async {
+    final ref = _activeRef;
+    if (ref == null) return;
+    final ch = _conn.channel;
+    if (ch == null) return; // still offline — nothing to do
+    final activeEpk = _activeEpk;
+    if (activeEpk != null && !_conn.isRoomLive(activeEpk, _activeRoomId)) {
+      return; // room still not live — don't re-send into a dead socket
+    }
+    final key = TranscriptSessionKey(
+      peerId: ref.peerEpk,
+      roomId: ref.roomId,
+      sessionId: ref.sessionId,
+    );
+    final events = await _eventStore.readSession(key);
+    // Post-await lifecycle validation: if the active ref changed during the
+    // async read (session switch / room switch), bail — the events we read
+    // belong to a session we may no longer be driving.
+    if (_activeRef != ref) return;
+    final confirmedIds = <String>{};
+    final heldPending = <UserMessageSubmitted>[];
+    for (final e in events) {
+      if (e is UserMessageConfirmed) {
+        confirmedIds.add(e.clientMessageId);
+      } else if (e is UserMessageSubmitted && e.held) {
+        heldPending.add(e);
+      }
+    }
+    for (final submitted in heldPending) {
+      final id = submitted.clientMessageId;
+      if (confirmedIds.contains(id)) continue; // already delivered
+      if (_resentHeldPendingIds.contains(id)) continue; // already re-sent this session
+      _resentHeldPendingIds.add(id);
+      // Re-verify the channel is still the active one (could have rotated
+      // during the loop). Reuses the ORIGINAL id so the echo/replay dedupes.
+      final currentCh = _conn.channel;
+      if (currentCh == null) break;
+      try {
+        await currentCh.send(
+          UserMessage(
+            id: id,
+            sessionId: ref.sessionId,
+            text: submitted.text,
+            images: submitted.image == null
+                ? null
+                : [WireImage(data: submitted.image!.data, mime: submitted.image!.mime)],
+          ),
+        );
+        // Re-arm the send-timeout from now (the original ts is stale).
+        _armSendTimeout(id, DateTime.now());
+        debugPrint('[msg-resend] id=$id (held-pending re-sent on reconnect)');
+      } catch (err) {
+        debugPrint('[msg-resend] id=$id failed: $err');
+      }
     }
   }
 
