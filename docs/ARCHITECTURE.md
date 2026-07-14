@@ -130,14 +130,14 @@ UI, Hive persistence.
 Next.js App Router. Static/presentational marketing + docs. `src/app/`
 (layout, page, opengraph-image), `src/components/` (header, footer, docs-shell,
 install-tabs, code-block, callout, pager, tabs), `src/lib/` (`app-release`,
-`cockpit-release` — read release manifests from rp-s3 / GitHub).
+`cockpit-release` — read release manifests from GitHub; rp-s3 is dormant and
+not currently deployed).
 
 ### rp-s3 (`rp-s3/`)
 
-Rust + axum download server. Serves cockpit installers from a mounted volume
-behind TLS-terminating proxy. `GET /healthz`, `GET /downloads/<product>/...`
-with immutable caching for versioned artifacts, 5-min revalidate for
-`latest.json`/`SHA256SUMS`. CORS-open for cross-domain manifest reads by site.
+Dormant and not currently deployed. The source contains the Rust + axum
+download-server implementation, but no running deployment or active
+publication flow depends on it.
 
 ## Wire protocol shape
 
