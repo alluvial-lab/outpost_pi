@@ -99,11 +99,7 @@ class SettingsViewModel extends ViewModel<SettingsState> {
   String get relayUrlOverride => _prefs.relayUrl ?? '';
 
   Future<String?> saveRelayUrl(String? value) async {
-    if (value == null || value.trim().isEmpty) {
-      return 'Enter a URL or clear the field to use the default relay.';
-    }
-    final trimmed = value.trim();
-
+    final trimmed = value?.trim() ?? '';
     final reason = relayUrlValidationMessage(trimmed);
     if (reason != null) return reason;
     await _prefs.setRelayUrl(trimmed);

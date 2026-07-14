@@ -16,34 +16,25 @@ class OnboardingViewModel extends ViewModel<OnboardingState> {
   // Step navigation
   // ---------------------------------------------------------------------------
 
-  void next() {
+  Future<void> next() async {
     final s = state;
     if (s is! OnboardingInProgress) return;
     switch (s.step) {
       case OnboardingStep.welcome:
         emit(s.copyWith(step: OnboardingStep.relay));
       case OnboardingStep.relay:
-        // Validate the relay choice before advancing. Empty custom URL
-        // is allowed — it falls back to the default community relay.
-        if (s.relayChoice == RelayChoice.custom &&
-            s.customRelayUrl.isNotEmpty) {
-          final reason = relayUrlValidationMessage(s.customRelayUrl);
-          if (reason != null) {
-            emit(s.copyWith(customRelayError: reason));
-            return;
-          }
+        final url = s.customRelayUrl.trim();
+        final reason = relayUrlValidationMessage(url);
+        if (reason != null) {
+          emit(s.copyWith(customRelayError: reason));
+          return;
         }
-        // Persist relay (null = use default community).
-        final urlToSave = s.relayChoice == RelayChoice.custom &&
-                s.customRelayUrl.isNotEmpty
-            ? s.customRelayUrl
-            : null;
-        // ignore: unawaited_futures
-        _prefs.setRelayUrl(urlToSave);
+        // The pair step must never observe an unconfigured relay.
+        await _prefs.setRelayUrl(url);
         emit(s.copyWith(step: OnboardingStep.pair, clearCustomError: true));
       case OnboardingStep.pair:
-        // Advancing from pair happens via `completePairing` (callback
-        // when pair_ok lands). Manual `next()` from pair is a no-op.
+      // Advancing from pair happens via `completePairing` (callback
+      // when pair_ok lands). Manual `next()` from pair is a no-op.
     }
   }
 
@@ -64,24 +55,20 @@ class OnboardingViewModel extends ViewModel<OnboardingState> {
   // Step 2 — relay configuration
   // ---------------------------------------------------------------------------
 
-  void setRelayChoice(RelayChoice choice) {
-    final s = state;
-    if (s is! OnboardingInProgress) return;
-    emit(s.copyWith(relayChoice: choice, clearCustomError: true));
-  }
-
-  /// Updates the in-flight custom URL string. Validates on-the-fly:
-  /// inline error if non-empty + invalid. Empty input clears the error
-  /// (user is still typing).
+  /// Updates the in-flight self-hosted URL string. Validates on-the-fly:
+  /// inline error if non-empty + invalid. Empty input clears the error while
+  /// the user is typing; submitting it renders the shared validation error.
   void setCustomRelayUrl(String url) {
     final s = state;
     if (s is! OnboardingInProgress) return;
     final error = url.isEmpty ? null : relayUrlValidationMessage(url);
-    emit(s.copyWith(
-      customRelayUrl: url,
-      customRelayError: error,
-      clearCustomError: error == null,
-    ));
+    emit(
+      s.copyWith(
+        customRelayUrl: url,
+        customRelayError: error,
+        clearCustomError: error == null,
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
