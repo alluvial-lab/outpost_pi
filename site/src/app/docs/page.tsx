@@ -63,6 +63,7 @@ const DOCS_TOC: TocItem[] = [
   { id: "links", label: "Links" },
 ];
 
+/** Render the Outpost-Pi reference documentation. */
 export default function DocsPage() {
   return (
     <div className="page">

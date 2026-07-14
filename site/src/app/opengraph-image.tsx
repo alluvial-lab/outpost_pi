@@ -4,6 +4,7 @@ export const alt = "Outpost-Pi — Your coding agents, in your pocket";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
+/** Generate the branded Open Graph image for shared links. */
 export default function OpengraphImage() {
   return new ImageResponse(
     (

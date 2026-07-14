@@ -45,6 +45,7 @@ const highlights = [
   },
 ];
 
+/** Render the rationale for an always-on Pi agent. */
 export default function WhyPage() {
   return (
     <div className="page">
