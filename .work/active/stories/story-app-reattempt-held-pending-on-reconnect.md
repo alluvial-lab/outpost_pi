@@ -1,48 +1,37 @@
 ---
 id: story-app-reattempt-held-pending-on-reconnect
+kind: story
+stage: implementing
+tags: [app, bug, lifecycle, transport]
+parent: feature-reconnect-reproduction
+depends_on: []
+release_binding: null
+gate_origin: null
 created: 2026-07-13
 updated: 2026-07-13
-tags: [app, bug, lifecycle, transport]
-status: parked
+implemented: 2026-07-13
 follow_up_of: story-app-half-open-socket-swallows-sends-arrives-late
 ---
 
-# ⏸ PARKED — Re-attempt held-pending messages on reconnect (half-open option 4)
+# Re-attempt held-pending messages on reconnect (half-open option 4)
 
-> ## STATUS: PARKED — blocked on Pi-side agent-invocation idempotency
+> ## STATUS: REVIVED — prerequisite met (2026-07-13)
 >
-> **Not safe to ship as implemented.** A fresh-context review (`gpt-5.6-sol`)
-> found two blockers. The fix was reverted; the analysis is preserved below.
+> The blocker (Pi-side agent-invocation idempotency) was shipped in
+> `story-extension-user-message-ingress-idempotency` (commit `89b709b`).
+> The Pi now dedupes `user_message` frames by `(session_id, msg.id)` via an
+> in-flight coordinator in `_attemptUserDelivery` — a re-sent message that
+> already landed is re-echoed without re-waking the agent. Re-sending is
+> now safe.
 >
-> **TL;DR.** Option 4 (re-send held-pending messages on reconnect) is the one
-> half-open option that is NOT redundant with existing mechanisms — a held-pending
-> message was never sent, so late-confirmation can't recover it. But the
-> implementation uncovered that **the Pi does not dedupe agent invocations by
-> `clientMessageId`.** Re-sending a message that already reached the Pi (race
-> window) would trigger a **second agent turn** — the transcript/UI dedupes by
-> id, but `_wakeAgent` runs before the dedupe. And the `_onRoomsChanged` hook is
-> too broad: the re-send's own `working:true` emission re-fires it, and since
-> `held` isn't cleared, it self-retriggers.
+> The previous implementation was reverted for the double-execution risk
+> (now resolved). The remaining review findings (self-retrigger via
+> `_onRoomsChanged`, steer semantics, post-await validation) are addressed
+> in the revived implementation below.
 >
-> **The blocker is on the Pi side, not the app side.** Safe re-send requires
-> the extension to dedupe incoming `user_message` frames by `(session_id,
-> msg.id)` BEFORE `_wakeAgent` — i.e. an ingress idempotency guard in
-> `pi-extension/src/index.ts` (`_attemptUserDelivery` / the `user_message`
-> handler at ~line 2525). Without that, ANY re-send is unsafe.
->
-> **Two paths forward (operator decision, deferred):**
->
-> 1. **Park until Pi-side idempotency exists.** File a separate story for
->    extension-side `user_message` ingress dedupe by `(session_id, msg.id)`.
->    Once that lands, this story's re-send becomes safe (the race-window
->    duplicate is dropped at the Pi ingress, not double-executed). *(Recommended
->    sequence.)*
-> 2. **Drop.** If the held-pending failure is rare enough in practice (the room
->    must be offline for >20s AND the user must send during that window), the
->    permanent-failure badge may be acceptable. Option 1 + late-confirmation
->    already handle the common case (message landed).
->
-> **Durable finding (carries forward regardless):** the extension's
+> **Provenance:** the original parked analysis (the double-execution blocker,
+> the `_onRoomsChanged` self-retrigger, the stale-liveness concern) is
+> preserved in the "Review findings" section below for reference.
 > `user_message` ingress (`pi-extension/src/index.ts:2525`) has NO idempotency
 > guard by `msg.id` — `_attemptUserDelivery` calls `_wakeAgent` before
 > `_confirmUserDelivery` records the confirmation. This is a latent risk for
