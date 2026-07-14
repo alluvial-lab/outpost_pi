@@ -6,7 +6,7 @@ import { Callout } from "@/components/callout";
 import { Pager } from "@/components/pager";
 import { RevealController } from "@/components/landing/reveal-controller";
 
-const GITHUB_URL = "https://github.com/jacobaraujo7/outpost_pi";
+const GITHUB_URL = "https://github.com/KevounC/outpost_pi";
 
 export const metadata: Metadata = {
   title: "Remote mesh",
@@ -63,8 +63,7 @@ export default function MeshRemoteTutorial() {
             </li>
           </ul>
           <p>
-            Point both machines at the same relay. The default is the community
-            relay; for your own, see{" "}
+            Point both machines at the same self-hosted relay. For setup, see{" "}
             <Link href="/docs#relay" className="text-accent underline">
               the relay reference
             </Link>
@@ -152,9 +151,8 @@ export default function MeshRemoteTutorial() {
             behind a VPN.
           </Callout>
           <p className="text-sm">
-            The community relay does not log, persist, or inspect payloads, but
-            self-hosting is the way to get cryptographic-grade isolation. The
-            full trust model is in{" "}
+            Your self-hosted relay keeps traffic on infrastructure you control.
+            The full trust model is in{" "}
             <a
               className="text-accent underline"
               href={`${GITHUB_URL}/blob/main/PROTOCOL.md`}

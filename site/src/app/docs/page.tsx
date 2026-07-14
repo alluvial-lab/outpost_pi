@@ -16,11 +16,11 @@ export const metadata: Metadata = {
     "Reference for Outpost-Pi: the relay, protocol & security, the full command reference, configuration files, and troubleshooting.",
 };
 
-const GITHUB_URL = "https://github.com/jacobaraujo7/outpost_pi";
+const GITHUB_URL = "https://github.com/KevounC/outpost_pi";
 const PI_URL = "https://github.com/earendil-works/pi";
 const RELAY_README_URL =
-  "https://github.com/jacobaraujo7/outpost_pi/blob/main/relay/README.md";
-const ISSUES_URL = "https://github.com/jacobaraujo7/outpost_pi/issues";
+  "https://github.com/KevounC/outpost_pi/blob/main/relay/README.md";
+const ISSUES_URL = "https://github.com/KevounC/outpost_pi/issues";
 
 const DOCS_TOC: TocItem[] = [
   { id: "quick-start", label: "Quick start" },
@@ -35,8 +35,7 @@ const DOCS_TOC: TocItem[] = [
     id: "relay",
     label: "The relay",
     sub: [
-      { id: "community-relay", label: "Community relay" },
-      { id: "self-host", label: "Self-host" },
+      { id: "self-host", label: "Self-host the relay" },
       { id: "point-pi", label: "Point Pi at your relay" },
     ],
   },
@@ -312,16 +311,15 @@ export default function DocsPage() {
       <DocsSection id="relay" title="The relay">
         <p>
           The relay is the only network-touching piece of Outpost-Pi. In the
-          current MVP it sees both message payloads (forwarded but never logged
-          or inspected by the community operator) and connection metadata: which
-          keypair is online, which room/cwd identifiers exist, message timing,
-          sizes. Traffic is encrypted in transit (TLS) and peers authenticate
-          with Ed25519 pairing, but payloads are not encrypted at the
-          application layer — see{" "}
+          current MVP it sees both message payloads and connection metadata:
+          which keypair is online, which room/cwd identifiers exist, message
+          timing, and sizes. Traffic is encrypted in transit (TLS) and peers
+          authenticate with Ed25519 pairing, but payloads are not encrypted at
+          the application layer — see{" "}
           <a href="#protocol" className="text-accent underline">
             Protocol &amp; Security
           </a>{" "}
-          and the Privacy Policy, section 9, for the full picture.
+          and the Privacy Policy for the full picture.
         </p>
         <p>
           The relay also <strong className="text-fg">persists a small SQLite
@@ -342,36 +340,11 @@ export default function DocsPage() {
           </a>{" "}
           mesh-membership section for the wire format.
         </p>
-        <p>You have two options.</p>
-
-        <DocsSubsection id="community-relay" title="Option A — Use the community relay">
+        <DocsSubsection id="self-host" title="Self-host the relay">
           <p>
-            <InlineCode>https://relay-rp1.jacobmoura.work</InlineCode> (default).
-            Zero setup. Good for trying things out or for casual use.
-            (Internally the extension uses the WebSocket form{" "}
-            <InlineCode>wss://…</InlineCode> — both schemes point at the same
-            endpoint.)
-          </p>
-          <p>Caveats:</p>
-          <ul className="ml-6 list-disc space-y-2">
-            <li>Shared infrastructure — availability is best-effort.</li>
-            <li>
-              <strong className="text-fg">TLS in transit is the only network protection</strong>
-              {" "}— the relay operator sees plaintext envelopes (payloads,
-              routing metadata, peer pubkeys, timing). Self-host for
-              confidentiality from the operator.
-            </li>
-            <li>
-              <strong className="text-fg">No IP allow-listing or VPN gating</strong>{" "}
-              built in. Anyone with a paired keypair can connect; layer a
-              VPN on top via Option B if you want network-level isolation.
-            </li>
-          </ul>
-        </DocsSubsection>
-
-        <DocsSubsection id="self-host" title="Option B — Self-host (recommended for privacy)">
-          <p>
-            Run the relay yourself in Docker and put it behind a VPN like{" "}
+            Outpost-Pi is local-relay-only: build the relay from this project&apos;s
+            <InlineCode>relay/</InlineCode> source, run it on infrastructure you
+            control, and put it behind a VPN like{" "}
             <a className="text-accent underline" href="https://tailscale.com" target="_blank" rel="noopener noreferrer">Tailscale</a>,{" "}
             <a className="text-accent underline" href="https://www.wireguard.com" target="_blank" rel="noopener noreferrer">WireGuard</a>,
             or your own VPC. Because the relay&apos;s network-level protection
@@ -380,20 +353,20 @@ export default function DocsPage() {
             reach the WebSocket port — defense in depth.
           </p>
           <p>
-            Quick Docker outline (see the{" "}
-            <a className="text-accent underline" href={`${RELAY_README_URL}#self-hosted-relay-recommended-for-privacy`} target="_blank" rel="noopener noreferrer">
+            Build and run the local source (see the{" "}
+            <a className="text-accent underline" href={`${RELAY_README_URL}#self-hosted-relay`} target="_blank" rel="noopener noreferrer">
               relay README
             </a>{" "}
             for the full setup, environment variables, and reverse-proxy
             guidance):
           </p>
           <CodeBlock
-            code={`docker run -d \\
+            code={`docker build -t outpost-pi-relay relay/\n\ndocker run -d \\
   --name outpost-pi-relay \\
   -p 3000:3000 \\
   -v outpost-pi-data:/data \\
   --restart unless-stopped \\
-  jacobmoura7/outpost-pi-relay`}
+  outpost-pi-relay`}
             label="On your relay host"
             language="bash"
           />
@@ -446,12 +419,11 @@ export default function DocsPage() {
               (CI / one-off overrides)
             </li>
             <li><InlineCode>~/.pi/remote/config.json</InlineCode></li>
-            <li>
-              The built-in default (
-              <InlineCode>https://relay-rp1.jacobmoura.work</InlineCode>)
-            </li>
           </ol>
-          <p>Verify the active URL and its source with:</p>
+          <p>
+            If neither is configured, the relay is unconfigured and Outpost-Pi
+            does not connect. Verify the active URL and its source with:
+          </p>
           <CodeBlock code="/outpost-pi config" label="In Pi" language="text" />
           <p>
             To switch URLs while connected: <InlineCode>/outpost-pi stop</InlineCode>{" "}
@@ -933,7 +905,7 @@ export default function DocsPage() {
           <li>
             Source:{" "}
             <a className="text-accent underline" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
-              github.com/jacobaraujo7/outpost_pi
+              github.com/KevounC/outpost_pi
             </a>
           </li>
           <li>
@@ -962,7 +934,7 @@ export default function DocsPage() {
           <li>
             Issues / bugs:{" "}
             <a className="text-accent underline" href={ISSUES_URL} target="_blank" rel="noopener noreferrer">
-              github.com/jacobaraujo7/outpost_pi/issues
+              github.com/KevounC/outpost_pi/issues
             </a>
           </li>
         </ul>
