@@ -2,7 +2,7 @@
 id: epic-rebrand-to-outpost-pi-en-first-prose-surfaces
 kind: feature
 stage: drafting
-tags: [rebrand, docs, i18n]
+tags: [rebrand, docs, i18n, prose]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
 release_binding: null
