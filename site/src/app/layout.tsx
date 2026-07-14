@@ -30,7 +30,7 @@ const siteDescription =
   "Pair your phone once, then drive any Pi coding agent from it — keep a fleet running 24/7 and link every machine into one mesh. Open source, self-hostable.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://outpost-pi.jacobmoura.work"),
+  metadataBase: new URL("https://outpost-pi.kevoun.com"),
   title: {
     default: siteTagline,
     template: "%s · Outpost-Pi",
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     type: "website",
-    url: "https://outpost-pi.jacobmoura.work",
+    url: "https://outpost-pi.kevoun.com",
     title: siteTagline,
     description: siteDescription,
     siteName: "Outpost-Pi",

@@ -11,7 +11,7 @@ This package ships three static routes:
 - `/terms` — Terms of Service
 - `/privacy` — Privacy Policy (LGPD)
 
-Target domain: <https://outpost-pi.jacobmoura.work>.
+Target domain: <https://outpost-pi.kevoun.com>.
 
 ## Stack
 
