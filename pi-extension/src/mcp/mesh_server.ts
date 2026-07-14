@@ -64,13 +64,20 @@ const inbox: IncomingMsg[] = [];
 
 // ── Mesh node ─────────────────────────────────────────────────────────────────
 
-const { url: relayUrl } = resolveRelayUrl();
-
 // Diagnostics go to STDERR — stdout is the JSON-RPC channel, so writing there
 // would corrupt the MCP protocol. Claude Code captures an MCP server's stderr
 // into its mcp-logs, which is where these land for debugging.
 function logErr(msg: string): void {
   process.stderr.write(`[outpost-pi-mesh ${isoNow()}] ${msg}\n`);
+}
+
+const relayResolution = resolveRelayUrl();
+const relayBridgeEnabled = _bridgeEnabled && relayResolution.source !== "unconfigured";
+if (_bridgeEnabled && !relayBridgeEnabled) {
+  logErr(
+    "Relay bridge disabled: relay not configured. Run /outpost-pi set-relay <url>. " +
+    "The local mesh remains available.",
+  );
 }
 
 // Survive stray async failures. This process runs background work (relay WS
@@ -100,7 +107,7 @@ const mesh = new MeshNode({
   // Own Pi-key cross-PC bridge — active only when this node leads (no Pi /
   // daemon already hosting the broker for this cwd). As a follower the
   // bridge stays dormant and cross-PC rides the existing leader.
-  ...(_bridgeEnabled ? { bridge: { relayUrl, cwd: _cwd } } : {}),
+  ...(relayBridgeEnabled ? { bridge: { relayUrl: relayResolution.url, cwd: _cwd } } : {}),
   // Silent: stdout is the MCP JSON-RPC channel and stderr noise isn't wanted.
   // Real failures still surface via the global handlers / fail-loud below.
   log: () => { /* no-op */ },

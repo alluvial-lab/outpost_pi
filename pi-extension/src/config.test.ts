@@ -1,11 +1,28 @@
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+
+const { readConfig } = vi.hoisted(() => ({ readConfig: vi.fn() }));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    default: { ...actual, readFileSync: readConfig },
+  };
+});
+
 import {
   isValidRelayUrl,
   isWebSocketScheme,
+  resolveRelayUrl,
   toWebSocketUrl,
   toHttpUrl,
-  kDefaultRelayUrl,
 } from "./config.js";
+
+beforeEach(() => {
+  delete process.env["OUTPOST_PI_RELAY"];
+  readConfig.mockReset();
+  readConfig.mockImplementation(() => { throw new Error("config not found"); });
+});
 
 describe("isValidRelayUrl (strict http(s):// only)", () => {
   test("accepts http://", () => {
@@ -16,7 +33,7 @@ describe("isValidRelayUrl (strict http(s):// only)", () => {
 
   test("accepts https://", () => {
     expect(isValidRelayUrl("https://relay.example.tld")).toBe(true);
-    expect(isValidRelayUrl("https://relay-rp1.jacobmoura.work")).toBe(true);
+    expect(isValidRelayUrl("https://relay.example.tld:3000")).toBe(true);
   });
 
   test("rejects ws:// (user must use http:// + auto-convert)", () => {
@@ -88,9 +105,21 @@ describe("toHttpUrl (ws(s):// → http(s)://)", () => {
   });
 });
 
-describe("kDefaultRelayUrl", () => {
-  test("is canonical https:// form (no scheme conversion needed at resolve time)", () => {
-    expect(kDefaultRelayUrl).toMatch(/^https:\/\//);
-    expect(kDefaultRelayUrl).toBe("https://relay-rp1.jacobmoura.work");
+describe("resolveRelayUrl", () => {
+  test("reports unconfigured when neither environment nor config supplies a relay", () => {
+    expect(resolveRelayUrl()).toEqual({ url: null, source: "unconfigured" });
+  });
+
+  test("uses and canonicalizes the configured relay", () => {
+    readConfig.mockReturnValue(JSON.stringify({ relay: "ws://config.example.test" }));
+
+    expect(resolveRelayUrl()).toEqual({ url: "http://config.example.test", source: "config" });
+  });
+
+  test("uses and canonicalizes the environment relay ahead of config", () => {
+    readConfig.mockReturnValue(JSON.stringify({ relay: "https://config.example.test" }));
+    process.env["OUTPOST_PI_RELAY"] = "wss://env.example.test";
+
+    expect(resolveRelayUrl()).toEqual({ url: "https://env.example.test", source: "env" });
   });
 });
