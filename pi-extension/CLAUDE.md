@@ -49,8 +49,7 @@ Ordem de resolução (precedência):
 1. `process.env.OUTPOST_PI_RELAY` — escape hatch pra CI/ops
 2. `~/.pi/remote/config.json` (`{ "relay": "..." }`) — persistido via
    `/outpost-pi set-relay <url>`
-3. Sem uma dessas fontes, o relay está desconfigurado; `/outpost-pi` informa
-   como configurar antes de abrir uma conexão.
+3. `kDefaultRelayUrl` (`https://relay-rp1.jacobmoura.work`) — produção
 
 Slash commands:
 
@@ -58,11 +57,11 @@ Slash commands:
   `~/.pi/remote/config.json`. Validação rejeita `ws://`, `wss://`,
   string vazia e URLs malformadas (a extensão converte http(s)→ws(s)
   internamente ao abrir o WebSocket).
-- `/outpost-pi status` — mostra o estado do relay e, quando desconfigurado,
-  orienta a executar `/outpost-pi set-relay <url>`.
+- `/outpost-pi config` — mostra a URL efetiva atual + de qual fonte vem
+  (`env`/`config`/`default`).
 
-`_cmdStart` chama `resolveRelayUrl()` e só abre um socket para uma resolução
-configurada (`env` ou `config`).
+`_cmdStart` chama `resolveRelayUrl()` e exibe o `source` no notify
+("Connecting to relay <url> (source: …)") pra QA validar.
 
 ## Dependências importantes
 

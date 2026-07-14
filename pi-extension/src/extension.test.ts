@@ -91,7 +91,6 @@ vi.mock("./pairing/storage.js", async (importOriginal) => {
 // ── Mock config (no real fs writes) ───────────────────────────────────────────
 
 let _savedRelayUrl: string | null = null;
-let _relayConfiguredByTest = true;
 const _setRelayCalls: string[] = [];
 
 vi.mock("./config.js", async (importOriginal) => {
@@ -111,15 +110,10 @@ vi.mock("./config.js", async (importOriginal) => {
       if (_savedRelayUrl && _savedRelayUrl.length > 0) {
         return { url: orig.toHttpUrl(_savedRelayUrl), source: "config" as const };
       }
-      // Most integration tests exercise relay behavior, so provide an explicit
-      // test-only relay unless a test opts into the unconfigured state.
-      if (_relayConfiguredByTest) {
-        return { url: "https://relay.example.test", source: "config" as const };
-      }
-      return { url: null, source: "unconfigured" as const };
+      return { url: orig.toHttpUrl(orig.kDefaultRelayUrl), source: "default" as const };
     }),
-    // isValidRelayUrl + isWebSocketScheme + toHttpUrl + toWebSocketUrl come
-    // from orig (...spread).
+    // isValidRelayUrl + isWebSocketScheme + kDefaultRelayUrl + toHttpUrl
+    // + toWebSocketUrl come from orig (...spread).
   };
 });
 
@@ -397,8 +391,6 @@ describe("standalone outpost-pi CLI dispatcher", () => {
     try {
       await runStandaloneOutpostPiCli(["node", "outpost-pi", "devices"], deps);
       await runStandaloneOutpostPiCli(["node", "outpost-pi", "revoke", "abcd1234"], deps);
-      await runStandaloneOutpostPiCli(["node", "outpost-pi", "set-relay"], deps);
-      expect(logs).toHaveBeenCalledWith("Usage: set-relay <url>");
       await runStandaloneOutpostPiCli(["node", "outpost-pi", "set-relay", "https://relay.example.test"], deps);
       await runStandaloneOutpostPiCli(["node", "outpost-pi", "create", "/tmp/agent dir", "--name", "Tmp Agent"], deps);
       await runStandaloneOutpostPiCli(["node", "outpost-pi", "remove", "daemon-a"], deps);
@@ -3052,7 +3044,6 @@ describe("/outpost-pi set-relay + config", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     _savedRelayUrl = null;
-    _relayConfiguredByTest = true;
     _setRelayCalls.length = 0;
     delete process.env["OUTPOST_PI_RELAY"];
     relayRef.current = null;
@@ -3144,12 +3135,12 @@ describe("/outpost-pi set-relay + config", () => {
     );
   });
 
-  test("resolveRelayUrl: env > config > unconfigured (all configured values canonicalized to http(s)://)", async () => {
-    const { resolveRelayUrl } = await import("./config.js");
+  test("resolveRelayUrl: env > config > default (all canonicalized to http(s)://)", async () => {
+    const cfg = await import("./config.js");
+    const { resolveRelayUrl, kDefaultRelayUrl, toHttpUrl } = cfg;
 
-    // 1) Nothing set → explicit unconfigured state.
-    _relayConfiguredByTest = false;
-    expect(resolveRelayUrl()).toEqual({ url: null, source: "unconfigured" });
+    // 1) Nothing set → default (canonical form is http(s)://)
+    expect(resolveRelayUrl()).toEqual({ url: toHttpUrl(kDefaultRelayUrl), source: "default" });
 
     // 2) Config set, no env → config. Legacy ws:// in config gets coerced
     // back to canonical http(s):// by resolveRelayUrl.
@@ -3174,15 +3165,13 @@ describe("/outpost-pi set-relay + config", () => {
     expect(text).toContain("http://10.0.0.5:4000");
   });
 
-  test("/outpost-pi status shows an actionable unconfigured state when nothing is set", async () => {
-    _relayConfiguredByTest = false;
+  test("/outpost-pi status shows the default URL when nothing set", async () => {
     const status = captureHandler("outpost-pi status");
     const ctx = makeMockCtx();
     await status("", ctx);
 
     const text = (ctx.ui.notify.mock.calls[0]![0]) as string;
-    expect(text).toContain("Relay: unconfigured");
-    expect(text).toContain("/outpost-pi set-relay <url>");
+    expect(text).toContain("https://relay-rp1.jacobmoura.work");
   });
 
   test("/outpost-pi status reflects env override (canonicalized to https://)", async () => {
@@ -3195,21 +3184,6 @@ describe("/outpost-pi set-relay + config", () => {
     const text = (ctx.ui.notify.mock.calls[0]![0]) as string;
     expect(text).toContain("https://from-env.test");
     delete process.env["OUTPOST_PI_RELAY"];
-  });
-
-  test("start with no configured relay fails before creating a relay socket", async () => {
-    _relayConfiguredByTest = false;
-    const relayCountBeforeStart = relayInstances.length;
-    const ctx = makeMockCtx();
-
-    await _connectForTest(ctx);
-
-    expect(_getState()).toBe("idle");
-    expect(relayInstances).toHaveLength(relayCountBeforeStart);
-    expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("/outpost-pi set-relay <url>"),
-      "warning",
-    );
   });
 
   test("saved URL is used by _cmdStart on next connect (http:// stored as-is)", async () => {
@@ -4746,14 +4720,11 @@ describe("same-folder same-name → #N suffix (no refusal)", () => {
   // second "Backoffice" must NOT be refused — it comes up as "Backoffice#2"
   // (and the name-assigned event reports the change), matching the broker.
   test("a second same-name agent joins as <name>#2 instead of being refused", async () => {
-    const previousOutpostPiHome = process.env["OUTPOST_PI_HOME"];
-    const lockHome = mkdtempSync(join(tmpdir(), "outpost-pi-lock-home-"));
-    process.env["OUTPOST_PI_HOME"] = lockHome;
     process.env["OUTPOST_PI_DIRECT_CONFIG"] = JSON.stringify({
       agent_name: "Backoffice",
       auto_start_relay: false, // keep the test off the relay
     });
-    const cwd = mkdtempSync(join(tmpdir(), "outpost-pi-name-suffix-"));
+    const cwd = "/home/user/projects/outpost_pi";
     // Simulate the first agent already holding (cwd, "Backoffice").
     const first = await acquireCwdLock(cwd, "Backoffice");
     expect(first.ok).toBe(true);
@@ -4767,11 +4738,7 @@ describe("same-folder same-name → #N suffix (no refusal)", () => {
     } finally {
       if (first.ok) first.release();
       delete process.env["OUTPOST_PI_DIRECT_CONFIG"];
-      if (previousOutpostPiHome === undefined) delete process.env["OUTPOST_PI_HOME"];
-      else process.env["OUTPOST_PI_HOME"] = previousOutpostPiHome;
       _resetCwdLockForTest();
-      rmSync(cwd, { recursive: true, force: true });
-      rmSync(lockHome, { recursive: true, force: true });
     }
   });
 });

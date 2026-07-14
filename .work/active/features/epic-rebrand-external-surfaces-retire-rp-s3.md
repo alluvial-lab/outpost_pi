@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-external-surfaces-retire-rp-s3
 kind: feature
-stage: implementing
+stage: review
 tags: [rebrand, app, cockpit, rp-s3]
 parent: epic-rebrand-external-surfaces
 depends_on: []
