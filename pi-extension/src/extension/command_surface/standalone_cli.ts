@@ -9,6 +9,7 @@ import type { OutpostPiCommandSurfaceHarness } from "../testing.js";
 import {
   isValidRelayUrl,
   isWebSocketScheme,
+  kDefaultRelayUrl,
 } from "../../config.js";
 import {
   defaultAgentName,
@@ -115,7 +116,7 @@ export async function runStandaloneOutpostPiCli(
   } else if (subcmd === "set-relay") {
     const raw = (cliArgs[0] ?? "").trim();
     if (!raw) {
-      console.log("Usage: set-relay <url>");
+      console.log(`Usage: set-relay <url> (default: ${kDefaultRelayUrl})`);
     } else if (isWebSocketScheme(raw)) {
       console.log("Use http:// or https://. The extension converts to WebSocket automatically.");
     } else if (!isValidRelayUrl(raw)) {
