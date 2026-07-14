@@ -1,7 +1,7 @@
 ---
 id: story-epic-rebrand-external-surfaces-hostname-migration-branding-svg-redraw
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, branding, design]
 parent: epic-rebrand-external-surfaces-hostname-migration
 depends_on: [story-epic-rebrand-external-surfaces-hostname-migration-mechanical-replacement]
@@ -38,12 +38,30 @@ they contain no legacy wordmark, command, or hostname, so no edit is required.
 
 ## Acceptance criteria
 
-- [ ] `banner.svg` is well-formed SVG and preserves its 1280×640 viewBox/canvas.
-- [ ] The rendered banner visibly has the Outpost-Pi wordmark, the
+- [x] `banner.svg` is well-formed SVG and preserves its 1280×640 viewBox/canvas.
+- [x] The rendered banner visibly has the Outpost-Pi wordmark, the
   `outpost-pi` npm command, and `outpost-pi.kevoun.com`; none is clipped,
   overlapped, or pushed outside the right panel.
-- [ ] No `Remote Pi`, `npm:remote-pi`, or `remote-pi.jacobmoura.work` remains
+- [x] No `Remote Pi`, `npm:remote-pi`, or `remote-pi.jacobmoura.work` remains
   in the banner.
-- [ ] The other branding SVGs remain byte-for-byte unchanged unless a manual
+- [x] The other branding SVGs remain byte-for-byte unchanged unless a manual
   review discovers a previously missed legacy text element.
-- [ ] No raster export or generated asset is committed.
+- [x] No raster export or generated asset is committed.
+
+## Implementation notes
+
+- Manually updated only the three affected `text` node values in
+  `branding/banner.svg`. The existing x-coordinates, font sizes, and spacing
+  remain appropriate: the wordmark and command fit within the 664px usable
+  width of the right panel, and the new hostname is shorter than its previous
+  value.
+- Confirmed `branding/logo-{full,background,foreground,monochrome}.svg` has no
+  legacy wordmark, command, or hostname text, so those files remain unchanged.
+
+## Verification
+
+- Parsed the SVG with Python's XML parser; asserted the 1280×640 canvas and
+  viewBox, all three required text nodes, and the absence of legacy text.
+- Reviewed the scoped diff: it changes exactly the three target text values and
+  preserves all SVG structure and geometry. `rsvg-convert` and ImageMagick were
+  unavailable in this environment, so no raster render was produced.
