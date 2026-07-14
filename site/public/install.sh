@@ -3,7 +3,7 @@
 # Outpost-Pi — zero-to-running bootstrap installer
 # ================================================
 #
-#   curl -fsSL https://outpost-pi.jacobmoura.work/install.sh | bash
+#   curl -fsSL https://outpost-pi.kevoun.com/install.sh | bash
 #
 # What it does (all user-space, NO sudo, idempotent):
 #   1. Node      — uses the system Node if it's >= 20.6.0; otherwise installs
@@ -86,7 +86,7 @@ installer inside your WSL shell — it's treated as Linux and works the same:
   wsl --install
 
   ${DIM}# then, inside the WSL (Ubuntu) shell:${RST}
-  curl -fsSL https://outpost-pi.jacobmoura.work/install.sh | bash
+  curl -fsSL https://outpost-pi.kevoun.com/install.sh | bash
 
 EOF
   exit 0
@@ -385,7 +385,7 @@ print_next_steps() {
     3. Scan the QR with the app to pair.
 
     Manage the always-on daemon later with ${BOLD}outpost-pi${RST} (now on your PATH).
-    Docs: ${DIM}https://outpost-pi.jacobmoura.work${RST}
+    Docs: ${DIM}https://outpost-pi.kevoun.com${RST}
 
 EOF
   case ":$PATH:" in
