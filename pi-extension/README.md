@@ -244,25 +244,11 @@ encryption** in the current implementation. The relay can see plaintext envelope
 contents while forwarding, plus connection metadata: which keypair is online,
 which room/cwd identifiers exist, message timing, and sizes.
 
-You have two options:
+You must self-host a relay. TLS + Ed25519 pairing/relay authentication are
+built in, but there is **no IP allow-listing, VPN gating, or app-layer E2E
+encryption**.
 
-### Option A — Use the community relay
-
-`https://relay-rp1.jacobmoura.work` (default). Zero setup. Good for trying
-things out or for casual use. (The extension converts to `wss://…`
-internally when opening the connection — both schemes point at the same
-endpoint.)
-
-Caveats:
-
-- Shared infrastructure — availability is best-effort.
-- The operator could observe connection metadata and current plaintext envelope
-  contents as described above.
-- TLS + Ed25519 pairing/relay authentication are the current built-in
-  protections; **there is no IP allow-listing, VPN gating, or app-layer E2E
-  encryption**.
-
-### Option B — Self-host (recommended for privacy)
+### Self-host a relay
 
 Run the relay yourself in Docker and put it behind a VPN like
 [Tailscale](https://tailscale.com), [WireGuard](https://www.wireguard.com),
@@ -291,7 +277,7 @@ and point both your Pi and your phone at the resulting `https://…` URL.
 Once your relay is reachable, tell the extension:
 
 ```text
-/outpost-pi relay url https://relay.yourdomain.tld
+/outpost-pi set-relay https://relay.yourdomain.tld
 ```
 
 The URL **must** be `http://` or `https://` — `ws://` / `wss://` are
@@ -304,16 +290,18 @@ order (highest precedence first):
 
 1. `OUTPOST_PI_RELAY` environment variable (CI / one-off overrides)
 2. `~/.pi/remote/config.json`
-3. The built-in default (`https://relay-rp1.jacobmoura.work`)
 
-Verify the active URL and its source with:
+Without either source, relay-dependent commands stay unconfigured and direct
+users to `/outpost-pi set-relay <url>`.
+
+Verify the relay state with:
 
 ```text
-/outpost-pi config
+/outpost-pi status
 ```
 
-If you change the URL while connected, run `/outpost-pi relay stop` then
-`/outpost-pi relay start` (or `/outpost-pi relay` to toggle).
+If you change the URL while connected, run `/outpost-pi stop`, then
+`/outpost-pi` to start it again.
 
 The mobile app has its own relay-URL setting in its preferences pane — keep
 both pointing at the same relay.
