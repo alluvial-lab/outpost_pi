@@ -11,9 +11,10 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ## [v0.1.0] — 2026-07-12
 
-**Outpost-Pi** — the rebrand release. This fork of `jacobaraujo7/remote_pi`
-gets its own name and identity. All subprojects reset to `0.1.0` (the
-product is pre-1.0; see `docs/VISION.md` Fork posture).
+**Outpost-Pi** — the rebrand release. Outpost-Pi is derived from Jacob
+Moura's `jacobaraujo7/remote_pi`, MIT-licensed, and gets its own name and
+identity. All subprojects reset to `0.1.0` (the product is pre-1.0; see
+`docs/VISION.md`).
 
 ### Rebrand (mechanical rename)
 - Renamed all code-internal `remote_pi`/`remote-pi`/`Remote Pi` strings to
@@ -287,7 +288,7 @@ surface fixes.
 - Session-start message API recapture.
 
 ### Added
-- Local vendor switch (fork-private pi-extension packaging).
+- Local vendor switch (pi-extension local-path packaging).
 - Stale-context source investigation + source fix.
 
 ## [relay-0.1.0] — 2026-06-29
@@ -629,5 +630,5 @@ chat-state recovery, onboarding, mirror cache, rooms, agent network, agent
 tools, setup wizard, and the site MVP. See [`plan/`](plan/) for the design
 history of each.
 
-[Unreleased]: https://github.com/jacobaraujo7/remote_pi/compare/v0.1.3...HEAD
-[0.1.3]: https://github.com/jacobaraujo7/remote_pi/releases/tag/v0.1.3
+[Unreleased]: https://github.com/KevounC/outpost_pi/compare/v0.1.0...HEAD
+[v0.1.0]: https://github.com/KevounC/outpost_pi/releases/tag/v0.1.0
