@@ -189,16 +189,6 @@ export class PairingCoordinator {
       return;
     }
 
-    const relayResolution = resolveRelayUrl();
-    if (relayResolution.source === "unconfigured") {
-      ctx.ui.notify(
-        "[outpost-pi] Relay not configured. Run /outpost-pi set-relay <url> and try again.",
-        "warning",
-      );
-      return;
-    }
-    const { url: relayUrl, source } = relayResolution;
-
     let edKp: Ed25519Keypair;
     try {
       edKp = await getOrCreateEd25519Keypair();
@@ -217,6 +207,7 @@ export class PairingCoordinator {
     }
     this.cachedEd25519 = edKp;
 
+    const { url: relayUrl, source } = resolveRelayUrl();
     const myShort = Buffer.from(edKp.publicKey).toString("base64").slice(0, 8);
     const cwd = cwdFrom(ctx);
     const sessionName = this.deps.displayName(cwd);
