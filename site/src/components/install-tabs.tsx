@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CodeBlock } from "./code-block";
 
-const CURL = "curl -fsSL https://outpost-pi.jacobmoura.work/install.sh | bash";
+const CURL = "curl -fsSL https://outpost-pi.kevoun.com/install.sh | bash";
 const HAVE_PI = `pi install npm:outpost-pi
 /outpost-pi
 /outpost-pi pair`;
