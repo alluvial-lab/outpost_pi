@@ -12,17 +12,15 @@ import 'package:dio/dio.dart';
 /// `android`/`apk`. O parsing/validação fica em [UpdateInfo.fromJson].
 class UpdateCheckerImpl implements UpdateChecker {
   UpdateCheckerImpl({
-    String? manifestUrl,
+    this.manifestUrl,
     Duration timeout = const Duration(seconds: 5),
     Dio? dio,
-  })  : manifestUrl = manifestUrl ?? defaultManifestUrl,
-        _dio = dio ?? _defaultDio(timeout);
+  }) : _timeout = timeout,
+       _dio = dio;
 
-  static const String defaultManifestUrl =
-      'https://rp-s3.jacobmoura.work/downloads/app/latest.json';
-
-  final String manifestUrl;
-  final Dio _dio;
+  final String? manifestUrl;
+  final Duration _timeout;
+  final Dio? _dio;
 
   static Dio _defaultDio(Duration timeout) {
     return Dio(
@@ -41,8 +39,12 @@ class UpdateCheckerImpl implements UpdateChecker {
 
   @override
   Future<UpdateInfo?> fetchLatest() async {
+    final manifestUrl = this.manifestUrl;
+    if (manifestUrl == null) return null;
+
     try {
-      final response = await _dio.getUri<Object?>(Uri.parse(manifestUrl));
+      final dio = _dio ?? _defaultDio(_timeout);
+      final response = await dio.getUri<Object?>(Uri.parse(manifestUrl));
       if (response.statusCode != 200) return null;
       final data = response.data;
       final body = data is String ? data : null;
