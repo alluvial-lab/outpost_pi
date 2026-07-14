@@ -80,9 +80,9 @@ migration.
 
 ## Anti-vision (failure modes)
 
-- A relay operator (including the public relay) can read message contents and
-  metadata. Acceptable for a closed beta; unacceptable as the silent default
-  for a wide audience without an honest UI and a self-host path.
+- The operator-controlled local relay can read message contents and metadata.
+  Outpost-Pi is local-relay-only; users who need confidentiality from the relay
+  must wait for E2E, and no product copy claims E2E.
 - A contamination bug where session B's chat appears in session A's view — the
   system has no session discriminator on chat-bearing messages and relies on
   relay-room demux that fails open. This is the class of defect the bold
