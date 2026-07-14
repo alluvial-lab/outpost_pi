@@ -1834,9 +1834,7 @@ function _cmdStatus(ctx: Pick<ExtensionContext, "ui">): void {
 
   // Relay line — paired state is derived from OwnerMultiplexer snapshot.
   let relayLine: string;
-  if (relayUrl === null) {
-    relayLine = "⚪ Relay: unconfigured — run /outpost-pi set-relay <url>";
-  } else if (_state === "idle") {
+  if (_state === "idle") {
     relayLine = `⚪ Relay: off (${relayUrl}) — run /outpost-pi to start`;
   } else if (ownerSnapshot.activeOwnerCount > 0) {
     const count = ownerSnapshot.activeOwnerCount;
@@ -1878,16 +1876,6 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
     return;
   }
 
-  const relayResolution = resolveRelayUrl();
-  if (relayResolution.source === "unconfigured") {
-    ctx.ui.notify(
-      "[outpost-pi] Relay not configured. Run /outpost-pi set-relay <url> and try again.",
-      "warning",
-    );
-    return;
-  }
-  const { url: relayUrl, source } = relayResolution;
-
   let edKp: Ed25519Keypair;
   try {
     edKp = await getOrCreateEd25519Keypair();
@@ -1906,6 +1894,7 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
   }
   _pairingCoordinatorInternals().cachedEd25519 = edKp;
 
+  const { url: relayUrl, source } = resolveRelayUrl();
   const myShort = Buffer.from(edKp.publicKey).toString("base64").slice(0, 8);
   const cwd = "cwd" in ctx && typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
   const sessionName = _displayName(cwd);
