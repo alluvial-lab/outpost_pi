@@ -12,6 +12,7 @@ export const metadata: Metadata = {
     "Keep a Pi agent alive 24/7: install the supervisor (launchd / systemd --user), register a folder as a daemon, and manage the fleet from one CLI.",
 };
 
+/** Render the daemon-mode tutorial and its operational examples. */
 export default function DaemonTutorial() {
   return (
     <div className="page">
@@ -177,7 +178,7 @@ tail -f ~/.pi/remote/supervisord.log`}
             cron expression, then the prompt:
           </p>
           <CodeBlock
-            code={`# every weekday at 9am, São Paulo time
+            code={`# every weekday at 9am, Sao Paulo time
 outpost-pi cron add 4e39152d "0 9 * * 1-5" "Summarize the new PRs" --tz America/Sao_Paulo
 # → Cron j_ab12 added → daemon 4e39152d: "0 9 * * 1-5" (America/Sao_Paulo). Next run: …`}
             label="Schedule a prompt"

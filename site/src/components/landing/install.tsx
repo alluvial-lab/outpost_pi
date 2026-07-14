@@ -44,6 +44,7 @@ const INSTALL_TABS: Record<string, InstallTab> = {
   },
 };
 
+/** Render the interactive landing-page installation instructions. */
 export function Install() {
   const tabs = Object.keys(INSTALL_TABS);
   const [active, setActive] = useState(tabs[0]);

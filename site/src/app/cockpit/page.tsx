@@ -60,6 +60,7 @@ const FEATURES: { title: string; body: string }[] = [
   },
 ];
 
+/** Render the Cockpit product overview and feature highlights. */
 export default function CockpitPage() {
   return (
     <div className="page">
