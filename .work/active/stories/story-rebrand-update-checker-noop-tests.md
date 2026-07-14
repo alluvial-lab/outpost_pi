@@ -1,7 +1,7 @@
 ---
 id: story-rebrand-update-checker-noop-tests
 kind: story
-stage: drafting
+stage: review
 tags: [rebrand, testing, app, cockpit]
 parent: epic-rebrand-external-surfaces-retire-rp-s3
 depends_on: []
@@ -34,8 +34,20 @@ Add focused tests in both Flutter projects:
 
 ## Acceptance criteria
 
-- [ ] Test proves default `fetchLatest()` returns null without HTTP.
-- [ ] Test proves explicit-URL path still fetches + parses + returns null on
+- [x] Test proves default `fetchLatest()` returns null without HTTP.
+- [x] Test proves explicit-URL path still fetches + parses + returns null on
   failure.
-- [ ] `flutter analyze` + focused tests pass in both `app/` and `cockpit/`.
-- [ ] Acceptance boxes checked in the parent runtime-update-noop story.
+- [x] `flutter analyze` + focused tests pass in both `app/` and `cockpit/`.
+- [x] Acceptance boxes checked in the parent runtime-update-noop story.
+
+## Implementation notes
+
+- Added an app test under `app/test/data/update/` with a fake Dio adapter. The
+  adapter fails the contract if a default checker makes a request, while
+  explicit-URL cases cover valid parsing, 404, and invalid JSON.
+- Added a Cockpit test under `cockpit/test/app/cockpit/data/update/`. The
+  default case installs an `HttpOverrides` client factory that would throw if
+  invoked; explicit-URL cases use a loopback `HttpServer` so parsing and
+  silent failures are tested without external network access.
+- Verification passed with the repository Flutter SDK: focused tests and
+  `flutter analyze` in both `app/` and `cockpit/`.

@@ -33,11 +33,11 @@ Implement Unit 1 of the parent feature.
 
 ## Acceptance criteria
 
-- [ ] Default app and cockpit update checks return `null` without HTTP.
-- [ ] Explicit manifest URLs preserve existing parsing and silent failures.
-- [ ] Cockpit native self-update has no appcast URL by default.
-- [ ] No file in this story retains `rp-s3.jacobmoura.work`.
-- [ ] Relevant Flutter tests and `flutter analyze` pass, or an exact
+- [x] Default app and cockpit update checks return `null` without HTTP.
+- [x] Explicit manifest URLs preserve existing parsing and silent failures.
+- [x] Cockpit native self-update has no appcast URL by default.
+- [x] No file in this story retains `rp-s3.jacobmoura.work`.
+- [x] Relevant Flutter tests and `flutter analyze` pass, or an exact
   environmental prerequisite is recorded.
 
 ## Implementation notes
@@ -50,14 +50,11 @@ Implement Unit 1 of the parent feature.
 - Cockpit no longer supplies native appcast URLs, so its existing updater
   selection resolves to `NoopSelfUpdater`; the packaging runbook records that
   appcasts are not currently published or deployed.
-- The explicit worker instruction restricted edits to the two checker files,
-  `cockpit_module.dart`, and the packaging README (plus this required stage
-  transition), so no new test files were added despite the broader Scope test
-  bullet. Existing update-focused tests were run: app `update_info_test.dart`
-  and Cockpit `update_info_test.dart` plus `auto_updater_self_updater_test.dart`
-  passed.
-- Verification: Cockpit `flutter analyze` passed. App `flutter analyze` is
-  blocked by pre-existing unrelated relay migration errors (`kDefaultRelayUrl`
-  references and stale `MeshClient` constructor arguments in relay/mesh tests);
-  the app update-info test passed. `flutter` is not on `PATH`; verification
-  used the repository SDK at `.tools/flutter/bin/flutter`.
+- Focused no-op coverage was added under `app/test/data/update/` and
+  `cockpit/test/app/cockpit/data/update/`. The tests use a fake Dio adapter and
+  an `HttpOverrides` guard respectively to prove the default path creates no
+  HTTP request, and loopback/local responses to cover explicit URL parsing,
+  404, and invalid JSON behavior.
+- Verification: focused update-checker tests and `flutter analyze` passed in
+  both `app/` and `cockpit/` using the repository SDK at
+  `.tools/flutter/bin/flutter`.
