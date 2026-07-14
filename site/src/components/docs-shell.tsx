@@ -20,6 +20,7 @@ export function DocsSection({ id, title, children }: DocsSectionProps) {
   );
 }
 
+/** Render a documentation subsection heading and its content. */
 export function DocsSubsection({
   id,
   title,
@@ -37,10 +38,12 @@ export function DocsSubsection({
   );
 }
 
+/** Render inline code with the shared documentation treatment. */
 export function InlineCode({ children }: { children: ReactNode }) {
   return <code className="code-pill">{children}</code>;
 }
 
+/** Render a horizontally scrollable documentation table. */
 export function DocsTable({
   headers,
   rows,
