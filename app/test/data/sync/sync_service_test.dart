@@ -3041,6 +3041,89 @@ void main() {
         s.sync.dispose();
       },
     );
+
+    test(
+      '(iii) a failed held-pending re-send is retryable on a later reconnect',
+      () async {
+        // Review blocker: the in-flight guard must NOT permanently suppress
+        // a message whose re-send failed (stale-liveness, send throw). A
+        // later genuinely-healthy reconnect must be able to retry it. The
+        // guard is removed on failure so the id is eligible again.
+        const short = Duration(milliseconds: 60);
+        final s = await setup(pendingSendTimeout: short);
+
+        // Mark the room offline so the send is held.
+        s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 0));
+        for (var i = 0; i < 50 && s.conn.isRoomLive(s.epk, 'main'); i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 4));
+        }
+        expect(s.conn.isRoomLive(s.epk, 'main'), isFalse);
+
+        await s.sync.sendMessage('held, fails first re-send');
+        await _settle();
+        final heldId = messages(s.epk).single.id;
+
+        // Wait for send_timeout → row fails.
+        await Future<void>.delayed(const Duration(milliseconds: 140));
+        await _settle();
+        expect(messages(s.epk).single.status, UserMsgStatus.failed);
+
+        // First reconnect: re-send FAILS (the channel throws).
+        final reconnect1 = _FakeChannel()..defaultSessionId = s.sessionId;
+        reconnect1.sendFailure = Exception('send failed');
+        s.conn.adopt(
+          reconnect1,
+          PeerRecord(
+            remoteEpk: s.epk,
+            sessionName: 'Pi',
+            relayUrl: 'ws://localhost',
+            pairedAt: '2026-01-01T00:00:00Z',
+          ),
+        );
+        reconnect1.pushControl(
+          RoomAnnounced(peer: s.epk, roomId: 'main', startedAt: 1, sessionId: s.sessionId),
+        );
+        await _settle();
+        await _settle();
+        // The first re-send attempted but failed (no UserMessage recorded
+        // because send threw before sent.add).
+        expect(reconnect1.sent.whereType<UserMessage>(), isEmpty);
+        // Clear the failure so the next reconnect can succeed.
+        reconnect1.sendFailure = null;
+
+        // Second reconnect: a genuinely-healthy channel. The message must be
+        // retryable (not permanently suppressed by the failed first attempt).
+        final reconnect2 = _FakeChannel()..defaultSessionId = s.sessionId;
+        s.conn.adopt(
+          reconnect2,
+          PeerRecord(
+            remoteEpk: s.epk,
+            sessionName: 'Pi',
+            relayUrl: 'ws://localhost',
+            pairedAt: '2026-01-01T00:00:00Z',
+          ),
+        );
+        // A fresh RoomAnnounced with a different startedAt so it's not
+        // deduped as a no-op re-broadcast (the room was already marked live
+        // by reconnect1's announce). working:true models the Pi accepting
+        // the re-sent message.
+        reconnect2.pushControl(
+          RoomAnnounced(peer: s.epk, roomId: 'main', startedAt: 2, sessionId: s.sessionId, working: true),
+        );
+        await _settle();
+        await _settle();
+
+        final resent = reconnect2.sent.whereType<UserMessage>();
+        expect(
+          resent,
+          hasLength(1),
+          reason: 'failed re-send must be retryable on a later reconnect',
+        );
+        expect(resent.single.id, heldId, reason: 'reuses the original id');
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
   });
 
   group('turn projection convergence', () {
