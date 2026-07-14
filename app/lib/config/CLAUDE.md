@@ -1,100 +1,99 @@
-# Camada `config/`
+# `config/` Layer
 
-## Propósito
+## Purpose
 
-Custodiar todas as decisões de orquestração do aplicativo: bootstrapping,
-configuração de dependências (`auto_injector`), ambientes, chaves, integrações
-globais. Esta camada conhece todas as outras — é o único lugar com essa
-permissão.
+Own all application orchestration decisions: bootstrapping, dependency
+configuration (`auto_injector`), environments, keys, and global integrations.
+This layer knows every other layer — it is the only place permitted to do so.
 
-## Deve fazer
+## Must do
 
-1. **Declarar bindings**: toda dependência compartilhada nasce aqui via
-   `injector.add...`. Repositórios, serviços, ViewModels — tudo passa pelo
+1. **Declare bindings**: every shared dependency originates here through
+   `injector.add...`. Repositories, services, and ViewModels all go through the
    registry.
-2. **Usar injeção automática**: prefira passar a referência do construtor
-   (`MyClass.new`) em vez de instanciar manualmente. O `AutoInjector` resolve
-   parâmetros sozinho.
-3. **Isolar setup**: inicializações de SDKs, logs, rotas, temas globais
-   acontecem em funções claramente nomeadas (`setupDependencies`,
-   `disposeDependencies`, `bootstrap`).
-4. **Confiar em contratos**: use apenas interfaces expostas por `domain/`,
-   `data/` (services) e `ui/` (ViewModels) — não crie lógica de negócio.
-5. **Documentar switches**: variáveis de ambiente e feature flags precisam de
-   descrição neste arquivo ou em `.env.example`.
+2. **Use automatic injection**: prefer passing the constructor reference
+   (`MyClass.new`) rather than instantiating manually. `AutoInjector` resolves
+   parameters itself.
+3. **Isolate setup**: SDK, log, route, and global-theme initialization belongs
+   in clearly named functions (`setupDependencies`, `disposeDependencies`,
+   `bootstrap`).
+4. **Rely on contracts**: use only interfaces exposed by `domain/`, `data/`
+   (services), and `ui/` (ViewModels) — do not create business logic.
+5. **Document switches**: environment variables and feature flags need a
+   description in this file or in `.env.example`.
 
-## Não deve fazer
+## Must not do
 
-1. **Codificar regras de domínio** — nenhum cálculo, validação ou regra de
-   negócio mora aqui.
-2. **Criar singletons manuais** — sempre use o `AutoInjector` para controlar
-   ciclo de vida.
-3. **Importar widgets ou páginas** — manter-se independente da camada `ui/`
-   (exceto declarações de tipos para registrar ViewModels).
-4. **Executar chamadas de rede** — configure clientes, mas não consuma
-   serviços diretamente.
+1. **Encode domain rules** — no calculation, validation, or business rule
+   belongs here.
+2. **Create manual singletons** — always use `AutoInjector` to control the
+   lifecycle.
+3. **Import widgets or pages** — remain independent of the `ui/` layer
+   (except type declarations required to register ViewModels).
+4. **Perform network calls** — configure clients, but do not consume services
+   directly.
 
-## Estrutura sugerida
+## Suggested structure
 
 ```
 config/
 ├── dependencies.dart    # setupDependencies / disposeDependencies / ViewmodelProvider
-├── env.dart             # leitura de --dart-define e feature flags
-├── theme.dart           # ThemeData global
+├── env.dart             # --dart-define and feature-flag reading
+├── theme.dart           # global ThemeData
 └── utils/
-    └── injector.dart    # CustomInjector — fachada tipada sobre auto_injector
+    └── injector.dart    # CustomInjector — typed facade over auto_injector
 ```
 
-## Sistema de DI — como usar
+## DI system — how to use it
 
-A fachada [`CustomInjector`](utils/injector.dart) embrulha o `auto_injector`
-com métodos tipados por camada. Cada método declara intenção e amarra o tipo
-a um contrato do domínio (`Service`, `Repository`, `UseCase`, `ViewModel`).
+The [`CustomInjector`](utils/injector.dart) facade wraps `auto_injector` with
+layer-typed methods. Each method declares intent and binds the type to a domain
+contract (`Service`, `Repository`, `UseCase`, `ViewModel`).
 
-### Registrar dependências
+### Register dependencies
 
-Tudo é registrado em `setupDependencies()` em
-[`config/dependencies.dart`](dependencies.dart), nesta ordem:
+Everything is registered in `setupDependencies()` in
+[`config/dependencies.dart`](dependencies.dart), in this order:
 
 ```dart
 Future<void> setupDependencies() async {
-  // 1. Instâncias prontas (SDKs)
+  // 1. Ready instances (SDKs)
   _injector.addInstance<SharedPreferences>(await SharedPreferences.getInstance());
 
-  // 2. Serviços de infra (singleton preguiçoso + dispose automático)
+  // 2. Infrastructure services (lazy singleton + automatic disposal)
   _injector.addService<NetworkService>(NetworkServiceImpl.new);
 
-  // 3. Factories utilitárias (sem contrato do domínio)
+  // 3. Utility factories (without a domain contract)
   _injector.addOther<Dio>(dioFactory);
 
-  // 4. Repositórios (impl em data/, contrato em domain/)
+  // 4. Repositories (implementation in data/, contract in domain/)
   _injector.addRepository<PairingRepository>(PairingRepositoryImpl.new);
 
-  // 5. Use cases (instância nova por chamada)
+  // 5. Use cases (new instance per call)
   _injector.addUseCase<PairWithPiUseCase>(PairWithPiUseCase.new);
 
-  // 6. ViewModels (instância nova por tela)
+  // 6. ViewModels (new instance per screen)
   _injector.addViewModel<HomeViewModel>(HomeViewModel.new);
 
-  _injector.commit(); // bloqueia novas inserções
+  _injector.commit(); // prevents further registrations
 }
 ```
 
-### Ciclo de vida
+### Lifecycle
 
-- `addService` / `addRepository` → singleton preguiçoso; `dispose()` é
-  chamado quando `disposeDependencies()` roda.
-- `addUseCase` / `addViewModel` → `_injector.add(...)` puro: cada `get`
-  devolve **uma nova instância**. Estado de tela nunca vaza entre rotas.
-- `addInstance` → exatamente o objeto passado, para sempre.
-- `addOther` → singleton preguiçoso, **sem** dispose hook.
+- `addService` / `addRepository` → lazy singleton; `dispose()` is called when
+  `disposeDependencies()` runs.
+- `addUseCase` / `addViewModel` → plain `_injector.add(...)`: each `get`
+  returns **a new instance**. Screen state never leaks between routes.
+- `addInstance` → exactly the object provided, permanently.
+- `addOther` → lazy singleton, **without** a dispose hook.
 
-### Como o ViewModel chega na UI
+### How the ViewModel reaches the UI
 
-`config/dependencies.dart` exporta `ViewmodelProvider<T>` — um
-`ChangeNotifierProvider` que pede ao injector uma nova instância do
-ViewModel quando a rota é montada. A composição em `routing/router.dart` é
-o **único** lugar onde ViewmodelProviders são declarados:
+`config/dependencies.dart` exports `ViewmodelProvider<T>` — a
+`ChangeNotifierProvider` that asks the injector for a new ViewModel instance
+when the route is mounted. Composition in `routing/router.dart` is the
+**only** place where ViewmodelProviders are declared:
 
 ```dart
 GoRoute(
@@ -109,11 +108,11 @@ GoRoute(
 )
 ```
 
-Detalhes do consumo em `ui/CLAUDE.md`.
+See `ui/CLAUDE.md` for consumption details.
 
-## Vocabulário
+## Vocabulary
 
-- **Injector** — fonte única de verdade para dependências.
-- **Binding** — contrato que associa um tipo concreto ao seu provedor dentro
-  do injector.
-- **Bootstrap** — sequência de inicialização do app antes do `runApp`.
+- **Injector** — single source of truth for dependencies.
+- **Binding** — contract that associates a concrete type with its provider in
+  the injector.
+- **Bootstrap** — application initialization sequence before `runApp`.
