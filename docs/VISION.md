@@ -61,30 +61,22 @@ A developer who runs Pi as their coding agent and wants to:
   typed vocabulary mapped to the Pi SDK's public API — not a mirror of the
   TUI's built-in command list.
 
-## Fork posture & provenance
+## Provenance
 
-This checkout (`KevounC/remote_pi`) is a **hard fork** of
-`jacobaraujo7/remote_pi`, rebranded **Outpost-Pi**. It has diverged past
-upstream rebase (547 commits ahead, 0 upstream since the fork point as of
-2026-07-02); the fork is the product, not a set of patches awaiting upstream.
-Upstream remote (`jacobaraujo7/remote_pi`) is historical provenance and
-read-only comparison, not a design constraint.
+Outpost-Pi is derived from Jacob Moura's `remote_pi`, MIT-licensed. The rebrand
+credits its origin in the LICENSE, NOTICE, and README — it does not scrub the
+original author. See `docs/DECISIONS.md` for the locked naming, versioning,
+and identifier decisions.
 
-**Provenance is preserved.** Outpost-Pi is built on Jacob Moura's
-`remote_pi`, MIT-licensed. The rebrand credits its origin in the LICENSE,
-NOTICE, and README — it does not scrub the upstream author. See the
-`epic-rebrand-to-outpost-pi` epic and `docs/DECISIONS.md` for the locked
-naming, versioning, and identifier decisions.
-
-The bold refactor is a fork-owned reconception of the absorbed codebase. It
-is not a product divergence in scope — the product is still "mobile remote
+The bold refactor is a reconception of the codebase. It is not a product
+divergence in scope — the product is still "mobile remote
 control + cross-PC agent mesh for Pi." It is a structural reconception that
-makes the absorbed codebase safe to bugfix against.
+makes the codebase safe to bugfix against.
 
-**Patchbay is the long-term play.** The bold refactor hardens the fork's
-structure in the short term; patchbay is the intended successor direction
-beyond carrying this fork. Bold-refactor design avoids decisions that would
-block a future patchbay migration.
+**Patchbay is the long-term play.** The bold refactor hardens the product's
+structure in the short term; patchbay is the intended successor direction.
+Bold-refactor design avoids decisions that would block a future patchbay
+migration.
 
 ## Anti-vision (failure modes)
 

@@ -35,21 +35,17 @@ resolved they move here.
 - **Not MuxAgent**: it covers multi-harness commercial. Outpost-Pi is Pi-only,
   open source, quality-first.
 
-## Fork posture (locked)
+## Provenance & repository
 
-- **Private-carry fork.** `KevounC/remote_pi` is a private fork of
-  `jacobaraujo7/remote_pi`. Upstream is read-only comparison/reference; work
-  is pushed only to `origin`. No upstream PRs unless the operator explicitly
-  asks.
-- **The bold refactor is fork-local.** No upstream-compatibility constraints
-  apply to the reconception — the generated protocol schema, canonical session
-  model, typed relay actor, etc. are private-carry and need not stay
-  shareable with upstream's hand-maintained mirrors.
-- **Patchbay is the long-term play.** The bold refactor hardens the fork's
-  structure in the short term; patchbay is the intended successor direction
-  beyond carrying this fork. Bold-refactor design should avoid decisions that
-  block a future patchbay migration (e.g. don't bake fork-specific assumptions
-  into the canonical schema in ways that wouldn't travel).
+- Outpost-Pi is derived from Jacob Moura's `remote_pi` (MIT-licensed); the
+  LICENSE and NOTICE preserve that attribution. Work is pushed only to
+  `origin` (`https://github.com/KevounC/outpost_pi.git`), the only configured
+  remote.
+- **Patchbay is the long-term play.** The bold refactor hardens the product's
+  structure in the short term; patchbay is the intended successor direction.
+  Bold-refactor design should avoid decisions that block a future patchbay
+  migration (e.g. don't bake assumptions into the canonical schema in ways
+  that wouldn't travel).
 
 ## Architecture
 

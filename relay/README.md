@@ -62,13 +62,16 @@ party can observe your traffic.
 
 ### Docker (quickest)
 
+Build from the local `relay/` source, then run:
+
 ```bash
+docker build -t outpost-pi-relay relay/
 docker run -d \
   --name outpost-pi-relay \
   -p 3000:3000 \
   -v outpost-pi-data:/data \
   --restart unless-stopped \
-  jacobmoura7/outpost-pi-relay
+  outpost-pi-relay
 ```
 
 The relay listens on a **single port** (`3000` by default) and serves three
@@ -106,7 +109,7 @@ docker run -d \
   -e OUTPOSTPI_RELAY_PORT=8080 \
   -e RUST_LOG=info \
   --restart unless-stopped \
-  jacobmoura7/outpost-pi-relay
+  outpost-pi-relay
 ```
 
 ### Mesh membership endpoint

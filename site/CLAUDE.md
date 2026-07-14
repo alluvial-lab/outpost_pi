@@ -39,20 +39,19 @@ documentação do MVP. **Apenas apresentação — não tem lógica de produto.*
 
 ## Publicação (deploy)
 
-O site roda em produção (`outpost-pi.jacobmoura.work`) como **imagem Docker** no
-Docker Hub: `jacobmoura7/outpost-pi-site`. O host de produção puxa a tag
-`:latest` — então **publicar = buildar e dar push da imagem**.
+O site roda em produção (`outpost-pi.jacobmoura.work`) como **imagem Docker**,
+construída localmente a partir de `site/` (sem publicação em registry). O host
+de produção carrega a imagem local.
 
 ```bash
-./push-docker.sh            # build multi-plataforma + push, tag :latest
-./push-docker.sh v1.2.3     # tag :v1.2.3 E :latest
+./build-docker.sh            # build local, tag :latest
+./build-docker.sh v1.2.3     # tag :v1.2.3 E :latest
 ```
 
-O que o script faz: cria (idempotente) um builder buildx `multiarch`
-(`docker-container`), builda para `linux/amd64,linux/arm64` a partir do
+O que o script faz: builda para a plataforma do host a partir do
 `Dockerfile` (multi-stage → `next build` com `output: "standalone"`, runtime
-`node:22-alpine` na porta 3000 com healthcheck em `/`) e dá `--push` pro Docker
-Hub.
+`node:22-alpine` na porta 3000 com healthcheck em `/`) e carrega a imagem
+no daemon Docker local (sem `--push`).
 
 Pré-requisitos: **`docker login`** (Docker Hub) feito antes, e `docker buildx`
 (vem no Docker moderno). Sem login, o push falha no fim do build.

@@ -15,7 +15,7 @@
 
 - **Official site** — <https://outpost-pi.jacobmoura.work>
 - **Package documentation** — <https://pi.dev/packages/outpost-pi?name=outpost-pi>
-- **GitHub** — <https://github.com/jacobaraujo7/outpost_pi>
+- **GitHub** — <https://github.com/KevounC/outpost_pi>
 
 ### Downloads
 
@@ -23,7 +23,7 @@
 |---|---|
 | Google Play (Android) | _Coming soon — 0.1.0 is sideload-only (new applicationId)_ |
 | App Store (iOS) | [Download on the App Store](https://apps.apple.com/app/outpost-pi-coding-agent/id6773499691) |
-| APK (sideload, Android) | [GitHub Releases](https://github.com/jacobaraujo7/outpost_pi/releases) |
+| APK (sideload, Android) | [GitHub Releases](https://github.com/KevounC/outpost_pi/releases) |
 
 ## What's in this repo
 

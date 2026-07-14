@@ -133,9 +133,9 @@ routes ephemeral traffic.
 
 **Contact information** (required fields):
 ```
-First / Last name:  Jacob / Moura
+First / Last name:  Kevoun
 Phone:              <your phone, intl format e.g. +55 ...>
-Email:              jacobaraujo7@gmail.com
+Email:              <operator contact email>
 ```
 
 **Attachment:** the demo video (mp4) and/or a link to it in the notes below.
@@ -158,7 +158,7 @@ NETWORK & PRIVACY
 The app connects to a relay over TLS to reach your machines. Public relays must use TLS; cleartext (http/ws) is permitted only on the local network for self-hosted relays. No personal data is collected.
 
 CONTACT
-Jacob Moura — jacobaraujo7@gmail.com
+Kevoun — <operator contact email>
 ```
 
 ### Demo video — recording checklist

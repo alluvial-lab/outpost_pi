@@ -37,18 +37,18 @@
     "extensions": [
       "./dist"
     ],
-    "image": "https://raw.githubusercontent.com/jacobaraujo7/outpost_pi/main/branding/banner.png"
+    "image": "https://raw.githubusercontent.com/KevounC/outpost_pi/main/branding/banner.png"
   },
-  "author": "Jacob Moura <jacobmoura7@gmail.com>",
+  "author": "KevounC",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jacobaraujo7/outpost_pi.git",
+    "url": "git+https://github.com/KevounC/outpost_pi.git",
     "directory": "pi-extension"
   },
   "homepage": "https://outpost-pi.jacobmoura.work",
   "bugs": {
-    "url": "https://github.com/jacobaraujo7/outpost_pi/issues"
+    "url": "https://github.com/KevounC/outpost_pi/issues"
   },
   "files": [
     "dist",
