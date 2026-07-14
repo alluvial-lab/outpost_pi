@@ -114,14 +114,29 @@ provenance awareness but does **not** change the attribution posture (above)
   progress logs; the convention reference goes in `.agents/skills/`.
 - `LICENSE` / `NOTICE` — the attribution surface (unchanged by this epic).
 
+## Design prerequisite (landed 2026-07-14)
+
+The documentation convention is now in place at
+`.agents/skills/documentation-conventions/SKILL.md`, with a matching
+`scan-documentation` gate skill (auto-loads via the `scan-*/SKILL.md` glob).
+`epic-design` and the child features reference these instead of re-deriving
+the doc-framework stance. The convention adapts the SNC/platform three-tier
+intent model (Always / Recommended / Skip) to Outpost-Pi's four languages:
+JSDoc (TS), dartdoc `///` (Dart), rustdoc `///` (Rust), JSDoc-on-components
+(React). It pins the per-language definition of "public API" (the open-ended
+risk flagged below) via the Always-tier marker table.
+
 ## Decomposition risks (for epic-design)
 
 - **Cockpit is 216/252 files** — the decomposition must handle the cockpit
   slice's size; it may warrant its own feature or sub-slicing.
-- **2(b) gap-filling is open-ended** — "every public API gets a doc comment"
-  has no natural ceiling without a definition of "public." `epic-design` /
-  `feature-design` should pin what counts as a public API per language
-  (exported Dart symbol, TS `export`, Rust `pub`, exported React component).
+- **2(b) gap-filling is bounded by the convention's Always tier** — "every
+  public API gets a doc comment" is now defined per language in
+  `.agents/skills/documentation-conventions/SKILL.md` (exported TS symbol,
+  public Dart declaration, Rust `pub`, exported React component with 3+
+  props). The Skip tier (schema decls, barrel re-exports, tests, trivial
+  helpers, generated code) is explicitly out of scope, so gap-fill is not
+  open-ended.
 - **User-visible UI text needs review, not just mechanical translation** —
   some PT strings are user-facing and need translation-review, not sed.
 - **Tests gate each slice** — `flutter analyze` + `flutter test` (app,
