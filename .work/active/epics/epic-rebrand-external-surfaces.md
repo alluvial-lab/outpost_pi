@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-external-surfaces
 kind: epic
-stage: implementing
+stage: review
 tags: [rebrand, pi-extension, app, relay, cockpit, site, docs]
 parent: null
 depends_on: [epic-rebrand-to-outpost-pi]
