@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:app/data/mesh/mesh_client.dart';
 import 'package:app/data/mesh/mesh_envelope.dart';
+import 'package:app/data/transport/relay_config.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -40,7 +41,9 @@ class _StubAdapter implements HttpClientAdapter {
     final key = '${options.method} ${options.uri.path}';
     final reply = replies[key];
     if (reply == null) {
-      throw StateError('No stub for $key — registered: ${replies.keys.toList()}');
+      throw StateError(
+        'No stub for $key — registered: ${replies.keys.toList()}',
+      );
     }
     final bodyBytes = Uint8List.fromList(utf8.encode(reply.body));
     return ResponseBody.fromBytes(
@@ -62,13 +65,12 @@ class _Reply {
 MeshClient _makeClient(_StubAdapter adapter) {
   // Same BaseOptions the production client uses: plain body so 4xx/5xx
   // without JSON don't trip dio's parser.
-  final dio = Dio(BaseOptions(
-    validateStatus: (_) => true,
-    responseType: ResponseType.plain,
-  ))
-    ..httpClientAdapter = adapter;
+  final dio = Dio(
+    BaseOptions(validateStatus: (_) => true, responseType: ResponseType.plain),
+  )..httpClientAdapter = adapter;
   return MeshClient(
-    baseUrlProvider: () => 'https://relay.example',
+    relayResolutionProvider: () =>
+        const ConfiguredRelay('https://relay.example'),
     dio: dio,
   );
 }
@@ -98,12 +100,19 @@ void main() {
     });
 
     test('200 OK → MeshFetchOk with parsed envelope', () async {
-      adapter.on('GET', '/mesh/abc', _Reply(200, jsonEncode({
-        'blob': base64.encode(utf8.encode('{"version":1}')),
-        'sig': base64.encode(List.filled(64, 1)),
-        'version': 7,
-        'updated_at': 1700000000000,
-      })));
+      adapter.on(
+        'GET',
+        '/mesh/abc',
+        _Reply(
+          200,
+          jsonEncode({
+            'blob': base64.encode(utf8.encode('{"version":1}')),
+            'sig': base64.encode(List.filled(64, 1)),
+            'version': 7,
+            'updated_at': 1700000000000,
+          }),
+        ),
+      );
       final result = await client.fetch('abc');
       expect(result, isA<MeshFetchOk>());
       final ok = result as MeshFetchOk;
@@ -123,7 +132,11 @@ void main() {
     });
 
     test('500 → MeshFetchFailure with status in message', () async {
-      adapter.on('GET', '/mesh/abc', _Reply(500, jsonEncode({'error': 'oops'})));
+      adapter.on(
+        'GET',
+        '/mesh/abc',
+        _Reply(500, jsonEncode({'error': 'oops'})),
+      );
       final r = await client.fetch('abc');
       expect(r, isA<MeshFetchFailure>());
       expect((r as MeshFetchFailure).reason, contains('500'));
@@ -138,7 +151,22 @@ void main() {
     test('omits since when null', () async {
       adapter.on('GET', '/mesh/abc', const _Reply(404, ''));
       await client.fetch('abc');
-      expect(adapter.lastOptions?.uri.queryParameters.containsKey('since'), isFalse);
+      expect(
+        adapter.lastOptions?.uri.queryParameters.containsKey('since'),
+        isFalse,
+      );
+    });
+
+    test('unconfigured relay fails before URI construction or HTTP', () async {
+      final client = MeshClient(
+        relayResolutionProvider: () => const UnconfiguredRelay(),
+        dio: Dio()..httpClientAdapter = adapter,
+      );
+
+      final result = await client.fetch('abc');
+      expect(result, isA<MeshFetchFailure>());
+      expect((result as MeshFetchFailure).reason, kRelayNotConfiguredMessage);
+      expect(adapter.lastOptions, isNull);
     });
   });
 
@@ -156,19 +184,22 @@ void main() {
     });
 
     test('200 → MeshPublishOk', () async {
-      adapter.on('POST', '/mesh/abc', _Reply(200, jsonEncode({
-        'version': 8,
-        'updated_at': 1700000000000,
-      })));
+      adapter.on(
+        'POST',
+        '/mesh/abc',
+        _Reply(200, jsonEncode({'version': 8, 'updated_at': 1700000000000})),
+      );
       final r = await client.publish('abc', envelope);
       expect(r, isA<MeshPublishOk>());
       expect((r as MeshPublishOk).version, 8);
     });
 
     test('400 → MeshPublishBadRequest with extracted message', () async {
-      adapter.on('POST', '/mesh/abc', _Reply(400, jsonEncode({
-        'message': 'version must be int',
-      })));
+      adapter.on(
+        'POST',
+        '/mesh/abc',
+        _Reply(400, jsonEncode({'message': 'version must be int'})),
+      );
       final r = await client.publish('abc', envelope);
       expect(r, isA<MeshPublishBadRequest>());
       expect((r as MeshPublishBadRequest).message, 'version must be int');
@@ -176,7 +207,10 @@ void main() {
 
     test('403 → MeshPublishForbidden', () async {
       adapter.on('POST', '/mesh/abc', const _Reply(403, ''));
-      expect(await client.publish('abc', envelope), isA<MeshPublishForbidden>());
+      expect(
+        await client.publish('abc', envelope),
+        isA<MeshPublishForbidden>(),
+      );
     });
 
     test('409 → MeshPublishConflict', () async {
@@ -196,15 +230,34 @@ void main() {
     });
 
     test('request body contains the envelope JSON', () async {
-      adapter.on('POST', '/mesh/abc', _Reply(200, jsonEncode({
-        'version': 1,
-        'updated_at': 0,
-      })));
+      adapter.on(
+        'POST',
+        '/mesh/abc',
+        _Reply(200, jsonEncode({'version': 1, 'updated_at': 0})),
+      );
       await client.publish('abc', envelope);
       expect(adapter.lastBody, isNotNull);
       final parsed = jsonDecode(adapter.lastBody!) as Map<String, Object?>;
       expect(parsed['blob'], base64.encode(envelope.blob));
       expect(parsed['sig'], base64.encode(envelope.sig));
     });
+
+    test(
+      'unconfigured relay fails without issuing a publish request',
+      () async {
+        final client = MeshClient(
+          relayResolutionProvider: () => const UnconfiguredRelay(),
+          dio: Dio()..httpClientAdapter = adapter,
+        );
+
+        final result = await client.publish('abc', envelope);
+        expect(result, isA<MeshPublishFailure>());
+        expect(
+          (result as MeshPublishFailure).reason,
+          kRelayNotConfiguredMessage,
+        );
+        expect(adapter.lastOptions, isNull);
+      },
+    );
   });
 }

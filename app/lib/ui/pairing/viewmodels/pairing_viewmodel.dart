@@ -54,6 +54,17 @@ class PairingViewModel extends ViewModel<PairingState> {
     final qr = QrPairPayload.tryParse(rawUri);
     if (qr == null) return; // not an outpostpi:// QR — ignore silently
 
+    final relayResolution = resolveRelayUrl(_prefs);
+    if (relayResolution is! ConfiguredRelay) {
+      emit(
+        const PairingError(
+          message: kRelayNotConfiguredMessage,
+          canRetry: false,
+        ),
+      );
+      return;
+    }
+
     emit(PairingConnecting(sessionName: qr.sessionName));
 
     try {
@@ -77,7 +88,7 @@ class PairingViewModel extends ViewModel<PairingState> {
             transport: transport,
             storage: _storage,
             deviceName: _deviceName(),
-            currentRelayUrl: resolveRelayUrl(_prefs),
+            currentRelayUrl: relayResolution.url,
           )
           .timeout(
             const Duration(seconds: 30),
@@ -99,6 +110,14 @@ class PairingViewModel extends ViewModel<PairingState> {
       _liveChannel = null;
 
       emit(PairingPaired(peer: result.peer, hostnameHint: result.hostnameHint));
+    } on RelayNotConfiguredException {
+      await _closeTransient();
+      emit(
+        const PairingError(
+          message: kRelayNotConfiguredMessage,
+          canRetry: false,
+        ),
+      );
     } on pair_flow.PairingError catch (e) {
       await _closeTransient();
       emit(PairingError(message: _friendlyError(e), canRetry: true));
@@ -143,7 +162,8 @@ class PairingViewModel extends ViewModel<PairingState> {
     'token_expired' => 'QR expired — generate a new one on your Mac',
     'token_consumed' => 'QR already used — generate a new one',
     'token_unknown' => 'QR not recognized by Mac — re-run /outpost-pi pair',
-    'pair_timeout' => 'Timed out — make sure /outpost-pi is running on your Mac',
+    'pair_timeout' =>
+      'Timed out — make sure /outpost-pi is running on your Mac',
     _ => e.message.isEmpty ? e.code : e.message,
   };
 
