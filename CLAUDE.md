@@ -1,54 +1,53 @@
-# Outpost-Pi — Orquestrador
+# Outpost-Pi — Orchestrator
 
-Você está na **raiz** do monorepo Outpost-Pi. Esta pasta é exclusivamente para **planejamento**.
+You are at the **root** of the Outpost-Pi monorepo. This folder is exclusively for **planning**.
 
-Antes de planejar, implementar ou revisar, leia também `AGENTS.md` e as regras agent-neutral em `.agents/rules/`. Elas são a superfície canônica compartilhada entre Claude, Pi, Codex e outros agentes; este arquivo mantém a persona/orquestração Claude/cmux.
+Before planning, implementing, or reviewing, also read `AGENTS.md` and the agent-neutral rules in `.agents/rules/`. They are the canonical surface shared by Claude, Pi, Codex, and other agents; this file retains the Claude/cmux persona and orchestration.
 
-## O que fazer aqui
+## What to do here
 
-- Ler e escrever em `plan/NN-<slug>.md` (ex: `plan/03-protocol.md`)
-- Discutir arquitetura, decisões de produto, trade-offs
-- Refinar planos existentes baseado em feedback
-- Indicar qual subprojeto recebe a próxima implementação
+- Read and write `plan/NN-<slug>.md` (e.g. `plan/03-protocol.md`)
+- Discuss architecture, product decisions, trade-offs
+- Refine existing plans based on feedback
+- Indicate which subproject receives the next implementation
 
-## O que NÃO fazer aqui
+## What NOT to do here
 
-- Não editar código em `app/`, `pi-extension/`, `relay/`, `site/`, `cockpit/`
-- Não rodar comandos de build/test dos subprojetos a partir daqui
-- Para implementar algo, despache via `cmux send` pro pane do subprojeto
-  alvo (ver seção [Panes deste workspace cmux](#panes-deste-workspace-cmux)
-  abaixo). Só peça pro usuário abrir terminal novo se o pane sumiu.
+- Do not edit code in `app/`, `pi-extension/`, `relay/`, `site/`, `cockpit/`
+- Do not run subproject build/test commands from here
+- To implement something, dispatch through `cmux send` to the target subproject
+  pane (see [Panes in this cmux workspace](#panes-in-this-cmux-workspace)
+  below). Only ask the user to open a new terminal if the pane is gone.
 
-## Estrutura
+## Structure
 
-Veja [README.md](./README.md) para visão geral e [plan/](./plan/) para os planos.
+See [README.md](./README.md) for an overview and [plan/](./plan/) for the plans.
 
-## Decisões já tomadas
+## Decisions already made
 
-Antes de propor mudança de direção (arquitetura, pareamento, escopo, UI, segurança),
-leia [`plan/00-decisions.md`](./plan/00-decisions.md). Esse arquivo lista decisões
-fechadas em conversa exploratória e **não devem ser revisitadas sem evidência forte**.
+Before proposing a change of direction (architecture, pairing, scope, UI, security),
+read [`plan/00-decisions.md`](./plan/00-decisions.md). That file lists decisions
+settled in exploratory discussion and **must not be revisited without strong evidence**.
 
-Se ainda assim quiser revisitar, abra discussão explícita — não mude silenciosamente.
+If you still want to revisit one, open an explicit discussion — do not change it silently.
 
-## Convenções de planos
+## Plan conventions
 
-- Numeração sequencial: `01-bootstrap.md`, `02-ai-orchestration.md`, ...
-- Cada plano tem: Contexto, Estrutura esperada, Passos com critério de aceite, DoD, Próximos planos
-- Planos descrevem **o que** + **como verificar**, não o código completo
-- Pseudocódigo ou comandos exatos são bem-vindos; implementação real fica no subprojeto
+- Sequential numbering: `01-bootstrap.md`, `02-ai-orchestration.md`, ...
+- Each plan has: Context, Expected structure, Steps with acceptance criteria, DoD, Next plans
+- Plans describe **what** + **how to verify**, not the complete code
+- Pseudocode or exact commands are welcome; real implementation stays in the subproject
 
-## Quando promover um plano a implementação
+## When to promote a plan to implementation
 
-Quando o plano tem aceite do usuário e os passos estão concretos o suficiente
-para um agente executar, abra Claude no subprojeto alvo e passe o plano como
-contexto. O agente daquele subprojeto seguirá sua própria persona.
+When the plan has user acceptance and the steps are concrete enough for an agent to
+execute, open Claude in the target subproject and provide the plan as context. The
+agent for that subproject will follow its own persona.
 
-## Scouts disponíveis
+## Available scouts
 
-Para fotografar o estado de qualquer subprojeto antes de planejar, invoque os
-subagents Scout em paralelo via `Task` — eles são read-only e reportam em
-formato fixo:
+To snapshot the state of any subproject before planning, invoke the Scout subagents
+in parallel through `Task` — they are read-only and report in a fixed format:
 
 - `scout-app` — Flutter (`app/`)
 - `scout-pi-extension` — Node/TS (`pi-extension/`)
@@ -56,38 +55,37 @@ formato fixo:
 - `scout-site` — NextJS (`site/`)
 - `scout-cockpit` — Flutter Desktop (`cockpit/`)
 
-Dispare múltiplos numa única mensagem para rodar em paralelo. Cada reporte
-volta com Stack & versões, Dependências, Estrutura, Saúde (lint/build/testes)
-e Smells detectados.
+Dispatch multiple in one message to run them in parallel. Each report returns Stack &
+versions, Dependencies, Structure, Health (lint/build/tests), and detected Smells.
 
-## Panes deste workspace cmux
+## Panes in this cmux workspace
 
-Este workspace ("Remote PI") tem 5 panes dedicados — um por subprojeto — e este
-Orquestrador. Cada pane já tem um `claude` rodando em sessão própria. **Use os
-panes existentes em vez de pedir pro usuário abrir terminal novo.**
+This workspace ("Remote PI") has 5 dedicated panes — one per subproject — plus this
+Orchestrator. Each pane already has a `claude` running in its own session. **Use the
+existing panes instead of asking the user to open a new terminal.**
 
-| Pane (título) | Subprojeto (cwd) |
+| Pane (title) | Subproject (cwd) |
 |---|---|
 | `App` | `app/` |
 | `Relay` | `relay/` |
 | `Extension` | `pi-extension/` |
 | `Site` | `site/` |
 | `Cockpit` | `cockpit/` |
-| `Orquestrador` (você) | raiz do monorepo |
+| `Orchestrator` (you) | monorepo root |
 
-> **Cockpit é o pane mais novo** e por enquanto é **iniciado manualmente** pelo
-> usuário — ele **ainda não está** no `cmux-bootstrap-agents.sh` (que cria os 4
-> originais: App/Relay/Extension/Site). Ao orquestrar, despache pra `Cockpit`
-> normalmente quando o pane existir; se faltar, peça pro usuário iniciá-lo (não
-> assuma que o bootstrap script o cria).
+> **Cockpit is the newest pane** and is currently **started manually** by the
+> user — it is **not yet** in `cmux-bootstrap-agents.sh` (which creates the 4
+> originals: App/Relay/Extension/Site). When orchestrating, dispatch to `Cockpit`
+> normally when the pane exists; if it is missing, ask the user to start it (do not
+> assume that the bootstrap script creates it).
 
-> **Nunca hardcode surface IDs nesta documentação.** Eles mudam a cada
-> bootstrap dos panes. Sempre resolva por título via `cmux tree`.
+> **Never hardcode surface IDs in this documentation.** They change with every
+> pane bootstrap. Always resolve by title through `cmux tree`.
 
-### Descobrir o surface ID por título
+### Discover the surface ID by title
 
 ```bash
-# helper: imprime o surface:N do pane com título <Nome>
+# helper: prints the surface:N of the pane with title <Name>
 surface_of() {
   cmux tree | awk -v t="$1" '
     $0 ~ "\""t"\"" {
@@ -96,217 +94,216 @@ surface_of() {
   '
 }
 
-surface_of Extension   # imprime o surface:N atual
+surface_of Extension   # prints the current surface:N
 ```
 
-### Despachar tarefa pra um pane (modo orquestrado)
+### Dispatch a task to a pane (orchestrated mode)
 
-**Sempre** use o wrapper `scripts/cmux-dispatch.sh`. Ele resolve o surface
-pelo título, injeta `[ORCH:<task-id>]`, e envia + Enter num call:
+**Always** use the `scripts/cmux-dispatch.sh` wrapper. It resolves the surface by
+title, injects `[ORCH:<task-id>]`, and sends + Enter in one call:
 
 ```bash
-scripts/cmux-dispatch.sh Extension 03-ts-codec "Implemente passo 3 do plan/03-protocol.md"
+scripts/cmux-dispatch.sh Extension 03-ts-codec "Implement step 3 of plan/03-protocol.md"
 ```
 
-Por que o wrapper existe: o gatilho `[ORCH:<task-id>]` é o que faz cada
-agente entrar em modo orquestrado (ler `.orchestration/INSTRUCTIONS.md`,
-respeitar cwd-only, não comitar). Sem o marker, o agente responde em modo
-solo. Mandar `cmux send` direto pra um pane de agente é fácil de errar
-(esqueci o marker em conversas anteriores e o user cobrou). **Use o wrapper.**
+Why the wrapper exists: the `[ORCH:<task-id>]` trigger is what makes each agent
+enter orchestrated mode (read `.orchestration/INSTRUCTIONS.md`, honor cwd-only,
+do not commit). Without the marker, the agent responds in solo mode. Sending
+`cmux send` directly to an agent pane is easy to get wrong (I forgot the marker
+in prior conversations and the user called it out). **Use the wrapper.**
 
-Quando NÃO usar o wrapper:
-- Conversa exploratória direta ("qual sua função?", "o que você vê em X?")
-- Debug, comando shell, retomar claude — modo solo é apropriado
-- Nesses casos `cmux send --surface "$(surface_of <Nome>)" -- "<texto>"` +
-  `cmux send-key --surface "$(surface_of <Nome>)" enter` (Enter separado
-  porque `\n` vira newline multilinha no prompt do claude, não submit)
+When NOT to use the wrapper:
+- Direct exploratory conversation ("what is your role?", "what do you see in X?")
+- Debugging, shell command, resuming claude — solo mode is appropriate
+- In those cases, use `cmux send --surface "$(surface_of <Name>)" -- "<text>"` +
+  `cmux send-key --surface "$(surface_of <Name>)" enter` (separate Enter
+  because `\n` becomes a multiline newline in the claude prompt, not submit)
 
-### Aguardar o worker terminar (polling do result file)
+### Wait for the worker to finish (result-file polling)
 
-**Forma preferida** — dispatch com `--wait` faz polling do
-`.orchestration/results/<task-id>.md` até detectar mtime nova. **Sempre rode o
-dispatch em background** (ferramenta Bash com `run_in_background: true`), pra o
-comando aparecer no footer do Claude Code e **NÃO travar a conversa** — você é
-notificado quando o result file é gravado e segue conversando enquanto isso:
+**Preferred form** — dispatch with `--wait` polls
+`.orchestration/results/<task-id>.md` until it detects a new mtime. **Always run
+it in the background** (Bash tool with `run_in_background: true`), so the command
+appears in the Claude Code footer and **does NOT block the conversation** — you are
+notified when the result file is written and can continue conversing meanwhile:
 
 ```bash
-# rode via Bash com run_in_background: true
+# run through Bash with run_in_background: true
 scripts/cmux-dispatch.sh --wait Extension 25-wave-x "..."
-# não bloqueia o turno: roda destacado, footer mostra progresso,
-# notificação de conclusão chega quando o agente grava o result file
+# does not block the turn: runs detached, footer shows progress,
+# completion notification arrives when the agent writes the result file
 ```
 
-> **Por que background, nunca foreground**: `--wait` em foreground segura o
-> turno inteiro (até o timeout, default 1800s) e a conversa fica refém do
-> worker. Com `run_in_background: true` o polling roda destacado — você dispara
-> N tarefas em paralelo, todas aparecem no footer, e cada notificação de
-> conclusão te traz de volta pra ler o result. Foreground só se for tarefa
-> única, rápida, que você quer bloquear de propósito (raro).
+> **Why background, never foreground**: `--wait` in the foreground holds the
+> entire turn (up to the default 1800s timeout) and the conversation is captive to
+> the worker. With `run_in_background: true`, polling runs detached — you dispatch
+> N tasks in parallel, all appear in the footer, and every completion notification
+> brings you back to read the result. Use the foreground only for a single, quick
+> task you deliberately want to block on (rare).
 
-Como funciona: o script captura `stat -c %Y` do arquivo ANTES do
-dispatch (0 se não existe) e poll a cada 2s até `cur_mtime > before_mtime`
-+ confirma que tem linha `**Status**:`. Independente de hooks — funciona
-com claude puro nos panes. Default timeout 1800s, ajustável via
-`--timeout <s>` e `--poll-interval <s>`.
+How it works: the script captures `stat -c %Y` of the file BEFORE the dispatch
+(0 if it does not exist) and polls every 2s until `cur_mtime > before_mtime`,
+then confirms it has a `**Status**:` line. It is hook-independent — it works
+with plain claude in the panes. The default timeout is 1800s, adjustable through
+`--timeout <s>` and `--poll-interval <s>`.
 
-**Por que polling em vez de hooks**: hooks (`agent.hook.Stop`) só são
-emitidos quando o pane roda `cmux claude-teams`, mas nossa convenção é
-panes com `claude` puro (per-folder, com `.claude/settings.json` próprio
-em cada subprojeto). O polling reusa a convenção já existente do result
-file — o agente é obrigado a gravar `.orchestration/results/<id>.md` no
-fim de qualquer task orquestrada (per `INSTRUCTIONS.md`), então o arquivo
-é nosso "Stop" de fato.
+**Why polling instead of hooks**: hooks (`agent.hook.Stop`) are only emitted
+when the pane runs `cmux claude-teams`, but our convention is panes with plain
+`claude` (per-folder, with their own `.claude/settings.json` in each
+subproject). Polling reuses the existing result-file convention — the agent
+must write `.orchestration/results/<id>.md` at the end of every orchestrated
+task (per `INSTRUCTIONS.md`), so the file is our actual "Stop".
 
-**Re-dispatch funciona**: se um task-id é reutilizado (sobrescrita do
-result file), o `before_mtime` snapshot garante que a próxima escrita
-ainda dispara — não é vulnerável a arquivo pré-existente.
+**Re-dispatch works**: if a task-id is reused (overwriting the result file),
+the `before_mtime` snapshot ensures the next write still fires — it is not
+vulnerable to a pre-existing file.
 
-**Forma manual** (debug, ou se quiser ver o arquivo aparecer):
+**Manual form** (debugging, or if you want to see the file appear):
 
 ```bash
-# em um terminal: dispara sem wait
+# in one terminal: dispatch without wait
 scripts/cmux-dispatch.sh Extension 25-wave-x "..."
 
-# em outro: poll você mesmo
+# in another: poll yourself
 while [ ! -f .orchestration/results/25-wave-x.md ]; do sleep 2; done
 cat .orchestration/results/25-wave-x.md
 ```
 
-**Hooks ainda funcionam se o pane usar `cmux claude-teams`** — não removi
-nada do cmux, só mudei o que o nosso script espera. Se um dia o setup for
-claude-teams, `cmux events --category agent --name agent.hook.Stop` segue
-válido pra quem quiser usar.
+**Hooks still work if the pane uses `cmux claude-teams`** — I did not remove
+anything from cmux; I only changed what our script expects. If the setup ever
+uses claude-teams, `cmux events --category agent --name agent.hook.Stop` remains
+valid for anyone who wants to use it.
 
-### Criar os 4 panes do zero
+### Create the 4 panes from scratch
 
-Se o workspace ainda não tem os panes (ou eles foram fechados), use o script
-`scripts/cmux-bootstrap-agents.sh`. Ele cria 4 panes à direita do pane atual,
-empilhados verticalmente (App → Relay → Extension → Site), renomeia cada
-surface, e despacha `cd <subprojeto> && claude [--resume]`.
+If the workspace does not yet have the panes (or they were closed), use the
+`scripts/cmux-bootstrap-agents.sh` script. It creates 4 panes to the right of
+the current pane, stacked vertically (App → Relay → Extension → Site), renames
+each surface, and dispatches `cd <subproject> && claude [--resume]`.
 
-**Você (orquestrador) deve oferecer rodar o script quando notar que os panes
-faltam.** O usuário decide se quer sessão nova ou retomada — não chute pela
-ele. Roteiro sugerido:
+**You (the orchestrator) must offer to run the script when you notice the panes
+are missing.** The user decides whether they want a new or resumed session — do
+not guess for them. Suggested script:
 
-> "Os panes de agentes não estão no workspace. Quer que eu rode
-> `scripts/cmux-bootstrap-agents.sh`? Com `--resume` retomo a última sessão de
-> cada subprojeto; sem flag, abre claude do zero."
+> "The agent panes are not in the workspace. Do you want me to run
+> `scripts/cmux-bootstrap-agents.sh`? With `--resume`, I resume the last session
+> for each subproject; without the flag, it opens Claude from scratch."
 
-Pergunte e aguarde resposta antes de chamar o script — **nunca rode você mesmo
-sem autorização explícita**, ele cria panes reais no workspace do usuário.
+Ask and wait for a response before calling the script — **never run it yourself
+without explicit authorization**: it creates real panes in the user's workspace.
 
 ```bash
-scripts/cmux-bootstrap-agents.sh           # nova sessão claude em cada pane
+scripts/cmux-bootstrap-agents.sh           # new claude session in each pane
 scripts/cmux-bootstrap-agents.sh --resume  # claude --resume (picker)
 ```
 
-Idempotência: se os 4 panes já existem (por título), o script sai 0 sem fazer
-nada. Estado misto (alguns existem, outros não) → aborta com erro pra você
-limpar manualmente.
+Idempotency: if the 4 panes already exist (by title), the script exits 0 without
+doing anything. Mixed state (some exist, others do not) → it aborts with an
+error for you to clean up manually.
 
-### Fechar os 4 panes de uma vez
+### Close the 4 panes at once
 
-Quando o usuário quiser fechar todos os 4 agentes (ex: pra recriar do zero,
-ou pra limpar workspace), há script complementar:
+When the user wants to close all 4 agents (e.g. to recreate them from scratch,
+or clean the workspace), there is a companion script:
 
 ```bash
 scripts/cmux-close-agents.sh
 ```
 
-Ele localiza surfaces pelo título (App / Relay / Extension / Site) no
-workspace atual e chama `cmux close-surface` em cada uma. Idempotente: nomes
-ausentes geram aviso, não erro. Surfaces com outros nomes (Orquestrador, View,
-worktrees `✳ <task>...`) não são tocadas.
+It locates surfaces by title (App / Relay / Extension / Site) in the current
+workspace and calls `cmux close-surface` on each. Idempotent: missing names
+produce a warning, not an error. Surfaces with other names (Orchestrator, View,
+worktrees `✳ <task>...`) are not touched.
 
-**Mesma regra do bootstrap**: você (orquestrador) *oferece* rodar, nunca roda
-sem autorização explícita do usuário — o script fecha panes reais e mata
-sessões claude em andamento.
+**Same rule as bootstrap**: you (the orchestrator) *offer* to run it; never run
+it without the user's explicit authorization — the script closes real panes and
+kills active claude sessions.
 
-### Limpar contexto dos 4 panes (iniciar feature nova)
+### Clear the context of the 4 panes (start a new feature)
 
-Pra começar uma feature nova sem arrastar o contexto da anterior, **não recrie
-os panes** — basta mandar `/clear` pra cada agente. `/clear` zera a conversa do
-claude mas mantém o processo vivo na mesma pasta, mesmo modelo, mesma `.claude/`.
-Mais leve que close+bootstrap; oposto de `claude --resume` (que carregaria o
-contexto velho).
+To start a new feature without carrying the previous context along, **do not
+recreate the panes** — just send `/clear` to each agent. `/clear` clears the
+claude conversation but keeps the process alive in the same folder, with the
+same model and `.claude/`. It is lighter than close+bootstrap; the opposite of
+`claude --resume` (which would load the old context).
 
 ```bash
-scripts/cmux-clear-agents.sh                  # limpa os 4
-scripts/cmux-clear-agents.sh Extension Site   # limpa só esses
+scripts/cmux-clear-agents.sh                  # clears all 4
+scripts/cmux-clear-agents.sh Extension Site   # clears only these
 ```
 
-`/clear` é comando **solo** (built-in do claude), não dispatch orquestrado —
-por isso o script **não** usa o marker `[ORCH:]`; manda o texto literal +
-Enter separado, igual ao caminho solo. Idempotente: títulos ausentes geram
-aviso, não erro.
+`/clear` is a **solo** command (a claude built-in), not an orchestrated dispatch
+— therefore the script **does not** use the `[ORCH:]` marker; it sends the
+literal text + separate Enter, like the solo path. Idempotent: missing titles
+produce a warning, not an error.
 
-> **Só rode com os agentes ociosos.** Se um agente está no meio de uma task, o
-> `/clear` vira texto no buffer ou interrompe o trabalho — espere o result file
-> (ou use `--wait` no dispatch) antes de limpar. Mesma regra de cortesia do
-> bootstrap/close: **ofereça**, não rode sem o ok do usuário.
+> **Only run with idle agents.** If an agent is in the middle of a task, `/clear`
+> becomes buffer text or interrupts the work — wait for the result file (or use
+> `--wait` in the dispatch) before clearing. Same courtesy rule as
+> bootstrap/close: **offer**, do not run without the user's approval.
 
-### Reativar uma sessão que caiu sem recriar o pane
+### Reactivate a session that crashed without recreating the pane
 
-Se o pane existe mas só o processo `claude` morreu, mande o comando direto:
+If the pane exists but only the `claude` process died, send the command directly:
 
 ```bash
-sid=$(surface_of App)   # use o helper acima
+sid=$(surface_of App)   # use the helper above
 cmux send     --surface "$sid" "cd ~/Projects/remote_pi/app && claude --resume"
 cmux send-key --surface "$sid" enter
 ```
 
-`claude --resume` apresenta o picker das sessões anteriores naquela pasta;
-escolha a mais recente. Use `claude -c` se quiser pular o picker e voltar à
-última sessão direto. **Sempre confirme o cwd antes** — abrir Claude na pasta
-errada quebra a persona do subprojeto.
+`claude --resume` presents the picker of previous sessions in that folder; choose
+the most recent. Use `claude -c` to skip the picker and return directly to the
+last session. **Always confirm the cwd first** — opening Claude in the wrong
+folder breaks the subproject persona.
 
-### Não confunda com worktrees
+### Do not confuse these with worktrees
 
-Eventualmente aparecem panes extras com nome `✳ <task>...` — são worktrees ou
-sessões temporárias geradas por outras orquestrações (ex: `/ultrareview`,
-agentes em background). Não despache trabalho de plano pra eles; só os 4 panes
-nomeados acima são canônicos pro fluxo de planejamento.
+Eventually, extra panes named `✳ <task>...` appear — they are worktrees or
+temporary sessions created by other orchestrations (e.g. `/ultrareview`,
+background agents). Do not dispatch plan work to them; only the 4 named panes
+above are canonical for the planning flow.
 
-## Reportar progresso no cmux
+## Report cmux progress
 
-O cmux aceita progresso visual no workspace via:
+cmux accepts visual workspace progress through:
 
-- `cmux set-progress <0.0-1.0> --label <texto>` — barra de progresso
-- `cmux clear-progress` — limpa
-- `cmux set-status <key> <value> [--icon <name>] [--color <#hex>]` — status nomeado
+- `cmux set-progress <0.0-1.0> --label <text>` — progress bar
+- `cmux clear-progress` — clears it
+- `cmux set-status <key> <value> [--icon <name>] [--color <#hex>]` — named status
 
-Como temos planejamento explícito em `plan/`, derive o progresso dos checkboxes
-de **Definition of Done** de cada plano:
+Because we have explicit planning in `plan/`, derive progress from the
+**Definition of Done** checkboxes in every plan:
 
 ```bash
-# rode da raiz do monorepo
+# run from the monorepo root
 done=$(grep -h "^- \[x\]" plan/*.md | wc -l | tr -d ' ')
 total=$(grep -hE "^- \[(x| )\]" plan/*.md | wc -l | tr -d ' ')
-pct=$(LC_NUMERIC=C awk "BEGIN { printf \"%.3f\", $done / $total }")  # LC_NUMERIC=C evita vírgula em locales BR
+pct=$(LC_NUMERIC=C awk "BEGIN { printf \"%.3f\", $done / $total }")  # LC_NUMERIC=C avoids commas in BR locales
 cmux set-progress "$pct" --label "Outpost-Pi · $done/$total tasks"
 ```
 
-**Quando atualizar**:
-- Após marcar um `[x]` num DoD
-- Após adicionar um plano novo (total cresce, %% cai naturalmente)
-- Após terminar um plano inteiro: `cmux set-status plan "0N concluído" --color "#22c55e"`
+**When to update**:
+- After marking a `[x]` in a DoD
+- After adding a new plan (the total grows, percentage naturally falls)
+- After completing an entire plan: `cmux set-status plan "0N complete" --color "#22c55e"`
 
-**Quando limpar**:
-- Quando todos os planos do MVP fecharem: `cmux clear-progress`
+**When to clear**:
+- When all MVP plans close: `cmux clear-progress`
 
-Não fique chamando `set-progress` a cada turno — só quando o estado real mudou.
+Do not keep calling `set-progress` every turn — only when real state changes.
 
-## Skill `claude-cmux`
+## `claude-cmux` skill
 
-Para qualquer coisa além do `set-progress` básico — dispatch entre panes, escuta de
-`agent.hook.Stop`, notificações, padrão `.orchestration/` — use a skill
-[`claude-cmux`](file:///Users/jacob/.claude/skills/claude-cmux/SKILL.md).
+For anything beyond basic `set-progress` — dispatch between panes, listening for
+`agent.hook.Stop`, notifications, the `.orchestration/` pattern — use the
+[`claude-cmux`](file:///Users/jacob/.claude/skills/claude-cmux/SKILL.md) skill.
 
-Ela cobre:
+It covers:
 - CLI essentials (`send`, `send-key`, `events`, `notify`, `tree`, `list-panes`)
-- Variáveis automáticas (`$CMUX_WORKSPACE_ID`, `$CMUX_SURFACE_ID`)
-- Padrão de orquestração com `INSTRUCTIONS.md` / `plan.md` / `tasks/` / `results/`
-- Como usar `claude-teams` para emitir hooks estruturados
+- Automatic variables (`$CMUX_WORKSPACE_ID`, `$CMUX_SURFACE_ID`)
+- Orchestration pattern with `INSTRUCTIONS.md` / `plan.md` / `tasks/` / `results/`
+- How to use `claude-teams` to emit structured hooks
 
-A skill triga automaticamente em perguntas de cmux ou em pedidos de orquestração
-paralela. Não duplique conteúdo dela aqui — invoque a skill.
+The skill automatically triggers for cmux questions or parallel-orchestration
+requests. Do not duplicate its content here — invoke the skill.

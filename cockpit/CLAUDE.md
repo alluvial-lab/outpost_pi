@@ -1,198 +1,198 @@
 # Outpost-Pi — Cockpit (Flutter Desktop)
 
-Antes de editar ou revisar `cockpit/`, leia a referência de stack em [`../.agents/skills/flutter-desktop-cockpit/SKILL.md`](../.agents/skills/flutter-desktop-cockpit/SKILL.md).
+Before editing or reviewing `cockpit/`, read the stack reference in [`../.agents/skills/flutter-desktop-cockpit/SKILL.md`](../.agents/skills/flutter-desktop-cockpit/SKILL.md).
 
-Cliente **desktop** (macOS first) do Outpost-Pi. GUI multi-pane sobre o motor do
-Pi: projetos à esquerda, agentes no centro, árvore de arquivos à direita. Cada
-agente é um `pi --mode rpc` que o app spawna e dirige **localmente** — sem relay,
-sem pareamento, sem crypto. É a contraparte local do `app/` (que é o gateway
-remoto). Plano de referência: [`../plan/37-desktop-cockpit.md`](../plan/37-desktop-cockpit.md).
+Outpost-Pi's **desktop** client (macOS first). A multi-pane GUI over the Pi engine:
+projects on the left, agents in the center, file tree on the right. Each agent is a
+`pi --mode rpc` that the app spawns and drives **locally** — no relay, pairing, or
+crypto. It is the local counterpart to `app/` (the remote gateway). Reference plan:
+[`../plan/37-desktop-cockpit.md`](../plan/37-desktop-cockpit.md).
 
-## Escopo atual (pós-refactor: workspace projection + controle remoto)
+## Current scope (post-refactor: workspace projection + remote control)
 
-A fase MVP foi superada pela refatoração *bold-refactor* (cockpit-workspace-projection,
-generated-protocol, transcript-event-log). O cockpit agora é um **documento de
-workspace + projeções**: o workspace é um `WorkspaceDocument` puro (`LeafPane`/
-`SplitPane`, múltiplas tabs/sessões), e cada agente é uma `AgentSessionProjection`
-derivada do estado do `pi --mode rpc` — a UI consome projeções imutáveis, não
-campos mutáveis diretos. Mutações do workspace passam por *command transforms* puros
-(`WorkspaceDocumentCommands` → `WorkspaceCommandResult`) com um único reducer
-(`CockpitViewModel._applyWorkspaceCommand`). Controle remoto (relay/mesh/crypto)
-está ativo via overlay de controle RPC — as extensions do pi ficam carregadas.
+The MVP phase was surpassed by the *bold-refactor* (cockpit-workspace-projection,
+generated-protocol, transcript-event-log). Cockpit is now a **workspace document +
+projections**: the workspace is a pure `WorkspaceDocument` (`LeafPane`/
+`SplitPane`, multiple tabs/sessions), and every agent is an `AgentSessionProjection`
+derived from `pi --mode rpc` state — the UI consumes immutable projections, not
+direct mutable fields. Workspace mutations go through pure *command transforms*
+(`WorkspaceDocumentCommands` → `WorkspaceCommandResult`) with a single reducer
+(`CockpitViewModel._applyWorkspaceCommand`). Remote control (relay/mesh/crypto) is
+active through the RPC-control overlay — the pi extensions remain loaded.
 
-Decisões fechadas (plano 37, 2026-06-05; revisadas no bold-refactor):
+Settled decisions (plan 37, 2026-06-05; revised in bold-refactor):
 
-| # | Decisão |
+| # | Decision |
 |---|---|
-| **A** | Código mora aqui em `cockpit/` (não dentro de `app/`). Reuso futuro com `app/` via `packages/pi_core` — **ainda não extraído** |
-| **B** | Spawna `pi --mode rpc` **com extensions** (outpost-pi carregado p/ command discovery + controle). `noSession`/`noExtensions` defaultam a `false` (ver `lib/app/core/env.dart`) |
-| **C** | Spawn **próprio** — não reusa o supervisor do plano 26 (que é fire-and-forget sem streaming) |
+| **A** | Code lives here in `cockpit/` (not inside `app/`). Future reuse with `app/` via `packages/pi_core` — **not yet extracted** |
+| **B** | Spawn `pi --mode rpc` **with extensions** (outpost-pi loaded for command discovery + control). `noSession`/`noExtensions` default to `false` (see `lib/app/core/env.dart`) |
+| **C** | **Own** spawn — do not reuse the plan 26 supervisor (which is fire-and-forget without streaming) |
 
 ## Stack
 
-- Flutter desktop / Dart (mesma major do `app/`)
-- Plataforma: **macOS first** (Windows/Linux possíveis via Flutter, não testados)
-- DI + roteamento + estado: **`flutter_modular`** (v7). Cada feature é um módulo
-  (`createModule`) que declara **suas próprias rotas + binds**; estado page-scoped
-  via `provide`/`addChangeNotifier` (sobre `ChangeNotifier`), estado app-scoped
-  (tema/fonte) via `ModularApp.provide`. Substituiu `provider` + `auto_injector` +
+- Flutter desktop / Dart (same major as `app/`)
+- Platform: **macOS first** (Windows/Linux possible through Flutter, untested)
+- DI + routing + state: **`flutter_modular`** (v7). Every feature is a module
+  (`createModule`) that declares **its own routes + binds**; page-scoped state
+  through `provide`/`addChangeNotifier` (over `ChangeNotifier`), app-scoped state
+  (theme/font) through `ModularApp.provide`. Replaces `provider` + `auto_injector` +
   `go_router`.
-- Consumo de estado na UI: `context.watch/read/select`, `Consumer`/`Selector`
-  (re-exportados pelo `flutter_modular` — API igual à do `provider`).
-- Resultado tipado: `Result<T, E>`
-- Subprocesso: `dart:io` `Process.start` (spawn do `pi --mode rpc`)
-- Menu nativo: `PlatformMenuBar`
+- UI state consumption: `context.watch/read/select`, `Consumer`/`Selector`
+  (re-exported by `flutter_modular` — same API as `provider`).
+- Typed result: `Result<T, E>`
+- Subprocess: `dart:io` `Process.start` (spawning `pi --mode rpc`)
+- Native menu: `PlatformMenuBar`
 
-> **Diverge do `app/` de propósito**: o cockpit é organizado em **fatias verticais
-> por feature** (`lib/app/<feature>/{domain,data,ui}`), não em camadas globais. A
-> motivação foi matar os god classes `router.dart`/`dependencies.dart` e deixar
-> cada feature auto-contida (cresce sem editar arquivos compartilhados). O `app/`
-> (mobile) segue na arquitetura por camadas — não espelhe um no outro.
+> **Intentionally diverges from `app/`**: Cockpit is organized in **vertical
+> feature slices** (`lib/app/<feature>/{domain,data,ui}`), not global layers. The
+> motivation was to eliminate the `router.dart`/`dependencies.dart` god classes and
+> keep every feature self-contained (it grows without editing shared files). The
+> mobile `app/` continues using layered architecture — do not mirror one in the other.
 
-## Comandos
+## Commands
 
-O SDK do Flutter e o pub cache vivem no repositório (não em `/opt` ou `/tmp`).
-Defina `PUB_CACHE` e use o binário em `.tools/flutter`. Para cockpit, `pub get`
-precisa de `--offline` porque 3 deps git-overridden (`gpt_markdown`,
-`kyroon_pty`, `xterm` de `github.com/jacobaraujo7/*`) não clonam online — o
-config git global reescreve https→ssh e não há chave SSH neste sandbox; os mirrors
-bare em `.pub-cache/git/cache/` resolvem offline. Veja
+The Flutter SDK and pub cache live in the repository (not in `/opt` or `/tmp`).
+Set `PUB_CACHE` and use the binary in `.tools/flutter`. For Cockpit, `pub get`
+requires `--offline` because 3 git-overridden dependencies (`gpt_markdown`,
+`kyroon_pty`, `xterm` from `github.com/jacobaraujo7/*`) cannot clone online — the
+global git config rewrites https→ssh and there is no SSH key in this sandbox; the
+bare mirrors in `.pub-cache/git/cache/` resolve offline. See
 [`../.agents/skills/flutter-desktop-cockpit/SKILL.md`](../.agents/skills/flutter-desktop-cockpit/SKILL.md)
-para o porquê.
+for why.
 
 ```bash
 cd cockpit
 export PUB_CACHE=~/projects/outpost_pi/.pub-cache
-~/projects/outpost_pi/.tools/flutter/bin/flutter pub get --offline   # cockpit precisa de --offline
-~/projects/outpost_pi/.tools/flutter/bin/flutter analyze              # deve passar zero issues
+~/projects/outpost_pi/.tools/flutter/bin/flutter pub get --offline   # Cockpit requires --offline
+~/projects/outpost_pi/.tools/flutter/bin/flutter analyze              # must pass with zero issues
 ~/projects/outpost_pi/.tools/flutter/bin/flutter test
 ~/projects/outpost_pi/.tools/flutter/bin/flutter run -d macos
 ~/projects/outpost_pi/.tools/flutter/bin/flutter build macos
 ```
 
-- `dart format .` — formata (ou `~/.tools/flutter/bin/cache/dart-sdk/bin/dart format .`)
+- `dart format .` — formats (or `~/.tools/flutter/bin/cache/dart-sdk/bin/dart format .`)
 
-## Arquitetura — fatias verticais por feature
+## Architecture — vertical feature slices
 
-Tudo vive sob `lib/app/`. Cada **feature** é um mini-app auto-contido com suas
-próprias camadas `domain/ data/ ui/` e **um módulo** (`<feature>_module.dart`) que
-declara as rotas e os binds daquela feature. O `app/core/` guarda só o que é
-transversal (usado por 2+ features). **Leia [`lib/app/CLAUDE.md`](lib/app/CLAUDE.md)
-(convenções de feature/módulo) e [`lib/app/core/CLAUDE.md`](lib/app/core/CLAUDE.md)
-(o que é kernel) antes de editar.**
+Everything lives under `lib/app/`. Every **feature** is a self-contained mini-app
+with its own `domain/ data/ ui/` layers and **one module** (`<feature>_module.dart`)
+that declares that feature's routes and binds. `app/core/` contains only what is
+cross-cutting (used by 2+ features). **Read [`lib/app/CLAUDE.md`](lib/app/CLAUDE.md)
+(feature/module conventions) and [`lib/app/core/CLAUDE.md`](lib/app/core/CLAUDE.md)
+(what is kernel) before editing.**
 
 ```
 lib/
-├── main.dart                 # bootstrap async (Hive/boxes/config/notifier) + runApp(ModularApp)
+├── main.dart                 # async bootstrap (Hive/boxes/config/notifier) + runApp(ModularApp)
 └── app/
-    ├── app_module.dart       # raiz: compõe core + features (só composição)
+    ├── app_module.dart       # root: composes core + features (composition only)
     ├── app_widget.dart       # AppRoot: ShadcnApp.router + watch<SettingsController>
-    ├── core/                 # kernel transversal (módulo SEM path → binds root-owned)
-    │   ├── core_module.dart  # binds compartilhados (PiSpawnConfig)
+    ├── core/                 # cross-cutting kernel (module WITHOUT path → root-owned binds)
+    │   ├── core_module.dart  # shared binds (PiSpawnConfig)
     │   ├── routes.dart  env.dart  app_intents.dart
-    │   ├── domain/  data/    # markers (Service/Disposable), Result, contratos/impls compartilhados
+    │   ├── domain/  data/    # markers (Service/Disposable), Result, shared contracts/impls
     │   └── ui/               # themes/  widgets/  file_icons/  settings_controller.dart (app-scoped)
-    ├── cockpit/              # FEATURE: o shell (projetos | panes/agentes/terminal | arquivos)
+    ├── cockpit/              # FEATURE: the shell (projects | panes/agents/terminal | files)
     │   ├── cockpit_module.dart   # path '/', binds + route('/', provide: Cockpit/Setup/Update VMs)
     │   └── domain/  data/  ui/   # ui/ = cockpit_page + viewmodels/ session/ states/ widgets/
-    └── settings/             # FEATURE: conectividade + daemon agents + agendamentos (cron)
+    └── settings/             # FEATURE: connectivity + daemon agents + schedules (cron)
         ├── settings_module.dart  # path '/settings', binds + route('/', provide: Connectivity/Daemons/Cron VMs)
         └── domain/  data/  ui/
 ```
 
-Fluxo de dependência **dentro de cada feature** (e do core):
+Dependency flow **inside each feature** (and core):
 
 ```
 ui ──► domain ◄── data
         ▲
-   <feature>_module.dart   (compõe: registra binds + declara rota + provê ViewModels)
+   <feature>_module.dart   (composes: registers binds + declares route + provides ViewModels)
 ```
 
-- `domain/` (de cada feature e do core) **não** importa `data/`, `ui/` nem módulos.
-- `data/` implementa contratos de `domain/`, nunca importa de `ui/`.
-- `ui/` consome `domain/` via ViewModels page-scoped — nunca chama `data/` direto.
-- `<feature>_module.dart` é o único lugar que conhece as 3 camadas da feature.
-- Uma feature **pode importar de `core/`, nunca de outra feature**; o `core/` não
-  importa de feature nenhuma. (Ex.: o `SupervisorClientImpl`, que serve daemons **e**
-  cron, e o `SettingsController` global moram onde são compartilhados, não numa aba.)
+- `domain/` (of every feature and core) does **not** import `data/`, `ui/`, or modules.
+- `data/` implements `domain/` contracts; it never imports from `ui/`.
+- `ui/` consumes `domain/` through page-scoped ViewModels — it never calls `data/` directly.
+- `<feature>_module.dart` is the only place that knows the feature's three layers.
+- A feature **may import from `core/`, never from another feature**; `core/` does not
+  import from any feature. (E.g. `SupervisorClientImpl`, which serves daemons **and**
+  cron, and global `SettingsController` belong where they are shared, not in a tab.)
 
-## Convenções
+## Conventions
 
-- **Naming**: arquivos `snake_case.dart`, classes `PascalCase`, widgets `PascalCase`
-- **Imports**: relativos dentro do mesmo feature; absolutos via `package:cockpit/...`
-  quando cruzando features ou camadas
-- **Barrel files**: cada feature/módulo pode expor um `<nome>.dart` agregando os
-  símbolos públicos; consumidores externos importam só o barrel
-- **Async**: prefira `Future`/`Stream` tipados, evite `dynamic` (o stream de
-  eventos RPC é tipado em `domain/`, nunca `Map<String, dynamic>` cru na `ui/`)
-- **Erros**: `Result<T, E>` ou exceptions tipadas; nunca `catch (e)` genérico em produção
-- **ViewModels**: `ChangeNotifier` page-scoped, providos no `provide:` da rota
-  (`s.addChangeNotifier<T>(…)`) **dentro do `<feature>_module.dart`**; páginas nunca
-  instanciam ViewModel — sempre `context.watch/read/select`. Nascem ao montar a
-  rota e são `dispose()`-ados ao sair. Estado app-global (tema/fonte =
-  `SettingsController`) vive em `ModularApp.provide`, acima do `ShadcnApp`.
-- **Injeção via `.new`** (regra): registre binds e ViewModels com o **tear-off do
-  construtor** (`addChangeNotifier<Foo>(Foo.new)`, `addLazySingleton<Bar>(Bar.new)`)
-  e deixe o `auto_injector` resolver os parâmetros pelo grafo. **Não** escreva
-  `() => Foo(inject<A>(), inject<B>())` quando `Foo.new` resolve. Pós-construção
-  (`init()`/`check()`) roda no `initState` da página, não encadeada no factory.
-  Dois casos exigem um **tipo nomeado** para seguir `.new` (o parser de parâmetros
-  do `auto_injector` é regex sobre o `toString` do construtor):
-  - **dependência factory** ("crie um X novo a cada uso"): use uma **interface de
-    factory** (`abstract class XFactory { X create(); }`, impl no `data/`), **não**
-    `X Function()` — o parser quebra no `=>` e funde dois params factory seguidos.
-    Ver `PairingGatewayFactory` + `ConnectivityViewModel`.
-  - **vários primitivos ambíguos** (vários `String`): troque por um **value object
-    injetável** (ex.: `UpdateTarget` no `cockpit_module`).
-- **Tema**: nunca hardcode `Color(0x…)` / `TextStyle(fontFamily:…)`; leia via
-  `context.colors.<token>` / `context.typo.<estilo>` (barrel `app/core/ui/themes`)
+- **Naming**: `snake_case.dart` files, `PascalCase` classes, `PascalCase` widgets
+- **Imports**: relative within the same feature; absolute through `package:cockpit/...`
+  when crossing features or layers
+- **Barrel files**: each feature/module may expose a `<name>.dart` aggregating its
+  public symbols; external consumers import only the barrel
+- **Async**: prefer typed `Future`/`Stream`; avoid `dynamic` (the RPC event stream
+  is typed in `domain/`, never raw `Map<String, dynamic>` in `ui/`)
+- **Errors**: `Result<T, E>` or typed exceptions; never generic production `catch (e)`
+- **ViewModels**: page-scoped `ChangeNotifier`, provided in the route's `provide:`
+  (`s.addChangeNotifier<T>(…)`) **inside `<feature>_module.dart`**; pages never
+  instantiate a ViewModel — always `context.watch/read/select`. They are created
+  when the route mounts and `dispose()`-ed on exit. App-global state (theme/font =
+  `SettingsController`) lives in `ModularApp.provide`, above `ShadcnApp`.
+- **`.new` injection** (rule): register binds and ViewModels with the **constructor
+  tear-off** (`addChangeNotifier<Foo>(Foo.new)`, `addLazySingleton<Bar>(Bar.new)`)
+  and let `auto_injector` resolve parameters through the graph. **Do not** write
+  `() => Foo(inject<A>(), inject<B>())` when `Foo.new` resolves it. Post-construction
+  (`init()`/`check()`) runs in the page's `initState`, not chained in the factory.
+  Two cases require a **named type** to follow `.new` (the `auto_injector` parameter
+  parser uses regex on the constructor's `toString`):
+  - **factory dependency** ("create a new X for each use"): use a **factory
+    interface** (`abstract class XFactory { X create(); }`, implementation in `data/`),
+    **not** `X Function()` — the parser breaks on `=>` and merges two consecutive
+    factory parameters. See `PairingGatewayFactory` + `ConnectivityViewModel`.
+  - **multiple ambiguous primitives** (multiple `String`): replace them with an
+    injectable **value object** (e.g. `UpdateTarget` in `cockpit_module`).
+- **Theme**: never hardcode `Color(0x…)` / `TextStyle(fontFamily:…)`; read through
+  `context.colors.<token>` / `context.typo.<style>` (barrel `app/core/ui/themes`)
 
-## Regra crítica: `BuildContext` em código assíncrono
+## Critical rule: `BuildContext` in asynchronous code
 
-Acessar `context` após um `await` (ou dentro de `.then/.onSuccess/.flatMap/.whenComplete`)
-pode crashar com `Null check operator used on a null value` se o widget já tiver
-sido desmontado. O lint `use_build_context_synchronously` **não detecta** callbacks
-encadeados — a prevenção é manual.
+Accessing `context` after an `await` (or inside `.then/.onSuccess/.flatMap/.whenComplete`)
+can crash with `Null check operator used on a null value` if the widget has already
+been unmounted. The `use_build_context_synchronously` lint **does not detect** chained
+callbacks — prevention is manual.
 
 ```dart
-// CORRETO — await + guard
+// CORRECT — await + guard
 final result = await viewModel.spawnAgent();
-if (!mounted) return;           // em StatefulWidget
-// if (!context.mounted) return; // em StatelessWidget
+if (!mounted) return;           // in StatefulWidget
+// if (!context.mounted) return; // in StatelessWidget
 context.useContextSomehow();
 ```
 
 ```dart
-// ERRADO — context dentro de callback assíncrono
+// WRONG — context inside asynchronous callback
 await viewModel.spawnAgent().onSuccess((_) {
-  context.useContextSomehow(); // CRASH se desmontado
+  context.useContextSomehow(); // CRASH if unmounted
 });
 ```
 
-> Nunca use `context` dentro de `.onSuccess()`, `.onFailure()`, `.flatMap()`,
-> `.then()` ou `.whenComplete()`. Sempre transforme para `await` + guard.
+> Never use `context` inside `.onSuccess()`, `.onFailure()`, `.flatMap()`,
+> `.then()`, or `.whenComplete()`. Always convert to `await` + guard.
 
-## NÃO fazer
+## Do NOT
 
-- Editar arquivos fora de `cockpit/`
-- Adicionar **relay, mesh, crypto ou pareamento** nesta fase — Cockpit é
-  local-only (decisão B). Reachability remota é evolução futura (plano 37)
-- Criar **panes/multiplexação** antes de revalidar o conceito com layout básico
-  (plano 37 — panes deliberadamente adiados)
-- Reusar o supervisor do plano 26 (decisão C — spawn próprio)
-- Implementar crypto manual (não há crypto nesta fase)
-- Comitar `build/`, `.dart_tool/`, `macos/Pods/`
-- Adicionar dependência sem registrar no plano 37
-- Misturar responsabilidades entre camadas/features — quando bater dúvida, leia
-  [`lib/app/CLAUDE.md`](lib/app/CLAUDE.md) e o `domain/data/ui` da feature alvo
-- Importar de uma feature para outra, ou do `core/` para uma feature — só
-  feature→core é permitido (ver fluxo de dependência acima)
-- Recriar god classes: **não** centralize rotas ou binds num arquivo só — cada
-  feature declara os seus no próprio `<feature>_module.dart`
+- Edit files outside `cockpit/`
+- Add **relay, mesh, crypto, or pairing** at this stage — Cockpit is local-only
+  (decision B). Remote reachability is a future evolution (plan 37)
+- Create **panes/multiplexing** before revalidating the concept with the basic
+  layout (plan 37 — panes deliberately deferred)
+- Reuse the plan 26 supervisor (decision C — own spawn)
+- Implement crypto manually (there is no crypto at this stage)
+- Commit `build/`, `.dart_tool/`, `macos/Pods/`
+- Add a dependency without registering it in plan 37
+- Mix responsibilities between layers/features — when in doubt, read
+  [`lib/app/CLAUDE.md`](lib/app/CLAUDE.md) and the target feature's `domain/data/ui`
+- Import from one feature into another, or from `core/` into a feature — only
+  feature→core is allowed (see dependency flow above)
+- Recreate god classes: **do not** centralize routes or binds in one file — every
+  feature declares its own in `<feature>_module.dart`
 
-## Modo orquestrado
+## Orchestrated mode
 
-Se receber um prompt começando com `[ORCH:<task-id>]`, leia
-[`../.orchestration/INSTRUCTIONS.md`](../.orchestration/INSTRUCTIONS.md) antes de
-qualquer outra ação. Esse marker indica que outro agente está coordenando o
-trabalho e tem regras específicas (onde escrever resultado, não comitar, etc).
+If you receive a prompt starting with `[ORCH:<task-id>]`, read
+[`../.orchestration/INSTRUCTIONS.md`](../.orchestration/INSTRUCTIONS.md) before
+any other action. That marker indicates another agent is coordinating the work
+and has specific rules (where to write the result, do not commit, etc.).
