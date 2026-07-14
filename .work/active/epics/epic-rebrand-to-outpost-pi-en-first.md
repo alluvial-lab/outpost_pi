@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first
 kind: epic
-stage: drafting
+stage: implementing
 tags: [rebrand, docs, i18n, cockpit, app, pi-extension, relay, site]
 parent: null
 depends_on: [epic-rebrand-to-outpost-pi]
@@ -126,19 +126,85 @@ JSDoc (TS), dartdoc `///` (Dart), rustdoc `///` (Rust), JSDoc-on-components
 (React). It pins the per-language definition of "public API" (the open-ended
 risk flagged below) via the Always-tier marker table.
 
-## Decomposition risks (for epic-design)
+## Decomposition
 
-- **Cockpit is 216/252 files** — the decomposition must handle the cockpit
-  slice's size; it may warrant its own feature or sub-slicing.
+Split by subproject, with the cockpit module sub-sliced by layer because it
+is 216/252 files — too large for one feature-design→implement pass. The
+operator-confirmed strategic decisions (attribution posture, native doc
+framework + gap-fill, `scripts/` exclusion) are inherited by every child;
+the only thing deferred to this decomposition was the *shape*, and the
+measured surface (PT is ~2,100 comment-lines vs ~18 user-facing string
+literals in cockpit) confirmed the bulk is mechanical comment translation,
+with a small bounded translate-review surface for UI strings and test
+descriptions.
+
+All 10 child features are independent (no `depends_on` between them): the
+wire-stable identifiers already migrated in the first rebrand epic, so no
+child shares a type or contract with another. They can all run in parallel.
+The four cockpit features share the `flutter analyze` + `flutter test` build
+gate but own disjoint file sets (separate flutter_modular modules / layers +
+their mapped test dirs).
+
+### Child features
+
+- `epic-rebrand-to-outpost-pi-en-first-pi-extension` — TS/JSDoc; 6 files;
+  reference slice (first to prove the convention end-to-end) — depends on: `[]`
+- `epic-rebrand-to-outpost-pi-en-first-relay` — Rust/rustdoc; 1 file —
+  depends on: `[]`
+- `epic-rebrand-to-outpost-pi-en-first-app` — Dart/dartdoc; 21 files;
+  onboarding + update-banner UI strings need review — depends on: `[]`
+- `epic-rebrand-to-outpost-pi-en-first-site` — React/JSDoc; 2 files;
+  tutorial page is translate-review prose — depends on: `[]`
+- `epic-rebrand-to-outpost-pi-en-first-cockpit-core` — Dart/dartdoc; 54 lib
+  files + 4 root tests; owns the generated `file_icon_map.g.dart` header
+  edge case — depends on: `[]`
+- `epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-domain` —
+  Dart/dartdoc; 43 lib files + 4 tests; contract-bearing gap-fill heart —
+  depends on: `[]`
+- `epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-ui` —
+  Dart/dartdoc; 38 lib files + 1 test; user-facing widget/viewmodel strings
+  need review — depends on: `[]`
+- `epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data` —
+  Dart/dartdoc; 21 lib files + 10 tests; adapter edge (document
+  adapter-specific behavior, not port contracts) — depends on: `[]`
+- `epic-rebrand-to-outpost-pi-en-first-cockpit-settings` —
+  Dart/dartdoc; 25 lib files; settings-panel UI strings need review —
+  depends on: `[]`
+- `epic-rebrand-to-outpost-pi-en-first-prose-surfaces` — cross-cutting
+  prose/config (branding SVG comments + README, `docs/`, per-subproject
+  `CLAUDE.md` files, cockpit non-Dart config/packaging); no gap-fill (Skip
+  tier); owns the seam files between the code slices — depends on: `[]`
+
+### Decomposition risks
+
+- **Cockpit is 216/252 files** — resolved by sub-slicing the cockpit module
+  by layer (domain/ui/data) plus separate `core` and `settings` module
+  features. Each cockpit feature is 21–58 files, within the one
+  feature-design→implement pass range. The four cockpit features share the
+  build gate but own disjoint file sets.
 - **2(b) gap-filling is bounded by the convention's Always tier** — "every
-  public API gets a doc comment" is now defined per language in
+  public API gets a doc comment" is defined per language in
   `.agents/skills/documentation-conventions/SKILL.md` (exported TS symbol,
   public Dart declaration, Rust `pub`, exported React component with 3+
   props). The Skip tier (schema decls, barrel re-exports, tests, trivial
   helpers, generated code) is explicitly out of scope, so gap-fill is not
   open-ended.
 - **User-visible UI text needs review, not just mechanical translation** —
-  some PT strings are user-facing and need translation-review, not sed.
+  the measured surface is small (~18 PT string literals cockpit-wide, plus
+  PT test descriptions in cockpit tests). The app, site, cockpit-ui, and
+  cockpit-settings features flag this in their briefs; their design passes
+  must split comment-translation (sed-safe) from UI-string/test-description
+  translation (review).
+- **Generated file edge case** — `cockpit/lib/app/core/ui/file_icons/file_icon_map.g.dart`
+  is generated and shipped; its header comment carries PT. Translate the
+  header (one-time edit; the generator source is a script, out of scope per
+  the `scripts/` exclusion, so it won't regenerate in this epic), skip
+  gap-fill on the generated body. Owned by the cockpit-core feature.
+- **Branding boundary with the external-surfaces epic** — that epic (at
+  `review`) already migrated the wordmark/URL text in `branding/banner.svg`.
+  This epic's prose-surfaces feature owns only the *remaining* PT in branding
+  (SVG comment prose + README), not the already-migrated text nodes. The
+  feature brief records this boundary explicitly.
 - **Tests gate each slice** — `flutter analyze` + `flutter test` (app,
   cockpit), `corepack pnpm typecheck`/`test` (pi-extension), `cargo
   fmt`/`clippy`/`test` (relay), `pnpm lint`/`build` (site). The EN pass must
