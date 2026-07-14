@@ -6,9 +6,9 @@
 display_name: Outpost-Pi Cockpit
 summary: Cliente desktop multi-pane do Outpost-Pi
 license: LicenseRef-proprietary
-url: https://jacobmoura.work
-vendor: Jacob Moura
-packager: Jacob Moura
+url: https://kevoun.com
+vendor: Kevoun
+packager: Kevoun
 packagerEmail: jacobaraujo7@gmail.com
 group: Development/Tools
 generic_name: Outpost-Pi Cockpit

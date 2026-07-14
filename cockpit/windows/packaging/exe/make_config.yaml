@@ -3,8 +3,8 @@
 # fase (aviso do SmartScreen documentado no site).
 app_id: work.jacobmoura.cockpit
 display_name: Outpost-Pi Cockpit
-publisher_name: Jacob Moura
-publisher_url: https://jacobmoura.work
+publisher_name: Kevoun
+publisher_url: https://kevoun.com
 # O binário do runner Windows é `cockpit.exe` (BINARY_NAME=cockpit).
 executable_name: cockpit.exe
 # Instala por usuário (sem exigir admin) em %LOCALAPPDATA%\Programs.

@@ -70,16 +70,11 @@ mobile pairing.
 
 ## Relay
 
-A free community relay is available at:
-
-```
-wss://relay-rp1.jacobmoura.work
-```
-
-It's enough to get started, but the relay operator can see the content of your
-messages and is a single point of trust for routing. **For sensitive work, we
-strongly recommend running your own relay** — it's a single Docker command and
-the only thing your traffic ever touches is your own infrastructure.
+Outpost-Pi is local-relay-only — you run your own relay from the
+`relay/` source. There is no public/community relay. The relay can see the
+content of messages it routes, so running your own is both the privacy stance
+and the default: the only thing your traffic ever touches is your own
+infrastructure.
 
 Full security trade-offs and the self-hosting guide live in
 **[`relay/README.md`](./relay/README.md)**.
