@@ -26,20 +26,16 @@ identified by their public key. It never decrypts or inspects payload content.
 
 ---
 
-## Public relay
+## Self-hosted relay
 
-A shared relay is available at:
-
-```
-https://relay-rp1.jacobmoura.work
-```
-
-You can use it to get started without any setup. However, be aware of the security
-trade-offs below.
+Outpost-Pi is local-relay-only: you run your own relay from the
+`relay/` source. There is no public/community relay. Running your own
+means only your devices ever touch the connection — no third party can
+observe your traffic.
 
 ### Security considerations
 
-Messages are protected in two ways on the public relay:
+Messages are protected in two ways on your self-hosted relay:
 
 - **TLS (SSL)** — the WebSocket connection is encrypted in transit.
 - **Ed25519 pairing key** — only devices that completed the pairing flow can
