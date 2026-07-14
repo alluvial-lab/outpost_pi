@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/transport/relay_config.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
@@ -218,6 +219,37 @@ void main() {
       expect(s.conn.isRoomWorking('epk_projection', 'main'), isFalse);
       s.conn.dispose();
     });
+  });
+
+  group('ConnectionManager unconfigured relay', () {
+    test(
+      'emits non-retryable offline and the watchdog does not retry',
+      () async {
+        var factoryCalls = 0;
+        final conn = ConnectionManager(
+          factory: (_, _) async {
+            factoryCalls++;
+            throw const RelayNotConfiguredException();
+          },
+          storage: _FakeStorage(),
+          emitDebounce: Duration.zero,
+        );
+
+        await conn.connectTo(_peer);
+
+        expect(conn.status, isA<StatusOffline>());
+        final status = conn.status as StatusOffline;
+        expect(status.canRetry, isFalse);
+        expect(status.reason, kRelayNotConfiguredMessage);
+        expect(factoryCalls, 1);
+
+        conn.debugRunWatchdog();
+        await Future<void>.delayed(Duration.zero);
+        expect(factoryCalls, 1);
+        expect(conn.status, same(status));
+        conn.dispose();
+      },
+    );
   });
 
   // Regression for `story-fix-transport-active-room-reestablishment-on-reconnect`.

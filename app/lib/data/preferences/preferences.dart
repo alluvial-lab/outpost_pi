@@ -63,9 +63,8 @@ class Preferences extends ChangeNotifier {
   /// Composite raw value (epk[:room]). Tests can inspect.
   String? get selectedRoomRaw => _selectedPeerEpk;
 
-  /// User-configured relay URL override. `null` = use the public default
-  /// (`kDefaultRelayUrl` in `relay_config.dart`). Set via Settings or
-  /// during onboarding step 2 (custom relay).
+  /// User-configured relay URL. `null` means relay configuration is still
+  /// required. Set via Settings or onboarding.
   String? get relayUrl => _relayUrl;
 
   /// `true` after the user completed the 3-step onboarding flow at least
@@ -160,9 +159,9 @@ class Preferences extends ChangeNotifier {
     return setSelectedPeerEpk(composite);
   }
 
-  /// Set the user-configured relay URL. `null` or empty clears the
-  /// override so the app falls back to `kDefaultRelayUrl`. Caller should
-  /// validate via `isValidRelayUrl` first when [value] is non-null.
+  /// Set the user-configured relay URL. `null` or empty clears the stored
+  /// value and produces the explicit unconfigured state. Caller should validate
+  /// via `isValidRelayUrl` first when [value] is non-null.
   Future<void> setRelayUrl(String? value) async {
     final cleaned = (value != null && value.isNotEmpty) ? value : null;
     if (cleaned == _relayUrl) return;

@@ -35,6 +35,7 @@ import 'dart:async';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/data/transport/reachability_adapter.dart';
+import 'package:app/data/transport/relay_config.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/service.dart';
 import 'package:flutter/foundation.dart';
@@ -178,16 +179,25 @@ class ConnectionManager extends Service {
   void _startWatchdog() {
     _watchdogTimer?.cancel();
     _watchdogTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      final peer = _activePeer;
-      if (peer == null) return;
-      if (_status is StatusOnline) return;
-      if (_reachability.connectInFlight) return;
-      if (_retryTimer != null) return;
-      // We SHOULD be reconnecting but nothing's scheduled and no
-      // attempt is in flight. Kick the retry chain.
-      _scheduleRetry(peer);
+      _runWatchdog();
     });
   }
+
+  void _runWatchdog() {
+    final peer = _activePeer;
+    if (peer == null) return;
+    if (_status is StatusOnline) return;
+    final status = _status;
+    if (status is StatusOffline && !status.canRetry) return;
+    if (_reachability.connectInFlight) return;
+    if (_retryTimer != null) return;
+    // We SHOULD be reconnecting but nothing's scheduled and no
+    // attempt is in flight. Kick the retry chain.
+    _scheduleRetry(peer);
+  }
+
+  @visibleForTesting
+  void debugRunWatchdog() => _runWatchdog();
 
   ConnectionStatus get status => _status;
   Stream<ConnectionStatus> get statusStream => _statusController.stream;
@@ -580,6 +590,19 @@ class ConnectionManager extends Service {
       _watchChannel(peer, ch);
       _watchControl(ch);
       _replaySubscriptions();
+    } on RelayNotConfiguredException {
+      if (token.isCancelled) return;
+      // Configuration cannot be healed by a network retry. Clear the
+      // reachability in-flight flag so the watchdog cannot resurrect this
+      // connection attempt, then expose the Settings recovery action.
+      _reachability.onStopRequested();
+      _cancelRetry();
+      _emit(
+        const StatusOffline(
+          reason: kRelayNotConfiguredMessage,
+          canRetry: false,
+        ),
+      );
     } catch (e) {
       if (!token.isCancelled) _scheduleRetry(peer);
     }

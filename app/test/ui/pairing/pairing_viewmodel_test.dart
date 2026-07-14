@@ -227,6 +227,38 @@ void main() {
       vm.dispose();
     });
 
+    test(
+      'unconfigured relay fails before disconnecting or opening transport',
+      () async {
+        final storage = _FakeStorage();
+        final conn = _SpyConn();
+        final bridge = await _bootedBridge(storage);
+        var transportCalls = 0;
+        final vm = PairingViewModel(
+          storage,
+          (qr, key) async {
+            transportCalls++;
+            throw StateError('transport must not be opened');
+          },
+          conn,
+          _PrefsForTest(relay: null),
+          bridge,
+        );
+
+        await vm.onQrScanned(_qrUri);
+
+        expect(vm.state, isA<PairingError>());
+        final error = vm.state as PairingError;
+        expect(error.canRetry, isFalse);
+        expect(error.message, contains('Settings'));
+        expect(transportCalls, 0);
+        expect(conn.disconnectCalls, 0);
+
+        vm.dispose();
+        conn.dispose();
+      },
+    );
+
     test('scan → connecting → paired (channel adopted)', () async {
       final storage = _FakeStorage();
       final fakeRepo = _SpyConn();

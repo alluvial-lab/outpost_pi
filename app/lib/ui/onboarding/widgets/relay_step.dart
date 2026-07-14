@@ -4,9 +4,9 @@ import 'package:app/ui/onboarding/states/onboarding_state.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-/// Empty custom URL is allowed — onboarding treats it as "use default
-/// community relay" (saves null in Preferences, falls back to
-/// [kDefaultRelayUrl] via [resolveRelayUrl]).
+/// Relay selection is being migrated to require an explicit self-hosted URL.
+/// The temporary Community card remains until the onboarding flow slice removes
+/// it, but it no longer names or resolves a fallback endpoint.
 
 /// Onboarding step 2 — relay choice. Two vertical cards: self-hosted
 /// (recommended for the privacy story) vs community (convenience).
@@ -73,7 +73,7 @@ class RelayStep extends StatelessWidget {
           _RelayCard(
             title: 'Community relay',
             description: 'Hosted by us. Quick to start.',
-            footer: kDefaultRelayUrl,
+            footer: kRelayNotConfiguredMessage,
             selected: state.relayChoice == RelayChoice.community,
             onTap: () => onChoice(RelayChoice.community),
           ),

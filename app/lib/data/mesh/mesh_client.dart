@@ -4,6 +4,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../transport/relay_config.dart';
 import 'mesh_envelope.dart';
 
 /// Outcome of `MeshClient.fetch()`.
@@ -86,34 +87,43 @@ final class MeshPublishFailure extends MeshPublishResult {
 
 /// HTTP client for the plan-24 `/mesh/<owner_pk_hash>` endpoints.
 ///
-/// The base URL is resolved lazily via [baseUrlProvider] so a runtime
-/// change to `Preferences.relayUrl` propagates without re-creating the
-/// client. Status codes 200/304/400/403/404/409/413 are folded into
-/// the [MeshFetchResult] / [MeshPublishResult] sealed hierarchy; raw
+/// Relay configuration is resolved lazily via [relayResolutionProvider] so a
+/// runtime Settings change is picked up without re-creating the client. Status
+/// codes 200/304/400/403/404/409/413 are folded into the
+/// [MeshFetchResult] / [MeshPublishResult] sealed hierarchy; raw
 /// `DioException`s never escape.
 class MeshClient {
-  /// Lazily resolved base URL — typically wraps `toHttpRelayUrl(
-  /// resolveRelayUrl(prefs))`. Called on every request so a relay
-  /// switch via Settings is picked up without re-injecting the client.
-  final String Function() baseUrlProvider;
+  /// Called on every request. Its unconfigured branch is handled before URI
+  /// construction or HTTP I/O.
+  final RelayResolution Function() relayResolutionProvider;
 
   final Dio _dio;
 
-  MeshClient({required this.baseUrlProvider, Dio? dio})
-      : _dio = dio ?? _defaultDio();
+  MeshClient({
+    RelayResolution Function()? relayResolutionProvider,
+    @Deprecated('Inject RelayResolution instead.')
+    String Function()? baseUrlProvider,
+    Dio? dio,
+  }) : assert(relayResolutionProvider != null || baseUrlProvider != null),
+       relayResolutionProvider =
+           relayResolutionProvider ??
+           (() => ConfiguredRelay(baseUrlProvider!())),
+       _dio = dio ?? _defaultDio();
 
   static Dio _defaultDio() {
-    return Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 8),
-      sendTimeout: const Duration(seconds: 8),
-      receiveTimeout: const Duration(seconds: 8),
-      // We treat every non-2xx status manually — don't let dio throw.
-      validateStatus: (_) => true,
-      // Plain so an empty / non-JSON body on 4xx/5xx doesn't trip the
-      // built-in JSON parser into raising a DioException. We jsonDecode
-      // manually on the success branch.
-      responseType: ResponseType.plain,
-    ));
+    return Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 8),
+        sendTimeout: const Duration(seconds: 8),
+        receiveTimeout: const Duration(seconds: 8),
+        // We treat every non-2xx status manually — don't let dio throw.
+        validateStatus: (_) => true,
+        // Plain so an empty / non-JSON body on 4xx/5xx doesn't trip the
+        // built-in JSON parser into raising a DioException. We jsonDecode
+        // manually on the success branch.
+        responseType: ResponseType.plain,
+      ),
+    );
   }
 
   /// Decode a response body string as JSON when present. Returns null
@@ -125,7 +135,9 @@ class MeshClient {
       try {
         final parsed = jsonDecode(data);
         if (parsed is Map<String, Object?>) return parsed;
-      } catch (_) {/* fall through */}
+      } catch (_) {
+        /* fall through */
+      }
     }
     return null;
   }
@@ -141,9 +153,10 @@ class MeshClient {
     return buf.toString();
   }
 
-  Uri _meshUri(String hash) {
-    final base = baseUrlProvider();
-    final trimmed = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+  Uri _meshUri(String base, String hash) {
+    final trimmed = base.endsWith('/')
+        ? base.substring(0, base.length - 1)
+        : base;
     return Uri.parse('$trimmed/mesh/$hash');
   }
 
@@ -151,8 +164,13 @@ class MeshClient {
   /// Returns one of [MeshFetchOk], [MeshFetchNotModified],
   /// [MeshFetchNotFound], [MeshFetchFailure].
   Future<MeshFetchResult> fetch(String hash, {int? since}) async {
+    final resolution = relayResolutionProvider();
+    if (resolution is UnconfiguredRelay) {
+      return const MeshFetchFailure(kRelayNotConfiguredMessage);
+    }
+    final relay = resolution as ConfiguredRelay;
     try {
-      final uri = _meshUri(hash);
+      final uri = _meshUri(relay.url, hash);
       final response = await _dio.getUri<Object?>(
         since == null ? uri : uri.replace(queryParameters: {'since': '$since'}),
         options: Options(
@@ -184,9 +202,7 @@ class MeshClient {
         case 404:
           return const MeshFetchNotFound();
         default:
-          return MeshFetchFailure(
-            'unexpected status ${response.statusCode}',
-          );
+          return MeshFetchFailure('unexpected status ${response.statusCode}');
       }
     } on DioException catch (e) {
       final status = e.response?.statusCode;
@@ -200,12 +216,14 @@ class MeshClient {
   }
 
   /// `POST /mesh/<hash>` with `{blob, sig}` body.
-  Future<MeshPublishResult> publish(
-    String hash,
-    MeshEnvelope envelope,
-  ) async {
+  Future<MeshPublishResult> publish(String hash, MeshEnvelope envelope) async {
+    final resolution = relayResolutionProvider();
+    if (resolution is UnconfiguredRelay) {
+      return const MeshPublishFailure(kRelayNotConfiguredMessage);
+    }
+    final relay = resolution as ConfiguredRelay;
     try {
-      final uri = _meshUri(hash);
+      final uri = _meshUri(relay.url, hash);
       final response = await _dio.postUri<Object?>(
         uri,
         data: jsonEncode(envelope.toJson()),
@@ -241,9 +259,7 @@ class MeshClient {
         case 413:
           return const MeshPublishTooLarge();
         default:
-          return MeshPublishFailure(
-            'unexpected status ${response.statusCode}',
-          );
+          return MeshPublishFailure('unexpected status ${response.statusCode}');
       }
     } on DioException catch (e) {
       final status = e.response?.statusCode;
