@@ -35,107 +35,107 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
-  # Migração de UI: design system shadcn (componentes, overlays, tema). Substitui
-  # o Material como camada de UI na raiz (`ShadcnApp.router`). Pin exato — pacote
-  # pré-1.0 (API churna). Nota: o `ShadcnApp` já injeta
-  # `DefaultMaterialLocalizations` (en-US) por padrão, então os widgets de
-  # terceiros que embutem Material (xterm, media_kit_video, gpt_markdown)
-  # funcionam sem `flutter_localizations`; e `shadcn_flutter.dart` já re-exporta
-  # `Icons`, então mantemos os Material Icons sem import extra.
+  # UI migration: shadcn design system (components, overlays, theme). Replaces
+  # Material as the UI layer at the root (`ShadcnApp.router`). Pinned exact —
+  # pre-1.0 package (API churns). Note: `ShadcnApp` already injects
+  # `DefaultMaterialLocalizations` (en-US) by default, so third-party widgets
+  # that embed Material (xterm, media_kit_video, gpt_markdown) work without
+  # `flutter_localizations`; and `shadcn_flutter.dart` already re-exports
+  # `Icons`, so we keep the Material Icons with no extra import.
   shadcn_flutter: 0.0.52
 
-  # DI + roteamento + estado page-scoped num pacote só: cada feature é um módulo
-  # (`createModule`) que declara suas rotas + binds. Substitui provider +
-  # auto_injector + go_router (removidos). Ver `lib/app/` e CLAUDE.md.
+  # DI + routing + page-scoped state in one package: each feature is a module
+  # (`createModule`) that declares its routes + binds. Replaces provider +
+  # auto_injector + go_router (removed). See `lib/app/` and CLAUDE.md.
   flutter_modular: ^7.1.0
 
-  # Plano 37 — seleção de pasta (NSOpenPanel no macOS) para abrir um projeto.
+  # Plan 37 — folder selection (NSOpenPanel on macOS) to open a project.
   file_picker: ^8.1.2
 
-  # Wave 2 — persistência local dos projetos (pasta salva = projeto).
+  # Wave 2 — local persistence of projects (saved folder = project).
   hive: ^2.2.3
   hive_flutter: ^1.1.0
 
-  # Wave 2 — fontes da identidade visual (Space Grotesk / Hanken Grotesk /
-  # JetBrains Mono), servidas em runtime + cacheadas pelo google_fonts.
+  # Wave 2 — visual-identity fonts (Space Grotesk / Hanken Grotesk /
+  # JetBrains Mono), served at runtime + cached by google_fonts.
   google_fonts: ^6.2.1
 
-  # Wave 2 — renderiza o Markdown (GFM + code) da resposta do agente.
+  # Wave 2 — renders the agent response Markdown (GFM + code).
   gpt_markdown: ^1.1.7
 
-  # Wave 2 — notificações nativas do SO (agente terminou um turno).
+  # Wave 2 — native OS notifications (an agent finished a turn).
   flutter_local_notifications: ^18.0.1
 
-  # Wave 2 — esconde a barra nativa da janela (temos a customizada) e permite
-  # arrastar/min/max pela nossa barra. macOS/Windows/Linux.
+  # Wave 2 — hides the native window bar (we have a custom one) and allows
+  # drag/min/max via our bar. macOS/Windows/Linux.
   window_manager: ^0.4.3
 
-  # Wave 2 — aba de terminal: emulador + widget (xterm) + PTY nativo
-  # (kyroon_pty: PTY em código nativo — forkpty no macOS/Linux, ConPTY no
-  # Windows 10 1809+; mais estável e mantido que o flutter_pty antigo).
+  # Wave 2 — terminal tab: emulator + widget (xterm) + native PTY
+  # (kyroon_pty: PTY in native code — forkpty on macOS/Linux, ConPTY on
+  # Windows 10 1809+; more stable and maintained than the old flutter_pty).
   xterm: ^4.0.0
   kyroon_pty: ^1.0.4
 
-  # Wave 2 — viewer de arquivo: renderiza SVG no pane (PNG/JPEG via Image.file).
+  # Wave 2 — file viewer: renders SVG in the pane (PNG/JPEG via Image.file).
   flutter_svg: ^2.0.10
 
-  # Plano 46 — preview de áudio e vídeo no viewer (libmpv via media_kit): um
-  # motor só cobre A/V, com aceleração de hardware, cross-platform. O
-  # `media_kit_libs_video` embarca a libmpv em macOS/Windows; no Linux usamos a
-  # do sistema (ver linux/packaging/*). NOTA: registrar no plano 46.
+  # Plan 46 — audio and video preview in the viewer (libmpv via media_kit): a
+  # single engine covers A/V, with hardware acceleration, cross-platform.
+  # `media_kit_libs_video` bundles libmpv on macOS/Windows; on Linux we use the
+  # system one (see linux/packaging/*). NOTE: register in plan 46.
   media_kit: ^1.1.10
   media_kit_video: ^1.2.4
   media_kit_libs_video: ^1.0.4
 
-  # Wave 2 — syntax highlight no viewer de texto. Port Dart do highlight.js; o
-  # import default registra todas as 189 linguagens + aliases. Convertemos a
-  # árvore de nós em TextSpan e pintamos com a paleta `SyntaxColors` do tema.
-  # NOTA: registrar esta dep no plano 37 (responsabilidade do orquestrador).
+  # Wave 2 — syntax highlighting in the text viewer. Dart port of highlight.js;
+  # the default import registers all 189 languages + aliases. We convert the
+  # node tree to a TextSpan and paint it with the theme's `SyntaxColors` palette.
+  # NOTE: register this dep in plan 37 (orchestrator responsibility).
   highlight: ^0.7.0
 
-  # Wave 2 — colar imagem/arquivos do clipboard (Cmd/Ctrl+V) no composer. O
-  # `Clipboard` do Flutter só lê texto; o pasteboard lê imagem (bytes) e paths.
-  # NOTA: registrar esta dep no plano 37 (responsabilidade do orquestrador).
+  # Wave 2 — paste image/files from the clipboard (Cmd/Ctrl+V) into the composer.
+  # Flutter's `Clipboard` only reads text; pasteboard reads image (bytes) and paths.
+  # NOTE: register this dep in plan 37 (orchestrator responsibility).
   pasteboard: ^0.4.0
 
-  # Wave 2 — arrastar arquivos do SO (Finder/Explorer/etc.) pro input. O
-  # drag-drop interno do Flutter não pega drops nativos; o desktop_drop cobre
-  # macOS/Linux/Windows. NOTA: registrar esta dep no plano 37.
+  # Wave 2 — drag files from the OS (Finder/Explorer/etc.) into the input.
+  # Flutter's internal drag-drop does not catch native drops; desktop_drop
+  # covers macOS/Linux/Windows. NOTE: register this dep in plan 37.
   desktop_drop: ^0.5.0
 
-  # Wave 2 — header fixo (sticky) por turno no chat: a pergunta do usuário fica
-  # pinada no topo enquanto a resposta rola. NOTA: registrar no plano 37.
+  # Wave 2 — sticky header per turn in the chat: the user's question stays
+  # pinned at the top while the response scrolls. NOTE: register in plan 37.
   flutter_sticky_header: ^0.8.0
 
-  # Conectividade (Fatia 3 — pareamento) — renderiza a URI de pareamento do
-  # `outpost-pi` como QR Code no dialog. NOTA: registrar esta dep no plano 37.
+  # Connectivity (Slice 3 — pairing) — renders the `outpost-pi` pairing URI as
+  # a QR Code in the dialog. NOTE: register this dep in plan 37.
   qr_flutter: ^4.1.0
 
-  # Windows-only — cliente de named pipe (Win32 FFI) pra falar com o supervisor,
-  # que no Windows escuta em `\\.\pipe\…` em vez de UDS. Ver
+  # Windows-only — named pipe client (Win32 FFI) to talk to the supervisor,
+  # which on Windows listens on `\\.\pipe\…` instead of a UDS. See
   # lib/data/daemon/win_named_pipe.dart.
   ffi: ^2.1.0
   win32: ^5.5.0
 
-  # Aviso de atualização in-app (plano 43, passo 7): versão atual do app
-  # (package_info_plus) + abrir a URL do artefato no navegador (url_launcher).
+  # In-app update notice (plan 43, step 7): current app version
+  # (package_info_plus) + open the artifact URL in the browser (url_launcher).
   package_info_plus: ^8.0.0
   url_launcher: ^6.3.0
 
-  # Plano 47 — self-update nativo: Sparkle (macOS) + WinSparkle (Windows) via o
-  # plugin federado auto_updater. No Linux é no-op (NoopSelfUpdater) e o caminho
-  # de notify+download manual (UpdateChecker/UpdateCard) assume. O macOS embarca
-  # o Sparkle.framework via CocoaPods; o Windows vendoriza a WinSparkle.dll.
+  # Plan 47 — native self-update: Sparkle (macOS) + WinSparkle (Windows) via the
+  # federated auto_updater plugin. On Linux it is a no-op (NoopSelfUpdater) and
+  # the manual notify+download path (UpdateChecker/UpdateCard) takes over. macOS
+  # bundles the Sparkle.framework via CocoaPods; Windows vendors WinSparkle.dll.
   auto_updater: ^1.0.0
 
 dependency_overrides:
-  # Fork do xterm com render procedural de Block Elements (U+2580–259F) e Box
-  # Drawing (U+2500–257F): o xterm 4.0 pinta esses glifos com a fonte (no
-  # tamanho natural, não esticados pra célula), deixando frestas entre células
-  # — half-blocks de arte de pixel (mascote do Claude) saem listrados e bordas
-  # de TUI não conectam. O fork desenha os blocos/bordas proceduralmente,
-  # preenchendo a célula exata, como os terminais nativos. PR para o upstream
-  # (TerminalStudio/xterm.dart) pendente; voltar pro pub.dev quando mergeado.
+  # Fork of xterm with procedural rendering of Block Elements (U+2580–259F) and
+  # Box Drawing (U+2500–257F): xterm 4.0 paints these glyphs with the font (at
+  # natural size, not stretched to the cell), leaving gaps between cells —
+  # half-blocks of pixel art (the Claude mascot) come out striped and TUI
+  # borders don't connect. The fork draws the blocks/borders procedurally,
+  # filling the exact cell, like native terminals. PR to upstream
+  # (TerminalStudio/xterm.dart) pending; revert to pub.dev when merged.
   xterm:
     git:
       url: https://github.com/jacobaraujo7/xterm.dart
@@ -144,9 +144,9 @@ dependency_overrides:
     git:
       url: https://github.com/jacobaraujo7/gpt_markdown
       ref: v1.2.2
-  # Fork com o fix da UB em build_working_directory (kyroon_pty_win.c), que
-  # quebrava o spawn de PTY no Windows ARM. PR aberto pro upstream
-  # (cesarmod2017/kyroon_pty); voltar pro pub.dev quando publicarem >= 1.0.5.
+  # Fork with the UB fix in build_working_directory (kyroon_pty_win.c), which
+  # broke PTY spawning on Windows ARM. PR open to upstream
+  # (cesarmod2017/kyroon_pty); revert to pub.dev when they publish >= 1.0.5.
   kyroon_pty:
     git:
       url: https://github.com/jacobaraujo7/kyroon_pty
@@ -173,8 +173,8 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # Ícones de arquivo/pasta por extensão (material-icon-theme, MIT). O mapa
-  # arquivo->ícone é gerado em lib/ui/core/file_icons/file_icon_map.g.dart.
+  # File/folder icons by extension (material-icon-theme, MIT). The
+  # file->icon map is generated in lib/ui/core/file_icons/file_icon_map.g.dart.
   assets:
     - assets/file_icons/
     - assets/branding/

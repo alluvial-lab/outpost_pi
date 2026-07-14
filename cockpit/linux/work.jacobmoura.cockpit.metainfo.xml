@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- AppStream metadata (mínimo) para empacotamento Linux. Instalado em
-     share/metainfo/. O <id> casa com o app ID e o .desktop. -->
+<!-- Minimal AppStream metadata for Linux packaging. Installed in
+     share/metainfo/. The <id> matches the app ID and the .desktop file. -->
 <component type="desktop-application">
   <id>work.jacobmoura.cockpit</id>
   <name>Outpost-Pi Cockpit</name>
-  <summary>Cliente desktop multi-pane do Outpost-Pi</summary>
+  <summary>Multi-pane desktop client for Outpost-Pi</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
-  <!-- Licença do projeto ainda pendente no monorepo; placeholder válido. -->
+  <!-- Project license still pending in the monorepo; valid placeholder. -->
   <project_license>LicenseRef-proprietary</project_license>
 
   <developer id="work.jacobmoura">
@@ -16,10 +16,10 @@
 
   <description>
     <p>
-      Cockpit é o cliente desktop do Outpost-Pi: uma GUI multi-pane sobre o motor
-      do Pi. Roda agentes (cada um um <code>pi --mode rpc</code>) e terminais
-      lado a lado, com árvore de arquivos, worktrees por workspace e
-      agendamento de daemons.
+      Cockpit is the Outpost-Pi desktop client: a multi-pane GUI over the Pi
+      engine. It runs agents (each a <code>pi --mode rpc</code>) and terminals
+      side by side, with a file tree, per-workspace worktrees, and daemon
+      scheduling.
     </p>
   </description>
 
@@ -37,7 +37,7 @@
     </release>
     <release version="1.0.0" date="2026-06-12">
       <description>
-        <p>Primeira release distribuível do Cockpit.</p>
+        <p>First distributable release of the Cockpit.</p>
       </description>
     </release>
   </releases>

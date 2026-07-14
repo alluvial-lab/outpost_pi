@@ -4,13 +4,14 @@ import FlutterMacOS
 @main
 class AppDelegate: FlutterAppDelegate {
   override func applicationWillFinishLaunching(_ notification: Notification) {
-    // Ignora SIGPIPE no processo inteiro (disposição de sinal é por-processo,
-    // não por-thread → cobre a platform/UI thread mesclada). Sem isso, qualquer
-    // escrita num pipe sem leitor — spawn de language server que falha, PTY de
-    // terminal fechado, processo `pi --mode rpc` que sumiu junto com uma worktree
-    // deletada — entrega SIGPIPE e derruba o app inteiro, sem dialog nem crash
-    // report. A Dart VM normalmente seta SIG_IGN, mas o embedder Flutter macOS no
-    // modo "merged UI and platform thread (Experimental)" não o herda.
+    // Ignore SIGPIPE for the whole process (signal disposition is per-process,
+    // not per-thread → covers the merged platform/UI thread). Without this, any
+    // write to a pipe with no reader — a language-server spawn that fails, a
+    // closed terminal PTY, a `pi --mode rpc` process that vanished along with a
+    // deleted worktree — delivers SIGPIPE and crashes the whole app, with no
+    // dialog or crash report. The Dart VM normally sets SIG_IGN, but the Flutter
+    // macOS embedder in "merged UI and platform thread (Experimental)" mode does
+    // not inherit it.
     signal(SIGPIPE, SIG_IGN)
     super.applicationWillFinishLaunching(notification)
   }

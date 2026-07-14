@@ -1,34 +1,34 @@
 # Branding — Outpost-Pi
 
-Identidade visual oficial. Fonte de verdade: arquivos SVG (escaláveis).
-PNGs derivados gerados via ferramenta externa quando necessário.
+Official visual identity. Source of truth: SVG files (scalable).
+Derived PNGs generated via an external tool when needed.
 
-## Paleta
+## Palette
 
-| Cor | Hex | Uso |
+| Color | Hex | Use |
 |---|---|---|
-| Preto puro | `#000000` | Background (full + adaptive icon bg) |
-| Branco puro | `#FFFFFF` | Símbolo π (foreground principal) |
-| Azul Pi | `#4FC3F7` | Bolinha característica |
+| Pure black | `#000000` | Background (full + adaptive icon bg) |
+| Pure white | `#FFFFFF` | π symbol (main foreground) |
+| Pi blue | `#4FC3F7` | Characteristic dot |
 
-## Arquivos
+## Files
 
-| Arquivo | Conteúdo | Uso recomendado |
+| File | Content | Recommended use |
 |---|---|---|
-| `logo-full.svg` | Background preto + π branco + bolinha azul | Logo single-piece (favicon, README header, site, app store screenshots) |
-| `logo-foreground.svg` | π + bolinha em fundo transparente | iOS app icon (com background separado), Android adaptive icon foreground layer |
-| `logo-background.svg` | Preto sólido 1024×1024 | Android adaptive icon background layer |
-| `logo-monochrome.svg` | Silhueta branca completa | Android 13+ themed icon (sistema colore conforme wallpaper) |
-| `banner.svg` / `banner.png` | Banner 1280×640 horizontal — π à esquerda + título + tagline + comando install + URL | Card de pacote pi.dev (`pi.image` no package.json), README hero do GitHub, social preview |
+| `logo-full.svg` | Black background + white π + blue dot | Single-piece logo (favicon, README header, site, app store screenshots) |
+| `logo-foreground.svg` | π + dot on transparent background | iOS app icon (with a separate background), Android adaptive icon foreground layer |
+| `logo-background.svg` | Solid black 1024×1024 | Android adaptive icon background layer |
+| `logo-monochrome.svg` | Complete white silhouette | Android 13+ themed icon (system colors it to match the wallpaper) |
+| `banner.svg` / `banner.png` | 1280×640 horizontal banner — π on the left + title + tagline + install command + URL | pi.dev package card (`pi.image` in package.json), GitHub README hero, social preview |
 
-Todos os arquivos: **1024×1024** viewBox, safe zone Android-compatível (~66% central).
+All files: **1024×1024** viewBox, Android-compatible safe zone (~66% center).
 
-## Como converter pra PNG
+## How to convert to PNG
 
-Nenhuma ferramenta de conversão hoje instalada no projeto. Opções pra
-gerar PNG quando necessário:
+No conversion tool is currently installed in the project. Options for
+generating PNGs when needed:
 
-### Via `rsvg-convert` (mais simples)
+### Via `rsvg-convert` (simplest)
 
 ```bash
 brew install librsvg
@@ -56,28 +56,28 @@ inkscape --export-type=png --export-width=1024 logo-foreground.svg
 - [https://cloudconvert.com/svg-to-png](https://cloudconvert.com/svg-to-png)
 - [https://svgtopng.com](https://svgtopng.com)
 
-## Tamanhos padrão exportar
+## Standard export sizes
 
-Antes de upload em store/site, gere variantes:
+Before uploading to a store/site, generate the variants:
 
-| Plataforma | Tamanho | Arquivo fonte |
+| Platform | Size | Source file |
 |---|---|---|
-| iOS App Icon | 1024×1024 PNG (sem alpha) | `logo-full.svg` |
-| Android Adaptive (foreground) | 432×432 PNG transparente | `logo-foreground.svg` |
-| Android Adaptive (background) | 432×432 PNG (cor sólida basta) | `logo-background.svg` |
-| Android Themed (monochrome) | 432×432 PNG transparente | `logo-monochrome.svg` |
+| iOS App Icon | 1024×1024 PNG (no alpha) | `logo-full.svg` |
+| Android Adaptive (foreground) | 432×432 transparent PNG | `logo-foreground.svg` |
+| Android Adaptive (background) | 432×432 PNG (solid color is enough) | `logo-background.svg` |
+| Android Themed (monochrome) | 432×432 transparent PNG | `logo-monochrome.svg` |
 | Favicon | 32×32, 16×16 PNG | `logo-full.svg` |
-| App Store screenshot header | 1200×630 PNG | `logo-full.svg` (compor) |
+| App Store screenshot header | 1200×630 PNG | `logo-full.svg` (compose) |
 | npm registry README | 512×512 PNG | `logo-full.svg` |
 
-> Android adaptive icons: tanto foreground quanto background ocupam 108dp
-> canvas total, mas conteúdo importante deve ficar dentro de 66dp central
-> (safe zone). Os SVGs já respeitam essa proporção (~66% do 1024).
+> Android adaptive icons: both foreground and background occupy a 108dp
+> total canvas, but important content must stay within the central 66dp
+> (safe zone). The SVGs already respect this proportion (~66% of 1024).
 
-## Atualização
+## Updates
 
-Mudanças visuais: editar SVG (Figma → export SVG é OK). Regenerar PNGs
-derivados nos pontos de uso (site, app, store).
+Visual changes: edit the SVG (Figma → export SVG is fine). Regenerate derived
+PNGs at the points of use (site, app, store).
 
-Antes de mudar paleta ou silhueta, atualizar este README com a nova
-versão da identidade visual + razão da mudança.
+Before changing the palette or silhouette, update this README with the new
+visual-identity version + the reason for the change.

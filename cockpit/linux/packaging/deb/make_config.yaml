@@ -1,27 +1,27 @@
-# Pacote .deb do Cockpit. NÃO buildável neste Mac — gerado nos jobs `linux-x64`
-# (ubuntu-24.04) e `linux-arm64` (ubuntu-24.04-arm) do CI. A arquitetura é
-# detectada pelo Fastforge (uname -m) no runner.
+# Cockpit .deb package. NOT buildable on this Mac — generated in the `linux-x64`
+# (ubuntu-24.04) and `linux-arm64` (ubuntu-24.04-arm) CI jobs. The architecture
+# is detected by Fastforge (uname -m) on the runner.
 #
-# Artefato resultante: outpost-pi-cockpit_<versão>_<arch>.deb
+# Resulting artifact: outpost-pi-cockpit_<version>_<arch>.deb
 display_name: Outpost-Pi Cockpit
 package_name: outpost-pi-cockpit
-# Installed-Size do pacote .deb, em KB (campo obrigatório do maker do Fastforge).
-# Estimativa do bundle Flutter Linux release (~150 MB); recalibrar com
-# `du -sk build/linux/*/release/bundle` quando houver build Linux real.
+# Installed-Size of the .deb package, in KB (mandatory field for the Fastforge maker).
+# Estimate of the Flutter Linux release bundle (~150 MB); recalibrate with
+# `du -sk build/linux/*/release/bundle` once there is a real Linux build.
 installed_size: 150000
 maintainer:
   name: Kevoun
   email: <operator contact email>
 section: devel
 priority: optional
-# Deps de runtime: GTK3 + libs base do bundle Flutter Linux. (Confirmar/expandir
-# via `ldd` do bundle no CI — premissa do plano.)
+# Runtime deps: GTK3 + base libs of the Flutter Linux bundle. (Confirm/expand
+# via `ldd` of the bundle in CI — plan premise.)
 dependencies:
   - libgtk-3-0
   - libblkid1
   - liblzma5
-  # Plano 46 — preview de A/V via media_kit (libmpv). No Linux usamos a libmpv
-  # do sistema (em macOS/Windows é embarcada pelo media_kit_libs_video).
+  # Plan 46 — A/V preview via media_kit (libmpv). On Linux we use the system
+  # libmpv (on macOS/Windows it is bundled by media_kit_libs_video).
   - libmpv2
 generic_name: Outpost-Pi Cockpit
 categories:
