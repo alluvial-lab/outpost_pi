@@ -9,7 +9,7 @@ license: LicenseRef-proprietary
 url: https://kevoun.com
 vendor: Kevoun
 packager: Kevoun
-packagerEmail: jacobaraujo7@gmail.com
+packagerEmail: <operator contact email>
 group: Development/Tools
 generic_name: Outpost-Pi Cockpit
 # Deps de runtime: GTK3 (nome do pacote no Fedora).
