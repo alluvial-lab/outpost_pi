@@ -24,9 +24,9 @@ class _NoopTransport implements PeerTransport {
 
 PlainPeerChannel _channel() => PlainPeerChannel(transport: _NoopTransport());
 
-ConnectionManager _conn({_FakeStorage? storage}) {
+ConnectionManager _conn({_FakeStorage? storage, ConnectionFactory? factory}) {
   return ConnectionManager(
-    factory: (_, _) async => _channel(),
+    factory: factory ?? (_, _) async => _channel(),
     storage: storage ?? _FakeStorage([]),
   );
 }
@@ -52,6 +52,9 @@ class _FakeStorage extends PairingStorage {
   Future<void> deletePeerSilent(String epk) async {
     peers = peers.where((p) => p.remoteEpk != epk).toList();
   }
+
+  @override
+  Future<List<PersistedRoom>> loadRooms(String remoteEpk) async => const [];
 }
 
 class _FakeDebugLog implements DebugLog {
@@ -357,20 +360,43 @@ void main() {
 
       // Empty → error, override untouched.
       final emptyErr = await vm.saveRelayUrl('');
-      expect(emptyErr, isNotNull);
+      expect(emptyErr, kRelayUrlInvalidGeneric);
       expect(prefs.relayUrl, 'https://x.example');
 
       // Whitespace-only → same (trimmed to empty).
       final blankErr = await vm.saveRelayUrl('   ');
-      expect(blankErr, isNotNull);
+      expect(blankErr, kRelayUrlInvalidGeneric);
       expect(prefs.relayUrl, 'https://x.example');
 
       // null → same.
       final nullErr = await vm.saveRelayUrl(null);
-      expect(nullErr, isNotNull);
+      expect(nullErr, kRelayUrlInvalidGeneric);
       expect(prefs.relayUrl, 'https://x.example');
 
       vm.dispose();
+    });
+
+    test('valid relay save reconnects after persistence', () async {
+      final storage = _FakeStorage([_peerA()]);
+      var connections = 0;
+      final conn = _conn(
+        storage: storage,
+        factory: (_, _) async {
+          connections += 1;
+          return _channel();
+        },
+      );
+      final prefs = Preferences(_FakeSecureStorage());
+      final vm = SettingsViewModel(storage, prefs, conn);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(await vm.saveRelayUrl('https://relay.example'), isNull);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(prefs.relayUrl, 'https://relay.example');
+      expect(connections, 1);
+      vm.dispose();
+      conn.dispose();
     });
 
     test(
