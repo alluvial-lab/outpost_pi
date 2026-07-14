@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-external-surfaces-retire-rp-s3-runtime-update-noop
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, app, cockpit]
 parent: epic-rebrand-external-surfaces-retire-rp-s3
 depends_on: []
@@ -39,3 +39,25 @@ Implement Unit 1 of the parent feature.
 - [ ] No file in this story retains `rp-s3.jacobmoura.work`.
 - [ ] Relevant Flutter tests and `flutter analyze` pass, or an exact
   environmental prerequisite is recorded.
+
+## Implementation notes
+
+- Both update checkers now treat a missing manifest URL as an immediate `null`
+  result. The app checker lazily creates its default Dio adapter only after an
+  explicit URL is supplied; the Cockpit checker creates and tears down its
+  `HttpClient` only for explicit URLs, preserving the existing silent failure
+  and parsing paths.
+- Cockpit no longer supplies native appcast URLs, so its existing updater
+  selection resolves to `NoopSelfUpdater`; the packaging runbook records that
+  appcasts are not currently published or deployed.
+- The explicit worker instruction restricted edits to the two checker files,
+  `cockpit_module.dart`, and the packaging README (plus this required stage
+  transition), so no new test files were added despite the broader Scope test
+  bullet. Existing update-focused tests were run: app `update_info_test.dart`
+  and Cockpit `update_info_test.dart` plus `auto_updater_self_updater_test.dart`
+  passed.
+- Verification: Cockpit `flutter analyze` passed. App `flutter analyze` is
+  blocked by pre-existing unrelated relay migration errors (`kDefaultRelayUrl`
+  references and stale `MeshClient` constructor arguments in relay/mesh tests);
+  the app update-info test passed. `flutter` is not on `PATH`; verification
+  used the repository SDK at `.tools/flutter/bin/flutter`.

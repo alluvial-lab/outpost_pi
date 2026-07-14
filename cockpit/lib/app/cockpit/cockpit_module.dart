@@ -114,9 +114,8 @@ Future<Module> buildCockpitModule() async {
         ..addInstance<UpdateChecker>(const UpdateCheckerImpl())
         ..addInstance<UrlOpener>(const UrlOpenerImpl())
         ..addInstance<UpdateTarget>(_updateTarget(appVersion))
-        // Self-update nativo (plano 47): Sparkle/WinSparkle quando há appcast
-        // pra plataforma (macOS/Windows); Noop no Linux → o card cai no caminho
-        // de notify + download manual (UpdateChecker).
+        // Self-update nativo permanece desativado até os appcasts serem
+        // publicados e implantados; o updater é Noop em todas as plataformas.
         ..addInstance<SelfUpdater>(_buildSelfUpdater(_updateTarget(appVersion)))
         ..route(
           '/',
@@ -133,12 +132,9 @@ Future<Module> buildCockpitModule() async {
   );
 }
 
-/// Base do rp-s3 onde moram `latest.json` (notify) e os appcasts (self-update).
-const String _kDownloadsBase =
-    'https://rp-s3.jacobmoura.work/downloads/cockpit';
-
 /// [UpdateTarget] da máquina atual: versão do app + plataforma/formato/arch do
-/// manifest + URL do appcast de self-update (macOS/Windows; `null` no Linux).
+/// manifest. Appcasts nativos não são configurados enquanto não houver
+/// publicação/implantação desses feeds.
 /// macOS → dmg/universal; Windows → exe/x64; Linux → deb/(arm64|x64).
 UpdateTarget _updateTarget(String version) {
   if (Platform.isMacOS) {
@@ -147,7 +143,6 @@ UpdateTarget _updateTarget(String version) {
       platform: 'macos',
       format: 'dmg',
       arch: 'universal',
-      selfUpdateFeedUrl: '$_kDownloadsBase/appcast-macos.xml',
     );
   }
   if (Platform.isWindows) {
@@ -156,7 +151,6 @@ UpdateTarget _updateTarget(String version) {
       platform: 'windows',
       format: 'exe',
       arch: 'x64',
-      selfUpdateFeedUrl: '$_kDownloadsBase/appcast-windows.xml',
     );
   }
   final arch = Platform.version.toLowerCase().contains('arm') ? 'arm64' : 'x64';
@@ -168,9 +162,8 @@ UpdateTarget _updateTarget(String version) {
   );
 }
 
-/// Constrói o [SelfUpdater] da plataforma: [AutoUpdaterSelfUpdater] quando há
-/// appcast (macOS/Windows), [NoopSelfUpdater] no Linux (sem self-update nativo →
-/// o `UpdateViewModel` usa o caminho de notify + download manual).
+/// Constrói o [SelfUpdater]. Sem appcast configurado, [NoopSelfUpdater] deixa
+/// o `UpdateViewModel` no caminho de notify + download manual.
 SelfUpdater _buildSelfUpdater(UpdateTarget target) {
   final feed = target.selfUpdateFeedUrl;
   if (feed == null) return const NoopSelfUpdater();

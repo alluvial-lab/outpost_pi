@@ -10,18 +10,18 @@ import 'package:cockpit/app/cockpit/domain/entities/update_info.dart';
 /// silencioso quando offline/indisponível.
 class UpdateCheckerImpl implements UpdateChecker {
   const UpdateCheckerImpl({
-    this.manifestUrl = defaultManifestUrl,
+    this.manifestUrl,
     this.timeout = const Duration(seconds: 5),
   });
 
-  static const String defaultManifestUrl =
-      'https://rp-s3.jacobmoura.work/downloads/cockpit/latest.json';
-
-  final String manifestUrl;
+  final String? manifestUrl;
   final Duration timeout;
 
   @override
   Future<UpdateInfo?> fetchLatest() async {
+    final manifestUrl = this.manifestUrl;
+    if (manifestUrl == null) return null;
+
     final client = HttpClient()..connectionTimeout = timeout;
     try {
       final request = await client
