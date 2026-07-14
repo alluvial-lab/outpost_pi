@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:app/data/preferences/preferences.dart';
-import 'package:app/data/transport/relay_config.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/settings/states/settings_state.dart';
@@ -207,7 +206,7 @@ class _RelaySectionState extends State<_RelaySection> {
                     color: colors.muted,
                     fontSize: 12,
                   ),
-                  helperText: 'Current: ${vm.effectiveRelayUrl}',
+                  helperText: 'Current: ${vm.effectiveRelayLabel}',
                   helperStyle: context.typo.mono.copyWith(
                     fontSize: 10,
                     color: colors.muted,
@@ -250,20 +249,6 @@ class _RelaySectionState extends State<_RelaySection> {
                       ),
                       child: Text(
                         'Save',
-                        style: const TextStyle(
-                          fontFamily: kMonoFamily,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    TextButton(
-                      onPressed: () {
-                        _ctrl.text = kDefaultRelayUrl;
-                        _save();
-                      },
-                      child: Text(
-                        'Use default Relay',
                         style: const TextStyle(
                           fontFamily: kMonoFamily,
                           fontSize: 13,

@@ -1,10 +1,8 @@
 // Relay endpoint resolution.
 //
 // The app always connects to a SINGLE relay at a time, regardless of
-// how many peers it's paired with. The URL is resolved from:
-//
-//   1. `prefs.relayUrl` (user override, set via Settings or onboarding)
-//   2. `kDefaultRelayUrl` (the public community relay)
+// how many peers it's paired with. A stored `prefs.relayUrl` resolves to a
+// relay; its absence is an explicit recoverable configuration state.
 //
 // Canonical scheme on storage is `http://` or `https://` — this is
 // the form the user types and what we keep in Preferences. The WebSocket
@@ -20,9 +18,42 @@
 
 import 'package:app/data/preferences/preferences.dart';
 
-/// Public community relay. Hardcoded; not configurable at build time
-/// to keep the onboarding flow deterministic.
-const String kDefaultRelayUrl = 'https://relay-rp1.jacobmoura.work';
+/// User-facing recovery message for every unconfigured-relay boundary.
+const String kRelayNotConfiguredMessage =
+    'Relay not configured. Set a relay in Settings and try again.';
+
+enum RelaySource { preferences, unconfigured }
+
+sealed class RelayResolution {
+  const RelayResolution();
+  RelaySource get source;
+}
+
+final class ConfiguredRelay extends RelayResolution {
+  const ConfiguredRelay(this.url);
+
+  final String url;
+
+  @override
+  RelaySource get source => RelaySource.preferences;
+}
+
+final class UnconfiguredRelay extends RelayResolution {
+  const UnconfiguredRelay();
+
+  @override
+  RelaySource get source => RelaySource.unconfigured;
+}
+
+/// Raised by I/O boundaries when a relay connection was requested without a
+/// configured relay. Configuration is recoverable, so callers must surface
+/// [kRelayNotConfiguredMessage] rather than retrying network I/O.
+final class RelayNotConfiguredException implements Exception {
+  const RelayNotConfiguredException();
+
+  @override
+  String toString() => kRelayNotConfiguredMessage;
+}
 
 /// User-facing message returned when [isValidRelayUrl] rejects a value.
 /// Surfaced verbatim by Settings and Onboarding — keep stable for
@@ -37,12 +68,16 @@ const String kRelayUrlInvalidGeneric =
     'Enter a valid URL starting with https:// (or http:// for local '
     'relays).';
 
-/// Returns the effective relay URL the app should connect to.
-/// Falls back to [kDefaultRelayUrl] when no user override is set.
-/// Always returns an `http(s)://` URL — caller is responsible for
-/// applying [toWsRelayUrl] when opening a WebSocket.
-String resolveRelayUrl(Preferences prefs) =>
-    prefs.relayUrl ?? kDefaultRelayUrl;
+/// Resolves the relay configuration without performing I/O.
+///
+/// A configured branch always carries the stored canonical `http(s)://` URL.
+/// An absent preference stays observable as [UnconfiguredRelay] so each I/O
+/// boundary can offer its appropriate recovery action instead of silently
+/// connecting to an unrelated relay.
+RelayResolution resolveRelayUrl(Preferences prefs) {
+  final url = prefs.relayUrl;
+  return url == null ? const UnconfiguredRelay() : ConfiguredRelay(url);
+}
 
 /// Translates the canonical HTTP-form relay URL into the WebSocket
 /// form expected by the underlying transport. `https://` → `wss://`,
