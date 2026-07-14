@@ -1,84 +1,88 @@
-# rp-s3 — servidor de downloads do Outpost-Pi
+# rp-s3 — dormant download server
 
-Servidor HTTP mínimo (Rust + axum) que serve os instaladores do Cockpit (e
-futuros produtos) a partir de um diretório montado como volume. Roda em
-container na VPS atrás do proxy que termina TLS em
-`https://rp-s3.jacobmoura.work`.
+`rp-s3` is a minimal Rust + axum HTTP server that can serve Cockpit and other
+product distribution files from a mounted directory. The server is currently
+dormant and is **not deployed** as part of the current Outpost-Pi release
+infrastructure.
 
-É o lado "leitura" do passo 4 do [plano 43](../plan/43-cockpit-packaging.md).
-A VPS não tem acesso SSH, então o fluxo é: o CI (`cockpit-release.yml`)
-publica os binários como assets da **GitHub Release** `cockpit-v<versão>` e
-anexa o `latest.json` (com as URLs desses assets); o usuário coloca o
-`latest.json` manualmente no volume deste host — é o gate de publicação. O
-rp-s3 serve o manifest na URL estável que o site consome.
+This README retains the routes and local configuration as a reference for a
+future self-hosted distribution service. It is not an instruction to operate a
+currently deployed service.
 
-## Rotas
+## Routes
 
-| Rota | Comportamento |
+| Route | Behavior |
 |---|---|
 | `GET /healthz` | `200 ok` |
-| `GET /downloads/<produto>/...` | arquivos de `DATA_DIR/<produto>/...` |
+| `GET /downloads/<product>/...` | Files from `DATA_DIR/<product>/...` |
 
-Regras de resposta em `/downloads`:
+Rules for `/downloads` responses:
 
-- `.dmg`/`.exe`/`.deb`/`.rpm`/`.zip` → `Content-Disposition: attachment` +
-  `Cache-Control: immutable, 1 ano` (artefatos vivem em pastas versionadas,
-  a URL nunca é reusada).
-- Demais arquivos (`latest.json`, `SHA256SUMS`) → `Cache-Control: max-age=300`
-  (URL fixa, release novo propaga em ≤5 min).
-- `Access-Control-Allow-Origin: *` em tudo (o site lê o manifest de outro
-  domínio).
-- Sem listagem de diretório; diretório sem index → 404.
+- `.dmg`/`.exe`/`.deb`/`.rpm`/`.zip` use `Content-Disposition: attachment` and
+  `Cache-Control: immutable, 1 year` (artifacts live in versioned directories,
+  so their URLs are never reused).
+- Other files (`latest.json`, `SHA256SUMS`) use `Cache-Control: max-age=300`
+  (a fixed URL propagates a new release within five minutes).
+- `Access-Control-Allow-Origin: *` is set on every response so a site can read
+  the manifest from another origin.
+- Directories are not listed; a directory without an index returns 404.
 
-## Configuração
+## Configuration
 
-| Env | Default | Descrição |
+| Environment variable | Default | Description |
 |---|---|---|
-| `DATA_DIR` | `/data` | raiz servida em `/downloads` |
-| `PORT` | `8080` | porta HTTP (TLS fica no proxy) |
-| `RUST_LOG` | `rp_s3=info,tower_http=info` | nível de log |
+| `DATA_DIR` | `/data` | Root served under `/downloads` |
+| `PORT` | `8080` | HTTP port |
+| `RUST_LOG` | `rp_s3=info,tower_http=info` | Log filter |
 
-## Layout do volume
+## Local data layout
 
-O `docker-compose.yml` monta o deploy path do CI **como o subdiretório do
-produto** — assim o host fica plano e a URL ganha o prefixo certo:
+The compose template uses local, configurable directories and mounts them
+read-only into the container:
 
+```text
+./data/
+├── cockpit/
+│   ├── latest.json
+│   └── SHA256SUMS             (optional)
+└── app/
+    └── latest.json
 ```
-host:  /Users/flutterando/cockpit/data/          (colocado manualmente)
-         latest.json
-         SHA256SUMS                              (opcional)
 
-mount: /Users/flutterando/cockpit/data → /data/cockpit (read-only)
-
-URL:   https://rp-s3.jacobmoura.work/downloads/cockpit/latest.json
-```
-
-Os binários em si vivem nos assets da GitHub Release — as URLs dentro do
-`latest.json` apontam pra lá. O servidor continua sabendo servir
-`.dmg`/`.exe`/`.deb`/`.rpm` como attachment caso um dia algum arquivo seja
-hospedado aqui também.
-
-Produto novo no futuro = outro volume montado em `/data/<produto>`.
-
-## Rodar
+Override the defaults when the data lives elsewhere:
 
 ```bash
-# local, sem docker
-DATA_DIR=./exemplo PORT=8080 cargo run
+RP_S3_COCKPIT_DATA_DIR=/path/to/cockpit/data \
+RP_S3_APP_DATA_DIR=/path/to/app/data \
+docker compose up -d
+```
 
-# na VPS (carrega a imagem local)
+The corresponding future self-hosted routes would be
+`/downloads/cockpit/latest.json` and `/downloads/app/latest.json`.
+
+## Run locally
+
+Without Docker:
+
+```bash
+DATA_DIR=./example PORT=8080 cargo run
+curl -fsS http://localhost:8080/healthz
+```
+
+The compose file is retained as a future self-hosting template. The commands
+below build or run local artifacts only; they do not deploy the dormant server:
+
+```bash
 docker compose up -d
 curl -fsS http://localhost:8080/healthz
 ```
 
-## Buildar a imagem Docker
+## Build the Docker image
 
-Mesmo fluxo do relay: o script lê a versão do `Cargo.toml`, builda para a
-plataforma do host e carrega a imagem local como `outpost-pi-rp-s3:v<versão>`
-+ `:latest` (sem `--push` — imagem project-local).
+`build-docker.sh` reads the version from `Cargo.toml`, builds for the host
+platform, and loads `outpost-pi-rp-s3:v<version>` plus `:latest` into the local
+Docker daemon. It does not push or deploy the dormant server.
 
 ```bash
 ./build-docker.sh
 ```
-
-O proxy reverso da VPS aponta `rp-s3.jacobmoura.work` → `localhost:8080`.
