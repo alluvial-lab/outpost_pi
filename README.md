@@ -13,7 +13,7 @@
 
 ## Links
 
-- **Official site** — <https://outpost-pi.jacobmoura.work>
+- **Official site** — <https://outpost-pi.kevoun.com>
 - **Package documentation** — <https://pi.dev/packages/outpost-pi?name=outpost-pi>
 - **GitHub** — <https://github.com/KevounC/outpost_pi>
 

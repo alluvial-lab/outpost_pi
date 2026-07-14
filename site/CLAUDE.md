@@ -39,7 +39,7 @@ documentação do MVP. **Apenas apresentação — não tem lógica de produto.*
 
 ## Publicação (deploy)
 
-O site roda em produção (`outpost-pi.jacobmoura.work`) como **imagem Docker**,
+O site roda em produção (`outpost-pi.kevoun.com`) como **imagem Docker**,
 construída localmente a partir de `site/` (sem publicação em registry). O host
 de produção carrega a imagem local.
 
