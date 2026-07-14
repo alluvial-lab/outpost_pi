@@ -1,59 +1,60 @@
-# Camada `domain/`
+# `domain/` Layer
 
-## Propósito
+## Purpose
 
-Materializar o conhecimento do negócio. Aqui vivem modelos, casos de uso e
-validadores com regras determinísticas, **independentes de UI, banco ou rede**.
-Esta camada é o núcleo — todas as outras dependem dela; ela não depende de
-nenhuma.
+Materialize business knowledge. This is where models, use cases, and validators
+with deterministic rules live, **independent of UI, database, or network**.
+This layer is the core — every other layer depends on it; it depends on none.
 
-## Deve fazer
+## Must do
 
-1. **Modelar entidades e value objects** com imutabilidade e igualdade
-   consistente (`==` / `hashCode`).
-2. **Orquestrar regras via Use Cases**: cada `*UseCase` expõe um único verbo do
-   domínio e delega integrações aos contratos (`repositories/`, `services/`).
-3. **Validar invariantes** em `validators/`, lançando exceções tipadas
+1. **Model entities and value objects** with immutability and consistent
+   equality (`==` / `hashCode`).
+2. **Orchestrate rules through Use Cases**: each `*UseCase` exposes a single
+   domain verb and delegates integrations to contracts (`repositories/`,
+   `services/`).
+3. **Validate invariants** in `validators/`, throwing typed exceptions
    (`ValidationException`, `DomainException`).
-4. **Manter pureza**: código síncrono ou assíncrono previsível, sem side
-   effects além de chamadas a contratos.
-5. **Expor contratos**: interfaces (abstratas) de repositórios e serviços moram
-   aqui — implementações concretas vivem em `data/`.
+4. **Maintain purity**: predictable synchronous or asynchronous code, without
+   side effects beyond calls to contracts.
+5. **Expose contracts**: abstract repository and service interfaces belong
+   here — concrete implementations live in `data/`.
 
-## Não deve fazer
+## Must not do
 
-1. **Importar Flutter** — nada de `BuildContext`, widgets, `Material`,
-   `Cupertino`. Use Dart puro.
-2. **Acessar infraestrutura diretamente** — bancos, HTTP, mDNS, platform
-   channels pertencem a `data/services/`.
-3. **Guardar estado mutável global** — evite singletons; objetos vêm pelo
-   injector quando necessário.
-4. **Duplicar lógica** — reutilize validators e models existentes em vez de
-   recriar regras em cada use case.
-5. **Conhecer detalhes de transporte** — se uma regra precisa decidir entre
-   "buscar do cache ou da rede", essa decisão é de `data/`, não daqui.
+1. **Import Flutter** — no `BuildContext`, widgets, `Material`, or
+   `Cupertino`. Use plain Dart.
+2. **Access infrastructure directly** — databases, HTTP, mDNS, and platform
+   channels belong in `data/services/`.
+3. **Keep global mutable state** — avoid singletons; objects arrive through the
+   injector when needed.
+4. **Duplicate logic** — reuse existing validators and models rather than
+   recreate rules in each use case.
+5. **Know transport details** — if a rule must decide between "fetch from cache
+   or network", that decision belongs to `data/`, not here.
 
-## Estrutura sugerida
+## Suggested structure
 
 ```
 domain/
-├── entities/           # objetos com identidade (id + ciclo de vida)
-│   └── <agregado>/
-├── value_objects/      # valores imutáveis sem identidade (Email, CPF, ...)
-├── dtos/               # objetos de transferência entre camadas
-├── contracts/          # interfaces de baixo nível (clients, gateways)
-├── repositories/       # interfaces de repositório
-├── services/           # interfaces de serviço de domínio
-├── usecases/           # operações unitárias (1 verbo cada)
-├── validators/         # invariantes e regras de validação
-└── exceptions/         # exceções tipadas do domínio
+├── entities/           # objects with identity (id + lifecycle)
+│   └── <aggregate>/
+├── value_objects/      # immutable values without identity (Email, CPF, ...)
+├── dtos/               # transfer objects between layers
+├── contracts/          # low-level interfaces (clients, gateways)
+├── repositories/       # repository interfaces
+├── services/           # domain service interfaces
+├── usecases/           # unit operations (one verb each)
+├── validators/         # invariants and validation rules
+└── exceptions/         # typed domain exceptions
 ```
 
-## Vocabulário
+## Vocabulary
 
-- **Entidade** — objeto com identidade (`id`) e ciclo de vida próprio.
-- **Value Object** — valor imutável sem identidade (ex.: `Email`, `Hostname`).
-- **Use Case** — operação unitária do domínio exposta à aplicação.
-- **Invariante** — regra que sempre precisa ser verdadeira para o domínio
-  continuar consistente.
-- **Contrato** — interface declarada no domínio e implementada em `data/`.
+- **Entity** — object with its own identity (`id`) and lifecycle.
+- **Value Object** — immutable value without identity (for example, `Email`,
+  `Hostname`).
+- **Use Case** — unit domain operation exposed to the application.
+- **Invariant** — rule that must always be true for the domain to remain
+  consistent.
+- **Contract** — interface declared in the domain and implemented in `data/`.
