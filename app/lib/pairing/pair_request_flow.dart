@@ -66,6 +66,7 @@ Future<PairingResult> performPairing({
   required PeerTransport transport,
   required PairingStorage storage,
   required String deviceName,
+
   /// Effective relay URL the app is currently connected to. Used to
   /// detect mismatch vs `qr.relayUrl` for legacy QRs. Passed in by
   /// the caller (PairingViewModel reads it from Preferences).
@@ -81,7 +82,8 @@ Future<PairingResult> performPairing({
       toWsRelayUrl(qr.relayUrl!) != toWsRelayUrl(currentRelayUrl)) {
     throw PairingError(
       code: 'relay_mismatch',
-      message: 'QR points to "${qr.relayUrl}", '
+      message:
+          'QR points to "${qr.relayUrl}", '
           'but the app is configured for "$currentRelayUrl". '
           'Update the relay in settings or ask the Pi to generate '
           'a new QR.',
@@ -130,9 +132,7 @@ Future<PairingResult> performPairing({
     // only in the latter case do we want to fall back to qr.roomId.
     final rawRoom = inner['room_id'];
     final piEchoedRoom = rawRoom is String && rawRoom.isNotEmpty;
-    final piRoomId = piEchoedRoom
-        ? pairOk.roomId
-        : (qr.roomId ?? 'main');
+    final piRoomId = piEchoedRoom ? pairOk.roomId : (qr.roomId ?? 'main');
     final peer = PeerRecord(
       remoteEpk: qr.epk,
       sessionName: pairOk.sessionName,
@@ -162,28 +162,3 @@ Future<PairingResult> performPairing({
     message: 'Unknown response type: $type',
   );
 }
-
-/// Convenience overload that derives `currentRelayUrl` from a
-/// [Preferences]-aware caller. Use directly from production code; tests
-/// can still call [performPairing] with an explicit URL.
-Future<PairingResult> performPairingWithRelay(
-  String currentRelayUrl, {
-  required QrPairPayload qr,
-  required PeerTransport transport,
-  required PairingStorage storage,
-  required String deviceName,
-}) =>
-    performPairing(
-      qr: qr,
-      transport: transport,
-      storage: storage,
-      deviceName: deviceName,
-      currentRelayUrl: currentRelayUrl,
-    );
-
-// Silence "unused" once we wire helpers from caller-side; relay_config
-// is intentionally imported because PairingViewModel and tests may
-// resolve currentRelayUrl via it.
-// ignore: unused_element
-void _keepRelayConfigImport() => resolveRelayUrl;
-
