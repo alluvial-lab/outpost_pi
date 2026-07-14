@@ -64,8 +64,19 @@ class SettingsViewModel extends ViewModel<SettingsState> {
     await _load();
   }
 
-  /// Effective relay URL the app is connecting to right now.
-  String get effectiveRelayUrl => resolveRelayUrl(_prefs);
+  /// Current relay configuration. The explicit unconfigured branch keeps
+  /// legacy completed-onboarding installs recoverable in Settings.
+  RelayResolution get relayResolution => resolveRelayUrl(_prefs);
+
+  /// Display label derived from the canonical resolution rather than a UI-only
+  /// null check.
+  String get effectiveRelayLabel => switch (relayResolution) {
+    ConfiguredRelay(:final url) => url,
+    UnconfiguredRelay() => 'Not configured',
+  };
+
+  /// Compatibility projection for the existing Settings field label.
+  String get effectiveRelayUrl => effectiveRelayLabel;
 
   bool get isDebugLogging => _prefs.debugLogging;
 
@@ -83,9 +94,9 @@ class SettingsViewModel extends ViewModel<SettingsState> {
   /// intentionally works even while capture is disabled.
   Future<void> clearDebugLog() => _debugLog?.clear() ?? Future.value();
 
-  /// User-set override for the relay URL. If `null`, the app is using the
-  /// default endpoint [kDefaultRelayUrl].
-  String get relayUrlOverride => _prefs.relayUrl ?? kDefaultRelayUrl;
+  /// User-set relay URL. A missing value intentionally keeps the editor blank
+  /// so users can recover legacy installations by supplying their own relay.
+  String get relayUrlOverride => _prefs.relayUrl ?? '';
 
   Future<String?> saveRelayUrl(String? value) async {
     if (value == null || value.trim().isEmpty) {

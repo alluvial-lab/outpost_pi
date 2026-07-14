@@ -373,23 +373,25 @@ void main() {
       vm.dispose();
     });
 
-    test('relayUrlOverride defaults to kDefaultRelayUrl (pre-fill for the '
-        '"use default" button) and reflects a saved override', () async {
-      final prefs = Preferences(_FakeSecureStorage());
-      final vm = SettingsViewModel(_FakeStorage([]), prefs, _conn());
-      await Future<void>.delayed(Duration.zero);
+    test(
+      'unconfigured relay stays blank and exposes a recovery label',
+      () async {
+        final prefs = Preferences(_FakeSecureStorage());
+        final vm = SettingsViewModel(_FakeStorage([]), prefs, _conn());
+        await Future<void>.delayed(Duration.zero);
 
-      // No override yet → the field pre-fills with the default endpoint.
-      expect(vm.relayUrlOverride, kDefaultRelayUrl);
-      expect(vm.effectiveRelayUrl, kDefaultRelayUrl);
+        expect(vm.relayResolution, isA<UnconfiguredRelay>());
+        expect(vm.relayUrlOverride, isEmpty);
+        expect(vm.effectiveRelayLabel, 'Not configured');
 
-      // Saving the default URL explicitly is valid (what the button does).
-      final err = await vm.saveRelayUrl(kDefaultRelayUrl);
-      expect(err, isNull);
-      expect(vm.relayUrlOverride, kDefaultRelayUrl);
-      expect(prefs.relayUrl, kDefaultRelayUrl);
+        final err = await vm.saveRelayUrl('https://relay.example');
+        expect(err, isNull);
+        expect(vm.relayResolution, isA<ConfiguredRelay>());
+        expect(vm.relayUrlOverride, 'https://relay.example');
+        expect(prefs.relayUrl, 'https://relay.example');
 
-      vm.dispose();
-    });
+        vm.dispose();
+      },
+    );
   });
 }

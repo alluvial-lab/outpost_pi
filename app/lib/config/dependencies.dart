@@ -101,7 +101,9 @@ Future<void> setupDependencies() async {
   // post-Wave-2 URL scheme decision — see plan/24-fix-app-url-scheme).
   // No translation needed: the relay's `/mesh` endpoint shares host +
   // port with the WebSocket.
-  final meshClient = MeshClient(baseUrlProvider: () => resolveRelayUrl(prefs));
+  final meshClient = MeshClient(
+    relayResolutionProvider: () => resolveRelayUrl(prefs),
+  );
   _injector.addInstance<MeshClient>(meshClient);
   final meshSync = MeshSyncService(
     meshClient,
@@ -254,6 +256,12 @@ Future<IChannel> _productionConnectionFactory(
   PeerRecord peer,
   CancelToken cancel,
 ) async {
+  final resolution = resolveRelayUrl(_injector.get<Preferences>());
+  if (resolution is! ConfiguredRelay) {
+    throw const RelayNotConfiguredException();
+  }
+  final relayUrl = resolution.url;
+
   final bridge = injector.get<OwnerIdentityBridge>();
   final ownerKey = await bridge.requireKeyPair();
   if (cancel.isCancelled) throw _CancelledError();
@@ -265,10 +273,8 @@ Future<IChannel> _productionConnectionFactory(
   // its retry/backoff path, which is observable as `StatusRetrying` and
   // renders a "reconnecting" banner rather than an empty spinner.
   const wsConnectTimeout = Duration(seconds: 10);
-  // Resolve the GLOBAL relay URL (plan 14): user override > default.
   // `peer.relayUrl` is kept on PeerRecord for legacy QR payloads but is
   // no longer consulted when opening a connection.
-  final relayUrl = resolveRelayUrl(_injector.get<Preferences>());
   // Construct the transport with the real destination room from the start
   // so post-auth frames are demuxed against the correct room from frame 1 —
   // the relay can push envelopes before any post-connect setActiveRoom call
@@ -320,9 +326,12 @@ Future<PeerTransport> _productionPairingTransportFactory(
   // from frame 1. `performPairing`'s own `setActiveRoom` is now a
   // redundant safety (kept harmless) — see
   // `story-fix-transport-active-room-reestablishment-on-reconnect`.
-  final relayUrl = resolveRelayUrl(_injector.get<Preferences>());
+  final resolution = resolveRelayUrl(_injector.get<Preferences>());
+  if (resolution is! ConfiguredRelay) {
+    throw const RelayNotConfiguredException();
+  }
   return WsTransport.connect(
-    relayUrl: relayUrl,
+    relayUrl: resolution.url,
     peerPubkey: qr.epk,
     ed25519Key: deviceEd25519,
     deviceId: await _injector.get<DeviceId>().get(),
