@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     "Deciding how to run an always-on coding agent? outpost-pi keeps Pi alive 24/7 and puts it in your pocket. Here's when that's the right shape — and when an all-in-one platform isn't.",
 };
 
-const GITHUB_URL = "https://github.com/jacobaraujo7/outpost_pi";
+const GITHUB_URL = "https://github.com/KevounC/outpost_pi";
 
 const highlights = [
   {
@@ -41,7 +41,7 @@ const highlights = [
   {
     title: "Open source, self-hostable",
     description:
-      "MIT licensed. Run the community relay or host your own; traffic is encrypted in transit, and self-hosting keeps it on infrastructure you control.",
+      "MIT licensed. Build and run your own relay; traffic is encrypted in transit, and your relay stays on infrastructure you control.",
   },
 ];
 

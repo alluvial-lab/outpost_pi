@@ -1,7 +1,7 @@
 ---
 id: story-rebrand-site-docs-self-host-only-prose
 kind: story
-stage: drafting
+stage: review
 tags: [rebrand, site, docs]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -42,8 +42,18 @@ in site prose → `KevounC/outpost_pi` / project-local.
 
 ## Acceptance criteria
 
-- [ ] No `jacobmoura.work` or `relay-rp1` reference remains in `site/src/`.
-- [ ] No `jacobaraujo7` or `jacobmoura7` reference remains in `site/src/`.
-- [ ] Site docs present self-hosted relay as the only option (no community
+- [x] No `jacobmoura.work` or `relay-rp1` reference remains in `site/src/`.
+- [x] No `jacobaraujo7` or `jacobmoura7` reference remains in `site/src/`.
+- [x] Site docs present self-hosted relay as the only option (no community
   relay).
-- [ ] `pnpm lint` and `pnpm build` from `site/` pass.
+- [x] `pnpm lint` and `pnpm build` from `site/` pass.
+
+## Implementation notes
+
+- Files changed: `site/src/app/{cockpit,docs,privacy,terms,why}/page.tsx`, `site/src/app/layout.tsx`, `site/src/app/tutorials/mesh-remote/page.tsx`, `site/src/components/{header,footer}.tsx`, and `site/src/components/landing/{hero,sections}.tsx`.
+- Relay docs now require building `outpost-pi-relay` from local `relay/` source; the public/community option, fallback URL, Docker Hub image, and stale GitHub references are removed.
+- Privacy and terms pages now describe the self-host-only model rather than retaining inherited claims about a third-party-operated relay or its controller.
+- Tests added: none (copy-only change).
+- Verification: `corepack pnpm lint` and `corepack pnpm build` passed from `site/` with the required writable cache environment. (`pnpm` was not installed as a standalone executable, so Corepack supplied the project-pinned pnpm.)
+- Discrepancies from design: none. The delegated instruction explicitly requested advancing this prose story directly from `drafting` to `review`.
+- Adjacent issues parked: none.

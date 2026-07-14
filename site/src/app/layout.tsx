@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   },
   description: siteDescription,
   applicationName: "Outpost-Pi",
-  authors: [{ name: "Flutterando", url: "https://flutterando.com.br" }],
+  authors: [{ name: "Outpost-Pi", url: "https://github.com/KevounC/outpost_pi" }],
   keywords: [
     "Outpost-Pi",
     "coding agents",
