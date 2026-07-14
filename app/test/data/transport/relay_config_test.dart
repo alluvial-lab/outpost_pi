@@ -14,8 +14,7 @@ class _FakeStore implements FlutterSecureStorage {
     WebOptions? webOptions,
     MacOsOptions? mOptions,
     WindowsOptions? wOptions,
-  }) async =>
-      _m[key];
+  }) async => _m[key];
   @override
   Future<void> write({
     required String key,
@@ -33,6 +32,7 @@ class _FakeStore implements FlutterSecureStorage {
       _m[key] = value;
     }
   }
+
   @override
   Future<void> delete({
     required String key,
@@ -42,8 +42,7 @@ class _FakeStore implements FlutterSecureStorage {
     WebOptions? webOptions,
     MacOsOptions? mOptions,
     WindowsOptions? wOptions,
-  }) async =>
-      _m.remove(key);
+  }) async => _m.remove(key);
   @override
   dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
@@ -54,7 +53,7 @@ void main() {
       expect(isValidRelayUrl('http://localhost'), isTrue);
       expect(isValidRelayUrl('http://127.0.0.1:8080'), isTrue);
       expect(isValidRelayUrl('https://relay.example.com'), isTrue);
-      expect(isValidRelayUrl('https://relay-rp1.jacobmoura.work'), isTrue);
+      expect(isValidRelayUrl('https://selfhosted.example'), isTrue);
     });
 
     test('rejects ws:// and wss:// — those are conversions only', () {
@@ -66,10 +65,8 @@ void main() {
       expect(isValidRelayUrl(''), isFalse);
       expect(isValidRelayUrl('ftp://example.com'), isFalse);
       expect(isValidRelayUrl('foo'), isFalse);
-      expect(isValidRelayUrl('https://'), isFalse,
-          reason: 'no host segment');
-      expect(isValidRelayUrl('http://'), isFalse,
-          reason: 'no host segment');
+      expect(isValidRelayUrl('https://'), isFalse, reason: 'no host segment');
+      expect(isValidRelayUrl('http://'), isFalse, reason: 'no host segment');
     });
   });
 
@@ -99,34 +96,44 @@ void main() {
 
   group('relay_config — toWsRelayUrl', () {
     test('translates http(s) to ws(s)', () {
-      expect(toWsRelayUrl('https://relay.example.com'),
-          'wss://relay.example.com');
-      expect(toWsRelayUrl('http://localhost:8080'),
-          'ws://localhost:8080');
+      expect(
+        toWsRelayUrl('https://relay.example.com'),
+        'wss://relay.example.com',
+      );
+      expect(toWsRelayUrl('http://localhost:8080'), 'ws://localhost:8080');
     });
 
     test('passes ws(s) through unchanged (legacy QR / PeerRecord)', () {
-      expect(toWsRelayUrl('wss://relay.example.com'),
-          'wss://relay.example.com');
+      expect(
+        toWsRelayUrl('wss://relay.example.com'),
+        'wss://relay.example.com',
+      );
       expect(toWsRelayUrl('ws://localhost'), 'ws://localhost');
     });
   });
 
   group('relay_config — resolveRelayUrl', () {
-    test('returns prefs.relayUrl when set', () async {
+    test('returns ConfiguredRelay when a stored URL is present', () async {
       final p = Preferences(_FakeStore());
       await p.setRelayUrl('https://custom.example.com');
-      expect(resolveRelayUrl(p), 'https://custom.example.com');
+
+      final resolution = resolveRelayUrl(p);
+      expect(resolution, isA<ConfiguredRelay>());
+      expect((resolution as ConfiguredRelay).url, 'https://custom.example.com');
+      expect(resolution.source, RelaySource.preferences);
     });
 
-    test('falls back to kDefaultRelayUrl when override is null', () async {
-      final p = Preferences(_FakeStore());
-      expect(p.relayUrl, isNull);
-      expect(resolveRelayUrl(p), kDefaultRelayUrl);
+    test('returns UnconfiguredRelay when no stored URL is present', () {
+      final resolution = resolveRelayUrl(Preferences(_FakeStore()));
+      expect(resolution, isA<UnconfiguredRelay>());
+      expect(resolution.source, RelaySource.unconfigured);
     });
 
-    test('kDefaultRelayUrl is https://', () {
-      expect(kDefaultRelayUrl, startsWith('https://'));
+    test('uses a shared actionable message for unconfigured failures', () {
+      expect(
+        const RelayNotConfiguredException().toString(),
+        kRelayNotConfiguredMessage,
+      );
     });
   });
 }
