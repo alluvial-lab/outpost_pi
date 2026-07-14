@@ -1,14 +1,14 @@
 /* ===========================================================
    Outpost-Pi Cockpit — release manifest
    The download page reads a `latest.json` published by the release CI
-   (plan/43, step 3) to the VPS. The shape below is the CLOSED CONTRACT
-   between that CI and this site (plan/43, step 4) — do not drift it on
-   one side without the other.
+   (plan/43, step 3). The shape below is the CLOSED CONTRACT between that CI
+   and this site (plan/43, step 4) — do not drift it on one side without the
+   other.
 
-   The VPS endpoint does not exist yet, so the manifest URL is
-   configurable (NEXT_PUBLIC_COCKPIT_MANIFEST_URL) and the loader falls
-   back to MOCK_MANIFEST — same shape — whenever the fetch fails. The page
-   still renders, just flagged "not yet published".
+   The manifest URL is optional (NEXT_PUBLIC_COCKPIT_MANIFEST_URL). When it is
+   absent, or when the configured fetch fails, the loader falls back to
+   MOCK_MANIFEST — same shape. The page still renders, just flagged "not yet
+   published".
    =========================================================== */
 
 export type CockpitPlatform = "macos" | "windows" | "linux";
@@ -32,14 +32,8 @@ export type CockpitManifest = {
   artifacts: CockpitArtifact[];
 };
 
-/**
- * Where the live manifest lives. Set NEXT_PUBLIC_COCKPIT_MANIFEST_URL once
- * the release pipeline publishes to the VPS; until then this default 404s
- * and the page falls back to MOCK_MANIFEST.
- */
-export const MANIFEST_URL =
-  process.env.NEXT_PUBLIC_COCKPIT_MANIFEST_URL ??
-  "https://rp-s3.jacobmoura.work/downloads/cockpit/latest.json";
+/** Optional live Cockpit manifest override. */
+export const MANIFEST_URL = process.env.NEXT_PUBLIC_COCKPIT_MANIFEST_URL;
 
 /**
  * Stand-in manifest used during development and whenever the live fetch
@@ -107,8 +101,8 @@ export const MOCK_MANIFEST: CockpitManifest = {
 export type ManifestLoad = {
   manifest: CockpitManifest;
   /**
-   * True when the data came from the live VPS manifest; false when we fell
-   * back to the bundled mock (URL unset, fetch failed, or bad shape).
+   * True when the data came from the configured live manifest; false when we
+   * fell back to the bundled mock (URL unset, fetch failed, or bad shape).
    */
   live: boolean;
 };
@@ -140,13 +134,18 @@ function isManifest(d: unknown): d is CockpitManifest {
 }
 
 /**
- * Load the release manifest. Fetches the live VPS endpoint at request time
- * (no build-time caching — the manifest is published independently of the
- * site deploy, so a static snapshot would go stale or freeze the page in
- * "not published" state). On any failure (network, non-200, malformed)
- * returns the mock so the page degrades gracefully instead of crashing.
+ * Load the release manifest. Fetches the configured live endpoint at request
+ * time (no build-time caching — the manifest is published independently of
+ * the site deploy, so a static snapshot would go stale or freeze the page in
+ * "not published" state). When no URL is configured, or on any fetch failure
+ * (network, non-200, malformed), returns the mock so the page degrades
+ * gracefully instead of crashing.
  */
 export async function loadCockpitManifest(): Promise<ManifestLoad> {
+  if (!MANIFEST_URL) {
+    return { manifest: MOCK_MANIFEST, live: false };
+  }
+
   try {
     const res = await fetch(MANIFEST_URL, { cache: "no-store" });
     if (!res.ok) throw new Error(`manifest responded ${res.status}`);

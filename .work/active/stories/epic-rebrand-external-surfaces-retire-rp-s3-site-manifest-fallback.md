@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-external-surfaces-retire-rp-s3-site-manifest-fallback
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, site]
 parent: epic-rebrand-external-surfaces-retire-rp-s3
 depends_on: []
@@ -29,8 +29,20 @@ Implement Unit 2 of the parent feature.
 
 ## Acceptance criteria
 
-- [ ] Absent manifest environment variables return the current mock without a
+- [x] Absent manifest environment variables return the current mock without a
   network fetch.
-- [ ] Explicit URLs retain current fetch, shape validation, and failure fallback.
-- [ ] No rp-s3 URL remains in either module.
-- [ ] Appropriate site static verification passes or its prerequisite is noted.
+- [x] Explicit URLs retain current fetch, shape validation, and failure fallback.
+- [x] No rp-s3 URL remains in either module.
+- [x] Appropriate site static verification passes or its prerequisite is noted.
+
+## Implementation notes
+
+- Removed the hard-coded rp-s3 fallback while preserving each environment
+  variable as an optional manifest URL override. The loaders now return their
+  existing mock immediately when the override is absent, so no network request
+  is attempted; configured URLs still use the existing fetch, shape validation,
+  and catch fallback path.
+- Preserved all `outpost-pi.jacobmoura.work` mock artifact URLs unchanged; this
+  story intentionally does not take on the sibling hostname migration.
+- Verification: with the required writable pnpm/cache environment configured,
+  `corepack pnpm lint` and `corepack pnpm build` both passed from `site/`.
