@@ -1,92 +1,94 @@
 # Outpost-Pi — Pi Extension (Node + TypeScript)
 
-Extensão para o [Pi coding agent](https://github.com/earendil-works/pi) que
-adiciona o slash command `/outpost-pi`. Embarca o SDK do Pi
-(`@earendil-works/pi-coding-agent`) e expõe via WebSocket pro relay.
+Extension for the [Pi coding agent](https://github.com/earendil-works/pi) that
+adds the `/outpost-pi` slash command. It embeds the Pi SDK
+(`@earendil-works/pi-coding-agent`) and exposes it to the relay through
+WebSocket.
 
-Faz parte da **mesh de agentes coding cross-PC** do Outpost-Pi: cada PC
-roda esta extensão (Node daemon) com uma Pi-key Ed25519 no keyring do
-sistema; o celular é autenticador inicial via QR; entre PCs irmãos do
-mesmo Owner, broker UDS local + relay forward Pi-to-Pi via WS roteiam
-envelopes com prefixo `<pc>:<peer>`.
+It is part of Outpost-Pi's **cross-PC coding-agent mesh**: each PC runs this
+extension (a Node daemon) with an Ed25519 Pi key in the system keyring; the
+phone is the initial QR authenticator; among sibling PCs owned by the same
+Owner, a local UDS broker plus Pi-to-Pi relay forwarding over WS route
+envelopes prefixed with `<pc>:<peer>`.
 
-Protocolo, identidades, ACK, roteamento cross-PC e trust model: ver
-[`../PROTOCOL.md`](../PROTOCOL.md) (doc canônica do repo).
+For protocol, identities, ACKs, cross-PC routing, and the trust model, see
+[`../PROTOCOL.md`](../PROTOCOL.md) (the repository's canonical document).
 
 ## Stack
 
 - Node 20+ / TypeScript 6
-- **Module system**: ESM only (NodeNext). Imports com extensão `.js` mesmo em `.ts`
-- Package manager: **pnpm** (não usar npm/yarn)
+- **Module system**: ESM only (NodeNext). Imports use the `.js` extension even in `.ts` files
+- Package manager: **pnpm** (do not use npm/yarn)
 - Crypto/auth: Ed25519 via `@noble/ed25519` for Pi/Owner identities, pairing signatures, and relay challenge-response. Transport confidentiality is WebSocket over TLS; there is **no app-layer E2E encryption** in the current implementation.
-- Pi-secret storage: `@napi-rs/keyring` (Keychain macOS / libsecret Linux desktop / Credential Manager Windows). Headless Linux sem D-Bus cai pra `~/.pi/remote/identity.json` (`chmod 0600`) com warning — instale GNOME Keyring/KWallet pra hardening real.
+- Pi-secret storage: `@napi-rs/keyring` (macOS Keychain / desktop Linux libsecret / Windows Credential Manager). Headless Linux without D-Bus falls back to `~/.pi/remote/identity.json` (`chmod 0600`) with a warning — install GNOME Keyring/KWallet for real hardening.
 
 ## Comandos
 
-No sandbox (`dev-vm`), `/home/agent/.cache` é read-only e o pnpm 11.x falha com
-`[ERR_SQLITE_ERROR] unable to open database file` se não redirecionar store/caches.
-`/home/agent/.npmrc` é um char device quebrado (aviso `EACCES` inofensivo — ignore).
-Sempre prefixe com env repo-local:
+In the sandbox (`dev-vm`), `/home/agent/.cache` is read-only and pnpm 11.x fails
+with `[ERR_SQLITE_ERROR] unable to open database file` unless its store/caches are
+redirected. `/home/agent/.npmrc` is a broken character device (the harmless
+`EACCES` warning can be ignored). Always prefix commands with repository-local
+environment variables:
 
 ```bash
 cd pi-extension
 export PNPM_HOME=~/projects/outpost_pi/.pnpm-store
 export npm_config_cache=~/projects/outpost_pi/.npm-cache
 export XDG_CACHE_HOME=~/projects/outpost_pi/.xdg-cache
-corepack pnpm install --store-dir ~/projects/outpost_pi/.pnpm-store   # se faltar node_modules
-corepack pnpm typecheck   # tsc --noEmit, deve passar zero erros
+corepack pnpm install --store-dir ~/projects/outpost_pi/.pnpm-store   # if node_modules is missing
+corepack pnpm typecheck   # tsc --noEmit, must pass with zero errors
 corepack pnpm build      # tsc -> dist/
 corepack pnpm dev        # tsx src/index.ts
-corepack pnpm exec vitest run <caminho/do/teste.ts>   # tests alvo; `pnpm test` completo tem falhas env conhecidas (EPERM em /tmp/claude/*.sock)
+corepack pnpm exec vitest run <path/to/test.ts>   # targeted tests; full `pnpm test` has known environment failures (EPERM in /tmp/claude/*.sock)
 ```
 
-Veja [`../.agents/skills/pi-extension-typescript/SKILL.md`](../.agents/skills/pi-extension-typescript/SKILL.md) para o porquê.
+See [`../.agents/skills/pi-extension-typescript/SKILL.md`](../.agents/skills/pi-extension-typescript/SKILL.md) for the rationale.
 
-## Configuração do relay
+## Relay configuration
 
-Ordem de resolução (precedência):
+Resolution order (precedence):
 
-1. `process.env.OUTPOST_PI_RELAY` — escape hatch pra CI/ops
-2. `~/.pi/remote/config.json` (`{ "relay": "..." }`) — persistido via
+1. `process.env.OUTPOST_PI_RELAY` — escape hatch for CI/ops
+2. `~/.pi/remote/config.json` (`{ "relay": "..." }`) — persisted through
    `/outpost-pi set-relay <url>`
-3. Sem uma dessas fontes, o relay está desconfigurado; `/outpost-pi` informa
-   como configurar antes de abrir uma conexão.
+3. Without either source, the relay is unconfigured; `/outpost-pi` explains
+   how to configure it before opening a connection.
 
 Slash commands:
 
-- `/outpost-pi set-relay <http://… | https://…>` — grava URL em
-  `~/.pi/remote/config.json`. Validação rejeita `ws://`, `wss://`,
-  string vazia e URLs malformadas (a extensão converte http(s)→ws(s)
-  internamente ao abrir o WebSocket).
-- `/outpost-pi status` — mostra o estado do relay e, quando desconfigurado,
-  orienta a executar `/outpost-pi set-relay <url>`.
+- `/outpost-pi set-relay <http://… | https://…>` — writes the URL to
+  `~/.pi/remote/config.json`. Validation rejects `ws://`, `wss://`, empty
+  strings, and malformed URLs (the extension internally converts http(s)→ws(s)
+  when opening the WebSocket).
+- `/outpost-pi status` — shows relay status and, when unconfigured, instructs
+  the user to run `/outpost-pi set-relay <url>`.
 
-`_cmdStart` chama `resolveRelayUrl()` e só abre um socket para uma resolução
-configurada (`env` ou `config`).
+`_cmdStart` calls `resolveRelayUrl()` and opens a socket only for a configured
+resolution (`env` or `config`).
 
-## Dependências importantes
+## Important dependencies
 
 - `@earendil-works/pi-coding-agent` — SDK do Pi (`AgentSession`, `SessionManager`, `ModelRegistry`)
 - `ws` — WebSocket client
 
-## Convenções
+## Conventions
 
-- **Strict TS**: `"strict": true`, sem `any` exceto onde inevitável (use `unknown` + narrow)
-- **Imports**: `import { foo } from "./bar.js"` (extensão obrigatória em ESM)
+- **Strict TS**: `"strict": true`, no `any` except where unavoidable (use `unknown` + narrow)
+- **Imports**: `import { foo } from "./bar.js"` (extension required in ESM)
 - **Top-level await** ok (ESM permite)
-- **Erros**: `class XxxError extends Error` para classes nomeadas, throw cedo no boundary
-- **Logging**: `console.log` ok no MVP; depois migrar pra `pino` ou similar
+- **Errors**: `class XxxError extends Error` for named classes; throw early at the boundary
+- **Logging**: `console.log` is acceptable in the MVP; later migrate to `pino` or similar
 
-## NÃO fazer
+## Must not do
 
-- Não escrever CommonJS (`require`, `module.exports`)
-- Não comitar `dist/` (já no .gitignore raiz)
-- Não afirmar nem implementar E2E ad hoc; o modelo atual é TLS + Ed25519 para autenticação/pareamento, e qualquer cifragem de payload futura deve passar por `PROTOCOL.md` e dependências explícitas
-- Não introduzir dependência que não seja ESM-friendly
+- Do not write CommonJS (`require`, `module.exports`)
+- Do not commit `dist/` (already in the root `.gitignore`)
+- Do not claim or implement ad hoc E2E; the current model is TLS + Ed25519 for authentication/pairing, and any future payload encryption must go through `PROTOCOL.md` and explicit dependencies
+- Do not introduce a dependency that is not ESM-friendly
 
-## Modo orquestrado
+## Orchestrated mode
 
-Se receber um prompt começando com `[ORCH:<task-id>]`, leia
-`../.orchestration/INSTRUCTIONS.md` antes de qualquer outra ação. Esse marker
-indica que outro agente está coordenando o trabalho e tem regras específicas
-(onde escrever resultado, não comitar, etc).
+If you receive a prompt beginning with `[ORCH:<task-id>]`, read
+`../.orchestration/INSTRUCTIONS.md` before taking any other action. This marker
+indicates that another agent is coordinating the work and has specific rules
+(where to write the result, do not commit, and so on).
