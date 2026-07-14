@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-external-surfaces-no-default-relay
 kind: feature
-stage: implementing
+stage: review
 tags: [rebrand, pi-extension, app]
 parent: epic-rebrand-external-surfaces
 depends_on: []
