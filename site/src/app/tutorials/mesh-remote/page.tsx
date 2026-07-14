@@ -14,6 +14,7 @@ export const metadata: Metadata = {
     "Route messages between agents on different PCs through the relay, address peers as pc_label:peer, and understand what an ACK does and does not guarantee.",
 };
 
+/** Render the cross-machine agent-mesh tutorial. */
 export default function MeshRemoteTutorial() {
   return (
     <div className="page">
