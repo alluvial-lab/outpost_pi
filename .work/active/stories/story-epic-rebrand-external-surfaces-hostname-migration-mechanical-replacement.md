@@ -1,7 +1,7 @@
 ---
 id: story-epic-rebrand-external-surfaces-hostname-migration-mechanical-replacement
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, pi-extension, app, cockpit, site, docs]
 parent: epic-rebrand-external-surfaces-hostname-migration
 depends_on: []
@@ -57,15 +57,28 @@ is historical/owned by the no-default-relay transition.
 
 ## Acceptance criteria
 
-- [ ] Every listed owned hostname becomes `outpost-pi.kevoun.com`, including
+- [x] Every listed owned hostname becomes `outpost-pi.kevoun.com`, including
   `/download`, `/privacy`, `/install.sh`, and `/tutorials/daemon` paths.
-- [ ] `site/public/install.sh` exactly matches the canonical installer after
+- [x] `site/public/install.sh` exactly matches the canonical installer after
   `pnpm build`.
-- [ ] The app update-banner fallback unit test asserts
+- [x] The app update-banner fallback unit test asserts
   `https://outpost-pi.kevoun.com/download`.
-- [ ] A scoped grep across `README.md`, `app`, `branding`, `cockpit`,
+- [x] A scoped grep across `README.md`, `app`, `branding`, `cockpit`,
   `pi-extension`, and `site` finds no owned old homepage hostname (the SVG is
   handled by the dependent story); the retained `relay-rp1` and `rp-s3` hosts
   are untouched.
-- [ ] From `site/`, with repo-local pnpm caches, `pnpm lint` and `pnpm build`
+- [x] From `site/`, with repo-local pnpm caches, `pnpm lint` and `pnpm build`
   pass.
+
+## Implementation notes
+
+- Applied the operator-confirmed `outpost-pi.kevoun.com` mapping across the
+  listed docs, installer, metadata, update fallbacks, store copy, cockpit
+  mock artifacts, and site install snippets. The community relay and `rp-s3`
+  hosts were left for their sibling stories.
+- Kept `pi-extension/install.sh` canonical and regenerated
+  `site/public/install.sh` through the site build; the copies compare exactly.
+- `corepack pnpm typecheck` passed in `pi-extension/`, `flutter test
+  test/ui/update/update_banner_viewmodel_test.dart` passed in `app/`, and
+  `corepack pnpm lint && corepack pnpm build` passed in `site/`. The remaining
+  legacy hostname is the branding SVG owned by the dependent redraw story.

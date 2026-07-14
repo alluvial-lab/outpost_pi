@@ -921,7 +921,7 @@ export default function DocsPage() {
           <li>
             Homepage:{" "}
             <Link href="/" className="text-accent underline">
-              outpost-pi.jacobmoura.work
+              outpost-pi.kevoun.com
             </Link>
           </li>
           <li>

@@ -8,7 +8,7 @@
 > superpowers: agents that talk to each other on the same machine, and a mobile
 > app that drives Pi from your phone.
 
-**Homepage:** <https://outpost-pi.jacobmoura.work>
+**Homepage:** <https://outpost-pi.kevoun.com>
 
 `/outpost-pi` is a single slash command that wires both at once. Run it; the
 first time it asks a couple of questions and you are done.
@@ -107,7 +107,7 @@ The relay sees plaintext envelopes at rest and in forwarding — see
 **Get the app** — all current download options (Google Play, App Store, and
 direct builds while public releases roll out):
 
-<https://outpost-pi.jacobmoura.work/#get-the-app>
+<https://outpost-pi.kevoun.com/#get-the-app>
 
 ---
 
@@ -415,7 +415,7 @@ the mesh/app like any prompt; the cron layer only audits the dispatch.
   `woke_and_delivered`, `deliver_failed`, `skipped_busy`, `skipped_down`, or
   `skipped_disabled` — read it with `outpost-pi cron log`.
 
-Step-by-step walkthrough: the [daemon tutorial](https://outpost-pi.jacobmoura.work/tutorials/daemon).
+Step-by-step walkthrough: the [daemon tutorial](https://outpost-pi.kevoun.com/tutorials/daemon).
 
 ### Footer + title
 
@@ -603,7 +603,7 @@ for palette and export sizes.
 
 ## Links
 
-- Homepage: <https://outpost-pi.jacobmoura.work>
+- Homepage: <https://outpost-pi.kevoun.com>
 - Source: <https://github.com/KevounC/outpost_pi>
 - Pi coding agent: <https://github.com/earendil-works/pi>
 - Relay (self-hosting guide): <https://github.com/KevounC/outpost_pi/blob/main/relay/README.md>
