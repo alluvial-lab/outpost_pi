@@ -13,7 +13,7 @@ against the package files in the relevant subproject before relying on it.
 | `relay/` | Rust (edition 2024), axum 0.7, tokio, rusqlite | `relay/Cargo.toml` | single Rust binary |
 | `cockpit/` | Flutter / Dart (desktop) | `cockpit/pubspec.yaml` | macOS / Windows / Linux desktop |
 | `site/` | Next.js (App Router) + React + Tailwind | `site/package.json` | static / standalone Docker |
-| `rp-s3/` | Rust + axum (download server) | `rp-s3/Cargo.toml` | container serving cockpit installers |
+| `rp-s3/` | Rust + axum (download server) | `rp-s3/Cargo.toml` | dormant download-server implementation; not currently deployed |
 
 Key dependencies: Pi SDK (`@earendil-works/pi-coding-agent`) consumed by the
 extension; `ws` (WebSocket) in the extension; `@napi-rs/keyring` for Pi-key
