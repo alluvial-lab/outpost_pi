@@ -1,20 +1,14 @@
-import 'package:app/data/transport/relay_config.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/onboarding/states/onboarding_state.dart';
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-/// Relay selection is being migrated to require an explicit self-hosted URL.
-/// The temporary Community card remains until the onboarding flow slice removes
-/// it, but it no longer names or resolves a fallback endpoint.
-
-/// Onboarding step 2 — relay choice. Two vertical cards: self-hosted
-/// (recommended for the privacy story) vs community (convenience).
-/// The custom card carries a URL field with inline validation; leaving
-/// it empty falls back to the default community relay.
-class RelayStep extends StatelessWidget {
+/// Onboarding step 2 — require the URL of the user's self-hosted relay.
+///
+/// The relay URL remains in [OnboardingInProgress] so validation errors from
+/// the ViewModel render here. This widget owns its controller for its mounted
+/// lifetime instead of allocating one during every rebuild.
+class RelayStep extends StatefulWidget {
   final OnboardingInProgress state;
-  final ValueChanged<RelayChoice> onChoice;
   final ValueChanged<String> onCustomUrl;
   final VoidCallback onBack;
   final VoidCallback onNext;
@@ -22,17 +16,39 @@ class RelayStep extends StatelessWidget {
   const RelayStep({
     super.key,
     required this.state,
-    required this.onChoice,
     required this.onCustomUrl,
     required this.onBack,
     required this.onNext,
   });
 
-  bool get _canContinue {
-    if (state.relayChoice == RelayChoice.community) return true;
-    // Empty custom URL is allowed (treated as default community relay).
-    if (state.customRelayUrl.isEmpty) return true;
-    return isValidRelayUrl(state.customRelayUrl);
+  @override
+  State<RelayStep> createState() => _RelayStepState();
+}
+
+class _RelayStepState extends State<RelayStep> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.state.customRelayUrl);
+  }
+
+  @override
+  void didUpdateWidget(covariant RelayStep oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextUrl = widget.state.customRelayUrl;
+    if (_controller.text == nextUrl) return;
+    _controller.value = TextEditingValue(
+      text: nextUrl,
+      selection: TextSelection.collapsed(offset: nextUrl.length),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -45,7 +61,7 @@ class RelayStep extends StatelessWidget {
         children: [
           const SizedBox(height: 24),
           Text(
-            'Choose a relay',
+            'Configure your relay',
             style: TextStyle(
               fontFamily: kMonoFamily,
               fontSize: 16,
@@ -55,38 +71,63 @@ class RelayStep extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Where the app and your PC meet.',
+            'Enter the URL for the self-hosted relay you operate.',
             style: TextStyle(
-                fontFamily: kMonoFamily, fontSize: 11, color: colors.muted),
+              fontFamily: kMonoFamily,
+              fontSize: 11,
+              color: colors.muted,
+            ),
           ),
           const SizedBox(height: 24),
-          _CustomRelayCard(
-            badge: 'recommended',
-            description: 'Self-hosted. Best privacy.',
-            selected: state.relayChoice == RelayChoice.custom,
-            customUrl: state.customRelayUrl,
-            error: state.customRelayError,
-            onTap: () => onChoice(RelayChoice.custom),
-            onUrlChanged: onCustomUrl,
-          ),
-          const SizedBox(height: 12),
-          _RelayCard(
-            title: 'Community relay',
-            description: 'Hosted by us. Quick to start.',
-            footer: kRelayNotConfiguredMessage,
-            selected: state.relayChoice == RelayChoice.community,
-            onTap: () => onChoice(RelayChoice.community),
+          TextField(
+            controller: _controller,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            enableSuggestions: false,
+            onChanged: widget.onCustomUrl,
+            style: TextStyle(
+              fontFamily: kMonoFamily,
+              fontSize: 12,
+              color: colors.text,
+            ),
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: 'Self-hosted relay URL',
+              hintText: 'https://my-relay.example.com',
+              hintStyle: TextStyle(
+                fontFamily: kMonoFamily,
+                color: colors.muted,
+              ),
+              errorText: widget.state.customRelayError,
+              errorStyle: TextStyle(
+                fontFamily: kMonoFamily,
+                fontSize: 10,
+                color: colors.error,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 10,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: colors.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: colors.accent),
+              ),
+            ),
           ),
           const Spacer(),
           Row(
             children: [
               OutlinedButton(
-                onPressed: onBack,
+                onPressed: widget.onBack,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: colors.muted,
                   side: BorderSide(color: colors.border),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.all(Radius.circular(6)),
                   ),
@@ -99,11 +140,12 @@ class RelayStep extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: _canContinue ? onNext : null,
+                  // Validation belongs to the ViewModel so an empty submit can
+                  // surface the shared relay URL validation message.
+                  onPressed: widget.onNext,
                   style: FilledButton.styleFrom(
                     backgroundColor: colors.accent,
                     foregroundColor: colors.onAccent,
-                    disabledBackgroundColor: colors.border,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: const RoundedRectangleBorder(
                       borderRadius: BorderRadius.all(Radius.circular(6)),
@@ -127,229 +169,3 @@ class RelayStep extends StatelessWidget {
     );
   }
 }
-
-class _RelayCard extends StatelessWidget {
-  final String title;
-  final String description;
-  final String? footer;
-  final bool selected;
-  final VoidCallback onTap;
-  const _RelayCard({
-    required this.title,
-    required this.description,
-    required this.selected,
-    required this.onTap,
-    this.footer,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.bg,
-          border: Border.all(
-            color: selected ? colors.accent : colors.border,
-            width: selected ? 1.5 : 1,
-          ),
-          borderRadius: const BorderRadius.all(Radius.circular(8)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  selected ? LucideIcons.circleDot : LucideIcons.circle,
-                  size: 16,
-                  color: selected ? colors.accent : colors.muted,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontFamily: kMonoFamily,
-                      fontSize: 13,
-                      color: colors.text,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.only(left: 26),
-              child: Text(
-                description,
-                style: TextStyle(
-                  fontFamily: kMonoFamily,
-                  fontSize: 11,
-                  color: colors.muted,
-                  height: 1.4,
-                ),
-              ),
-            ),
-            if (footer != null) ...[
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.only(left: 26),
-                child: Text(
-                  footer!,
-                  style: TextStyle(
-                    fontFamily: kMonoFamily,
-                    fontSize: 10,
-                    color: colors.muted,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CustomRelayCard extends StatelessWidget {
-  final bool selected;
-  final String customUrl;
-  final String? error;
-  final String? badge;
-  final String? description;
-  final VoidCallback onTap;
-  final ValueChanged<String> onUrlChanged;
-  const _CustomRelayCard({
-    required this.selected,
-    required this.customUrl,
-    required this.error,
-    required this.onTap,
-    required this.onUrlChanged,
-    this.badge,
-    this.description,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.bg,
-          border: Border.all(
-            color: selected ? colors.accent : colors.border,
-            width: selected ? 1.5 : 1,
-          ),
-          borderRadius: const BorderRadius.all(Radius.circular(8)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  selected ? LucideIcons.circleDot : LucideIcons.circle,
-                  size: 16,
-                  color: selected ? colors.accent : colors.muted,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Use my own server',
-                    style: TextStyle(
-                      fontFamily: kMonoFamily,
-                      fontSize: 13,
-                      color: colors.text,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                if (badge != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: colors.accent.withValues(alpha: 0.15),
-                      borderRadius:
-                          const BorderRadius.all(Radius.circular(4)),
-                    ),
-                    child: Text(
-                      badge!,
-                      style: TextStyle(
-                        fontFamily: kMonoFamily,
-                        fontSize: 9,
-                        color: colors.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            if (description != null) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(left: 26),
-                child: Text(
-                  description!,
-                  style: TextStyle(
-                    fontFamily: kMonoFamily,
-                    fontSize: 11,
-                    color: colors.muted,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-            ],
-            if (selected) ...[
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.only(left: 26),
-                child: TextField(
-                  controller: TextEditingController(text: customUrl)
-                    ..selection = TextSelection.fromPosition(
-                      TextPosition(offset: customUrl.length),
-                    ),
-                  onChanged: onUrlChanged,
-                  style: TextStyle(
-                    fontFamily: kMonoFamily,
-                    fontSize: 12,
-                    color: colors.text,
-                  ),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: 'https://my-relay.com',
-                    hintStyle:
-                        TextStyle(fontFamily: kMonoFamily, color: colors.muted),
-                    errorText: error,
-                    errorStyle: TextStyle(
-                      fontFamily: kMonoFamily,
-                      fontSize: 10,
-                      color: colors.error,
-                    ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: colors.border),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: colors.accent),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
