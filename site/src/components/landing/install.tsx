@@ -11,7 +11,7 @@ type InstallTab = {
   note: ReactNode;
 };
 
-const CURL = "curl -fsSL https://outpost-pi.jacobmoura.work/install.sh | bash";
+const CURL = "curl -fsSL https://outpost-pi.kevoun.com/install.sh | bash";
 
 const INSTALL_TABS: Record<string, InstallTab> = {
   "No Pi yet": {

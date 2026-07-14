@@ -1,6 +1,6 @@
 [Unit]
 Description=Outpost-Pi daemon supervisor (plan/26)
-Documentation=https://outpost-pi.jacobmoura.work
+Documentation=https://outpost-pi.kevoun.com
 After=default.target
 
 [Service]

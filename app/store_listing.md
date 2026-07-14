@@ -75,9 +75,9 @@ First public release of Outpost-Pi. Pair your phone with your machines, watch yo
 
 ## URLs
 ```
-Support URL:        https://outpost-pi.jacobmoura.work
-Marketing URL:      https://outpost-pi.jacobmoura.work
-Privacy Policy URL: https://outpost-pi.jacobmoura.work/privacy
+Support URL:        https://outpost-pi.kevoun.com
+Marketing URL:      https://outpost-pi.kevoun.com
+Privacy Policy URL: https://outpost-pi.kevoun.com/privacy
 ```
 
 ## Classification
@@ -237,7 +237,7 @@ Outpost-Pi is open source. Start with the public relay, or point the app at your
 Built for developers who want their agents within reach — on the couch, on the move, or away from the desk.
 ```
 
-**Privacy Policy URL** (required): `https://outpost-pi.jacobmoura.work/privacy`
+**Privacy Policy URL** (required): `https://outpost-pi.kevoun.com/privacy`
 
 **Category:** Tools (primary). **Tags:** developer tools, productivity.
 **Contains ads:** No. **In-app purchases:** No.
