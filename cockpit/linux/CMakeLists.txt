@@ -127,10 +127,10 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
     COMPONENT Runtime)
 endif()
 
-# === Desktop integration (nome + ícone para publicação) ===
-# .desktop com Name=Cockpit, e ícones do tema hicolor nomeados pelo
-# APPLICATION_ID (work.jacobmoura.cockpit) — é assim que o launcher/dock e a
-# barra de tarefas resolvem nome e ícone do app empacotado (deb/AppImage/snap).
+# === Desktop integration (name + icon for publishing) ===
+# .desktop with Name=Cockpit, and hicolor-theme icons named after the
+# APPLICATION_ID (work.jacobmoura.cockpit) — this is how the launcher/dock and
+# taskbar resolve the name and icon of the packaged app (deb/AppImage/snap).
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/cockpit.desktop"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
   RENAME "${APPLICATION_ID}.desktop"
