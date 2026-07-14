@@ -1,7 +1,7 @@
 ---
 id: story-rebrand-foundation-docs-local-relay
 kind: story
-stage: drafting
+stage: review
 tags: [rebrand, docs]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -35,8 +35,27 @@ they must reflect local-relay-only and dormant rp-s3.
 
 ## Acceptance criteria
 
-- [ ] No foundation doc describes a public/community relay as a current
+- [x] No foundation doc describes a public/community relay as a current
   capability.
-- [ ] rp-s3 is documented as dormant / not currently deployed.
-- [ ] No "previously" / historical migration prose (rolling-foundation rule).
-- [ ] Native self-update docs reflect the no-op default.
+- [x] rp-s3 is documented as dormant / not currently deployed.
+- [x] No "previously" / historical migration prose (rolling-foundation rule).
+- [x] Native self-update docs reflect the no-op default.
+
+## Implementation notes
+
+- Rewrote the listed foundation-doc surfaces in place to state the current
+  local-relay-only deployment, dormant `rp-s3` status, and native self-update
+  no-op default.
+- Updated the deferred federation wording to use the local relay as the
+  current reference point, removing the retired public-relay assumption.
+- Rationale: the durable docs must describe the operating model that is
+  deployed now, while retaining only the source-level `rp-s3` description
+  needed to identify the dormant component. `PROTOCOL.md` was left unchanged
+  because review B4 found no community-default resolution contract there.
+
+## Verification
+
+- Searched `docs/` for public/community relay, `rp-s3`, self-update, and
+  historical-migration wording; current-state references now match the
+  acceptance criteria.
+- `git diff --check` passes.

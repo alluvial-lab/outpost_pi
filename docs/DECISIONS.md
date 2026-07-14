@@ -55,7 +55,7 @@ resolved they move here.
 | **Extension, not wrapper** | Pi has a TypeScript extension API. The extension consumes the Pi SDK directly — no wrapper process. (Future harness support — Claude Code, OpenCode — would come via wrappers like `outpost-pi claude`, not by re-targeting the extension.) |
 | **Auto-start relay is optional** | Config `auto_start_relay=true` connects to the relay automatically when Pi opens. Daemon config forces this on. |
 | **Relay: stateless routing + narrow mesh-membership persistence** | The relay is stateless for message routing — no per-session state, no offline queue, no at-least-once delivery. It has a narrow persistence layer: the SQLite-backed `MeshStore` (the Owner-signed `mesh_versions` cartulary, LWW + monotonic-version anti-rollback) plus ephemeral in-memory `PeerRegistry`, `PresenceManager`, `RoomManager`, and `FirehoseMetrics`. (The MVP-era "relay stateless, no persistence" line is superseded — mesh membership is persisted.) |
-| **Relay is open-source + self-hostable** | Credibility commitment. A paranoid user runs their own. The public relay is not a single point of compromise for an operator who self-hosts. |
+| **Relay is open-source + self-hostable** | The operator runs the open-source relay locally under their control. No public/community relay is deployed or assumed. |
 | **No offline message queue** | If a peer is offline, the sender gets `transport_error: offline` immediately. In-memory queued-message state is a short Pi-side buffer for prompts held during an active turn, lost on restart. |
 | **Cross-PC is relay-mediated** | Direct PC-to-PC (WebRTC/QUIC) is long-term roadmap; the relay becomes the fallback then. |
 
@@ -119,8 +119,8 @@ resolved they move here.
 |---|---|
 | **Mobile app: dual distribution** | iOS = App Store. Android = Play Store (AAB) + direct APK (`OutpostPi.apk` on GitHub Release `app-v*`, linked from site `/download`). Store-ready artifacts verified at `1.1.0+5`. CI covers only the direct APK. |
 | **Cockpit: out of stores** | Notarized DMG (macOS) + unsigned EXE (Windows, SmartScreen documented) + deb/rpm (Linux x64+arm64) via GitHub Release `cockpit-v*`. |
-| **Binary hosting** | GitHub Release assets (product-prefixed tags; monorepo as pure storage). VPS without SSH → `rp-s3` serves only `latest.json` per product; operator positions the manifest manually = publication gate. |
-| **Self-update** | Cockpit macOS/Windows self-update via Sparkle/WinSparkle (`auto_updater`): background download, "restart to install" card, swap + relaunch. Linux stays manual-notify. The rp-s3 manual publication gate still applies (now also covers `appcast-{macos,windows}.xml`). Site `/download` and in-app card read `latest.json` as fallback. |
+| **Binary hosting** | GitHub Release assets (product-prefixed tags; monorepo as pure storage). `rp-s3` is dormant and not currently deployed; no manifest publication gate is active. |
+| **Self-update** | Native Cockpit self-update is a no-op by default. Linux remains manual-notify; no `rp-s3` publication gate or manifest service is active. |
 
 ## Deferred (decide when triggered)
 
@@ -129,7 +129,7 @@ resolved they move here.
 | Protocol versioning (`v` field) | When v2 surfaces and requires migration |
 | Optional user account | When multi-device sync/recovery pain demands it |
 | Push notifications | When MVP is validated; additive, schema-unchanged |
-| Multi-relay / federation | Probably never — only if the public relay becomes a bottleneck |
+| Multi-relay / federation | Probably never — only if the local relay becomes a bottleneck |
 | Native apps (Swift/Kotlin) over Flutter | Probably never — reconsider only if Flutter blocks a critical feature (e.g. deep iOS Keychain integration) |
 | Clone detection (two PCs, same Pi-key) | Not yet implemented; roadmap — alert when two WS with the same Pi-pubkey appear from different IPs |
 
