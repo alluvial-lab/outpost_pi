@@ -6,9 +6,9 @@
    arch "universal", format "apk"). Distribution is direct APK — no
    Play Store — so the URL points at the GitHub Release asset.
 
-   The host (rp-s3) may not have the manifest yet, so the URL is
-   configurable (NEXT_PUBLIC_APP_MANIFEST_URL) and the loader falls back
-   to APP_MOCK_MANIFEST — same shape — whenever the fetch fails.
+   The live manifest URL is optional (NEXT_PUBLIC_APP_MANIFEST_URL). When it
+   is absent, or when the configured fetch fails, the loader falls back to
+   APP_MOCK_MANIFEST — same shape.
    =========================================================== */
 
 export type AppPlatform = "android";
@@ -32,14 +32,8 @@ export type AppManifest = {
   artifacts: AppArtifact[];
 };
 
-/**
- * Where the live app manifest lives. Set NEXT_PUBLIC_APP_MANIFEST_URL once
- * the host serves it; until then this default 404s and the page falls back
- * to APP_MOCK_MANIFEST.
- */
-export const APP_MANIFEST_URL =
-  process.env.NEXT_PUBLIC_APP_MANIFEST_URL ??
-  "https://rp-s3.jacobmoura.work/downloads/app/latest.json";
+/** Optional live app manifest override. */
+export const APP_MANIFEST_URL = process.env.NEXT_PUBLIC_APP_MANIFEST_URL;
 
 /**
  * Stand-in manifest for development and whenever the live fetch fails. Same
@@ -100,13 +94,18 @@ function isAppManifest(d: unknown): d is AppManifest {
 }
 
 /**
- * Load the app release manifest. Fetches the live host endpoint at request
- * time (no build-time caching — the manifest is published independently of
- * the site deploy, so a static snapshot would go stale or freeze the page in
- * "not published" state). On any failure (network, non-200, malformed)
- * returns the mock so the page degrades gracefully instead of crashing.
+ * Load the app release manifest. Fetches the configured live endpoint at
+ * request time (no build-time caching — the manifest is published
+ * independently of the site deploy, so a static snapshot would go stale or
+ * freeze the page in "not published" state). When no URL is configured, or on
+ * any fetch failure (network, non-200, malformed), returns the mock so the
+ * page degrades gracefully instead of crashing.
  */
 export async function loadAppManifest(): Promise<AppManifestLoad> {
+  if (!APP_MANIFEST_URL) {
+    return { manifest: APP_MOCK_MANIFEST, live: false };
+  }
+
   try {
     const res = await fetch(APP_MANIFEST_URL, { cache: "no-store" });
     if (!res.ok) throw new Error(`manifest responded ${res.status}`);
