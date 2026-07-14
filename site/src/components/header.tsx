@@ -54,6 +54,7 @@ function HamburgerIcon({ open }: { open: boolean }) {
   );
 }
 
+/** Render responsive site navigation and its mobile menu. */
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
 

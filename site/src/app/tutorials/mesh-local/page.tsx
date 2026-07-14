@@ -12,6 +12,7 @@ export const metadata: Metadata = {
     "Run two Pi agents on the same machine and have them discover each other and exchange messages over the local broker with list_peers, agent_send, and get_messages.",
 };
 
+/** Render the local agent-mesh tutorial. */
 export default function MeshLocalTutorial() {
   return (
     <div className="page">

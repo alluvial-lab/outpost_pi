@@ -12,6 +12,7 @@ export const metadata: Metadata = {
     "Advanced extra: outpost-pi claude puts Claude Code on the agent mesh as a named peer next to Pi — agent-to-agent, driven from the terminal. Not in the app yet.",
 };
 
+/** Render the advanced Claude Code mesh tutorial. */
 export default function ClaudeMeshTutorial() {
   return (
     <div className="page">

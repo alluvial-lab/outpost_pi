@@ -9,6 +9,7 @@ export const metadata: Metadata = {
     "Privacy Policy for Outpost-Pi — a self-hosted remote-coding project.",
 };
 
+/** Render the project's privacy policy. */
 export default function PrivacyPage() {
   return (
     <LegalShell

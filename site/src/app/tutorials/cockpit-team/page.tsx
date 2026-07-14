@@ -55,6 +55,7 @@ named \`frontend\`.
 - When done, reply to the sender with what changed (use the message id
   as \`re\`).`;
 
+/** Render the Cockpit multi-agent team tutorial. */
 export default function CockpitTeamTutorial() {
   return (
     <div className="page">
