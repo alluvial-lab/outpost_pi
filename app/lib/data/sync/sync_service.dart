@@ -126,6 +126,12 @@ class SyncService extends Service {
   /// self-retrigger loop: the re-send's own `working:true` room_meta update
   /// re-fires `_onRoomsChanged`, but each id is re-sent at most once per
   /// session. Cleared on session switch (the `_activeRef` change path).
+  ///
+  /// NOTE: the self-retrigger is now harmless (the Pi-side ingress idempotency
+  /// guard re-echoes without re-waking on a duplicate), so this guard's only
+  /// value is avoiding redundant traffic. It is an in-flight set (cleared on
+  /// send failure) rather than a permanent block, so a failed re-send can be
+  /// retried on a later healthy reconnect — not permanently suppressed.
   final Set<String> _resentHeldPendingIds = {};
 
   SyncService(
@@ -705,12 +711,12 @@ class SyncService extends Service {
     for (final submitted in heldPending) {
       final id = submitted.clientMessageId;
       if (confirmedIds.contains(id)) continue; // already delivered
-      if (_resentHeldPendingIds.contains(id)) continue; // already re-sent this session
-      _resentHeldPendingIds.add(id);
+      if (_resentHeldPendingIds.contains(id)) continue; // in-flight this sweep
       // Re-verify the channel is still the active one (could have rotated
       // during the loop). Reuses the ORIGINAL id so the echo/replay dedupes.
       final currentCh = _conn.channel;
       if (currentCh == null) break;
+      _resentHeldPendingIds.add(id); // in-flight guard for this sweep
       try {
         await currentCh.send(
           UserMessage(
@@ -726,6 +732,9 @@ class SyncService extends Service {
         _armSendTimeout(id, DateTime.now());
         debugPrint('[msg-resend] id=$id (held-pending re-sent on reconnect)');
       } catch (err) {
+        // Remove from in-flight so a later healthy reconnect can retry —
+        // a failed re-send must NOT be permanently suppressed.
+        _resentHeldPendingIds.remove(id);
         debugPrint('[msg-resend] id=$id failed: $err');
       }
     }
