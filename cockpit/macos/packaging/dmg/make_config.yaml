@@ -1,9 +1,9 @@
-# DMG do Cockpit — layout da janela do instalador (ícone do app + atalho
-# /Applications). O Fastforge usa `appdmg` (npm i -g appdmg) pra gerar.
+# Cockpit DMG — installer window layout (app icon + /Applications shortcut).
+# Fastforge uses `appdmg` (npm i -g appdmg) to generate it.
 #
-# A assinatura (Developer ID) e a notarização NÃO acontecem aqui — são passos
-# separados no runbook (packaging/README.md), aplicados sobre o .app antes do
-# DMG e sobre o .dmg depois. No fluxo manual, o DMG é montado via hdiutil.
+# Signing (Developer ID) and notarization do NOT happen here — they are separate
+# steps in the runbook (packaging/README.md), applied to the .app before the
+# DMG and to the .dmg after. In the manual flow, the DMG is mounted via hdiutil.
 title: Outpost-Pi Cockpit
 icon: ../../Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png
 icon-size: 120
