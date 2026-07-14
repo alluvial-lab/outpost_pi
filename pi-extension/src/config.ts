@@ -5,15 +5,6 @@ import os from "node:os";
 const CONFIG_DIR = path.join(os.homedir(), ".pi", "remote");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
-/**
- * Default community relay. Stored in canonical http(s):// form — conversion
- * to ws(s):// happens at the transport layer (see `toWebSocketUrl`). The
- * community relay's reverse proxy maps `:443 → :3000` (the WS port), so the
- * URL has no explicit port and the WebSocket upgrade rides on the same TLS
- * connection as the HTTPS endpoints used by the mesh client.
- */
-export const kDefaultRelayUrl = "https://relay-rp1.jacobmoura.work";
-
 export type OutpostPiConfig = { relay?: string };
 
 export function loadConfig(): OutpostPiConfig {
@@ -34,26 +25,25 @@ export function saveConfig(patch: Partial<OutpostPiConfig>): void {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2));
 }
 
-export type RelayResolution = { url: string; source: "env" | "config" | "default" };
+export type ConfiguredRelayResolution = {
+  readonly url: string;
+  readonly source: "env" | "config";
+};
 
-/**
- * Resolves the effective relay URL in **canonical http(s):// form**.
- *
- * Precedence:
- *   1. `OUTPOST_PI_RELAY` env var (ops/CI escape hatch)
- *   2. `~/.pi/remote/config.json` `relay` field (set via /outpost-pi set-relay)
- *   3. `kDefaultRelayUrl` (community default)
- *
- * Any ws(s):// values found (legacy configs or env overrides) are coerced
- * to http(s):// defensively — the canonical form across the codebase is
- * http(s)://, and the transport layer converts to ws(s):// at WS-open time.
- */
+export type UnconfiguredRelayResolution = {
+  readonly url: null;
+  readonly source: "unconfigured";
+};
+
+export type RelayResolution = ConfiguredRelayResolution | UnconfiguredRelayResolution;
+
+/** Resolves the relay URL in canonical http(s):// form, if one is configured. */
 export function resolveRelayUrl(): RelayResolution {
   const env = process.env["OUTPOST_PI_RELAY"];
   if (env && env.length > 0) return { url: toHttpUrl(env), source: "env" };
   const cfg = loadConfig();
   if (cfg.relay && cfg.relay.length > 0) return { url: toHttpUrl(cfg.relay), source: "config" };
-  return { url: toHttpUrl(kDefaultRelayUrl), source: "default" };
+  return { url: null, source: "unconfigured" };
 }
 
 /**

@@ -182,7 +182,7 @@ The app may debounce or render transitions, but the extension must not leave dur
 
 - Use `ws` only in the extension; `RelayClient` opens with `new WebSocket(toWebSocketUrl(relayUrl))`.
 - Persist canonical relay URLs as HTTP(S); convert configured HTTP(S) relay URLs to WS(S) only at transport open.
-- Relay URL precedence: `OUTPOST_PI_RELAY` env, `~/.pi/remote/config.json`, then default relay URL.
+- Relay URL precedence: `OUTPOST_PI_RELAY` env, then `~/.pi/remote/config.json`; otherwise `resolveRelayUrl()` returns its explicit unconfigured state. I/O boundaries must surface `/outpost-pi set-relay <url>` before URL conversion or socket creation.
 - Validate user-facing relay URLs; reject empty/malformed `ws://`/`wss://` in slash command input if the command expects HTTP(S).
 - Relay auth flow is `hello { pubkey, room_id?, room_meta? }` → `challenge { nonce }` → `auth { sig }`. [remote-pi-relay-client]{1}
 - Liveness watchdog closes after roughly 70 seconds of no inbound activity; relay pings are expected to keep it alive. [remote-pi-relay-client]{1}
