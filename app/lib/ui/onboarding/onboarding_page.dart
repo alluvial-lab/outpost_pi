@@ -70,7 +70,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     WelcomeStep(onNext: vm.next),
                     RelayStep(
                       state: s,
-                      onChoice: vm.setRelayChoice,
                       onCustomUrl: vm.setCustomRelayUrl,
                       onBack: vm.back,
                       onNext: vm.next,

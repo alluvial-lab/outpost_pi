@@ -148,6 +148,37 @@ _pumpSettings(
 }
 
 void main() {
+  testWidgets(
+    'unconfigured relay is blank, visibly actionable, and has no default action',
+    (tester) async {
+      final result = await _pumpSettings(
+        tester,
+        store: _FakeSecureStorage(),
+        debugLog: _FakeDebugLog(),
+      );
+
+      expect(find.text('Current: Not configured'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        isEmpty,
+      );
+      expect(find.textContaining('Use default'), findsNothing);
+
+      await tester.enterText(
+        find.byType(TextField).first,
+        'https://self-hosted.example',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(result.prefs.relayUrl, 'https://self-hosted.example');
+      expect(find.text('Current: https://self-hosted.example'), findsOneWidget);
+
+      result.vm.dispose();
+      result.conn.dispose();
+    },
+  );
+
   testWidgets('debug logging switch persists across re-instantiated prefs', (
     tester,
   ) async {
