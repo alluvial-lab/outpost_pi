@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-external-surfaces
 kind: epic
-stage: drafting
+stage: implementing
 tags: [rebrand, pi-extension, app, relay, cockpit, site, docs]
 parent: null
 depends_on: [epic-rebrand-to-outpost-pi]
@@ -74,68 +74,48 @@ default and the rp-s3 download server.
     docs/CHANGELOG + branding SVG) → update to the new homepage target or
     remove the stale reference.
 
-## Scope
+## Decomposition
 
-Three workstreams, each a child feature. They are disjoint and can proceed in
-parallel; none is wire-stable or version-paired (the wire-stable identifiers
-already migrated in the first rebrand epic).
+Split by hostname surface: each of the three retiring/migrating hostnames
+maps to one feature, because they touch disjoint file sets with no shared
+types. All three are independent (no `depends_on` between them) and run in
+parallel. F1 is the only design-bearing slice (onboarding UX); F2 and F3 are
+mechanical. None is wire-stable or version-paired — the wire-stable
+identifiers already migrated in the first rebrand epic.
 
-### Feature 1 — Remove community relay default (no-default relay)
+### Child features
 
-The deepest-reaching slice: changes onboarding UX, not just constants.
+- `epic-rebrand-external-surfaces-no-default-relay` — remove the community
+  relay default (`relay-rp1.jacobmoura.work`); make "unconfigured" an
+  actionable surfaced state; remove the onboarding "Community relay" card so
+  self-hosted selection is mandatory. Design-bearing (UX). — depends on: `[]`
+- `epic-rebrand-external-surfaces-hostname-migration` — mechanically migrate
+  `outpost-pi.jacobmoura.work` and legacy `remote-pi.jacobmoura.work` to
+  `kevoun.com` subdomains across ~27 files (site, install scripts, READMEs,
+  store listing, branding SVGs). No UX. Absorbs the
+  `rebrand-branding-assets-redraw` backlog item as a child story. — depends on: `[]`
+- `epic-rebrand-external-surfaces-retire-rp-s3` — retire the rp-s3 download
+  server from the product: auto-update `UpdateCheckerImpl` manifest URLs stop
+  pointing at `rp-s3.jacobmoura.work` (silently no-op); fix the
+  `jacobmoura7/rp-s3:latest` tag in `docker-compose.yml`; mark the rp-s3
+  subproject dormant. — depends on: `[]`
 
-- `pi-extension/src/config.ts`: `kDefaultRelayUrl` → removed (or empty). The
-  `resolveRelayUrl()` precedence chain (env → config → default) must handle
-  "no default" — return a `source: "unconfigured"` state that the caller
-  surfaces as an actionable error ("set a relay via /outpost-pi set-relay"),
-  not a silent fallback.
-- `app/lib/data/transport/relay_config.dart`: same — `kDefaultRelayUrl`
-  removed, `resolveRelayUrl` returns null/unconfigured when no preference.
-- `app/lib/ui/onboarding/widgets/relay_step.dart`: the "Community relay"
-  card (with `footer: kDefaultRelayUrl`) is removed. Onboarding forces
-  self-hosted relay selection — the custom-URL card becomes the only path,
-  and an empty URL is no longer accepted (today empty → "use default").
-- `app/lib/ui/onboarding/viewmodels/onboarding_viewmodel.dart`: the
-  "empty = default" logic in the relay validation must reject empty.
-- Tests: `pi-extension/src/config.test.ts`, `app/test/data/transport/
-  relay_config_test.dart`, `app/test/ui/update/...` — update assertions that
-  assume a default URL; add tests for the unconfigured state.
+### Decomposition risks
 
-### Feature 2 — Migrate production hostnames to kevoun.com
-
-The mechanical hostname replacement across product source. No UX change.
-
-- Site/homepage: `outpost-pi.jacobmoura.work` → `kevoun.com` (or
-  `outpost-pi.kevoun.com`) across `site/src/lib/*-release.ts`,
-  `site/README.md`, `site/CLAUDE.md`, `site/public/install.sh`,
-  `pi-extension/install.sh`, `pi-extension/README.md`, `README.md`,
-  `app/store_listing.md`, `cockpit/.../update_viewmodel.dart`,
-  `app/lib/ui/update/viewmodels/update_banner_viewmodel.dart`. Note: the
-  site is not live, so these are constant updates, not DNS cuts.
-- Legacy `remote-pi.jacobmoura.work` references (CHANGELOG, branding SVGs,
-  backlog) → update or remove.
-- Does **not** touch `relay-rp1` or `rp-s3` (those retire, Features 1 & 3).
-
-### Feature 3 — Retire rp-s3 download server
-
-- `cockpit/lib/app/cockpit/data/update/update_checker_impl.dart` and
-  `app/lib/data/update/update_checker_impl.dart`: `defaultManifestUrl`
-  pointing at `rp-s3.jacobmoura.work/downloads/...` → the auto-update
-  checker should no-op (return null) or point at a future-distribution URL
-  the operator will stand up. Decision: leave the `UpdateCheckerImpl` code
-  intact but set the manifest URL to a non-resolving sentinel or remove the
-  default so the checker silently no-ops (it already returns null on any
-  failure — a non-resolving host is equivalent to "no update available").
-- `rp-s3/docker-compose.yml`: the `image: jacobmoura7/rp-s3:latest` tag (missed
-  in commit `4697fc2`) plus the `rp-s3.jacobmoura.work` URL comment.
-- `rp-s3/README.md`, `rp-s3/build-docker.sh`: decide whether the rp-s3
-  subproject stays as dormant code or is removed. Recommend: keep as dormant
-  code (it's a working download server), update its docs to reflect
-  "not currently deployed."
-- `cockpit/packaging/README.md`: appcast URLs (`rp-s3.jacobmoura.work/.../appcast-{macos,windows}.xml`)
-  and the `work.jacobmoura.cockpit` app-id prose (the app-id itself is
-  wire-stable and already migrated to `dev.kevoun.outpostpi` — check whether
-  packaging docs still carry stale prose).
+- **F1 reach is wider than onboarding.** `resolveRelayUrl` feeds the mesh
+  client, pairing flow, and settings page — not just onboarding. The
+  design pass must audit every caller to ensure the "unconfigured" state is
+  handled (surfaced as an error, not a silent null deref). The
+  `RelayChoice.community` enum value threads through `onboarding_state`,
+  `onboarding_viewmodel`, `relay_step`, `preferences`, and `settings_page`.
+- **F2/F3 file overlap on release-asset URLs.** `site/src/lib/*-release.ts`
+  may carry both `outpost-pi.jacobmoura.work` (F2) and `rp-s3.jacobmoura.work`
+  (F3) references. The two features can still run in parallel (different
+  string replacements in the same file), but `feature-design` should note the
+  shared file so a reviewer doesn't see a half-migrated state mid-implementation.
+- **Branding SVG redraw is layout-sensitive.** The `rebrand-branding-assets-redraw`
+  backlog item warns that sed risks breaking SVG layout — that story under F2
+  needs manual edit or redraw, not a mechanical replace.
 
 ## Absorb the branding-asset backlog item
 
