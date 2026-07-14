@@ -2,8 +2,8 @@
 #
 # Trigger: tag `cockpit-v<versão>` (a versão DEVE bater com o pubspec.yaml).
 # Produz: GitHub Release com 6 artefatos + SHA256SUMS + latest.json.
-# Publicação no site é MANUAL (gate): baixar o latest.json da release e colocar
-# no rp-s3 (volume /Users/flutterando/cockpit/data) — ver rp-s3/README.md.
+# Os manifestos e appcasts não são atualmente publicados/implantados; o site e
+# o self-update permanecem desativados até que a distribuição seja configurada.
 #
 # Runbook por plataforma: cockpit/packaging/README.md.
 
@@ -389,12 +389,9 @@ jobs:
           {
             echo ""
             echo "---"
-            echo "**Publicação (gate manual):** baixe \`latest.json\`, \`appcast-macos.xml\`"
-            echo "e \`appcast-windows.xml\` desta release e coloque em"
-            echo "\`/Users/flutterando/cockpit/data/\` no host do rp-s3 (ver \`rp-s3/README.md\`)."
-            echo "O \`latest.json\` liga o card/site (e o notify do Linux); os appcasts ligam"
-            echo "o self-update (Sparkle/WinSparkle) dos cockpits já instalados. Até subir,"
-            echo "ninguém atualiza."
+            echo "**Publicação:** os manifestos e appcasts não são atualmente"
+            echo "publicados/implantados. O card/site e o self-update permanecem"
+            echo "desativados até que a distribuição seja configurada."
           } >> "$NOTES_FILE"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release/* --clobber
@@ -412,7 +409,7 @@ jobs:
             echo ""
             echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
             echo ""
-            echo "**Próximo passo (manual):** baixar \`latest.json\` + \`appcast-macos.xml\`"
-            echo "+ \`appcast-windows.xml\` da release e colocar no rp-s3"
-            echo "(\`/Users/flutterando/cockpit/data/\`) — liga site/card e o self-update."
+            echo "**Publicação:** os manifestos e appcasts não são atualmente"
+            echo "publicados/implantados; o site/card e o self-update permanecem"
+            echo "desativados até que a distribuição seja configurada."
           } >> "$GITHUB_STEP_SUMMARY"
