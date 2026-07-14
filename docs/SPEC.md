@@ -100,7 +100,7 @@ island remains for control frames not yet migrated to the schema IR.
 | App-key | Ed25519, ephemeral | App RAM | App per pairing session | Authenticated channel establishment during pairing |
 
 Detailed trust model, threat table, and "what is NOT protected" live in
-`PROTOCOL.md` → "Modelo de proteção (Trust Model)." Summary of what is not
+`PROTOCOL.md` → "Protection model (Trust Model)." Summary of what is not
 protected: relay sees plaintext contents; no E2E; headless Linux falls back to
 a `0600` file on disk; full encrypted backups can carry the Keychain; clone
 detection (two PCs with the same Pi-key) is not yet implemented.
@@ -145,7 +145,7 @@ foundation stays clean rather than baking in a guess.
    should describe the target state instead.
 
 2. **Relay "stateless" framing has drifted.** The absorbed project's
-   `plan/00-decisions.md` recorded "Relay stateless / Sem persistência." The
+   `plan/00-decisions.md` recorded "Relay stateless / No persistence." The
    relay now has a SQLite-backed `MeshStore` (the signed `mesh_versions`
    cartulary) plus in-memory `PeerRegistry`, `PresenceManager`, `RoomManager`,
    and `FirehoseMetrics`. Accurate framing: the relay is **stateless for
