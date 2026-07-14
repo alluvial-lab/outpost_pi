@@ -1,13 +1,13 @@
-# Instalador Windows (Inno Setup) do Cockpit. NÃO buildável neste Mac — gerado
-# no job `windows` do CI (windows-latest + Inno Setup). Sem assinatura nesta
-# fase (aviso do SmartScreen documentado no site).
+# Windows installer (Inno Setup) for the Cockpit. NOT buildable on this Mac —
+# generated in the `windows` CI job (windows-latest + Inno Setup). No signing at
+# this stage (SmartScreen warning documented on the site).
 app_id: work.jacobmoura.cockpit
 display_name: Outpost-Pi Cockpit
 publisher_name: Kevoun
 publisher_url: https://kevoun.com
-# O binário do runner Windows é `cockpit.exe` (BINARY_NAME=cockpit).
+# The Windows runner binary is `cockpit.exe` (BINARY_NAME=cockpit).
 executable_name: cockpit.exe
-# Instala por usuário (sem exigir admin) em %LOCALAPPDATA%\Programs.
+# Installs per-user (no admin required) in %LOCALAPPDATA%\Programs.
 install_dir_name: "{userpf}\\Outpost-Pi Cockpit"
 privileges_required: lowest
 create_desktop_icon: true

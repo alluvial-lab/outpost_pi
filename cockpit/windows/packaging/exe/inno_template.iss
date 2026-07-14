@@ -1,7 +1,7 @@
-; Template Inno Setup custom do Cockpit (plano 47). Referenciado por
-; `script_template: inno_template.iss` no make_config.yaml. Baseado no template
-; default do fastforge (flutter_app_packager) + as diretivas de self-update.
-; As variáveis {{...}}/{% %} são preenchidas pelo fastforge (Liquid).
+; Custom Inno Setup template for the Cockpit (plan 47). Referenced by
+; `script_template: inno_template.iss` in make_config.yaml. Based on the
+; fastforge default template (flutter_app_packager) + the self-update directives.
+; The {{...}}/{% %} variables are filled in by fastforge (Liquid).
 [Setup]
 AppId={{APP_ID}}
 AppVersion={{APP_VERSION}}
@@ -21,11 +21,11 @@ WizardStyle=modern
 PrivilegesRequired={{PRIVILEGES_REQUIRED}}
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
-; Plano 47 — self-update via WinSparkle. Num update silencioso o cockpit pode
-; estar rodando: o Restart Manager fecha a instância (CloseApplications) e a
-; relança após instalar (RestartApplications). O WinSparkle encerra o app antes
-; de rodar o instalador, então o RM vê uma instância só — sem duplo-launch.
-; VALIDAR no Windows real (não testável neste Mac).
+; Plan 47 — self-update via WinSparkle. During a silent update the cockpit may
+; be running: the Restart Manager closes the instance (CloseApplications) and
+; relaunches it after installing (RestartApplications). WinSparkle quits the app
+; before running the installer, so the RM sees a single instance — no double-launch.
+; VALIDATE on real Windows (not testable on this Mac).
 CloseApplications=yes
 RestartApplications=yes
 

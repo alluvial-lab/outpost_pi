@@ -1,10 +1,10 @@
-# Pacote .rpm do Cockpit. NÃO buildável neste Mac — gerado no CI (ubuntu-24.04
-# com `apt install rpm` → rpmbuild; arch detectada por uname -m). Valida-se em
-# container fedora:40 (premissa do plano).
+# Cockpit .rpm package. NOT buildable on this Mac — generated in CI (ubuntu-24.04
+# with `apt install rpm` → rpmbuild; arch detected by uname -m). Validated in a
+# fedora:40 container (plan premise).
 #
-# Artefato resultante: outpost-pi-cockpit-<versão>.<arch>.rpm
+# Resulting artifact: outpost-pi-cockpit-<version>.<arch>.rpm
 display_name: Outpost-Pi Cockpit
-summary: Cliente desktop multi-pane do Outpost-Pi
+summary: Multi-pane desktop client for Outpost-Pi
 license: LicenseRef-proprietary
 url: https://kevoun.com
 vendor: Kevoun
@@ -12,10 +12,10 @@ packager: Kevoun
 packagerEmail: <operator contact email>
 group: Development/Tools
 generic_name: Outpost-Pi Cockpit
-# Deps de runtime: GTK3 (nome do pacote no Fedora).
+# Runtime deps: GTK3 (Fedora package name).
 requires:
   - gtk3
-  # Plano 46 — preview de A/V via media_kit (libmpv) usando a lib do sistema.
+  # Plan 46 — A/V preview via media_kit (libmpv) using the system lib.
   - mpv-libs
 categories:
   - Development
@@ -29,6 +29,6 @@ startup_notify: true
 icon: linux/runner/resources/app_icon_512.png
 metainfo: linux/work.jacobmoura.cockpit.metainfo.xml
 description: |
-  Cockpit é o cliente desktop do Outpost-Pi: uma GUI multi-pane sobre o motor do
-  Pi. Roda agentes (cada um um `pi --mode rpc`) e terminais lado a lado, com
-  árvore de arquivos, worktrees por workspace e agendamento de daemons.
+  Cockpit is the Outpost-Pi desktop client: a multi-pane GUI over the Pi
+  engine. It runs agents (each a `pi --mode rpc`) and terminals side by side,
+  with a file tree, per-workspace worktrees, and daemon scheduling.
