@@ -82,6 +82,7 @@ function StepCard({ s }: { s: Step }) {
   );
 }
 
+/** Render the index of tutorials and advanced guides. */
 export default function TutorialsIndexPage() {
   return (
     <div className="page">

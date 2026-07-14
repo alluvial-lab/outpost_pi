@@ -31,6 +31,7 @@ function Ic({
 }
 
 /* brand mark — Outpost-Pi "π" logo with accent dot */
+/** Render the Outpost-Pi pi-mark logo. */
 export function LogoMark() {
   return (
     <svg viewBox="255 250 625 545" fill="none" aria-hidden="true">
@@ -46,6 +47,7 @@ export function LogoMark() {
 }
 
 /* pillar 1 — app gateway: phone with signal arrows */
+/** Render the phone gateway icon. */
 export function IconGateway() {
   return (
     <Ic>
@@ -58,6 +60,7 @@ export function IconGateway() {
 }
 
 /* pillar 2 — always on: clock / loop */
+/** Render the always-on clock icon. */
 export function IconAlwaysOn() {
   return (
     <Ic>
@@ -68,6 +71,7 @@ export function IconAlwaysOn() {
 }
 
 /* pillar 3 — one mesh: connected nodes */
+/** Render the connected agent-mesh icon. */
 export function IconMesh() {
   return (
     <Ic>
@@ -79,6 +83,7 @@ export function IconMesh() {
   );
 }
 
+/** Render the voice-input icon. */
 export function IconMic() {
   return (
     <Ic>
@@ -89,6 +94,7 @@ export function IconMic() {
   );
 }
 
+/** Render the image-attachment icon. */
 export function IconImage() {
   return (
     <Ic>
@@ -99,6 +105,7 @@ export function IconImage() {
   );
 }
 
+/** Render the open-source icon. */
 export function IconOpenSource() {
   return (
     <Ic>
@@ -109,6 +116,7 @@ export function IconOpenSource() {
   );
 }
 
+/** Render the self-hosted server icon. */
 export function IconSelfHost() {
   return (
     <Ic>
@@ -119,10 +127,12 @@ export function IconSelfHost() {
   );
 }
 
+/** Render a right-pointing action arrow. */
 export function IconArrow() {
   return <Ic d="M5 12h14M13 6l6 6-6 6" />;
 }
 
+/** Render the copy-to-clipboard icon. */
 export function IconCopy() {
   return (
     <Ic>
@@ -132,14 +142,17 @@ export function IconCopy() {
   );
 }
 
+/** Render the confirmation checkmark icon. */
 export function IconCheck() {
   return <Ic d="M4 12.5 9 17.5 20 6.5" />;
 }
 
+/** Render the decorative star icon. */
 export function IconStar() {
   return <Ic d="m12 3 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8 6.8 19l1-5.8L3.6 9.1l5.8-.8L12 3Z" />;
 }
 
+/** Render the GitHub logo icon. */
 export function IconGithub() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -148,6 +161,7 @@ export function IconGithub() {
   );
 }
 
+/** Render the Apple platform icon. */
 export function IconApple() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -157,6 +171,7 @@ export function IconApple() {
 }
 
 /* Windows — classic four-pane flag */
+/** Render the Windows platform icon. */
 export function IconWindows() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -166,6 +181,7 @@ export function IconWindows() {
 }
 
 /* Linux — penguin silhouette */
+/** Render the Linux platform icon. */
 export function IconLinux() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -175,6 +191,7 @@ export function IconLinux() {
 }
 
 /* Android — robot front, line style */
+/** Render the Android platform icon. */
 export function IconAndroid() {
   return (
     <svg
@@ -195,6 +212,7 @@ export function IconAndroid() {
   );
 }
 
+/** Render the Google Play icon. */
 export function IconPlay() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -206,6 +224,7 @@ export function IconPlay() {
   );
 }
 
+/** Render the download action icon. */
 export function IconDownload() {
   return (
     <Ic>
@@ -215,10 +234,12 @@ export function IconDownload() {
   );
 }
 
+/** Render a left-pointing navigation chevron. */
 export function IconChevronLeft() {
   return <Ic d="M15 5 8 12l7 7" />;
 }
 
+/** Render the terminal icon. */
 export function IconTerminal() {
   return (
     <Ic>
@@ -228,12 +249,14 @@ export function IconTerminal() {
   );
 }
 
+/** Render the attachment paperclip icon. */
 export function IconPaperclip() {
   return (
     <Ic d="M20.5 11.5 12 20a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" />
   );
 }
 
+/** Render the stop action icon. */
 export function IconStop() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

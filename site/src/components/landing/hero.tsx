@@ -237,6 +237,7 @@ function PhoneHero() {
   );
 }
 
+/** Render the landing page hero and animated agent preview. */
 export function Hero() {
   return (
     <section className="hero">

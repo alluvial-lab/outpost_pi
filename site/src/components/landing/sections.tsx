@@ -88,6 +88,7 @@ function PillarLink({ href, label }: { href: string; label: string }) {
   );
 }
 
+/** Render the landing page's three product pillars. */
 export function Pillars() {
   return (
     <section className="section pillars" id="pillars">
@@ -156,6 +157,7 @@ const STORES: Store[] = [
   },
 ];
 
+/** Render download links for the supported platforms. */
 export function GetApp() {
   return (
     <section className="section" id="get-the-app" style={{ paddingTop: 0 }}>
@@ -218,6 +220,7 @@ const STRIP: { icon: ReactNode; label: string }[] = [
   { icon: <IconSelfHost />, label: "Self-host — run the relay behind a VPN" },
 ];
 
+/** Render the compact landing-page capability strip. */
 export function Strip() {
   return (
     <div className="strip">
@@ -238,6 +241,7 @@ export function Strip() {
 }
 
 /* ---------------- GitHub CTA ---------------- */
+/** Render the landing page call to action for the source repository. */
 export function GithubCTA() {
   return (
     <section className="cta">

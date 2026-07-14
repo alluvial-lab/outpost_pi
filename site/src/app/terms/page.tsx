@@ -9,6 +9,7 @@ export const metadata: Metadata = {
     "Terms for using the self-hosted Outpost-Pi open-source software.",
 };
 
+/** Render the project's terms of service. */
 export default function TermsPage() {
   return (
     <LegalShell

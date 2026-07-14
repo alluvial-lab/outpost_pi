@@ -61,6 +61,7 @@ export const metadata: Metadata = {
   },
 };
 
+/** Render the shared document shell, navigation, and footer. */
 export default function RootLayout({
   children,
 }: Readonly<{

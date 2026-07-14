@@ -206,6 +206,7 @@ const OS_GROUPS: OsGroup[] = [
   },
 ];
 
+/** Render release downloads for Cockpit and the Android app. */
 export default async function DownloadPage() {
   const [cockpit, app] = await Promise.all([
     loadCockpitManifest(),

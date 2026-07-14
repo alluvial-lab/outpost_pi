@@ -7,6 +7,7 @@ type LegalShellProps = {
   children: ReactNode;
 };
 
+/** Render the shared shell for legal documents. */
 export function LegalShell({
   title,
   lastUpdated,
@@ -52,6 +53,7 @@ type SectionProps = {
   children: ReactNode;
 };
 
+/** Render a numbered section within a legal document. */
 export function LegalSection({ id, number, title, children }: SectionProps) {
   return (
     <section id={id}>

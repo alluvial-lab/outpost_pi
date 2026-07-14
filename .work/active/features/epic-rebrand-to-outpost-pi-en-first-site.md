@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-site
 kind: feature
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, site]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
@@ -282,4 +282,11 @@ skipped.
 
 None. The work is a single cohesive implementation stride with one shared
 source audit and one site build gate.
+
+## Implementation notes
+- Files changed: `site/src/app/icon.svg`; 16 App Router component files under `site/src/app/`; `site/src/components/docs-shell.tsx`, `footer.tsx`, `header.tsx`, `legal-shell.tsx`, and `landing/{hero,icons,install,sections}.tsx`.
+- Tests added: none; this documentation and comment-only slice uses the specified source audit, lint, and production build checks.
+- Discrepancies from design: the brief's provisional suggestion that the daemon tutorial likely had Portuguese body copy was not borne out by the current source; only the specified explanatory code comment contained accented text, so the bounded Unit 1 edit was applied.
+- Adjacent issues parked: none.
+- Verification rationale: the environment had no `pnpm` on `PATH`; used Corepack with a writable temporary store and the locked dependencies, then ran the specified lint and production build successfully.
 `

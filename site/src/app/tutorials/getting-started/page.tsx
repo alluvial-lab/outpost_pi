@@ -13,6 +13,7 @@ export const metadata: Metadata = {
     "Install Outpost-Pi on Pi, pair your phone, and send your first command to an agent from the app — from install to first prompt.",
 };
 
+/** Render the guided Outpost-Pi setup tutorial. */
 export default function GettingStartedTutorial() {
   return (
     <div className="page">
