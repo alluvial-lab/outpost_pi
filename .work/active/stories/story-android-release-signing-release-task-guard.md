@@ -1,14 +1,14 @@
 ---
 id: story-android-release-signing-release-task-guard
 kind: story
-stage: implementing
+stage: review
 tags: [app, bug, security, release]
 parent: epic-rebrand-external-surfaces
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-15
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Fail closed only when an Android release task is requested
@@ -42,3 +42,24 @@ still describes the removed fallback in
 - Add a regression check that exercises one no-key debug/non-release task and
   one no-key release task; the former must pass configuration and the latter
   must fail with the explicit signing error.
+
+## Implementation notes
+
+- Files changed: `app/android/app/build.gradle.kts`,
+  `app/android/check_release_signing_guard.sh`,
+  `.github/workflows/app-release.yml`, and
+  `.agents/skills/flutter-mobile/SKILL.md`.
+- Guard: validates all four signing properties plus the keystore file, then
+  rejects release APK/AAB task graphs in `gradle.taskGraph.whenReady` before
+  any task executes; non-release configuration never throws for absent signing
+  material.
+- Regression check: `android/check_release_signing_guard.sh` runs no-key
+  `gradlew help`, then requires no-key `:app:assembleRelease --dry-run` to fail
+  with the explicit signing error. The app-release workflow runs this check
+  before restoring CI signing secrets.
+- Verification: app `flutter analyze` and all 698 Flutter tests passed; no-key
+  `help` passed; no-key `assembleRelease --dry-run` and `bundleRelease
+  --dry-run` failed with the explicit guard error. A complete properties file
+  pointing at a missing keystore also allowed `help` and rejected release.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
