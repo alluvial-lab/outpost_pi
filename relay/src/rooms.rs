@@ -49,6 +49,7 @@ pub struct RoomManager {
 }
 
 impl RoomManager {
+    /// Create an empty room-subscription manager.
     pub fn new() -> Self {
         Self::default()
     }

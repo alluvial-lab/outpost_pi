@@ -5,6 +5,7 @@ use crate::handlers::connection_actor::{ActorDispatch, ConnectionActor};
 use crate::handlers::peer::MAX_CONTROL_FRAME_PEERS;
 use crate::protocol::generated::control::{RelayControlFrame, RoomMetaUpdateFrame};
 
+/// Describes a control frame whose peer list exceeds the relay's accepted bound.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ControlFrameError {
     #[error("control frame {frame_type} requested {requested} peers, limit is {limit}")]
@@ -496,7 +497,12 @@ mod tests {
         let (tx_other, mut rx_other) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("pi".into(), make_meta("other"), "dev-a".to_string(), tx_other)
+            .register(
+                "pi".into(),
+                make_meta("other"),
+                "dev-a".to_string(),
+                tx_other,
+            )
             .await;
         let (tx_app, mut rx_app) = mpsc::unbounded_channel::<Message>();
         fixture

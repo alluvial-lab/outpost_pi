@@ -53,6 +53,13 @@ impl IntoResponse for MeshHttpError {
     }
 }
 
+/// Validate and persist a strictly newer Owner-signed mesh envelope.
+///
+/// # Errors
+///
+/// Returns [`MeshHttpError`] mapped to a client response when the body exceeds
+/// the cap, the wire envelope or signature is invalid, the URL owner hash does
+/// not match, the version is stale, or storage fails.
 pub async fn post_mesh(
     State(store): State<Arc<MeshStore>>,
     Path(url_hash): Path<String>,
@@ -110,6 +117,12 @@ pub async fn post_mesh(
     }
 }
 
+/// Return the current signed mesh envelope, or a conditional 304 response.
+///
+/// # Errors
+///
+/// Returns [`MeshHttpError::NotFound`] when no mesh is stored for the URL hash
+/// and [`MeshHttpError::Internal`] when storage cannot be read.
 pub async fn get_mesh(
     State(store): State<Arc<MeshStore>>,
     Path(url_hash): Path<String>,

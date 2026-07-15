@@ -12,6 +12,7 @@ use crate::protocol::generated::frame::{RELAY_INBOUND_FRAME_TYPES, RelayInboundF
 pub use crate::protocol::generated::outer::OuterEnvelope;
 use crate::protocol::outer::{self, parse_line};
 
+/// Classifies one validated inbound relay frame for typed dispatch.
 #[derive(Debug)]
 pub enum DecodedRelayFrame {
     Outer(OuterEnvelope),
@@ -24,6 +25,7 @@ pub enum DecodedRelayFrame {
     MalformedPiEnvelope(serde_json::Value),
 }
 
+/// Describes a frame rejected at the relay's inbound decoding boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum FrameDecodeError {
     #[error("invalid json: {0}")]
@@ -34,6 +36,14 @@ pub enum FrameDecodeError {
     OuterTooLarge { estimated: usize, max: usize },
 }
 
+/// Decode and classify an authenticated inbound text frame before dispatch.
+///
+/// # Errors
+///
+/// Returns [`FrameDecodeError::InvalidJson`] for malformed JSON,
+/// [`FrameDecodeError::UnknownType`] for unsupported typed frames, or
+/// [`FrameDecodeError::OuterTooLarge`] when an outer envelope exceeds its
+/// configured ciphertext limit.
 pub fn decode_relay_frame(text: &str) -> Result<DecodedRelayFrame, FrameDecodeError> {
     let value: serde_json::Value = serde_json::from_str(text)?;
     let Some(frame_type) = value

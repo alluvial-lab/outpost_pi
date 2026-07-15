@@ -31,6 +31,7 @@ pub(crate) struct ConnectionInsert {
     pub superseded_same_device_conn_ids: Vec<u64>,
 }
 
+/// Describes the observable state changes caused by removing one connection.
 #[derive(Debug)]
 pub struct ConnectionRemove {
     pub peer_id: String,
@@ -99,13 +100,11 @@ impl ConnectionRegistry {
             );
         }
 
-        lock.entry(key)
-            .or_default()
-            .push(ConnectionEntry {
-                conn_id,
-                device_id: device_id.to_string(),
-                tx,
-            });
+        lock.entry(key).or_default().push(ConnectionEntry {
+            conn_id,
+            device_id: device_id.to_string(),
+            tx,
+        });
 
         ConnectionInsert {
             peer_id: peer_id.to_string(),
