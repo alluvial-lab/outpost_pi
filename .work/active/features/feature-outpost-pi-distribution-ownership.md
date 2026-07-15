@@ -1,14 +1,14 @@
 ---
 id: feature-outpost-pi-distribution-ownership
 kind: feature
-stage: implementing
+stage: review
 tags: [rebrand, release, infra, cockpit, app, site, security]
 parent: epic-rebrand-external-surfaces
 depends_on: [story-en-first-residual-maintained-surfaces]
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Make distribution identities and release infrastructure Outpost-Pi-owned
