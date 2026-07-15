@@ -6,14 +6,12 @@ import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Checklist do ambiente de **agente** (pi + extensão outpost-pi + supervisor),
-/// exibido inline numa aba de agente vazia quando o usuário escolhe "New agent"
-/// e o ambiente ainda não está pronto. Antes era a tela de onboarding do boot;
-/// agora dispara sob demanda (decisão: Cockpit como multiplexador não exige o
-/// Pi). O botão "Create agent" só habilita quando o trio está satisfeito.
+/// Guide on-demand setup of Pi, the Outpost-Pi extension, and the supervisor.
 ///
-/// Re-checa ao montar e quando a janela volta a ter foco (o usuário sai pro
-/// terminal/sistema, instala algo e volta).
+/// Appears in an empty agent tab when "New agent" is selected before the
+/// environment is ready. Cockpit can still act as a multiplexer without Pi.
+/// Enables "Create agent" only after all three checks pass, and rechecks on
+/// mount and whenever the window regains focus after external installation.
 class AgentSetupChecklist extends StatefulWidget {
   const AgentSetupChecklist({
     super.key,
@@ -21,10 +19,10 @@ class AgentSetupChecklist extends StatefulWidget {
     required this.onCancel,
   });
 
-  /// Trio satisfeito + clique em "Create agent" → spawnar o agente.
+  /// Spawn the agent after all checks pass and "Create agent" is clicked.
   final VoidCallback onReady;
 
-  /// Volta pro seletor de tipo (agente/terminal) da aba vazia.
+  /// Return the empty tab to its agent/terminal type selector.
   final VoidCallback onCancel;
 
   @override
@@ -50,15 +48,16 @@ class _AgentSetupChecklistState extends State<AgentSetupChecklist>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Voltou o foco → o ambiente pode ter sido instalado por fora (terminal).
+    // Recheck because the environment may have been installed externally.
     if (state == AppLifecycleState.resumed && mounted) {
       context.read<SetupViewModel>().recheckAll();
     }
   }
 
-  /// Abre o dialog de instalação (spinner → resultado). A re-checagem do passo
-  /// acontece dentro do [runner] (no ViewModel), então ao fechar o card já
-  /// reflete o novo status.
+  /// Run installation in a dialog that progresses from spinner to result.
+  ///
+  /// [runner] rechecks the step through the ViewModel, so closing the dialog
+  /// immediately reveals the updated status.
   Future<void> _install(
     BuildContext context, {
     required String title,
@@ -139,7 +138,7 @@ class _AgentSetupChecklistState extends State<AgentSetupChecklist>
                   description: 'pi-supervisord service (outpost-pi install).',
                   status: vm.supervisor,
                   onRecheck: vm.recheckSupervisor,
-                  // Sem a extensão não há index.js pra rodar o instalador.
+                  // The installer has no index.js to run until the extension exists.
                   action: vm.extension == CheckStatus.ok
                       ? _StepAction(
                           label: 'Install',
@@ -182,7 +181,7 @@ class _AgentSetupChecklistState extends State<AgentSetupChecklist>
   }
 }
 
-/// Ação secundária de um passo (ex.: "Install").
+/// Offer a secondary action for a setup step, such as "Install".
 class _StepAction {
   const _StepAction({required this.label, required this.onTap});
   final String label;
@@ -209,9 +208,8 @@ class _StepCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // Exibe a ação quando:
-    // - missing: precisa instalar
-    // - checking: pode pular a espera e já pedir ação diretamente
+    // Show the action when missing requires installation, or while checking so
+    // the user can skip the wait and request the action directly.
     final showAction =
         action != null &&
         (status == CheckStatus.missing || status == CheckStatus.checking);
@@ -273,7 +271,7 @@ class _StepCard extends StatelessWidget {
   }
 }
 
-/// Indicador de estado: spinner / check verde / x vermelho-claro / dispensado.
+/// Show setup state as a spinner, green check, pale-red x, or dismissed mark.
 class _StatusDot extends StatelessWidget {
   const _StatusDot({required this.status});
   final CheckStatus status;
@@ -310,7 +308,7 @@ class _StatusDot extends StatelessWidget {
   }
 }
 
-/// Botão-pílula matte pras ações de passo (Install).
+/// Render a matte pill button for setup-step actions such as Install.
 class _PillButton extends StatelessWidget {
   const _PillButton({required this.label, required this.onTap});
   final String label;
@@ -335,9 +333,10 @@ class _PillButton extends StatelessWidget {
   }
 }
 
-/// Dialog simples de instalação: dispara o [runner] ao montar, mostra spinner
-/// enquanto roda e, ao terminar, o resultado (sucesso/erro). Botão "Close" só
-/// habilita no fim.
+/// Run [runner] when the installation dialog mounts.
+///
+/// Shows a spinner until completion, then the success or error result. Enables
+/// "Close" only after the operation finishes.
 class _InstallDialog extends StatefulWidget {
   const _InstallDialog({required this.title, required this.runner});
 

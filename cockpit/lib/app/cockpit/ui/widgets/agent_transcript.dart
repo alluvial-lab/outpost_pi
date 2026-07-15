@@ -8,24 +8,26 @@ import 'package:cockpit/app/core/ui/file_icons/file_icons.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:cockpit/app/core/ui/settings_controller.dart';
-// SelectionArea (widget Material) envolve o scrollable → seleção de texto com
-// auto-scroll ao arrastar até a borda. Funciona sob ShadcnApp.
+// Material's SelectionArea wraps scrolling to auto-scroll text selection when
+// dragging to an edge. It works under ShadcnApp.
 import 'package:flutter/material.dart' show SelectionArea;
 import 'package:flutter_sticky_header/flutter_sticky_header.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Teto de largura do conteúdo do chat — em panes largas a conversa não estica
-/// de ponta a ponta (folgado; alinhado à esquerda).
+/// Keep chat content comfortably left-aligned instead of spanning wide panes.
 const double _kChatMaxWidth = 920;
 
-/// Corpo do pane: o stream do agente (texto, raciocínio, tool calls, infos),
-/// estilizado conforme o design (rp-p / rp-think / rp-tool / rp-usermsg).
-/// Responde a um pedido interativo da extensão (card no transcript):
-/// `(id, response, label)`. Ligado em `AgentSession.respondUi`.
+/// Respond to an interactive extension card as `(id, response, label)`.
+///
+/// Connect this callback to `AgentSession.respondUi`.
 typedef UiResponder =
     void Function(String id, Map<String, dynamic> response, String label);
 
+/// Project an agent event stream into a selectable, scrollable conversation.
+///
+/// Groups user messages and their responses into turns, optionally pins turn
+/// headers, and routes interactive extension cards through [onUiResponse].
 class AgentTranscript extends StatelessWidget {
   const AgentTranscript({
     super.key,
@@ -38,11 +40,10 @@ class AgentTranscript extends StatelessWidget {
   final List<Object> entries;
   final ScrollController controller;
 
-  /// Callback pros cards de `extension_ui_request` interativos responderem.
+  /// Respond to interactive `extension_ui_request` cards.
   final UiResponder? onUiResponse;
 
-  /// Espaço extra no fim da lista para a conversa não ficar atrás do composer
-  /// flutuante.
+  /// Reserve trailing space so conversation content clears the floating composer.
   final double bottomPadding;
 
   @override
@@ -55,13 +56,12 @@ class AgentTranscript extends StatelessWidget {
         ),
       );
     }
-    // Sticky header (pinar pergunta) é opcional — Configurações → Aparência.
+    // Pinned question headers are optional under Settings → Appearance.
     final pin = context.watch<SettingsController>().settings.pinUserMessage;
-    // A scrollbar e a lista ocupam a largura inteira (scrollbar na borda do
-    // pane); o **conteúdo** é centralizado com teto de largura via padding
-    // horizontal calculado. Com [pin], cada turno (pergunta + resposta) vira uma
-    // seção cujo header (a pergunta) fica pinado no topo enquanto a resposta
-    // rola; sem [pin], é uma lista plana (pergunta no fluxo, como balão).
+    // Let the scrollbar and list span the pane while calculated horizontal
+    // padding caps and centers content. With [pin], each question/response turn
+    // becomes a section whose question stays at the top while its response
+    // scrolls; otherwise questions remain bubbles in a flat list.
     return LayoutBuilder(
       builder: (context, constraints) {
         final extra = (constraints.maxWidth - _kChatMaxWidth) / 2;
@@ -110,7 +110,7 @@ class AgentTranscript extends StatelessWidget {
             controller: controller,
             thumbVisibility: true,
             child: ScrollConfiguration(
-              // Evita a scrollbar automática duplicar a nossa (sempre visível).
+              // Prevent the automatic scrollbar from duplicating ours.
               behavior: ScrollConfiguration.of(
                 context,
               ).copyWith(scrollbars: false),
@@ -122,9 +122,10 @@ class AgentTranscript extends StatelessWidget {
     );
   }
 
-  /// Agrupa as entradas em turnos: cada [ProjectedUserMessage] abre um turno (header) e as
-  /// entradas seguintes (até o próximo usuário) são o corpo. Entradas antes do
-  /// primeiro usuário viram um turno sem header.
+  /// Group entries into turns opened by each [ProjectedUserMessage].
+  ///
+  /// Following entries form the body until the next user message. Entries before
+  /// the first user message form a headerless turn.
   List<({ProjectedUserMessage? header, List<Object> body})> _groupIntoTurns(
     List<Object> entries,
   ) {
@@ -160,9 +161,10 @@ class AgentTranscript extends StatelessWidget {
   }
 }
 
-/// Header sticky de um turno: a mensagem do usuário. Quando **pinada** ganha um
-/// fundo opaco (mascara o conteúdo rolando atrás) + borda inferior; solta, é só
-/// o balão normal (sem mudar de tamanho → sem "pulo").
+/// Render a user message as a sticky turn header when pinned.
+///
+/// Pinned headers gain an opaque background and bottom border to mask scrolling
+/// content. Unpinned headers remain ordinary bubbles at the same size.
 class _PinnedUserHeader extends StatelessWidget {
   const _PinnedUserHeader({required this.entry, required this.pinned});
   final ProjectedUserMessage entry;
@@ -257,16 +259,12 @@ class _EntryView extends StatelessWidget {
   }
 }
 
-/// Cacheia o [AgentMarkdown] por texto. O parsing do `gpt_markdown` roda no
-/// `build` e é caro; o transcript rebuilda em toda notificação da sessão (cada
-/// delta de streaming) e em toda troca de aba (o `IndexedStack` mantém o corpo
-/// montado, e o rebuild do `_PaneBody` propaga até aqui). Reusar a **mesma
-/// instância** do widget quando o texto não mudou faz o framework pular o
-/// rebuild da subárvore (`identical` → sem re-parse / re-layout do markdown).
+/// Cache [AgentMarkdown] widgets by text to avoid repeated parsing and layout.
 ///
-/// Mudança de tema continua refletindo: a dependência de `InheritedWidget` (cores)
-/// é registrada lá dentro do [AgentMarkdown] e rebuilda o descendente direto,
-/// fora deste atalho de identidade (que só pula rebuilds vindos do pai).
+/// Streaming notifications and tab changes rebuild the transcript frequently.
+/// Reusing the identical widget instance lets Flutter skip its subtree when text
+/// is unchanged. Theme changes still rebuild [AgentMarkdown] directly through
+/// its own inherited color dependency.
 class _CachedMarkdown extends StatefulWidget {
   const _CachedMarkdown(this.text);
   final String text;
@@ -288,7 +286,7 @@ class _CachedMarkdownState extends State<_CachedMarkdown> {
   Widget build(BuildContext context) => _markdown;
 }
 
-/// Formata a duração de um turno: `12s` → `3m 05s` → `1h 02m`.
+/// Format a turn duration as `12s`, `3m 05s`, or `1h 02m`.
 String _formatWorked(Duration d) {
   final s = d.inSeconds;
   if (s < 60) return '${s}s';
@@ -306,7 +304,7 @@ class _UserMessage extends StatefulWidget {
   final String text;
   final List<Uint8List> images;
 
-  /// `true` no sticky header: reduz padding vertical para não ocupar espaço.
+  /// Reduce vertical padding when this bubble serves as a sticky header.
   final bool compact;
 
   @override
@@ -407,7 +405,7 @@ class _UserMessageState extends State<_UserMessage> {
       );
     }
 
-    // Colapsado: chevron flutua sobre o texto no hover, sem consumir linha extra.
+    // Float the collapsed chevron over text on hover without consuming a row.
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
@@ -457,13 +455,12 @@ class _UserMessageState extends State<_UserMessage> {
   }
 }
 
-/// Texto do balão do usuário com as menções `@<path>` viradas em badges (só o
-/// nome + extensão do arquivo, com o ícone de tipo).
+/// Render `@<path>` mentions in a user bubble as file-type badges.
 class _MessageText extends StatelessWidget {
   const _MessageText({required this.text});
   final String text;
 
-  // `@` no começo ou após espaço (evita casar e-mails tipo `foo@bar.com`).
+  // Match `@` only at the start or after a space to avoid email addresses.
   static final RegExp _mention = RegExp(r'(?<![^\s])@(\S+)');
 
   @override
@@ -494,7 +491,7 @@ class _MessageText extends StatelessWidget {
   }
 }
 
-/// Badge inline de um arquivo mencionado: ícone de tipo + nome.extensão.
+/// Render an inline mentioned-file badge with its type icon and name.
 class _FileBadge extends StatelessWidget {
   const _FileBadge({required this.name});
   final String name;
@@ -528,12 +525,12 @@ class _FileBadge extends StatelessWidget {
   }
 }
 
-/// Limite de altura do conteúdo expandido (raciocínio / resultado de tool);
-/// passou disso, rola por dentro.
+/// Cap expanded reasoning or tool results and scroll overflow internally.
 const double _kExpandMaxHeight = 240;
 
-/// Caixa expansível: header clicável (com chevron) + corpo colapsável que,
-/// quando aberto, respeita [_kExpandMaxHeight] e rola se ultrapassar.
+/// Toggle a collapsible body from a chevron header.
+///
+/// Open content respects [_kExpandMaxHeight] and scrolls when it exceeds the cap.
 class _Expandable extends StatefulWidget {
   const _Expandable({
     required this.header,
@@ -737,8 +734,9 @@ class _ToolCard extends StatelessWidget {
       text.length <= max ? text : '${text.substring(0, max)}\n… (truncated)';
 }
 
-/// Aviso da extensão (`notify`) — linha inline, cor por nível (0 info / 1 warn /
-/// 2 erro). Preserva quebras de linha da mensagem.
+/// Render an extension `notify` event inline with severity color.
+///
+/// Maps 0 to info, 1 to warning, and 2 to error while preserving line breaks.
 class _NoticeLine extends StatelessWidget {
   const _NoticeLine({required this.message, required this.level});
   final String message;
@@ -774,8 +772,9 @@ class _NoticeLine extends StatelessWidget {
   }
 }
 
-/// Card de um pedido interativo da extensão (`select`/`confirm`/`input`/
-/// `editor`). Responde via [onRespond] e, depois, mostra o que foi escolhido.
+/// Render an interactive extension request for select, confirm, input, or editor.
+///
+/// Responds through [onRespond], then displays the chosen value.
 class _UiRequestCard extends StatefulWidget {
   const _UiRequestCard({required this.entry, required this.onRespond});
   final UiRequestEntry entry;
@@ -944,7 +943,7 @@ class _ChoiceButton extends StatelessWidget {
     final colors = context.colors;
     return HoverTap(
       color: filled ? colors.accent : colors.panel3,
-      // Filled (accent) não deve "apagar" pro panel3 no hover; mantém o accent.
+      // Keep the accent fill on hover instead of fading it to panel3.
       hoverColor: filled ? colors.accent : colors.border2,
       borderRadius: BorderRadius.circular(7),
       onTap: onTap,
