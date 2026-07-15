@@ -3,8 +3,10 @@ import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Lista as sessões salvas do pi para a pasta do agente. Devolve a [SessionInfo]
-/// escolhida (pra `switch_session`), ou `null` se cancelar.
+/// Choose a saved pi session for the agent's folder.
+///
+/// Returns the [SessionInfo] selected for `switch_session`, or `null` when
+/// canceled.
 Future<SessionInfo?> showHistoryDialog(
   BuildContext context, {
   required List<SessionInfo> sessions,
