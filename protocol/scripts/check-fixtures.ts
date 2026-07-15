@@ -1,5 +1,6 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import { Buffer } from "node:buffer";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +54,38 @@ function fixtureLines(path: string): unknown[] {
     });
 }
 
+function authDomainVectorErrors(manifest: Manifest): string[] {
+  const relayControl = manifest.families.find((family) => family.id === "relayControl");
+  if (!relayControl) return ["relayControl: missing from protocol manifest"];
+
+  const schema = readJson<Record<string, unknown>>(join(protocolRoot, relayControl.schema));
+  const schemaMetadata = schema["x-outpost-pi"];
+  const authDomainPrefix =
+    typeof schemaMetadata === "object" && schemaMetadata !== null && !Array.isArray(schemaMetadata)
+      ? (schemaMetadata as Record<string, unknown>).authDomainPrefix
+      : undefined;
+  const vector = readJson<Record<string, unknown>>(join(fixturesRoot, "relay/auth-domain-vector.json"));
+  const vectorPrefix = vector.authDomainPrefix;
+  const nonceBase64 = vector.nonceBase64;
+  const signingBytesBase64 = vector.signingBytesBase64;
+
+  if (typeof authDomainPrefix !== "string" || authDomainPrefix.length === 0) {
+    return ["relayControl: x-outpost-pi.authDomainPrefix must be a non-empty string"];
+  }
+  if (typeof vectorPrefix !== "string" || typeof nonceBase64 !== "string" || typeof signingBytesBase64 !== "string") {
+    return ["relay/auth-domain-vector.json: expected authDomainPrefix, nonceBase64, and signingBytesBase64 strings"];
+  }
+  if (vectorPrefix !== authDomainPrefix) {
+    return ["relay/auth-domain-vector.json: authDomainPrefix must match relayControl schema metadata"];
+  }
+
+  const expectedSigningBytes = Buffer.concat([Buffer.from(authDomainPrefix, "utf8"), Buffer.from(nonceBase64, "base64")]);
+  if (expectedSigningBytes.toString("base64") !== signingBytesBase64) {
+    return ["relay/auth-domain-vector.json: signingBytesBase64 must equal UTF-8 authDomainPrefix ++ decoded nonce"];
+  }
+  return [];
+}
+
 const ajv = new Ajv2020({
   strict: true,
   allErrors: true,
@@ -70,7 +103,7 @@ for (const schemaPath of collectSchemaFiles(schemaRoot)) {
 }
 
 const manifest = readJson<Manifest>(join(schemaRoot, "manifest.json"));
-const errors: string[] = [];
+const errors: string[] = authDomainVectorErrors(manifest);
 
 for (const family of manifest.families) {
   const validate = ajv.getSchema(`https://kevoun.com/schemas/${family.schema.replace(/^schema\//, "")}`);

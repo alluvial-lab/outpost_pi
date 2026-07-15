@@ -17,6 +17,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 interface GeneratedProtocolModule {
+  readonly RELAY_AUTH_DOMAIN_PREFIX?: string;
   readonly CLIENT_MESSAGE_TYPES?: readonly string[];
   readonly SERVER_MESSAGE_TYPES?: readonly string[];
   readonly SESSION_HISTORY_EVENT_TYPES?: readonly string[];
@@ -26,14 +27,14 @@ interface GeneratedProtocolModule {
 }
 
 async function importGeneratedProtocol(output: string): Promise<GeneratedProtocolModule> {
-  const root = await mkdtemp(join(tmpdir(), "remote-pi-generated-protocol-import-"));
+  const root = await mkdtemp(join(tmpdir(), "outpost-pi-generated-protocol-import-"));
   const file = join(root, "protocol.generated.ts");
   await writeFile(file, output, "utf8");
   return import(`${pathToFileURL(file).href}?cache=${Date.now()}`) as Promise<GeneratedProtocolModule>;
 }
 
 async function writeFixtureProtocol(schema: unknown): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "remote-pi-protocol-codegen-"));
+  const root = await mkdtemp(join(tmpdir(), "outpost-pi-protocol-codegen-"));
   const schemaRoot = join(root, "schema");
   await writeFile(join(root, ".keep"), "", "utf8");
   await mkdir(schemaRoot, { recursive: true });
@@ -101,12 +102,13 @@ test("minimal manifest schema emits deterministic TypeScript output", async () =
   assert.equal(generated.isClientMessage?.({ type: "error", message: "bad", code: "future_code" }), false);
 });
 
-test("real Remote Pi schema emits generated app/Pi unions and shared value types", async () => {
+test("Outpost-Pi schema emits generated app/Pi unions and shared value types", async () => {
   const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
   const manifest = await loadOutpostPiManifest(join(repoRoot, "protocol", "schema", "manifest.json"));
   const ir = await buildOutpostPiIr(manifest, { profile: "compat" });
   const output = renderTypeScriptProtocol(ir);
 
+  assert.match(output, /export const RELAY_AUTH_DOMAIN_PREFIX = "outpost-pi-relay-auth-v1\\n";/);
   assert.match(output, /export interface WireImage \{\n  readonly data: string;\n  readonly mime: string;\n\}/);
   assert.match(output, /export interface Usage \{\n  readonly input_tokens: number;\n  readonly output_tokens: number;\n\}/);
   assert.match(output, /export interface WireModel \{[\s\S]*readonly vision\?: boolean;[\s\S]*\}/);
@@ -139,12 +141,13 @@ test("real Remote Pi schema emits generated app/Pi unions and shared value types
   assert.doesNotMatch(output, /ServerMessagePairOk|ClientMessageUserMessage/);
 });
 
-test("real Remote Pi generated validators accept current app/Pi variants and reject malformed objects", async () => {
+test("Outpost-Pi generated validators accept current app/Pi variants and reject malformed objects", async () => {
   const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
   const manifest = await loadOutpostPiManifest(join(repoRoot, "protocol", "schema", "manifest.json"));
   const ir = await buildOutpostPiIr(manifest, { profile: "compat" });
   const generated = await importGeneratedProtocol(renderTypeScriptProtocol(ir));
 
+  assert.equal(generated.RELAY_AUTH_DOMAIN_PREFIX, "outpost-pi-relay-auth-v1\n");
   assert.deepEqual(generated.SERVER_MESSAGE_TYPES, [
     "pair_ok",
     "pair_error",
