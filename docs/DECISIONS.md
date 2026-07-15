@@ -117,7 +117,7 @@ resolved they move here.
 
 | Decision | Current truth |
 |---|---|
-| **Mobile app: dual distribution** | iOS = App Store. Android = Play Store (AAB) + direct APK (`OutpostPi.apk` on GitHub Release `app-v*`, linked from site `/download`). Store-ready artifacts verified at `1.1.0+5`. CI covers only the direct APK. |
+| **Mobile app: operator-owned distribution** | iOS distribution is unavailable until the operator provisions an Apple Developer team and owned App Store listing; no inherited team or listing is an active release channel. Android = future Play Store (AAB) + direct APK (`OutpostPi.apk` on GitHub Release `app-v*`, linked from site `/download`). CI currently covers only the direct APK. |
 | **Cockpit: out of stores** | Notarized DMG (macOS) + unsigned EXE (Windows, SmartScreen documented) + deb/rpm (Linux x64+arm64) via GitHub Release `cockpit-v*`. |
 | **Binary hosting** | GitHub Release assets (product-prefixed tags; monorepo as pure storage). `rp-s3` is dormant and not currently deployed; no manifest publication gate is active. |
 | **Self-update** | Native Cockpit self-update is a no-op by default. Linux remains manual-notify; no `rp-s3` publication gate or manifest service is active. |

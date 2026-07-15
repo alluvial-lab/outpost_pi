@@ -104,8 +104,8 @@ Communication: WebSocket over TLS to the relay (ciphertext in transit).
 The relay sees plaintext envelopes at rest and in forwarding — see
 [`PROTOCOL.md`](../PROTOCOL.md) for the trust model.
 
-**Get the app** — all current download options (Google Play, App Store, and
-direct builds while public releases roll out):
+**Get the app** — current direct downloads and store availability while
+operator-owned public releases roll out:
 
 <https://outpost-pi.kevoun.com/#get-the-app>
 

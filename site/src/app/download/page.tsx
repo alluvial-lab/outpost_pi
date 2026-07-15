@@ -353,7 +353,9 @@ export default async function DownloadPage() {
                       On Android, the current release ships as a sideload-only
                       APK (new applicationId). Google Play is
                       <strong> coming soon</strong> for the new listing; until
-                      then, use the APK above. iOS ships through the App Store.
+                      then, use the APK above. iOS distribution remains
+                      unavailable until operator-owned Apple signing and an
+                      App Store listing are provisioned.
                     </p>
                   </div>
                 </div>
