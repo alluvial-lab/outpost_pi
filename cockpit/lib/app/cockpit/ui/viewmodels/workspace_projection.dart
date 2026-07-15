@@ -20,7 +20,10 @@ import 'package:cockpit/app/core/data/lsp/lsp_server_pool.dart';
 import 'package:flutter/foundation.dart';
 import 'package:window_manager/window_manager.dart';
 
+/// Handle completion of a projected agent turn.
 typedef WorkspaceProjectionTurnEnd = void Function(AgentSession session);
+
+/// Handle a live tab descriptor change that requires workspace persistence.
 typedef WorkspaceProjectionDescriptorChanged = void Function(String projectId);
 
 /// Live projection of a persisted [WorkspaceDocument] into disposable UI tabs.
@@ -78,6 +81,11 @@ final class WorkspaceProjection {
   int notificationCount(String projectId) =>
       itemsForProject(projectId).where((item) => item.unseenFinish).length;
 
+  /// Realize a persisted tab descriptor as a live, owned UI resource.
+  ///
+  /// Returns `false` when the descriptor cannot be realized, such as an invalid
+  /// viewer path. Agent realization awaits boot; terminal and empty tabs are
+  /// created synchronously.
   Future<bool> realize(WorkspaceTab tab, Project project) async {
     String cwdOf() {
       final sub = tab.relativeSubpath;
@@ -110,6 +118,7 @@ final class WorkspaceProjection {
     }
   }
 
+  /// Create and own a placeholder agent tab without starting an RPC process.
   AgentSession createEmpty({
     required String id,
     required String projectId,
@@ -127,6 +136,7 @@ final class WorkspaceProjection {
     return session;
   }
 
+  /// Create and own a terminal tab, starting its PTY immediately.
   TerminalSession createTerminal({
     required String id,
     required String projectId,
@@ -144,6 +154,10 @@ final class WorkspaceProjection {
     return terminal;
   }
 
+  /// Restore and boot an agent from a persisted descriptor.
+  ///
+  /// Returns `false` for non-agent descriptors. A valid descriptor is inserted
+  /// before boot so this projection owns cleanup even if startup fails.
   Future<bool> realizeAgent(WorkspaceTab tab, Project project) async {
     if (tab.kind != WorkspaceTabKind.agent) return false;
     final cwd = tab.relativeSubpath.isEmpty
@@ -161,6 +175,10 @@ final class WorkspaceProjection {
     return true;
   }
 
+  /// Create, own, and asynchronously boot a new agent tab.
+  ///
+  /// The returned session is available immediately; callers observe its boot
+  /// lifecycle through the session projection.
   AgentSession createAgent({
     required String id,
     required Project project,
@@ -192,6 +210,9 @@ final class WorkspaceProjection {
     return session;
   }
 
+  /// Read [path] and create an owned viewer with live file watching.
+  ///
+  /// Returns `null` when the file reader classifies the path as unsupported.
   Future<FileViewerSession?> createViewer({
     required String id,
     required String projectId,
@@ -212,6 +233,9 @@ final class WorkspaceProjection {
     return viewer;
   }
 
+  /// Replace a live viewer's path and content while retaining its tab identity.
+  ///
+  /// Returns `false` for an unsupported path or a non-viewer id.
   Future<bool> replaceViewerPath(String id, String path) async {
     final fresh = await _fileReader.read(path);
     if (fresh is FileViewUnsupported) return false;
@@ -226,6 +250,9 @@ final class WorkspaceProjection {
     return true;
   }
 
+  /// Save editor content and refresh the viewer's classified representation.
+  ///
+  /// Returns `false` when [id] is not a viewer or the write fails.
   Future<bool> saveViewer(String id, String content) async {
     final viewer = _items[id];
     if (viewer is! FileViewerSession) return false;
@@ -240,6 +267,9 @@ final class WorkspaceProjection {
     return true;
   }
 
+  /// Retarget every viewer at or below [from] after a filesystem rename.
+  ///
+  /// Reloads supported content, reattaches watchers, and preserves each tab id.
   Future<void> retargetViewersUnder(String from, String to) async {
     for (final item in List<PaneItem>.of(_items.values)) {
       if (item is! FileViewerSession || !_isUnder(item.path, from)) continue;
@@ -256,11 +286,13 @@ final class WorkspaceProjection {
     _onChanged();
   }
 
+  /// Clear an agent tab's unseen-completion marker when it becomes visible.
   void clearUnseen(String id) {
     final item = _items[id];
     if (item != null && item.unseenFinish) item.clearUnseen();
   }
 
+  /// Dispose a tab and all watcher, debounce, and live process resources it owns.
   void disposeTab(String id) {
     _fileWatchers.remove(id)?.cancel();
     _fileWatchDebounce.remove(id)?.cancel();
@@ -268,12 +300,14 @@ final class WorkspaceProjection {
     item?.dispose();
   }
 
+  /// Dispose every live tab described by a project's workspace document.
   void disposeProject(WorkspaceDocument document) {
     for (final tabId in document.tabs.keys) {
       disposeTab(tabId);
     }
   }
 
+  /// Snapshot a live tab as a persistable workspace descriptor.
   WorkspaceTab descriptorFor(PaneItem item, Project project) {
     if (item is TerminalSession) {
       return WorkspaceTab.terminal(
@@ -289,6 +323,7 @@ final class WorkspaceProjection {
     return descriptorForAgent(agent, project);
   }
 
+  /// Snapshot an agent or placeholder with a project-relative working path.
   WorkspaceTab descriptorForAgent(AgentSession session, Project project) {
     if (session.isPlaceholder) {
       return WorkspaceTab.empty(id: session.id, title: session.title);
@@ -298,6 +333,7 @@ final class WorkspaceProjection {
     );
   }
 
+  /// Refresh a document's tab descriptors from currently owned live tabs.
   WorkspaceDocument documentWithLiveTabs(
     Project project,
     WorkspaceDocument document,
@@ -315,6 +351,9 @@ final class WorkspaceProjection {
     return document.copyWith(tabs: tabs);
   }
 
+  /// Capture the session file created after an agent's baseline snapshot.
+  ///
+  /// Leaves the session unchanged when no unambiguous new history entry exists.
   Future<void> captureSessionPath(AgentSession session) async {
     final baseline = session.sessionBaseline;
     if (baseline == null || session.sessionPath != null) return;
@@ -326,6 +365,7 @@ final class WorkspaceProjection {
     _notifyDescriptorChanged(session.projectId);
   }
 
+  /// Mark an inactive completed agent unseen and notify when the window is out of focus.
   Future<void> notifyIfNeeded(
     AgentSession session, {
     required bool isActiveTab,
@@ -348,6 +388,7 @@ final class WorkspaceProjection {
     }
   }
 
+  /// Dispose all projected tabs, file watchers, and debounce timers.
   void dispose() {
     for (final watcher in _fileWatchers.values) {
       watcher.cancel();

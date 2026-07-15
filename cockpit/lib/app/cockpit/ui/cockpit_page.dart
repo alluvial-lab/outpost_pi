@@ -17,8 +17,9 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
-/// Shell do Cockpit: top bar + rail de projetos + multiplexador (árvore de
-/// splits). Cada folha é uma [PaneView] com abas; cada aba é um agente.
+/// Compose the Cockpit shell from its top bar, project rail, and split tree.
+///
+/// Each leaf renders a tabbed [PaneView] for agents, terminals, or files.
 class CockpitPage extends StatefulWidget {
   const CockpitPage({super.key});
 
@@ -29,8 +30,7 @@ class CockpitPage extends StatefulWidget {
 class _CockpitPageState extends State<CockpitPage> {
   CockpitViewModel get _vm => context.read<CockpitViewModel>();
 
-  /// Larguras dos painéis laterais (arrastáveis). **Não** são persistidas —
-  /// estado só da sessão da janela.
+  /// Keep draggable side-panel widths for this window session only.
   double _treeWidth = 300;
   static const double _treeMin = 220;
   static const double _treeMax = 620;
@@ -42,15 +42,15 @@ class _CockpitPageState extends State<CockpitPage> {
   @override
   void initState() {
     super.initState();
-    // Registra a ponte do ⌘L global (handler em main.dart) → foca o input do
-    // agente focado, mesmo quando o foco caiu num espaço vazio do shell.
+    // Bridge the global Command-L handler to the focused agent's composer,
+    // including when focus has fallen onto empty shell space.
     requestFocusActiveComposer = _focusActiveComposer;
-    // Dispara o carregamento inicial dos ViewModels page-scoped ao montar a rota.
-    // Os módulos provêm via `.new`, então não encadeiam mais `..init()`/`..check()`.
+    // Start page-scoped ViewModels when the route mounts. Modules provide them
+    // with `.new`, so factories do not chain `..init()` or `..check()`.
     context.read<CockpitViewModel>().init();
     context.read<UpdateViewModel>().check();
-    // Mantém os overrides de comando do LSP (tela "Language") em sync com o pool:
-    // empurra o estado atual e re-empurra a cada mudança das Configurações.
+    // Keep LSP command overrides from the Language settings synchronized with
+    // the pool initially and after every settings change.
     _settings = context.read<SettingsController>()
       ..addListener(_syncLspCommands)
       ..addListener(_syncNotifications);
@@ -61,9 +61,9 @@ class _CockpitPageState extends State<CockpitPage> {
   SettingsController? _settings;
   Map<String, String> _lastLspCommands = const <String, String>{};
 
-  /// Espelha o toggle de Notificações (aba das Configurações) para a VM, que
-  /// gateia o disparo de fim de turno. A VM é page-scoped e não vê o
-  /// `SettingsController` app-scoped, então a página empurra o valor.
+  /// Mirror the app-scoped notification setting into the page-scoped ViewModel.
+  ///
+  /// The value gates end-of-turn notifications across the scope boundary.
   void _syncNotifications() {
     _vm.setNotificationsEnabled(_settings!.settings.notificationsEnabled);
   }
@@ -71,8 +71,8 @@ class _CockpitPageState extends State<CockpitPage> {
   void _syncLspCommands() {
     final next = _settings!.settings.lspCommands;
     _vm.applyLspCommands(next);
-    // Reinicia os servidores das linguagens cujo comando mudou (efetiva o novo
-    // comando nos já vivos). Na 1ª sincronização não há o que reiniciar.
+    // Restart languages whose command changed so live servers adopt it. The
+    // first synchronization has no previous commands to restart.
     final langs = <String>{..._lastLspCommands.keys, ...next.keys};
     for (final id in langs) {
       if (_lastLspCommands[id] != next[id]) {
@@ -92,14 +92,15 @@ class _CockpitPageState extends State<CockpitPage> {
     super.dispose();
   }
 
-  /// Foca o input do agente focado (no-op se a aba ativa não for um agente).
+  /// Focus the active agent's composer, or do nothing for another tab type.
   void _focusActiveComposer() {
     final agent = _vm.focusedAgent;
     if (agent is AgentSession) agent.requestComposerFocus?.call();
   }
 
-  /// Garante um projeto selecionado (pede uma pasta se não houver). Retorna
-  /// `true` se há projeto pronto para uso.
+  /// Ensure a project is selected, prompting for a folder when necessary.
+  ///
+  /// Returns `true` once a project is ready for use.
   Future<bool> _ensureProject() async {
     if (_vm.selectedProject != null) return true;
     return _addProject();
@@ -115,11 +116,10 @@ class _CockpitPageState extends State<CockpitPage> {
     return true;
   }
 
-  /// Fluxo "Criar Workspace": escolhe a pasta, abre o dialog de configurações
-  /// (nome pré-preenchido com o da pasta + cor sugerida, ambos editáveis) e cria.
-  // DEBUG (temporário): marcadores síncronos pra localizar o segfault no
-  // Windows. Escrita síncrona+flush sobrevive a um crash nativo (print não).
-  // Arquivo: <temp>/ck_trace.log
+  /// Run the Create Workspace flow with editable folder-derived defaults.
+  // Temporary debug markers isolate a Windows native crash. Synchronous writes
+  // with flush survive a native crash where print output may not.
+  // File: <temp>/ck_trace.log
   void _mark(String m) {
     try {
       File(
@@ -159,7 +159,7 @@ class _CockpitPageState extends State<CockpitPage> {
     return true;
   }
 
-  /// "Configurações" do workspace: editar nome + cor do avatar.
+  /// Edit workspace identity and explain when a rename reaches running agents.
   Future<void> _configureProject(Project project) async {
     final vm = _vm;
     final result = await showWorkspaceSettingsDialog(
@@ -188,9 +188,10 @@ class _CockpitPageState extends State<CockpitPage> {
     }
   }
 
-  /// "Criar worktree": busca o namespace (branches + worktrees) pra validação ao
-  /// vivo e abre o dialog. O dialog roda o `git worktree add` via `onCreate` e a
-  /// VM auto-seleciona o fork novo (decisões 14, 21).
+  /// Open worktree creation with live branch and worktree name validation.
+  ///
+  /// The dialog runs `git worktree add` through `onCreate`; the ViewModel then
+  /// selects the new fork.
   Future<void> _createWorktree(Project root) async {
     final vm = _vm;
     final namespace = await vm.worktreeNamespace(root.id);
@@ -206,8 +207,7 @@ class _CockpitPageState extends State<CockpitPage> {
     );
   }
 
-  /// "Fechar" o workspace (confirma → remove da lista local + encerra agentes).
-  /// **Não deleta** a pasta no disco — só sai do cockpit.
+  /// Confirm and close a workspace without deleting its folder from disk.
   Future<void> _deleteProject(Project project) async {
     final vm = _vm;
     final ok = await showConfirmDialog(
@@ -223,10 +223,10 @@ class _CockpitPageState extends State<CockpitPage> {
     await vm.removeProject(project.id);
   }
 
-  /// "Remover" a worktree (fork): confirma (aviso reforçado se a branch ainda
-  /// não foi mergeada) → `git worktree remove` + `git branch -D`, encerra os
-  /// agentes do fork e volta a seleção pro pai (decisões 6, 9). Erro do git →
-  /// dialog de informação.
+  /// Confirm and remove a worktree, warning when its branch is unmerged.
+  ///
+  /// Removal deletes the worktree and branch, terminates fork agents, and
+  /// returns selection to the parent. Git failures are shown in an info dialog.
   Future<void> _removeWorktree(Project fork) async {
     final vm = _vm;
     final merged = await vm.isWorktreeBranchMerged(fork.id);
@@ -257,8 +257,9 @@ class _CockpitPageState extends State<CockpitPage> {
     }
   }
 
-  /// Pede a subpasta onde o agente vai atuar e dispara [action] com o caminho
-  /// relativo escolhido (`''` = raiz do projeto).
+  /// Ask where the agent should work and invoke [action] with a relative path.
+  ///
+  /// An empty path represents the project root.
   Future<void> _pickSubfolderThen(void Function(String sub) action) async {
     final vm = _vm;
     if (!await _ensureProject()) return;
@@ -274,12 +275,12 @@ class _CockpitPageState extends State<CockpitPage> {
     action(chosen);
   }
 
-  /// "Histórico": lista as sessões salvas do pi para a pasta do agente ativo e,
-  /// ao escolher, substitui o transcript pela sessão carregada.
+  /// Choose a saved Pi session for the active agent and replace its transcript.
   Future<void> _openHistory(String agentId) async {
     final vm = _vm;
     final session = vm.session(agentId);
-    if (session is! AgentSession || !session.isAlive) return; // agente vivo
+    // History switching requires a live agent process.
+    if (session is! AgentSession || !session.isAlive) return;
     final sessions = await vm.historyFor(session.workingDirectory);
     if (!mounted) return;
     final picked = await showHistoryDialog(context, sessions: sessions);
@@ -313,9 +314,10 @@ class _CockpitPageState extends State<CockpitPage> {
     );
   }
 
-  /// ⌘L (macOS) / Ctrl+L (Win/Linux): foca o input do agente focado quando o
-  /// foco está dentro do shell. (Fora dele — clique no vazio — quem dispara é a
-  /// ponte global de `main.dart`; ver [requestFocusActiveComposer].)
+  /// Bind Command-L on macOS and Ctrl-L elsewhere to the focused composer.
+  ///
+  /// When focus is outside the shell, the global bridge in `main.dart` invokes
+  /// [requestFocusActiveComposer] instead.
   Map<ShortcutActivator, VoidCallback> _focusComposerBindings() =>
       <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.keyL, meta: true):
@@ -338,9 +340,8 @@ class _CockpitPageState extends State<CockpitPage> {
 
     return CallbackShortcuts(
       bindings: _focusComposerBindings(),
-      // Focus(autofocus) garante que a página esteja na cadeia de foco mesmo
-      // antes de clicar em algo — senão o atalho ⌘L não dispara num agente
-      // recém-aberto (nada focado ainda).
+      // Keep the page in the focus chain before the first click so Command-L
+      // works for a newly opened agent with no focused child.
       child: Focus(
         autofocus: true,
         child: Scaffold(
@@ -395,7 +396,7 @@ class _CockpitPageState extends State<CockpitPage> {
                             onOpenSettings: () =>
                                 context.pushNamed(RoutePaths.settings),
                           ),
-                          // Alça de arraste na borda direita (direita = alarga).
+                          // Drag the right edge; moving right widens the rail.
                           Positioned(
                             right: 0,
                             top: 0,
@@ -418,8 +419,8 @@ class _CockpitPageState extends State<CockpitPage> {
                               index: _activeIndex(vm),
                               sizing: StackFit.expand,
                               children: [
-                                // Um multiplexador por projeto — todos montados, só
-                                // o ativo pintado → estado preservado ao trocar.
+                                // Keep one mounted multiplexer per project and
+                                // paint only the active one to preserve state.
                                 for (final project in vm.projects)
                                   KeyedSubtree(
                                     key: ValueKey(project.id),
@@ -435,7 +436,7 @@ class _CockpitPageState extends State<CockpitPage> {
                       Stack(
                         children: [
                           FileTreePanel(
-                            // Pasta do workspace; reseta ao trocar de workspace.
+                            // Reset the file tree when the workspace root changes.
                             key: ValueKey(vm.selectedProject?.path ?? ''),
                             width: _treeWidth,
                             rootPath: vm.selectedProject?.path ?? '',
@@ -445,9 +446,10 @@ class _CockpitPageState extends State<CockpitPage> {
                             gitStatusOf: vm.gitStatusForPath,
                             onOpenFile: (path) =>
                                 vm.openFile(path, isPreview: false),
-                            onTapFile: vm.openFile, // clique único = preview
-                            onSelectFile:
-                                vm.selectFileInTree, // atualiza highlight
+                            onTapFile:
+                                vm.openFile, // A single click opens a preview.
+                            onSelectFile: vm
+                                .selectFileInTree, // Update the selection highlight.
                             onOpenWith: vm.openWithDefaultApp,
                             onCreateInFolder: (sub, terminal) =>
                                 vm.newTabIn(sub, terminal: terminal),
@@ -458,8 +460,7 @@ class _CockpitPageState extends State<CockpitPage> {
                             onDelete: vm.deletePath,
                             footer: const _LspStatusBar(),
                           ),
-                          // Alça de arraste sobre a borda esquerda do painel
-                          // (esquerda = alarga; direita = estreita).
+                          // Drag the panel's left edge; moving left widens it.
                           Positioned(
                             left: 0,
                             top: 0,
@@ -521,7 +522,7 @@ class _CockpitPageState extends State<CockpitPage> {
     }
     final split = node as SplitPane;
     final isRow = split.dir == SplitDir.vertical;
-    // Largura da região de arraste (a linha visual continua 1px, centralizada).
+    // Use a wide hit target while keeping the visual divider centered at 1 px.
     const handle = 12.0;
 
     return LayoutBuilder(
@@ -548,11 +549,11 @@ class _CockpitPageState extends State<CockpitPage> {
         );
         return Stack(
           children: [
-            // Base: as duas panes adjacentes (a linha vem do handle por cima).
+            // Lay out adjacent panes beneath the overlaid divider.
             isRow
                 ? Row(children: [first, second])
                 : Column(children: [first, second]),
-            // Overlay: handle largo centralizado na divisória (hit-test real).
+            // Center the wide interactive handle on the visible divider.
             if (isRow)
               Positioned(
                 left: aSize - handle / 2,
@@ -576,13 +577,14 @@ class _CockpitPageState extends State<CockpitPage> {
   }
 }
 
-/// Alça fina pra redimensionar um painel lateral. Hit-area de 8px (cursor de
-/// resize); o visual fica por conta da borda do próprio painel. Quem usa decide
-/// o sinal do delta (borda esquerda vs direita).
+/// Provide an 8 px drag target for resizing a side panel.
+///
+/// The panel border supplies the visual line; the caller interprets the delta
+/// direction according to whether this is a left or right edge.
 class _ResizeHandle extends StatelessWidget {
   const _ResizeHandle({required this.onDelta});
 
-  /// Delta horizontal do arraste (px).
+  /// Report each horizontal drag delta in pixels.
   final ValueChanged<double> onDelta;
 
   @override
@@ -598,11 +600,11 @@ class _ResizeHandle extends StatelessWidget {
   }
 }
 
-/// Barra de status do LSP no rodapé do pane de Files. Reflete o servidor da aba
-/// **focada**: linguagem + rodando/parado + botão de reiniciar. Quando a aba não
-/// é um arquivo de código (agente/terminal/sem aba), fica vazia — mas mantém a
-/// altura, pra não pular o layout. Reage a mudança de aba (watch da VM) e a
-/// subida/queda de servidor (stream `lspStatusChanges`).
+/// Show LSP status for the focused file tab in the Files pane footer.
+///
+/// The bar reports language and running state and offers restart. It keeps its
+/// height when the focused tab is not supported so the layout does not jump,
+/// and reacts to both tab changes and `lspStatusChanges`.
 class _LspStatusBar extends StatefulWidget {
   const _LspStatusBar();
 
