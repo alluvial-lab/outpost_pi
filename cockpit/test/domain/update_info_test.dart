@@ -5,12 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('UpdateInfo.fromJson', () {
-    test('parseia manifest válido com artifacts', () {
+    test('parses a valid manifest with artifacts', () {
       final json = jsonDecode('''
       {
         "version": "1.2.0",
         "date": "2026-06-12",
-        "notes": "resumo",
+        "notes": "summary",
         "artifacts": [
           { "platform": "macos", "arch": "universal", "format": "dmg",
             "url": "https://x/a.dmg", "sha256": "abc", "size": 123 },
@@ -22,14 +22,14 @@ void main() {
       final info = UpdateInfo.fromJson(json);
       expect(info.version, '1.2.0');
       expect(info.date, '2026-06-12');
-      expect(info.notes, 'resumo');
+      expect(info.notes, 'summary');
       expect(info.artifacts, hasLength(2));
       expect(info.artifacts.first.platform, 'macos');
       expect(info.artifacts.first.url, 'https://x/a.dmg');
       expect(info.artifacts[1].size, 456);
     });
 
-    test('campos opcionais ausentes viram defaults', () {
+    test('uses defaults when optional fields are absent', () {
       final info = UpdateInfo.fromJson(
         jsonDecode('{"version":"1.0.0","artifacts":[]}'),
       );
@@ -38,25 +38,28 @@ void main() {
       expect(info.artifacts, isEmpty);
     });
 
-    test('lança em schema errado (version ausente)', () {
+    test('throws for the wrong schema when version is absent', () {
       expect(
         () => UpdateInfo.fromJson(jsonDecode('{"artifacts":[]}')),
         throwsFormatException,
       );
     });
 
-    test('lança quando não é objeto / artifacts não é lista', () {
-      expect(
-        () => UpdateInfo.fromJson(jsonDecode('[]')),
-        throwsFormatException,
-      );
-      expect(
-        () => UpdateInfo.fromJson(jsonDecode('{"version":"1.0.0"}')),
-        throwsFormatException,
-      );
-    });
+    test(
+      'throws when the manifest is not an object or artifacts is not a list',
+      () {
+        expect(
+          () => UpdateInfo.fromJson(jsonDecode('[]')),
+          throwsFormatException,
+        );
+        expect(
+          () => UpdateInfo.fromJson(jsonDecode('{"version":"1.0.0"}')),
+          throwsFormatException,
+        );
+      },
+    );
 
-    test('lança quando um artifact não tem url/platform/format', () {
+    test('throws when an artifact lacks url, platform, or format', () {
       expect(
         () => UpdateInfo.fromJson(
           jsonDecode('{"version":"1.0.0","artifacts":[{"platform":"macos"}]}'),
@@ -80,7 +83,7 @@ void main() {
     '''),
     );
 
-    test('casa platform+format e prefere a arch pedida', () {
+    test('matches platform and format while preferring the requested arch', () {
       expect(
         info.artifactFor(platform: 'linux', format: 'deb', arch: 'arm64')?.url,
         'arm.deb',
@@ -91,7 +94,7 @@ void main() {
       );
     });
 
-    test('macOS: arch universal cai no primeiro do formato', () {
+    test('falls back to the first format match for universal macOS', () {
       expect(
         info
             .artifactFor(platform: 'macos', format: 'dmg', arch: 'universal')
@@ -100,7 +103,7 @@ void main() {
       );
     });
 
-    test('sem match → null', () {
+    test('returns null when no artifact matches', () {
       expect(
         info.artifactFor(platform: 'windows', format: 'exe', arch: 'x64'),
         isNull,
