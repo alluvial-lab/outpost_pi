@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-ui
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # EN-first + dartdoc gap-fill — cockpit module: UI layer
@@ -388,3 +388,17 @@ not blanket coverage.
 
 Not required. This feature changes copy/comments/documentation only and reuses
 all existing UI composition and behavior.
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD -- cockpit/lib/app/cockpit/ui/`).
+
+### Findings
+- None. PT sweeps clean (no residual Portuguese); no signature/identifier/enum/
+  wire-value/lifecycle change. Intended literal translations bounded at
+  `worktree_create_dialog.dart:136`. Dartdoc meaningful and tier-appropriate.
+
+### Verdict
+Approve. Advanced `review → done`.

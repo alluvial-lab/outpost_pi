@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # EN-first + dartdoc gap-fill — cockpit module: data layer
@@ -408,3 +408,19 @@ translation did not alter behavior.
 No foundation document update is required: this feature applies the already
 landed EN-first/native-dartdoc policy without changing product behavior,
 architecture, protocol, or persistence.
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD -- cockpit/lib/app/cockpit/data/ cockpit/test/data/`).
+
+### Findings (adjudicated)
+- **Important — "diff not comments-only" — REJECTED (diff-range confounding).** The reviewer flagged `update_checker_impl.dart` (manifestUrl nullable), `rpc_event_mapper.dart:189`, `app_launcher_impl.dart:242`, `local_notifier.dart:25,38` as non-comments-only changes contradicting the feature's comments-only contract. Verified against per-commit history: the `manifestUrl` nullable behavior change came from commit `387c34c` (the **retire-rp-s3** feature's `runtime-update-noop` story — already reviewed and done in the external-surfaces batch), NOT from the cockpit-data EN-first feature. The cockpit-data feature's commit `f066593` touched the same file but only for PT→EN comment/dartdoc translation. The reviewer itself flagged this possibility ("either provide a feature-only baseline excluding sibling commit `387c34c`..."). The integrated diff range `c346e28..HEAD` conflates sibling features; per-commit attribution confirms the cockpit-data feature's changes are comments-only as claimed. **No fix required.**
+- No other findings; translation complete (only intentional `café`/`olá 世界 🚀` UTF-8 fixtures remain), wire values unchanged, dartdoc tier-correct.
+
+### Verification
+- `flutter analyze` clean; `flutter test` (241) green (reproduced by reviewer and re-verified).
+
+### Verdict
+Approve. Advanced `review → done`.

@@ -95,12 +95,12 @@ identifiers, token names, icon names, colors, typography, or widget behavior.
   `curly_braces_in_flow_control_structures` info in the concurrently owned
   `cockpit/lib/app/cockpit/data/filesystem/git_status_reader_impl.dart`; the
   core UI scope itself analyzes cleanly, and this story did not edit that file.
-- Discrepancies from design: the generated map contains four pre-existing PT
-  dartdoc lines after `// ignore_for_file:`. The explicit header-only exception
-  was treated as authoritative over the general zero-PT criterion, so those
-  generated-body lines remain byte-identical. The 16 handwritten files and the
-  generated header contain no Portuguese; the full-file grep reports only those
-  four intentionally preserved generated lines.
+- Discrepancies from design: the generated map's four section-header dartdoc
+  lines (`file_icon_map.g.dart:17,1389,3517,4450`) are English (e.g.
+  `/// Extension (no dot, lowercase) -> icon name.`). An earlier draft of this
+  note described them as residual PT; that was stale — they are EN. The 16
+  handwritten files and the generated header contain no Portuguese; the
+  full-file grep reports no PT.
 - Documentation rationale: attached the shared-token and out-of-tree fallback
   contract directly to `AppThemeX`; kept its obvious getters undocumented.
 - Adjacent issues parked: none. The unrelated analyzer finding is already in a
