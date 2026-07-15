@@ -5,19 +5,14 @@ import 'app_typography.dart';
 import 'cockpit_theme.dart';
 import 'syntax_colors.dart';
 
-/// Acesso ergonômico aos tokens do tema a partir de qualquer widget.
-///
-/// ```dart
-/// Container(color: context.colors.panel);
-/// Text('hi', style: context.typo.mono.copyWith(color: context.colors.accent));
-/// ```
-///
-/// Os tokens vêm do [CockpitTheme] (InheritedWidget instalado pela raiz). Se um
-/// widget for construído fora dessa árvore (ex.: teste que monta um app cru), os
-/// getters caem no dark — o visual padrão — sem lançar.
-/// Fallback de tipografia, construído uma vez.
+// Construct the typography fallback once for widgets outside the theme tree.
 final AppTypography _fallbackTypo = AppTypography.build();
 
+/// Access shared Cockpit theme tokens from any widget context.
+///
+/// Reads tokens from the root-installed [CockpitTheme]. Outside that tree, such
+/// as in a minimal widget test, falls back to the default dark color and syntax
+/// palettes and a cached default typography rather than throwing.
 extension AppThemeX on BuildContext {
   AppColors get colors => CockpitTheme.maybeOf(this)?.colors ?? AppColors.dark;
 

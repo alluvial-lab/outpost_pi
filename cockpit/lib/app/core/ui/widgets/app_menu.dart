@@ -1,8 +1,10 @@
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Um item de [showAppMenu]: ícone (opcional) à esquerda + rótulo, com check à
-/// direita quando [selected] e cor de erro quando [danger] (ação destrutiva).
+/// Describe an item rendered by [showAppMenu].
+///
+/// Places an optional icon and label on the left, a check on the right when
+/// [selected], and uses the error color when [danger] marks a destructive action.
 class AppMenuItem<T> {
   const AppMenuItem({
     required this.value,
@@ -19,28 +21,28 @@ class AppMenuItem<T> {
   final bool danger;
 }
 
-/// Popover de menu atualmente aberto. O `showPopover` do shadcn **não** fecha
-/// sozinho quando outro abre (um clique-direito num segundo item dispara o
-/// `onSecondaryTapUp` antes do barrier dismissar o primeiro), então rastreamos o
-/// menu ativo e fechamos o anterior antes de abrir o novo — só um por vez.
+/// Track the currently open menu popover.
+///
+/// shadcn `showPopover` does not close itself when another opens: a secondary
+/// tap on a second item fires before the barrier dismisses the first. Tracking
+/// the active menu lets callers close it before opening another.
 OverlayCompleter<dynamic>? _activeMenu;
 
-/// Registra [overlay] como o menu ativo, fechando o anterior se ainda estiver
-/// aberto. Usado por [showAppMenu] e por outros popovers de menu do app (ex.: o
-/// dropdown de "Open" da topbar) para garantir um único menu aberto por vez.
+/// Register [overlay] as active, closing the previous menu if still open.
+///
+/// Shared by [showAppMenu] and other app menu popovers to keep at most one menu
+/// open.
 void trackMenuOverlay(OverlayCompleter<dynamic> overlay) {
   if (_activeMenu?.isCompleted == false) _activeMenu!.remove();
   _activeMenu = overlay;
 }
 
-/// Menu popup **compacto** (shadcn). Por padrão ancora no widget que chamou (via
-/// [context]): abre logo **abaixo** do trigger — ideal pra botões. Passando
-/// [globalPosition] (ex.: `onSecondaryTapUp(d).globalPosition`), abre no **ponto
-/// do clique** — ideal pra menu de contexto (botão direito). O popover do shadcn
-/// inverte sozinho se não couber. Ícone à esquerda, check à direita do
-/// selecionado. Devolve o `value` escolhido (ou `null`).
+/// Show the app's compact shadcn popup menu.
 ///
-/// Componente único do app — todos os menus passam por aqui.
+/// By default, anchors below the calling widget through [context]. Supplying
+/// [globalPosition] anchors at the click point for a context menu. shadcn flips
+/// the popover when space is constrained. Returns the selected value, or `null`
+/// when dismissed. All app menus use this shared component.
 Future<T?> showAppMenu<T>(
   BuildContext context, {
   required List<AppMenuItem<T>> items,
@@ -52,14 +54,14 @@ Future<T?> showAppMenu<T>(
 
   final overlay = showPopover<T>(
     context: context,
-    // Ponto do clique (menu de contexto) ou âncora no trigger (dropdown).
+    // Anchor at the context-menu click point or the dropdown trigger.
     position: globalPosition,
     alignment: Alignment.topLeft,
     anchorAlignment: anchored ? Alignment.bottomLeft : Alignment.topLeft,
     offset: anchored ? const Offset(0, 4) : null,
     builder: (context) => ConstrainedBox(
       constraints: BoxConstraints(minWidth: minWidth, maxWidth: 320),
-      // DropdownMenu embrulha os MenuButton num MenuGroup (exigido) + MenuPopup.
+      // DropdownMenu wraps MenuButtons in the required MenuGroup + MenuPopup.
       child: DropdownMenu(
         children: [
           for (final item in items)

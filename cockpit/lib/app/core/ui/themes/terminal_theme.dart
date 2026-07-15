@@ -1,14 +1,15 @@
 import 'package:flutter/widgets.dart';
 import 'package:xterm/xterm.dart';
 
-/// Tema **dark** do `TerminalView` (fundo `#18181B`, cursor accent, paleta ANSI
-/// dark). O fundo e a paleta de 16 cores são do emulador (nossos) — o oh-my-zsh
-/// só emite os códigos ANSI do prompt/`ls`; quem pinta é este tema.
+/// Dark `TerminalView` theme with Cockpit's background, cursor, and ANSI palette.
+///
+/// The emulator owns the background and 16-color palette; oh-my-zsh only emits
+/// ANSI codes for the prompt and `ls`, which this theme renders.
 const TerminalTheme cockpitTerminalThemeDark = TerminalTheme(
   cursor: Color(0xFF2F6FF0), // accent
   selection: Color(0x402F6FF0),
   foreground: Color(0xFFECECEF), // text
-  background: Color(0xFF18181B), // panel (mesmo fundo do corpo do agente)
+  background: Color(0xFF18181B), // panel (same as the agent body background)
   black: Color(0xFF26262A),
   red: Color(0xFFE5484D),
   green: Color(0xFF3FB868),
@@ -30,14 +31,15 @@ const TerminalTheme cockpitTerminalThemeDark = TerminalTheme(
   searchHitForeground: Color(0xFF0D0D0F),
 );
 
-/// Tema **light** do terminal — fundo claro + paleta ANSI escurecida (estilo
-/// GitHub light), legível sobre branco. Cores claras (yellow/white) viram tons
-/// mais escuros pra não sumirem; prompts do oh-my-zsh ficam legíveis.
+/// Light terminal theme with a white background and darkened ANSI palette.
+///
+/// Uses GitHub Light-inspired colors; normally bright yellow and white become
+/// darker shades so output and oh-my-zsh prompts remain legible.
 const TerminalTheme cockpitTerminalThemeLight = TerminalTheme(
   cursor: Color(0xFF2F6FF0), // accent
   selection: Color(0x222F6FF0),
   foreground: Color(0xFF1A1A1F), // text (dark)
-  background: Color(0xFFFFFFFF), // panel (mesmo fundo do corpo do agente)
+  background: Color(0xFFFFFFFF), // panel (same as the agent body background)
   black: Color(0xFF1A1A1F),
   red: Color(0xFFCF222E),
   green: Color(0xFF1A7F37),
@@ -59,7 +61,7 @@ const TerminalTheme cockpitTerminalThemeLight = TerminalTheme(
   searchHitForeground: Color(0xFFFFFFFF),
 );
 
-/// Tema do terminal conforme o brilho do app.
+/// Resolve the terminal theme for the app brightness.
 TerminalTheme cockpitTerminalThemeFor(Brightness brightness) =>
     brightness == Brightness.dark
     ? cockpitTerminalThemeDark

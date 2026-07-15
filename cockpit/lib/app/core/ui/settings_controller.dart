@@ -2,9 +2,10 @@ import 'package:cockpit/app/core/domain/contracts/settings_store.dart';
 import 'package:cockpit/app/core/domain/entities/app_settings.dart';
 import 'package:flutter/foundation.dart';
 
-/// Estado global das preferências do app. Vive **acima do `ShadcnApp`** pra
-/// trocar tema/fonte em runtime, e é lido pela tela de Configurações. Cada
-/// mudança aplica na hora (notify) e persiste (Hive).
+/// Manage app-wide preferences above `ShadcnApp`.
+///
+/// Enables runtime theme and font changes and exposes them to the Settings
+/// screen. Each change notifies listeners immediately and persists to Hive.
 class SettingsController extends ChangeNotifier {
   SettingsController(this._store);
 
@@ -13,7 +14,7 @@ class SettingsController extends ChangeNotifier {
 
   AppSettings get settings => _settings;
 
-  /// Carrega o que está salvo (chamado no boot, antes do primeiro frame).
+  /// Load persisted settings during startup before the first frame.
   Future<void> load() async {
     _settings = await _store.load();
     notifyListeners();
@@ -51,7 +52,7 @@ class SettingsController extends ChangeNotifier {
   void setLastOpenApp(String id) =>
       _apply(_settings.copyWith(lastOpenAppId: id));
 
-  /// Define (ou limpa, se vazio) o comando do language server de [languageId].
+  /// Set the language-server command for [languageId], or clear it when empty.
   void setLspCommand(String languageId, String? command) {
     final next = Map<String, String>.of(_settings.lspCommands);
     final trimmed = command?.trim();
@@ -63,7 +64,7 @@ class SettingsController extends ChangeNotifier {
     _apply(_settings.copyWith(lspCommands: next));
   }
 
-  /// Define (ou limpa, se vazio) o comando de formatador externo de [languageId].
+  /// Set the external formatter command for [languageId], or clear it when empty.
   void setLspFormatter(String languageId, String? command) {
     final next = Map<String, String>.of(_settings.lspFormatters);
     final trimmed = command?.trim();
@@ -84,7 +85,7 @@ class SettingsController extends ChangeNotifier {
   void _apply(AppSettings next) {
     _settings = next;
     notifyListeners();
-    // Persiste em background — falha de IO não pode travar a UI.
+    // Persist in the background so an I/O failure cannot block the UI.
     _store.save(next);
   }
 }

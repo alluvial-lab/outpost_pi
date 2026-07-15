@@ -1,12 +1,12 @@
 // GENERATED — do not edit by hand.
 //
-// Mapeamento arquivo/pasta -> ícone, derivado do material-icon-theme
+// File/folder -> icon mapping derived from material-icon-theme
 // (https://github.com/material-extensions/vscode-material-icon-theme),
-// versão 5.35.0, licença MIT (ver assets/file_icons/LICENSE).
+// version 5.35.0, MIT license (see assets/file_icons/LICENSE).
 //
-// Regenerar: ver o script no plano 37 / histórico de commits do cockpit.
-// Apenas o conjunto *default* (dark) é embarcado — variantes _light e
-// _highContrast são ignoradas (o Cockpit é dark-only).
+// To regenerate, see the script referenced by plan 37 / the Cockpit commit history.
+// Only the *default* (dark) set is bundled; _light and _highContrast variants
+// are ignored because Cockpit is dark-only.
 //
 // ignore_for_file: lines_longer_than_80_chars
 

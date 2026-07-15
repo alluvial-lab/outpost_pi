@@ -2,27 +2,27 @@ import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 import 'package:cockpit/app/core/ui/widgets/code_highlight.dart';
 import 'package:flutter/widgets.dart';
 
-/// `TextEditingController` que pinta o texto editável com o **mesmo** syntax
-/// highlight do viewer read-only e sobrepõe os **diagnostics do LSP** (sublinhado
-/// ondulado). O Flutter desenha o conteúdo de um campo via [buildTextSpan];
-/// sobrescrevê-lo para devolver os spans do highlight.js + diagnostics dá tudo
-/// ao vivo enquanto se digita — sem reimplementar pintura, seleção ou cursor.
+/// Render editable text with the read-only viewer's syntax highlighting.
+///
+/// Overlays LSP diagnostics as wavy underlines. Overriding [buildTextSpan] lets
+/// Flutter render highlight.js and diagnostic spans live while preserving the
+/// framework's text painting, selection, and cursor behavior.
 class CodeEditingController extends TextEditingController {
   CodeEditingController({super.text, required this.language});
 
-  /// Linguagem (extensão) pro highlight; `null`/desconhecida cai em texto puro.
+  /// File extension used for highlighting; null or unknown values use plain text.
   final String? language;
 
   List<LspDiagnostic> _diagnostics = const <LspDiagnostic>[];
 
-  /// Diagnostics publicados pelo servidor para este documento. Setar repinta.
+  /// Diagnostics published for this document; assigning them triggers repaint.
   List<LspDiagnostic> get diagnostics => _diagnostics;
   set diagnostics(List<LspDiagnostic> value) {
     _diagnostics = value;
     notifyListeners();
   }
 
-  /// Severidade mais grave que toca a linha (base 0), ou `null`. Usado no gutter.
+  /// Return the highest severity touching a zero-based line for gutter display.
   LspSeverity? severityForLine(int line) {
     LspSeverity? result;
     for (final d in _diagnostics) {
@@ -35,7 +35,7 @@ class CodeEditingController extends TextEditingController {
     return result;
   }
 
-  /// Mensagens dos diagnostics que tocam a linha (base 0). Usado no tooltip.
+  /// Return diagnostic messages touching a zero-based line for its tooltip.
   List<String> messagesForLine(int line) {
     final out = <String>[];
     for (final d in _diagnostics) {
