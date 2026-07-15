@@ -1,13 +1,13 @@
-/// Comparação de versões semver simples `x.y.z` — numérica por componente.
+/// Compare simple `x.y.z` semver versions numerically by component.
 ///
-/// Ignora sufixos de pré-release/build (`-beta`, `+1`): considera só os três
-/// primeiros componentes numéricos. Componentes ausentes contam como 0
-/// (`1.2` == `1.2.0`); não-numéricos contam como 0. Espelha a versão do
-/// Cockpit (plano 43) — o app baixa o `latest.json` com o mesmo schema.
+/// Pre-release and build suffixes (`-beta`, `+1`) are ignored; only the first
+/// three numeric components participate. Missing components count as zero
+/// (`1.2` == `1.2.0`), as do non-numeric components. This mirrors Cockpit's
+/// implementation so the app reads the same `latest.json` schema.
 library;
 
 List<int> _parse(String v) {
-  // Tira qualquer coisa depois de `-` ou `+` (pré-release / build metadata).
+  // Remove everything after `-` or `+` (pre-release / build metadata).
   final core = v.trim().split(RegExp(r'[-+]')).first;
   final parts = core.split('.');
   return List<int>.generate(3, (i) {
@@ -16,7 +16,7 @@ List<int> _parse(String v) {
   });
 }
 
-/// `-1` se [a] < [b], `0` se iguais, `1` se [a] > [b].
+/// Compare [a] and [b], returning `-1`, `0`, or `1`.
 int compareSemver(String a, String b) {
   final pa = _parse(a);
   final pb = _parse(b);
@@ -26,6 +26,6 @@ int compareSemver(String a, String b) {
   return 0;
 }
 
-/// `true` se [candidate] é uma versão **maior** que [current].
+/// Report whether [candidate] is newer than [current].
 bool isNewerVersion(String candidate, String current) =>
     compareSemver(candidate, current) > 0;
