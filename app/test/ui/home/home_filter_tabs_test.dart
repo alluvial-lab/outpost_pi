@@ -1,4 +1,4 @@
-// Plan-38 Fase 3 — the Home presence filter: a 3-pill segmented control and
+// Plan-38 Phase 3 — the Home presence filter: a 3-pill segmented control and
 // the per-tab empty state. Pure view widgets; `context.colors` falls back to
 // the dark palette outside the themed tree, so a bare MaterialApp is enough.
 

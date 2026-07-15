@@ -4,7 +4,7 @@ import 'package:app/ui/home/states/home_state.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-/// Plan-38 Fase 3 — presence filter for the Home list. A 3-pill segmented
+/// Plan-38 Phase 3 — presence filter for the Home list. A 3-pill segmented
 /// control (All · Online · Offline) the user taps to slice the existing
 /// (peer → room) list by liveness. Pure view filter: tapping a tab never
 /// reloads data, it only narrows [HomeViewModel.visibleItems]. The default
@@ -100,7 +100,7 @@ class HomeFilterTabs extends StatelessWidget {
   }
 }
 
-/// Plan-38 Fase 3 — empty state shown BELOW the tabs when the current tab
+/// Plan-38 Phase 3 — empty state shown BELOW the tabs when the current tab
 /// has no matching sessions but the list isn't globally empty (the
 /// globally-empty case keeps the existing "Nothing here…" lonely state and
 /// hides the tabs entirely). Copy varies per tab so the user understands
