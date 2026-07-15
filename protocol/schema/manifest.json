@@ -32,7 +32,7 @@
       "id": "cockpitControl",
       "transport": "pi-custom-event",
       "schema": "schema/cockpit-control.schema.json",
-      "description": "Remote Pi cockpit control overlay over Pi custom events"
+      "description": "Outpost-Pi cockpit control overlay over Pi custom events"
     }
   ]
 }

@@ -15,7 +15,7 @@ rebuilding our own artifacts.
 
 ## Work tracking
 
-This fork has its own `.work/` queue. Use it for Remote Pi code/product bugs, follow-up slices, and fork-owned operational work.
+This fork has its own `.work/` queue. Use it for Outpost-Pi code/product bugs, follow-up slices, and fork-owned operational work.
 
 - `.work/backlog/` — parked bugs and ideas.
 - `.work/active/stories/` — scoped implementation-sized work.
@@ -23,7 +23,7 @@ This fork has its own `.work/` queue. Use it for Remote Pi code/product bugs, fo
 - `.work/active/epics/` — larger arcs.
 - `.work/CONVENTIONS.md` — frontmatter, tags, and routing rules.
 
-Do **not** park Remote Pi code/product bugs in the SNC root `.work/` queue. SNC root can record high-level operator context, but concrete Remote Pi implementation work belongs here.
+Do **not** park Outpost-Pi code/product bugs in the SNC root `.work/` queue. SNC root can record high-level operator context, but concrete Outpost-Pi implementation work belongs here.
 
 ## Agent operating discipline
 
@@ -50,7 +50,7 @@ Read `CLAUDE.md` at the repo root for the orchestration/planning posture, and re
 
 ## Agent reference surface
 
-Remote Pi is adopting platform-style agent references so implementation/review agents have current language, library, and development-cycle guidance before touching code. The pattern and template live at `docs/agent-reference-surface.md`. New canonical references should prefer `.agents/skills/<reference>/SKILL.md` so Pi/Codex/non-Claude agents can read them directly; Claude-facing files may link to those references but should not become the only source of API facts.
+Outpost-Pi is adopting platform-style agent references so implementation/review agents have current language, library, and development-cycle guidance before touching code. The pattern and template live at `docs/agent-reference-surface.md`. New canonical references should prefer `.agents/skills/<reference>/SKILL.md` so Pi/Codex/non-Claude agents can read them directly; Claude-facing files may link to those references but should not become the only source of API facts.
 
 When picking up any active `.work` item tagged `research` or containing `research_dials`, load and follow the `research-orchestrator` skill before authoring research-backed docs, skills, briefs, or references. Treat the item's `research_dials` as the commissioning registration and surface/confirm them through that workflow rather than proceeding ad hoc.
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kevoun.com/schemas/cockpit-control.schema.json",
-  "title": "Remote Pi cockpit control overlay",
-  "description": "Compatibility NUL-prefixed prompt commands plus the target structured Remote Pi control command/event vocabulary for Cockpit↔Pi custom events.",
+  "title": "Outpost-Pi cockpit control overlay",
+  "description": "Compatibility NUL-prefixed prompt commands plus the target structured Outpost-Pi control command/event vocabulary for Cockpit↔Pi custom events.",
   "oneOf": [
     { "$ref": "#/$defs/compatPrompt" },
     { "$ref": "#/$defs/controlCommand" },
