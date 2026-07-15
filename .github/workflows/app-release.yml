@@ -71,12 +71,12 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           mkdir -p android/signing
-          echo "$ANDROID_KEYSTORE" | base64 -d > android/signing/remotepi-release.jks
+          echo "$ANDROID_KEYSTORE" | base64 -d > android/signing/outpostpi-release.jks
           cat > android/key.properties <<EOF
           storePassword=$ANDROID_KEYSTORE_PASSWORD
           keyPassword=$ANDROID_KEY_PASSWORD
           keyAlias=$ANDROID_KEY_ALIAS
-          storeFile=signing/remotepi-release.jks
+          storeFile=signing/outpostpi-release.jks
           EOF
 
       - name: Build APK release
@@ -93,7 +93,7 @@ jobs:
           BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
           APK_CERT=$("$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs "$APK" \
             | grep -m1 "SHA-256 digest" | awk '{print $NF}' | tr -d ':' | tr '[:upper:]' '[:lower:]')
-          KS_CERT=$(keytool -list -v -keystore android/signing/remotepi-release.jks \
+          KS_CERT=$(keytool -list -v -keystore android/signing/outpostpi-release.jks \
             -alias "$ANDROID_KEY_ALIAS" -storepass "$ANDROID_KEYSTORE_PASSWORD" \
             | grep -m1 "SHA256:" | awk '{print $NF}' | tr -d ':' | tr '[:upper:]' '[:lower:]')
           echo "apk:      $APK_CERT"
