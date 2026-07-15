@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-distribution-ownership
 kind: feature
-stage: review
+stage: implementing
 tags: [rebrand, release, infra, cockpit, app, site, security]
 parent: epic-rebrand-external-surfaces
 depends_on: [story-en-first-residual-maintained-surfaces]
@@ -115,4 +115,19 @@ Both touch disjoint files and can run in parallel.
 **Nits**: none
 
 **Notes**: SUBSTRATE-MODE deep lane. A fresh-context reviewer ran the required order as iterative convergence passes: Phase 1 checked requirement/acceptance completeness, cross-platform identifier projection, documentation, keep-list preservation, and end-to-end site state; Phase 2 attacked configuration-time failure behavior, release/version assumptions, and secret consistency. Both phases converged with the findings above and no additional nit-only issues. This delegated context had no second reviewer mechanism, so the ideal different-class reviewer per phase was unavailable; the review remained fresh-context relative to the orchestrator. Verified: Cockpit offline pub resolution, analyze, and 241 tests passed; site lint/build passed; both workflow YAML files and the AppStream XML parsed; Linux's installed desktop rename matches the metainfo launchable ID; empty Apple signing/team values exit non-zero before certificate import; the preserve-list files were untouched. `docs/DECISIONS.md` and `cockpit/CLAUDE.md` have no assertion invalidated by the identifier cutover, but the owning packaging runbook is incomplete as filed above. Feature bounced `review -> implementing`.
+
+## Review (2026-07-15, second pass)
+
+**Verdict**: Request changes
+
+**Blockers**:
+- The Apple-team fix parses the complete multiline OpenSSL subject line instead of the certificate OU, so a valid operator certificate always fails the team comparison (`story-cockpit-signing-team-consistency`).
+- The active iOS app release configuration still hard-codes the inherited Apple team, contrary to the feature's remaining-distribution-boundary claim and the required ownership grep (`story-app-ios-signing-ownership-cutover`).
+
+**Important**:
+- Cockpit's Unreleased changelog still claims that CI publishes `appcast-windows.xml` after the repaired workflow deliberately stopped producing it (`story-cockpit-windows-appcast-changelog-consistency`).
+
+**Nits**: none
+
+**Notes**: SUBSTRATE-MODE deep lane, second pass. The fresh-context review used the required order as convergence loops. Phase 1 ran three completeness/complementary passes over the feature brief, all ten original/finding stories, the five repaired surfaces, release docs, ownership greps, and the keep-list; Android task-graph guarding, Windows appcast disablement, the Cockpit runbook, and all three site surfaces are genuinely repaired, while the broad ownership probe exposed the active app iOS team and the Windows changelog drift. Phase 2 ran three adversarial passes over failure behavior and release coherence: the no-key Android guard passed `help` and rejected both `assembleRelease` and `bundleRelease`; a synthetic certificate subject proved the current `awk -F'/'` OU extraction returns `organizationalUnitName = TEAMID` rather than `TEAMID`, so the match path cannot succeed; the Windows installer and macOS/Linux artifact jobs remain coherent without a Windows appcast. App analyze + 698 tests, Cockpit offline resolution/analyze + 241 tests, site lint/build, both workflow YAML parses, AppStream XML parsing, shell syntax, and diff checks passed. The feature commit range did not modify the historical Cockpit changelog record or genuine `jacobaraujo7/*` dependency coordinates. This delegated reviewer is fresh-context relative to the orchestrator, but no additional different-class reviewer mechanism was available in this context. Feature bounced `review -> implementing`.
 

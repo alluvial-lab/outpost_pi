@@ -1,7 +1,7 @@
 ---
 id: story-android-release-signing-release-task-guard
 kind: story
-stage: review
+stage: done
 tags: [app, bug, security, release]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -63,3 +63,13 @@ still describes the removed fallback in
   pointing at a missing keystore also allowed `help` and rejected release.
 - Discrepancies from design: none.
 - Adjacent issues parked: none.
+
+## Review (2026-07-15, second pass)
+
+**Verdict**: Approve
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Deep-feature second-pass verification confirmed the guard runs from `gradle.taskGraph.whenReady`, no-key `help` succeeds, and no-key `assembleRelease` plus `bundleRelease` task graphs fail with the explicit signing error before execution. The regression script exercises the required non-release and release paths. Story advanced `review -> done`.
