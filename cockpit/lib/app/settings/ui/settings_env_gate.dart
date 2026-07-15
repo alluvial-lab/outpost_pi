@@ -1,12 +1,11 @@
 import 'package:cockpit/app/core/domain/contracts/environment_probe.dart';
 import 'package:flutter/foundation.dart';
 
-/// Decide se as abas que dependem do ambiente outpost-pi (Conectividade, Daemon
-/// Agents, Agendamentos) aparecem nas Configurações. Sem a extensão outpost-pi e
-/// o supervisor instalados não há o que configurar, então essas abas ficam
-/// ocultas — o ambiente é instalado pelo checklist da aba de agente.
+/// Decide whether environment-dependent Settings tabs are visible.
 ///
-/// Page-scoped: nasce ao abrir as Configurações e roda [check] no `initState`.
+/// Connectivity, Daemon Agents, and Schedules stay hidden until the outpost-pi
+/// extension and supervisor are installed through the agent-tab checklist.
+/// This page-scoped gate is created with Settings and runs [check] in `initState`.
 class SettingsEnvGate extends ChangeNotifier {
   SettingsEnvGate(this._env);
 
@@ -15,11 +14,10 @@ class SettingsEnvGate extends ChangeNotifier {
   bool _remoteReady = false;
   bool _disposed = false;
 
-  /// `true` quando extensão outpost-pi **e** supervisor estão instalados.
+  /// Report whether both the outpost-pi extension and supervisor are installed.
   bool get remoteReady => _remoteReady;
 
-  /// Re-sonda o ambiente. Chamado ao montar a tela (e pode ser re-chamado se o
-  /// usuário instalar o ambiente sem sair das Configurações).
+  /// Probe the environment after mount or an in-place installation.
   Future<void> check() async {
     final extension = await _env.extensionInstalled();
     final supervisor = await _env.supervisorInstalled();

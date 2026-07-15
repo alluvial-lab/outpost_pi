@@ -4,12 +4,14 @@ import 'package:cockpit/app/core/domain/contracts/pairing_gateway.dart';
 import 'package:cockpit/app/core/domain/entities/pair_event.dart';
 import 'package:flutter/foundation.dart';
 
-/// Etapa atual do fluxo de pareamento (dirige o que o dialog mostra).
+/// Describe the pairing stage that drives dialog content.
 enum PairStage { connecting, showingCode, paired, failed }
 
-/// Estado do dialog de pareamento. Cria uma [PairingGateway] efêmera por
-/// tentativa (via a factory injetada), inicia no [start] e mata no [dispose].
-/// Traduz os [PairEvent] em [stage] + dados. [retry] reabre uma nova sessão.
+/// Manage state and resources for one pairing dialog.
+///
+/// Creates an ephemeral [PairingGateway] per attempt, translates [PairEvent]
+/// values into dialog state, and cancels subscriptions and the active gateway
+/// from [dispose].
 class PairingController extends ChangeNotifier {
   PairingController(this._createGateway);
 
@@ -25,11 +27,15 @@ class PairingController extends ChangeNotifier {
 
   bool _disposed = false;
 
-  /// `true` assim que um aparelho parear — o dialog observa pra fechar sozinho.
+  /// Report when the dialog should close after a device pairs.
   bool get isPaired => stage == PairStage.paired;
 
+  /// Start a fresh ephemeral pairing session.
+  ///
+  /// Cancels and replaces any prior subscription and gateway before resetting
+  /// state. Listener notifications from late work are suppressed after disposal.
   Future<void> start() async {
-    // Encerra uma sessão anterior (retry) antes de abrir outra.
+    // Close a previous retry session before opening another.
     await _sub?.cancel();
     await _gateway?.cancel();
 
@@ -44,6 +50,7 @@ class PairingController extends ChangeNotifier {
     await gateway.start(ttl: const Duration(seconds: 120));
   }
 
+  /// Retry pairing by replacing the current ephemeral session.
   Future<void> retry() => start();
 
   void _onEvent(PairEvent event) {
@@ -63,7 +70,7 @@ class PairingController extends ChangeNotifier {
   }
 
   void _fail(String message) {
-    // Já pareou? Ignora ruído de encerramento do processo.
+    // Ignore process-shutdown noise after pairing has succeeded.
     if (stage == PairStage.paired) return;
     error = message;
     stage = PairStage.failed;
