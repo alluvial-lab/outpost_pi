@@ -1,6 +1,11 @@
 import type { Broker, RemoteInjectStatus, RemoteRouter, PeerInfo } from "./broker.js";
 import { type Envelope, envelope, uuidv7 } from "./envelope.js";
 import type { PiForwardClient } from "../transport/pi_forward_client.js";
+import type {
+  RelayControlFrameRoomAnnounced,
+  RelayControlFrameRoomEnded,
+  RelayControlFrameRooms,
+} from "../protocol/generated/protocol.generated.js";
 
 /**
  * Plan/25 Wave B/C — cross-PC broker.
@@ -148,10 +153,20 @@ export class BrokerRemote implements RemoteRouter {
 
   /** Cache of peers per remote pc_label. */
   private readonly remotePeers = new Map<string, RemotePeerEntry>();
+  /** Relay-authoritative live room IDs per sibling pubkey, ordered oldest-first. */
+  private readonly siblingRooms = new Map<string, Set<string>>();
+  /** Start timestamps used to keep `siblingRooms` deterministic across snapshots/pushes. */
+  private readonly siblingRoomStartedAt = new Map<string, Map<string, number>>();
+  /** Room subscriptions and one-shot snapshots installed on this relay connection. */
+  private readonly subscribedRooms = new Set<string>();
+  private readonly pendingRoomChecks = new Set<string>();
   /** In-flight `peers_request` calls, keyed by pc_label. */
   private readonly pendingFills = new Map<string, Set<PendingFill>>();
 
-  private readonly onIncoming: (env: Envelope, fromPc: string) => void;
+  private readonly onIncoming: (env: Envelope, fromPc: string, toRoom: string) => void;
+  private readonly onRooms: (frame: RelayControlFrameRooms) => void;
+  private readonly onRoomAnnounced: (frame: RelayControlFrameRoomAnnounced) => void;
+  private readonly onRoomEnded: (frame: RelayControlFrameRoomEnded) => void;
   private reannounceTimer: ReturnType<typeof setInterval> | null = null;
   private detached = false;
 
@@ -166,17 +181,22 @@ export class BrokerRemote implements RemoteRouter {
 
     for (const s of opts.siblings ?? []) this._addSibling(s);
 
-    this.onIncoming = (env, fromPc) => this.handleIncoming(env, fromPc);
+    this.onIncoming = (env, fromPc, toRoom) => this.handleIncoming(env, fromPc, toRoom);
+    this.onRooms = (frame) => this._handleRooms(frame);
+    this.onRoomAnnounced = (frame) => this._handleRoomAnnounced(frame);
+    this.onRoomEnded = (frame) => this._handleRoomEnded(frame);
     this.pi.on("envelope", this.onIncoming);
+    this.pi.on("rooms", this.onRooms);
+    this.pi.on("room_announced", this.onRoomAnnounced);
+    this.pi.on("room_ended", this.onRoomEnded);
 
     this.broker.setRemoteRouter(this);
 
-    // Plan/25 Wave B bootstrap: kick a `peers_request` at every known
-    // sibling so the cache is warm before anyone calls `list_peers` or
-    // `agent_send` cross-PC. Also push our current peer list proactively
-    // so siblings don't have to wait for their own request roundtrip.
-    // Best-effort; siblings offline at boot will reply when they come
-    // online and push their own `peers_update`.
+    // Discover each sibling's relay-authoritative live rooms before any
+    // room-targeted envelope is sent. The first `rooms` snapshot fans a
+    // `peers_request` to every room; only the sibling leader handles it.
+    // Best-effort: offline siblings are learned later through the installed
+    // room subscription.
     this._bootstrapWithSiblings();
 
     // Periodic re-announce: the bootstrap pair (request + push) only fires
@@ -195,14 +215,15 @@ export class BrokerRemote implements RemoteRouter {
     }
   }
 
-  /** Bootstrap: announce ourselves AND ask every sibling for their peers.
-   *  Single helper so `_addSibling` can reuse half of it when a new
-   *  sibling appears via `setSiblings`. */
+  /** Subscribe to relay-authoritative room changes, then announce/request over a live room when known. */
   private _bootstrapWithSiblings(): void {
     const body = this._localPeersBody();
     for (const [, pcPubkey] of this.siblingByLabel) {
-      this._sendControlEnvelope(pcPubkey, { type: "peers_request" });
-      this._sendControlEnvelope(pcPubkey, body);
+      this._subscribeToRooms(pcPubkey);
+      const room = this._pickRoom(pcPubkey);
+      if (!room) continue;
+      this._sendControlEnvelopeToRoom(pcPubkey, room, { type: "peers_request" });
+      this._sendControlEnvelopeToRoom(pcPubkey, room, body);
     }
   }
 
@@ -228,33 +249,40 @@ export class BrokerRemote implements RemoteRouter {
       this.reannounceTimer = null;
     }
     this.pi.off("envelope", this.onIncoming);
+    this.pi.off("rooms", this.onRooms);
+    this.pi.off("room_announced", this.onRoomAnnounced);
+    this.pi.off("room_ended", this.onRoomEnded);
     this.broker.setRemoteRouter(null);
   }
 
   // ── Sibling management ────────────────────────────────────────────────────
 
   /** Replace or extend the sibling set. Idempotent on identical input.
-   *  Removes any sibling missing from `next`. Plan/25 Wave B bootstrap:
-   *  fires `peers_request` at any sibling that wasn't in the previous
-   *  set so the cache warms up without waiting for their next push. */
+   *  Removes any sibling missing from `next`; new siblings receive a room
+   *  subscription plus an authoritative one-shot room snapshot request. */
   setSiblings(next: SiblingInfo[]): void {
     if (this.detached) return;
     const prevPubkeys = new Set(this.siblingByPubkey.keys());
     this.siblingByLabel.clear();
     this.siblingByPubkey.clear();
     for (const s of next) this._addSibling(s);
-    // Drop cache entries for siblings that disappeared.
+    // Drop cache and relay-discovery state for siblings that disappeared.
     for (const label of [...this.remotePeers.keys()]) {
       if (!this.siblingByLabel.has(label)) this.remotePeers.delete(label);
     }
-    // For newly-added pubkeys: do the same announce+request pair the
-    // constructor does. Re-pinging siblings we already knew about would
-    // be wasteful (and triggers redundant audit lines on their side).
-    const body = this._localPeersBody();
+    for (const pubkey of prevPubkeys) {
+      if (this.siblingByPubkey.has(pubkey)) continue;
+      this.siblingRooms.delete(pubkey);
+      this.siblingRoomStartedAt.delete(pubkey);
+      this.subscribedRooms.delete(pubkey);
+      this.pendingRoomChecks.delete(pubkey);
+    }
+    // New siblings must first be discovered from the relay; the resulting
+    // `rooms` snapshot fans `peers_request` out to every live room.
     for (const [, pcPubkey] of this.siblingByLabel) {
       if (prevPubkeys.has(pcPubkey)) continue;
-      this._sendControlEnvelope(pcPubkey, { type: "peers_request" });
-      this._sendControlEnvelope(pcPubkey, body);
+      this._subscribeToRooms(pcPubkey);
+      this._requestRooms(pcPubkey);
     }
   }
 
@@ -348,10 +376,9 @@ export class BrokerRemote implements RemoteRouter {
    *     the local resolver will treat it as a literal name, which works
    *     because local names don't carry colons in practice)
    *   - prefix === known sibling label → rewrite `env.from`, pack onto the
-   *     relay, return true. May trigger a lazy `peers_request` when the
-   *     cache is empty (returns false on hard cache miss so the broker
-   *     surfaces a transport_error path; we always optimistically send,
-   *     and ACK timeout in the sender ends up reporting the failure).
+   *     relay, return true. A cold room cache starts `rooms_check` and leaves
+   *     the existing ACK timeout to report this attempt; the resulting room
+   *     snapshot warms subsequent sends and fans out the roster request.
    *   - prefix is not a known sibling label → return false (backward-compat
    *     for hypothetical local names containing `:`)
    */
@@ -371,11 +398,12 @@ export class BrokerRemote implements RemoteRouter {
       from: `${this.selfPcLabel}:${env.from}`,
     };
 
-    // Optimistic send. If the recipient's cache doesn't list our target
-    // yet, the recipient's wrapper still injects (the broker just decides
-    // received/busy/denied on actual local UDS state). A simultaneous
-    // `peers_request` warms the cache for next time.
-    this.pi.sendEnvelopeToPi(siblingPk, "main", rewritten);
+    // Optimistic send once the relay has supplied a live destination room.
+    // On a cold cache `_pickRoom` starts `rooms_check`; returning true keeps
+    // the broker's existing ACK-timeout contract while the discovery snapshot
+    // warms the next attempt instead of sending to a fabricated room.
+    const room = this._pickRoom(siblingPk);
+    if (room) this.pi.sendEnvelopeToPi(siblingPk, room, rewritten);
     if (this.remotePeers.get(pcLabel) === undefined) {
       this._sendControlEnvelope(siblingPk, { type: "peers_request" } satisfies PeersRequestBody);
       void this._awaitPeersFill(pcLabel, PEERS_REQUEST_TIMEOUT_MS);
@@ -387,10 +415,10 @@ export class BrokerRemote implements RemoteRouter {
 
   /**
    * Entry point for envelopes the relay forwards to us. Receives the
-   * envelope verbatim plus the verified `from_pc` (Pi-pubkey of the
-   * sender, authoritative — relay-checked).
+   * envelope verbatim, verified `from_pc` (Pi-pubkey of the sender), and
+   * relay-validated inbound `to_room`, which is threaded onto the ACK.
    */
-  handleIncoming(env: Envelope, fromPc: string): void {
+  handleIncoming(env: Envelope, fromPc: string, toRoom: string): void {
     if (this.detached) return;
     // ── transport_error from relay ─────────────────────────────────────────
     // The relay synthesises these with `from_pc = "_relay"` and
@@ -484,10 +512,70 @@ export class BrokerRemote implements RemoteRouter {
       re: env.id,
       body: ackBody,
     };
-    this.pi.sendEnvelopeToPi(fromPc, "main", ackEnv);
+    this.pi.sendEnvelopeToPi(fromPc, toRoom, ackEnv);
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────
+
+  private _subscribeToRooms(pcPubkey: string): void {
+    if (this.detached || this.subscribedRooms.has(pcPubkey)) return;
+    this.subscribedRooms.add(pcPubkey);
+    this.pi.sendRoomControl({ type: "subscribe_rooms", peers: [pcPubkey] });
+  }
+
+  private _requestRooms(pcPubkey: string): void {
+    if (this.detached || this.pendingRoomChecks.has(pcPubkey)) return;
+    this.pendingRoomChecks.add(pcPubkey);
+    this.pi.sendRoomControl({ type: "rooms_check", peers: [pcPubkey] });
+  }
+
+  private _pickRoom(pcPubkey: string): string | undefined {
+    const room = this.siblingRooms.get(pcPubkey)?.values().next().value;
+    if (room) return room;
+    this._subscribeToRooms(pcPubkey);
+    this._requestRooms(pcPubkey);
+    return undefined;
+  }
+
+  private _handleRooms(frame: RelayControlFrameRooms): void {
+    if (this.detached || !this.siblingByPubkey.has(frame.peer)) return;
+    this.pendingRoomChecks.delete(frame.peer);
+    const startedAt = new Map(frame.rooms.map((room) => [room.room_id, room.started_at]));
+    this.siblingRoomStartedAt.set(frame.peer, startedAt);
+    this._replaceOrderedRooms(frame.peer);
+
+    // A snapshot is the only safe cold-cache bootstrap: fan the control
+    // request to every live room because only the sibling leader listens for
+    // Pi envelopes. Data sends remain single-room after this cache is warm.
+    for (const roomId of this.siblingRooms.get(frame.peer) ?? []) {
+      this._sendControlEnvelopeToRoom(frame.peer, roomId, { type: "peers_request" });
+    }
+  }
+
+  private _handleRoomAnnounced(frame: RelayControlFrameRoomAnnounced): void {
+    if (this.detached || !this.siblingByPubkey.has(frame.peer)) return;
+    this.pendingRoomChecks.delete(frame.peer);
+    const startedAt = this.siblingRoomStartedAt.get(frame.peer) ?? new Map<string, number>();
+    startedAt.set(frame.room_id, frame.started_at);
+    this.siblingRoomStartedAt.set(frame.peer, startedAt);
+    this._replaceOrderedRooms(frame.peer);
+  }
+
+  private _handleRoomEnded(frame: RelayControlFrameRoomEnded): void {
+    if (this.detached || !this.siblingByPubkey.has(frame.peer)) return;
+    this.siblingRoomStartedAt.get(frame.peer)?.delete(frame.room_id);
+    this._replaceOrderedRooms(frame.peer);
+  }
+
+  private _replaceOrderedRooms(pcPubkey: string): void {
+    const startedAt = this.siblingRoomStartedAt.get(pcPubkey) ?? new Map<string, number>();
+    // The UDS leader is the first Pi process to register; prefer the oldest
+    // live relay room while retaining deterministic room-id tie breaking.
+    const ordered = [...startedAt.entries()]
+      .sort(([roomA, startedA], [roomB, startedB]) => startedA - startedB || roomA.localeCompare(roomB))
+      .map(([roomId]) => roomId);
+    this.siblingRooms.set(pcPubkey, new Set(ordered));
+  }
 
   private _setRemoteCache(
     pcLabel: string,
@@ -542,6 +630,16 @@ export class BrokerRemote implements RemoteRouter {
     toPc: string,
     body: PeersUpdateBody | PeersRequestBody,
   ): void {
+    const room = this._pickRoom(toPc);
+    if (!room) return;
+    this._sendControlEnvelopeToRoom(toPc, room, body);
+  }
+
+  private _sendControlEnvelopeToRoom(
+    toPc: string,
+    toRoom: string,
+    body: PeersUpdateBody | PeersRequestBody,
+  ): void {
     if (this.detached) return;
     const env: Envelope = envelope(
       `${this.selfPcLabel}:_broker_remote`,
@@ -549,7 +647,7 @@ export class BrokerRemote implements RemoteRouter {
       body,
       null,
     );
-    this.pi.sendEnvelopeToPi(toPc, "main", env);
+    this.pi.sendEnvelopeToPi(toPc, toRoom, env);
   }
 
   private _labelForPubkey(pcPubkey: string): string | undefined {
