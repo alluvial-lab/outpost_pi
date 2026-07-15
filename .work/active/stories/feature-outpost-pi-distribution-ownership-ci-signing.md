@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-distribution-ownership-ci-signing
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, release, security, cockpit, app]
 parent: feature-outpost-pi-distribution-ownership
 depends_on: []
@@ -30,3 +30,11 @@ Implements Unit 2 of `feature-outpost-pi-distribution-ownership`.
 - `rg 'Developer ID Application: Jacob Moura|jacob-moura/remote_pi|remotepi-release' .github/ cockpit/ app/` returns no hits (excluding historical CHANGELOG).
 
 Note: do not run a full `flutter build apk` (memory-expensive on this VM). The keystore rename is a config/comment change; the fail-closed behavior was verified by the prior story.
+
+## Implementation notes
+
+- Parameterized the macOS signer and Apple team through `APPLE_SIGNING_IDENTITY` and `APPLE_TEAM_ID` GitHub secrets. The release job fails before certificate import when either is absent, then verifies the imported keychain contains the requested signing identity before `codesign` uses it.
+- Removed the committed Fastforge signing identity and documented the environment/CI-secret signing contract in the packaging runbook.
+- Updated the identity podspec homepage and author to `Outpost-Pi` / `contact@kevoun.com`.
+- Renamed the Android release keystore path and documented alias to `outpostpi`. `app/android/app/build.gradle.kts` had no inherited keystore name in comments, so its existing fail-closed release-signing behavior was left unchanged.
+- Verified both release workflow YAML files parse with PyYAML and the required inherited-identity search returns no matches. No full APK build was run, per the story scope.
