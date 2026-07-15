@@ -1,7 +1,7 @@
 ---
 id: story-app-ios-signing-ownership-cutover
 kind: story
-stage: review
+stage: done
 tags: [rebrand, app, release, security]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -75,3 +75,7 @@ or export under the upstream team and directly contradicts the feature brief.
   Apple codesigning toolchain.
 - Tests added: none (signing metadata and current-state documentation only).
 - Adjacent issues parked: none.
+
+## Verification closure (2026-07-15, third pass)
+
+`ExportOptions.plist` parses as an automatic App Store Connect export with no `teamID`; neither the app nor identity-example Xcode project contains `DEVELOPMENT_TEAM`; and the inherited team/author grep is empty across `app/ios/` and `app/store_listing.md`. Public docs/site surfaces consistently mark iOS unavailable until operator-owned provisioning. App analyze and all 698 tests passed. The child checkpoint advanced directly to `done`.
