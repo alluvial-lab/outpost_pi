@@ -1,7 +1,9 @@
 import 'package:flutter/widgets.dart';
 
-/// Tokens de cor do Cockpit — espelham `tokens.css` do design (dark pro-tool,
-/// accent azul Outpost-Pi). Lidos via `context.colors.<token>`.
+/// Define Cockpit color tokens that mirror the design's `tokens.css`.
+///
+/// Uses a dark professional-tool palette with an Outpost-Pi blue accent and is
+/// consumed through `context.colors.<token>`.
 @immutable
 class AppColors {
   const AppColors({
@@ -50,11 +52,11 @@ class AppColors {
   final Color edited; // recently-edited file accent
   final Color editedBg;
 
-  // Git status (file tree). Modificado reusa [warn] (âmbar, mesma da branch).
-  final Color gitStaged; // staged no index → verde
-  final Color gitUntracked; // novo / não-rastreado → azul
-  final Color gitDeleted; // removido → vermelho
-  final Color gitConflict; // conflito de merge → laranja
+  // Git status (file tree). Modified reuses [warn] (amber, like the branch).
+  final Color gitStaged; // staged in the index → green
+  final Color gitUntracked; // new / untracked → blue
+  final Color gitDeleted; // removed → red
+  final Color gitConflict; // merge conflict → orange
 
   static const AppColors dark = AppColors(
     bg: Color(0xFF0D0D0F),
@@ -82,7 +84,7 @@ class AppColors {
     gitConflict: Color(0xFFF0883E),
   );
 
-  /// Variante light — mesmos papéis, luminância invertida; accent azul mantido.
+  /// Light variant with inverted luminance and the same blue accent roles.
   static const AppColors light = AppColors(
     bg: Color(0xFFF5F5F7),
     panel: Color(0xFFFFFFFF),

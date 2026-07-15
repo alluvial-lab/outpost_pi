@@ -2,10 +2,11 @@ import 'package:cockpit/app/core/domain/entities/app_settings.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 import 'package:flutter/widgets.dart';
 
-/// Paleta de **syntax highlight** do viewer de código. Mapeia os escopos do
-/// highlight.js (className dos nós) para um punhado de cores semânticas, lidas
-/// via `context.syntax`. É **independente do tema do app**: cada paleta traz seu
-/// próprio [background], então o viewer fica consistente mesmo no light/dark.
+/// Define the code viewer's syntax-highlighting palette.
+///
+/// Maps highlight.js node class names to semantic colors exposed through
+/// `context.syntax`. Each palette carries its own [background], keeping the
+/// viewer internally consistent across light and dark app themes.
 @immutable
 class SyntaxColors {
   const SyntaxColors({
@@ -23,17 +24,17 @@ class SyntaxColors {
     required this.deletion,
   });
 
-  final Color background; // fundo do viewer de código
-  final Color base; // texto sem escopo
-  final Color comment; // comentários (itálico)
-  final Color keyword; // palavras-chave
-  final Color string; // strings / regex de valor / adição (diff +)
-  final Color number; // números e literais (true/false/null)
-  final Color klass; // tipos / classes (`type` colidiria com ThemeExtension)
+  final Color background; // code-viewer background
+  final Color base; // unscoped text
+  final Color comment; // comments (italic)
+  final Color keyword; // keywords
+  final Color string; // strings / value regex / addition (diff +)
+  final Color number; // numbers and literals (true/false/null)
+  final Color klass; // types / classes (`type` would clash with ThemeExtension)
   final Color builtin; // built-ins
-  final Color function; // títulos / nomes de função / seções
-  final Color variable; // variáveis / atributos / tags / símbolos
-  final Color meta; // meta / decorators / preprocessador
+  final Color function; // titles / function names / sections
+  final Color variable; // variables / attributes / tags / symbols
+  final Color meta; // metadata / decorators / preprocessor
   final Color deletion; // diff -
 
   // --- One ------------------------------------------------------------------
@@ -86,7 +87,7 @@ class SyntaxColors {
     deletion: Color(0xFFFF5555),
   );
 
-  /// Dracula light (Alucard-ish) — escurecido pra legibilidade sobre claro.
+  /// Dracula light (Alucard-inspired), darkened for contrast on light surfaces.
   static const SyntaxColors draculaLight = SyntaxColors(
     background: Color(0xFFF6F2FF),
     base: Color(0xFF2A2A37),
@@ -135,18 +136,18 @@ class SyntaxColors {
     deletion: Color(0xFF82071E),
   );
 
-  /// Fallback usado por `context.syntax` fora da árvore com tema.
+  /// Fallback used by `context.syntax` outside the themed tree.
   static const SyntaxColors dark = oneDark;
 
   // --- Diagnostics (LSP) ----------------------------------------------------
-  // Cores semânticas independentes da paleta (legíveis sobre dark e light),
-  // usadas no squiggle e no ícone de severity do gutter.
+  // Palette-independent semantic colors remain legible on dark and light
+  // backgrounds and color diagnostic squiggles and gutter severity icons.
   static const Color diagnosticError = Color(0xFFE5484D);
   static const Color diagnosticWarning = Color(0xFFF5A623);
   static const Color diagnosticInfo = Color(0xFF4C9AFF);
   static const Color diagnosticHint = Color(0xFF8B949E);
 
-  /// Cor do sublinhado/ícone por severidade.
+  /// Resolve the underline and icon color for a diagnostic severity.
   static Color diagnosticColor(LspSeverity severity) => switch (severity) {
     LspSeverity.error => diagnosticError,
     LspSeverity.warning => diagnosticWarning,
@@ -154,16 +155,19 @@ class SyntaxColors {
     LspSeverity.hint => diagnosticHint,
   };
 
-  /// Estilo de sublinhado ondulado para um range com diagnostic da [severity].
-  /// É feito para `style.merge(...)` sobre o span de syntax (preserva a cor).
+  /// Build a wavy underline for a diagnostic range with [severity].
+  ///
+  /// Designed to merge over a syntax span so its foreground color is preserved.
   static TextStyle underlineStyleFor(LspSeverity severity) => TextStyle(
     decoration: TextDecoration.underline,
     decorationStyle: TextDecorationStyle.wavy,
     decorationColor: diagnosticColor(severity),
   );
 
-  /// Resolve a paleta pelo id escolhido **e o brilho do app** — cada família
-  /// tem variante light/dark, então o highlight segue o tema (claro no claro).
+  /// Resolve a palette from its selected ID and the app brightness.
+  ///
+  /// Each family has light and dark variants so highlighting follows the app
+  /// theme.
   static SyntaxColors forId(SyntaxThemeId id, Brightness brightness) {
     final isDark = brightness == Brightness.dark;
     return switch (id) {
@@ -173,8 +177,10 @@ class SyntaxColors {
     };
   }
 
-  /// Estilo de um escopo do highlight.js. `null` → herda o estilo base (texto
-  /// sem realce). Comentários ganham itálico.
+  /// Resolve a highlight.js scope style.
+  ///
+  /// Returns `null` to inherit the base unhighlighted style; comments are
+  /// italicized.
   TextStyle? styleFor(String scope) {
     final color = _colorFor(scope);
     if (color == null) return null;

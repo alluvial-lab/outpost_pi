@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-core-ui-generated-file
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-core
 depends_on: []
@@ -80,3 +80,28 @@ identifiers, token names, icon names, colors, typography, or widget behavior.
       Flutter `build()` overrides.
 - [ ] Themes, widgets, settings, and icon lookup behavior remain unchanged;
       `cockpit/test/widget_test.dart` passes after integration.
+
+## Implementation notes
+
+- Files changed: all 17 owned core UI files listed above.
+- Tests added: none; this is a documentation translation and assertion-message
+  update with no behavior change.
+- Verification: formatting passed for the 16 handwritten files; scoped
+  `flutter analyze lib/app/core/ui` passed with zero issues; full `flutter test`
+  passed all 241 tests, including `cockpit/test/widget_test.dart`; `git diff
+  --check` passed; and a byte comparison confirmed every generated-file byte
+  after `// ignore_for_file:` is unchanged.
+- Full-gate note: repository-wide `flutter analyze` reports one pre-existing
+  `curly_braces_in_flow_control_structures` info in the concurrently owned
+  `cockpit/lib/app/cockpit/data/filesystem/git_status_reader_impl.dart`; the
+  core UI scope itself analyzes cleanly, and this story did not edit that file.
+- Discrepancies from design: the generated map contains four pre-existing PT
+  dartdoc lines after `// ignore_for_file:`. The explicit header-only exception
+  was treated as authoritative over the general zero-PT criterion, so those
+  generated-body lines remain byte-identical. The 16 handwritten files and the
+  generated header contain no Portuguese; the full-file grep reports only those
+  four intentionally preserved generated lines.
+- Documentation rationale: attached the shared-token and out-of-tree fallback
+  contract directly to `AppThemeX`; kept its obvious getters undocumented.
+- Adjacent issues parked: none. The unrelated analyzer finding is already in a
+  disjoint active/review story owned by another parallel worker.
