@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-distribution-ownership
 kind: feature
-stage: implementing
+stage: review
 tags: [rebrand, release, infra, cockpit, app, site, security]
 parent: epic-rebrand-external-surfaces
 depends_on: [story-en-first-residual-maintained-surfaces]
