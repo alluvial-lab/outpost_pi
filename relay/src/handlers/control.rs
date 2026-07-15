@@ -21,6 +21,11 @@ pub enum ControlFrameError {
 /// This is the fail-closed boundary that generated control-frame decoding calls
 /// before mutating subscription state. Missing `peers` defaults to the canonical
 /// empty list; malformed or oversized values are dropped by the typed handler.
+///
+/// # Errors
+///
+/// Returns [`ControlFrameError::TooManyPeers`] when `peers` exceeds
+/// `MAX_CONTROL_FRAME_PEERS`.
 pub fn bounded_peer_list(
     frame_type: &str,
     peers: Vec<String>,

@@ -27,6 +27,14 @@ pub enum VerifyError {
 /// lexicographically, no whitespace, JCS-style (RFC 8785 simplified).
 /// Different serializers may produce different bytes for the same logical
 /// object — agree on one canonical form across Dart, Rust, TypeScript.
+///
+/// # Errors
+///
+/// Returns [`VerifyError::BadBlobJson`] if the blob is not valid JSON or
+/// missing required fields, [`VerifyError::BadBase64`] if `owner_pk` is not
+/// valid base64, [`VerifyError::BadOwnerPk`] if it is not a 32-byte key,
+/// [`VerifyError::BadSigLength`] if the signature is not 64 bytes, or
+/// [`VerifyError::SigFailed`] if the Ed25519 signature does not verify.
 pub fn verify_envelope(env: &MeshEnvelope) -> Result<MeshHeader, VerifyError> {
     let header: MeshHeader =
         serde_json::from_slice(&env.blob).map_err(|e| VerifyError::BadBlobJson(e.to_string()))?;
@@ -54,6 +62,10 @@ pub fn verify_envelope(env: &MeshEnvelope) -> Result<MeshHeader, VerifyError> {
 }
 
 /// Decodes the wire envelope (base64 strings) into raw bytes.
+///
+/// # Errors
+///
+/// Returns [`VerifyError::BadBase64`] when `blob` or `sig` is not valid base64.
 pub fn decode_wire(wire: &MeshEnvelopeWire) -> Result<MeshEnvelope, VerifyError> {
     let blob = B64
         .decode(&wire.blob)

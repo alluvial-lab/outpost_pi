@@ -39,6 +39,11 @@ impl MeshStore {
     /// SQLite runs in the default (rollback-journal) mode — only `mesh.db`
     /// persists; a transient `mesh.db-journal` may appear briefly during a
     /// write transaction and is deleted on commit. WAL mode is NOT enabled.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError::Sql`] if SQLite cannot open or initialize the
+    /// schema, or [`StoreError::Io`] on a filesystem failure.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         let path = path.as_ref();
         if let Some(parent) = path.parent()
@@ -63,6 +68,10 @@ impl MeshStore {
     }
 
     /// Returns the current version for `owner_pk_hash`, or `None` if absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError::Sql`] if the query fails.
     pub fn current_version(&self, owner_pk_hash: &str) -> Result<Option<u64>, StoreError> {
         let conn = self.conn.lock().expect("mesh store mutex poisoned");
         let v: Option<i64> = conn
@@ -129,6 +138,10 @@ impl MeshStore {
 
     /// Returns every stored mesh envelope with its row key. Used by mesh
     /// authorization to re-verify Owner signatures before trusting members.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError::Sql`] if the query or row deserialization fails.
     pub fn all_envelopes(&self) -> Result<Vec<(String, MeshEnvelope)>, StoreError> {
         let conn = self.conn.lock().expect("mesh store mutex poisoned");
         let mut stmt = conn.prepare("SELECT owner_pk_hash, blob, sig FROM mesh_versions")?;
@@ -147,6 +160,10 @@ impl MeshStore {
     }
 
     /// Fetches the current record for `owner_pk_hash`, or `None` if absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError::Sql`] if the query fails.
     pub fn get(&self, owner_pk_hash: &str) -> Result<Option<MeshRecord>, StoreError> {
         let conn = self.conn.lock().expect("mesh store mutex poisoned");
         let row = conn
