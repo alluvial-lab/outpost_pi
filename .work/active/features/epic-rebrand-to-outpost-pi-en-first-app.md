@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-app
 kind: feature
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, app]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
