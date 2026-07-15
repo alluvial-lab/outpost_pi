@@ -1,7 +1,7 @@
 ---
 id: story-to-room-sender-side-room-targeting
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug, security]
 parent: epic-bold-canonical-session
 depends_on: [epic-bold-canonical-session-relay-opaque-targeting]
@@ -316,3 +316,36 @@ Extension-only change (no relay/schema/app edit).
   (read-only `~/.pi/remote/locks/`), unchanged from baseline. `broker_remote.test.ts` 41/41 pass.
 
 Advanced `implementing → review`.
+
+## Review (2026-07-15, standalone-story, bounded inline)
+
+Standalone-story bounded inline review (parent epic `epic-bold-canonical-session`
+shipped in v0.6.0; this is the sender-half follow-up to the relay-0.2.0
+`to_room` wire change). No independent/cross-model reviewer (standalone-story
+lane per review skill).
+
+### Lenses walked
+- **No `"main"` literal**: confirmed — all 3 sites target a live room from
+  `pickRoom()` or the threaded `toRoom`. ✓
+- **`PeersUpdateBody` unchanged**: no `leader_room` field (relay is single
+  room truth). ✓
+- **Lifecycle**: `detach()` removes all new listeners (`rooms`,
+  `room_announced`, `room_ended`); `subscribedRooms`/`pendingRoomChecks`
+  cleared on sibling removal. ✓
+- **Cold cache safety**: `pickRoom()` returns `undefined` when empty — no
+  fabricated room send; ACK-timeout contract holds; `rooms_check` warms
+  subsequent sends. ✓
+- **ACK threading (Site 2)**: `handleIncoming(env, fromPc, toRoom)` threads
+  the relay-validated `to_room` to the ACK. ✓
+- **Anti-spoof**: `from_pc` sibling-cache check intact; room event handlers
+  check `siblingByPubkey.has(frame.peer)` (don't process unknown peers). ✓
+- **Idempotency**: `subscribe_rooms` guarded by `subscribedRooms` set. ✓
+- **Leader heuristic**: oldest `started_at` first (leader registers first),
+  deterministic tie-break. ✓
+
+### Verification
+- typecheck clean; build clean; `broker_remote.test.ts` 41/41 pass.
+- 8 pre-existing EROFS failures unchanged from baseline.
+
+### Verdict
+Approve. No blockers, no important findings. Advanced `review → done`.
