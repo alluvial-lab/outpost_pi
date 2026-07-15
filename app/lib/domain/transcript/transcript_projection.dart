@@ -14,6 +14,7 @@ abstract final class TranscriptTurnStatus {
   static const stale = AppTurnStatus.stale;
 }
 
+/// Represent the transcript-derived state of the current conversation turn.
 final class TranscriptTurnView {
   const TranscriptTurnView({
     required this.status,
@@ -47,6 +48,10 @@ final class TranscriptTurnView {
   );
 }
 
+/// Reconcile room reachability, transcript state, and streamed deltas.
+///
+/// Stale room reachability wins; otherwise active transcript or streaming state
+/// supplies the app's canonical turn projection.
 AppTurnProjection deriveChatTurnProjection({
   required RoomTurnProjection room,
   required TranscriptTurnView transcript,
@@ -83,6 +88,7 @@ AppTurnProjection deriveChatTurnProjection({
   return AppTurnProjection.idle;
 }
 
+/// Materialize transcript messages, streaming state, and turn state together.
 final class TranscriptProjection {
   const TranscriptProjection({
     required this.messages,

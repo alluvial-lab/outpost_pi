@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-app-domain
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, app]
 parent: epic-rebrand-to-outpost-pi-en-first-app
 depends_on: []
@@ -69,3 +69,10 @@ them public.
 - [ ] Touched Dart files are formatted; relevant domain tests pass.
 - [ ] The feature-level integrated run can pass `flutter analyze` and
       `flutter test` from `app/`.
+
+## Implementation notes
+- Files changed: `app/lib/domain/contracts/{dismissed_update_store,disposable,repository,service,transcript_event_store,update_checker,url_opener,usecase}.dart`, `app/lib/domain/entities/update_info.dart`, `app/lib/domain/session_state.dart`, `app/lib/domain/transcript/{transcript_event,transcript_projection}.dart`, and `app/lib/domain/value_objects/{reachability,semver}.dart`.
+- Tests added: none; this story changes prose, dartdoc, and the five specified observable error messages only.
+- Verification: `dart format` completed with no changes; accented-Latin and common Portuguese-token scans of `app/lib/domain/` were empty; `flutter analyze` and `flutter test` passed (697 tests).
+- Discrepancies from design: the story calls out six PT-bearing files, but `app/lib/domain/CLAUDE.md` was already English as noted in the delegation; translated the five owned Dart files only.
+- Adjacent issues parked: none.
