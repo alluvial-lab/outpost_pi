@@ -1,28 +1,30 @@
 import 'dart:io';
 
-/// Descobre a **raiz do projeto** de um arquivo subindo a árvore de diretórios
-/// até achar um arquivo marcador da linguagem (ex.: `pubspec.yaml` pro Dart,
-/// `package.json`/`tsconfig.json` pro TS). É o que resolve o monorepo: dado
-/// `mono/cockpit/lib/main.dart`, a raiz do servidor Dart é `mono/cockpit/`
-/// (onde está o `pubspec.yaml`), não `mono/`.
+/// Find a file's project root by walking up to a language marker.
 ///
-/// A chave do pool é `(linguagem, raiz)` — logo dois arquivos do mesmo pacote
-/// compartilham servidor, e pacotes distintos têm servidores distintos.
+/// Markers include `pubspec.yaml` for Dart and `package.json` or
+/// `tsconfig.json` for TypeScript. This resolves monorepo boundaries: for
+/// `mono/cockpit/lib/main.dart`, the Dart server root is `mono/cockpit/`, where
+/// `pubspec.yaml` lives, rather than `mono/`.
+///
+/// The pool key is `(language, root)`, so files in one package share a server
+/// while distinct packages use distinct servers.
 class ProjectRootFinder {
   const ProjectRootFinder();
 
-  /// Sobe a partir do diretório de [filePath] procurando qualquer um dos
-  /// [markers]. Markers podem ser nome exato (`pubspec.yaml`) ou padrão de
-  /// sufixo (`*.csproj`). Retorna a primeira raiz encontrada, ou `null` se
-  /// nenhuma — o chamador decide o fallback (geralmente a pasta do workspace).
+  /// Walk up from [filePath] looking for any of [markers].
+  ///
+  /// Markers may be exact names such as `pubspec.yaml` or suffix patterns such
+  /// as `*.csproj`. Returns the nearest matching root, or `null` so the caller
+  /// can choose a fallback, usually the workspace directory.
   String? findRoot(String filePath, List<String> markers) {
     if (markers.isEmpty) return null;
     var dir = Directory(File(filePath).parent.path);
-    // Limite defensivo de profundidade pra não andar a árvore inteira.
+    // Bound traversal defensively rather than walking an arbitrary tree.
     for (var depth = 0; depth < 64; depth++) {
       if (_hasMarker(dir, markers)) return dir.path;
       final parent = dir.parent;
-      if (parent.path == dir.path) break; // chegou na raiz do FS
+      if (parent.path == dir.path) break; // Reached the filesystem root.
       dir = parent;
     }
     return null;
@@ -33,18 +35,18 @@ class ProjectRootFinder {
     final suffixes = <String>[];
     for (final m in markers) {
       if (m.startsWith('*.')) {
-        suffixes.add(m.substring(1)); // '.csproj'
+        suffixes.add(m.substring(1)); // `.csproj`
       } else {
         exact.add(m);
       }
     }
-    // Nome exato: checagem direta (barato).
+    // Exact names allow inexpensive direct checks.
     for (final name in exact) {
       if (File('${dir.path}${Platform.pathSeparator}$name').existsSync()) {
         return true;
       }
     }
-    // Sufixo (*.csproj/*.sln): precisa listar o diretório.
+    // Suffix patterns such as *.csproj/*.sln require listing the directory.
     if (suffixes.isNotEmpty) {
       try {
         for (final entity in dir.listSync(followLinks: false)) {
@@ -54,7 +56,7 @@ class ProjectRootFinder {
           }
         }
       } catch (_) {
-        // Sem permissão de leitura no diretório → ignora.
+        // Ignore directories that cannot be read.
       }
     }
     return false;

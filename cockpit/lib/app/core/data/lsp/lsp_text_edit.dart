@@ -1,7 +1,8 @@
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 
-/// Um `TextEdit` do LSP: substitui o trecho em [range] por [newText]. É o que
-/// `textDocument/formatting` devolve — uma lista a aplicar no buffer.
+/// Represent an LSP `TextEdit` returned by `textDocument/formatting`.
+///
+/// Replaces the text in [range] with [newText] when applied to a buffer.
 class LspTextEdit {
   const LspTextEdit({required this.range, required this.newText});
 
@@ -14,8 +15,9 @@ class LspTextEdit {
   );
 }
 
-/// Parseia o resultado de `textDocument/formatting` (lista de TextEdit) numa
-/// lista tipada. Resultado nulo/vazio → lista vazia.
+/// Parse a `textDocument/formatting` result into typed edits.
+///
+/// Returns an empty list for a null, empty, or non-list result.
 List<LspTextEdit> parseTextEdits(Object? result) {
   if (result is! List) return const <LspTextEdit>[];
   return <LspTextEdit>[
@@ -24,16 +26,18 @@ List<LspTextEdit> parseTextEdits(Object? result) {
   ];
 }
 
-/// Aplica os [edits] (posições `line`/`character`, base 0, UTF-16) sobre [text]
-/// e devolve o texto formatado. Aplica de trás pra frente (por offset de início
-/// decrescente) pra que os offsets dos edits anteriores não desloquem.
+/// Apply [edits] to [text] and return the formatted text.
 ///
-/// As code units UTF-16 do LSP batem 1:1 com a `String` Dart — só aritmética de
-/// offset (nunca `.runes`/`.characters`).
+/// LSP positions use zero-based `line`/`character` coordinates in UTF-16.
+/// Applies edits from the highest start offset to the lowest so later text
+/// changes do not shift earlier offsets.
+///
+/// LSP UTF-16 code units map one-to-one to Dart [String] code units, so offset
+/// arithmetic is used rather than `.runes` or `.characters`.
 String applyTextEdits(String text, List<LspTextEdit> edits) {
   if (edits.isEmpty) return text;
 
-  // Índice de início de cada linha (offset logo após cada '\n').
+  // Index each line start at the offset immediately after its preceding `\n`.
   final lineStarts = <int>[0];
   for (var i = 0; i < text.length; i++) {
     if (text.codeUnitAt(i) == 0x0A) lineStarts.add(i + 1);
@@ -48,7 +52,7 @@ String applyTextEdits(String text, List<LspTextEdit> edits) {
     return (base + (p.character < 0 ? 0 : p.character)).clamp(base, lineEnd);
   }
 
-  // Resolve os edits para (start, end, newText) e ordena por start decrescente.
+  // Resolve edits to (start, end, newText) and sort by descending start.
   final resolved = <({int start, int end, String newText})>[
     for (final e in edits)
       (

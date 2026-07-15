@@ -5,8 +5,9 @@ import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 import 'package:cockpit/app/core/utils/executable_resolver.dart';
 
-/// Quebra uma linha de comando em tokens respeitando aspas simples/duplas (pra
-/// caminhos com espaço). Não expande variáveis — é só tokenização.
+/// Split a command line into tokens while honoring single and double quotes.
+///
+/// Supports paths containing spaces but does not expand variables.
 List<String> splitLspCommand(String command) {
   final tokens = <String>[];
   final buf = StringBuffer();
@@ -34,13 +35,15 @@ List<String> splitLspCommand(String command) {
   return tokens;
 }
 
-/// Verifica se [command] se comporta como um language server **válido**:
-/// spawna o processo e checa se ele **fica vivo** por um curto intervalo. Um LSP
-/// real fica esperando o `initialize` no stdin; um comando errado (ex.:
-/// `dart language-serve`) imprime uso e sai na hora com código != 0.
+/// Probe whether [command] behaves like a valid language server.
 ///
-/// É mais forte que só checar o binário no PATH (que não valida os argumentos).
-/// Mata o processo após a sondagem. `false` se não dá nem pra spawnar.
+/// Spawns the process and checks whether it remains alive for a short interval.
+/// A real LSP waits for `initialize` on stdin, while an invalid command such as
+/// `dart language-serve` prints usage and exits immediately with a nonzero code.
+///
+/// This validates arguments as well as finding the binary on PATH. The probe
+/// always kills a process it successfully starts and returns `false` when the
+/// process cannot be spawned.
 Future<bool> probeLspCommand(String command) async {
   final parts = splitLspCommand(command.trim());
   if (parts.isEmpty) return false;
@@ -55,15 +58,15 @@ Future<bool> probeLspCommand(String command) async {
       runInShell: Platform.isWindows,
     );
   } catch (_) {
-    return false; // nem conseguiu spawnar (binário ausente / inválido)
+    return false; // The binary is missing or invalid and could not be spawned.
   }
 
-  // Drena os streams pra não travar o processo num buffer cheio.
+  // Drain both streams so a full buffer cannot block the process.
   final proc = process;
   unawaited(proc.stdout.drain<void>().catchError((_) {}));
   unawaited(proc.stderr.drain<void>().catchError((_) {}));
 
-  // Saiu dentro da janela → inválido. Continuou vivo → parece um LSP de verdade.
+  // An early exit is invalid; remaining alive suggests a real LSP.
   var aliveAfterWindow = false;
   try {
     await proc.exitCode.timeout(const Duration(milliseconds: 1200));
@@ -75,10 +78,11 @@ Future<bool> probeLspCommand(String command) async {
   return aliveAfterWindow;
 }
 
-/// Roda um **formatador externo** (ex.: `prettier --write %FILE%`) sobre o
-/// arquivo em [filePath]. O token `%FILE%` é substituído pelo caminho em cada
-/// argumento. File-based: o formatador reescreve o arquivo no disco. Sucesso se
-/// exit code 0; senão devolve o stderr (ou exit code) como mensagem.
+/// Run an external formatter such as `prettier --write %FILE%` on [filePath].
+///
+/// Replaces `%FILE%` in every argument with the path. The formatter operates on
+/// the file directly and may rewrite it on disk. Returns success for exit code
+/// zero; otherwise returns stderr, or the exit code when stderr is empty.
 Future<Result<void, String>> runFormatterCommand(
   String command,
   String filePath,

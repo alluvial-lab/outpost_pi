@@ -7,15 +7,17 @@ import 'package:cockpit/app/core/env.dart';
 import 'package:cockpit/app/core/data/rpc/jsonl_line_splitter.dart';
 import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 
-/// Sessão **efêmera e dedicada** de `pi --mode rpc --no-session` para comandos
-/// pontuais do outpost-pi (pareamento, revoke). Roda numa pasta temporária única
-/// (evita colisão de cwd-lock) com `OUTPOST_PI_DIRECT_CONFIG` de pareamento — o
-/// que faz `localConfigExists` virar true e o `/outpost-pi <cmd>` auto-ligar o
-/// relay. Carrega a extensão outpost-pi (SEM `--no-extensions`).
+/// Run one-off outpost-pi commands in a dedicated ephemeral RPC session.
 ///
-/// Não interpreta o protocolo: entrega cada objeto JSON do stdout via [onLine];
-/// quem usa decide o que é resposta/evento. [dispose] mata o processo (sem
-/// órfão) e remove a pasta temp — idempotente.
+/// Starts `pi --mode rpc --no-session` in a unique temporary directory to avoid
+/// cwd-lock collisions. Supplies a pairing `OUTPOST_PI_DIRECT_CONFIG`, making
+/// `localConfigExists` true so `/outpost-pi <cmd>` connects to the relay
+/// automatically. The outpost-pi extension remains enabled; this deliberately
+/// omits `--no-extensions`.
+///
+/// Does not interpret the protocol. Each stdout JSON object is delivered through
+/// [onLine] for the caller to classify as a response or event. [dispose]
+/// idempotently prevents orphan processes and removes the temporary directory.
 class EphemeralPiRpc {
   EphemeralPiRpc(this._config);
 
@@ -27,9 +29,10 @@ class EphemeralPiRpc {
   StreamSubscription<String>? _stderrSub;
   bool _disposed = false;
 
-  /// Sobe o processo e manda [prompt] (uma linha JSON, ex.: o comando `prompt`).
-  /// [onLine] recebe cada objeto JSON do stdout; [onExit] (opcional) o exit
-  /// code. Lança em falha de spawn.
+  /// Start the process and send [prompt] as one JSON line.
+  ///
+  /// Delivers each stdout JSON object to [onLine] and, when supplied, the exit
+  /// code to [onExit]. Throws when the process cannot be spawned.
   Future<void> start({
     required String prompt,
     required void Function(Map<String, dynamic> json) onLine,
@@ -39,11 +42,11 @@ class EphemeralPiRpc {
     _tempDir = dir;
 
     final env = <String, String>{
-      // bin do `node` na PATH (shim `pi` usa `#!/usr/bin/env node`).
+      // Put the `node` binary on PATH for pi's `#!/usr/bin/env node` shim.
       ...await envWithNodeOnPath(),
       'OUTPOST_PI_DIRECT_CONFIG': jsonEncode(<String, dynamic>{
         'agent_name': _randomName(),
-        'workspace': 'pareamento',
+        'workspace': 'pairing',
       }),
     };
 
@@ -52,7 +55,7 @@ class EphemeralPiRpc {
       _args(),
       workingDirectory: dir.path,
       environment: env,
-      // Windows: o `pi` é shim `.cmd`/`.bat` do npm — só executa via shell.
+      // On Windows, pi is an npm `.cmd`/`.bat` shim and requires the shell.
       runInShell: Platform.isWindows,
     );
     _process = process;
@@ -64,7 +67,7 @@ class EphemeralPiRpc {
         final decoded = jsonDecode(line);
         if (decoded is Map<String, dynamic>) onLine(decoded);
       } catch (_) {
-        // Linha não-JSON — ignora (não derruba o comando).
+        // Ignore a non-JSON line without terminating the command.
       }
     }, onError: (_) {});
     _stderrSub = process.stderr
@@ -85,7 +88,7 @@ class EphemeralPiRpc {
     _process = null;
     if (process != null) {
       try {
-        await process.stdin.close(); // shutdown gracioso (code 0)
+        await process.stdin.close(); // Graceful shutdown (code 0).
       } catch (_) {}
       try {
         await process.exitCode.timeout(const Duration(seconds: 2));
@@ -104,8 +107,10 @@ class EphemeralPiRpc {
     }
   }
 
-  /// `--mode rpc --no-session` (sem persistir sessão), SEM `--no-extensions`
-  /// (precisamos da extensão outpost-pi pros slash commands).
+  /// Build arguments for a non-persistent RPC session with extensions enabled.
+  ///
+  /// The outpost-pi slash commands require the extension, so the arguments
+  /// deliberately omit `--no-extensions`.
   List<String> _args() => <String>[
     '--mode',
     'rpc',
@@ -127,6 +132,6 @@ class EphemeralPiRpc {
       6,
       (_) => chars[random.nextInt(chars.length)],
     ).join();
-    return 'pareamento-$suffix';
+    return 'pairing-$suffix';
   }
 }

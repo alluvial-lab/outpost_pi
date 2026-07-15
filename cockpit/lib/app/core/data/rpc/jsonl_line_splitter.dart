@@ -1,16 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 
-/// Quebra um stream de bytes em linhas JSONL conforme o protocolo do
-/// `pi --mode rpc`: **LF (`\n`) é o único delimitador**; um `\r` final é
-/// removido (aceita `\r\n`).
+/// Split a byte stream into JSONL records for the `pi --mode rpc` protocol.
 ///
-/// Por que não usar `LineSplitter`: o doc do RPC (rpc.md) avisa que leitores
-/// genéricos quebram em separadores Unicode (`U+2028`/`U+2029`), que são
-/// válidos *dentro* de strings JSON. Este splitter quebra só em `\n`.
+/// Uses LF (`\n`) as the only delimiter and strips a trailing `\r` to accept
+/// CRLF input.
 ///
-/// O `utf8.decoder` (chunked) é aplicado antes, então sequências multibyte
-/// partidas entre chunks são montadas corretamente.
+/// Do not replace this with [LineSplitter]. The RPC documentation warns that
+/// generic line readers also split on Unicode separators (`U+2028`/`U+2029`),
+/// which are valid inside JSON strings. This transformer splits only on `\n`.
+///
+/// Applies the chunked [utf8.decoder] first so multibyte sequences split across
+/// chunks are reconstructed correctly.
 class JsonlLineSplitter extends StreamTransformerBase<List<int>, String> {
   const JsonlLineSplitter();
 

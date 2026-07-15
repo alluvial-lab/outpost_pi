@@ -3,19 +3,20 @@ import 'dart:io';
 
 import 'package:cockpit/app/core/utils/executable_resolver.dart';
 
-/// Helpers de resolução do `outpost-pi` — compartilhados entre o instalador do
-/// supervisor e o gateway de relay/pareamento.
+/// Resolve outpost-pi commands for the supervisor installer and relay adapters.
 ///
-/// No POSIX o `outpost-pi` é um binário no PATH/prefixos conhecidos. No Windows
-/// **não** está no PATH: invocamos `node <dist/index.js>` da extensão, resolvido
-/// a partir do `packages[]` em `~/.pi/agent/settings.json`.
+/// On POSIX, `outpost-pi` is a binary on PATH or in known prefixes. On Windows,
+/// it is not on PATH; invoke the extension as `node <dist/index.js>`, resolving
+/// it from `packages[]` in `~/.pi/agent/settings.json`.
 
-/// `~/` do usuário: Windows não seta `HOME`, o equivalente é `USERPROFILE`.
+/// Resolve the user's home directory, using USERPROFILE on Windows.
 String? outpostPiHome() =>
     Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
 
-/// Caminho absoluto do `dist/index.js` da extensão outpost-pi (via `packages[]`
-/// do `~/.pi/agent/settings.json`), ou `null` se não der pra achar.
+/// Resolve the absolute path to the outpost-pi extension's `dist/index.js`.
+///
+/// Reads `packages[]` from `~/.pi/agent/settings.json` and returns `null` when
+/// the extension cannot be located.
 Future<String?> resolveOutpostPiIndexJs() async {
   final home = outpostPiHome();
   if (home == null) return null;
@@ -35,10 +36,10 @@ Future<String?> resolveOutpostPiIndexJs() async {
 
     final String pkgRoot;
     if (!spec.contains('/') && !spec.contains(r'\')) {
-      // Spec do npm (`npm:outpost-pi` / `outpost-pi`) → node_modules do pi.
+      // npm specs (`npm:outpost-pi` / `outpost-pi`) use pi's node_modules.
       pkgRoot = '$home/.pi/agent/npm/node_modules/outpost-pi';
     } else {
-      // Caminho local (possivelmente relativo a ~/.pi/agent/, com `../`).
+      // Local paths may be relative to ~/.pi/agent/ and contain `../`.
       final clean = spec.startsWith('npm:') ? spec.substring(4) : spec;
       pkgRoot = Uri.directory('$home/.pi/agent/').resolve(clean).toFilePath();
     }
@@ -51,7 +52,7 @@ Future<String?> resolveOutpostPiIndexJs() async {
   }
 }
 
-/// Resolve o `node` em caminhos conhecidos (mesma estratégia do `pi`).
+/// Resolve `node` from known paths using the same strategy as pi.
 Future<String> resolveNode() => resolveExecutable(
   'node',
   unixCandidates: const ['/opt/homebrew/bin/node', '/usr/local/bin/node'],
@@ -59,24 +60,27 @@ Future<String> resolveNode() => resolveExecutable(
   windowsExtraDirs: const [r'C:\Program Files\nodejs'],
 );
 
-/// Diretório onde o `node` resolvido mora (geralmente o mesmo bin do `pi`/`npm`/
-/// `outpost-pi`). `null` se o node não foi resolvido pra um caminho.
+/// Resolve the directory containing `node`.
+///
+/// This is usually the same bin directory as `pi`, `npm`, and `outpost-pi`.
+/// Returns `null` when node did not resolve to a path.
 Future<String?> resolveNodeBinDir() async {
   final node = await resolveNode();
   final idx = node.lastIndexOf(RegExp(r'[/\\]'));
   return idx > 0 ? node.substring(0, idx) : null;
 }
 
-/// Environment do processo com o bin do `node` **prefixado** na PATH. Necessário
-/// pra rodar shims `pi`/`outpost-pi`, cujo shebang `#!/usr/bin/env node` precisa
-/// achar o `node` — que em setups nvm/Homebrew não está na PATH herdada pelo app
-/// GUI (erro `/usr/bin/env: 'node': No such file or directory`).
+/// Build a process environment with the `node` bin directory prepended to PATH.
+///
+/// The `pi` and `outpost-pi` shims use `#!/usr/bin/env node`, but nvm/Homebrew
+/// installs may not appear on the PATH inherited by a GUI app, causing
+/// `/usr/bin/env: 'node': No such file or directory`.
 Future<Map<String, String>> envWithNodeOnPath() async {
   final env = Map<String, String>.of(Platform.environment);
   final dir = await resolveNodeBinDir();
   if (dir != null) {
     final sep = Platform.isWindows ? ';' : ':';
-    // Windows usa 'Path'; POSIX usa 'PATH'.
+    // Windows commonly uses `Path`; POSIX uses `PATH`.
     final key = env.containsKey('Path') && !env.containsKey('PATH')
         ? 'Path'
         : 'PATH';
@@ -88,9 +92,11 @@ Future<Map<String, String>> envWithNodeOnPath() async {
   return env;
 }
 
-/// Como invocar o `outpost-pi`: o executável + os args de prefixo. No POSIX é o
-/// binário `outpost-pi` (prefixo vazio); no Windows é `node <index.js>`. Devolve
-/// `null` se o Windows não conseguir localizar o `index.js` da extensão.
+/// Resolve the executable and prefix arguments used to invoke outpost-pi.
+///
+/// POSIX uses the `outpost-pi` binary with no prefix arguments; Windows uses
+/// `node <index.js>`. Returns `null` on Windows when the extension's `index.js`
+/// cannot be located.
 Future<({String exe, List<String> prefixArgs})?>
 resolveOutpostPiCommand() async {
   if (Platform.isWindows) {

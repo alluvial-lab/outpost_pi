@@ -12,20 +12,21 @@ import 'package:cockpit/app/core/domain/result.dart';
 import 'package:cockpit/app/core/utils/executable_resolver.dart';
 import 'package:flutter/foundation.dart';
 
-/// Pool **global do app** de language servers, chaveado por `(linguagem, raiz)`.
-/// Vários workspaces vivos compartilham este pool: dois arquivos da mesma raiz
-/// reusam o servidor; raízes/linguagens distintas têm servidores distintos.
+/// Share language servers across the entire app, keyed by `(language, root)`.
 ///
-/// Gerencia o ciclo de vida por **contagem de referência** dos documentos
-/// abertos: o último `closeDocument` agenda o desligamento (com carência, caso
-/// o usuário reabra logo). Degrada graciosamente — linguagem sem servidor
-/// instalado é um no-op silencioso, o editor nunca quebra.
+/// Multiple live workspaces use this pool: two files under the same root reuse
+/// one server, while distinct roots or languages use distinct servers.
+///
+/// Manages lifecycle through open-document reference counting. The last
+/// `closeDocument` schedules shutdown after a grace period in case the user
+/// quickly reopens a file. It degrades gracefully: a language without an
+/// installed server is a silent no-op and never breaks the editor.
 class LspServerPool {
   LspServerPool(this._factory);
 
   final LspClientFactory _factory;
-  // Não injetado: o parser do auto_injector não pula parâmetro opcional com
-  // default, então fica como campo inline (fora do grafo de DI).
+  // Keep this outside DI because auto_injector's parser does not skip an
+  // optional parameter with a default value.
   final ProjectRootFinder _rootFinder = const ProjectRootFinder();
 
   final Map<String, _ServerEntry> _servers = <String, _ServerEntry>{};
@@ -34,29 +35,33 @@ class LspServerPool {
   final StreamController<LspDiagnosticsBatch> _diagnostics =
       StreamController<LspDiagnosticsBatch>.broadcast();
 
-  /// Emite a cada mudança de estado de servidor (subiu / caiu / reiniciou). A
-  /// barra de status do LSP escuta isto pra atualizar o indicador ao vivo.
+  /// Emit whenever a server starts, stops, or restarts.
+  ///
+  /// The LSP status bar listens to these pulses to refresh its live indicator.
   final StreamController<void> _statusChanges =
       StreamController<void>.broadcast();
 
-  /// Diagnostics de **todos** os servidores, mesclados. A UI roteia por `uri`.
+  /// Merge diagnostics from every server; the UI routes batches by `uri`.
   Stream<LspDiagnosticsBatch> get diagnostics => _diagnostics.stream;
 
-  /// Pulsos de mudança de estado de servidores (sem payload — a UI re-consulta
-  /// [statusForPath]).
+  /// Emit payload-free server-state changes so the UI rechecks [statusForPath].
   Stream<void> get statusChanges => _statusChanges.stream;
 
-  /// Override de comando por linguagem (Wave 2: vem da tela "Language").
-  /// `languageId` → linha de comando (`exec arg1 arg2`). Vazio = usa o default.
+  /// Override commands by language from the Wave 2 Language screen.
+  ///
+  /// Maps `languageId` to a command line (`exec arg1 arg2`). An empty value uses
+  /// the default command.
   Map<String, String> commandOverrides = const <String, String>{};
 
-  /// Carência antes de desligar um servidor sem documentos abertos.
+  /// Grace period before shutting down a server with no open documents.
   static const Duration _shutdownGrace = Duration(seconds: 30);
 
-  /// Abre um documento: resolve linguagem/raiz, **registra o doc** (mesmo se o
-  /// servidor não subir — pra que o restart saiba o que reabrir), sobe/reusa o
-  /// servidor e manda `didOpen`. [fallbackRoot] (a raiz do workspace) é usado
-  /// quando o walk-up não acha marcador. No-op se a linguagem não é suportada.
+  /// Open a document and attach it to its language server.
+  ///
+  /// Resolves the language/root, records the document even when the server
+  /// fails to start so restart can reopen it, starts or reuses the server, and
+  /// sends `didOpen`. Uses the workspace [fallbackRoot] when the upward marker
+  /// search finds no root. Unsupported languages are a no-op.
   Future<void> openDocument({
     required String path,
     required String text,
@@ -68,8 +73,8 @@ class LspServerPool {
     if (root == null) return;
 
     final key = _key(def.id, root);
-    // Registra o doc antes de tentar subir — garante que statusForPath/restart
-    // conheçam o documento (texto + raiz) mesmo se o start falhar.
+    // Record the document before startup so statusForPath/restart retain its
+    // text and root even if startup fails.
     _docs[path] = _DocEntry(key, root, text);
     final entry = await _ensureServer(key, def, root);
     if (entry != null && entry.client.isRunning) {
@@ -77,9 +82,11 @@ class LspServerPool {
     }
   }
 
-  /// Garante um servidor vivo para [key]. Reusa se já existe; senão resolve a
-  /// spec e sobe. Retorna o entry vivo, ou `null` se não deu pra subir
-  /// (degradação graciosa — os docs ficam registrados, status = stopped).
+  /// Ensure [key] has a live server.
+  ///
+  /// Reuses an existing server or resolves its specification and starts one.
+  /// Returns the live entry, or `null` when startup fails; documents remain
+  /// recorded and their status stays stopped for graceful degradation.
   Future<_ServerEntry?> _ensureServer(
     String key,
     LanguageDef def,
@@ -101,7 +108,7 @@ class LspServerPool {
     entry.sub = client.diagnostics.listen(_onDiagnostics);
     final result = await client.start();
     if (result.isFailure) {
-      debugPrint('[lsp-pool] start falhou ($key)');
+      debugPrint('[lsp-pool] start failed ($key)');
       await entry.sub?.cancel();
       _servers.remove(key);
       client.dispose();
@@ -112,8 +119,10 @@ class LspServerPool {
     return entry;
   }
 
-  /// `textDocument/didChange` (full sync). Guarda o texto mesmo sem servidor
-  /// vivo (pro restart reabrir com o conteúdo atual).
+  /// Send a full-sync `textDocument/didChange` notification.
+  ///
+  /// Retains the text without a live server so restart can reopen the current
+  /// content.
   Future<void> changeDocument({
     required String path,
     required String text,
@@ -127,8 +136,9 @@ class LspServerPool {
     await entry.client.didChange(path: path, text: text, version: doc.version);
   }
 
-  /// Estado do LSP para o documento [path]: a linguagem e se o servidor está
-  /// rodando. `null` se a linguagem não é suportada (a UI mostra vazio).
+  /// Report the language and server state for the document at [path].
+  ///
+  /// Returns `null` for an unsupported language so the UI shows no status.
   LspDocStatus? statusForPath(String path) {
     final def = languageForPath(path);
     if (def == null) return null;
@@ -141,17 +151,20 @@ class LspServerPool {
     );
   }
 
-  /// Reinicia o servidor que atende [path]. Funciona mesmo se o servidor estava
-  /// parado/falho (re-tenta subir e reabre os docs com o texto atual).
+  /// Restart the server serving [path].
+  ///
+  /// Retries startup and reopens documents with their current text even when
+  /// the prior server had stopped or failed.
   Future<void> restartForPath(String path) async {
     final doc = _docs[path];
     if (doc == null) return;
     await _restartKey(doc.serverKey);
   }
 
-  /// Reinicia todos os servidores de uma linguagem (ex.: após o usuário salvar
-  /// um novo comando na tela "Language"). Cobre tanto servidores vivos quanto
-  /// chaves com docs registrados mas sem servidor (start falhou antes).
+  /// Restart every server for [languageId].
+  ///
+  /// Covers live servers and keys that retain documents after an earlier start
+  /// failure, such as after the user saves a new command on the Language screen.
   Future<void> restartLanguage(String languageId) async {
     final prefix = '$languageId$_sep';
     final keys = <String>{
@@ -165,8 +178,7 @@ class LspServerPool {
     }
   }
 
-  /// Mata (se vivo) e re-sobe o servidor de [key], reabrindo todos os docs
-  /// registrados nele com o último texto conhecido.
+  /// Replace the server at [key] and reopen its documents with their latest text.
   Future<void> _restartKey(String key) async {
     final entry = _servers.remove(key);
     if (entry != null) {
@@ -191,8 +203,7 @@ class LspServerPool {
     }
   }
 
-  /// Fecha o documento; agenda o desligamento do servidor quando não sobra
-  /// nenhum doc registrado naquela chave.
+  /// Close a document and schedule shutdown when its server has no documents.
   Future<void> closeDocument(String path) async {
     final doc = _docs.remove(path);
     if (doc == null) return;
@@ -203,8 +214,9 @@ class LspServerPool {
     if (!remaining) _scheduleShutdown(doc.serverKey, entry);
   }
 
-  /// Request genérico ao servidor que atende [path] (ex.: formatting na Wave 3).
-  /// Falha se não há servidor para o documento.
+  /// Send a generic request to the server serving [path].
+  ///
+  /// Returns a failure when the document has no server.
   Future<Result<Object?, LspError>> requestForPath(
     String path,
     String method,
@@ -218,9 +230,10 @@ class LspServerPool {
     return entry.client.request(method, params);
   }
 
-  /// `textDocument/formatting` — pede a formatação do documento ao servidor e
-  /// devolve os edits a aplicar no buffer. Lista vazia se não há servidor vivo,
-  /// se o servidor não suporta formatting, ou em erro.
+  /// Request `textDocument/formatting` edits for a document.
+  ///
+  /// Returns an empty list when no server is live, formatting is unsupported,
+  /// or the request fails.
   Future<List<LspTextEdit>> formatDocument(
     String path, {
     int tabSize = 2,
@@ -233,7 +246,7 @@ class LspServerPool {
     return result.fold(parseTextEdits, (_) => const <LspTextEdit>[]);
   }
 
-  /// Desliga tudo (shutdown do app).
+  /// Shut down all server resources during app shutdown.
   void dispose() {
     for (final entry in _servers.values) {
       entry.cancelPendingShutdown();
@@ -252,19 +265,21 @@ class LspServerPool {
 
   void _scheduleShutdown(String key, _ServerEntry entry) {
     entry.shutdownTimer = Timer(_shutdownGrace, () async {
-      // Pode ter sido reusado durante a carência (algum doc voltou pra chave).
+      // A document may have reused this server during the grace period.
       if (_docs.values.any((d) => d.serverKey == key)) return;
       _servers.remove(key);
       await entry.sub?.cancel();
       await entry.client.kill();
       entry.client.dispose();
       _statusChanges.add(null);
-      debugPrint('[lsp-pool] desligou $key');
+      debugPrint('[lsp-pool] shut down $key');
     });
   }
 
-  /// Resolve a spec: aplica override do usuário (Wave 2) ou o default, e
-  /// localiza o binário no PATH (apps GUI não herdam PATH do shell).
+  /// Resolve a server specification and executable.
+  ///
+  /// Applies the Wave 2 user override or the default, then locates the binary
+  /// because GUI apps do not inherit the shell PATH.
   Future<LspServerSpec?> _resolveSpec(LanguageDef def) async {
     String executable = def.defaultExecutable;
     List<String> args = def.defaultArgs;
@@ -279,23 +294,27 @@ class LspServerPool {
     }
 
     final resolved = await resolveExecutable(executable);
-    // Não sobe o servidor se o binário não existe de fato. `resolveExecutable`
-    // devolve o nome cru quando não acha (ex.: `gopls` sem o `~/go/bin` na PATH
-    // de um launch GUI). Spawnar um executável inexistente dispara
-    // ProcessException — e, no modo merged-thread, um SIGPIPE que derrubava o app
-    // inteiro. Degradação graciosa: retorna null → status "stopped", e um
-    // restart (após instalar o server / ajustar o comando) re-tenta.
+    // Do not start a server unless the binary exists. `resolveExecutable`
+    // returns the raw name when it cannot resolve it, for example `gopls` when
+    // `~/go/bin` is absent from a GUI app's PATH. Spawning a missing executable
+    // raises ProcessException and, in merged-thread mode, previously triggered
+    // SIGPIPE that terminated the whole app. Degrade gracefully to null and a
+    // stopped status; restart retries after installation or command changes.
     if (!_resolvesToRealFile(resolved)) return null;
     return def.toSpec(executable: resolved, args: args);
   }
 
-  /// `true` se [exec] aponta pra um arquivo real (caminho absoluto existente).
-  /// Nome cru (sem separador) = `resolveExecutable` não achou → não dá pra subir.
+  /// Check whether [exec] resolves to an existing absolute file.
+  ///
+  /// A raw name without a path separator means `resolveExecutable` did not find
+  /// the executable, so the server cannot start.
   bool _resolvesToRealFile(String exec) =>
       (exec.contains('/') || exec.contains(r'\')) && File(exec).existsSync();
 
-  /// Separador da chave `(linguagem, raiz)`. NUL nunca aparece num caminho nem
-  /// num languageId, então é um delimitador seguro (raízes podem ter espaços).
+  /// Separate the `(language, root)` key with NUL.
+  ///
+  /// NUL cannot appear in a path or language id, so it remains unambiguous even
+  /// when roots contain spaces.
   static const String _sep = '\u0000';
 
   String _key(String languageId, String root) => '$languageId$_sep$root';
@@ -319,16 +338,16 @@ class _DocEntry {
 
   final String serverKey;
 
-  /// Raiz usada ao abrir — reusada no restart pra recriar o mesmo servidor.
+  /// Root retained from open and reused to recreate the same server on restart.
   final String root;
 
-  /// Último texto conhecido (open/change) — reaberto no restart.
+  /// Latest text from open/change, used to reopen the document after restart.
   String lastText;
 
   int version = 1;
 }
 
-/// Estado do LSP de um documento, pra barra de status do pane de Files.
+/// Describe a document's LSP state for the Files pane status bar.
 class LspDocStatus {
   const LspDocStatus({
     required this.languageId,

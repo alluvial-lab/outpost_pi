@@ -1,12 +1,14 @@
 import 'package:cockpit/app/core/domain/contracts/lsp_client.dart';
 
-/// Definição de uma linguagem para o LSP: como detectá-la (extensões), onde
-/// está a raiz do projeto (markers, ver [ProjectRootFinder]) e o comando padrão
-/// do language server. O comando é **binário + args** separados — split ingênuo
-/// de string quebra em caminhos com espaço.
+/// Define how to detect and launch a language server.
 ///
-/// Na Wave 2 a tela "Language" sobrescreve `defaultExecutable`/`defaultArgs` por
-/// preferência do usuário; a detecção no PATH preenche o default.
+/// Associates file extensions, project-root markers (see [ProjectRootFinder]),
+/// and the default language-server command. The command stores the executable
+/// and arguments separately because naively splitting a string breaks paths
+/// containing spaces.
+///
+/// In Wave 2, the Language screen overrides `defaultExecutable` and
+/// `defaultArgs` from user preferences; PATH detection supplies the default.
 class LanguageDef {
   const LanguageDef({
     required this.id,
@@ -17,16 +19,16 @@ class LanguageDef {
     this.defaultArgs = const <String>[],
   });
 
-  /// `languageId` do LSP (vai no `didOpen`) e chave de config/pool.
+  /// LSP `languageId` sent in `didOpen` and used as the config/pool key.
   final String id;
 
-  /// Nome amigável pra UI (tela Language).
+  /// Human-readable name for the Language screen.
   final String label;
 
-  /// Extensões (sem ponto, minúsculas) que mapeiam pra esta linguagem.
+  /// Lowercase file extensions, without dots, mapped to this language.
   final List<String> extensions;
 
-  /// Arquivos marcadores de raiz de projeto (nome exato ou `*.sufixo`).
+  /// Project-root marker files, as exact names or `*.suffix` patterns.
   final List<String> markers;
 
   final String defaultExecutable;
@@ -40,8 +42,10 @@ class LanguageDef {
       );
 }
 
-/// Catálogo de linguagens suportadas. Dart é o caso campeão (servidor vem com o
-/// Flutter SDK). As demais ficam prontas para a Wave 2 (config + status no PATH).
+/// Catalog the supported languages.
+///
+/// Dart is the primary case because its server ships with the Flutter SDK. The
+/// others are prepared for Wave 2 configuration and PATH status checks.
 const List<LanguageDef> kLanguageDefs = <LanguageDef>[
   LanguageDef(
     id: 'dart',
@@ -124,8 +128,9 @@ const List<LanguageDef> kLanguageDefs = <LanguageDef>[
   ),
 ];
 
-/// Resolve a [LanguageDef] de um caminho pela extensão, ou `null` se nenhuma
-/// linguagem suportada bate.
+/// Resolve a [LanguageDef] from a path's extension.
+///
+/// Returns `null` when no supported language matches.
 LanguageDef? languageForPath(String path) {
   final dot = path.lastIndexOf('.');
   if (dot < 0) return null;

@@ -7,7 +7,7 @@ import 'package:cockpit/app/core/domain/contracts/revoke_gateway.dart';
 import 'package:cockpit/app/core/domain/exceptions/relay_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Factory de [RevokeGateway]: cada `create()` sobe um `pi --mode rpc` novo.
+/// Create a [RevokeGateway] backed by a fresh `pi --mode rpc` process.
 class RevokeGatewayFactoryImpl implements RevokeGatewayFactory {
   RevokeGatewayFactoryImpl(this._config);
 
@@ -17,13 +17,13 @@ class RevokeGatewayFactoryImpl implements RevokeGatewayFactory {
   RevokeGateway create() => RevokeGatewayImpl(_config);
 }
 
-/// Implementação do [RevokeGateway] sobre uma sessão [EphemeralPiRpc].
+/// Implement [RevokeGateway] over an [EphemeralPiRpc] session.
 ///
-/// Comando one-shot: manda `/outpost-pi revoke <shortId>` e espera o `notify` de
-/// confirmação. O outpost-pi não emite custom event no revoke (diferente do
-/// pair) — sinaliza por `extension_ui_request`/`notify`:
-/// - sucesso → `[outpost-pi] Revoked: <name> …` (info)
-/// - falha   → warning (`No peer matching`, `Revoke requires the relay`, …)
+/// Sends the one-shot `/outpost-pi revoke <shortId>` command and waits for a
+/// confirmation notification. Unlike pairing, revoke emits no custom event;
+/// it reports through `extension_ui_request`/`notify`:
+/// - success → `[outpost-pi] Revoked: <name> …` (info)
+/// - failure → warning (`No peer matching`, `Revoke requires the relay`, …)
 class RevokeGatewayImpl implements RevokeGateway {
   RevokeGatewayImpl(this._config);
 
@@ -93,8 +93,8 @@ class RevokeGatewayImpl implements RevokeGateway {
       finish(const Success(null));
       return;
     }
-    // Warnings do outpost-pi durante o revoke = falha (peer inexistente, relay
-    // off, shortid ambíguo, setup pendente…).
+    // Treat outpost-pi warnings during revoke as failures: missing peer,
+    // unavailable relay, ambiguous short id, or incomplete setup.
     if (json['notifyType'] == 'warning' && message.contains('outpost-pi')) {
       finish(Failure(RelayError(_clean(message))));
     }
