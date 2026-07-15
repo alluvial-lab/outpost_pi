@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-core
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # EN-first + dartdoc gap-fill — cockpit core module
@@ -506,3 +506,16 @@ Fallback: if parallel translation produces inconsistent terminology, keep the
 three file-owned diffs but run one final vocabulary normalization pass before
 verification. No rollback or architectural alternative is needed because the
 work changes no APIs or persistence/wire shape.
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD -- cockpit/lib/app/cockpit/core/`).
+
+### Findings (adjudicated)
+- **Nit — stale implementation note** (`.work/active/stories/epic-rebrand-to-outpost-pi-en-first-cockpit-core-ui-generated-file.md:98-102`): the note claimed four PT dartdoc lines remain in the generated map, but `file_icon_map.g.dart:17,1389,3517,4450` are English. Corrected the story note. **Fixed (story body only; no source change).**
+- No other findings; PT sweeps clean, no behavior/contract change, intended literal translations bounded at `lsp_server_pool.dart:111,275`, `ephemeral_pi_rpc.dart:49,135`, `cockpit_theme.dart:33`. The fallback URL change at `update_viewmodel.dart:49` belongs to mechanical-rebrand commit `3a7d01a`, not this feature.
+
+### Verdict
+Approve. Advanced `review → done`.
