@@ -2,7 +2,7 @@
 <!-- Minimal AppStream metadata for Linux packaging. Installed in
      share/metainfo/. The <id> matches the app ID and the .desktop file. -->
 <component type="desktop-application">
-  <id>work.jacobmoura.cockpit</id>
+  <id>dev.kevoun.outpostpi.cockpit</id>
   <name>Outpost-Pi Cockpit</name>
   <summary>Multi-pane desktop client for Outpost-Pi</summary>
 
@@ -10,8 +10,8 @@
   <!-- Project license still pending in the monorepo; valid placeholder. -->
   <project_license>LicenseRef-proprietary</project_license>
 
-  <developer id="work.jacobmoura">
-    <name>Jacob Moura</name>
+  <developer id="dev.kevoun">
+    <name>Outpost-Pi</name>
   </developer>
 
   <description>
@@ -23,7 +23,7 @@
     </p>
   </description>
 
-  <launchable type="desktop-id">work.jacobmoura.cockpit.desktop</launchable>
+  <launchable type="desktop-id">dev.kevoun.outpostpi.cockpit.desktop</launchable>
 
   <url type="homepage">https://kevoun.com</url>
 
