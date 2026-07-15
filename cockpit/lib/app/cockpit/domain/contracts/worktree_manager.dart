@@ -1,17 +1,19 @@
 import 'package:cockpit/app/cockpit/domain/entities/worktree.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Falha de uma operação de worktree, carregando a saída do git pra mostrar
-/// inline no dialog (plan/42, decisão 21).
+/// Carry Git output from a failed worktree operation for inline dialog display
+/// under plan 42, decision 21.
 class WorktreeOpError {
   const WorktreeOpError(this.message);
 
-  /// Mensagem legível (geralmente o stderr do git).
+  /// Provide a readable message, usually Git's stderr.
   final String message;
 }
 
-/// Branches locais + nomes de worktree já em uso num repo — insumo da validação
-/// de unicidade (decisão 11), coletado uma vez quando o dialog de criar abre.
+/// Capture local branches and worktree names already used in a repository.
+///
+/// Collected once when the creation dialog opens, this namespace supplies the
+/// uniqueness validation required by decision 11.
 class WorktreeNamespace {
   const WorktreeNamespace({
     required this.branches,
@@ -22,41 +24,53 @@ class WorktreeNamespace {
     : branches = const <String>{},
       worktreeNames = const <String>{};
 
-  /// Nomes de branch locais (`git branch`).
+  /// Contain local branch names from `git branch`.
   final Set<String> branches;
 
-  /// Nomes (basename) das worktrees existentes (`git worktree list`).
+  /// Contain existing worktree basenames from `git worktree list`.
   final Set<String> worktreeNames;
 }
 
-/// Lado **mutável** do git pro Cockpit: listar/criar/remover worktrees. Contrato
-/// no domínio; a impl (roda `git worktree …`) mora em `data/`. O lado de leitura
-/// de estado (branch/dirtyCount) continua no [GitStatusReader] — não misturar.
+/// Own Cockpit's **mutable** Git worktree boundary for listing, creating, and
+/// removing worktrees.
+///
+/// This domain contract is implemented in `data/` by running `git worktree …`.
+/// Keep read-only branch and dirty-count state in [GitStatusReader] instead.
 abstract class WorktreeManager {
-  /// Worktrees de [repoPath], **excluindo** a raiz (que é o próprio workspace).
-  /// Lista vazia se [repoPath] não é repo git ou o git está indisponível
-  /// (decisões 4, 5).
+  /// List worktrees for [repoPath], **excluding** its workspace root.
+  ///
+  /// Returns an empty list when [repoPath] is not a Git repository or Git is
+  /// unavailable, as required by decisions 4 and 5.
   Future<List<Worktree>> list(String repoPath);
 
-  /// Branches locais + nomes de worktree de [repoPath], pra alimentar a
-  /// validação de unicidade. Vazio se não-git/erro.
+  /// Return local branches and worktree names for uniqueness validation.
+  ///
+  /// Returns an empty namespace when [repoPath] is not a Git repository or an
+  /// error occurs.
   Future<WorktreeNamespace> namespace(String repoPath);
 
-  /// Cria uma worktree em `<repoPath>/.pi/remote/worktrees/<name>` numa branch
-  /// **nova** [name] a partir do HEAD atual do repo (decisões 2, 3, 15).
-  /// [name] já deve ter passado pela validação de nome.
+  /// Create `<repoPath>/.pi/remote/worktrees/<name>` on a **new** [name] branch
+  /// from the repository's current HEAD, as required by decisions 2, 3, and 15.
+  ///
+  /// [name] must already have passed name validation. Returns the created
+  /// worktree on success and Git output in [WorktreeOpError] on failure.
   Future<Result<Worktree, WorktreeOpError>> add(String repoPath, String name);
 
-  /// Remove a worktree em [worktreePath] e, se [branch] não for vazio, apaga a
-  /// branch (decisão 6 — `git worktree remove` **antes** de `git branch -D`).
+  /// Remove the worktree at [worktreePath] and optionally delete [branch].
+  ///
+  /// When [branch] is not empty, decision 6 requires `git worktree remove`
+  /// **before** `git branch -D`. Returns success only after the ordered removal
+  /// completes, or [WorktreeOpError] with Git output on failure.
   Future<Result<void, WorktreeOpError>> remove(
     String repoPath,
     String worktreePath,
     String branch,
   );
 
-  /// `true` se [branch] já foi mergeada na linha principal do repo (`git branch
-  /// --merged`). Alimenta o aviso de "branch não-mergeada" antes de remover
-  /// (decisão 6). Em dúvida/erro, retorna `false` (mostra o aviso por segurança).
+  /// Report whether [branch] is merged into the repository's main line according
+  /// to `git branch --merged`.
+  ///
+  /// This drives decision 6's unmerged-branch warning before removal. Returns
+  /// `false` on uncertainty or error so the warning is shown safely.
   Future<bool> isBranchMerged(String repoPath, String branch);
 }

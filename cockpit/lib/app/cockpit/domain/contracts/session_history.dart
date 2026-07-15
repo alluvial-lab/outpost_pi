@@ -1,10 +1,14 @@
 import 'package:cockpit/app/cockpit/domain/entities/session_info.dart';
 
-/// Lista as sessões salvas do pi para uma pasta. Contrato no domínio; a impl
-/// (lê `~/.pi/agent/sessions/<cwd-codificado>/`) mora em `data/`.
+/// List Pi's saved sessions for a folder.
+///
+/// The `data/` implementation reads
+/// `~/.pi/agent/sessions/<cwd-codificado>/`.
 abstract class SessionHistory {
-  /// Sessões da pasta [cwd], mais recentes primeiro. [withTitle] = também lê o
-  /// começo de cada `.jsonl` pra derivar o título (1ª mensagem do usuário) —
-  /// custa I/O extra, então fica desligado nos caminhos quentes (captura/baseline).
+  /// Return sessions for [cwd] from newest to oldest.
+  ///
+  /// When [withTitle] is `true`, also read the beginning of each `.jsonl` to
+  /// derive its title from the first user message. This costs extra I/O, so hot
+  /// capture and baseline paths leave it disabled.
   Future<List<SessionInfo>> sessionsFor(String cwd, {bool withTitle = false});
 }
