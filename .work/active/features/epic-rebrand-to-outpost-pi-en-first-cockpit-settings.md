@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-settings
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # EN-first + dartdoc gap-fill — cockpit settings module
@@ -473,3 +473,16 @@ weaken assertions to rescue a prose pass.
 No foundation document update is required: this feature implements the already
 landed EN-first/native-documentation policy without changing product behavior,
 architecture, or protocol.
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD -- cockpit/lib/app/settings/`).
+
+### Findings
+- None. PT sweeps clean; no signature/identifier/enum/wire-value/lifecycle
+  change. Dartdoc meaningful and tier-appropriate.
+
+### Verdict
+Approve. Advanced `review → done`.

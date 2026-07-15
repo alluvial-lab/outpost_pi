@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-domain
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # EN-first + dartdoc gap-fill — cockpit module: domain layer
@@ -385,3 +385,19 @@ plus the full suite prove that descriptions/fixtures did not alter behavior.
 No foundation document changes are required: this feature implements the
 already-landed EN-first and native-documentation policy without changing product
 behavior, architecture, or protocol.
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD -- cockpit/lib/app/cockpit/domain/ cockpit/test/domain/`).
+
+### Findings (adjudicated)
+- **Nit — stale PTY package name in dartdoc** (`cockpit/lib/app/cockpit/domain/contracts/terminal_gateway.dart:3`): the translated dartdoc named `flutter_pty`, but the actual adapter imports and the pubspec dependency is `kyroon_pty`. Corrected to `kyroon_pty`. **Fixed.**
+- No other findings; translation complete, wire values unchanged (`rpc_event.dart:184-188`, `pi_rpc_process.dart:386`), dartdoc intent-bearing and tier-correct.
+
+### Verification of fixes
+- `flutter analyze` clean; `flutter test` (241) green (pending re-verify run).
+
+### Verdict
+Approve. Advanced `review → done`.
