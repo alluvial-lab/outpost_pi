@@ -1,14 +1,14 @@
 ---
 id: story-epic-rebrand-external-surfaces-hostname-migration-mechanical-replacement
 kind: story
-stage: review
+stage: done
 tags: [rebrand, pi-extension, app, cockpit, site, docs]
 parent: epic-rebrand-external-surfaces-hostname-migration
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Replace public homepage and download hostnames

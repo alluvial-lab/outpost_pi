@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data-persistence-update
 kind: story
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Translate cockpit data persistence and update adapters

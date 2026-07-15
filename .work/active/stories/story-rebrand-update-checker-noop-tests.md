@@ -1,14 +1,14 @@
 ---
 id: story-rebrand-update-checker-noop-tests
 kind: story
-stage: review
+stage: done
 tags: [rebrand, testing, app, cockpit]
 parent: epic-rebrand-external-surfaces-retire-rp-s3
 depends_on: []
 release_binding: null
 gate_origin: review
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Add tests for the update-checker no-op default

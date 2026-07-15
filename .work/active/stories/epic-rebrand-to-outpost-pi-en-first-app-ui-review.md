@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-app-ui-review
 kind: story
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, app]
 parent: epic-rebrand-to-outpost-pi-en-first-app
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Translate app UI prose and review onboarding/update copy
