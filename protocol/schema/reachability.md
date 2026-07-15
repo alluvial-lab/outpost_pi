@@ -1,6 +1,6 @@
 # Reachability contract
 
-This is the interim canonical source for Remote Pi reachability until `epic-bold-generated-protocol` absorbs it into the generated protocol schema. It lives under `protocol/schema/` because `.orchestration/` is retired except for legacy contract fixtures.
+This is the interim canonical source for Outpost-Pi reachability until `epic-bold-generated-protocol` absorbs it into the generated protocol schema. It lives under `protocol/schema/` because `.orchestration/` is retired except for legacy contract fixtures.
 
 Language projections must derive states, display names, backoff values, heartbeat timings, and transition names from `protocol/schema/reachability.json`. They must not invent additional states or drift the `[1, 2, 5, 10, 30]` backoff policy.
 
