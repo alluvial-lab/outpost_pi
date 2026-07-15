@@ -84,13 +84,21 @@ export default function GettingStartedTutorial() {
               </li>
               <li>
                 <strong className="text-fg">Use the relay?</strong> — answer{" "}
-                <InlineCode>Yes</InlineCode> so your phone (and, later, other
-                PCs) can reach this agent.
+                <InlineCode>Yes</InlineCode> so this terminal auto-starts the
+                relay on future runs.
               </li>
             </ol>
             <p>
-              When it finishes, the agent has joined the local mesh and the
-              relay is connected.
+              The wizard sets your preferences, but Outpost-Pi has no built-in
+              relay URL — you must point it at one before the relay can connect.
+              Configure it with:
+            </p>
+            <CodeBlock code="/outpost-pi set-relay https://your-relay.example" label="In Pi" language="text" />
+            <p>
+              Then run <InlineCode>/outpost-pi</InlineCode> to join the local
+              mesh and connect the relay. (If you skip the URL,
+              <InlineCode>/outpost-pi</InlineCode> joins the local mesh only and
+              warns that the relay is unconfigured.)
             </p>
           </DocsSubsection>
           <DocsSubsection title="/outpost-pi pair">

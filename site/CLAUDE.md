@@ -40,8 +40,8 @@ and MVP documentation. **Presentation only — it has no product logic.**
 ## Publishing (deploy)
 
 The site runs in production (`outpost-pi.kevoun.com`) as a **Docker image**,
-built locally from `site/` (without publishing to a registry). The production host
-loads the local image.
+built locally from `site/` and loaded into the local Docker daemon (no registry
+push). The production host runs the local image.
 
 ```bash
 ./build-docker.sh            # local build, :latest tag
@@ -50,15 +50,21 @@ loads the local image.
 
 What the script does: builds for the host platform from the
 `Dockerfile` (multi-stage → `next build` with `output: "standalone"`,
-`node:22-alpine` runtime on port 3000 with healthcheck at `/`) and loads the image
-into the local Docker daemon (without `--push`).
+`node:22-alpine` runtime on port 3000 with healthcheck at `/`) and loads the
+image into the local Docker daemon (no `--push`, no registry login).
 
-Prerequisites: **`docker login`** (Docker Hub) performed first, and `docker buildx`
-(included in modern Docker). Without login, the push fails at the end of the build.
+Prerequisites: `docker` with `buildx` (bundled with modern Docker). No Docker
+Hub login or registry credentials are required — the image is project-local.
 
 Typical publishing flow: commit + push to git → `pnpm lint && pnpm build`
-green → `./push-docker.sh` → the host redeploys from `:latest`. Pass a version
-(`vX.Y.Z`) when you want a pinned tag in addition to `:latest`.
+green → `./build-docker.sh` → transfer the local image to the host and
+redeploy from `:latest`. Pass a version (`vX.Y.Z`) when you want a pinned tag
+in addition to `:latest`.
+
+> **Note:** `site/README.md` mentions Vercel as an alternative deploy target
+> for contributors who want zero-config Next.js hosting. The production
+deployment uses the local Docker flow above; the two are not in conflict —
+> Vercel is a contributor convenience, Docker is the production path.
 
 ## Orchestrated mode
 
