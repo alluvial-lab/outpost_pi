@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-external-surfaces-retire-rp-s3-dormant-server-docs
 kind: story
-stage: review
+stage: done
 tags: [rebrand, rp-s3, docs]
 parent: epic-rebrand-external-surfaces-retire-rp-s3
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Mark rp-s3 dormant and make its compose template fork-local

@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-external-surfaces-retire-rp-s3-site-manifest-fallback
 kind: story
-stage: review
+stage: done
 tags: [rebrand, site]
 parent: epic-rebrand-external-surfaces-retire-rp-s3
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Remove rp-s3 defaults from site release loaders

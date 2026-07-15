@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-pi-extension-jsdoc-composition-daemon
 kind: story
-stage: review
+stage: done
 tags: [rebrand, docs, pi-extension]
 parent: epic-rebrand-to-outpost-pi-en-first-pi-extension
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Add JSDoc to composition, commands, and daemon services
