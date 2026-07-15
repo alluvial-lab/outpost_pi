@@ -141,12 +141,10 @@ class AppearanceSettingsPanel extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Notifications
+// Syntax preview
 // ---------------------------------------------------------------------------
 
-/// Aba **Notifications** (sempre visível). Liga/desliga as notificações de fim
-/// de turno (persistido em `AppSettings`) e, no macOS, mostra o estado da
-/// permissão do SO + botão pra pedi-la.
+/// Render the JSON sample with the currently selected syntax theme.
 class _SyntaxPreview extends StatelessWidget {
   const _SyntaxPreview();
 
@@ -185,7 +183,7 @@ class _SyntaxPreview extends StatelessWidget {
   }
 }
 
-/// Gatilho de dropdown (rótulo + chevron) que abre o `showAppMenu`.
+/// Open `showAppMenu` from a labeled dropdown trigger with a chevron.
 class _ThemeDropdown extends StatelessWidget {
   const _ThemeDropdown({required this.value, required this.onChanged});
   final AppThemeMode value;
@@ -260,7 +258,7 @@ class _SyntaxDropdown extends StatelessWidget {
   }
 }
 
-/// Campo de família de fonte (texto livre; vazio = padrão).
+/// Edit a free-form font family, using an empty value for the default.
 class _FontField extends StatefulWidget {
   const _FontField({
     required this.value,
@@ -306,7 +304,7 @@ class _FontFieldState extends State<_FontField> {
   }
 }
 
-/// Stepper de tamanho ( − valor + ) com sufixo "px".
+/// Adjust a size between the configured bounds and display it in pixels.
 class _SizeStepper extends StatelessWidget {
   const _SizeStepper({
     required this.value,
@@ -365,13 +363,3 @@ class _SizeStepper extends StatelessWidget {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// Language (LSP)
-// ---------------------------------------------------------------------------
-
-/// Configura o comando do language server (LSP) de cada linguagem. Vem
-/// pré-preenchido com o default do catálogo; o usuário pode sobrescrever (ex.:
-/// caminho custom do binário). Um indicador mostra se o executável está no PATH
-/// — comunica por que uma linguagem mostra erros e outra não, sem prometer
-/// mágica (Cockpit não instala servidores; só usa o que está na máquina).

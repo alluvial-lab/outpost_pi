@@ -2,9 +2,10 @@ import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/settings/ui/revoke_controller.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Dialog de progresso do revoke: carregando enquanto sobe o `pi --mode rpc` e
-/// roda `/outpost-pi revoke`, depois sucesso/erro com botão "Ok". Recebe o
-/// [RevokeController] por construtor (quem abre descarta ao fechar).
+/// Show revocation progress while `pi --mode rpc` runs `/outpost-pi revoke`.
+///
+/// Displays a success or error result with an acknowledgment action. The caller
+/// owns and disposes the injected [RevokeController].
 class RevokeDialog extends StatelessWidget {
   const RevokeDialog({super.key, required this.controller});
 

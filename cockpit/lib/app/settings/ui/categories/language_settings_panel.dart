@@ -64,9 +64,10 @@ class LanguageSettingsPanel extends StatelessWidget {
   }
 }
 
-/// Linha de uma linguagem (tile expansível): nome + status (●/○) e, ao expandir,
-/// o comando do language server + o comando do formatador externo (opcional). A
-/// sonda do servidor roda ao montar e ao salvar.
+/// Display one expandable language row with availability status.
+///
+/// The expanded row edits the language-server command and optional external
+/// formatter. Server probing runs on mount and after saving.
 class _LanguageRow extends StatefulWidget {
   const _LanguageRow({
     super.key,
@@ -90,7 +91,7 @@ class _LanguageRow extends StatefulWidget {
 class _LanguageRowState extends State<_LanguageRow> {
   late final TextEditingController _serverCtrl;
   late final TextEditingController _formatterCtrl;
-  bool? _available; // null = checando
+  bool? _available; // null while checking
   bool _expanded = false;
   bool _dirty = false;
 
@@ -130,16 +131,19 @@ class _LanguageRowState extends State<_LanguageRow> {
     if (dirty != _dirty) setState(() => _dirty = dirty);
   }
 
-  /// Sonda o comando do servidor salvo: spawna e verifica se fica vivo como um
-  /// LSP de verdade (valida os argumentos, não só o binário no PATH).
+  /// Probe the saved server command as a live LSP process.
+  ///
+  /// Validates the arguments as well as the executable's presence on `PATH`.
   Future<void> _detect() async {
-    setState(() => _available = null); // checando
+    setState(() => _available = null); // checking
     final ok = await probeLspCommand(_savedServer);
     if (mounted) setState(() => _available = ok);
   }
 
-  /// Persiste comando do servidor + formatador (reinicia o LSP da linguagem via
-  /// o listener do shell). Servidor igual ao default → limpa o override.
+  /// Persist the server and formatter commands.
+  ///
+  /// Matching the default server clears its override; the shell listener
+  /// restarts that language's LSP.
   void _save() {
     final server = _serverCtrl.text.trim();
     widget.onChangedCommand(
@@ -151,7 +155,7 @@ class _LanguageRowState extends State<_LanguageRow> {
     _detect();
   }
 
-  /// Volta o servidor ao default e limpa o formatador (limpa ambos os overrides).
+  /// Restore the default server and clear both command overrides.
   void _reset() {
     _serverCtrl.text = _default;
     _formatterCtrl.text = '';
@@ -167,7 +171,7 @@ class _LanguageRowState extends State<_LanguageRow> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Cabeçalho clicável: chevron + nome + extensões + status.
+        // Clickable header: chevron, name, extensions, and status.
         HoverTap(
           onTap: () => setState(() => _expanded = !_expanded),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -284,8 +288,8 @@ class _LanguageRowState extends State<_LanguageRow> {
   );
 }
 
-/// Bolinha de status do executável: verde (encontrado), cinza vazado (ausente),
-/// cinza claro (checando).
+/// Indicate executable status: green when found, outlined gray when absent,
+/// and light gray while checking.
 class _StatusDot extends StatelessWidget {
   const _StatusDot({required this.available});
   final bool? available;
@@ -314,5 +318,5 @@ class _StatusDot extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Conectividade
+// Connectivity
 // ---------------------------------------------------------------------------

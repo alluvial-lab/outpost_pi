@@ -6,11 +6,13 @@ import 'package:cockpit/app/settings/domain/exceptions/daemon_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 import 'package:flutter/foundation.dart';
 
+/// Describe the schedule list's load lifecycle.
 enum CronLoad { idle, loading, ready, error }
 
-/// Estado da aba **Agendamentos**: jobs de cron (plan/39) + lista de daemons
-/// (pra resolver nomes e popular o dropdown do "criar"). Mesmo control-plane
-/// UDS dos daemons. Carrega sob demanda; cada ação recarrega.
+/// Manage the **Schedules** tab's cron jobs and daemon lookup list.
+///
+/// Uses the daemon UDS control plane, loads on demand, and reloads after each
+/// mutation so displayed state converges with the supervisor.
 class CronViewModel extends ChangeNotifier {
   CronViewModel(this._cron, this._supervisor);
 
@@ -21,8 +23,8 @@ class CronViewModel extends ChangeNotifier {
   bool online = false;
   List<CronJob> jobs = const <CronJob>[];
   List<DaemonInfo> daemons = const <DaemonInfo>[];
-  String? error; // falha ao listar jobs
-  String? actionError; // falha da última ação
+  String? error; // Failure while listing jobs.
+  String? actionError; // Failure from the most recent action.
 
   final Set<String> _busy = <String>{};
 
@@ -32,14 +34,13 @@ class CronViewModel extends ChangeNotifier {
   bool get anyBusy => _busy.isNotEmpty;
   bool get hasDaemons => daemons.isNotEmpty;
 
-  /// Refresh silencioso (polling): só recarrega se estiver ocioso, sem piscar
-  /// o spinner de "primeira carga".
+  /// Poll for updates only while idle, without flashing the first-load spinner.
   Future<void> refreshQuiet() async {
     if (anyBusy || load == CronLoad.loading) return;
     await reload();
   }
 
-  /// Nome do daemon alvo de um job (resolve pela lista; fallback ao id).
+  /// Resolve a job's target daemon name, falling back to its ID.
   String daemonName(String daemonId) {
     for (final d in daemons) {
       if (d.id == daemonId) return d.name.isEmpty ? d.id : d.name;
@@ -47,6 +48,10 @@ class CronViewModel extends ChangeNotifier {
     return daemonId;
   }
 
+  /// Reload supervisor reachability, daemons, and scheduled jobs.
+  ///
+  /// An offline supervisor produces a ready empty snapshot; cron-list failures
+  /// publish [CronLoad.error]. Notifications after disposal are suppressed.
   Future<void> reload() async {
     load = CronLoad.loading;
     error = null;
@@ -78,12 +83,21 @@ class CronViewModel extends ChangeNotifier {
     _notify();
   }
 
+  /// Set whether [job] is enabled, exposing per-job busy and failure state.
+  ///
+  /// Reloads the schedule snapshot after the gateway returns.
   Future<void> setEnabled(CronJob job, bool enabled) =>
       _action(job.id, () => _cron.setCronEnabled(job.id, enabled));
 
+  /// Remove [job], exposing per-job busy and failure state.
+  ///
+  /// Reloads the schedule snapshot after the gateway returns.
   Future<void> remove(CronJob job) =>
       _action(job.id, () => _cron.removeCron(job.id));
 
+  /// Run [job] immediately, exposing per-job busy and failure state.
+  ///
+  /// Normalizes the gateway result and reloads the schedule snapshot afterward.
   Future<void> run(CronJob job) => _action(job.id, () async {
     final r = await _cron.runCron(job.id);
     return r.fold(
@@ -92,7 +106,9 @@ class CronViewModel extends ChangeNotifier {
     );
   });
 
-  /// Cria um job. Retorna `true` no sucesso (o dialog fecha).
+  /// Create a job and return whether the dialog may close.
+  ///
+  /// Successful creation reloads the schedule snapshot.
   Future<bool> create({
     required String daemonId,
     required String schedule,
@@ -121,7 +137,7 @@ class CronViewModel extends ChangeNotifier {
     return ok;
   }
 
-  /// Busca o log (`cron.jsonl`); `null` em falha (com [actionError] setado).
+  /// Fetch `cron.jsonl`, returning `null` and setting [actionError] on failure.
   Future<List<CronLogEntry>?> fetchLog({String? jobId}) async {
     final result = await _cron.cronLog(jobId: jobId, tail: 50);
     return result.fold((list) => list, (e) {
