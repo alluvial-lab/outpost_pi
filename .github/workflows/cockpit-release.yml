@@ -66,7 +66,8 @@ jobs:
     defaults: { run: { working-directory: cockpit } }
     env:
       VERSION: ${{ needs.meta.outputs.version }}
-      SIGN_ID: "Developer ID Application: Jacob Moura (U843T2P7A2)"
+      SIGN_ID: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,6 +77,17 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+
+      - name: Require Apple signing configuration
+        run: |
+          if [ -z "$SIGN_ID" ]; then
+            echo "::error::APPLE_SIGNING_IDENTITY secret is required for release signing"
+            exit 1
+          fi
+          if [ -z "$APPLE_TEAM_ID" ]; then
+            echo "::error::APPLE_TEAM_ID secret is required for release signing"
+            exit 1
+          fi
 
       - name: Import Developer ID certificate into temporary keychain
         env:
@@ -92,6 +104,11 @@ jobs:
             -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: \
             -s -k "$KEYCHAIN_PASS" "$KEYCHAIN"
+          if ! security find-identity -v -p codesigning "$KEYCHAIN" | grep -Fq "$SIGN_ID"; then
+            rm "$RUNNER_TEMP/cert.p12"
+            echo "::error::Imported certificate does not contain APPLE_SIGNING_IDENTITY for team $APPLE_TEAM_ID"
+            exit 1
+          fi
           security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
           rm "$RUNNER_TEMP/cert.p12"
 
