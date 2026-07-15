@@ -152,7 +152,7 @@ vi.mock("./pairing/qr.js", async (importOriginal) => {
 const {
   default: extension,
   _getState,
-  remotePiTestHarness,
+  outpostPiTestHarness,
   _onPeerDisconnect,
   routeClientMessage,
   _routeClientMessageFrom,
@@ -194,7 +194,7 @@ const { createRelayTransportPort } = await import("./extension/relay_transport.j
 function makeMockPi(): { pi: ExtensionAPI; registeredCommands: string[] } {
   const registeredCommands: string[] = [];
   const pi = {
-    __remotePiTestHarness: true,
+    __outpostPiTestHarness: true,
     events: createEventBus(),
     on: () => undefined,
     registerCommand(name: string, _opts: unknown) { registeredCommands.push(name); },
@@ -216,7 +216,7 @@ function captureHandler(commandName: string): CmdHandler {
   resetOutpostPiRuntimeCoordinatorForTest();
   let captured: CmdHandler | undefined;
   const pi = {
-    __remotePiTestHarness: true,
+    __outpostPiTestHarness: true,
     events: createEventBus(),
     on: () => undefined,
     registerCommand(name: string, opts: { handler: CmdHandler }) {
@@ -464,9 +464,9 @@ describe("state machine + pair_request flow", () => {
 
   test("start: idle → started", async () => {
     captureHandler("outpost-pi");
-    await remotePiTestHarness.connect(makeMockCtx());
-    expect(remotePiTestHarness.state()).toBe("started");
-    expect(_getState()).toBe(remotePiTestHarness.state());
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(outpostPiTestHarness.state()).toBe("started");
+    expect(_getState()).toBe(outpostPiTestHarness.state());
   });
 
   test("pair without start → warning, state stays idle", async () => {
@@ -1044,7 +1044,7 @@ function captureEventHandler(eventName: string): EventHandler {
   resetOutpostPiRuntimeCoordinatorForTest();
   let captured: EventHandler | undefined;
   const pi = {
-    __remotePiTestHarness: true,
+    __outpostPiTestHarness: true,
     events: createEventBus(),
     on(e: string, h: EventHandler) {
       if (e === eventName) captured = h;
