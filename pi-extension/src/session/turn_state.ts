@@ -7,25 +7,32 @@ export const TURN_STATE_TAGS = [
   "error",
 ] as const;
 
+/** Name a canonical phase in the session turn state machine. */
 export type TurnStateTag = (typeof TURN_STATE_TAGS)[number];
+/** Identify the ingress path that began a turn. */
 export type TurnSource = "app" | "queued" | "local" | "rpc" | "compaction";
+/** Classify the terminal cause that forces a turn out of its active phase. */
 export type TurnErrorReason =
   | "provider_error"
   | "delivery_error"
   | "cancelled"
   | "session_shutdown";
 
+/** Preserve one deferred app message until the current turn reaches an idle, drainable state. */
 export interface QueuedMessage {
   id: string;
   text: string;
 }
 
+/** Distinguish consumers that need a final history sync after attaching mid-turn. */
 export type LateAttachKind = "owner" | "mesh_bridge";
+/** Identify one late-attaching consumer that must receive the completed turn snapshot. */
 export interface LateAttachTarget {
   kind: LateAttachKind;
   id: string;
 }
 
+/** Model the authoritative turn lifecycle, including terminal and late-attach synchronization states. */
 export type TurnState =
   | { tag: "idle" }
   | { tag: "working"; turnId: string; replyTo: string; source: TurnSource }
@@ -34,6 +41,7 @@ export type TurnState =
   | { tag: "done"; turnId: string; awaitingSync: true; collectLateAttach: boolean; flushReady: boolean }
   | { tag: "error"; turnId: string | null; reason: TurnErrorReason };
 
+/** Hold the full reducer-owned turn state from which all public projections derive. */
 export interface TurnSnapshot {
   state: TurnState;
   queuedMessage: QueuedMessage | null;
@@ -41,6 +49,7 @@ export interface TurnSnapshot {
   lateAttachTargets: readonly LateAttachTarget[];
 }
 
+/** Describe an input that advances, preserves, or terminates the turn state machine. */
 export type TurnEvent =
   | { type: "user_message_accepted"; turnId: string; replyTo?: string; source?: Exclude<TurnSource, "compaction"> }
   | { type: "local_input"; turnId: string; replyTo?: string; source?: "local" | "rpc" }
@@ -62,6 +71,7 @@ export type TurnEvent =
   | { type: "queued_message_set"; id: string; text: string }
   | { type: "queued_message_clear" };
 
+/** Expose convergence-safe UI, delivery, queue, and late-attach decisions derived from a turn snapshot. */
 export interface TurnProjection {
   /** Existing room_meta projection. Sibling projection-consumers derives UI from this. */
   working: boolean;
@@ -85,6 +95,7 @@ export interface TurnProjection {
   queuedMessage: QueuedMessage | null;
 }
 
+/** Create the idle, queue-free turn snapshot used at session startup or reset. */
 export function initialTurnSnapshot(): TurnSnapshot {
   return {
     state: { tag: "idle" },
@@ -94,6 +105,7 @@ export function initialTurnSnapshot(): TurnSnapshot {
   };
 }
 
+/** Reduce one typed event into the next immutable turn snapshot, preserving convergence on terminal paths. */
 export function reduceTurn(snapshot: TurnSnapshot, event: TurnEvent): TurnSnapshot {
   switch (event.type) {
     case "queued_message_set":
@@ -190,6 +202,7 @@ export function reduceTurn(snapshot: TurnSnapshot, event: TurnEvent): TurnSnapsh
   }
 }
 
+/** Derive consumer-facing working, delivery, queue, and late-attach state from the canonical snapshot. */
 export function projectTurn(snapshot: TurnSnapshot): TurnProjection {
   const state = snapshot.state;
   const working = state.tag === "working" || state.tag === "awaiting_tool" || state.tag === "streaming";

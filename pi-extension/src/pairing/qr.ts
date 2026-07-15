@@ -55,10 +55,12 @@ export class QRSession {
   }
 }
 
+/** Own the process-wide, single-use QR token state for pairing. */
 export const qrSession = new QRSession();
 
 // ── URI + display ─────────────────────────────────────────────────────────────
 
+/** Build the room-targeted, opaque pairing URI consumed by the mobile app. */
 export function buildQRUri(
   token: string,
   longtermEdPk: Uint8Array, // Ed25519 — only peer ID after E2E rollback

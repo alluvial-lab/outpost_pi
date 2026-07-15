@@ -8,6 +8,7 @@ const BASE_BACKOFF_MS = 30;
 const JITTER_MS = 70;
 const PROBE_TIMEOUT_MS = 500;
 
+/** Return the elected role together with the live handle whose lifecycle the caller must own. */
 export type ElectionResult =
   | { role: "leader"; server: Server }
   | { role: "follower"; socket: Socket };

@@ -14,8 +14,10 @@ import { Broker } from "./broker.js";
  * peers re-run `joinOrLead`. One becomes the new leader; others reconnect.
  */
 export type MessageHandler = (env: Envelope) => void;
+/** Receive notification after a successful post-failover rejoin, not during initial startup. */
 export type ReconnectHandler = () => void;
 
+/** Configure a local UDS peer and its routing identity, timeouts, and optional audit path. */
 export interface SessionPeerOptions {
   sockPath: string;
   name: string;
@@ -36,8 +38,10 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const ACK_TIMEOUT_MS = 5_000;
 const FAILOVER_RETRY_MS = 100;
 
+/** Classify the broker acknowledgement for a unicast delivery attempt. */
 export type AckStatus = "received" | "busy" | "denied" | "timeout";
 
+/** Report the terminal acknowledgement result; timeout means no broker confirmation arrived. */
 export interface AckResult {
   status: AckStatus;
   /** The original envelope id that was awaiting ACK. */
@@ -52,6 +56,7 @@ interface AckBody {
   target: string;
 }
 
+/** Own a peer's broker connection, pending requests, and failover rejoin lifecycle until {@link leave} tears them down. */
 export class SessionPeer {
   private readonly opts: SessionPeerOptions;
   /** Clean leaf name actually assigned by the broker (may carry a `#N`
