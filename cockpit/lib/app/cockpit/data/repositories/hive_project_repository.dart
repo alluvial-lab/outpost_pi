@@ -2,18 +2,22 @@ import 'package:cockpit/app/cockpit/domain/contracts/project_repository.dart';
 import 'package:cockpit/app/cockpit/domain/entities/project.dart';
 import 'package:hive/hive.dart';
 
-/// Persiste projetos numa Box do Hive, um `Map` por id (sem TypeAdapters —
-/// só tipos primitivos, então não precisa de code-gen).
+/// Persist projects in Hive as one primitive-only `Map` per project id.
+///
+/// Avoids TypeAdapters and generated codecs so legacy primitive maps remain
+/// directly readable.
 class HiveProjectRepository implements ProjectRepository {
   HiveProjectRepository(this._box);
 
-  /// Box aberta no bootstrap (`config/`). Guarda `Map` por `project.id`.
+  /// Use the box opened during bootstrap (`config/`), keyed by `project.id`.
   final Box<dynamic> _box;
 
   static const String boxName = 'projects';
 
-  /// Chave reservada (não-Map) pro último workspace selecionado. Não colide com
-  /// ids de projeto (caminhos absolutos) e o `all()` a ignora (`whereType<Map>`).
+  /// Reserve a non-Map key for the last selected workspace.
+  ///
+  /// It cannot collide with absolute-path project ids, and `all()` ignores it
+  /// through `whereType<Map>`.
   static const String _lastSelectedKey = '__last_selected__';
 
   @override
@@ -23,8 +27,8 @@ class HiveProjectRepository implements ProjectRepository {
         .map(_fromMap)
         .whereType<Project>()
         .toList();
-    // Ordem manual do usuário (drag-drop); `createdAt` como desempate e como
-    // fallback para dados antigos (todos com order=0 → caem no createdAt).
+    // Preserve the user's manual drag-and-drop order. Use `createdAt` to break
+    // ties and as the fallback for legacy records whose order is always zero.
     projects.sort((a, b) {
       final byOrder = a.order.compareTo(b.order);
       return byOrder != 0 ? byOrder : a.createdAt.compareTo(b.createdAt);
@@ -75,7 +79,7 @@ class HiveProjectRepository implements ProjectRepository {
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         (map['createdAt'] as num?)?.toInt() ?? 0,
       ),
-      // Ausente em dados de versões anteriores → 0 (ordena por createdAt).
+      // Legacy records omit this field; zero falls back to `createdAt` order.
       order: (map['order'] as num?)?.toInt() ?? 0,
       imagePath: map['image'] as String?,
     );

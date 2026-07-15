@@ -1,8 +1,10 @@
 import 'package:cockpit/app/cockpit/domain/contracts/dismissed_update_store.dart';
 import 'package:hive/hive.dart';
 
-/// Persiste a versão de atualização dispensada numa chave própria da Box de
-/// settings (reusa a box, sem TypeAdapter — só uma String).
+/// Persist the dismissed update version under a dedicated settings-box key.
+///
+/// Reuses the existing box without a TypeAdapter because the stored value is a
+/// single String.
 class HiveDismissedUpdateStore implements DismissedUpdateStore {
   HiveDismissedUpdateStore(this._box);
 
