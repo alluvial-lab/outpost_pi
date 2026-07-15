@@ -28,7 +28,7 @@ import { ipcAddress, usesNamedPipe } from "./ipc.js";
  *
  * Caller workflow:
  *   const lock = await acquireCwdLock(cwd);
- *   if (!lock.ok) { ui.notify("Já tem um agente rodando nessa pasta."); return; }
+ *   if (!lock.ok) { ui.notify("An agent is already running in this folder."); return; }
  *   // …run /outpost-pi normally; lock auto-releases on process exit
  */
 
@@ -40,18 +40,36 @@ function locksDir(): string {
   return join(root, ".pi", "remote", "locks");
 }
 
+/**
+ * Represents a lock owned by this process.
+ *
+ * Calling `release` closes the retained IPC server early; otherwise process
+ * exit releases it through the operating system.
+ */
 export interface AcquiredLock {
   ok: true;
   /** Manual release. Optional — process exit cleans up too. */
   release(): void;
 }
 
+/**
+ * Reports that another live process owns the requested lock.
+ *
+ * No local resource was acquired, so callers must not attempt cleanup and may
+ * use `lockPath` only for diagnostics.
+ */
 export interface RefusedLock {
   ok: false;
   /** Where the live lock socket lives, in case the caller wants to log it. */
   lockPath: string;
 }
 
+/**
+ * Distinguishes a successfully acquired lock from a live-holder refusal.
+ *
+ * Branch on `ok`; only the acquired variant grants lifecycle ownership and a
+ * release action.
+ */
 export type CwdLockResult = AcquiredLock | RefusedLock;
 
 /**
