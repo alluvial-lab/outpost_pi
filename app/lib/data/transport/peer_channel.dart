@@ -17,6 +17,7 @@ import 'package:app/protocol/codec.dart';
 // ControlInbound + IControlLink come from these.
 import 'package:app/protocol/protocol.dart';
 
+/// Describe a peer-channel failure safe to show or log without raw frame data.
 class PeerChannelError implements Exception {
   final String message;
   const PeerChannelError(this.message);
@@ -25,6 +26,10 @@ class PeerChannelError implements Exception {
   String toString() => 'PeerChannelError: $message';
 }
 
+/// Adapt one connected [PeerTransport] into typed peer and relay-control streams.
+///
+/// Starts receiving on the first server-message subscription, forwards unknown
+/// wire types as typed errors, and owns transport/controller closure.
 class PlainPeerChannel implements IChannel, IControlLink {
   final PeerTransport _transport;
   final DebugLog? _debugLog;
@@ -148,6 +153,8 @@ class PlainPeerChannel implements IChannel, IControlLink {
     // a constant (never raw.toString()) so the invariant holds even if
     // runtimeType is somehow empty.
     final type = raw.runtimeType.toString();
-    return type.isEmpty ? 'unknown_error' : (type.length <= 120 ? type : '${type.substring(0, 120)}…');
+    return type.isEmpty
+        ? 'unknown_error'
+        : (type.length <= 120 ? type : '${type.substring(0, 120)}…');
   }
 }

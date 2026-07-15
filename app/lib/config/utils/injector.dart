@@ -2,36 +2,32 @@ import 'package:app/domain/contracts/contracts.dart';
 import 'package:app/ui/core/viewmodel/viewmodel.dart';
 import 'package:auto_injector/auto_injector.dart';
 
-/// Fachada sobre o [AutoInjector] que centraliza a configuração de serviços,
-/// repositórios, casos de uso e view models, garantindo descarte correto.
+/// Wrap [AutoInjector] with layer-aware registrations and disposal ownership.
 ///
-/// Métodos tipados (`addService`, `addRepository`, `addUseCase`,
-/// `addViewModel`) servem como documentação viva: ao registrar algo, você
-/// declara qual camada ele pertence e qual contrato ele satisfaz.
-///
-/// Use `addInstance` para valores prontos (ex.: instâncias de SDK) e
-/// `addOther` para tipos que não se encaixam nos contratos do domínio (ex.:
-/// `Dio`, `Connectivity`).
+/// Typed registration methods make each binding's architectural role explicit.
+/// Services and repositories are injector-owned lazy singletons; ViewModels and
+/// use cases are constructed on demand. Use [addInstance] for ready SDK values
+/// and [addOther] for infrastructure that has no domain lifecycle contract.
 class CustomInjector {
   final _injector = AutoInjector();
 
-  /// Resolve uma instância registrada. Para `ViewModel`s, cada chamada
-  /// devolve uma nova instância (registrada com `add`, não `addLazySingleton`).
+  /// Resolve a registered dependency.
+  ///
+  /// ViewModel bindings create a new instance for each lookup rather than
+  /// retaining route state in the injector.
   T get<T extends Object>() => _injector.get<T>();
 
-  /// Registra um valor já construído (singleton de fato).
+  /// Register an already-constructed instance for the app lifetime.
   void addInstance<T>(T instance) {
     _injector.addInstance<T>(instance);
   }
 
-  /// Registra um singleton preguiçoso para tipos que não são `Service`,
-  /// `Repository` ou `UseCase` — ex.: `Dio`, factories de SDKs.
+  /// Register a lazy singleton without imposing a domain disposal contract.
   void addOther<T>(Function constructor) {
     _injector.addLazySingleton<T>(constructor);
   }
 
-  /// Adiciona um [Service] como singleton preguiçoso, encadeando o
-  /// `dispose()` no descarte do injector.
+  /// Register an injector-owned lazy service and dispose it at shutdown.
   void addService<T extends Service>(Function constructor) {
     _injector.addLazySingleton<T>(
       constructor,
@@ -39,8 +35,7 @@ class CustomInjector {
     );
   }
 
-  /// Adiciona um [Repository] como singleton preguiçoso, encadeando o
-  /// `dispose()` no descarte do injector.
+  /// Register an injector-owned lazy repository and dispose it at shutdown.
   void addRepository<T extends Repository>(Function constructor) {
     _injector.addLazySingleton<T>(
       constructor,
@@ -48,21 +43,19 @@ class CustomInjector {
     );
   }
 
-  /// Registra um [ViewModel]; cada `get` retorna uma nova instância. Estado
-  /// não vaza entre telas distintas.
+  /// Register a ViewModel factory so state cannot leak across route mounts.
   void addViewModel<T extends ViewModel>(Function constructor) {
     _injector.add(constructor);
   }
 
-  /// Registra um [UseCase] para ser resolvido sob demanda.
+  /// Register a use-case factory for demand-time resolution.
   void addUseCase<T extends UseCase>(Function constructor) {
     _injector.add(constructor);
   }
 
-  /// Libera todas as dependências registradas e reseta o injector.
+  /// Dispose injector-owned bindings and reset the registry.
   void dispose() => _injector.dispose();
 
-  /// Finaliza o cadastro de dependências e bloqueia novas inserções. Deve ser
-  /// chamado ao fim de `setupDependencies()`.
+  /// Seal registration after bootstrap so the dependency graph cannot drift.
   void commit() => _injector.commit();
 }

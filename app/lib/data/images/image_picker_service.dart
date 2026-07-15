@@ -4,12 +4,10 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 
-/// Plan/30 — pick one image from the camera or the gallery and compress it
-/// (JPEG, longest side ≤1568px, q80) entirely on-device before it travels
-/// inline on a `user_message`. No file is uploaded out-of-band.
+/// Capture or choose one image, then produce a send-ready on-device JPEG.
 ///
-/// The plugin calls go through the [ImagePickerBackend] seam so the
-/// pick + iterative size-ceiling logic is unit-testable without a device.
+/// No file is uploaded out of band. The backend seam keeps platform picking and
+/// iterative compression testable without a device.
 abstract class IImagePickerService {
   /// Capture a photo. Returns null if the user cancelled. Throws
   /// [ImagePermissionDeniedException] when camera permission is denied (#10).
@@ -37,6 +35,7 @@ class ImagePermissionDeniedException implements Exception {
   String toString() => 'ImagePermissionDeniedException';
 }
 
+/// Apply picker results to the app's bounded JPEG attachment contract.
 class ImagePickerService implements IImagePickerService {
   ImagePickerService([ImagePickerBackend? backend])
     : _backend = backend ?? PlatformImagePickerBackend();
@@ -106,6 +105,10 @@ abstract class ImagePickerBackend {
   });
 }
 
+/// Adapt `image_picker` and `flutter_image_compress` to [ImagePickerBackend].
+///
+/// Converts platform permission denials into [ImagePermissionDeniedException]
+/// so callers can distinguish recoverable camera access from other failures.
 class PlatformImagePickerBackend implements ImagePickerBackend {
   PlatformImagePickerBackend([ImagePicker? picker])
     : _picker = picker ?? ImagePicker();

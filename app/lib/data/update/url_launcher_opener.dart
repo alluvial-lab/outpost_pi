@@ -1,9 +1,10 @@
 import 'package:app/domain/contracts/url_opener.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Abre URLs externas via `url_launcher` em modo navegador/app externo —
-/// usado pelo aviso de update pra baixar o `OutpostPi.apk` direto. Best-effort:
-/// URL inválida ou plataforma sem handler → `false` (a UI já tem fallback).
+/// Open external URLs through `url_launcher` for direct `OutpostPi.apk` downloads.
+///
+/// This is best-effort: invalid URLs, unsupported handlers, and platform
+/// failures return `false` so the update UI can retain its fallback.
 class UrlLauncherOpener implements UrlOpener {
   const UrlLauncherOpener();
 

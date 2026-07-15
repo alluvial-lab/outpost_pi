@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-app-data-shared
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, app]
 parent: epic-rebrand-to-outpost-pi-en-first-app
 depends_on: []
@@ -63,3 +63,11 @@ named by the parent manifest.
 - [ ] Touched Dart files are formatted; targeted service/transport tests pass.
 - [ ] The feature-level integrated run can pass `flutter analyze` and
       `flutter test` from `app/`.
+
+## Implementation notes
+- Files changed: `app/lib/config/dependencies.dart`, `app/lib/config/utils/injector.dart`, `app/lib/main.dart`; data service, persistence, sync, transport, update, and voice files named in the reviewed manifest; `app/lib/pairing/{owner_identity_bridge,pair_request_flow,qr_scanner,storage}.dart`; and `app/lib/routing/adaptive.dart`.
+- Tests added: none; this is documentation/translation work. `HiveTranscriptEventStore` received a brace-only lint repair found by `flutter analyze`.
+- Discrepancies from design: none. Dart formatting touched layout only; runtime literals, identifiers, storage keys, URLs, protocol constants, and behavior were preserved.
+- Adjacent issues parked: none.
+- Verification: formatted all touched Dart files; `flutter analyze` and `flutter test` passed from `app/` with `PUB_CACHE=/home/agent/projects/remote_pi/.pub-cache`; the owned-scope accented-Latin `rg` returned no matches.
+- Rationale: adapter overrides retain inherited contract documentation where their behavior does not differ; new dartdoc is concentrated on the manifest's lifecycle, failure, ownership, and boundary seams.
