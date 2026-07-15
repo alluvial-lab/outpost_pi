@@ -1,49 +1,49 @@
-# `lib/app/` — features verticais + módulos
+# `lib/app/` — vertical features + modules
 
-Tudo do cockpit mora aqui. Cada **feature** é um mini-app auto-contido; o
-`core/` é o kernel transversal (ver [`core/CLAUDE.md`](core/CLAUDE.md)).
+Everything in the Cockpit lives here. Each **feature** is a self-contained mini-app;
+`core/` is the cross-cutting kernel (see [`core/CLAUDE.md`](core/CLAUDE.md)).
 
-## Anatomia de uma feature
+## Feature anatomy
 
 ```
 app/<feature>/
-├── <feature>_module.dart   # rotas + binds da feature (createModule)
-├── domain/                 # contratos (interfaces) + entities da feature
-├── data/                   # implementações dos contratos (IO, processos, repos)
+├── <feature>_module.dart   # feature routes + binds (createModule)
+├── domain/                 # feature contracts (interfaces) + entities
+├── data/                   # contract implementations (IO, processes, repos)
 └── ui/
-    ├── <feature>_page.dart # entry widget da rota
-    ├── viewmodels/         # ChangeNotifiers page-scoped
-    ├── widgets/            # widgets locais (barrel widgets.dart opcional)
-    └── states/  session/   # estruturas de estado próprias da feature (quando houver)
+    ├── <feature>_page.dart # route entry widget
+    ├── viewmodels/         # page-scoped ChangeNotifiers
+    ├── widgets/            # local widgets (optional widgets.dart barrel)
+    └── states/  session/   # feature-specific state structures (when present)
 ```
 
-Regra de dependência (vale por feature):
-`ui ──► domain ◄── data`, com `<feature>_module.dart` compondo as três.
+Dependency rule (per feature):
+`ui ──► domain ◄── data`, with `<feature>_module.dart` composing all three.
 
-- `domain/` não importa `data/`, `ui/` nem módulos. Só Dart + `core/domain`.
-- `data/` implementa `domain/`, nunca importa `ui/`.
-- `ui/` consome `domain/` via ViewModels — **nunca** chama `data/` direto.
-- Uma feature pode importar de `core/`; **nunca** de outra feature.
+- `domain/` does not import `data/`, `ui/`, or modules. Only Dart + `core/domain`.
+- `data/` implements `domain/`; it never imports `ui/`.
+- `ui/` consumes `domain/` through ViewModels — it **never** calls `data/` directly.
+- A feature can import from `core/`; **never** from another feature.
 
-## O módulo da feature (`<feature>_module.dart`)
+## The feature module (`<feature>_module.dart`)
 
-É o coração: substitui os antigos god classes `dependencies.dart` (DI) e
-`router.dart` (rotas). Padrão (`flutter_modular` v7):
+It is the heart: it replaces the old `dependencies.dart` (DI) and
+`router.dart` (routes) god classes. Pattern (`flutter_modular` v7):
 
 ```dart
-Module buildFooModule(/* deps async resolvidas no main */) => createModule(
-  path: '/foo',                         // feature → rotas flattenadas sob /foo;
-  register: (c) {                       //   sem path = só DI (caso do core)
+Module buildFooModule(/* async deps resolved in main */) => createModule(
+  path: '/foo',                         // feature → routes flattened under /foo;
+  register: (c) {                       //   no path = DI only (core case)
     c
-      // binds da feature: contrato → impl. addInstance (instância pronta),
-      // addLazySingleton/add (constructor tear-off, auto-injetado).
+      // feature binds: contract → impl. addInstance (ready instance),
+      // addLazySingleton/add (constructor tear-off, auto-injected).
       ..addInstance<FooRepository>(FooRepositoryImpl(box))
       ..route(
-        '/',                            // resolve para /foo
+        '/',                            // resolves to /foo
         transition: TransitionType.fade,
-        // provide: estado PAGE-SCOPED — nasce ao montar a rota, dispose ao sair.
-        // Registre via tear-off `.new`: o auto_injector resolve os parâmetros
-        // pelos binds acima. init()/check() rodam no initState da página.
+        // provide: PAGE-SCOPED state — born when route mounts, disposed when leaving.
+        // Register through `.new` tear-off: auto_injector resolves parameters
+        // from the binds above. init()/check() run in the page's initState.
         provide: (s) => s..addChangeNotifier<FooViewModel>(FooViewModel.new),
         child: (context, state) => const FooPage(),
       );
@@ -51,60 +51,60 @@ Module buildFooModule(/* deps async resolvidas no main */) => createModule(
 );
 ```
 
-- **DI lifecycle**: bind em módulo **com `path`** = feature-scoped (vive enquanto
-  a feature está na pilha). Bind no `core` (sem `path`) = root-owned (app inteiro).
-- **Injeção `.new`** (regra): registre com o tear-off do construtor (`Foo.new`) e
-  deixe o auto_injector resolver os parâmetros pelo grafo — **não** escreva
-  `() => Foo(inject<A>(), inject<B>())`. `inject<T>()` fica só para onde não há
-  construtor (guards, callbacks). O parser de params do auto_injector é regex sobre
-  o `toString` do construtor, então use sempre **tipos nomeados**:
-  - dependência **factory** ("um X novo por uso"): interface
-    `XFactory { X create(); }` (impl no `data/`), **nunca** `X Function()` — o `=>`
-    quebra o parser e dois params factory seguidos fundem. Ver `PairingGatewayFactory`
+- **DI lifecycle**: a bind in a module **with `path`** = feature-scoped (lives while
+  the feature is on the stack). A bind in `core` (without `path`) = root-owned (entire app).
+- **`.new` injection** (rule): register with the constructor tear-off (`Foo.new`) and
+  let auto_injector resolve parameters through the graph — **do not** write
+  `() => Foo(inject<A>(), inject<B>())`. `inject<T>()` is only for where there is no
+  constructor (guards, callbacks). The auto_injector parameter parser is regex over the
+  constructor's `toString`, so always use **named types**:
+  - **factory** dependency ("a new X per use"): interface
+    `XFactory { X create(); }` (impl in `data/`), **never** `X Function()` — `=>`
+    breaks the parser and two consecutive factory params merge. See `PairingGatewayFactory`
     + `ConnectivityViewModel`.
-  - **vários primitivos** ambíguos (`String`...): um **value object injetável**
-    (ex.: `UpdateTarget`).
-- **Valores async** (Hive boxes, `PiSpawnConfig`, versão) são resolvidos no `main`
-  e passados às factories `buildXModule(...)` — `register` é síncrono.
-- Registre a feature no `app_module.dart` com `c.module(fooModule)`.
+  - **multiple ambiguous primitives** (`String`...): an injectable **value object**
+    (e.g. `UpdateTarget`).
+- **Async values** (Hive boxes, `PiSpawnConfig`, version) are resolved in `main`
+  and passed to `buildXModule(...)` factories — `register` is synchronous.
+- Register the feature in `app_module.dart` with `c.module(fooModule)`.
 
 ## ViewModels
 
-`ChangeNotifier` puro, **page-scoped** via `provide`. Não há mais base
-`ViewModel<T>` nem `states/` sealed obrigatório (era aspiracional, nunca usado).
-A página consome via `context.watch<T>()` (rebuild), `context.read<T>()`
-(callback) ou `context.select<T,R>()` (rebuild granular). `Consumer`/`Selector`
-também existem. **Nunca** instancie ViewModel na página.
+Plain `ChangeNotifier`, **page-scoped** through `provide`. There is no longer a base
+`ViewModel<T>` nor mandatory `states/` sealed class (it was aspirational, never used).
+The page consumes through `context.watch<T>()` (rebuild), `context.read<T>()`
+(callback), or `context.select<T,R>()` (granular rebuild). `Consumer`/`Selector`
+also exist. **Never** instantiate a ViewModel in the page.
 
-Estado **app-global** (tema/fonte = `SettingsController`) não é de feature: vive
-em `ModularApp.provide` (no `main`), acima do `ShadcnApp` → `context.watch` em
-qualquer lugar.
+**App-global** state (theme/font = `SettingsController`) is not a feature concern: it lives
+in `ModularApp.provide` (in `main`), above `ShadcnApp` → `context.watch` anywhere.
 
-## Navegação
+## Navigation
 
-`context.pushNamed('/settings')` empilha modal-like (fica fora da URL; `pop`
-volta). `context.navigate('/x')` troca a base da pilha. `context.pop([result])`.
-Paths em [`core/routes.dart`](core/routes.dart) (`RoutePaths`).
+`context.pushNamed('/settings')` pushes modal-like (stays outside the URL; `pop`
+returns). `context.navigate('/x')` replaces the stack base. `context.pop([result])`.
+Paths in [`core/routes.dart`](core/routes.dart) (`RoutePaths`).
 
-## Dialogs com estado próprio
+## Dialogs with their own state
 
-`flutter_modular` não tem provider de árvore ad-hoc. Para um controller de dialog
-(ex. pareamento), crie-o no call-site, passe por **construtor** e consuma com
-`ListenableBuilder` — e **descarte no fim** (`ctrl.dispose()` após `showDialog`),
-senão vaza o `pi --mode rpc` efêmero. Ver `settings/ui/pairing_dialog.dart`.
+`flutter_modular` has no ad-hoc tree provider. For a dialog controller
+(e.g., pairing), create it at the call site, pass it through its **constructor** and consume
+it with `ListenableBuilder` — and **dispose it at the end** (`ctrl.dispose()` after
+`showDialog`), otherwise the ephemeral `pi --mode rpc` leaks. See
+`settings/ui/pairing_dialog.dart`.
 
-## Regra crítica: `BuildContext` em código assíncrono
+## Critical rule: `BuildContext` in asynchronous code
 
-Acessar `context` após `await` (ou dentro de `.then/.onSuccess/.flatMap/
-.whenComplete`) crasha se o widget desmontou. O lint não pega callbacks
-encadeados — transforme para `await` + guard (`if (!mounted) return;` /
-`if (!context.mounted) return;`). Detalhe no [CLAUDE.md raiz](../../CLAUDE.md).
+Accessing `context` after `await` (or inside `.then/.onSuccess/.flatMap/
+.whenComplete`) crashes if the widget is disposed. The lint does not catch chained
+callbacks — convert to `await` + guard (`if (!mounted) return;` /
+`if (!context.mounted) return;`). Details in the [root CLAUDE.md](../../CLAUDE.md).
 
-## Checklist — nova feature
+## Checklist — new feature
 
 1. `mkdir app/<feature>/{domain,data,ui}`.
-2. Contratos em `domain/contracts/`, impls em `data/`, página + VMs em `ui/`.
-3. `<feature>_module.dart`: registra binds + `route(...)` + `provide:` dos VMs.
-4. `c.module(<feature>Module)` no `app_module.dart` (passando deps async do `main`).
-5. Path em `core/routes.dart` se for navegado de fora.
-6. `flutter analyze` (zero issues) — pega import cruzando feature/quebra de camada.
+2. Contracts in `domain/contracts/`, implementations in `data/`, page + VMs in `ui/`.
+3. `<feature>_module.dart`: registers binds + `route(...)` + VM `provide:`.
+4. `c.module(<feature>Module)` in `app_module.dart` (passing async deps from `main`).
+5. Path in `core/routes.dart` if navigated from elsewhere.
+6. `flutter analyze` (zero issues) — catches cross-feature imports/layer violations.
