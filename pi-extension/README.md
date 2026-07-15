@@ -11,7 +11,9 @@
 **Homepage:** <https://outpost-pi.kevoun.com>
 
 `/outpost-pi` is a single slash command that wires both at once. Run it; the
-first time it asks a couple of questions and you are done.
+first time it asks a couple of questions and you are done. You will also need
+to point it at a relay with `/outpost-pi set-relay <url>` (there is no default
+relay) before the relay can connect.
 
 ## Protocol & Security
 
@@ -36,9 +38,11 @@ Then in any Pi terminal:
 /outpost-pi
 ```
 
-The first run shows a short interactive wizard (agent name, default session,
-whether to auto-start the relay). On every following run, `/outpost-pi` joins
-the local agent session and starts the relay automatically — no extra typing.
+The first run shows a short interactive wizard (agent name, whether to
+auto-start the relay). The wizard sets your preferences but does not configure
+a relay URL — run `/outpost-pi set-relay <url>` once first (there is no
+default relay). On every following run, `/outpost-pi` joins the local agent
+session and starts the relay automatically — no extra typing.
 
 ### Try the agent network in 30 seconds
 
