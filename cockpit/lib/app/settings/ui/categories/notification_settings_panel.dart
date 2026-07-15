@@ -52,9 +52,10 @@ class NotificationSettingsPanel extends StatelessWidget {
   }
 }
 
-/// Estado da permissão de notificação do macOS + botão para solicitá-la. Sonda
-/// ao montar; ao pedir, dispara uma notificação de teste e, se ainda negada,
-/// abre as instruções do System Settings.
+/// Display and request the macOS notification permission.
+///
+/// Probes on mount; a request sends a test notification and opens System
+/// Settings instructions if permission remains denied.
 class _NotificationPermissionRow extends StatefulWidget {
   const _NotificationPermissionRow();
 
@@ -110,6 +111,3 @@ class _NotificationPermissionRowState
     );
   }
 }
-
-/// Amostra de código realçada com o tema de syntax atual (atualiza ao trocar o
-/// dropdown). Usa o `context.syntax` (fundo + cores) e o `buildCodeSpan`.

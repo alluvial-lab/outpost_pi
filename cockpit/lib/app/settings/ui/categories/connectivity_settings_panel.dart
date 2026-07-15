@@ -20,19 +20,21 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
   @override
   void initState() {
     super.initState();
-    // Carrega relay + aparelhos quando a aba abre (lazy — não roda o shell-out
-    // do `outpost-pi` se o usuário só visita Aparência).
+    // Load relay and devices lazily when this tab opens, avoiding an `outpost-pi`
+    // shell-out when the user only visits Appearance.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<ConnectivityViewModel>().load();
     });
   }
 
-  /// Abre o dialog de pareamento (sobe um `pi --mode rpc` efêmero). Quando um
-  /// aparelho parear, o dialog fecha com `true` e a lista é recarregada.
+  /// Open the pairing dialog backed by an ephemeral `pi --mode rpc` process.
+  ///
+  /// A successful pairing closes the dialog with `true` and reloads the device
+  /// list.
   Future<void> _openPairing() async {
     final vm = context.read<ConnectivityViewModel>();
-    // O controller é dono do `pi --mode rpc` efêmero; criado aqui e descartado
-    // ao fechar (era o `ChangeNotifierProvider` que fazia esse dispose).
+    // The controller owns the ephemeral `pi --mode rpc` process, so create it
+    // here and dispose it when the dialog closes.
     final controller = vm.newPairingController()..start();
     final paired = await showDialog<bool>(
       context: context,
@@ -43,9 +45,10 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
     if (paired == true) await vm.loadDevices();
   }
 
-  /// Revogar é destrutivo (o aparelho perde acesso) → confirma, depois roda o
-  /// revoke (sobe um `pi --mode rpc` que liga o relay) num dialog de progresso,
-  /// e recarrega a lista ao fim.
+  /// Confirm and run the destructive device-revocation flow.
+  ///
+  /// Revocation removes access, runs through an ephemeral relay-connected
+  /// `pi --mode rpc` process in a progress dialog, and then reloads the list.
   Future<void> _confirmRevoke(PairedDevice device) async {
     final vm = context.read<ConnectivityViewModel>();
     final colors = context.colors;
@@ -89,8 +92,8 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
     );
     if (confirmed != true || !mounted) return;
 
-    // Dialog de progresso (não-dismissível): roda o revoke e mostra resultado.
-    // O controller é dono do `pi --mode rpc` efêmero; descartado ao fechar.
+    // Run revocation and show its result in a non-dismissible progress dialog.
+    // The controller owns the ephemeral `pi --mode rpc` process until close.
     final controller = vm.newRevokeController()..run(device);
     await showDialog<void>(
       context: context,
@@ -143,7 +146,7 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
   Widget _devicesCard(BuildContext context, ConnectivityViewModel vm) {
     final colors = context.colors;
 
-    // Primeira carga (ainda sem dados).
+    // Show the first-load state before any device data is available.
     if (vm.devicesLoad == ConnLoad.loading && vm.devices.isEmpty) {
       return SettingsMessageCard(
         child: Row(
@@ -200,8 +203,10 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
   }
 }
 
-/// Campo de URL do relay (mono) + botão Salvar. O valor carregado/salvo sincroniza
-/// com o campo, mas só enquanto o usuário não estiver digitando.
+/// Edit and save the relay URL in a monospace field.
+///
+/// Synchronizes loaded or saved values into the field only while the user is
+/// not editing.
 class _RelayEditor extends StatefulWidget {
   const _RelayEditor();
 
@@ -278,7 +283,7 @@ class _RelayEditorState extends State<_RelayEditor> {
                   controller: _ctrl,
                   onChanged: (_) {
                     setState(() => _edited = true);
-                    _vm.clearHealth(); // check anterior não vale mais
+                    _vm.clearHealth(); // The previous check no longer applies.
                   },
                   onSubmitted: (_) {
                     if (canSave) _save();
@@ -325,7 +330,7 @@ class _RelayEditorState extends State<_RelayEditor> {
   }
 }
 
-/// Resultado do "Verificar" do relay: ponto colorido + texto.
+/// Display the relay health-check result as a colored dot and label.
 class _HealthIndicator extends StatelessWidget {
   const _HealthIndicator({required this.vm});
   final ConnectivityViewModel vm;
@@ -382,7 +387,7 @@ class _HealthIndicator extends StatelessWidget {
   }
 }
 
-/// Uma linha da lista de aparelhos pareados (rótulo + shortId + revogar).
+/// Display one paired device with its label, short ID, and revoke action.
 class _DeviceTile extends StatelessWidget {
   const _DeviceTile({required this.device, required this.onRevoke});
   final PairedDevice device;
@@ -439,11 +444,10 @@ class _DeviceTile extends StatelessWidget {
   }
 }
 
-/// Botão de recarregar (à direita do rótulo da seção). Vira spinner enquanto carrega.
-/// Container com a mesma moldura do `SettingsCard`, para mensagens de estado (vazio /
-/// carregando / erro) no lugar da lista.
-/// Botão de pareamento (abre o dialog com QR). Tonal accent pra diferenciar do
-/// Salvar (primário) sem competir com ele.
+/// Open the QR pairing dialog from a tonal-accent action.
+///
+/// The tonal treatment distinguishes pairing from the primary Save action
+/// without competing with it.
 class _PairButton extends StatelessWidget {
   const _PairButton({required this.onTap});
   final VoidCallback onTap;

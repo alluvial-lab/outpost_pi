@@ -4,11 +4,13 @@ import 'package:cockpit/app/settings/domain/exceptions/daemon_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 import 'package:flutter/foundation.dart';
 
+/// Describe the daemon list's load lifecycle.
 enum DaemonsLoad { idle, loading, ready, error }
 
-/// Estado da aba **Daemon Agents**: lista + controle dos agentes 24/7 sob o
-/// supervisor. Carrega sob demanda; cada ação recarrega a lista pra refletir o
-/// novo estado. `online == false` → supervisor inacessível (mostra aviso).
+/// Manage the **Daemon Agents** tab's supervised, long-running agents.
+///
+/// Loads on demand and reloads after actions so state converges with the
+/// supervisor. An `online` value of `false` indicates an unreachable supervisor.
 class DaemonsViewModel extends ChangeNotifier {
   DaemonsViewModel(this._supervisor);
 
@@ -17,26 +19,25 @@ class DaemonsViewModel extends ChangeNotifier {
   DaemonsLoad load = DaemonsLoad.idle;
   bool online = false;
   List<DaemonInfo> daemons = const <DaemonInfo>[];
-  String? error; // falha ao listar
+  String? error; // Failure while listing daemons.
   String?
-  actionError; // falha da última ação (start/stop/restart/remove/create)
+  actionError; // Failure from the latest start/stop/restart/remove/create.
 
-  final Set<String> _busy = <String>{}; // ids com ação em andamento
-  bool busyAll = false; // ação global em andamento
+  final Set<String> _busy = <String>{}; // IDs with an action in progress.
+  bool busyAll = false; // Whether a fleet-wide action is in progress.
 
   bool _disposed = false;
 
   bool isBusy(String id) => _busy.contains(id);
   bool get anyBusy => busyAll || _busy.isNotEmpty;
 
-  /// Refresh silencioso (polling): só recarrega se estiver ocioso, pra refletir
-  /// mudanças de estado feitas fora da UI (crash, restart, etc.).
+  /// Poll only while idle to reflect state changes made outside the UI.
   Future<void> refreshQuiet() async {
     if (anyBusy || load == DaemonsLoad.loading) return;
     await reload();
   }
 
-  /// Checa o supervisor e lista os daemons. Chamado ao abrir a aba.
+  /// Check supervisor reachability and load daemons when the tab opens.
   Future<void> reload() async {
     load = DaemonsLoad.loading;
     error = null;
@@ -64,18 +65,45 @@ class DaemonsViewModel extends ChangeNotifier {
     _notify();
   }
 
+  /// Start one daemon, ignoring duplicate work for the same [id].
+  ///
+  /// Exposes per-daemon busy or failure state and reloads after completion.
   Future<void> start(String id) => _action(id, () => _supervisor.start(id));
+
+  /// Stop one daemon, ignoring duplicate work for the same [id].
+  ///
+  /// Exposes per-daemon busy or failure state and reloads after completion.
   Future<void> stop(String id) => _action(id, () => _supervisor.stop(id));
+
+  /// Restart one daemon, ignoring duplicate work for the same [id].
+  ///
+  /// Exposes per-daemon busy or failure state and reloads after completion.
   Future<void> restart(String id) => _action(id, () => _supervisor.restart(id));
+
+  /// Unregister one daemon, ignoring duplicate work for the same [id].
+  ///
+  /// Exposes per-daemon busy or failure state and reloads after completion.
   Future<void> remove(String id) =>
       _action(id, () => _supervisor.unregister(id));
 
+  /// Start every daemon as one fleet-wide busy operation.
+  ///
+  /// Records typed failures and reloads the daemon snapshot afterward.
   Future<void> startAll() => _globalAction(_supervisor.startAll);
+
+  /// Stop every daemon as one fleet-wide busy operation.
+  ///
+  /// Records typed failures and reloads the daemon snapshot afterward.
   Future<void> stopAll() => _globalAction(_supervisor.stopAll);
+
+  /// Restart every daemon as one fleet-wide busy operation.
+  ///
+  /// Records typed failures and reloads the daemon snapshot afterward.
   Future<void> restartAll() => _globalAction(_supervisor.restartAll);
 
-  /// Reinicia o **processo do supervisor** (recarrega o código). Espera ele
-  /// voltar online antes de recarregar a lista.
+  /// Restart the **supervisor process** to reload its code.
+  ///
+  /// Waits for the supervisor to return online before reloading the list.
   Future<void> restartSupervisor() async {
     if (busyAll) return;
     busyAll = true;
@@ -83,7 +111,7 @@ class DaemonsViewModel extends ChangeNotifier {
     _notify();
     final result = await _supervisor.restartSupervisor();
     result.fold((_) {}, (e) => actionError = e.message);
-    // Aguarda o supervisor rebindar o UDS (até ~12s) antes de listar.
+    // Wait up to about 12 seconds for the supervisor to rebind the UDS.
     for (var i = 0; i < 12; i++) {
       if (await _supervisor.isOnline()) break;
       await Future<void>.delayed(const Duration(seconds: 1));
@@ -93,8 +121,9 @@ class DaemonsViewModel extends ChangeNotifier {
     await reload();
   }
 
-  /// Renomeia o agente (grava o `agent_name`) e **reinicia** o daemon para
-  /// aplicar ao processo vivo. Retorna `true` se o nome foi gravado.
+  /// Rename an agent and restart its daemon to apply the new `agent_name`.
+  ///
+  /// Returns whether the name was saved, even if the subsequent restart fails.
   Future<bool> rename(DaemonInfo daemon, String name) async {
     if (_busy.contains(daemon.id)) return false;
     _busy.add(daemon.id);
@@ -106,7 +135,7 @@ class DaemonsViewModel extends ChangeNotifier {
       return false;
     });
     if (ok) {
-      // Reinicia pra o processo vivo assumir o novo nome.
+      // Restart so the live process adopts the new name.
       final restart = await _supervisor.restart(daemon.id);
       restart.fold(
         (_) {},
@@ -119,7 +148,7 @@ class DaemonsViewModel extends ChangeNotifier {
     return ok;
   }
 
-  /// Cria/registra um daemon pra [cwd]. Retorna `true` no sucesso.
+  /// Create and register a daemon for [cwd], reporting whether it succeeded.
   Future<bool> create(String cwd, {String? name}) async {
     actionError = null;
     _notify();

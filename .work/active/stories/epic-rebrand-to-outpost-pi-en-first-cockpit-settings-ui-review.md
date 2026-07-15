@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-settings-ui-review
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-settings
 depends_on: []
@@ -54,13 +54,33 @@ fields, simple exported widgets, private helpers, or Flutter overrides.
 
 ## Acceptance criteria
 
-- [ ] All 13 files contain EN-only comment/dartdoc prose.
-- [ ] Every human-readable string literal in the named review surface is
+- [x] All 13 files contain EN-only comment/dartdoc prose.
+- [x] Every human-readable string literal in the named review surface is
       inspected separately from comment translation; already-English copy is
       not churned.
-- [ ] The eighteen named Always-tier declarations have meaningful `///` docs.
-- [ ] Pairing/revoke resources, subscriptions, `_disposed` guards, and mounted
+- [x] The eighteen named Always-tier declarations have meaningful `///` docs.
+- [x] Pairing/revoke resources, subscriptions, `_disposed` guards, and mounted
       guards retain their current ownership and behavior.
-- [ ] The five `cockpit/test/settings/*.dart` files remain unchanged and pass.
-- [ ] Scoped PT/string review, dart format check, `flutter analyze`, and full
+- [x] The five `cockpit/test/settings/*.dart` files remain unchanged and pass.
+- [x] Scoped PT/string review, dart format check, `flutter analyze`, and full
       `flutter test` pass at integration.
+
+## Implementation notes
+
+- Files changed: all 13 owned settings UI files listed in Scope.
+- Tests added: none; this was a comment/dartdoc-only change, and the five
+  existing `cockpit/test/settings/*.dart` files remained unchanged.
+- Runtime-copy review: inspected the human-readable literals in the four panels,
+  connectivity/daemon ViewModels, and pairing/revoke dialogs; all were already
+  English, so no executable string literal changed.
+- Dartdoc gap-fill: documented all eighteen named ViewModel/controller exports,
+  including busy/error/reload behavior, ephemeral pairing-session replacement,
+  and late-notification suppression after disposal.
+- Rationale: two inherited PT comments were stale (one misdescribed
+  `_SyntaxPreview`, and one was orphaned at end of file); corrected or removed
+  them rather than preserve inaccurate documentation.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
+- Verification: scoped accent and PT-term greps returned no Portuguese prose;
+  `dart format --output=none --set-exit-if-changed` passed for all 13 files;
+  `flutter analyze` reported no issues; full `flutter test` passed (241 tests).

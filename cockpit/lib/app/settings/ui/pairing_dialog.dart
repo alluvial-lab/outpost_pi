@@ -6,10 +6,10 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Dialog de pareamento: mostra os passos + QR Code do `/outpost-pi pair`. Fecha
-/// sozinho (retornando `true`) quando um aparelho parear — quem abriu recarrega
-/// a lista. Recebe o [PairingController] por construtor (quem abre é dono do
-/// ciclo de vida → descarta ao fechar).
+/// Show `/outpost-pi pair` instructions and its QR code.
+///
+/// Closes with `true` after a device pairs so the caller can reload its list.
+/// The caller owns and disposes the injected [PairingController].
 class PairingDialog extends StatefulWidget {
   const PairingDialog({super.key, required this.controller});
 
@@ -32,12 +32,12 @@ class _PairingDialogState extends State<PairingDialog> {
   }
 
   void _onChange() {
-    // Pareou → fecha o dialog sinalizando sucesso (o painel recarrega a lista).
+    // Close with success after pairing so the panel can reload its list.
     if (_ctrl.isPaired && mounted) {
       Navigator.of(context).pop(true);
       return;
     }
-    // Reage às mudanças de estágio (showingCode → connecting → failed).
+    // Rebuild for stage changes such as showingCode → connecting → failed.
     if (mounted) setState(() {});
   }
 
@@ -86,7 +86,7 @@ class _PairingDialogState extends State<PairingDialog> {
         child: switch (ctrl.stage) {
           PairStage.failed => _failed(context, ctrl),
           PairStage.showingCode => _code(context, ctrl),
-          // paired é transitório (fecha sozinho) → mostra o "conectando".
+          // Paired is transient before auto-close, so keep showing connecting.
           PairStage.connecting || PairStage.paired => _connecting(context),
         },
       ),
@@ -127,7 +127,7 @@ class _PairingDialogState extends State<PairingDialog> {
         const SizedBox(height: 18),
         Center(
           child: Container(
-            // Branco fixo: o QR precisa de contraste pra ser lido — não é tema.
+            // Keep a fixed white background so the QR remains readable.
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white,

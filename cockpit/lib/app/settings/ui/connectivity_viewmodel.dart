@@ -6,16 +6,17 @@ import 'package:cockpit/app/settings/ui/pairing_controller.dart';
 import 'package:cockpit/app/settings/ui/revoke_controller.dart';
 import 'package:flutter/foundation.dart';
 
-/// Estado de carregamento de uma seção da Conectividade.
+/// Describe the loading state of a Connectivity section.
 enum ConnLoad { idle, loading, ready, error }
 
-/// Resultado do "Verificar" do relay (`GET /health`).
+/// Describe the result of checking relay health via `GET /health`.
 enum HealthState { unknown, checking, healthy, unhealthy }
 
-/// Estado da aba **Conectividade** das Configurações: relay global (ler/definir)
-/// + aparelhos pareados (listar) via [RelayGateway] (CLI `outpost-pi`). Pareamento
-/// e revoke sobem um `pi --mode rpc` efêmero via [PairingGatewayFactory] /
-/// [RevokeGatewayFactory] (cada dialog cria sua instância). Carregado sob demanda.
+/// Manage the Settings **Connectivity** tab's relay and paired-device state.
+///
+/// Reads and updates the global relay and lists devices through [RelayGateway].
+/// Pairing and revocation dialogs each create their own ephemeral `pi --mode rpc`
+/// gateway through [PairingGatewayFactory] or [RevokeGatewayFactory].
 class ConnectivityViewModel extends ChangeNotifier {
   ConnectivityViewModel(this._relay, this._pairingFactory, this._revokeFactory);
 
@@ -23,12 +24,11 @@ class ConnectivityViewModel extends ChangeNotifier {
   final PairingGatewayFactory _pairingFactory;
   final RevokeGatewayFactory _revokeFactory;
 
-  /// Controller pro dialog de pareamento — instância nova por dialog (cada uma
-  /// dona do seu processo efêmero).
+  /// Create a pairing-dialog controller that owns a fresh ephemeral process.
   PairingController newPairingController() =>
       PairingController(_pairingFactory.create);
 
-  /// Controller pro dialog de revoke — instância nova por dialog.
+  /// Create a fresh controller for one revocation dialog.
   RevokeController newRevokeController() =>
       RevokeController(_revokeFactory.create());
 
@@ -38,21 +38,25 @@ class ConnectivityViewModel extends ChangeNotifier {
   String? relayError;
   bool savingRelay = false;
 
-  // saúde do relay (`GET /health`)
+  // Relay health (`GET /health`).
   HealthState healthState = HealthState.unknown;
   String? healthMessage;
 
-  // ---- aparelhos ------------------------------------------------------------
+  // ---- devices ---------------------------------------------------------------
   ConnLoad devicesLoad = ConnLoad.idle;
   List<PairedDevice> devices = const <PairedDevice>[];
   String? devicesError;
 
   bool _disposed = false;
 
-  /// Carrega relay + aparelhos em paralelo. Chamado quando a aba abre.
+  /// Load relay and device state in parallel when the tab opens.
   Future<void> load() =>
       Future.wait(<Future<void>>[loadRelay(), loadDevices()]);
 
+  /// Load the configured relay into its independent loading or error state.
+  ///
+  /// Listener notifications are suppressed if this ViewModel is disposed while
+  /// the gateway request is pending.
   Future<void> loadRelay() async {
     relayLoad = ConnLoad.loading;
     relayError = null;
@@ -71,7 +75,9 @@ class ConnectivityViewModel extends ChangeNotifier {
     _notify();
   }
 
-  /// Define a URL do relay. Retorna `true` no sucesso (a view limpa o "dirty").
+  /// Save the relay URL and report whether the update succeeded.
+  ///
+  /// A successful update lets the view clear its dirty state.
   Future<bool> setRelay(String url) async {
     final trimmed = url.trim();
     if (trimmed.isEmpty || trimmed == relayUrl) return false;
@@ -85,7 +91,7 @@ class ConnectivityViewModel extends ChangeNotifier {
     });
     if (ok) {
       relayUrl = trimmed;
-      // O check anterior valia pra outra URL → reseta.
+      // The previous health check applied to a different URL.
       healthState = HealthState.unknown;
       healthMessage = null;
     }
@@ -94,7 +100,7 @@ class ConnectivityViewModel extends ChangeNotifier {
     return ok;
   }
 
-  /// Verifica se o relay em [url] está no ar (`GET /health`).
+  /// Check whether the relay at [url] responds to `GET /health`.
   Future<void> checkRelay(String url) async {
     final trimmed = url.trim();
     if (trimmed.isEmpty) {
@@ -120,7 +126,7 @@ class ConnectivityViewModel extends ChangeNotifier {
     _notify();
   }
 
-  /// Zera o resultado do check (ex.: usuário começou a editar a URL).
+  /// Clear a stale health result when the URL starts changing.
   void clearHealth() {
     if (healthState == HealthState.unknown && healthMessage == null) return;
     healthState = HealthState.unknown;
@@ -128,6 +134,10 @@ class ConnectivityViewModel extends ChangeNotifier {
     _notify();
   }
 
+  /// Load paired devices into their independent loading or error state.
+  ///
+  /// Listener notifications are suppressed if this ViewModel is disposed while
+  /// the gateway request is pending.
   Future<void> loadDevices() async {
     devicesLoad = ConnLoad.loading;
     devicesError = null;
