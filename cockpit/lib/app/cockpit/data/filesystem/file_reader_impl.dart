@@ -4,13 +4,11 @@ import 'dart:io';
 import 'package:cockpit/app/cockpit/domain/contracts/file_reader.dart';
 import 'package:cockpit/app/cockpit/domain/entities/file_view.dart';
 
-/// Classifica o arquivo por extensão + conteúdo:
-/// - vídeo → [FileViewVideo] (só o caminho);
-/// - áudio → [FileViewAudio] (só o caminho);
-/// - imagem → [FileViewImage] (só o caminho);
-/// - markdown → [FileViewMarkdown];
-/// - texto legível (utf8, sem null byte, ≤ 2MB) → [FileViewText];
-/// - resto (binário, grande demais, não-utf8) → [FileViewUnsupported].
+/// Classify files by extension and content.
+///
+/// Video, audio, and image results carry only the path. Markdown and readable
+/// UTF-8 text without null bytes are loaded up to 2 MB; binary, oversized, or
+/// non-UTF-8 files are reported as [FileViewUnsupported].
 class FileReaderImpl implements FileReader {
   const FileReaderImpl();
 
@@ -48,8 +46,8 @@ class FileReaderImpl implements FileReader {
   @override
   Future<FileView> read(String path) async {
     final ext = _ext(path);
-    // A/V e imagem só passam o caminho — o player/widget carrega (sem ler bytes,
-    // sem limite de tamanho). Decisão cedo, antes de qualquer leitura de disco.
+    // A/V and image results carry only the path; the player or widget loads the
+    // content without a size limit. Decide before reading anything from disk.
     if (_video.contains(ext)) return FileViewVideo(path);
     if (_audio.contains(ext)) return FileViewAudio(path);
     if (_image.contains(ext)) return FileViewImage(path);
@@ -71,7 +69,7 @@ class FileReaderImpl implements FileReader {
     }
 
     if (_markdown.contains(ext)) return FileViewMarkdown(text);
-    // SVG é texto (XML) que também renderiza — fonte editável + preview.
+    // SVG is renderable XML, so expose both editable source and a preview.
     if (ext == 'svg') return FileViewSvg(path, text);
     return FileViewText(text, language: ext.isEmpty ? null : ext);
   }
@@ -89,8 +87,8 @@ class FileReaderImpl implements FileReader {
   @override
   Stream<void> watch(String path) {
     try {
-      // FSEvents no macOS. Erros do stream (arquivo trocado por rename, etc.)
-      // viram fim silencioso — o consumidor (VM) trata via onError.
+      // macOS uses FSEvents. Stream errors, such as replacement by rename, end
+      // the stream silently; the consuming ViewModel handles them through onError.
       return File(path)
           .watch(events: FileSystemEvent.modify | FileSystemEvent.delete)
           .map((_) {});
@@ -99,7 +97,7 @@ class FileReaderImpl implements FileReader {
     }
   }
 
-  /// Heurística de binário: null byte nos primeiros ~8KB.
+  /// Detect likely binary content by a null byte in the first ~8 KB.
   bool _looksBinary(List<int> bytes) {
     final n = bytes.length < 8000 ? bytes.length : 8000;
     for (var i = 0; i < n; i++) {

@@ -3,13 +3,14 @@ import 'dart:io';
 import 'package:cockpit/app/cockpit/domain/contracts/file_system_reader.dart';
 import 'package:cockpit/app/cockpit/domain/entities/file_node.dart';
 
-/// Lê a árvore via `dart:io`: pastas primeiro (ordenadas), depois arquivos.
-/// Inclui ocultos úteis (`.pi`, `.claude`, `.env`…), mas **esconde pastas de
-/// VCS** ([_hiddenDirs]) em qualquer nível — `.git` nunca interessa navegar.
+/// Read directory children through `dart:io`, with folders sorted before files.
+///
+/// Includes useful hidden entries such as `.pi`, `.claude`, and `.env`, but
+/// excludes VCS directories at every level.
 class FileSystemReaderImpl implements FileSystemReader {
   const FileSystemReaderImpl();
 
-  /// Pastas de versionamento ocultadas em toda a árvore (não só na raiz).
+  /// Version-control directories hidden throughout the tree, not only at root.
   static const Set<String> _hiddenDirs = <String>{'.git', '.hg', '.svn'};
 
   @override

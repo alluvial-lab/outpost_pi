@@ -4,12 +4,13 @@ import 'dart:io';
 import 'package:cockpit/app/cockpit/domain/contracts/session_history.dart';
 import 'package:cockpit/app/cockpit/domain/entities/session_info.dart';
 
-/// Lê as sessões salvas do pi de `~/.pi/agent/sessions/<cwd-codificado>/`.
+/// Read saved Pi sessions from `~/.pi/agent/sessions/<encoded-cwd>/`.
 ///
-/// A pasta de uma sessão segue o **mesmo esquema do pi** (core/session-manager):
-/// remove o separador inicial, troca `/`, `\` e `:` por `-`, e envolve em `--…--`
-/// (ex.: `/Users/jacob/app` → `--Users-jacob-app--`;
-/// `R:\code\orbe` → `--R-code-orbe--`). Cada `.jsonl` é uma sessão.
+/// Uses the same directory encoding as Pi's core session manager: remove the
+/// leading separator, replace `/`, `\`, and `:` with `-`, then wrap the result
+/// in `--…--` (for example, `/Users/jacob/app` becomes
+/// `--Users-jacob-app--`, and `R:\code\orbe` becomes `--R-code-orbe--`). Each
+/// `.jsonl` file is one session.
 class SessionHistoryImpl implements SessionHistory {
   const SessionHistoryImpl();
 
@@ -35,15 +36,17 @@ class SessionHistoryImpl implements SessionHistory {
         );
       }
     } catch (_) {
-      // path inválido/ilegível → trata como "sem sessões" em vez de crashar.
+      // Treat invalid or unreadable paths as no sessions instead of crashing.
       return const <SessionInfo>[];
     }
     sessions.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
     return sessions;
   }
 
-  /// Título derivado = 1ª mensagem do usuário (o pi não grava nome de sessão).
-  /// Lê o `.jsonl` linha a linha e **para** na primeira mensagem `role:user`.
+  /// Derive a title from the first user message because Pi stores no session name.
+  ///
+  /// Reads the `.jsonl` stream line by line and stops at the first `role:user`
+  /// message.
   Future<String?> _titleOf(File file) async {
     try {
       final lines = file
@@ -63,12 +66,12 @@ class SessionHistoryImpl implements SessionHistory {
         return text.length > 100 ? '${text.substring(0, 100)}…' : text;
       }
     } catch (_) {
-      // arquivo ilegível/corrompido → sem título
+      // An unreadable or corrupt file has no title.
     }
     return null;
   }
 
-  /// Extrai o texto do `content` de uma mensagem (string ou lista de partes).
+  /// Extract text from message `content`, whether a string or a list of parts.
   String _textOf(Object? content) {
     if (content is String) return content;
     if (content is List) {
@@ -86,7 +89,7 @@ class SessionHistoryImpl implements SessionHistory {
   }
 
   String _sessionsRoot() {
-    // Windows não seta HOME; o equivalente é USERPROFILE.
+    // Windows uses USERPROFILE instead of HOME.
     final home =
         Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
     final agentDir =
@@ -94,18 +97,21 @@ class SessionHistoryImpl implements SessionHistory {
     return '$agentDir/sessions';
   }
 
-  /// Codifica o cwd no nome de pasta do pi. Espelha
-  /// `core/session-manager.js`: `--${cwd.replace(/^[/\\]/,'').replace(/[/\\:]/g,'-')}--`.
-  /// Sem isso, no Windows o `:`/`\` do path (ex.: `R:\code`) entram crus e geram
-  /// um nome de diretório inválido.
+  /// Encode the working directory as Pi's session folder name.
+  ///
+  /// Mirrors `core/session-manager.js`:
+  /// `--${cwd.replace(/^[/\\]/,'').replace(/[/\\:]/g,'-')}--`. Without this,
+  /// raw `:` and `\` characters in Windows paths such as `R:\code` would produce
+  /// an invalid directory name.
   String _encode(String cwd) {
     final stripped = cwd.replaceFirst(RegExp(r'^[/\\]'), '');
     final slug = stripped.replaceAll(RegExp(r'[/\\:]'), '-');
     return '--$slug--';
   }
 
-  /// Sufixo uuid do nome do arquivo `<timestamp>_<uuid>.jsonl`. Aceita `/` e `\`
-  /// como separador (Windows).
+  /// Extract the UUID suffix from `<timestamp>_<uuid>.jsonl`.
+  ///
+  /// Accepts both `/` and `\` as path separators for Windows compatibility.
   String _idOf(String path) {
     final name = path.split(RegExp(r'[/\\]')).last.replaceAll('.jsonl', '');
     final underscore = name.lastIndexOf('_');
