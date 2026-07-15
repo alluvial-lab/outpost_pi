@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-distribution-ownership
 kind: feature
-stage: review
+stage: implementing
 tags: [rebrand, release, infra, cockpit, app, site, security]
 parent: epic-rebrand-external-surfaces
 depends_on: [story-en-first-residual-maintained-surfaces]
@@ -98,4 +98,21 @@ Both touch disjoint files and can run in parallel.
 - `cockpit/CHANGELOG.md` historical release-identity record
 - Genuine `jacobaraujo7/*` dependency coordinates
 - `cockpit/pubspec.yaml`/`pubspec.lock` dependency URLs
+
+## Review (2026-07-15)
+
+**Verdict**: Request changes
+
+**Blockers**:
+- Android's release-signing guard throws during configuration for non-release tasks (`story-android-release-signing-release-task-guard`).
+- The Windows appcast build value is not paired with the locked WinSparkle plugin's current-version contract (`story-windows-appcast-build-version-contract`).
+- The Cockpit runbook retains inherited signing metadata/path and does not document the bundle-ID reinstall cutover (`story-cockpit-signing-runbook-ownership-cutover`).
+
+**Important**:
+- The Apple team secret is required but not validated against the selected signing certificate (`story-cockpit-signing-team-consistency`).
+- Landing-page Google Play availability contradicts the coming-soon download/tutorial copy (`story-site-play-availability-copy-consistency`).
+
+**Nits**: none
+
+**Notes**: SUBSTRATE-MODE deep lane. A fresh-context reviewer ran the required order as iterative convergence passes: Phase 1 checked requirement/acceptance completeness, cross-platform identifier projection, documentation, keep-list preservation, and end-to-end site state; Phase 2 attacked configuration-time failure behavior, release/version assumptions, and secret consistency. Both phases converged with the findings above and no additional nit-only issues. This delegated context had no second reviewer mechanism, so the ideal different-class reviewer per phase was unavailable; the review remained fresh-context relative to the orchestrator. Verified: Cockpit offline pub resolution, analyze, and 241 tests passed; site lint/build passed; both workflow YAML files and the AppStream XML parsed; Linux's installed desktop rename matches the metainfo launchable ID; empty Apple signing/team values exit non-zero before certificate import; the preserve-list files were untouched. `docs/DECISIONS.md` and `cockpit/CLAUDE.md` have no assertion invalidated by the identifier cutover, but the owning packaging runbook is incomplete as filed above. Feature bounced `review -> implementing`.
 
