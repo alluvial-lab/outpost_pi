@@ -104,6 +104,9 @@ export function encodeReply<T>(reply: ControlReply<T>): string {
  * Parses a single JSON line into a request. Throws on malformed input —
  * the supervisor catches and replies `{ok:false, error}` so the client
  * gets a clean error rather than an unframed disconnect.
+ *
+ * @throws {Error} when the line is not valid JSON or does not match the
+ *   expected control-request shape.
  */
 export function parseRequest(line: string): ControlRequest {
   let obj: unknown;
