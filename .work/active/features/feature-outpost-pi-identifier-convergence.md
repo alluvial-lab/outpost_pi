@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-identifier-convergence
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, protocol, pi-extension, app, relay, docs, testing]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
@@ -133,4 +133,19 @@ All three stories are independent (disjoint file sets) and can run in parallel.
 - `remote-pi-data` Docker volume name (deferred to cwd migration per Q5)
 - Absolute `/home/agent/projects/remote_pi` checkout paths
 - `cockpit/CHANGELOG.md:33` historical release-identity record
+
+## Review (2026-07-15)
+
+**Verdict**: Approve with comments
+
+**Blockers**: none remaining. Deep verification found a stale `KnownErrorCode` assertion in `tools/protocol-codegen/src/index.test.ts`; it was corrected inline and the five protocol-codegen tests pass.
+
+**Important**:
+- `story-wire-protocol-codegen-tests-into-check` — wire the currently orphaned protocol-codegen unit suite into canonical verification.
+- `story-refresh-current-protocol-security-docs` — correct the explicitly out-of-scope pairing trust-model drift and stale generated-contract progress prose.
+- `story-document-deferred-relay-volume-cutover` — preserve the confirmed legacy-volume/cwd-migration decision in the durable operator runbook.
+
+**Nits**: none
+
+**Notes**: Substrate-mode deep review by a fresh-context Codex reviewer. Phase 1 ran completeness/complementary convergence across the feature design, all three child stories, aggregate implementation commits, acceptance criteria, package/private-consumer paths, and the keep-list. Phase 2 then attacked schema/codegen drift, auth-byte ownership, actual signer/verifier call paths, test execution and lifecycle, package/release behavior, and operational documentation. No second fresh reviewer mechanism was exposed inside this delegated context, so both ordered phases used the same fresh reviewer; concrete claims were rechecked directly and stabilized after the failing codegen test was repaired and rerun. Verification passed: protocol fixtures + Rust generation drift check; TypeScript generation drift check; protocol-codegen unit tests (5/5); extension typecheck + 838 tests (3 skipped); relay fmt/clippy + all tests; app analyze + 698 tests. The protocol package remains `private: true`, has no tracked consumers by package name, and the schema rename leaves no active old `$ref`/`$id` path. TS/Rust derive the auth prefix from schema-generated modules; Dart is the one documented local copy and is chained to the same schema-backed fixture. Preserve-list audit passed: legacy rejection literal, provenance/acknowledgement lines, genuine `jacobaraujo7/*` coordinates, historical records, `remote-pi-data`, and checkout paths were not rewritten by the target commits.
 
