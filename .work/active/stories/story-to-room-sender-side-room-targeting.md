@@ -1,7 +1,7 @@
 ---
 id: story-to-room-sender-side-room-targeting
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, bug, security]
 parent: epic-bold-canonical-session
 depends_on: [epic-bold-canonical-session-relay-opaque-targeting]
@@ -291,3 +291,28 @@ corepack pnpm typecheck
 corepack pnpm test
 corepack pnpm build
 ```
+
+## Implementation (2026-07-15)
+
+Implemented Option B (relay-authoritative room discovery) across 3 files:
+- `pi_forward_client.ts`: threads `to_room` on the `envelope` event (Site 2);
+  emits validated `rooms`/`room_announced`/`room_ended` control events;
+  exposes `sendRoomControl` for `subscribe_rooms`/`rooms_check`.
+- `broker_remote.ts`: `siblingRooms` cache from relay push events; `pickRoom()`
+  targets a live room (Sites 1 & 3); cold-cache `rooms_check` bootstrap +
+  bounded `peers_request` fanout; `subscribe_rooms` on sibling add; leader
+  heuristic (oldest `started_at` first); `detach` removes all new listeners.
+- `broker_remote.test.ts`: 41 tests (updated `"main"` assertions + new
+  cold-cache/ACK/room-event/bootstrap/convergence tests).
+
+No `leader_room` field on `PeersUpdateBody` (relay is the single room truth).
+Extension-only change (no relay/schema/app edit).
+
+### Verification
+- `corepack pnpm typecheck` clean.
+- `corepack pnpm build` clean.
+- `corepack pnpm test`: 835 passed, 3 skipped, 8 failed — the 8 failures are
+  the documented pre-existing `acquireCwdLock` EROFS environmental flake
+  (read-only `~/.pi/remote/locks/`), unchanged from baseline. `broker_remote.test.ts` 41/41 pass.
+
+Advanced `implementing → review`.
