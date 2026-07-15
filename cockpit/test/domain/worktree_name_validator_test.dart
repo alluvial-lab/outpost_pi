@@ -14,22 +14,22 @@ void main() {
     existingWorktreeNames: worktrees,
   );
 
-  group('formato', () {
-    test('vazio', () {
+  group('format', () {
+    test('rejects an empty name', () {
       expect(check('').error, WorktreeNameError.empty);
     });
 
-    test('espaço é rejeitado (regra do usuário)', () {
+    test('rejects whitespace according to product policy', () {
       expect(check('feat sso').error, WorktreeNameError.whitespace);
       expect(check('trailing ').error, WorktreeNameError.whitespace);
     });
 
-    test('barra é permitida', () {
+    test('permits slashes', () {
       expect(check('feat/sso').isValid, isTrue);
       expect(check('fix/prorate').isValid, isTrue);
     });
 
-    test('caracteres proibidos do git', () {
+    test('rejects characters forbidden by Git', () {
       for (final n in <String>[
         'a~b',
         'a^b',
@@ -43,7 +43,7 @@ void main() {
       }
     });
 
-    test('sequências inválidas', () {
+    test('rejects invalid sequences', () {
       expect(check('foo..bar').error, WorktreeNameError.invalidSequence);
       expect(check('foo//bar').error, WorktreeNameError.invalidSequence);
       expect(check('foo@{bar').error, WorktreeNameError.invalidSequence);
@@ -52,7 +52,7 @@ void main() {
       expect(check('foo/').error, WorktreeNameError.invalidSequence);
     });
 
-    test('posições reservadas', () {
+    test('rejects reserved positions', () {
       expect(check('-foo').error, WorktreeNameError.reserved);
       expect(check('.foo').error, WorktreeNameError.reserved);
       expect(check('foo.').error, WorktreeNameError.reserved);
@@ -61,36 +61,36 @@ void main() {
       expect(check('feat/x.lock').error, WorktreeNameError.reserved);
     });
 
-    test('nome simples válido', () {
+    test('accepts a valid simple name', () {
       expect(check('login').isValid, isTrue);
       expect(check('experiment/cache').isValid, isTrue);
     });
   });
 
-  group('unicidade (decisão 11)', () {
-    test('colide com branch local', () {
+  group('uniqueness (decision 11)', () {
+    test('rejects a local branch collision', () {
       expect(
         check('main', branches: {'main', 'dev'}).error,
         WorktreeNameError.duplicateBranch,
       );
     });
 
-    test('colide com worktree existente', () {
+    test('rejects an existing worktree collision', () {
       expect(
         check('feat/sso', worktrees: {'sso', 'feat/sso'}).error,
         WorktreeNameError.duplicateWorktree,
       );
     });
 
-    test('nome único passa', () {
+    test('accepts a unique name', () {
       expect(
         check('feat/new', branches: {'main'}, worktrees: {'old'}).isValid,
         isTrue,
       );
     });
 
-    test('formato é checado antes de unicidade', () {
-      // 'main ' tem espaço — falha por whitespace, não por duplicate.
+    test('checks format before uniqueness', () {
+      // The trailing space makes `main ` fail as whitespace, not as a duplicate.
       expect(
         check('main ', branches: {'main'}).error,
         WorktreeNameError.whitespace,
