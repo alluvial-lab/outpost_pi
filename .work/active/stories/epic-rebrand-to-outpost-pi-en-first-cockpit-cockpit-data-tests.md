@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data-tests
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data
 depends_on: []
@@ -47,3 +47,13 @@ UTF-8 fixtures, not prose to normalize. Tests are Skip-tier for dartdoc.
       binary and writable `PUB_CACHE` documented by the feature.
 - [ ] The integrated feature can pass full `flutter analyze` and `flutter test`
       from `cockpit/`.
+
+## Implementation notes
+
+- Files changed: the ten scoped files under `cockpit/test/data/` listed above.
+- Tests added: none; this story changes test-runner prose and comments only.
+- Delivery mode: direct-read only. The fixed ten-file manifest and translation-only boundary made exploratory fan-out unnecessary.
+- Verification: repository Dart formatter completed for all ten files; the focused ten-file Flutter run passed (66 tests); full `flutter analyze` passed with zero issues; full `flutter test` passed (241 tests); `git diff --check` passed.
+- Language review: all test descriptions, skip messages, assertion reasons, and explanatory comments are natural English. Manual ASCII-token review found only preserved fixture data such as `novo`, `conteudo`, and `nao/existe`.
+- Discrepancies from design: the literal accent grep cannot have zero matches while preserving the explicitly exempt `café` and `olá 世界 🚀` UTF-8 fixtures; its four matches are only those required fixture lines. No Portuguese prose remains.
+- Adjacent issues parked: none.
