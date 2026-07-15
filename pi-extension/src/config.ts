@@ -19,7 +19,13 @@ export function loadConfig(): OutpostPiConfig {
   }
 }
 
-/** Merge relay settings into the user config file, creating its parent directory when needed. */
+/**
+ * Merge relay settings into the user config file, creating its parent
+ * directory when needed.
+ *
+ * @throws when the config file cannot be written (filesystem permissions,
+ *   disk full, etc.). The caller is responsible for surfacing the error.
+ */
 export function saveConfig(patch: Partial<OutpostPiConfig>): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const current = loadConfig();
