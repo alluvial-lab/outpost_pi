@@ -1,7 +1,7 @@
 ---
 id: story-root-readme-provenance-acknowledgement
 kind: story
-stage: review
+stage: done
 tags: [rebrand, docs, legal]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
@@ -30,3 +30,13 @@ Match the factual tone of `NOTICE`; do not imply current operational ownership, 
 - Rewrote the **License** section from the stale "per-package, repository-wide decision pending" text to state repository-wide MIT under root `LICENSE`.
 - Discrepancies from design: none.
 - Adjacent issues parked: none.
+
+## Review (2026-07-15)
+
+**Verdict**: Approve - story verified by implement; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fast-lane: green build+test verification recorded by implement. Orchestrator re-verified the combined tree (extension 838 passed/3 skipped; relay all green; app analyze clean + 698 passed; protocol check + generate:rust:check clean; site lint+build clean).
