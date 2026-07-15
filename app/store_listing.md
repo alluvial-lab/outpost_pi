@@ -187,8 +187,8 @@ Reuses the same brand voice and the **no-E2E copy rule** above.
 - **Min SDK:** API 34 (Android 14) — intentional, `outpost_pi_identity` needs
   Block Store. **Target SDK:** Flutter default (verify it meets Play's current
   minimum target — API 35 for new apps).
-- **Signing:** already configured. Upload key in `android/signing/remotepi-release.jks`
-  (alias `remotepi`), loaded via `android/key.properties`. On first upload, enroll
+- **Signing:** already configured. Upload key in `android/signing/outpostpi-release.jks`
+  (alias `outpostpi`), loaded via `android/key.properties`. On first upload, enroll
   in **Play App Signing** (Google manages the app key; this keystore is the upload key).
   - Upload key **SHA-1:** `C6:F8:AF:C9:4B:31:98:D7:5B:75:08:78:4E:F3:8C:AD:70:1A:06:89`
   - Upload key **SHA-256:** `92:5C:FB:3B:90:76:E0:81:19:E0:12:5B:34:77:38:44:9B:70:BF:CF:53:8F:8A:DC:A6:63:5A:68:AC:B1:9E:40`

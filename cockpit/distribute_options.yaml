@@ -5,8 +5,8 @@
 # (a fixed Fastforge convention), not in packaging/<platform>/. See packaging/README.md.
 output: dist/
 variables:
-  # Override with env in CI; here they are kept as reference/local.
-  APPLE_SIGNING_IDENTITY: "Developer ID Application: Jacob Moura (U843T2P7A2)"
+  # Supplied by the local environment or CI secret; never commit a signing identity.
+  APPLE_SIGNING_IDENTITY: "${APPLE_SIGNING_IDENTITY}"
 
 releases:
   # macOS: universal DMG (signing + notarization are separate manual/CI steps;
