@@ -2,10 +2,11 @@ import 'package:cockpit/app/core/domain/contracts/system_permissions.dart';
 import 'package:cockpit/app/core/domain/entities/setup_check.dart';
 import 'package:flutter/foundation.dart';
 
-/// Estado da permissão de notificações do SO para a aba **Notifications**.
-/// Page-scoped: injeta o [SystemPermissions] (core) e expõe o status atual +
-/// ações de re-checagem/solicitação. O toggle de liga/desliga vive no
-/// `SettingsController` (persistido); aqui cuidamos só da permissão do SO.
+/// Manage operating-system notification permission for the **Notifications** tab.
+///
+/// This page-scoped ViewModel exposes permission checks and requests through
+/// [SystemPermissions]. Persisted notification enablement remains owned by
+/// `SettingsController`.
 class NotificationsViewModel extends ChangeNotifier {
   NotificationsViewModel(this._perms);
 
@@ -16,10 +17,10 @@ class NotificationsViewModel extends ChangeNotifier {
 
   CheckStatus get status => _status;
 
-  /// Sonda o estado atual (chamado ao montar a aba e no foco da janela).
+  /// Probe current permission when the tab mounts or the window regains focus.
   Future<void> check() => _set(_perms.notificationStatus);
 
-  /// Pede a permissão + dispara uma notificação de teste; devolve o resultado.
+  /// Request permission, send a test notification, and return the result.
   Future<CheckStatus> request() async {
     await _set(_perms.requestNotifications);
     return _status;
