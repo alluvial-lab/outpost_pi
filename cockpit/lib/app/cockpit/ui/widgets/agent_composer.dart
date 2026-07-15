@@ -23,9 +23,10 @@ import 'package:pasteboard/pasteboard.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Composer do design: input + toolbar (modelo · effort · aprovação · enviar).
-/// Modelo e effort são reais (set_model / set_thinking_level); aprovação é
-/// preferência da UI por enquanto.
+/// Compose agent prompts with model, effort, approval, and send controls.
+///
+/// Model and effort changes invoke `set_model` and `set_thinking_level`;
+/// approval remains a UI preference.
 class AgentComposer extends StatefulWidget {
   const AgentComposer({super.key, required this.session});
   final AgentSession session;
@@ -40,36 +41,36 @@ class _AgentComposerState extends State<AgentComposer> {
   bool _focused = false;
   bool _hasText = false;
 
-  // --- slash commands (/) — input inteiro começa com '/' ---
-  String? _cmdQuery; // texto após '/', null = fora do modo comando
+  // --- Slash commands (/) — the entire input starts with '/'. ---
+  String? _cmdQuery; // Text after '/'; null outside command mode.
   bool _cmdSuppress = false;
 
-  // --- menções de arquivo (@) — '@token' colado no cursor ---
+  // --- File mentions (@) — an '@token' adjacent to the cursor. ---
   ({int start, String query})? _mention;
   List<String> _fileMatches = const <String>[];
   bool _fileSuppress = false;
   Timer? _searchDebounce;
   int _searchSeq = 0;
 
-  /// Índice destacado no overlay ativo (comando OU arquivo).
+  /// Track the highlighted index in the active command or file overlay.
   int _index = 0;
 
-  /// Anexos do composer. Imagem → chip com preview, vai como visão (`images`).
-  /// Arquivo → chip badge (ícone + nome) e a referência `@<rel>` é reconstruída
-  /// no envio — conceito do textfield_tags: a menção vive como **chip, fora do
-  /// texto editável**.
+  /// Hold composer attachments outside the editable text.
+  ///
+  /// Images become preview chips and are sent through `images`. Files become
+  /// icon/name chips whose `@<rel>` references are rebuilt when sending.
   final List<_Attachment> _attachments = <_Attachment>[];
   static const int _maxImages = 3;
   int _pasteSeq = 0;
 
-  /// Arrastando arquivos do SO (Finder/Explorer) sobre o input.
+  /// Indicate that OS files are being dragged over the input.
   bool _osDragOver = false;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onChanged);
-    // Registra o foco do input pra o atalho ⌘L/Ctrl+L (em CockpitPage).
+    // Register input focus for CockpitPage's ⌘L/Ctrl+L shortcut.
     widget.session.requestComposerFocus = _focusInput;
   }
 
@@ -77,7 +78,7 @@ class _AgentComposerState extends State<AgentComposer> {
     if (mounted) _inputFocus.requestFocus();
   }
 
-  /// "+" — escolhe arquivos externos: imagem → anexo de visão; outro → chip.
+  /// Pick external files, attaching images as vision input and others as chips.
   Future<void> _pickAttachment() async {
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
@@ -98,7 +99,7 @@ class _AgentComposerState extends State<AgentComposer> {
     }
   }
 
-  /// Drop nativo do SO (Finder/Explorer/…): imagem → visão; outro → chip.
+  /// Handle native OS drops, attaching images as vision input and others as chips.
   Future<void> _onOsDrop(List<DropItem> items) async {
     for (final item in items) {
       final path = item.path;
@@ -112,8 +113,9 @@ class _AgentComposerState extends State<AgentComposer> {
     }
   }
 
-  /// Cmd/Ctrl+V: imagem do clipboard → visão; arquivos copiados → chips; senão
-  /// cola o texto no cursor (paste normal).
+  /// Paste clipboard images as vision input and copied files as chips.
+  ///
+  /// Falls back to inserting ordinary clipboard text at the cursor.
   Future<void> _pasteFromClipboard() async {
     final imageBytes = await Pasteboard.image;
     if (imageBytes != null && imageBytes.isNotEmpty) {
@@ -137,7 +139,7 @@ class _AgentComposerState extends State<AgentComposer> {
     if (text != null && text.isNotEmpty) _insertText(text);
   }
 
-  /// Insere [text] na posição do cursor (fallback do paste de texto).
+  /// Insert [text] at the cursor as the plain-text paste fallback.
   void _insertText(String text) {
     final value = _controller.value;
     final sel = value.selection;
@@ -150,7 +152,7 @@ class _AgentComposerState extends State<AgentComposer> {
     );
   }
 
-  /// Adiciona um anexo de **imagem** (respeita o limite [_maxImages]).
+  /// Add an image attachment while enforcing [_maxImages].
   void _addImage(_Attachment image) {
     if (!mounted) return;
     final count = _attachments.where((a) => a.isImage).length;
@@ -161,21 +163,22 @@ class _AgentComposerState extends State<AgentComposer> {
     setState(() => _attachments.add(image));
   }
 
-  /// Chip de **arquivo** a partir do caminho (emite `@<path>` no envio).
+  /// Create a file chip that emits `@<path>` when sent.
   void _addFileFromPath(String path) {
     _addFileMention(path, _basename(path));
   }
 
-  /// Devolve o foco ao input depois de um drop de arquivo (o drag — externo do
-  /// SO ou interno do painel Files — rouba o foco do `TextField`). Pós-frame
-  /// porque o drop do SO só libera o foco após o evento assentar.
+  /// Restore input focus after an OS or Files-panel drop steals it.
+  ///
+  /// Runs post-frame because native drops release focus only after the event
+  /// settles.
   void _restoreInputFocus() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _inputFocus.requestFocus();
     });
   }
 
-  /// Chip de arquivo a partir da referência (sem duplicar).
+  /// Add a file chip from a reference without duplicating it.
   void _addFileMention(String mention, String name) {
     if (!mounted) return;
     if (_attachments.any((a) => !a.isImage && a.mention == mention)) return;
@@ -226,7 +229,7 @@ class _AgentComposerState extends State<AgentComposer> {
     final text = _controller.text;
     _hasText = text.trim().isNotEmpty;
 
-    // 1) Comando tem precedência: input inteiro começa com '/'.
+    // 1) Commands take precedence when the entire input starts with '/'.
     if (text.startsWith('/')) {
       _mention = null;
       _fileMatches = const <String>[];
@@ -242,7 +245,7 @@ class _AgentComposerState extends State<AgentComposer> {
     _cmdSuppress = false;
     _cmdQuery = null;
 
-    // 2) Menção de arquivo: '@token' antes do cursor.
+    // 2) Match a file mention from the '@token' before the cursor.
     final mention = _activeMention(text, _cursor);
     if (mention == null) {
       _fileSuppress = false;
@@ -258,8 +261,10 @@ class _AgentComposerState extends State<AgentComposer> {
     setState(() {});
   }
 
-  /// Acha o `@token` imediatamente antes do cursor (precedido por início ou
-  /// espaço, sem espaço até o cursor). `null` = não há menção ativa.
+  /// Find the `@token` immediately before the cursor.
+  ///
+  /// The token must start at the input boundary or after a space and contain no
+  /// intervening spaces. Returns `null` when no mention is active.
   ({int start, String query})? _activeMention(String text, int cursor) {
     if (cursor < 0 || cursor > text.length) cursor = text.length;
     var i = cursor - 1;
@@ -299,7 +304,7 @@ class _AgentComposerState extends State<AgentComposer> {
     PiCommand(name: 'compact', description: 'Compacts the agent context'),
   ];
 
-  /// Embutidos + comandos das extensions, **suprimindo os `/outpost-pi`**.
+  /// Combine built-ins with extension commands while suppressing `/outpost-pi`.
   List<PiCommand> get _allCommands => <PiCommand>[
     ..._builtins,
     ...widget.session.projection.controls.commands.where(
@@ -329,14 +334,14 @@ class _AgentComposerState extends State<AgentComposer> {
     }
   }
 
-  // --- overlays (comando OU arquivo; nunca os dois) ---
+  // --- Overlays: command or file, never both. ---
   bool get _cmdOpen => _cmdQuery != null && _cmdMatches.isNotEmpty;
   bool get _fileOpen => _mention != null && _fileMatches.isNotEmpty;
   bool get _overlayOpen => _cmdOpen || _fileOpen;
   int get _activeCount =>
       _cmdOpen ? _cmdMatches.length : (_fileOpen ? _fileMatches.length : 0);
 
-  /// Itens do overlay ativo, já no formato do palette.
+  /// Build active-overlay entries in palette format.
   List<_Suggest> get _suggestions {
     if (_cmdOpen) {
       return [
@@ -370,7 +375,7 @@ class _AgentComposerState extends State<AgentComposer> {
     return i == -1 ? null : p.substring(0, i);
   }
 
-  // --- teclado / aceitação ---
+  // --- Keyboard navigation and acceptance. ---
   void _onEnter() {
     if (_cmdOpen) {
       _acceptCommand(_index);
@@ -414,7 +419,8 @@ class _AgentComposerState extends State<AgentComposer> {
     final matches = _cmdMatches;
     if (matches.isEmpty) return;
     final cmd = matches[index.clamp(0, matches.length - 1)];
-    _cmdSuppress = true; // setado antes de mexer no texto (o listener lê isso)
+    _cmdSuppress =
+        true; // Set before changing text because the listener reads it.
     final value = '/${cmd.name} ';
     _controller.value = TextEditingValue(
       text: value,
@@ -422,10 +428,10 @@ class _AgentComposerState extends State<AgentComposer> {
     );
   }
 
-  /// Aceita um arquivo do overlay `@`: **remove o `@query`** digitado e vira um
-  /// chip de arquivo (conceito do textfield_tags — a menção sai do texto). A
-  /// busca devolve caminho **relativo** ao cwd; convertemos pra **absoluto**
-  /// (todas as menções são absolutas — relativo dava ambiguidade).
+  /// Accept a file from the `@` overlay and replace the typed query with a chip.
+  ///
+  /// Search returns a cwd-relative path; convert it to an absolute path because
+  /// relative mentions are ambiguous.
   void _acceptFile(int index) {
     final mention = _mention;
     final matches = _fileMatches;
@@ -460,8 +466,8 @@ class _AgentComposerState extends State<AgentComposer> {
     final attachments = List<_Attachment>.of(_attachments);
     if (typed.isEmpty && attachments.isEmpty) return;
 
-    // Embutido (/new, /compact) → RPC dedicado; só quando é comando puro (sem
-    // anexo). Senão vai como prompt (texto + anexos).
+    // Route a pure built-in (/new, /compact) through its dedicated RPC. A
+    // command with attachments is sent as a prompt instead.
     if (attachments.isEmpty &&
         typed.startsWith('/') &&
         _runBuiltin(typed.substring(1).split(' ').first)) {
@@ -469,8 +475,8 @@ class _AgentComposerState extends State<AgentComposer> {
       return;
     }
 
-    // Reconstrói as menções de arquivo (`@<path>`) a partir dos chips e anexa
-    // ao texto — o agente lê via tools e o balão renderiza como badge.
+    // Rebuild file mentions (`@<path>`) from chips and append them to the text;
+    // the agent reads them through tools and the message renders them as badges.
     final fileMentions = attachments
         .where((a) => !a.isImage && a.mention != null)
         .map((a) => '@${a.mention}');
@@ -479,13 +485,12 @@ class _AgentComposerState extends State<AgentComposer> {
       ...fileMentions,
     ].join(' ');
 
-    // Limpa a UI já (responsivo); a normalização das imagens é assíncrona.
+    // Clear the UI immediately for responsiveness; image normalization is async.
     _resetInput();
 
-    // Normaliza toda imagem pra **PNG sRGB 8-bit** (decodifica e re-encoda):
-    // o clipboard do macOS costuma trazer Display P3/16-bit, que vários
-    // provedores de visão rejeitam — por isso colar falhava e anexar não.
-    // Também reduz screenshots gigantes.
+    // Normalize every image to 8-bit sRGB PNG. The macOS clipboard often
+    // supplies Display P3/16-bit data rejected by vision providers, which made
+    // paste fail while file attachment worked. Also shrink huge screenshots.
     final images = <PromptImage>[];
     for (final a in attachments) {
       if (!a.isImage || a.bytes == null) continue;
@@ -496,8 +501,10 @@ class _AgentComposerState extends State<AgentComposer> {
     session.send(message, images: images);
   }
 
-  /// Decodifica os [bytes] e re-encoda como PNG padrão (8-bit sRGB), reduzindo
-  /// se o lado maior passar de [maxSide]. Em erro, devolve os bytes originais.
+  /// Re-encode [bytes] as a standard 8-bit sRGB PNG.
+  ///
+  /// Shrinks images whose longest side exceeds [maxSide]. Returns the original
+  /// bytes when decoding or encoding fails.
   Future<Uint8List> _toStandardPng(
     Uint8List bytes, {
     int maxSide = 1568,
@@ -524,7 +531,7 @@ class _AgentComposerState extends State<AgentComposer> {
     }
   }
 
-  /// Limpa input e anexos após enviar (ou executar um builtin).
+  /// Clear input and attachments after sending or executing a built-in.
   void _resetInput() {
     _controller.clear();
     _cmdSuppress = false;
@@ -546,8 +553,8 @@ class _AgentComposerState extends State<AgentComposer> {
     final canStop = turn.canStop;
     final controlsEnabled = projection.isAlive && !turn.working;
 
-    // Drop **nativo** do SO (Finder/Explorer/…) → anexa imagem / vira `@`. O
-    // drag-drop **interno** (do painel Files) é o DragTarget<String> filho.
+    // A native OS drop attaches an image or creates an `@` reference. The child
+    // DragTarget<String> handles internal drag-and-drop from the Files panel.
     return DropTarget(
       onDragEntered: (_) {
         if (!_osDragOver) setState(() => _osDragOver = true);
@@ -575,28 +582,26 @@ class _AgentComposerState extends State<AgentComposer> {
             decoration: BoxDecoration(
               color: colors.panel2,
               borderRadius: BorderRadius.circular(10),
-              // Sem sombra — o foco é sinalizado só pela borda accent.
+              // Use only the accent border, not a shadow, to signal focus.
               border: Border.all(color: borderColor),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Overlay de sugestões (comandos `/` ou arquivos `@`) — acima do
-                // input (a caixa cresce pra cima).
+                // Show command (`/`) or file (`@`) suggestions above the input.
                 if (_overlayOpen)
                   _SuggestPalette(
                     items: _suggestions,
                     selected: _index,
                     onSelect: _onSelectIndex,
                   ),
-                // Anexos do "+" — imagens em miniatura, outros como chip. Acima
-                // do input.
+                // Show image thumbnails and other attachment chips above input.
                 if (_attachments.isNotEmpty)
                   _AttachmentStrip(
                     attachments: _attachments,
                     onRemove: _removeAttachment,
                   ),
-                // Aviso: o modelo atual é text-only e não vai enxergar a imagem.
+                // Warn when the current text-only model cannot see the image.
                 if (_attachments.any((a) => a.isImage) &&
                     !(projection.controls.model?.supportsImages ?? false))
                   const _ImageModelWarning(),
@@ -608,8 +613,8 @@ class _AgentComposerState extends State<AgentComposer> {
                       bindings: <ShortcutActivator, VoidCallback>{
                         const SingleActivator(LogicalKeyboardKey.enter):
                             _onEnter,
-                        // Cmd/Ctrl+V: imagem/arquivo do clipboard vira anexo;
-                        // texto cola normalmente.
+                        // Cmd/Ctrl+V attaches clipboard images/files and pastes
+                        // ordinary text normally.
                         const SingleActivator(
                           LogicalKeyboardKey.keyV,
                           meta: true,
@@ -642,9 +647,8 @@ class _AgentComposerState extends State<AgentComposer> {
                           fontSize: 13.5,
                           color: colors.text,
                         ),
-                        // Campo embutido no Container do composer: chromeless
-                        // (sem fundo nem borda própria — antes era
-                        // InputDecoration(isCollapsed: true, border: none)).
+                        // Keep the field chromeless inside the composer container,
+                        // without its own background or border.
                         decoration: const BoxDecoration(),
                         padding: EdgeInsets.zero,
                         placeholder: Text(
@@ -668,14 +672,14 @@ class _AgentComposerState extends State<AgentComposer> {
                         onTap: _pickAttachment,
                       ),
                       _ModelChip(session: session, enabled: controlsEnabled),
-                      // Effort só pra modelos com raciocínio (senão o pi não usa).
+                      // Show effort only for reasoning models that Pi can use it with.
                       if (projection.controls.model?.reasoning ?? false)
                         _EffortChip(session: session, enabled: controlsEnabled),
-                      // Bolinha de uso do contexto (enche conforme a janela enche).
+                      // Fill the context-usage indicator as the window fills.
                       _ContextGauge(session: session),
                       _RelayButton(session: session),
                       const Spacer(),
-                      // Spinner + cronômetro do turno (só enquanto trabalha).
+                      // Show the spinner and turn timer only while working.
                       _TurnIndicator(session: session),
                       _SendButton(
                         streaming: canStop,
@@ -692,8 +696,8 @@ class _AgentComposerState extends State<AgentComposer> {
             clipBehavior: Clip.none,
             children: [
               box,
-              // Dica do atalho — só quando esta tab é a ativa E o input não
-              // está focado. Tabs de planos de fundo não exibem o badge.
+              // Show the shortcut hint only for the active tab while input is
+              // unfocused; background tabs never display it.
               if (context.select<CockpitViewModel, bool>(
                     (vm) => vm.focusedAgent?.id == widget.session.id,
                   ) &&
@@ -708,7 +712,7 @@ class _AgentComposerState extends State<AgentComposer> {
   }
 }
 
-/// Pílula discreta com o atalho de foco do input (⌘L / Ctrl+L).
+/// Show a subtle pill for the input-focus shortcut (⌘L / Ctrl+L).
 class _ShortcutHint extends StatelessWidget {
   const _ShortcutHint();
 
@@ -735,16 +739,18 @@ class _ShortcutHint extends StatelessWidget {
   }
 }
 
-/// Item de uma sugestão do overlay (comando ou arquivo).
+/// Describe a command or file suggestion shown in the overlay.
 class _Suggest {
   const _Suggest({required this.primary, this.secondary, this.icon});
   final String primary; // mono
-  final String? secondary; // dim, à direita
+  final String? secondary; // Dimmed trailing text.
   final IconData? icon;
 }
 
-/// Lista de sugestões sobre o input (comandos `/` ou arquivos `@`). Realça o
-/// item selecionado (setas) e aceita por clique. Rola se passar da altura máxima.
+/// List command (`/`) or file (`@`) suggestions above the input.
+///
+/// Highlights keyboard selection, accepts clicks, and scrolls beyond its maximum
+/// height.
 class _SuggestPalette extends StatelessWidget {
   const _SuggestPalette({
     required this.items,
@@ -774,8 +780,7 @@ class _SuggestPalette extends StatelessWidget {
           final item = items[i];
           final active = i == selected;
           return HoverTap(
-            onTap: () =>
-                onSelect(i), // GestureDetector não rouba o foco do input
+            onTap: () => onSelect(i), // GestureDetector preserves input focus.
             color: active ? colors.panel3 : Colors.transparent,
             borderRadius: BorderRadius.zero,
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
@@ -896,7 +901,7 @@ class _EffortChip extends StatelessWidget {
   final bool enabled;
 
   Future<void> _show(BuildContext context) async {
-    // Níveis que ESTE modelo aceita (derivados do thinkingLevelMap dele).
+    // Use only the levels accepted by this model's thinkingLevelMap.
     final controls = session.projection.controls;
     final levels = ThinkingLevel.availableFor(
       controls.model?.thinkingLevelMap ?? const <String, String?>{},
@@ -929,8 +934,9 @@ class _EffortChip extends StatelessWidget {
   }
 }
 
-/// Spinner + cronômetro do turno enquanto o agente trabalha (streaming). Conta
-/// em segundos e passa pra minutos/horas. Some quando o turno termina.
+/// Show streaming activity and elapsed turn time while the agent works.
+///
+/// Counts through seconds, minutes, and hours, then disappears when the turn ends.
 class _TurnIndicator extends StatefulWidget {
   const _TurnIndicator({required this.session});
   final AgentSession session;
@@ -961,7 +967,7 @@ class _TurnIndicatorState extends State<_TurnIndicator> {
     if (mounted) setState(() {});
   }
 
-  /// Liga/desliga o tick de 1s conforme o turno está rodando.
+  /// Start or stop one-second ticks as the turn begins or ends.
   void _sync() {
     final turn = widget.session.projection.turn;
     final active = turn.working && turn.startedAt != null;
@@ -1017,9 +1023,10 @@ class _TurnIndicatorState extends State<_TurnIndicator> {
   }
 }
 
-/// Bolinha de uso do contexto: um disco que enche conforme a janela de contexto
-/// se aproxima do limite (verde→âmbar→vermelho). Tooltip mostra a porcentagem.
-/// `percent` vem na escala 0–100 (ver [ContextUsage]).
+/// Visualize context usage as a disk that fills toward the window limit.
+///
+/// Color progresses from green to amber to red, and the tooltip shows the
+/// percentage. [ContextUsage] supplies `percent` on a 0–100 scale.
 class _ContextGauge extends StatelessWidget {
   const _ContextGauge({required this.session});
   final AgentSession session;
@@ -1074,7 +1081,7 @@ class _GaugePainter extends CustomPainter {
     final center = size.center(Offset.zero);
     final radius = size.width / 2;
 
-    // Fundo (vazio).
+    // Empty background.
     canvas.drawCircle(
       center,
       radius,
@@ -1083,7 +1090,7 @@ class _GaugePainter extends CustomPainter {
         ..style = PaintingStyle.fill,
     );
 
-    // Preenchimento: fatia de pizza crescendo do topo no sentido horário.
+    // Fill clockwise from the top like a growing pie slice.
     if (fraction > 0) {
       final path = Path()
         ..moveTo(center.dx, center.dy)
@@ -1102,7 +1109,7 @@ class _GaugePainter extends CustomPainter {
       );
     }
 
-    // Contorno (mais visível).
+    // Draw a more visible outline.
     canvas.drawCircle(
       center,
       radius - 0.6,
@@ -1178,8 +1185,8 @@ class _SendButton extends StatelessWidget {
     return Tooltip(
       tooltip: (context) =>
           TooltipContainer(child: Text(streaming ? 'Stop' : 'Send')),
-      // borderRadius 15 num quadrado 30×30 = círculo (substitui o CircleBorder
-      // do Material; HoverTap só aceita BorderRadius).
+      // A radius of 15 in a 30×30 square forms a circle. HoverTap accepts only
+      // BorderRadius, so this replaces Material's CircleBorder.
       child: HoverTap(
         borderRadius: BorderRadius.circular(15),
         color: bg,
@@ -1198,8 +1205,10 @@ class _SendButton extends StatelessWidget {
   }
 }
 
-/// Indicador/botão do relay: ativo (verde), reconectando (âmbar), offline (cinza).
-/// Toca o comando schema-aligned de toggle sem envolver o LLM nem o transcript.
+/// Indicate relay state and toggle it through the schema-aligned command.
+///
+/// Uses green for active, amber for reconnecting, and gray for offline without
+/// involving the LLM or transcript.
 class _RelayButton extends StatelessWidget {
   const _RelayButton({required this.session});
   final AgentSession session;
@@ -1245,7 +1254,7 @@ class _RelayButton extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Anexos do "+"
+// Attachments from the "+" button.
 // ---------------------------------------------------------------------------
 
 const Set<String> _kImageExts = <String>{
@@ -1263,8 +1272,10 @@ bool _isImageName(String name) {
   return _kImageExts.contains(name.substring(dot + 1).toLowerCase());
 }
 
-/// Um anexo do composer. Imagens guardam os [bytes] (preview + base64 no envio);
-/// outros arquivos guardam só o [path] (o agente lê via tools).
+/// Hold one composer attachment outside the editable text.
+///
+/// Images retain [bytes] for preview and base64 transport; other files retain
+/// only [path] for the agent to read through tools.
 class _Attachment {
   _Attachment({
     required this.name,
@@ -1276,14 +1287,14 @@ class _Attachment {
   final String name;
   final bool isImage;
 
-  /// Imagens: bytes (preview + base64 no envio).
+  /// Retain image bytes for preview and base64 transport.
   final Uint8List? bytes;
 
-  /// Arquivos: referência relativa (sem o `@`) emitida no envio.
+  /// Retain the relative file reference emitted without the `@` prefix.
   final String? mention;
 }
 
-/// Aviso quando há imagem anexada mas o modelo é text-only (não enxerga).
+/// Warn when an attached image is invisible to the text-only model.
 class _ImageModelWarning extends StatelessWidget {
   const _ImageModelWarning();
 
@@ -1312,7 +1323,7 @@ class _ImageModelWarning extends StatelessWidget {
   }
 }
 
-/// Faixa de anexos acima do input: imagens em miniatura, outros como chip.
+/// Display image thumbnails and other file chips above the input.
 class _AttachmentStrip extends StatelessWidget {
   const _AttachmentStrip({required this.attachments, required this.onRemove});
 
@@ -1321,8 +1332,8 @@ class _AttachmentStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Align(centerLeft) ocupa a largura toda e encosta os anexos à esquerda (o
-    // Column do composer é center por padrão).
+    // Align(centerLeft) spans the width and pins attachments left despite the
+    // composer's centered Column default.
     return Align(
       alignment: Alignment.centerLeft,
       child: Padding(
