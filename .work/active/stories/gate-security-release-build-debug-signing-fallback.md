@@ -3,12 +3,12 @@ id: gate-security-release-build-debug-signing-fallback
 kind: story
 stage: implementing
 tags: [security, app]
-parent: null
-depends_on: []
+parent: feature-outpost-pi-distribution-ownership
+depends_on: [story-en-first-residual-maintained-surfaces]
 release_binding: null
 gate_origin: security
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-14
 ---
 
 # Android release builds silently fall back to debug signing
