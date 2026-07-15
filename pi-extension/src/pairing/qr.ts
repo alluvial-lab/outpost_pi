@@ -68,12 +68,13 @@ export function buildQRUri(
   /**
    * Pi room id (12 chars, base64url) derived from cwd. App routes pair_request
    * to this room so the relay delivers it to the right Pi instance among N
-   * paralelos com mesmo epk. Adicionado no fix do plano 17 (sem `rm` o app
-   * cai em room=main e o relay drops com "dest not found").
+   * parallel instances with the same epk. Added in the plan 17 fix (without
+   * `rm`, the app falls back to room=main and the relay drops it with
+   * "dest not found").
    */
   roomId?: string,
 ): string {
-  // `r` (relay URL) removed in plano 14 — relay now comes from app config /
+  // `r` (relay URL) removed in plan 14 — relay now comes from app config /
   // pi-ext env|config|default chain. Keeps QR ~30-50 chars shorter.
   // `n` (session name) is kept: the app uses it for the pre-pair_ok preview
   // screen (showing the agent name immediately after scan, before the

@@ -126,7 +126,7 @@ describe("agent-network e2e", () => {
     await p3.leave();
   });
 
-  test("broadcast: msg pra todos exceto sender", async () => {
+  test("broadcast: message to everyone except the sender", async () => {
     const sock = tmpSock();
     const orq = await makePeer(sock, "orq");
     const a = await makePeer(sock, "a");

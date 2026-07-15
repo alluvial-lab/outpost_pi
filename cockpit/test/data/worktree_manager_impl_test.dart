@@ -128,7 +128,7 @@ void main() {
 
       // Empty / nonexistent branch → false (shows the warning for safety).
       expect(await manager.isBranchMerged(repo.path, ''), isFalse);
-      expect(await manager.isBranchMerged(repo.path, 'nao/existe'), isFalse);
+      expect(await manager.isBranchMerged(repo.path, 'does-not/exist'), isFalse);
     },
   );
 }

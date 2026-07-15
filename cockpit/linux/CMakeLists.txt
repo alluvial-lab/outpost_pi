@@ -143,7 +143,7 @@ foreach(icon_size 64 128 256 512 1024)
     COMPONENT Runtime)
 endforeach()
 
-# AppStream metainfo — descreve o app pra centros de software/empacotadores.
+# AppStream metainfo — describes the app for software centers and packagers.
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${APPLICATION_ID}.metainfo.xml"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/metainfo"
   COMPONENT Runtime)

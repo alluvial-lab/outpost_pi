@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 /// A row in the Home list.
 ///
-/// Renders an inline presence dot (plano 12) driven by
+/// Renders an inline presence dot (plan 12) driven by
 /// [ConnectionManager.presenceStream]: green = online, grey = offline,
 /// no dot = relay hasn't reported yet.
 class SessionTile extends StatelessWidget {

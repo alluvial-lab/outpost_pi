@@ -53,7 +53,7 @@ android {
         // plan/23: minSdk 34 (Android 14). Block Store itself works
         // back to API 23, but the project as a whole standardizes on
         // 14+ for modern biometry / themed icons / Credential Manager
-        // (future) — see plano 23 § "Decisões fixadas".
+        // (future) — see plan 23 § "Settled decisions".
         minSdk = 34
     }
 

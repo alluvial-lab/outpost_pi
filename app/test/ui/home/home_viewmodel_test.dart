@@ -255,7 +255,7 @@ void main() {
     });
 
     test(
-      'plano app-state-normalization: openSession ONLY sets prefs '
+      'plan app-state-normalization: openSession ONLY sets prefs '
       '(no switchTo from Home — boot races would otherwise happen)',
       () async {
         final storage = _FakeStorage([_peerA, _peerB]);

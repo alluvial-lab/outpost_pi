@@ -270,7 +270,7 @@ Future<IChannel> _productionConnectionFactory(
   final ownerKey = await bridge.requireKeyPair();
   if (cancel.isCancelled) throw _CancelledError();
 
-  // Defensive timeout (plano app-state-normalization): without this the
+  // Defensive timeout (plan app-state-normalization): without this the
   // WebSocket connect + Ed25519 challenge round-trip can hang
   // indefinitely if the relay is unreachable — ChatViewModel would sit
   // in `ChatConnecting` forever. Throwing here pushes the manager into
