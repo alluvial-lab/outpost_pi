@@ -1,7 +1,7 @@
 ---
 id: rebrand-site-download-links-old-appid
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, site, release]
 parent: feature-outpost-pi-distribution-ownership
 depends_on: []
@@ -30,3 +30,13 @@ The README's Play link is already marked “coming soon” (sideload-only).
 Disable or mark the site Play Store links as unavailable until the operator-owned listing exists. The published site must not direct users to the incompatible upstream application.
 
 Run `pnpm lint` and `pnpm build` from `site/`.
+
+## Implementation notes
+- Files changed:
+  - `site/src/components/landing/sections.tsx` — removed the Google Play store card and its now-unused `IconPlay` import.
+  - `site/src/app/download/page.tsx` — replaced the old Play Store link with a "coming soon" note (0.1.0 sideload-only, new applicationId).
+  - `site/src/app/tutorials/getting-started/page.tsx` — removed the Play Store link; directs to App Store + APK direct download, notes Google Play is coming soon.
+- Verification: `corepack pnpm lint` clean; `corepack pnpm build` succeeded (18 static pages).
+- `rg 'work.jacobmoura.remotepi' site/` returns no hits.
+- Discrepancies from design: none.
+- Adjacent issues parked: none (left `IconPlay` export in `icons.tsx` as harmless unused export; lint did not flag it).
