@@ -5,15 +5,12 @@ import 'package:app/domain/value_objects/semver.dart';
 import 'package:app/ui/core/viewmodel/viewmodel.dart';
 import 'package:app/ui/update/states/update_banner_state.dart';
 
-/// Aviso de atualização in-app, **Android-only** (plano 44, passo 3 — espelho
-/// do passo 7 do plano 43 do Cockpit). No [check] (disparado no mount da Home,
-/// = startup) consulta o manifest; se houver versão **maior** que a atual e que
-/// **não foi dispensada**, emite [UpdateBannerVisible]. Tudo best-effort:
-/// falhas são silenciosas.
+/// Drive the Android-only in-app update banner (plan 44, step 3).
 ///
-/// O gate de plataforma vive aqui via [enabled] (injetado como
-/// `Platform.isAndroid` no boot) — isso mantém a regra "nada no iOS"
-/// testável sem depender do host onde o `flutter test` roda.
+/// [check] runs when Home mounts and emits [UpdateBannerVisible] only for a
+/// newer, non-dismissed manifest version. Failures are intentionally silent.
+/// [enabled] receives `Platform.isAndroid` at boot, keeping the no-iOS rule
+/// testable without depending on the host that runs `flutter test`.
 class UpdateBannerViewModel extends ViewModel<UpdateBannerState> {
   UpdateBannerViewModel(
     this._checker,
@@ -31,51 +28,51 @@ class UpdateBannerViewModel extends ViewModel<UpdateBannerState> {
   final DismissedUpdateStore _dismissed;
   final UrlOpener _opener;
 
-  /// Versão do app rodando (de `package_info`, injetada no boot).
+  /// Identify the running app version injected from `package_info` at boot.
   final String currentVersion;
 
-  /// `true` só no Android — em iOS o app atualiza pela App Store, então o
-  /// aviso nunca aparece.
+  /// Enable the banner only on Android; iOS updates through the App Store.
   final bool enabled;
 
-  /// Coordenadas do artefato a baixar (Android = apk universal).
+  /// Select the downloadable artifact coordinates for the universal Android APK.
   final String platform;
   final String format;
   final String arch;
 
-  /// Página de download do site — fallback quando não há artefato compatível.
+  /// Fall back to the site's download page when no compatible artifact exists.
   final String fallbackUrl;
 
-  static const String _kFallbackUrl =
-      'https://outpost-pi.kevoun.com/download';
+  static const String _kFallbackUrl = 'https://outpost-pi.kevoun.com/download';
 
   bool _checked = false;
   bool _disposed = false;
 
-  /// Consulta o manifest e decide se o card deve aparecer. Silencioso em
-  /// falha. Idempotente por instância (re-mount cria nova instância e
-  /// re-consulta; uma mesma instância só consulta uma vez).
+  /// Fetch the manifest and determine whether to show the banner.
+  ///
+  /// This is silent on failure and idempotent per instance: a remount creates
+  /// a new instance and checks again, while one instance checks only once.
   Future<void> check() async {
-    if (!enabled) return; // iOS / não-Android → nunca mostra.
+    if (!enabled) return; // iOS / non-Android: never show the banner.
     if (_checked) return;
     _checked = true;
 
     final latest = await _checker.fetchLatest();
     if (_disposed) return;
-    if (latest == null) return; // sem rede/manifest/inválido → nada.
+    if (latest == null) return; // No network or invalid manifest: no banner.
     if (!isNewerVersion(latest.version, currentVersion)) {
-      return; // igual/menor → nada.
+      return; // Equal or lower version: no banner.
     }
 
     final dismissed = await _dismissed.dismissedVersion();
     if (_disposed) return;
-    if (dismissed == latest.version) return; // dispensada → nada.
+    if (dismissed == latest.version) return; // Dismissed version: no banner.
 
     emit(UpdateBannerVisible(latest));
   }
 
-  /// Fecha o card e persiste a versão como dispensada — não reaparece pra ela
-  /// (volta numa versão maior).
+  /// Hide the banner and persist its version as dismissed.
+  ///
+  /// It remains hidden for that version but returns for a newer one.
   Future<void> dismiss() async {
     final current = state;
     if (current is! UpdateBannerVisible) return;
@@ -84,8 +81,9 @@ class UpdateBannerViewModel extends ViewModel<UpdateBannerState> {
     await _dismissed.dismiss(version);
   }
 
-  /// Baixa o APK do Android (abre a URL no navegador → download direto). Sem
-  /// artefato compatível no manifest → abre a página de download do site.
+  /// Open the Android APK download in the browser.
+  ///
+  /// Opens the site download page when the manifest has no compatible artifact.
   Future<void> download() async {
     final current = state;
     if (current is! UpdateBannerVisible) return;
