@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-distribution-ownership
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, release, infra, cockpit, app, site, security]
 parent: epic-rebrand-external-surfaces
 depends_on: [story-en-first-residual-maintained-surfaces]
@@ -130,4 +130,19 @@ Both touch disjoint files and can run in parallel.
 **Nits**: none
 
 **Notes**: SUBSTRATE-MODE deep lane, second pass. The fresh-context review used the required order as convergence loops. Phase 1 ran three completeness/complementary passes over the feature brief, all ten original/finding stories, the five repaired surfaces, release docs, ownership greps, and the keep-list; Android task-graph guarding, Windows appcast disablement, the Cockpit runbook, and all three site surfaces are genuinely repaired, while the broad ownership probe exposed the active app iOS team and the Windows changelog drift. Phase 2 ran three adversarial passes over failure behavior and release coherence: the no-key Android guard passed `help` and rejected both `assembleRelease` and `bundleRelease`; a synthetic certificate subject proved the current `awk -F'/'` OU extraction returns `organizationalUnitName = TEAMID` rather than `TEAMID`, so the match path cannot succeed; the Windows installer and macOS/Linux artifact jobs remain coherent without a Windows appcast. App analyze + 698 tests, Cockpit offline resolution/analyze + 241 tests, site lint/build, both workflow YAML parses, AppStream XML parsing, shell syntax, and diff checks passed. The feature commit range did not modify the historical Cockpit changelog record or genuine `jacobaraujo7/*` dependency coordinates. This delegated reviewer is fresh-context relative to the orchestrator, but no additional different-class reviewer mechanism was available in this context. Feature bounced `review -> implementing`.
+
+## Review (2026-07-15, third pass)
+
+**Verdict**: Approve with comments
+
+**Blockers**: none
+
+**Important**:
+- The Unreleased Cockpit changelog correctly disables Windows appcast publication, but still says Cockpit "now updates itself" on macOS while the runtime deliberately wires `NoopSelfUpdater` on every platform until feeds are deployed (`cockpit-macos-self-update-changelog-consistency`, parked and unbound).
+
+**Nits**: none
+
+**Rejected**: none
+
+**Notes**: SUBSTRATE-MODE deep lane, third confirmation pass. Effective review weight remained standard; the caller-required single fresh-context pass was ordered completeness/complementary first, then adversarial. The three second-pass fixes hold: the OpenSSL multiline OU parser now extracts only the value after `=` and synthetic matching, mismatching, missing, and malformed subjects exercised the accept/reject branches; Windows appcast generation remains unconditionally skipped and the historical `1.0.0` changelog record is byte-preserved; and the inherited iOS team is absent from the app and identity-example Xcode projects, export plist, store guidance, and public availability surfaces. The no-team automatic export plist parses and remains coherent with an operator-selected signed archive; the Android-only release workflow makes iOS publication unavailable rather than silently inherited. Ownership greps return only the historical Cockpit identity and the intentional bundle-ID cutover warning. Preserve-list dependency URLs and `app/CHANGELOG.md` are untouched. Verification passed: app analyze + 698 tests; Cockpit offline resolution, analyze + 241 tests; site lint/build; Android no-key guard (`help` passes, release graph rejects); both workflow YAML parses; plist/AppStream XML/shell syntax/diff checks. The remaining macOS changelog overstatement is below the material current-cycle blocker bar and is parked; feature advanced `review -> done`.
 

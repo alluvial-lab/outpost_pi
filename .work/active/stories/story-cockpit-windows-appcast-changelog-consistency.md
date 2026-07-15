@@ -1,7 +1,7 @@
 ---
 id: story-cockpit-windows-appcast-changelog-consistency
 kind: story
-stage: review
+stage: done
 tags: [cockpit, docs, release]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -45,3 +45,7 @@ not be rewritten.
 - Verification: `git diff --check` clean.
 - Discrepancies: none.
 - Adjacent issues parked: none.
+
+## Verification closure (2026-07-15, third pass)
+
+The Unreleased entry no longer names or claims publication of `appcast-windows.xml`; it states Windows auto-update is inactive and manual reinstall is required. The historical `## [1.0.0]` record is byte-identical to its pre-fix form. The child checkpoint advanced directly to `done`. A separate unbound follow-up records the remaining macOS-runtime wording mismatch.
