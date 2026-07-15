@@ -1,42 +1,29 @@
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:flutter/widgets.dart';
 
-/// Lado menor (em pixels lógicos) a partir do qual o app entra no modo tablet
-/// de dois painéis (master + detail).
+/// Minimum logical shortest side that enables the two-pane tablet layout.
 const double kTabletBreakpoint = 600.0;
 
-/// `true` quando a janela é "classe tablet" — larga o bastante, em qualquer
-/// orientação, para o layout de dois painéis.
+/// Whether the window can use the two-pane tablet layout in either orientation.
 ///
-/// Classificamos por `shortestSide` (= `min(width, height)`), **não** por
-/// `width`, porque a largura sozinha confunde classe-de-device com orientação:
-/// um CELULAR em landscape tem `width >= 600` e virava "tablet" por engano (o
-/// bug que isto corrige). `shortestSide` é invariante à rotação:
-///   • Celular: shortestSide ~360–430 (< 600) em qualquer orientação → phone.
-///   • Tablet:  shortestSide >= 768 em qualquer orientação → tablet.
+/// Classify by `shortestSide` (`min(width, height)`), not width alone: a phone
+/// in landscape can be wide without being tablet-sized. The rotation-invariant
+/// threshold keeps phones (~360–430) single-pane and tablets (>=768) split.
 ///
-/// Split View / Slide Over do iPadOS continua colapsando pra painel único: o
-/// `MediaQuery` mede a JANELA dada ao app, não o device físico. Quando o usuário
-/// encolhe o app numa coluna estreita, `shortestSide` cai junto abaixo de 600 e
-/// voltamos a phone. Ou seja, `shortestSide` atende os dois objetivos de uma vez
-/// — estável como classe-de-device E sensível a multitarefa estreita.
-///
-/// É estritamente mais rígido que `width` (exige AMBAS as dimensões >= 600). A
-/// única diferença de comportamento vs. o critério antigo é justamente
-/// "landscape com altura < 600" (= celulares) passar a ser phone — o desejado.
+/// iPad Split View and Slide Over also collapse naturally because `MediaQuery`
+/// measures the allocated window, not the physical device. Requiring both
+/// dimensions to meet the threshold deliberately treats a short landscape phone
+/// as a phone.
 bool isWideLayout(BuildContext context) =>
     MediaQuery.sizeOf(context).shortestSide >= kTabletBreakpoint;
 
-/// Largura máxima de conteúdo de coluna única (onboarding, empty states).
-/// Acima disso o conteúdo é centralizado em vez de esticar borda-a-borda —
-/// evita o efeito "UI de celular gigante" no tablet.
+/// Maximum single-column content width for onboarding and empty states.
 const double kMaxContentWidth = 460.0;
 
-/// Centraliza e limita a largura do [child] em telas largas; em larguras de
-/// celular é praticamente um passthrough (o conteúdo já preenche a tela).
-/// Centraliza nos dois eixos, então serve tanto para conteúdo de altura
-/// mínima (empty states) quanto para colunas full-height (onboarding com
-/// `Expanded`).
+/// Center and constrain [child] on wide screens while preserving phone layout.
+///
+/// Centers on both axes so it supports minimum-height empty states and
+/// full-height onboarding columns with `Expanded`.
 class ResponsiveCenter extends StatelessWidget {
   final Widget child;
   final double maxWidth;
@@ -57,13 +44,11 @@ class ResponsiveCenter extends StatelessWidget {
   }
 }
 
-/// Estado de layout do shell adaptativo. Hoje carrega só `isZeroState`:
-/// `true` quando a Home não tem nada para listar/selecionar (sem Pi pareado
-/// ou lista vazia). Nesse caso o shell colapsa para um único painel cheio e
-/// centralizado, em vez de mostrar o split com um placeholder grande e vazio.
+/// Hold adaptive-shell state that collapses an empty Home view to one pane.
 ///
-/// Default `false` (split por padrão em telas largas) para não piscar
-/// single→split no caso comum de já existirem sessões no boot.
+/// `isZeroState` is true when no paired Pi or session can be listed or selected.
+/// It defaults false so a populated tablet does not visibly transition from one
+/// pane to a split during bootstrap.
 class ShellLayout extends ChangeNotifier {
   bool _zeroState = false;
   bool get isZeroState => _zeroState;
@@ -75,14 +60,11 @@ class ShellLayout extends ChangeNotifier {
   }
 }
 
-/// Sessão atualmente selecionada na UI (o chat mostrado no painel detail
-/// do tablet e destacado na lista master).
+/// Hold the session selected by the UI for the tablet detail pane and list.
 ///
-/// É **distinta** do peer conectado (`Preferences.selectedPeerEpk`, setado
-/// no boot): começa `null` de propósito para que, ao abrir o app, nenhum
-/// chat apareça pré-selecionado — o placeholder é mostrado até o primeiro
-/// toque. Vive enquanto o app roda (não é restaurada entre execuções, já
-/// que queremos iniciar sempre sem seleção).
+/// This is distinct from the peer connected at bootstrap. It intentionally
+/// starts null and is not persisted, so every app launch begins with the
+/// selection placeholder until the user chooses a session.
 class SelectedSession {
   const SelectedSession({
     required this.ref,
@@ -101,14 +83,16 @@ class SelectedSession {
   String get sessionId => ref.sessionId;
 }
 
+/// Own the current transcript-scoped selection for adaptive master-detail UI.
 class SessionSelection extends ChangeNotifier {
   SelectedSession? _current;
 
   SelectedSession? get current => _current;
 
-  /// `true` se a sessão canônica é a seleção atual. Production callers pass
-  /// [sessionId] so a Pi SDK session rotation in the same relay room tears down
-  /// the old detail chat instead of reusing its transcript-scoped state.
+  /// Whether this canonical session is the current selection.
+  ///
+  /// Production callers pass [sessionId] so a Pi SDK session rotation in one
+  /// relay room replaces, rather than reuses, transcript-scoped detail state.
   bool matches(String epk, String roomId, [String? sessionId]) {
     final c = _current;
     return c != null &&
@@ -119,14 +103,11 @@ class SessionSelection extends ChangeNotifier {
 
   bool matchesRef(RemoteSessionRef ref) => _current?.ref == ref;
 
-  /// Plan/32g — `device` é o nome do dispositivo pareado (nickname /
-  /// sessionName) que o Home já conhece; o detail-pane do tablet o repassa pro
-  /// `ChatPage.initialDevice` pra renderizar a linha 2 da AppBar de cara, sem
-  /// esperar o PeerRecord assíncrono. `online` é o estado live do tile (verde),
-  /// repassado pro `ChatPage.initialOnline` pra o ponto de status não piscar
-  /// "reconnecting" no boot do runtime. Ambos acompanham o
-  /// [RemoteSessionRef] completo; a seleção é transcript-scoped, enquanto
-  /// liveness permanece consultada por `(epk, roomId)`.
+  /// Select a transcript-scoped session and seed its detail metadata.
+  ///
+  /// [device] and [online] let the tablet detail pane render its AppBar before
+  /// asynchronous peer/runtime reads complete. Liveness remains room-scoped,
+  /// while selection follows the complete [RemoteSessionRef].
   void select(
     RemoteSessionRef ref,
     String title, [

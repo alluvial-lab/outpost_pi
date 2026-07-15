@@ -7,6 +7,10 @@ import 'package:app/data/local/boxes.dart';
 import 'package:app/data/local/records/session_index_record.dart';
 import 'package:app/domain/contracts/repository.dart';
 
+/// Read the durable cross-session index without owning any write path.
+///
+/// Home receives reactive snapshots while [SyncService] remains the sole Hive
+/// mutator, preserving a single source of transcript-derived state.
 class HomeReadRepository extends Repository {
   HomeReadRepository(this._boxes);
 
