@@ -1,5 +1,5 @@
-// Testes do Shift+Enter no terminal: rastreio do kitty keyboard protocol e a
-// escolha do byte (CSI-u quando ativo, `\n` quando legado).
+// Verify terminal Shift+Enter by tracking the kitty keyboard protocol and
+// choosing CSI-u while active or legacy `\n` otherwise.
 
 import 'package:cockpit/app/cockpit/ui/session/terminal_input.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,31 +24,31 @@ TerminalKeyboardEvent _event(
 
 void main() {
   group('KittyKeyboardTracker', () {
-    test('começa inativo', () {
+    test('starts inactive', () {
       expect(KittyKeyboardTracker().active, isFalse);
     });
 
-    test('push (CSI > flags u) ativa; pop (CSI < u) desativa', () {
+    test('push (CSI > flags u) activates; pop (CSI < u) deactivates', () {
       final k = KittyKeyboardTracker();
-      k.feed('\x1b[>7u'); // pi empurra flags=7 ao iniciar
+      k.feed('\x1b[>7u'); // Pi pushes flags=7 at startup.
       expect(k.active, isTrue);
-      k.feed('\x1b[<u'); // remove ao sair
+      k.feed('\x1b[<u'); // Remove on exit.
       expect(k.active, isFalse);
     });
 
-    test('push de flags 0 não conta como ativo', () {
+    test('pushing flags 0 does not count as active', () {
       final k = KittyKeyboardTracker();
       k.feed('\x1b[>0u');
       expect(k.active, isFalse);
     });
 
-    test('query (CSI ? u) sozinha não ativa — só observamos passivamente', () {
+    test('query (CSI ? u) alone does not activate passive tracking', () {
       final k = KittyKeyboardTracker();
       k.feed('\x1b[?u');
       expect(k.active, isFalse);
     });
 
-    test('RIS (ESC c) reseta o estado', () {
+    test('RIS (ESC c) resets state', () {
       final k = KittyKeyboardTracker();
       k.feed('\x1b[>7u');
       expect(k.active, isTrue);
@@ -56,7 +56,7 @@ void main() {
       expect(k.active, isFalse);
     });
 
-    test('set (CSI = flags ; mode u) liga e desliga', () {
+    test('set (CSI = flags ; mode u) turns state on and off', () {
       final k = KittyKeyboardTracker();
       k.feed('\x1b[=5;1u'); // set flags=5
       expect(k.active, isTrue);
@@ -64,56 +64,59 @@ void main() {
       expect(k.active, isFalse);
     });
 
-    test('sequência partida entre chunks ainda é detectada', () {
+    test('sequence split across chunks is still detected', () {
       final k = KittyKeyboardTracker();
-      k.feed('saída qualquer\x1b[>');
-      expect(k.active, isFalse); // ainda incompleta
-      k.feed('7u mais saída');
+      k.feed('arbitrary output\x1b[>');
+      expect(k.active, isFalse); // Still incomplete.
+      k.feed('7u more output');
       expect(k.active, isTrue);
     });
 
-    test('texto comum não liga o protocolo por engano', () {
+    test('ordinary text does not activate the protocol accidentally', () {
       final k = KittyKeyboardTracker();
-      k.feed('echo \x1b[31mvermelho\x1b[0m e \x1b[2J limpa');
+      k.feed('echo \x1b[31mred\x1b[0m and \x1b[2J clear');
       expect(k.active, isFalse);
     });
 
-    test('push aninhado: pop volta ao nível anterior ativo', () {
+    test('nested push: pop restores the previous active level', () {
       final k = KittyKeyboardTracker();
-      k.feed('\x1b[>1u'); // nível 1
-      k.feed('\x1b[>15u'); // nível 2
-      k.feed('\x1b[<u'); // volta pro nível 1 (ainda ativo)
+      k.feed('\x1b[>1u'); // Level 1.
+      k.feed('\x1b[>15u'); // Level 2.
+      k.feed('\x1b[<u'); // Return to active level 1.
       expect(k.active, isTrue);
-      k.feed('\x1b[<u'); // remove o último
+      k.feed('\x1b[<u'); // Remove the last level.
       expect(k.active, isFalse);
     });
   });
 
   group('ShiftEnterInputHandler', () {
-    test('Shift+Enter sem kitty -> line feed', () {
+    test('Shift+Enter without kitty -> line feed', () {
       final k = KittyKeyboardTracker();
       final h = ShiftEnterInputHandler(k);
       expect(h(_event(TerminalKey.enter, shift: true)), '\n');
     });
 
-    test('Shift+Enter com kitty ativo -> CSI 13 ; 2 u', () {
+    test('Shift+Enter with kitty active -> CSI 13 ; 2 u', () {
       final k = KittyKeyboardTracker()..feed('\x1b[>7u');
       final h = ShiftEnterInputHandler(k);
       expect(h(_event(TerminalKey.enter, shift: true)), '\x1b[13;2u');
     });
 
-    test('Enter puro (sem shift) cai pro handler padrão (null)', () {
-      final h = ShiftEnterInputHandler(KittyKeyboardTracker());
-      expect(h(_event(TerminalKey.enter)), isNull);
-    });
+    test(
+      'plain Enter without shift falls through to default handler (null)',
+      () {
+        final h = ShiftEnterInputHandler(KittyKeyboardTracker());
+        expect(h(_event(TerminalKey.enter)), isNull);
+      },
+    );
 
-    test('Ctrl+Shift+Enter e Alt+Shift+Enter não são tratados aqui', () {
+    test('Ctrl+Shift+Enter and Alt+Shift+Enter are not handled here', () {
       final h = ShiftEnterInputHandler(KittyKeyboardTracker());
       expect(h(_event(TerminalKey.enter, shift: true, ctrl: true)), isNull);
       expect(h(_event(TerminalKey.enter, shift: true, alt: true)), isNull);
     });
 
-    test('outras teclas com shift não são tratadas aqui', () {
+    test('other shifted keys are not handled here', () {
       final h = ShiftEnterInputHandler(KittyKeyboardTracker());
       expect(h(_event(TerminalKey.keyA, shift: true)), isNull);
     });

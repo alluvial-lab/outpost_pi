@@ -18,19 +18,17 @@ import 'package:cockpit/app/cockpit/ui/widgets/media_view.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
-// SelectionArea (Material) envolve o scroll do markdown → seleção + auto-scroll.
+// Material's SelectionArea wraps Markdown scrolling for selection auto-scroll.
 import 'package:flutter/material.dart' show SelectionArea;
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Corpo do viewer de arquivo: markdown / texto / imagem / A/V.
+/// Present Markdown, text, images, or audio/video within a file tab.
 ///
-/// Texto e markdown são **editáveis**: uma toolbar fina no topo alterna entre
-/// visualizar (highlight read-only / markdown renderizado) e editar (código
-/// editável com gutter). Salvar é `Cmd+S` (ou o botão); o ponto sujo (●) sinaliza
-/// alterações não gravadas. [onSave] persiste em disco via a VM. Mídia/imagem e
-/// não-suportado seguem read-only, sem toolbar.
+/// Text and Markdown can switch between rendered/read-only and guttered editing.
+/// Cmd+S or the toolbar saves through [onSave], while a dirty dot marks unsaved
+/// changes. Media, images, and unsupported types remain read-only.
 class FileViewer extends StatefulWidget {
   const FileViewer({
     super.key,
@@ -42,15 +40,17 @@ class FileViewer extends StatefulWidget {
 
   final FileViewerSession session;
 
-  /// Grava o conteúdo editado em disco. Retorna `true` no sucesso.
+  /// Persist edited content and report whether the save succeeded.
   final Future<bool> Function(String content) onSave;
 
-  /// `true` enquanto esta é a aba ativa (visível). Repassado ao player A/V, que
-  /// pausa ao virar `false` (plano 46). Tipos não-mídia ignoram.
+  /// Indicate whether this tab is visible.
+  ///
+  /// Audio/video pauses when this becomes false; non-media types ignore it.
   final bool active;
 
-  /// `true` quando esta aba está ativa **e** a pane focada — aí o editor recebe
-  /// o foco do teclado automaticamente (digitar direto ao selecionar a aba).
+  /// Indicate that this tab is active in the focused pane.
+  ///
+  /// The editor then receives keyboard focus automatically.
   final bool focused;
 
   @override
@@ -58,7 +58,7 @@ class FileViewer extends StatefulWidget {
 }
 
 class _FileViewerState extends State<FileViewer> {
-  /// Modo de edição ligado (texto) / fonte exibida (markdown). Desligado = ver.
+  /// Track text editing or Markdown source mode; false means preview.
   bool _editing = false;
   bool _dirty = false;
   bool _saving = false;
@@ -68,15 +68,16 @@ class _FileViewerState extends State<FileViewer> {
   CodeEditingController? _ctrl;
   final _focus = FocusNode();
 
-  /// LSP: VM (captado uma vez), assinatura de diagnostics e debounce do
-  /// didChange. `_diagnostics` espelha o último batch deste documento — vale pro
-  /// editor (via `_ctrl`) **e** pro viewer read-only.
+  /// Own the cached LSP ViewModel, diagnostic subscription, and didChange debounce.
+  ///
+  /// `_diagnostics` mirrors the latest document batch for both the editor and
+  /// read-only viewer.
   CockpitViewModel? _vm;
   StreamSubscription<LspDiagnosticsBatch>? _diagSub;
   Timer? _lspDebounce;
   List<LspDiagnostic> _diagnostics = const <LspDiagnostic>[];
 
-  /// Texto editável da view atual, ou `null` se o tipo não é editável.
+  /// Return current editable text, or `null` for a non-editable type.
   String? get _editableText => switch (widget.session.view) {
     FileViewText(:final text) => text,
     FileViewMarkdown(:final text) => text,
@@ -84,7 +85,7 @@ class _FileViewerState extends State<FileViewer> {
     _ => null,
   };
 
-  /// Linguagem pro highlight: extensão (texto), `markdown` ou `xml` (svg).
+  /// Resolve highlighting language from text extension, Markdown, or SVG XML.
   String? get _language => switch (widget.session.view) {
     FileViewText(:final language) => language,
     FileViewMarkdown() => 'markdown',
@@ -92,8 +93,9 @@ class _FileViewerState extends State<FileViewer> {
     _ => null,
   };
 
-  /// Tem modo renderizado além da fonte (markdown/svg) → mostra o switch
-  /// Preview/Source. Demais textos/códigos entram direto em edição (sem toggle).
+  /// Indicate whether Markdown or SVG offers preview in addition to source.
+  ///
+  /// Other text/code enters editing directly without a Preview/Source toggle.
   bool get _hasPreview =>
       widget.session.view is FileViewMarkdown ||
       widget.session.view is FileViewSvg;
@@ -107,16 +109,17 @@ class _FileViewerState extends State<FileViewer> {
       _baseline = text;
       _ctrl = CodeEditingController(text: text, language: _language)
         ..addListener(_onCtrlChanged);
-      // Expõe o save do buffer à sessão pro "Salvar e fechar" (limpo no dispose).
+      // Expose buffer save to the session for "Save and close"; clear on dispose.
       widget.session.saveDraft = _save;
       _startLsp(text);
     }
-    // Aba já nasce focada (ex.: arquivo recém-aberto) → foca o editor.
+    // Focus the editor when a newly opened tab starts focused.
     _focusEditorIfActive();
   }
 
-  /// Abre o documento no LSP e passa a escutar os diagnostics deste arquivo.
-  /// No-op para linguagens sem servidor (o pool degrada graciosamente).
+  /// Open the document in LSP and subscribe to its diagnostics.
+  ///
+  /// No-ops for languages without a server because the pool degrades gracefully.
   void _startLsp(String text) {
     final vm = context.read<CockpitViewModel>();
     _vm = vm;
@@ -133,8 +136,8 @@ class _FileViewerState extends State<FileViewer> {
   @override
   void didUpdateWidget(FileViewer old) {
     super.didUpdateWidget(old);
-    
-    // Se o path mudou (preview reutilizado), força rebuild total.
+
+    // Force a full rebuild when a reused preview changes path.
     if (widget.session.path != _lastObservedPath) {
       final oldPath = _lastObservedPath;
       _lastObservedPath = widget.session.path;
@@ -145,13 +148,13 @@ class _FileViewerState extends State<FileViewer> {
       _ctrl?.dispose();
       _ctrl = null;
 
-      // Troca o documento do LSP: fecha o antigo, abre o novo.
+      // Close the old LSP document before opening the new one.
       if (oldPath != null) unawaited(_vm?.lspCloseDocument(oldPath));
       _diagSub?.cancel();
       _diagSub = null;
       _diagnostics = const <LspDiagnostic>[];
 
-      // Recria o controller com o novo conteúdo.
+      // Recreate the controller with new content.
       final text = _editableText;
       if (text != null) {
         _baseline = text;
@@ -162,41 +165,43 @@ class _FileViewerState extends State<FileViewer> {
       } else {
         widget.session.saveDraft = null;
       }
-      // Força rebuild.
+      // Force a rebuild.
       setState(() {});
       return;
     }
 
     final text = _editableText;
-    // Tipo deixou de ser editável (raro) → sai do modo edição.
+    // Exit editing if the type unexpectedly becomes non-editable.
     if (text == null) {
       if (_editing) setState(() => _editing = false);
       return;
     }
-    // Recarga externa (watcher) sobre conteúdo **não** sujo → sincroniza o campo.
-    // Com edições pendentes, mantém o buffer do usuário (last-write-wins no save).
-    // Adia para pós-build: evitar setState durante build (setDirty -> notifyListeners).
+    // Synchronize clean content after an external watcher reload. Preserve a
+    // user's dirty buffer for last-write-wins on save. Defer until post-build to
+    // avoid setState during build through setDirty -> notifyListeners.
     if (!_dirty && _ctrl != null && _ctrl!.text != text) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !_dirty && _ctrl != null && _ctrl!.text != text) {
           _ctrl!.text = text;
           _baseline = text;
-          // O disco mudou (agente editou) → mantém o LSP em sync.
+          // Keep LSP synchronized after an agent changes the file on disk.
           unawaited(_vm?.lspChangeDocument(widget.session.path, text));
         }
       });
     }
-    // Virou a aba focada (seleção da tab) → joga o foco no editor.
+    // Focus the editor when tab selection makes this the focused tab.
     if (widget.focused && !old.focused) _focusEditorIfActive();
   }
 
-  /// `true` quando há editor visível (texto/código sempre; markdown/svg só em
-  /// Source). Markdown/svg em preview não têm campo pra focar.
+  /// Report whether an editor is visible and can receive focus.
+  ///
+  /// Text/code always qualifies; Markdown/SVG qualifies only in Source mode.
   bool get _editingNow => _editableText != null && (!_hasPreview || _editing);
 
-  /// Devolve o foco ao editor após uma ação da toolbar (Format/Save/Discard),
-  /// pra continuar digitando sem reclicar no campo. Post-frame porque a ação
-  /// pode disparar rebuild (ex.: saving) que rouba o foco recém-pedido.
+  /// Restore editor focus after Format, Save, or Discard.
+  ///
+  /// Runs post-frame because toolbar actions can rebuild and steal a newly
+  /// requested focus.
   void _refocusEditor() {
     if (!mounted || _ctrl == null || !_editingNow) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -204,7 +209,7 @@ class _FileViewerState extends State<FileViewer> {
     });
   }
 
-  /// Foca o campo do editor se esta aba está focada e em modo edição.
+  /// Focus the editor only when this tab is focused and editing.
   void _focusEditorIfActive() {
     if (!widget.focused || !_editingNow || _ctrl == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -226,7 +231,7 @@ class _FileViewerState extends State<FileViewer> {
 
   void _onCtrlChanged() {
     _updateDirty(_ctrl != null && _ctrl!.text != _baseline);
-    // Edição do usuário → notifica o LSP (debounced p/ juntar rajada de teclas).
+    // Debounce user edits before notifying LSP to coalesce typing bursts.
     final ctrl = _ctrl;
     if (ctrl == null) return;
     _lspDebounce?.cancel();
@@ -235,7 +240,7 @@ class _FileViewerState extends State<FileViewer> {
     });
   }
 
-  /// Atualiza o estado sujo local **e** o da sessão (indicador da aba + dialog).
+  /// Synchronize dirty state locally and with the session's tab/dialog indicators.
   void _updateDirty(bool value) {
     if (value != _dirty) setState(() => _dirty = value);
     widget.session.setDirty(value);
@@ -243,7 +248,7 @@ class _FileViewerState extends State<FileViewer> {
 
   void _toggleEditing() {
     setState(() => _editing = !_editing);
-    // Ao iniciar a edição, transforma preview em aba normal.
+    // Convert a preview into a normal tab when editing starts.
     if (_editing) {
       widget.session.pin();
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -255,13 +260,14 @@ class _FileViewerState extends State<FileViewer> {
   void _discard() {
     final ctrl = _ctrl;
     if (ctrl == null || !_dirty || _saving) return;
-    // Volta o buffer ao último conteúdo salvo (baseline) e zera o estado sujo.
+    // Restore the last saved baseline and clear dirty state.
     ctrl.text = _baseline;
     _updateDirty(false);
   }
 
-  /// Comando de formatador externo (`%FILE%`) configurado pra linguagem deste
-  /// arquivo, ou `null`. Lido das Configurações (app-scoped).
+  /// Resolve the external `%FILE%` formatter configured for this language.
+  ///
+  /// Returns `null` when Settings defines none.
   String? _externalFormatter() {
     final lang = languageForPath(widget.session.path)?.id;
     if (lang == null) return null;
@@ -271,9 +277,10 @@ class _FileViewerState extends State<FileViewer> {
   bool get _formatOnSave =>
       context.read<SettingsController>().settings.formatOnSave;
 
-  /// Grava o buffer em disco. Retorna `true` no sucesso (ou se nada a salvar).
-  /// Com **format-on-save** ligado: formatadores de buffer (JSON/LSP) rodam
-  /// **antes** de gravar; formatador externo roda **depois** (file-based) e relê.
+  /// Persist the buffer and report success, including when nothing needs saving.
+  ///
+  /// With format-on-save, JSON/LSP buffer formatters run before writing. External
+  /// file-based formatters run after writing and trigger a reread.
   Future<bool> _save() async {
     final ctrl = _ctrl;
     if (ctrl == null) return false;
@@ -282,7 +289,7 @@ class _FileViewerState extends State<FileViewer> {
     final external = _externalFormatter();
     final formatOnSave = _formatOnSave;
 
-    // Buffer-format antes de gravar (só quando não há formatador externo).
+    // Format the buffer before writing only when no external formatter exists.
     if (formatOnSave && external == null) {
       final formatted = await _formatBuffer();
       if (!mounted) return false;
@@ -301,21 +308,23 @@ class _FileViewerState extends State<FileViewer> {
       _updateDirty(false);
     }
 
-    // Formatador externo: roda no arquivo já gravado e relê.
+    // Run the external formatter on the written file, then reread it.
     if (ok && formatOnSave && external != null) {
       await _runExternalFormatter(external);
     }
     return ok;
   }
 
-  /// Formata sob demanda (⇧⌘F). Externo (file-based) tem precedência; senão
-  /// JSON via stdlib / LSP no buffer.
+  /// Format on demand with ⇧⌘F.
+  ///
+  /// A file-based external formatter takes precedence; otherwise format JSON
+  /// through the standard library or use LSP on the buffer.
   Future<void> _format() async {
     final ctrl = _ctrl;
     if (ctrl == null || _saving) return;
     final external = _externalFormatter();
     if (external != null) {
-      // File-based: grava o buffer atual, roda o formatador, relê.
+      // For file-based formatting, write the current buffer, run, and reread.
       final ok = await _save();
       if (!ok || !mounted) return;
       await _runExternalFormatter(external);
@@ -326,8 +335,10 @@ class _FileViewerState extends State<FileViewer> {
     _applyToBuffer(formatted);
   }
 
-  /// Formata o conteúdo atual **no buffer** e devolve o texto (sem gravar):
-  /// JSON via stdlib, demais via LSP. `null` se não há o que formatar.
+  /// Format current buffer content without writing it.
+  ///
+  /// Uses the standard library for JSON and LSP otherwise. Returns `null` when
+  /// no formatter can produce content.
   Future<String?> _formatBuffer() async {
     final ctrl = _ctrl;
     if (ctrl == null) return null;
@@ -337,7 +348,7 @@ class _FileViewerState extends State<FileViewer> {
       try {
         return '${const JsonEncoder.withIndent('  ').convert(jsonDecode(ctrl.text))}\n';
       } catch (_) {
-        return null; // JSON inválido
+        return null; // Invalid JSON.
       }
     }
     final vm = _vm;
@@ -347,14 +358,14 @@ class _FileViewerState extends State<FileViewer> {
     return applyTextEdits(ctrl.text, edits);
   }
 
-  /// Roda o formatador externo no arquivo em disco e relê o buffer.
+  /// Run the external formatter on disk and reread the buffer.
   Future<void> _runExternalFormatter(String command) async {
     final result = await runFormatterCommand(command, widget.session.path);
     if (!mounted) return;
     await result.fold((_) => _reloadFromDisk(), (_) async {});
   }
 
-  /// Relê o conteúdo do disco para o buffer (após o formatador externo).
+  /// Reload disk content into the buffer after external formatting.
   Future<void> _reloadFromDisk() async {
     try {
       final fresh = await File(widget.session.path).readAsString();
@@ -368,7 +379,7 @@ class _FileViewerState extends State<FileViewer> {
     } catch (_) {}
   }
 
-  /// Aplica [text] no buffer preservando o cursor (best-effort).
+  /// Apply [text] to the buffer while preserving the cursor when possible.
   void _applyToBuffer(String text) {
     final ctrl = _ctrl;
     if (ctrl == null) return;
@@ -385,8 +396,7 @@ class _FileViewerState extends State<FileViewer> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final editable = _editableText != null;
-    // Texto/código sem preview edita direto; markdown/svg só editam quando o
-    // switch está em "Source".
+    // Text/code without preview edits directly; Markdown/SVG edits only in Source.
     final editingNow = editable && (!_hasPreview || _editing);
 
     final Widget body = switch (widget.session.view) {
@@ -449,9 +459,9 @@ class _FileViewerState extends State<FileViewer> {
       ),
     );
 
-    // Cmd+S / Ctrl+S envolve o viewer **inteiro** (editor + footer): o markdown/
-    // svg entra em Source pelo botão do footer, então o foco fica fora do campo;
-    // wrapping só o editor deixaria o atalho sem alcance (era o bug do markdown).
+    // Wrap the entire viewer in Cmd+S/Ctrl+S handling. Markdown/SVG enters Source
+    // through the footer while focus remains outside the field, so wrapping only
+    // the editor would make the shortcut unreachable.
     if (!editable) return content;
     return CallbackShortcuts(
       bindings: {
@@ -483,10 +493,11 @@ class _FileViewerState extends State<FileViewer> {
   }
 }
 
-/// Footer fino do viewer editável. Markdown/svg ([hasPreview]) ganham o switch
-/// Preview↔Source; texto/código não têm switch e editam direto. Save/Discard
-/// aparecem sempre que se está editando ([editing]); o ponto sujo sinaliza
-/// alterações não gravadas.
+/// Provide compact controls beneath editable file content.
+///
+/// Markdown/SVG with [hasPreview] gains Preview/Source switching, while text/code
+/// edits directly. Save and Discard appear during [editing], with a dirty dot for
+/// unsaved changes.
 class _Toolbar extends StatelessWidget {
   const _Toolbar({
     required this.hasPreview,
@@ -500,13 +511,13 @@ class _Toolbar extends StatelessWidget {
     required this.onFormat,
   });
 
-  /// Tem modo renderizado (markdown/svg) → mostra o switch Preview/Source.
+  /// Indicate whether Markdown/SVG has a rendered Preview/Source switch.
   final bool hasPreview;
 
-  /// Está no editor (fonte para markdown/svg; sempre para texto/código).
+  /// Indicate editor mode: source for Markdown/SVG, always true for text/code.
   final bool editing;
 
-  /// Está mostrando o render (só faz sentido com [hasPreview]).
+  /// Indicate rendered preview mode when [hasPreview] applies.
   final bool previewing;
   final bool dirty;
   final bool saving;
@@ -580,7 +591,7 @@ class _Toolbar extends StatelessWidget {
   }
 }
 
-/// Switch de dois estados (ver | editar). Clicar em qualquer lado alterna.
+/// Toggle between two view and edit states by clicking either side.
 class _Segmented extends StatelessWidget {
   const _Segmented({
     required this.leftLabel,
@@ -688,9 +699,10 @@ class _Scroll extends StatelessWidget {
   }
 }
 
-/// Visualizador read-only de texto/código com **gutter de número de linha** à
-/// esquerda (fixo na horizontal) e **scroll horizontal** pro conteúdo quando a
-/// linha é longa. O texto segue selecionável; os números, não.
+/// Present selectable read-only text/code beside a fixed line-number gutter.
+///
+/// Long lines scroll horizontally while line numbers remain fixed and
+/// non-selectable.
 class _TextView extends StatefulWidget {
   const _TextView({
     required this.text,
@@ -700,10 +712,10 @@ class _TextView extends StatefulWidget {
 
   final String text;
 
-  /// Linguagem (extensão do arquivo) pro syntax highlight; `null` = sem dica.
+  /// Supply an extension-based highlighting language, or `null` for no hint.
   final String? language;
 
-  /// Diagnostics do LSP a sublinhar (mesmo do editor).
+  /// Supply LSP diagnostics to underline consistently with the editor.
   final List<LspDiagnostic> diagnostics;
 
   @override
@@ -724,13 +736,13 @@ class _TextViewState extends State<_TextView> {
   @override
   Widget build(BuildContext context) {
     final typo = context.typo;
-    // O viewer de código segue o tema de **syntax** (fundo próprio), não o tema
-    // do app — assim One Dark/Dracula ficam escuros mesmo no app em light. O
-    // tamanho vem do `typo.mono` (configurável em Configurações → Código).
+    // Use the syntax theme's own background rather than the app theme so One
+    // Dark/Dracula remain dark in light mode. Font size comes from configurable
+    // `typo.mono` under Settings → Code.
     final syntax = context.syntax;
     final codeStyle = typo.mono.copyWith(color: syntax.base);
-    // Spans coloridos (highlight.js → tema). `null` quando não vale destacar
-    // (sem linguagem / arquivo grande) → renderiza texto puro.
+    // Render highlight.js/theme spans when appropriate; fall back to plain text
+    // when language is unknown or the file is too large.
     final codeSpan = buildCodeSpan(
       context,
       source: widget.text,
@@ -742,14 +754,13 @@ class _TextViewState extends State<_TextView> {
       color: syntax.base.withValues(alpha: 0.4),
     );
 
-    // Conta linhas pelos '\n' (arquivo sem newline final = última linha conta;
-    // arquivo vazio = 1 linha). Mesma métrica do código → gutter alinha 1:1.
+    // Count newline separators while retaining a final unterminated line and one
+    // line for an empty file, matching code metrics for gutter alignment.
     final lineCount = '\n'.allMatches(widget.text).length + 1;
 
-    // Dois scrollbars aninhados: a barra **horizontal** envolve tudo, então fica
-    // **pinada no rodapé do viewport** (não some ao fim do conteúdo). O scroll
-    // horizontal é aninhado dentro do vertical (`depth == 1`), por isso o
-    // `notificationPredicate` filtra por profundidade. A vertical fica na borda.
+    // Nest horizontal scrolling inside vertical scrolling. The outer horizontal
+    // scrollbar stays pinned at the viewport bottom. Its notifications arrive at
+    // depth 1, so notificationPredicate filters by depth; vertical stays at edge.
     return ColoredBox(
       color: syntax.background,
       child: Scrollbar(
@@ -765,7 +776,7 @@ class _TextViewState extends State<_TextView> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Gutter — números à direita, fixo (não rola na horizontal).
+                // Right-align fixed gutter numbers outside horizontal scrolling.
                 Padding(
                   padding: const EdgeInsets.only(left: 14, right: 14),
                   child: Column(
@@ -777,7 +788,7 @@ class _TextViewState extends State<_TextView> {
                   ),
                 ),
                 Container(width: 1, color: syntax.base.withValues(alpha: 0.15)),
-                // Código — rola na horizontal quando a linha estoura; selecionável.
+                // Keep code selectable and horizontally scroll long lines.
                 Expanded(
                   child: SingleChildScrollView(
                     controller: _horizontal,
@@ -797,8 +808,10 @@ class _TextViewState extends State<_TextView> {
   }
 }
 
-/// Render do SVG a partir da **fonte** (texto), não do caminho — assim o preview
-/// reflete o conteúdo salvo e atualiza após cada save (sem cache de arquivo).
+/// Render SVG from source text rather than a file path.
+///
+/// This keeps preview aligned with saved content after every save without a file
+/// cache.
 class _SvgPreview extends StatelessWidget {
   const _SvgPreview({required this.source});
   final String source;
