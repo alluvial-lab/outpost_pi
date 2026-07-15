@@ -7,9 +7,10 @@ import 'package:cockpit/app/cockpit/ui/session/terminal_input.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:xterm/xterm.dart';
 
-/// Uma aba de terminal: um shell num PTY ([TerminalGateway]) ligado a um
-/// emulador [Terminal] do xterm. O `TerminalView` (na PaneView) renderiza
-/// `terminal`. Mata o PTY no `dispose` (sem órfão).
+/// Own a terminal tab that connects a PTY shell to an xterm [Terminal].
+///
+/// `TerminalView` renders [terminal], while this session owns the gateway and
+/// kills the PTY during [dispose] so no child process is orphaned.
 class TerminalSession extends PaneItem {
   TerminalSession({
     required this.id,
@@ -19,9 +20,8 @@ class TerminalSession extends PaneItem {
     String? title,
   }) : _gateway = gateway,
        _title = title ?? 'New terminal' {
-    // O `ShiftEnterInputHandler` (antes do padrão) faz Shift+Enter virar quebra
-    // de linha nos harnesses (claude, codex, pi) em vez de submeter; ele lê o
-    // estado do kitty keyboard protocol que `_kitty` rastreia pela saída do PTY.
+    // Handle Shift+Enter before xterm's default so TUI harnesses receive a line
+    // break instead of submit; `_kitty` tracks protocol state from PTY output.
     terminal = Terminal(
       maxLines: 10000,
       inputHandler: CascadeInputHandler([
@@ -30,27 +30,26 @@ class TerminalSession extends PaneItem {
       ]),
     );
 
-    // Sobe o shell e liga os dois lados. O `.cast<List<int>>()` re-vincula o
-    // tipo do stream (o PTY emite Uint8List) para o `utf8.decoder` aceitar e
-    // decodificar em streaming (trata multibyte partido entre chunks).
+    // Start the shell and connect both directions. The cast adapts the PTY's
+    // Uint8List stream for streaming UTF-8 decoding across chunk boundaries.
     _gateway.start(workingDirectory: workingDirectory, rows: 25, columns: 80);
     _sub = _gateway.output
         .cast<List<int>>()
         .transform(const Utf8Decoder(allowMalformed: true))
         .listen((data) {
-          _kitty.feed(data); // observa push/pop do kitty antes de renderizar.
+          _kitty.feed(data); // Observe kitty push/pop before rendering.
           terminal.write(data);
         });
     terminal.onOutput = (data) => _gateway.write(utf8.encode(data));
     terminal.onResize = (width, height, pixelWidth, pixelHeight) =>
         _gateway.resize(height, width);
-    // Programas mudam o título da janela via OSC 0/2 (ex.: shell mostra o cwd,
-    // `vim`/`ssh` mostram o arquivo/host). Refletimos isso no nome da aba.
+    // Reflect OSC 0/2 window titles from shells, editors, or SSH in the tab.
     terminal.onTitleChange = (osc) => rename(_shortTitle(osc));
   }
 
-  /// Encurta títulos longos pra caber melhor na aba. Caminhos viram o último
-  /// segmento; `~` é mantido; o resto vai como veio (a aba ainda faz ellipsis).
+  /// Shorten path-like window titles to their last segment for the tab.
+  ///
+  /// Preserve `~` and non-path titles; the tab still applies ellipsis.
   String _shortTitle(String raw) {
     final t = raw.trim();
     if (t.isEmpty || !t.contains('/')) return t;
@@ -81,27 +80,25 @@ class TerminalSession extends PaneItem {
     notifyListeners();
   }
 
-  /// Insere [text] diretamente no PTY como se o usuário tivesse digitado/colado
-  /// (ex.: caminho de arquivo arrastado até o terminal).
+  /// Insert [text] directly into the PTY as typed or pasted input.
+  ///
+  /// This supports inputs such as a file path dropped onto the terminal.
   void insertText(String text) => _gateway.write(utf8.encode(text));
 
-  /// Cola do clipboard no terminal, com suporte a **imagem**.
+  /// Paste clipboard text or forward an image paste to the foreground harness.
   ///
-  /// Se há uma imagem no clipboard, manda o byte de Ctrl+V (`\x16`) pro harness
-  /// em primeiro plano (claude/codex/pi) — todos eles, ao receber `\x16`, leem a
-  /// imagem do clipboard e a anexam (claude mostra `[Image #1]`, o pi grava num
-  /// `.png` temporário). Sem imagem, faz o paste de texto normal (respeitando o
-  /// bracketed paste mode).
+  /// For an image, write the Ctrl+V byte (`\x16`) so Claude, Codex, or Pi reads
+  /// and attaches the image from the clipboard. Otherwise use xterm's normal
+  /// text paste so bracketed-paste mode is respected.
   ///
-  /// Por que existe: o `TerminalView` só cola texto (via `Clipboard`, que não lê
-  /// imagem) e, no macOS, o caminho de IME engole o Ctrl+V cru (vira `pageDown`),
-  /// então o `\x16` nunca era gerado e a imagem nunca chegava ao harness.
+  /// This bypasses `TerminalView`'s text-only clipboard path and the macOS IME
+  /// path that converts raw Ctrl+V to `pageDown` before it reaches the PTY.
   Future<void> pasteFromClipboard() async {
     final image = await Pasteboard.image;
     if (image != null && image.isNotEmpty) {
       _gateway.write(const [
         0x16,
-      ]); // Ctrl+V: o harness lê a imagem do clipboard.
+      ]); // Ctrl+V tells the foreground harness to read the clipboard image.
       return;
     }
     final text = await Pasteboard.text;

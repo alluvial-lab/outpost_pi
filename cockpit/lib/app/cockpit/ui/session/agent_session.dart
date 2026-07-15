@@ -19,12 +19,14 @@ import 'package:cockpit/app/cockpit/ui/session/agent_process_controller.dart';
 import 'package:cockpit/app/cockpit/ui/session/pane_item.dart';
 import 'package:flutter/foundation.dart';
 
+/// Preserve the legacy lifecycle labels consumed by existing agent-tab widgets.
 enum AgentStatus { empty, booting, idle, crashed }
 
-/// Controlador de UM agente (uma aba do multiplexador). Dono de um
-/// processo RPC próprio (criado pela fábrica), do transcript e dos
-/// controles (modelo/effort/contexto/aprovação). `ChangeNotifier`: cada pane
-/// escuta só a sua sessão, então um agente em streaming rebuilda só o seu pane.
+/// Own one agent tab, its RPC process, transcript, and interactive controls.
+///
+/// Each pane listens only to its own [AgentSession], so streaming updates
+/// rebuild that pane rather than the whole workspace. The session delegates
+/// process effects to [AgentProcessController] and projects them for the UI.
 class AgentSession extends PaneItem {
   AgentSession({
     required this.id,
@@ -39,6 +41,9 @@ class AgentSession extends PaneItem {
     _signalSub = _process.signals.listen(_onSignal);
   }
 
+  /// Restore an agent session from a persisted agent-tab descriptor.
+  ///
+  /// Throws [ArgumentError] when [tab] is not an agent descriptor.
   factory AgentSession.fromWorkspaceTab({
     required WorkspaceTab tab,
     required String projectId,
@@ -68,66 +73,71 @@ class AgentSession extends PaneItem {
   @override
   final String projectId;
 
-  /// Disparado quando o agente fecha um turno (`agent_end`). A VM usa pra
-  /// notificar o workspace.
+  /// Notify the workspace when the agent closes a turn (`agent_end`).
   VoidCallback? onTurnEnd;
 
-  /// Disparado quando o descritor persistível deste agente muda.
-  /// A projeção usa isso para atualizar o WorkspaceDocument sem esperar o fim
-  /// de turno: título, sessão restaurada/capturada e preferências entram aqui.
+  /// Notify the workspace when this agent's persistable descriptor changes.
+  ///
+  /// This lets title, session path, and preference changes persist without
+  /// waiting for the next turn to finish.
   VoidCallback? onProjectionChanged;
 
-  /// Foca o input do composer deste agente. Registrado pelo `AgentComposer`
-  /// (quando montado) e disparado pelo atalho ⌘L/Ctrl+L.
+  /// Focus this agent's composer.
+  ///
+  /// `AgentComposer` registers the callback while mounted; the global
+  /// Command-L/Ctrl-L shortcut invokes it.
   VoidCallback? requestComposerFocus;
 
-  /// Pasta (subpasta do projeto) onde o `pi --mode rpc` roda.
+  /// Identify the project directory where `pi --mode rpc` runs.
   @override
   final String workingDirectory;
 
-  /// Verdadeiro só para a aba placeholder "New" criada pelo WorkspaceDocument.
-  /// Um agente real ainda pode estar com lifecycle `empty` antes do boot começar;
-  /// persistência deve usar este marcador, não o estado do processo.
+  /// Distinguish a persisted "New" placeholder from a real unbooted agent.
+  ///
+  /// A real agent may also have an `empty` lifecycle before boot, so persistence
+  /// must use this marker rather than process state.
   final bool isPlaceholder;
 
-  /// Conectar ao relay ao iniciar (injetado em `OUTPOST_PI_DIRECT_CONFIG`).
+  /// Request relay connection at startup through `OUTPOST_PI_DIRECT_CONFIG`.
   bool autoStartRelay;
 
-  /// Estado atual da conexão do relay (atualizado por `outpost-pi:relay-state`).
+  /// Track relay connectivity reported by `outpost-pi:relay-state`.
   RelayStatus relayStatus = RelayStatus.disconnected;
 
-  /// ID do modelo que o usuário escolheu para este agente (ex: `'claude-sonnet-4-6'`).
-  /// `null` = nunca foi alterado → pi decide o default.
-  /// Persistido no layout; aplicado automaticamente após cada boot via [_loadControls].
+  /// Persist the model selected for this agent across boots.
+  ///
+  /// `null` means the user has never overridden Pi's default. [_loadControls]
+  /// reapplies a stored id after boot.
   String? preferredModelId;
 
-  /// Nível de effort preferido. Persistido e reaplicado após cada boot.
+  /// Persist and reapply the preferred thinking level after each boot.
   ThinkingLevel preferredThinking = ThinkingLevel.off;
 
   final AgentProcessController _process;
   StreamSubscription<AgentSessionSignal>? _signalSub;
 
-  /// Caminho do arquivo de sessão do pi (`~/.pi/agent/sessions/<cwd>/*.jsonl`)
-  /// que pertence a este agente. Capturado pela VM no 1º fim de turno e usado
-  /// pra reanexar a conversa ao restaurar o workspace.
+  /// Track the Pi session file owned by this agent.
+  ///
+  /// The ViewModel captures the path after the first turn and uses it to
+  /// reattach the conversation when restoring the workspace.
   String? sessionPath;
 
-  /// Sessões que já existiam na pasta **antes** deste agente bootar — a VM usa
-  /// pra descobrir, por diferença, qual arquivo o pi criou pra ele.
+  /// Snapshot session paths that existed before this agent booted.
+  ///
+  /// The ViewModel uses the difference after a turn to identify the new file.
   Set<String>? sessionBaseline;
 
   String _title;
   AgentStatus _status = AgentStatus.empty;
 
-  /// `true` entre o `sendPrompt` e o `RpcAgentStart`: a mensagem foi enviada
-  /// mas o agente ainda não confirmou que iniciou o turno. Bloqueia novo envio
-  /// sem acender o indicador de "trabalhando" (que só aparece com AgentStart).
+  /// Block duplicate sends between `sendPrompt` and `RpcAgentStart` without
+  /// showing a working indicator before Pi confirms the turn.
   bool _pendingSend = false;
 
-  /// Textos de mensagens enviadas **localmente** que já entraram otimisticamente
-  /// no transcript e estão aguardando o eco `message_start:user` do pi. Quando o
-  /// eco chega e bate com uma entrada daqui, ignoramos (senão duplica a bolha).
-  /// Mensagens do app/mesh não passam por aqui → viram bolha normalmente.
+  /// Track locally submitted messages awaiting Pi's `message_start:user` echo.
+  ///
+  /// Matching echoes are ignored because the optimistic transcript already
+  /// contains them. App and mesh messages are not tracked and remain visible.
   final List<String> _awaitingUserEcho = <String>[];
 
   AgentTurnProjection _turn = AgentTurnProjection.idle;
@@ -143,12 +153,12 @@ class AgentSession extends PaneItem {
   ThinkingLevel _thinking = ThinkingLevel.off;
   ContextUsage? _ctx;
 
-  /// `true` quando o agente fechou um turno e o usuário ainda não olhou — move
-  /// a evidência na aba e conta pro badge do workspace.
+  /// Track a completed turn the user has not yet viewed for tab and workspace badges.
   bool _unseenFinish = false;
   @override
   bool get unseenFinish => _unseenFinish;
 
+  /// Mark the latest completed turn as unseen and notify the owning pane.
   void markUnseen() {
     if (_unseenFinish) return;
     _unseenFinish = true;
@@ -162,8 +172,7 @@ class AgentSession extends PaneItem {
     notifyListeners();
   }
 
-  /// Pedidos interativos da extensão (`extension_ui_request`) ainda abertos,
-  /// por `id` — pra marcar o card como resolvido ao responder.
+  /// Track unresolved `extension_ui_request` cards by id until they are answered.
   final Map<String, UiRequestEntry> _openUiRequests =
       <String, UiRequestEntry>{};
 
@@ -195,6 +204,7 @@ class AgentSession extends PaneItem {
 
   AgentStatus get status => projection.lifecycle.toLegacyStatus();
 
+  /// Snapshot live identity, session, relay, and control preferences for persistence.
   WorkspaceTab workspaceDescriptor({required String relativeSubpath}) =>
       WorkspaceTab.agent(
         id: id,
@@ -226,15 +236,12 @@ class AgentSession extends PaneItem {
 
   // ---- lifecycle ------------------------------------------------------------
 
-  /// Sobe o `pi --mode rpc` na [workingDirectory] e começa a ouvir o stream.
+  /// Start `pi --mode rpc` in [workingDirectory] and project its event stream.
   ///
-  /// [environment] é fundido com o ambiente do processo pai — use para injetar
-  /// `OUTPOST_PI_DIRECT_CONFIG` sem perder PATH/HOME. Se `null`, herda tudo.
-  ///
-  /// [restoreSessionPath] (opcional) é o caminho completo do `.jsonl` a
-  /// restaurar. Quando presente, passa `--session <id>` ao pi para que ele
-  /// inicie já naquela sessão — sem `switch_session` posterior, evitando a
-  /// re-avaliação dupla do módulo da extensão.
+  /// [environment] is merged with the parent process environment, allowing
+  /// `OUTPOST_PI_DIRECT_CONFIG` injection without losing PATH or HOME. A
+  /// [restoreSessionPath] boots directly into that JSONL session, avoiding a
+  /// later `switch_session` and duplicate extension-module evaluation.
   Future<void> boot({
     Map<String, String>? environment,
     String? restoreSessionPath,
@@ -267,6 +274,10 @@ class AgentSession extends PaneItem {
     notifyListeners();
   }
 
+  /// Submit a prompt optimistically when the process is alive and idle.
+  ///
+  /// Empty prompts are ignored unless they include images. RPC failure is
+  /// appended to the transcript and clears the pending-send gate.
   Future<void> send(
     String message, {
     List<PromptImage> images = const <PromptImage>[],
@@ -275,10 +286,8 @@ class AgentSession extends PaneItem {
     if ((text.isEmpty && images.isEmpty) || !isAlive || isBusy) {
       return;
     }
-    // Balão do usuário: texto + miniaturas das imagens (decodifica o base64
-    // uma vez pra exibir). Status permanece idle até RpcAgentStart confirmar
-    // o início do turno — comandos não-bloqueantes (compact etc.) não devem
-    // acender o indicador de "trabalhando".
+    // Add the user bubble with decoded image thumbnails. Stay idle until
+    // RpcAgentStart confirms a turn so nonblocking commands do not look busy.
     _appendTranscriptEvent(
       CockpitUserMessageSubmitted(
         eventId: _nextTranscriptEventId(),
@@ -289,7 +298,7 @@ class AgentSession extends PaneItem {
         images: [for (final image in images) base64Decode(image.data)],
       ),
     );
-    // Marca pra deduplicar o eco `message_start:user` que o pi vai emitir.
+    // Track the prompt so Pi's later `message_start:user` echo is deduplicated.
     _awaitingUserEcho.add(text);
     _pendingSend = true;
     notifyListeners();
@@ -306,7 +315,7 @@ class AgentSession extends PaneItem {
     });
   }
 
-  /// Interrompe o turno atual (não mata o processo).
+  /// Abort the current turn without killing the agent process.
   Future<void> stop() async {
     final result = await _process.stop();
     result?.fold((_) {}, (error) {
@@ -315,8 +324,9 @@ class AgentSession extends PaneItem {
     });
   }
 
-  /// `/new` — começa uma sessão nova: zera a conversa. O `sessionPath` é
-  /// resetado pra a VM recapturar o novo arquivo de sessão no próximo turno.
+  /// Start a fresh Pi session and clear the current conversation.
+  ///
+  /// Resets [sessionPath] so the ViewModel captures the new file after a turn.
   Future<void> startNewSession() async {
     if (!_process.isRunning || isBusy) return;
     final result = await _process.newSession();
@@ -332,8 +342,8 @@ class AgentSession extends PaneItem {
         sessionPath = null;
         _addInfo('new session');
         notifyListeners();
-        // sessionPath mudou → pede à projeção para salvar o layout agora (sem
-        // esperar o próximo fim de turno, que pode nunca vir antes do app fechar).
+        // Persist the cleared session path now; another turn may not finish
+        // before the application closes.
         _notifyProjectionChanged();
       },
       (error) {
@@ -343,7 +353,7 @@ class AgentSession extends PaneItem {
     );
   }
 
-  /// `/compact` — compacta o contexto da sessão.
+  /// Compact the current session context while the agent is idle.
   Future<void> compact() async {
     if (!_process.isRunning || isBusy) return;
     final result = await _process.compact();
@@ -356,6 +366,7 @@ class AgentSession extends PaneItem {
     unawaited(_refreshStats()); // o contexto mudou
   }
 
+  /// Apply and persist a different model while the agent is idle.
   Future<void> changeModel(PiModel model) async {
     if (!_process.isRunning || isBusy || model == _model) return;
     final result = await _process.setModel(model);
@@ -363,7 +374,7 @@ class AgentSession extends PaneItem {
     result.fold(
       (applied) {
         _model = applied;
-        preferredModelId = applied.id; // persiste a escolha do usuário
+        preferredModelId = applied.id; // Persist the user's selection.
         _notifyProjectionChanged();
       },
       (error) {
@@ -374,6 +385,7 @@ class AgentSession extends PaneItem {
     unawaited(_refreshStats());
   }
 
+  /// Apply and persist a different thinking level while the agent is idle.
   Future<void> changeThinking(ThinkingLevel level) async {
     if (!_process.isRunning || isBusy || level == _thinking) return;
     final result = await _process.setThinkingLevel(level);
@@ -381,7 +393,7 @@ class AgentSession extends PaneItem {
     result.fold(
       (_) {
         _thinking = level;
-        preferredThinking = level; // persiste a escolha do usuário
+        preferredThinking = level; // Persist the user's selection.
         _notifyProjectionChanged();
       },
       (error) {
@@ -391,8 +403,7 @@ class AgentSession extends PaneItem {
     notifyListeners();
   }
 
-  /// Troca de sessão interativamente (picker de histórico) e recarrega o
-  /// transcript. Usa `switch_session` para mudar a sessão no processo pi vivo.
+  /// Switch the live Pi process to a history entry and reload its transcript.
   Future<void> loadHistory(String sessionPath) async {
     if (!_process.isRunning || isBusy) return;
 
@@ -408,9 +419,10 @@ class AgentSession extends PaneItem {
     await _populateTranscript(sessionPath);
   }
 
-  /// Busca as mensagens da sessão atual do pi e substitui o transcript exibido.
-  /// Chamado após boot com `--session <id>` (sem `switch_session`) e após
-  /// [loadHistory] (que já fez o `switch_session`).
+  /// Replace the displayed transcript with messages from a Pi session.
+  ///
+  /// Called after direct `--session` boot or after [loadHistory] has switched
+  /// the live process.
   Future<void> _populateTranscript(String sessionPath) async {
     if (!_process.isRunning) return;
 
@@ -436,6 +448,7 @@ class AgentSession extends PaneItem {
     );
   }
 
+  /// Rename the agent and immediately request workspace persistence.
   void rename(String title) {
     final trimmed = title.trim();
     if (trimmed.isEmpty || trimmed == _title) return;
@@ -444,6 +457,7 @@ class AgentSession extends PaneItem {
     _notifyProjectionChanged();
   }
 
+  /// Persist whether this agent should connect to the relay on its next boot.
   void setAutoStartRelay(bool value) {
     if (autoStartRelay == value) return;
     autoStartRelay = value;
@@ -451,8 +465,7 @@ class AgentSession extends PaneItem {
     _notifyProjectionChanged();
   }
 
-  /// Mata o processo e reseta o status para `crashed`, mas mantém a sessão
-  /// viva na UI. Use antes de chamar `boot()` novamente com nova config.
+  /// Kill the process for a configuration restart while retaining the UI tab.
   Future<void> killForRestart() async {
     final wasAlive = _status == AgentStatus.booting || isAlive;
     await _process.killForRestart();
@@ -462,7 +475,7 @@ class AgentSession extends PaneItem {
     }
   }
 
-  /// Mata o processo limpo e libera o gateway. Chamado ao fechar a aba.
+  /// Kill the process and release all session resources when its tab closes.
   @override
   Future<void> dispose() async {
     await _process.dispose();
@@ -471,14 +484,14 @@ class AgentSession extends PaneItem {
     super.dispose();
   }
 
-  // ---- controles (request/response) -----------------------------------------
+  // ---- Controls (request/response) ------------------------------------------
 
-  /// Liga/desliga/alterna o relay sem envolver o LLM. Não aparece no transcript.
+  /// Send a relay control command outside the LLM and transcript.
   Future<void> sendRelayControl(PiControlCommand command) async {
     await _process.sendControl(command);
   }
 
-  /// Solicita o estado atual do relay ao pi (resposta chega como RpcRelayState).
+  /// Request relay state from Pi; the response arrives as `RpcRelayState`.
   Future<void> _syncRelayStatus() async {
     await _process.sendControl(
       PiControlCommand.relay(PiRelayControlAction.status),
@@ -503,13 +516,14 @@ class AgentSession extends PaneItem {
     }, (_) {});
     notifyListeners();
     unawaited(_refreshStats());
-    // Reaplicar preferências do usuário (persistidas do boot anterior).
+    // Reapply user preferences persisted from the previous boot.
     unawaited(_applyPreferred());
   }
 
-  /// Envia `set_model` / `set_thinking_level` silenciosamente se as preferências
-  /// diferem do estado que o pi subiu. Erros são descartados (o pi pode não ter
-  /// o modelo; a UI continua com o default dele nesse caso).
+  /// Silently reapply model and thinking preferences after boot.
+  ///
+  /// RPC failures are ignored because a persisted model may no longer exist;
+  /// in that case the UI keeps Pi's default.
   Future<void> _applyPreferred() async {
     if (!_process.isRunning) return;
     final pid = preferredModelId;
@@ -607,8 +621,8 @@ class AgentSession extends PaneItem {
           ),
         );
       case RpcUserMessage(:final text):
-        // Eco da nossa própria mensagem local → já está no transcript, ignora.
-        // Caso contrário, é mensagem vinda do app/mesh → mostra a bolha.
+        // Ignore our local echo because it is already in the transcript.
+        // App or mesh messages have no local match and remain visible.
         if (_awaitingUserEcho.remove(text)) return;
         _appendTranscriptEvent(
           CockpitUserMessageConfirmed(
@@ -684,7 +698,7 @@ class AgentSession extends PaneItem {
         relayStatus = status;
       case RpcNameAssigned(:final assigned, :final changed):
         if (changed) {
-          rename(assigned); // persiste no layout imediatamente
+          rename(assigned); // Persist the assigned name immediately.
         }
       case RpcPairCode() || RpcPaired() || RpcMeshRevoked():
         return;
@@ -693,9 +707,10 @@ class AgentSession extends PaneItem {
     }
   }
 
-  /// Responde a um pedido interativo da extensão (card do transcript) e marca o
-  /// card como resolvido. [response] é `{value:…}`/`{confirmed:…}`/`{cancelled:
-  /// true}`; [label] é o texto que o card mostra depois ("você escolheu …").
+  /// Answer an interactive extension request and resolve its transcript card.
+  ///
+  /// [response] carries `value`, `confirmed`, or `cancelled`; [label] is the
+  /// human-readable result retained on the resolved card.
   void respondUi(String id, Map<String, dynamic> response, String label) {
     final entry = _openUiRequests.remove(id);
     if (entry != null) {

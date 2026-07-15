@@ -1,33 +1,28 @@
 import 'package:xterm/xterm.dart';
 
-/// Rastreia se o *kitty keyboard protocol* está ativo, observando a saída do
-/// programa em primeiro plano (claude, codex, pi, ...).
+/// Track whether the foreground program enabled the kitty keyboard protocol.
 ///
-/// Apps que suportam o protocolo "empurram" flags via `CSI > flags u` ao iniciar
-/// e as removem via `CSI < n u` (ou um reset) ao sair. Enquanto há flags ativas,
-/// o terminal deve codificar teclas modificadas (ex.: Shift+Enter) no formato
-/// CSI-u em vez do encoding legado.
+/// Supporting applications push flags with `CSI > flags u` on startup and pop
+/// them with `CSI < n u` (or a reset) on exit. While flags are active, modified
+/// keys such as Shift+Enter must use CSI-u rather than legacy encoding.
 ///
-/// **Não** implementamos o protocolo inteiro — só detectamos se ele está ligado,
-/// pra escolher o byte certo do Shift+Enter (ver [ShiftEnterInputHandler]). Todas
-/// as outras teclas continuam no encoding legado do xterm, exatamente como hoje
-/// (o `pi`, que já empurra flags kitty, prova que isso funciona). Por isso só
-/// observamos passivamente: nunca anunciamos suporte (não respondemos à query
-/// `CSI ? u`), pra não fazer um app habilitar o protocolo e quebrar outras teclas
-/// que continuariam legadas.
+/// This tracker deliberately implements only enablement detection so
+/// [ShiftEnterInputHandler] can choose the correct bytes. Every other key keeps
+/// xterm's legacy encoding. It observes passively and never answers the
+/// `CSI ? u` capability query, which prevents applications from enabling a
+/// protocol that the rest of the keyboard path does not implement.
 class KittyKeyboardTracker {
   final List<int> _stack = <int>[];
   String _carry = '';
 
-  /// Verdadeiro quando o app em primeiro plano habilitou o protocolo (há flags
-  /// não-nulas no topo da pilha).
+  /// Report whether the foreground application has nonzero kitty flags active.
   bool get active => _stack.isNotEmpty && _stack.last > 0;
 
-  /// Alimenta um pedaço da saída do PTY (já decodificado — as sequências de
-  /// controle são ASCII puro, então a decodificação UTF-8 não as altera).
+  /// Inspect a decoded PTY output chunk for kitty control sequences.
+  ///
+  /// The sequences are ASCII, so UTF-8 decoding does not alter them.
   void feed(String chunk) {
-    // Uma sequência kitty pode chegar partida entre dois reads do PTY; por isso
-    // guardamos uma pequena cauda (sufixo não casado) entre chamadas.
+    // Preserve a short unmatched suffix because a kitty sequence may span reads.
     final s = _carry + chunk;
     var consumedEnd = 0;
     for (final m in _seqPattern.allMatches(s)) {
@@ -42,16 +37,16 @@ class KittyKeyboardTracker {
 
   void _apply(String seq) {
     if (seq == '\x1bc') {
-      _stack.clear(); // RIS: reset total do terminal.
+      _stack.clear(); // RIS performs a full terminal reset.
       return;
     }
     // seq = ESC [ <marker> <0-9;>* u
     final marker = seq.codeUnitAt(2);
     final body = seq.substring(3, seq.length - 1);
     switch (marker) {
-      case 0x3e: // '>' push: novo nível com estas flags.
+      case 0x3e: // '>' push: add a level with these flags.
         _stack.add(_firstInt(body));
-      case 0x3c: // '<' pop: remove n níveis (default 1).
+      case 0x3c: // '<' pop: remove n levels (default 1).
         var n = _firstInt(body, fallback: 1);
         if (n < 1) n = 1;
         for (var i = 0; i < n && _stack.isNotEmpty; i++) {
@@ -67,7 +62,7 @@ class KittyKeyboardTracker {
           3 => current & ~flags,
           _ => flags,
         });
-      case 0x3f: // '?' query: app só pergunta o suporte. Passivo: ignoramos.
+      case 0x3f: // '?' query: ignore capability checks to stay passive.
         break;
     }
   }
@@ -79,24 +74,22 @@ class KittyKeyboardTracker {
 
   static const _maxSeqLen = 16;
 
-  /// `CSI <marker> <0-9;>* u` (marker ∈ `> < = ?`) ou RIS (`ESC c`).
+  /// Match `CSI <marker> <0-9;>* u` or RIS (`ESC c`).
   static final _seqPattern = RegExp(r'\x1b\[[<>=?][0-9;]*u|\x1bc');
 }
 
-/// Faz o **Shift+Enter** inserir uma quebra de linha em vez de submeter, nos
-/// harnesses TUI (claude, codex, pi).
+/// Make Shift+Enter insert a line break in TUI harnesses instead of submitting.
 ///
-/// O xterm 4.0 mapeia Shift+Enter pra `ESC O M` (`\x1bOM`), que esses apps
-/// ignoram — então a quebra nunca acontece. Aqui interceptamos antes do
-/// [defaultInputHandler] e emitimos o byte que o app entende:
+/// xterm 4.0 maps Shift+Enter to `ESC O M` (`\x1bOM`), which Claude, Codex,
+/// and Pi ignore. This handler intercepts it before [defaultInputHandler] and
+/// emits the encoding understood by the foreground application:
 ///
-/// - app com kitty keyboard ATIVO (pi, codex): `CSI 13 ; 2 u` (`\x1b[13;2u`),
-///   o encoding canônico de Shift+Enter no protocolo kitty;
-/// - caso contrário (claude em modo legado, shells, REPLs): um line feed `\n` —
-///   claude/pi tratam como nova linha e o shell trata como Enter, sem o lixo
-///   `[13;2u` que o CSI-u deixaria num programa sem kitty.
+/// - with kitty keyboard active (Pi and Codex), canonical kitty Shift+Enter as
+///   `CSI 13 ; 2 u` (`\x1b[13;2u`);
+/// - otherwise (legacy Claude, shells, and REPLs), a line feed (`\n`) without
+///   leaking CSI-u text into applications that do not support kitty.
 ///
-/// Só o Shift+Enter muda; qualquer outra tecla cai no handler padrão.
+/// Every key other than Shift+Enter falls through to the default handler.
 class ShiftEnterInputHandler implements TerminalInputHandler {
   const ShiftEnterInputHandler(this._kitty);
 
@@ -108,7 +101,7 @@ class ShiftEnterInputHandler implements TerminalInputHandler {
         !event.shift ||
         event.ctrl ||
         event.alt) {
-      return null; // não é Shift+Enter "puro" — deixa o handler padrão decidir.
+      return null; // Let the default handler decide unless this is pure Shift+Enter.
     }
     return _kitty.active ? '\x1b[13;2u' : '\n';
   }

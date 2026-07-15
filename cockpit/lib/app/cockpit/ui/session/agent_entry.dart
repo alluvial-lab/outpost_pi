@@ -10,30 +10,35 @@ sealed class AgentEntry {
   AgentEntry();
 }
 
-/// Linha de ciclo de vida (ACK de erro, stderr, saída do processo).
+/// Record a lifecycle message such as an error ACK, stderr, or process exit.
 final class InfoEntry extends AgentEntry {
   InfoEntry(this.text, {this.isError = false});
   final String text;
   final bool isError;
 }
 
-/// Marca o fim de um turno com quanto tempo o agente trabalhou.
+/// Mark the end of a turn with the time the agent spent working.
 final class WorkedEntry extends AgentEntry {
   WorkedEntry(this.duration);
   final Duration duration;
 }
 
-/// Aviso da extensão (`extension_ui_request` method `notify`) — não é resposta
-/// do agente. `level`: 0 info, 1 warning, 2 error.
+/// Represent an extension notice (`extension_ui_request` method `notify`).
+///
+/// This is not an agent response. [level] is 0 for info, 1 for warning, and 2
+/// for error.
 final class NoticeEntry extends AgentEntry {
   NoticeEntry(this.message, this.level);
   final String message;
   final int level;
 }
 
-/// Pedido interativo da extensão (`select`/`confirm`/`input`/`editor`).
-/// Renderiza um card no transcript; ao responder, vira [resolved] com
-/// [answerLabel] e o `extension_ui_response` é enviado. Mutável de propósito.
+/// Represent an interactive extension request (`select`, `confirm`, `input`,
+/// or `editor`).
+///
+/// The transcript renders this as a card. Responding marks it [resolved], sets
+/// [answerLabel], and sends `extension_ui_response`; it is intentionally
+/// mutable.
 final class UiRequestEntry extends AgentEntry {
   UiRequestEntry({
     required this.id,
