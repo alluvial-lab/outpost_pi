@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first
 kind: epic
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit, app, pi-extension, relay, site]
 parent: null
 depends_on: [epic-rebrand-to-outpost-pi]
 release_binding: null
 gate_origin: null
 created: 2026-07-11
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # EN-first pass + native documentation frameworks
@@ -241,3 +241,9 @@ workflows, dormant `rp-s3` product tooling, Claude scout definitions, and the
 identity package documentation. The epic is reopened for
 `story-en-first-residual-maintained-surfaces`; intentional multilingual codec
 fixtures and the existing `scripts/` exclusion remain out of scope.
+
+## Child features reviewed and complete (2026-07-15)
+
+All child features are `stage: done` with cross-model fresh-context reviews
+recorded. Epic advanced `implementing → review` for the deeper aggregate
+review per the review skill's roll-up rule.

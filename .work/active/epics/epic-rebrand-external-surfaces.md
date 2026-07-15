@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-external-surfaces
 kind: epic
-stage: implementing
+stage: review
 tags: [rebrand, pi-extension, app, relay, cockpit, site, docs]
 parent: null
 depends_on: [epic-rebrand-to-outpost-pi]
 release_binding: null
 gate_origin: null
 created: 2026-07-13
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Rebrand external surfaces: retire community relay, migrate hostnames
@@ -181,3 +181,9 @@ Cockpit application/signing identities, fail-closed Android release signing,
 old store links, package metadata, and the dormant Windows update path.
 Third-party dependency coordinates remain factual until the separately parked
 independence investigation produces a verified replacement.
+
+## Child features reviewed and complete (2026-07-15)
+
+All child features are `stage: done` with cross-model fresh-context reviews
+recorded. Epic advanced `implementing → review` for the deeper aggregate
+review per the review skill's roll-up rule.
