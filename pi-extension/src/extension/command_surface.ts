@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { CommandSurfacePort, OutpostPiRuntime } from "./ports.js";
 
+/** Supply side-effecting registration operations for the extension command surface. */
 export interface CommandSurfaceDeps {
   readonly registerAgentTools: (pi: ExtensionAPI) => void;
   readonly deployAgentNetworkSkill: () => void;
@@ -9,7 +10,7 @@ export interface CommandSurfaceDeps {
   readonly startDaemonMode: () => void;
 }
 
-/** Behavior-preserving command/daemon registration shell. */
+/** Register agent tools, commands, and daemon mode through injected composition-root operations. */
 export class CommandSurface implements CommandSurfacePort {
   constructor(private readonly deps: CommandSurfaceDeps) {}
 
@@ -22,6 +23,7 @@ export class CommandSurface implements CommandSurfacePort {
   }
 }
 
+/** Create the command-surface port owned by an extension runtime. */
 export function createCommandSurface(deps: CommandSurfaceDeps): CommandSurfacePort {
   return new CommandSurface(deps);
 }
