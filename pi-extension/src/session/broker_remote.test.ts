@@ -15,10 +15,26 @@ import { PiForwardClient } from "../transport/pi_forward_client.js";
  */
 class FakePi extends EventEmitter {
   readonly sent: { toPc: string; toRoom: string; env: Envelope }[] = [];
+  readonly controls: object[] = [];
   sendEnvelopeToPi(toPc: string, toRoom: string, env: Envelope): void {
     this.sent.push({ toPc, toRoom, env });
   }
+  sendRoomControl(frame: object): void {
+    this.controls.push(frame);
+  }
   detach(): void { /* no-op */ }
+}
+
+function announceRooms(fakePi: FakePi, peer: string, roomIds: string[]): void {
+  fakePi.emit("rooms", {
+    type: "rooms",
+    peer,
+    rooms: roomIds.map((room_id, index) => ({
+      room_id,
+      working: false,
+      started_at: index + 1,
+    })),
+  });
 }
 
 interface FakeBrokerOptions {
@@ -128,7 +144,7 @@ describe("BrokerRemote.tryRouteOutbound", () => {
     expect(fakePi.sent.length).toBe(0);
   });
 
-  test("known sibling prefix → packs frame to relay, rewrites from", () => {
+  test("known sibling prefix → targets a relay-discovered live room and rewrites from", () => {
     const fakePi = new FakePi();
     const { broker } = makeFakeBroker();
     const br = new BrokerRemote({
@@ -136,18 +152,20 @@ describe("BrokerRemote.tryRouteOutbound", () => {
       selfPcLabel: "casa", selfPcPubkey: "K_A",
       siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
     });
+    announceRooms(fakePi, "K_B", ["room-b-live"]);
+    fakePi.sent.length = 0;
 
     const env = envelope("sess-3", "trab:agent-1", { x: 1 });
     expect(br.tryRouteOutbound(env)).toBe(true);
-    expect(fakePi.sent.length).toBeGreaterThanOrEqual(1);
     const main = fakePi.sent.find((s) => s.env.id === env.id);
     expect(main).toBeDefined();
     expect(main!.toPc).toBe("K_B");
+    expect(main!.toRoom).toBe("room-b-live");
     expect(main!.env.from).toBe("casa:sess-3");
     expect(main!.env.to).toBe("trab:agent-1");
   });
 
-  test("cache miss triggers a peers_request alongside the main send", () => {
+  test("cold room cache triggers rooms_check without inventing a destination room", () => {
     const fakePi = new FakePi();
     const { broker } = makeFakeBroker();
     const br = new BrokerRemote({
@@ -155,18 +173,18 @@ describe("BrokerRemote.tryRouteOutbound", () => {
       selfPcLabel: "casa", selfPcPubkey: "K_A",
       siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
     });
-    // Bootstrap fires peers_request to every sibling on construction.
-    // Clear that out so we can verify the cache-miss path also fires one.
     fakePi.sent.length = 0;
 
     const env = envelope("sess-3", "trab:agent-1", { x: 1 });
-    br.tryRouteOutbound(env);
+    expect(br.tryRouteOutbound(env)).toBe(true);
 
-    const peersReq = fakePi.sent.find((s) =>
-      (s.env.body as { type?: string } | null)?.type === "peers_request",
-    );
-    expect(peersReq).toBeDefined();
-    expect(peersReq!.toPc).toBe("K_B");
+    // The constructor starts discovery and the cold send reuses that in-flight
+    // check rather than flooding the relay or targeting a fabricated room.
+    expect(fakePi.sent.find((s) => s.env.id === env.id)).toBeUndefined();
+    expect(fakePi.controls).toEqual([
+      { type: "subscribe_rooms", peers: ["K_B"] },
+      { type: "rooms_check", peers: ["K_B"] },
+    ]);
   });
 
   test("does not trigger peers_request when cache is already populated", () => {
@@ -178,11 +196,12 @@ describe("BrokerRemote.tryRouteOutbound", () => {
       siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
     });
 
-    // Prime the cache via peers_update
+    // Prime both relay room discovery and the remote roster cache.
+    announceRooms(fakePi, "K_B", ["room-b-live"]);
     fakePi.emit("envelope", envelope(
       "trab:_broker_remote", "casa:_broker_remote",
       { type: "peers_update", peers: ["agent-1"] },
-    ), "K_B");
+    ), "K_B", "room-a-live");
 
     fakePi.sent.length = 0;
     const env = envelope("sess-3", "trab:agent-1", { x: 1 });
@@ -233,7 +252,7 @@ describe("BrokerRemote.handleIncoming (anti-spoof + injection)", () => {
     expect(logs.some((l) => /prefix\s+mismatches/.test(l))).toBe(true);
   });
 
-  test("valid envelope → strip to-prefix, injectFromRemote, ACK back", () => {
+  test("valid envelope → strip to-prefix, injectFromRemote, ACK to threaded inbound room", () => {
     const fakePi = new FakePi();
     const { broker, injectFromRemote } = makeFakeBroker({ injectStatus: "received" });
     new BrokerRemote({
@@ -243,7 +262,7 @@ describe("BrokerRemote.handleIncoming (anti-spoof + injection)", () => {
     });
 
     const inbound = envelope("trab:agent-1", "casa:sess-3", { hello: "world" });
-    fakePi.emit("envelope", inbound, "K_B");
+    fakePi.emit("envelope", inbound, "K_B", "threaded-room-a");
 
     expect(injectFromRemote).toHaveBeenCalledTimes(1);
     const injected = injectFromRemote.mock.calls[0]![0] as Envelope;
@@ -256,6 +275,7 @@ describe("BrokerRemote.handleIncoming (anti-spoof + injection)", () => {
     );
     expect(ack).toBeDefined();
     expect(ack!.toPc).toBe("K_B");
+    expect(ack!.toRoom).toBe("threaded-room-a");
     expect(ack!.env.re).toBe(inbound.id);
     expect((ack!.env.body as { status: string }).status).toBe("received");
   });
@@ -408,12 +428,13 @@ describe("BrokerRemote: control envelopes (peers_update / peers_request)", () =>
       selfPcLabel: "casa", selfPcPubkey: "K_A",
       siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
     });
+    announceRooms(fakePi, "K_B", ["room-b-live"]);
     fakePi.sent.length = 0;
 
     fakePi.emit("envelope", envelope(
       "trab:_broker_remote", "casa:_broker_remote",
       { type: "peers_request" },
-    ), "K_B");
+    ), "K_B", "room-a-live");
 
     const reply = fakePi.sent.find((s) =>
       (s.env.body as { type?: string } | null)?.type === "peers_update",
@@ -434,14 +455,15 @@ describe("BrokerRemote: control envelopes (peers_update / peers_request)", () =>
       selfPcLabel: "MacMini", selfPcPubkey: "K_B",
       siblings: [{ pcLabel: "MacBook", pcPubkey: "K_A" }],
     });
-    // Note: no `onLocalPeersChanged` was ever called. Bootstrap traffic
-    // was sent; clear it so we observe the reply path cleanly.
+    announceRooms(fakePi, "K_A", ["macbook-room"]);
+    // Note: no `onLocalPeersChanged` was ever called. Clear room-bootstrap
+    // traffic so we observe the reply path cleanly.
     fakePi.sent.length = 0;
 
     fakePi.emit("envelope", envelope(
       "MacBook:_broker_remote", "MacMini:_broker_remote",
       { type: "peers_request" },
-    ), "K_A");
+    ), "K_A", "macmini-room");
 
     const reply = fakePi.sent.find((s) =>
       (s.env.body as { type?: string } | null)?.type === "peers_update",
@@ -465,8 +487,10 @@ describe("BrokerRemote: control envelopes (peers_update / peers_request)", () =>
         { pcLabel: "movel", pcPubkey: "K_C" },
       ],
     });
-    // Discard bootstrap announce/request traffic; we only care about the
-    // peers_update emitted by `onLocalPeersChanged` below.
+    announceRooms(fakePi, "K_B", ["room-b-live"]);
+    announceRooms(fakePi, "K_C", ["room-c-live"]);
+    // Discard room-bootstrap traffic; we only care about the peers_update
+    // emitted by `onLocalPeersChanged` below.
     fakePi.sent.length = 0;
     br.onLocalPeersChanged(["sess-3"]);
 
@@ -490,7 +514,8 @@ describe("BrokerRemote: control envelopes (peers_update / peers_request)", () =>
         siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
         reannounceIntervalMs: 1_000,
       });
-      fakePi.sent.length = 0;  // drop bootstrap request+push
+      announceRooms(fakePi, "K_B", ["room-b-live"]);
+      fakePi.sent.length = 0;  // drop room-bootstrap request fanout
 
       vi.advanceTimersByTime(1_000);
       // One full re-announce cycle = the bootstrap pair (request + push).
@@ -542,6 +567,92 @@ describe("BrokerRemote: transport_error from relay", () => {
   });
 });
 
+// ── PiForwardClient relay frame decoding ────────────────────────────────────
+
+describe("PiForwardClient room-aware relay events", () => {
+  test("delegates room discovery controls to RelayClient.sendControl", () => {
+    const relay = new EventEmitter() as EventEmitter & {
+      send: ReturnType<typeof vi.fn>;
+      sendControl: ReturnType<typeof vi.fn>;
+    };
+    relay.send = vi.fn();
+    relay.sendControl = vi.fn();
+    const pi = new PiForwardClient(relay as never);
+
+    pi.sendRoomControl({ type: "subscribe_rooms", peers: ["K_B"] });
+    pi.sendRoomControl({ type: "rooms_check", peers: ["K_B"] });
+
+    expect(relay.sendControl.mock.calls.map((call) => call[0])).toEqual([
+      { type: "subscribe_rooms", peers: ["K_B"] },
+      { type: "rooms_check", peers: ["K_B"] },
+    ]);
+  });
+
+  test("threads pi_envelope_in.to_room through the envelope event", () => {
+    const relay = new EventEmitter() as EventEmitter & {
+      send: ReturnType<typeof vi.fn>;
+      sendControl: ReturnType<typeof vi.fn>;
+    };
+    relay.send = vi.fn();
+    relay.sendControl = vi.fn();
+    const pi = new PiForwardClient(relay as never);
+    const onEnvelope = vi.fn();
+    pi.on("envelope", onEnvelope);
+    const inbound = envelope("trab:agent", "casa:sess", { hello: "world" });
+
+    relay.emit("message", JSON.stringify({
+      type: "pi_envelope_in",
+      from_pc: "K_B",
+      to_room: "room-a-live",
+      envelope: inbound,
+    }));
+
+    expect(onEnvelope).toHaveBeenCalledWith(inbound, "K_B", "room-a-live");
+  });
+
+  test("emits validated rooms, room_announced, and room_ended control events", () => {
+    const relay = new EventEmitter() as EventEmitter & {
+      send: ReturnType<typeof vi.fn>;
+      sendControl: ReturnType<typeof vi.fn>;
+    };
+    relay.send = vi.fn();
+    relay.sendControl = vi.fn();
+    const pi = new PiForwardClient(relay as never);
+    const onRooms = vi.fn();
+    const onAnnounced = vi.fn();
+    const onEnded = vi.fn();
+    pi.on("rooms", onRooms);
+    pi.on("room_announced", onAnnounced);
+    pi.on("room_ended", onEnded);
+
+    const rooms = {
+      type: "rooms",
+      peer: "K_B",
+      rooms: [{ room_id: "room-b-live", working: false, started_at: 1 }],
+    };
+    const announced = {
+      type: "room_announced",
+      peer: "K_B",
+      room_id: "room-b-next",
+      working: true,
+      started_at: 2,
+    };
+    const ended = {
+      type: "room_ended",
+      peer: "K_B",
+      room_id: "room-b-live",
+      since_ts: 3,
+    };
+    relay.emit("message", JSON.stringify(rooms));
+    relay.emit("message", JSON.stringify(announced));
+    relay.emit("message", JSON.stringify(ended));
+
+    expect(onRooms).toHaveBeenCalledWith(rooms);
+    expect(onAnnounced).toHaveBeenCalledWith(announced);
+    expect(onEnded).toHaveBeenCalledWith(ended);
+  });
+});
+
 // ── detached no-op guards ───────────────────────────────────────────────────
 
 describe("detached cross-PC bridge components", () => {
@@ -556,7 +667,11 @@ describe("detached cross-PC bridge components", () => {
     fakePi.sent.length = 0;
 
     br.detach();
-    br.handleIncoming(envelope("trab:agent-1", "casa:sess-3", { hello: "after-detach" }), "K_B");
+    br.handleIncoming(
+      envelope("trab:agent-1", "casa:sess-3", { hello: "after-detach" }),
+      "K_B",
+      "room-a-live",
+    );
     expect(injectFromRemote).not.toHaveBeenCalled();
 
     const outbound = envelope("sess-3", "trab:agent-1", { hello: "after-detach" });
@@ -630,7 +745,7 @@ describe("detached cross-PC bridge components", () => {
     pi.on("envelope", onEnvelope);
 
     pi.detach();
-    pi.sendEnvelopeToPi("K_B", "main", envelope("casa:sess", "trab:agent", { hello: "after-detach" }));
+    pi.sendEnvelopeToPi("K_B", "room-b-live", envelope("casa:sess", "trab:agent", { hello: "after-detach" }));
     expect(relay.send).not.toHaveBeenCalled();
 
     queuedInbound?.(JSON.stringify({
@@ -683,10 +798,10 @@ describe("BrokerRemote.setSiblings", () => {
   });
 });
 
-// ── Bootstrap: warm cache via peers_request ──────────────────────────────────
+// ── Relay-authoritative room discovery bootstrap ─────────────────────────────
 
-describe("BrokerRemote: bootstrap peers_request (plan/25 Wave B)", () => {
-  test("constructor pings every initial sibling with peers_request", () => {
+describe("BrokerRemote: relay-authoritative room discovery", () => {
+  test("constructor subscribes to and snapshots every initial sibling's rooms", () => {
     const fakePi = new FakePi();
     const { broker } = makeFakeBroker();
     new BrokerRemote({
@@ -698,30 +813,45 @@ describe("BrokerRemote: bootstrap peers_request (plan/25 Wave B)", () => {
       ],
     });
 
+    expect(fakePi.controls).toEqual([
+      { type: "subscribe_rooms", peers: ["K_B"] },
+      { type: "rooms_check", peers: ["K_B"] },
+      { type: "subscribe_rooms", peers: ["K_C"] },
+      { type: "rooms_check", peers: ["K_C"] },
+    ]);
+    expect(fakePi.sent).toEqual([]);
+  });
+
+  test("rooms snapshot populates cache and fans peers_request out to every discovered room", () => {
+    const fakePi = new FakePi();
+    const { broker } = makeFakeBroker();
+    const br = new BrokerRemote({
+      broker, pi: fakePi as never,
+      selfPcLabel: "casa", selfPcPubkey: "K_A",
+      siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
+    });
+
+    fakePi.emit("rooms", {
+      type: "rooms",
+      peer: "K_B",
+      rooms: [
+        { room_id: "follower-room", working: false, started_at: 2 },
+        { room_id: "leader-room", working: false, started_at: 1 },
+      ],
+    });
+
     const requests = fakePi.sent.filter((s) =>
       (s.env.body as { type?: string } | null)?.type === "peers_request",
     );
-    expect(requests.map((r) => r.toPc).sort()).toEqual(["K_B", "K_C"]);
+    expect(requests.map((request) => request.toRoom)).toEqual(["leader-room", "follower-room"]);
+
+    fakePi.sent.length = 0;
+    const data = envelope("sess-3", "trab:agent-1", { x: 1 });
+    expect(br.tryRouteOutbound(data)).toBe(true);
+    expect(fakePi.sent.find((send) => send.env.id === data.id)?.toRoom).toBe("leader-room");
   });
 
-  test("constructor also announces our own peers (peers_update) to every sibling", () => {
-    const fakePi = new FakePi();
-    const { broker } = makeFakeBroker({ localPeers: ["MacMini"] });
-    new BrokerRemote({
-      broker, pi: fakePi as never,
-      selfPcLabel: "MacMini", selfPcPubkey: "K_B",
-      siblings: [{ pcLabel: "MacBook", pcPubkey: "K_A" }],
-    });
-
-    const announces = fakePi.sent.filter((s) =>
-      (s.env.body as { type?: string } | null)?.type === "peers_update",
-    );
-    expect(announces.length).toBe(1);
-    expect(announces[0]!.toPc).toBe("K_A");
-    expect((announces[0]!.env.body as { peers: string[] }).peers).toEqual(["MacMini"]);
-  });
-
-  test("no peers_request emitted when there are zero siblings", () => {
+  test("no room controls or envelopes are emitted when there are zero siblings", () => {
     const fakePi = new FakePi();
     const { broker } = makeFakeBroker();
     new BrokerRemote({
@@ -729,7 +859,8 @@ describe("BrokerRemote: bootstrap peers_request (plan/25 Wave B)", () => {
       selfPcLabel: "casa", selfPcPubkey: "K_A",
     });
 
-    expect(fakePi.sent.length).toBe(0);
+    expect(fakePi.controls).toEqual([]);
+    expect(fakePi.sent).toEqual([]);
   });
 
   test("setSiblings sends peers_request only to newly-added siblings", () => {
@@ -740,20 +871,20 @@ describe("BrokerRemote: bootstrap peers_request (plan/25 Wave B)", () => {
       selfPcLabel: "casa", selfPcPubkey: "K_A",
       siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
     });
-    // Drop initial bootstrap traffic so the assertion is isolated.
-    fakePi.sent.length = 0;
+    // Drop initial room-discovery controls so the assertion is isolated.
+    fakePi.controls.length = 0;
 
-    // Replace with set that keeps K_B and adds K_C. We expect a single
-    // peers_request to K_C; K_B should NOT be re-pinged.
+    // Replace with set that keeps K_B and adds K_C. Only the new sibling gets
+    // a room subscription + snapshot request; K_B is not re-subscribed.
     br.setSiblings([
       { pcLabel: "trab", pcPubkey: "K_B" },
       { pcLabel: "movel", pcPubkey: "K_C" },
     ]);
 
-    const requests = fakePi.sent.filter((s) =>
-      (s.env.body as { type?: string } | null)?.type === "peers_request",
-    );
-    expect(requests.map((r) => r.toPc)).toEqual(["K_C"]);
+    expect(fakePi.controls).toEqual([
+      { type: "subscribe_rooms", peers: ["K_C"] },
+      { type: "rooms_check", peers: ["K_C"] },
+    ]);
   });
 
   test("setSiblings removes a sibling without firing peers_request for the survivors", () => {
@@ -767,13 +898,67 @@ describe("BrokerRemote: bootstrap peers_request (plan/25 Wave B)", () => {
         { pcLabel: "movel", pcPubkey: "K_C" },
       ],
     });
+    fakePi.controls.length = 0;
     fakePi.sent.length = 0;
 
     br.setSiblings([{ pcLabel: "movel", pcPubkey: "K_C" }]);
 
-    const requests = fakePi.sent.filter((s) =>
-      (s.env.body as { type?: string } | null)?.type === "peers_request",
-    );
-    expect(requests).toEqual([]);
+    expect(fakePi.controls).toEqual([]);
+    expect(fakePi.sent).toEqual([]);
+  });
+
+  test("room_announced populates the live cache and room_ended removes it", () => {
+    const fakePi = new FakePi();
+    const { broker } = makeFakeBroker();
+    const br = new BrokerRemote({
+      broker, pi: fakePi as never,
+      selfPcLabel: "casa", selfPcPubkey: "K_A",
+      siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
+    });
+
+    fakePi.emit("room_announced", {
+      type: "room_announced",
+      peer: "K_B",
+      room_id: "room-b-live",
+      working: false,
+      started_at: 10,
+    });
+    fakePi.sent.length = 0;
+    const first = envelope("sess", "trab:agent", { n: 1 });
+    br.tryRouteOutbound(first);
+    expect(fakePi.sent.find((send) => send.env.id === first.id)?.toRoom).toBe("room-b-live");
+
+    fakePi.emit("room_ended", {
+      type: "room_ended",
+      peer: "K_B",
+      room_id: "room-b-live",
+      since_ts: 11,
+    });
+    fakePi.sent.length = 0;
+    const second = envelope("sess", "trab:agent", { n: 2 });
+    br.tryRouteOutbound(second);
+    expect(fakePi.sent.find((send) => send.env.id === second.id)).toBeUndefined();
+  });
+
+  test("a fresh bridge re-issues subscribe_rooms after relay reconnect", () => {
+    const firstPi = new FakePi();
+    const { broker: firstBroker } = makeFakeBroker();
+    const first = new BrokerRemote({
+      broker: firstBroker, pi: firstPi as never,
+      selfPcLabel: "casa", selfPcPubkey: "K_A",
+      siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
+    });
+    first.detach();
+
+    const reconnectedPi = new FakePi();
+    const { broker: reconnectedBroker } = makeFakeBroker();
+    new BrokerRemote({
+      broker: reconnectedBroker, pi: reconnectedPi as never,
+      selfPcLabel: "casa", selfPcPubkey: "K_A",
+      siblings: [{ pcLabel: "trab", pcPubkey: "K_B" }],
+    });
+
+    expect(firstPi.controls[0]).toEqual({ type: "subscribe_rooms", peers: ["K_B"] });
+    expect(reconnectedPi.controls[0]).toEqual({ type: "subscribe_rooms", peers: ["K_B"] });
   });
 });
