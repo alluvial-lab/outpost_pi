@@ -1,14 +1,14 @@
 ---
 id: story-site-play-availability-copy-consistency
 kind: story
-stage: review
+stage: done
 tags: [site, bug, rebrand]
 parent: epic-rebrand-external-surfaces
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-15
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Make Google Play availability copy consistent across the site
@@ -43,3 +43,13 @@ links and affirmative Play-availability claims.
 - `rg 'Google Play|coming soon|work.jacobmoura.remotepi' site/src/` confirms consistency; no old listing links remain.
 - Discrepancies from design: none.
 - Adjacent issues parked: none.
+
+## Review (2026-07-15, second pass)
+
+**Verdict**: Approve
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Deep-feature second-pass verification confirmed landing, download, and getting-started all describe Google Play as coming soon, retain direct APK as the Android path, contain no old Play URL/application ID, and no longer hard-code `0.1.0`. Site lint/build passed. Story advanced `review -> done`.
