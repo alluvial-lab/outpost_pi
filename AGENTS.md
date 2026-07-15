@@ -120,7 +120,7 @@ and the pi-extension is registered as a **local-path** extension (not npm).
 - **relay** — Docker container `outpost-pi-relay` on `:3300` (host) → `:3000`
   (container). Image built from `relay/` source (`docker build -t
   outpost-pi-relay:<version> relay/`); the persistent `mesh_versions` SQLite DB
-  lives in the named volume `remote-pi-data:/data`. The live
+  lives in the named volume `outpost-pi-data:/data`. The live
   container runs `outpost-pi-relay:0.1.0` with the retroactive file log
   enabled: `OUTPOSTPI_RELAY_LOG_DIR=/data/logs` (daily-rotated `relay.log`
   in the volume) + `RUST_LOG=info,relay=debug` (lifts the cross-PC
@@ -128,7 +128,7 @@ and the pi-extension is registered as a **local-path** extension (not npm).
   cross-side correlation key that joins the phone's `msg-send id` and the
   extension's `app user_message id`).
 - **pi-extension** — registered in `~/.pi/agent/settings.json` as the local path
-  `/home/agent/projects/remote_pi/pi-extension`, loading `dist/index.js` (the
+  `/home/agent/projects/outpost_pi/pi-extension`, loading `dist/index.js` (the
   `package.json` `main`). The local path is authoritative. `dist/` is gitignored
   and **not rebuilt automatically**; a source edit requires
   `corepack pnpm build` (or `./node_modules/.bin/tsc` to bypass the corepack
@@ -206,7 +206,7 @@ docker build -t outpost-pi-relay:0.1.0 relay/
 # run (reproduces the live container's config: port 3300→3000, named volume,
 # retroactive file log + cross-side debug correlation)
 docker run -d --name outpost-pi-relay -p 3300:3000 \
-  -v remote-pi-data:/data \
+  -v outpost-pi-data:/data \
   -e OUTPOSTPI_RELAY_PORT=3000 \
   -e OUTPOSTPI_MESH_DB_PATH=/data/mesh.db \
   -e OUTPOSTPI_RELAY_LOG_DIR=/data/logs \
@@ -247,7 +247,7 @@ the VM**; `/tmp` is a **tmpfs** (RAM-backed) that Gradle also uses for build
 - prefer `flutter build apk --release` (single fat APK, one dart2native pass)
   over `--split-per-abi` (3 passes, ~3× peak RAM) when RAM is tight
 
-Toolchain: Flutter at `~/projects/remote_pi/.tools/flutter`, JDK 21
+Toolchain: Flutter at `~/projects/outpost_pi/.tools/flutter`, JDK 21
 (`JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`), Android SDK API 36 at
 `/opt/android-sdk`. Full build-path notes in `.agents/skills/flutter-mobile/SKILL.md`.
 
