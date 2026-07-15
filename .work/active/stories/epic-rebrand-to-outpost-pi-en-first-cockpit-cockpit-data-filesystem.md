@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data-filesystem
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data
 depends_on: []
@@ -50,3 +50,19 @@ Skip-tier; do not add obvious-description dartdoc to them.
 - [ ] Normal and word-diff review shows production edits are comment-only.
 - [ ] Touched Dart files are formatted and the integrated feature can pass
       `flutter analyze` and `flutter test` from `cockpit/`.
+
+## Implementation notes
+
+- Files changed: all nine scoped adapters under
+  `cockpit/lib/app/cockpit/data/filesystem/`.
+- Tests added: none; production changes are documentation-only.
+- Verification: touched files formatted; `flutter analyze` passed with zero
+  issues; full `flutter test` passed (241 tests); accented-Portuguese grep
+  returned no matches in the owned directory; normal and word-diff review
+  confirmed executable code, runtime strings, commands, paths, and signatures
+  are unchanged.
+- Discrepancies from design: none. The Always-tier audit matched the feature
+  design: each public adapter already had adapter-specific class dartdoc, so the
+  work translated and clarified those docs without duplicating inherited port
+  contracts. Private candidate/cache/ranking helpers remained undocumented.
+- Adjacent issues parked: none.

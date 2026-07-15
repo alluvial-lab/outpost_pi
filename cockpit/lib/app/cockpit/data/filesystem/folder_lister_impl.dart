@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:cockpit/app/cockpit/domain/contracts/folder_lister.dart';
 
-/// Lista subpastas via `dart:io`, ignorando ocultas (`.git`, `.dart_tool`…).
+/// List sorted subfolders through `dart:io`, excluding hidden directories.
 class FolderListerImpl implements FolderLister {
   const FolderListerImpl();
 

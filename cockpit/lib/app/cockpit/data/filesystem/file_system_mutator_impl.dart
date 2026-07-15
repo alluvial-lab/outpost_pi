@@ -3,15 +3,17 @@ import 'dart:io';
 import 'package:cockpit/app/cockpit/domain/contracts/file_system_mutator.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Mutação via `dart:io`; a lixeira no macOS é delegada ao Finder por
-/// `osascript` (move pra Trash, reversível). Erros de IO viram `Failure` com
-/// mensagem amigável — sem `catch` genérico solto na UI.
+/// Mutate the filesystem through `dart:io` with platform-specific trashing.
+///
+/// On macOS, delegates reversible Trash moves to Finder through `osascript`.
+/// Maps I/O errors to user-facing `Failure` values at the adapter boundary.
 class FileSystemMutatorImpl implements FileSystemMutator {
   const FileSystemMutatorImpl({this.useSystemTrash = true});
 
-  /// Quando `true` (produção), o macOS delega à Lixeira do Finder via
-  /// `osascript`. `false` força a deleção permanente — usado em **testes**, que
-  /// não devem mandar arquivos pra Lixeira de verdade a cada `flutter test`.
+  /// Whether macOS delegates deletion to Finder Trash through `osascript`.
+  ///
+  /// Production keeps this enabled. Tests disable it to force permanent
+  /// deletion instead of filling the real Trash during `flutter test`.
   final bool useSystemTrash;
 
   @override
@@ -66,12 +68,12 @@ class FileSystemMutatorImpl implements FileSystemMutator {
 
   @override
   Future<Result<void, String>> moveToTrash(String path) async {
-    if (!await _exists(path)) return const Success(null); // idempotente
+    if (!await _exists(path)) return const Success(null); // Idempotent.
     if (Platform.isMacOS && useSystemTrash) return _macTrash(path);
     return _permanentDelete(path);
   }
 
-  /// macOS: pede ao Finder pra mover pra lixeira (reversível pelo usuário).
+  /// Ask Finder to move the path to the user-reversible macOS Trash.
   Future<Result<void, String>> _macTrash(String path) async {
     final script =
         'tell application "Finder" to delete POSIX file "${_osaEscape(path)}"';
@@ -85,7 +87,7 @@ class FileSystemMutatorImpl implements FileSystemMutator {
     }
   }
 
-  /// Fallback (Windows/Linux): deleção permanente. A confirmação é da UI.
+  /// Permanently delete on Windows/Linux after confirmation by the UI.
   Future<Result<void, String>> _permanentDelete(String path) async {
     try {
       final type = await FileSystemEntity.type(path, followLinks: false);
@@ -107,7 +109,7 @@ class FileSystemMutatorImpl implements FileSystemMutator {
   String _basename(String path) =>
       path.split('/').where((p) => p.isNotEmpty).lastOrNull ?? path;
 
-  /// Escapa `\` e `"` pra interpolar com segurança numa string AppleScript.
+  /// Escape `\` and `"` for safe interpolation into an AppleScript string.
   String _osaEscape(String path) =>
       path.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 }
