@@ -46,6 +46,7 @@ export interface CronJob {
   last_status?: string;
 }
 
+/** Persist the complete set of scheduled daemon prompts as one registry snapshot. */
 export interface CronRegistry {
   jobs: CronJob[];
 }
@@ -79,15 +80,18 @@ export function loadCronRegistry(): CronRegistry {
   }
 }
 
+/** Replace the persisted cron registry, creating its parent directory when needed. */
 export function saveCronRegistry(reg: CronRegistry): void {
   mkdirSync(dirname(cronPath()), { recursive: true });
   writeFileSync(cronPath(), JSON.stringify(reg, null, 2) + "\n");
 }
 
+/** Return the current persisted job snapshot without retaining mutable registry state. */
 export function listJobs(): CronJob[] {
   return loadCronRegistry().jobs;
 }
 
+/** Find a scheduled job by stable id, or return no result when it is absent. */
 export function getJob(id: string): CronJob | undefined {
   return loadCronRegistry().jobs.find((j) => j.id === id);
 }
@@ -124,6 +128,7 @@ export function addJob(input: NewJobInput): CronJob {
   return job;
 }
 
+/** Remove a scheduled job and persist the change; report whether the id existed. */
 export function removeJob(id: string): boolean {
   const reg = loadCronRegistry();
   const idx = reg.jobs.findIndex((j) => j.id === id);
@@ -133,6 +138,7 @@ export function removeJob(id: string): boolean {
   return true;
 }
 
+/** Enable or disable a stored job and report whether it was found. */
 export function setJobEnabled(id: string, enabled: boolean): boolean {
   const reg = loadCronRegistry();
   const job = reg.jobs.find((j) => j.id === id);
@@ -154,6 +160,7 @@ export function recordRun(id: string, at: string, status: string): void {
 
 // ── Schedule validation (croner) ────────────────────────────────────────────
 
+/** Report whether a schedule can run safely and, when known, its firing interval. */
 export interface ScheduleValidation {
   ok: boolean;
   error?: string;

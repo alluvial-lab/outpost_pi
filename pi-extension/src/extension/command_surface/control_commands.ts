@@ -3,6 +3,7 @@ import type { MeshNode } from "../../session/mesh_node.js";
 import type { ByeReason } from "../../protocol/types.js";
 import { saveLocalConfig } from "../../session/local_config.js";
 
+/** Supply the lifecycle-owned relay and UI operations used by transparent control commands. */
 export interface ControlCommandsDeps {
   readonly getState: () => "idle" | "started" | "paired";
   readonly isDisposed: () => boolean;
@@ -23,6 +24,7 @@ export interface ControlCommandsDeps {
   ) => boolean;
 }
 
+/** Adapt Cockpit control input into relay lifecycle and live agent-name operations. */
 export class ControlCommands {
   constructor(private readonly deps: ControlCommandsDeps) {}
 
