@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'package:cockpit/app/cockpit/domain/contracts/workspace_layout_store.dart';
 import 'package:hive/hive.dart';
 
-/// Persiste o documento de layout numa Box do Hive, **uma String JSON por
-/// `projectId`**. Serializar pra String evita a dor dos `Map<dynamic, dynamic>`
-/// aninhados que o Hive devolve — voltamos sempre um `Map<String, dynamic>` limpo.
+/// Persist each project's layout document as one JSON String in a Hive box.
+///
+/// Encoding the document as text avoids Hive's nested
+/// `Map<dynamic, dynamic>` values and always returns a clean
+/// `Map<String, dynamic>` after decoding.
 class HiveWorkspaceLayoutStore implements WorkspaceLayoutStore {
   HiveWorkspaceLayoutStore(this._box);
 
@@ -21,7 +23,7 @@ class HiveWorkspaceLayoutStore implements WorkspaceLayoutStore {
       final decoded = jsonDecode(raw);
       return decoded is Map ? decoded.cast<String, dynamic>() : null;
     } catch (_) {
-      return null; // documento corrompido → trata como inexistente
+      return null; // Treat a corrupt document as missing.
     }
   }
 

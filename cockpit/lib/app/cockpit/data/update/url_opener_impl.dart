@@ -1,7 +1,10 @@
 import 'package:cockpit/app/cockpit/domain/contracts/url_opener.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Abre URLs externas via `url_launcher` (navegador/handler do SO).
+/// Open external URLs through the operating system's registered handler.
+///
+/// Uses `url_launcher` in external-application mode and maps URI or launcher
+/// failures to `false`.
 class UrlOpenerImpl implements UrlOpener {
   const UrlOpenerImpl();
 
