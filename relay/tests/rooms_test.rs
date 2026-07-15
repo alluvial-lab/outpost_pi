@@ -112,7 +112,8 @@ async fn same_device_reconnect_preserves_room_subscriptions() {
     let peer_pi = B64.encode(sk_pi.verifying_key().to_bytes());
 
     // Pi connects (device "dev-a") and the app subscribes to Pi's room events.
-    let (mut ws_pi_1, _) = connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
+    let (mut ws_pi_1, _) =
+        connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
     let (mut ws_app, _) = connect_and_auth(port).await;
     ws_app
         .send(Message::text(
@@ -129,7 +130,8 @@ async fn same_device_reconnect_preserves_room_subscriptions() {
     // The old conn's handle_peer teardown runs (unregister + conditional
     // unsubscribe_all). If it wrongly wipes the subscription, the
     // room_meta_update below won't reach the app.
-    let (mut ws_pi_2, _) = connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
+    let (mut ws_pi_2, _) =
+        connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // The replacement conn sends a room_meta_update. The app's subscription
@@ -326,8 +328,10 @@ async fn duplicate_room_connection_accepted_and_both_receive_broadcast() {
     let peer_pi = B64.encode(sk_pi.verifying_key().to_bytes());
 
     // Two conns at the same (peer, room) — both must complete the handshake.
-    let (mut ws_pi_1, _) = connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
-    let (mut ws_pi_2, _) = connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-b").await;
+    let (mut ws_pi_1, _) =
+        connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
+    let (mut ws_pi_2, _) =
+        connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-b").await;
 
     // A third party (the "app") sends a message to (peer_pi, "work").
     let (mut ws_app, _) = connect_and_auth(port).await;

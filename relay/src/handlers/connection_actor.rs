@@ -451,7 +451,12 @@ mod tests {
         let (registry, services) = actor_services();
         let (dest_tx, mut dest_rx) = mpsc::unbounded_channel::<Message>();
         let _dest_conn = registry
-            .register("dest-peer".to_string(), make_meta("dest-room"), "dev-a".to_string(), dest_tx)
+            .register(
+                "dest-peer".to_string(),
+                make_meta("dest-room"),
+                "dev-a".to_string(),
+                dest_tx,
+            )
             .await;
 
         let mut actor = ConnectionActor::new(
@@ -484,10 +489,20 @@ mod tests {
         let (target_tx, mut target_rx) = mpsc::unbounded_channel::<Message>();
         let (other_tx, mut other_rx) = mpsc::unbounded_channel::<Message>();
         let _target_conn = registry
-            .register("dest-peer".to_string(), make_meta("target-room"), "dev-a".to_string(), target_tx)
+            .register(
+                "dest-peer".to_string(),
+                make_meta("target-room"),
+                "dev-a".to_string(),
+                target_tx,
+            )
             .await;
         let _other_conn = registry
-            .register("dest-peer".to_string(), make_meta("other-room"), "dev-a".to_string(), other_tx)
+            .register(
+                "dest-peer".to_string(),
+                make_meta("other-room"),
+                "dev-a".to_string(),
+                other_tx,
+            )
             .await;
 
         let mut actor = ConnectionActor::new(
@@ -522,10 +537,20 @@ mod tests {
         let (sender_tx, mut sender_rx) = mpsc::unbounded_channel::<Message>();
         let (other_tx, mut other_rx) = mpsc::unbounded_channel::<Message>();
         let sender_conn = registry
-            .register("owner-peer".to_string(), make_meta("main"), "dev-a".to_string(), sender_tx)
+            .register(
+                "owner-peer".to_string(),
+                make_meta("main"),
+                "dev-a".to_string(),
+                sender_tx,
+            )
             .await;
         let _other_conn = registry
-            .register("owner-peer".to_string(), make_meta("main"), "dev-b".to_string(), other_tx)
+            .register(
+                "owner-peer".to_string(),
+                make_meta("main"),
+                "dev-b".to_string(),
+                other_tx,
+            )
             .await;
 
         let mut actor = ConnectionActor::new(
