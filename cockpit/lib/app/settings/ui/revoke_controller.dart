@@ -2,12 +2,13 @@ import 'package:cockpit/app/core/domain/contracts/revoke_gateway.dart';
 import 'package:cockpit/app/settings/domain/entities/paired_device.dart';
 import 'package:flutter/foundation.dart';
 
-/// Etapa do dialog de revoke (dirige o que ele mostra).
+/// Describe the revocation stage that drives dialog content.
 enum RevokeStage { running, done, failed }
 
-/// Estado do dialog de revoke. Sobe um `pi --mode rpc` efêmero (via a
-/// [RevokeGateway]) e manda `/outpost-pi revoke <shortId>`. One-shot: roda no
-/// [run] e reporta done/failed.
+/// Manage the one-shot device-revocation dialog state.
+///
+/// Uses an ephemeral `pi --mode rpc` process through [RevokeGateway] to run
+/// `/outpost-pi revoke <shortId>` and report completion or failure.
 class RevokeController extends ChangeNotifier {
   RevokeController(this._gateway);
 
@@ -19,6 +20,10 @@ class RevokeController extends ChangeNotifier {
 
   bool _disposed = false;
 
+  /// Run one revocation and publish its terminal state.
+  ///
+  /// Resets prior error state, preserves a display name for progress copy, and
+  /// suppresses listener notification if completion arrives after disposal.
   Future<void> run(PairedDevice device) async {
     deviceName = device.label.isEmpty ? device.shortId : device.label;
     stage = RevokeStage.running;
