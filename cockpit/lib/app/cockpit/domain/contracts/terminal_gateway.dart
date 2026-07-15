@@ -1,6 +1,6 @@
 /// Run a shell in a native pseudo-terminal (PTY).
 ///
-/// The `data/terminal/` implementation uses `flutter_pty` with forkpty on
+/// The `data/terminal/` implementation uses `kyroon_pty` with forkpty on
 /// macOS/Linux and ConPTY on Windows. `TerminalSession` in `ui/` depends only on
 /// this domain interface.
 abstract class TerminalGateway {
