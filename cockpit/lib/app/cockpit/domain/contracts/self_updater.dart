@@ -1,26 +1,30 @@
 import 'dart:async';
 
-/// Fase corrente do self-update nativo (Sparkle/WinSparkle). Best-effort: toda
-/// falha vira [error] e o card cai pro caminho de notify (nunca derruba o boot).
+/// Track the current native self-update phase for Sparkle or WinSparkle.
+///
+/// Updates are best-effort: every failure becomes [error], and the card falls
+/// back to the notification path without disrupting startup.
 enum SelfUpdatePhase {
-  /// Sem update pendente (nunca checou, ou já está na última versão).
+  /// Indicate that no update is pending, before a check or on the latest version.
   idle,
 
-  /// Checando o appcast.
+  /// Indicate that the appcast is being checked.
   checking,
 
-  /// Há versão nova; download em curso (modo auto-download silencioso).
+  /// Indicate that a new version is downloading silently in the background.
   downloading,
 
-  /// Artefato baixado e verificado — pronto pra instalar no próximo restart.
+  /// Indicate that a verified artifact is ready to install after a restart.
   downloaded,
 
-  /// Falha (rede, assinatura, parsing). Silenciosa pra UI; só loga.
+  /// Indicate a network, signature, or parsing failure logged without UI noise.
   error,
 }
 
-/// Estado observável do [SelfUpdater]. [version] preenchido quando há update
-/// disponível/baixado; [message] no erro.
+/// Expose observable [SelfUpdater] state.
+///
+/// [version] is present when an update is available or downloaded, and
+/// [message] is present on error.
 class SelfUpdateState {
   const SelfUpdateState(this.phase, {this.version, this.message});
 
@@ -30,46 +34,50 @@ class SelfUpdateState {
   final String? version;
   final String? message;
 
-  /// `true` quando o artefato já está baixado e só falta reiniciar pra aplicar.
+  /// Return `true` once the artifact is downloaded and awaits a restart.
   bool get isReadyToInstall => phase == SelfUpdatePhase.downloaded;
 
-  /// `true` enquanto há um update em andamento ou pronto (a UI mostra o card).
+  /// Return `true` while an update is downloading or ready for the UI card.
   bool get hasPendingUpdate =>
       phase == SelfUpdatePhase.downloading ||
       phase == SelfUpdatePhase.downloaded;
 }
 
-/// Self-update nativo: **Sparkle no macOS, WinSparkle no Windows** (via o plugin
-/// `auto_updater`). Em plataformas sem suporte (Linux) [isSupported] é `false` e
-/// os métodos são no-op — aí o caminho de notify + download manual
-/// (`UpdateChecker`/`UpdateCard`) assume.
+/// Manage native self-updates with **Sparkle on macOS and WinSparkle on
+/// Windows** through the `auto_updater` plugin.
 ///
-/// UX híbrida (decisão B do plano 47): a checagem/baixa roda **em background**
-/// (sem diálogo nativo); a UI visível é só o nosso card, que reflete [state]/
-/// [changes]. Reinício **silencioso** (decisão C): ao aplicar o update o app é
-/// encerrado e relançado pelo motor nativo; os agentes `pi` filhos são reapeados
-/// no próximo boot por `PiProcessRegistry.cleanOrphans` e respawnados pelo estado
-/// no Hive.
+/// On unsupported platforms such as Linux, [isSupported] is `false` and methods
+/// are no-ops. The notification and manual-download path through
+/// `UpdateChecker` and `UpdateCard` takes over.
+///
+/// Under plan 47's hybrid UX decision B, checks and downloads run **in the
+/// background** without a native dialog. Only the app's card is visible, driven
+/// by [state] and [changes]. Applying an update follows silent-restart decision
+/// C: the native engine exits and relaunches the app. On the next startup,
+/// `PiProcessRegistry.cleanOrphans` reaps child `pi` agents and Hive state
+/// respawns them.
 abstract class SelfUpdater {
-  /// `true` só onde há motor nativo (macOS/Windows).
+  /// Report whether a native update engine exists on macOS or Windows.
   bool get isSupported;
 
-  /// Estado corrente (snapshot síncrono pra primeira pintura do card).
+  /// Return a synchronous state snapshot for the card's first render.
   SelfUpdateState get state;
 
-  /// Stream de transições de [state] — a UI escuta pra re-renderizar.
+  /// Emit [state] transitions that prompt the UI to render again.
   Stream<SelfUpdateState> get changes;
 
-  /// Liga o motor nativo: feed URL + listener + agenda a checagem periódica.
-  /// Idempotente; no-op se [isSupported] é `false`.
+  /// Start the native engine, configure its feed and listener, and schedule
+  /// periodic checks.
+  ///
+  /// This operation is idempotent and a no-op when [isSupported] is `false`.
   Future<void> initialize();
 
-  /// Dispara uma checagem. [inBackground] = silenciosa (sem UI nativa).
+  /// Trigger an update check, suppressing native UI when [inBackground] is true.
   Future<void> checkForUpdates({bool inBackground = true});
 
-  /// Aplica o update já baixado: instala e relança. No-op se nada foi baixado.
+  /// Install the downloaded update and relaunch, or do nothing if none exists.
   Future<void> applyDownloadedUpdate();
 
-  /// Libera o listener nativo e a stream.
+  /// Release the native listener and state stream.
   void dispose();
 }

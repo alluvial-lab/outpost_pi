@@ -1,21 +1,23 @@
 import 'package:cockpit/app/cockpit/domain/entities/project.dart';
 
-/// Persistência dos projetos (pastas salvas). Contrato no domínio; a
-/// implementação concreta (Hive) mora em `data/`.
+/// Persist projects and their saved folders.
+///
+/// This domain contract has a concrete Hive implementation in `data/`.
 abstract class ProjectRepository {
-  /// Todos os projetos salvos, ordenados por criação (mais antigo primeiro).
+  /// Return all saved projects from oldest to newest by creation time.
   Future<List<Project>> all();
 
-  /// Cria ou atualiza um projeto.
+  /// Create or update [project].
   Future<void> save(Project project);
 
-  /// Remove um projeto pelo id.
+  /// Remove the project identified by [id].
   Future<void> remove(String id);
 
-  /// Id do último workspace selecionado (pra pré-selecionar na próxima
-  /// abertura), ou `null` se nunca salvou.
+  /// Return the last selected workspace ID for the next startup selection.
+  ///
+  /// Returns `null` when no selection has ever been saved.
   Future<String?> loadLastSelected();
 
-  /// Persiste o id do último workspace selecionado (`null` limpa).
+  /// Persist the last selected workspace [id], or clear it when `null`.
   Future<void> saveLastSelected(String? id);
 }

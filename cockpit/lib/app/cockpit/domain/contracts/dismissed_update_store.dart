@@ -1,10 +1,11 @@
-/// Persiste qual versão de atualização o usuário **dispensou** (fechou o card).
-/// Contrato no domínio; impl (Hive) em `data/`. O card não reaparece pra essa
-/// versão, mas volta quando sair uma maior.
+/// Persist the update version the user **dismissed** by closing its card.
+///
+/// This domain contract is implemented with Hive in `data/`. The card stays
+/// hidden for that version but reappears when a newer version is released.
 abstract class DismissedUpdateStore {
-  /// A última versão dispensada, ou `null` se nenhuma.
+  /// Return the last dismissed version, or `null` if none was dismissed.
   String? dismissedVersion();
 
-  /// Marca [version] como dispensada.
+  /// Mark [version] as dismissed.
   Future<void> dismiss(String version);
 }

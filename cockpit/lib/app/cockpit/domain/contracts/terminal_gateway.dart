@@ -1,23 +1,25 @@
-/// Pseudo-terminal nativo (PTY) rodando um shell. Contrato no domínio; a impl
-/// (`data/terminal/`) usa `flutter_pty` (forkpty no macOS/Linux, ConPTY no
-/// Windows). A `ui/` (TerminalSession) só conhece esta interface.
+/// Run a shell in a native pseudo-terminal (PTY).
+///
+/// The `data/terminal/` implementation uses `flutter_pty` with forkpty on
+/// macOS/Linux and ConPTY on Windows. `TerminalSession` in `ui/` depends only on
+/// this domain interface.
 abstract class TerminalGateway {
-  /// Sobe o shell num PTY na pasta [workingDirectory].
+  /// Start the shell in a PTY rooted at [workingDirectory].
   void start({
     required String workingDirectory,
     int rows = 25,
     int columns = 80,
   });
 
-  /// Bytes do stdout/stderr do shell.
+  /// Emit bytes from the shell's stdout and stderr.
   Stream<List<int>> get output;
 
-  /// Escreve no stdin do shell (teclado).
+  /// Write keyboard input to the shell's stdin.
   void write(List<int> data);
 
-  /// Redimensiona o PTY.
+  /// Resize the PTY to [rows] by [columns].
   void resize(int rows, int columns);
 
-  /// Mata o shell limpo (sem órfão).
+  /// Stop the shell cleanly without leaving an orphan process.
   Future<void> kill();
 }
