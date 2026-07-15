@@ -239,7 +239,7 @@ class AppLauncherImpl implements AppLauncherGateway {
     // `xdg-open` provides the Finder/Explorer equivalent and is available on
     // nearly every Linux desktop through xdg-utils.
     if (await unixWhich('xdg-open') != null) {
-      found.add(const LaunchableApp(id: 'files', name: 'Arquivos'));
+      found.add(const LaunchableApp(id: 'files', name: 'Files'));
     }
     return found;
   }
