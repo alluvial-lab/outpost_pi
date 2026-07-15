@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kevoun.com/schemas/relay-control.schema.json",
-  "title": "Remote Pi relay auth, presence, rooms, and control frames",
+  "title": "Outpost-Pi relay auth, presence, rooms, and control frames",
   "oneOf": [
     { "$ref": "./relay-outer.schema.json" },
     { "$ref": "#/$defs/hello" },
@@ -243,6 +243,7 @@
     "family": "relayControl",
     "transport": "relay-jsonl",
     "discriminator": "type",
-    "relayOpaque": ["ct"]
+    "relayOpaque": ["ct"],
+    "authDomainPrefix": "outpost-pi-relay-auth-v1\n"
   }
 }

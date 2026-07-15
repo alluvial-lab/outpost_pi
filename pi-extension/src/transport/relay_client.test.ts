@@ -1,9 +1,21 @@
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { generateEd25519Keypair } from "../pairing/crypto.js";
+import { RELAY_AUTH_DOMAIN_PREFIX } from "../protocol/generated/protocol.generated.js";
 
 // ── WS mock (class-based, vitest-hoisted) ─────────────────────────────────────
 // Must use a proper class so `new WebSocket(...)` works inside RelayClient.
+
+interface RelayAuthDomainVector {
+  authDomainPrefix: string;
+  nonceBase64: string;
+  signingBytesBase64: string;
+}
+
+const relayAuthDomainVector = JSON.parse(
+  readFileSync(new URL("../../../protocol/fixtures/relay/auth-domain-vector.json", import.meta.url), "utf8"),
+) as RelayAuthDomainVector;
 
 // Shared reference: set by the MockWS constructor so tests can access it.
 const wsRef: { current: MockWS | null } = { current: null };
@@ -28,7 +40,7 @@ class MockWS extends EventEmitter {
 vi.mock("ws", () => ({ default: MockWS }));
 
 // Import AFTER the mock so RelayClient picks up the mocked ws module.
-const { RelayClient } = await import("./relay_client.js");
+const { RelayClient, relayAuthSigningBytes } = await import("./relay_client.js");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -60,6 +72,15 @@ describe("RelayClient", () => {
   beforeEach(() => {
     keypair = generateEd25519Keypair();
     wsRef.current = null;
+  });
+
+  test("auth contract: generated prefix signs the shared byte vector", () => {
+    const nonce = Buffer.from(relayAuthDomainVector.nonceBase64, "base64");
+
+    expect(RELAY_AUTH_DOMAIN_PREFIX).toBe(relayAuthDomainVector.authDomainPrefix);
+    expect(relayAuthSigningBytes(nonce).toString("base64")).toBe(
+      relayAuthDomainVector.signingBytesBase64,
+    );
   });
 
   test("connect: sends hello with correct Ed25519 pubkey", async () => {

@@ -1,0 +1,5 @@
+{
+  "authDomainPrefix": "outpost-pi-relay-auth-v1\n",
+  "nonceBase64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "signingBytesBase64": "b3V0cG9zdC1waS1yZWxheS1hdXRoLXYxCgABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f"
+}

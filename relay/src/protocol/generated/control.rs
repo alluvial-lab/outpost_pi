@@ -7,6 +7,8 @@
 use super::room::RoomMetaPatch;
 use serde::{Deserialize, Serialize};
 
+pub const RELAY_AUTH_DOMAIN_PREFIX: &[u8] = b"outpost-pi-relay-auth-v1\n";
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientAuthMsg {

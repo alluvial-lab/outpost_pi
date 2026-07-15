@@ -28,11 +28,15 @@ import '../../pairing/pair_request_flow.dart';
 
 /// Domain-separation prefix for relay-auth signatures. Appended before the
 /// relay-provided nonce before signing, so the owner key cannot be abused as a
-/// cross-protocol signing oracle. MUST stay byte-for-byte identical to the
-/// relay's `RELAY_AUTH_DOMAIN_PREFIX` (relay/src/auth/challenge.rs).
+/// cross-protocol signing oracle. Dart has no schema codegen path; the shared
+/// auth-domain vector test keeps this local value aligned with the schema.
 final List<int> relayAuthDomainPrefix = utf8.encode(
   'outpost-pi-relay-auth-v1\n',
 );
+
+/// Build the exact bytes covered by a relay-auth signature.
+Uint8List relayAuthSigningBytes(List<int> nonce) =>
+    Uint8List.fromList([...relayAuthDomainPrefix, ...nonce]);
 
 /// Describe WebSocket transport failure at the relay boundary.
 class WsTransportError implements Exception {
@@ -286,8 +290,10 @@ class WsTransport implements PeerTransport, IControlLink {
       // signature to the relay-auth context so it is useless as a forgery of
       // any other protocol's signature. MUST stay in lockstep with the relay's
       // `verify_auth` (relay/src/auth/challenge.rs).
-      final signed = Uint8List.fromList([...relayAuthDomainPrefix, ...nonce]);
-      final sig = await Ed25519().sign(signed, keyPair: ed25519Key);
+      final sig = await Ed25519().sign(
+        relayAuthSigningBytes(nonce),
+        keyPair: ed25519Key,
+      );
       ws.sink.add(
         jsonEncode({'type': 'auth', 'sig': base64.encode(sig.bytes)}),
       );

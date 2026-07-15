@@ -84,10 +84,13 @@ export type SessionHistoryEvent =
   | HistoryAgentMessage
   | HistoryCompaction;
 
+export const RELAY_AUTH_DOMAIN_PREFIX = "outpost-pi-relay-auth-v1\n";
+
 export const protocolManifest = {
   schemaVersion: 1,
   source: "json-schema-2020-12",
   profile: "compat",
+  authDomainPrefix: RELAY_AUTH_DOMAIN_PREFIX,
   families: [
     { id: "appPiClient", union: "ClientMessage", transport: "relay-jsonl" },
     { id: "appPiServer", union: "ServerMessage", transport: "relay-jsonl" },
