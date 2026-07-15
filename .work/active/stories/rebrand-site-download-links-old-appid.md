@@ -1,7 +1,7 @@
 ---
 id: rebrand-site-download-links-old-appid
 kind: story
-stage: review
+stage: done
 tags: [rebrand, site, release]
 parent: feature-outpost-pi-distribution-ownership
 depends_on: []
@@ -40,3 +40,13 @@ Run `pnpm lint` and `pnpm build` from `site/`.
 - `rg 'work.jacobmoura.remotepi' site/` returns no hits.
 - Discrepancies from design: none.
 - Adjacent issues parked: none (left `IconPlay` export in `icons.tsx` as harmless unused export; lint did not flag it).
+
+## Review (2026-07-15)
+
+**Verdict**: Approve - story verified by implement; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fast-lane: green build+test verification recorded by implement. Orchestrator re-verified the combined tree (extension 838 passed/3 skipped; relay all green; app analyze clean + 698 passed; protocol check + generate:rust:check clean; site lint+build clean).
