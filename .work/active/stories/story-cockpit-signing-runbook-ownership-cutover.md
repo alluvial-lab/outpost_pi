@@ -1,7 +1,7 @@
 ---
 id: story-cockpit-signing-runbook-ownership-cutover
 kind: story
-stage: implementing
+stage: review
 tags: [cockpit, docs, release, rebrand]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -41,3 +41,13 @@ identity cutover a surprise outside the transient feature body.
   it from the separate disabled-self-update/manual-install state.
 - Re-run the inherited-identity grep while preserving the historical
   `cockpit/CHANGELOG.md` record and genuine `jacobaraujo7/*` dependencies.
+
+## Implementation notes
+- Files changed: `cockpit/packaging/README.md`
+- Removed the inherited Apple team ID `U843T2P7A2` from the identity table; replaced with "operator-owned, supplied via `APPLE_TEAM_ID` secret (not yet provisioned)."
+- Removed the inherited `/Users/jacob/.../AuthKey_3Y2J8MA3M4.p8` notarization key path; the notarize step now reads `APPLE_API_KEY_FILE` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` from env with `:?` fail-closed.
+- Updated the CI secrets inventory to list all 7 Apple secrets (incl. `APPLE_SIGNING_IDENTITY`, `APPLE_TEAM_ID`) and to state the operator Developer ID is not yet provisioned (workflow fails closed until secrets exist).
+- Added a **one-way bundle-ID cutover** callout documenting that moving from `work.jacobmoura.cockpit` to `dev.kevoun.outpostpi.cockpit` prevents in-place upgrade, distinguished from the separate disabled-self-update/manual-install state.
+- Verification: `rg 'U843T2P7A2|/Users/jacob|jacobmoura|Developer ID Application: Jacob Moura' cockpit/ .github/workflows/cockpit-release.yml` returns only the intentional one-way-door warning naming the old ID being migrated from, and a harmless doc-comment example in `session_history_impl.dart`.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
