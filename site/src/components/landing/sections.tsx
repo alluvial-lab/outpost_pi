@@ -6,7 +6,6 @@ import {
   IconMesh,
   IconArrow,
   IconAndroid,
-  IconPlay,
   IconApple,
   IconDownload,
   IconMic,
@@ -131,14 +130,6 @@ const STORES: Store[] = [
     name: "App Store",
     sub: "iOS · iPhone & iPad",
     href: "https://apps.apple.com/app/outpost-pi-coding-agent/id6773499691",
-    external: true,
-  },
-  {
-    glyph: <IconPlay />,
-    top: "Get it on",
-    name: "Google Play",
-    sub: "Android",
-    href: "https://play.google.com/store/apps/details?id=work.jacobmoura.remotepi",
     external: true,
   },
   {
