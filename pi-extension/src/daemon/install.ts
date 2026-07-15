@@ -495,7 +495,7 @@ export function isOnPath(dir: string, envPath: string = process.env["PATH"] ?? "
  */
 export function linkCliBinaries(
   home: string = homedir(),
-  paths: { remotePi?: string; supervisord?: string } = {},
+  paths: { outpostPi?: string; supervisord?: string } = {},
   opts: { node?: string; mutatePath?: boolean } = {},
 ): LinkBinariesResult {
   const binDir = userLocalBinDir(home);
@@ -512,11 +512,11 @@ export function linkCliBinaries(
   mkdirSync(binDir, { recursive: true });
   log.push(`ensured ${binDir}`);
 
-  const remotePi = paths.remotePi ?? findOutpostPiScript();
+  const outpostPi = paths.outpostPi ?? findOutpostPiScript();
   const supervisord = paths.supervisord ?? findSupervisorScript();
-  if (!existsSync(remotePi)) {
+  if (!existsSync(outpostPi)) {
     throw new Error(
-      `outpost-pi script not found at ${remotePi}. ` +
+      `outpost-pi script not found at ${outpostPi}. ` +
       "Run `pnpm build` (dev) or reinstall the extension.",
     );
   }
@@ -531,11 +531,11 @@ export function linkCliBinaries(
   // of dist/index.js means the file IS a valid interpreter target once
   // chmod +x is applied. Same for supervisord.js (no shebang — we rely
   // on `node` resolving via the symlink at exec time).
-  try { chmodSync(remotePi, 0o755); } catch { /* best-effort */ }
+  try { chmodSync(outpostPi, 0o755); } catch { /* best-effort */ }
   try { chmodSync(supervisord, 0o755); } catch { /* best-effort */ }
 
   const links: LinkBinariesResult["links"] = [
-    { name: "outpost-pi",     path: join(binDir, "outpost-pi"),      target: remotePi },
+    { name: "outpost-pi",     path: join(binDir, "outpost-pi"),      target: outpostPi },
     { name: "pi-supervisord", path: join(binDir, "pi-supervisord"), target: supervisord },
   ];
   for (const link of links) {
@@ -563,7 +563,7 @@ export function linkCliBinaries(
 function _linkCliBinariesWindows(
   home: string,
   binDir: string,
-  paths: { remotePi?: string; supervisord?: string },
+  paths: { outpostPi?: string; supervisord?: string },
   opts: { node?: string; mutatePath?: boolean },
 ): LinkBinariesResult {
   void home;
@@ -572,11 +572,11 @@ function _linkCliBinariesWindows(
   log.push(`ensured ${binDir}`);
 
   const node = opts.node ?? findNodeBinary();
-  const remotePi = paths.remotePi ?? findOutpostPiScript();
+  const outpostPi = paths.outpostPi ?? findOutpostPiScript();
   const supervisord = paths.supervisord ?? findSupervisorScript();
-  if (!existsSync(remotePi)) {
+  if (!existsSync(outpostPi)) {
     throw new Error(
-      `outpost-pi script not found at ${remotePi}. ` +
+      `outpost-pi script not found at ${outpostPi}. ` +
       "Run `pnpm build` (dev) or reinstall the extension.",
     );
   }
@@ -588,7 +588,7 @@ function _linkCliBinariesWindows(
   }
 
   const links: LinkBinariesResult["links"] = [
-    { name: "outpost-pi.cmd",      path: join(binDir, "outpost-pi.cmd"),      target: remotePi },
+    { name: "outpost-pi.cmd",      path: join(binDir, "outpost-pi.cmd"),      target: outpostPi },
     { name: "pi-supervisord.cmd", path: join(binDir, "pi-supervisord.cmd"), target: supervisord },
   ];
   for (const link of links) {

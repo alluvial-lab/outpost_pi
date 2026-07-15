@@ -2704,7 +2704,7 @@ const routeClientMessageForTest = (
   ctx: Pick<ExtensionContext, "abort">,
 ): void => ownerHarness.fallbackRoute(msg, ctx);
 
-export const remotePiTestHarness: OutpostPiTestHarness = createOutpostPiTestHarness({
+export const outpostPiTestHarness: OutpostPiTestHarness = createOutpostPiTestHarness({
   connect: (ctx) => connectForTest(ctx),
   stop: (ctx) => stopForTest(ctx),
   state: () => getStateForTest(),
@@ -2713,10 +2713,10 @@ export const remotePiTestHarness: OutpostPiTestHarness = createOutpostPiTestHarn
 
 // Legacy compatibility aliases. Keep these private test exports available while
 // new tests migrate to the named harness above.
-export const _connectForTest = remotePiTestHarness.connect;
-export const _stopForTest = remotePiTestHarness.stop;
-export const _getState = remotePiTestHarness.state;
-export const routeClientMessage = remotePiTestHarness.routeClientMessage;
+export const _connectForTest = outpostPiTestHarness.connect;
+export const _stopForTest = outpostPiTestHarness.stop;
+export const _getState = outpostPiTestHarness.state;
+export const routeClientMessage = outpostPiTestHarness.routeClientMessage;
 
 // ── session_sync handler + helpers ────────────────────────────────────────────
 
