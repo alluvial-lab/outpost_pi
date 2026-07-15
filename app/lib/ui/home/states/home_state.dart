@@ -6,7 +6,7 @@ sealed class HomeState {
   const HomeState();
 }
 
-/// Plan-38 Fase 3 — which presence slice of the Home list is shown.
+/// Plan-38 Phase 3 — which presence slice of the Home list is shown.
 /// Pure view filter over the existing (peer → room) list; the tabs never
 /// reload or regroup data. Default is [online] (see [HomeList.filter]).
 ///
@@ -67,7 +67,7 @@ class HomeList extends HomeState {
   final Map<String, PresenceState> statusByEpk;
   final Map<String, List<RoomInfo>> roomsByPeer;
 
-  /// Plan-38 Fase 3 — the selected presence tab. Part of the immutable
+  /// Plan-38 Phase 3 — the selected presence tab. Part of the immutable
   /// state (per the `ViewModel<T>` pattern) so the choice is reactive and
   /// survives presence/rooms/status re-emits. Default [HomeFilter.online].
   final HomeFilter filter;

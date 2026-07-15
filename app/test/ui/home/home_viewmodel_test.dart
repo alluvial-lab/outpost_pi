@@ -330,7 +330,7 @@ void main() {
     );
   });
 
-  group('HomeViewModel — presence filter (plan-38 Fase 3)', () {
+  group('HomeViewModel — presence filter (plan-38 Phase 3)', () {
     test('counts / visibleItems split rooms by liveness; setFilter re-derives '
         'without reloading', () async {
       final ch = _ControllableChannel();
