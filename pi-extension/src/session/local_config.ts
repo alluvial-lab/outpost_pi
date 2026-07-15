@@ -23,8 +23,8 @@ export interface LocalConfig {
    * configs without this field are treated as `true` for backward compat.
    */
   auto_start_relay?: boolean;
-  // `workspace?`/`worktree?` were removed (plan/38, reescrito 2026-06-08): the
-  // mesh identity is `(cwd, nome)`, with `cwd` subsuming folder + worktree
+  // `workspace?`/`worktree?` were removed (plan/38, rewritten 2026-06-08): the
+  // mesh identity is `(cwd, name)`, with `cwd` subsuming folder + worktree
   // disambiguation. Neither axis is derived anymore, so the config fields are
   // gone. Any stale `workspace`/`worktree` key in an on-disk/inline config is
   // simply ignored on read (parseLocalConfig surfaces only known fields).
@@ -41,7 +41,7 @@ function pathFor(cwd: string): string {
  * separator — `<cwd>@<name>` stays unambiguous on the wire. Returns undefined
  * when the input isn't a usable non-empty string, sanitizes to empty, or is a
  * reserved addressing keyword (`broadcast` / `broker`). Used by the broker's
- * `sanitizeMeshName` to keep the `<nome>` half of a peer address safe to
+ * `sanitizeMeshName` to keep the `<name>` half of a peer address safe to
  * compose (plan/38).
  */
 export function sanitizeSegment(v: unknown): string | undefined {
@@ -151,8 +151,8 @@ export function saveLocalConfig(cwd: string, patch: Partial<LocalConfig>): void 
 /**
  * Default agent name when none is configured (plan/38 decision D): the **leaf**
  * of the cwd, `basename(cwd)`. The cwd now travels as its own address axis
- * (`<cwd>@<nome>`), so the name no longer needs the `parent/folder` prefix that
- * used to disambiguate folders — the broker keys peers by `(cwd, nome)`, and a
+ * (`<cwd>@<name>`), so the name no longer needs the `parent/folder` prefix that
+ * used to disambiguate folders — the broker keys peers by `(cwd, name)`, and a
  * clean leaf means `#N` almost never fires. Falls back to `"agent"` for a
  * path with no usable basename (root / empty).
  */
