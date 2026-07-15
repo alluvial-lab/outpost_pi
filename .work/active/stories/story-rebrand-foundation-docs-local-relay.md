@@ -1,14 +1,14 @@
 ---
 id: story-rebrand-foundation-docs-local-relay
 kind: story
-stage: review
+stage: done
 tags: [rebrand, docs]
 parent: epic-rebrand-external-surfaces
 depends_on: []
 release_binding: null
 gate_origin: review
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Roll foundation docs forward to local-relay-only + dormant rp-s3

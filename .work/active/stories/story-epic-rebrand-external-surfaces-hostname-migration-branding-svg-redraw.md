@@ -1,14 +1,14 @@
 ---
 id: story-epic-rebrand-external-surfaces-hostname-migration-branding-svg-redraw
 kind: story
-stage: review
+stage: done
 tags: [rebrand, branding, design]
 parent: epic-rebrand-external-surfaces-hostname-migration
 depends_on: [story-epic-rebrand-external-surfaces-hostname-migration-mechanical-replacement]
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Manually redraw the banner branding text
