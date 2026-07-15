@@ -1,42 +1,42 @@
-# Empacotamento & Release — Cockpit
+# Packaging & Release — Cockpit
 
-Runbook de build/empacotamento das 3 plataformas. Base pro job de CI
-(`.github/workflows/cockpit-release.yml`, plano 43 passo 3). Plano de
-referência: [`../../plan/43-cockpit-packaging.md`](../../plan/43-cockpit-packaging.md).
+Build/packaging runbook for the 3 platforms. Basis for the CI job
+(`.github/workflows/cockpit-release.yml`, plan 43 step 3). Reference plan:
+[`../../plan/43-cockpit-packaging.md`](../../plan/43-cockpit-packaging.md).
 
-## Identidade (passo 1 — feito)
+## Identity (step 1 — done)
 
-| Item | Valor |
+| Item | Value |
 |---|---|
 | App ID (macOS bundle id / Linux app id) | `work.jacobmoura.cockpit` |
-| Nome de exibição | **Outpost-Pi Cockpit** |
-| Binário | `cockpit` (Linux/Windows) / `Cockpit` (macOS) — **não** renomeado |
+| Display name | **Outpost-Pi Cockpit** |
+| Binary | `cockpit` (Linux/Windows) / `Cockpit` (macOS) — **not** renamed |
 | Team ID (Apple) | `U843T2P7A2` |
-| Versão (SSOT) | `version:` do `pubspec.yaml` (`x.y.z+n`) |
+| Version (SSOT) | `version:` in `pubspec.yaml` (`x.y.z+n`) |
 
-- macOS: `PRODUCT_BUNDLE_IDENTIFIER` em `macos/Runner/Configs/AppInfo.xcconfig`;
-  `CFBundleDisplayName` em `Info.plist`; **Hardened Runtime** ligado no Release
-  (`ENABLE_HARDENED_RUNTIME = YES`, exigência da notarização) com
-  `Release.entitlements` (sandbox off — compatível com Developer ID).
-- Windows: `CompanyName`/`ProductName`/`LegalCopyright` em
-  `windows/runner/Runner.rc`; versão vem dos defines `FLUTTER_VERSION_*`
-  (injetados em build; o `#else "1.0.0"` é só fallback).
-- Linux: `.desktop` + ícones hicolor + `work.jacobmoura.cockpit.metainfo.xml`
-  (AppStream), instalados via `linux/CMakeLists.txt`.
+- macOS: `PRODUCT_BUNDLE_IDENTIFIER` in `macos/Runner/Configs/AppInfo.xcconfig`;
+  `CFBundleDisplayName` in `Info.plist`; **Hardened Runtime** enabled in Release
+  (`ENABLE_HARDENED_RUNTIME = YES`, notarization requirement) with
+  `Release.entitlements` (sandbox off — compatible with Developer ID).
+- Windows: `CompanyName`/`ProductName`/`LegalCopyright` in
+  `windows/runner/Runner.rc`; version comes from `FLUTTER_VERSION_*` defines
+  (injected during build; `#else "1.0.0"` is only a fallback).
+- Linux: `.desktop` + hicolor icons + `work.jacobmoura.cockpit.metainfo.xml`
+  (AppStream), installed through `linux/CMakeLists.txt`.
 
-## Ferramenta
+## Tool
 
-[Fastforge](https://pub.dev/packages/fastforge) (sucessor do `flutter_distributor`,
-descontinuado):
+[Fastforge](https://pub.dev/packages/fastforge) (successor to the discontinued
+`flutter_distributor`):
 
 ```bash
 dart pub global activate fastforge
 ```
 
-Config: `distribute_options.yaml` (raiz do cockpit) + um `make_config.yaml` por
-formato. **Atenção à convenção de path do Fastforge**: os configs ficam em
-`<plataforma>/packaging/<formato>/make_config.yaml` (hardcoded no loader), **não**
-em `packaging/<plataforma>/...` como o diagrama do plano sugeria:
+Config: `distribute_options.yaml` (Cockpit root) + one `make_config.yaml` per
+format. **Note the Fastforge path convention**: configs live in
+`<platform>/packaging/<format>/make_config.yaml` (hardcoded in the loader), **not**
+in `packaging/<platform>/...` as the plan diagram suggested:
 
 ```
 macos/packaging/dmg/make_config.yaml
@@ -45,98 +45,97 @@ linux/packaging/deb/make_config.yaml
 linux/packaging/rpm/make_config.yaml
 ```
 
-## macOS — build + sign + DMG + notarize + staple (ponta a ponta)
+## macOS — build + sign + DMG + notarize + staple (end to end)
 
-Validado localmente em 2026-06-12 (DMG aceito pelo Gatekeeper). Pré-requisitos:
-identidade **"Developer ID Application: Jacob Moura (U843T2P7A2)"** no Keychain e
-a API key do App Store Connect.
+Validated locally on 2026-06-12 (DMG accepted by Gatekeeper). Prerequisites:
+**"Developer ID Application: Jacob Moura (U843T2P7A2)"** identity in Keychain and
+the App Store Connect API key.
 
 ```bash
 cd cockpit
 
-# 1. Build universal (x86_64 + arm64 — default do Flutter macOS release).
+# 1. Universal build (x86_64 + arm64 — Flutter macOS release default).
 flutter build macos --release
 APP="build/macos/Build/Products/Release/Cockpit.app"
 
-# 2. Assina o .app com Developer ID + Hardened Runtime + entitlements de Release.
+# 2. Sign the .app with Developer ID + Hardened Runtime + Release entitlements.
 codesign --force --deep --options runtime --timestamp \
   --entitlements macos/Runner/Release.entitlements \
   --sign "Developer ID Application: Jacob Moura (U843T2P7A2)" "$APP"
-codesign --verify --deep --strict --verbose=2 "$APP"   # checagem
+codesign --verify --deep --strict --verbose=2 "$APP"   # check
 
-# 3. Monta o DMG (hdiutil — sem dependências; o maker do Fastforge usa `appdmg`
-#    via npm, alternativa pra CI). Layout: app + atalho /Applications.
+# 3. Build the DMG (hdiutil — no dependencies; Fastforge maker uses `appdmg`
+#    through npm, an alternative for CI). Layout: app + /Applications shortcut.
 mkdir -p dist
 STAGE=$(mktemp -d); cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
 DMG="dist/OutpostPiCockpit-1.0.0-macos-universal.dmg"
 hdiutil create -volname "Outpost-Pi Cockpit" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
 
-# 4. Assina o DMG.
+# 4. Sign the DMG.
 codesign --force --timestamp \
   --sign "Developer ID Application: Jacob Moura (U843T2P7A2)" "$DMG"
 
-# 5. Notariza (App Store Connect API key) e aguarda.
+# 5. Notarize (App Store Connect API key) and wait.
 xcrun notarytool submit "$DMG" \
   --key "/Users/jacob/Library/Mobile Documents/com~apple~CloudDocs/Flutterando/OutpostPi/CockpitApp/AuthKey_3Y2J8MA3M4.p8" \
   --key-id 3Y2J8MA3M4 \
   --issuer a76c76e6-a413-449e-926c-f2c30d5645c4 \
   --wait
 
-# 6. Grampeia o ticket e valida.
+# 6. Staple the ticket and validate.
 xcrun stapler staple "$DMG"
 spctl -a -t open --context context:primary-signature -vv "$DMG"   # → "accepted / Notarized Developer ID"
 ```
 
-> **CI**: os 5 secrets Apple já estão no repo (`MACOS_CERT_P12`,
+> **CI**: the 5 Apple secrets are already in the repo (`MACOS_CERT_P12`,
 > `MACOS_CERT_PASSWORD`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_API_KEY`).
-> No runner, importar o `.p12` num keychain temporário e escrever a `.p8` num
-> arquivo antes de rodar os passos acima.
+> On the runner, import the `.p12` into a temporary keychain and write the `.p8` to a
+> file before running the steps above.
 
 ## Windows — Inno Setup (`.exe`)
 
-**Não buildável no Mac.** Job `windows` do CI (`windows-latest`):
+**Cannot be built on Mac.** CI `windows` job (`windows-latest`):
 
 ```bash
 flutter build windows --release
-fastforge package --platform windows --targets exe   # usa windows/packaging/exe/make_config.yaml
+fastforge package --platform windows --targets exe   # uses windows/packaging/exe/make_config.yaml
 ```
 
-Sem assinatura nesta fase (aviso do SmartScreen documentado no site). Artefato:
+No signing at this stage (SmartScreen warning documented on the site). Artifact:
 `OutpostPiCockpit-Setup-<v>-windows-x64.exe`.
 
-## Linux — `.deb` + `.rpm` (x86_64 e arm64)
+## Linux — `.deb` + `.rpm` (x86_64 and arm64)
 
-**Não buildável no Mac.** Jobs `linux-x64` (`ubuntu-24.04`) e `linux-arm64`
-(`ubuntu-24.04-arm`) do CI:
+**Cannot be built on Mac.** CI jobs `linux-x64` (`ubuntu-24.04`) and `linux-arm64`
+(`ubuntu-24.04-arm`):
 
 ```bash
-sudo apt-get install -y rpm   # rpmbuild, pra gerar .rpm em runner Ubuntu
+sudo apt-get install -y rpm   # rpmbuild, to generate .rpm on Ubuntu runner
 flutter build linux --release
 fastforge package --platform linux --targets deb
 fastforge package --platform linux --targets rpm
 ```
 
-Deps de runtime declaradas nos `make_config.yaml` (GTK3 + libs base). **Pendência
-de CI** (passo 3): rodar `ldd` no bundle gerado pra confirmar/expandir as deps, e
-validar instalação em containers `ubuntu:24.04` (deb) e `fedora:40` (rpm) — não
-foi possível neste Mac (sem build Linux; Docker presente mas parado).
+Runtime dependencies declared in `make_config.yaml` (GTK3 + base libs). **CI
+pending work** (step 3): run `ldd` on the generated bundle to confirm/expand deps, and
+validate installation in `ubuntu:24.04` (deb) and `fedora:40` (rpm) containers — this was
+not possible on this Mac (no Linux build; Docker present but stopped).
 
-## Self-update (atualmente desativado)
+## Self-update (currently disabled)
 
-Os appcasts de auto-update não são atualmente publicados nem implantados. Por
-isso, o runtime não configura feeds para macOS ou Windows e usa
-`NoopSelfUpdater` em todas as plataformas. As atualizações do Cockpit dependem
-de uma nova instalação manual até que a publicação dos appcasts seja retomada.
+Auto-update appcasts are not currently published or deployed. Therefore, the runtime
+does not configure feeds for macOS or Windows and uses `NoopSelfUpdater` on all
+platforms. Cockpit updates depend on a new manual installation until appcast publication
+resumes.
 
-O pipeline pode continuar gerando instaladores para a primeira instalação, mas
-não há artefatos ou chaves de appcast neste runbook enquanto o recurso estiver
-desativado.
+The pipeline can keep generating installers for the first installation, but there are no
+appcast artifacts or keys in this runbook while the feature is disabled.
 
-## Próximos passos (plano 43)
+## Next steps (plan 43)
 
-- Passo 3: `.github/workflows/cockpit-release.yml` (trigger `cockpit-v*`). **Feito**
-  (+ self-update do plano 47: `.app.zip` + appcasts assinados).
-- Passo 4: layout/`latest.json` na VPS.
-- Passo 5: página de downloads no `site/`.
-- Passo 6: runbook de release (bump `version:` → tag → CI → smoke test).
+- Step 3: `.github/workflows/cockpit-release.yml` (trigger `cockpit-v*`). **Done**
+  (+ plan 47 self-update: `.app.zip` + signed appcasts).
+- Step 4: `latest.json` layout on the VPS.
+- Step 5: downloads page in `site/`.
+- Step 6: release runbook (bump `version:` → tag → CI → smoke test).

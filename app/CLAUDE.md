@@ -1,69 +1,69 @@
 # Outpost-Pi — App (Flutter)
 
-Cliente mobile (iOS + Android) do Outpost-Pi. Pareia via QR, lista sessões do Pi,
-chat com streaming, approval cards para tool calls.
+Outpost-Pi mobile client (iOS + Android). Pairs via QR, lists Pi sessions,
+chat with streaming, approval cards for tool calls.
 
-Antes de editar ou revisar `app/`, leia também a referência agent-neutral
-`../.agents/skills/flutter-mobile/SKILL.md`. Para mudanças de estado/reconnect que cruzem
-app/extension/relay, leia `../.agents/skills/mobile-remote-coding/SKILL.md`.
+Before editing or reviewing `app/`, also read the agent-neutral reference
+`../.agents/skills/flutter-mobile/SKILL.md`. For state/reconnect changes that cross
+app/extension/relay, read `../.agents/skills/mobile-remote-coding/SKILL.md`.
 
 ## Stack
 
 - Flutter 3.41+ / Dart 3.11+
-- Plataformas: iOS, Android
-- State management: `ChangeNotifier` + `provider` (ViewModels reativos)
-- DI: `auto_injector` (registry em `lib/config/`)
-- Roteamento: `go_router`
-- Resultado tipado: `Result<T, E>` (sucesso/falha explícitos)
-- Crypto: bindings para libsodium (pacote a confirmar — ver `plan/00-decisions.md`)
-- WebSocket: `web_socket_channel` ou similar
+- Platforms: iOS, Android
+- State management: `ChangeNotifier` + `provider` (reactive ViewModels)
+- DI: `auto_injector` (registry in `lib/config/`)
+- Routing: `go_router`
+- Typed result: `Result<T, E>` (explicit success/failure)
+- Crypto: bindings for libsodium (package to be confirmed — see `plan/00-decisions.md`)
+- WebSocket: `web_socket_channel` or similar
 
-> Decisões ainda abertas (state mgmt definitivo, pacote libsodium) vivem em
-> `../plan/00-decisions.md`. A stack acima é a direção atual baseada na
-> arquitetura herdada; mudanças estruturais exigem plano novo.
+> Still-open decisions (final state management, libsodium package) live in
+> `../plan/00-decisions.md`. The stack above is the current direction based on the
+> inherited architecture; structural changes require a new plan.
 
-## Comandos
+## Commands
 
-O SDK do Flutter e o pub cache vivem no repositório (não em `/opt` ou `/tmp`).
-Defina `PUB_CACHE` e use o binário em `.tools/flutter`. `app/` não tem deps git,
-então `pub get` online funciona (ou `--offline` se o cache já estiver povoado).
+The Flutter SDK and pub cache live in the repository (not in `/opt` or `/tmp`).
+Set `PUB_CACHE` and use the binary in `.tools/flutter`. `app/` has no git dependencies,
+so online `pub get` works (or `--offline` if the cache is already populated).
 
 ```bash
 cd app
 export PUB_CACHE=~/projects/outpost_pi/.pub-cache
 ~/projects/outpost_pi/.tools/flutter/bin/flutter pub get
-~/projects/outpost_pi/.tools/flutter/bin/flutter analyze              # deve passar zero issues
+~/projects/outpost_pi/.tools/flutter/bin/flutter analyze              # must pass with zero issues
 ~/projects/outpost_pi/.tools/flutter/bin/flutter test
-~/projects/outpost_pi/.tools/flutter/bin/flutter build apk --debug    # ou --no-codesign ios
+~/projects/outpost_pi/.tools/flutter/bin/flutter build apk --debug    # or --no-codesign ios
 ```
 
-- `dart format .` — formata (ou `~/.tools/flutter/bin/cache/dart-sdk/bin/dart format .`)
+- `dart format .` — formats (or `~/.tools/flutter/bin/cache/dart-sdk/bin/dart format .`)
 
-Nota: `flutter analyze` em `app/` emite um `info` pré-existente e não relacionado:
-`axisAlignment` deprecated em `lib/ui/chat/widgets/input_bar.dart:802`. Não falhar revisões por isso.
+Note: `flutter analyze` in `app/` emits one pre-existing, unrelated `info`:
+deprecated `axisAlignment` in `lib/ui/chat/widgets/input_bar.dart:802`. Do not fail reviews because of it.
 
-> Para o caminho completo de build de APK no dev VM (`codebox`) — toolchain JDK 21
-> + Android SDK API 36, build `--release --split-per-abi` (~31 MB por ABI), e os
-> dois gotchas de build (`.` vs `source` em jobs dash; wipe completo de
-> `~/.gradle` em corrupção de workspace Kotlin-DSL) — veja a referência
-> agent-neutral `../.agents/skills/flutter-mobile/SKILL.md` (seção "Android APK
-> build on the dev VM").
+> For the complete APK build path on the dev VM (`codebox`) — JDK 21 toolchain
+> + Android SDK API 36, `--release --split-per-abi` build (~31 MB per ABI), and the
+> two build gotchas (`.` vs `source` in dash jobs; complete wipe of
+> `~/.gradle` for Kotlin-DSL workspace corruption) — see the agent-neutral
+> reference `../.agents/skills/flutter-mobile/SKILL.md` ("Android APK build on the
+> dev VM" section).
 
-## Arquitetura por camadas
+## Layered architecture
 
-O `lib/` é organizado em camadas com responsabilidades estritas. Cada pasta
-tem seu próprio `CLAUDE.md` descrevendo a persona daquela camada — **leia o
-CLAUDE.md da camada antes de editar qualquer arquivo dentro dela**.
+`lib/` is organized into layers with strict responsibilities. Each directory
+has its own `CLAUDE.md` describing that layer's role — **read the layer's
+CLAUDE.md before editing any file within it**.
 
 ```
 lib/
 ├── main.dart
-├── config/          # Bootstrap, DI, env, setup global  → config/CLAUDE.md
-│   └── utils/       # Helpers horizontais
-├── domain/          # Entidades, use cases, validators  → domain/CLAUDE.md
-├── data/            # Repositórios, adapters, APIs      → data/CLAUDE.md
+├── config/          # Bootstrap, DI, env, global setup  → config/CLAUDE.md
+│   └── utils/       # Cross-cutting helpers
+├── domain/          # Entities, use cases, validators   → domain/CLAUDE.md
+├── data/            # Repositories, adapters, APIs      → data/CLAUDE.md
 ├── routing/         # GoRouter, paths, guards           → routing/CLAUDE.md
-└── ui/              # Páginas + ViewModels por feature  → ui/CLAUDE.md
+└── ui/              # Pages + ViewModels by feature     → ui/CLAUDE.md
     └── <feature>/
         ├── states/
         ├── viewmodels/
@@ -71,72 +71,72 @@ lib/
         └── <feature>_page.dart
 ```
 
-Regra de ouro do fluxo de dependência:
+Dependency-flow golden rule:
 
 ```
 ui ──► domain ◄── data
         ▲
         │
-     config (injeta tudo)
-     routing (compõe rotas + ViewModels)
+     config (injects everything)
+     routing (composes routes + ViewModels)
 ```
 
-- `domain/` **não** importa nada de `data/`, `ui/`, `routing/`, `config/`.
-- `data/` importa contratos de `domain/`, nunca de `ui/`.
-- `ui/` consome `domain/` (use cases) via ViewModels — nunca chama `data/` direto.
-- `config/` é o único lugar que conhece todas as camadas (para registrar bindings).
+- `domain/` **does not** import anything from `data/`, `ui/`, `routing/`, or `config/`.
+- `data/` imports contracts from `domain/`, never from `ui/`.
+- `ui/` consumes `domain/` (use cases) through ViewModels — it never calls `data/` directly.
+- `config/` is the only place that knows all layers (to register bindings).
 
-## Convenções
+## Conventions
 
-- **Naming**: arquivos `snake_case.dart`, classes `PascalCase`, widgets `PascalCase`
-- **Imports**: relativos dentro do mesmo feature; absolutos via `package:app/...`
-  quando cruzando features ou camadas
-- **Barrel files**: cada feature/módulo pode expor um `<nome>.dart` agregando
-  os símbolos públicos; consumidores externos importam só o barrel
-- **Async**: prefira `Future`/`Stream` tipados, evite `dynamic`
-- **Erros**: `Result<T, E>` ou exceptions tipadas; nunca `catch (e)` genérico em produção
-- **ViewModels**: registrados em `config/` e injetados em `routing/` via Provider;
-  páginas nunca instanciam ViewModel diretamente — sempre `context.watch/read/select`
+- **Naming**: `snake_case.dart` files, `PascalCase` classes, `PascalCase` widgets
+- **Imports**: relative within the same feature; absolute through `package:app/...`
+  when crossing features or layers
+- **Barrel files**: each feature/module can expose a `<name>.dart` aggregating
+  public symbols; external consumers import only the barrel
+- **Async**: prefer typed `Future`/`Stream`, avoid `dynamic`
+- **Errors**: `Result<T, E>` or typed exceptions; never generic `catch (e)` in production
+- **ViewModels**: registered in `config/` and injected in `routing/` through Provider;
+  pages never instantiate ViewModels directly — always use `context.watch/read/select`
 
-## Regra crítica: `BuildContext` em código assíncrono
+## Critical rule: `BuildContext` in asynchronous code
 
-Acessar `context` após um `await` (ou dentro de `.then/.onSuccess/.flatMap/.whenComplete`)
-pode crashar com `Null check operator used on a null value` se o widget já tiver sido
-desmontado. O lint `use_build_context_synchronously` **não detecta** callbacks
-encadeados — a prevenção é manual.
+Accessing `context` after an `await` (or inside `.then/.onSuccess/.flatMap/.whenComplete`)
+can crash with `Null check operator used on a null value` if the widget has already been
+disposed. The `use_build_context_synchronously` lint **does not detect** chained
+callbacks — prevention is manual.
 
-**Padrão obrigatório**:
+**Required pattern**:
 
 ```dart
-// CORRETO — await + guard
+// CORRECT — await + guard
 final result = await viewModel.doSomething();
-if (!mounted) return;          // em StatefulWidget
-// if (!context.mounted) return; // em StatelessWidget
+if (!mounted) return;          // in StatefulWidget
+// if (!context.mounted) return; // in StatelessWidget
 context.useContextSomehow();
 ```
 
 ```dart
-// ERRADO — context dentro de callback assíncrono
+// WRONG — context inside asynchronous callback
 await viewModel.doSomething().onSuccess((_) {
-  context.useContextSomehow(); // CRASH se desmontado
+  context.useContextSomehow(); // CRASH if disposed
 });
 ```
 
-> Nunca use `context` dentro de `.onSuccess()`, `.onFailure()`, `.flatMap()`,
-> `.then()` ou `.whenComplete()`. Sempre transforme para `await` + guard.
+> Never use `context` inside `.onSuccess()`, `.onFailure()`, `.flatMap()`,
+> `.then()`, or `.whenComplete()`. Always convert to `await` + guard.
 
-## NÃO fazer
+## Do NOT
 
-- Editar arquivos fora de `app/`
-- Implementar crypto manual — usar bindings libsodium
-- Comitar `build/`, `.dart_tool/`, `ios/Pods/` (já no `.gitignore` raiz)
-- Adicionar dependência sem registrar no plano correspondente
-- Misturar responsabilidades entre camadas — quando bater dúvida, leia o
-  CLAUDE.md da camada alvo
+- Edit files outside `app/`
+- Implement crypto manually — use libsodium bindings
+- Commit `build/`, `.dart_tool/`, `ios/Pods/` (already in the root `.gitignore`)
+- Add a dependency without recording it in the corresponding plan
+- Mix responsibilities between layers — when in doubt, read the target layer's
+  CLAUDE.md
 
-## Modo orquestrado
+## Orchestrated mode
 
-Se receber um prompt começando com `[ORCH:<task-id>]`, leia
-`../.orchestration/INSTRUCTIONS.md` antes de qualquer outra ação. Esse marker
-indica que outro agente está coordenando o trabalho e tem regras específicas
-(onde escrever resultado, não comitar, etc).
+If you receive a prompt starting with `[ORCH:<task-id>]`, read
+`../.orchestration/INSTRUCTIONS.md` before any other action. This marker
+indicates another agent is coordinating the work and has specific rules
+(where to write results, do not commit, etc.).

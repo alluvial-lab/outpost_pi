@@ -1,22 +1,22 @@
 # Changelog — Remote Pi Cockpit
 
-Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
-As versões seguem o `version:` do `pubspec.yaml` (SSOT). O campo `notes` do
-`latest.json` (VPS) deriva deste arquivo.
+Format based on [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
+Versions follow `version:` in `pubspec.yaml` (SSOT). The `notes` field in
+`latest.json` (VPS) derives from this file.
 
 ## [Unreleased]
 
 ### Added
-- **Self-update (plano 47):** Cockpit agora se atualiza sozinho no macOS e no
-  Windows via Sparkle/WinSparkle (pacote `auto_updater`): checa e baixa em
-  background, mostra "restart to install" no card do rail e troca o binário ao
-  reiniciar. **Linux** segue no aviso + download manual (`latest.json`). O CI
-  passa a publicar `appcast-macos.xml` e `appcast-windows.xml` (assinados EdDSA)
-  ao lado do `latest.json`.
+- **Self-update (plan 47):** Cockpit now updates itself on macOS and
+  Windows through Sparkle/WinSparkle (`auto_updater` package): checks and downloads in
+  the background, shows "restart to install" in the rail card, and swaps the binary on
+  restart. **Linux** retains the warning + manual download (`latest.json`). CI now
+  publishes `appcast-macos.xml` and `appcast-windows.xml` (EdDSA-signed)
+  alongside `latest.json`.
 
-> Nota de release: o Sparkle compara o **build number** (`CFBundleVersion`, o
-> `+n`) — incremente o `+n` no `pubspec.yaml` a cada release ou o macOS não
-> detecta a versão nova.
+> Release note: Sparkle compares the **build number** (`CFBundleVersion`, the
+> `+n`) — increment `+n` in `pubspec.yaml` on every release or macOS will not
+> detect the new version.
 
 ## [1.1.0] — 2026-06-12
 
@@ -27,24 +27,24 @@ As versões seguem o `version:` do `pubspec.yaml` (SSOT). O campo `notes` do
 
 ## [1.0.0] — 2026-06-12
 
-Primeira release distribuível do Cockpit (cliente desktop do Remote Pi).
+First distributable Cockpit release (Remote Pi desktop client).
 
-### Adicionado
-- Identidade de release: app ID `work.jacobmoura.cockpit`, nome de exibição
-  **Remote Pi Cockpit** nas três plataformas.
-- macOS: Hardened Runtime no Release; build assinado com Developer ID +
-  notarização + staple (DMG universal x86_64+arm64).
-- Linux: integração de desktop (`.desktop`, ícones hicolor, AppStream
-  `metainfo.xml`) e controles de janela na barra customizada.
-- Windows: metadados do executável (CompanyName/ProductName) e controles de
-  janela na barra customizada.
-- Empacotamento via Fastforge: `distribute_options.yaml` + `make_config.yaml`
-  de dmg/exe/deb/rpm.
+### Added
+- Release identity: app ID `work.jacobmoura.cockpit`, display name
+  **Remote Pi Cockpit** on all three platforms.
+- macOS: Hardened Runtime in Release; build signed with Developer ID +
+  notarization + staple (universal x86_64+arm64 DMG).
+- Linux: desktop integration (`.desktop`, hicolor icons, AppStream
+  `metainfo.xml`) and window controls in the custom title bar.
+- Windows: executable metadata (CompanyName/ProductName) and window controls
+  in the custom title bar.
+- Packaging through Fastforge: `distribute_options.yaml` + `make_config.yaml`
+  for dmg/exe/deb/rpm.
 
-### Funcionalidades do app (MVP)
-- Multiplexador de panes por workspace: agentes (`pi --mode rpc`) e terminais
-  lado a lado, com splits e abas.
-- Árvore de arquivos com menu de contexto (criar agente/terminal numa pasta).
-- Worktrees por workspace (clona a estrutura de panes pro fork).
-- Onboarding que checa/instala `pi`, extensão `remote-pi` e supervisor.
-- Agendamento de daemons e conectividade (pareamento via relay).
+### App functionality (MVP)
+- Workspace pane multiplexer: agents (`pi --mode rpc`) and terminals
+  side by side, with splits and tabs.
+- File tree with context menu (create an agent/terminal in a directory).
+- Worktrees per workspace (clones the pane structure for the fork).
+- Onboarding that checks/installs `pi`, the `remote-pi` extension, and supervisor.
+- Daemon scheduling and connectivity (pairing through relay).

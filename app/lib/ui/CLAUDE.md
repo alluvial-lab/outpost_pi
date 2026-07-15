@@ -1,43 +1,43 @@
-# Camada `ui/`
+# `ui/` layer
 
-## Propósito
+## Purpose
 
-Entregar a experiência visual e interativa do usuário, consumindo ViewModels e
-use cases para refletir o estado da aplicação por feature.
+Deliver the user's visual and interactive experience, consuming ViewModels and
+use cases to reflect application state by feature.
 
-## Deve fazer
+## Must do
 
-1. **Organizar por feature** — cada pasta representa um fluxo completo
-   (página, states, viewmodels, widgets).
-2. **Delegar lógica de negócio** — ViewModels chamam use cases e apenas
-   interpretam resultados para o estado da tela.
-3. **Reagir via `ChangeNotifier` + `Consumer`** — manter o loop
-   UI → ViewModel → UseCase → ViewModel → UI claro e unidirecional.
-4. **Cultivar widgets pequenos** — preferir `StatelessWidget`, com
-   `widgets.dart` exportando componentes da feature (barrel file).
-5. **Aplicar linguagem visual consistente** — todo tema (cores, tipografia,
-   fonte) vive em [`core/themes/`](core/themes/themes.dart). **Nunca** hardcode
-   `Color(0x…)`, `Colors.*` ou `TextStyle(fontFamily: …)` num widget: leia via
-   `context.colors.<token>` e `context.typo.<estilo>` (import do barrel
-   `package:app/ui/core/themes/themes.dart`). Cores semânticas novas entram em
-   `AppColors` (dark + light), estilos de texto em `AppTypography`, e a família
-   da fonte é a constante `kMonoFamily`. Exceções permitidas: scrims/overlays
-   independentes de tema (`Colors.black.withValues(...)` como `barrierColor`,
-   overlays sobre câmera/foto, fundo vermelho sólido de ação destrutiva).
-6. **Consumir ViewModels via Provider** — sempre via `context.watch<T>()`,
-   `context.read<T>()` ou `context.select<T, R>()`. **Nunca** instancie
-   ViewModels diretamente na página.
-7. **Registrar ViewModels no `config/dependencies.dart`** — usando
+1. **Organize by feature** — each directory represents a complete flow
+   (page, states, viewmodels, widgets).
+2. **Delegate business logic** — ViewModels call use cases and only
+   interpret results for screen state.
+3. **React through `ChangeNotifier` + `Consumer`** — keep the
+   UI → ViewModel → UseCase → ViewModel → UI loop clear and unidirectional.
+4. **Cultivate small widgets** — prefer `StatelessWidget`, with
+   `widgets.dart` exporting feature components (barrel file).
+5. **Apply consistent visual language** — all theming (colors, typography,
+   font) lives in [`core/themes/`](core/themes/themes.dart). **Never** hardcode
+   `Color(0x…)`, `Colors.*`, or `TextStyle(fontFamily: …)` in a widget: read through
+   `context.colors.<token>` and `context.typo.<style>` (import the barrel
+   `package:app/ui/core/themes/themes.dart`). New semantic colors go in
+   `AppColors` (dark + light), text styles in `AppTypography`, and the font family
+   is the `kMonoFamily` constant. Permitted exceptions: theme-independent
+   scrims/overlays (`Colors.black.withValues(...)` such as `barrierColor`,
+   overlays over camera/photo, solid red destructive-action background).
+6. **Consume ViewModels through Provider** — always through `context.watch<T>()`,
+   `context.read<T>()`, or `context.select<T, R>()`. **Never** instantiate
+   ViewModels directly in the page.
+7. **Register ViewModels in `config/dependencies.dart`** — using
    `_injector.addViewModel<T>(T.new)`.
-8. **Adicionar `ViewmodelProvider<T>()` no `routing/router.dart`** na
-   definição da rota correspondente.
+8. **Add `ViewmodelProvider<T>()` in `routing/router.dart`** in the
+   corresponding route definition.
 
-## ViewModel — a classe base do estado
+## ViewModel — the base state class
 
-Todo ViewModel estende [`ViewModel<T>`](core/viewmodel/viewmodel.dart), que é
-um `ChangeNotifier` com **um único campo de estado imutável** e um único
-verbo para alterá-lo (`emit`). O estado vive em uma sealed class na pasta
-`states/` da feature.
+Every ViewModel extends [`ViewModel<T>`](core/viewmodel/viewmodel.dart), which is
+a `ChangeNotifier` with **a single immutable state field** and a single
+verb to modify it (`emit`). State lives in a sealed class in the feature's
+`states/` directory.
 
 ```dart
 // ui/pairing/states/pairing_state.dart
@@ -90,15 +90,15 @@ class PairingViewModel extends ViewModel<PairingState> {
 }
 ```
 
-`emit` só dispara `notifyListeners()` se o novo estado for `!=` do atual —
-por isso states precisam de `==` / `hashCode` corretos (use `equatable` ou
-escreva manualmente). Isso evita rebuilds desnecessários.
+`emit` only fires `notifyListeners()` if the new state is `!=` the current one —
+therefore states need correct `==` / `hashCode` (use `equatable` or
+write them manually). This prevents unnecessary rebuilds.
 
-## Como a UI consome o ViewModel
+## How the UI consumes the ViewModel
 
-Páginas **nunca** instanciam o ViewModel — o `ViewmodelProvider<T>` declarado
-em `routing/router.dart` (ver `config/CLAUDE.md`) já injeta a instância na
-árvore. A página acessa via `context`:
+Pages **never** instantiate the ViewModel — the `ViewmodelProvider<T>` declared
+in `routing/router.dart` (see `config/CLAUDE.md`) already injects the instance into
+the tree. The page accesses it through `context`:
 
 ```dart
 class PairingPage extends StatelessWidget {
@@ -106,8 +106,8 @@ class PairingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Lê + escuta — rebuild quando state muda
-    final viewModel = context.watch<PairingViewModel>(); // or .read() para não escutar
+    // Reads + listens — rebuilds when state changes
+    final viewModel = context.watch<PairingViewModel>(); // or .read() not to listen
     final state = viewModel.state;
 
     return Scaffold(
@@ -122,7 +122,7 @@ class PairingPage extends StatelessWidget {
 }
 ```
 
-Para reagir a **apenas um pedaço** do state (otimização):
+To react to **only one part** of the state (optimization):
 
 ```dart
 final isScanning = context.select<PairingViewModel, bool>(
@@ -130,33 +130,33 @@ final isScanning = context.select<PairingViewModel, bool>(
 );
 ```
 
-### Checklist ao criar uma feature
+### Checklist when creating a feature
 
-1. Criar `states/<feature>_state.dart` (sealed class com `==`/`hashCode`).
-2. Criar `viewmodels/<feature>_viewmodel.dart` estendendo `ViewModel<TState>`.
-3. Registrar em `config/dependencies.dart`:
+1. Create `states/<feature>_state.dart` (sealed class with `==`/`hashCode`).
+2. Create `viewmodels/<feature>_viewmodel.dart` extending `ViewModel<TState>`.
+3. Register in `config/dependencies.dart`:
    `_injector.addViewModel<FooViewModel>(FooViewModel.new);`
-4. Bindar na rota em `routing/router.dart` dentro de `MultiProvider` com
+4. Bind the route in `routing/router.dart` inside `MultiProvider` with
    `ViewmodelProvider<FooViewModel>()`.
-5. Página consome via `context.watch/read/select`.
+5. The page consumes it through `context.watch/read/select`.
 
-## Regra crítica: `BuildContext` em código assíncrono
+## Critical rule: `BuildContext` in asynchronous code
 
-Acessar `context` após uma operação assíncrona pode crashar
-(`Null check operator used on a null value`) se o widget já tiver sido
-desmontado. O lint `use_build_context_synchronously` **não detecta** uso de
-`context` dentro de `.onSuccess()`, `.onFailure()`, `.flatMap()`, `.then()`
-ou `.whenComplete()` — a prevenção é manual.
+Accessing `context` after an asynchronous operation can crash
+(`Null check operator used on a null value`) if the widget has already been
+disposed. The `use_build_context_synchronously` lint **does not detect** use of
+`context` inside `.onSuccess()`, `.onFailure()`, `.flatMap()`, `.then()`,
+or `.whenComplete()` — prevention is manual.
 
-**Em `StatefulWidget`** — sempre `mounted` antes do `context`:
+**In `StatefulWidget`** — always use `mounted` before `context`:
 
 ```dart
-// CORRETO — await + mounted guard
+// CORRECT — await + mounted guard
 final result = await viewModel.doSomething();
 if (!mounted) return;
 context.sendLog('done');
 
-// CORRETO — evitar .onSuccess, preferir await
+// CORRECT — avoid .onSuccess, prefer await
 final result = await viewModel.doSomething();
 final value = result.getOrNull();
 if (mounted && value != null) {
@@ -165,18 +165,18 @@ if (mounted && value != null) {
 ```
 
 ```dart
-// ERRADO — context dentro de .onSuccess sem guard (lint NÃO detecta)
+// WRONG — context inside .onSuccess without guard (lint does NOT detect)
 await viewModel.doSomething().onSuccess((_) {
-  context.sendLog('done'); // CRASH se widget desmontado
+  context.sendLog('done'); // CRASH if widget is disposed
 });
 
-// ERRADO — context dentro de .flatMap sem guard
+// WRONG — context inside .flatMap without guard
 await viewModel.doSomething().flatMap(
   (_) => context.sendLog('done'),
 );
 ```
 
-**Em `StatelessWidget`** — usar `context.mounted`:
+**In `StatelessWidget`** — use `context.mounted`:
 
 ```dart
 final result = await viewModel.doSomething();
@@ -184,48 +184,48 @@ if (!context.mounted) return;
 context.sendLog('done');
 ```
 
-**Regra resumida**:
+**Summary rule**:
 
-> Nunca use `context` dentro de `.onSuccess()`, `.onFailure()`, `.flatMap()`,
-> `.then()` ou `.whenComplete()`. Sempre transforme para `await` + guard
-> (`mounted` / `context.mounted`) antes de tocar em `context`.
+> Never use `context` inside `.onSuccess()`, `.onFailure()`, `.flatMap()`,
+> `.then()`, or `.whenComplete()`. Always convert to `await` + guard
+> (`mounted` / `context.mounted`) before touching `context`.
 
-## Não deve fazer
+## Must not do
 
-1. **Duplicar regras de domínio** — sem validações de negócio ou formatações
-   complexas aqui; delegue ao domínio.
-2. **Instanciar ViewModels diretamente** — nunca `MyViewModel()` dentro de
-   páginas; obtenha sempre via `context.watch/read/select`.
-3. **Instanciar serviços diretamente** — use dependências já injetadas via
+1. **Duplicate domain rules** — no business validation or complex formatting
+   here; delegate to the domain.
+2. **Instantiate ViewModels directly** — never `MyViewModel()` inside
+   pages; always obtain them through `context.watch/read/select`.
+3. **Instantiate services directly** — use dependencies already injected through
    ViewModels.
-4. **Misturar responsabilidades** — sem lógica de rede ou persistência dentro
-   de widgets.
-5. **Quebrar isolamento de feature** — imports cruzados passam por barrel
-   files ou contratos claros.
-6. **Usar `context` em callbacks assíncronos** — ver "Regra crítica" acima.
+4. **Mix responsibilities** — no networking or persistence logic inside
+   widgets.
+5. **Break feature isolation** — cross-feature imports go through barrel
+   files or clear contracts.
+6. **Use `context` in asynchronous callbacks** — see "Critical rule" above.
 
-## Estrutura de pastas por feature
+## Feature directory structure
 
 ```
 feature/
-├── states/              # sealed classes do estado da feature
+├── states/              # sealed classes for feature state
 │   └── feature_state.dart
-├── viewmodels/          # ViewModels que orquestram o estado
+├── viewmodels/          # ViewModels that orchestrate state
 │   └── feature_viewmodel.dart
-├── widgets/             # widgets locais componentizados
+├── widgets/             # componentized local widgets
 │   ├── widgets.dart     # barrel
 │   └── feature_widget.dart
-└── feature_page.dart    # página principal (Entry Widget)
+└── feature_page.dart    # main page (Entry Widget)
 ```
 
-## Vocabulário
+## Vocabulary
 
-- **Feature Page** — ponto de entrada da experiência da funcionalidade.
-- **ViewModel** — guardião do estado e dos comandos de UI (extends
+- **Feature Page** — entry point for the feature experience.
+- **ViewModel** — guardian of UI state and commands (extends
   `ChangeNotifier`).
-- **State** — modelagem do que a tela pode mostrar (sealed class com casos
-  como `Loading`, `Ready`, `Error`).
-- **Consumer / Selector** — listener que reconstrói a UI a cada mudança do
-  ViewModel.
-- **Widgets Barrel** — arquivo `widgets.dart` que expõe componentes locais da
-  feature.
+- **State** — model of what the screen can show (sealed class with cases
+  such as `Loading`, `Ready`, `Error`).
+- **Consumer / Selector** — listener that rebuilds the UI on each ViewModel
+  change.
+- **Widgets Barrel** — `widgets.dart` file that exposes the feature's local
+  components.
