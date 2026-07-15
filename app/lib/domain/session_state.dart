@@ -5,6 +5,7 @@
 // ChatMessage — sealed union of message variants in the conversation history
 // ---------------------------------------------------------------------------
 
+/// Represent one renderable entry in a conversation transcript.
 sealed class ChatMessage {
   final String id;
   const ChatMessage({required this.id});
@@ -43,6 +44,7 @@ class MessageImage {
   int get hashCode => Object.hash(data, mime);
 }
 
+/// Preserve a user submission and its confirmation state for transcript views.
 class UserMsg extends ChatMessage {
   final String text;
   final UserMsgStatus status;
@@ -73,6 +75,7 @@ class UserMsg extends ChatMessage {
   int get hashCode => Object.hash(id, text, status, image);
 }
 
+/// Preserve a committed assistant reply in the transcript.
 class AssistantMsg extends ChatMessage {
   final String text;
   const AssistantMsg({required super.id, required this.text});
@@ -85,6 +88,7 @@ class AssistantMsg extends ChatMessage {
   int get hashCode => Object.hash(id, text);
 }
 
+/// Project a requested tool call and its terminal result into the transcript.
 class ToolEvent extends ChatMessage {
   final String toolCallId;
   final String tool;
@@ -160,6 +164,7 @@ class CompactionMsg extends ChatMessage {
 // StreamingMessage — accumulated deltas while the assistant is typing
 // ---------------------------------------------------------------------------
 
+/// Accumulate assistant deltas until the corresponding reply is committed.
 class StreamingMessage {
   final String inReplyTo; // id of the UserMsg being answered
   final String buffer;
@@ -195,6 +200,10 @@ enum AppTurnStatus {
   stale,
 }
 
+/// Describe the canonical app-side state of one active or completed turn.
+///
+/// Consumers derive working and cancellation affordances from this projection
+/// rather than maintaining independent sticky flags.
 final class AppTurnProjection {
   const AppTurnProjection({
     required this.status,

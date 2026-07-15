@@ -1,6 +1,7 @@
-/// Abre uma URL externa (navegador/download do SO). Contrato no domínio; impl
-/// (`url_launcher`) em `data/update/`.
+/// Open an external URL in the system browser or download handler.
+///
+/// This domain contract is implemented with `url_launcher` in `data/update/`.
 abstract class UrlOpener {
-  /// Abre [url]. Devolve `true` se conseguiu, `false` caso contrário.
+  /// Open [url], returning whether the platform accepted the request.
   Future<bool> open(String url);
 }

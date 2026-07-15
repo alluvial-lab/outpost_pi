@@ -2,6 +2,7 @@ import 'package:app/domain/session_state.dart';
 import 'package:app/protocol/protocol.dart'
     show Usage, UserMessageStreamingBehavior;
 
+/// Capture one immutable fact in a session's append-only transcript stream.
 sealed class TranscriptEvent {
   const TranscriptEvent({
     required this.eventId,
@@ -16,6 +17,7 @@ sealed class TranscriptEvent {
   final String? turnId;
 }
 
+/// Record a locally accepted user submission before server confirmation.
 final class UserMessageSubmitted extends TranscriptEvent {
   const UserMessageSubmitted({
     required super.eventId,
@@ -43,6 +45,7 @@ final class UserMessageSubmitted extends TranscriptEvent {
   final bool held;
 }
 
+/// Record the authoritative confirmation of a user message.
 final class UserMessageConfirmed extends TranscriptEvent {
   const UserMessageConfirmed({
     required super.eventId,
@@ -61,6 +64,7 @@ final class UserMessageConfirmed extends TranscriptEvent {
   final UserMessageStreamingBehavior? streamingBehavior;
 }
 
+/// Record a terminal local failure while a submission lacks confirmation.
 final class UserMessageFailed extends TranscriptEvent {
   const UserMessageFailed({
     required super.eventId,
@@ -77,6 +81,7 @@ final class UserMessageFailed extends TranscriptEvent {
   final String message;
 }
 
+/// Record one streamed assistant delta for an in-progress reply.
 final class AssistantDeltaReceived extends TranscriptEvent {
   const AssistantDeltaReceived({
     required super.eventId,
@@ -91,6 +96,7 @@ final class AssistantDeltaReceived extends TranscriptEvent {
   final String delta;
 }
 
+/// Record the authoritative assistant reply that replaces streamed deltas.
 final class AssistantMessageCommitted extends TranscriptEvent {
   const AssistantMessageCommitted({
     required super.eventId,
@@ -109,6 +115,7 @@ final class AssistantMessageCommitted extends TranscriptEvent {
   final Usage? usage;
 }
 
+/// Record completion of an assistant turn that may have no final message.
 final class AssistantDoneReceived extends TranscriptEvent {
   const AssistantDoneReceived({
     required super.eventId,
@@ -123,6 +130,7 @@ final class AssistantDoneReceived extends TranscriptEvent {
   final Usage? usage;
 }
 
+/// Record a tool invocation requested during a turn.
 final class ToolRequested extends TranscriptEvent {
   const ToolRequested({
     required super.eventId,
@@ -139,6 +147,7 @@ final class ToolRequested extends TranscriptEvent {
   final Map<String, Object?> args;
 }
 
+/// Record the result or failure that settles a requested tool invocation.
 final class ToolFinished extends TranscriptEvent {
   const ToolFinished({
     required super.eventId,
@@ -155,6 +164,7 @@ final class ToolFinished extends TranscriptEvent {
   final String? error;
 }
 
+/// Record a context compaction and its user-visible recap.
 final class CompactionRecorded extends TranscriptEvent {
   const CompactionRecorded({
     required super.eventId,
