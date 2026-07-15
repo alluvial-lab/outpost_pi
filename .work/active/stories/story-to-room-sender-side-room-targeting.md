@@ -1,14 +1,14 @@
 ---
 id: story-to-room-sender-side-room-targeting
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension, bug, security]
 parent: epic-bold-canonical-session
 depends_on: [epic-bold-canonical-session-relay-opaque-targeting]
 release_binding: null
 gate_origin: null
 created: 2026-07-01
-updated: 2026-07-13
+updated: 2026-07-15
 ---
 
 # to_room sender-side room-targeting (cross-PC pi-envelope)
@@ -39,7 +39,7 @@ sender had no path to the destination room. The relay correctly rejects
 empty/missing `to_room` and returns `offline` for an unknown room — so the
 hardcode silently breaks delivery rather than failing loud at the sender.
 
-## Design — leader room announcement + relay room discovery
+## Design — relay-authoritative room discovery (Option B)
 
 ### Why the original "roster derivation" design is unsound
 
@@ -76,15 +76,57 @@ the leader), not the Pi-extension path (N Pi processes, N relay rooms,
 leader-bridge-only). It works for MCP but is broken for the multi-Pi-per-PC
 case that the Pi extension actually runs.
 
-### Corrected design
+### Wire-stance decision: Option B (relay-authoritative)
 
-The sibling leader already knows its own room_id (`_myRoomId`, set in
-`_startRelayViaTransport`). Announce it in `peers_update`; the sender caches
-and targets it. For the cold-cache bootstrap (neither side knows the other's
-room yet), use the relay's existing `rooms_check` control frame (no `to_room`
-needed) to discover the sibling's live rooms.
+Two options were considered for how the sender learns the sibling leader's
+room:
 
-#### Site 2 — `handleIncoming` ACK: thread inbound `to_room` (UNCHANGED)
+- **Option A — `leader_room` bolted on `peers_update`.** The leader announces
+  its own `_myRoomId` as a new `leader_room` field in `peers_update`; the
+  sender caches + targets it verbatim. Cold-cache bootstrap via `rooms_check`.
+  Simpler sender, but adds a peer-announced field that duplicates relay state
+  and can drift (a stale `leader_room` survives until the next push, even if
+  the relay already knows the room ended).
+
+- **Option B — relay as authoritative room source (CHOSEN).** The sender does
+  NOT trust a peer-announced room field. Instead it asks the relay directly:
+  `subscribe_rooms { peers: [siblingPubkey] }` for live push updates of the
+  sibling's rooms, and `rooms_check { peers: [siblingPubkey] }` for a one-shot
+  cold-cache snapshot. The relay is the single source of truth for which rooms
+  are live; the sender targets the sibling's live room(s) from relay state.
+
+**Operator chose Option B** (2026-07-14 session). Rationale: the relay already
+maintains authoritative room state (`RoomManager`, `RoomMeta`, the
+`registry_event_publisher` push path) and already exposes `subscribe_rooms` +
+`rooms_check` + `room_announced`/`room_ended`/`room_meta_updated` events.
+Option A would duplicate that state into a peer-announced field that can drift
+from relay truth; Option B reuses the relay's existing room-discovery API with
+no new wire field on `peers_update` and no second source of room truth. The
+relay is already the authority for `to_room` validation (it rejects unknown
+rooms as `offline`); making it the authority for room *discovery* too keeps one
+source of truth.
+
+### Corrected design (Option B)
+
+The relay already exposes everything needed (verified against
+`relay/src/handlers/control.rs`, `relay/src/peers/rooms.rs`,
+`relay/src/peers/registry_event_publisher.rs`,
+`relay/src/protocol/generated/room.rs`):
+
+- `subscribe_rooms { peers: [pubkey] }` → the relay pushes `room_announced`,
+  `room_ended`, and `room_meta_updated` frames to the subscriber whenever the
+  sibling's rooms change.
+- `rooms_check { peers: [pubkey] }` → one-shot response `{ type: "rooms",
+  peer, rooms: [RoomMeta] }` listing the sibling's live rooms.
+- `RoomMeta` carries `room_id`, `name`, `cwd`, `session_id`, `model`,
+  `thinking`, `working`, `started_at` — enough to identify the leader's room.
+
+The sender (leader's `BrokerRemote`) subscribes to each sibling's rooms on
+bridge attach and maintains a `siblingRooms: Map<pcPubkey, Set<room_id>>`
+cache from the relay push events. Sends target a live room from that cache.
+
+#### Site 2 — `handleIncoming` ACK: thread inbound `to_room` (UNCHANGED from
+the original corrected design)
 
 The relay echoes the destination `to_room` on every `pi_envelope_in` frame
 (`relay/src/handlers/pi_forward.rs:194`, confirmed `to_room` = the room the
@@ -97,108 +139,133 @@ Currently `PiForwardClient._handleLine` emits only `[env, fromPc]`, discarding
 - `PiForwardClientEvents.envelope` → `[env, fromPc, toRoom]`.
 - `handleIncoming(env, fromPc, toRoom)` — ACK targets `toRoom`.
 
-#### Sites 1 & 3 — data + control: target the cached `leader_room`
+#### Sites 1 & 3 — data + control: target a sibling live room from the relay cache
 
-**Wire change (minimal):** add `leader_room?: string` to `PeersUpdateBody`.
-The leader includes its own `selfRoomId` (a new `BrokerRemoteOptions` field,
-set at construction from `_myRoomId`).
+The sender no longer hardcodes `"main"` and no longer bolts `leader_room` onto
+`peers_update`. Instead it targets a room from `siblingRooms` (populated by
+`subscribe_rooms` push events + `rooms_check` bootstrap).
 
-- `_localPeersBody()` includes `leader_room: this.selfRoomId`.
-- `_setRemoteCache()` caches `leaderRoom` from the inbound `peers_update`.
-- **Site 1** (`tryRouteOutbound`): `sendEnvelopeToPi(siblingPk, cachedLeaderRoom, rewritten)`.
-- **Site 3** (`_sendControlEnvelope`): `sendEnvelopeToPi(toPc, cachedLeaderRoom, env)`.
+- **Site 1** (`tryRouteOutbound`): `sendEnvelopeToPi(siblingPk, pickRoom(siblingPk), rewritten)`.
+- **Site 3** (`_sendControlEnvelope`): `sendEnvelopeToPi(toPc, pickRoom(toPc), env)`.
 
-Warm-cache data + control both target the single leader room — no fanout,
-no derivation, no `#N` ambiguity. The `roomIdFor` import is NOT needed in
-`broker_remote.ts` (the leader sends its actual room_id; the sender echoes
-it verbatim).
+`pickRoom(pcPubkey)` returns a live room from the cache. If the cache has
+exactly one room (the normal warm case), target it. If multiple (the sibling
+has follower rooms too), prefer the one whose `RoomMeta` matches the leader
+heuristic — but in practice only the leader's room has a `PiForwardClient`
+listener, so targeting any live room is safe: follower rooms silently drop
+the envelope (no listener), and the leader's room delivers. If the cache is
+empty (cold), fall through to the bootstrap path below.
 
-#### Cold-cache bootstrap — `rooms_check` breaks the mutual deadlock
+**No `leader_room` field on `PeersUpdateBody`.** `PeersUpdateBody` is
+unchanged. The `roomIdFor` import is NOT needed in `broker_remote.ts`.
 
-Both sides need the other's `leader_room` to push `peers_update`, but neither
-can send a `pi_envelope` (which requires `to_room`) to ask for it. The relay
-already exposes `rooms_check` (`relay/src/handlers/control.rs:133`, generated
-type `RelayControlFrameRoomsCheck`) — a relay control frame that returns the
-sibling's live `room_id[]` WITHOUT needing a `to_room`.
+#### Cold-cache bootstrap — `rooms_check` + bounded fanout
 
-Bootstrap sequence (cold cache, sibling `pcLabel`):
+On bridge attach (or when `pickRoom` finds an empty cache for a sibling), the
+sender bootstraps via the relay's one-shot `rooms_check`:
+
 1. Sender emits `rooms_check { peers: [siblingPubkey] }` via `relay.sendControl`.
-2. Relay responds with a `rooms` frame: `{ peer, rooms: [{ room_id, … }] }`.
-3. Sender fans out a `peers_request` `pi_envelope` to EACH returned `room_id`.
+2. Relay responds with `{ type: "rooms", peer, rooms: [RoomMeta, …] }`.
+3. Sender populates `siblingRooms` from the response.
+4. Sender fans out a `peers_request` `pi_envelope` to EACH returned `room_id`.
    Only the leader's room has a `PiForwardClient` → only the leader handles it;
    followers' rooms silently drop. Bounded one-time fanout, control-envelope
    only.
-4. The leader responds with `peers_update` (now including `leader_room`).
-5. Cache warm → all subsequent sends target the single `leader_room`.
+5. The leader responds with `peers_update` (unchanged shape).
+6. `subscribe_rooms` push events keep `siblingRooms` warm thereafter — no
+   further `rooms_check` needed unless the subscription lapses (relay
+   reconnect).
 
-This requires a new listener on the relay `"message"` stream for `rooms`
-frames (currently `PiForwardClient` only handles `pi_envelope_in`). Scope it as
-a small `RoomDiscovery` helper or extend `PiForwardClient`'s `_handleLine`.
+This requires a new listener for `rooms` / `room_announced` / `room_ended`
+frames (currently `PiForwardClient._handleLine` only handles `pi_envelope_in`,
+discarding everything else). Scope it by extending `PiForwardClient`'s
+`_handleLine` to emit a `rooms` event (and `room_announced`/`room_ended`), or
+via a small `RoomDiscovery` helper that shares the relay message stream.
+Prefer extending `PiForwardClient` to avoid a second relay-message listener
+competing with the existing one.
 
-**Why not a well-known control room (original option b)?** That requires the
-leader to join a SECOND relay room (a second `RelayClient` connection, since
-one WS connection registers exactly one `room_id` via hello). `rooms_check`
-reuses the relay's existing room-discovery API with no second connection and
-no multi-room join — less lifecycle surface for the same result.
+**Why not a well-known control room?** That requires the leader to join a
+SECOND relay room (a second `RelayClient` connection, since one WS connection
+registers exactly one `room_id` via hello). `subscribe_rooms` + `rooms_check`
+reuse the relay's existing room-discovery API with no second connection and no
+multi-room join — less lifecycle surface for the same result.
 
 #### Convergence
 
-- Warm cache: every send targets the single `leader_room`. No fanout.
+- Warm cache: every send targets a live room from `siblingRooms` (kept warm
+  by `subscribe_rooms` push events). No fanout.
 - Cold cache: one `rooms_check` + bounded fanout to discovered rooms, then
-  `peers_update` warms the cache. The reannounce timer (2 min) re-warms via
-  `leader_room` (now known) — no further `rooms_check` needed.
-- ACK timeout on a stale `leader_room` (post-failover, sibling re-elected a
-  new leader in a new room): the next `peers_update` push carries the new
-  `leader_room`; the sender re-targets. No permanent `offline`.
+  `subscribe_rooms` keeps the cache warm. The reannounce timer (2 min)
+  re-warms via the subscription — no further `rooms_check` needed unless the
+  relay WS reconnects.
+- ACK timeout on a stale room (post-failover, sibling re-elected a new leader
+  in a new room): `room_ended` for the old room + `room_announced` for the
+  new room arrive via the subscription; the sender re-targets. No permanent
+  `offline`.
+- Relay reconnect: re-issue `subscribe_rooms` for all known siblings on
+  reconnect (the subscription is per-WS-connection).
 
 ## Acceptance criteria
 
 - [ ] No `"main"` literal remains as a `toRoom` argument in
-  `broker_remote.ts` (Sites 1 & 3 target the cached `leader_room`; Site 2
-  threads the inbound `to_room`).
-- [ ] `peers_update` carries `leader_room`; the receiver caches it and uses
-  it as the `to_room` for both data (Site 1) and control (Site 3) sends.
+  `broker_remote.ts` (Sites 1 & 3 target a live room from the relay-sourced
+  `siblingRooms` cache; Site 2 threads the inbound `to_room`).
+- [ ] `BrokerRemote` subscribes to each sibling's rooms via `subscribe_rooms`
+  on bridge attach and maintains a `siblingRooms: Map<pcPubkey, Set<room_id>>`
+  cache from `room_announced`/`room_ended` push events. Sends target a live
+  room from this cache (Sites 1 & 3).
 - [ ] `PiForwardClientEvents.envelope` threads the inbound `to_room`;
   `handleIncoming` uses it as the ACK `to_room` (Site 2).
 - [ ] Cold-cache bootstrap uses `rooms_check` to discover the sibling's live
-  rooms and fans out `peers_request` to each, then converges to the cached
-  `leader_room` once `peers_update` returns. No permanent `offline`.
+  rooms and fans out `peers_request` to each, then `subscribe_rooms` keeps the
+  cache warm. No permanent `offline`.
+- [ ] `PeersUpdateBody` is unchanged (no `leader_room` field — the relay is
+  the authoritative room source, not a peer-announced field).
 - [ ] A cross-PC data envelope to a sibling leader in a non-`main` room is
-  delivered (relay routes to the cached `leader_room`, not `main`).
+  delivered (relay routes to a live room from the cache, not `main`).
 - [ ] `broker_remote.test.ts` assertions updated: the existing
-  `pi.sendEnvelopeToPi("K_B", "main", …)` sites must assert the cached
-  `leader_room` (or threaded `to_room` for the ACK), not `"main"`.
-- [ ] New tests: `leader_room` round-trips through `peers_update`; cold-cache
-  `rooms_check` path; ACK targets threaded `to_room`.
+  `pi.sendEnvelopeToPi("K_B", "main", …)` sites must assert a cached live
+  room (or threaded `to_room` for the ACK), not `"main"`.
+- [ ] New tests: `siblingRooms` cache populates from `room_announced` and
+  clears on `room_ended`; cold-cache `rooms_check` path; ACK targets
+  threaded `to_room`; `subscribe_rooms` re-issued on relay reconnect.
 - [ ] `corepack pnpm typecheck`, `corepack pnpm test`, `corepack pnpm build`
     pass.
 
 ## Implementation notes
 
-- `BrokerRemote` gains `selfRoomId` (a `BrokerRemoteOptions` field, set at
-  construction from `_myRoomId`). It is NOT derived — the leader already has
-  it from `_startRelayViaTransport`. The `roomIdFor` import stays in
-  `mesh_node.ts`; `broker_remote.ts` does NOT import it.
-- `PeersUpdateBody` gains optional `leader_room?: string`.
-- `WirePeerInfo` (the `peers_detailed` roster entry) does NOT gain a
-  `leader_room` field — `leader_room` is PC-scoped, not peer-scoped.
-- `RelayClient.sendControl` already exists for control frames (`pi_forward`
-  uses it indirectly; `room_meta_update` uses it directly). `rooms_check` is
-  a relay control frame, not a `pi_envelope`.
-- The `rooms` response listener can live in a small `RoomDiscovery` helper
-  or extend `PiForwardClient._handleLine` to emit a `rooms` event. Prefer the
-  latter to avoid a second relay-message listener competing with the existing
-  one.
+- `BrokerRemote` gains a `siblingRooms: Map<pcPubkey, Set<room_id>>` cache
+  populated from relay push events, NOT a `selfRoomId` field (Option A's
+  `selfRoomId`/`leader_room` is dropped — the relay is the room authority).
+- `PeersUpdateBody` is unchanged (no `leader_room` field).
+- `WirePeerInfo` (the `peers_detailed` roster entry) is unchanged.
+- `RelayClient.sendControl` already exists for control frames (`room_meta_update`
+  uses it directly at `relay_transport.ts:320`; `subscribe_presence` at
+  `index.ts:379`). `subscribe_rooms` and `rooms_check` are relay control frames,
+  not `pi_envelope`s — send them via the same `sendControl` path.
+- The `rooms` / `room_announced` / `room_ended` response listener extends
+  `PiForwardClient._handleLine` to emit new events (currently it only handles
+  `pi_envelope_in`, discarding everything else). Prefer this over a second
+  relay-message listener competing with the existing one.
+- `pickRoom(pcPubkey)`: returns a live room from `siblingRooms`. If multiple,
+  any live room is safe (follower rooms silently drop; only the leader's room
+  has a `PiForwardClient` listener). If empty, trigger the `rooms_check`
+  bootstrap.
 - Keep the optimistic-send + ACK-timeout contract intact; the fix changes
   *which room* is targeted, not whether a send is attempted.
 - `MeshMember` (the `mesh_versions` sibling-discovery blob) does NOT carry a
-  room_id (`src/mesh/types.ts`); only the relay's `rooms_check`/`rooms` path
-  exposes a peer's live rooms. This is why `rooms_check` is the bootstrap
-  primitive, not sibling discovery.
+  room_id (`src/mesh/types.ts`); only the relay's `rooms_check`/`rooms`/
+  `subscribe_rooms` path exposes a peer's live rooms. This is why the relay
+  is the bootstrap primitive, not sibling discovery.
 - The `to_room` wire field is already the canonical shape (relay-0.2.0).
-  The `leader_room` addition is an extension of `peers_update` — we own the
-  wire across relay, schema, and extension, so the change ships by rebuilding
-  our own artifacts across all of them.
+  Option B adds NO new wire field — it reuses the relay's existing
+  `subscribe_rooms`/`rooms_check`/`room_announced`/`room_ended` control
+  frames. The change ships as an extension-only edit (no relay, schema, or
+  app change needed).
+- Relay reconnect handling: `subscribe_rooms` is per-WS-connection, so on
+  relay reconnect the bridge must re-issue `subscribe_rooms` for all known
+  siblings. The existing relay-transport reconnect path already re-runs
+  bridge attach; hook the subscription there.
 
 ## Why this is a story, not inline
 
@@ -208,11 +275,12 @@ sender-side room-targeting has a deeper problem than the original
 "roster derivation" design anticipated. The original design is unsound for
 the multi-Pi-per-PC case (only the UDS leader hosts the cross-PC bridge, but
 the roster can't identify the leader and `#N`-suffixed entries derive the
-wrong room). The corrected design announces the leader's own room in
-`peers_update` and bootstraps cold-cache delivery via the relay's existing
-`rooms_check`/`rooms` discovery API (no `to_room` required, no second relay
-connection). Scoping it as a tracked story keeps the release honest and gives
-the gates a concrete artifact to verify.
+wrong room). The corrected design (Option B) uses the relay as the
+authoritative room source via its existing `subscribe_rooms`/`rooms_check`/
+`room_announced`/`room_ended` discovery API — no new wire field, no second
+source of room truth, no second relay connection. Scoping it as a tracked
+story keeps the release honest and gives the gates a concrete artifact to
+verify.
 
 ## Verification
 
