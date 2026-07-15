@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-external-surfaces
 kind: epic
-stage: review
+stage: implementing
 tags: [rebrand, pi-extension, app, relay, cockpit, site, docs]
 parent: null
 depends_on: [epic-rebrand-to-outpost-pi]
@@ -172,3 +172,12 @@ flutter analyze && flutter test
 
 Plus a repo-wide grep confirming zero `jacobmoura.work` references in
 product source (excluding historical CHANGELOG prose).
+
+## Follow-up scope (2026-07-14)
+
+The hostname/community-relay work did not complete distribution ownership.
+The epic is reopened for `feature-outpost-pi-distribution-ownership`, covering
+Cockpit application/signing identities, fail-closed Android release signing,
+old store links, package metadata, and the dormant Windows update path.
+Third-party dependency coordinates remain factual until the separately parked
+independence investigation produces a verified replacement.
