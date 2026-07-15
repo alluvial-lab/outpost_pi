@@ -15,15 +15,12 @@ import 'package:flutter/material.dart'
 import 'package:flutter/gestures.dart' show PointerHoverEvent;
 import 'package:flutter/widgets.dart';
 
-/// Área **editável** de código com gutter de número de linha — a contraparte
-/// edit do `_TextView` (read-only) do file_viewer. Mesmo layout: um scroll
-/// vertical externo embrulha `Row[gutter fixo, divisor, scroll horizontal(campo)]`.
-/// O campo é um [EditableText] com `maxLines: null` (cresce até a altura total,
-/// sem scroll interno) dentro de `IntrinsicWidth` + scroll horizontal, então a
-/// linha longa **não quebra** e o gutter alinha 1:1 — igual ao viewer.
+/// Edit code beside a fixed line-number gutter without wrapping long lines.
 ///
-/// Não cuida de dirty/save: só edição + pintura. O dono ([FileViewer]) escuta o
-/// [controller] para o estado sujo e dispara o save.
+/// An outer vertical scroll contains a fixed gutter, divider, and horizontally
+/// scrolling field. The field grows to full content height without internal
+/// scrolling so gutter rows stay aligned. [FileViewer] owns dirty state and save
+/// behavior by listening to [controller].
 class CodeEditor extends StatefulWidget {
   const CodeEditor({
     super.key,
@@ -45,17 +42,17 @@ class _CodeEditorState extends State<CodeEditor> {
   @override
   void initState() {
     super.initState();
-    // Recontar linhas (gutter) a cada digitação que muda o nº de '\n'.
+    // Recount gutter rows after edits that change the number of newlines.
     widget.controller.addListener(_onChanged);
   }
 
   int _lineCount = 1;
   List<LspDiagnostic> _lastDiag = const <LspDiagnostic>[];
 
-  // Hover de diagnostic ao nível de **linha** (não de coluna): mostra a(s)
-  // mensagem(ns) da linha sob o mouse. Suficiente pro "suporte secundário".
-  double _lineHeight = 18; // px por linha; recalculado no build via TextPainter
-  static const double _padTop = 14; // padding vertical do SingleChildScrollView
+  // Show diagnostics at line rather than column granularity when hovering.
+  double _lineHeight =
+      18; // Pixels per line; recalculated in build via TextPainter.
+  static const double _padTop = 14; // SingleChildScrollView vertical padding.
   int? _hoverLine;
   List<String> _hoverMsgs = const <String>[];
   double _hoverDx = 0;
@@ -65,7 +62,7 @@ class _CodeEditorState extends State<CodeEditor> {
     final contentY = event.localPosition.dy - _padTop + scroll;
     if (contentY < 0 || _lineHeight <= 0) return _clearHover();
     final line = (contentY ~/ _lineHeight); // base 0
-    if (line == _hoverLine) return; // mesma linha → nada a fazer
+    if (line == _hoverLine) return; // No work when still on the same line.
     final msgs = widget.controller.messagesForLine(line);
     setState(() {
       _hoverLine = line;
@@ -85,8 +82,8 @@ class _CodeEditorState extends State<CodeEditor> {
   void _onChanged() {
     final n = '\n'.allMatches(widget.controller.text).length + 1;
     final diag = widget.controller.diagnostics;
-    // Rebuild do gutter quando o nº de linhas OU os diagnostics mudam (o campo
-    // de texto repinta sozinho via buildTextSpan; o gutter depende de setState).
+    // Rebuild the gutter when line count or diagnostics change. The text field
+    // repaints itself through buildTextSpan, while the gutter requires setState.
     if ((n != _lineCount || !identical(diag, _lastDiag)) && mounted) {
       setState(() {
         _lineCount = n;
@@ -103,14 +100,14 @@ class _CodeEditorState extends State<CodeEditor> {
     super.dispose();
   }
 
-  /// Largura fixa reservada pro slot do ícone de severity — **sempre** presente
-  /// (mesmo sem diagnostic) pra que a coluna do gutter não mude de largura e
-  /// empurre o código quando um erro aparece/some.
+  /// Reserve a fixed severity-icon slot even when no diagnostic exists.
+  ///
+  /// This prevents the gutter width from shifting code as errors appear or vanish.
   static const double _iconSlot = 16;
 
-  /// Uma linha do gutter: um slot fixo (ícone de severity quando há diagnostic,
-  /// senão vazio) + o número. O ícone (12px) cabe na altura da linha de texto,
-  /// mantendo o alinhamento 1:1 com o código.
+  /// Build one gutter row from a fixed severity slot and line number.
+  ///
+  /// A 12px icon fits within text line height to preserve one-to-one alignment.
   Widget _gutterLine(int oneBased, TextStyle numStyle) {
     final severity = widget.controller.severityForLine(oneBased - 1);
     final Widget slot;
@@ -154,17 +151,16 @@ class _CodeEditorState extends State<CodeEditor> {
     final codeStyle = typo.mono.copyWith(color: syntax.base);
     _lineCount = '\n'.allMatches(widget.controller.text).length + 1;
 
-    // Altura de uma linha (px) pra mapear posição do mouse → índice de linha.
+    // Map mouse position to a line index using line height in pixels.
     final lineProbe = TextPainter(
       text: TextSpan(text: 'X', style: codeStyle),
       textDirection: TextDirection.ltr,
     )..layout();
     _lineHeight = lineProbe.preferredLineHeight;
 
-    // Clicar em qualquer ponto do editor (gutter, padding, espaço abaixo da
-    // última linha) foca o campo — como num editor de verdade. Cliques sobre o
-    // próprio TextField ganham a arena de gestos e posicionam o cursor; os
-    // demais caem aqui. `translucent` pra não roubar o tap do campo.
+    // Focus the field when clicking gutter, padding, or space below the last
+    // line. TextField wins its own gesture arena to position the cursor; other
+    // clicks fall through here. Translucent behavior preserves field taps.
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () {
@@ -189,8 +185,9 @@ class _CodeEditorState extends State<CodeEditor> {
     );
   }
 
-  /// Overlay com a(s) mensagem(ns) de diagnostic da linha sob o mouse, ancorado
-  /// abaixo da linha. Coordenadas relativas ao viewport (origem do Stack).
+  /// Show hovered-line diagnostic messages beneath that line.
+  ///
+  /// Coordinates are relative to the Stack's viewport origin.
   Widget _hoverOverlay(BuildContext context, double maxWidth) {
     final colors = context.colors;
     final scroll = _vertical.hasClients ? _vertical.offset : 0.0;
@@ -256,9 +253,9 @@ class _CodeEditorState extends State<CodeEditor> {
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    // Largura mínima = viewport (menos o padding H). Sem isso, o
-                    // IntrinsicWidth colapsa o campo a ~0 quando o arquivo está
-                    // vazio (recém-criado) → sem área pra clicar/digitar.
+                    // Keep minimum width at the viewport minus horizontal padding;
+                    // otherwise IntrinsicWidth collapses an empty new file and
+                    // leaves no area to click or type.
                     final minWidth = (constraints.maxWidth - 30).clamp(
                       0.0,
                       double.infinity,
@@ -267,10 +264,10 @@ class _CodeEditorState extends State<CodeEditor> {
                       controller: _horizontal,
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.only(left: 14, right: 16),
-                      // `TextField` (e não `EditableText` cru) pra ganhar os
-                      // gestos de seleção do desktop: arrastar com o mouse,
-                      // duplo-clique, Cmd+A. O highlight vem do `buildTextSpan`
-                      // do controller; a decoração é zerada (sem borda/fundo).
+                      // Use TextField rather than raw EditableText for desktop
+                      // selection gestures: drag, double-click, and Cmd+A.
+                      // Controller buildTextSpan supplies highlighting; decoration
+                      // removes border and background.
                       child: ConstrainedBox(
                         constraints: BoxConstraints(minWidth: minWidth),
                         child: IntrinsicWidth(
@@ -281,9 +278,8 @@ class _CodeEditorState extends State<CodeEditor> {
                             cursorColor: syntax.base,
                             maxLines: null,
                             minLines: null,
-                            // Scroll vertical é do contêiner externo; o campo
-                            // cresce até a altura total (sem scroll interno) pra
-                            // o gutter alinhar 1:1.
+                            // Let the outer container own vertical scrolling while
+                            // the field grows to full height so gutter rows align.
                             expands: false,
                             keyboardType: TextInputType.multiline,
                             decoration: const InputDecoration(

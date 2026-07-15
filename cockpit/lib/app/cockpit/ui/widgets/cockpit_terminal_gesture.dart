@@ -1,9 +1,8 @@
-// Fork do `TerminalGestureHandler` do xterm (src/ui/gesture/gesture_handler.dart).
-// Forkado só porque o original tipa `terminalView` como o `TerminalViewState` do
-// xterm — precisamos do nosso [CockpitTerminalState] pra alcançar o
-// [CockpitTerminalRender]. A lógica (tap/drag/double-tap → seleção; encaminhar
-// mouse pro terminal) é idêntica. O `TerminalGestureDetector` é view-agnóstico,
-// então o reusamos direto do pacote.
+// Fork of xterm's `TerminalGestureHandler`
+// (`src/ui/gesture/gesture_handler.dart`). The original binds `terminalView` to
+// xterm's `TerminalViewState`; Cockpit needs [CockpitTerminalState] to reach
+// [CockpitTerminalRender]. Tap, drag, double-tap selection, and terminal mouse
+// logic remain identical. Reuse the view-agnostic `TerminalGestureDetector`.
 //
 // ignore_for_file: implementation_imports
 import 'package:flutter/gestures.dart';
@@ -18,6 +17,10 @@ import 'package:xterm/src/ui/gesture/gesture_detector.dart';
 import 'cockpit_terminal.dart';
 import 'cockpit_terminal_render.dart';
 
+/// Adapt xterm's gesture contract to [CockpitTerminalState] and its renderer.
+///
+/// Keeps xterm selection behavior while allowing [TerminalPane] to remain the
+/// sole authority for raw mouse forwarding and selection auto-scroll.
 class CockpitTerminalGestureHandler extends StatefulWidget {
   const CockpitTerminalGestureHandler({
     super.key,
@@ -90,18 +93,18 @@ class _CockpitTerminalGestureHandlerState
     );
   }
 
-  /// Seleção local (overlay do nosso renderer) só é permitida quando a app
-  /// **não** dona o mouse, ou quando ⌥ está segurado (escape hatch pra copiar,
-  /// igual iTerm). Com a app no comando (claude/vim), os cliques vão pra ela e a
-  /// seleção é dela — não pintamos uma segunda por cima.
+  /// Allow local renderer selection only when the application does not own mouse input.
+  ///
+  /// Holding Option is the iTerm-style escape hatch for copying raw text. When
+  /// applications such as Claude or Vim own the mouse, their selection remains
+  /// authoritative and Cockpit does not paint a second selection.
   bool get _localSelectionAllowed =>
       terminalView.widget.terminal.mouseMode == MouseMode.none ||
       HardwareKeyboard.instance.isAltPressed;
 
-  // O forward de mouse pra TUI (down/motion/up) é feito pelo [TerminalPane], que
-  // é a única autoridade — ele vê os eventos crus de ponteiro e sabe encaminhar
-  // o arraste como motion. Aqui NÃO encaminhamos tap (evita reportar o clique
-  // duas vezes pra app). Mantemos só o callback de foco no onTapDown.
+  // TerminalPane is the sole authority for forwarding raw down/motion/up events
+  // to the TUI. Do not forward taps here or the application receives duplicates;
+  // retain only the focus callback on onTapDown.
   static const bool _shouldSendTapEvent = false;
 
   void _tapDown(
@@ -174,8 +177,8 @@ class _CockpitTerminalGestureHandlerState
   }
 
   void onDoubleTapDown(TapDownDetails details) {
-    // Com a app no comando do mouse, o duplo-clique vira seleção de palavra DELA
-    // (via taps encaminhados) — não pintamos uma local por cima.
+    // When the application owns the mouse, forwarded double taps drive its word
+    // selection; do not paint a local selection over it.
     if (!_localSelectionAllowed) return;
     renderTerminal.selectWord(details.localPosition);
   }

@@ -1,7 +1,8 @@
 import 'package:xterm/xterm.dart';
 
-/// Um link detectado no buffer do terminal: a URL e o range de colunas (numa
-/// linha) que ela ocupa, pra desenhar o realce e abrir no clique.
+/// Describe a URL and its column range within one terminal buffer line.
+///
+/// The range drives hover highlighting and click-to-open behavior.
 class TerminalLink {
   const TerminalLink({
     required this.url,
@@ -18,19 +19,19 @@ class TerminalLink {
   bool contains(int col) => col >= startCol && col < endCol;
 }
 
-/// Acha a URL sob uma célula. Hoje por **regex** sobre o texto que o terminal
-/// renderizou (território legítimo do terminal — todo emulador faz isso). O
-/// gancho de OSC 8 (hyperlink explícito da app) entra no Slice 2: quando a
-/// célula tiver um id de hyperlink, ele tem precedência sobre o regex.
+/// Find the URL beneath a terminal cell.
+///
+/// Explicit OSC 8 hyperlinks take precedence. Otherwise detect URLs by regex over
+/// rendered terminal text, as terminal emulators conventionally do.
 class TerminalLinkDetector {
-  // http(s):// e file://, mais www. — para em espaço e em fechamentos comuns
-  // que não fazem parte de URL (aspas, parênteses, colchetes).
+  // Match http(s)://, file://, and www., stopping at whitespace or common closing
+  // punctuation that does not belong to a URL.
   static final _urlRegex = RegExp(
     r'''(?:https?://|file://|www\.)[^\s<>()\[\]{}"'`]+''',
     caseSensitive: false,
   );
 
-  // Pontuação de fim de frase que costuma grudar na URL mas não faz parte dela.
+  // Strip sentence-ending punctuation commonly adjacent to a URL.
   static const _trailingTrim = '.,;:!?';
 
   TerminalLink? linkAt(Terminal terminal, CellOffset pos) {
@@ -40,9 +41,8 @@ class TerminalLinkDetector {
     final cols = line.length;
     if (cols <= 0 || pos.x < 0 || pos.x >= cols) return null;
 
-    // OSC 8 (hyperlink explícito da app) tem precedência sobre o regex: é a URL
-    // que a própria app marcou, não um palpite. O range é o trecho contíguo de
-    // células com a mesma URL.
+    // Prefer explicit OSC 8 application hyperlinks over regex guesses. Extend
+    // through the contiguous cells carrying the same URL.
     if (line.getCodePoint(pos.x) != 0) {
       final url = terminal.hyperlinkUrl(line.getAttributes(pos.x));
       if (url != null && url.isNotEmpty) {
@@ -60,9 +60,9 @@ class TerminalLinkDetector {
       }
     }
 
-    // String indexada por COLUNA: célula vazia/spacer vira espaço (quebra a
-    // URL), char real fica na sua coluna. URLs são ASCII (largura 1), então
-    // coluna == índice no texto — match.start/end são colunas direto.
+    // Build a column-indexed string: empty/spacer cells become spaces that break
+    // URLs, while real characters retain their columns. URLs are single-width
+    // ASCII, so regex offsets map directly to columns.
     final units = List<int>.filled(cols, 0x20);
     for (var c = 0; c < cols; c++) {
       final code = line.getCodePoint(c);
@@ -73,8 +73,7 @@ class TerminalLinkDetector {
     for (final m in _urlRegex.allMatches(text)) {
       if (pos.x < m.start || pos.x >= m.end) continue;
       var end = m.end;
-      // tira pontuação final que não é da URL (mas mantém se o ponteiro estiver
-      // exatamente sobre ela)
+      // Trim trailing punctuation unless the pointer is directly over it.
       while (end - 1 > m.start &&
           end - 1 > pos.x &&
           _trailingTrim.contains(text[end - 1])) {

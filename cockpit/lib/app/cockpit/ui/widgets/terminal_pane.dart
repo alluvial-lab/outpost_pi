@@ -9,18 +9,13 @@ import 'cockpit_terminal.dart';
 import 'cockpit_terminal_render.dart';
 import 'terminal_link.dart';
 
-/// Envólucro do [CockpitTerminal] que adiciona **auto-scroll durante a
-/// seleção por arraste**: quando o mouse passa da borda superior/inferior do
-/// terminal enquanto seleciona, a viewport rola na direção e a seleção
-/// acompanha (como num editor/terminal nativo).
+/// Add native-style selection auto-scroll and mouse ownership to [CockpitTerminal].
 ///
-/// Por que existe: o xterm 4.0 só estende a seleção no `onDragUpdate` (que só
-/// dispara quando o ponteiro se move) e **nunca rola a viewport**. Resultado: ao
-/// arrastar pra baixo de um texto longo, a tela ficava parada. Aqui escutamos os
-/// eventos crus do ponteiro, rolamos via [ScrollController] e dirigimos a
-/// seleção a partir de uma âncora fixa — assim o início não "escorrega" quando a
-/// viewport rola (o que aconteceria se reusássemos o cálculo por pixel do xterm,
-/// que não compensa o scroll).
+/// xterm 4.0 extends selection only on pointer movement and never scrolls the
+/// viewport during a drag. This wrapper consumes raw pointer events, scrolls via
+/// [ScrollController], and extends selection from a fixed buffer anchor so its
+/// start does not slip as the viewport moves. It also owns TUI mouse forwarding
+/// and command-click link handling to avoid duplicate authorities.
 class TerminalPane extends StatefulWidget {
   const TerminalPane({
     super.key,
@@ -50,49 +45,51 @@ class _TerminalPaneState extends State<TerminalPane>
   late final _SelectionGuardController _controller;
   late final Ticker _ticker;
 
-  /// Quão próximo da borda (px) o arraste já dispara o auto-scroll.
+  /// Start auto-scroll when a drag enters this edge distance in pixels.
   static const _edgeZone = 24.0;
 
-  /// Distância além da borda (px) que satura a velocidade do auto-scroll.
+  /// Saturate auto-scroll speed at this distance beyond the edge.
   static const _maxOvershoot = 80.0;
 
-  /// Passo máximo de rolagem por frame (px), atingido na saturação.
+  /// Cap scrolling at this many pixels per frame.
   static const _maxStep = 18.0;
 
-  /// Movimento mínimo (px) com o botão pressionado pra contar como "arraste".
-  /// Abaixo disso é clique/duplo-clique — esses seguem no gesto do xterm.
+  /// Treat held-button movement beyond this threshold as a drag.
+  ///
+  /// Smaller movement remains an xterm click or double-click.
   static const _dragSlop = 3.0;
 
-  Offset? _downLocal; // pointer-down em coords do RenderTerminal
-  Offset? _pointer; // última posição do ponteiro (mesmas coords)
-  CellAnchor? _anchor; // início fixo da seleção (acompanha o buffer)
+  Offset? _downLocal; // Pointer-down in RenderTerminal coordinates.
+  Offset? _pointer; // Latest pointer position in the same coordinate space.
+  CellAnchor? _anchor; // Fixed selection start that follows the buffer.
   bool _selecting = false;
 
-  /// Resto fracionário de linha acumulado ao encaminhar o wheel pra app (trackpad
-  /// manda deltas pequenos e frequentes; sem acumular, arredondaríamos cada um
-  /// pra 1 linha e o scroll ficaria rápido demais).
+  /// Accumulate fractional wheel lines before forwarding to the application.
+  ///
+  /// Trackpads emit small frequent deltas; rounding each to one line would scroll
+  /// too quickly.
   double _wheelLineAccum = 0;
 
-  /// True enquanto um clique/arraste está sendo **encaminhado pra TUI** (claude/
-  /// vim com mouse reporting). Nesse modo o `TerminalPane` é a única autoridade
-  /// de mouse: manda botão down no toque, motion durante o arraste e up no
-  /// soltar — o gesto interno do xterm não encaminha nada (evita duplicar).
+  /// Track when a click or drag is being forwarded to a mouse-reporting TUI.
+  ///
+  /// During forwarding, TerminalPane is the sole mouse authority: it emits down,
+  /// drag motion, and up while xterm's internal gesture sends nothing.
   bool _forwardingMouse = false;
-  CellOffset? _tuiLastCell; // última célula reportada (motion só em mudança)
+  CellOffset? _tuiLastCell; // Last reported cell; motion emits only on change.
 
-  // --- Abrir URL com Cmd (hover → mãozinha + realce; Cmd+clique → abre) ---
+  // --- Open URLs with Cmd: pointer/highlight on hover, open on click. ---
   final _linkDetector = TerminalLinkDetector();
   MouseCursor _cursor = SystemMouseCursors.text;
-  TerminalLink? _hoverLink; // link sob o ponteiro (só quando Cmd está segurado)
-  TerminalHighlight? _linkHighlight; // realce do link (removível)
-  Offset? _lastHoverGlobal; // pra reavaliar quando o Cmd muda sem mover o mouse
+  TerminalLink? _hoverLink; // Link under pointer while Cmd is held.
+  TerminalHighlight? _linkHighlight; // Removable link highlight.
+  Offset? _lastHoverGlobal; // Reevaluate Cmd changes without pointer movement.
 
   @override
   void initState() {
     super.initState();
     _controller = _SelectionGuardController();
     _ticker = createTicker(_onTick);
-    // Cmd pressionado/solto sem mover o mouse também atualiza o realce/cursor.
+    // Update highlight/cursor when Cmd changes without pointer movement.
     HardwareKeyboard.instance.addHandler(_onKey);
   }
 
@@ -108,23 +105,26 @@ class _TerminalPaneState extends State<TerminalPane>
   }
 
   bool _onKey(KeyEvent _) {
-    _evaluateHover(_lastHoverGlobal); // reavalia com a última posição conhecida
-    return false; // não consome — só observa o estado do Cmd
+    _evaluateHover(_lastHoverGlobal); // Reevaluate at the last known position.
+    return false; // Observe Cmd state without consuming the event.
   }
 
   CockpitTerminalRender? get _render => _viewKey.currentState?.renderTerminal;
 
   bool get _isCmd => HardwareKeyboard.instance.isMetaPressed;
 
-  /// ⌥ (Option) segurado força a seleção **local** mesmo quando a app dona o
-  /// mouse — é o escape hatch pra copiar texto cru, igual iTerm/Terminal.app.
+  /// Force local selection while Option is held, even when the app owns the mouse.
+  ///
+  /// This is the iTerm/Terminal.app-style escape hatch for copying raw text.
   bool get _isAlt => HardwareKeyboard.instance.isAltPressed;
 
-  /// A app declarou mouse reporting (claude/vim): ela dona cliques e seleção.
+  /// Report whether a mouse-reporting app owns clicks and selection.
   bool get _appOwnsMouse => widget.terminal.mouseMode != MouseMode.none;
 
-  /// Reavalia o link sob [global] (coords globais). Só detecta com Cmd segurado:
-  /// sem Cmd, o terminal opera normal (seleção / clique vai pro app).
+  /// Reevaluate the link under global coordinates [global].
+  ///
+  /// Detect only while Cmd is held; otherwise selection and clicks follow normal
+  /// terminal/application behavior.
   void _evaluateHover(Offset? global) {
     final r = _render;
     if (r == null || global == null) {
@@ -175,16 +175,15 @@ class _TerminalPaneState extends State<TerminalPane>
   }
 
   void _onPointerDown(PointerDownEvent e) {
-    // Toque não seleciona por arraste no desktop; só mouse/trackpad com botão.
+    // Desktop drag selection requires a mouse/trackpad button, not touch.
     if (e.kind == PointerDeviceKind.touch) return;
     if ((e.buttons & kPrimaryButton) == 0) return;
-    // Com Cmd, o clique é pra abrir link — não inicia seleção.
+    // Cmd-click opens a link rather than starting selection.
     if (_isCmd) return;
     final r = _render;
     if (r == null) return;
-    // App dona o mouse (claude/vim): encaminhamos clique+arraste pra ela (ela faz
-    // a própria seleção e rola junto). ⌥ segurado fura isso → seleção local pra
-    // copiar texto cru (igual iTerm).
+    // Forward click and drag when Claude/Vim owns the mouse so it selects and
+    // scrolls itself. Holding Option overrides this for local raw-text selection.
     if (_appOwnsMouse && !_isAlt) {
       final cell = r.getCellOffset(r.globalToLocal(e.position));
       _forwardingMouse = true;
@@ -205,8 +204,8 @@ class _TerminalPaneState extends State<TerminalPane>
     if ((e.buttons & kPrimaryButton) == 0) return;
     final r = _render;
     if (r == null) return;
-    // Encaminhando pra TUI: manda motion (botão segurado) a cada mudança de
-    // célula — é isso que faz o arraste virar seleção dentro do claude/vim.
+    // While forwarding, emit held-button motion on each cell change so dragging
+    // becomes selection inside Claude/Vim.
     if (_forwardingMouse) {
       final cell = r.getCellOffset(r.globalToLocal(e.position));
       if (_tuiLastCell != null &&
@@ -231,7 +230,7 @@ class _TerminalPaneState extends State<TerminalPane>
   }
 
   void _onPointerUp(PointerUpEvent e) {
-    // Fim do encaminhamento pra TUI: solta o botão na célula atual.
+    // End TUI forwarding by releasing the button at the current cell.
     if (_forwardingMouse) {
       final r = _render;
       if (r != null) {
@@ -246,19 +245,18 @@ class _TerminalPaneState extends State<TerminalPane>
       _tuiLastCell = null;
       return;
     }
-    // Cmd+clique (sem arraste) sobre um link → abre no navegador.
+    // Open a link in the browser on Cmd-click without dragging.
     if (_isCmd && !_selecting && _hoverLink != null) {
       _openLink(_hoverLink!.url);
     }
     _finishSelecting();
   }
 
-  /// Encaminha um evento de **motion** (ponteiro movido com botão segurado) pra
-  /// TUI. O `mouseInput` do xterm só sabe `down`/`up` — o protocolo de mouse
-  /// (1002/1003) reporta motion com o **bit 32** somado ao id do botão. Como o
-  /// reporter do xterm não expõe isso, montamos a sequência aqui e mandamos pelo
-  /// mesmo `onOutput` que o `mouseInput` usaria. Só vale pros modos que rastreiam
-  /// arraste/movimento — senão a app não espera motion.
+  /// Forward held-button pointer motion to the TUI.
+  ///
+  /// xterm's `mouseInput` exposes only down/up, while mouse modes 1002/1003 encode
+  /// motion by adding bit 32 to the button id. Build that sequence here and send
+  /// it through the same `onOutput`, only for modes that expect motion.
   void _sendMouseMotion(CellOffset cell) {
     final mode = widget.terminal.mouseMode;
     if (mode != MouseMode.upDownScrollDrag &&
@@ -267,8 +265,8 @@ class _TerminalPaneState extends State<TerminalPane>
     }
     final out = widget.terminal.onOutput;
     if (out == null) return;
-    const motionLeft = 0 + 32; // botão esquerdo (0) + bit de motion (32)
-    final x = cell.x + 1; // protocolo é 1-based
+    const motionLeft = 0 + 32; // Left button (0) plus motion bit (32).
+    final x = cell.x + 1; // The protocol is one-based.
     final y = cell.y + 1;
     final seq = switch (widget.terminal.mouseReportMode) {
       MouseReportMode.sgr => '\x1b[<$motionLeft;$x;${y}M',
@@ -283,20 +281,19 @@ class _TerminalPaneState extends State<TerminalPane>
   void _onPointerSignal(PointerSignalEvent e) {
     if (e is! PointerScrollEvent) return;
     final term = widget.terminal;
-    // "App dona o scroll" = declarou mouse reporting com scroll (claude/vim).
-    // Nesse caso ela **repinta** as células ao rolar; a seleção ancorada não tem
-    // como acompanhar (vira realce sobre texto trocado), então limpamos. O mesmo
-    // vale pro alt-buffer puro (less etc.). No buffer normal sem mouse reporting
-    // o scroll move o nosso scrollback e a seleção acompanha — não mexemos.
+    // An application owns scrolling when it declares scroll mouse reporting.
+    // Claude/Vim then repaints cells while scrolling, so anchored selection cannot
+    // follow changed text and must be cleared. The same applies to a plain alt
+    // buffer such as less. In normal buffer without reporting, local scrollback
+    // moves and the selection follows, so preserve it.
     final appOwnsScroll = term.mouseMode.reportScroll;
     final alt = term.buffer.isAltBuffer;
     if ((appOwnsScroll || alt) && _controller.selection != null) {
       _controller.clearSelection();
     }
-    // Encaminha o wheel pra app no buffer normal: lá o nosso Scrollable está
-    // NeverScrollable (ver cockpit_terminal.dart), então o wheel chegaria a
-    // ninguém. No alt-buffer quem encaminha é o TerminalScrollGestureHandler do
-    // xterm — não duplicamos.
+    // Forward wheel input in normal buffer because CockpitTerminal's Scrollable
+    // is NeverScrollable when the app owns scrolling. In alt buffer, xterm's
+    // TerminalScrollGestureHandler forwards it, so do not duplicate.
     if (appOwnsScroll && !alt) {
       final r = _render;
       if (r == null) return;
@@ -319,7 +316,8 @@ class _TerminalPaneState extends State<TerminalPane>
   void _onPointerCancel(PointerCancelEvent e) {
     if (_forwardingMouse) {
       final r = _render;
-      final cell = r?.getCellOffset(r.globalToLocal(e.position)) ?? _tuiLastCell;
+      final cell =
+          r?.getCellOffset(r.globalToLocal(e.position)) ?? _tuiLastCell;
       if (cell != null) {
         widget.terminal.mouseInput(
           TerminalMouseButton.left,
@@ -339,14 +337,14 @@ class _TerminalPaneState extends State<TerminalPane>
       r.getCellOffset(down),
     );
     _selecting = true;
-    // A partir daqui ignoramos a seleção do gesto interno do xterm — nós a
-    // dirigimos por completo enquanto o arraste durar.
+    // Ignore xterm's internal selection from here and own it for the entire drag.
     _controller.suppressGestureSelection = true;
   }
 
-  /// Estende a seleção da âncora fixa até o ponteiro, **clampando** o Y dentro
-  /// da viewport: assim, com o ponteiro além da borda, o extremo acompanha a
-  /// linha visível mais próxima — que avança no buffer conforme a viewport rola.
+  /// Extend selection from the fixed anchor to the pointer.
+  ///
+  /// Clamp Y within the viewport so an out-of-bounds pointer follows the nearest
+  /// visible line as scrolling advances through the buffer.
   void _extendSelection(CockpitTerminalRender r) {
     final anchor = _anchor;
     final p = _pointer;
@@ -355,8 +353,8 @@ class _TerminalPaneState extends State<TerminalPane>
     final clampedY = p.dy.clamp(0.0, h - 1.0);
     final from = anchor.offset;
     var to = r.getCellOffset(Offset(p.dx, clampedY));
-    // Mesma regra do xterm: ao arrastar pra frente, inclui a célula sob o
-    // cursor pra seleção não ficar "uma célula curta".
+    // Match xterm by including the cell under a forward drag, avoiding a
+    // one-cell-short selection.
     if (to.x >= from.x) {
       to = CellOffset(to.x + 1, to.y);
     }
@@ -375,8 +373,9 @@ class _TerminalPaneState extends State<TerminalPane>
     }
   }
 
-  /// Quanto o ponteiro passou da zona de borda. `< 0` = acima (rola pra cima),
-  /// `> 0` = abaixo (rola pra baixo), `0` = dentro (sem auto-scroll).
+  /// Measure pointer distance beyond the edge zone.
+  ///
+  /// Negative scrolls up, positive scrolls down, and zero disables auto-scroll.
   double _overshoot(CockpitTerminalRender r) {
     final p = _pointer;
     if (p == null) return 0;
@@ -409,7 +408,7 @@ class _TerminalPaneState extends State<TerminalPane>
         _scroll.jumpTo(next);
       }
     }
-    // A viewport rolou → reestende a seleção até a nova borda visível.
+    // Re-extend selection to the new visible edge after viewport scrolling.
     _extendSelection(r);
   }
 
@@ -443,8 +442,8 @@ class _TerminalPaneState extends State<TerminalPane>
         onPointerUp: _onPointerUp,
         onPointerCancel: _onPointerCancel,
         onPointerSignal: _onPointerSignal,
-        // O cursor é decidido pelo MouseRegion acima (mãozinha sobre link com
-        // Cmd, senão I-beam); o CockpitTerminal defere o dele pra cá.
+        // The outer MouseRegion chooses a hand over Cmd-links or an I-beam;
+        // CockpitTerminal defers its cursor here.
         child: CockpitTerminal(
           widget.terminal,
           key: _viewKey,
@@ -462,11 +461,11 @@ class _TerminalPaneState extends State<TerminalPane>
   }
 }
 
-/// [TerminalController] que ignora as escritas de seleção do gesto **interno**
-/// do xterm enquanto o [TerminalPane] está dirigindo a seleção (arraste com
-/// auto-scroll). Sem isso, o `onDragUpdate` do xterm — que recalcula o início a
-/// partir de um pixel fixo, sem compensar o scroll — brigaria com a nossa
-/// seleção ancorada e a faria "pular".
+/// Suppress xterm's internal selection writes while [TerminalPane] owns selection.
+///
+/// During auto-scroll drag, xterm recalculates from a fixed pixel without scroll
+/// compensation. Ignoring those writes prevents conflict with the anchored
+/// selection and keeps its start from jumping.
 class _SelectionGuardController extends TerminalController {
   bool suppressGestureSelection = false;
   bool _fromGuard = false;
@@ -484,8 +483,8 @@ class _SelectionGuardController extends TerminalController {
   @override
   void setSelection(CellAnchor base, CellAnchor extent, {SelectionMode? mode}) {
     if (suppressGestureSelection && !_fromGuard) {
-      // O xterm transfere a posse das âncoras esperando que sejam consumidas;
-      // como vamos ignorá-las, liberamos pra não vazar.
+      // xterm transfers anchor ownership expecting consumption; release ignored
+      // anchors to avoid leaks.
       base.dispose();
       extent.dispose();
       return;
