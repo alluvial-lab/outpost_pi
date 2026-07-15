@@ -22,13 +22,16 @@ import 'package:app/data/preferences/preferences.dart';
 const String kRelayNotConfiguredMessage =
     'Relay not configured. Set a relay in Settings and try again.';
 
+/// Identify the source that produced a relay-resolution branch.
 enum RelaySource { preferences, unconfigured }
 
+/// Represent the explicit result of resolving relay configuration without I/O.
 sealed class RelayResolution {
   const RelayResolution();
   RelaySource get source;
 }
 
+/// Carry the canonical user-configured HTTP(S) relay URL.
 final class ConfiguredRelay extends RelayResolution {
   const ConfiguredRelay(this.url);
 
@@ -38,6 +41,7 @@ final class ConfiguredRelay extends RelayResolution {
   RelaySource get source => RelaySource.preferences;
 }
 
+/// Signal that callers must surface configuration recovery instead of connecting.
 final class UnconfiguredRelay extends RelayResolution {
   const UnconfiguredRelay();
 

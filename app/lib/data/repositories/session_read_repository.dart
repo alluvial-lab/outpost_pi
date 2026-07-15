@@ -11,6 +11,10 @@ import 'package:app/data/local/records/runtime_record.dart';
 import 'package:app/domain/contracts/repository.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 
+/// Read one canonical session's message projection and room runtime snapshots.
+///
+/// This repository never touches the channel or writes Hive; [SyncService]
+/// owns mutation while consumers receive ordered reactive projections.
 class SessionReadRepository extends Repository {
   SessionReadRepository(this._boxes);
 

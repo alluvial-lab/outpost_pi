@@ -22,9 +22,18 @@ import 'storage.dart';
 // PeerTransport — minimal byte-level interface (was NoiseTransport pre-rollback)
 // ---------------------------------------------------------------------------
 
+/// Exchange raw inner-pairing bytes over a connected peer transport.
+///
+/// The pairing flow owns [close] after it finishes or fails; implementations do
+/// not interpret the plaintext protocol payload.
 abstract class PeerTransport {
+  /// Send one complete pairing frame to the addressed Pi room.
   Future<void> send(Uint8List data);
+
+  /// Receive the next complete pairing frame from the Pi.
   Future<Uint8List> receive();
+
+  /// Release the pairing transport and any underlying socket resources.
   Future<void> close();
 }
 
@@ -32,6 +41,7 @@ abstract class PeerTransport {
 // PairingError
 // ---------------------------------------------------------------------------
 
+/// Report a typed pairing failure that callers can map to recovery UI.
 class PairingError implements Exception {
   final String code;
   final String message;
@@ -61,6 +71,11 @@ class PairingResult {
 // performPairing
 // ---------------------------------------------------------------------------
 
+/// Perform the plaintext QR-token pairing exchange and persist its peer record.
+///
+/// Rejects a legacy QR relay mismatch before sending, and throws [PairingError]
+/// for Pi rejection or an unexpected reply. The caller retains transport-close
+/// ownership so it can coordinate the surrounding pairing lifecycle.
 Future<PairingResult> performPairing({
   required QrPairPayload qr,
   required PeerTransport transport,
