@@ -11,39 +11,39 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('file icons', () {
-    test('extensão simples resolve pelo último segmento', () {
+    test('simple extension resolves from the final segment', () {
       expect(fileIconName('main.dart'), 'dart');
       expect(fileIconName('styles.scss'), 'sass');
       expect(fileIconName('script.sh'), 'console');
     });
 
-    test('extensão é case-insensitive', () {
+    test('extension matching is case-insensitive', () {
       expect(fileIconName('PHOTO.PNG'), 'image');
     });
 
-    test('extensão composta vence a simples (mais longa primeiro)', () {
+    test('compound extension wins over a simple extension', () {
       expect(fileIconName('app.module.ts'), 'angular');
       expect(fileIconName('foo.test.tsx'), 'test-jsx');
     });
 
-    test('nome exato tem prioridade sobre extensão', () {
+    test('exact name takes priority over extension', () {
       expect(fileIconName('package.json'), 'nodejs');
       expect(fileIconName('.gitignore'), 'git');
       expect(fileIconName('Dockerfile'), 'docker');
     });
 
-    test('desconhecido cai no ícone padrão', () {
+    test('unknown file falls back to the default icon', () {
       expect(fileIconName('weird'), kDefaultFileIcon);
       expect(fileIconName('no.such.ext'), kDefaultFileIcon);
     });
 
-    test('pasta resolve e normaliza variantes (._- e __x__)', () {
+    test('folder lookup normalizes dotted, dashed, and wrapped variants', () {
       expect(folderIconName('src'), folderIconName('.src'));
       expect(folderIconName('test'), folderIconName('__tests__'));
       expect(folderIconName('node_modules'), isNot(kDefaultFolderIcon));
     });
 
-    test('pasta aberta usa o ícone aberto', () {
+    test('open folder uses the open icon', () {
       final closed = folderIconName('src');
       final open = folderIconName('src', open: true);
       expect(open, isNot(closed));
@@ -53,7 +53,7 @@ void main() {
   });
 
   group('agent setup gate', () {
-    test('trio satisfeito → agentReady', () async {
+    test('all three prerequisites satisfied makes the agent ready', () async {
       final vm = SetupViewModel(_FakeEnv(), _FakeInstaller());
       await vm.recheckAll();
       expect(vm.pi, CheckStatus.ok);
@@ -62,14 +62,14 @@ void main() {
       expect(vm.agentReady, isTrue);
     });
 
-    test('um passo faltando bloqueia', () async {
+    test('one missing prerequisite blocks readiness', () async {
       final vm = SetupViewModel(_FakeEnv(ext: false), _FakeInstaller());
       await vm.recheckAll();
       expect(vm.extension, CheckStatus.missing);
       expect(vm.agentReady, isFalse);
     });
 
-    test('pi ou supervisor faltando também bloqueia', () async {
+    test('missing Pi or supervisor also blocks readiness', () async {
       final a = SetupViewModel(_FakeEnv(pi: false), _FakeInstaller());
       await a.recheckAll();
       expect(a.pi, CheckStatus.missing);

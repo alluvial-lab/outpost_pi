@@ -1,13 +1,15 @@
-/// Verifica o que está instalado no ambiente do usuário pro onboarding:
-/// o binário do Pi, a extensão outpost-pi registrada no Pi, e o supervisor
-/// (serviço do SO). Contrato no domínio; a impl (Process/filesystem) em `data/`.
+/// Probe the user's environment for onboarding prerequisites.
+///
+/// Checks the Pi binary, the outpost-pi extension registration, and the
+/// operating-system supervisor service. Infrastructure probing lives in
+/// `data/`; this contract keeps onboarding independent of process and file I/O.
 abstract class EnvironmentProbe {
-  /// O binário `pi` está instalado/acessível?
+  /// Check whether the `pi` binary is installed and accessible.
   Future<bool> piInstalled();
 
-  /// A extensão `outpost-pi` está registrada no Pi (em `~/.pi/agent/settings.json`)?
+  /// Check whether `outpost-pi` is registered in `~/.pi/agent/settings.json`.
   Future<bool> extensionInstalled();
 
-  /// O supervisor (`pi-supervisord`) está instalado como serviço do SO?
+  /// Check whether `pi-supervisord` is installed as an OS service.
   Future<bool> supervisorInstalled();
 }
