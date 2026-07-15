@@ -12,15 +12,15 @@ Rejected alternatives for this fork-private bold refactor:
 
 - **Protobuf/Buf**: attractive for a future rigorous/patchbay rewrite, but default Protobuf JSON mapping fights the existing `{ "type": ... }` shape and would require a custom JSON bridge before the current wire is under control.
 - **TypeScript-native schemas** (`zod`, TypeBox, Valibot): pleasant for TS but would keep Dart and Rust downstream of a TS derivative, recreating the source/derivative ambiguity this refactor removes.
-- **Custom IDL**: could fit Remote Pi closely, but would create a new protocol language to maintain and would travel worse to patchbay than a neutral schema.
+- **Custom IDL**: could fit Outpost-Pi closely, but would create a new protocol language to maintain and would travel worse to patchbay than a neutral schema.
 
 ## Layout
 
-- `schema/remote-pi.schema.json` — umbrella schema and shared metadata.
+- `schema/outpost-pi.schema.json` — umbrella schema and shared metadata.
 - `schema/manifest.json` — deterministic family registry for generators.
 - `schema/defs/common.schema.json` — shared scalar/JSON definitions.
 - `schema/defs/agent-envelope.schema.json` — generic `{from,to,id,re,body}` agent envelope used by local/cross-PC mesh.
-- Family schemas define app↔Pi, relay control/outer, cross-PC, cockpit control, and reachability contract surfaces.
+- Family schemas define app↔Pi, relay control/outer, cross-PC, cockpit control, and reachability contract surfaces. `relay-control.schema.json` owns the relay auth-domain prefix under `x-outpost-pi.authDomainPrefix`; generated TS/Rust consumers derive it, while the Dart transport is guarded by the shared auth-domain vector.
 - `fixtures/<family>/*.jsonl` — compatibility examples validated by the schema check.
 - `scripts/check-fixtures.ts` — compiles schemas and validates every configured fixture.
 - `scripts/list-types.ts` — emits the deterministic generator handoff catalog.

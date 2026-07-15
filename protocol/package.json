@@ -1,9 +1,9 @@
 {
-  "name": "@remote-pi/protocol-schema",
+  "name": "@outpost-pi/protocol-schema",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Canonical JSON Schema source for Remote Pi protocol code generation",
+  "description": "Canonical JSON Schema source for Outpost-Pi protocol code generation",
   "scripts": {
     "check": "node --import tsx scripts/check-fixtures.ts",
     "list-types": "node --import tsx scripts/list-types.ts",

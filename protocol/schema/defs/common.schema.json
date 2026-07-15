@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kevoun.com/schemas/defs/common.schema.json",
-  "title": "Remote Pi common schema definitions",
+  "title": "Outpost-Pi common schema definitions",
   "$defs": {
     "uuid": {
       "type": "string",
