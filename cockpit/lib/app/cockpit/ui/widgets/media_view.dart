@@ -5,18 +5,14 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Áudio ou vídeo — define se há superfície de vídeo.
+/// Distinguish audio from media that requires a video surface.
 enum MediaKind { audio, video }
 
-/// Player de áudio/vídeo do viewer (plano 46). **Stateful**: cria o [Player]
-/// (e o [VideoController] no caso de vídeo) no [initState] e dá `dispose` no
-/// fim — fechar a aba zera o player (sem áudio fantasma).
+/// Play audio or video within a file-viewer tab with explicit lifecycle ownership.
 ///
-/// Regras de produto (confirmadas):
-/// - **Não autoplay**: abre `pausado`, o usuário dá play.
-/// - **Pausa fora de foco**: quando [active] vira `false` (aba deixou de ser a
-///   ativa — o `IndexedStack` do pane mantém todas montadas), pausa. **Sem
-///   auto-resume** ao voltar (continua no ponto, pausado).
+/// Creates [Player] and, for video, [VideoController] in `initState`, then
+/// disposes them when the tab closes to prevent orphaned audio. Media opens
+/// paused, pauses when [active] becomes false, and never auto-resumes on return.
 class MediaView extends StatefulWidget {
   const MediaView({
     super.key,
@@ -28,8 +24,7 @@ class MediaView extends StatefulWidget {
   final String path;
   final MediaKind kind;
 
-  /// `true` enquanto esta é a aba ativa (visível) da pane. Ao virar `false`,
-  /// o player pausa.
+  /// Indicate whether this tab is visible; becoming false pauses playback.
   final bool active;
 
   @override
@@ -47,7 +42,7 @@ class _MediaViewState extends State<MediaView> {
   double _volume = 100;
   double _lastVolume = 100;
 
-  /// Posição-alvo enquanto o usuário arrasta o slider (null = não arrastando).
+  /// Track the seek target while dragging, or null outside a drag.
   double? _seekMs;
 
   @override
@@ -77,14 +72,14 @@ class _MediaViewState extends State<MediaView> {
         if (mounted) setState(() => _volume = v);
       }),
     );
-    // Carrega PAUSADO (não autoplay).
+    // Open paused rather than autoplaying.
     _player.open(Media(widget.path), play: false);
   }
 
   @override
   void didUpdateWidget(MediaView old) {
     super.didUpdateWidget(old);
-    // Deixou de ser a aba ativa → pausa (sem auto-resume ao voltar).
+    // Pause when the tab becomes inactive, without auto-resuming on return.
     if (old.active && !widget.active) {
       _player.pause();
     }
@@ -137,7 +132,7 @@ class _MediaViewState extends State<MediaView> {
         ),
       );
     }
-    // Áudio: card centralizado (sem superfície de vídeo).
+    // Center audio controls in a card without a video surface.
     final name = widget.path.split('/').where((p) => p.isNotEmpty).last;
     return ColoredBox(
       color: colors.panel,
@@ -174,8 +169,9 @@ class _MediaViewState extends State<MediaView> {
     );
   }
 
-  /// Barra de controles compartilhada (vídeo e áudio): play/pause · slider de
-  /// posição · tempo · volume/mute. Cores/tipografia do tema.
+  /// Build themed controls shared by audio and video.
+  ///
+  /// Includes play/pause, seek position, time, volume, and mute.
   Widget _controls(BuildContext context) {
     final colors = context.colors;
     final onDark = widget.kind == MediaKind.video;

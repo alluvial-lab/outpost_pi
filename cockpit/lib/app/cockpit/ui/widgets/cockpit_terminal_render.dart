@@ -1,20 +1,16 @@
-// Fork do `RenderTerminal` do xterm (src/ui/render.dart), trazido pra dentro do
-// cockpit pra ganharmos controle do *renderer* sem manter um fork do pacote
-// inteiro. O "cérebro" (parser ANSI + buffer) continua sendo o do xterm; aqui só
-// trocamos o *pintor*.
+// Fork of xterm's `RenderTerminal` (`src/ui/render.dart`) so Cockpit controls the
+// renderer without maintaining a package-wide fork. xterm still owns the ANSI
+// parser and buffer; only painting changes here.
 //
-// Única mudança funcional vs. o original: **cache de `ui.Picture` por linha**.
-// O xterm re-grava cada célula visível (drawRect do fundo + drawParagraph do
-// glifo) a cada frame — ~10k draw calls por frame quando um harness despeja
-// saída, daí a lentidão. Aqui gravamos cada *linha* num `Picture` chaveado pelo
-// hash do conteúdo: linhas estáveis viram um único `drawPicture` (barato na GPU)
-// e só as linhas que mudaram são re-gravadas. Cursor, seleção e highlights
-// continuam pintados por cima, ao vivo (não entram no cache da linha), então
-// selecionar/piscar cursor não invalida nada.
+// Difference from upstream: cache one `ui.Picture` per line. xterm records every
+// visible cell on every frame, causing roughly 10k draw calls per frame under
+// heavy output. Record each line under a content hash so stable lines reduce to
+// one GPU-cheap `drawPicture`, while only changed lines are re-recorded. Cursor,
+// selection, and highlights remain live overlays outside the line cache, so
+// selecting or blinking the cursor does not invalidate it.
 //
-// Reusamos o `CockpitTerminalPainter` do xterm (que já tem cache de parágrafo, glifos
-// procedurais de bloco/borda do nosso fork e resolução correta de cor/flags) —
-// não há por que reescrever a pintura de célula, que está correta.
+// Reuse [CockpitTerminalPainter] for its paragraph cache, forked block/border
+// glyphs, and correct color/flag resolution rather than rewriting cell painting.
 //
 // ignore_for_file: implementation_imports
 import 'dart:math' show max;
@@ -40,6 +36,11 @@ import 'cockpit_terminal_painter.dart';
 
 typedef EditableRectCallback = void Function(Rect rect, Rect caretRect);
 
+/// Render xterm buffers with a content-addressed per-line Picture cache.
+///
+/// xterm retains ANSI parsing, buffer ownership, selection semantics, and layout
+/// contracts. Stable line pictures are cached beneath live cursor, selection,
+/// and highlight overlays; native pictures are disposed on eviction and teardown.
 class CockpitTerminalRender extends RenderBox
     with RelayoutWhenSystemFontsChangeMixin {
   CockpitTerminalRender({
@@ -120,8 +121,7 @@ class CockpitTerminalRender extends RenderBox
   set textStyle(TerminalStyle value) {
     if (value == _painter.textStyle) return;
     _painter.textStyle = value;
-    _lineCache
-        .clear(); // glifos mudam de tamanho/forma → pictures velhas inválidas
+    _lineCache.clear(); // Glyph size/shape changed, invalidating old pictures.
     markNeedsLayout();
   }
 
@@ -141,7 +141,7 @@ class CockpitTerminalRender extends RenderBox
 
   set devicePixelRatio(double value) {
     if (value == _painter.devicePixelRatio) return;
-    _painter.devicePixelRatio = value; // re-snap do cellSize → relayout
+    _painter.devicePixelRatio = value; // Re-snap cellSize and relayout.
     _lineCache.clear();
     markNeedsLayout();
   }
@@ -187,7 +187,7 @@ class CockpitTerminalRender extends RenderBox
 
   final CockpitTerminalPainter _painter;
 
-  /// Cache de uma `Picture` por conteúdo de linha (ver nota no topo do arquivo).
+  /// Cache one `Picture` for each distinct line content.
   final _lineCache = _LinePictureCache(maxSize: 512);
 
   var _stickToBottom = true;
@@ -234,7 +234,7 @@ class CockpitTerminalRender extends RenderBox
 
   @override
   void dispose() {
-    _lineCache.clear(); // libera os Pictures nativos
+    _lineCache.clear(); // Release native Pictures.
     super.dispose();
   }
 
@@ -461,9 +461,9 @@ class CockpitTerminalRender extends RenderBox
       final line = lines[i];
       final dy = (i * charHeight + _lineOffset).truncateToDouble();
 
-      // Cache por conteúdo: a Picture é gravada em (0,0) e reposicionada no draw,
-      // então linhas com o mesmo conteúdo (ex.: várias linhas em branco) e a
-      // mesma linha em frames seguintes reaproveitam a mesma Picture.
+      // Record pictures at (0,0) and reposition during draw so identical content,
+      // including repeated blank lines and stable lines across frames, shares one
+      // cached Picture.
       final key = _hashLine(line);
       var picture = _lineCache.get(key);
       if (picture == null) {
@@ -510,9 +510,10 @@ class CockpitTerminalRender extends RenderBox
     }
   }
 
-  /// Grava uma única linha (fundo + glifos) num `Picture`, em (0,0). Reusa o
-  /// `CockpitTerminalPainter` do xterm, então herda cache de parágrafo e glifos
-  /// procedurais sem reimplementar nada.
+  /// Record one line's background and glyphs into a `Picture` at (0,0).
+  ///
+  /// Reuses [CockpitTerminalPainter], including its paragraph cache and procedural
+  /// glyphs, without duplicating cell painting.
   Picture _recordLine(BufferLine line) {
     final recorder = PictureRecorder();
     final canvas = Canvas(recorder);
@@ -520,9 +521,10 @@ class CockpitTerminalRender extends RenderBox
     return recorder.endRecording();
   }
 
-  /// Hash FNV-1a sobre as células da linha (4 ints por célula no buffer do
-  /// xterm). Barato comparado a re-gravar a linha; é o que decide se a Picture
-  /// cacheada ainda vale.
+  /// Hash each line's four-integer xterm cells with FNV-1a.
+  ///
+  /// Hashing is cheaper than re-recording and determines whether a cached Picture
+  /// remains valid.
   int _hashLine(BufferLine line) {
     final data = line.data;
     final count = line.length * 4;
@@ -629,10 +631,11 @@ class CockpitTerminalRender extends RenderBox
   }
 }
 
-/// LRU mínimo de `Picture` por linha. Um `Map` em Dart preserva a ordem de
-/// inserção, então a chave mais antiga é a primeira; ao acessar, reinserimos pra
-/// promover a MRU. Pictures evictadas/limpas são `dispose()`-adas (recurso
-/// nativo — não some sozinho).
+/// Bound native line pictures with a minimal LRU cache.
+///
+/// Dart maps preserve insertion order, so access reinserts an entry to promote
+/// it to MRU. Evicted and cleared Pictures are explicitly disposed because their
+/// native resources are not reclaimed by removing map references alone.
 class _LinePictureCache {
   _LinePictureCache({required this.maxSize});
 
@@ -641,7 +644,7 @@ class _LinePictureCache {
 
   Picture? get(int key) {
     final picture = _map.remove(key);
-    if (picture != null) _map[key] = picture; // promove a MRU
+    if (picture != null) _map[key] = picture; // Promote to MRU.
     return picture;
   }
 
