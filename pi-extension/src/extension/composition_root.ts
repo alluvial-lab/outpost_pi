@@ -53,7 +53,7 @@ export function createOutpostPiExtensionRuntime(
   // intentionally exercise handlers in isolation. They opt into an explicit
   // test seam; production ExtensionAPI objects always carry a real event bus.
   // Real lifecycle behavior is covered against the installed SDK integration.
-  const isolatedTestHarness = (pi as ExtensionAPI & { __remotePiTestHarness?: boolean }).__remotePiTestHarness === true
+  const isolatedTestHarness = (pi as ExtensionAPI & { __outpostPiTestHarness?: boolean }).__outpostPiTestHarness === true
     || !hasEventBus;
   if (isolatedTestHarness) {
     coordinator.activate(lease, "test-harness", pi);

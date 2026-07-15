@@ -269,7 +269,7 @@ describe.skipIf(posixOnly)("userLocalBinDir + isOnPath", () => {
 // (npm-global provides the `.cmd` shims there), so these don't apply.
 describe.skipIf(posixOnly)("linkCliBinaries / unlinkCliBinaries", () => {
   let tmpHome: string;
-  let fakePaths: { remotePi: string; supervisord: string };
+  let fakePaths: { outpostPi: string; supervisord: string };
 
   beforeEach(() => {
     tmpHome = mkdtempSync(join(tmpdir(), "pi-link-"));
@@ -278,10 +278,10 @@ describe.skipIf(posixOnly)("linkCliBinaries / unlinkCliBinaries", () => {
     const stub = join(tmpHome, "fake-ext");
     mkdirSync(join(stub, "bin"), { recursive: true });
     fakePaths = {
-      remotePi: join(stub, "index.js"),
+      outpostPi: join(stub, "index.js"),
       supervisord: join(stub, "bin", "supervisord.js"),
     };
-    writeFileSync(fakePaths.remotePi, "#!/usr/bin/env node\n");
+    writeFileSync(fakePaths.outpostPi, "#!/usr/bin/env node\n");
     writeFileSync(fakePaths.supervisord, "#!/usr/bin/env node\n");
   });
 
@@ -367,7 +367,7 @@ describe.skipIf(posixOnly)("linkCliBinaries / unlinkCliBinaries", () => {
 // shim contents are deterministic.
 describe.skipIf(!posixOnly)("linkCliBinaries / unlinkCliBinaries (Windows .cmd shims)", () => {
   let tmpHome: string;
-  let fakePaths: { remotePi: string; supervisord: string };
+  let fakePaths: { outpostPi: string; supervisord: string };
   const node = "C:\\Program Files\\nodejs\\node.exe";
 
   beforeEach(() => {
@@ -375,10 +375,10 @@ describe.skipIf(!posixOnly)("linkCliBinaries / unlinkCliBinaries (Windows .cmd s
     const stub = join(tmpHome, "fake-ext");
     mkdirSync(join(stub, "bin"), { recursive: true });
     fakePaths = {
-      remotePi: join(stub, "index.js"),
+      outpostPi: join(stub, "index.js"),
       supervisord: join(stub, "bin", "supervisord.js"),
     };
-    writeFileSync(fakePaths.remotePi, "// stub\n");
+    writeFileSync(fakePaths.outpostPi, "// stub\n");
     writeFileSync(fakePaths.supervisord, "// stub\n");
   });
 
