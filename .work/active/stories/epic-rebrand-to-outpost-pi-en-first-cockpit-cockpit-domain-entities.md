@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-domain-entities
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-domain
 depends_on: []
@@ -69,3 +69,13 @@ enum values, and executable code.
 - [ ] The scan-documentation rubric reports no remaining Always-tier gap in the 19-file owned set.
 - [ ] A targeted accented-Latin grep reports no matches in the 19 files, and a manual lexical review catches unaccented Portuguese residue.
 - [ ] `dart format` is run on the owned files; from `cockpit/`, `flutter analyze` and `flutter test` pass (or an exact environment failure is reported without weakening tests).
+
+## Implementation notes
+
+- Files changed: the 18 scoped files under `cockpit/lib/app/cockpit/domain/entities/` and `cockpit/lib/app/cockpit/domain/exceptions/rpc_error.dart`.
+- Tests added: none; this is a behavior-preserving documentation translation.
+- Discrepancies from design: none. For `setFrac` and `updateLeaf`, “unchanged when absent” is documented as structurally unchanged rather than object-identical because the existing recursive implementation rebuilds split nodes; executable behavior remains untouched.
+- Documentation disposition: added intent and traversal/update/no-op contracts to the six listed declarations; left `UpdateArtifact` undocumented as the explicit wire-DTO Skip-tier case.
+- Dispatch rationale: direct-read implementation was sufficient because the story supplied a fixed, disjoint file inventory and required no integration discovery.
+- Verification: formatted all 19 owned Dart files (`0 changed` after translation); accented-Portuguese grep returned no matches; manual lexical review found no unaccented Portuguese residue; `flutter analyze` passed with no issues; full `flutter test` passed (241 tests).
+- Adjacent issues parked: none.
