@@ -3,17 +3,21 @@ import WebSocket from "ws";
 import { ed25519Sign } from "../pairing/crypto.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import {
+  RELAY_AUTH_DOMAIN_PREFIX,
+} from "../protocol/generated/protocol.generated.js";
+import {
   REACHABILITY_RELAY_LIVENESS_CHECK_MS,
   REACHABILITY_RELAY_LIVENESS_TIMEOUT_MS,
 } from "../reachability/reachability_contract.js";
 
-/** Auth-signature domain prefix. MUST match the relay's `RELAY_AUTH_DOMAIN_PREFIX`
- *  (`relay/src/auth/challenge.rs`). The relay verifies the auth signature over
- *  `prefix ++ nonce`; signing the bare nonce is rejected as `invalid signature`
- *  and makes the extension a signing oracle under the long-term identity key. */
-const RELAY_AUTH_DOMAIN_PREFIX = Buffer.from("outpost-pi-relay-auth-v1\n", "utf8");
+const RELAY_AUTH_DOMAIN_PREFIX_BYTES = Buffer.from(RELAY_AUTH_DOMAIN_PREFIX, "utf8");
 
 const AUTH_TIMEOUT_MS = 5_000;
+
+/** Build the exact bytes covered by a relay-auth signature. */
+export function relayAuthSigningBytes(nonce: Uint8Array): Buffer {
+  return Buffer.concat([RELAY_AUTH_DOMAIN_PREFIX_BYTES, nonce]);
+}
 
 /**
  * Liveness watchdog. The relay sends a WS Ping every ~25s (relay `peer.rs`),
@@ -250,7 +254,7 @@ export class RelayClient extends EventEmitter {
     // signing the bare nonce makes the extension a signing oracle for
     // arbitrary Ed25519 messages under the long-term identity key and is
     // rejected by relay-0.2.0 as `invalid signature`.
-    const sig = ed25519Sign(this.keypair.secretKey, Buffer.concat([RELAY_AUTH_DOMAIN_PREFIX, nonce]));
+    const sig = ed25519Sign(this.keypair.secretKey, relayAuthSigningBytes(nonce));
     const auth: AuthMsg = {
       type: "auth",
       sig: Buffer.from(sig).toString("base64"),
