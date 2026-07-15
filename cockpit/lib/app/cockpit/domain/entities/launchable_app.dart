@@ -1,16 +1,19 @@
-/// Aplicativo externo que pode ser lançado para abrir uma pasta (IDE ou Finder).
+/// Describe an external application that can open a directory, such as an IDE or Finder.
 class LaunchableApp {
   const LaunchableApp({required this.id, required this.name, this.iconPath});
 
-  /// Identificador estável usado para persistir a última escolha do usuário.
-  /// Valores conhecidos: `'cursor'`, `'windsurf'`, `'antigravity'`, `'vscode'`,
-  /// `'finder'`.
+  /// Stable identifier used to persist the user's last selection.
+  ///
+  /// Known values are `'cursor'`, `'windsurf'`, `'antigravity'`, `'vscode'`,
+  /// and `'finder'`.
   final String id;
 
-  /// Nome legível exibido no dropdown.
+  /// Human-readable label displayed in the dropdown.
   final String name;
 
-  /// Caminho para um PNG extraído do bundle do app (64×64). Pode ser `null` se
-  /// a extração falhou — o widget cai no ícone Material de fallback.
+  /// Path to a 64×64 PNG extracted from the application bundle.
+  ///
+  /// May be `null` when extraction fails, in which case the widget uses its
+  /// fallback Material icon.
   final String? iconPath;
 }

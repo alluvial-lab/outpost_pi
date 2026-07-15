@@ -1,50 +1,51 @@
-/// O conteúdo de um arquivo aberto no viewer, já classificado.
+/// Represent classified content for a file opened in the viewer.
 sealed class FileView {
   const FileView();
 }
 
-/// Markdown (.md/.mdx) — renderizado com gpt_markdown.
+/// Render Markdown files (`.md` and `.mdx`) with `gpt_markdown`.
 final class FileViewMarkdown extends FileView {
   const FileViewMarkdown(this.text);
   final String text;
 }
 
-/// Texto legível (.js/.json/…) — texto puro por enquanto (highlight depois).
+/// Render readable text files as plain text until syntax highlighting is added.
 final class FileViewText extends FileView {
   const FileViewText(this.text, {this.language});
   final String text;
 
-  /// Dica de linguagem (extensão), para highlight futuro.
+  /// Optional extension-based language hint for future syntax highlighting.
   final String? language;
 }
 
-/// Imagem raster (PNG/JPEG/…) — só o caminho; o widget carrega.
+/// Identify a raster image by path so the widget can load it.
 final class FileViewImage extends FileView {
   const FileViewImage(this.path);
   final String path;
 }
 
-/// SVG — texto (XML) **e** imagem ao mesmo tempo: editável na fonte e
-/// renderizável no preview. Carrega [text] (fonte) e [path] (origem do render).
+/// Provide an SVG as both editable XML source and a previewable image.
+///
+/// Carries [text] for source editing and [path] as the preview origin.
 final class FileViewSvg extends FileView {
   const FileViewSvg(this.path, this.text);
   final String path;
   final String text;
 }
 
-/// Áudio (mp3/wav/flac/…) — só o caminho; o player (media_kit) carrega. Plano 46.
+/// Identify an audio file by path for the `media_kit` player (Plan 46).
 final class FileViewAudio extends FileView {
   const FileViewAudio(this.path);
   final String path;
 }
 
-/// Vídeo (mp4/mov/mkv/…) — só o caminho; o player (media_kit) carrega. Plano 46.
+/// Identify a video file by path for the `media_kit` player (Plan 46).
 final class FileViewVideo extends FileView {
   const FileViewVideo(this.path);
   final String path;
 }
 
-/// Binário/grande demais — **não abre**.
+/// Mark a binary or oversized file that the viewer must not open.
 final class FileViewUnsupported extends FileView {
   const FileViewUnsupported();
 }
