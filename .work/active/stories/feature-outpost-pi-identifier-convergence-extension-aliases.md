@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-identifier-convergence-extension-aliases
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, pi-extension]
 parent: feature-outpost-pi-identifier-convergence
 depends_on: []
@@ -10,6 +10,12 @@ gate_origin: null
 created: 2026-07-14
 updated: 2026-07-14
 ---
+
+## Implementation notes
+
+- Renamed the extension's internal `remotePi` path and test-harness identifiers to `outpostPi` across the specified implementation and test surfaces.
+- Also renamed the standalone CLI help-text helper so `rg 'remotePi|__remotePi' pi-extension/src/` is clean.
+- Verification passed: `corepack pnpm typecheck` and `corepack pnpm test` (51 files, 837 passed, 3 skipped).
 
 # Rename extension remotePi aliases and test-harness exports
 
