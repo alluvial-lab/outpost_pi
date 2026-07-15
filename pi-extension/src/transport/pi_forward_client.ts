@@ -4,6 +4,11 @@ import type { Envelope } from "../session/envelope.js";
 import type {
   CrossPcFramePiEnvelope,
   CrossPcFramePiEnvelopeIn,
+  RelayControlFrameRoomAnnounced,
+  RelayControlFrameRoomEnded,
+  RelayControlFrameRooms,
+  RelayControlFrameRoomsCheck,
+  RelayControlFrameSubscribeRooms,
 } from "../protocol/generated/protocol.generated.js";
 import { crossPcTypes } from "../protocol/generated/protocol.generated.js";
 
@@ -38,13 +43,20 @@ export interface PiForwardClientEvents {
   /**
    * Emitted whenever the relay delivers a `pi_envelope_in` frame addressed
    * to this Pi. `fromPc` is the verified Pi-pubkey of the sender (relay
-   * authoritative — defense against spoofed `envelope.from`).
+   * authoritative — defense against spoofed `envelope.from`), while `toRoom`
+   * is the relay-validated room echoed by the inbound frame.
    */
-  envelope: [env: Envelope, fromPc: string];
+  envelope: [env: Envelope, fromPc: string, toRoom: string];
+  /** Authoritative one-shot room snapshot returned by `rooms_check`. */
+  rooms: [frame: RelayControlFrameRooms];
+  /** Authoritative push announcing a newly-live sibling room. */
+  room_announced: [frame: RelayControlFrameRoomAnnounced];
+  /** Authoritative push removing a sibling room from the live set. */
+  room_ended: [frame: RelayControlFrameRoomEnded];
 }
 
 /** Multiplex opaque cross-PC envelopes over a caller-owned relay and detach its listener during bridge shutdown. */
-export class PiForwardClient extends EventEmitter {
+export class PiForwardClient extends EventEmitter<PiForwardClientEvents> {
   private readonly onRelayMessage: (line: string) => void;
   private detached = false;
 
@@ -79,6 +91,12 @@ export class PiForwardClient extends EventEmitter {
     }
   }
 
+  /** Send a relay-authoritative room subscription or snapshot request. */
+  sendRoomControl(frame: RelayControlFrameSubscribeRooms | RelayControlFrameRoomsCheck): void {
+    if (this.detached) return;
+    this.relay.sendControl(frame);
+  }
+
   /** Stop listening to the relay. Call from `_goIdle` / shutdown. */
   detach(): void {
     if (this.detached) return;
@@ -88,24 +106,103 @@ export class PiForwardClient extends EventEmitter {
 
   private _handleLine(line: string): void {
     if (this.detached) return;
-    // The relay multiplexes several frame types over the same WS; we only
-    // care about `pi_envelope_in`. Other frames (outer-encrypted owner
-    // envelopes, control replies) are silently ignored.
     let parsed: unknown;
     try {
       parsed = JSON.parse(line);
     } catch {
       return;
     }
-    if (!parsed || typeof parsed !== "object") return;
-    const o = parsed as Partial<CrossPcFramePiEnvelopeIn>;
-    if (o.type !== PI_ENVELOPE_IN_TYPE) return;
-    if (typeof o.from_pc !== "string" || !o.envelope || typeof o.envelope !== "object") return;
+    if (!isRecord(parsed) || typeof parsed.type !== "string") return;
 
-    // Cheap shape check — full envelope parse happens downstream in broker_remote.
-    const env = o.envelope as Envelope;
-    if (typeof env.from !== "string" || typeof env.id !== "string") return;
-    if (this.detached) return;
-    this.emit("envelope", env, o.from_pc);
+    if (parsed.type === PI_ENVELOPE_IN_TYPE) {
+      const o = parsed as Partial<CrossPcFramePiEnvelopeIn>;
+      if (
+        typeof o.from_pc !== "string" ||
+        typeof o.to_room !== "string" ||
+        o.to_room.length === 0 ||
+        !o.envelope ||
+        typeof o.envelope !== "object"
+      ) return;
+
+      // Cheap shape check — full envelope parse happens downstream in broker_remote.
+      const env = o.envelope as Envelope;
+      if (typeof env.from !== "string" || typeof env.id !== "string") return;
+      if (this.detached) return;
+      this.emit("envelope", env, o.from_pc, o.to_room);
+      return;
+    }
+
+    if (parsed.type === "rooms") {
+      const frame = parseRoomsFrame(parsed);
+      if (frame && !this.detached) this.emit("rooms", frame);
+      return;
+    }
+
+    if (parsed.type === "room_announced") {
+      const frame = parseRoomAnnouncedFrame(parsed);
+      if (frame && !this.detached) this.emit("room_announced", frame);
+      return;
+    }
+
+    if (parsed.type === "room_ended") {
+      const frame = parseRoomEndedFrame(parsed);
+      if (frame && !this.detached) this.emit("room_ended", frame);
+    }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function hasRoomIdentity(value: unknown): value is Record<string, unknown> & {
+  room_id: string;
+  started_at: number;
+} {
+  return isRecord(value) &&
+    typeof value.room_id === "string" &&
+    value.room_id.length > 0 &&
+    Number.isInteger(value.started_at) &&
+    (value.started_at as number) >= 0;
+}
+
+function hasOptionalString(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || typeof value[key] === "string";
+}
+
+function isLiveRoom(value: unknown): boolean {
+  if (!hasRoomIdentity(value) || typeof value.working !== "boolean") return false;
+  return ["name", "cwd", "session_id", "model", "thinking"]
+    .every((key) => hasOptionalString(value, key));
+}
+
+function parseRoomsFrame(value: Record<string, unknown>): RelayControlFrameRooms | null {
+  if (typeof value.peer !== "string" || value.peer.length === 0 || !Array.isArray(value.rooms)) {
+    return null;
+  }
+  if (!value.rooms.every(isLiveRoom)) return null;
+  return value as unknown as RelayControlFrameRooms;
+}
+
+function parseRoomAnnouncedFrame(
+  value: Record<string, unknown>,
+): RelayControlFrameRoomAnnounced | null {
+  if (
+    typeof value.peer !== "string" ||
+    value.peer.length === 0 ||
+    !isLiveRoom(value)
+  ) return null;
+  return value as unknown as RelayControlFrameRoomAnnounced;
+}
+
+function parseRoomEndedFrame(value: Record<string, unknown>): RelayControlFrameRoomEnded | null {
+  if (
+    typeof value.peer !== "string" ||
+    value.peer.length === 0 ||
+    typeof value.room_id !== "string" ||
+    value.room_id.length === 0 ||
+    !Number.isInteger(value.since_ts) ||
+    (value.since_ts as number) < 0
+  ) return null;
+  return value as unknown as RelayControlFrameRoomEnded;
 }
