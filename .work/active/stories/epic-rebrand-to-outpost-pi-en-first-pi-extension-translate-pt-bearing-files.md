@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-pi-extension-translate-pt-bearing-files
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, pi-extension]
 parent: epic-rebrand-to-outpost-pi-en-first-pi-extension
 depends_on: []
@@ -38,8 +38,15 @@ noise docs there. `canonical.test.ts` stays Skip-tier for JSDoc.
 
 ## Acceptance criteria
 
-- [ ] The six listed files contain no Portuguese comment prose or accented-Latin
+- [x] The six listed files contain no Portuguese comment prose or accented-Latin
   candidates.
-- [ ] `canonicalize` behavior and all runtime/wire identifiers remain unchanged.
-- [ ] New comments are English JSDoc that document contracts rather than types.
-- [ ] Focused mesh/session tests and the final feature verification pass.
+- [x] `canonicalize` behavior and all runtime/wire identifiers remain unchanged.
+- [x] New comments are English JSDoc that document contracts rather than types.
+- [x] Focused mesh/session tests and the final feature verification pass.
+
+## Implementation notes
+- Files changed: `pi-extension/src/index.ts`, `pi-extension/src/mesh/siblings.ts`, `pi-extension/src/mesh/canonical.ts`, `pi-extension/src/mesh/canonical.test.ts`, `pi-extension/src/session/broker_remote.ts`, and `pi-extension/src/session/cwd_lock.ts`.
+- Tests added: none (documentation-only change; retained and ran the affected regression tests).
+- Discrepancies from design: none; the specified `Renée 🦀` fixture is now `Renee 🦀`, retaining emoji UTF-8 coverage.
+- Adjacent issues parked: none.
+- Verification: focused canonical/siblings/broker-remote/cwd-lock tests (59 passed); full typecheck, test (837 passed, 3 skipped), and build passed; the required accented-Latin scan produced zero candidates.
