@@ -29,113 +29,117 @@ LF (`\n`) is the **only** record delimiter. A final `\r` is removed
 middle of an event. Therefore `lib/data/rpc/jsonl_line_splitter.dart` splits only
 on `\n` (rather than Dart's `LineSplitter`).
 
-## Comandos que o Cockpit envia (stdin)
+## Commands the Cockpit sends (stdin)
 
-O Cockpit usa o protocolo RPC JSONL do Pi e, para o overlay Outpost-Pi, o schema
-`protocol/schema/cockpit-control.schema.json`. O schema cobre a familia
-`outpost_pi_control` e os eventos customizados `outpost-pi:*`; o transporte RPC
-continua sendo uma linha `prompt` quando o comando precisa passar pelo hook de
-input da extensao Outpost-Pi.
+The Cockpit uses Pi's JSONL RPC protocol and, for the Outpost-Pi overlay, the
+schema `protocol/schema/cockpit-control.schema.json`. The schema covers the
+`outpost_pi_control` family and the custom `outpost-pi:*` events; the RPC
+transport remains a `prompt` line when the command needs to go through the
+Outpost-Pi extension's input hook.
 
-### `prompt` — manda um prompt do usuario  ✅ usado
+### `prompt` — sends a user prompt  ✅ used
 
 ```json
-{"type": "prompt", "message": "liste os arquivos neste projeto"}
+{"type": "prompt", "message": "list the files in this project"}
 ```
 
-A resposta (`response`) chega **assim que o prompt e aceito/enfileirado**; os
-eventos do turno seguem em streaming depois. `success: true` = aceito.
+The response (`response`) arrives **as soon as the prompt is accepted/enqueued**;
+the turn's events then stream in. `success: true` = accepted.
 
-> ⚠️ **Correcao vs. plano 26/37**: o comando e `prompt` com campo `message` — **nao**
-> `{type:"command", command:"sendUserMessage", ...}` (suposicao antiga do plano
-> 26). O wire real do `0.78.1` e `{"type":"prompt","message":...}`.
+> ⚠️ **Correction vs. plan 26/37**: the command is `prompt` with a `message` field — **not**
+> `{type:"command", command:"sendUserMessage", ...}` (an old assumption from plan
+> 26). The actual wire in `0.78.1` is `{"type":"prompt","message":...}`.
 
-**Durante streaming** (agente ocupado), um novo `prompt` e **recusado** a menos
-que se passe `streamingBehavior`:
+**During streaming** (agent busy), a new `prompt` is **rejected** unless
+`streamingBehavior` is passed:
 
 ```json
 {"type": "prompt", "message": "...", "streamingBehavior": "steer"}
 ```
 
-- `"steer"`: entregue apos o turno atual terminar as tool calls, antes da proxima
-  chamada ao LLM.
-- `"followUp"`: entregue so quando o agente parar.
+- `"steer"`: delivered after the current turn finishes its tool calls, before
+  the next LLM call.
+- `"followUp"`: delivered only when the agent stops.
 
-O MVP **desabilita o composer enquanto ocupado** (mais simples que enfileirar),
-entao nao passa `streamingBehavior`. O gateway suporta `steerIfBusy` para o futuro.
+The MVP **disables the composer while busy** (simpler than enqueuing), so it
+does not pass `streamingBehavior`. The gateway supports `steerIfBusy` for the
+future.
 
-### Overlay `outpost_pi_control` — controle Outpost-Pi  ✅ usado
+### `outpost_pi_control` overlay — Outpost-Pi control  ✅ used
 
-Relay/rename nao sao prompts para o LLM. O Cockpit serializa um envelope de
-controle schema-compatible e o carrega como string no mesmo comando `prompt` que
-o Pi RPC ja expoe; a extensao Outpost-Pi intercepta o texto, executa a acao e
-engole o input para nao poluir o transcript.
+Relay/rename are not prompts for the LLM. The Cockpit serializes a
+schema-compatible control envelope and loads it as a string in the same
+`prompt` command that Pi RPC already exposes; the Outpost-Pi extension
+intercepts the text, executes the action, and swallows the input so it does not
+pollute the transcript.
 
 ```json
 {"type":"prompt","message":"{\"type\":\"outpost_pi_control\",\"command\":\"relay_status\"}"}
 {"type":"prompt","message":"{\"type\":\"outpost_pi_control\",\"command\":\"rename\",\"name\":\"desk-agent\"}"}
 ```
 
-O receptor ainda aceita o legado `\u0000outpost-pi-ctrl:<verb>` como shim de
-compatibilidade, mas o Cockpit nao emite esse formato como caminho primario. Os
-comandos validos sao os definidos no schema `cockpit-control`: `relay_on`,
-`relay_off`, `relay_toggle`, `relay_status`, e `rename` com `name` nao vazio.
+The receiver still accepts the legacy `\u0000outpost-pi-ctrl:<verb>` as a
+compatibility shim, but the Cockpit does not emit that format as the primary
+path. The valid commands are those defined in the `cockpit-control` schema:
+`relay_on`, `relay_off`, `relay_toggle`, `relay_status`, and `rename` with a
+non-empty `name`.
 
-### Comandos request/response (correlacionados por `id`)  ✅ usados
+### Request/response commands (correlated by `id`)  ✅ used
 
-Todo comando aceita um `id` opcional; se presente, a `response` ecoa o mesmo
-`id`. O `PiRpcProcess` usa isso para um canal request/response: gera um `id`,
-registra um `Completer`, manda o comando e completa quando a `response` com
-aquele `id` chega no stdout (essas respostas **nao** entram no stream de
-eventos — sao interceptadas). Timeout de 15s; processo morto → requests
-pendentes falham (nao penduram).
+Every command accepts an optional `id`; if present, the `response` echoes the
+same `id`. `PiRpcProcess` uses this for a request/response channel: it generates
+an `id`, registers a `Completer`, sends the command, and completes when the
+`response` with that `id` arrives on stdout (these responses **do not** enter
+the event stream — they are intercepted). 15s timeout; dead process → pending
+requests fail (they don't hang).
 
-Usados hoje pela toolbar do agente:
+Used today by the agent toolbar:
 
-| Comando | Wire | `data` da resposta |
+| Command | Wire | Response `data` |
 |---|---|---|
-| `get_available_models` | `{"type":"get_available_models"}` | `{models:[{provider,id,name,reasoning,contextWindow,…}]}` (≈264 no setup deepseek+openrouter) |
+| `get_available_models` | `{"type":"get_available_models"}` | `{models:[{provider,id,name,reasoning,contextWindow,…}]}` (≈264 in the deepseek+openrouter setup) |
 | `get_state` | `{"type":"get_state"}` | `{model:Model\|null, thinkingLevel, isStreaming, …}` |
-| `set_model` | `{"type":"set_model","provider":"…","modelId":"…"}` | o `Model` aplicado |
-| `set_thinking_level` | `{"type":"set_thinking_level","level":"low"}` | — (niveis: off/minimal/low/medium/high/xhigh) |
+| `set_model` | `{"type":"set_model","provider":"…","modelId":"…"}` | the applied `Model` |
+| `set_thinking_level` | `{"type":"set_thinking_level","level":"low"}` | — (levels: off/minimal/low/medium/high/xhigh) |
 | `get_session_stats` | `{"type":"get_session_stats"}` | `{…, contextUsage:{tokens,contextWindow,percent}}` |
 
-> ⚠️ **`contextUsage.percent` esta na escala 0–100, nao 0–1.** Ex.: `tokens
-> 8287 / contextWindow 1000000` → `percent: 0.8287` (= 0,83%). A UI usa `percent`
-> direto e divide por 100 so para a barra de progresso.
+> ⚠️ **`contextUsage.percent` is on a 0–100 scale, not 0–1.** E.g. `tokens
+> 8287 / contextWindow 1000000` → `percent: 0.8287` (= 0.83%). The UI uses
+> `percent` directly and divides by 100 only for the progress bar.
 
-> O modelo do spawn pode **nao** estar no `get_available_models` (ex.:
-> `deepseek-chat` nao aparece no catalogo, que lista `deepseek-v4-*`). A toolbar
-> injeta o modelo ativo na lista para nao ficar sem selecao.
+> The spawn model may **not** be in `get_available_models` (e.g.:
+> `deepseek-chat` does not appear in the catalog, which lists `deepseek-v4-*`).
+> The toolbar injects the active model into the list so it is never left without
+> a selection.
 
-### Outros comandos do protocolo (ainda nao usados)
+### Other protocol commands (not yet used)
 
 `steer`, `follow_up`, `abort`, `new_session`, `get_messages`, `cycle_model`,
 `cycle_thinking_level`, `compact`/`set_auto_compaction`,
 `set_auto_retry`/`abort_retry`, `bash`/`abort_bash`, `export_html`,
 `switch_session`/`fork`/`clone`, `set_session_name`, `get_commands`, …
-Util proximo: `abort` → botao de "parar" o turno sem matar o processo.
+Useful next: `abort` → a "stop" button for the turn without killing the process.
 
-## Eventos que o Cockpit recebe (stdout)
+## Events the Cockpit receives (stdout)
 
-Eventos **nao** tem `id` (so respostas tem). Ordem real de um turno com tool call
-(capturada do spike, deepseek):
+Events do **not** have an `id` (only responses do). Real order of a turn with a
+tool call (captured from the spike, deepseek):
 
 ```
 agent_start
 turn_start
-message_start            (role:user — eco do nosso prompt)
+message_start            (role:user — echo of our prompt)
 message_end
 message_start            (role:assistant, content:[])
 message_update  × N      (thinking_delta…)
 message_update  × N      (toolcall_start / toolcall_delta / toolcall_end)
 message_end
 tool_execution_start
-tool_execution_update × N (partialResult acumulado)
+tool_execution_update × N (accumulated partialResult)
 tool_execution_end
 message_start / message_end (role:toolResult)
 turn_end
-turn_start               (2ª rodada: o assistant responde com o resultado)
+turn_start               (2nd round: the assistant responds with the result)
 message_start (assistant)
 message_update × N       (thinking_delta… text_start, text_delta…, text_end)
 message_end
@@ -143,44 +147,44 @@ turn_end
 agent_end
 ```
 
-### Mapa evento → `RpcEvent` (dominio)
+### Event → `RpcEvent` map (domain)
 
-O `RpcEventMapper` (`lib/data/adapters/`) traduz cada linha em um
-[`RpcEvent`](../lib/domain/entities/rpc_event.dart) tipado. O que o MVP consome:
+`RpcEventMapper` (`lib/data/adapters/`) translates each line into a typed
+[`RpcEvent`](../lib/domain/entities/rpc_event.dart). What the MVP consumes:
 
-| Linha JSON (stdout) | `RpcEvent` | Uso na UI |
+| JSON line (stdout) | `RpcEvent` | UI use |
 |---|---|---|
-| `{"type":"agent_start"}` | `RpcAgentStart` | marca `busy` |
-| `{"type":"agent_end","messages":[…]}` | `RpcAgentEnd` | libera o composer |
-| `{"type":"turn_start"}` / `{"type":"turn_end",…}` | `RpcTurnStart`/`RpcTurnEnd` | reseta buffers do turno |
-| `{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"…"}}` | `RpcTextDelta` | streama o texto do assistant |
-| `…"assistantMessageEvent":{"type":"text_end","content":"…"}` | `RpcTextEnd` | fecha o bloco de texto |
-| `…"assistantMessageEvent":{"type":"thinking_delta","delta":"…"}` | `RpcThinkingDelta` | bloco de raciocinio (dim) |
-| `{"type":"tool_execution_start","toolCallId":"…","toolName":"bash","args":{…}}` | `RpcToolStart` | card da tool (spinner) |
-| `{"type":"tool_execution_end","toolCallId":"…","toolName":"…","isError":false,"result":{"content":[{"type":"text","text":"…"}]}}` | `RpcToolEnd` | resultado da tool |
-| `{"type":"response","command":"prompt","success":true}` | `RpcCommandResponse` | ACK; mostra erro se `success:false` |
-| `message_start` com `role:"custom"` + `customType:"outpost-pi:relay-state"` | `RpcRelayState` | status do botao/indicador do relay |
-| `message_start` com `role:"custom"` + `customType:"outpost-pi:name-assigned"` | `RpcNameAssigned` | renomeia a aba quando o broker resolve colisao |
-| `message_start` com `role:"custom"` + `customType:"outpost-pi:pair-code"` | `RpcPairCode` | evento schema-mapeado; a UI de sessao ignora por enquanto |
-| `message_start` com `role:"custom"` + `customType:"outpost-pi:paired"` | `RpcPaired` | evento schema-mapeado; a UI de sessao ignora por enquanto |
-| `message_start` com `role:"custom"` + `customType:"outpost-pi:mesh-revoked"` | `RpcMeshRevoked` | evento schema-mapeado; a UI de sessao ignora por enquanto |
-| `{"type":"message_end","message":{"stopReason":"error","errorMessage":"Connection error."}}` | `RpcStreamError` | mostra o erro do turno (provider fora do ar etc.) |
-| `{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"delayMs":2000,"errorMessage":"…"}` | `RpcAutoRetry` | linha "retentando (1/3…)" |
-| *(stderr, nao-JSON)* | `RpcDiagnostic` | linha de diagnostico |
-| *(processo saiu)* | `RpcProcessExit` | banner "encerrado (code=N)" |
-| qualquer outro `type` | `RpcUnknown` | **ignorado** (nunca crasha) |
+| `{"type":"agent_start"}` | `RpcAgentStart` | marks `busy` |
+| `{"type":"agent_end","messages":[…]}` | `RpcAgentEnd` | releases the composer |
+| `{"type":"turn_start"}` / `{"type":"turn_end",…}` | `RpcTurnStart`/`RpcTurnEnd` | resets turn buffers |
+| `{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"…"}}` | `RpcTextDelta` | streams the assistant text |
+| `…"assistantMessageEvent":{"type":"text_end","content":"…"}` | `RpcTextEnd` | closes the text block |
+| `…"assistantMessageEvent":{"type":"thinking_delta","delta":"…"}` | `RpcThinkingDelta` | reasoning block (dim) |
+| `{"type":"tool_execution_start","toolCallId":"…","toolName":"bash","args":{…}}` | `RpcToolStart` | tool card (spinner) |
+| `{"type":"tool_execution_end","toolCallId":"…","toolName":"…","isError":false,"result":{"content":[{"type":"text","text":"…"}]}}` | `RpcToolEnd` | tool result |
+| `{"type":"response","command":"prompt","success":true}` | `RpcCommandResponse` | ACK; shows error if `success:false` |
+| `message_start` with `role:"custom"` + `customType:"outpost-pi:relay-state"` | `RpcRelayState` | relay button/indicator status |
+| `message_start` with `role:"custom"` + `customType:"outpost-pi:name-assigned"` | `RpcNameAssigned` | renames the tab when the broker resolves a collision |
+| `message_start` with `role:"custom"` + `customType:"outpost-pi:pair-code"` | `RpcPairCode` | schema-mapped event; the session UI ignores it for now |
+| `message_start` with `role:"custom"` + `customType:"outpost-pi:paired"` | `RpcPaired` | schema-mapped event; the session UI ignores it for now |
+| `message_start` with `role:"custom"` + `customType:"outpost-pi:mesh-revoked"` | `RpcMeshRevoked` | schema-mapped event; the session UI ignores it for now |
+| `{"type":"message_end","message":{"stopReason":"error","errorMessage":"Connection error."}}` | `RpcStreamError` | shows the turn error (provider down, etc.) |
+| `{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"delayMs":2000,"errorMessage":"…"}` | `RpcAutoRetry` | "retrying (1/3…)" line |
+| *(stderr, non-JSON)* | `RpcDiagnostic` | diagnostic line |
+| *(process exited)* | `RpcProcessExit` | "terminated (code=N)" banner |
+| any other `type` | `RpcUnknown` | **ignored** (never crashes) |
 
-Tipos emitidos mas **ignorados** no MVP (viram `RpcUnknown`): outros
-`message_start`, `message_end`, `tool_execution_update`, e os deltas
+Types emitted but **ignored** in the MVP (become `RpcUnknown`): other
+`message_start`, `message_end`, `tool_execution_update`, and the deltas
 `text_start`, `thinking_start`/`thinking_end`,
-`toolcall_start`/`toolcall_delta`/`toolcall_end`, `done`/`error`. Tambem:
-`queue_update`, `compaction_*`, `extension_error`. Mapear
-conforme as waves precisarem. (`auto_retry_*` **nao** esta mais aqui — e
-parseado como `RpcAutoRetry`, ver linha acima.)
+`toolcall_start`/`toolcall_delta`/`toolcall_end`, `done`/`error`. Also:
+`queue_update`, `compaction_*`, `extension_error`. Map them as the waves need
+them. (`auto_retry_*` is **no longer** here — it is parsed as `RpcAutoRetry`,
+see the line above.)
 
-### Exemplos de linha reais (capturados)
+### Real line examples (captured)
 
-`text_delta` (streaming do texto final):
+`text_delta` (streaming the final text):
 ```json
 {"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" directory","partial":{…}}}
 ```
@@ -196,37 +200,38 @@ parseado como `RpcAutoRetry`, ver linha acima.)
 {"type":"agent_end","messages":[{"role":"user",…},{"role":"assistant",…}]}
 ```
 
-## Achados do spike (importam para a UI)
+## Spike findings (matter for the UI)
 
-1. **`prompt`, nao `sendUserMessage`.** Wire real `{"type":"prompt","message":…}`.
-2. **Fechar o stdin e o encerramento gracioso.** Ao fechar `stdin`, o pi sai com
-   **code 0** sozinho — nao precisa de SIGTERM. O `kill()` do gateway fecha o
-   stdin e so escala para SIGTERM→SIGKILL se ele nao sair em 3s. Resultado:
-   **sem processo orfao** (`pgrep -f "cli.js --mode rpc"` limpo).
-3. **`message_update` repete o `partial` inteiro.** Cada delta carrega o
-   `message.partial` acumulado (cresce o turno todo). **Renderize pelo `delta`**,
-   nao reparseando `partial` a cada tick — senao e O(n²) de payload.
-4. **Modelos com reasoning streamam `thinking_*` pelo RPC** mesmo com
-   `hideThinkingBlock` na TUI. A UI precisa tolerar (o MVP mostra dim).
-5. **stderr ≠ protocolo.** Warnings (ex.: "Model … not found") saem no stderr. Ler
-   junto com o stdout quebraria o parser JSONL. Canais separados.
-6. **App macOS nao herda o PATH do shell.** O binario `pi` e resolvido por
-   caminhos conhecidos (`/opt/homebrew/bin/pi`, `/usr/local/bin/pi`) ou
-   `--dart-define=COCKPIT_PI_PATH=…`. Ver `lib/config/env.dart`.
-7. **Sandbox do macOS bloqueia spawn + leitura de pasta.** Desligado nas
-   entitlements (decisao B, dev tool local — fora da App Store por ora).
-8. **Erro de turno nao vem nos deltas — vem na mensagem final.** Quando o
-   provider falha (ex.: ollama fora do ar), o conteudo dos deltas e **vazio** e o
-   erro esta em `message_end`/`agent_end` como `stopReason:"error"` +
-   `errorMessage`, seguido de `auto_retry_start` (se retry ligado). Se a UI so
-   olhar `text_delta`, ela fica **muda**. Por isso mapeamos `message_end(error)`
-   → `RpcStreamError` e `auto_retry_start` → `RpcAutoRetry`.
+1. **`prompt`, not `sendUserMessage`.** Actual wire `{"type":"prompt","message":…}`.
+2. **Closing stdin and graceful shutdown.** On closing `stdin`, pi exits with
+   **code 0** on its own — no SIGTERM needed. The gateway's `kill()` closes
+   stdin and only escalates to SIGTERM→SIGKILL if it doesn't exit in 3s. Result:
+   **no orphan process** (`pgrep -f "cli.js --mode rpc"` clean).
+3. **`message_update` repeats the entire `partial`.** Each delta carries the
+   accumulated `message.partial` (grows for the whole turn). **Render by `delta`**,
+   don't re-parse `partial` on every tick — otherwise it's O(n²) in payload.
+4. **Models with reasoning stream `thinking_*` over RPC** even with
+   `hideThinkingBlock` in the TUI. The UI must tolerate it (the MVP shows it dim).
+5. **stderr ≠ protocol.** Warnings (e.g.: "Model … not found") go to stderr.
+   Reading it alongside stdout would break the JSONL parser. Separate channels.
+6. **The macOS app does not inherit the shell PATH.** The `pi` binary is
+   resolved via known paths (`/opt/homebrew/bin/pi`, `/usr/local/bin/pi`) or
+   `--dart-define=COCKPIT_PI_PATH=…`. See `lib/config/env.dart`.
+7. **The macOS sandbox blocks spawning + folder reads.** Disabled in the
+   entitlements (decision B, local dev tool — outside the App Store for now).
+8. **A turn error doesn't come in the deltas — it comes in the final message.**
+   When the provider fails (e.g.: ollama down), the delta content is **empty**
+   and the error is in `message_end`/`agent_end` as `stopReason:"error"` +
+   `errorMessage`, followed by `auto_retry_start` (if retry is on). If the UI
+   only looks at `text_delta`, it goes **mute**. That's why we map
+   `message_end(error)` → `RpcStreamError` and `auto_retry_start` →
+   `RpcAutoRetry`.
 
-## Provider/model no spawn
+## Provider/model at spawn
 
-`pi --mode rpc` usa o provider/model do `~/.pi/agent/settings.json` por padrao.
-Para o demo (a maquina tem o default `ollama`, que pode estar fora do ar),
-aponte para um provider com chave via `--dart-define`:
+`pi --mode rpc` uses the provider/model from `~/.pi/agent/settings.json` by
+default. For the demo (the machine has `ollama` as the default, which may be
+down), point it at a provider with a key via `--dart-define`:
 
 ```bash
 flutter run -d macos \
@@ -234,16 +239,17 @@ flutter run -d macos \
   --dart-define=COCKPIT_PI_MODEL=deepseek-chat
 ```
 
-Sem overrides → usa o default do pi. Ver `PiSpawnConfig` em `lib/config/env.dart`.
+Without overrides → uses the pi default. See `PiSpawnConfig` in
+`lib/config/env.dart`.
 
-## Como reproduzir o spike
+## How to reproduce the spike
 
-Headless, sem GUI (o gateway nao depende do Flutter):
+Headless, no GUI (the gateway doesn't depend on Flutter):
 
 ```bash
-dart run tool/rpc_smoke.dart   # spawn → prompt → stream → kill + checa orfao
+dart run tool/rpc_smoke.dart   # spawn → prompt → stream → kill + checks for orphans
 ```
 
-Fonte oficial do schema (para waves futuras):
+Official schema source (for future waves):
 `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs/rpc.md`
-e os tipos em `dist/modes/rpc/rpc-types.d.ts`.
+and the types in `dist/modes/rpc/rpc-types.d.ts`.
