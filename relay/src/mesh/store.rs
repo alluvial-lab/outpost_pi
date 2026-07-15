@@ -5,6 +5,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use super::types::{MeshEnvelope, MeshRecord};
 
+/// Describes SQLite, filesystem, and monotonic-version failures in mesh storage.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error("sqlite: {0}")]

@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-relay
 kind: feature
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, relay]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
@@ -243,3 +243,26 @@ return no matches; generated files are not edited regardless of that scan.
 - Skipped: this is a bounded comment/rustdoc-only design with no architectural
   or wire decision; the parent epic and documentation convention already lock
   the relevant choices.
+
+## Implementation notes
+
+- Files changed: `relay/src/auth/challenge.rs`, `relay/src/handlers/control.rs`,
+  `relay/src/handlers/pi_forward.rs`, `relay/src/mesh/handler.rs`,
+  `relay/src/mesh/store.rs`, `relay/src/mesh/verify.rs`, `relay/src/metrics.rs`,
+  `relay/src/peers/connections.rs`, `relay/src/peers/registry.rs`,
+  `relay/src/presence.rs`, `relay/src/protocol/frame.rs`,
+  `relay/src/protocol/outer.rs`, `relay/src/reachability.rs`, and
+  `relay/src/rooms.rs`.
+- Tests added: none; this is a comment-only change and existing tests provide
+  the behavioral regression coverage.
+- Discrepancies from design: none. `cargo fmt` reflowed existing layout in
+  touched sources, including test code, without changing any test assertions
+  or behavior; this was necessary for `cargo fmt --check`.
+- Adjacent issues parked: none.
+- Verification: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`
+  (122 unit, 57 integration, and 0 doctests), `cargo build`, and
+  `cargo doc --no-deps` all passed. The required accented-Latin Portuguese
+  grep returned no matches in `relay/src/`.
+- Rationale: documented only the audited handwritten public boundary, retained
+  generated protocol output untouched, and kept error docs tied to the actual
+  fail-fast mappings rather than payload semantics.
