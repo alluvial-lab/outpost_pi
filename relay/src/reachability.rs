@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+/// Canonical transport reachability states shared by relay clients.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReachabilityState {
     Connecting,
@@ -10,6 +11,7 @@ pub enum ReachabilityState {
 }
 
 impl ReachabilityState {
+    /// Return this state’s canonical wire representation.
     pub const fn as_wire(self) -> &'static str {
         match self {
             Self::Connecting => "connecting",
@@ -21,6 +23,7 @@ impl ReachabilityState {
     }
 }
 
+/// Ordered projection of every supported reachability state.
 pub const REACHABILITY_STATES: [ReachabilityState; 5] = [
     ReachabilityState::Connecting,
     ReachabilityState::Online,
@@ -29,6 +32,7 @@ pub const REACHABILITY_STATES: [ReachabilityState; 5] = [
     ReachabilityState::Retrying,
 ];
 
+/// Retry delays indexed by consecutive failed connection attempts.
 pub const REACHABILITY_BACKOFF: [Duration; 5] = [
     Duration::from_secs(1),
     Duration::from_secs(2),
@@ -37,14 +41,20 @@ pub const REACHABILITY_BACKOFF: [Duration; 5] = [
     Duration::from_secs(30),
 ];
 
+/// Return the retry delay for `attempt`, clamped to the final configured delay.
 pub fn reachability_backoff(attempt: usize) -> Duration {
     REACHABILITY_BACKOFF[attempt.min(REACHABILITY_BACKOFF.len() - 1)]
 }
 
+/// Interval between relay-originated WebSocket ping frames.
 pub const RELAY_WS_PING_INTERVAL: Duration = Duration::from_secs(25);
+/// Interval between app-level protocol pings.
 pub const APP_PROTOCOL_PING_INTERVAL: Duration = Duration::from_secs(25);
+/// Interval at which the extension evaluates app liveness.
 pub const EXTENSION_LIVENESS_CHECK_INTERVAL: Duration = Duration::from_secs(20);
+/// Maximum app silence before the extension declares liveness lost.
 pub const EXTENSION_LIVENESS_TIMEOUT: Duration = Duration::from_secs(70);
+/// Number of missed app pongs that transitions an otherwise connected app to degraded.
 pub const DEGRADED_AFTER_MISSED_APP_PONGS: u8 = 3;
 
 #[cfg(test)]

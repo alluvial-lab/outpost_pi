@@ -3,6 +3,7 @@ use ed25519_dalek::{Signature, VerifyingKey};
 
 use super::types::{MeshEnvelope, MeshEnvelopeWire, MeshHeader};
 
+/// Describes malformed or unauthentic signed mesh-envelope data.
 #[derive(Debug, thiserror::Error)]
 pub enum VerifyError {
     #[error("invalid base64: {0}")]
