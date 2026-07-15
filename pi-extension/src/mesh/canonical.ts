@@ -1,8 +1,8 @@
 /**
  * JCS-like canonical JSON encoder for the mesh membership protocol.
  *
- * **Spec**: plan/24-mesh-membership.md — "chaves ordenadas alfabeticamente +
- * separadores `,` e `:` sem espaços. Mesma regra em Dart, Rust, TypeScript."
+ * **Spec**: plan/24-mesh-membership.md — "keys sorted alphabetically with
+ * `,` and `:` separators and no spaces. The same rule in Dart, Rust, and TypeScript."
  *
  * **Bit-compatibility contract** (must hold across the 3 implementations):
  *   - Object keys sorted lexicographically by UTF-16 code unit order
