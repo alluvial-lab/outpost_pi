@@ -147,8 +147,18 @@ does not configure feeds for macOS or Windows and uses `NoopSelfUpdater` on all
 platforms. Cockpit updates depend on a new manual installation until appcast publication
 resumes.
 
-The pipeline can keep generating installers for the first installation, but there are no
-appcast artifacts or keys in this runbook while the feature is disabled.
+Windows appcast generation is also explicitly disabled in the release workflow. The
+locked `auto_updater_windows` 1.0.0 plugin initializes WinSparkle 0.8.1 without calling
+`win_sparkle_set_app_build_version()`. WinSparkle therefore reads the current version
+from the executable's `VERSIONINFO` string (`x.y.z+n` from `Runner.rc`); a bare `+n`
+appcast version is not paired with that domain. Re-enable Windows appcast generation
+only after a Windows smoke proves that the chosen integration accepts a higher build
+number and rejects an equal or lower one.
+
+An inherited 1.5.1 Windows installation sorts above the reset 0.x marketing version and
+must be replaced by one manual Outpost-Pi installation before any future 0.x update
+contract can apply. The pipeline continues to generate the Windows installer needed for
+that cutover.
 
 ## Next steps (plan 43)
 
