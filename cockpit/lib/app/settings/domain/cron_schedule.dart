@@ -1,10 +1,10 @@
-/// Avaliador de cron-expression **padrão de 5 campos** (minuto hora dia-do-mês
-/// mês dia-da-semana), só pra **preview** do próximo disparo na UI.
+/// Preview the next local run of a standard five-field cron expression.
 ///
-/// Suporta `* , - / ` e números; dia-da-semana aceita 0 e 7 = domingo. NÃO
-/// cobre extensões do croner (segundos, `@daily`, `L`, `#`, `?`, `W`) — nesses
-/// casos devolve `null` e a UI mostra "calculado ao salvar". A fonte da verdade
-/// do `next_run` é o servidor (croner); isto é só uma estimativa em hora local.
+/// Supports numbers and `* , - /`; day-of-week accepts both 0 and 7 for Sunday.
+/// Returns `null` for croner extensions such as seconds, `@daily`, `L`, `#`,
+/// `?`, or `W`, allowing the UI to show "calculated on save". The server's
+/// croner-derived `next_run` remains authoritative; this is only a local-time
+/// estimate.
 DateTime? nextCronRun(String expr, DateTime from) {
   final fields = expr.trim().split(RegExp(r'\s+'));
   if (fields.length != 5) return null;
@@ -21,13 +21,13 @@ DateTime? nextCronRun(String expr, DateTime from) {
       dows == null) {
     return null;
   }
-  // Normaliza dia-da-semana: 7 → 0 (domingo).
+  // Normalize day-of-week: 7 → 0 (Sunday).
   final dowSet = dows.map((d) => d == 7 ? 0 : d).toSet();
 
   final domRestricted = !_isFull(fields[2]);
   final dowRestricted = !_isFull(fields[4]);
 
-  // Começa no próximo minuto cheio.
+  // Start at the next whole minute.
   var t = DateTime(
     from.year,
     from.month,
@@ -36,7 +36,7 @@ DateTime? nextCronRun(String expr, DateTime from) {
     from.minute,
   ).add(const Duration(minutes: 1));
 
-  // Horizonte de busca: ~366 dias (em minutos). Cron padrão sempre casa nisso.
+  // Search horizon: about 366 days in minutes; standard cron always matches.
   const maxIterations = 367 * 24 * 60;
   for (var i = 0; i < maxIterations; i++) {
     if (months.contains(t.month) &&
@@ -52,8 +52,11 @@ DateTime? nextCronRun(String expr, DateTime from) {
 
 bool _isFull(String field) => field.trim() == '*';
 
-/// Regra Vixie: se dom E dow ambos restritos, casa quem bater em UM dos dois;
-/// se só um está restrito, vale só ele; se nenhum, qualquer dia.
+/// Apply Vixie cron day matching.
+///
+/// When both day-of-month and day-of-week are restricted, either may match. If
+/// only one is restricted, that field controls the match; otherwise any day
+/// matches.
 bool _dayMatches(
   DateTime t,
   Set<int> doms,
@@ -70,7 +73,7 @@ bool _dayMatches(
   return true;
 }
 
-/// Parseia um campo em um conjunto de valores permitidos, ou `null` se inválido.
+/// Parse a field into its allowed values, returning `null` when invalid.
 Set<int>? _parseField(String field, int min, int max) {
   final out = <int>{};
   for (final rawPart in field.split(',')) {
