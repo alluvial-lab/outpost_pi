@@ -21,14 +21,12 @@ import 'package:cockpit/app/cockpit/domain/exceptions/rpc_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 import 'package:flutter/foundation.dart';
 
-/// Implementação do [RpcProcessGateway] sobre `dart:io` `Process`.
+/// Run an [RpcProcessGateway] over a `dart:io` [Process].
 ///
-/// Dono do ciclo de vida do child `pi --mode rpc`: spawn, escrita no stdin,
-/// parse do stdout (via [JsonlLineSplitter] + [RpcEventMapper]), detecção de
-/// saída e kill limpo. **Mata o child no `dispose` (sem órfão).**
-///
-/// MVP single-pane: um processo por instância. Validado empiricamente no spike
-/// do plano 37 — ver `docs/rpc-protocol.md`.
+/// This adapter owns one `pi --mode rpc` child per instance: spawning it,
+/// serializing stdin writes, parsing stdout through [JsonlLineSplitter] and
+/// [RpcEventMapper], observing exit, and terminating it during disposal so no
+/// child is orphaned. See `docs/rpc-protocol.md` for the RPC contract.
 class PiRpcProcess implements RpcProcessGateway {
   PiRpcProcess(this._config);
 
@@ -38,15 +36,16 @@ class PiRpcProcess implements RpcProcessGateway {
   final StreamController<RpcEvent> _events =
       StreamController<RpcEvent>.broadcast();
 
-  /// Requests pendentes aguardando a `response` com o `id` correspondente.
+  /// Track pending requests until a `response` with the matching `id` arrives.
   final Map<String, Completer<Map<String, dynamic>>> _pending =
       <String, Completer<Map<String, dynamic>>>{};
   int _seq = 0;
 
-  /// Serializa as escritas no stdin. Dois `write`/`flush` concorrentes (ex.:
-  /// `_loadControls` do boot + `switch_session` da restauração) estouram
-  /// `Bad state: StreamSink is bound to a stream`. Cada escrita espera a
-  /// anterior terminar.
+  /// Serialize stdin writes to prevent concurrent `write` and `flush` calls.
+  ///
+  /// Each write waits for its predecessor, avoiding
+  /// `Bad state: StreamSink is bound to a stream` when boot and restoration
+  /// commands overlap.
   Future<void> _writeChain = Future<void>.value();
 
   Process? _process;
@@ -75,8 +74,8 @@ class PiRpcProcess implements RpcProcessGateway {
       );
     }
     try {
-      // Base = ambiente do pai com o bin do `node` na PATH (shim `pi` usa
-      // `#!/usr/bin/env node`; em nvm/Homebrew o node não está na PATH do GUI).
+      // Start from the parent environment with the Node binary on PATH. The
+      // `pi` shim uses `#!/usr/bin/env node`, while GUI apps omit nvm/Homebrew.
       final base = await envWithNodeOnPath();
       final env = environment != null ? {...base, ...environment} : base;
       final process = await Process.start(
@@ -84,7 +83,7 @@ class PiRpcProcess implements RpcProcessGateway {
         _config.spawnArgs(sessionId: sessionId),
         workingDirectory: workingDirectory,
         environment: env,
-        // Windows: o `pi` é shim `.cmd`/`.bat` do npm — só executa via shell.
+        // On Windows, the npm `.cmd`/`.bat` Pi shim requires a shell.
         runInShell: Platform.isWindows,
       );
       _process = process;
@@ -100,7 +99,7 @@ class PiRpcProcess implements RpcProcessGateway {
           .transform(const LineSplitter())
           .listen(_onStderrLine, onError: _onStreamError);
 
-      // Detecta saída/crash sem bloquear.
+      // Observe normal exit or crash without blocking spawn.
       unawaited(process.exitCode.then(_onExit));
 
       return const Success(null);
@@ -182,11 +181,11 @@ class PiRpcProcess implements RpcProcessGateway {
     final process = _process;
     if (process == null) return;
 
-    // Caminho gracioso (provado no spike): fechar o stdin já faz o pi sair 0.
+    // Closing stdin is the graceful path and lets Pi exit with code 0.
     try {
       await process.stdin.close();
     } catch (_) {
-      // stdin pode já estar fechado.
+      // stdin may already be closed.
     }
 
     try {
@@ -199,13 +198,13 @@ class PiRpcProcess implements RpcProcessGateway {
         process.kill(ProcessSignal.sigkill);
       }
     }
-    // _onExit cuida da limpeza das refs e emite RpcProcessExit.
+    // _onExit clears references and emits RpcProcessExit.
   }
 
   @override
   void dispose() {
-    // Rede de segurança síncrona (chamado pelo injector no shutdown). O caminho
-    // gracioso de verdade é [kill]; aqui garantimos que nada fica órfão.
+    // Synchronous shutdown safety net for the injector. [kill] owns the truly
+    // graceful path; this fallback guarantees that no process is orphaned.
     final process = _process;
     if (process != null) {
       try {
@@ -226,8 +225,8 @@ class PiRpcProcess implements RpcProcessGateway {
         _emit(RpcUnknown('<non-object>', line));
         return;
       }
-      // Resposta de um request nosso (correlacionada por id) → completa o
-      // Completer e NÃO emite como evento.
+      // Complete responses correlated by request id without emitting them as
+      // events.
       if (decoded['type'] == 'response') {
         final id = decoded['id'];
         if (id is String) {
@@ -244,9 +243,10 @@ class PiRpcProcess implements RpcProcessGateway {
     }
   }
 
-  /// Escreve uma linha no stdin, **serializada** com as demais (ver [_writeChain]).
-  /// Aguarda a escrita anterior antes de tocar no sink, evitando o
-  /// `StreamSink is bound to a stream` de `write`/`flush` concorrentes.
+  /// Write one stdin line in sequence with all other writes.
+  ///
+  /// Waits for [_writeChain] before touching the sink, preventing concurrent
+  /// `write` and `flush` calls from binding the stream twice.
   Future<void> _writeLine(String line) {
     final result = _writeChain.then((_) async {
       final process = _process;
@@ -257,14 +257,16 @@ class PiRpcProcess implements RpcProcessGateway {
       process.stdin.write(line);
       await process.stdin.flush();
     });
-    // A corrente segue viva mesmo se uma escrita falhar (não propaga o erro
-    // pro próximo da fila — quem chamou já recebe a exceção via `result`).
+    // Keep the chain alive after a failed write without forwarding that error
+    // to the next queued writer; the original caller receives it via `result`.
     _writeChain = result.then((_) {}, onError: (_) {});
     return result;
   }
 
-  /// Envia um comando com `id` e aguarda a `response` correspondente.
-  /// Lança [RpcError] em falha/timeout — os métodos públicos embrulham em [Result].
+  /// Send a command with an `id` and await its matching `response`.
+  ///
+  /// Throws [RpcError] on command failure or timeout; public methods convert
+  /// that exception to [Result].
   Future<Map<String, dynamic>> _request(Map<String, dynamic> command) async {
     final process = _process;
     if (process == null) {
@@ -441,7 +443,7 @@ class PiRpcProcess implements RpcProcessGateway {
     _process = null;
     _cwd = null;
     if (pid != null) unawaited(PiProcessRegistry.unregister(pid));
-    // Não deixe requests pendentes pendurados quando o processo morre.
+    // Fail every pending request when the process exits.
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
         completer.completeError(RpcError('Process exited (code=$code).'));
