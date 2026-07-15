@@ -1,13 +1,13 @@
 import 'dart:io';
 
-/// Registro persistente de PIDs dos language servers (LSP) ativos.
+/// Persist the PIDs of active language-server processes.
 ///
-/// Mesmo problema do [PiProcessRegistry]: hot restart / crash do app não mata os
-/// child processes do `Process.start`, deixando `dart language-server`,
-/// `jdtls`, `node`… órfãos. A diferença é que aqui os servers são **vários
-/// binários distintos**, então o `pgrep -x <nome>` do pi (que assume um único
-/// nome) não serve — usamos **só o registry-file**: cada PID spawnado é gravado
-/// e, no boot, os remanescentes são mortos e o arquivo zerado.
+/// As with [PiProcessRegistry], a hot restart or app crash does not kill child
+/// processes created by [Process.start], leaving `dart language-server`,
+/// `jdtls`, `node`, and similar processes orphaned. Unlike pi, these servers use
+/// several executable names, so `pgrep -x <name>` cannot identify all of them.
+/// The registry file is therefore the sole source: every spawned PID is stored,
+/// and remaining processes are killed and the file cleared at startup.
 class LspProcessRegistry {
   LspProcessRegistry._();
 
@@ -16,8 +16,9 @@ class LspProcessRegistry {
     return '$home/.pi/cockpit/lsp-pids';
   }
 
-  /// Mata os PIDs remanescentes do ciclo anterior e limpa o registro. Deve ser
-  /// chamado UMA VEZ por boot, antes de qualquer spawn.
+  /// Kill PIDs left by the previous app lifecycle and clear the registry.
+  ///
+  /// Call exactly once per startup, before spawning any language server.
   static Future<void> cleanOrphans() async {
     try {
       final file = File(_path);
@@ -34,7 +35,7 @@ class LspProcessRegistry {
     } catch (_) {}
   }
 
-  /// Registra [pid] no arquivo. Chamado logo após o spawn bem-sucedido.
+  /// Record [pid] immediately after a successful spawn.
   static Future<void> register(int pid) async {
     try {
       final file = File(_path);
@@ -43,7 +44,7 @@ class LspProcessRegistry {
     } catch (_) {}
   }
 
-  /// Remove [pid] do arquivo. Chamado na saída limpa do servidor.
+  /// Remove [pid] after a clean server exit.
   static Future<void> unregister(int pid) async {
     try {
       final file = File(_path);

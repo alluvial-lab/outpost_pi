@@ -2,8 +2,10 @@ import 'package:cockpit/app/core/domain/contracts/settings_store.dart';
 import 'package:cockpit/app/core/domain/entities/app_settings.dart';
 import 'package:hive/hive.dart';
 
-/// Persiste as [AppSettings] numa Box do Hive (um único registro JSON sob a
-/// chave [_key]). Só tipos primitivos → sem TypeAdapters.
+/// Persist [AppSettings] in a Hive box.
+///
+/// Stores one JSON record under [_key] using primitive values only, so no Hive
+/// type adapters are required.
 class HiveSettingsStore implements SettingsStore {
   HiveSettingsStore(this._box);
 
