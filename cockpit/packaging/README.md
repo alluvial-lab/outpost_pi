@@ -8,7 +8,7 @@ Build/packaging runbook for the 3 platforms. Basis for the CI job
 
 | Item | Value |
 |---|---|
-| App ID (macOS bundle id / Linux app id) | `work.jacobmoura.cockpit` |
+| App ID (macOS bundle id / Linux app id) | `dev.kevoun.outpostpi.cockpit` |
 | Display name | **Outpost-Pi Cockpit** |
 | Binary | `cockpit` (Linux/Windows) / `Cockpit` (macOS) — **not** renamed |
 | Team ID (Apple) | `U843T2P7A2` |
@@ -21,7 +21,7 @@ Build/packaging runbook for the 3 platforms. Basis for the CI job
 - Windows: `CompanyName`/`ProductName`/`LegalCopyright` in
   `windows/runner/Runner.rc`; version comes from `FLUTTER_VERSION_*` defines
   (injected during build; `#else "1.0.0"` is only a fallback).
-- Linux: `.desktop` + hicolor icons + `work.jacobmoura.cockpit.metainfo.xml`
+- Linux: `.desktop` + hicolor icons + `dev.kevoun.outpostpi.cockpit.metainfo.xml`
   (AppStream), installed through `linux/CMakeLists.txt`.
 
 ## Tool
@@ -48,20 +48,24 @@ linux/packaging/rpm/make_config.yaml
 ## macOS — build + sign + DMG + notarize + staple (end to end)
 
 Validated locally on 2026-06-12 (DMG accepted by Gatekeeper). Prerequisites:
-**"Developer ID Application: Jacob Moura (U843T2P7A2)"** identity in Keychain and
-the App Store Connect API key.
+a Developer ID Application identity supplied through CI secrets and the App Store
+Connect API key. Set `APPLE_SIGNING_IDENTITY` to that identity for a local release.
+CI reads `APPLE_SIGNING_IDENTITY` and `APPLE_TEAM_ID` from repository secrets and
+fails closed before certificate import if either is absent; no signing identity is
+committed to this repository.
 
 ```bash
 cd cockpit
 
 # 1. Universal build (x86_64 + arm64 — Flutter macOS release default).
+: "${APPLE_SIGNING_IDENTITY:?Set APPLE_SIGNING_IDENTITY before signing}"
 flutter build macos --release
 APP="build/macos/Build/Products/Release/Cockpit.app"
 
 # 2. Sign the .app with Developer ID + Hardened Runtime + Release entitlements.
 codesign --force --deep --options runtime --timestamp \
   --entitlements macos/Runner/Release.entitlements \
-  --sign "Developer ID Application: Jacob Moura (U843T2P7A2)" "$APP"
+  --sign "$APPLE_SIGNING_IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"   # check
 
 # 3. Build the DMG (hdiutil — no dependencies; Fastforge maker uses `appdmg`
@@ -74,7 +78,7 @@ rm -rf "$STAGE"
 
 # 4. Sign the DMG.
 codesign --force --timestamp \
-  --sign "Developer ID Application: Jacob Moura (U843T2P7A2)" "$DMG"
+  --sign "$APPLE_SIGNING_IDENTITY" "$DMG"
 
 # 5. Notarize (App Store Connect API key) and wait.
 xcrun notarytool submit "$DMG" \
