@@ -1,12 +1,12 @@
-/// Comparação de versões semver simples `x.y.z` — numérica por componente.
+/// Compare simplified `x.y.z` semantic versions numerically by component.
 ///
-/// Ignora sufixos de pré-release/build (`-beta`, `+1`): considera só os três
-/// primeiros componentes numéricos. Componentes ausentes contam como 0
-/// (`1.2` == `1.2.0`); não-numéricos contam como 0.
+/// Prerelease and build suffixes such as `-beta` and `+1` are ignored. Only
+/// the first three numeric components participate; missing and non-numeric
+/// components count as zero, so `1.2` equals `1.2.0`.
 library;
 
 List<int> _parse(String v) {
-  // Tira qualquer coisa depois de `-` ou `+` (pré-release / build metadata).
+  // Discard prerelease and build metadata after the first `-` or `+`.
   final core = v.trim().split(RegExp(r'[-+]')).first;
   final parts = core.split('.');
   return List<int>.generate(3, (i) {
@@ -15,7 +15,10 @@ List<int> _parse(String v) {
   });
 }
 
-/// `-1` se [a] < [b], `0` se iguais, `1` se [a] > [b].
+/// Compare [a] and [b] using the module's simplified semantic-version rules.
+///
+/// Return `-1` when [a] is lower, `0` when they are equivalent, and `1` when
+/// [a] is higher.
 int compareSemver(String a, String b) {
   final pa = _parse(a);
   final pb = _parse(b);
@@ -25,6 +28,6 @@ int compareSemver(String a, String b) {
   return 0;
 }
 
-/// `true` se [candidate] é uma versão **maior** que [current].
+/// Report whether [candidate] is strictly newer than [current].
 bool isNewerVersion(String candidate, String current) =>
     compareSemver(candidate, current) > 0;
