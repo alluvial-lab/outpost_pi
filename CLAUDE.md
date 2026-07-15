@@ -60,7 +60,7 @@ versions, Dependencies, Structure, Health (lint/build/tests), and detected Smell
 
 ## Panes in this cmux workspace
 
-This workspace ("Remote PI") has 5 dedicated panes — one per subproject — plus this
+This workspace ("Outpost-Pi") has 5 dedicated panes — one per subproject — plus this
 Orchestrator. Each pane already has a `claude` running in its own session. **Use the
 existing panes instead of asking the user to open a new terminal.**
 

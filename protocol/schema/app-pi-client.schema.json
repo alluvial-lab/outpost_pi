@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kevoun.com/schemas/app-pi-client.schema.json",
-  "title": "Remote Pi app-to-Pi client messages",
+  "title": "Outpost-Pi app-to-Pi client messages",
   "oneOf": [
     { "$ref": "#/$defs/pairRequest" },
     { "$ref": "#/$defs/userMessage" },
