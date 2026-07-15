@@ -27,8 +27,10 @@ import 'package:flutter_modular/flutter_modular.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:xterm/xterm.dart';
 
-/// Folha do multiplexador: tab strip + corpo (agente: transcript+composer / empty;
-/// terminal: TerminalView). O foco aparece **só na aba ativa**.
+/// Render one multiplexer leaf as a tab strip and its persistent tab bodies.
+///
+/// Only the active tab receives focus; agent, terminal, file, and empty-tab
+/// content remain mounted according to their session contracts.
 class PaneView extends StatelessWidget {
   const PaneView({
     super.key,
@@ -47,28 +49,28 @@ class PaneView extends StatelessWidget {
   final CockpitViewModel vm;
   final bool focused;
 
-  /// Abre uma aba "Novo" (placeholder vazio) — o tipo é escolhido dentro dela.
+  /// Opens an empty New tab whose content type is selected inside the tab.
   final VoidCallback onCreateTab;
   final ValueChanged<SplitDir> onSplit;
 
-  /// Preenche a pane vazia — `(emptyId, terminal)`.
+  /// Replaces an empty tab, where `terminal` selects the new session type.
   final void Function(String emptyId, bool terminal) onFillEmpty;
 
-  /// Abre o histórico de sessões de um agente (por id da aba).
+  /// Opens an agent's session history by tab ID.
   final ValueChanged<String> onHistoryAgent;
 
-  /// Renomeia o agente (id da aba, novo nome já sanitizado).
+  /// Renames an agent using its tab ID and an already sanitized name.
   final void Function(String agentId, String name) onRenameAgent;
 
-  /// Alterna o auto-relay do agente (por id da aba).
+  /// Toggles automatic relay startup for an agent tab.
   final ValueChanged<String> onToggleRelayAgent;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final tabs = pane.tabs;
-    // Índice da aba ativa em [tabs] (fallback 0 se, transitoriamente, o active
-    // ainda não constar na lista — ex.: durante um move/close).
+    // Fall back to zero while the active tab is transiently absent during a move
+    // or close.
     final rawIndex = tabs.indexOf(pane.active);
     final activeIndex = rawIndex < 0 ? 0 : rawIndex;
 
@@ -92,12 +94,11 @@ class PaneView extends StatelessWidget {
             Expanded(
               child: tabs.isEmpty
                   ? const SizedBox.shrink()
-                  // IndexedStack mantém TODAS as abas montadas e só pinta a
-                  // ativa. Sem isso, trocar de aba remove o _PaneBody da anterior
-                  // da árvore e seu State é destruído — perdendo o estado de
-                  // *view*: scroll do transcript, viewport/seleção do terminal,
-                  // foco e o rascunho digitado no composer. (As sessões/dados já
-                  // persistem na VM; aqui preservamos a apresentação.)
+                  // IndexedStack keeps every tab mounted while painting only the
+                  // active one. Removing inactive bodies would destroy view state:
+                  // transcript scroll, terminal viewport and selection, focus, and
+                  // composer drafts. Session data already persists in the VM; this
+                  // preserves its presentation.
                   : IndexedStack(
                       index: activeIndex,
                       sizing: StackFit.expand,
@@ -110,9 +111,10 @@ class PaneView extends StatelessWidget {
     );
   }
 
-  /// Corpo de uma aba, com key estável por sessão — preserva o State através de
-  /// troca e reordenação de abas. Só a aba ativa recebe `focused`; do contrário
-  /// vários terminais montados disputariam o foco do teclado.
+  /// Build a tab body with a stable session key across selection and reordering.
+  ///
+  /// Only the active tab receives focus so mounted terminals do not compete for
+  /// keyboard input.
   Widget _keyedBody(String tabId) {
     final session = vm.session(tabId);
     if (session == null) return SizedBox.shrink(key: ValueKey('body-$tabId'));
@@ -126,10 +128,10 @@ class PaneView extends StatelessWidget {
   }
 }
 
-/// Largura fixa de uma aba — também usada pra calcular o auto-scroll do ativo.
+/// Keep tab width consistent with active-tab auto-scroll calculations.
 const double _kTabWidth = 188;
 
-/// Ícone por tipo de aba (usado na aba e no dropdown "todas as abas").
+/// Resolve the icon shared by a tab and the all-tabs menu.
 IconData _tabIcon(PaneItem? item) {
   if (item is TerminalSession) return Icons.terminal_outlined;
   if (item is FileViewerSession) return Icons.description_outlined;
@@ -201,14 +203,14 @@ class _TabStripState extends State<_TabStrip> {
     if (value != _hovering) setState(() => _hovering = value);
   }
 
-  /// Mostra/esconde o botão de overflow conforme a strip realmente estoura.
+  /// Show the overflow control only when the tab strip actually overflows.
   void _syncOverflow() {
     if (!_scroll.hasClients) return;
     final over = _scroll.position.maxScrollExtent > 0.5;
     if (over != _overflowing) setState(() => _overflowing = over);
   }
 
-  /// Rola a aba ativa pra dentro da área visível (largura fixa → offset = i*W).
+  /// Scroll the fixed-width active tab into the visible strip area.
   void _scrollActiveIntoView() {
     if (!_scroll.hasClients) return;
     final index = widget.pane.tabs.indexOf(widget.pane.active);
@@ -247,7 +249,7 @@ class _TabStripState extends State<_TabStrip> {
     if (ok) widget.vm.closePane(widget.pane.id);
   }
 
-  /// Dropdown com todas as abas (pular direto pra uma) — aparece no overflow.
+  /// Show all tabs for direct selection when the strip overflows.
   Future<void> _showTabList(BuildContext anchor) async {
     final pane = widget.pane;
     final picked = await showAppMenu<String>(
@@ -270,7 +272,7 @@ class _TabStripState extends State<_TabStrip> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final pane = widget.pane;
-    // Re-checa overflow a cada layout (resize de pane, add/remove de aba).
+    // Recheck overflow after pane resize or tab addition and removal.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncOverflow();
     });
@@ -288,7 +290,7 @@ class _TabStripState extends State<_TabStrip> {
               onExit: (_) => _setHover(false),
               child: Scrollbar(
                 controller: _scroll,
-                // Só aparece com o mouse em cima (e quando há overflow).
+                // Reveal the scrollbar only while hovering an overflowing strip.
                 thumbVisibility: _hovering && _overflowing,
                 thickness: 3,
                 radius: const Radius.circular(3),
@@ -335,7 +337,7 @@ class _TabStripState extends State<_TabStrip> {
               ),
             ),
           ),
-          // Overflow: lista todas as abas pra pular direto (só quando estoura).
+          // Offer direct tab selection only when the strip overflows.
           if (_overflowing)
             Builder(
               builder: (ctx) => _StripButton(
@@ -355,7 +357,7 @@ class _TabStripState extends State<_TabStrip> {
   }
 }
 
-/// Botãozinho de ícone da tab strip (28px) — overflow, etc.
+/// Render a compact tab-strip action such as the overflow control.
 class _StripButton extends StatelessWidget {
   const _StripButton({
     required this.icon,
@@ -415,8 +417,7 @@ class _TabState extends State<_Tab> {
   final TextEditingController _ctrl = TextEditingController();
   final FocusNode _focus = FocusNode();
 
-  /// Instante do último tap nesta aba — usado pra detectar duplo-clique
-  /// manualmente (ver [_handleTap]).
+  /// Last tap timestamp used for manual double-click detection.
   DateTime? _lastTapAt;
 
   @override
@@ -428,7 +429,7 @@ class _TabState extends State<_Tab> {
   @override
   void didUpdateWidget(_Tab old) {
     super.didUpdateWidget(old);
-    // Se a aba mudou enquanto estava editando, cancela a edição.
+    // Cancel editing if this widget is rebound to another tab.
     if (old.item?.id != widget.item?.id && _editing) {
       setState(() => _editing = false);
     }
@@ -441,10 +442,10 @@ class _TabState extends State<_Tab> {
     super.dispose();
   }
 
-  /// Tap na aba: **seleciona na hora** e detecta duplo-clique manualmente pra
-  /// renomear (agentes) ou fixar (preview). Um `DoubleTapGestureRecognizer`
-  /// seguraria a arena de gestos por `kDoubleTapTimeout` (~300ms) antes de cada
-  /// `onTapUp`, atrasando a seleção.
+  /// Select immediately while detecting double-click rename or preview pinning.
+  ///
+  /// Manual detection avoids the delay that `DoubleTapGestureRecognizer` adds
+  /// while holding the gesture arena for `kDoubleTapTimeout`.
   void _handleTap() {
     final s = widget.item;
     final agent = s is AgentSession ? s : null;
@@ -457,10 +458,10 @@ class _TabState extends State<_Tab> {
     final last = _lastTapAt;
     _lastTapAt = now;
 
-    // Duplo-clique: renomear agente OU fixar preview.
+    // A double-click renames an agent or pins a file preview.
     if (last != null &&
         now.difference(last) < const Duration(milliseconds: 300)) {
-      _lastTapAt = null; // consumiu o segundo clique
+      _lastTapAt = null; // Consume the second click.
       if (canPin) {
         viewer.pin();
         return;
@@ -502,8 +503,7 @@ class _TabState extends State<_Tab> {
     if (!_focus.hasFocus && _editing) _commitEdit();
   }
 
-  /// Fecha a aba pedindo confirmação se for um arquivo com edição não salva:
-  /// descartar, cancelar ou salvar-e-fechar. Demais abas fecham direto.
+  /// Close the tab, asking how to handle unsaved file edits when necessary.
   Future<void> _requestClose() async {
     final s = widget.item;
     if (s is! FileViewerSession || !s.dirty) {
@@ -518,7 +518,7 @@ class _TabState extends State<_Tab> {
       case CloseDirtyChoice.dontSave:
         widget.onClose();
       case CloseDirtyChoice.save:
-        // Salva o buffer atual; só fecha se gravou (erro de IO mantém aberto).
+        // Close only after the current buffer saves; I/O failure keeps it open.
         final ok = await s.saveDraft?.call() ?? false;
         if (!mounted) return;
         if (ok) widget.onClose();
@@ -596,8 +596,7 @@ class _TabState extends State<_Tab> {
 
         final icon = _tabIcon(s);
 
-        // Título: texto normal ou campo inline ao renomear.
-        // Preview tabs usam itálico (estilo VSCode).
+        // Use inline editing while renaming and italicize preview tabs like VS Code.
         final isPreview = s is FileViewerSession && s.isPreview;
         final titleWidget = _editing && agent != null
             ? CallbackShortcuts(
@@ -691,11 +690,11 @@ class _TabState extends State<_Tab> {
           ),
         );
 
-        // Ao editar o nome, desabilita drag e cliques de seleção para não
-        // interferir com a seleção de texto no TextField.
+        // While editing, disable dragging and tab selection so the field owns text
+        // selection.
         if (_editing) return tabBody;
 
-        // Builder garante um BuildContext com RenderBox para showAppMenu.
+        // Builder supplies showAppMenu with a context backed by a RenderBox.
         final interactive = Builder(
           builder: (menuCtx) => GestureDetector(
             onTapUp: (d) => _handleTap(),
@@ -719,9 +718,7 @@ class _TabState extends State<_Tab> {
   }
 }
 
-/// Alvo de drop por aba: ao arrastar outra aba pra cima desta, mostra um caret
-/// vertical no lado (esquerda = inserir antes, direita = depois) e, ao soltar,
-/// insere/reordena naquela posição. É o que permite **trocar abas de lugar**.
+/// Reorder tabs by showing an insertion caret on the hovered tab edge.
 class _TabDropSlot extends StatefulWidget {
   const _TabDropSlot({
     required this.index,
@@ -738,7 +735,7 @@ class _TabDropSlot extends StatefulWidget {
 }
 
 class _TabDropSlotState extends State<_TabDropSlot> {
-  /// `null` = sem caret; `true` = caret à esquerda (antes); `false` = direita.
+  /// `null` hides the caret; `true` inserts before and `false` after.
   bool? _before;
 
   void _update(Offset global) {
@@ -792,8 +789,7 @@ class _TabClose extends StatefulWidget {
   const _TabClose({required this.onTap, this.dirty = false});
   final VoidCallback onTap;
 
-  /// Arquivo com edição não salva: mostra uma bolinha no lugar do X (o X
-  /// reaparece ao passar o mouse, deixando o fechar acessível).
+  /// Replace the close icon with a dot for unsaved edits until hovered.
   final bool dirty;
 
   @override
@@ -806,7 +802,7 @@ class _TabCloseState extends State<_TabClose> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // Sujo e sem hover → bolinha; do contrário → X.
+    // Show a dot for unhovered unsaved tabs and the close icon otherwise.
     final showDot = widget.dirty && !_hover;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -833,8 +829,7 @@ class _TabCloseState extends State<_TabClose> {
   }
 }
 
-/// "+" — abre direto uma aba "Novo" (placeholder); o tipo (agente/terminal) é
-/// escolhido dentro da aba.
+/// Open an empty New tab that lets the user choose agent or terminal content.
 class _TabAdd extends StatelessWidget {
   const _TabAdd({required this.onTap});
   final VoidCallback onTap;
@@ -887,9 +882,8 @@ class _PaneTools extends StatelessWidget {
         child: SizedBox(width: spacing, height: spacing, child: icon),
       ),
     );
-    // Mesma base (splitscreen = dois painéis), pra ler "horizontal vs vertical"
-    // num relance: empilhado = dividir abaixo; girado 90° (colunas lado-a-lado)
-    // = dividir à direita. (Mockup.)
+    // Use one split-screen shape in two orientations: stacked means split down,
+    // while side-by-side means split right.
 
     return Padding(
       padding: const EdgeInsets.only(right: spacing),
@@ -937,12 +931,13 @@ class _PaneBody extends StatefulWidget {
   final PaneItem item;
   final bool focused;
 
-  /// `true` quando esta é a aba **ativa** (visível) da pane — independente do
-  /// foco da pane. Repassado ao viewer A/V, que pausa quando deixa de ser ativa
-  /// (o `IndexedStack` mantém todas as abas montadas). Plano 46.
+  /// Whether this is the pane's visible tab, independently of pane focus.
+  ///
+  /// Media viewers use this to pause while inactive because [IndexedStack] keeps
+  /// every tab mounted.
   final bool active;
 
-  /// `(terminal)` — qual tipo criar ao preencher a pane vazia.
+  /// Fills the empty tab with a terminal when `true`, otherwise an agent.
   final ValueChanged<bool> onFillEmpty;
 
   @override
@@ -955,14 +950,14 @@ class _PaneBodyState extends State<_PaneBody> {
 
   static const double _stickThreshold = 80;
 
-  /// Aba de agente vazia: gate do ambiente. `_checkingAgent` = rodando o probe
-  /// após "New agent"; `_showAgentSetup` = trio incompleto → mostra o checklist.
+  /// Track the environment gate for an empty agent tab and its setup fallback.
   bool _checkingAgent = false;
   bool _showAgentSetup = false;
 
-  /// "New agent" numa aba vazia: confere o ambiente. Pronto → spawna direto;
-  /// incompleto → revela o [AgentSetupChecklist] inline. Terminal nunca passa
-  /// por aqui.
+  /// Check agent readiness before filling an empty tab.
+  ///
+  /// A ready environment starts the agent; otherwise the tab reveals
+  /// [AgentSetupChecklist]. Terminal creation bypasses this gate.
   Future<void> _onNewAgent() async {
     final setup = context.read<SetupViewModel>();
     setState(() => _checkingAgent = true);
@@ -991,8 +986,8 @@ class _PaneBodyState extends State<_PaneBody> {
     super.didUpdateWidget(old);
     if (widget.item is! TerminalSession) return;
     if (widget.focused && !old.focused) {
-      // Adiar para pós-frame: o requestFocus() síncrono durante onTapDown
-      // interfere com o onTapUp da seleção de tab no mesmo ciclo de gestos.
+      // Defer focus until after the frame so requestFocus during onTapDown does
+      // not interfere with tab selection's onTapUp in the same gesture cycle.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _terminalFocus.requestFocus();
       });
@@ -1008,20 +1003,18 @@ class _PaneBodyState extends State<_PaneBody> {
     super.dispose();
   }
 
-  /// Intercepta o atalho de **colar** no terminal pra suportar imagem.
+  /// Intercept the terminal paste shortcut to support clipboard images.
   ///
-  /// O `TerminalView` só cola texto; a imagem do clipboard nunca chegava ao
-  /// harness. No Cmd+V (macOS) / Ctrl+V (Linux/Windows) delegamos pro
-  /// [TerminalSession.pasteFromClipboard], que manda `\x16` quando há imagem.
-  /// No macOS o Ctrl+V cru é engolido pelo IME (vira `pageDown`), então lá o
-  /// atalho confiável de colar é o Cmd+V — por isso checamos a tecla certa por
-  /// plataforma. As demais teclas seguem o fluxo normal do terminal (`ignored`).
+  /// `TerminalView` pastes only text, so Cmd+V on macOS and Ctrl+V elsewhere
+  /// delegate to [TerminalSession.pasteFromClipboard], which sends `\x16` for
+  /// an image. macOS also prefers Cmd+V because its IME can consume raw Ctrl+V
+  /// as `pageDown`. Other keys continue through normal terminal handling.
   KeyEventResult _onTerminalKey(KeyEvent event, TerminalSession session) {
     if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyV) {
       return KeyEventResult.ignored;
     }
-    // Cmd+V no macOS (atalho confiável; o Ctrl+V cru é engolido pelo IME) e
-    // Ctrl+V no resto — mas também aceitamos Ctrl+V no macOS caso ele chegue.
+    // Prefer Cmd+V on macOS and Ctrl+V elsewhere, while accepting Ctrl+V on
+    // macOS if the IME lets it through.
     final keys = HardwareKeyboard.instance;
     final isPaste =
         (Platform.isMacOS && keys.isMetaPressed) || keys.isControlPressed;
@@ -1050,7 +1043,7 @@ class _PaneBodyState extends State<_PaneBody> {
   Widget build(BuildContext context) {
     final item = widget.item;
 
-    // Viewer de arquivo (read-only): markdown / texto / imagem.
+    // File viewer: Markdown, text, image, and editable file surfaces.
     if (item is FileViewerSession) {
       return FileViewer(
         session: item,
@@ -1061,13 +1054,12 @@ class _PaneBodyState extends State<_PaneBody> {
       );
     }
 
-    // Terminal: só o TerminalView (ele se atualiza sozinho pelo Terminal model).
+    // TerminalView updates itself from the Terminal model.
     if (item is TerminalSession) {
       final settings = context.watch<SettingsController>().settings;
       final termFont = settings.terminalFont;
-      // Fonte exclusiva do terminal (vazia = mono padrão do xterm); tamanho =
-      // "tamanho do código". O zoom da interface é global (Transform em
-      // `_AppZoom`), então não precisa escalar aqui.
+      // The terminal has its own optional font and uses the configured code size.
+      // Global interface zoom is applied by `_AppZoom`, so do not scale it here.
       final termStyle = (termFont == null || termFont.isEmpty)
           ? TerminalStyle(fontSize: settings.codeSize)
           : TerminalStyle(fontSize: settings.codeSize, fontFamily: termFont);
@@ -1078,13 +1070,12 @@ class _PaneBodyState extends State<_PaneBody> {
           child: TerminalPane(
             terminal: item.terminal,
             focusNode: _terminalFocus,
-            // Windows: o caminho de IME/TextInput do xterm quebra no desktop
-            // ("Could not set client, view ID is null") e impede digitar. O
-            // modo só-hardware ignora o TextInput e lê KeyEvents crus. No
-            // macOS mantemos o IME (melhor pra acentos/composição).
+            // xterm's IME/TextInput path fails on Windows desktop with "Could not
+            // set client, view ID is null" and prevents typing. Hardware-only
+            // mode reads raw KeyEvents there; macOS retains IME composition.
             hardwareKeyboardOnly: Platform.isWindows,
-            // Intercepta o atalho de colar pra suportar IMAGEM do clipboard
-            // (o paste padrão do xterm só cola texto). Ver `_onTerminalKey`.
+            // Intercept paste to support clipboard images; xterm's default paste
+            // handles text only. See `_onTerminalKey`.
             onKeyEvent: (event) => _onTerminalKey(event, item),
             theme: cockpitTerminalThemeFor(Theme.of(context).brightness),
             textStyle: termStyle,
@@ -1137,8 +1128,8 @@ class _PaneBodyState extends State<_PaneBody> {
               left: 16,
               right: 16,
               bottom: 16,
-              // Centraliza e limita a largura — em panes largas o input não
-              // estica de ponta a ponta; em panes estreitas, preenche.
+              // Center and cap composer width in wide panes while filling narrow
+              // panes.
               child: Align(
                 alignment: Alignment.bottomCenter,
                 child: ConstrainedBox(
@@ -1158,21 +1149,22 @@ class _PaneBodyState extends State<_PaneBody> {
 }
 
 // ============================================================================
-// Drag & drop de abas entre panes
+// Drag and drop tabs between panes
 // ============================================================================
 
-/// Carga arrastada quando o usuário pega uma aba: de onde veio e qual aba.
+/// Identify the tab and source pane carried during a drag.
 class TabDragData {
   const TabDragData({required this.paneId, required this.tabId});
   final String paneId;
   final String tabId;
 }
 
-/// Onde a aba será solta dentro de um pane.
-/// [strip]/[center] = acoplar como aba; as bordas = criar um split.
+/// Describe where a tab will be dropped within a pane.
+///
+/// [strip] and [center] dock it as a tab; edge zones create a split.
 enum _DropZone { strip, center, left, right, top, bottom }
 
-/// Mini-chip que segue o cursor enquanto a aba é arrastada.
+/// Follow the cursor with a compact tab preview during dragging.
 class _DragFeedback extends StatelessWidget {
   const _DragFeedback({required this.icon, required this.title});
   final IconData icon;
@@ -1214,8 +1206,10 @@ class _DragFeedback extends StatelessWidget {
   }
 }
 
-/// Envolve uma [PaneView] como alvo de drop. Mostra as zonas (acoplar / dividir)
-/// sob o cursor enquanto uma aba é arrastada, e dispara a operação ao soltar.
+/// Accept tab and file drops over a [PaneView].
+///
+/// Tab drags preview dock or split zones before committing the workspace move;
+/// file drags open a tab or insert a path into the active terminal.
 class PaneDropZone extends StatefulWidget {
   const PaneDropZone({
     super.key,
@@ -1234,12 +1228,13 @@ class PaneDropZone extends StatefulWidget {
 
 class _PaneDropZoneState extends State<PaneDropZone> {
   static const double _stripHeight = 40;
-  static const double _edge = 0.25; // fração da borda que vira split
+  static const double _edge =
+      0.25; // Fraction of each edge that creates a split.
 
   _DropZone? _zone;
   bool _fileOver = false;
 
-  /// Retorna a sessão ativa na pane, ou `null` se não encontrada.
+  /// Return the pane's active session, or `null` when it cannot be resolved.
   PaneItem? _activeSession() {
     final projectId = widget.vm.selectedProjectId;
     if (projectId == null) return null;
@@ -1264,7 +1259,7 @@ class _PaneDropZoneState extends State<PaneDropZone> {
     final fx = (local.dx / bw).clamp(0.0, 1.0);
     final fy = ((local.dy - _stripHeight) / bh).clamp(0.0, 1.0);
 
-    // Profundidade dentro de cada borda; a mais rasa (< _edge) vence.
+    // Choose the shallowest edge depth within the split threshold.
     var best = _DropZone.center;
     var bestDepth = _edge;
     void consider(_DropZone zone, double depth) {
@@ -1326,10 +1321,8 @@ class _PaneDropZoneState extends State<PaneDropZone> {
 
   @override
   Widget build(BuildContext context) {
-    // Camada externa: arrastar um **arquivo** (da árvore, `Draggable<String>`)
-    // sobre a pane abre-o como aba. O input (composer) é um `DragTarget<String>`
-    // mais interno → soltar nele vira `@menção`; soltar no resto da pane vira
-    // aba. Os dois disputam o mesmo drag; o mais interno (input) ganha.
+    // The outer target opens a tree file as a tab. The composer's nested string
+    // target wins when hit and turns that same drag into an @mention.
     return DragTarget<String>(
       hitTestBehavior: HitTestBehavior.opaque,
       onMove: (_) {
@@ -1341,7 +1334,7 @@ class _PaneDropZoneState extends State<PaneDropZone> {
       onAcceptWithDetails: (d) {
         final session = _activeSession();
         if (session is TerminalSession) {
-          // Terminal ativo: insere o caminho absoluto no PTY (como se digitado).
+          // An active terminal inserts the absolute path as typed PTY input.
           session.insertText(d.data);
         } else {
           widget.vm.openFile(d.data, inPane: widget.paneId);
@@ -1350,7 +1343,7 @@ class _PaneDropZoneState extends State<PaneDropZone> {
       },
       builder: (context, fileCandidate, fileRejected) {
         final fileOver = _fileOver && fileCandidate.isNotEmpty;
-        // Camada interna: mover **abas** entre panes (`DragTarget<TabDragData>`).
+        // The inner target moves tabs between panes.
         return DragTarget<TabDragData>(
           hitTestBehavior: HitTestBehavior.opaque,
           onMove: (d) {
@@ -1373,7 +1366,7 @@ class _PaneDropZoneState extends State<PaneDropZone> {
                   Positioned.fill(
                     child: IgnorePointer(child: _ZonePreview(zone: _zone!)),
                   ),
-                // Realce sutil: arquivo sobre a pane → vira aba ao soltar.
+                // Subtly indicate that dropping the file will open it as a tab.
                 if (fileOver)
                   Positioned.fill(
                     child: IgnorePointer(
@@ -1397,8 +1390,7 @@ class _PaneDropZoneState extends State<PaneDropZone> {
   }
 }
 
-/// Realce da zona de drop sob o cursor (metade pra split, tudo pra acoplar, ou
-/// uma faixa na tab strip).
+/// Preview the drop zone as a split half, full dock area, or tab-strip band.
 class _ZonePreview extends StatelessWidget {
   const _ZonePreview({required this.zone});
   final _DropZone zone;
@@ -1432,11 +1424,11 @@ class _ZonePreview extends StatelessWidget {
       _DropZone.right => (Alignment.centerRight, 0.5, 1.0, null),
       _DropZone.top => (Alignment.topCenter, 1.0, 0.5, null),
       _DropZone.bottom => (Alignment.bottomCenter, 1.0, 0.5, null),
-      _DropZone.strip => (Alignment.center, 1.0, 1.0, null), // inalcançável
+      _DropZone.strip => (Alignment.center, 1.0, 1.0, null), // Unreachable.
     };
 
     return Padding(
-      // Não cobre a tab strip (o realce de split mora só no corpo).
+      // Keep split highlighting within the body, below the tab strip.
       padding: const EdgeInsets.only(top: 40),
       child: Align(
         alignment: align,

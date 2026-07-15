@@ -3,11 +3,11 @@ import 'package:cockpit/app/cockpit/domain/validators/worktree_name_validator.da
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Dialog de criar worktree. Valida o nome **ao vivo** (decisões 10, 11) contra
-/// o [namespace] (branches locais + worktrees existentes); Criar só acende com
-/// nome válido. Ao confirmar, trava com spinner e chama [onCreate] (que roda o
-/// `git worktree add` real): se devolver uma mensagem de erro, mostra inline e
-/// reabre; `null` = sucesso → fecha (decisão 21).
+/// Create a worktree after validating its name against [namespace].
+///
+/// The confirm action is enabled only for a valid name. While [onCreate] runs,
+/// the dialog locks and shows progress; a returned error is shown inline,
+/// while `null` closes the dialog.
 Future<void> showWorktreeCreateDialog(
   BuildContext context, {
   required String rootName,
@@ -44,7 +44,7 @@ class _WorktreeCreateDialogState extends State<_WorktreeCreateDialog> {
   static const _validator = WorktreeNameValidator();
   final TextEditingController _name = TextEditingController();
   bool _submitting = false;
-  String? _gitError; // erro do git no último submit
+  String? _gitError; // Git error from the most recent submission.
 
   @override
   void dispose() {
@@ -61,7 +61,7 @@ class _WorktreeCreateDialogState extends State<_WorktreeCreateDialog> {
   bool get _canCreate =>
       _name.text.isNotEmpty && _check.isValid && !_submitting;
 
-  /// Mensagem por causa de validação (null quando válido ou campo intacto).
+  /// Return the validation message, or `null` before editing and when valid.
   String? _reason(WorktreeNameCheck check) => switch (check.error) {
     null || WorktreeNameError.empty => null,
     WorktreeNameError.whitespace => 'No spaces in the name.',
@@ -133,7 +133,7 @@ class _WorktreeCreateDialogState extends State<_WorktreeCreateDialog> {
               enabled: !_submitting,
               onChanged: (_) => setState(() => _gitError = null),
               onSubmitted: (_) => _submit(),
-              placeholder: const Text('feat/minha-feature'),
+              placeholder: const Text('feat/my-feature'),
               style: context.typo.mono.copyWith(
                 fontSize: 13,
                 color: colors.text,

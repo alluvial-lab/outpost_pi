@@ -7,10 +7,11 @@ import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Top bar (~46px) customizada — substitui a barra nativa da janela. Semáforo
-/// macOS **funcional** (fecha/minimiza/maximiza) · toggle da rail · nome do
-/// projeto · botão "Abrir" (split: IDE | dropdown). A barra inteira arrasta a
-/// janela (via [WindowTitleBar]).
+/// Replace the native title bar with cockpit window and workspace controls.
+///
+/// The full bar remains draggable through [WindowTitleBar], while the macOS
+/// traffic lights, rail toggles, project name, and split Open control stay
+/// interactive.
 class CockpitTopbar extends StatelessWidget {
   const CockpitTopbar({
     super.key,
@@ -31,16 +32,16 @@ class CockpitTopbar extends StatelessWidget {
   final VoidCallback onToggleRail;
   final VoidCallback onToggleTree;
 
-  /// Apps disponíveis para abrir o workspace (vazio = botão desabilitado).
+  /// Apps available to open the workspace; an empty list disables the control.
   final List<LaunchableApp> availableApps;
 
-  /// Último app usado (pode não estar mais em [availableApps]).
+  /// Most recently used app, which may no longer be in [availableApps].
   final String? lastOpenAppId;
 
-  /// Chamado com o `id` do app escolhido (click no segmento esquerdo ou no menu).
+  /// Receives the selected app ID from either split-button segment.
   final void Function(String appId) onOpenInApp;
 
-  /// Botão desabilitado quando não há workspace selecionado.
+  /// Whether a selected workspace allows the Open control to be used.
   final bool openEnabled;
 
   @override
@@ -83,8 +84,7 @@ class CockpitTopbar extends StatelessWidget {
 
 // --------------------------------------------------------------------------
 
-/// Botão split: segmento esquerdo [ícone + "Abrir"] abre no último app; segmento
-/// direito [chevron] mostra dropdown com todos os apps disponíveis + checkmark.
+/// Open in the most recent app or choose another available app from a menu.
 class _OpenInIdeButton extends StatelessWidget {
   const _OpenInIdeButton({
     required this.apps,
@@ -117,7 +117,7 @@ class _OpenInIdeButton extends StatelessWidget {
       offset: const Offset(0, 4),
       builder: (context) => ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 180, maxWidth: 320),
-        // DropdownMenu embrulha os MenuButton num MenuGroup (exigido) + MenuPopup.
+        // DropdownMenu wraps MenuButtons in the required MenuGroup and MenuPopup.
         child: DropdownMenu(
           children: [
             for (final app in apps)
@@ -162,7 +162,7 @@ class _OpenInIdeButton extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Segmento esquerdo — abre no app atual
+          // The left segment opens the workspace in the current app.
           HoverTap(
             onTap: enabled && current != null ? () => onOpen(current.id) : null,
             hoverColor: hover,
@@ -184,9 +184,9 @@ class _OpenInIdeButton extends StatelessWidget {
               ],
             ),
           ),
-          // Divisor vertical
+          // Vertical divider.
           Container(width: 1, height: 28, color: fg.withValues(alpha: 0.25)),
-          // Segmento direito — dropdown de apps
+          // The right segment opens the app menu.
           Builder(
             builder: (ctx) => HoverTap(
               onTap: enabled && apps.isNotEmpty
@@ -204,7 +204,7 @@ class _OpenInIdeButton extends StatelessWidget {
   }
 }
 
-/// Mostra o ícone do app extraído do bundle (PNG) ou cai num ícone Material.
+/// Show the app's bundled PNG icon, falling back to a Material icon.
 class _AppIcon extends StatelessWidget {
   const _AppIcon(this.app, {this.size = 14, this.color});
 

@@ -7,8 +7,9 @@ import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 typedef AgentEditResult = ({String agentName, bool autoStartRelay});
 
-/// Dialog "Editar agente": nome editável + toggle relay + infos do agente.
-/// Devolve [AgentEditResult] ou `null` se cancelar.
+/// Edit an agent's name and relay preference while showing session details.
+///
+/// Returns [AgentEditResult], or `null` when canceled.
 Future<AgentEditResult?> showAgentEditDialog(
   BuildContext context, {
   required AgentSession session,

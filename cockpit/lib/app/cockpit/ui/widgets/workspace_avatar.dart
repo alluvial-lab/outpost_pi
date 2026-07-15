@@ -4,11 +4,11 @@ import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Avatar de um workspace. Por padrão é o quadrado colorido com a inicial do
-/// nome; quando há [imagePath] (PNG/JPG/SVG escolhido em Workspace Settings),
-/// mostra a imagem recortada no mesmo formato (SVG renderiza vetorial → nítido
-/// em qualquer tamanho). Se o arquivo sumir/for ilegível, cai num **placeholder
-/// de erro** (ícone de imagem quebrada) — nunca quebra a UI.
+/// Render a workspace avatar from an image or its color and initial.
+///
+/// PNG, JPG, and SVG images are clipped to the configured shape. A missing,
+/// unreadable, or corrupt image falls back to an error placeholder rather than
+/// breaking the surrounding UI.
 class WorkspaceAvatar extends StatelessWidget {
   const WorkspaceAvatar({
     super.key,
@@ -19,7 +19,7 @@ class WorkspaceAvatar extends StatelessWidget {
     this.radius = 7,
   });
 
-  /// Caminho absoluto da imagem ou `null` para o avatar de cor + inicial.
+  /// Absolute image path, or `null` to use the color-and-initial fallback.
   final String? imagePath;
   final int colorValue;
   final String initial;
@@ -33,8 +33,7 @@ class WorkspaceAvatar extends StatelessWidget {
       final isSvg = path.toLowerCase().endsWith('.svg');
       return ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        // Arquivo movido/deletado/corrompido → placeholder de erro (ambos os
-        // loaders têm errorBuilder, então cobre raster e vetor do mesmo jeito).
+        // Both loaders use the same fallback for moved, deleted, or corrupt files.
         child: isSvg
             ? SvgPicture.file(
                 File(path),
@@ -53,7 +52,7 @@ class WorkspaceAvatar extends StatelessWidget {
               ),
       );
     }
-    // Sem imagem: quadrado colorido com a inicial.
+    // Without an image, show the workspace color and initial.
     return _box(
       context,
       child: Text(

@@ -4,7 +4,7 @@ import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Paleta de cores do avatar de workspace.
+/// Provide the selectable workspace avatar colors.
 const List<int> kWorkspacePalette = <int>[
   0xFF6E56CF,
   0xFF2F6FF0,
@@ -16,9 +16,10 @@ const List<int> kWorkspacePalette = <int>[
   0xFF8E8E96,
 ];
 
-/// Dialog de configurações do workspace: nome, cor e foto do avatar. Devolve
-/// `(name, colorValue, imagePath)` ou `null` se cancelar. `imagePath` null no
-/// retorno = sem imagem (nunca teve ou foi removida).
+/// Edit a workspace's name, avatar color, and avatar image.
+///
+/// Returns the edited values, or `null` when canceled. A `null` `imagePath` in
+/// the result means that the workspace has no image.
 Future<({String name, int colorValue, String? imagePath})?>
 showWorkspaceSettingsDialog(
   BuildContext context, {
@@ -89,8 +90,9 @@ class _WorkspaceSettingsDialogState extends State<_WorkspaceSettingsDialog> {
     ).pop((name: name, colorValue: _color, imagePath: _imagePath));
   }
 
-  /// Escolhe um PNG/JPG para o avatar do workspace. Guarda só o caminho — se o
-  /// arquivo sumir depois, o `WorkspaceAvatar` mostra o placeholder de erro.
+  /// Choose an avatar image and retain only its path.
+  ///
+  /// [WorkspaceAvatar] handles the path becoming unreadable later.
   Future<void> _pickImage() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -254,7 +256,7 @@ class _Swatch extends StatelessWidget {
   }
 }
 
-/// Botão compacto da seção de foto (Add/Change/Remove).
+/// Show a compact Add, Change, or Remove action for the avatar image.
 class _PhotoButton extends StatelessWidget {
   const _PhotoButton({
     required this.icon,
