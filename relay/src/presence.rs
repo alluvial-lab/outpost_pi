@@ -12,11 +12,13 @@ struct Inner {
     last_offline_ts: HashMap<String, i64>,
 }
 
+/// Owns presence subscriptions and the last offline timestamp for each peer.
 #[derive(Clone, Debug, Default)]
 pub struct PresenceManager {
     inner: Arc<Mutex<Inner>>,
 }
 
+/// Represents one peer's current reachability in a presence snapshot.
 #[derive(serde::Serialize)]
 pub struct PeerPresence {
     pub peer: String,
@@ -25,6 +27,7 @@ pub struct PeerPresence {
 }
 
 impl PresenceManager {
+    /// Create an empty presence subscription and offline-state manager.
     pub fn new() -> Self {
         Self::default()
     }
