@@ -13,14 +13,21 @@ import 'package:app/ui/core/viewmodel/viewmodel.dart';
 import 'package:app/ui/pairing/states/pairing_state.dart';
 import 'package:cryptography/cryptography.dart';
 
-// Factory that produces a connected PeerTransport for the given QR payload.
-// Production: WsTransport.connect(...). Tests: in-memory pipe.
+/// Create the connected transport for one QR pairing attempt.
+///
+/// The caller owns the returned transport until pairing transfers it to a live
+/// channel, and must close it when that handoff cannot complete. Production
+/// uses `WsTransport.connect`; tests use an in-memory pipe.
 typedef PairingTransportFactory =
     Future<pair_flow.PeerTransport> Function(
       QrPairPayload qr,
       SimpleKeyPair deviceEd25519,
     );
 
+/// Drive QR pairing and expose scanning, connection, success, and error state.
+///
+/// Owns each transient transport until it becomes a [PlainPeerChannel] adopted
+/// by [ConnectionManager], closing it after a failed pairing attempt.
 class PairingViewModel extends ViewModel<PairingState> {
   final PairingStorage _storage;
   final PairingTransportFactory _transportFactory;
