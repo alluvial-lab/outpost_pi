@@ -182,6 +182,7 @@ export function renderTemplate(template: string, vars: RenderVars): string {
 
 // ── Install / uninstall API ────────────────────────────────────────────────
 
+/** Summarize the platform service installation and operator-visible steps performed. */
 export interface InstallResult {
   platform: SupervisorPlatform;
   unitPath: string;
@@ -195,6 +196,8 @@ export interface InstallResult {
  *
  * Idempotent: re-running re-writes the unit (paths could have changed)
  * and re-activates via the platform tool's idempotent flag.
+ *
+ * @throws `Error` when the platform, built supervisor, template, or service command is unavailable.
  */
 export function installService(vars: RenderVars = defaultRenderVars()): InstallResult {
   const plat = detectPlatform();
@@ -273,6 +276,7 @@ export function installService(vars: RenderVars = defaultRenderVars()): InstallR
   return { platform: plat, unitPath, log };
 }
 
+/** Summarize platform service removal and whether the installed unit file was deleted. */
 export interface UninstallResult {
   platform: SupervisorPlatform;
   unitPath: string;
@@ -280,6 +284,10 @@ export interface UninstallResult {
   log: string[];
 }
 
+/** Deactivate and remove the current user's supervisor service without touching daemon data.
+ *
+ * @throws `Error` when the current platform is unsupported.
+ */
 export function uninstallService(): UninstallResult {
   const plat = detectPlatform();
   const log: string[] = [];
@@ -447,6 +455,7 @@ function _execElevatedWindows(lines: string[], log: string[]): void {
 // would point them at the *Pi-extension copy* instead of the npm-global
 // copy, which is a different file tree and would diverge on upgrades.
 
+/** Summarize CLI launcher creation and the caller's remaining PATH setup responsibility. */
 export interface LinkBinariesResult {
   /** `~/.local/bin/`. The two symlinks land here. */
   binDir: string;
@@ -481,6 +490,8 @@ export function isOnPath(dir: string, envPath: string = process.env["PATH"] ?? "
  * Returns `onPath: false` when `~/.local/bin` isn't in the user's `$PATH`.
  * The caller is responsible for surfacing the shell-rc instruction —
  * we don't edit the user's shell config files automatically.
+ *
+ * @throws `Error` when either compiled launcher target is unavailable.
  */
 export function linkCliBinaries(
   home: string = homedir(),
@@ -625,18 +636,14 @@ function _addUserPath(dir: string): void {
   ], { stdio: ["ignore", "pipe", "pipe"] });
 }
 
-/**
- * Remove the symlinks `linkCliBinaries` created. Idempotent — missing
- * links are a no-op. Returns whether each link was actually present so
- * the caller can render a useful summary. Targets (the extension files)
- * are NOT touched here — they live outside this dir and belong to Pi.
- */
+/** Summarize removal attempts for CLI launchers while leaving extension targets untouched. */
 export interface UnlinkBinariesResult {
   binDir: string;
   removed: Array<{ name: string; path: string; existed: boolean }>;
   log: string[];
 }
 
+/** Remove user-local CLI launchers idempotently without deleting the extension itself. */
 export function unlinkCliBinaries(home: string = homedir()): UnlinkBinariesResult {
   const binDir = userLocalBinDir(home);
   const log: string[] = [];

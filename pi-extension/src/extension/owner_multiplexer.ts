@@ -4,10 +4,12 @@ import type { PeerChannel } from "../transport/peer_channel.js";
 import type { RelayClient } from "../transport/relay_client.js";
 import type { AttachOwnerInput, OwnerMultiplexerPort } from "./ports.js";
 
+/** Extend a relay peer channel with explicit listener teardown owned by the multiplexer. */
 export interface PeerChannelHandle extends PeerChannel {
   detach(): void;
 }
 
+/** Carry owner attachment context so reconnects preserve routing and late-attach semantics. */
 export interface OwnerAttachInput extends AttachOwnerInput {
   /** Human/device name from peers.json or the pair_request. */
   peerName?: string;
@@ -15,17 +17,20 @@ export interface OwnerAttachInput extends AttachOwnerInput {
   turnActive?: boolean;
 }
 
+/** Define the callbacks required when the multiplexer creates one managed owner channel. */
 export type CreateOwnerChannelInput = Omit<OwnerAttachInput, "onMessage" | "onDisconnect" | "turnActive"> & {
   onMessage(message: ClientMessage): void | Promise<void>;
   onDisconnect(peerId: string): void;
 };
 
+/** Describe a persisted owner identity supplied by the pairing adapter. */
 export interface OwnerPeerRecord {
   name: string;
   remote_epk: string;
   paired_at: string;
 }
 
+/** Provide a read-only owner and mesh snapshot for status projection. */
 export interface OwnerMultiplexerSnapshot {
   activeOwnerCount: number;
   ownerShortIds: string[];
@@ -35,6 +40,7 @@ export interface OwnerMultiplexerSnapshot {
   sessionPeerCount: number;
 }
 
+/** Report whether a requested owner disconnect changed the active channel set. */
 export interface OwnerDisconnectResult {
   disconnected: boolean;
   activeOwnerCount: number;
@@ -46,6 +52,7 @@ type PairOkMessage = Extract<ServerMessage, { type: "pair_ok" }>;
 
 type UnknownPeerErrorMessage = Extract<ServerMessage, { type: "error" }>;
 
+/** Supply the authoritative session identity included in a successful pairing reply. */
 export interface PairingSessionSnapshot {
   sessionName: PairOkMessage["session_name"];
   sessionStartedAt: PairOkMessage["session_started_at"];
@@ -55,18 +62,21 @@ export interface PairingSessionSnapshot {
   hostname?: PairOkMessage["hostname"];
 }
 
+/** Notify runtime observers that an owner channel became available for routing. */
 export interface OwnerAttachedEvent {
   peerId: string;
   peerName: string;
   activeCount: number;
 }
 
+/** Notify runtime observers that a pairing was persisted and attached. */
 export interface OwnerPairedEvent {
   peerId: string;
   peerName: string;
   pairedAt: string;
 }
 
+/** Notify fanout observers when an attached owner becomes unavailable or resumes. */
 export interface OwnerFanoutPresenceEvent {
   peerId: string;
   peerShortId: string;
@@ -74,6 +84,7 @@ export interface OwnerFanoutPresenceEvent {
   sinceTs?: number;
 }
 
+/** Supply channel, pairing, footer, and lifecycle callbacks owned outside the multiplexer. */
 export interface OwnerMultiplexerDeps {
   createChannel(input: CreateOwnerChannelInput): PeerChannelHandle;
   refreshFooter(): void;
@@ -95,6 +106,7 @@ interface OwnerOuterEnvelope {
   ct: string;
 }
 
+/** Carry relay ingress dependencies for decoding and routing one owner envelope. */
 export interface OwnerOuterLineInput {
   line: string;
   relay: RelayClient;
@@ -110,6 +122,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+/** Validate the relay outer-envelope boundary before pairing or owner routing. */
 export function decodeOuterEnvelope(line: string): OwnerOuterEnvelope | null {
   let parsed: unknown;
   try {
@@ -128,6 +141,7 @@ export function decodeOuterEnvelope(line: string): OwnerOuterEnvelope | null {
   };
 }
 
+/** Decode a base64 relay payload through the canonical client-message boundary validator. */
 export function decodeClientMessage(ct: string): ClientMessage | null {
   try {
     return decodeClient(Buffer.from(ct, "base64").toString("utf8"));
@@ -482,6 +496,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   }
 }
 
+/** Create the runtime owner port with one multiplexer-owned channel registry. */
 export function createOwnerMultiplexerPort(
   deps: OwnerMultiplexerDeps,
 ): OwnerMultiplexerPort {

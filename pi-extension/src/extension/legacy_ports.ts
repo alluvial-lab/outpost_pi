@@ -17,6 +17,7 @@ import type {
 import type { ByeReason, ClientMessage, ServerMessage } from "../protocol/types.js";
 import type { RelayConnectivity } from "./types.js";
 
+/** Describe legacy relay operations adapted into the runtime transport port during migration. */
 export interface LegacyRelayTransportDeps {
   status(): RelayConnectivity;
   start(input: RelayStartInput): Promise<RelayStartResult>;
@@ -29,6 +30,7 @@ export interface LegacyRelayTransportDeps {
   setRelay(relay: RelayClient | null): void;
 }
 
+/** Describe legacy owner-channel operations adapted into the runtime owner port. */
 export interface LegacyOwnerMultiplexerDeps {
   activeCount(): number;
   attach(input: AttachOwnerInput): PeerChannel;
@@ -38,6 +40,7 @@ export interface LegacyOwnerMultiplexerDeps {
   lateAttachTargets(): readonly PeerChannel[];
 }
 
+/** Describe legacy session-projection operations adapted behind stale-context-safe runtime ownership. */
 export interface LegacySdkSessionProjectionDeps {
   setRoomId?(roomId: string | null): void;
   bindApi(pi: ExtensionAPI): void;
@@ -51,6 +54,7 @@ export interface LegacySdkSessionProjectionDeps {
   onSessionLifecycle?(reason: string, sessionIdTail: string): void;
 }
 
+/** Describe legacy command registration and teardown operations adapted into the command port. */
 export interface LegacyCommandSurfaceDeps {
   register(pi: ExtensionAPI, runtime: OutpostPiRuntime): void;
   ensureStarted?(ctx: ExtensionContext): void | Promise<void>;
@@ -58,6 +62,7 @@ export interface LegacyCommandSurfaceDeps {
   closeMesh?(): Promise<void>;
 }
 
+/** Group legacy index dependencies at the compatibility composition boundary. */
 export interface LegacyIndexDeps {
   relay: LegacyRelayTransportDeps;
   owners: LegacyOwnerMultiplexerDeps;
@@ -65,6 +70,7 @@ export interface LegacyIndexDeps {
   commands: LegacyCommandSurfaceDeps;
 }
 
+/** Adapt legacy index collaborators into the runtime's canonical port graph. */
 export function createLegacyIndexPorts(deps: LegacyIndexDeps): OutpostPiRuntimePorts {
   return {
     relay: createLegacyRelayTransport(deps.relay),

@@ -188,6 +188,7 @@ type ModelSetMsg = Extract<ClientMessage, { type: "model_set" }>;
 type ThinkingSetMsg = Extract<ClientMessage, { type: "thinking_set" }>;
 type ListModelsMsg = Extract<ClientMessage, { type: "list_models" }>;
 
+/** Request compaction from the current session; unavailable or SDK failures become `action_error` replies. */
 export function handleSessionCompact(
   ctx: ActionCtx | null,
   sender: ActionReplySender,
@@ -206,6 +207,10 @@ export function handleSessionCompact(
   });
 }
 
+/** Replace the active session and pass the fresh context to the lifecycle owner.
+ *
+ * @returns Whether a new session was created; cancellation and SDK failures reply with `action_error`.
+ */
 export async function handleSessionNew(
   ctx: ActionCtx | null,
   sender: ActionReplySender,
@@ -233,6 +238,7 @@ export async function handleSessionNew(
   });
 }
 
+/** Set the live Pi thinking level and acknowledge the requested action. */
 export function handleThinkingSet(
   pi: ActionPi,
   sender: ActionReplySender,
@@ -243,6 +249,7 @@ export function handleThinkingSet(
   });
 }
 
+/** Select a model from the live registry and persist the successful choice when requested. */
 export async function handleModelSet(
   pi: ActionPi,
   ctx: ActionCtx | null,
@@ -274,6 +281,7 @@ export async function handleModelSet(
   });
 }
 
+/** Send the available model catalog and current selection to the requesting owner. */
 export function handleListModels(
   ctx: ActionCtx | null,
   reg: ActionModelRegistry,
