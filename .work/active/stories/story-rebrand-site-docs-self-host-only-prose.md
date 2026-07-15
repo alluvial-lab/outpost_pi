@@ -1,14 +1,14 @@
 ---
 id: story-rebrand-site-docs-self-host-only-prose
 kind: story
-stage: review
+stage: done
 tags: [rebrand, site, docs]
 parent: epic-rebrand-external-surfaces
 depends_on: []
 release_binding: null
 gate_origin: review
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Rewrite site docs prose for local-relay-only + kevoun.com

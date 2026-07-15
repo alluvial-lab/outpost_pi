@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-pi-extension-translate-pt-bearing-files
 kind: story
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, pi-extension]
 parent: epic-rebrand-to-outpost-pi-en-first-pi-extension
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Translate PT-bearing pi-extension source comments
