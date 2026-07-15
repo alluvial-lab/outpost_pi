@@ -811,8 +811,26 @@ function emitRustControlPeerVariant(lines, type, schema) {
   lines.push('    },');
 }
 
+function relayAuthDomainPrefix(entries, schemaPath) {
+  const rootSchema = relayControlRootSchemaFromCatalog(entries, schemaPath);
+  const metadata = requireObject(rootSchema['x-outpost-pi'] ?? {}, 'relay control schema.x-outpost-pi');
+  const prefix = metadata.authDomainPrefix;
+  if (typeof prefix !== 'string' || prefix.length === 0) {
+    throw new Error('relay control schema.x-outpost-pi.authDomainPrefix must be a non-empty string');
+  }
+  if (!/^[\x00-\x7F]*$/.test(prefix)) {
+    throw new Error('relay control schema.x-outpost-pi.authDomainPrefix must be ASCII for Rust byte-string generation');
+  }
+  return prefix;
+}
+
+function rustByteStringLiteral(value) {
+  return `b${JSON.stringify(value)}`;
+}
+
 function emitRustControl(entries, schemaPath) {
   const lines = rustHeader('control');
+  const authDomainPrefix = relayAuthDomainPrefix(entries, schemaPath);
   const byType = new Map(entries.map((entry) => [entry.type, entry]));
   const schemasByType = new Map(entries.map((entry) => [entry.type, schemaForCatalogEntry(entry, schemaPath)]));
   const hasType = (type) => byType.has(type);
@@ -822,6 +840,8 @@ function emitRustControl(entries, schemaPath) {
   if (hasType('room_meta_update')) {
     lines.push('use super::room::RoomMetaPatch;');
   }
+  lines.push('');
+  lines.push(`pub const RELAY_AUTH_DOMAIN_PREFIX: &[u8] = ${rustByteStringLiteral(authDomainPrefix)};`);
   lines.push('');
 
   if (hasType('hello') || hasType('auth')) {

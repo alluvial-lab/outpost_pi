@@ -1,9 +1,41 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::{Signer as _, SigningKey};
+use serde::Deserialize;
 
 use super::challenge::{
-    AuthError, RELAY_AUTH_DOMAIN_PREFIX, gen_nonce, parse_hello, parse_hello_bootstrap, verify_auth,
+    AuthError, RELAY_AUTH_DOMAIN_PREFIX, gen_nonce, parse_hello, parse_hello_bootstrap,
+    relay_auth_signing_bytes, verify_auth,
 };
+
+#[derive(Deserialize)]
+struct RelayAuthDomainVector {
+    #[serde(rename = "authDomainPrefix")]
+    auth_domain_prefix: String,
+    #[serde(rename = "nonceBase64")]
+    nonce_base64: String,
+    #[serde(rename = "signingBytesBase64")]
+    signing_bytes_base64: String,
+}
+
+#[test]
+fn relay_auth_signs_the_shared_cross_component_byte_vector() {
+    let vector: RelayAuthDomainVector = serde_json::from_str(include_str!(
+        "../../../protocol/fixtures/relay/auth-domain-vector.json"
+    ))
+    .expect("auth-domain vector must be valid JSON");
+    let nonce = B64
+        .decode(vector.nonce_base64)
+        .expect("auth-domain vector nonce must be base64");
+    let expected_signing_bytes = B64
+        .decode(vector.signing_bytes_base64)
+        .expect("auth-domain vector signing bytes must be base64");
+
+    assert_eq!(
+        RELAY_AUTH_DOMAIN_PREFIX,
+        vector.auth_domain_prefix.as_bytes()
+    );
+    assert_eq!(relay_auth_signing_bytes(&nonce), expected_signing_bytes);
+}
 
 /// First message is not "hello" → NoHello error.
 #[test]
