@@ -106,7 +106,26 @@ jobs:
             -s -k "$KEYCHAIN_PASS" "$KEYCHAIN"
           if ! security find-identity -v -p codesigning "$KEYCHAIN" | grep -Fq "$SIGN_ID"; then
             rm "$RUNNER_TEMP/cert.p12"
-            echo "::error::Imported certificate does not contain APPLE_SIGNING_IDENTITY for team $APPLE_TEAM_ID"
+            echo "::error::Imported certificate does not contain APPLE_SIGNING_IDENTITY ('$SIGN_ID')"
+            exit 1
+          fi
+          # Verify the imported Developer ID certificate belongs to the
+          # configured Apple team. The Organizational Unit (OU) of a Developer
+          # ID Application certificate is the 10-character team ID, so a
+          # mismatch means the identity is from a different team and must not
+          # be used to publish Outpost-Pi.
+          CERT_CN=$(security find-certificate -c "$SIGN_ID" -p "$KEYCHAIN" \
+            | openssl x509 -noout -subject -nameopt multiline 2>/dev/null)
+          CERT_OU=$(printf '%s\n' "$CERT_CN" \
+            | awk -F'/' '/organizationalUnitName/ {gsub(/^[[:space:]]+/,""); print $NF}')
+          if [ -z "$CERT_OU" ]; then
+            rm "$RUNNER_TEMP/cert.p12"
+            echo "::error::Could not extract the team ID (OU) from '$SIGN_ID'; the certificate is not a valid Developer ID Application identity"
+            exit 1
+          fi
+          if [ "$CERT_OU" != "$APPLE_TEAM_ID" ]; then
+            rm "$RUNNER_TEMP/cert.p12"
+            echo "::error::APPLE_SIGNING_IDENTITY team '$CERT_OU' does not match APPLE_TEAM_ID '$APPLE_TEAM_ID'; refusing to sign with a foreign team identity"
             exit 1
           fi
           security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
@@ -332,15 +351,13 @@ jobs:
           rm artifacts.ndjson
           cat latest.json
 
-      - name: Sign artifacts and generate appcasts (Sparkle/WinSparkle)
+      - name: Sign macOS artifact and generate Sparkle appcast
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           BUILD: ${{ needs.meta.outputs.build }}
         run: |
-          # Plan 47 — sign the .app.zip (macOS) and .exe (Windows) with the SAME
-          # ed25519 key (refined decision E): ed25519 is deterministic, so
-          # PyNaCl generates the signature Sparkle and WinSparkle verify. No
-          # native tool is needed on the runners — only the key (secret).
+          # Plan 47 — ed25519 is deterministic, so PyNaCl generates the
+          # signature Sparkle verifies. No native tool is needed on the runner.
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet pynacl
           cat > "$RUNNER_TEMP/sign.py" <<'PY'
@@ -354,10 +371,8 @@ jobs:
           cd release
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
           ZIP="Cockpit-${VERSION}-macos.zip"
-          EXE="OutpostPiCockpit-Setup-${VERSION}-windows-x64.exe"
-          test -f "$ZIP"; test -f "$EXE"
+          test -f "$ZIP"
           MAC_SIG=$(sign "$ZIP"); MAC_LEN=$(stat -c%s "$ZIP")
-          WIN_SIG=$(sign "$EXE"); WIN_LEN=$(stat -c%s "$EXE")
           PUBDATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
           NOTES=$(jq -r .notes latest.json)
           # macOS: sparkle:version = CFBundleVersion (build +n); shortVersion = marketing.
@@ -378,28 +393,18 @@ jobs:
             </channel>
           </rss>
           XML
-          # Windows: WinSparkle downloads the Inno .exe and runs it silently through
-          # sparkle:installerArguments. Like macOS, sparkle:version is the monotonic
-          # pubspec +n build number, never the resettable marketing version. Remote Pi
-          # 1.5.1 installations predate this sequence and require one manual install
-          # when an operator first enables a Windows appcast; later updates compare +n.
-          cat > appcast-windows.xml <<XML
-          <?xml version="1.0" encoding="utf-8"?>
-          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-            <channel>
-              <title>Outpost-Pi Cockpit</title>
-              <item>
-                <title>${VERSION}</title>
-                <pubDate>${PUBDATE}</pubDate>
-                <sparkle:version>${BUILD}</sparkle:version>
-                <description><![CDATA[${NOTES}]]></description>
-                <enclosure url="${BASE}/${EXE}" sparkle:edSignature="${WIN_SIG}" length="${WIN_LEN}" sparkle:os="windows" sparkle:installerArguments="/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" type="application/octet-stream" />
-              </item>
-            </channel>
-          </rss>
-          XML
           echo "== appcast-macos.xml =="; cat appcast-macos.xml
-          echo "== appcast-windows.xml =="; cat appcast-windows.xml
+
+      # Intentionally skipped until the locked auto_updater_windows 1.0.0
+      # integration has a tested version contract. Its SetFeedURL calls only
+      # win_sparkle_set_appcast_url() and win_sparkle_init(); without
+      # win_sparkle_set_app_build_version(), WinSparkle compares the appcast
+      # against Runner.rc's VERSIONINFO string (x.y.z+n), not a bare +n. Re-enable
+      # only with a Windows smoke proving higher +n accepted and equal/lower
+      # rejected. The inherited 1.5.1 -> 0.x reset still requires one manual install.
+      - name: Windows appcast disabled (unproven WinSparkle version contract)
+        if: ${{ false }}
+        run: echo "Windows appcast generation remains intentionally disabled"
 
       - name: Create (or update) GitHub Release
         run: |

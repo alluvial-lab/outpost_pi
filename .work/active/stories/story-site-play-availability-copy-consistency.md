@@ -1,7 +1,7 @@
 ---
 id: story-site-play-availability-copy-consistency
 kind: story
-stage: implementing
+stage: review
 tags: [site, bug, rebrand]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -32,3 +32,14 @@ started: Google Play is unavailable/coming soon until an owned listing exists,
 with direct APK as the Android path. Avoid a hard-coded release number for this
 ongoing distribution state. Run site lint/build and grep for both old listing
 links and affirmative Play-availability claims.
+
+## Implementation notes
+- Files changed:
+  - `site/src/components/landing/sections.tsx` — the `GetApp` intro paragraph no longer says "Get it on the App Store or Google Play"; it now reads App Store + APK direct, with "Google Play for the new listing is coming soon."
+  - `site/src/app/download/page.tsx` — removed the hard-coded `0.1.0`; the sideload/coming-soon note now says "the current release" instead of a pinned version.
+- `site/src/app/tutorials/getting-started/page.tsx` already said coming soon (prior story); no change needed.
+- All three surfaces (landing, download, getting-started) now consistently state Google Play is coming soon.
+- Verification: `corepack pnpm lint` + `corepack pnpm build` green (18 static pages).
+- `rg 'Google Play|coming soon|work.jacobmoura.remotepi' site/src/` confirms consistency; no old listing links remain.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.

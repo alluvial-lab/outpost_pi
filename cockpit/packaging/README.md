@@ -11,8 +11,16 @@ Build/packaging runbook for the 3 platforms. Basis for the CI job
 | App ID (macOS bundle id / Linux app id) | `dev.kevoun.outpostpi.cockpit` |
 | Display name | **Outpost-Pi Cockpit** |
 | Binary | `cockpit` (Linux/Windows) / `Cockpit` (macOS) — **not** renamed |
-| Team ID (Apple) | `U843T2P7A2` |
+| Team ID (Apple) | operator-owned, supplied via `APPLE_TEAM_ID` secret (not yet provisioned) |
 | Version (SSOT) | `version:` in `pubspec.yaml` (`x.y.z+n`) |
+
+> **One-way bundle-ID cutover.** Moving from the inherited
+> `work.jacobmoura.cockpit` to `dev.kevoun.outpostpi.cockpit` means existing
+> Cockpit installs **cannot upgrade in place** — macOS treats the new bundle ID
+> as a different application. Users on the inherited build must **uninstall
+> the old Cockpit and install the new one manually**. This is distinct from the
+> separate disabled-self-update state below (which is about appcast
+> publication, not the bundle-ID change).
 
 - macOS: `PRODUCT_BUNDLE_IDENTIFIER` in `macos/Runner/Configs/AppInfo.xcconfig`;
   `CFBundleDisplayName` in `Info.plist`; **Hardened Runtime** enabled in Release
@@ -81,10 +89,12 @@ codesign --force --timestamp \
   --sign "$APPLE_SIGNING_IDENTITY" "$DMG"
 
 # 5. Notarize (App Store Connect API key) and wait.
+#    Supply the API key path/key-id/issuer via CI secrets or a local env; do
+#    not commit operator credentials to the repository.
 xcrun notarytool submit "$DMG" \
-  --key "/Users/jacob/Library/Mobile Documents/com~apple~CloudDocs/Flutterando/OutpostPi/CockpitApp/AuthKey_3Y2J8MA3M4.p8" \
-  --key-id 3Y2J8MA3M4 \
-  --issuer a76c76e6-a413-449e-926c-f2c30d5645c4 \
+  --key "${APPLE_API_KEY_FILE:?Set APPLE_API_KEY_FILE to the .p8 path}" \
+  --key-id "${APPLE_API_KEY_ID:?Set APPLE_API_KEY_ID}" \
+  --issuer "${APPLE_API_ISSUER:?Set APPLE_API_ISSUER}" \
   --wait
 
 # 6. Staple the ticket and validate.
@@ -92,10 +102,14 @@ xcrun stapler staple "$DMG"
 spctl -a -t open --context context:primary-signature -vv "$DMG"   # → "accepted / Notarized Developer ID"
 ```
 
-> **CI**: the 5 Apple secrets are already in the repo (`MACOS_CERT_P12`,
-> `MACOS_CERT_PASSWORD`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_API_KEY`).
-> On the runner, import the `.p12` into a temporary keychain and write the `.p8` to a
-> file before running the steps above.
+> **CI**: the Apple secrets are supplied as repository secrets
+> (`MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `APPLE_API_KEY_ID`,
+> `APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_SIGNING_IDENTITY`,
+> `APPLE_TEAM_ID`). On the runner, import the `.p12` into a temporary keychain
+> and write the `.p8` to a file before running the steps above. The operator's
+> Developer ID is **not yet provisioned** — the workflow fails closed until
+> these secrets exist. No signing identity or credential is committed to this
+> repository.
 
 ## Windows — Inno Setup (`.exe`)
 

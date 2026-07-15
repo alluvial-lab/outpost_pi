@@ -350,8 +350,8 @@ export default async function DownloadPage() {
                       </li>
                     </ol>
                     <p className="dl-note-foot">
-                      On Android, 0.1.0 ships as a sideload-only APK
-                      (new applicationId). Google Play is
+                      On Android, the current release ships as a sideload-only
+                      APK (new applicationId). Google Play is
                       <strong> coming soon</strong> for the new listing; until
                       then, use the APK above. iOS ships through the App Store.
                     </p>
