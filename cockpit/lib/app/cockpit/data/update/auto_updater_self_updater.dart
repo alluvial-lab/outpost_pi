@@ -4,29 +4,30 @@ import 'package:auto_updater/auto_updater.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/self_updater.dart';
 import 'package:flutter/foundation.dart';
 
-/// Self-update nativo via [autoUpdater] (Sparkle no macOS, WinSparkle no
-/// Windows). Implementa [SelfUpdater] e ouve os eventos do motor via
-/// [UpdaterListener], traduzindo-os pra [SelfUpdateState].
+/// Drive native self-updates through [autoUpdater]: Sparkle on macOS and
+/// WinSparkle on Windows.
 ///
-/// UX híbrida (decisão B do plano 47): a checagem de boot e a agendada rodam
-/// `inBackground: true` (silenciosas). Com `SUEnableAutomaticChecks`/
-/// `SUAutomaticallyUpdate` no Info.plist (macOS) o Sparkle baixa em background e
-/// instala no próximo quit; o card reflete [changes]. [applyDownloadedUpdate]
-/// re-checa em foreground pra o motor instalar+relançar o update já baixado.
+/// Implements [SelfUpdater] and maps native [UpdaterListener] events to
+/// [SelfUpdateState]. Boot and scheduled checks run silently with
+/// `inBackground: true`. On macOS, `SUEnableAutomaticChecks` and
+/// `SUAutomaticallyUpdate` let Sparkle download in the background and install
+/// on the next quit while [changes] keeps the card current.
+/// [applyDownloadedUpdate] checks again in the foreground so the native engine
+/// can install and relaunch an already-downloaded update.
 ///
-/// Limite conhecido (risco do plano): o plugin usa `SPUStandardUserDriver`, então
-/// o passo final de install pode mostrar UI nativa mínima — não dá pra suprimir
-/// 100% pela fachada. Aceitável; a checagem de boot continua silenciosa.
+/// The plugin uses `SPUStandardUserDriver`, so the final installation step may
+/// show minimal native UI that this adapter cannot fully suppress. Boot checks
+/// remain silent.
 class AutoUpdaterSelfUpdater with UpdaterListener implements SelfUpdater {
   AutoUpdaterSelfUpdater({
     required this.feedUrl,
     this.checkInterval = const Duration(hours: 24),
   });
 
-  /// Appcast da plataforma (`appcast-macos.xml` / `appcast-windows.xml`).
+  /// Use the platform appcast (`appcast-macos.xml` or `appcast-windows.xml`).
   final String feedUrl;
 
-  /// Intervalo da checagem periódica do motor nativo (mín. 1h; 0 desliga).
+  /// Configure the native engine's periodic check interval (minimum 1h; 0 disables it).
   final Duration checkInterval;
 
   final StreamController<SelfUpdateState> _controller =
@@ -66,12 +67,12 @@ class AutoUpdaterSelfUpdater with UpdaterListener implements SelfUpdater {
   @override
   Future<void> applyDownloadedUpdate() async {
     if (_state.phase != SelfUpdatePhase.downloaded) return;
-    // Re-checar em foreground faz o Sparkle/WinSparkle instalar o update já
-    // baixado e relançar o app (o motor conduz o restart).
+    // A foreground recheck makes Sparkle or WinSparkle install the downloaded
+    // update and relaunch the app; the native engine owns the restart.
     await autoUpdater.checkForUpdates(inBackground: false);
   }
 
-  // ---- UpdaterListener: eventos do motor nativo → SelfUpdateState ----
+  // ---- UpdaterListener: native engine events → SelfUpdateState ----
 
   @override
   void onUpdaterCheckingForUpdate(Appcast? appcast) {
@@ -80,7 +81,7 @@ class AutoUpdaterSelfUpdater with UpdaterListener implements SelfUpdater {
 
   @override
   void onUpdaterUpdateAvailable(AppcastItem? item) {
-    // Disponível → o motor baixa em background (modo auto-update).
+    // The native engine downloads an available update in the background.
     _emit(
       SelfUpdateState(SelfUpdatePhase.downloading, version: _versionOf(item)),
     );
@@ -100,11 +101,11 @@ class AutoUpdaterSelfUpdater with UpdaterListener implements SelfUpdater {
 
   @override
   void onUpdaterBeforeQuitForUpdate(AppcastItem? item) {
-    // Reinício silencioso (decisão C): a fachada NÃO aguarda este callback —
-    // não dá pra bloquear o quit nem matar agentes graciosamente aqui. Os
-    // agentes `pi` filhos viram órfãos e são reapeados no próximo boot por
-    // `PiProcessRegistry.cleanOrphans` (SIGKILL dos PIDs do registry); o
-    // workspace (panes/abas) reabre pelo estado no Hive.
+    // The adapter does not await this callback during a silent restart, so it
+    // cannot block quit or gracefully stop agents here. Child `pi` agents
+    // become orphans and `PiProcessRegistry.cleanOrphans` reaps their registry
+    // PIDs with SIGKILL on the next boot. Hive state restores the workspace,
+    // including panes and tabs.
     debugPrint(
       '[self-update] before quit for update — agents reaped on next boot',
     );
