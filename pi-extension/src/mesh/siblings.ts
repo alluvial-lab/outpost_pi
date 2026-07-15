@@ -4,7 +4,7 @@ import { verifyEnvelope } from "./verify.js";
 import { bytesEqual, decodeB64Any } from "./encoding.js";
 
 /**
- * Plan/25 — discover Pis-irmãos of every Owner this Pi is paired with.
+ * Plan/25 — discover sibling Pis for every Owner paired with this Pi.
  *
  * For each Owner pubkey (from `peers.json`), pulls the latest signed
  * `mesh_versions` blob from the relay, verifies it, and walks the members
@@ -26,12 +26,22 @@ export interface SiblingPi {
   pcPubkey: string;
 }
 
+/**
+ * Reports the label this Pi must use in cross-PC addresses.
+ *
+ * Discovery returns an Owner-provided nickname when available; otherwise the
+ * deterministic public-key prefix keeps independently discovered peers aligned.
+ */
 export interface DiscoverSelfLabelResult {
-  /** This Pi's effective `pc_label` (nickname when any Owner has set one;
-   *  pubkey prefix fallback otherwise). */
   selfPcLabel: string;
 }
 
+/**
+ * Supplies the authenticated mesh inputs for sibling and self-label discovery.
+ *
+ * Each Owner blob is fetched and signature-verified independently, so a failed
+ * Owner lookup is logged and does not prevent results from other Owners.
+ */
 export interface DiscoverOptions {
   client: MeshClient;
   ownerEpks: string[];
@@ -75,7 +85,7 @@ export async function discoverSelfLabel(
 }
 
 /**
- * Enumerate Pis-irmãos across all Owners. De-duplicated by `pcPubkey`.
+ * Enumerate sibling Pis across all Owners. De-duplicated by `pcPubkey`.
  * Excludes `myPubkey`.
  *
  * Label resolution rule (anti-asymmetry — see plan/25 Wave D fix):

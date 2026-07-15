@@ -58,6 +58,12 @@ export interface WirePeerInfo {
   address: string;
 }
 
+/**
+ * Caches one sibling's most recently announced local roster.
+ *
+ * The timestamp drives TTL expiry, while the verified public key binds the
+ * cached label to mesh membership before cross-PC addresses are projected.
+ */
 export interface RemotePeerEntry {
   /** The sibling's local peers (unprefixed `(cwd, name, address)`). */
   infos: WirePeerInfo[];
@@ -70,12 +76,19 @@ interface SiblingInfo {
   pcPubkey: string;
 }
 
+/**
+ * Wires a broker to the relay-backed cross-PC routing adapter.
+ *
+ * The caller supplies verified local identity and sibling membership. The
+ * adapter subscribes to `pi` immediately and retains an optional re-announce
+ * timer until {@link BrokerRemote.detach} releases both resources.
+ */
 export interface BrokerRemoteOptions {
   broker: Broker;
   pi: PiForwardClient;
   selfPcLabel: string;
   selfPcPubkey: string;
-  /** Initial siblings (Pis-irmãos of the same Owner). May be extended later. */
+  /** Initial sibling Pis of the same Owner. May be extended later. */
   siblings?: SiblingInfo[];
   /** TTL override (testing). */
   cacheTtlMs?: number;
@@ -87,9 +100,9 @@ export interface BrokerRemoteOptions {
 
 interface PeersUpdateBody {
   type: "peers_update";
-  /** Addresses — always sent for back-compat with Fase-1-only siblings. */
+  /** Addresses — always sent for backward compatibility with Phase-1-only siblings. */
   peers: string[];
-  /** Structured roster (plan/38 Fase 2). Optional: a Fase-1-only sibling omits
+  /** Structured roster (Plan/38 Phase 2). Optional: a Phase-1-only sibling omits
    *  it, and the receiver synthesizes `{cwd:"", name:addr, address:addr}` from
    *  `peers`. A new sibling sends both. */
   peers_detailed?: WirePeerInfo[];
@@ -111,6 +124,14 @@ interface PendingFill {
   timer: ReturnType<typeof setTimeout>;
 }
 
+/**
+ * Route broker envelopes across verified sibling Pis and maintain their rosters.
+ *
+ * Construction subscribes to relay envelopes, registers this instance as the
+ * broker's remote router, warms sibling caches, and may start a re-announce
+ * timer. Call {@link detach} exactly once at the owning mesh-node teardown to
+ * unregister the listener, stop the timer, and restore the broker boundary.
+ */
 export class BrokerRemote implements RemoteRouter {
   private readonly broker: Broker;
   private readonly pi: PiForwardClient;
@@ -188,8 +209,8 @@ export class BrokerRemote implements RemoteRouter {
   /** Fresh local inventory for a `peers_update` push, read straight from the
    *  broker (authoritative + sync — no stale cache, drive-letter-safe: the
    *  broker knows its real local peers, no `:`-heuristic). Always carries BOTH
-   *  `peers` (addresses, back-compat for Fase-1-only siblings) and the
-   *  structured `peers_detailed` (plan/38 Fase 2). */
+   *  `peers` (addresses, backward compatible with Phase-1-only siblings) and
+   *  the structured `peers_detailed` (Plan/38 Phase 2). */
   private _localPeersBody(): PeersUpdateBody {
     const detailed = this.broker.localPeerInfos();
     return {
@@ -272,7 +293,7 @@ export class BrokerRemote implements RemoteRouter {
     return out;
   }
 
-  /** Aggregated remote peer addresses (`<pc>:<cwd>@<nome>`) for the broker's
+  /** Aggregated remote peer addresses (`<pc>:<cwd>@<name>`) for the broker's
    *  `list_peers` `peers` field. Skips siblings with no cache entry. */
   listRemotePeers(): string[] {
     const out: string[] = [];
@@ -284,9 +305,9 @@ export class BrokerRemote implements RemoteRouter {
     return out;
   }
 
-  /** Structured remote roster (plan/38 Fase 2): one `PeerInfo` per cross-PC
+  /** Structured remote roster (Plan/38 Phase 2): one `PeerInfo` per cross-PC
    *  peer with `pc` = sibling label, `cwd`/`name` from the sibling's inventory,
-   *  and `address` prefixed `<pc>:<cwd>@<nome>`. Powers `peers_detailed`. */
+   *  and `address` prefixed `<pc>:<cwd>@<name>`. Powers `peers_detailed`. */
   listRemotePeerInfos(): PeerInfo[] {
     const out: PeerInfo[] = [];
     for (const [label] of this.remotePeers) {
@@ -297,7 +318,7 @@ export class BrokerRemote implements RemoteRouter {
     return out;
   }
 
-  // ── Push proativo ─────────────────────────────────────────────────────────
+  // ── Proactive push ─────────────────────────────────────────────────────────
 
   /**
    * Called whenever the local UDS broker's peer set changes
@@ -556,11 +577,11 @@ export function parseAddress(
 
 /**
  * Parse an inbound `peers_update` body into structured `WirePeerInfo[]`
- * (plan/38 Fase 2), tolerant of two sender generations:
+ * (Plan/38 Phase 2), tolerant of two sender generations:
  *
- *   - **Fase 2 sibling** sends `peers_detailed` → use it (validating each entry
+ *   - **Phase 2 sibling** sends `peers_detailed` → use it (validating each entry
  *     has string `cwd`/`name`/`address`).
- *   - **Fase 1-only sibling** sends only `peers: string[]` (addresses) → each
+ *   - **Phase 1-only sibling** sends only `peers: string[]` (addresses) → each
  *     becomes `{cwd:"", name:addr, address:addr}` so the mesh stays mixed-safe.
  *
  * Untrusted input: every field is shape-checked; malformed entries are dropped.

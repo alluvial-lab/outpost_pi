@@ -66,7 +66,7 @@ describe("canonical JSON encoder", () => {
   });
 
   test("UTF-8 bytes round-trip via canonicalBytes", () => {
-    const obj = { name: "Renée 🦀" };
+    const obj = { name: "Renee 🦀" };
     const bytes = canonicalBytes(obj);
     expect(bytes).toBeInstanceOf(Uint8Array);
     const decoded = new TextDecoder().decode(bytes);
