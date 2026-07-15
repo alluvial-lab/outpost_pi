@@ -2,7 +2,7 @@
 name = "rp-s3"
 version = "0.1.0"
 edition = "2021"
-description = "Servidor de downloads do Remote Pi — serve artefatos e latest.json a partir de um volume"
+description = "Outpost-Pi download server — serves artifacts and latest.json from a volume"
 license = "LicenseRef-proprietary"
 
 [dependencies]

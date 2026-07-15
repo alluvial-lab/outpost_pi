@@ -1,7 +1,7 @@
 FROM rust:1-slim AS builder
 WORKDIR /app
 
-# Camada de cache das dependências: builda um main vazio só com os manifests.
+# Dependency cache layer: build an empty main using only the manifests.
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs \
     && cargo build --release \
