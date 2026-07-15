@@ -210,6 +210,7 @@ export function rpcSpawnArgs(
   ];
 }
 
+/** Own one daemon RPC child process and expose its spawn, prompt, busy, and shutdown lifecycle. */
 export class RpcChild extends EventEmitter {
   private child: ChildProcess | null = null;
   private _state: DaemonState = "stopped";

@@ -1,10 +1,12 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
+/** Represent one displayable completion for the Outpost-Pi command surface. */
 export interface CommandCompletion {
   value: string;
   label: string;
 }
 
+/** Define one injected slash-command adapter and its optional completion behavior. */
 export interface OutpostPiCommandSpec {
   readonly suffix: string;
   readonly description: string;
@@ -13,6 +15,7 @@ export interface OutpostPiCommandSpec {
   readonly run: (args: string, ctx: ExtensionCommandContext) => void | Promise<void>;
 }
 
+/** Register the root command and all injected subcommands against the Pi SDK. */
 export function registerOutpostPiCommands(
   pi: ExtensionAPI,
   specs: readonly OutpostPiCommandSpec[],
