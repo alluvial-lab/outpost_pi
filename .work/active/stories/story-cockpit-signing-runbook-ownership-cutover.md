@@ -1,14 +1,14 @@
 ---
 id: story-cockpit-signing-runbook-ownership-cutover
 kind: story
-stage: review
+stage: done
 tags: [cockpit, docs, release, rebrand]
 parent: epic-rebrand-external-surfaces
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-15
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Finish the Cockpit signing and bundle-ID cutover runbook
@@ -51,3 +51,13 @@ identity cutover a surprise outside the transient feature body.
 - Verification: `rg 'U843T2P7A2|/Users/jacob|jacobmoura|Developer ID Application: Jacob Moura' cockpit/ .github/workflows/cockpit-release.yml` returns only the intentional one-way-door warning naming the old ID being migrated from, and a harmless doc-comment example in `session_history_impl.dart`.
 - Discrepancies from design: none.
 - Adjacent issues parked: none.
+
+## Review (2026-07-15, second pass)
+
+**Verdict**: Approve
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Deep-feature second-pass verification confirmed the inherited team ID and credential path are gone from the Cockpit runbook, local notarization inputs fail closed through environment variables, the seven CI secrets are documented, and the one-way bundle-ID reinstall cutover is distinct from dormant self-update. Story advanced `review -> done`.

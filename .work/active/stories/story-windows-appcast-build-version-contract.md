@@ -1,14 +1,14 @@
 ---
 id: story-windows-appcast-build-version-contract
 kind: story
-stage: review
+stage: done
 tags: [cockpit, bug, release, windows]
 parent: epic-rebrand-external-surfaces
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-15
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Pair the Windows appcast version with WinSparkle's current-version contract
@@ -75,3 +75,13 @@ not prove that later Windows installs will be offered updates.
   paired build-version integration and no honest WinSparkle acceptance smoke
   exists in this repository.
 - Adjacent issues parked: none.
+
+## Review (2026-07-15, second pass)
+
+**Verdict**: Approve
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Deep-feature second-pass verification confirmed the sentinel step is unconditionally skipped, the workflow contains no Windows appcast generator/signature variables, and no `appcast-windows.xml` is tracked or uploaded. Windows installers and the macOS/Linux artifact paths remain intact. Story advanced `review -> done`.
