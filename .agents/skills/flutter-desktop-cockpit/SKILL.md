@@ -24,8 +24,8 @@ Run from `cockpit/`: [remote-pi-cockpit-guidance]{1}
 ### Sandbox toolchain (dev VM / `codebox`)
 
 The Flutter SDK and pub cache live **in the repo**, not under `/opt` or `/tmp`.
-Flutter 3.44.4 (Dart 3.12.2) at `~/projects/remote_pi/.tools/flutter`; pub cache at
-`~/projects/remote_pi/.pub-cache` (gitignored). Always set `PUB_CACHE` and call the
+Flutter 3.44.4 (Dart 3.12.2) at `~/projects/outpost_pi/.tools/flutter`; pub cache at
+`~/projects/outpost_pi/.pub-cache` (gitignored). Always set `PUB_CACHE` and call the
 binary directly — `flutter` is not on `PATH`, and the default
 `/home/agent/.pub-cache` is mounted read-only.
 
@@ -39,13 +39,13 @@ populated (re-seed from another checkout if it is ever cleared).
 
 ```bash
 cd cockpit
-export PUB_CACHE=~/projects/remote_pi/.pub-cache
-~/projects/remote_pi/.tools/flutter/bin/flutter pub get --offline
-~/projects/remote_pi/.tools/flutter/bin/flutter analyze
-~/projects/remote_pi/.tools/flutter/bin/flutter test
-~/projects/remote_pi/.tools/flutter/bin/dart format .
-~/projects/remote_pi/.tools/flutter/bin/flutter run -d macos
-~/projects/remote_pi/.tools/flutter/bin/flutter build macos
+export PUB_CACHE=~/projects/outpost_pi/.pub-cache
+~/projects/outpost_pi/.tools/flutter/bin/flutter pub get --offline
+~/projects/outpost_pi/.tools/flutter/bin/flutter analyze
+~/projects/outpost_pi/.tools/flutter/bin/flutter test
+~/projects/outpost_pi/.tools/flutter/bin/dart format .
+~/projects/outpost_pi/.tools/flutter/bin/flutter run -d macos
+~/projects/outpost_pi/.tools/flutter/bin/flutter build macos
 ```
 
 Do not commit `build/`, `.dart_tool/`, `macos/Pods/`, generated artifacts, local `.pi/`, logs, or secrets.
