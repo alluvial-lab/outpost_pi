@@ -9,15 +9,36 @@ plugins {
 }
 
 // Release signing — loaded from android/key.properties when present.
-// Distributable release builds must have their dedicated signing key; debug
-// signing is confined to the debug build type.
+// Configuration-only and non-release tasks must remain usable without local
+// secrets; release artifact task graphs are rejected below before execution.
+val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties().apply {
-    val f = rootProject.file("key.properties")
-    if (f.exists()) {
-        load(FileInputStream(f))
+    if (keystorePropertiesFile.isFile) {
+        FileInputStream(keystorePropertiesFile).use(::load)
     }
 }
-val hasReleaseKeystore = keystoreProperties.getProperty("storeFile") != null
+val requiredReleaseSigningProperties =
+    listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+val missingReleaseSigningProperties =
+    requiredReleaseSigningProperties.filter { keystoreProperties.getProperty(it).isNullOrBlank() }
+val hasCompleteReleaseSigningProperties = missingReleaseSigningProperties.isEmpty()
+val releaseKeystoreFile =
+    keystoreProperties
+        .getProperty("storeFile")
+        ?.takeIf(String::isNotBlank)
+        ?.let(rootProject::file)
+val releaseSigningConfigurationError =
+    when {
+        !keystorePropertiesFile.isFile -> "android/key.properties is missing"
+        missingReleaseSigningProperties.isNotEmpty() ->
+            "android/key.properties is missing or has blank properties: " +
+                missingReleaseSigningProperties.joinToString()
+        releaseKeystoreFile?.isFile != true -> "the configured release keystore file is missing"
+        else -> null
+    }
+val releaseSigningError =
+    "Release APK/AAB tasks require a complete android/key.properties and an existing release keystore. " +
+        "Debug signing is only available to debug builds."
 
 android {
     namespace = "dev.kevoun.outpostpi"
@@ -46,11 +67,11 @@ android {
     }
 
     signingConfigs {
-        if (hasReleaseKeystore) {
+        if (hasCompleteReleaseSigningProperties) {
             create("release") {
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
-                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storeFile = releaseKeystoreFile
                 storePassword = keystoreProperties.getProperty("storePassword")
             }
         }
@@ -58,14 +79,25 @@ android {
 
     buildTypes {
         release {
-            if (!hasReleaseKeystore) {
-                throw org.gradle.api.GradleException(
-                    "Release builds require android/key.properties with the release keystore configuration. " +
-                        "Debug signing is only available to debug builds.",
-                )
+            if (hasCompleteReleaseSigningProperties) {
+                signingConfig = signingConfigs.getByName("release")
             }
-            signingConfig = signingConfigs.getByName("release")
         }
+    }
+}
+
+// Public release lifecycle tasks plus the AGP packaging/signing tasks that can
+// be invoked directly. Rejecting the ready graph runs before any task can emit
+// an unsigned or incorrectly signed release artifact.
+val releaseArtifactTaskNames =
+    setOf("assembleRelease", "bundleRelease", "packageRelease", "packageReleaseBundle", "signReleaseBundle")
+gradle.taskGraph.whenReady {
+    val producesReleaseArtifact =
+        allTasks.any { task -> task.project == project && task.name in releaseArtifactTaskNames }
+    if (producesReleaseArtifact && releaseSigningConfigurationError != null) {
+        throw org.gradle.api.GradleException(
+            "$releaseSigningError Cause: $releaseSigningConfigurationError.",
+        )
     }
 }
 

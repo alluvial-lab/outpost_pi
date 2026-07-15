@@ -4,9 +4,9 @@
 # Produces: a GitHub Release with a signed `OutpostPi.apk` (release keystore) +
 # SHA256SUMS. No stores — direct APK distribution.
 #
-# Anti-debug safeguard: the app's Gradle build silently falls back to debug
-# keys if key.properties is absent, so the job compares the APK certificate
-# fingerprint with the keystore's and FAILS if they differ.
+# Signing safeguards: Gradle allows no-key configuration/debug work but rejects
+# release APK/AAB task graphs unless their release signing material is complete.
+# The job also compares certificate fingerprints as defense in depth.
 
 name: app-release
 
@@ -63,6 +63,11 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Verify no-key release signing guard
+        run: |
+          flutter pub get
+          android/check_release_signing_guard.sh
+
       - name: Restore keystore and key.properties
         env:
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
@@ -84,7 +89,7 @@ jobs:
           flutter pub get
           flutter build apk --release
 
-      - name: Verify signature (anti-debug fallback)
+      - name: Verify release signer (defense in depth)
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -99,7 +104,7 @@ jobs:
           echo "apk:      $APK_CERT"
           echo "keystore: $KS_CERT"
           if [ -z "$APK_CERT" ] || [ "$APK_CERT" != "$KS_CERT" ]; then
-            echo "::error::APK is not signed with the release keystore (debug fallback?)"
+            echo "::error::APK signer does not match the configured release keystore"
             exit 1
           fi
 
