@@ -22,16 +22,19 @@ import { formatPeerInventory } from "../../session/peer_inventory.js";
 import { runSetupWizard, type WizardUI } from "../../session/setup_wizard.js";
 import { ControlCommands } from "./control_commands.js";
 
+/** Describe the minimal UI capability accepted by local-mesh command adapters. */
 export type OutpostPiUi = {
   setStatus?: (key: string, value: string | undefined) => void;
   setTitle?: (title: string) => void;
   notify?: (message: string, type?: "info" | "warning" | "error") => void;
 };
 
+/** Allow command helpers to receive an optional Pi UI context without retaining stale session state. */
 export type OutpostPiUiContext = { ui?: OutpostPiUi } | null | undefined;
 
 type MeshEnvelope = { id: string; from: string; re: string | null; body: unknown };
 
+/** Supply lifecycle-owned mesh, relay, session, and UI operations to local command handlers. */
 export interface LocalMeshCommandsDeps {
   readonly isDisposed: () => boolean;
   readonly getState: () => "idle" | "started" | "paired";
@@ -59,6 +62,7 @@ export interface LocalMeshCommandsDeps {
   ) => boolean;
 }
 
+/** Adapt slash commands into local-mesh ownership, relay control, and teardown operations. */
 export class LocalMeshCommands {
   private cwdLock: AcquiredLock | null = null;
   private lockedName: string | null = null;

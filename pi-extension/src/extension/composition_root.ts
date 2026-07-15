@@ -9,6 +9,7 @@ import {
 
 let nextEpochId = 1;
 
+/** Own one extension runtime epoch and its registration and disposal lifecycle. */
 export interface OutpostPiRuntime {
   readonly epoch: RuntimeEpoch;
   readonly ports: OutpostPiRuntimePorts;
@@ -19,6 +20,7 @@ export interface OutpostPiRuntime {
   dispose(): Promise<void>;
 }
 
+/** Create an independently disposable epoch that guards stale asynchronous runtime work. */
 export function createRuntimeEpoch(): RuntimeEpoch {
   let disposed = false;
   const id = nextEpochId++;
@@ -36,6 +38,7 @@ export function createRuntimeEpoch(): RuntimeEpoch {
   };
 }
 
+/** Compose a lifecycle-owned extension runtime from injected ports and coordinator authority. */
 export function createOutpostPiExtensionRuntime(
   pi: ExtensionAPI,
   ports: OutpostPiRuntimePorts,
@@ -78,6 +81,7 @@ export function createOutpostPiExtensionRuntime(
   return runtime;
 }
 
+/** Bind Pi session hooks that acquire ownership, refresh session context, and tear down runtime ports. */
 export function registerLifecycleHooks(
   pi: ExtensionAPI,
   ports: OutpostPiRuntimePorts,
@@ -121,6 +125,7 @@ async function disposeRuntimePorts(
   await ports.commands.closeMesh?.();
 }
 
+/** Create the SDK factory that supplies a fresh port graph for each extension instance. */
 export function createOutpostPiExtensionFactory(
   createPorts: () => OutpostPiRuntimePorts,
 ): ExtensionFactory {

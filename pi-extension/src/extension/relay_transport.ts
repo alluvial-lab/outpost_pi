@@ -18,6 +18,7 @@ import type {
 } from "./ports.js";
 import type { RelayConnectivity } from "./types.js";
 
+/** Project relay connectivity into the status snapshot emitted to external observers. */
 export interface RelayStateSnapshot {
   status: RelayConnectivity;
   connected: boolean;
@@ -25,12 +26,14 @@ export interface RelayStateSnapshot {
   room?: string;
 }
 
+/** Extend relay startup with epoch guards and callbacks owned by the runtime coordinator. */
 export interface RelayTransportStartInput extends RelayStartInput {
   isDisposed?: () => boolean;
   onUnexpectedClose?: () => void;
   onConnected?: (relay: RelayClient) => void | Promise<void>;
 }
 
+/** Report that relay startup completed after its owning runtime epoch was disposed. */
 export class RelayStartAbortedError extends Error {
   constructor() {
     super("relay start aborted");
@@ -38,6 +41,7 @@ export class RelayStartAbortedError extends Error {
   }
 }
 
+/** Supply transport construction, timing, and state publication adapters to the relay port. */
 export interface RelayTransportDeps {
   createRelay(url: string, keypair: Ed25519Keypair): RelayClient;
   toWebSocketUrl(url: string): string;
@@ -48,6 +52,7 @@ export interface RelayTransportDeps {
   emitRelayState(snapshot: RelayStateSnapshot): void;
 }
 
+/** Expose the concrete relay adapter's extended startup, control-frame, and diagnostics contract. */
 export interface RelayTransportAdapter extends Omit<RelayTransportPort, "start" | "createPeerChannel"> {
   start(input: RelayTransportStartInput): Promise<RelayStartResult>;
   createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel;
@@ -73,6 +78,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+/** Decode one relay control frame at the transport boundary, rejecting malformed payloads. */
 export function decodeRelayControlFrame(line: string): RelayControlFrame | null {
   let parsed: unknown;
   try {
@@ -124,6 +130,7 @@ export function decodeRelayControlFrame(line: string): RelayControlFrame | null 
   return null;
 }
 
+/** Create the lifecycle-owned relay adapter with reconnect and cross-PC bridge teardown. */
 export function createRelayTransportPort(deps: RelayTransportDeps): RelayTransportAdapter {
   const backoffMs = deps.backoffMs ?? reachabilityBackoffMs;
   let relay: RelayClient | null = null;

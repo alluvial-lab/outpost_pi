@@ -5,8 +5,10 @@ const COORDINATOR_SYMBOL = Symbol.for("outpost-pi.runtime-coordinator.v1");
 const COORDINATOR_MARKER = Symbol.for("outpost-pi.runtime-coordinator.schema");
 const LEASE_BRAND: unique symbol = Symbol("outpost-pi.factory-lease");
 
+/** Name the SDK lifecycle transition that grants, replaces, or releases runtime ownership. */
 export type SessionLifecycleReason = "startup" | "reload" | "new" | "resume" | "fork" | "quit";
 
+/** Brand an opaque factory capability that the coordinator validates before lifecycle changes. */
 export interface FactoryLease {
   readonly [LEASE_BRAND]: true;
 }
@@ -161,6 +163,10 @@ function isCoordinator(value: unknown): value is OutpostPiRuntimeCoordinator {
     && typeof candidate.isReplacing === "function";
 }
 
+/** Return the process-scoped runtime coordinator, rejecting incompatible global state.
+ *
+ * @throws `Error` when another value occupies the coordinator global with a different schema.
+ */
 export function getOutpostPiRuntimeCoordinator(): OutpostPiRuntimeCoordinator {
   const globals = globalThis as typeof globalThis & { [COORDINATOR_SYMBOL]?: unknown };
   const existing = globals[COORDINATOR_SYMBOL];

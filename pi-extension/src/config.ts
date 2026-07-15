@@ -7,6 +7,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
 export type OutpostPiConfig = { relay?: string };
 
+/** Load persisted relay settings, treating missing or invalid local storage as unconfigured. */
 export function loadConfig(): OutpostPiConfig {
   try {
     const raw = fs.readFileSync(CONFIG_FILE, "utf8");
@@ -18,6 +19,7 @@ export function loadConfig(): OutpostPiConfig {
   }
 }
 
+/** Merge relay settings into the user config file, creating its parent directory when needed. */
 export function saveConfig(patch: Partial<OutpostPiConfig>): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   const current = loadConfig();
@@ -25,16 +27,19 @@ export function saveConfig(patch: Partial<OutpostPiConfig>): void {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2));
 }
 
+/** Describe a canonical relay URL and the configuration source that supplied it. */
 export type ConfiguredRelayResolution = {
   readonly url: string;
   readonly source: "env" | "config";
 };
 
+/** Signal that no environment override or persisted relay URL is available. */
 export type UnconfiguredRelayResolution = {
   readonly url: null;
   readonly source: "unconfigured";
 };
 
+/** Represent explicit relay availability so callers never open a transport on an implicit fallback. */
 export type RelayResolution = ConfiguredRelayResolution | UnconfiguredRelayResolution;
 
 /** Resolves the relay URL in canonical http(s):// form, if one is configured. */

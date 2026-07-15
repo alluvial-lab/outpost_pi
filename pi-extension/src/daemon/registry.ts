@@ -90,15 +90,15 @@ export function loadRegistry(): DaemonRegistry {
   }
 }
 
+/** Replace the daemon registry on disk, creating its parent directory when needed. */
 export function saveRegistry(reg: DaemonRegistry): void {
   mkdirSync(dirname(registryPathInternal()), { recursive: true });
   writeFileSync(registryPathInternal(), JSON.stringify(reg, null, 2) + "\n");
 }
 
-/**
- * Adds a daemon entry. Refuses duplicates (same normalized cwd already
- * present). Returns the derived id + normalized cwd so the caller can
- * report it back to the user.
+/** Register one canonical working directory and return its supervisor identity.
+ *
+ * @throws `Error` when the path is invalid or already registered.
  */
 export function addDaemon(rawCwd: string, name?: string): { id: string; cwd: string; name: string } {
   const cwd = normalizeCwd(rawCwd);
@@ -114,11 +114,7 @@ export function addDaemon(rawCwd: string, name?: string): { id: string; cwd: str
   return { id: daemonIdForCwd(cwd), cwd, name: resolvedName };
 }
 
-/**
- * Removes the daemon entry whose derived id matches `id`. Returns the
- * removed cwd (if any). Does NOT touch the cwd's local config — `create`
- * the same cwd later restores the registration idempotently.
- */
+/** Remove a daemon registration by its derived id without changing its project config. */
 export function removeDaemon(id: string): { removed: boolean; cwd?: string } {
   const reg = loadRegistry();
   const idx = reg.daemons.findIndex((d) => daemonIdForCwd(d.cwd) === id);
@@ -128,8 +124,7 @@ export function removeDaemon(id: string): { removed: boolean; cwd?: string } {
   return { removed: true, cwd: removed!.cwd };
 }
 
-/** Snapshot of all registered daemons with derived ids. Order matches the
- *  file's insertion order — first-registered first. */
+/** Project persisted registrations into the supervisor's derived daemon identities. */
 export function listDaemons(): Array<{ id: string; cwd: string; name: string }> {
   return loadRegistry().daemons.map((d) => ({
     id: daemonIdForCwd(d.cwd),
@@ -140,12 +135,7 @@ export function listDaemons(): Array<{ id: string; cwd: string; name: string }> 
   }));
 }
 
-/**
- * One-shot migration: backfill `name` (folder-derived) into legacy entries
- * that predate the name field, persisting the change to `daemons.json`.
- * Idempotent — writes only when something was missing. Returns how many
- * entries were backfilled. The supervisor runs this on start.
- */
+/** Backfill missing legacy daemon names once and return the number persisted. */
 export function migrateRegistryNames(): number {
   const reg = loadRegistry();
   let changed = 0;
