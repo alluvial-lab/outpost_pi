@@ -2,7 +2,7 @@
 Type=Application
 Name=Cockpit
 GenericName=Outpost-Pi Cockpit
-Comment=Cliente desktop do Outpost-Pi — GUI multi-pane sobre o motor do Pi
+Comment=Outpost-Pi desktop client — multi-pane GUI over the Pi engine
 Exec=cockpit
 Icon=dev.kevoun.outpostpi.cockpit
 Terminal=false
