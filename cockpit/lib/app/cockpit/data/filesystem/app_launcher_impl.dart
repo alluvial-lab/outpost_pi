@@ -11,7 +11,7 @@ class _Candidate {
   final String bundle;
 }
 
-/// Candidatos macOS por ordem de preferência (primeiro encontrado = padrão).
+/// macOS candidates in preference order (the first match is the default).
 const _kCandidates = [
   _Candidate('cursor', 'Cursor', 'Cursor.app'),
   _Candidate('windsurf', 'Windsurf', 'Windsurf.app'),
@@ -24,13 +24,16 @@ class _WinCandidate {
   final String id;
   final String name;
 
-  /// Pares `(envVar, subpath)` — o caminho final é `%envVar%\<subpath>`. O
-  /// primeiro que existir no disco resolve o app.
+  /// `(envVar, subpath)` pairs whose final path is `%envVar%\<subpath>`.
+  ///
+  /// The first candidate found on disk resolves the app.
   final List<(String, String)> exeCandidates;
 }
 
-/// Candidatos Windows por ordem de preferência. Os IDEs instalam o `.exe` sob
-/// `%LOCALAPPDATA%\Programs\…` (install por usuário) ou `%ProgramFiles%\…`.
+/// Windows candidates in preference order.
+///
+/// IDEs install the `.exe` under `%LOCALAPPDATA%\Programs\…` for per-user
+/// installs or under `%ProgramFiles%\…`.
 const _kWinCandidates = [
   _WinCandidate('cursor', 'Cursor', [
     ('LOCALAPPDATA', r'Programs\cursor\Cursor.exe'),
@@ -49,24 +52,27 @@ class _LinuxCandidate {
   final String id;
   final String name;
 
-  /// Comando CLI resolvido via PATH (`cursor`, `windsurf`, `code`).
+  /// CLI command resolved through PATH (`cursor`, `windsurf`, or `code`).
   final String command;
 }
 
-/// Candidatos Linux por ordem de preferência. Os IDEs expõem um comando no PATH
-/// (deb/snap/flatpak-wrapper) que abre a pasta como workspace.
+/// Linux candidates in preference order.
+///
+/// IDE packages expose a command on PATH (deb/snap/Flatpak wrapper) that opens
+/// the folder as a workspace.
 const _kLinuxCandidates = [
   _LinuxCandidate('cursor', 'Cursor', 'cursor'),
   _LinuxCandidate('windsurf', 'Windsurf', 'windsurf'),
   _LinuxCandidate('vscode', 'Visual Studio Code', 'code'),
 ];
 
-/// Lança apps externos pra abrir uma pasta. **macOS**: sonda `/Applications` e
-/// extrai ícones via `sips`. **Windows**: resolve os `.exe` conhecidos sob
-/// `%LOCALAPPDATA%`/`%ProgramFiles%` e usa o Explorer como equivalente do Finder.
-/// **Linux**: resolve os comandos de IDE no PATH e usa `xdg-open` como
-/// equivalente do Finder (gerenciador de arquivos padrão). Sem ícone fora do
-/// macOS — a UI cai no fallback Material.
+/// Launch external apps for a folder using platform-specific discovery.
+///
+/// **macOS** probes `/Applications` and extracts icons with `sips`. **Windows**
+/// resolves known `.exe` files under `%LOCALAPPDATA%`/`%ProgramFiles%` and uses
+/// Explorer as the Finder equivalent. **Linux** resolves IDE commands on PATH
+/// and uses `xdg-open` for the default file manager. Outside macOS, the UI uses
+/// its Material icon fallback.
 class AppLauncherImpl implements AppLauncherGateway {
   const AppLauncherImpl();
 
@@ -88,14 +94,14 @@ class AppLauncherImpl implements AppLauncherGateway {
   @override
   Future<void> openWithDefaultApp(String path) async {
     if (Platform.isMacOS) {
-      // `open <path>` abre com o app padrão do tipo (arquivo) ou Finder (pasta).
+      // `open <path>` uses the type's default app for a file or Finder for a folder.
       await Process.run('open', [path]);
     } else if (Platform.isLinux) {
       final xdg = await unixWhich('xdg-open') ?? 'xdg-open';
       await Process.run(xdg, [path]);
     } else if (Platform.isWindows) {
-      // `start` (builtin do cmd) abre com o app padrão via ShellExecute. O `""`
-      // é o título da janela — obrigatório quando o alvo pode vir entre aspas.
+      // `start`, a cmd builtin, opens with the default app through ShellExecute.
+      // `""` is the required window title when the target may be quoted.
       await Process.run('cmd', ['/c', 'start', '', path]);
     }
   }
@@ -111,7 +117,7 @@ class AppLauncherImpl implements AppLauncherGateway {
         found.add(LaunchableApp(id: c.id, name: c.name, iconPath: icon));
       }
     }
-    // Finder — sempre disponível no macOS.
+    // Finder is always available on macOS.
     final finderIcon = await _extractIcon(
       '/System/Library/CoreServices/Finder.app',
     );
@@ -140,11 +146,13 @@ class AppLauncherImpl implements AppLauncherGateway {
     return null;
   }
 
-  /// Lê `CFBundleIconFile` do Info.plist do bundle, converte o `.icns` para
-  /// PNG 32×32 com `sips` e retorna o caminho do PNG cacheado.
+  /// Extract the bundle icon into the temporary icon cache.
+  ///
+  /// Reads `CFBundleIconFile` from Info.plist and uses `sips` to convert the
+  /// `.icns` resource to a 32×32 PNG.
   Future<String?> _extractIcon(String bundlePath) async {
     try {
-      // Lê o nome do arquivo de ícone do plist.
+      // Read the icon filename from the plist.
       final plist = await Process.run('defaults', [
         'read',
         '$bundlePath/Contents/Info',
@@ -158,7 +166,7 @@ class AppLauncherImpl implements AppLauncherGateway {
       final icnsPath = '$bundlePath/Contents/Resources/$iconName';
       if (!File(icnsPath).existsSync()) return null;
 
-      // Cache: <temp>/ck_icon_<hash>.png — reutiliza entre boots do app.
+      // Cache: <temp>/ck_icon_<hash>.png, reused across app launches.
       final cacheKey = icnsPath.hashCode.abs();
       final outPath = '${Directory.systemTemp.path}/ck_icon_$cacheKey.png';
       if (File(outPath).existsSync()) return outPath;
@@ -189,14 +197,14 @@ class AppLauncherImpl implements AppLauncherGateway {
         found.add(LaunchableApp(id: c.id, name: c.name));
       }
     }
-    // Explorer — equivalente do Finder, sempre disponível no Windows.
+    // Explorer is the always-available Windows equivalent of Finder.
     found.add(const LaunchableApp(id: 'explorer', name: 'Explorer'));
     return found;
   }
 
   Future<void> _launchWindows(LaunchableApp app, String path) async {
     if (app.id == 'explorer') {
-      // explorer.exe abre a pasta; ignora o exit code (retorna 1 mesmo no ok).
+      // explorer.exe opens the folder; ignore its exit code because success may return 1.
       await Process.run('explorer', [path]);
       return;
     }
@@ -204,11 +212,11 @@ class AppLauncherImpl implements AppLauncherGateway {
     if (c == null) return;
     final exe = await _findWindowsExe(c);
     if (exe == null) return;
-    // IDE abre a pasta como workspace; detached pra não prender o app.
+    // Open the folder as an IDE workspace without tying the process to the app.
     await Process.start(exe, [path], mode: ProcessStartMode.detached);
   }
 
-  /// Primeiro `.exe` candidato que existir no disco, ou `null`.
+  /// Resolve the first candidate `.exe` found on disk, or `null`.
   Future<String?> _findWindowsExe(_WinCandidate c) async {
     for (final (envVar, sub) in c.exeCandidates) {
       final base = Platform.environment[envVar];
@@ -228,8 +236,8 @@ class AppLauncherImpl implements AppLauncherGateway {
         found.add(LaunchableApp(id: c.id, name: c.name));
       }
     }
-    // Gerenciador de arquivos via `xdg-open` — equivalente do Finder/Explorer,
-    // presente em praticamente todo desktop Linux (xdg-utils).
+    // `xdg-open` provides the Finder/Explorer equivalent and is available on
+    // nearly every Linux desktop through xdg-utils.
     if (await unixWhich('xdg-open') != null) {
       found.add(const LaunchableApp(id: 'files', name: 'Arquivos'));
     }
@@ -238,7 +246,7 @@ class AppLauncherImpl implements AppLauncherGateway {
 
   Future<void> _launchLinux(LaunchableApp app, String path) async {
     if (app.id == 'files') {
-      // Abre a pasta no gerenciador de arquivos padrão.
+      // Open the folder in the default file manager.
       final xdg = await unixWhich('xdg-open') ?? 'xdg-open';
       await Process.run(xdg, [path]);
       return;
@@ -246,7 +254,7 @@ class AppLauncherImpl implements AppLauncherGateway {
     final c = _kLinuxCandidates.where((x) => x.id == app.id).firstOrNull;
     if (c == null) return;
     final exe = await unixWhich(c.command) ?? c.command;
-    // IDE abre a pasta como workspace; detached pra não prender o app.
+    // Open the folder as an IDE workspace without tying the process to the app.
     await Process.start(exe, [path], mode: ProcessStartMode.detached);
   }
 }

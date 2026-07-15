@@ -4,13 +4,14 @@ import 'package:cockpit/app/cockpit/domain/contracts/worktree_manager.dart';
 import 'package:cockpit/app/cockpit/domain/entities/worktree.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Roda o binário `git` pra listar/criar/remover worktrees. Resolve o caminho do
-/// git por candidatos conhecidos (o app macOS **não herda o PATH do shell**) —
-/// mesmo padrão do `GitStatusReaderImpl`.
+/// List, create, and remove worktrees through a resolved `git` executable.
+///
+/// Because a macOS app does not inherit the shell PATH, probes known executable
+/// locations once using the same strategy as [GitStatusReaderImpl].
 class WorktreeManagerImpl implements WorktreeManager {
   WorktreeManagerImpl();
 
-  String? _git; // caminho do binário, resolvido uma vez
+  String? _git; // Executable path, resolved once.
 
   static const List<String> _candidates = <String>[
     '/usr/bin/git',
@@ -18,8 +19,7 @@ class WorktreeManagerImpl implements WorktreeManager {
     '/usr/local/bin/git',
   ];
 
-  /// Onde as worktrees criadas pelo Cockpit moram, relativo à raiz do repo
-  /// (decisão 2).
+  /// Location for Cockpit-created worktrees, relative to the repository root.
   static const String worktreesSubdir = '.pi/remote/worktrees';
 
   Future<String> _resolveGit() async {
@@ -28,7 +28,7 @@ class WorktreeManagerImpl implements WorktreeManager {
     for (final candidate in _candidates) {
       if (await File(candidate).exists()) return _git = candidate;
     }
-    return _git = 'git'; // último recurso: PATH
+    return _git = 'git'; // Last resort: PATH.
   }
 
   @override
@@ -84,16 +84,16 @@ class WorktreeManagerImpl implements WorktreeManager {
   ) async {
     try {
       final git = await _resolveGit();
-      // Regra cross-plataforma: só cria worktree quando a branch NÃO existe.
-      // Sem isso, `worktree add -b` falha ("branch already exists") e/ou deixa
-      // o repo num estado meio-criado.
+      // Cross-platform rule: create a worktree only when the branch is absent.
+      // Otherwise `worktree add -b` fails ("branch already exists") or may leave
+      // the repository partially created.
       if (await _branchExists(git, repoPath, name)) {
         return const Failure(
           WorktreeOpError('A branch with that name already exists.'),
         );
       }
       final target = '$repoPath/$worktreesSubdir/$name';
-      // Branch nova a partir do HEAD atual do repo (sem ref explícito).
+      // Create the branch from the repository's current HEAD without an explicit ref.
       final res = await Process.run(git, [
         '-C',
         repoPath,
@@ -106,10 +106,10 @@ class WorktreeManagerImpl implements WorktreeManager {
       if (res.exitCode != 0) {
         return Failure(WorktreeOpError(_errText(res)));
       }
-      // Devolve o path **como o git lista** (separadores nativos do SO), não o
-      // `target` que montamos com `/`. No Windows o git lista com `\`, então o
-      // `target` com `/` não casaria com `list()` → o chamador não encontraria
-      // o fork recém-criado ("não apareceu na lista") e o dialog não fecharia.
+      // Return the path exactly as Git lists it, with native OS separators,
+      // rather than the `/`-joined `target`. On Windows, Git lists `\`; returning
+      // `target` would not match `list()`, so the new fork would appear missing
+      // and the dialog would remain open.
       final created = (await list(repoPath)).where((w) => w.branch == name);
       return Success(
         created.isNotEmpty
@@ -121,7 +121,7 @@ class WorktreeManagerImpl implements WorktreeManager {
     }
   }
 
-  /// `true` se a branch local [name] já existe no repo.
+  /// Check whether the local branch [name] already exists in the repository.
   Future<bool> _branchExists(String git, String repoPath, String name) async {
     final res = await Process.run(git, [
       '-C',
@@ -142,8 +142,8 @@ class WorktreeManagerImpl implements WorktreeManager {
   ) async {
     try {
       final git = await _resolveGit();
-      // 1. Remove a worktree primeiro (--force: o usuário já confirmou; remove
-      //    mesmo com working tree suja — decisões 6, 9).
+      // 1. Remove the worktree first. The user already confirmed `--force`,
+      //    including removal with a dirty working tree.
       final rmRes = await Process.run(git, [
         '-C',
         repoPath,
@@ -155,7 +155,7 @@ class WorktreeManagerImpl implements WorktreeManager {
       if (rmRes.exitCode != 0) {
         return Failure(WorktreeOpError(_errText(rmRes)));
       }
-      // 2. Só então apaga a branch (git recusa apagar branch em uso por worktree).
+      // 2. Then delete the branch; Git rejects deleting one used by a worktree.
       if (branch.isNotEmpty) {
         final brRes = await Process.run(git, [
           '-C',
@@ -179,12 +179,12 @@ class WorktreeManagerImpl implements WorktreeManager {
     if (branch.isEmpty) return false;
     try {
       final git = await _resolveGit();
-      // Branches já mergeadas no HEAD do checkout principal. Se a branch do fork
-      // aparece aqui, foi mergeada (decisão 6). Em dúvida/erro → false (aviso).
+      // List branches merged into the main checkout's HEAD. If the fork branch
+      // appears, it is merged; uncertainty or errors return false for a warning.
       //
-      // NB: `--merged` aceita um `<commit>` opcional e engoliria um `--format`
-      // seguinte como objeto ("malformed object name"), então parseamos o output
-      // plano e tiramos o marcador de linha (`* ` atual, `+ ` em worktree, `  `).
+      // `--merged` accepts an optional `<commit>` and would consume a following
+      // `--format` as that object ("malformed object name"), so parse the plain
+      // output and strip its line marker (`* ` current, `+ ` worktree, or `  `).
       final res = await Process.run(git, [
         '-C',
         repoPath,
@@ -203,8 +203,7 @@ class WorktreeManagerImpl implements WorktreeManager {
     }
   }
 
-  /// Parseia `git worktree list --porcelain`, **descartando a primeira entrada**
-  /// (a worktree principal = o próprio workspace).
+  /// Parse `git worktree list --porcelain`, discarding the main workspace entry.
   List<Worktree> _parsePorcelain(String out) {
     final blocks = out.split('\n\n');
     final result = <Worktree>[];
@@ -232,7 +231,7 @@ class WorktreeManagerImpl implements WorktreeManager {
           bare = true;
         }
       }
-      // Primeira entrada (principal) e repos bare não viram fork.
+      // Exclude the first, main entry and bare repositories from forks.
       if (i == 0 || bare || path == null) continue;
       result.add(
         Worktree(
@@ -250,7 +249,7 @@ class WorktreeManagerImpl implements WorktreeManager {
   }
 
   String _basename(String path) {
-    // Aceita separador `/` (POSIX) e `\` (Windows, como o git lista lá).
+    // Accept `/` on POSIX and the `\` separator emitted by Git on Windows.
     var p = path;
     while ((p.endsWith('/') || p.endsWith(r'\')) && p.length > 1) {
       p = p.substring(0, p.length - 1);
