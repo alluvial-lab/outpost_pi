@@ -170,11 +170,13 @@ agent skill that teaches the LLM how to use `agent_send` / `agent_request`.
 To verify:
 
 ```text
-/outpost-pi config
+/outpost-pi status
 ```
 
-It should print the effective relay URL and where it came from
-(`env` / `config` / `default`).
+It prints a two-line snapshot: the local mesh state and the relay state
+(`unconfigured` / `off` / `on`), including the effective relay URL. When the
+relay is unconfigured, the status line directs you to
+`/outpost-pi set-relay <url>` to persist a relay URL to user config.
 
 ---
 

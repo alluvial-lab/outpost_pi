@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-external-surfaces-hostname-migration
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, pi-extension, app, cockpit, site, docs]
 parent: epic-rebrand-external-surfaces
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Migrate production hostnames to kevoun.com
@@ -317,3 +317,17 @@ the checks after implementation.
 No new screen, flow, interaction, or component is introduced. The banner is
 an existing external asset receiving a manual brand-text correction, so the
 mockup fallback is not applicable.
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD`), focused on hostname/URL migration + branding SVG redraw.
+
+### Findings
+- None. Hostname migration is coherent: owned URLs use `outpost-pi.kevoun.com`,
+  installer copies match, and the banner SVG validates with the required
+  branding. Wire-stable identifiers unchanged.
+
+### Verdict
+Approve. Advanced `review → done`.

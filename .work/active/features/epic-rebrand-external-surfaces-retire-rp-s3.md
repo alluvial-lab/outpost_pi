@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-external-surfaces-retire-rp-s3
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, app, cockpit, rp-s3]
 parent: epic-rebrand-external-surfaces
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Retire rp-s3 download server
@@ -309,3 +309,18 @@ necessary corrections within their owned scope.
 - `flutter analyze` in `cockpit/` passed with no issues using the same
   repository-local cache. Both initial plain-PATH runs correctly exposed the
   read-only default cache prerequisite; no source change was involved.
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD`), focused on rp-s3 retirement (update-checker noop, site
+manifest fallback, dormant-server docs).
+
+### Findings
+- None. rp-s3 retirement is coherent: default update checks perform no HTTP,
+  optional injection remains, site loaders fall back safely, and dormant
+  Compose configuration validates. Wire-stable identifiers unchanged.
+
+### Verdict
+Approve. Advanced `review → done`.
