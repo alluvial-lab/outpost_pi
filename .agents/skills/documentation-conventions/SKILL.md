@@ -173,5 +173,5 @@ fits the existing `scan-*` stack this repo already uses
   publishes nothing, so optimizing for the agent reading the raw comment is
   correct. If a rendered human-facing doc site becomes a goal, richer
   examples and prose may be warranted for the published surface.
-- The three-tier Always/Recommended/Split keeps producing false positives on
+- The three-tier Always/Recommended/Skip keeps producing false positives on
   Dart/Rust edge cases (e.g. trait impls, Flutter widget `build()` overrides).

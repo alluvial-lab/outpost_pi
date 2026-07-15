@@ -125,7 +125,7 @@ class HomeViewModel extends ViewModel<HomeState> {
     }
   }
 
-  /// Plan-38 Fase 3 — switch the presence tab. No reload: it only swaps the
+  /// Plan-38 Phase 3 — switch the presence tab. No reload: it only swaps the
   /// `filter` in state so [visibleItems] re-derives. No-op when the state
   /// isn't a list or the filter is unchanged.
   void setFilter(HomeFilter filter) {
@@ -143,7 +143,7 @@ class HomeViewModel extends ViewModel<HomeState> {
   bool _online(HomeItem it) =>
       _relayConnected && _conn.isRoomLive(it.peer.remoteEpk, it.room.roomId);
 
-  /// Plan-38 Fase 3 — the items the current [HomeList.filter] keeps. A pure
+  /// Plan-38 Phase 3 — the items the current [HomeList.filter] keeps. A pure
   /// view over `state.items()`; returns `const []` outside a list state.
   List<HomeItem> get visibleItems {
     final s = state;
@@ -156,7 +156,7 @@ class HomeViewModel extends ViewModel<HomeState> {
     };
   }
 
-  /// Plan-38 Fase 3 — per-tab counts for the filter badges. Independent of
+  /// Plan-38 Phase 3 — per-tab counts for the filter badges. Independent of
   /// the active tab (each badge always shows its own slice's size).
   ({int all, int online, int offline}) get counts {
     final s = state;
