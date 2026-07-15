@@ -10,7 +10,7 @@
 //
 // `peer` is standard base64 of the destination's Ed25519 pubkey (matches
 // the relay registry, populated from the peer's hello). `ct` is base64 of
-// the inner-envelope bytes (plain JSON post-rollback, see plano 06).
+// the inner-envelope bytes (plain JSON post-rollback, see plan 06).
 
 import 'dart:async';
 import 'dart:convert';

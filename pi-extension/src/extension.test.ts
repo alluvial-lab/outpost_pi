@@ -1,7 +1,7 @@
 /**
  * Integration tests: extension default export + pair_request flow + reconnect.
  *
- * Post plano 06: no Noise XX. Pairing is `pair_request → pair_ok|pair_error`
+ * Post plan 06: no Noise XX. Pairing is `pair_request → pair_ok|pair_error`
  * over an opaque outer envelope whose `ct` is base64(JSON.stringify(inner)).
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
@@ -2505,7 +2505,7 @@ describe("user_input mirroring", () => {
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
     const onInput = captureEventHandler("input");
-    onInput({ type: "input", text: "listar arquivos", source: "interactive" });
+    onInput({ type: "input", text: "list files", source: "interactive" });
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const userInputs = sent.map(decodeSentCt).filter((d) => d.inner.type === "user_input");

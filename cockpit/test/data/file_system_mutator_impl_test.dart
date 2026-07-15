@@ -16,7 +16,7 @@ void main() {
     });
 
     test('createFile creates an empty file', () async {
-      final path = '${dir.path}/novo.txt';
+      final path = '${dir.path}/new.txt';
       final r = await mutator.createFile(path);
       expect(r.isSuccess, isTrue);
       expect(File(path).existsSync(), isTrue);
@@ -40,11 +40,11 @@ void main() {
     test('rename moves the file to the new name', () async {
       final from = '${dir.path}/a.txt';
       final to = '${dir.path}/b.txt';
-      File(from).writeAsStringSync('conteudo');
+      File(from).writeAsStringSync('content');
       final r = await mutator.rename(from, to);
       expect(r.isSuccess, isTrue);
       expect(File(from).existsSync(), isFalse);
-      expect(File(to).readAsStringSync(), 'conteudo');
+      expect(File(to).readAsStringSync(), 'content');
     });
 
     test('rename renames a folder (including its contents)', () async {

@@ -16,7 +16,7 @@ import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 
 Future<void> main(List<String> args) async {
   // dart run tool/rpc_smoke.dart [provider] [model]
-  // Sem args → default do pi (settings.json).
+  // No args → use Pi's default (settings.json).
   final provider = args.isNotEmpty ? args[0] : null;
   final model = args.length > 1 ? args[1] : null;
   final gateway = PiRpcProcess(
@@ -59,18 +59,18 @@ Future<void> main(List<String> args) async {
   final spawn = await gateway.spawn(workingDirectory: Directory.current.path);
   stdout.writeln('spawn success=${spawn.isSuccess}');
 
-  // Comandos request/response (modelo / effort / contexto).
+  // Command request/response (model / effort / context).
   final models = await gateway.availableModels();
   models.fold(
-    (list) => stdout.writeln('[models] ${list.length} disponíveis'),
-    (e) => stdout.writeln('[models] erro: ${e.message}'),
+    (list) => stdout.writeln('[models] ${list.length} available'),
+    (e) => stdout.writeln('[models] error: ${e.message}'),
   );
   final state = await gateway.state();
   state.fold(
     (s) => stdout.writeln(
       '[state] model=${s.model?.id} effort=${s.thinkingLevel.wire}',
     ),
-    (e) => stdout.writeln('[state] erro: ${e.message}'),
+    (e) => stdout.writeln('[state] error: ${e.message}'),
   );
   final setLevel = await gateway.setThinkingLevel(ThinkingLevel.low);
   stdout.writeln('[set_thinking_level low] success=${setLevel.isSuccess}');
@@ -91,7 +91,7 @@ Future<void> main(List<String> args) async {
     (usage) => stdout.writeln(
       '[context] ${usage?.tokens}/${usage?.contextWindow} = ${usage?.percent}%',
     ),
-    (e) => stdout.writeln('[context] erro: ${e.message}'),
+    (e) => stdout.writeln('[context] error: ${e.message}'),
   );
 
   stdout.writeln('--- killing ---');
