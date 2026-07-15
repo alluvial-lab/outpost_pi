@@ -4,15 +4,15 @@ import 'package:cockpit/app/core/env.dart';
 import 'package:cockpit/app/settings/settings_module.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
-/// Módulo raiz — **só composição**. É o mapa de acoplamento do app: quais módulos
-/// existem e como se conectam. Cada submódulo declara seu próprio `path` (ou a
-/// ausência dele, no caso do core), então aqui é só `module(...)`.
+/// Root module — **composition only**. It is the app's coupling map: which
+/// modules exist and how they connect. Each submodule declares its own `path`
+/// (or the absence of one, in core's case), so here it's just `module(...)`.
 ///
-/// `Future` porque o `cockpit` faz bootstrap async (abre as próprias Hive boxes).
-/// O único valor threadado é o [PiSpawnConfig]: mora no core (root-owned) e as
-/// features o resolvem **upward**; os demais async (boxes/versão/notifier) cada
-/// builder resolve sozinho. Construído **uma vez** no `main` — dedup por
-/// identidade preservado.
+/// `Future` because `cockpit` does async bootstrap (opens its own Hive boxes).
+/// The only threaded value is [PiSpawnConfig]: it lives in core (root-owned) and
+/// the features resolve it **upward**; the other async bits (boxes/version/
+/// notifier) each builder resolves on its own. Built **once** in `main` — dedup
+/// by identity is preserved.
 Future<Module> buildAppModule({required PiSpawnConfig config}) async {
   final core = buildCoreModule(config: config);
   final cockpit = await buildCockpitModule();
