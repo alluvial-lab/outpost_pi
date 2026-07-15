@@ -401,7 +401,8 @@ jobs:
       # win_sparkle_set_app_build_version(), WinSparkle compares the appcast
       # against Runner.rc's VERSIONINFO string (x.y.z+n), not a bare +n. Re-enable
       # only with a Windows smoke proving higher +n accepted and equal/lower
-      # rejected. The inherited 1.5.1 -> 0.x reset still requires one manual install.
+      # rejected. No Windows appcast or signature is produced or uploaded while
+      # disabled. The inherited 1.5.1 -> 0.x reset still requires one manual install.
       - name: Windows appcast disabled (unproven WinSparkle version contract)
         if: ${{ false }}
         run: echo "Windows appcast generation remains intentionally disabled"
