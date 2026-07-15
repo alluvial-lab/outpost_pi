@@ -93,8 +93,10 @@ Then in the Pi chat, run:
 /outpost-pi
 ```
 
-The setup wizard walks you through agent name, session name, and relay choice,
-then prints a QR code. Scan it with the Outpost-Pi mobile app and you're paired.
+The setup wizard walks you through agent name and relay choice, then prints a
+QR code. (You also need to configure a relay URL once with
+`/outpost-pi set-relay <url>` — there is no default relay.) Scan it with the
+Outpost-Pi mobile app and you're paired.
 
 ## Status
 
