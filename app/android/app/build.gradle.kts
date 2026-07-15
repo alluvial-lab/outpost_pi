@@ -9,10 +9,8 @@ plugins {
 }
 
 // Release signing — loaded from android/key.properties when present.
-// If the file is missing (CI without secrets, fresh clone for debug-only
-// work), release builds fall back to the debug keys so `flutter run
-// --release` still works locally without forcing every contributor to
-// configure signing.
+// Distributable release builds must have their dedicated signing key; debug
+// signing is confined to the debug build type.
 val keystoreProperties = Properties().apply {
     val f = rootProject.file("key.properties")
     if (f.exists()) {
@@ -60,11 +58,13 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (hasReleaseKeystore) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            if (!hasReleaseKeystore) {
+                throw org.gradle.api.GradleException(
+                    "Release builds require android/key.properties with the release keystore configuration. " +
+                        "Debug signing is only available to debug builds.",
+                )
             }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
