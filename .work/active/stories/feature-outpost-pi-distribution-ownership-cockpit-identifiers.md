@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-distribution-ownership-cockpit-identifiers
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, cockpit, release]
 parent: feature-outpost-pi-distribution-ownership
 depends_on: []
@@ -47,3 +47,24 @@ export PUB_CACHE=/home/agent/projects/remote_pi/.pub-cache
 ```
 
 `rg 'work.jacobmoura.cockpit|jacobmoura' cockpit/` returns only dependency URLs and historical CHANGELOG. `rg 'Jacob Moura' cockpit/` returns only the dual-copyright line and historical CHANGELOG.
+
+## Implementation notes
+
+- Replaced Cockpit's macOS, Linux, and Windows application identifiers with
+  `dev.kevoun.outpostpi.cockpit`, including the three macOS test-target bundle
+  identifiers.
+- Renamed the Linux AppStream metadata file to
+  `linux/dev.kevoun.outpostpi.cockpit.metainfo.xml` and updated its AppStream,
+  desktop-entry, developer, and package-config references.
+- Updated platform copyright/company metadata and the packaging runbook. The
+  runbook now uses `APPLE_SIGNING_IDENTITY` rather than naming a particular
+  signing identity.
+- Verification passed: `flutter pub get --offline`, `flutter analyze`, and
+  `flutter test`.
+
+### Discrepancy
+
+`cockpit/distribute_options.yaml` retains the existing literal signing identity.
+It is outside this story's exact file scope; the CI-signing story owns its
+workflow/configuration migration. Consequently, a raw `rg 'Jacob Moura'
+ cockpit/` also reports that configuration line until the CI-signing work lands.

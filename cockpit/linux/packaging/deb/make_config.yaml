@@ -33,6 +33,6 @@ keywords:
   - agent
   - cockpit
 startup_notify: true
-startup_wm_class: work.jacobmoura.cockpit
+startup_wm_class: dev.kevoun.outpostpi.cockpit
 icon: linux/runner/resources/app_icon_512.png
-metainfo: linux/work.jacobmoura.cockpit.metainfo.xml
+metainfo: linux/dev.kevoun.outpostpi.cockpit.metainfo.xml
