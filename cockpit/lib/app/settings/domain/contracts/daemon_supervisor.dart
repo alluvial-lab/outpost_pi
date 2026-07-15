@@ -2,47 +2,68 @@ import 'package:cockpit/app/settings/domain/entities/daemon_info.dart';
 import 'package:cockpit/app/settings/domain/exceptions/daemon_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Fronteira de controle dos "Daemon Agents" (agentes 24/7 sob o
-/// `pi-supervisord`).
+/// Control always-on daemon agents managed by `pi-supervisord`.
 ///
-/// Lista/controla via o UDS de controle do supervisor
-/// (`~/.pi/remote/supervisor.sock`); cria via o CLI `outpost-pi create` (que
-/// escreve o config local + registra + sobe). Contrato no domínio; a impl
-/// (socket/Process) mora em `data/`.
+/// Lists and controls daemons through the supervisor UDS at
+/// `~/.pi/remote/supervisor.sock`. Creation delegates to `outpost-pi create`,
+/// which writes local configuration, registers the daemon, and starts it. The
+/// domain owns this contract; socket and process adapters live in `data/`.
 ///
-/// ⚠️ `stop`/`restart` por-id dependem de ops novas no supervisor
-/// (pi-extension) — até existirem, falham com "unknown op". `startAll`/`stopAll`/
-/// `restartAll` e `start` por-id já são suportados hoje.
+/// Per-daemon `stop` and `restart` depend on their corresponding supervisor
+/// operations and fail with "unknown op" when those operations are unavailable.
 abstract class DaemonSupervisor {
-  /// O supervisor está acessível (sock existe + conecta)?
+  /// Check whether the supervisor socket exists and accepts a connection.
   Future<bool> isOnline();
 
-  /// Lista os daemons registrados com estado de runtime.
+  /// List registered daemons with their observed runtime state.
   Future<Result<List<DaemonInfo>, DaemonError>> list();
 
+  /// Start one registered daemon by identifier.
+  ///
+  /// Returns a typed supervisor failure when the action cannot be completed.
   Future<Result<void, DaemonError>> start(String id);
+
+  /// Stop one registered daemon by identifier.
+  ///
+  /// Returns a typed supervisor failure when the action cannot be completed.
   Future<Result<void, DaemonError>> stop(String id);
+
+  /// Restart one registered daemon by identifier.
+  ///
+  /// Returns a typed supervisor failure when the action cannot be completed.
   Future<Result<void, DaemonError>> restart(String id);
 
+  /// Start every daemon registered with the supervisor.
+  ///
+  /// Returns a typed supervisor failure if the fleet action fails.
   Future<Result<void, DaemonError>> startAll();
+
+  /// Stop every daemon registered with the supervisor.
+  ///
+  /// Returns a typed supervisor failure if the fleet action fails.
   Future<Result<void, DaemonError>> stopAll();
+
+  /// Restart every daemon registered with the supervisor.
+  ///
+  /// Returns a typed supervisor failure if the fleet action fails.
   Future<Result<void, DaemonError>> restartAll();
 
-  /// Remove o daemon (para o processo + tira do registry).
+  /// Stop and remove a daemon from the registry.
   Future<Result<void, DaemonError>> unregister(String id);
 
-  /// Registra um novo daemon para [cwd] (`outpost-pi create <cwd> [--name]`).
+  /// Register and start a daemon for [cwd] via `outpost-pi create`.
   Future<Result<void, DaemonError>> create(String cwd, {String? name});
 
-  /// Renomeia o agente: atualiza `name` no registry global
-  /// `~/.pi/remote/daemons.json` (fonte da verdade). O processo vivo só reflete
-  /// o novo nome após um restart (o supervisor injeta o nome no spawn).
+  /// Rename an agent in the authoritative global daemon registry.
+  ///
+  /// Updates `name` in `~/.pi/remote/daemons.json`; a running process observes
+  /// the new name only after restart because the supervisor injects it at spawn.
   Future<Result<void, DaemonError>> setAgentName(String cwd, String name);
 
-  /// Reinicia o **processo do supervisor** (`pi-supervisord`) — não os daemons.
-  /// Necessário pra recarregar código novo do pi-extension (Node não faz
-  /// hot-reload). Reinicia todos os daemons junto. Delega ao CLI
-  /// `outpost-pi restart-supervisor`, que trata o detalhe por SO
-  /// (launchctl/systemctl/serviço do Windows).
+  /// Restart the `pi-supervisord` process rather than an individual daemon.
+  ///
+  /// Delegates to `outpost-pi restart-supervisor` so the platform-specific
+  /// launchctl, systemd, or Windows service path can reload extension code.
+  /// Restarting the supervisor also restarts all managed daemons.
   Future<Result<void, DaemonError>> restartSupervisor();
 }

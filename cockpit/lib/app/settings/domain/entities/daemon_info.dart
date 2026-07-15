@@ -1,6 +1,9 @@
-/// Estado de um daemon observado pelo supervisor.
+/// Describe a daemon state observed by the supervisor.
 enum DaemonState { running, stopped, starting, crashed, unknown }
 
+/// Decode a supervisor daemon state without rejecting future wire values.
+///
+/// Unknown or absent values map to [DaemonState.unknown].
 DaemonState daemonStateFromWire(String? raw) => switch (raw) {
   'running' => DaemonState.running,
   'stopped' => DaemonState.stopped,
@@ -9,11 +12,12 @@ DaemonState daemonStateFromWire(String? raw) => switch (raw) {
   _ => DaemonState.unknown,
 };
 
-/// Um "Daemon Agent" — um `pi --mode rpc` que roda 24/7 sob o `pi-supervisord`.
+/// Represent an always-on `pi --mode rpc` agent managed by `pi-supervisord`.
 ///
-/// Espelha o `DaemonInfo` do control protocol do outpost-pi
-/// (`pi-extension/src/daemon/control_protocol.ts`). O `id` é derivado do cwd
-/// (sha256[0..8]); `name`/cwd vêm do registry + config local.
+/// Mirrors Outpost-Pi's control-protocol `DaemonInfo` in
+/// `pi-extension/src/daemon/control_protocol.ts`. The ID is derived from the
+/// working directory (`sha256[0..8]`); `name` and `cwd` come from the registry
+/// and local configuration.
 class DaemonInfo {
   const DaemonInfo({
     required this.id,
