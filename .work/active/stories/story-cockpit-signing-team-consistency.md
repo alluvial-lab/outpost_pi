@@ -1,7 +1,7 @@
 ---
 id: story-cockpit-signing-team-consistency
 kind: story
-stage: implementing
+stage: review
 tags: [cockpit, security, release]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -34,6 +34,22 @@ Validate that the selected Developer ID identity/certificate belongs to the
 configured team (or remove the redundant team secret and document why the full
 signing identity is the sole authority). Add a lightweight workflow assertion
 or extracted-script test covering empty, mismatched, and matching values.
+
+## Implementation notes (first pass)
+- File changed: `.github/workflows/cockpit-release.yml` (the "Import Developer ID certificate" step).
+- After confirming the imported certificate matches `SIGN_ID`, the step extracts the certificate's Organizational Unit (OU) and compares it to `APPLE_TEAM_ID`. The OU of a Developer ID Application certificate is the 10-character team ID.
+
+## Review (2026-07-15, second pass) — bounced
+The first-pass OU extraction was defective: `awk -F'/'` split on `/` but `openssl x509 -nameopt multiline` emits `organizationalUnitName = TEAMID` with `=` as the separator, so `$NF` captured the whole line and the comparison always rejected valid certificates. Reproduced with a synthetic cert.
+
+## Implementation notes (second pass fix)
+- File changed: `.github/workflows/cockpit-release.yml`.
+- Fixed the OU extraction to `awk -F' *= *'` (split on `=` with optional surrounding whitespace) and trim trailing whitespace: `awk -F' *= *' '/organizationalUnitName/ {gsub(/[[:space:]]+$/,"",$2); print $2}')`.
+- Verified against a realistic synthetic multiline openssl subject: extracts `U843T2P7A2` correctly (MATCH), rejects garbage/missing OU (empty-reject), YAML still valid.
+- The three failure paths remain: (1) `SIGN_ID` not in keychain; (2) OU missing/unextractable; (3) OU != `APPLE_TEAM_ID` → foreign-team error. Empty-secret paths still fail-closed via the `Require Apple signing configuration` step.
+- Verification: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/cockpit-release.yml'))"` passes.
+- Discrepancies: none (the fix corrects the parsing bug the second-pass review caught).
+- Adjacent issues parked: none.
 
 ## Implementation notes
 - File changed: `.github/workflows/cockpit-release.yml` (the "Import Developer ID certificate" step).

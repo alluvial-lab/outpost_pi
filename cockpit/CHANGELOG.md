@@ -7,12 +7,15 @@ Versions follow `version:` in `pubspec.yaml` (SSOT). The `notes` field in
 ## [Unreleased]
 
 ### Added
-- **Self-update (plan 47):** Cockpit now updates itself on macOS and
-  Windows through Sparkle/WinSparkle (`auto_updater` package): checks and downloads in
-  the background, shows "restart to install" in the rail card, and swaps the binary on
-  restart. **Linux** retains the warning + manual download (`latest.json`). CI now
-  publishes `appcast-macos.xml` and `appcast-windows.xml` (EdDSA-signed)
-  alongside `latest.json`.
+- **Self-update (plan 47):** Cockpit now updates itself on **macOS**
+  through Sparkle (`auto_updater` package): checks and downloads in the
+  background, shows "restart to install" in the rail card, and swaps the binary
+  on restart. **Linux** retains the warning + manual download (`latest.json`).
+  CI publishes `appcast-macos.xml` (EdDSA-signed) alongside `latest.json`.
+  **Windows** auto-update is **not yet active**: the locked `auto_updater_windows`
+  plugin does not expose the WinSparkle build-version API needed for a proven
+  version contract, so the Windows appcast is intentionally not published.
+  Windows users update by manual reinstall until the plugin is upgraded.
 
 > Release note: Sparkle compares the **build number** (`CFBundleVersion`, the
 > `+n`) — increment `+n` in `pubspec.yaml` on every release or macOS will not
