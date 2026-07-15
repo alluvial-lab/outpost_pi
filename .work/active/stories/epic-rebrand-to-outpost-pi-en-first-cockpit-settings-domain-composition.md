@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-settings-domain-composition
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-settings
 depends_on: []
@@ -52,3 +52,23 @@ translated in place. Do not add filler docs to DTO fields or obvious members.
 - [ ] No declaration, enum/wire value, JSON key, algorithm, route, bind, or
       runtime behavior changes.
 - [ ] Scoped PT scan, dart format check, and relevant settings tests pass.
+
+## Implementation notes
+
+- Files changed: all nine owned settings domain/composition files listed in
+  Scope.
+- Tests added: none; the change is comment/dartdoc-only and existing behavior
+  coverage remains unchanged.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
+- Dispatch rationale: direct-read only. The story supplied an exact, exclusive
+  file list and fixed twelve-declaration documentation audit, so another agent
+  would add coordination without resolving an unknown.
+- Translation judgment: translated the quoted UI phrase in the explanatory
+  `nextCronRun` dartdoc because it is comment prose, not an executable string;
+  all Dart string literals, commands, wire values, paths, signatures, and
+  behavior remain unchanged.
+- Verification: scoped dart format check passed (9 files, 0 changed); scoped
+  accented and targeted unaccented PT scans found no owned-file matches;
+  `flutter analyze` passed with no issues; full `flutter test` passed (241
+  tests).

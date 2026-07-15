@@ -11,17 +11,14 @@ import 'package:cockpit/app/settings/ui/settings_env_gate.dart';
 import 'package:cockpit/app/settings/ui/settings_page.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
-/// Feature **Configurações** — `path: '/settings'` (rota empilhada por cima do
-/// shell via `pushNamed`; o shell continua na base da pilha). Cobre Conectividade,
-/// Daemon Agents e Agendamentos (cron).
+/// Build the stacked `/settings` feature for connectivity, daemons, and cron.
 ///
-/// O [SupervisorClientImpl] é **uma instância** sob dois contratos
-/// ([DaemonSupervisor] + [CronGateway]) — mesmo control-plane UDS do
-/// `pi-supervisord`. Os ViewModels são page-scoped (`provide`): nascem ao abrir a
-/// tela e morrem (`dispose`) ao fechar. Pareamento/revoke sobem um `pi --mode rpc`
-/// efêmero via `PairingGatewayFactory`/`RevokeGatewayFactory`, registradas no
-/// **core** (root-owned — dependem do `PiSpawnConfig`, também do core) e injetadas
-/// no `ConnectivityViewModel`.
+/// Registers one [SupervisorClientImpl] under both [DaemonSupervisor] and
+/// [CronGateway] because they share the `pi-supervisord` control-plane UDS.
+/// ViewModels are page-scoped through `provide` and disposed when the route
+/// closes. The root-owned core injects `PairingGatewayFactory` and
+/// `RevokeGatewayFactory` into `ConnectivityViewModel`; those factories spawn
+/// an ephemeral `pi --mode rpc` for pairing and revocation.
 Module buildSettingsModule() => createModule(
   path: '/settings',
   register: (c) {
@@ -37,8 +34,8 @@ Module buildSettingsModule() => createModule(
           ..addChangeNotifier<ConnectivityViewModel>(ConnectivityViewModel.new)
           ..addChangeNotifier<DaemonsViewModel>(DaemonsViewModel.new)
           ..addChangeNotifier<CronViewModel>(CronViewModel.new)
-          // Resolvem deps do core upward (page-scoped enxerga core):
-          // EnvironmentProbe e SystemPermissions.
+          // Resolve core dependencies upward from the page scope:
+          // EnvironmentProbe and SystemPermissions.
           ..addChangeNotifier<SettingsEnvGate>(SettingsEnvGate.new)
           ..addChangeNotifier<NotificationsViewModel>(
             NotificationsViewModel.new,

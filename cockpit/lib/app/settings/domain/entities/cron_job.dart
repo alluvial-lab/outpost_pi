@@ -1,4 +1,4 @@
-/// Resultado de um disparo (ou skip) de cron, do log do supervisor.
+/// Describe a cron delivery or skip recorded in the supervisor log.
 enum CronResult {
   delivered,
   deliverFailed,
@@ -9,6 +9,9 @@ enum CronResult {
   unknown,
 }
 
+/// Decode a supervisor cron result without rejecting forward-compatible input.
+///
+/// Unknown or absent wire values map to [CronResult.unknown].
 CronResult cronResultFromWire(String? raw) => switch (raw) {
   'delivered' => CronResult.delivered,
   'deliver_failed' => CronResult.deliverFailed,
@@ -19,9 +22,10 @@ CronResult cronResultFromWire(String? raw) => switch (raw) {
   _ => CronResult.unknown,
 };
 
-/// Um job de cron: prompt recorrente agendado para um daemon (plan/39).
-/// Espelha o `CronJobView` do supervisor (`control_protocol.ts`): o job + o
-/// `nextRun` calculado.
+/// Represent a recurring prompt scheduled for a daemon.
+///
+/// Mirrors the supervisor's `CronJobView` from `control_protocol.ts`, including
+/// its calculated `nextRun`.
 class CronJob {
   const CronJob({
     required this.id,
@@ -40,18 +44,18 @@ class CronJob {
   });
 
   final String id; // "j_<rand>"
-  final String daemonId; // id 8-hex do daemon alvo
-  final String schedule; // expressão cron
+  final String daemonId; // Eight-hex-character target daemon ID.
+  final String schedule; // Cron expression.
   final String prompt;
   final bool enabled;
   final bool skipIfBusy;
   final bool wake;
   final bool catchup;
   final String? tz;
-  final String? createdAt; // ISO
-  final String? lastRun; // ISO
-  final String? lastStatus; // último CronResult (string crua)
-  final String? nextRun; // ISO ou null
+  final String? createdAt; // ISO timestamp.
+  final String? lastRun; // ISO timestamp.
+  final String? lastStatus; // Latest CronResult as its raw wire value.
+  final String? nextRun; // ISO timestamp or null.
 
   @override
   bool operator ==(Object other) =>
@@ -86,7 +90,7 @@ class CronJob {
   );
 }
 
-/// Uma linha do log do cron (`cron.jsonl`) — todo disparo E todo skip.
+/// Represent one `cron.jsonl` entry for every trigger and skip.
 class CronLogEntry {
   const CronLogEntry({
     required this.tsMs,
