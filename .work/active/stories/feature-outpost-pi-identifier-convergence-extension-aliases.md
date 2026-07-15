@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-identifier-convergence-extension-aliases
 kind: story
-stage: review
+stage: done
 tags: [rebrand, pi-extension]
 parent: feature-outpost-pi-identifier-convergence
 depends_on: []
@@ -40,3 +40,13 @@ corepack pnpm typecheck && corepack pnpm test
 ```
 
 `rg 'remotePi|__remotePi' pi-extension/src/` must return no hits.
+
+## Review (2026-07-15)
+
+**Verdict**: Approve - story verified by implement; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fast-lane: green build+test verification recorded by implement. Orchestrator re-verified the combined tree (extension 838 passed/3 skipped; relay all green; app analyze clean + 698 passed; protocol check + generate:rust:check clean; site lint+build clean).

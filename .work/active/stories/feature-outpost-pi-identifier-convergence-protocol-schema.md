@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-identifier-convergence-protocol-schema
 kind: story
-stage: review
+stage: done
 tags: [rebrand, protocol, docs]
 parent: feature-outpost-pi-identifier-convergence
 depends_on: []
@@ -50,3 +50,13 @@ If `generate:rust:check` shows the generated file changed (titles/descriptions f
 - `protocol check` and `generate:rust:check` pass. The latter initially regenerated `relay/src/protocol/generated/control.rs` because a concurrent auth-domain schema/codegen change in the shared working tree had made it stale; that generated change and its corresponding source changes are deliberately not included in this identifier-only story.
 - Relay verification passed from `relay/`: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` (125 tests passed; existing test-build `unused_mut` warnings were emitted by `cargo test`).
 - Final `rg 'remote-pi|Remote Pi|@remote-pi' protocol/ tools/protocol-codegen/` returned no tracked-source hits. The only raw matches were ignored `protocol/node_modules/` install metadata, which is generated local state and not part of the searched product source.
+
+## Review (2026-07-15)
+
+**Verdict**: Approve - story verified by implement; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fast-lane: green build+test verification recorded by implement. Orchestrator re-verified the combined tree (extension 838 passed/3 skipped; relay all green; app analyze clean + 698 passed; protocol check + generate:rust:check clean; site lint+build clean).
