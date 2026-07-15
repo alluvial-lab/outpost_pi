@@ -14,7 +14,7 @@ const String kDefaultFileIcon = "file";
 const String kDefaultFolderIcon = "folder";
 const String kDefaultFolderOpenIcon = "folder-open";
 
-/// Extensão (sem ponto, minúscula) -> nome do ícone.
+/// Extension (no dot, lowercase) -> icon name.
 const Map<String, String> kFileExtensionIcons = {
   ".ncurc.js": "dependencies-update",
   ".ncurc.json": "dependencies-update",
@@ -1386,7 +1386,7 @@ const Map<String, String> kFileExtensionIcons = {
   "🔥": "mojo",
 };
 
-/// Nome de arquivo completo (minúsculo) -> nome do ícone.
+/// Full file name (lowercase) -> icon name.
 const Map<String, String> kFileNameIcons = {
   "._sc_": "godot-assets",
   ".adonisrc.json": "adonis",
@@ -3514,7 +3514,7 @@ const Map<String, String> kFileNameIcons = {
   "zshrc_apple_terminal": "console",
 };
 
-/// Nome de pasta normalizado -> ícone (fechada).
+/// Normalized folder name -> icon (closed).
 const Map<String, String> kFolderIcons = {
   "@types": "folder-typescript",
   "addin": "folder-plugin",
@@ -4447,7 +4447,7 @@ const Map<String, String> kFolderIcons = {
   "zed": "folder-zed",
 };
 
-/// Nome de pasta normalizado -> ícone (aberta).
+/// Normalized folder name -> icon (open).
 const Map<String, String> kFolderOpenIcons = {
   "@types": "folder-typescript-open",
   "addin": "folder-plugin-open",

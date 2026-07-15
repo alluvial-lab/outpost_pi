@@ -50,42 +50,43 @@ import 'package:flutter_modular/flutter_modular.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-/// Feature **Cockpit** — o shell (home, `path: '/'`). Registra os binds de infra
-/// do shell (filesystem, RPC, terminal, repos, setup, update) e declara a rota
-/// `/` com os 3 ViewModels page-scoped.
+/// Feature **Cockpit** — the shell (home, `path: '/'`). Registers the shell's
+/// infra binds (filesystem, RPC, terminal, repos, setup, update) and declares
+/// the `/` route with the 3 page-scoped ViewModels.
 ///
-/// **Bootstrap async (idioma do flutter_modular):** o builder é `Future` e abre
-/// as PRÓPRIAS dependências assíncronas — Hive boxes, versão do app, notifier —
-/// capturando-as no closure (box privada → `addInstance(HiveX(box))`). Assim o
-/// `main` não threada esses valores: chame UMA vez e componha o módulo retornado
-/// (dedup é por identidade).
+/// **Async bootstrap (flutter_modular idiom):** the builder is a `Future` and
+/// opens its OWN async dependencies — Hive boxes, app version, notifier —
+/// capturing them in the closure (private box → `addInstance(HiveX(box))`).
+/// So `main` doesn't thread these values: call ONCE and compose the returned
+/// module (dedup is by identity).
 ///
-/// **Resolução cross-module (flutter_modular >= 7.1.0):** os binds que dependem
-/// do `PiSpawnConfig` usam `.new` e resolvem o config **upward** do core
-/// (root-owned) — por isso o builder não recebe mais `config`. As Hive boxes,
-/// porém, continuam exigindo o bootstrap async acima (não há async bind).
+/// **Cross-module resolution (flutter_modular >= 7.1.0):** binds that depend
+/// on `PiSpawnConfig` use `.new` and resolve the config **upward** from core
+/// (root-owned) — which is why the builder no longer takes `config`. The Hive
+/// boxes, however, still require the async bootstrap above (there is no async
+/// bind).
 ///
-/// Como o shell fica em `/` e o Settings é **empilhado** por cima (não substitui),
-/// a rota `/` nunca deixa a pilha em navegação normal → estes binds
-/// feature-scoped vivem o app inteiro na prática.
+/// Since the shell lives at `/` and Settings is **stacked** on top (not
+/// replacing), the `/` route never leaves the stack during normal navigation →
+/// these feature-scoped binds effectively live for the whole app lifetime.
 Future<Module> buildCockpitModule() async {
-  // Bootstrap async: abre as próprias boxes (privadas no closure), resolve a
-  // versão e inicia o notifier. `Hive.initFlutter` já rodou no `main`.
+  // Async bootstrap: opens its own boxes (private in the closure), resolves the
+  // version, and starts the notifier. `Hive.initFlutter` already ran in `main`.
   final projectBox = await Hive.openBox<dynamic>(HiveProjectRepository.boxName);
   final layoutBox = await Hive.openBox<dynamic>(
     HiveWorkspaceLayoutStore.boxName,
   );
-  // Updates dispensados moram na box de settings (mesma do SettingsController);
-  // `openBox` é idempotente → devolve a instância já aberta pelo `main`.
+  // Dismissed updates live in the settings box (same as SettingsController);
+  // `openBox` is idempotent → returns the instance already opened by `main`.
   final settingsBox = await Hive.openBox<dynamic>(HiveSettingsStore.boxName);
   final appVersion = (await PackageInfo.fromPlatform()).version;
 
-  // Notificações do SO — init pede permissão; falha não pode derrubar o boot.
+  // OS notifications — init asks for permission; failure must not crash the boot.
   final notifier = LocalNotifier();
   try {
     await notifier.init();
   } catch (error) {
-    debugPrint('Falha ao iniciar notificações: $error');
+    debugPrint('Failed to start notifications: $error');
   }
 
   return createModule(
@@ -97,7 +98,7 @@ Future<Module> buildCockpitModule() async {
         ..addInstance<DismissedUpdateStore>(
           HiveDismissedUpdateStore(settingsBox),
         )
-        // Dependem do PiSpawnConfig → `.new` resolve upward do core (>= 7.1.0).
+        // Depend on PiSpawnConfig → `.new` resolves upward from core (>= 7.1.0).
         ..addLazySingleton<RpcGatewayFactory>(PiRpcProcessFactory.new)
         ..addLazySingleton<EnvironmentInstaller>(EnvironmentInstallerImpl.new)
         ..addInstance<FolderLister>(const FolderListerImpl())
@@ -114,14 +115,14 @@ Future<Module> buildCockpitModule() async {
         ..addInstance<UpdateChecker>(const UpdateCheckerImpl())
         ..addInstance<UrlOpener>(const UrlOpenerImpl())
         ..addInstance<UpdateTarget>(_updateTarget(appVersion))
-        // Self-update nativo permanece desativado até os appcasts serem
-        // publicados e implantados; o updater é Noop em todas as plataformas.
+        // Native self-update remains disabled until appcasts are published
+        // and deployed; the updater is Noop on all platforms.
         ..addInstance<SelfUpdater>(_buildSelfUpdater(_updateTarget(appVersion)))
         ..route(
           '/',
-          // ViewModels page-scoped via tear-off `.new` → o auto_injector resolve
-          // o construtor a partir dos binds acima. Os `init()`/`check()` (que
-          // antes encadeavam no factory) agora rodam no `CockpitPage.initState`.
+          // Page-scoped ViewModels via tear-off `.new` → auto_injector resolves
+          // the constructor from the binds above. The `init()`/`check()` (which
+          // used to chain in the factory) now run in `CockpitPage.initState`.
           provide: (s) => s
             ..addChangeNotifier<CockpitViewModel>(CockpitViewModel.new)
             ..addChangeNotifier<SetupViewModel>(SetupViewModel.new)
@@ -132,9 +133,9 @@ Future<Module> buildCockpitModule() async {
   );
 }
 
-/// [UpdateTarget] da máquina atual: versão do app + plataforma/formato/arch do
-/// manifest. Appcasts nativos não são configurados enquanto não houver
-/// publicação/implantação desses feeds.
+/// The current machine's [UpdateTarget]: app version + platform/format/arch of
+/// the manifest. Native appcasts are not configured until those feeds are
+/// published/deployed.
 /// macOS → dmg/universal; Windows → exe/x64; Linux → deb/(arm64|x64).
 UpdateTarget _updateTarget(String version) {
   if (Platform.isMacOS) {
@@ -162,8 +163,8 @@ UpdateTarget _updateTarget(String version) {
   );
 }
 
-/// Constrói o [SelfUpdater]. Sem appcast configurado, [NoopSelfUpdater] deixa
-/// o `UpdateViewModel` no caminho de notify + download manual.
+/// Builds the [SelfUpdater]. With no appcast configured, [NoopSelfUpdater]
+/// leaves the `UpdateViewModel` on the manual notify + download path.
 SelfUpdater _buildSelfUpdater(UpdateTarget target) {
   final feed = target.selfUpdateFeedUrl;
   if (feed == null) return const NoopSelfUpdater();
