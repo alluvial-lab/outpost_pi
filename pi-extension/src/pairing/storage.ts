@@ -216,7 +216,7 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
 
       // A successful empty read is a genuine first run on a working keyring.
       // The Outpost-Pi hard cutover deliberately does not inspect legacy
-      // Remote Pi/keytar services.
+      // remote-pi/keytar services.
       // Generate and save to the new service.
       const fresh = generateEd25519Keypair();
       await backend.write(NEW_SERVICE, ACCOUNT, _serialize(fresh));
