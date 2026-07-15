@@ -9,17 +9,16 @@ import 'package:cockpit/app/cockpit/domain/value_objects/semver.dart';
 import 'package:cockpit/app/cockpit/domain/value_objects/update_target.dart';
 import 'package:flutter/foundation.dart';
 
-/// Dono do mini card de atualização do rail. Tem **dois modos**, decididos pela
-/// plataforma:
+/// Drive the rail's update card through platform-specific update flows.
 ///
-/// - **macOS/Windows (self-update, plano 47):** [check] liga o [SelfUpdater]
-///   nativo (Sparkle/WinSparkle) — checa/baixa em background; o card reflete o
-///   [SelfUpdateState] (baixando → pronto). O toque instala+relança o já baixado.
-/// - **Linux (notify, plano 43):** [check] lê o `latest.json` via [UpdateChecker];
-///   se houver versão **maior** e **não dispensada**, o card aparece e o toque
-///   abre a URL do artefato no navegador (download manual).
+/// On macOS and Windows, [check] initializes the native [SelfUpdater], which
+/// downloads in the background and exposes progress through [SelfUpdateState];
+/// the primary action installs the downloaded update and relaunches. On Linux,
+/// [check] reads `latest.json` through [UpdateChecker] and offers a newer,
+/// non-dismissed artifact for manual download.
 ///
-/// Tudo best-effort: falhas são silenciosas, nunca derrubam o boot.
+/// All update operations are best effort: failures stay silent and never block
+/// application startup.
 class UpdateViewModel extends ChangeNotifier {
   UpdateViewModel(
     this._checker,
@@ -36,31 +35,30 @@ class UpdateViewModel extends ChangeNotifier {
   final UpdateTarget _target;
   final SelfUpdater _selfUpdater;
 
-  /// Versão do app rodando (de package_info, resolvida no boot).
+  /// Expose the running application version resolved during startup.
   String get currentVersion => _target.version;
 
-  /// Plataforma/arch correntes pra escolher o artefato (caminho Linux/notify).
+  /// Expose the platform target used to select a Linux download artifact.
   String get platform => _target.platform;
   String get format => _target.format;
   String get arch => _target.arch;
 
-  /// Página de download do site — fallback quando não há artefato da plataforma.
+  /// Fall back to this download page when no compatible artifact exists.
   final String fallbackUrl;
 
-  static const String _kFallbackUrl =
-      'https://outpost-pi.kevoun.com/download';
+  static const String _kFallbackUrl = 'https://outpost-pi.kevoun.com/download';
 
-  UpdateInfo? _available; // caminho Linux/notify
+  UpdateInfo? _available; // Linux notification/manual-download path
   StreamSubscription<SelfUpdateState>? _selfSub;
-  bool _selfDismissed = false; // dispensa transiente no modo self-update
+  bool _selfDismissed = false; // Session-only dismissal in self-update mode
   bool _disposed = false;
 
-  /// `true` em macOS/Windows (há motor de self-update); `false` no Linux.
+  /// Report whether this platform has a native self-update engine.
   bool get isSelfUpdate => _selfUpdater.isSupported;
 
-  // ---- Estado unificado consumido pelo card ----
+  // ---- Unified state consumed by the card ----
 
-  /// O card deve aparecer?
+  /// Report whether the update card should be visible.
   bool get hasUpdate {
     if (isSelfUpdate) {
       return !_selfDismissed && _selfUpdater.state.hasPendingUpdate;
@@ -68,18 +66,19 @@ class UpdateViewModel extends ChangeNotifier {
     return _available != null;
   }
 
-  /// Artefato baixado e pronto pra instalar (só self-update).
+  /// Report whether a self-update artifact is downloaded and ready to install.
   bool get isReadyToInstall =>
       isSelfUpdate && _selfUpdater.state.isReadyToInstall;
 
-  /// Versão a anunciar no card (`null` se ainda desconhecida).
+  /// Expose the update version, or `null` until it is known.
   String? get updateVersion =>
       isSelfUpdate ? _selfUpdater.state.version : _available?.version;
 
-  /// Título do card.
-  String get cardTitle => isReadyToInstall ? 'Update ready' : 'Update available';
+  /// Build the update card title for the current phase.
+  String get cardTitle =>
+      isReadyToInstall ? 'Update ready' : 'Update available';
 
-  /// Subtítulo do card (varia por modo/fase).
+  /// Build the update card subtitle for the current mode and phase.
   String get cardSubtitle {
     final v = updateVersion ?? '';
     if (isSelfUpdate) {
@@ -88,9 +87,12 @@ class UpdateViewModel extends ChangeNotifier {
     return 'v$v — click to download';
   }
 
-  // ---- Boot ----
+  // ---- Startup ----
 
-  /// Consulta updates e decide se o card aparece. Silencioso em falha.
+  /// Check for updates and publish whether the card should appear.
+  ///
+  /// Native self-update subscribes to engine changes before initialization;
+  /// Linux fetches and filters the manifest. Failures remain silent.
   Future<void> check() async {
     if (isSelfUpdate) {
       _selfSub ??= _selfUpdater.changes.listen((_) => _safeNotify());
@@ -98,19 +100,21 @@ class UpdateViewModel extends ChangeNotifier {
       await _selfUpdater.checkForUpdates(inBackground: true);
       return;
     }
-    // Linux: notify + download manual.
+    // Linux uses notification plus manual download.
     final latest = await _checker.fetchLatest();
-    if (latest == null) return; // sem rede/manifest/inválido → nada.
-    if (!isNewerVersion(latest.version, currentVersion)) return; // igual/menor.
-    if (_dismissed.dismissedVersion() == latest.version) return; // dispensada.
+    if (latest == null) return; // No network, manifest, or valid update.
+    if (!isNewerVersion(latest.version, currentVersion)) return; // Not newer.
+    if (_dismissed.dismissedVersion() == latest.version) return; // Dismissed.
     _available = latest;
     _safeNotify();
   }
 
-  // ---- Ações do card ----
+  // ---- Card actions ----
 
-  /// Toque no card: self-update → instala+relança o update já baixado; Linux →
-  /// baixa o artefato (abre a URL no navegador).
+  /// Perform the update card's primary action.
+  ///
+  /// Native self-update installs and relaunches with the downloaded update;
+  /// Linux opens the selected artifact in the browser.
   Future<void> primaryAction() async {
     if (isSelfUpdate) {
       await _selfUpdater.applyDownloadedUpdate();
@@ -119,8 +123,10 @@ class UpdateViewModel extends ChangeNotifier {
     await _download();
   }
 
-  /// Fecha o card. Self-update → dispensa só pela sessão (reaparece se baixar
-  /// outra versão). Linux → persiste a versão como dispensada (não reaparece).
+  /// Dismiss the current update card.
+  ///
+  /// Self-update dismissal lasts only for this session; Linux persists the
+  /// dismissed version so it does not reappear.
   Future<void> dismiss() async {
     if (isSelfUpdate) {
       _selfDismissed = true;
@@ -133,8 +139,7 @@ class UpdateViewModel extends ChangeNotifier {
     if (v != null) await _dismissed.dismiss(v);
   }
 
-  /// Abre a URL do artefato da plataforma corrente; sem artefato compatível →
-  /// abre a página de download do site (caminho Linux/notify).
+  /// Open the current platform artifact or the fallback download page.
   Future<void> _download() async {
     final info = _available;
     if (info == null) return;

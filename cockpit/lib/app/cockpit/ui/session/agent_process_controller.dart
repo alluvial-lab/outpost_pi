@@ -53,10 +53,16 @@ final class AgentProcessController {
   bool _booting = false;
   bool _disposed = false;
 
+  /// Stream lifecycle, turn, and transcript signals to the owning session.
   Stream<AgentSessionSignal> get signals => _signals.stream;
 
+  /// Report whether the owned RPC gateway currently has a live child process.
   bool get isRunning => _gateway?.isRunning ?? false;
 
+  /// Start the owned RPC process unless it is running, booting, or disposed.
+  ///
+  /// Emits lifecycle signals for boot, success, or failure. If disposal races
+  /// with spawn completion, the newly created gateway is killed immediately.
   Future<void> boot(AgentSessionBootRequest request) async {
     if (_disposed || _booting || isRunning) return;
     _booting = true;
@@ -96,12 +102,20 @@ final class AgentProcessController {
     );
   }
 
+  /// Send a prompt through the live gateway.
+  ///
+  /// Returns `null` when no process is available; otherwise returns the RPC
+  /// result without translating its failure.
   Future<Result<void, RpcError>?> send(AgentPrompt prompt) async {
     final gateway = _gateway;
     if (gateway == null) return null;
     return gateway.sendPrompt(prompt.text, images: prompt.images);
   }
 
+  /// Abort the current turn without killing the process.
+  ///
+  /// Returns `null` when no process is available. Emits a convergent idle or
+  /// error turn signal from the returned RPC result.
   Future<Result<void, RpcError>?> stop() async {
     final result = await _gateway?.abort();
     result?.fold(
@@ -127,6 +141,7 @@ final class AgentProcessController {
     return result;
   }
 
+  /// Kill the current gateway and mark its turn stale before a restart.
   Future<void> killForRestart() async {
     await _releaseCurrentGateway(kill: true);
     _emit(
@@ -140,6 +155,10 @@ final class AgentProcessController {
     _emit(const AgentLifecycleSignal(AgentProcessLifecycle.crashed));
   }
 
+  /// Permanently dispose this controller and all process resources.
+  ///
+  /// Marks the active turn stale, kills the gateway, cancels its subscription,
+  /// and closes [signals]. Repeated calls are safe.
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
@@ -156,39 +175,65 @@ final class AgentProcessController {
     await _signals.close();
   }
 
+  /// Fetch models from the live process, or return `null` when it is absent.
   Future<Result<List<PiModel>, RpcError>?> availableModels() async =>
       _gateway?.availableModels();
 
+  /// Fetch slash commands from the live process, or `null` when it is absent.
   Future<Result<List<PiCommand>, RpcError>?> commands() async =>
       _gateway?.commands();
 
+  /// Fetch the live agent snapshot, or return `null` when no process exists.
   Future<Result<AgentSnapshot, RpcError>?> state() async => _gateway?.state();
 
+  /// Change the live model and return the applied model.
+  ///
+  /// Returns `null` when no process exists and preserves RPC failures.
   Future<Result<PiModel, RpcError>?> setModel(PiModel model) async =>
       _gateway?.setModel(model);
 
+  /// Change the live thinking level, preserving RPC failures.
+  ///
+  /// Returns `null` when no process exists.
   Future<Result<void, RpcError>?> setThinkingLevel(ThinkingLevel level) async =>
       _gateway?.setThinkingLevel(level);
 
+  /// Start a fresh Pi session, or return `null` when no process exists.
   Future<Result<void, RpcError>?> newSession() async => _gateway?.newSession();
 
+  /// Compact the live session context, or return `null` when unavailable.
   Future<Result<void, RpcError>?> compact() async => _gateway?.compact();
 
+  /// Switch the live process to [sessionPath], preserving RPC failures.
+  ///
+  /// Returns `null` when no process exists.
   Future<Result<void, RpcError>?> switchSession(String sessionPath) async =>
       _gateway?.switchSession(sessionPath);
 
+  /// Load transcript events for [sessionId] from the live process.
+  ///
+  /// Returns `null` when no process exists and preserves RPC failures.
   Future<Result<List<CockpitTranscriptEvent>, RpcError>?> getMessages({
     required String sessionId,
   }) async => _gateway?.getMessages(sessionId: sessionId);
 
+  /// Fetch current context usage, including a successful `null` when unknown.
+  ///
+  /// Returns outer `null` only when no process exists.
   Future<Result<ContextUsage?, RpcError>?> sessionStats() async =>
       _gateway?.sessionStats();
 
+  /// Send an extension UI response through the live process.
+  ///
+  /// Returns `null` when no process exists and preserves RPC failures.
   Future<Result<void, RpcError>?> respondUi(
     String id,
     Map<String, dynamic> response,
   ) async => _gateway?.respondUi(id, response);
 
+  /// Send an Outpost-Pi control command outside the LLM transcript.
+  ///
+  /// Returns `null` when no process exists and preserves RPC failures.
   Future<Result<void, RpcError>?> sendControl(PiControlCommand command) async =>
       _gateway?.sendControl(command);
 

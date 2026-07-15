@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-ui-state-session-viewmodels
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-ui
 depends_on: []
@@ -80,3 +80,25 @@ export PUB_CACHE=~/projects/remote_pi/.pub-cache
 
 Also review the word diff and run the parent feature's PT and documentation
 self-checks. The full cockpit test suite is the integrated parent gate.
+
+## Implementation notes
+
+- Files changed: `cockpit_page.dart`; session files `agent_entry.dart`,
+  `agent_process_controller.dart`, `agent_session.dart`,
+  `file_viewer_session.dart`, `pane_item.dart`, `terminal_input.dart`, and
+  `terminal_session.dart`; ViewModels `cockpit_viewmodel.dart`,
+  `setup_viewmodel.dart`, `update_viewmodel.dart`, and
+  `workspace_projection.dart`. `states/pane_node.dart` was audited and remains
+  an unchanged Skip-tier barrel.
+- Tests added: none; this is a comment/dartdoc-only change.
+- Discrepancies from design: none. No owned user-facing Portuguese runtime
+  strings were found, so all literal values remain unchanged. Public DTO-shaped
+  boot/prompt declarations and trivial projection getters remain intentionally
+  undocumented under the Skip tier.
+- Adjacent issues parked: none.
+- Dispatch rationale: direct-read only. The exact 13-file ownership boundary was
+  explicit and disjoint from parallel agents, so no exploratory sub-agent was
+  needed.
+- Verification: repo Flutter `pub get --offline`, `flutter analyze`, and the full
+  `flutter test` suite pass (241 tests). Formatter validation and the explicit
+  Portuguese-accent grep over all 13 owned files pass with zero matches.
