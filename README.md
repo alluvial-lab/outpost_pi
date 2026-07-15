@@ -100,7 +100,13 @@ then prints a QR code. Scan it with the Outpost-Pi mobile app and you're paired.
 
 The MVP is functional. Planning notes and roadmap live in [`plan/`](./plan).
 
+## Acknowledgements
+
+Outpost-Pi is independently maintained and was built on
+[remote_pi](https://github.com/jacobaraujo7/remote_pi) by Jacob Moura, released
+under the MIT License.
+
 ## License
 
-License is per-package — see each subproject's `LICENSE` file (the `pi-extension`
-is MIT). A repository-wide license decision is pending.
+Outpost-Pi is licensed repository-wide under the MIT License — see
+[`LICENSE`](./LICENSE).
