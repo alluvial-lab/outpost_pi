@@ -1,7 +1,7 @@
 ---
 id: cockpit-winsparkle-marketing-version-comparison
 kind: story
-stage: implementing
+stage: review
 tags: [cockpit, release, infra]
 parent: feature-outpost-pi-distribution-ownership
 depends_on: [story-en-first-residual-maintained-surfaces]
@@ -24,3 +24,10 @@ Manifest publication and self-update are currently dormant, but this invalid inh
 Use the WinSparkle equivalent of a monotonic build version, or remove the dormant Windows appcast publication path until an operator-owned distribution channel is deliberately reactivated. Document any required one-time manual reinstall for the version reset.
 
 The implementation follows the EN-first workflow translation because both edit `.github/workflows/cockpit-release.yml`.
+
+## Implementation notes
+
+- Changed `.github/workflows/cockpit-release.yml`: the Windows appcast now emits `${BUILD}` in `<sparkle:version>`, matching macOS and making WinSparkle compare the required monotonic pubspec `+n` build number rather than the marketing version.
+- The appcast-generation comments document that inherited Remote Pi 1.5.1 Windows installations require one manual installation when an operator first enables the feed; later updates compare `+n`.
+- Verification: PyYAML parsed the workflow successfully and `git diff --check` passed. The Windows appcast block was then read back to confirm it emits `${BUILD}`.
+- Discrepancies: none. Parked issues: none.

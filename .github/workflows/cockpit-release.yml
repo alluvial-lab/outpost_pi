@@ -362,8 +362,10 @@ jobs:
           </rss>
           XML
           # Windows: WinSparkle downloads the Inno .exe and runs it silently through
-          # sparkle:installerArguments; sparkle:version = marketing version (matches
-          # Runner.rc's ProductVersion).
+          # sparkle:installerArguments. Like macOS, sparkle:version is the monotonic
+          # pubspec +n build number, never the resettable marketing version. Remote Pi
+          # 1.5.1 installations predate this sequence and require one manual install
+          # when an operator first enables a Windows appcast; later updates compare +n.
           cat > appcast-windows.xml <<XML
           <?xml version="1.0" encoding="utf-8"?>
           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
@@ -372,7 +374,7 @@ jobs:
               <item>
                 <title>${VERSION}</title>
                 <pubDate>${PUBDATE}</pubDate>
-                <sparkle:version>${VERSION}</sparkle:version>
+                <sparkle:version>${BUILD}</sparkle:version>
                 <description><![CDATA[${NOTES}]]></description>
                 <enclosure url="${BASE}/${EXE}" sparkle:edSignature="${WIN_SIG}" length="${WIN_LEN}" sparkle:os="windows" sparkle:installerArguments="/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" type="application/octet-stream" />
               </item>
