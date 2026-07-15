@@ -10,16 +10,16 @@
  *   /outpost-pi pair    shows QR for new peers (started, async → paired via auto-listener)
  *   /outpost-pi stop    closes everything (any → idle)
  *
- * Pairing (post plano 06 — sem Noise XX):
- *   App envia inner `pair_request` (id, token, device_name) sobre canal opaco.
- *   Pi valida o token via qrSession.consumeToken, salva peer em peers.json
- *   {name, remote_epk, paired_at} e responde com `pair_ok` (ou `pair_error`).
- *   `ct` é base64(JSON.stringify(inner)) — sem cifra, sem MAC.
+ * Pairing (after Plan 06 — without Noise XX):
+ *   The app sends an inner `pair_request` (id, token, device_name) over an opaque channel.
+ *   Pi validates the token with qrSession.consumeToken, saves the peer in peers.json
+ *   as `{name, remote_epk, paired_at}`, and responds with `pair_ok` (or `pair_error`).
+ *   `ct` is base64(JSON.stringify(inner)) — without encryption or a MAC.
  *
- * Reconexão de peer conhecido:
- *   Se uma mensagem chega em estado `started` vinda de um epk presente em
- *   peers.json, o auto-listener promove direto pra `paired` sem novo
- *   pair_request, criando o PlainPeerChannel e roteando a mensagem.
+ * Known-peer reconnection:
+ *   When a message arrives in `started` state from an epk present in peers.json,
+ *   the auto-listener promotes directly to `paired` without a new pair_request,
+ *   creates the PlainPeerChannel, and routes the message.
  *
  * Architecture note — why we don't use AgentBridge directly here:
  *   AgentBridge.beforeToolCallHook is designed to be passed to createAgentSession().
@@ -469,7 +469,7 @@ let _myRoomMeta: { name: string; cwd: string; session_id?: string; model?: strin
 let _currentModel: string | undefined = undefined;  // last-known model name
 let _currentThinking: ThinkingLevel | undefined = undefined;  // last-known thinking level
 
-// ── Agent-network session (plano 19) ──────────────────────────────────────────
+// ── Agent-network session (Plan 19) ───────────────────────────────────────────
 // MeshNode owns the local UDS mesh plus BrokerRemote/PiForwardClient internals.
 // RelayTransport owns when the app relay is handed to MeshNode for cross-PC
 // bridge attach/detach during relay start, reconnect, close, and stop.
@@ -504,7 +504,7 @@ function _refreshSessionPeerCount(
     .catch(() => { /* older broker without list_peers — keep prior count */ });
 }
 
-/** Friendly model name for room_meta (plano 18). undefined when SDK has none yet. */
+/** Friendly model name for room_meta (Plan 18). undefined when SDK has none yet. */
 function _currentModelName(): string | undefined {
   return _currentModel;
 }
@@ -1272,7 +1272,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     },
   });
 
-  // Plano 19: ensure ~/.pi/remote/{sessions,skills}/ exist. The command
+  // Plan 19: ensure ~/.pi/remote/{sessions,skills}/ exist. The command
   // surface deploys the agent-network skill when it registers.
   try {
     ensureGlobalDirs();
@@ -1333,7 +1333,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     return undefined;
   });
 
-  // Track active model so the app can show it in the SessionTile (plano 18).
+  // Track active model so the app can show it in the SessionTile (Plan 18).
   // SDK fires model_select on settings load + every user switch. We cache the
   // friendly name and broadcast a room_meta_update so the relay can fan it
   // out to subscribed apps without needing a new pair.
@@ -2021,7 +2021,7 @@ function _cmdSetRelay(arg: string, ctx: Pick<ExtensionContext, "ui">): void {
 // Daemon, cron, and service command handlers live in extension/command_surface/*.
 // The daemon/ modules remain the single source of runtime behavior.
 
-// ── Agent-network commands (plano 19) ─────────────────────────────────────────
+// ── Agent-network commands (Plan 19) ──────────────────────────────────────────
 
 function _resolveExtensionDir(): string {
   // dist/index.js → dist; skills sit at <extensionRoot>/skills/. When we run
@@ -2607,7 +2607,7 @@ export function _routeClientMessageFrom(
       _broadcastQueuedMessageState();
       break;
     case "approve_tool":
-      // Approval gate was removed (plano 10.2 revisado). Type kept in
+      // Approval gate was removed (revised Plan 10.2). Type kept in
       // ClientMessage for forward-compat with a future permissions model;
       // ignore silently if the app still sends it from an older build.
       break;
