@@ -1,6 +1,8 @@
-/// Lista subpastas de um diretório — para o seletor de "qual pasta dentro do
-/// projeto o agente vai atuar". Contrato no domínio; impl (dart:io) em `data/`.
+/// List a directory's subfolders for selecting which project folder an agent
+/// will work in.
+///
+/// This domain contract is implemented with `dart:io` in `data/`.
 abstract class FolderLister {
-  /// Nomes das subpastas imediatas de [root] (sem ocultas), ordenados.
+  /// Return the sorted names of [root]'s immediate, non-hidden subfolders.
   Future<List<String>> subfolders(String root);
 }
