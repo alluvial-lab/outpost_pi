@@ -1,25 +1,10 @@
 import 'dart:io';
 
-/// Resolve o caminho de um executável (`pi`, `node`, `outpost-pi`, …) de forma
-/// robusta — apps GUI não herdam a PATH do shell.
+/// Check whether [exec] resolves to an existing executable.
 ///
-/// Estratégia preferida:
-/// - **macOS/Linux**: `which <name>` no shell do usuário — primeiro login
-///   (`-lc`), e se não achar, interativo (`-ic`) pra cobrir nvm (PATH no
-///   `.bashrc`/`.zshrc`). Enxerga a PATH real — mais seguro que adivinhar prefixos.
-/// - **Windows**: `where <name>`, que já resolve PATHEXT (`pi.cmd`/`pi.exe`/…).
-///
-/// Fallbacks (quando o which/where não acha): os caminhos conhecidos abaixo e,
-/// por fim, o próprio [name] (deixa o SO resolver no spawn).
-///
-/// - [unixCandidates]: caminhos absolutos testados em ordem (macOS/Linux).
-/// - [unixHomeRelative]: caminhos relativos a `$HOME` (ex.: `.local/bin/pi`).
-/// - [windowsExtraDirs]: diretórios absolutos extras a sondar no Windows
-///   (ex.: `C:\Program Files\nodejs`), além da PATH e de `%APPDATA%\npm`.
-/// `true` se [exec] dá pra resolver para um caminho real — usado pra mostrar o
-/// status (● encontrado / ○ ausente) de um language server na tela "Language".
-/// Caminho absoluto: testa existência direta. Nome simples: resolve via
-/// [resolveExecutable] e confirma que achou algo além do próprio nome.
+/// Absolute paths are checked directly. A bare name is resolved through
+/// [resolveExecutable] and is available only when resolution finds a concrete
+/// file rather than returning the original name.
 Future<bool> isExecutableAvailable(String exec) async {
   final name = exec.trim();
   if (name.isEmpty) return false;
@@ -30,6 +15,13 @@ Future<bool> isExecutableAvailable(String exec) async {
   return resolved != name && File(resolved).existsSync();
 }
 
+/// Resolve an executable for GUI apps that do not inherit the shell `PATH`.
+///
+/// On macOS and Linux, checks the user's login shell and then interactive shell
+/// before trying [unixCandidates] and [unixHomeRelative] in order. On Windows,
+/// uses `where`, then `PATH`/`PATHEXT`, `%APPDATA%\\npm`, and
+/// [windowsExtraDirs]. Returns [name] unchanged as the final fallback so the OS
+/// can attempt resolution when the caller spawns the process.
 Future<String> resolveExecutable(
   String name, {
   List<String> unixCandidates = const [],
@@ -40,7 +32,7 @@ Future<String> resolveExecutable(
     final viaWhere = await _windowsWhere(name);
     if (viaWhere != null) return viaWhere;
 
-    // Fallback: varre PATH×PATHEXT, %APPDATA%\npm e diretórios extras.
+    // Fall back through PATH×PATHEXT, %APPDATA%\npm, and extra directories.
     final fromPath = await _searchWindowsPath(name);
     if (fromPath != null) return fromPath;
     final appData = Platform.environment['APPDATA'];
@@ -59,11 +51,11 @@ Future<String> resolveExecutable(
     return name;
   }
 
-  // macOS/Linux: `which` via shell de login (PATH completa do usuário).
+  // On macOS/Linux, run `which` through the login shell for the user's full PATH.
   final viaWhich = await unixWhich(name);
   if (viaWhich != null) return viaWhich;
 
-  // Fallback: caminhos conhecidos.
+  // Fall back to known paths.
   for (final candidate in unixCandidates) {
     if (await File(candidate).exists()) return candidate;
   }
@@ -77,27 +69,23 @@ Future<String> resolveExecutable(
   return name;
 }
 
-/// `which <name>` no shell do usuário, pra herdar a PATH real (npm/nvm/brew) que
-/// o processo GUI não tem. Devolve o 1º caminho existente, ou `null`.
+/// Run `which <name>` in the user's shell to recover npm, nvm, or brew paths.
 ///
-/// Tenta em duas etapas:
-/// 1. **login** (`-lc`): carrega `.zprofile`/`.bash_profile`/`.profile`. Cobre
-///    Homebrew, npm global, instaladores que escrevem no profile de login. Não
-///    é interativo → sem o erro de job control.
-/// 2. **interativo** (`-ic`): só se o login não achar. Sourceia `.bashrc`/
-///    `.zshrc`, onde o **nvm** mete a PATH (guardada atrás do check de
-///    interatividade). Em sistemas sem tty (ex.: Linux ARM) o shell solta
-///    "cannot set terminal process group / no job control" no **stderr** — que
-///    o `Process.run` captura e nós ignoramos; lemos só o `stdout`. Por isso
-///    **não** gateamos no `exitCode`: parseamos a saída direto.
+/// Tries a login shell first, loading `.zprofile`, `.bash_profile`, or
+/// `.profile` without interactive job-control noise. If unresolved, tries an
+/// interactive shell to load `.bashrc` or `.zshrc`, where nvm commonly updates
+/// `PATH`. Non-TTY job-control warnings are ignored; only stdout is parsed, so
+/// resolution does not depend on the shell exit code.
 Future<String?> unixWhich(String name) async {
   final shell = Platform.environment['SHELL'] ?? '/bin/sh';
   return await _runWhich(shell, ['-lc', 'which $name']) ??
       await _runWhich(shell, ['-ic', 'which $name']);
 }
 
-/// Roda `which` e devolve o 1º caminho absoluto existente no stdout (ignora
-/// exitCode e ruído de stderr). `null` se não achar / timeout / erro.
+/// Return the first existing absolute path printed by `which`.
+///
+/// Ignores exit code and stderr noise; returns `null` on no match, timeout, or
+/// process error.
 Future<String?> _runWhich(String shell, List<String> args) async {
   try {
     final res = await Process.run(
@@ -109,12 +97,12 @@ Future<String?> _runWhich(String shell, List<String> args) async {
       if (p.startsWith('/') && await File(p).exists()) return p;
     }
   } catch (_) {
-    // shell ausente / timeout / erro → cai pra próxima tentativa/fallback.
+    // A missing shell, timeout, or error falls through to the next strategy.
   }
   return null;
 }
 
-/// `where <name>` no Windows — resolve PATHEXT e devolve o 1º caminho existente.
+/// Resolve Windows `PATHEXT` through `where` and return the first existing path.
 Future<String?> _windowsWhere(String name) async {
   try {
     final res = await Process.run('where', [
@@ -126,14 +114,14 @@ Future<String?> _windowsWhere(String name) async {
       if (p.isNotEmpty && await File(p).exists()) return p;
     }
   } catch (_) {
-    // where indisponível / timeout → cai pros fallbacks.
+    // An unavailable `where` or timeout falls through to the other strategies.
   }
   return null;
 }
 
-/// Varre cada diretório do `PATH` testando `name` + cada extensão do `PATHEXT`
-/// (`.COM;.EXE;.BAT;.CMD;…`). Devolve o caminho absoluto do primeiro hit, ou
-/// `null`. Específico de Windows.
+/// Search Windows `PATH` entries using every configured `PATHEXT` suffix.
+///
+/// Returns the first existing absolute path, or `null` when none match.
 Future<String?> _searchWindowsPath(String name) async {
   final pathEnv = Platform.environment['PATH'] ?? '';
   final pathExt = (Platform.environment['PATHEXT'] ?? '.COM;.EXE;.BAT;.CMD')

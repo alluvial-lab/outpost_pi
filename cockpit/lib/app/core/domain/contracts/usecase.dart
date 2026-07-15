@@ -1,2 +1,2 @@
-/// Marcador para operações unitárias do domínio (1 verbo por classe).
+/// Mark a single-purpose domain operation, with one action per class.
 abstract class UseCase {}
