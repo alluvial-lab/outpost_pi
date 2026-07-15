@@ -72,7 +72,7 @@ void main() {
     await write('staged.txt', 'new');
     await git(['add', 'staged.txt']);
     // Untracked: new file outside the index.
-    await write('lib/fresh.dart', '// novo');
+    await write('lib/fresh.dart', '// new');
     // Deleted: tracked file removed from disk.
     await File('${repo.path}/lib/app.dart').delete();
 
@@ -101,19 +101,19 @@ void main() {
       markTestSkipped('git is unavailable');
       return;
     }
-    // A completely new directory → Git collapses it into "?? novo/".
-    await Directory('${repo.path}/novo/sub').create(recursive: true);
-    await write('novo/a.txt', '1');
-    await write('novo/sub/b.txt', '2');
+    // A completely new directory → Git collapses it into "?? new/".
+    await Directory('${repo.path}/new/sub').create(recursive: true);
+    await write('new/a.txt', '1');
+    await write('new/sub/b.txt', '2');
 
     final info = await reader.read(repo.path);
     expect(info, isNotNull);
-    expect(info!.untrackedDirs, contains('novo'));
+    expect(info!.untrackedDirs, contains('new'));
     // The collapsed folder itself is untracked (colors its row and ancestors).
-    expect(info.files['novo'], GitFileStatus.untracked);
+    expect(info.files['new'], GitFileStatus.untracked);
     // Descendants are not enumerated, but isUntracked still covers them.
-    expect(info.isUntracked('novo/a.txt'), isTrue);
-    expect(info.isUntracked('novo/sub/b.txt'), isTrue);
+    expect(info.isUntracked('new/a.txt'), isTrue);
+    expect(info.isUntracked('new/sub/b.txt'), isTrue);
     expect(info.isUntracked('lib/app.dart'), isFalse);
   });
 
