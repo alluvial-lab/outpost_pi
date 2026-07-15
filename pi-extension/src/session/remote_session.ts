@@ -5,6 +5,7 @@ import type { ThinkingLevel } from "../protocol/types.js";
 
 export type { RemoteSessionId };
 
+/** Describe the mobile-visible identity and runtime metadata of one Pi SDK session. */
 export interface RemoteSession {
   sessionId: RemoteSessionId;
   peerId: string;
@@ -47,6 +48,7 @@ function safeSessionManager(value: unknown): { getSessionId(): unknown } | undef
   return undefined;
 }
 
+/** Generate a time-ordered UUID v7 fallback identity when the SDK session id is unavailable. */
 export function uuid7(): string {
   const bytes = randomBytes(16);
   const now = BigInt(Date.now());
@@ -62,6 +64,7 @@ export function uuid7(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/** Resolve the SDK session id, falling back to a new UUID v7 when a context is absent or stale. */
 export function resolveRemoteSessionId(ctx: unknown): RemoteSessionId {
   const sm = safeSessionManager(ctx);
   if (sm) {
@@ -84,6 +87,7 @@ export function remoteSessionDurableKey(
   return `${session.peerId}:${session.roomId}:${session.sessionId}`;
 }
 
+/** Cache the active remote-session identity and clear it at the owning session lifecycle boundary. */
 export class RemoteSessionIssuer {
   private currentId: RemoteSessionId | null = null;
 

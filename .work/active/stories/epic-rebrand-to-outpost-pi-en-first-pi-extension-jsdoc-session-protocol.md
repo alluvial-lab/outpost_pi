@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-pi-extension-jsdoc-session-protocol
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, pi-extension]
 parent: epic-rebrand-to-outpost-pi-en-first-pi-extension
 depends_on: []
@@ -59,9 +59,16 @@ constants, and DTO-only schemas remain Skip-tier.
 
 ## Acceptance criteria
 
-- [ ] Contract-bearing exports above have English JSDoc, including throw/result
+- [x] Contract-bearing exports above have English JSDoc, including throw/result
   semantics and lifecycle ownership where the code exposes them.
-- [ ] No JSDoc is added to generated protocol output, test files, or DTO-only
+- [x] No JSDoc is added to generated protocol output, test files, or DTO-only
   wire/storage shapes.
-- [ ] No relay, mesh, session, or protocol runtime behavior changes.
-- [ ] Focused protocol/session/transport tests and final feature verification pass.
+- [x] No relay, mesh, session, or protocol runtime behavior changes.
+- [x] Focused protocol/session/transport tests and final feature verification pass.
+
+## Implementation notes
+- Files changed: `pi-extension/src/mesh/self_revoke.ts`, `pi-extension/src/pairing/{crypto,qr,storage}.ts`, `pi-extension/src/protocol/{codec,session_scope}.ts`, `pi-extension/src/reachability/contract.ts`, `pi-extension/src/session/{bridge,broker,envelope,leader_election,local_config,mesh_node,peer,remote_session,sdk_session_projection,session_gate,transcript_event,transcript_projection,turn_state,wizard}.ts`, and `pi-extension/src/transport/pi_forward_client.ts`.
+- Tests added: none; this documentation-only change preserves existing contracts and behavior.
+- Verification: `COREPACK_HOME=/tmp/corepack-home corepack pnpm typecheck`, `test` (51 files, 837 passed, 3 skipped), and `build` passed from `pi-extension/`.
+- Discrepancies from design: none. `relay_client.ts` and `peer_channel.ts` were audited; their relay/event lifecycle contracts were already documented, so no non-inventory JSDoc was added.
+- Adjacent issues parked: none.

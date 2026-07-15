@@ -1,5 +1,6 @@
 import type { StreamingBehavior, Usage, WireImage } from "../protocol/types.js";
 
+/** Record one canonical, session-scoped transcript fact before projecting it to wire or UI views. */
 export type TranscriptEvent =
   | {
       kind: "user_submitted";
@@ -101,14 +102,17 @@ export type TranscriptEvent =
       tokensBefore?: number;
     };
 
+/** Classify the user-visible transcript turn state. */
 export type TranscriptTurnStatus = "idle" | "working" | "streaming" | "error";
 
+/** Project the current transcript turn, including its reply target or terminal error when present. */
 export interface TranscriptTurnView {
   status: TranscriptTurnStatus;
   replyTo?: string;
   error?: string;
 }
 
+/** Provide a transcript projection with committed messages, optional streaming content, and turn state. */
 export interface TranscriptProjection<TMessage = unknown> {
   messages: TMessage[];
   streaming?: { replyTo: string; text: string };
