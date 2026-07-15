@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi
 kind: epic
-stage: review
+stage: implementing
 tags: [rebrand, fork-posture, pi-extension, app, relay, cockpit, site, docs]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-12
+updated: 2026-07-14
 ---
 
 # Rebrand the fork: remote_pi → Outpost-Pi
@@ -320,3 +320,12 @@ half-renamed fixture, stale agent-skill reference, deploy-runbook ambiguity)
 cut once the operator confirms the deploy order (relay → Pi restart → app →
 cockpit) and accepts the destructive cutover (phone reinstall + re-pair +
 old-daemon cleanup).
+
+## Follow-up scope (2026-07-14)
+
+A post-epic coherence review found active pre-rebrand identifiers that the
+original review should have caught. The epic is reopened while
+`feature-outpost-pi-identifier-convergence` completes canonical protocol,
+code/test alias, contract-test, and stateful runtime identifier convergence.
+Intentional provenance, history, legacy-rejection evidence, and checkout-path
+migration remain explicitly outside that feature.
