@@ -1,6 +1,6 @@
-/// Manifest de release (`latest.json` na VPS) — contrato com o CI/Site.
+/// Release manifest (`latest.json` on the VPS) shared with CI and the site.
 ///
-/// Schema (mesmo do Cockpit, plano 43/44, com 1 artefato Android):
+/// Schema shared with Cockpit, with one Android artifact:
 /// ```json
 /// {
 ///   "version": "1.1.0",
@@ -25,20 +25,21 @@ class UpdateInfo {
   final String notes;
   final List<UpdateArtifact> artifacts;
 
-  /// Parseia o manifest. **Lança** `FormatException` se o shape estiver errado
-  /// (campos obrigatórios ausentes/tipo errado) — o checker trata como "sem
-  /// atualização" e silencia.
+  /// Parse the manifest.
+  ///
+  /// Throws [FormatException] for missing or incorrectly typed required
+  /// fields. The checker treats that as no available update and suppresses it.
   factory UpdateInfo.fromJson(Object? json) {
     if (json is! Map) {
-      throw const FormatException('manifest não é um objeto JSON');
+      throw const FormatException('manifest is not a JSON object');
     }
     final version = json['version'];
     if (version is! String || version.isEmpty) {
-      throw const FormatException('campo "version" inválido');
+      throw const FormatException('invalid "version" field');
     }
     final rawArtifacts = json['artifacts'];
     if (rawArtifacts is! List) {
-      throw const FormatException('campo "artifacts" inválido');
+      throw const FormatException('invalid "artifacts" field');
     }
     return UpdateInfo(
       version: version,
@@ -50,9 +51,11 @@ class UpdateInfo {
     );
   }
 
-  /// Artefato que casa com [platform] + [format], preferindo [arch]. O APK do
-  /// Android é `universal`, então o arch casa direto. `null` se não houver
-  /// match (a UI cai pro fallback da página de download).
+  /// Find an artifact matching [platform] and [format], preferring [arch].
+  ///
+  /// Android APKs are `universal`, so their architecture matches directly.
+  /// Returns `null` when no format matches, allowing the UI to use its
+  /// download-page fallback.
   UpdateArtifact? artifactFor({
     required String platform,
     required String format,
@@ -65,7 +68,7 @@ class UpdateInfo {
     for (final a in matches) {
       if (a.arch == arch) return a;
     }
-    // Sem match exato de arch → primeiro do formato.
+    // No exact architecture match: use the first artifact of the format.
     return matches.first;
   }
 }
@@ -89,13 +92,13 @@ class UpdateArtifact {
 
   factory UpdateArtifact.fromJson(Object? json) {
     if (json is! Map) {
-      throw const FormatException('artifact não é um objeto JSON');
+      throw const FormatException('artifact is not a JSON object');
     }
     final url = json['url'];
     final platform = json['platform'];
     final format = json['format'];
     if (url is! String || platform is! String || format is! String) {
-      throw const FormatException('artifact com campos obrigatórios inválidos');
+      throw const FormatException('artifact has invalid required fields');
     }
     return UpdateArtifact(
       platform: platform,

@@ -8,6 +8,7 @@ library;
 /// UI imports.
 enum ReachabilityState { connecting, online, degraded, offline, retrying }
 
+/// Provide user-facing labels from the canonical reachability state set.
 extension ReachabilityStateLabel on ReachabilityState {
   String get displayName => switch (this) {
     ReachabilityState.connecting => 'Connecting',
@@ -26,6 +27,7 @@ const reachabilityBackoff = <Duration>[
   Duration(seconds: 30),
 ];
 
+/// Return the retry delay for [attempt], clamped to the policy bounds.
 Duration reachabilityBackoffForAttempt(int attempt) {
   final safeAttempt = attempt < 0 ? 0 : attempt;
   final idx = safeAttempt >= reachabilityBackoff.length
@@ -42,6 +44,7 @@ const reachabilityHeartbeat = ReachabilityHeartbeat(
   degradedAfterMissedAppPongs: 3,
 );
 
+/// Group the shared heartbeat cadence and degradation threshold policy.
 final class ReachabilityHeartbeat {
   const ReachabilityHeartbeat({
     required this.appProtocolPing,
@@ -126,6 +129,7 @@ const reachabilityTransitions = <ReachabilityTransition>[
   ),
 ];
 
+/// Define one legal transition in the canonical reachability state machine.
 final class ReachabilityTransition {
   const ReachabilityTransition({
     required this.from,
