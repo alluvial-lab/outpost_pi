@@ -15,41 +15,43 @@ import 'package:media_kit/media_kit.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// Subdiretório raiz das boxes do Hive. Em debug usa `cockpit-debug` para não
-/// colidir com as boxes da build de produção (que costuma ficar aberta em
-/// paralelo durante o desenvolvimento). Todas as boxes — inclusive a
-/// `window_state` — herdam esse diretório via `Hive.initFlutter`.
+/// Root subdirectory for Hive boxes. In debug mode uses `cockpit-debug` to
+/// avoid colliding with the production build's boxes (which is often left open
+/// in parallel during development). All boxes — including `window_state` —
+/// inherit this directory via `Hive.initFlutter`.
 const String hiveSubdir = kDebugMode ? 'cockpit-debug' : 'cockpit';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Plano 46 — inicializa o media_kit (libmpv) antes de qualquer Player.
+  // Plan 46 — initialize media_kit (libmpv) before any Player.
   MediaKit.ensureInitialized();
 
-  // Mata processos `pi --mode rpc` e language servers (LSP) órfãos do ciclo
-  // anterior antes de qualquer novo spawn (cobre hot restart e cold restart
-  // com crash).
+  // Kills orphaned `pi --mode rpc` processes and language servers (LSP) from
+  // the previous cycle before any new spawn (covers hot restart and cold
+  // restart after a crash).
   await PiProcessRegistry.cleanOrphans();
   await LspProcessRegistry.cleanOrphans();
 
-  // Subdiretório próprio; em debug separado da build de produção. As boxes das
-  // features são abertas pelos próprios builders async (ver buildCockpitModule);
-  // aqui só a de settings, que o SettingsController precisa antes do 1º frame.
+  // Own subdirectory; in debug mode separated from the production build. The
+  // feature boxes are opened by their own async builders (see
+  // buildCockpitModule); here only the settings box, which SettingsController
+  // needs before the first frame.
   await Hive.initFlutter(hiveSubdir);
   final settingsBox = await Hive.openBox<dynamic>(HiveSettingsStore.boxName);
 
-  // Preferências carregadas ANTES do primeiro frame → o app já abre no tema
-  // salvo (sem flash). App-scoped: provido via `ModularApp.provide`, acima do
-  // `ShadcnApp` → trocar tema/fonte repinta tudo.
+  // Preferences loaded BEFORE the first frame → the app opens in the saved
+  // theme (no flash). App-scoped: provided via `ModularApp.provide`, above the
+  // `ShadcnApp` → changing theme/font repaints everything.
   final settings = SettingsController(HiveSettingsStore(settingsBox));
   await settings.load();
 
   final winBox = await Hive.openBox<dynamic>('window_state');
   await _setupWindow(winBox);
 
-  // Único valor threadado: mora no core (root-owned) e as features o resolvem
-  // upward. O módulo é `Future` porque o cockpit abre as próprias boxes.
+  // The only threaded value: lives in core (root-owned) and the features
+  // resolve it upward. The module is a `Future` because the cockpit opens its
+  // own boxes.
   final config = await PiSpawnConfig.resolve();
   final appModule = await buildAppModule(config: config);
 
@@ -65,7 +67,7 @@ Future<void> main() async {
   );
 }
 
-/// Esconde a barra nativa e restaura o último tamanho da janela.
+/// Hides the native title bar and restores the last window size.
 Future<void> _setupWindow(Box<dynamic> winBox) async {
   if (!(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) return;
   await windowManager.ensureInitialized();
@@ -83,7 +85,7 @@ Future<void> _setupWindow(Box<dynamic> winBox) async {
   });
 }
 
-/// Ouve redimensionamentos e persiste o tamanho da janela com debounce.
+/// Listens for resizes and persists the window size with debounce.
 class _WindowStateKeeper extends StatefulWidget {
   const _WindowStateKeeper({required this.box, required this.child});
   final Box<dynamic> box;

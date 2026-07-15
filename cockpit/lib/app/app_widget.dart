@@ -6,10 +6,11 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Raiz visual do app. Fica **abaixo** do `ModularApp` (que provê o router) e
-/// **acima** do `ShadcnApp.router`. Lê o [SettingsController] app-scoped (provido
-/// em `ModularApp.provide`, no `main`) via `context.watch` → trocar tema/fonte
-/// repinta tudo. O router vem de `ModularApp.routerConfigOf(context)`.
+/// Visual root of the app. Sits **below** `ModularApp` (which provides the
+/// router) and **above** `ShadcnApp.router`. Reads the app-scoped
+/// [SettingsController] (provided in `ModularApp.provide`, in `main`) via
+/// `context.watch` → changing theme/font repaints everything. The router
+/// comes from `ModularApp.routerConfigOf(context)`.
 class AppRoot extends StatelessWidget {
   const AppRoot({super.key});
 
@@ -17,8 +18,8 @@ class AppRoot extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<SettingsController>();
     final s = controller.settings;
-    // "Tamanho da interface" = **zoom do app inteiro** (texto, panes, ícones,
-    // app bar, terminal). Baseline 14 = 1.0x. Ver [_AppZoom].
+    // "Interface size" = **zoom for the whole app** (text, panes, icons,
+    // app bar, terminal). Baseline 14 = 1.0x. See [_AppZoom].
     final uiScale = s.interfaceSize / 14.0;
     return ShadcnApp.router(
       title: 'Cockpit',
@@ -28,17 +29,17 @@ class AppRoot extends StatelessWidget {
       themeMode: _themeMode(s.themeMode),
       routerConfig: ModularApp.routerConfigOf(context),
       builder: (context, child) {
-        // Brightness efetiva (já resolvida pelo ShadcnApp via themeMode): monta os
-        // tokens bespoke e os instala via CockpitTheme — alimenta
-        // context.colors/typo/syntax em toda a árvore de rotas.
+        // Effective brightness (already resolved by ShadcnApp via themeMode):
+        // builds the bespoke tokens and installs them via CockpitTheme — feeds
+        // context.colors/typo/syntax across the entire route tree.
         final tokens = buildTokens(
           brightness: Theme.of(context).brightness,
           settings: s,
         );
         return CallbackShortcuts(
-          // Atalhos globais (sempre na cadeia de foco): zoom (⌘=/⌘-/⌘0) e foco do
-          // input (⌘L). CallbackShortcuts é aditivo (não quebra copiar/colar) e
-          // funciona mesmo sem nada focado.
+          // Global shortcuts (always in the focus chain): zoom (⌘=/⌘-/⌘0) and
+          // input focus (⌘L). CallbackShortcuts is additive (doesn't break
+          // copy/paste) and works even with nothing focused.
           bindings: {..._zoomBindings(controller), ..._focusBindings()},
           child: _AppZoom(
             scale: uiScale,
@@ -60,9 +61,9 @@ class AppRoot extends StatelessWidget {
     AppThemeMode.dark => ThemeMode.dark,
   };
 
-  /// ⌘L / Ctrl+L → foca o input do agente focado (via ponte global, resolvida
-  /// pelo `CockpitPage`). Fica aqui (não no shell) pra disparar mesmo quando o
-  /// foco caiu num espaço vazio.
+  /// ⌘L / Ctrl+L → focuses the active agent's input (via a global bridge,
+  /// resolved by `CockpitPage`). Lives here (not in the shell) so it fires
+  /// even when focus fell on an empty area.
   Map<ShortcutActivator, VoidCallback> _focusBindings() {
     void focus() => requestFocusActiveComposer?.call();
     return <ShortcutActivator, VoidCallback>{
@@ -71,9 +72,9 @@ class AppRoot extends StatelessWidget {
     };
   }
 
-  /// Atalhos de zoom (tamanho da interface). `meta` = ⌘ (macOS); `control` = Ctrl
-  /// (Windows/Linux). `=`/numpad+ aumenta, `-`/numpad- diminui, `0` reseta. Step
-  /// de 1, limitado a 11..22 (igual ao stepper das Configurações).
+  /// Zoom shortcuts (interface size). `meta` = ⌘ (macOS); `control` = Ctrl
+  /// (Windows/Linux). `=`/numpad+ increases, `-`/numpad- decreases, `0` resets.
+  /// Step of 1, clamped to 11..22 (same as the Settings stepper).
   Map<ShortcutActivator, VoidCallback> _zoomBindings(
     SettingsController controller,
   ) {
@@ -120,10 +121,11 @@ class AppRoot extends StatelessWidget {
   }
 }
 
-/// Zoom do **app inteiro**: lê o app num espaço lógico reduzido (`size/scale`) e
-/// escala de volta com `FittedBox`, então tudo (texto, ícones, panes, app bar)
-/// cresce junto — não só o texto. Vetores (texto/ícones) são re-rasterizados pelo
-/// Skia (nítidos); bitmaps (imagens) interpolam. `scale == 1` é no-op.
+/// Zoom for the **whole app**: lays the app out in a reduced logical space
+/// (`size/scale`) and scales it back up with `FittedBox`, so everything (text,
+/// icons, panes, app bar) grows together — not just the text. Vectors
+/// (text/icons) are re-rasterized by Skia (crisp); bitmaps (images) interpolate.
+/// `scale == 1` is a no-op.
 class _AppZoom extends StatelessWidget {
   const _AppZoom({required this.scale, required this.child});
   final double scale;
@@ -135,12 +137,12 @@ class _AppZoom extends StatelessWidget {
     final mq = MediaQuery.of(context);
     final scaled = mq.size / scale;
     return MediaQuery(
-      // Layout pensa numa tela menor (`size/scale`) → os elementos ocupam mais
-      // dela; o `FittedBox` amplia pro tamanho real da janela. Uso FittedBox (e
-      // não `Transform.scale` cru) porque ele **reporta o tamanho da janela** — o
-      // Transform reportaria o tamanho lógico reduzido e um ancestral cortaria a
-      // direita/baixo (Files e composer somindo). Gestos/hit-test são convertidos
-      // pro espaço lógico automaticamente.
+      // Layout thinks it has a smaller screen (`size/scale`) → elements take
+      // up more of it; the `FittedBox` enlarges to the real window size. Using
+      // FittedBox (not raw `Transform.scale`) because it **reports the window
+      // size** — Transform would report the reduced logical size and an ancestor
+      // would clip on the right/bottom (Files and composer vanishing).
+      // Gestures/hit-testing are converted to the logical space automatically.
       data: mq.copyWith(size: scaled),
       child: FittedBox(
         fit: BoxFit.fill,
