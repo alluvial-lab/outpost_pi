@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-settings-data-adapters
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-settings
 depends_on: []
@@ -35,12 +35,21 @@ only need their existing docs translated.
 
 ## Acceptance criteria
 
-- [ ] All three files contain EN-only comment/dartdoc prose.
-- [ ] Adapter-specific platform, lifecycle, framing, and failure rationale is
+- [x] All three files contain EN-only comment/dartdoc prose.
+- [x] Adapter-specific platform, lifecycle, framing, and failure rationale is
       preserved rather than replaced with generic contract restatement.
-- [ ] Natural-language error strings are reviewed and remain unchanged when
+- [x] Natural-language error strings are reviewed and remain unchanged when
       already English.
-- [ ] No executable token, command, path, key, timeout, FFI call, error mapping,
+- [x] No executable token, command, path, key, timeout, FFI call, error mapping,
       process/socket behavior, or public signature changes.
-- [ ] Scoped PT scan and dart format check pass; parent integration runs the
+- [x] Scoped PT scan and dart format check pass; parent integration runs the
       full settings and Cockpit gates.
+
+## Implementation notes
+
+- Files changed: `cockpit/lib/app/settings/data/daemon/supervisor_client_impl.dart`, `cockpit/lib/app/settings/data/daemon/win_named_pipe.dart`, `cockpit/lib/app/settings/data/relay/relay_gateway_impl.dart`.
+- Tests added: none; this was a comment/dartdoc-only change with no behavior change.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
+- Documentation rationale: kept adapter overrides undocumented because their contracts are inherited from the domain ports; translated and gap-filled the adapter class and existing helper docs instead. Described `_call` as using the supervisor transport rather than only the UDS because the same helper delegates to a Windows named pipe.
+- Verification: scoped EN/PT grep found no accented or sampled unaccented Portuguese; `dart format --output=none --set-exit-if-changed` passed for all three owned files; `flutter analyze` passed with zero issues; full `flutter test` passed (241 tests). Existing natural-language error literals were reviewed and left unchanged.
