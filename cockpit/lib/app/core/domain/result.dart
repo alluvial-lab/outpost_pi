@@ -1,22 +1,25 @@
-/// Resultado tipado de uma operação que pode falhar.
+/// Represent the typed outcome of an operation that can fail.
 ///
-/// Sealed para forçar o consumidor a tratar os dois casos (`Success` /
-/// `Failure`) — sem `null` ambíguo nem `catch (e)` genérico. Mora em `domain/`
-/// porque os Use Cases o retornam e o domínio não importa nada de fora de si.
+/// Sealing forces consumers to handle both [Success] and [Failure], avoiding
+/// ambiguous `null` values and generic `catch` paths at domain boundaries.
 sealed class Result<S, F> {
   const Result();
 
-  /// Casa os dois ramos e devolve um valor comum.
+  /// Fold both branches into a common value.
   T fold<T>(T Function(S value) onSuccess, T Function(F error) onFailure);
 
   bool get isSuccess => this is Success<S, F>;
   bool get isFailure => this is Failure<S, F>;
 
-  /// Transforma o valor de sucesso, preservando a falha.
+  /// Transform the success value while preserving any failure.
   Result<T, F> map<T>(T Function(S value) transform) =>
       fold((s) => Success(transform(s)), (f) => Failure(f));
 }
 
+/// Represent the successful [Result] branch.
+///
+/// [Result.fold] dispatches this branch to its success callback, while
+/// [Result.map] transforms the value.
 final class Success<S, F> extends Result<S, F> {
   const Success(this.value);
   final S value;
@@ -26,6 +29,10 @@ final class Success<S, F> extends Result<S, F> {
       onSuccess(value);
 }
 
+/// Represent the failed [Result] branch.
+///
+/// [Result.fold] dispatches this branch to its failure callback, while
+/// [Result.map] preserves the error unchanged.
 final class Failure<S, F> extends Result<S, F> {
   const Failure(this.error);
   final F error;

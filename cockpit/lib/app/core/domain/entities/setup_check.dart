@@ -1,21 +1,24 @@
-/// Estado de uma checagem de ambiente/permissão na tela de onboarding.
+/// Represent an environment or permission check on the onboarding screen.
 enum CheckStatus {
-  /// Rodando a verificação.
+  /// The check is in progress.
   checking,
 
-  /// Tudo certo (verdinho).
+  /// The prerequisite is satisfied.
   ok,
 
-  /// Falta instalar/conceder (x vermelho-claro).
+  /// Installation or permission is still required.
   missing,
 
-  /// Não se aplica neste SO (ex.: permissões de macOS no Linux/Windows) — conta
-  /// como satisfeito pro gate, mas é exibido como dispensado.
+  /// The prerequisite does not apply on this OS and counts as satisfied.
   notApplicable,
 }
 
+/// Project a setup check into the onboarding gate decision.
 extension CheckStatusX on CheckStatus {
-  /// Satisfaz o gate de "Criar Workspace"? `notApplicable` conta como sim.
+  /// Whether this status permits workspace creation.
+  ///
+  /// [CheckStatus.notApplicable] counts as satisfied because the prerequisite
+  /// cannot block a platform where it does not apply.
   bool get satisfied =>
       this == CheckStatus.ok || this == CheckStatus.notApplicable;
 }

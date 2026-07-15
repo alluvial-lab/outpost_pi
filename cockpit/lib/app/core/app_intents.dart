@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart';
 
-/// Ponte global pro atalho ⌘L/Ctrl+L. O handler vive em `main.dart` (sempre na
-/// cadeia de foco, então dispara mesmo sem nada focado); o `CockpitPage`
-/// registra aqui a ação de focar o input do agente focado. `null` quando o
-/// shell não está montado.
+/// Bridge the global Cmd+L/Ctrl+L shortcut to the active agent composer.
+///
+/// The handler in `main.dart` remains in the focus chain even when no control
+/// is focused. `CockpitPage` registers its focus action here and clears it to
+/// `null` while the shell is unmounted.
 VoidCallback? requestFocusActiveComposer;
