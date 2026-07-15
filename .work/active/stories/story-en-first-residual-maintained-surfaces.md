@@ -1,7 +1,7 @@
 ---
 id: story-en-first-residual-maintained-surfaces
 kind: story
-stage: review
+stage: done
 tags: [rebrand, docs, workflow, cockpit, app, site]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
@@ -50,3 +50,13 @@ Run syntax or owning-project checks for every touched executable surface, then r
 - Workflow YAML parsed successfully with `yaml.safe_load_all`; `${{ }}` and shell interpolation were preserved.
 - `rp-s3`: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` passed.
 - Final PT scan (`rg -n '[ãõáéíóúâêôçÃÕÁÉÍÓÚÂÊÔÇ]' .github .claude rp-s3 app/packages/outpost_pi_identity 2>/dev/null`) returned no hits. There are no retained occurrences in the scanned maintained surfaces; codec fixtures, historical records, and excluded `scripts/` were not scanned.
+
+## Review (2026-07-15)
+
+**Verdict**: Approve - story verified by implement; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fast-lane: green build+test verification recorded by implement. Orchestrator re-verified the combined tree (extension 838 passed/3 skipped; relay all green; app analyze clean + 698 passed; protocol check + generate:rust:check clean; site lint+build clean).

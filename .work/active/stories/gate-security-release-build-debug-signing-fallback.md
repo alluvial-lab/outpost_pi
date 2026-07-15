@@ -1,7 +1,7 @@
 ---
 id: gate-security-release-build-debug-signing-fallback
 kind: story
-stage: review
+stage: done
 tags: [security, app]
 parent: feature-outpost-pi-distribution-ownership
 depends_on: [story-en-first-residual-maintained-surfaces]
@@ -45,3 +45,13 @@ Make distributable release builds fail closed when the release keystore is absen
 - Keystore filename and alias logic are unchanged (`remotepi-release.jks` / `remotepi`). No development-only release-mode override was added.
 - Verified by inspection that the release block fails closed and the debug build type remains unmodified; `flutter analyze` and `flutter test` pass from `app/`.
 - Discrepancies: none. Parked issues: none.
+
+## Review (2026-07-15)
+
+**Verdict**: Approve - story verified by implement; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fast-lane: green build+test verification recorded by implement. Orchestrator re-verified the combined tree (extension 838 passed/3 skipped; relay all green; app analyze clean + 698 passed; protocol check + generate:rust:check clean; site lint+build clean).
