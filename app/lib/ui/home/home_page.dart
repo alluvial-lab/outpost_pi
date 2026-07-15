@@ -279,7 +279,7 @@ class HomePage extends StatelessWidget {
       );
     }
 
-    // Plan-38 Fase 3 — presence filter at the top of the list. Pure view:
+    // Plan-38 Phase 3 — presence filter at the top of the list. Pure view:
     // tapping a tab only swaps `state.filter` → `vm.visibleItems` re-derives.
     final tabs = SliverToBoxAdapter(
       child: HomeFilterTabs(

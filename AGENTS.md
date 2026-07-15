@@ -57,6 +57,7 @@ When picking up any active `.work` item tagged `research` or containing `researc
 First-wave references are tracked in `.work/active/features/feature-agent-reference-surface.md` and children. Available references:
 
 - `.agents/skills/code-design-principles/SKILL.md` — generic design/implementation principles adapted from SNC/platform: ports/adapters, single source of truth, generated contracts, fail fast, lifecycle ownership, convergent state.
+- `.agents/skills/documentation-conventions/SKILL.md` — the three-tier (Always/Recommended/Skip) native-doc intent model and agent-scan enforcement for TypeScript (JSDoc), Dart (dartdoc), and Rust (rustdoc).
 - `.agents/skills/pi-extension-typescript/SKILL.md` — `pi-extension/` TypeScript/Pi SDK lifecycle work.
 - `.agents/skills/flutter-mobile/SKILL.md` — `app/` Flutter mobile lifecycle, provider/ViewModels, routing, WebSocket reconnect, and room/session state.
 - `.agents/skills/rust-relay/SKILL.md` — `relay/` Rust async WebSocket routing, mesh membership, presence/rooms, logging/privacy, and relay tests.

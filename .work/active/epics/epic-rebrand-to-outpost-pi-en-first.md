@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first
 kind: epic
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, cockpit, app, pi-extension, relay, site]
 parent: null
 depends_on: [epic-rebrand-to-outpost-pi]
@@ -247,3 +247,23 @@ fixtures and the existing `scripts/` exclusion remain out of scope.
 All child features are `stage: done` with cross-model fresh-context reviews
 recorded. Epic advanced `implementing → review` for the deeper aggregate
 review per the review skill's roll-up rule.
+
+## Epic review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol`. Aggregate epic pass — did not repeat
+line-level child-feature review. Inspected end-to-end translation completeness,
+cross-feature doc-tier consistency, cumulative no-behavior-change contract,
+and foundation-doc alignment.
+
+### Findings (adjudicated)
+- **Important — 10 ASCII `Fase` remnants in app code/tests.** The app feature review said "no findings" but missed these (accented-only scan gap, same as pi-extension). `app/lib/ui/home/{home_page,states/home_state,viewmodels/home_viewmodel,widgets/home_filter_tabs}.dart` + `app/test/ui/home/{home_filter_tabs,home_viewmodel}_test.dart`. Translated `Fase` → `Phase`. **Fixed.**
+- **Important — `.orchestration/contracts/` remain Portuguese.** `pairing.md` (212 lines) and `protocol.md` (241 lines) are substantially PT. **Parked** as `idea-translate-legacy-orchestration-contracts` — these are legacy orchestration-framework docs, not in the EN-first epic's owned scope, last touched pre-rebrand and not referenced as active. The `.gitignore` comment describing the contracts dir (in prose scope) was translated. The backlog item captures the translate-or-retire decision.
+- **Nit — foundation-reference hygiene.** `AGENTS.md` omitted `documentation-conventions` from the available-reference catalog (added), and `.agents/skills/documentation-conventions/SKILL.md:176` said "Split" instead of "Skip" (corrected). **Fixed.**
+- No aggregate documentation imbalance; JSDoc/dartdoc/rustdoc gap-fills consistently follow the Always/Recommended/Skip model. No unintended logic/signature/wire/persistence changes; observable literal edits are bounded translations.
+
+### Verification of fixes
+- `flutter analyze` + `flutter test` (app, home tests) — pending re-verify run.
+- Doc-only changes to AGENTS.md, SKILL.md, .gitignore (no build gate).
+
+### Verdict
+Approve. Advanced `review → done`.
