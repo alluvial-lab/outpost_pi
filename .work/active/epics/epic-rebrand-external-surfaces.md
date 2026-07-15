@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-external-surfaces
 kind: epic
-stage: review
+stage: done
 tags: [rebrand, pi-extension, app, relay, cockpit, site, docs]
 parent: null
 depends_on: [epic-rebrand-to-outpost-pi]
@@ -187,3 +187,22 @@ independence investigation produces a verified replacement.
 All child features are `stage: done` with cross-model fresh-context reviews
 recorded. Epic advanced `implementing → review` for the deeper aggregate
 review per the review skill's roll-up rule.
+
+## Epic review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol`. Aggregate epic pass — did not repeat
+line-level child-feature review. Inspected end-to-end capability completeness,
+cross-feature contracts, cumulative operational/release risk, and
+foundation-doc alignment.
+
+### Findings (adjudicated)
+- **Blocker — primary setup journey cannot work as documented.** The getting-started tutorial (`site/src/app/tutorials/getting-started/page.tsx`) and READMEs claimed the wizard's "Use the relay?" step connects the relay, but after the no-default-relay feature the extension refuses to connect without an explicit `set-relay` URL (`index.ts:1888-1894`). Fixed: tutorial now documents `/outpost-pi set-relay <url>` as a required step before the relay connects; `pi-extension/README.md` and root `README.md` updated to state there is no default relay and `set-relay` is required. **Fixed.**
+- **Important — site deployment docs described incompatible/nonexistent paths.** `site/CLAUDE.md` required Docker Hub login and referenced a deleted `./push-docker.sh`, while `site/README.md` named Vercel and the actual `build-docker.sh` is local-only (no push, no registry). Fixed: `site/CLAUDE.md` now matches `build-docker.sh` (local build, no registry login, no push-docker.sh); added a note reconciling the Vercel contributor-convenience mention in `site/README.md` with the Docker production path. **Fixed.**
+- Runtime contracts cohere; retired host/default scans clean (no `jacobmoura.work`, rp-s3 namespace, or `kDefaultRelayUrl` remains).
+
+### Verification of fixes
+- `corepack pnpm lint` + `corepack pnpm build` (site) green (pending re-verify run).
+- Doc-only changes to READMEs and CLAUDE.md (no build gate).
+
+### Verdict
+Approve. Advanced `review → done`.
