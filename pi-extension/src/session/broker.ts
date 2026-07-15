@@ -8,7 +8,7 @@ import { sanitizeSegment } from "./local_config.js";
  * Structured view of one mesh peer (plan/38). The `address` is the canonical
  * routing key; the other fields let a client group/label peers WITHOUT parsing
  * the address string. `pc` is undefined for local peers (filled cross-PC in
- * Fase 2). Returned by `list_peers` as `peers_detailed`.
+ * Phase 2). Returned by `list_peers` as `peers_detailed`.
  */
 export interface PeerInfo {
   /** Cross-PC label; undefined for a local peer. */
@@ -22,13 +22,13 @@ export interface PeerInfo {
 }
 
 /**
- * THE sole encoder of a peer address (plan/38): `[<pc>:]<cwd>@<nome>`.
+ * THE sole encoder of a peer address (plan/38): `[<pc>:]<cwd>@<name>`.
  *
- * - `cwd` present → `<cwd>@<nome>` (the `@` separates name from path so a `/`
+ * - `cwd` present → `<cwd>@<name>` (the `@` separates name from path so a `/`
  *   in the path never confuses lookup, which is exact-match anyway).
  * - `cwd` empty (legacy peer that sent no cwd) → `address == name`, preserving
  *   pre-plan/38 behavior so a mixed mesh keeps routing.
- * - `pc` present (cross-PC, Fase 2) → prefixed `<pc>:`.
+ * - `pc` present (cross-PC, Phase 2) → prefixed `<pc>:`.
  *
  * Does NOT sanitize — callers sanitize the `name` once (see `sanitizeMeshName`)
  * before composing, so an already-appended `#N` collision suffix survives.
@@ -103,12 +103,12 @@ export interface RemoteRouter {
    * prefix at all.
    */
   tryRouteOutbound(env: Envelope): boolean;
-  /** Aggregated remote peer addresses (`<pc_label>:<cwd>@<nome>`) for the
+  /** Aggregated remote peer addresses (`<pc_label>:<cwd>@<name>`) for the
    *  `list_peers` reply's `peers` (string) field. Empty when nothing known. */
   listRemotePeers(): string[];
-  /** Structured remote roster (plan/38 Fase 2): one `PeerInfo` per cross-PC
+  /** Structured remote roster (plan/38 Phase 2): one `PeerInfo` per cross-PC
    *  peer with `pc` filled (the sibling label), `cwd`/`name` from the sibling's
-   *  inventory, and `address` prefixed `<pc>:<cwd>@<nome>`. Powers the
+   *  inventory, and `address` prefixed `<pc>:<cwd>@<name>`. Powers the
    *  `peers_detailed` half of `list_peers` so clients group by `pc`/`cwd`
    *  without parsing. Empty when nothing known. */
   listRemotePeerInfos(): PeerInfo[];
@@ -379,7 +379,7 @@ export class Broker {
   }
 
   /** Structured roster (plan/38): local peers (no `pc`) + cross-PC peers with
-   *  `pc`/`cwd`/`name` filled by the remote router (Fase 2). */
+   *  `pc`/`cwd`/`name` filled by the remote router (Phase 2). */
   private _allPeerInfos(): PeerInfo[] {
     const remote = this.remoteRouter?.listRemotePeerInfos() ?? [];
     return [...this.localPeerInfos(), ...remote];

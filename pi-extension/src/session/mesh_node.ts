@@ -394,7 +394,7 @@ export class MeshNode {
     return this.peer_.name();
   }
 
-  /** Canonical mesh address (`[<pc>:]<cwd>@<nome>`) — echo, never compose. */
+  /** Canonical mesh address (`[<pc>:]<cwd>@<name>`) — echo, never compose. */
   address(): string {
     return this.peer_.address();
   }
