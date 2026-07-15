@@ -1,57 +1,57 @@
-# `lib/app/core/` — kernel transversal
+# `lib/app/core/` — cross-cutting kernel
 
-O que é **compartilhado por 2+ features** ou é app-global. Não é uma feature: o
-`core_module.dart` é um `createModule` **sem `path`** → seus binds são root-owned
-(vivem o app inteiro, nunca descartados).
+What is **shared by 2+ features** or is app-global lives here. It is not a
+feature: `core_module.dart` is a `createModule` **without `path`** → its bindings
+are root-owned (live for the entire app, never disposed).
 
-> **Regra de ouro**: o `core/` **não importa de feature nenhuma**. Features
-> importam do `core/`, nunca o contrário. Se algo no core precisar de uma feature,
-> ele não é core — mora na feature.
+> **Golden rule**: `core/` **does not import from any feature**. Features
+> import from `core/`, never the other way around. If something in core needs a feature,
+> it is not core — it belongs in the feature.
 
-## O que mora aqui
+## What lives here
 
 ```
 core/
-├── core_module.dart   # binds root-owned: PiSpawnConfig + Pairing/RevokeGatewayFactory
-├── routes.dart        # RoutePaths (consts de path; evita string mágica)
-├── env.dart           # PiSpawnConfig (resolve o binário pi + args)
-├── app_intents.dart   # ponte global de atalhos (foco do composer)
+├── core_module.dart   # root-owned bindings: PiSpawnConfig + Pairing/RevokeGatewayFactory
+├── routes.dart        # RoutePaths (path consts; avoids magic strings)
+├── env.dart           # PiSpawnConfig (resolves the pi binary + args)
+├── app_intents.dart   # global shortcut bridge (composer focus)
 ├── domain/
 │   ├── contracts/     # markers: Service/Disposable/UseCase; settings_store;
 │   │                  #   pairing_gateway, revoke_gateway (+ factories)
-│   ├── entities/      # app_settings (preferências); pair_event
+│   ├── entities/      # app_settings (preferences); pair_event
 │   ├── exceptions/    # relay_error
 │   └── result.dart    # Result<T, E>
-├── data/              # utils compartilhados: jsonl_line_splitter, outpost_pi_resolver,
+├── data/              # shared utils: jsonl_line_splitter, outpost_pi_resolver,
 │   │                  #   hive_settings_store
 │   └── relay/         # ephemeral_pi_rpc + pairing/revoke gateway impls
 └── ui/
-    ├── settings_controller.dart  # APP-SCOPED (tema/fonte) — construído no main,
-    │                             #   provido em ModularApp.provide (não em rota)
-    ├── themes/        # tema dark; context.colors / context.typo / syntax
-    ├── widgets/       # widgets reutilizados por +1 feature (hover_tap, app_menu,
+    ├── settings_controller.dart  # APP-SCOPED (theme/font) — built in main,
+    │                             #   provided in ModularApp.provide (not in a route)
+    ├── themes/        # dark theme; context.colors / context.typo / syntax
+    ├── widgets/       # widgets reused by +1 feature (hover_tap, app_menu,
     │                  #   code_highlight, window_controls)
-    └── file_icons/    # mapa de ícone por tipo de arquivo
+    └── file_icons/    # icon map by file type
 ```
 
-## Critério: core vs feature
+## Criterion: core vs feature
 
-- Usado por **só uma** feature → vai para a feature (`app/<feature>/...`).
-- Usado por **duas ou mais** (ou é app-global) → core.
-- **Exceção (DI)**: um bind de nível de feature (módulo com `path`) **não enxerga
-  o core** na resolução do `auto_injector` — só o `provide` page-scoped e o próprio
-  core enxergam. Logo um bind que resolve uma dep do core **pelo construtor** mora
-  aqui (root-owned) mesmo que só uma feature o use. É o caso das
-  `Pairing/RevokeGatewayFactory`: recebem `PiSpawnConfig` no construtor, então
-  ficam no core junto do config, e o `ConnectivityViewModel` (settings, page-scoped)
-  as injeta.
-- Ex.: `SupervisorClientImpl` serve daemons **e** cron (mesma instância sob dois
-  contratos) → fica em `settings/data` porque ambos são da feature *settings*; já
-  o `SettingsController` (tema lido pelo shell **e** editado em settings) e o
-  `PiSpawnConfig` (RPC do cockpit **e** pi efêmero do settings) são core.
+- Used by **only one** feature → goes in the feature (`app/<feature>/...`).
+- Used by **two or more** (or is app-global) → core.
+- **Exception (DI)**: a feature-level binding (module with `path`) **cannot see
+  core** in `auto_injector` resolution — only page-scoped `provide` and core can
+  see it. Therefore, a binding that resolves a core dependency **through its
+  constructor** belongs here (root-owned) even if only one feature uses it. This is
+  the case for `Pairing/RevokeGatewayFactory`: they receive `PiSpawnConfig` in their
+  constructor, so they stay in core with config, and `ConnectivityViewModel`
+  (settings, page-scoped) injects them.
+- E.g., `SupervisorClientImpl` serves daemons **and** cron (the same instance under two
+  contracts) → it lives in `settings/data` because both belong to the *settings* feature;
+  `SettingsController` (theme read by the shell **and** edited in settings) and
+  `PiSpawnConfig` (Cockpit RPC **and** ephemeral settings Pi) are core.
 
-## Tema
+## Theme
 
-Toda cor/tipografia vem de `themes/` via `context.colors.<token>` /
-`context.typo.<estilo>` (barrel `themes/themes.dart`). Nunca hardcode `Color(0x…)`
-ou `TextStyle(fontFamily:…)` em widget.
+All color/typography comes from `themes/` through `context.colors.<token>` /
+`context.typo.<style>` (barrel `themes/themes.dart`). Never hardcode `Color(0x…)`
+or `TextStyle(fontFamily:…)` in a widget.
