@@ -1,7 +1,7 @@
 ---
 id: cockpit-winsparkle-marketing-version-comparison
 kind: story
-stage: review
+stage: done
 tags: [cockpit, release, infra]
 parent: feature-outpost-pi-distribution-ownership
 depends_on: [story-en-first-residual-maintained-surfaces]
@@ -31,3 +31,13 @@ The implementation follows the EN-first workflow translation because both edit `
 - The appcast-generation comments document that inherited Remote Pi 1.5.1 Windows installations require one manual installation when an operator first enables the feed; later updates compare `+n`.
 - Verification: PyYAML parsed the workflow successfully and `git diff --check` passed. The Windows appcast block was then read back to confirm it emits `${BUILD}`.
 - Discrepancies: none. Parked issues: none.
+
+## Review (2026-07-15)
+
+**Verdict**: Approve - story verified by implement; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fast-lane: green build+test verification recorded by implement. Orchestrator re-verified the combined tree (extension 838 passed/3 skipped; relay all green; app analyze clean + 698 passed; protocol check + generate:rust:check clean; site lint+build clean).
