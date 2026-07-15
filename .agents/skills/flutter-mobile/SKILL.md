@@ -93,9 +93,13 @@ same-package build signed with a different key first to avoid
 Kit/CameraX deps. If the VM is low, reclaim from the systemd journal
 (`journalctl --vacuum-size=100M`) and the apt cache (`apt-get clean`) first.
 
-**Release signing:** loads `android/key.properties` when present; falls back to
-debug keys otherwise (see `app/android/app/build.gradle.kts`). Debug builds are
-fine for private/dev side-loading.
+**Release signing:** configuration-only, test, and debug Gradle tasks work
+without `android/key.properties`. A task-graph guard rejects release APK/AAB
+tasks before execution unless all four signing properties are non-blank and the
+configured keystore file exists; release builds never fall back to debug keys.
+Run `android/check_release_signing_guard.sh` from `app/` to exercise both the
+no-key non-release pass and no-key release rejection. CI additionally compares
+the produced APK signer fingerprint with the configured release keystore.
 
 ## App architecture
 
