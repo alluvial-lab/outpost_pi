@@ -11,19 +11,20 @@ import 'package:cockpit/app/settings/domain/entities/daemon_info.dart';
 import 'package:cockpit/app/settings/domain/exceptions/daemon_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Implementação do [DaemonSupervisor] + [CronGateway] (mesmo control-plane).
+/// Adapt [DaemonSupervisor] and [CronGateway] to the same control plane.
 ///
-/// **Controle** via o UDS `~/.pi/remote/supervisor.sock` (JSON-por-linha, 1 req
-/// → 1 reply → close; espelha `pi-extension/src/daemon/client.ts`). **Criação**
-/// via shell-out `outpost-pi create` (faz o write do config local + registra +
-/// sobe — o op `register` do UDS não escreve config). Cron (plan/39) usa as ops
-/// `cron_*` no mesmo socket.
+/// **Control** uses the `~/.pi/remote/supervisor.sock` UDS with line-delimited
+/// JSON (one request → one reply → close), mirroring
+/// `pi-extension/src/daemon/client.ts`. **Creation** shells out to
+/// `outpost-pi create`, which writes the local config, registers the daemon,
+/// and starts it; the UDS `register` operation does not write config. Cron
+/// (plan/39) uses the `cron_*` operations on the same socket.
 class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
   SupervisorClientImpl();
 
   Future<({String exe, List<String> prefixArgs})?>? _resolvedCli;
 
-  // Windows não seta HOME; o equivalente é USERPROFILE.
+  // Windows does not set HOME; its equivalent is USERPROFILE.
   String? get _home =>
       Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
 
@@ -34,8 +35,9 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
 
   @override
   Future<bool> isOnline() async {
-    // Windows: o supervisor escuta num named pipe (não há arquivo de socket).
-    // Uma transação `list` que volta != null prova que o pipe está aceitando.
+    // On Windows, the supervisor listens on a named pipe, so no socket file
+    // exists. A non-null `list` transaction proves that the pipe is accepting
+    // requests.
     if (Platform.isWindows) {
       final reply = await winPipeTransact(
         supervisorPipeName(),
@@ -125,10 +127,11 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
     String cwd,
     String name,
   ) async {
-    // O nome é a fonte da verdade no registry global `~/.pi/remote/daemons.json`
-    // (`{cwd, name}`) — o supervisor o injeta no spawn via OUTPOST_PI_DIRECT_CONFIG.
-    // Não há config local por-pasta nem op/CLI de rename, então editamos o
-    // registry direto; o `restart{id}` (no VM) respawna com o nome novo.
+    // The global `~/.pi/remote/daemons.json` registry (`{cwd, name}`) is the
+    // source of truth for the name; the supervisor injects it at spawn through
+    // OUTPOST_PI_DIRECT_CONFIG. There is no per-folder local config or rename
+    // operation/CLI, so edit the registry directly. The ViewModel's
+    // `restart(id)` then respawns the daemon with the new name.
     final home = _home;
     if (home == null) {
       return const Failure(DaemonError('HOME not found in the environment.'));
@@ -153,7 +156,7 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
       if (!found) {
         return const Failure(DaemonError('Daemon not found in the registry.'));
       }
-      // Mesmo formato do saveRegistry do pi-extension (2 espaços + LF final).
+      // Match pi-extension's saveRegistry format: two-space indent and final LF.
       await file.writeAsString(
         '${const JsonEncoder.withIndent('  ').convert(decoded)}\n',
       );
@@ -171,9 +174,9 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
 
   @override
   Future<Result<void, DaemonError>> restartSupervisor() async {
-    // Delega ao CLI `outpost-pi restart-supervisor` — ele cuida do detalhe por
-    // plataforma (launchctl no macOS, systemctl no Linux, serviço no Windows).
-    // Centraliza a lógica de SO no outpost-pi em vez de duplicá-la aqui.
+    // Delegate to `outpost-pi restart-supervisor`, which handles each platform:
+    // launchctl on macOS, systemctl on Linux, and a service on Windows. This
+    // keeps OS-specific logic in outpost-pi instead of duplicating it here.
     try {
       final result = await _runCli(const ['restart-supervisor']);
       if (result == null) {
@@ -183,8 +186,9 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
       }
       final out = (result.stdout as String? ?? '');
       final err = (result.stderr as String? ?? '');
-      // O CLI imprime o help e sai 0 quando o comando não existe — não dá pra
-      // confiar só no exitCode. Detecta o banner de uso e trata como indisponível.
+      // The CLI prints help and exits with 0 when the command is unavailable,
+      // so exitCode alone is insufficient. Treat its usage banner as proof that
+      // the command is unavailable.
       if ('$out\n$err'.contains('Usage: outpost-pi')) {
         return const Failure(
           DaemonError(
@@ -319,7 +323,8 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
 
   // ---- UDS internals --------------------------------------------------------
 
-  /// `_call` que descarta o `data` — pra ops cujo sucesso é só `{ok:true}`.
+  /// Call the supervisor and discard `data` for operations whose only success
+  /// signal is `{ok:true}`.
   Future<Result<void, DaemonError>> _voidCall(Map<String, dynamic> req) async {
     final result = await _call(req);
     return result.fold((_) => const Success(null), (error) => Failure(error));
@@ -330,8 +335,11 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
     return result.fold((_) => const Success(null), (error) => Failure(error));
   }
 
-  /// Abre o UDS, manda uma linha JSON, lê uma linha de reply, fecha. Devolve o
-  /// `data` em caso de `{ok:true}`; `{ok:false}` ou falha de socket viram erro.
+  /// Open the supervisor transport, send one JSON line, read one reply line,
+  /// and close it.
+  ///
+  /// Returns `data` for `{ok:true}`; maps `{ok:false}` and transport failures
+  /// to [DaemonError].
   Future<Result<Map<String, dynamic>, DaemonError>> _call(
     Map<String, dynamic> request,
   ) async {
@@ -366,8 +374,10 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
     }
   }
 
-  /// Transação 1-req → 1-reply com o supervisor. Windows usa named pipe; POSIX
-  /// usa o UDS. Devolve a linha de resposta (sem `\n`) ou `null` se offline.
+  /// Perform one request → one reply transaction with the supervisor.
+  ///
+  /// Windows uses a named pipe and POSIX uses the UDS. Returns the reply line
+  /// without `\n`, or `null` when the supervisor is offline.
   Future<String?> _transact(String requestLine) async {
     if (Platform.isWindows) {
       return winPipeTransact(supervisorPipeName(), requestLine);
@@ -435,12 +445,15 @@ class SupervisorClientImpl implements DaemonSupervisor, CronGateway {
 
   // ---- CLI resolution -------------------------------------------------------
 
-  /// Como invocar o `outpost-pi`: binário no POSIX, `node <index.js>` no Windows.
+  /// Resolve how to invoke `outpost-pi`: a binary on POSIX or
+  /// `node <index.js>` on Windows.
   Future<({String exe, List<String> prefixArgs})?> _cli() =>
       _resolvedCli ??= resolveOutpostPiCommand();
 
-  /// Roda o `outpost-pi <args>` resolvido por plataforma, com o `node` na PATH
-  /// (shim usa `#!/usr/bin/env node`) e `runInShell` no Windows.
+  /// Run the platform-resolved `outpost-pi <args>` command.
+  ///
+  /// Includes `node` on PATH because the shim uses `#!/usr/bin/env node`, and
+  /// enables `runInShell` on Windows.
   Future<ProcessResult?> _runCli(List<String> args) async {
     final cmd = await _cli();
     if (cmd == null) return null;

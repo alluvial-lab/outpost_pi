@@ -6,21 +6,25 @@ import 'dart:isolate';
 import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart';
 
-/// Nome do named pipe do supervisor no Windows. Espelha
-/// `pi-extension/src/session/ipc.ts`: `\\.\pipe\outpost-pi-supervisor-<user>`,
-/// com o username sanitizado (`[^A-Za-z0-9_.-]` → `_`).
+/// Build the Windows supervisor named-pipe path.
+///
+/// Mirrors `pi-extension/src/session/ipc.ts`:
+/// `\\.\pipe\outpost-pi-supervisor-<user>`, with the username sanitized by
+/// replacing `[^A-Za-z0-9_.-]` with `_`.
 String supervisorPipeName() {
   final raw = Platform.environment['USERNAME'] ?? 'user';
   final user = raw.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
   return r'\\.\pipe\outpost-pi-supervisor-' + (user.isEmpty ? 'user' : user);
 }
 
-/// Faz uma transação completa num named pipe do Windows: conecta, escreve
-/// [requestLine] (que deve terminar em `\n`), lê uma linha de resposta e fecha.
-/// Devolve a linha (sem o `\n`) ou `null` em offline/erro/timeout.
+/// Perform one complete transaction over a Windows named pipe.
 ///
-/// As chamadas FFI são bloqueantes, então rodam num `Isolate.run` pra não travar
-/// a UI. Só passamos Strings (sendable) pro isolate.
+/// Connects, writes [requestLine] (which must end in `\n`), reads one reply
+/// line, and closes the pipe. Returns the line without `\n`, or `null` when the
+/// supervisor is offline, an operation fails, or the deadline expires.
+///
+/// Blocking FFI calls run in [Isolate.run] to keep the UI responsive. Only
+/// sendable strings cross the isolate boundary.
 Future<String?> winPipeTransact(
   String pipeName,
   String requestLine, {
@@ -30,14 +34,14 @@ Future<String?> winPipeTransact(
   return Isolate.run(() => _transactSync(pipeName, requestLine, deadlineMs));
 }
 
-/// Roda dentro do isolate. Tudo síncrono (Win32 bloqueante).
+/// Run the synchronous, blocking Win32 transaction inside the isolate.
 String? _transactSync(String pipeName, String requestLine, int deadlineMs) {
   final namePtr = pipeName.toNativeUtf16();
   var handle = INVALID_HANDLE_VALUE;
   final sw = Stopwatch()..start();
   try {
-    // Abre o pipe; em ERROR_PIPE_BUSY tenta de novo até o deadline (win32 5.x
-    // não expõe WaitNamedPipe, então fazemos backoff curto manual).
+    // Open the pipe, retrying ERROR_PIPE_BUSY until the deadline. win32 5.x
+    // does not expose WaitNamedPipe, so use a short manual backoff.
     while (true) {
       handle = CreateFile(
         namePtr,
@@ -51,7 +55,7 @@ String? _transactSync(String pipeName, String requestLine, int deadlineMs) {
       if (handle != INVALID_HANDLE_VALUE) break;
       final err = GetLastError();
       if (err != ERROR_PIPE_BUSY || sw.elapsedMilliseconds >= deadlineMs) {
-        return null; // offline / inexistente / sem permissão.
+        return null; // Offline, missing, or inaccessible.
       }
       sleep(const Duration(milliseconds: 50));
     }
@@ -89,8 +93,10 @@ bool _writeAll(int handle, List<int> bytes) {
   }
 }
 
-/// Lê do pipe acumulando bytes até o primeiro `\n`. Devolve a 1ª linha (sem o
-/// `\n`) ou `null` se o pipe fechar antes / estourar o deadline.
+/// Accumulate pipe bytes through the first `\n`.
+///
+/// Returns the first line without `\n`, or `null` if the pipe closes first or
+/// the deadline expires.
 String? _readLine(int handle, Stopwatch sw, int deadlineMs) {
   const chunk = 4096;
   final buf = calloc<Uint8>(chunk);
@@ -99,7 +105,7 @@ String? _readLine(int handle, Stopwatch sw, int deadlineMs) {
   try {
     while (sw.elapsedMilliseconds < deadlineMs) {
       final ok = ReadFile(handle, buf, chunk, read, nullptr);
-      if (ok == 0) return null; // pipe quebrado / fim.
+      if (ok == 0) return null; // Broken pipe or end of stream.
       final n = read.value;
       if (n == 0) return null;
       final bytes = buf.asTypedList(n);
