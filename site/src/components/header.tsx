@@ -101,7 +101,7 @@ export function SiteHeader() {
           onClick={() => setMenuOpen((s) => !s)}
           aria-expanded={menuOpen}
           aria-controls="mobile-menu"
-          aria-label={menuOpen ? "Fechar menu" : "Abrir menu"}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
           type="button"
         >
           <HamburgerIcon open={menuOpen} />
