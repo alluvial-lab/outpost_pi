@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-site
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, site]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # EN-first + JSDoc gap-fill — site
@@ -290,3 +290,19 @@ source audit and one site build gate.
 - Adjacent issues parked: none.
 - Verification rationale: the environment had no `pnpm` on `PATH`; used Corepack with a writable temporary store and the locked dependencies, then ran the specified lint and production build successfully.
 `
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD -- site/`).
+
+### Findings (adjudicated)
+- **Important — tautological JSDoc on icon primitives** (`site/src/components/landing/icons.tsx`): 23 single-line `/** Render the X icon. */` comments sat above zero-prop, equivalently named icon components — obvious-description padding, not intent docs. Per the documentation-conventions Skip tier, removed. **Fixed.**
+- No other findings; translation complete, no behavior/contract/identifier drift.
+
+### Verification of fixes
+- `corepack pnpm lint` (eslint) clean.
+- `corepack pnpm build` succeeds; all routes prerendered.
+
+### Verdict
+Approve. Advanced `review → done`.

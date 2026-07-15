@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-relay
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, relay]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # EN-first + rustdoc gap-fill — relay
@@ -266,3 +266,21 @@ return no matches; generated files are not edited regardless of that scan.
 - Rationale: documented only the audited handwritten public boundary, retained
   generated protocol output untouched, and kept error docs tied to the actual
   fail-fast mappings rather than payload semantics.
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD -- relay/src/`).
+
+### Findings (adjudicated)
+- **Important — duplicated summary + incomplete `# Errors` in `parse_hello`** (`relay/src/auth/challenge.rs`): the doc comment had two summary lines (a leftover from translation) and the `# Errors` section omitted `AuthError::Json`, which propagates from `parse_hello_bootstrap`. Collapsed to one summary and added the `AuthError::Json` (malformed JSON) variant. **Fixed.**
+- No other findings; translation complete, no behavior/contract/identifier drift. Wire-stable literals untouched.
+
+### Verification of fixes
+- `cargo fmt --check` clean.
+- `cargo clippy -- -D warnings` clean.
+- `cargo test` green (20 passed).
+
+### Verdict
+Approve. Advanced `review → done`.
