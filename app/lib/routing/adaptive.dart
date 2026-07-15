@@ -116,7 +116,7 @@ class SessionSelection extends ChangeNotifier {
   ]) {
     final c = _current;
     if (c != null && c.ref == ref) {
-      return; // no-op — evita rebuild do detail/master
+      return; // no-op — avoids rebuilding the detail/master views
     }
     _current = SelectedSession(
       ref: ref,

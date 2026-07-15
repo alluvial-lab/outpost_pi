@@ -3,7 +3,7 @@
 import 'generated/protocol.g.dart' show ThinkingLevel;
 
 // ---------------------------------------------------------------------------
-// Control frames (plano 12 — presence)
+// Control frames (plan 12 — presence)
 //
 // These travel raw over the WS (no outer envelope) and are routed by the
 // relay itself, not the Pi. They never enter the inner-message switch.

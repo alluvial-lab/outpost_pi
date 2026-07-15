@@ -113,7 +113,7 @@ class ConnectionManager extends Service {
   final DebugLog? _debugLog;
 
   final _statusController = StreamController<ConnectionStatus>.broadcast();
-  // Presence (plano 12): map per remote_epk + a broadcast stream the UI
+  // Presence (plan 12): map per remote_epk + a broadcast stream the UI
   // listens to. The map is emitted whole on every change for simple
   // diffing on the consumer side.
   final Map<String, PresenceState> _presence = <String, PresenceState>{};
@@ -226,7 +226,7 @@ class ConnectionManager extends Service {
   /// / fresh after disconnect()).
   PeerRecord? get activePeer => _activePeer;
 
-  // ---- Presence (plano 12) -------------------------------------------------
+  // ---- Presence (plan 12) --------------------------------------------------
 
   /// Stream of full presence-map snapshots. Subscribers should treat each
   /// event as the canonical state for all keys present in the map.
@@ -384,7 +384,7 @@ class ConnectionManager extends Service {
   }
 
   /// Open the WS and start driving a peer. Accepts an optional
-  /// [preferredEpk] (plano 13) so the caller can express the user's
+  /// [preferredEpk] (plan 13) so the caller can express the user's
   /// authoritative choice — typically `Preferences.selectedPeerEpk`.
   /// When the preferred epk is not in storage (or omitted), falls back
   /// to `peers.first`.
@@ -437,7 +437,7 @@ class ConnectionManager extends Service {
 
   /// Idempotent switch to another paired peer. If `peer` already matches
   /// [activePeer] AND we are Online, no-op. Otherwise tears down the
-  /// current channel WITHOUT emitting a transient `StatusNoPeer` (plano
+  /// current channel WITHOUT emitting a transient `StatusNoPeer` (plan
   /// 13) and starts a fresh connection — the visible transition becomes
   /// `Online → Connecting → Online`, never landing on NoPeer.
   Future<void> switchTo(PeerRecord peer) async {

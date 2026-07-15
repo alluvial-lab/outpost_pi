@@ -4,12 +4,12 @@
 //   - QR payload + PairingStorage use base64url (RFC 4648 §5; `-_` chars).
 //   - Relay's registry / hello / `peer` envelope field use base64 standard
 //     (RFC 4648 §4; `+/` chars, `=` padding).
-//   - Plano 06 already fixed envelope routing by normalising at
+//   - Plan 06 already fixed envelope routing by normalising at
 //     `WsTransport._normalizeToStandard` (see `ws_transport.dart`). The
-//     control frames added by plano 12 (subscribe_presence, peer_online,
-//     etc) re-broke the symmetry — see plano `fix-presence-epk-encoding`.
+//     control frames added by plan 12 (subscribe_presence, peer_online,
+//     etc) re-broke the symmetry — see plan `fix-presence-epk-encoding`.
 //
-// Until storage moves to standard (TODO plano-storage-encoding), every
+// Until storage moves to standard (TODO plan-storage-encoding), every
 // transport-bound epk goes through [toStandardB64]; every inbound
 // relay-reported epk goes through [toAppEpk] so it matches the key
 // `PairingStorage` already uses.

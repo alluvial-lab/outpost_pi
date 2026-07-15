@@ -3,7 +3,7 @@ import 'package:cockpit/app/cockpit/domain/entities/session_info.dart';
 /// List Pi's saved sessions for a folder.
 ///
 /// The `data/` implementation reads
-/// `~/.pi/agent/sessions/<cwd-codificado>/`.
+/// `~/.pi/agent/sessions/<encoded-cwd>/`.
 abstract class SessionHistory {
   /// Return sessions for [cwd] from newest to oldest.
   ///
