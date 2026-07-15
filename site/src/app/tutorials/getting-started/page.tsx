@@ -41,20 +41,12 @@ export default function GettingStartedTutorial() {
             </li>
             <li>
               The <strong className="text-fg">Outpost-Pi</strong> app on your
-              phone — from the{" "}
-              <a
-                className="text-accent underline"
-                href="https://apps.apple.com/app/outpost-pi-coding-agent/id6773499691"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                App Store
-              </a>
-              {" "}or the{" "}
+              phone — currently available as an{" "}
               <Link className="text-accent underline" href="/download">
                 Android APK
               </Link>{" "}
-              direct download (Google Play for the new listing is coming soon).
+              direct download. Operator-owned iOS distribution and the Google
+              Play listing are not available yet.
             </li>
           </ul>
           <p className="text-sm">

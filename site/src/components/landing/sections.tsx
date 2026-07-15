@@ -6,7 +6,6 @@ import {
   IconMesh,
   IconArrow,
   IconAndroid,
-  IconApple,
   IconDownload,
   IconMic,
   IconImage,
@@ -125,14 +124,6 @@ type Store = {
 
 const STORES: Store[] = [
   {
-    glyph: <IconApple />,
-    top: "Download on the",
-    name: "App Store",
-    sub: "iOS · iPhone & iPad",
-    href: "https://apps.apple.com/app/outpost-pi-coding-agent/id6773499691",
-    external: true,
-  },
-  {
     glyph: <IconAndroid />,
     top: "Direct download",
     name: "Android APK",
@@ -157,9 +148,9 @@ export function GetApp() {
           <span className="eyebrow">Get the app</span>
           <h2>Pair your phone, drive your agents.</h2>
           <p>
-            The authenticator and the remote control. Get it on the App
-            Store, grab the Android APK direct, or download the desktop
-            Cockpit. Google Play for the new listing is coming soon.
+            The authenticator and the remote control. Grab the Android APK
+            direct or download the desktop Cockpit. Operator-owned iOS
+            distribution and the Google Play listing are coming later.
           </p>
         </div>
         <div className="app-grid">
