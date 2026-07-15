@@ -425,7 +425,7 @@ export default function DocsPage() {
             If neither is configured, the relay is unconfigured and Outpost-Pi
             does not connect. Verify the active URL and its source with:
           </p>
-          <CodeBlock code="/outpost-pi config" label="In Pi" language="text" />
+          <CodeBlock code="/outpost-pi status" label="In Pi" language="text" />
           <p>
             To switch URLs while connected: <InlineCode>/outpost-pi stop</InlineCode>{" "}
             then <InlineCode>/outpost-pi</InlineCode> again. The mobile app has
