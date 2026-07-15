@@ -1,7 +1,7 @@
 ---
 id: story-cockpit-windows-appcast-changelog-consistency
 kind: story
-stage: implementing
+stage: review
 tags: [cockpit, docs, release]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -36,3 +36,12 @@ not be rewritten.
 - Preserve the historical `work.jacobmoura.cockpit` release record unchanged.
 - Verify the workflow, packaging runbook, and Unreleased changelog agree on the
   generated appcast set; run `git diff --check`.
+
+## Implementation notes
+- File changed: `cockpit/CHANGELOG.md` (Unreleased `### Added` self-update entry only).
+- Rewrote the entry to state Cockpit self-updates on **macOS** through Sparkle (publishes `appcast-macos.xml`), Linux retains manual download, and **Windows auto-update is not yet active** — the locked `auto_updater_windows` plugin does not expose the WinSparkle build-version API needed for a proven version contract, so the Windows appcast is intentionally not published and Windows users update by manual reinstall.
+- This now agrees with the repaired workflow (Windows appcast step always-skipped) and the packaging runbook's disabled-self-update section.
+- The historical `## [1.0.0]` release-identity record (`work.jacobmoura.cockpit`) is preserved unchanged.
+- Verification: `git diff --check` clean.
+- Discrepancies: none.
+- Adjacent issues parked: none.
