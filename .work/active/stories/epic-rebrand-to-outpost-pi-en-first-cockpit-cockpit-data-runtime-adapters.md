@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data-runtime-adapters
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data
 depends_on: []
@@ -42,11 +42,35 @@ existing class docs own infrastructure-specific behavior.
 
 ## Acceptance criteria
 
-- [ ] All nine files contain natural English comments/dartdoc with lifecycle,
+- [x] All nine files contain natural English comments/dartdoc with lifecycle,
       failure, and boundary semantics preserved.
-- [ ] Every public adapter/service class retains meaningful `///` documentation.
-- [ ] RPC keys/discriminators, process arguments, commands, environment values,
+- [x] Every public adapter/service class retains meaningful `///` documentation.
+- [x] RPC keys/discriminators, process arguments, commands, environment values,
       runtime strings, and executable behavior are unchanged.
-- [ ] Normal and word-diff review shows production edits are comment-only.
-- [ ] Touched Dart files are formatted and the integrated feature can pass
+- [x] Normal and word-diff review shows production edits are comment-only.
+- [x] Touched Dart files are formatted and the integrated feature can pass
       `flutter analyze` and `flutter test` from `cockpit/`.
+
+## Implementation notes
+
+- Files changed: `rpc_data_mapper.dart`, `rpc_event_mapper.dart`,
+  `pi_process_registry.dart`, `pi_rpc_process.dart`,
+  `pi_rpc_process_factory.dart`, `pty_terminal_gateway.dart`,
+  `pty_terminal_gateway_factory.dart`, `environment_installer_impl.dart`, and
+  `local_notifier.dart` in the story-owned cockpit data adapter paths.
+- Tests added: none; production changes are documentation-only.
+- Discrepancies from design: none. The existing public adapter/service class
+  docs were translated and strengthened around infrastructure-specific wire,
+  process, PTY, install, and notification behavior. Inherited port methods and
+  the `schemaControlPromptForTesting` test seam remain undocumented as designed.
+- Translation boundary decision: preserved the quoted runtime literals
+  `erro desconhecido`, `Abrir`, and `Agente terminou` because the story forbids
+  runtime-string changes; all comment and dartdoc prose in the nine files is
+  English.
+- Dispatch rationale: direct-read only; the exact nine-file manifest and
+  comment-only boundary made exploratory fan-out unnecessary.
+- Verification: the nine files pass `dart format` with no changes; executable
+  prefixes are unchanged in the diff; accented-Latin and Portuguese-token
+  comment scans return no matches; `flutter analyze` reports no issues; all 241
+  `flutter test` tests pass.
+- Adjacent issues parked: none.

@@ -1,7 +1,9 @@
 import 'package:cockpit/app/cockpit/domain/contracts/notifier.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-/// Notificações nativas via `flutter_local_notifications` (macOS first).
+/// Deliver native desktop notifications through `flutter_local_notifications`.
+///
+/// Configuration is macOS-first while retaining the Linux adapter path.
 class LocalNotifier implements Notifier {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -14,8 +16,8 @@ class LocalNotifier implements Notifier {
         requestAlertPermission: true,
         requestBadgePermission: true,
         requestSoundPermission: true,
-        // Desktop app está sempre em foreground: sem esses flags o
-        // UNUserNotificationCenter suprime o banner silenciosamente.
+        // Cockpit normally remains in the foreground; without these flags,
+        // UNUserNotificationCenter silently suppresses the banner.
         defaultPresentAlert: true,
         defaultPresentBadge: true,
         defaultPresentSound: true,

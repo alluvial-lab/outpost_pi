@@ -5,8 +5,10 @@ import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/environment_installer.dart';
 import 'package:cockpit/app/cockpit/domain/entities/install_result.dart';
 
-/// Instala extensão e supervisor rodando processos (`pi` / `node`). Best-effort:
-/// qualquer falha de IO vira [InstallResult.failure] com mensagem legível.
+/// Install the extension and supervisor through `pi` and `node` processes.
+///
+/// This adapter is best-effort: it converts every process or I/O failure into
+/// an [InstallResult.failure] with a readable message.
 class EnvironmentInstallerImpl implements EnvironmentInstaller {
   EnvironmentInstallerImpl(this._config);
 
@@ -52,7 +54,7 @@ class EnvironmentInstallerImpl implements EnvironmentInstaller {
     }
   }
 
-  /// Junta stderr + stdout (truncado) pra uma mensagem de erro útil no dialog.
+  /// Build a useful dialog error from stderr or stdout, truncated to 600 characters.
   String _output(ProcessResult r) {
     final err = (r.stderr ?? '').toString().trim();
     final out = (r.stdout ?? '').toString().trim();

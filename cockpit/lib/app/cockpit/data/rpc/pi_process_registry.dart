@@ -1,25 +1,20 @@
 import 'dart:io';
 
-/// Registro persistente de PIDs de processos `pi --mode rpc` ativos.
+/// Persist the PIDs of active `pi --mode rpc` processes for orphan cleanup.
 ///
-/// Problema: hot restart do `flutter run` reinicia a isolate Dart mas NÃO mata
-/// os child processes criados com `Process.start`. Sem `dispose`, os `pi`
-/// continuam rodando como órfãos — ao re-spawnar, há dois peers no mesh com o
-/// mesmo nome.
+/// A `flutter run` hot restart replaces the Dart isolate without killing child
+/// processes created by `Process.start`. On boot, [cleanOrphans] combines two
+/// cleanup sources:
 ///
-/// Solução em dois níveis, chamada por [cleanOrphans] no boot:
+/// 1. The file registry records successful spawns through [register] and
+///    removes clean exits through [unregister]. It covers cold restarts and
+///    crashes where Cockpit died and the recorded PIDs are no longer children.
+/// 2. A PPID scan finds direct `pi` children of the still-running Cockpit
+///    process that survived an isolate hot restart.
 ///
-/// 1. **Registry (arquivo)** — [register] escreve o PID no boot; [unregister]
-///    remove na saída limpa. Cobre cold restarts e crashes onde o processo pai
-///    (Cockpit) morreu e as PIDs não são mais filhos dele.
-///
-/// 2. **PPID scan** — antes de qualquer spawn, busca todos os processos `pi`
-///    cujo PPID == PID do Cockpit. Esses são exatamente os órfãos do hot
-///    restart: o processo macOS do Cockpit continua vivo mas a isolate anterior
-///    não liberou os filhos.
-///
-/// Ambos matam com SIGKILL (sem espera) — adequado para órfãos de
-/// desenvolvimento; a saída limpa de produção usa [dispose] → [kill].
+/// Both paths use SIGKILL without waiting, which is appropriate for abandoned
+/// development processes. Normal production shutdown remains the gateway's
+/// graceful `dispose` and `kill` path.
 class PiProcessRegistry {
   PiProcessRegistry._();
 
@@ -28,11 +23,11 @@ class PiProcessRegistry {
     return '$home/.pi/cockpit/agent-pids';
   }
 
-  /// Mata todos os pi órfãos do ciclo anterior e limpa o registro.
-  /// Deve ser chamado UMA VEZ por boot (em [setupDependencies]), antes de
-  /// qualquer spawn.
+  /// Kill Pi orphans from the previous lifecycle and clear the registry.
+  ///
+  /// Call exactly once per boot, before any new process is spawned.
   static Future<void> cleanOrphans() async {
-    // Roda as duas buscas em paralelo para minimizar latência no boot.
+    // Run both searches concurrently to minimize boot latency.
     final results = await Future.wait([
       _pidsFromRegistry(),
       _orphanedPiChildren(),
@@ -40,13 +35,14 @@ class PiProcessRegistry {
     final toKill = <int>{...results[0], ...results[1]};
     for (final p in toKill) {
       try {
-        Process.killPid(p, ProcessSignal.sigkill); // imediato, sem corrida
+        Process.killPid(p, ProcessSignal.sigkill); // Immediate and race-free.
       } catch (_) {}
     }
   }
 
-  /// Lê os PIDs registrados no arquivo e apaga o arquivo. Cobre restarts
-  /// frios (cold) e crashes onde o processo pai morreu.
+  /// Read registered PIDs and delete the registry file.
+  ///
+  /// This covers cold restarts and crashes where the parent process died.
   static Future<List<int>> _pidsFromRegistry() async {
     try {
       final file = File(_path);
@@ -62,25 +58,26 @@ class PiProcessRegistry {
     }
   }
 
-  /// Encontra todos os processos chamados exatamente `pi` cujo PPID é este
-  /// processo Cockpit. Esses são os órfãos deixados pelo hot restart: a isolate
-  /// Dart foi reciclada mas o processo macOS (e seus filhos) sobreviveu.
+  /// Find processes named exactly `pi` whose PPID is this Cockpit process.
+  ///
+  /// These are hot-restart orphans: Dart replaced the isolate while the native
+  /// Cockpit process and its children survived.
   static Future<List<int>> _orphanedPiChildren() async {
     if (!Platform.isMacOS && !Platform.isLinux) return const <int>[];
     try {
-      // pgrep -x pi: apenas processos com nome EXATAMENTE "pi"
+      // `pgrep -x pi` selects only processes named exactly "pi".
       final pgrepResult = await Process.run('pgrep', ['-x', 'pi']);
       final stdout = (pgrepResult.stdout as String).trim();
       if (stdout.isEmpty) return const <int>[];
 
-      final myCockpitPid = pid; // dart:io — PID do processo macOS deste app
+      final myCockpitPid = pid; // dart:io PID of this native app process.
       final piPids = stdout
           .split('\n')
           .map((l) => int.tryParse(l.trim()))
           .whereType<int>()
           .toList();
 
-      // Verifica o PPID de cada pi: só inclui os que são filhos diretos de mim.
+      // Include only Pi processes that are direct children of this process.
       final orphans = <int>[];
       for (final piPid in piPids) {
         final psResult = await Process.run('ps', [
@@ -99,7 +96,7 @@ class PiProcessRegistry {
     }
   }
 
-  /// Registra [pid] no arquivo. Chamado logo após o spawn bem-sucedido.
+  /// Record [pid] immediately after a successful spawn.
   static Future<void> register(int pid) async {
     try {
       final file = File(_path);
@@ -108,7 +105,7 @@ class PiProcessRegistry {
     } catch (_) {}
   }
 
-  /// Remove [pid] do arquivo. Chamado na saída limpa do processo.
+  /// Remove [pid] from the registry after a clean process exit.
   static Future<void> unregister(int pid) async {
     try {
       final file = File(_path);
