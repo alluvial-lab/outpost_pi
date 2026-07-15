@@ -38,9 +38,9 @@ void main() {
     if (await repo.exists()) await repo.delete(recursive: true);
   });
 
-  test('pasta não-git → null', () async {
+  test('non-Git folder → null', () async {
     if (!await gitAvailable()) {
-      markTestSkipped('git não disponível');
+      markTestSkipped('git is unavailable');
       return;
     }
     final plain = await Directory.systemTemp.createTemp('cockpit_plain_');
@@ -48,9 +48,9 @@ void main() {
     expect(await reader.read(plain.path), isNull);
   });
 
-  test('árvore limpa → branch sem arquivos sujos', () async {
+  test('clean tree → branch with no dirty files', () async {
     if (!await gitAvailable()) {
-      markTestSkipped('git não disponível');
+      markTestSkipped('git is unavailable');
       return;
     }
     final info = await reader.read(repo.path);
@@ -61,19 +61,19 @@ void main() {
     expect(info.behind, 0);
   });
 
-  test('classifica modified / staged / untracked / deleted', () async {
+  test('classifies modified / staged / untracked / deleted', () async {
     if (!await gitAvailable()) {
-      markTestSkipped('git não disponível');
+      markTestSkipped('git is unavailable');
       return;
     }
-    // modified working tree (não staged).
+    // Modified working tree (not staged).
     await write('README.md', 'changed');
-    // staged: arquivo novo adicionado ao index.
+    // Staged: new file added to the index.
     await write('staged.txt', 'new');
     await git(['add', 'staged.txt']);
-    // untracked: novo, fora do index.
+    // Untracked: new file outside the index.
     await write('lib/fresh.dart', '// novo');
-    // deleted: rastreado e removido do disco.
+    // Deleted: tracked file removed from disk.
     await File('${repo.path}/lib/app.dart').delete();
 
     final info = await reader.read(repo.path);
@@ -86,9 +86,9 @@ void main() {
     expect(info.dirtyCount, files.length);
   });
 
-  test('paths com espaço são parseados (separador -z é NUL)', () async {
+  test('paths with spaces are parsed (-z uses a NUL separator)', () async {
     if (!await gitAvailable()) {
-      markTestSkipped('git não disponível');
+      markTestSkipped('git is unavailable');
       return;
     }
     await write('a file.txt', 'x');
@@ -96,12 +96,12 @@ void main() {
     expect(info!.files['a file.txt'], GitFileStatus.untracked);
   });
 
-  test('pasta nova (untracked) colapsada → cobre descendentes', () async {
+  test('collapsed new (untracked) folder → covers descendants', () async {
     if (!await gitAvailable()) {
-      markTestSkipped('git não disponível');
+      markTestSkipped('git is unavailable');
       return;
     }
-    // Diretório totalmente novo → git colapsa em "?? novo/".
+    // A completely new directory → Git collapses it into "?? novo/".
     await Directory('${repo.path}/novo/sub').create(recursive: true);
     await write('novo/a.txt', '1');
     await write('novo/sub/b.txt', '2');
@@ -109,17 +109,17 @@ void main() {
     final info = await reader.read(repo.path);
     expect(info, isNotNull);
     expect(info!.untrackedDirs, contains('novo'));
-    // A própria pasta colapsada entra como untracked (colore a linha + ancestrais).
+    // The collapsed folder itself is untracked (colors its row and ancestors).
     expect(info.files['novo'], GitFileStatus.untracked);
-    // Descendentes não enumerados, mas cobertos por isUntracked.
+    // Descendants are not enumerated, but isUntracked still covers them.
     expect(info.isUntracked('novo/a.txt'), isTrue);
     expect(info.isUntracked('novo/sub/b.txt'), isTrue);
     expect(info.isUntracked('lib/app.dart'), isFalse);
   });
 
-  test('coleta raízes ignoradas (.gitignore) sem contar como sujo', () async {
+  test('collects ignored roots (.gitignore) without marking dirty', () async {
     if (!await gitAvailable()) {
-      markTestSkipped('git não disponível');
+      markTestSkipped('git is unavailable');
       return;
     }
     await write('.gitignore', 'build/\n*.log\n');
@@ -131,23 +131,23 @@ void main() {
 
     final info = await reader.read(repo.path);
     expect(info, isNotNull);
-    // Pasta colapsada → 'build' (sem barra); arquivo solto → 'debug.log'.
+    // Collapsed folder → 'build' (no slash); standalone file → 'debug.log'.
     expect(info!.ignored, containsAll(<String>{'build', 'debug.log'}));
-    // Ignorados não entram em files nem contam como sujo.
+    // Ignored paths are excluded from files and do not mark the tree dirty.
     expect(info.files.containsKey('build/out.bin'), isFalse);
     expect(info.isDirty, isFalse);
-    // Cobertura sob a raiz colapsada.
+    // Coverage beneath the collapsed root.
     expect(info.isIgnored('build/out.bin'), isTrue);
     expect(info.isIgnored('debug.log'), isTrue);
     expect(info.isIgnored('lib/app.dart'), isFalse);
   });
 
-  test('ahead/behind vs upstream local', () async {
+  test('ahead/behind vs local upstream', () async {
     if (!await gitAvailable()) {
-      markTestSkipped('git não disponível');
+      markTestSkipped('git is unavailable');
       return;
     }
-    // Cria um "remoto" como clone bare e configura upstream.
+    // Create a "remote" as a bare clone and configure the upstream.
     final bare = await Directory.systemTemp.createTemp('cockpit_bare_');
     addTearDown(() => bare.delete(recursive: true));
     await git(['clone', '--bare', repo.path, bare.path]);
@@ -159,7 +159,7 @@ void main() {
     ])).stdout.toString().trim();
     await git(['push', '-u', 'origin', branch]);
 
-    // Um commit local não-pushed → ahead 1, behind 0.
+    // One unpushed local commit → ahead 1, behind 0.
     await write('ahead.txt', '1');
     await git(['add', '.']);
     await git(['commit', '-m', 'ahead']);

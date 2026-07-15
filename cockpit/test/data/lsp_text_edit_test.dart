@@ -9,7 +9,7 @@ LspTextEdit edit(int sl, int sc, int el, int ec, String newText) => LspTextEdit(
 
 void main() {
   group('parseTextEdits', () {
-    test('parseia lista do wire', () {
+    test('parses a list from the wire', () {
       final r = parseTextEdits([
         {
           'range': {
@@ -23,47 +23,44 @@ void main() {
       expect(r.first.newText, 'X');
     });
 
-    test('não-lista vira vazio', () {
+    test('non-list input becomes empty', () {
       expect(parseTextEdits(null), isEmpty);
       expect(parseTextEdits('nope'), isEmpty);
     });
   });
 
   group('applyTextEdits', () {
-    test('substitui um trecho numa linha', () {
+    test('replaces a span within one line', () {
       const text = 'int x=1;';
-      // troca '=' (col 5..6) por ' = '
+      // Replace '=' (cols 5..6) with ' = '
       final out = applyTextEdits(text, [edit(0, 5, 0, 6, ' = ')]);
       expect(out, 'int x = 1;');
     });
 
-    test(
-      'múltiplos edits não-sobrepostos aplicam todos (ordem indiferente)',
-      () {
-        const text = 'a=1;b=2;';
-        final out = applyTextEdits(text, [
-          edit(0, 1, 0, 2, ' = '), // primeiro '='
-          edit(0, 5, 0, 6, ' = '), // segundo '='
-        ]);
-        expect(out, 'a = 1;b = 2;');
-      },
-    );
+    test('applies all non-overlapping edits regardless of order', () {
+      const text = 'a=1;b=2;';
+      final out = applyTextEdits(text, [
+        edit(0, 1, 0, 2, ' = '), // First '='
+        edit(0, 5, 0, 6, ' = '), // Second '='
+      ]);
+      expect(out, 'a = 1;b = 2;');
+    });
 
-    test('edit que cruza linhas (reformatação multi-linha)', () {
+    test('edit spanning lines (multiline reformatting)', () {
       const text = 'a{\n  x\n}';
-      // substitui tudo por versão formatada
+      // Replace everything with the formatted version.
       final out = applyTextEdits(text, [edit(0, 0, 2, 1, 'a {\n  x\n}')]);
       expect(out, 'a {\n  x\n}');
     });
 
-    test('lista vazia devolve o texto intacto', () {
+    test('empty list returns the text unchanged', () {
       expect(applyTextEdits('abc', const []), 'abc');
     });
 
-    test('clampa range defasado sem crashar', () {
+    test('clamps a stale range without crashing', () {
       const text = 'abc';
       final out = applyTextEdits(text, [edit(99, 0, 99, 5, 'Z')]);
-      // posição além do fim → no-op efetivo (inserção no fim)
+      // Position beyond the end → effective no-op (insertion at the end).
       expect(out, anyOf('abc', 'abcZ'));
     });
   });

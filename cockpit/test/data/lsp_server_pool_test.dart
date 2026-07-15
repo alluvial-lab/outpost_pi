@@ -8,8 +8,8 @@ import 'package:cockpit/app/core/domain/exceptions/lsp_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Cliente fake controlável: `startSucceeds` é compartilhado pela factory pra
-/// simular "falhou ao subir → corrigi o comando → restart sobe".
+/// Controllable fake client: the factory shares `startSucceeds` to simulate
+/// "startup failed → command fixed → restart succeeds".
 class _FakeClient implements LspClient {
   _FakeClient(this.rootPath, this._shared);
   final _Shared _shared;
@@ -85,30 +85,33 @@ void main() {
   });
   tearDown(() => tmp.deleteSync(recursive: true));
 
-  test('open com start falho → stopped; restart sobe e reabre o doc', () async {
-    final shared = _Shared()..startSucceeds = false;
-    final pool = LspServerPool(_FakeFactory(shared));
+  test(
+    'failed start on open → stopped; restart starts and reopens doc',
+    () async {
+      final shared = _Shared()..startSucceeds = false;
+      final pool = LspServerPool(_FakeFactory(shared));
 
-    await pool.openDocument(path: dartFile, text: 'a');
-    // Servidor falhou, mas o doc fica registrado → status stopped (não null).
-    final s1 = pool.statusForPath(dartFile);
-    expect(s1, isNotNull);
-    expect(s1!.running, isFalse);
-    expect(s1.languageId, 'dart');
+      await pool.openDocument(path: dartFile, text: 'a');
+      // The server failed, but the doc remains registered → stopped (not null).
+      final s1 = pool.statusForPath(dartFile);
+      expect(s1, isNotNull);
+      expect(s1!.running, isFalse);
+      expect(s1.languageId, 'dart');
 
-    // "Corrige o comando" e reinicia.
-    shared.startSucceeds = true;
-    await pool.restartForPath(dartFile);
+      // "Fix the command" and restart.
+      shared.startSucceeds = true;
+      await pool.restartForPath(dartFile);
 
-    final s2 = pool.statusForPath(dartFile);
-    expect(s2!.running, isTrue);
-    // O doc foi reaberto no servidor novo.
-    expect(shared.created.last.opened, contains(dartFile));
+      final s2 = pool.statusForPath(dartFile);
+      expect(s2!.running, isTrue);
+      // The doc was reopened on the new server.
+      expect(shared.created.last.opened, contains(dartFile));
 
-    pool.dispose();
-  });
+      pool.dispose();
+    },
+  );
 
-  test('restartLanguage reinicia mesmo sem servidor vivo', () async {
+  test('restartLanguage restarts even without a live server', () async {
     final shared = _Shared()..startSucceeds = false;
     final pool = LspServerPool(_FakeFactory(shared));
     await pool.openDocument(path: dartFile, text: 'a');
@@ -121,7 +124,7 @@ void main() {
     pool.dispose();
   });
 
-  test('open com sucesso abre o doc e fica running', () async {
+  test('successful open opens the doc and remains running', () async {
     final shared = _Shared();
     final pool = LspServerPool(_FakeFactory(shared));
     await pool.openDocument(path: dartFile, text: 'a');

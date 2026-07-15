@@ -15,7 +15,7 @@ void main() {
       if (await dir.exists()) await dir.delete(recursive: true);
     });
 
-    test('createFile cria arquivo vazio', () async {
+    test('createFile creates an empty file', () async {
       final path = '${dir.path}/novo.txt';
       final r = await mutator.createFile(path);
       expect(r.isSuccess, isTrue);
@@ -23,21 +23,21 @@ void main() {
       expect(File(path).readAsStringSync(), isEmpty);
     });
 
-    test('createFile falha se já existir', () async {
+    test('createFile fails if the file already exists', () async {
       final path = '${dir.path}/dup.txt';
       File(path).writeAsStringSync('x');
       final r = await mutator.createFile(path);
       expect(r.isFailure, isTrue);
     });
 
-    test('createDirectory cria pasta', () async {
+    test('createDirectory creates a folder', () async {
       final path = '${dir.path}/sub';
       final r = await mutator.createDirectory(path);
       expect(r.isSuccess, isTrue);
       expect(Directory(path).existsSync(), isTrue);
     });
 
-    test('rename move o arquivo para o novo nome', () async {
+    test('rename moves the file to the new name', () async {
       final from = '${dir.path}/a.txt';
       final to = '${dir.path}/b.txt';
       File(from).writeAsStringSync('conteudo');
@@ -47,7 +47,7 @@ void main() {
       expect(File(to).readAsStringSync(), 'conteudo');
     });
 
-    test('rename renomeia pasta (com conteúdo)', () async {
+    test('rename renames a folder (including its contents)', () async {
       final from = '${dir.path}/old';
       final to = '${dir.path}/new';
       Directory(from).createSync();
@@ -58,7 +58,7 @@ void main() {
       expect(File('$to/inner.txt').readAsStringSync(), 'hi');
     });
 
-    test('rename falha se o destino já existir', () async {
+    test('rename fails if the destination already exists', () async {
       final from = '${dir.path}/x.txt';
       final to = '${dir.path}/y.txt';
       File(from).writeAsStringSync('1');
@@ -67,17 +67,14 @@ void main() {
       expect(r.isFailure, isTrue);
     });
 
-    test(
-      'moveToTrash em caminho inexistente é sucesso (idempotente)',
-      () async {
-        final r = await mutator.moveToTrash('${dir.path}/ghost.txt');
-        expect(r.isSuccess, isTrue);
-      },
-    );
+    test('moveToTrash succeeds for a nonexistent path (idempotent)', () async {
+      final r = await mutator.moveToTrash('${dir.path}/ghost.txt');
+      expect(r.isSuccess, isTrue);
+    });
 
-    test('moveToTrash remove o arquivo do caminho original', () async {
-      // useSystemTrash: false → deleção permanente em vez de mandar pra Lixeira
-      // do macOS de verdade (senão cada `flutter test` suja a Lixeira).
+    test('moveToTrash removes the file from its original path', () async {
+      // useSystemTrash: false → permanent deletion instead of sending the file
+      // to the real macOS Trash (otherwise every `flutter test` pollutes it).
       const fileMutator = FileSystemMutatorImpl(useSystemTrash: false);
       final path = '${dir.path}/trash-me.txt';
       File(path).writeAsStringSync('bye');

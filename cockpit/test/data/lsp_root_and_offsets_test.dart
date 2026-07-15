@@ -23,36 +23,37 @@ LspDiagnostic diag(
 
 void main() {
   group('diagnosticRangesFor (line/char UTF-16 → offset)', () {
-    test('range numa linha do meio', () {
-      const text = 'abc\ndefg\nhij'; // linha1 começa em 4
+    test('range on a middle line', () {
+      const text = 'abc\ndefg\nhij'; // Line 1 starts at 4.
       final r = diagnosticRangesFor(text, [diag(1, 1, 1, 3)]);
       expect(r, hasLength(1));
       expect(r.first.start, 5); // 4 + 1
       expect(r.first.end, 7); // 4 + 3
     });
 
-    test('largura zero vira 1 caractere', () {
+    test('zero width becomes 1 character', () {
       const text = 'abc';
       final r = diagnosticRangesFor(text, [diag(0, 1, 0, 1)]);
       expect(r.first.start, 1);
       expect(r.first.end, 2);
     });
 
-    test('character além do fim da linha é clampado ao fim do conteúdo', () {
-      const text = 'ab\ncd'; // linha0 conteúdo = 'ab', fim em offset 2 (o \n)
+    test('character beyond the line end is clamped to the content end', () {
+      const text =
+          'ab\ncd'; // Line 0 content = 'ab'; it ends at offset 2 (the \n).
       final r = diagnosticRangesFor(text, [diag(0, 99, 0, 99)]);
-      // start clampado a 2; zero-width → end 3 clampado a len(5) ok
+      // Start clamped to 2; zero width → end 3, within length 5.
       expect(r.first.start, 2);
     });
 
-    test('linha fora do range cai no fim do texto', () {
+    test('out-of-range line falls at the end of the text', () {
       const text = 'abc';
       final r = diagnosticRangesFor(text, [diag(9, 0, 9, 1)]);
-      // start=end=text.length → zero-width expandido mas clampado → descartado
+      // start=end=text.length → zero width expands, then clamps → discarded.
       expect(r, isEmpty);
     });
 
-    test('emoji (surrogate pair) conta como 2 code units, igual ao LSP', () {
+    test('emoji (surrogate pair) counts as 2 code units, as in LSP', () {
       const text = '🚀ab'; // '🚀' = 2 code units (0,1); 'a'=2, 'b'=3
       final r = diagnosticRangesFor(text, [diag(0, 2, 0, 3)]);
       expect(r.first.start, 2);
@@ -66,8 +67,8 @@ void main() {
     setUp(() => tmp = Directory.systemTemp.createTempSync('lsp_root_test'));
     tearDown(() => tmp.deleteSync(recursive: true));
 
-    test('acha a raiz pelo marcador exato (monorepo)', () {
-      // tmp/pkg/pubspec.yaml ; arquivo em tmp/pkg/lib/main.dart
+    test('finds the root using an exact marker (monorepo)', () {
+      // tmp/pkg/pubspec.yaml; file at tmp/pkg/lib/main.dart.
       final pkg = Directory(join(tmp.path, 'pkg'))..createSync();
       File(join(pkg.path, 'pubspec.yaml')).writeAsStringSync('name: x');
       final lib = Directory(join(pkg.path, 'lib'))..createSync();
@@ -77,8 +78,8 @@ void main() {
       expect(root, pkg.path);
     });
 
-    test('escolhe a raiz mais próxima (pacote aninhado)', () {
-      // tmp/pubspec.yaml E tmp/inner/pubspec.yaml → arquivo em inner usa inner
+    test('chooses the nearest root (nested package)', () {
+      // tmp/pubspec.yaml AND tmp/inner/pubspec.yaml → a file in inner uses inner.
       File(join(tmp.path, 'pubspec.yaml')).writeAsStringSync('name: outer');
       final inner = Directory(join(tmp.path, 'inner'))..createSync();
       File(join(inner.path, 'pubspec.yaml')).writeAsStringSync('name: inner');
@@ -88,14 +89,14 @@ void main() {
       expect(root, inner.path);
     });
 
-    test('marcador por sufixo (*.csproj)', () {
+    test('suffix marker (*.csproj)', () {
       File(join(tmp.path, 'App.csproj')).writeAsStringSync('<Project/>');
       final file = join(tmp.path, 'Program.cs');
       final root = const ProjectRootFinder().findRoot(file, ['*.csproj']);
       expect(root, tmp.path);
     });
 
-    test('sem marcador retorna null', () {
+    test('returns null without a marker', () {
       final file = join(tmp.path, 'orphan.dart');
       final root = const ProjectRootFinder().findRoot(file, ['pubspec.yaml']);
       expect(root, isNull);

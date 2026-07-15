@@ -41,13 +41,13 @@ void main() {
     if (await repo.exists()) await repo.delete(recursive: true);
   });
 
-  test('add → list → namespace → remove (ciclo completo)', () async {
+  test('add → list → namespace → remove (complete cycle)', () async {
     if (!await gitAvailable()) {
-      markTestSkipped('git não disponível no ambiente');
+      markTestSkipped('git is unavailable in this environment');
       return;
     }
 
-    // add: cria worktree aninhada + branch nova a partir do HEAD.
+    // add: create a nested worktree and a new branch from HEAD.
     final added = await manager.add(repo.path, 'feat/sso');
     expect(
       added.isSuccess,
@@ -60,17 +60,17 @@ void main() {
     expect(wt.branch, 'feat/sso');
     expect(wt.isDetached, isFalse);
 
-    // list: exclui a raiz, inclui o novo fork.
+    // list: exclude the root and include the new fork.
     final list = await manager.list(repo.path);
     expect(list.length, 1);
     expect(list.single.branch, 'feat/sso');
 
-    // namespace: branch base + branch do worktree + basename do worktree.
+    // namespace: base branch + worktree branch + worktree basename.
     final ns = await manager.namespace(repo.path);
     expect(ns.branches, containsAll(<String>[mainBranch, 'feat/sso']));
     expect(ns.worktreeNames, contains('sso'));
 
-    // remove: apaga pasta E branch (decisão 6).
+    // remove: delete both the folder AND branch (decision 6).
     final removed = await manager.remove(repo.path, wt.path, 'feat/sso');
     expect(
       removed.isSuccess,
@@ -85,9 +85,9 @@ void main() {
     );
   });
 
-  test('add falha (Failure com mensagem) em branch já existente', () async {
+  test('add fails (Failure with message) for an existing branch', () async {
     if (!await gitAvailable()) {
-      markTestSkipped('git não disponível no ambiente');
+      markTestSkipped('git is unavailable in this environment');
       return;
     }
     final dup = await manager.add(repo.path, mainBranch);
@@ -98,7 +98,7 @@ void main() {
     );
   });
 
-  test('list/namespace de pasta não-git devolvem vazio', () async {
+  test('list/namespace return empty for a non-Git folder', () async {
     final tmp = await Directory.systemTemp.createTemp('cockpit_nogit_');
     addTearDown(() async {
       if (await tmp.exists()) await tmp.delete(recursive: true);
@@ -108,25 +108,25 @@ void main() {
   });
 
   test(
-    'isBranchMerged: true sem commits novos, false após commit no fork',
+    'isBranchMerged: true without new commits, false after a fork commit',
     () async {
       if (!await gitAvailable()) {
-        markTestSkipped('git não disponível no ambiente');
+        markTestSkipped('git is unavailable in this environment');
         return;
       }
       final added = await manager.add(repo.path, 'feat/x');
       final wt = (added as Success<Worktree, WorktreeOpError>).value;
 
-      // Recém-criada do HEAD, sem commits → mergeada (tip alcançável do HEAD).
+      // Just created from HEAD with no commits → merged (tip reachable from HEAD).
       expect(await manager.isBranchMerged(repo.path, 'feat/x'), isTrue);
 
-      // Commit novo no worktree → o tip deixa de ser alcançável do HEAD principal.
+      // New worktree commit → the tip is no longer reachable from the main HEAD.
       await File('${wt.path}/new.txt').writeAsString('x');
       await git(['add', '.'], cwd: wt.path);
       await git(['commit', '-m', 'work'], cwd: wt.path);
       expect(await manager.isBranchMerged(repo.path, 'feat/x'), isFalse);
 
-      // Branch vazia / inexistente → false (mostra o aviso por segurança).
+      // Empty / nonexistent branch → false (shows the warning for safety).
       expect(await manager.isBranchMerged(repo.path, ''), isFalse);
       expect(await manager.isBranchMerged(repo.path, 'nao/existe'), isFalse);
     },
