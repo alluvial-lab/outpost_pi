@@ -11,10 +11,10 @@ import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter/services.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Painel direito (~300px): árvore da pasta do **workspace**. Pastas começam
-/// colapsadas e expandem ao clicar (lazy-load). O header tem **+arquivo**,
-/// **+pasta** e **Refresh**; criar/renomear é **inline** (linha-input na árvore),
-/// deletar manda pra lixeira (macOS) ou pede confirmação (demais).
+/// Display and edit the selected workspace's lazily loaded file tree.
+///
+/// Folders start collapsed. Creation and renaming happen inline; deletion uses
+/// the Trash on macOS and requires confirmation on other platforms.
 class FileTreePanel extends StatefulWidget {
   const FileTreePanel({
     super.key,
@@ -35,38 +35,38 @@ class FileTreePanel extends StatefulWidget {
     this.footer,
   });
 
-  /// Rodapé opcional, fixado abaixo da árvore (ex.: barra de status do LSP).
+  /// Optional footer pinned below the tree, such as an LSP status bar.
   final Widget? footer;
 
   final String rootPath;
 
-  /// Token externo (VM) que sobe a cada mutação — força reler as pastas abertas.
+  /// External mutation token that forces expanded folders to reload.
   final int revision;
 
-  /// Caminho atualmente selecionado no tree (para highlight). Vindo da VM.
+  /// VM-owned path currently highlighted in the tree.
   final String? selectedPath;
 
   final Future<List<FileNode>> Function(String path) listChildren;
 
-  /// Status git (cor) de um caminho absoluto. `null` = limpo / fora de repo.
+  /// Resolves Git status for an absolute path; `null` means clean or outside Git.
   final GitFileStatus? Function(String absolutePath) gitStatusOf;
 
-  /// Duplo-clique num arquivo → abre no pane.
+  /// Opens a file in a pane after a double-click.
   final ValueChanged<String> onOpenFile;
 
-  /// Clique único → abre preview (VSCode-style).
+  /// Opens a VS Code-style preview after a single click.
   final ValueChanged<String>? onTapFile;
 
-  /// Clique único → seleciona o arquivo no tree (highlight).
+  /// Selects and highlights a file after a single click.
   final ValueChanged<String>? onSelectFile;
 
-  /// "Open with" → abre o arquivo/pasta no app/explorador padrão do SO.
+  /// Opens the file or folder with the selected OS application.
   final ValueChanged<String> onOpenWith;
 
-  /// Menu de contexto de uma **pasta**: cria uma aba (agente/terminal) nela.
+  /// Creates an agent or terminal tab from a folder's context menu.
   final void Function(String relativeSub, bool terminal) onCreateInFolder;
 
-  /// Cria arquivo (ou pasta) chamado [name] dentro de [parentDir]. Falha → msg.
+  /// Creates [name] in [parentDir], returning a displayable failure message.
   final Future<Result<void, String>> Function(
     String parentDir,
     String name,
@@ -74,21 +74,21 @@ class FileTreePanel extends StatefulWidget {
   )
   onCreate;
 
-  /// Renomeia [path] para [newName] (mesma pasta).
+  /// Renames [path] to [newName] within the same parent folder.
   final Future<Result<void, String>> Function(String path, String newName)
   onRename;
 
-  /// Manda [path] pra lixeira (a confirmação/condições ficam no painel).
+  /// Moves [path] to the Trash after panel-owned confirmation when required.
   final Future<Result<void, String>> Function(String path) onDelete;
 
-  /// Largura do painel (arrastável pela página — não persistido).
+  /// Current page-controlled panel width; it is not persisted here.
   final double width;
 
   @override
   State<FileTreePanel> createState() => _FileTreePanelState();
 }
 
-/// Intenção de criação inline pendente: dentro de [parentPath], arquivo ou pasta.
+/// Describe the single pending inline creation within [parentPath].
 class _PendingCreate {
   const _PendingCreate(this.parentPath, this.isFolder);
   final String parentPath;
@@ -99,10 +99,10 @@ class _FileTreePanelState extends State<FileTreePanel> {
   int _localRefresh = 0;
   String? _selectedPath;
 
-  /// Criação inline em andamento (uma de cada vez).
+  /// The one inline creation currently in progress.
   _PendingCreate? _pending;
 
-  /// Caminho sendo renomeado inline (`null` = nenhum).
+  /// Path currently being renamed inline, or `null`.
   String? _renaming;
 
   final FocusNode _treeFocus = FocusNode(debugLabel: 'fileTree');
@@ -113,8 +113,7 @@ class _FileTreePanelState extends State<FileTreePanel> {
     super.dispose();
   }
 
-  /// Token efetivo: refresh manual (botão) + revisão externa (VM). Ambos
-  /// monotônicos → a soma muda sempre que qualquer um muda.
+  /// Combine monotonic manual and external revisions into one reload token.
   int get _refreshToken => _localRefresh + widget.revision;
 
   bool _isUnder(String path, String root) =>
@@ -125,7 +124,7 @@ class _FileTreePanelState extends State<FileTreePanel> {
     _treeFocus.requestFocus();
   }
 
-  // ---- criação inline -------------------------------------------------------
+  // ---- inline creation ------------------------------------------------------
 
   void _startCreate(String parentPath, bool isFolder) {
     setState(() {
@@ -138,8 +137,10 @@ class _FileTreePanelState extends State<FileTreePanel> {
     if (_pending != null) setState(() => _pending = null);
   }
 
-  /// Commit do input de criação. Devolve a mensagem de erro (mantém o input) ou
-  /// `null` no sucesso (limpa — a árvore recarrega pela revisão da VM).
+  /// Commit an inline creation.
+  ///
+  /// Returns an error that keeps the input open, or `null` after success clears
+  /// it; the VM revision then reloads the tree.
   Future<String?> _commitCreate(
     String parentPath,
     bool isFolder,
@@ -169,7 +170,7 @@ class _FileTreePanelState extends State<FileTreePanel> {
     final r = await widget.onRename(path, newName);
     return r.fold((_) {
       if (mounted) {
-        // A seleção segue o novo caminho.
+        // Keep the selection attached to the renamed path.
         final parent = path.substring(0, path.lastIndexOf('/'));
         final newPath = '$parent/${newName.trim()}';
         setState(() {
@@ -183,12 +184,12 @@ class _FileTreePanelState extends State<FileTreePanel> {
     }, (e) => e);
   }
 
-  // ---- deleção --------------------------------------------------------------
+  // ---- deletion -------------------------------------------------------------
 
   Future<void> _requestDelete(String path) async {
     final name = path.split('/').where((p) => p.isNotEmpty).last;
-    // macOS manda pra Lixeira (reversível) → sem confirmação, como o Finder.
-    // Nas demais é permanente → confirma antes.
+    // macOS uses the reversible Trash without confirmation, like Finder.
+    // Other platforms delete permanently, so confirm first.
     if (!Platform.isMacOS) {
       final ok = await showConfirmDialog(
         context,
@@ -208,7 +209,7 @@ class _FileTreePanelState extends State<FileTreePanel> {
     }, (e) => showInfoDialog(context, title: 'Could not delete', message: e));
   }
 
-  // ---- atalhos de teclado ---------------------------------------------------
+  // ---- keyboard shortcuts --------------------------------------------------
 
   bool get _editing => _pending != null || _renaming != null;
 
@@ -222,9 +223,10 @@ class _FileTreePanelState extends State<FileTreePanel> {
     if (p != null && !_editing) _requestDelete(p);
   }
 
-  /// Handler de teclado **no próprio nó focado** (mais confiável que depender do
-  /// bubbling até um `CallbackShortcuts` ancestral). Delete/Backspace apagam;
-  /// Enter (macOS) / F2 (Win/Linux) renomeiam o selecionado.
+  /// Handle tree shortcuts on the focused node instead of relying on bubbling.
+  ///
+  /// Delete or Backspace removes the selection; Enter on macOS or F2 elsewhere
+  /// begins renaming it.
   KeyEventResult _onTreeKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent || _editing || _selectedPath == null) {
       return KeyEventResult.ignored;
@@ -252,7 +254,7 @@ class _FileTreePanelState extends State<FileTreePanel> {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    // Usa o selectedPath da VM se disponível, senão o local.
+    // Prefer the VM selection when supplied, otherwise use local selection.
     final effectiveSelected = widget.selectedPath ?? _selectedPath;
 
     final edit = _TreeEdit(
@@ -358,8 +360,7 @@ class _FileTreePanelState extends State<FileTreePanel> {
   }
 }
 
-/// Bundle das interações de edição da árvore — passado de cima a baixo pra evitar
-/// explosão de props. Imutável: recriado a cada build do painel.
+/// Bundle immutable tree-edit interactions to avoid threading many callbacks.
 class _TreeEdit {
   const _TreeEdit({
     required this.pending,
@@ -408,8 +409,7 @@ class _TreeEdit {
   final Future<List<FileNode>> Function(String path) listChildren;
 }
 
-/// Carrega os filhos de uma pasta e os renderiza. Re-lê quando [refreshToken]
-/// muda (Refresh manual ou mutação na VM).
+/// Load and render a folder's children, reloading when [refreshToken] changes.
 class _DirView extends StatefulWidget {
   const _DirView({
     required this.path,
@@ -460,7 +460,7 @@ class _DirViewState extends State<_DirView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Input de criação inline (no topo da pasta-alvo).
+        // Place inline creation at the top of its target folder.
         if (showCreate)
           _InlineEntry(
             key: ValueKey('create:${widget.path}:${pending.isFolder}'),
@@ -479,7 +479,7 @@ class _DirViewState extends State<_DirView> {
               edit: edit,
             )
           else
-            // Arrasta o arquivo até o input (vira `@<rel>`).
+            // Dragging a file into the composer turns it into `@<rel>`.
             Draggable<String>(
               data: node.path,
               dragAnchorStrategy: pointerDragAnchorStrategy,
@@ -531,8 +531,7 @@ class _Folder extends StatefulWidget {
 class _FolderState extends State<_Folder> {
   bool _expanded = false;
 
-  /// Força abrir quando há criação pendente nesta pasta ou em algo abaixo dela
-  /// (pra revelar o input inline alvo).
+  /// Expand to reveal pending creation in this folder or a descendant.
   bool get _forceExpand {
     final p = widget.edit.pending;
     if (p == null) return false;
@@ -553,7 +552,7 @@ class _FolderState extends State<_Folder> {
           expanded: expanded,
           name: widget.node.name,
           path: widget.node.path,
-          rootPath: widget.node.path, // (não usado em pasta)
+          rootPath: widget.node.path, // Not used for folders.
           selected: widget.node.path == edit.selectedPath,
           renaming: edit.renaming == widget.node.path,
           gitStatus: edit.gitStatusOf(widget.node.path),
@@ -620,13 +619,13 @@ class _Row extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onDoubleTap;
 
-  /// "Open with" (arquivo) / "Open in Finder" (pasta).
+  /// Opens files with an app or reveals folders in the platform file explorer.
   final VoidCallback? onOpenWith;
 
-  /// Só pastas: criar agente/terminal nela (relativo, terminal?).
+  /// For folders, creates an agent or terminal at its relative path.
   final void Function(String relativeSub, bool terminal)? onCreateInFolder;
 
-  /// Só pastas: iniciar criação inline de arquivo/pasta dentro dela.
+  /// For folders, begins inline file or folder creation.
   final VoidCallback? onNewFile;
   final VoidCallback? onNewFolder;
 
@@ -771,7 +770,7 @@ class _RowState extends State<_Row> {
     final Widget label = widget.renaming
         ? _NameField(
             initial: widget.name,
-            // Arquivos: pré-seleciona o nome sem extensão (estilo VSCode).
+            // Select a file's basename without its extension, as VS Code does.
             selectBasename: !widget.isFolder,
             onSubmit: (name) async =>
                 await widget.onCommitRename?.call(name) ?? 'Rename failed.',
@@ -795,7 +794,7 @@ class _RowState extends State<_Row> {
       onTap: widget.renaming ? null : _handleTap,
       padding: EdgeInsets.only(left: 6 + widget.depth * 14.0, right: 6),
       child: SizedBox(
-        // Em rename a linha cresce (campo + erro); fora dela, altura fixa.
+        // Renaming grows the row to fit the field and error; otherwise it is fixed.
         height: widget.renaming ? null : 26,
         child: Row(
           children: [
@@ -826,7 +825,7 @@ class _RowState extends State<_Row> {
       ),
     );
 
-    // Em rename o gesto secundário/seleção fica desligado (o campo manda).
+    // While renaming, let the field own selection and secondary gestures.
     if (widget.renaming) return row;
     return GestureDetector(
       onSecondaryTapUp: (d) => _showMenu(context, d.globalPosition),
@@ -835,8 +834,7 @@ class _RowState extends State<_Row> {
   }
 }
 
-/// Linha-input de **criação** inline: ícone (arquivo/pasta) + campo de nome,
-/// indentado como uma linha normal naquela profundidade.
+/// Show inline creation as an icon and name field at the target tree depth.
 class _InlineEntry extends StatelessWidget {
   const _InlineEntry({
     super.key,
@@ -857,7 +855,7 @@ class _InlineEntry extends StatelessWidget {
       padding: EdgeInsets.only(left: 6 + depth * 14.0, right: 6),
       child: Row(
         children: [
-          const SizedBox(width: 14), // alinha com o chevron das pastas
+          const SizedBox(width: 14), // Align with folder chevrons.
           const SizedBox(width: 2),
           isFolder
               ? FileTypeIcon.folder('new', open: false, size: 16)
@@ -877,9 +875,10 @@ class _InlineEntry extends StatelessWidget {
   }
 }
 
-/// Campo de nome compartilhado por criar/renomear: autofoco, Enter confirma,
-/// Esc/clique-fora cancela. Erro de validação aparece como linha vermelha abaixo
-/// (mantendo o foco pra correção).
+/// Edit a created or renamed entry with shared keyboard and validation behavior.
+///
+/// The field autofocuses; Enter submits, while Escape or clicking outside
+/// cancels. Validation errors appear below without releasing focus.
 class _NameField extends StatefulWidget {
   const _NameField({
     required this.initial,
@@ -890,10 +889,10 @@ class _NameField extends StatefulWidget {
 
   final String initial;
 
-  /// Pré-seleciona só o nome sem extensão (útil em rename de arquivo).
+  /// Select only the basename when beginning a file rename.
   final bool selectBasename;
 
-  /// Devolve mensagem de erro (mantém editando) ou `null` no sucesso.
+  /// Returns an error that keeps editing active, or `null` after success.
   final Future<String?> Function(String name) onSubmit;
   final VoidCallback onCancel;
 
@@ -983,7 +982,7 @@ class _NameFieldState extends State<_NameField> {
   }
 }
 
-/// Cor do nome conforme o status git da linha.
+/// Resolve the filename color for its Git status.
 Color? _gitColor(AppColors colors, GitFileStatus? status) {
   switch (status) {
     case null:
@@ -1030,7 +1029,7 @@ class _HeaderIcon extends StatelessWidget {
   }
 }
 
-/// Chip que segue o cursor ao arrastar um arquivo do painel pro input.
+/// Follow the cursor while dragging a file from the panel.
 class _FileChip extends StatelessWidget {
   const _FileChip({required this.name});
   final String name;

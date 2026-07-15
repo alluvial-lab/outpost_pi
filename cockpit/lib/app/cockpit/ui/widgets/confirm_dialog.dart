@@ -1,11 +1,10 @@
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Cor do barrier (escurece o fundo) — o `showDialog` do shadcn usa barrier
-/// transparente por padrão; aqui damos o leve dim que o modal pedia.
+/// Dim modal backgrounds because shadcn dialogs use a transparent barrier.
 const Color _barrier = Color(0x99000000);
 
-/// Dialog informativo genérico (tema do cockpit) — só botão "OK".
+/// Show a cockpit-themed informational dialog with one acknowledgment action.
 Future<void> showInfoDialog(
   BuildContext context, {
   required String title,
@@ -43,11 +42,12 @@ Future<void> showInfoDialog(
   );
 }
 
-/// Escolha do usuário ao fechar uma aba com alterações não salvas.
+/// Represent the user's choice when closing a tab with unsaved changes.
 enum CloseDirtyChoice { cancel, dontSave, save }
 
-/// Dialog ao fechar um arquivo editado e não salvo: descartar, cancelar ou
-/// salvar e fechar. `null` (dispensar fora) é tratado como [CloseDirtyChoice.cancel].
+/// Ask how to handle unsaved edits before closing a file tab.
+///
+/// Dismissing the dialog is treated as [CloseDirtyChoice.cancel].
 Future<CloseDirtyChoice> showCloseDirtyDialog(
   BuildContext context, {
   required String fileName,
@@ -93,7 +93,9 @@ Future<CloseDirtyChoice> showCloseDirtyDialog(
   return result ?? CloseDirtyChoice.cancel;
 }
 
-/// Dialog de confirmação genérico (tema do cockpit). Devolve `true` se confirmar.
+/// Show a cockpit-themed confirmation dialog.
+///
+/// Returns `true` only when the confirm action is selected.
 Future<bool> showConfirmDialog(
   BuildContext context, {
   required String title,

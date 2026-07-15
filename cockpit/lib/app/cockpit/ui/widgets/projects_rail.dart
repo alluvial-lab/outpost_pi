@@ -10,8 +10,10 @@ import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Rail esquerda (~252px): cabeçalho "Sessions", lista de projetos (avatar +
-/// nome + git + contador de notificações), rodapé com a máquina.
+/// Navigate root workspaces and their worktrees from the left rail.
+///
+/// The rail combines workspace identity, Git and notification state, reorder
+/// controls, update status, and machine-level settings navigation.
 class ProjectsRail extends StatefulWidget {
   const ProjectsRail({
     super.key,
@@ -31,13 +33,13 @@ class ProjectsRail extends StatefulWidget {
     this.width = 252,
   });
 
-  /// Largura do painel (arrastável pela página — não persistida).
+  /// Current page-controlled rail width; it is not persisted here.
   final double width;
 
-  /// Só os workspaces raiz; as worktrees vêm por [worktreesOf].
+  /// Root workspaces only; [worktreesOf] supplies their worktrees.
   final List<Project> projects;
 
-  /// Worktrees (forks) de um workspace raiz, na ordem do git.
+  /// Resolves a root workspace's worktrees in Git order.
   final List<Project> Function(String rootId) worktreesOf;
 
   final String? selectedId;
@@ -48,16 +50,16 @@ class ProjectsRail extends StatefulWidget {
   final ValueChanged<Project> onConfigure;
   final ValueChanged<Project> onDelete;
 
-  /// Abre o fluxo de criar worktree para um workspace (só raízes com git).
+  /// Starts worktree creation for a Git-backed root workspace.
   final ValueChanged<Project> onCreateWorktree;
 
-  /// Abre o fluxo de remover uma worktree (fork). A confirmação fica na page.
+  /// Starts worktree removal; the page owns confirmation.
   final ValueChanged<Project> onRemoveWorktree;
 
-  /// Abre a tela de Configurações (engrenagem no rodapé).
+  /// Opens Settings from the footer action.
   final VoidCallback onOpenSettings;
 
-  /// Reordena workspaces: move [movedId] para antes/depois de [targetId].
+  /// Moves [movedId] before or after [targetId] in root workspace order.
   final void Function(String movedId, String targetId, bool before) onReorder;
 
   @override
@@ -73,8 +75,7 @@ class _ProjectsRailState extends State<ProjectsRail> {
     super.dispose();
   }
 
-  /// Os forks de um workspace, com `isLast` marcado pra linha de árvore fechar
-  /// em "└" no último (a vertical dos demais segue até emendar com o próximo).
+  /// Build worktree rows with a terminating branch line on the final item.
   List<Widget> _forkItems(Project project) {
     final forks = widget.worktreesOf(project.id);
     return [
@@ -115,8 +116,7 @@ class _ProjectsRailState extends State<ProjectsRail> {
                   style: context.typo.title.copyWith(color: colors.text),
                 ),
                 const Spacer(),
-                // Sem "+" quando não há workspace: a criação fica centralizada
-                // no onboarding da tela vazia.
+                // With no workspace, creation stays centered in the empty view.
                 if (projects.isNotEmpty)
                   _SmallIcon(
                     icon: Icons.add,
@@ -155,7 +155,7 @@ class _ProjectsRailState extends State<ProjectsRail> {
                                   project.id,
                                 ),
                                 git: widget.gitInfo(project.id),
-                                // "Criar worktree" só faz sentido em repo git.
+                                // Worktree creation applies only to Git repositories.
                                 canCreateWorktree:
                                     widget.gitInfo(project.id) != null,
                                 onTap: () => widget.onSelect(project.id),
@@ -165,8 +165,7 @@ class _ProjectsRailState extends State<ProjectsRail> {
                                     widget.onCreateWorktree(project),
                               ),
                             ),
-                            // Worktrees (forks) penduradas abaixo do workspace,
-                            // sempre expandidas (plan/42, decisões 5, 12).
+                            // Worktrees remain expanded beneath their root workspace.
                             ..._forkItems(project),
                           ],
                         ],
@@ -174,10 +173,10 @@ class _ProjectsRailState extends State<ProjectsRail> {
                     ),
                   ),
           ),
-          // Aviso de atualização in-app — acima do nome da máquina (passo 7).
+          // Keep the in-app update notice above the machine name.
           const UpdateCard(),
           Container(
-            // Mesma altura do footer do file viewer (34) pra alinhar a base.
+            // Match the file viewer footer height to align the base.
             height: 34,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
@@ -274,7 +273,7 @@ class _ProjectItem extends StatelessWidget {
                       fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
-                  // Linha do git — só quando é repo git (senão, só o título).
+                  // Show the Git row only for repositories.
                   if (gitInfo != null) ...[
                     const SizedBox(height: 4),
                     _GitBadge(info: gitInfo),
@@ -316,11 +315,10 @@ class _ProjectItem extends StatelessWidget {
   }
 }
 
-/// Item de uma worktree (fork): pendurado abaixo do workspace pai por uma
-/// **linha de árvore** (vertical contínua nos forks do meio, "└" no último),
-/// sem avatar (o branch é a identidade). À direita, o sinal combinado de
-/// dirtyCount + notificação (decisões 8, 16, 19) e o menu ⋮ "Remover". Hover
-/// mostra tooltip com branch + path. A linha fica **fora** do realce do item.
+/// Render a worktree beneath its root workspace using branch identity.
+///
+/// The tree line remains outside row highlighting, while dirty state,
+/// notifications, and removal controls appear on the right.
 class _WorktreeItem extends StatelessWidget {
   const _WorktreeItem({
     required this.worktree,
@@ -334,8 +332,7 @@ class _WorktreeItem extends StatelessWidget {
 
   final Project worktree;
 
-  /// `true` quando é a última worktree do pai → a linha vira "└" (vertical para
-  /// no tick); nos do meio a vertical segue até o fim pra emendar com a próxima.
+  /// Whether the branch line terminates here instead of continuing downward.
   final bool isLast;
   final bool selected;
   final int notifications;
@@ -350,8 +347,7 @@ class _WorktreeItem extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Linha de árvore (fora do realce): preenche a altura do item, então
-          // verticais de forks consecutivos se encostam → espinha contínua.
+          // Fill the row outside its highlight so adjacent branch lines connect.
           SizedBox(
             width: 30,
             child: CustomPaint(
@@ -401,7 +397,7 @@ class _WorktreeItem extends StatelessWidget {
   }
 }
 
-/// Menu ⋮ compacto do fork — só "Remover" (plan/42, decisão 13).
+/// Show compact branch copy and worktree removal actions.
 class _ForkMenuButton extends StatelessWidget {
   const _ForkMenuButton({required this.branch, required this.onRemove});
 
@@ -451,9 +447,10 @@ class _ForkMenuButton extends StatelessWidget {
   }
 }
 
-/// Sinal à direita do fork. Sujo → badge âmbar com contador; limpo → ponto.
-/// A notificação (agente terminou) se sobrepõe: no limpo, o ponto vira accent;
-/// no sujo, ganha um dot accent no canto do badge.
+/// Combine worktree dirty count and completion notification in one signal.
+///
+/// Dirty worktrees show a count badge; clean ones show a dot. A completion
+/// notification accents the clean dot or overlays the dirty badge.
 class _WorktreeSignal extends StatelessWidget {
   const _WorktreeSignal({
     required this.dirtyCount,
@@ -505,7 +502,7 @@ class _WorktreeSignal extends StatelessWidget {
         ],
       );
     }
-    // Limpo: um ponto — accent quando há notificação, cinza caso contrário.
+    // A clean worktree uses an accent dot for notifications and gray otherwise.
     return Container(
       width: 7,
       height: 7,
@@ -518,16 +515,16 @@ class _WorktreeSignal extends StatelessWidget {
   }
 }
 
-/// Linha de árvore ligando a worktree ao workspace pai (estética do mockup).
-/// Preenche a altura do item (via `IntrinsicHeight` + `stretch`): a vertical em
-/// [_x] vai até o fim nos forks do meio (emenda com o próximo → espinha
-/// contínua) e para no centro ("└") no último; o tick horizontal liga ao item.
+/// Paint the tree line connecting a worktree to its root workspace.
+///
+/// Middle branches continue to the next row; the final branch stops at the
+/// horizontal tick.
 class _ForkLinePainter extends CustomPainter {
   _ForkLinePainter({required this.color, required this.isLast});
   final Color color;
   final bool isLast;
 
-  /// Posição da espinha vertical (alinhada sob o workspace pai).
+  /// Horizontal position aligned beneath the root workspace.
   static const double _x = 20;
 
   @override
@@ -549,8 +546,7 @@ class _ForkLinePainter extends CustomPainter {
       old.color != color || old.isLast != isLast;
 }
 
-/// Pílula de git: ícone de branch + nome do branch + nº de arquivos sujos.
-/// Sujo → âmbar com contador; limpo → cinza, sem número.
+/// Summarize branch, divergence, and dirty-file state in a compact Git badge.
 class _GitBadge extends StatelessWidget {
   const _GitBadge({required this.info});
   final GitInfo info;
@@ -613,7 +609,7 @@ class _GitBadge extends StatelessWidget {
   }
 }
 
-/// Indicador compacto de commits à frente (`↑`) / atrás (`↓`) do upstream.
+/// Show a compact count of commits ahead of or behind the upstream branch.
 class _AheadBehind extends StatelessWidget {
   const _AheadBehind({
     required this.glyph,
@@ -637,8 +633,7 @@ class _AheadBehind extends StatelessWidget {
   }
 }
 
-/// Botão ⋮ compacto (26px, encostado na borda) com menu Criar worktree (só em
-/// repo git) / Configurações / Deletar.
+/// Show compact workspace actions for worktrees, settings, and closing.
 class _MenuButton extends StatelessWidget {
   const _MenuButton({
     required this.canCreateWorktree,
@@ -656,7 +651,7 @@ class _MenuButton extends StatelessWidget {
     final pick = await showAppMenu<String>(
       context,
       items: [
-        // "Criar worktree" só aparece quando o workspace é um repo git.
+        // Offer worktree creation only for a Git repository.
         if (canCreateWorktree)
           const AppMenuItem(
             value: 'worktree',
@@ -749,10 +744,10 @@ class _SmallIcon extends StatelessWidget {
   }
 }
 
-/// Torna um item de workspace arrastável para **reordenar** os workspaces no
-/// rail. Mostra um caret horizontal (acima/abaixo) sob o cursor enquanto outro
-/// workspace é arrastado por cima e, ao soltar, dispara [onReorder]. Só vale
-/// para workspaces raiz — worktrees não entram (têm `_forkItems` próprio).
+/// Reorder root workspaces by dragging them above or below one another.
+///
+/// A horizontal caret previews the insertion side before [onReorder] runs.
+/// Worktrees are excluded because their ordering follows their root.
 class _WorkspaceReorderable extends StatefulWidget {
   const _WorkspaceReorderable({
     required this.projectId,
@@ -777,7 +772,7 @@ class _WorkspaceReorderable extends StatefulWidget {
 }
 
 class _WorkspaceReorderableState extends State<_WorkspaceReorderable> {
-  /// `null` = sem caret; `true` = caret acima (antes); `false` = abaixo (depois).
+  /// `null` hides the caret; `true` inserts above and `false` below.
   bool? _before;
 
   void _update(Offset global) {
@@ -806,10 +801,9 @@ class _WorkspaceReorderableState extends State<_WorkspaceReorderable> {
         final caret = candidate.isNotEmpty ? _before : null;
         return Stack(
           children: [
-            // Click-drag imediato pra reposicionar (sem segurar). No desktop a
-            // rolagem do rail é via roda/trackpad (PointerScroll, não gesto de
-            // arrasto), então o Draggable imediato não briga com o scroll; o tap
-            // continua selecionando e o botão de menu continua abrindo.
+            // Start dragging immediately. Desktop rail scrolling uses wheel or
+            // trackpad PointerScroll rather than a drag gesture, so this does not
+            // conflict with scrolling, selection, or the menu button.
             Draggable<String>(
               data: widget.projectId,
               dragAnchorStrategy: pointerDragAnchorStrategy,
@@ -846,7 +840,7 @@ class _WorkspaceReorderableState extends State<_WorkspaceReorderable> {
   }
 }
 
-/// Chip que segue o cursor ao arrastar um workspace (avatar + nome).
+/// Follow the cursor with workspace identity while reordering.
 class _WorkspaceDragChip extends StatelessWidget {
   const _WorkspaceDragChip({
     required this.title,
