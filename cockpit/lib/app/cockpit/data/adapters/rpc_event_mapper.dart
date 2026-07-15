@@ -1,11 +1,11 @@
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
 
-/// Converte a linha JSON crua do stdout do `pi --mode rpc` em [RpcEvent]
-/// tipado. **Único lugar** que conhece o wire format — nada acima da `data/`
-/// vê `Map<String,dynamic>`.
+/// Map raw JSON lines from `pi --mode rpc` stdout into typed [RpcEvent]s.
 ///
-/// Schema em `docs/rpc-protocol.md`. Tipos não mapeados viram [RpcUnknown]
-/// (a UI os ignora) — assim novos eventos do pi nunca derrubam o cliente.
+/// This is the only adapter that knows the event wire format; layers above
+/// `data/` never receive `Map<String, dynamic>`. Unmapped event types become
+/// [RpcUnknown], allowing newer Pi events to remain harmless to this client.
+/// See `docs/rpc-protocol.md` for the schema.
 class RpcEventMapper {
   const RpcEventMapper();
 
@@ -51,15 +51,16 @@ class RpcEventMapper {
 
       case 'message_start':
         final msg = json['message'];
-        // Mensagem do usuário (eco local ou vinda do app/mesh) → bolha de input.
+        // Map a user message, whether locally echoed or received from the
+        // app/mesh, to an input bubble.
         if (msg is Map<String, dynamic> && msg['role'] == 'user') {
           return RpcUserMessage(_contentText(msg['content']));
         }
         return _fromCustomMessage(msg);
 
       case 'message_end':
-        // Carrega o erro do turno quando o assistant falhou (provider fora do
-        // ar, etc.). Os deltas não trazem isso — só a mensagem final.
+        // Surface the turn error when the assistant failed, such as when its
+        // provider is unavailable. Deltas omit it; only the final message has it.
         final error = _errorMessageOf(json['message']);
         return error != null
             ? RpcStreamError(error)
@@ -78,8 +79,9 @@ class RpcEventMapper {
     }
   }
 
-  /// `message_start` com `role:"custom"` — despacha para o handler do tipo
-  /// customizado. Outros roles (ou role ausente) viram [RpcUnknown].
+  /// Dispatch a `message_start` with `role:"custom"` by its custom type.
+  ///
+  /// Other or missing roles become [RpcUnknown].
   RpcEvent _fromCustomMessage(Object? message) {
     if (message is! Map<String, dynamic>) {
       return const RpcUnknown('message_start');
@@ -159,9 +161,10 @@ class RpcEventMapper {
     }
   }
 
-  /// Extrai o texto de um `content` de mensagem do pi: string crua, ou lista de
-  /// partes (`{type:"text", text:"..."}`; partes não-texto, ex.: imagem, são
-  /// ignoradas). Junta as partes de texto com espaço.
+  /// Extract text from a Pi message `content` value.
+  ///
+  /// Accepts either a raw string or a list of `{type:"text", text:"..."}`
+  /// parts, ignores non-text parts such as images, and joins text with spaces.
   String _contentText(Object? content) {
     if (content is String) return content;
     if (content is List) {
@@ -178,7 +181,7 @@ class RpcEventMapper {
     return '';
   }
 
-  /// `errorMessage` de uma mensagem com `stopReason == "error"`, ou `null`.
+  /// Extract `errorMessage` when `stopReason == "error"`, or return `null`.
   String? _errorMessageOf(Object? message) {
     if (message is Map && message['stopReason'] == 'error') {
       final error = message['errorMessage'];
@@ -188,10 +191,10 @@ class RpcEventMapper {
     return null;
   }
 
-  /// `extension_ui_request`: `notify` (fire-and-forget) vira [RpcNotice]; os
-  /// interativos (`select`/`confirm`/`input`/`editor`) viram [RpcUiRequest]; o
-  /// resto (setStatus/setTitle/setWidget/set_editor_text) é chrome de TUI →
-  /// ignorado.
+  /// Map an `extension_ui_request` to its supported domain event.
+  ///
+  /// Fire-and-forget `notify` becomes [RpcNotice], interactive requests become
+  /// [RpcUiRequest], and TUI chrome methods remain ignored as [RpcUnknown].
   RpcEvent _fromUiRequest(Map<String, dynamic> json) {
     final method = json['method'] as String?;
     switch (method) {
@@ -211,9 +214,9 @@ class RpcEventMapper {
         final id = _str(json['id']);
         if (id == null) return const RpcUnknown('extension_ui_request:no-id');
         final rawOptions = json['options'];
-        // `placeholder` pode vir como string (hint) OU objeto
-        // `{defaultValue: "..."}` (valor inicial). Nada de `as String` cru —
-        // um cast errado derrubaria o evento inteiro pra <parse-error>.
+        // `placeholder` can be either a hint string or a
+        // `{defaultValue: "..."}` object. Avoid a raw `as String` cast because
+        // a mismatched shape would turn the whole event into <parse-error>.
         return RpcUiRequest(
           id: id,
           method: method!,
@@ -230,7 +233,7 @@ class RpcEventMapper {
     }
   }
 
-  /// Coerção segura pra String (nunca lança): não-string vira `null`.
+  /// Coerce to String without throwing; return `null` for non-string values.
   String? _str(Object? v) => v is String ? v : null;
 
   String? _nonEmptyString(Object? value) {
@@ -245,8 +248,10 @@ class RpcEventMapper {
     return value.map((key, v) => MapEntry(key.toString(), v));
   }
 
-  /// Valor inicial do campo: `placeholder.defaultValue`, `defaultValue` ou
-  /// `prefill`. Cobre o `ui.input(title, {defaultValue})` do outpost-pi.
+  /// Resolve the initial field value from `placeholder.defaultValue`,
+  /// `defaultValue`, or `prefill`.
+  ///
+  /// This covers Outpost-Pi's `ui.input(title, {defaultValue})` shape.
   String? _defaultValue(Map<String, dynamic> json) {
     final p = json['placeholder'];
     if (p is Map && p['defaultValue'] is String) {
@@ -270,7 +275,7 @@ class RpcEventMapper {
       case 'text_end':
         return RpcTextEnd(assistantMessageEvent['content'] as String? ?? '');
       default:
-        // text_start/thinking_start/toolcall_*/done/error — ignorados no MVP.
+        // text_start/thinking_start/toolcall_*/done/error remain ignored in the MVP.
         return RpcUnknown('message_update:${eventType ?? "?"}');
     }
   }
@@ -282,7 +287,7 @@ class RpcEventMapper {
     return const {};
   }
 
-  /// Extrai o texto concatenado de um `{content: [{type:"text", text:...}]}`.
+  /// Concatenate text from a `{content: [{type:"text", text:...}]}` payload.
   String _extractContentText(Object? result) {
     if (result is Map && result['content'] is List) {
       return (result['content'] as List)

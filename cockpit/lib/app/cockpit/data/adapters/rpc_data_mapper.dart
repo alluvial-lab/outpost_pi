@@ -7,10 +7,11 @@ import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_message.dart';
 
-/// Converte os `data` das respostas request/response do RPC em entidades de
-/// domínio. Separado do [RpcEventMapper] (que cuida do stream de eventos);
-/// aqui é o payload de `get_available_models`/`get_state`/`set_model`/
-/// `get_session_stats`. Único lugar que vê esse wire format.
+/// Map RPC request/response `data` payloads into domain entities.
+///
+/// Unlike [RpcEventMapper], which handles the event stream, this adapter owns
+/// the wire format for `get_available_models`, `get_state`, `set_model`, and
+/// `get_session_stats` responses.
 class RpcDataMapper {
   const RpcDataMapper();
 
@@ -126,10 +127,11 @@ class RpcDataMapper {
     );
   }
 
-  /// Converte `get_messages` (`{messages:[AgentMessage]}`) em eventos do
-  /// transcript. Histórico e stream ao vivo passam pelo mesmo reducer em
-  /// [deriveCockpitTranscript]; este adapter não publica uma segunda projeção
-  /// mutável de mensagens/tools.
+  /// Map `get_messages` (`{messages:[AgentMessage]}`) to transcript events.
+  ///
+  /// History and live events pass through the same reducer in
+  /// [deriveCockpitTranscript], so this adapter does not publish a second
+  /// mutable projection of messages and tools.
   List<CockpitTranscriptEvent> transcriptEvents(
     Object? data, {
     required String sessionId,
