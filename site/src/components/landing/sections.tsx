@@ -157,9 +157,9 @@ export function GetApp() {
           <span className="eyebrow">Get the app</span>
           <h2>Pair your phone, drive your agents.</h2>
           <p>
-            The authenticator and the remote control. Get it on the App Store or
-            Google Play, grab the Android APK direct, or download the desktop
-            Cockpit.
+            The authenticator and the remote control. Get it on the App
+            Store, grab the Android APK direct, or download the desktop
+            Cockpit. Google Play for the new listing is coming soon.
           </p>
         </div>
         <div className="app-grid">
