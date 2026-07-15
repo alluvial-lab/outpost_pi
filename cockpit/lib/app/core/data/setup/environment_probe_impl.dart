@@ -4,29 +4,30 @@ import 'dart:io';
 import 'package:cockpit/app/core/env.dart';
 import 'package:cockpit/app/core/domain/contracts/environment_probe.dart';
 
-/// Detecta o que está instalado lendo o disco e (no máximo) rodando `pi
-/// --version`. Tudo é best-effort: qualquer falha de IO vira "não instalado".
+/// Detect installed components through the filesystem and `pi --version`.
+///
+/// All probes are best-effort; any I/O failure is reported as not installed.
 class EnvironmentProbeImpl implements EnvironmentProbe {
   EnvironmentProbeImpl(this._config);
 
   final PiSpawnConfig _config;
 
-  // Windows não seta HOME; o equivalente é USERPROFILE.
+  // Windows uses USERPROFILE instead of HOME.
   String? get _home =>
       Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
 
   @override
   Future<bool> piInstalled() async {
     final exe = _config.executable;
-    // Caminho (não um nome solto no PATH) resolvido no boot → basta existir.
-    // Detecta separador Unix (`/`) e Windows (`\`).
+    // A path resolved at startup, rather than a bare PATH name, only needs to
+    // exist. Recognize both Unix (`/`) and Windows (`\`) separators.
     if (exe.contains('/') || exe.contains(r'\')) {
       if (await File(exe).exists()) return true;
     }
-    // 'pi' solto (PATH): tenta rodar. App macOS não herda o PATH do shell, então
-    // isto pode falhar mesmo instalado — mas aí os caminhos-candidato do boot já
-    // teriam achado. `runInShell` deixa o Windows resolver shims `.cmd`/`.bat`
-    // do npm via PATHEXT. Best-effort.
+    // Try running a bare `pi` resolved through PATH. A macOS GUI app does not
+    // inherit the shell PATH, but startup candidate paths should already have
+    // found such installs. `runInShell` lets Windows resolve npm `.cmd`/`.bat`
+    // shims through PATHEXT. This remains best-effort.
     try {
       final result = await Process.run(exe, const [
         '--version',
@@ -48,8 +49,8 @@ class EnvironmentProbeImpl implements EnvironmentProbe {
       if (json is! Map) return false;
       final packages = json['packages'];
       if (packages is! List) return false;
-      // Casa tanto o spec de produção (`npm:outpost-pi` / `outpost-pi`) quanto o
-      // dev (caminho local terminando em `pi-extension`).
+      // Match production specs (`npm:outpost-pi` / `outpost-pi`) and local
+      // development paths ending in `pi-extension`.
       return packages.whereType<String>().any((p) {
         final low = p.toLowerCase();
         return low.contains('outpost-pi') || low.endsWith('pi-extension');
@@ -64,7 +65,7 @@ class EnvironmentProbeImpl implements EnvironmentProbe {
     final home = _home;
     if (home == null) return false;
     try {
-      // Sinal primário: o serviço foi instalado por `outpost-pi install`.
+      // Primary signal: the service was installed by `outpost-pi install`.
       if (Platform.isMacOS) {
         final plist = File(
           '$home/Library/LaunchAgents/dev.outpostpi.supervisord.plist',
@@ -76,10 +77,10 @@ class EnvironmentProbeImpl implements EnvironmentProbe {
         );
         if (await unit.exists()) return true;
       } else if (Platform.isWindows) {
-        // Windows: o supervisor roda como uma Scheduled Task
-        // (`OutpostPiSupervisor`) criada por `outpost-pi install`. A task é a
-        // fonte de verdade — sobrevive a reboot e ao uninstall do .vbs.
-        // Query não precisa de elevação; só o /Create precisava.
+        // On Windows, the supervisor runs as the `OutpostPiSupervisor`
+        // Scheduled Task created by `outpost-pi install`. The task is the source
+        // of truth because it survives reboot and deletion of the .vbs file.
+        // Querying needs no elevation; only /Create did.
         try {
           final task = await Process.run('schtasks', const [
             '/Query',
@@ -88,13 +89,13 @@ class EnvironmentProbeImpl implements EnvironmentProbe {
           ], runInShell: true);
           if (task.exitCode == 0) return true;
         } catch (_) {
-          // schtasks indisponível → cai pro check de arquivo abaixo.
+          // Fall back to the file check when schtasks is unavailable.
         }
-        // Secundário: o launcher VBS escrito no install (em ~/.pi/remote/).
+        // Secondary signal: the VBS launcher written under ~/.pi/remote/.
         final vbs = File('$home/.pi/remote/OutpostPiSupervisorLauncher.vbs');
         return vbs.exists();
       }
-      // Fallback: o binário existe em algum prefixo de usuário conhecido.
+      // Fallback: look for the binary in known user installation prefixes.
       const candidates = <String>[
         '/opt/homebrew/bin/pi-supervisord',
         '/usr/local/bin/pi-supervisord',
