@@ -10,8 +10,9 @@ use axum::{
 };
 use tower_http::{services::ServeDir, trace::TraceLayer};
 
-/// Extensões servidas como download (attachment) com cache imutável —
-/// artefatos vivem em diretórios versionados, então a URL nunca é reusada.
+/// Extensions served as attachment downloads with immutable caching.
+///
+/// Artifacts live in versioned directories, so their URLs are never reused.
 const ARTIFACT_EXTENSIONS: [&str; 5] = [".dmg", ".exe", ".deb", ".rpm", ".zip"];
 
 #[tokio::main]
@@ -41,12 +42,12 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .unwrap_or_else(|e| panic!("falha ao bindar {addr}: {e}"));
-    tracing::info!("servindo {data_dir} em http://{addr}/downloads");
+        .unwrap_or_else(|e| panic!("failed to bind {addr}: {e}"));
+    tracing::info!("serving {data_dir} at http://{addr}/downloads");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .expect("servidor encerrou com erro");
+        .expect("server terminated with an error");
 }
 
 async fn set_download_headers(req: Request, next: Next) -> Response {
@@ -57,7 +58,7 @@ async fn set_download_headers(req: Request, next: Next) -> Response {
     }
 
     let headers = res.headers_mut();
-    // O site (Next.js) e qualquer cliente podem ler o manifest de outro domínio.
+    // The site (Next.js) and any client can read the manifest from another origin.
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_ORIGIN,
         HeaderValue::from_static("*"),
@@ -75,7 +76,7 @@ async fn set_download_headers(req: Request, next: Next) -> Response {
             }
         }
     } else {
-        // latest.json / SHA256SUMS: URL fixa, release novo precisa propagar rápido.
+        // latest.json / SHA256SUMS: stable URL, so a new release must propagate quickly.
         headers.insert(
             header::CACHE_CONTROL,
             HeaderValue::from_static("public, max-age=300"),
@@ -88,13 +89,13 @@ async fn shutdown_signal() {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
-            .expect("instalar handler de Ctrl+C");
+            .expect("install Ctrl+C handler");
     };
 
     #[cfg(unix)]
     let terminate = async {
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("instalar handler de SIGTERM")
+            .expect("install SIGTERM handler")
             .recv()
             .await;
     };
