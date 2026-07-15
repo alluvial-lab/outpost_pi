@@ -7,9 +7,9 @@ Owner-key Ed25519 identity for Outpost-Pi, persisted as a generic-password
 Keychain item with kSecAttrSynchronizable=true so it propagates between
 devices of the same Apple ID via iCloud Keychain.
                        DESC
-  s.homepage         = 'https://github.com/jacob-moura/remote_pi'
+  s.homepage         = 'https://github.com/KevounC/outpost_pi'
   s.license          = { :type => 'Proprietary', :text => 'Internal use only' }
-  s.author           = { 'Jacob Moura' => 'jacobaraujo7@gmail.com' }
+  s.author           = { 'Outpost-Pi' => 'contact@kevoun.com' }
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'
   s.dependency 'Flutter'
