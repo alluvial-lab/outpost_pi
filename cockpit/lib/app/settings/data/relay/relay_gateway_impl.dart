@@ -8,18 +8,18 @@ import 'package:cockpit/app/settings/domain/entities/paired_device.dart';
 import 'package:cockpit/app/core/domain/exceptions/relay_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Implementação via **shell-out** do `outpost-pi` + leitura do config global
-/// `~/.pi/remote/config.json`.
+/// Adapt [RelayGateway] by shelling out to `outpost-pi` and reading the global
+/// `~/.pi/remote/config.json` file.
 ///
-/// O `outpost-pi` é resolvido via [resolveOutpostPiCommand]: binário no PATH/
-/// prefixos conhecidos no POSIX; `node <index.js>` no Windows (onde não está no
-/// PATH). A resolução é memoizada — só faz os `exists()` uma vez.
+/// [resolveOutpostPiCommand] locates `outpost-pi` as a binary on PATH or under
+/// known POSIX prefixes, and as `node <index.js>` on Windows where it is not on
+/// PATH. Resolution is memoized so filesystem existence checks run only once.
 class RelayGatewayImpl implements RelayGateway {
   RelayGatewayImpl();
 
   Future<({String exe, List<String> prefixArgs})?>? _resolvedCmd;
 
-  // Windows não seta HOME; o equivalente é USERPROFILE.
+  // Windows does not set HOME; its equivalent is USERPROFILE.
   String? get _home => outpostPiHome();
 
   @override
@@ -52,9 +52,9 @@ class RelayGatewayImpl implements RelayGateway {
 
   @override
   Future<Result<List<PairedDevice>, RelayError>> listDevices() async {
-    // Lê os pares direto de `~/.pi/remote/peers.json` (mesma fonte do
-    // `/outpost-pi`). Não há subcomando `outpost-pi devices` na CLI, e ler o
-    // arquivo funciona igual em macOS/Linux/Windows.
+    // Read peers directly from `~/.pi/remote/peers.json`, the same source used
+    // by `/outpost-pi`. The CLI has no `outpost-pi devices` subcommand, and
+    // reading the file works consistently across macOS, Linux, and Windows.
     final home = _home;
     if (home == null) {
       return const Failure(RelayError('HOME not found in the environment.'));
@@ -72,8 +72,8 @@ class RelayGatewayImpl implements RelayGateway {
         final epk = p['remote_epk'];
         if (epk is! String || epk.isEmpty) continue;
         final name = p['name'];
-        // shortId = remote_epk (o que `/outpost-pi revoke <epk>` aceita);
-        // label = nome legível do pareamento (ex.: "iPhone").
+        // shortId is remote_epk, which `/outpost-pi revoke <epk>` accepts;
+        // label is the human-readable pairing name, such as "iPhone".
         devices.add(
           PairedDevice(
             shortId: epk,
@@ -130,7 +130,7 @@ class RelayGatewayImpl implements RelayGateway {
 
   // ---- internals ------------------------------------------------------------
 
-  /// Roda o comando e descarta a saída (só interessa o `exitCode`).
+  /// Run the command and discard its output, retaining only `exitCode`.
   Future<Result<void, RelayError>> _run(
     List<String> args,
     String onError,
@@ -139,8 +139,10 @@ class RelayGatewayImpl implements RelayGateway {
     return captured.fold((_) => const Success(null), (error) => Failure(error));
   }
 
-  /// Roda o comando e devolve o stdout (trim) em caso de sucesso. Falha de spawn
-  /// ou `exitCode != 0` viram [RelayError] com a mensagem do stderr, se houver.
+  /// Run the command and return trimmed stdout on success.
+  ///
+  /// Maps spawn failures and nonzero `exitCode` values to [RelayError], using
+  /// the stderr message when available.
   Future<Result<String, RelayError>> _capture(
     List<String> args,
     String onError,
