@@ -7,6 +7,7 @@ use rand::RngCore as _;
 /// Max milliseconds to wait for a "hello" before closing the connection.
 pub const HELLO_TIMEOUT_MS: u64 = 5_000;
 
+/// Authentication identity and initial room metadata accepted during the handshake.
 #[derive(Debug)]
 pub struct AuthenticatedPeer {
     pub verifying_key: VerifyingKey,
@@ -15,6 +16,7 @@ pub struct AuthenticatedPeer {
     pub room_meta: RoomMeta,
 }
 
+/// Describes a malformed or invalid relay authentication handshake.
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
     #[error("expected hello, got other message")]
@@ -47,6 +49,14 @@ pub fn parse_hello(line: &str) -> Result<VerifyingKey, AuthError> {
     Ok(parse_hello_bootstrap(line, 0)?.verifying_key)
 }
 
+/// Parse the initial `hello` frame into an authenticated peer bootstrap record.
+///
+/// # Errors
+///
+/// Returns [`AuthError::Json`] for malformed frames, [`AuthError::NoHello`]
+/// for another message type, [`AuthError::InvalidDeviceId`] for an empty device
+/// id, and the relevant key or base64 error when the advertised public key is
+/// invalid.
 pub fn parse_hello_bootstrap(line: &str, now_ms: i64) -> Result<AuthenticatedPeer, AuthError> {
     let msg: ClientAuthMsg = serde_json::from_str(line)?;
     match msg {
@@ -106,6 +116,14 @@ pub fn challenge_line(nonce_b64: &str) -> String {
 /// `app/lib/data/transport/ws_transport.dart`.
 pub const RELAY_AUTH_DOMAIN_PREFIX: &[u8] = b"outpost-pi-relay-auth-v1\n";
 
+/// Verify an `auth` frame's domain-separated signature against the challenge nonce.
+///
+/// # Errors
+///
+/// Returns [`AuthError::Json`] or [`AuthError::UnexpectedMsg`] for an invalid
+/// auth frame, [`AuthError::Base64`] or [`AuthError::InvalidSig`] for an
+/// invalid signature encoding, and [`AuthError::InvalidSig`] when verification
+/// fails.
 pub fn verify_auth(nonce: &[u8; 32], vk: &VerifyingKey, line: &str) -> Result<(), AuthError> {
     let msg: ClientAuthMsg = serde_json::from_str(line)?;
     let sig_b64 = match msg {

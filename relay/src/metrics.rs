@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use tracing::info;
 
+/// Aggregates emitted and suppressed firehose frames for periodic observability.
 #[derive(Debug, Default)]
 pub struct FirehoseMetrics {
     /// `peer_online` frames actually forwarded to presence subscribers.
@@ -31,30 +32,37 @@ pub struct FirehoseMetrics {
 }
 
 impl FirehoseMetrics {
+    /// Create zeroed counters for the current reporting window.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add delivered `peer_online` frames to the current window.
     pub fn inc_peer_online_emitted(&self, n: u64) {
         self.peer_online_emitted.fetch_add(n, Ordering::Relaxed);
     }
 
+    /// Add deduplicated `peer_online` frames to the current window.
     pub fn inc_peer_online_suppressed(&self, n: u64) {
         self.peer_online_suppressed.fetch_add(n, Ordering::Relaxed);
     }
 
+    /// Add delivered presence snapshots to the current window.
     pub fn inc_presence_emitted(&self, n: u64) {
         self.presence_emitted.fetch_add(n, Ordering::Relaxed);
     }
 
+    /// Add deduplicated presence snapshots to the current window.
     pub fn inc_presence_suppressed(&self, n: u64) {
         self.presence_suppressed.fetch_add(n, Ordering::Relaxed);
     }
 
+    /// Add delivered room snapshots to the current window.
     pub fn inc_rooms_emitted(&self, n: u64) {
         self.rooms_emitted.fetch_add(n, Ordering::Relaxed);
     }
 
+    /// Add deduplicated room snapshots to the current window.
     pub fn inc_rooms_suppressed(&self, n: u64) {
         self.rooms_suppressed.fetch_add(n, Ordering::Relaxed);
     }

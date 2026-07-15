@@ -58,6 +58,7 @@ struct CachedMembers {
 }
 
 impl MeshAuthCache {
+    /// Create an empty cache; membership is populated lazily from verified mesh blobs.
     pub fn new() -> Self {
         Self::default()
     }
@@ -713,10 +714,20 @@ mod tests {
         let (tx_main, mut rx_main) = tokio::sync::mpsc::unbounded_channel::<Message>();
         let (tx_work, mut rx_work) = tokio::sync::mpsc::unbounded_channel::<Message>();
         let _ = registry
-            .register("pi_b".to_string(), room_meta("main"), "dev-a".to_string(), tx_main)
+            .register(
+                "pi_b".to_string(),
+                room_meta("main"),
+                "dev-a".to_string(),
+                tx_main,
+            )
             .await;
         let _ = registry
-            .register("pi_b".to_string(), room_meta("work"), "dev-a".to_string(), tx_work)
+            .register(
+                "pi_b".to_string(),
+                room_meta("work"),
+                "dev-a".to_string(),
+                tx_work,
+            )
             .await;
 
         let store = MeshStore::open_in_memory().unwrap();
@@ -756,7 +767,12 @@ mod tests {
         let registry = make_registry();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
         let _ = registry
-            .register("pi_b".to_string(), room_meta("main"), "dev-a".to_string(), tx)
+            .register(
+                "pi_b".to_string(),
+                room_meta("main"),
+                "dev-a".to_string(),
+                tx,
+            )
             .await;
 
         let store = MeshStore::open_in_memory().unwrap();
