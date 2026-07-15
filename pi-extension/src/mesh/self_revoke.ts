@@ -43,6 +43,7 @@ export interface SelfRevokeStorage {
   removePeer(remoteEpk: string): Promise<boolean>;
 }
 
+/** Configure a self-revoke poller with caller-owned relay access and teardown callbacks. */
 export interface SelfRevokeOptions {
   client: MeshClient;
   storage: SelfRevokeStorage;
@@ -81,6 +82,7 @@ const DEFAULT_INTERVAL_MS = 60_000;
 
 const FALLBACK_LABEL_LEN = 8;
 
+/** Poll signed membership snapshots and remove this Pi's local pairing after verified revocation. */
 export class SelfRevoke {
   private readonly client: MeshClient;
   private readonly storage: SelfRevokeStorage;

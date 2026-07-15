@@ -15,6 +15,7 @@ export interface WizardUI {
 
 const CREATE_SENTINEL = "━━━ Create new session ━━━";
 
+/** Ask the user to join a live session or select the caller-provided default for a new one; null means cancellation. */
 export async function joinWizard(
   ui: WizardUI,
   defaultName: string,

@@ -115,6 +115,7 @@ export function localConfigExists(cwd: string): boolean {
   return directConfig() !== null || existsSync(pathFor(cwd));
 }
 
+/** Load known local mesh settings, preferring valid inline configuration and falling back to an empty config on read errors. */
 export function loadLocalConfig(cwd: string): LocalConfig {
   // Precedence: inline `OUTPOST_PI_DIRECT_CONFIG` env wins over the file. An
   // unset/empty/malformed env falls through to the on-disk config.json.
@@ -130,6 +131,11 @@ export function loadLocalConfig(cwd: string): LocalConfig {
   }
 }
 
+/**
+ * Merge a settings patch into this cwd's persisted config, materializing the backward-compatible relay default.
+ *
+ * @throws when the config directory or file cannot be written.
+ */
 export function saveLocalConfig(cwd: string, patch: Partial<LocalConfig>): void {
   const p = pathFor(cwd);
   mkdirSync(dirname(p), { recursive: true });

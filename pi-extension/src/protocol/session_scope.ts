@@ -1,3 +1,4 @@
+/** Identify the currently active remote Pi SDK session on session-scoped frames. */
 export type RemoteSessionId = string;
 
 export const SESSION_SCOPED_SERVER_TYPES = [
@@ -53,14 +54,17 @@ const sessionScopedServerTypes = new Set<string>(SESSION_SCOPED_SERVER_TYPES);
 const serverMessageTypes = new Set<string>(SERVER_MESSAGE_TYPES);
 const sessionScopedClientTypes = new Set<string>(SESSION_SCOPED_CLIENT_TYPES);
 
+/** Test whether a server message must carry the active remote-session identity. */
 export function isSessionScopedServerType(type: string): type is SessionScopedServerType {
   return sessionScopedServerTypes.has(type);
 }
 
+/** Test membership in the canonical server-message type registry. */
 export function isServerMessageType(type: string): type is ServerMessageType {
   return serverMessageTypes.has(type);
 }
 
+/** Test whether a client message is rejected when it targets a stale remote session. */
 export function isSessionScopedClientType(type: string): type is SessionScopedClientType {
   return sessionScopedClientTypes.has(type);
 }
