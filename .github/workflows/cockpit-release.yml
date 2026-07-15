@@ -1,11 +1,11 @@
-# Release do Cockpit (plano 43, passo 3).
+# Cockpit release (plan 43, step 3).
 #
-# Trigger: tag `cockpit-v<versão>` (a versão DEVE bater com o pubspec.yaml).
-# Produz: GitHub Release com 6 artefatos + SHA256SUMS + latest.json.
-# Os manifestos e appcasts não são atualmente publicados/implantados; o site e
-# o self-update permanecem desativados até que a distribuição seja configurada.
+# Trigger: tag `cockpit-v<version>` (the version MUST match pubspec.yaml).
+# Produces: a GitHub Release with 6 artifacts + SHA256SUMS + latest.json.
+# Manifests and appcasts are not currently published/deployed; the site and
+# self-update remain disabled until distribution is configured.
 #
-# Runbook por plataforma: cockpit/packaging/README.md.
+# Platform runbook: cockpit/packaging/README.md.
 
 name: cockpit-release
 
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag da release (ex: cockpit-v1.0.0); precisa existir"
+        description: "Release tag (e.g. cockpit-v1.0.0); must exist"
         required: true
 
 permissions:
@@ -31,7 +31,7 @@ env:
 
 jobs:
   meta:
-    name: Valida tag ↔ pubspec
+    name: Validate tag ↔ pubspec
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.v.outputs.version }}
@@ -47,20 +47,20 @@ jobs:
           PUBSPEC="${FULL%%+*}"
           BUILD="${FULL##*+}"
           if [ "$VERSION" != "$PUBSPEC" ]; then
-            echo "::error::tag $RELEASE_TAG pede $VERSION mas o pubspec está em $PUBSPEC"
+            echo "::error::tag $RELEASE_TAG requires $VERSION but pubspec is $PUBSPEC"
             exit 1
           fi
-          # Plano 47: o Sparkle (macOS) compara CFBundleVersion (o +n). Sem build
-          # number o self-update não detecta a versão nova — exigir +n explícito.
+          # Plan 47: Sparkle (macOS) compares CFBundleVersion (the +n). Without a
+          # build number self-update cannot detect the new version — require an explicit +n.
           if [ "$BUILD" = "$FULL" ] || [ -z "$BUILD" ]; then
-            echo "::error::pubspec precisa de build number (ex: $VERSION+8) pro Sparkle comparar a versão"
+            echo "::error::pubspec needs a build number (e.g. $VERSION+8) for Sparkle to compare the version"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
 
   macos:
-    name: macOS dmg (universal, notarizado)
+    name: macOS dmg (universal, notarized)
     needs: meta
     runs-on: macos-latest
     defaults: { run: { working-directory: cockpit } }
@@ -77,7 +77,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Importa certificado Developer ID em keychain temporário
+      - name: Import Developer ID certificate into temporary keychain
         env:
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -104,9 +104,9 @@ jobs:
           flutter pub get
           flutter build macos --release
           APP="build/macos/Build/Products/Release/Cockpit.app"
-          # Assina o .app (Developer ID + Hardened Runtime + timestamp). --deep
-          # cobre os componentes do Sparkle aninhados (Sparkle.framework,
-          # Autoupdate, Updater.app, XPCServices), exigência da notarização.
+          # Sign the .app (Developer ID + Hardened Runtime + timestamp). --deep
+          # covers nested Sparkle components (Sparkle.framework,
+          # Autoupdate, Updater.app, XPCServices), required for notarization.
           codesign --force --deep --options runtime --timestamp \
             --entitlements macos/Runner/Release.entitlements \
             --sign "$SIGN_ID" "$APP"
@@ -117,15 +117,15 @@ jobs:
             xcrun notarytool submit "$1" --key "$RUNNER_TEMP/apikey.p8" \
               --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
           }
-          # 1) Notariza o .app (submetendo um zip) e grampeia o ticket no bundle.
+          # 1) Notarize the .app (by submitting a zip) and staple the ticket to the bundle.
           ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarize-app.zip"
           notarize "$RUNNER_TEMP/notarize-app.zip"
           xcrun stapler staple "$APP"
-          # 2) Artefato de update do Sparkle (plano 47): zip do .app já
-          #    notarizado+stapled — Sparkle troca o bundle in-place (zip é o
-          #    caminho recomendado, não o dmg). NÃO entra no latest.json.
+          # 2) Sparkle update artifact (plan 47): zip of the already
+          #    notarized-and-stapled .app — Sparkle replaces the bundle in place (zip is
+          #    the recommended path, not the dmg). It does NOT go into latest.json.
           ditto -c -k --keepParent "$APP" "dist/Cockpit-${VERSION}-macos.zip"
-          # 3) DMG de primeira instalação, a partir do .app já stapled.
+          # 3) First-install DMG, from the already stapled .app.
           STAGE=$(mktemp -d)
           cp -R "$APP" "$STAGE/"
           ln -s /Applications "$STAGE/Applications"
@@ -141,7 +141,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          # dmg (primeira instalação) + Cockpit-<v>-macos.zip (update Sparkle).
+          # dmg (first installation) + Cockpit-<v>-macos.zip (Sparkle update).
           path: cockpit/dist/*
           if-no-files-found: error
 
@@ -162,12 +162,12 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Prepara Fastforge e Inno Setup
+      - name: Prepare Fastforge and Inno Setup
         run: |
           dart pub global activate fastforge
           echo "C:\\Program Files (x86)\\Inno Setup 6" >> "$GITHUB_PATH"
 
-      - name: Build + empacota
+      - name: Build + package
         run: |
           flutter pub get
           flutter build windows --release
@@ -212,25 +212,25 @@ jobs:
           channel: stable
           cache: true
 
-      # Não existe SDK empacotado de Flutter pra linux-arm64 (flutter-action
-      # falha em host ARM). O caminho suportado é rodar a partir do git: o
-      # tool se bootstrapa e baixa os artefatos de engine arm64.
+      # No packaged Flutter SDK exists for linux-arm64 (flutter-action
+      # fails on an ARM host). The supported path is to run from git: the
+      # tool bootstraps itself and downloads the arm64 engine artifacts.
       - name: Flutter arm64 (via git)
         if: matrix.deb_arch == 'arm64'
         run: |
           git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
 
-      - name: Deps de sistema (GTK, ninja, rpmbuild, libmpv)
+      - name: System dependencies (GTK, ninja, rpmbuild, libmpv)
         run: |
           sudo apt-get update
-          # libmpv-dev: media_kit linka contra libmpv no Linux (plano 46).
-          # Runtime declarado nos pacotes: deb libmpv2 / rpm mpv-libs.
+          # libmpv-dev: media_kit links against libmpv on Linux (plan 46).
+          # Runtime declared by the packages: deb libmpv2 / rpm mpv-libs.
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev rpm libmpv-dev
           flutter --version
           dart pub global activate fastforge
 
-      - name: Build + empacota
+      - name: Build + package
         run: |
           flutter pub get
           flutter build linux --release
@@ -242,15 +242,15 @@ jobs:
           mv "$DEB" "out/outpost-pi-cockpit_${VERSION}_${{ matrix.deb_arch }}.deb"
           mv "$RPM" "out/outpost-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm"
 
-      - name: Smoke test .deb (instala no próprio runner)
+      - name: Smoke test .deb (install on the runner itself)
         run: |
           sudo apt-get install -y "./out/outpost-pi-cockpit_${VERSION}_${{ matrix.deb_arch }}.deb"
           dpkg -L outpost-pi-cockpit | grep -m1 "\.desktop$"
 
       - name: Smoke test .rpm (container fedora:40)
         run: |
-          # rpm -qpl consulta o ARQUIVO (o nome interno do pacote não é
-          # outpost-pi-cockpit — o maker do Fastforge usa o nome do pubspec).
+          # rpm -qpl queries the FILE (the package's internal name is not
+          # outpost-pi-cockpit — Fastforge's maker uses the pubspec name).
           docker run --rm -v "$PWD/out:/out:ro" fedora:40 bash -c \
             "dnf install -y /out/outpost-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm \
              && rpm -qpl /out/outpost-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm | grep -m1 '\.desktop$'"
@@ -277,7 +277,7 @@ jobs:
           path: release
           merge-multiple: true
 
-      - name: Gera SHA256SUMS e latest.json
+      - name: Generate SHA256SUMS and latest.json
         run: |
           cd release
           sha256sum * > SHA256SUMS
@@ -302,10 +302,10 @@ jobs:
           done
           COUNT=$(jq -s length artifacts.ndjson)
           if [ "$COUNT" -ne 6 ]; then
-            echo "::error::esperava 6 artefatos no manifest, achei $COUNT"
+            echo "::error::expected 6 artifacts in the manifest, found $COUNT"
             exit 1
           fi
-          # Notas: primeira seção do CHANGELOG; fallback genérico.
+          # Notes: first CHANGELOG section; generic fallback.
           NOTES=$(awk '/^## /{n++} n==1' ../cockpit/CHANGELOG.md | tail -n +2 | sed '/^$/d' | head -20)
           [ -n "$NOTES" ] || NOTES="Outpost-Pi Cockpit ${VERSION}"
           jq -n --arg version "$VERSION" --arg date "$(date -u +%F)" \
@@ -315,15 +315,15 @@ jobs:
           rm artifacts.ndjson
           cat latest.json
 
-      - name: Assina artefatos e gera appcasts (Sparkle/WinSparkle)
+      - name: Sign artifacts and generate appcasts (Sparkle/WinSparkle)
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           BUILD: ${{ needs.meta.outputs.build }}
         run: |
-          # Plano 47 — assina o .app.zip (macOS) e o .exe (Windows) com a MESMA
-          # chave ed25519 (decisão E refinada): ed25519 é determinístico, então
-          # PyNaCl gera a assinatura que Sparkle e WinSparkle verificam. Sem
-          # ferramenta nativa nos runners — só a chave (secret).
+          # Plan 47 — sign the .app.zip (macOS) and .exe (Windows) with the SAME
+          # ed25519 key (refined decision E): ed25519 is deterministic, so
+          # PyNaCl generates the signature Sparkle and WinSparkle verify. No
+          # native tool is needed on the runners — only the key (secret).
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet pynacl
           cat > "$RUNNER_TEMP/sign.py" <<'PY'
@@ -361,9 +361,9 @@ jobs:
             </channel>
           </rss>
           XML
-          # Windows: WinSparkle baixa o .exe do Inno e roda silencioso via
-          # sparkle:installerArguments; sparkle:version = versão marketing (bate
-          # com o ProductVersion do Runner.rc).
+          # Windows: WinSparkle downloads the Inno .exe and runs it silently through
+          # sparkle:installerArguments; sparkle:version = marketing version (matches
+          # Runner.rc's ProductVersion).
           cat > appcast-windows.xml <<XML
           <?xml version="1.0" encoding="utf-8"?>
           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
@@ -382,16 +382,16 @@ jobs:
           echo "== appcast-macos.xml =="; cat appcast-macos.xml
           echo "== appcast-windows.xml =="; cat appcast-windows.xml
 
-      - name: Cria (ou atualiza) a GitHub Release
+      - name: Create (or update) GitHub Release
         run: |
           NOTES_FILE=$(mktemp)
           jq -r .notes release/latest.json > "$NOTES_FILE"
           {
             echo ""
             echo "---"
-            echo "**Publicação:** os manifestos e appcasts não são atualmente"
-            echo "publicados/implantados. O card/site e o self-update permanecem"
-            echo "desativados até que a distribuição seja configurada."
+            echo "**Publishing:** manifests and appcasts are not currently"
+            echo "published/deployed. The card/site and self-update remain"
+            echo "disabled until distribution is configured."
           } >> "$NOTES_FILE"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release/* --clobber
@@ -402,14 +402,14 @@ jobs:
               --latest=false
           fi
 
-      - name: Resumo
+      - name: Summary
         run: |
           {
-            echo "## Cockpit ${VERSION} publicado"
+            echo "## Cockpit ${VERSION} published"
             echo ""
             echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
             echo ""
-            echo "**Publicação:** os manifestos e appcasts não são atualmente"
-            echo "publicados/implantados; o site/card e o self-update permanecem"
-            echo "desativados até que a distribuição seja configurada."
+            echo "**Publishing:** manifests and appcasts are not currently"
+            echo "published/deployed; the site/card and self-update remain"
+            echo "disabled until distribution is configured."
           } >> "$GITHUB_STEP_SUMMARY"
