@@ -4,8 +4,10 @@ import 'package:cockpit/app/core/domain/contracts/system_permissions.dart';
 import 'package:cockpit/app/core/domain/entities/setup_check.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-/// Implementa as checagens de permissão do macOS. Em outros SOs as permissões
-/// retornam [CheckStatus.notApplicable] (decisão: macOS-first).
+/// Implement macOS permission checks.
+///
+/// Other operating systems return [CheckStatus.notApplicable], reflecting the
+/// app's macOS-first support policy.
 class SystemPermissionsImpl implements SystemPermissions {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -17,7 +19,7 @@ class SystemPermissionsImpl implements SystemPermissions {
         MacOSFlutterLocalNotificationsPlugin
       >();
 
-  // ---- notificações ---------------------------------------------------------
+  // ---- Notifications --------------------------------------------------------
   @override
   Future<CheckStatus> notificationStatus() async {
     if (!Platform.isMacOS) return CheckStatus.notApplicable;
@@ -45,7 +47,7 @@ class SystemPermissionsImpl implements SystemPermissions {
           ) ??
           false;
       if (granted) await _showTest();
-      // Re-checa: o request pode ter sido respondido antes (estado já decidido).
+      // Recheck because the request may reflect an already-decided state.
       return granted ? CheckStatus.ok : await notificationStatus();
     } catch (_) {
       return CheckStatus.missing;
