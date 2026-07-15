@@ -1,7 +1,7 @@
 # Windows installer (Inno Setup) for the Cockpit. NOT buildable on this Mac —
 # generated in the `windows` CI job (windows-latest + Inno Setup). No signing at
 # this stage (SmartScreen warning documented on the site).
-app_id: work.jacobmoura.cockpit
+app_id: dev.kevoun.outpostpi.cockpit
 display_name: Outpost-Pi Cockpit
 publisher_name: Kevoun
 publisher_url: https://kevoun.com
