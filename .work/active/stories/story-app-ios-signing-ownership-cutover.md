@@ -1,7 +1,7 @@
 ---
 id: story-app-ios-signing-ownership-cutover
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, app, release, security]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -47,3 +47,31 @@ or export under the upstream team and directly contradicts the feature brief.
   and `site/`, distinguishing harmless fake path fixtures from active signing
   metadata.
 - Run app analyze/tests and an appropriate no-codesign iOS project/config smoke.
+
+## Implementation notes
+
+- Files changed: `app/ios/ExportOptions.plist`, both app and identity-example
+  `Runner.xcodeproj/project.pbxproj` files, `app/store_listing.md`, `README.md`,
+  `docs/DECISIONS.md`, `pi-extension/README.md`, and the three active App Store
+  availability surfaces under `site/src/`.
+- Removed every committed app/example `DEVELOPMENT_TEAM` and omitted `teamID`
+  from the automatic App Store export options. Simulator/no-codesign builds stay
+  available, while device/archive signing has no repository default and requires
+  the operator to select an owned team. Automatic export can resolve only from
+  the team attached to an operator-owned signed archive.
+- Marked iOS distribution unavailable until the operator provisions an Apple
+  Developer team and owned listing. Future iOS CI must receive the team through
+  the `APPLE_TEAM_ID` secret; inherited App Store links and availability claims
+  were removed from active public docs/site surfaces.
+- Discrepancy from the review prompt: `.github/workflows/app-release.yml` has no
+  iOS build/export job; it publishes only the signed Android APK. No speculative
+  iOS job was added. The current release path therefore fails closed by having
+  no iOS publication channel, and the team remains unset in committed Xcode
+  configuration.
+- Verification: app `flutter analyze` passed with no issues; site `pnpm lint`
+  and `pnpm build` passed; `ExportOptions.plist` and `app-release.yml` parsed;
+  the requested inherited-identity grep returned no hits. A full/no-codesign iOS
+  build was not run, as required by the task and because this Linux VM has no
+  Apple codesigning toolchain.
+- Tests added: none (signing metadata and current-state documentation only).
+- Adjacent issues parked: none.
