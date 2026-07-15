@@ -1,15 +1,16 @@
-/// Um aparelho pareado com o relay, lido de `~/.pi/remote/peers.json`.
+/// Represent a paired relay device read from `~/.pi/remote/peers.json`.
 ///
-/// O Cockpit só **lista e revoga** — o pareamento em si (gerar QR) acontece do
-/// lado do app/agente, não aqui (não há comando `outpost-pi pair`).
+/// Cockpit only lists and revokes devices. Pairing and QR generation happen on
+/// the app or agent side; no `outpost-pi pair` command exists.
 class PairedDevice {
   const PairedDevice({required this.shortId, required this.label});
 
-  /// Identificador curto usado para revogar (`outpost-pi revoke <shortId>`).
-  /// Pode conter caracteres base64 (`+`, `/`) — sempre passe como arg único.
+  /// Short identifier passed to `outpost-pi revoke <shortId>` as one argument.
+  ///
+  /// May contain base64 characters such as `+` and `/`.
   final String shortId;
 
-  /// Rótulo legível reportado pelo relay (ex.: `iPhone`, `Android device`).
+  /// Human-readable device label reported by the relay.
   final String label;
 
   @override
