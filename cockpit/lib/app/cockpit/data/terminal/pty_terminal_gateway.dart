@@ -4,7 +4,10 @@ import 'dart:typed_data';
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_gateway.dart';
 import 'package:kyroon_pty/kyroon_pty.dart';
 
-/// PTY nativo via `kyroon_pty`. Roda o shell real do SO num pseudo-terminal.
+/// Run the platform's real shell in a native `kyroon_pty` pseudo-terminal.
+///
+/// This adapter owns the PTY lifecycle and explicitly advertises the terminal
+/// capabilities supported by Cockpit's xterm emulator.
 class PtyTerminalGateway implements TerminalGateway {
   Pty? _pty;
 
@@ -40,60 +43,56 @@ class PtyTerminalGateway implements TerminalGateway {
     try {
       _pty?.kill();
     } catch (_) {
-      // já encerrado.
+      // The PTY may already have exited.
     }
   }
 
-  /// Ambiente do PTY: herda o do app e **anuncia as capacidades do terminal**
-  /// que o emulador realmente tem, mas que ninguém declarava.
+  /// Build the PTY environment from the app environment and terminal capabilities.
   ///
-  /// - `TERM=xterm-256color`: o `xterm` (pacote Flutter) emula um xterm de 256
-  ///   cores. Fixamos explícito em vez de depender do default do `kyroon_pty`
-  ///   (que só preenche se ausente) — ao abrir pelo Finder, o `.app` não herda
-  ///   `TERM` algum e TUIs ncurses degradam.
-  /// - `COLORTERM=truecolor`: **a correção central pra "as cores saem um pouco
-  ///   diferentes".** O emulador pinta RGB 24-bit (SGR `38;2;r;g;b`), mas sem
-  ///   esta var os harnesses TUI (claude, codex, vim, lazygit…) assumem que o
-  ///   terminal não tem truecolor e rebaixam pra aproximações de 256 cores —
-  ///   exatamente o que iTerm/Terminal.app evitam ao anunciá-la.
+  /// - `TERM=xterm-256color` matches the Flutter xterm emulator. Setting it
+  ///   explicitly avoids degraded ncurses behavior when a Finder-launched app
+  ///   inherits no `TERM` value.
+  /// - `COLORTERM=truecolor` advertises the emulator's 24-bit RGB support
+  ///   (SGR `38;2;r;g;b`), preventing terminal tools from approximating colors
+  ///   with the 256-color palette.
   ///
-  /// O `kyroon_pty` faz `addAll(environment)` por último, então estes overrides
-  /// vencem o que veio herdado.
+  /// `kyroon_pty` applies this map last, so these capability declarations
+  /// override inherited values.
   Map<String, String> _terminalEnv() => {
     ...Platform.environment,
     'TERM': 'xterm-256color',
     'COLORTERM': 'truecolor',
   };
 
-  /// Shell por plataforma.
+  /// Select the platform shell.
   String _shell() {
     if (Platform.isWindows) {
-      // ARM: mantém cmd.exe (o spawn de PTY do powershell ainda é instável no
-      // Windows ARM). Demais Windows (x64): powershell.exe como default.
+      // Keep cmd.exe on Windows ARM, where PowerShell PTY spawning remains
+      // unstable. Use powershell.exe by default on other Windows builds.
       if (_isWindowsArm) return Platform.environment['COMSPEC'] ?? 'cmd.exe';
       return 'powershell.exe';
     }
     return Platform.environment['SHELL'] ?? '/bin/zsh';
   }
 
-  /// Argumentos do shell.
+  /// Select shell arguments that restore the user's expected command environment.
   ///
-  /// macOS/Linux: `-l` (**login shell**), igual ao Terminal.app/iTerm. Sem isso
-  /// um app GUI aberto pelo Finder/Dock herda só o PATH mínimo
-  /// (`/usr/bin:/bin:/usr/sbin:/sbin`) e um shell não-login carrega apenas o
-  /// `.zshrc` — perdendo o `.zprofile`/`/etc/zprofile` (onde `path_helper` lê
-  /// `/etc/paths.d/*` e o `brew shellenv`/Docker/.NET injetam seus diretórios).
-  /// Resultado: `node`, `npm`, `dotnet`, `docker` "não encontrados". Como o PTY
-  /// já anexa um tty, o shell também é interativo → o `.zshrc` (nvm) entra junto.
+  /// On macOS and Linux, `-l` starts a login shell like Terminal.app or iTerm.
+  /// Finder- and Dock-launched apps otherwise inherit only the minimal system
+  /// PATH, and a non-login shell misses `.zprofile`, `/etc/zprofile`,
+  /// `path_helper`, Homebrew, Docker, and .NET path setup. The attached TTY also
+  /// makes the shell interactive, so `.zshrc` still loads nvm configuration.
   ///
-  /// Windows: cmd/powershell herdam o PATH do registro mesmo via GUI — sem flag.
+  /// Windows shells inherit the registry PATH even when launched from a GUI,
+  /// so they require no flag.
   List<String> _shellArgs() {
     if (Platform.isWindows) return const [];
     return const ['-l'];
   }
 
-  /// Arquitetura do build (ex.: `... on "windows_arm64"`) — fonte confiável da
-  /// arch do app nativo, ao contrário de `PROCESSOR_ARCHITECTURE` (que reporta
-  /// emulação WOW). Casa `arm`/`arm64`.
+  /// Detect Windows ARM from the native build architecture in [Platform.version].
+  ///
+  /// Unlike `PROCESSOR_ARCHITECTURE`, which can report WOW emulation, the build
+  /// marker reliably contains `arm` or `arm64` for a native ARM app.
   bool get _isWindowsArm => Platform.version.toLowerCase().contains('arm');
 }
