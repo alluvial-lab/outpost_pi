@@ -1,22 +1,29 @@
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Mutação da árvore de arquivos: criar, renomear/mover e mandar pra lixeira.
-/// Contraparte de escrita do [FileSystemReader] (leitura). Impl (dart:io +
-/// `osascript` no macOS) em `data/filesystem/`. Operações devolvem
-/// `Result<void, String>` — a falha traz uma mensagem pronta pra UI.
+/// Mutate the file tree by creating, renaming, moving, or trashing entries.
+///
+/// This is the write counterpart to [FileSystemReader]. It is implemented in
+/// `data/filesystem/` with `dart:io` and, on macOS, `osascript`. Each operation
+/// returns `Result<void, String>` with a UI-ready message on failure.
 abstract class FileSystemMutator {
-  /// Cria um arquivo **vazio** em [path]. Falha se já existir algo no caminho
-  /// ou se a pasta-pai não existir.
+  /// Create an **empty** file at [path].
+  ///
+  /// Fails when an entry already exists at the path or its parent folder does
+  /// not exist.
   Future<Result<void, String>> createFile(String path);
 
-  /// Cria uma pasta em [path]. Falha se já existir.
+  /// Create a directory at [path], failing when it already exists.
   Future<Result<void, String>> createDirectory(String path);
 
-  /// Renomeia/move [from] para [to] (arquivo ou pasta). Falha se [to] já existir.
+  /// Rename or move the file or folder at [from] to [to].
+  ///
+  /// Fails when [to] already exists.
   Future<Result<void, String>> rename(String from, String to);
 
-  /// Move [path] para a lixeira (reversível). No macOS via Finder (`osascript`);
-  /// nas demais plataformas, deleção permanente (a confirmação fica na UI).
-  /// Idempotente: caminho inexistente é sucesso.
+  /// Move [path] to recoverable trash.
+  ///
+  /// Uses Finder via `osascript` on macOS and permanently deletes on other
+  /// platforms, where confirmation remains the UI's responsibility. The
+  /// operation is idempotent: a missing path is successful.
   Future<Result<void, String>> moveToTrash(String path);
 }

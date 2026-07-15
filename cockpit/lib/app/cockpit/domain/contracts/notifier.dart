@@ -1,10 +1,11 @@
-/// Notificações nativas do SO. Contrato no domínio; a impl (plugin) mora em
-/// `data/notifications/`.
+/// Send native OS notifications through a domain-owned contract.
+///
+/// The plugin implementation lives in `data/notifications/`.
 abstract class Notifier {
-  /// Inicializa o backend (pede permissão no boot).
+  /// Initialize the backend and request permission at startup.
   Future<void> init();
 
-  /// Notifica que um agente terminou um turno.
+  /// Notify the user that an agent finished a turn.
   Future<void> agentFinished({
     required String agentName,
     required String workspace,

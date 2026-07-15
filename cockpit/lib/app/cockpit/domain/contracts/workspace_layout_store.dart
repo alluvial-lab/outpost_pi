@@ -1,18 +1,17 @@
-/// Persiste o layout do multiplexador de um projeto (árvore de panes + os
-/// descritores de cada aba) como um **documento JSON opaco**, keyed por
-/// `projectId`.
+/// Persist a project's multiplexer layout, including its pane tree and tab
+/// descriptors, as an **opaque JSON document** keyed by `projectId`.
 ///
-/// A *forma* do documento é detalhe da `ui/` (quem conhece `PaneNode` e as
-/// sessões) — aqui é só um blob versionado que a `data/` guarda e devolve. Por
-/// isso o contrato trafega `Map<String, dynamic>` em vez de um tipo do domínio:
-/// o store não interpreta o conteúdo, só o persiste.
+/// The document's *shape* belongs to `ui/`, which knows `PaneNode` and the
+/// sessions. This contract only transports a versioned blob that `data/` stores
+/// and returns. It therefore uses `Map<String, dynamic>` instead of a domain
+/// type: the store persists content without interpreting it.
 abstract class WorkspaceLayoutStore {
-  /// Documento salvo do projeto, ou `null` se nunca foi salvo.
+  /// Return the project's saved document, or `null` if none was ever saved.
   Future<Map<String, dynamic>?> load(String projectId);
 
-  /// Salva (sobrescreve) o documento do projeto.
+  /// Save, overwriting, the project's [document].
   Future<void> save(String projectId, Map<String, dynamic> document);
 
-  /// Remove o documento do projeto (ao deletar o projeto).
+  /// Remove the project's document when its project is deleted.
   Future<void> remove(String projectId);
 }
