@@ -22,7 +22,7 @@ For protocol, identities, ACKs, cross-PC routing, and the trust model, see
 - Crypto/auth: Ed25519 via `@noble/ed25519` for Pi/Owner identities, pairing signatures, and relay challenge-response. Transport confidentiality is WebSocket over TLS; there is **no app-layer E2E encryption** in the current implementation.
 - Pi-secret storage: `@napi-rs/keyring` (macOS Keychain / desktop Linux libsecret / Windows Credential Manager). Headless Linux without D-Bus falls back to `~/.pi/remote/identity.json` (`chmod 0600`) with a warning — install GNOME Keyring/KWallet for real hardening.
 
-## Comandos
+## Commands
 
 In the sandbox (`codebox`), `/home/agent/.cache` is read-only and pnpm 11.x fails
 with `[ERR_SQLITE_ERROR] unable to open database file` unless its store/caches are
@@ -68,14 +68,14 @@ resolution (`env` or `config`).
 
 ## Important dependencies
 
-- `@earendil-works/pi-coding-agent` — SDK do Pi (`AgentSession`, `SessionManager`, `ModelRegistry`)
+- `@earendil-works/pi-coding-agent` — Pi SDK (`AgentSession`, `SessionManager`, `ModelRegistry`)
 - `ws` — WebSocket client
 
 ## Conventions
 
 - **Strict TS**: `"strict": true`, no `any` except where unavoidable (use `unknown` + narrow)
 - **Imports**: `import { foo } from "./bar.js"` (extension required in ESM)
-- **Top-level await** ok (ESM permite)
+- **Top-level await** is allowed by ESM
 - **Errors**: `class XxxError extends Error` for named classes; throw early at the boundary
 - **Logging**: `console.log` is acceptable in the MVP; later migrate to `pino` or similar
 

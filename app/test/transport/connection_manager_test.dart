@@ -532,7 +532,7 @@ void main() {
     );
 
     // -----------------------------------------------------------------------
-    // Presence (plano 12)
+    // Presence (plan 12)
     // -----------------------------------------------------------------------
 
     test(
@@ -749,7 +749,7 @@ void main() {
     );
 
     // -----------------------------------------------------------------------
-    // Plano 13: chat-state recovery (boot preferredEpk + no-NoPeer switchTo)
+    // Plan 13: chat-state recovery (boot preferredEpk + no-NoPeer switchTo)
     // -----------------------------------------------------------------------
 
     test(
@@ -880,7 +880,7 @@ void main() {
         expect(
           seen.whereType<StatusNoPeer>(),
           isEmpty,
-          reason: 'plano 13 — switchTo must not flash through NoPeer',
+          reason: 'plan 13 — switchTo must not flash through NoPeer',
         );
         // Must still go through Connecting on the way to Online.
         expect(seen.any((s) => s is StatusConnecting), isTrue);
@@ -1148,7 +1148,7 @@ class _ControllableChannel implements IChannel, IControlLink {
 }
 
 // ---------------------------------------------------------------------------
-// Presence (plano 12)
+// Presence (plan 12)
 // ---------------------------------------------------------------------------
 
 void mainPresence() {} // placeholder so the group below is visible

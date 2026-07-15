@@ -363,7 +363,7 @@ class AgentSession extends PaneItem {
       (error) => _addInfo('failed to compact: ${error.message}', isError: true),
     );
     notifyListeners();
-    unawaited(_refreshStats()); // o contexto mudou
+    unawaited(_refreshStats()); // the context changed
   }
 
   /// Apply and persist a different model while the agent is idle.

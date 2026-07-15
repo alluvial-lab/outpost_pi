@@ -30,7 +30,7 @@ interface SendDetails {
 
 /**
  * Registers the native tools the Pi LLM uses to talk to other agents in the
- * same UDS session (plano 19 transport + plan/25 Wave 0 ACK protocol):
+ * same UDS session (plan 19 transport + plan/25 Wave 0 ACK protocol):
  *
  *   - `agent_send`     — unified delivery with broker-level ACK. Returns
  *                        a status so the LLM can decide whether to retry.

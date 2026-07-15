@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 /**
- * 5-field envelope for the agent-network local protocol (plano 19).
+ * 5-field envelope for the agent-network local protocol (plan 19).
  * Serialized as JSONL (one JSON object per line) over UDS streams.
  */
 export interface Envelope {
