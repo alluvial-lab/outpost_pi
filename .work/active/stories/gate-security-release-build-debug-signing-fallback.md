@@ -1,7 +1,7 @@
 ---
 id: gate-security-release-build-debug-signing-fallback
 kind: story
-stage: implementing
+stage: review
 tags: [security, app]
 parent: feature-outpost-pi-distribution-ownership
 depends_on: [story-en-first-residual-maintained-surfaces]
@@ -37,3 +37,11 @@ buildTypes {
 
 ## Remediation direction
 Make distributable release builds fail closed when the release keystore is absent. Keep debug signing confined to the debug build type, or require an explicit, unmistakably development-only opt-in for a locally sideloaded release-mode build. Add a verification step that inspects the final APK signer before publishing the 0.1.0 artifact.
+
+## Implementation notes
+
+- Changed `app/android/app/build.gradle.kts`.
+- The `release` build type now throws a clear `GradleException` when `android/key.properties` does not configure a release keystore; otherwise it selects only the `release` signing config. It no longer references the debug signing config.
+- Keystore filename and alias logic are unchanged (`remotepi-release.jks` / `remotepi`). No development-only release-mode override was added.
+- Verified by inspection that the release block fails closed and the debug build type remains unmodified; `flutter analyze` and `flutter test` pass from `app/`.
+- Discrepancies: none. Parked issues: none.
