@@ -6,8 +6,9 @@ import 'package:cockpit/app/core/data/relay/ephemeral_pi_rpc.dart';
 import 'package:cockpit/app/core/domain/contracts/pairing_gateway.dart';
 import 'package:cockpit/app/core/domain/entities/pair_event.dart';
 
-/// Factory de [PairingGateway]: cada `create()` sobe uma sessão efêmera nova
-/// (cada tentativa de pareamento tem seu próprio `pi --mode rpc`).
+/// Create a [PairingGateway] backed by a fresh ephemeral RPC session.
+///
+/// Each pairing attempt owns its own `pi --mode rpc` process.
 class PairingGatewayFactoryImpl implements PairingGatewayFactory {
   PairingGatewayFactoryImpl(this._config);
 
@@ -17,12 +18,12 @@ class PairingGatewayFactoryImpl implements PairingGatewayFactory {
   PairingGateway create() => PairingGatewayImpl(_config);
 }
 
-/// Implementação do [PairingGateway] sobre uma sessão [EphemeralPiRpc].
+/// Implement [PairingGateway] over an [EphemeralPiRpc] session.
 ///
-/// Dispara `/outpost-pi pair` e traduz as mensagens `role: "custom"` do stdout
-/// (`outpost-pi:pair-code` / `outpost-pi:paired`) em [PairEvent]. Cada pair-code
-/// chega como DOIS eventos (`message_start` + `message_end`) com payload igual,
-/// então deduplicamos por assinatura.
+/// Runs `/outpost-pi pair` and converts stdout messages with `role: "custom"`
+/// (`outpost-pi:pair-code` and `outpost-pi:paired`) into [PairEvent] values. Each
+/// pair code arrives twice, as `message_start` and `message_end` with identical
+/// payloads, so events are deduplicated by signature.
 class PairingGatewayImpl implements PairingGateway {
   PairingGatewayImpl(PiSpawnConfig config) : _rpc = EphemeralPiRpc(config);
 
@@ -50,8 +51,9 @@ class PairingGatewayImpl implements PairingGateway {
       });
       await _rpc.start(prompt: command, onLine: _onLine, onExit: _onExit);
 
-      // O `/outpost-pi pair` sobe o relay sozinho — dá uns segundos pra conexão
-      // antes de desistir (sem pair-code = extensão ausente ou relay off).
+      // `/outpost-pi pair` starts the relay connection itself. Allow time for
+      // that connection before failing; no pair code indicates a missing
+      // extension or unavailable relay.
       _bootTimeout = Timer(const Duration(seconds: 30), () {
         if (!_gotCode) {
           _emit(
@@ -86,7 +88,7 @@ class PairingGatewayImpl implements PairingGateway {
   void _handleCustom(String? customType, Map<dynamic, dynamic> details) {
     if (customType == null) return;
     final signature = '$customType|${jsonEncode(details)}';
-    if (!_seen.add(signature)) return; // dedup message_start/message_end
+    if (!_seen.add(signature)) return; // Deduplicate start/end messages.
 
     switch (customType) {
       case 'outpost-pi:pair-code':

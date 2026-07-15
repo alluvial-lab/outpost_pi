@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-core-data-adapters
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-core
 depends_on: []
@@ -60,12 +60,29 @@ is discovered, record it in the parent feature before widening scope.
 
 ## Acceptance criteria
 
-- [ ] All 16 owned files contain no Portuguese prose or human-readable PT
+- [x] All 16 owned files contain no Portuguese prose or human-readable PT
       runtime labels.
-- [ ] LSP framing/start/restart/shutdown behavior, pairing/revoke RPC behavior,
+- [x] LSP framing/start/restart/shutdown behavior, pairing/revoke RPC behavior,
       Hive keys, setup probes, and permission behavior are unchanged.
-- [ ] Runtime changes are limited to the four bounded human-readable values;
+- [x] Runtime changes are limited to the four bounded human-readable values;
       keys, commands, identifiers, and data formats are unchanged.
-- [ ] No filler dartdoc is added to overrides, DTOs, or trivial helpers.
-- [ ] Focused LSP/data tests pass, followed by the parent feature's serialized
+- [x] No filler dartdoc is added to overrides, DTOs, or trivial helpers.
+- [x] Focused LSP/data tests pass, followed by the parent feature's serialized
       full `flutter analyze` and `flutter test` gate.
+
+## Implementation notes
+
+- Files changed: all 16 owned core data-layer files listed above.
+- Tests added: none; this is a behavior-preserving translation and dartdoc pass.
+- Runtime labels: translated only the two LSP pool debug labels plus the
+  ephemeral pairing workspace and generated-name prefix. JSON keys, commands,
+  identifiers, framing, persistence, and lifecycle behavior remain unchanged.
+- Dartdoc rationale: the story and parent audit identify no Always-tier gap in
+  this adapter slice, so existing adapter-specific docs were translated without
+  duplicating inherited port contracts on overrides.
+- Verification: focused LSP tests passed (26 tests); `flutter analyze` passed
+  with zero issues; full `flutter test` passed (241 tests); accented and known
+  unaccented Portuguese scans returned no matches in the owned files;
+  `git diff --check` passed.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
