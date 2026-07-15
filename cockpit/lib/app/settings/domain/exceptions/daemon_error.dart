@@ -1,6 +1,7 @@
-/// Erro tipado das operações de daemon (supervisor), traduzido do mundo de I/O
-/// em `data/` — UDS do `pi-supervisord` ou shell-out do `outpost-pi`. Nunca vaza
-/// `Exception` cru.
+/// Carry a typed daemon-operation failure across the domain boundary.
+///
+/// Data adapters translate `pi-supervisord` UDS and `outpost-pi` process errors
+/// into this type so raw exceptions never leak into the domain.
 class DaemonError {
   const DaemonError(this.message, {this.cause, this.stackTrace});
 
