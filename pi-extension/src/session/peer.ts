@@ -62,7 +62,7 @@ export class SessionPeer {
   /** Clean leaf name actually assigned by the broker (may carry a `#N`
    *  collision suffix). Used for display + self-filtering. */
   private assignedName: string;
-  /** Canonical address assigned by the broker (`[<pc>:]<cwd>@<nome>`, or just
+  /** Canonical address assigned by the broker (`[<pc>:]<cwd>@<name>`, or just
    *  the name for a legacy broker). This is the routing/identity key the mesh
    *  uses; callers ECHO it, never compose it. */
   private assignedAddress: string;
@@ -103,7 +103,7 @@ export class SessionPeer {
     return this.assignedName;
   }
 
-  /** Returns the canonical address (`[<pc>:]<cwd>@<nome>`) assigned by the
+  /** Returns the canonical address (`[<pc>:]<cwd>@<name>`) assigned by the
    *  broker — the key the mesh routes on. Equals `name()` against a legacy
    *  broker that returns no address. */
   address(): string {

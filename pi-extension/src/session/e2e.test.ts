@@ -380,7 +380,7 @@ describe("ACK protocol (plan/25 Wave 0)", () => {
     await orq.leave();
   });
 
-  test("Broker.list_peers surfaces remote peers_detailed with pc (plan/38 Fase 2)", async () => {
+  test("Broker.list_peers surfaces remote peers_detailed with pc (plan/38 Phase 2)", async () => {
     const sock = tmpSock();
     const orq = new SessionPeer({ sockPath: sock, name: "orq", cwd: "/w/orq", defaultTimeoutMs: 3000 });
     await orq.start();
@@ -681,7 +681,7 @@ describe("plan/38 — (cwd, name) mesh addressing (e2e)", () => {
   });
 
   test("Windows-style local cwd (drive-letter ':') is classified LOCAL, not remote", async () => {
-    // plan/38 Fase 2 gap 3: a local address like `C:\proj\app@app` contains a
+    // plan/38 Phase 2 gap 3: a local address like `C:\proj\app@app` contains a
     // ':' but is NOT cross-PC. The broker tags it with no `pc` in
     // peers_detailed, so the consumer (index.ts) keys on `!pc` instead of a
     // naive `:`-split and counts/pushes it as local.

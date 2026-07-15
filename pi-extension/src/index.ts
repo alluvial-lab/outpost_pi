@@ -150,6 +150,13 @@ import {
 // ("multi-channel broadcast"): pairing a second device no longer disconnects
 // the first, and every connected owner receives the same agent stream in parallel.
 
+/** Relay runtime lifecycle state.
+ * - `idle` — relay transport not started (no WS, no pairing channel).
+ * - `started` — relay transport running; the extension connects/reconnects
+ *   to the relay URL and routes app↔agent traffic.
+ *
+ * Drives the footer slot and the `/outpost-pi status` relay line. Mutated
+ * only by `_startRelay`/`_stopRelay`; read via `_state`. */
 export type RemoteState = "idle" | "started";
 
 let _state: RemoteState = "idle";

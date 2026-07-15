@@ -74,7 +74,7 @@ describe("loadLocalConfig — file vs OUTPOST_PI_DIRECT_CONFIG", () => {
 });
 
 describe("loadLocalConfig — workspace / worktree removed (plan 38)", () => {
-  // The fields were dropped: the mesh identity is `(cwd, nome)`, with `cwd`
+  // The fields were dropped: the mesh identity is `(cwd, name)`, with `cwd`
   // subsuming folder + worktree disambiguation. A stale key from an old config
   // (or one the Cockpit still injects) must be silently ignored on read.
   let cwd: string;
