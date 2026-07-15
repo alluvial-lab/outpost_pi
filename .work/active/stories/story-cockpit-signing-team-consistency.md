@@ -1,14 +1,14 @@
 ---
 id: story-cockpit-signing-team-consistency
 kind: story
-stage: review
+stage: implementing
 tags: [cockpit, security, release]
 parent: epic-rebrand-external-surfaces
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-15
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Validate the Cockpit signing identity against the configured Apple team
@@ -43,3 +43,15 @@ or extracted-script test covering empty, mismatched, and matching values.
 - Verification: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/cockpit-release.yml'))"` passes (valid YAML).
 - Discrepancies from design: chose to validate team consistency (not remove the team secret) because the team ID cross-check strengthens the protection against a stale inherited identity.
 - Adjacent issues parked: none.
+
+## Review (2026-07-15, second pass)
+
+**Verdict**: Request changes
+
+**Blockers**:
+- `.github/workflows/cockpit-release.yml:117-126` asks OpenSSL for a multiline subject, then splits the `organizationalUnitName = TEAMID` line on `/` and prints the whole line. A synthetic certificate reproduced `CERT_OU=organizationalUnitName = TEAMID`, so even the matching-team path compares unequal and blocks every correctly configured macOS release. Extract only the value after `=` and add a deterministic matching/mismatching subject regression check.
+
+**Important**: none
+**Nits**: none
+
+**Notes**: The certificate OU is the correct Apple team authority; only its shell extraction is defective. Story bounced `review -> implementing`.
