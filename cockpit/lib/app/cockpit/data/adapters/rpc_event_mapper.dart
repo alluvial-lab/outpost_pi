@@ -186,7 +186,7 @@ class RpcEventMapper {
     if (message is Map && message['stopReason'] == 'error') {
       final error = message['errorMessage'];
       if (error is String && error.isNotEmpty) return error;
-      return 'erro desconhecido';
+      return 'unknown error';
     }
     return null;
   }
