@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-external-surfaces-no-default-relay
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, pi-extension, app]
 parent: epic-rebrand-external-surfaces
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Remove community relay default (no-default relay)
@@ -375,3 +375,20 @@ String get relayUrlOverride => _prefs.relayUrl ?? '';
   writable cache environment. pnpm required `CI=true` in this non-TTY harness
   to recreate its ignored local `node_modules/`; no tracked dependency file
   changed.
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD`), focused on removing the hardcoded default relay URL.
+
+### Findings (adjudicated)
+- **Important — docs direct users to a removed command and claim a default exists.** `pi-extension/README.md:173` instructed `/outpost-pi config` (removed command) and promised an `env / config / default` result; `site/src/app/docs/page.tsx:428` repeated the removed command. The implementation registers `/outpost-pi status` (`pi-extension/src/index.ts:1743`) and explicitly tests that `/outpost-pi config` is absent (`pi-extension/src/extension.test.ts:363`). Replaced both command examples with `/outpost-pi status` and described the actual `unconfigured` / `off` / `on` states + the `set-relay` recovery action. **Fixed.**
+- No other findings; no-default-relay behavior is correct across app and extension (non-retryable app state, local-only MCP mesh).
+
+### Verification of fixes
+- `corepack pnpm typecheck` + `corepack pnpm test` (pi-extension) green.
+- `corepack pnpm lint` + `corepack pnpm build` (site) green.
+
+### Verdict
+Approve. Advanced `review → done`.
