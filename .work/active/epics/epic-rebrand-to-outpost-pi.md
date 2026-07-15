@@ -328,4 +328,6 @@ original review should have caught. The epic is reopened while
 `feature-outpost-pi-identifier-convergence` completes canonical protocol,
 code/test alias, contract-test, and stateful runtime identifier convergence.
 Intentional provenance, history, legacy-rejection evidence, and checkout-path
-migration remain explicitly outside that feature.
+migration remain explicitly outside that feature. The parallel
+`story-root-readme-provenance-acknowledgement` completes the README credit that
+the original provenance feature promised but missed.
