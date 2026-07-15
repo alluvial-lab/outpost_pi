@@ -22,7 +22,7 @@ class LocalNotifier implements Notifier {
         defaultPresentBadge: true,
         defaultPresentSound: true,
       ),
-      linux: LinuxInitializationSettings(defaultActionName: 'Abrir'),
+      linux: LinuxInitializationSettings(defaultActionName: 'Open'),
     );
     await _plugin.initialize(settings);
   }
@@ -35,7 +35,7 @@ class LocalNotifier implements Notifier {
     final subtitle = workspace.isEmpty ? agentName : '$agentName · $workspace';
     await _plugin.show(
       _id++,
-      'Agente terminou',
+      'Agent finished',
       subtitle,
       const NotificationDetails(
         macOS: DarwinNotificationDetails(
