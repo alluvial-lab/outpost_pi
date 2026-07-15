@@ -1,5 +1,7 @@
-/// Um modelo de LLM que o agente pode usar. Versão de domínio do objeto `Model`
-/// do RPC (`get_available_models` / `set_model` / `get_state`).
+/// Represent an LLM available to the agent.
+///
+/// This is the domain form of the RPC `Model` returned or consumed by
+/// `get_available_models`, `set_model`, and `get_state`.
 class PiModel {
   const PiModel({
     required this.provider,
@@ -15,22 +17,24 @@ class PiModel {
   final String id;
   final String name;
 
-  /// Suporta thinking/raciocínio (habilita o seletor de effort).
+  /// Whether the model supports reasoning and enables the effort selector.
   final bool reasoning;
 
-  /// Aceita imagem na entrada (`input` contém `image`) — habilita anexos de
-  /// visão. `false` = modelo text-only (não enxerga imagem).
+  /// Whether `input` includes `image` support and enables vision attachments.
+  ///
+  /// `false` denotes a text-only model that cannot inspect images.
   final bool supportsImages;
 
-  /// Tamanho da janela de contexto em tokens (pode faltar).
+  /// Context-window size in tokens when reported by the provider.
   final int? contextWindow;
 
-  /// O que o modelo aceita de effort (`thinkingLevelMap` do RPC). Mapa de
-  /// nível canônico → string que o provider quer (ou `null` = nível **não**
-  /// disponível pra este modelo). Chaves ausentes ficam disponíveis por padrão.
+  /// Effort levels accepted by the model from the RPC `thinkingLevelMap`.
+  ///
+  /// Maps canonical levels to provider-specific strings. A `null` value marks a
+  /// level as unavailable, while an absent key remains available by default.
   final Map<String, String?> thinkingLevelMap;
 
-  /// Identidade lógica: provider + id (o que `set_model` precisa).
+  /// Use provider and id as the logical identity required by `set_model`.
   @override
   bool operator ==(Object other) =>
       other is PiModel && other.provider == provider && other.id == id;

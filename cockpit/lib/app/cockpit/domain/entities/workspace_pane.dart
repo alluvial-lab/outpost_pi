@@ -1,19 +1,22 @@
-// Modelo da árvore de splits do multiplexador (binária).
+// Binary split-tree model for the multiplexer.
 //
-// Um LeafPane é um container com abas (cada aba = um agente). Um SplitPane
-// divide o espaço entre dois nós, lado a lado (SplitDir.vertical) ou empilhados
-// (SplitDir.horizontal). Fechar uma pane faz o irmão expandir (ver removeLeaf).
-// Imutável: as operações devolvem uma árvore nova.
+// A LeafPane contains tabs, one per agent. A SplitPane divides space between two
+// nodes, either side by side (SplitDir.vertical) or stacked
+// (SplitDir.horizontal). Closing a pane expands its sibling; see removeLeaf.
+// Operations are immutable and return a new tree.
 
+/// Orient pane children within a split.
+///
+/// [vertical] places panes side by side; [horizontal] stacks them.
 enum SplitDir { vertical, horizontal }
 
+/// Provide stable identity for nodes in the immutable pane split tree.
 sealed class PaneNode {
   const PaneNode(this.id);
   final String id;
 }
 
-/// Folha: container de abas. [tabs] são ids de sessões de agente; [active] é a
-/// aba selecionada.
+/// Hold agent-session tabs at a leaf, with [active] selecting the visible tab.
 final class LeafPane extends PaneNode {
   const LeafPane({required String id, required this.tabs, required this.active})
     : super(id);
@@ -25,7 +28,7 @@ final class LeafPane extends PaneNode {
       LeafPane(id: id, tabs: tabs ?? this.tabs, active: active ?? this.active);
 }
 
-/// Split: divide [a] e [b] na proporção [frac] (0..1) na direção [dir].
+/// Divide [a] and [b] according to [frac] (0..1) along [dir].
 final class SplitPane extends PaneNode {
   const SplitPane({
     required String id,
@@ -49,9 +52,9 @@ final class SplitPane extends PaneNode {
   );
 }
 
-// ---- serialização (persistência do layout) ----------------------------------
+// ---- serialization (layout persistence) ------------------------------------
 
-/// Serializa a árvore pra um mapa JSON-friendly (só primitivos/listas/mapas).
+/// Serialize the tree to a JSON-compatible map of primitives, lists, and maps.
 Map<String, dynamic> paneNodeToJson(PaneNode node) {
   return switch (node) {
     LeafPane() => <String, dynamic>{
@@ -71,7 +74,7 @@ Map<String, dynamic> paneNodeToJson(PaneNode node) {
   };
 }
 
-/// Reconstrói a árvore a partir do mapa de [paneNodeToJson].
+/// Reconstruct a tree from a map produced by [paneNodeToJson].
 PaneNode paneNodeFromJson(Map<String, dynamic> json) {
   if (json['k'] == 'split') {
     return SplitPane(
@@ -89,8 +92,12 @@ PaneNode paneNodeFromJson(Map<String, dynamic> json) {
   );
 }
 
-// ---- helpers puros (espelham os do design) ----------------------------------
+// ---- pure helpers (mirror the design) ---------------------------------------
 
+/// Collect leaves in depth-first `a`-then-`b` display order.
+///
+/// When [acc] is supplied, appends to and returns that same accumulator; otherwise
+/// creates a new list.
 List<LeafPane> leaves(PaneNode node, [List<LeafPane>? acc]) {
   final out = acc ?? <LeafPane>[];
   switch (node) {
@@ -103,6 +110,7 @@ List<LeafPane> leaves(PaneNode node, [List<LeafPane>? acc]) {
   return out;
 }
 
+/// Find the first leaf with [id] in display order, or return `null` if absent.
 LeafPane? findLeaf(PaneNode node, String id) {
   for (final leaf in leaves(node)) {
     if (leaf.id == id) return leaf;
@@ -110,6 +118,10 @@ LeafPane? findLeaf(PaneNode node, String id) {
   return null;
 }
 
+/// Replace one split fraction through an immutable recursive tree update.
+///
+/// Preserves [frac] verbatim and leaves the tree structurally unchanged when
+/// [splitId] is absent.
 PaneNode setFrac(PaneNode node, String splitId, double frac) {
   return switch (node) {
     LeafPane() => node,
@@ -123,6 +135,10 @@ PaneNode setFrac(PaneNode node, String splitId, double frac) {
   };
 }
 
+/// Apply [update] to the leaf with [id] through an immutable tree replacement.
+///
+/// Leaves the tree structurally unchanged and never invokes [update] when the
+/// target leaf is absent.
 PaneNode updateLeaf(
   PaneNode node,
   String id,
@@ -137,10 +153,12 @@ PaneNode updateLeaf(
   };
 }
 
-/// Divide a folha [id] em [dir], colocando [newLeaf] ao lado dela. Por padrão o
-/// novo pane fica **depois** (direita/baixo); [before] = true o põe **antes**
-/// (esquerda/cima). [splitId] permite um id único (evita colisão ao dividir a
-/// mesma folha mais de uma vez); se omitido, deriva de `id`+`dir`.
+/// Split leaf [id] along [dir] and place [newLeaf] beside it.
+///
+/// By default, the new pane appears **after** the original (right or below);
+/// [before] places it **before** (left or above). [splitId] supplies a unique id
+/// to avoid collisions when splitting the same leaf repeatedly; when omitted,
+/// the id is derived from `id` and `dir`.
 PaneNode splitLeaf(
   PaneNode node,
   String id,
@@ -167,23 +185,24 @@ PaneNode splitLeaf(
   };
 }
 
-/// Reordena [tabId] dentro de [tabs] pro slot [index] (0..len), devolvendo a
-/// nova ordem. [index] é a posição-alvo na lista **antes** da remoção (semântica
-/// de "soltar no slot i"); o ajuste pós-remoção é feito aqui. Se [tabId] não está
-/// na lista, devolve a lista inalterada.
+/// Move [tabId] within [tabs] to slot [index] (0..length) and return a new list.
+///
+/// [index] denotes the target slot **before** removal, matching "drop into slot
+/// i" semantics; this function adjusts the destination after removal. When
+/// [tabId] is absent, the returned copy preserves the original order.
 List<String> reorderTabs(List<String> tabs, String tabId, int index) {
   final out = [...tabs];
   final from = out.indexOf(tabId);
   if (from < 0) return out;
   out.removeAt(from);
   var to = index;
-  if (to > from) to -= 1; // o item saiu antes do alvo → desloca uma posição
+  if (to > from) to -= 1; // Removal before the target shifts it by one slot.
   to = to.clamp(0, out.length);
   out.insert(to, tabId);
   return out;
 }
 
-/// Remove a folha [id]; se ela for filha de um split, o irmão toma o lugar.
+/// Remove leaf [id], promoting its sibling when it is a direct split child.
 PaneNode removeLeaf(PaneNode node, String id) {
   switch (node) {
     case LeafPane():
