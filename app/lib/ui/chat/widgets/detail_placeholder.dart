@@ -2,8 +2,7 @@ import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-/// Estado vazio do painel detail no modo tablet — mostrado enquanto
-/// nenhuma sessão foi selecionada (o app inicia assim, de propósito).
+/// Show the tablet detail panel's empty state until a session is selected.
 class DetailPlaceholder extends StatelessWidget {
   const DetailPlaceholder({super.key});
 

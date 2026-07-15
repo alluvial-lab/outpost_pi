@@ -6,12 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
-/// Aviso de atualização in-app (plano 44, passo 3). Renderiza nada quando não
-/// há versão nova a anunciar (iOS, sem update, dispensada, manifest
-/// indisponível) — o gate Android-only vive no [UpdateBannerViewModel.enabled].
+/// Render the in-app update banner (plan 44, step 3).
 ///
-/// Dispara o check silencioso no primeiro mount (= startup da Home). Tocar
-/// baixa o `OutpostPi.apk` direto; o X dispensa (persistido por versão).
+/// Nothing renders when no update is actionable—on iOS, without an update,
+/// after dismissal, or when the manifest is unavailable. The Android-only gate
+/// is [UpdateBannerViewModel.enabled]. The first Home mount silently checks for
+/// updates; tapping downloads `OutpostPi.apk`, while the close button persists
+/// a dismissal for that version.
 class UpdateBanner extends StatefulWidget {
   const UpdateBanner({super.key});
 
@@ -23,8 +24,8 @@ class _UpdateBannerState extends State<UpdateBanner> {
   @override
   void initState() {
     super.initState();
-    // `context.read` é seguro no initState (não assina). Best-effort: o check
-    // se auto-silencia em qualquer falha e é no-op fora do Android.
+    // `context.read` is safe in initState because it does not subscribe. The
+    // check is best-effort, silent on failure, and a no-op outside Android.
     context.read<UpdateBannerViewModel>().check();
   }
 
@@ -38,8 +39,9 @@ class _UpdateBannerState extends State<UpdateBanner> {
   }
 }
 
-/// Card discreto no topo da Home (abaixo do título, acima da lista). Tocar no
-/// corpo baixa; o X dispensa.
+/// Render the compact Home card below the title and above the list.
+///
+/// Tapping its body starts the download; the close button dismisses it.
 class _UpdateCard extends StatelessWidget {
   const _UpdateCard({required this.info});
 
