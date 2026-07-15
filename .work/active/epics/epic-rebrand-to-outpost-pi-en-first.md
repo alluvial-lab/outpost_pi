@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first
 kind: epic
-stage: review
+stage: implementing
 tags: [rebrand, docs, i18n, cockpit, app, pi-extension, relay, site]
 parent: null
 depends_on: [epic-rebrand-to-outpost-pi]
@@ -233,3 +233,11 @@ pnpm lint && pnpm build
 
 Plus a repo-wide grep confirming zero PT (accented Latin) in shipped product
 source, excluding `scripts/` and generated/vendored state.
+
+## Follow-up scope (2026-07-14)
+
+A post-epic scan found Portuguese still present in maintained CI/release
+workflows, dormant `rp-s3` product tooling, Claude scout definitions, and the
+identity package documentation. The epic is reopened for
+`story-en-first-residual-maintained-surfaces`; intentional multilingual codec
+fixtures and the existing `scripts/` exclusion remain out of scope.
