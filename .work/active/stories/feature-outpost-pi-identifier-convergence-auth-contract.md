@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-identifier-convergence-auth-contract
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, security, testing, pi-extension, app, relay, protocol]
 parent: feature-outpost-pi-identifier-convergence
 depends_on: []

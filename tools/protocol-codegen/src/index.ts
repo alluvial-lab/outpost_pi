@@ -67,6 +67,7 @@ export interface OutpostPiIr {
   schemaVersion: number;
   source: string;
   profile: string;
+  relayAuthDomainPrefix?: string;
   sharedTypes: OutpostPiIrSharedType[];
   families: OutpostPiIrFamily[];
   nestedRegistries: OutpostPiIrNestedRegistry[];
@@ -668,6 +669,23 @@ async function appPiServerSharedTypes(
   return { sharedTypes: shared, nestedRegistries };
 }
 
+async function relayAuthDomainPrefixForProtocol(
+  families: OutpostPiIrFamily[],
+  cache: DocumentCache,
+): Promise<string | undefined> {
+  const relayControl = families.find((family) => family.id === "relayControl");
+  if (!relayControl) return undefined;
+
+  const metadata = optionalObject((await readDocument(relayControl.schemaPath, cache))["x-outpost-pi"]);
+  const prefix = metadata?.authDomainPrefix;
+  if (typeof prefix !== "string" || prefix.length === 0) {
+    throw new ProtocolCodegenError(
+      "relayControl.x-outpost-pi.authDomainPrefix must be a non-empty string",
+    );
+  }
+  return prefix;
+}
+
 async function sharedTypesForProtocol(
   protocolRoot: string,
   cache: DocumentCache,
@@ -707,6 +725,7 @@ export async function buildOutpostPiIr(manifest: OutpostPiManifest, options: Bui
     schemaVersion: manifest.schemaVersion ?? 1,
     source: manifest.source ?? "json-schema-2020-12",
     profile,
+    relayAuthDomainPrefix: await relayAuthDomainPrefixForProtocol(families, cache),
     sharedTypes: shared.sharedTypes,
     families,
     nestedRegistries: shared.nestedRegistries,
@@ -833,10 +852,17 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     sections.push(sharedType.declaration);
     sections.push("");
   }
+  if (ir.relayAuthDomainPrefix !== undefined) {
+    sections.push(`export const RELAY_AUTH_DOMAIN_PREFIX = ${literal(ir.relayAuthDomainPrefix)};`);
+    sections.push("");
+  }
   sections.push("export const protocolManifest = {");
   sections.push(`  schemaVersion: ${ir.schemaVersion},`);
   sections.push(`  source: ${literal(ir.source)},`);
   sections.push(`  profile: ${literal(ir.profile)},`);
+  if (ir.relayAuthDomainPrefix !== undefined) {
+    sections.push(`  authDomainPrefix: RELAY_AUTH_DOMAIN_PREFIX,`);
+  }
   sections.push("  families: [");
   for (const family of ir.families) {
     sections.push(`    { id: ${literal(family.id)}, union: ${literal(family.unionName)}, transport: ${literal(family.transport)} },`);
