@@ -3,7 +3,7 @@ import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 const Color _barrier = Color(0x99000000);
 
-/// Widget do dialog contendo as instruções para ativar as notificações no macOS.
+/// Show instructions for enabling notifications on macOS.
 class MacosNotificationInstructionsDialog extends StatelessWidget {
   const MacosNotificationInstructionsDialog({super.key});
 
@@ -176,7 +176,7 @@ class MacosNotificationInstructionsDialog extends StatelessWidget {
   }
 }
 
-/// Widget privado para renderizar cada linha de instrução com o número do passo.
+/// Render one numbered instruction row.
 class _InstructionStep extends StatelessWidget {
   const _InstructionStep({required this.step, required this.content});
 

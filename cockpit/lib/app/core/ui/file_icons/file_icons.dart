@@ -1,4 +1,4 @@
-/// Barrel dos ícones de arquivo/pasta (material-icon-theme).
+/// Barrel for material-icon-theme file and folder icons.
 library;
 
 export 'file_icon.dart';

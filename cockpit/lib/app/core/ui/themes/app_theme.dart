@@ -4,17 +4,18 @@ import 'package:cockpit/app/core/ui/themes/app_typography.dart';
 import 'package:cockpit/app/core/ui/themes/syntax_colors.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Bundle dos tokens bespoke (cores/tipografia/syntax) calculado para uma
-/// `brightness` + `settings`. Instalado na árvore via `CockpitTheme` (a raiz o
-/// monta no `builder`, já com a brightness efetiva). Consumido por
-/// `context.colors`/`context.typo`/`context.syntax`.
+/// Bundle bespoke color, typography, and syntax tokens for effective settings.
+///
+/// The root computes these tokens for its `brightness` and `settings`, installs
+/// them through `CockpitTheme`, and exposes them through `context.colors`,
+/// `context.typo`, and `context.syntax`.
 typedef CockpitTokens = ({
   AppColors colors,
   AppTypography typo,
   SyntaxColors syntax,
 });
 
-/// Calcula os tokens bespoke para [brightness]/[settings].
+/// Build bespoke tokens for [brightness] and [settings].
 CockpitTokens buildTokens({
   required Brightness brightness,
   AppSettings settings = const AppSettings(),
@@ -31,11 +32,11 @@ CockpitTokens buildTokens({
   return (colors: colors, typo: typo, syntax: syntax);
 }
 
-/// Monta o `ThemeData` do shadcn (light ou dark por [brightness]). A paleta é
-/// derivada de [AppColors] — a **mesma** fonte das cores bespoke — então os
-/// componentes shadcn e os widgets custom ficam coerentes. As `settings` entram
-/// só onde o shadcn tem slot equivalente; o resto (fontes/syntax) viaja pelo
-/// `CockpitTheme`.
+/// Build shadcn `ThemeData` for [brightness].
+///
+/// Derives the palette from [AppColors], keeping shadcn components and custom
+/// widgets consistent. Applies [settings] where shadcn has an equivalent slot;
+/// fonts and syntax colors travel through `CockpitTheme`.
 ThemeData buildTheme({
   required Brightness brightness,
   AppSettings settings = const AppSettings(),
@@ -43,11 +44,10 @@ ThemeData buildTheme({
   final colors = brightness == Brightness.dark
       ? AppColors.dark
       : AppColors.light;
-  // Reaproveita a resolução de fontes do AppTypography (Hanken/JetBrains ou as
-  // custom das settings) e extrai só a FAMÍLIA para alimentar a Typography do
-  // shadcn — assim todo componente shadcn herda a tipografia do Cockpit (o
-  // ShadcnApp instala `typography.sans` no DefaultTextStyle raiz; os
-  // modificadores .h3/.base/etc. só ajustam tamanho/peso e herdam a família).
+  // Reuse AppTypography font resolution (Hanken/JetBrains or configured fonts)
+  // and pass only the family to shadcn Typography. Every shadcn component then
+  // inherits Cockpit typography: ShadcnApp installs `typography.sans` in the
+  // root DefaultTextStyle, while .h3/.base/etc. only adjust size and weight.
   final appTypo = AppTypography.build(
     uiFont: settings.interfaceFont,
     monoFont: settings.codeFont,
@@ -55,7 +55,7 @@ ThemeData buildTheme({
   );
   return ThemeData(
     colorScheme: _schemeFrom(colors, brightness),
-    // Raio coerente com o design (cantos suaves, não pílula).
+    // Match the design's softly rounded corners rather than pill shapes.
     radius: 0.5,
     typography: Typography.geist(
       sans: TextStyle(
@@ -70,10 +70,10 @@ ThemeData buildTheme({
   );
 }
 
-/// Mapeia os 19 tokens do Cockpit nos slots semânticos do `ColorScheme` do
-/// shadcn. Os tokens excedentes (panel2/panel3 extras, text3/text4, border2,
-/// online/edited/warn…) não têm slot aqui e seguem disponíveis via
-/// `context.colors`. `chart1..5` herdam da paleta base (zinc).
+/// Map Cockpit tokens into shadcn `ColorScheme` semantic slots.
+///
+/// Tokens without equivalent slots remain available through `context.colors`.
+/// `chart1..5` inherit from the base zinc palette.
 ColorScheme _schemeFrom(AppColors c, Brightness brightness) {
   final base = brightness == Brightness.dark
       ? ColorSchemes.darkZinc
@@ -86,22 +86,22 @@ ColorScheme _schemeFrom(AppColors c, Brightness brightness) {
     cardForeground: c.text,
     popover: c.panel,
     popoverForeground: c.text,
-    // "primary" = a marca (azul Outpost-Pi). Texto sobre o azul: branco nos dois.
+    // "primary" is the Outpost-Pi blue brand; its foreground is always white.
     primary: c.accent,
     primaryForeground: Colors.white,
-    // "secondary" = superfície neutra de botão secundário.
+    // "secondary" is the neutral surface for secondary buttons.
     secondary: c.panel3,
     secondaryForeground: c.text2,
     muted: c.panel2,
     mutedForeground: c.text2,
-    // No shadcn "accent" é a superfície de hover/seleção (neutra), NÃO a marca.
+    // In shadcn, "accent" is a neutral hover/selection surface, not the brand.
     accent: c.panel3,
     accentForeground: c.text,
     destructive: c.error,
     destructiveForeground: Colors.white,
     border: c.border,
     input: c.border,
-    // Anel de foco usa a marca.
+    // Use the brand color for focus rings.
     ring: c.accent,
     chart1: base.chart1,
     chart2: base.chart2,
