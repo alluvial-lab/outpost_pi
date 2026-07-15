@@ -581,7 +581,7 @@ describe("ACK protocol (plan/25 Wave 0)", () => {
 // ── plan/38: address encoder + name migration (pure) ─────────────────────────
 
 describe("plan/38 — address encoder + name migration (pure)", () => {
-  test("composeAddress renders [<pc>:]<cwd>@<nome>; cwd-less → name", () => {
+  test("composeAddress renders [<pc>:]<cwd>@<name>; cwd-less → name", () => {
     // The render matrix from the plan.
     expect(composeAddress({ cwd: "/Users/jacob/acme/backend", name: "backend" }))
       .toBe("/Users/jacob/acme/backend@backend");
