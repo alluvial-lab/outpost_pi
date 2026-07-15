@@ -1,12 +1,12 @@
-# Release Android do app Outpost-Pi (app/).
+# Android release for the Outpost-Pi app (app/).
 #
-# Trigger: tag `app-v<versão>` (a versão DEVE bater com app/pubspec.yaml).
-# Produz: GitHub Release com `OutpostPi.apk` assinado (keystore release) +
-# SHA256SUMS. Sem lojas — distribuição direta do APK.
+# Trigger: tag `app-v<version>` (the version MUST match app/pubspec.yaml).
+# Produces: a GitHub Release with a signed `OutpostPi.apk` (release keystore) +
+# SHA256SUMS. No stores — direct APK distribution.
 #
-# Guarda anti-debug: o Gradle do app cai silenciosamente pras debug keys se o
-# key.properties faltar, então o job compara o fingerprint do certificado do
-# APK com o do keystore e FALHA se divergirem.
+# Anti-debug safeguard: the app's Gradle build silently falls back to debug
+# keys if key.properties is absent, so the job compares the APK certificate
+# fingerprint with the keystore's and FAILS if they differ.
 
 name: app-release
 
@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag da release (ex: app-v1.1.0); precisa existir"
+        description: "Release tag (e.g. app-v1.1.0); must exist"
         required: true
 
 permissions:
@@ -32,7 +32,7 @@ env:
 
 jobs:
   android:
-    name: APK assinado
+    name: Signed APK
     runs-on: ubuntu-24.04
     defaults: { run: { working-directory: app } }
     env:
@@ -42,13 +42,13 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
 
-      - name: Valida tag ↔ pubspec
+      - name: Validate tag ↔ pubspec
         id: v
         run: |
           VERSION="${RELEASE_TAG#app-v}"
           PUBSPEC=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
           if [ "$VERSION" != "$PUBSPEC" ]; then
-            echo "::error::tag $RELEASE_TAG pede $VERSION mas o pubspec do app está em $PUBSPEC"
+            echo "::error::tag $RELEASE_TAG requires $VERSION but the app pubspec is $PUBSPEC"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -63,7 +63,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Restaura keystore e key.properties
+      - name: Restore keystore and key.properties
         env:
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -84,7 +84,7 @@ jobs:
           flutter pub get
           flutter build apk --release
 
-      - name: Verifica assinatura (anti-fallback de debug)
+      - name: Verify signature (anti-debug fallback)
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -99,11 +99,11 @@ jobs:
           echo "apk:      $APK_CERT"
           echo "keystore: $KS_CERT"
           if [ -z "$APK_CERT" ] || [ "$APK_CERT" != "$KS_CERT" ]; then
-            echo "::error::APK não está assinado com o keystore release (fallback de debug?)"
+            echo "::error::APK is not signed with the release keystore (debug fallback?)"
             exit 1
           fi
 
-      - name: Gera latest.json (manifest do app)
+      - name: Generate latest.json (app manifest)
         run: |
           VERSION="${{ steps.v.outputs.version }}"
           mkdir -p out
@@ -121,7 +121,7 @@ jobs:
             > out/latest.json
           cat out/latest.json
 
-      - name: Cria (ou atualiza) a GitHub Release
+      - name: Create (or update) GitHub Release
         run: |
           VERSION="${{ steps.v.outputs.version }}"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
@@ -129,10 +129,10 @@ jobs:
           else
             NOTES_FILE=$(mktemp)
             {
-              echo "APK Android assinado — instalação direta. Conferir integridade com o SHA256SUMS."
+              echo "Signed Android APK — direct installation. Verify integrity with SHA256SUMS."
               echo ""
               echo "---"
-              echo "**Publicação no site:** o site e o aviso in-app permanecem sem atualização ao vivo até que o operador configure um endpoint de manifesto."
+              echo "**Site publishing:** the site and in-app notice remain without live updates until the operator configures a manifest endpoint."
             } > "$NOTES_FILE"
             gh release create "$RELEASE_TAG" out/OutpostPi.apk out/SHA256SUMS out/latest.json \
               --title "Outpost-Pi (app) ${VERSION}" \
@@ -140,15 +140,15 @@ jobs:
               --latest=false
           fi
 
-      - name: Resumo
+      - name: Summary
         run: |
           {
-            echo "## Outpost-Pi app ${{ steps.v.outputs.version }} — APK publicado"
+            echo "## Outpost-Pi app ${{ steps.v.outputs.version }} — APK published"
             echo ""
             echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
             echo ""
-            echo "Asset: \`OutpostPi.apk\` (assinado com o keystore release, verificado no job)."
+            echo "Asset: \`OutpostPi.apk\` (signed with the release keystore, verified by the job)."
             echo ""
-            echo "**Atualizações do site/in-app:** permanecem desativadas até que o operador"
-            echo "configure explicitamente um endpoint de manifesto para esta release."
+            echo "**Site/in-app updates:** remain disabled until the operator"
+            echo "explicitly configures a manifest endpoint for this release."
           } >> "$GITHUB_STEP_SUMMARY"
