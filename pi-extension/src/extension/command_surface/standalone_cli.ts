@@ -162,7 +162,7 @@ export async function runStandaloneOutpostPiCli(
   } else if (subcmd === "restart-supervisor") {
     deps.restartSupervisor();
   } else {
-    console.log(remotePiCliHelpText());
+    console.log(outpostPiCliHelpText());
   }
 }
 
@@ -178,7 +178,7 @@ function consoleUiCtx(): UiCtx {
   };
 }
 
-function remotePiCliHelpText(): string {
+function outpostPiCliHelpText(): string {
   return [
     "Usage: outpost-pi <command>",
     "",
