@@ -1,7 +1,7 @@
 ---
 id: story-cockpit-signing-team-consistency
 kind: story
-stage: review
+stage: done
 tags: [cockpit, security, release]
 parent: epic-rebrand-external-surfaces
 depends_on: []
@@ -71,3 +71,7 @@ The first-pass OU extraction was defective: `awk -F'/'` split on `/` but `openss
 **Nits**: none
 
 **Notes**: The certificate OU is the correct Apple team authority; only its shell extraction is defective. Story bounced `review -> implementing`.
+
+## Verification closure (2026-07-15, third pass)
+
+The corrected `awk -F' *= *'` parser extracts `AB12CD34EF` from realistic OpenSSL multiline output and returns empty for missing or malformed OU lines. Synthetic branch checks accepted the matching team and rejected mismatching, missing, and malformed inputs. Workflow YAML parsing passed. The child checkpoint advanced directly to `done`.
