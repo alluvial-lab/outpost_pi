@@ -1,8 +1,10 @@
 import 'package:cockpit/app/cockpit/domain/entities/update_info.dart';
 
-/// Busca o manifest de release (`latest.json`). Contrato no domínio; impl
-/// (HTTP) em `data/`. **Best-effort**: qualquer falha (sem rede, 404, JSON
-/// inválido, schema errado) devolve `null` — nunca lança.
+/// Fetch the release manifest (`latest.json`).
+///
+/// This domain contract has an HTTP implementation in `data/`. It is
+/// **best-effort**: any failure, including no network, 404, invalid JSON, or an
+/// invalid schema, returns `null` and never throws.
 abstract class UpdateChecker {
   Future<UpdateInfo?> fetchLatest();
 }

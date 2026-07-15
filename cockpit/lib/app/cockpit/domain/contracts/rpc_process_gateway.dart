@@ -10,103 +10,115 @@ import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
 import 'package:cockpit/app/cockpit/domain/exceptions/rpc_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Contrato de baixo nível que esconde o `Process.start` do `pi --mode rpc`.
+/// Hide the low-level `Process.start` boundary for `pi --mode rpc`.
 ///
-/// Declarado no domínio, implementado em `data/rpc/`. O domínio só conhece
-/// **esta interface** — não sabe que existe `dart:io`, stdin/stdout ou JSON.
+/// Declared in the domain and implemented in `data/rpc/`, this interface keeps
+/// `dart:io`, stdin/stdout, and JSON outside the domain.
 ///
-/// MVP (plano 37): um único processo por gateway — multiplexação (N panes) é
-/// adiada. `events` é um stream broadcast que persiste pela vida do gateway
-/// (sobrevive a `spawn`/`kill` sucessivos).
+/// The plan 37 MVP owns one process per gateway and defers multiplexing across
+/// multiple panes. The broadcast [events] stream lives for the gateway's full
+/// lifetime and survives successive [spawn] and [kill] calls.
 abstract class RpcProcessGateway implements Service {
-  /// Stream tipado de eventos do stdout do agente. Broadcast: a `ui/` assina
-  /// e re-assina entre spawns sem perder o controller.
+  /// Emit typed events from the agent's stdout as a broadcast stream.
+  ///
+  /// The `ui/` may subscribe again between spawns without losing the controller.
   Stream<RpcEvent> get events;
 
-  /// Há um agente vivo nesta sessão?
+  /// Report whether this session currently has a live agent.
   bool get isRunning;
 
-  /// Pasta do agente atual (cwd do child), ou `null` se nenhum.
+  /// Return the current agent's child-process working directory, or `null`.
   String? get workingDirectory;
 
-  /// Sobe um `pi --mode rpc` puro em [workingDirectory]. Falha se já houver um
-  /// agente vivo (dedup é responsabilidade de quem chama, no MVP single-pane).
+  /// Start a plain `pi --mode rpc` process in [workingDirectory].
   ///
-  /// [environment] é **fundido** com o ambiente do processo pai — variáveis
-  /// ausentes aqui são herdadas normalmente. Use para injetar
-  /// `OUTPOST_PI_DIRECT_CONFIG` sem perder PATH/HOME/etc.
+  /// Returns a failure when an agent is already live. In the single-pane MVP,
+  /// callers own deduplication.
   ///
-  /// [sessionId] (opcional) é o ID da sessão a restaurar (basename do `.jsonl`
-  /// sem extensão). Quando presente, passa `--session <id>` ao pi para que ele
-  /// inicie já carregado na sessão — sem `switch_session` posterior.
+  /// [environment] is **merged** with the parent process environment, so absent
+  /// variables are inherited normally. Use it to inject
+  /// `OUTPOST_PI_DIRECT_CONFIG` without losing PATH, HOME, or other variables.
+  ///
+  /// [sessionId] optionally identifies the session to restore: the `.jsonl`
+  /// basename without its extension. When present, the process receives
+  /// `--session <id>` and starts with that session loaded, without a later
+  /// `switch_session` command.
   Future<Result<void, RpcError>> spawn({
     required String workingDirectory,
     Map<String, String>? environment,
     String? sessionId,
   });
 
-  /// Envia um prompt do usuário pelo stdin. Se [steerIfBusy], anexa
-  /// `streamingBehavior: "steer"` para enfileirar durante streaming. [images]
-  /// viram o campo `images` do comando (anexos de visão).
+  /// Send a user prompt over stdin.
+  ///
+  /// When [steerIfBusy] is `true`, attach `streamingBehavior: "steer"` to queue
+  /// it during streaming. [images] become the command's `images` field for
+  /// vision attachments.
   Future<Result<void, RpcError>> sendPrompt(
     String message, {
     bool steerIfBusy = false,
     List<PromptImage> images = const <PromptImage>[],
   });
 
-  /// Responde a um `extension_ui_request` interativo (select/confirm/input/
-  /// editor) — escreve `{type:"extension_ui_response", id, ...response}` no
-  /// stdin. [response] é `{value:…}` / `{confirmed:…}` / `{cancelled:true}`.
+  /// Respond to an interactive `extension_ui_request` for select, confirm,
+  /// input, or editor UI.
+  ///
+  /// Writes `{type:"extension_ui_response", id, ...response}` to stdin.
+  /// [response] is `{value:…}`, `{confirmed:…}`, or `{cancelled:true}`.
   Future<Result<void, RpcError>> respondUi(
     String id,
     Map<String, dynamic> response,
   );
 
-  /// Mata o child limpo: fecha o stdin (encerramento gracioso, code 0) e só
-  /// escala para SIGTERM/SIGKILL se ele não sair. Sem processo órfão.
+  /// Stop the child process cleanly without leaving an orphan.
+  ///
+  /// Close stdin first for a graceful code-0 exit, escalating to
+  /// SIGTERM/SIGKILL only if the process does not exit.
   Future<void> kill();
 
-  // --- Comandos request/response (correlacionados por `id`) ----------------
+  // --- Request/response commands correlated by `id` -------------------------
 
-  /// `get_available_models` — catálogo de modelos configurados.
+  /// Run `get_available_models` to return the configured model catalog.
   Future<Result<List<PiModel>, RpcError>> availableModels();
 
-  /// `get_commands` — slash commands disponíveis (vêm das extensions).
+  /// Run `get_commands` to return slash commands supplied by extensions.
   Future<Result<List<PiCommand>, RpcError>> commands();
 
-  /// `get_state` — recorte do estado atual (modelo + effort + streaming).
+  /// Run `get_state` to return the current model, effort, and streaming state.
   Future<Result<AgentSnapshot, RpcError>> state();
 
-  /// `set_model` — troca o modelo ativo; devolve o modelo aplicado.
+  /// Run `set_model` and return the model that was applied.
   Future<Result<PiModel, RpcError>> setModel(PiModel model);
 
-  /// `set_thinking_level` — ajusta o effort de raciocínio.
+  /// Run `set_thinking_level` to adjust reasoning effort.
   Future<Result<void, RpcError>> setThinkingLevel(ThinkingLevel level);
 
-  /// `abort` — interrompe o turno atual **sem** matar o processo.
+  /// Run `abort` to interrupt the current turn **without** killing the process.
   Future<Result<void, RpcError>> abort();
 
-  /// `new_session` — começa uma sessão nova (zera a conversa do agente).
+  /// Run `new_session` to start a fresh session with an empty conversation.
   Future<Result<void, RpcError>> newSession();
 
-  /// `compact` — compacta o contexto da sessão atual.
+  /// Run `compact` to compact the current session's context.
   Future<Result<void, RpcError>> compact();
 
-  /// `switch_session` — carrega uma sessão salva do pi (por caminho).
+  /// Run `switch_session` to load a saved Pi session by path.
   Future<Result<void, RpcError>> switchSession(String sessionPath);
 
-  /// `get_messages` — eventos de transcript da sessão atual, prontos para
-  /// replay pelo reducer compartilhado.
+  /// Run `get_messages` to return current-session transcript events ready for
+  /// replay through the shared reducer.
   Future<Result<List<CockpitTranscriptEvent>, RpcError>> getMessages({
     required String sessionId,
   });
 
-  /// `get_session_stats` — uso da janela de contexto (pode ser `null`).
+  /// Run `get_session_stats` to return context-window usage, which may be `null`.
   Future<Result<ContextUsage?, RpcError>> sessionStats();
 
-  /// Envia um comando do overlay Outpost-Pi diretamente no stdin, sem envolver
-  /// o LLM nem aparecer no transcript. O domínio passa um valor alinhado ao
-  /// schema `cockpit-control`; a serialização de transporte fica no adapter.
-  /// Respostas chegam como eventos customizados `outpost-pi:*` no stdout.
+  /// Send an Outpost-Pi overlay command directly over stdin.
+  ///
+  /// This bypasses the LLM and does not appear in the transcript. The domain
+  /// supplies a value aligned with the `cockpit-control` schema while the
+  /// adapter owns transport serialization. Responses arrive on stdout as
+  /// custom `outpost-pi:*` events.
   Future<Result<void, RpcError>> sendControl(PiControlCommand command);
 }

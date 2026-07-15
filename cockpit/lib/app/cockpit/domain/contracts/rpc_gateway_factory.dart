@@ -1,10 +1,10 @@
 import 'package:cockpit/app/cockpit/domain/contracts/rpc_process_gateway.dart';
 
-/// Fábrica de gateways RPC — **um por agente** (multiplexação da Wave 2).
+/// Create RPC gateways with **one gateway per agent** for Wave 2 multiplexing.
 ///
-/// Contrato no domínio; a impl (`data/`) constrói um `PiRpcProcess` novo a cada
-/// chamada. A `ui/` (sessão do agente) pede um gateway aqui em vez de instanciar
-/// `data/` direto, preservando o fluxo `ui → domain ← data`.
+/// The `data/` implementation constructs a new `PiRpcProcess` on every call.
+/// Agent sessions in `ui/` request gateways here instead of instantiating
+/// `data/` directly, preserving the `ui → domain ← data` dependency flow.
 abstract class RpcGatewayFactory {
   RpcProcessGateway create();
 }

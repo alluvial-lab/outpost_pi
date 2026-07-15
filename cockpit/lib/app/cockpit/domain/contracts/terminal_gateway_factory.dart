@@ -1,6 +1,8 @@
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_gateway.dart';
 
-/// Fábrica de PTYs — **um por terminal**. Contrato no domínio; impl em `data/`.
+/// Create PTYs with **one gateway per terminal**.
+///
+/// This domain contract is implemented in `data/`.
 abstract class TerminalGatewayFactory {
   TerminalGateway create();
 }
