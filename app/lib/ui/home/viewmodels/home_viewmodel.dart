@@ -12,7 +12,7 @@ import 'package:app/ui/home/states/home_state.dart';
 /// + rooms discovered on each peer (plan 17). A single tile per
 /// (peer, room).
 ///
-/// The WS connection is owned by [ConnectionManager] from app boot (plano
+/// The WS connection is owned by [ConnectionManager] from app boot (plan
 /// 12). Home only:
 ///   - reads the peer list from storage
 ///   - watches `presenceStream` + `roomsStream` to render dots / rooms

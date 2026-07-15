@@ -351,7 +351,7 @@ void main() {
       );
       final msg = decodeServer(line) as UserInput;
       expect(msg.id, isNotEmpty);
-      expect(msg.text, 'listar arquivos modificados');
+      expect(msg.text, 'list modified files');
     });
 
     test(

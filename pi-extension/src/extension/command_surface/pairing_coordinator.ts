@@ -407,7 +407,7 @@ export class PairingCoordinator {
     if (matches.length > 1) {
       const collisions = matches.map((p) => p.remote_epk.slice(0, 8)).join(", ");
       ctx.ui.notify(
-        `[outpost-pi] Ambiguous shortid — ${matches.length} matches: ${collisions}. Use mais chars.`,
+        `[outpost-pi] Ambiguous shortid — ${matches.length} matches: ${collisions}. Use more characters.`,
         "warning",
       );
       return;

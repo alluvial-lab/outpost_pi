@@ -101,7 +101,7 @@ class _BootState extends ChangeNotifier {
     _onboarded = prefs.onboardingCompleted;
     _ready = true;
     notifyListeners();
-    // Plano 13: `Preferences.selectedPeerEpk` is the authoritative
+    // Plan 13: `Preferences.selectedPeerEpk` is the authoritative
     // pointer to the peer the user wants connected. On a fresh install
     // it's null — default to `peers.first` so subsequent boot()s have a
     // stable target and the user lands on a deterministic chat.

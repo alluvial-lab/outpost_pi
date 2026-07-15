@@ -24,7 +24,7 @@ const APP_DESTINATION_ROOM = "main";
  * Outer envelope shape forwarded by the relay.
  * { "peer": "<dest peer_id>", "room": "<dest room_id>", "ct": "<base64 JSON inner>" }
  *
- * Post rollback (plano 06): `ct` is base64(JSON.stringify(inner)) — no cipher,
+ * Post rollback (plan 06): `ct` is base64(JSON.stringify(inner)) — no cipher,
  * no MAC. Relay continues opaque (never JSON.parses ct).
  *
  * `room` (relay-0.2.0 paired wire change): REQUIRED on every outbound frame —
