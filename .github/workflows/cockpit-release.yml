@@ -117,7 +117,7 @@ jobs:
           CERT_CN=$(security find-certificate -c "$SIGN_ID" -p "$KEYCHAIN" \
             | openssl x509 -noout -subject -nameopt multiline 2>/dev/null)
           CERT_OU=$(printf '%s\n' "$CERT_CN" \
-            | awk -F'/' '/organizationalUnitName/ {gsub(/^[[:space:]]+/,""); print $NF}')
+            | awk -F' *= *' '/organizationalUnitName/ {gsub(/[[:space:]]+$/,"",$2); print $2}')
           if [ -z "$CERT_OU" ]; then
             rm "$RUNNER_TEMP/cert.p12"
             echo "::error::Could not extract the team ID (OU) from '$SIGN_ID'; the certificate is not a valid Developer ID Application identity"
