@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data-persistence-update
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-data
 depends_on: []
@@ -49,3 +49,18 @@ contract.
       touched Dart files are formatted.
 - [ ] The integrated feature can pass `flutter analyze` and `flutter test` from
       `cockpit/`.
+
+## Implementation notes
+
+- Files changed: all seven scoped repository/update adapter files.
+- Tests added: none; production changes are documentation-only.
+- Discrepancies from design: none.
+- Gap-fill rationale: all seven public adapter classes already had class-level
+  dartdoc, so the pass translated and refined those adapter-specific contracts
+  without duplicating domain-port method documentation on overrides.
+- Verification: `dart format` reported all seven files unchanged; `flutter
+  analyze` passed with zero issues; the full `flutter test` suite passed with
+  241 tests; accented-Latin and Portuguese-token scans found no PT prose in the
+  scoped files; normal and word-diff review confirmed Dart edits are
+  comment-only.
+- Adjacent issues parked: none.

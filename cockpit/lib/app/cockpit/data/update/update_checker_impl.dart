@@ -5,9 +5,10 @@ import 'dart:io';
 import 'package:cockpit/app/cockpit/domain/contracts/update_checker.dart';
 import 'package:cockpit/app/cockpit/domain/entities/update_info.dart';
 
-/// Busca o `latest.json` via HTTP (dart:io, sem dep extra). Timeout curto;
-/// qualquer falha → `null` (nunca lança), pra que o aviso seja totalmente
-/// silencioso quando offline/indisponível.
+/// Fetch `latest.json` over `dart:io` HTTP without another dependency.
+///
+/// Uses a short timeout and returns `null` instead of throwing on any failure,
+/// keeping update notifications silent while offline or unavailable.
 class UpdateCheckerImpl implements UpdateChecker {
   const UpdateCheckerImpl({
     this.manifestUrl,
@@ -38,7 +39,7 @@ class UpdateCheckerImpl implements UpdateChecker {
           .timeout(timeout);
       return UpdateInfo.fromJson(jsonDecode(body));
     } catch (_) {
-      // sem rede / 404 / JSON inválido / schema errado → silencioso.
+      // Treat network, HTTP, JSON, and schema failures as a silent miss.
       return null;
     } finally {
       client.close(force: true);

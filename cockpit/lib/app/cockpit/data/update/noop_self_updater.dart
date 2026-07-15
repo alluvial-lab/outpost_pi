@@ -1,8 +1,10 @@
 import 'package:cockpit/app/cockpit/domain/contracts/self_updater.dart';
 
-/// Sem self-update nativo (Linux): [isSupported] é `false` e tudo é no-op. O
-/// `UpdateViewModel` detecta isso e cai no caminho de notify + download manual
-/// (`UpdateChecker` lendo `latest.json` + abrir a URL do artefato).
+/// Disable native self-updates on unsupported platforms such as Linux.
+///
+/// Reports [isSupported] as `false` and otherwise performs no work, allowing
+/// `UpdateViewModel` to notify through its manual-download path (`UpdateChecker`
+/// reads `latest.json` and opens the artifact URL).
 class NoopSelfUpdater implements SelfUpdater {
   const NoopSelfUpdater();
 
