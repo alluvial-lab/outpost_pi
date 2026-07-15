@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-identifier-convergence
 kind: feature
-stage: implementing
+stage: review
 tags: [rebrand, protocol, pi-extension, app, relay, docs, testing]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
