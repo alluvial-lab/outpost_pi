@@ -248,7 +248,7 @@ If the pane exists but only the `claude` process died, send the command directly
 
 ```bash
 sid=$(surface_of App)   # use the helper above
-cmux send     --surface "$sid" "cd ~/Projects/remote_pi/app && claude --resume"
+cmux send     --surface "$sid" "cd ~/Projects/outpost_pi/app && claude --resume"
 cmux send-key --surface "$sid" enter
 ```
 
