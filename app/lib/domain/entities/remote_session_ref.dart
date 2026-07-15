@@ -1,4 +1,4 @@
-/// Canonical remote Pi session identity used for transcript persistence.
+/// Canonical Outpost-Pi session identity used for transcript persistence.
 ///
 /// Room reachability remains keyed separately by `(peerEpk, roomId)` because a
 /// relay room can stay live while its Pi SDK session rotates. Durable chat

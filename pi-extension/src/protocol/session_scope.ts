@@ -1,4 +1,4 @@
-/** Identify the currently active remote Pi SDK session on session-scoped frames. */
+/** Identify the currently active Outpost-Pi SDK session on session-scoped frames. */
 export type RemoteSessionId = string;
 
 export const SESSION_SCOPED_SERVER_TYPES = [

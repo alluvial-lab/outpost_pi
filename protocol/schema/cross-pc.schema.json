@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kevoun.com/schemas/cross-pc.schema.json",
-  "title": "Remote Pi cross-PC forwarding frames",
+  "title": "Outpost-Pi cross-PC forwarding frames",
   "oneOf": [
     { "$ref": "#/$defs/piEnvelope" },
     { "$ref": "#/$defs/piEnvelopeIn" }

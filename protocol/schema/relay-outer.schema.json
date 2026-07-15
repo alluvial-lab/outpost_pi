@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kevoun.com/schemas/relay-outer.schema.json",
-  "title": "Remote Pi relay outer envelope",
+  "title": "Outpost-Pi relay outer envelope",
   "description": "Relay-owned app↔Pi outer envelope. The relay routes peer/room and keeps ct opaque.",
   "$defs": {
     "outerEnvelope": {

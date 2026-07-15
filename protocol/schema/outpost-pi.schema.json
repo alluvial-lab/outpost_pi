@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kevoun.com/schemas/remote-pi.schema.json",
+  "$id": "https://kevoun.com/schemas/outpost-pi.schema.json",
   "title": "Outpost-Pi wire protocol",
   "description": "Umbrella schema for Outpost-Pi protocol families. Step 1 establishes the neutral source and manifest; later stories fill each family schema without changing runtime behavior.",
   "$defs": {
