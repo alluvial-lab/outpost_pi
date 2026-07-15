@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-app
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, app]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # EN-first + dartdoc gap-fill — app
@@ -444,3 +444,17 @@ weakened for this prose-only change.
 - **Parallel workers could collide at the integration gate.** Ownership is
   disjoint by path; only the orchestrator runs the final whole-app gate after
   merging all three stories.
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD -- app/`).
+
+### Findings
+- None. Translation complete; changes are documentation-only except the five
+  explicitly scoped English `FormatException` messages. No signature,
+  control-flow, wire, or identifier drift.
+
+### Verdict
+Approve. Advanced `review → done`.
