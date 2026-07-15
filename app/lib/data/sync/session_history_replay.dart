@@ -34,6 +34,10 @@ List<TranscriptEvent> sessionHistoryToTranscriptEvents({
   ];
 }
 
+/// Map one authoritative history event into its canonical transcript event.
+///
+/// Requires a non-empty canonical [sessionId] and derives deterministic IDs so
+/// repeated history replays deduplicate against live delivery.
 TranscriptEvent sessionHistoryEventToTranscriptEvent(
   SessionHistoryEvent event, {
   required String sessionId,
@@ -59,30 +63,30 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
           : MessageImage(data: image.data, mime: image.mime),
     ),
     AgentMessageEvt(:final inReplyTo, :final text, :final messageId) =>
-        AssistantMessageCommitted(
-      // Identity source (a): when the replay event carries `message_id`
-      // (sync_<ts>:assistant:<blockIndex>), use it as the stable key so
-      // multi-block assistant messages (same in_reply_to+ts, different
-      // blocks) do NOT collide on the same eventId. Falls back to inReplyTo
-      // for legacy replay events without message_id. See
-      // story-mobile-assistant-message-duplicated-live-replay decision 1.
-      eventId: serverReplayEventId(
-        sessionId,
-        'agent_message',
-        messageId ?? inReplyTo,
-        event.ts,
+      AssistantMessageCommitted(
+        // Identity source (a): when the replay event carries `message_id`
+        // (sync_<ts>:assistant:<blockIndex>), use it as the stable key so
+        // multi-block assistant messages (same in_reply_to+ts, different
+        // blocks) do NOT collide on the same eventId. Falls back to inReplyTo
+        // for legacy replay events without message_id. See
+        // story-mobile-assistant-message-duplicated-live-replay decision 1.
+        eventId: serverReplayEventId(
+          sessionId,
+          'agent_message',
+          messageId ?? inReplyTo,
+          event.ts,
+        ),
+        sessionId: sessionId,
+        ts: ts,
+        messageId: serverReplayMessageId(
+          sessionId,
+          'agent_message',
+          messageId ?? inReplyTo,
+          event.ts,
+        ),
+        replyTo: inReplyTo,
+        text: text,
       ),
-      sessionId: sessionId,
-      ts: ts,
-      messageId: serverReplayMessageId(
-        sessionId,
-        'agent_message',
-        messageId ?? inReplyTo,
-        event.ts,
-      ),
-      replyTo: inReplyTo,
-      text: text,
-    ),
     ToolRequestEvt(:final toolCallId, :final tool, :final args) =>
       ToolRequested(
         eventId: serverReplayEventId(
@@ -126,6 +130,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
   };
 }
 
+/// Derive a stable event identity shared by live and history-replay paths.
 String serverReplayEventId(
   String sessionId,
   String historyType,
@@ -133,6 +138,7 @@ String serverReplayEventId(
   int ts,
 ) => 'server:$sessionId:$historyType:$stableKey:$ts';
 
+/// Derive the stable projected message identity for one replayed event.
 String serverReplayMessageId(
   String sessionId,
   String historyType,

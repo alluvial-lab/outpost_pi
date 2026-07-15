@@ -4,20 +4,21 @@ import 'dart:convert';
 //   outpostpi://pair?t=<base64url>&epk=<base64url>&n=<name>[&r=<url>][&rm=<roomId>]
 //
 // Fields:
-//   t   — token efêmero (16 bytes, base64url), single-use, valid 60s
-//   epk — Ed25519 pubkey do Pi (32 bytes) — único peer ID no relay
+//   t   — ephemeral token (16 bytes, base64url), single-use, valid for 60s
+//   epk — Pi Ed25519 public key (32 bytes), the relay's unique peer ID
 //   n   — session name (max 80 chars)
-//   r   — relay WebSocket URL (OPTIONAL since plan 14: app uses its own
+//   r   — relay WebSocket URL (OPTIONAL since plan 14: the app uses its own
 //         configured relay; legacy QR codes that carry `r` are tolerated
-//         and trigger a "trocar relay?" modal if the value mismatches
-//         the user's configured relay).
+//         and trigger a relay-change modal when the value mismatches the
+//         user's configured relay).
 //   rm  — Pi-side room id this QR was generated FROM (plan 17 fix —
-//         lets the app address the right cwd-session on the very first
-//         pair_request, otherwise the relay drops with
+//         lets the app address the right cwd-session on the first
+//         pair_request; without it the relay drops with
 //         "dest (peer, room) not found"). Optional; legacy QRs without
-//         `rm` make the app fall back to `'main'` during pair_request
-//         and rely on subscribe_rooms-based discovery afterwards.
+//         `rm` fall back to `'main'` during pair_request and rely on
+//         subscribe_rooms-based discovery afterwards.
 
+/// Hold the validated fields extracted from one Outpost-Pi pairing QR URI.
 class QrPairPayload {
   final String token;
   final String epk; // base64url Ed25519 — relay peer ID
@@ -25,6 +26,7 @@ class QrPairPayload {
   /// Use `pair_request_flow` to detect mismatch vs `Preferences.relayUrl`.
   final String? relayUrl;
   final String sessionName;
+
   /// Plan 17 fix: Pi-side room id (cwd-session). Used as the outer
   /// envelope's `room` on pair_request so the relay can route to the
   /// right Pi-WS. `null` for pre-plan-17 QRs — caller must fall back to
@@ -39,6 +41,10 @@ class QrPairPayload {
     this.roomId,
   });
 
+  /// Parse and validate an Outpost-Pi pairing URI at the untrusted QR boundary.
+  ///
+  /// Returns `null` for a wrong scheme, malformed encoding, or a token/public
+  /// key with an invalid byte length; callers must not open a transport first.
   static QrPairPayload? tryParse(String raw) {
     try {
       final uri = Uri.parse(raw);
@@ -68,6 +74,7 @@ class QrPairPayload {
     }
   }
 
+  /// Decode the validated Pi public key for cryptographic or transport setup.
   List<int> get epkBytes => base64Url.decode(_pad(epk));
 
   static String _pad(String s) {

@@ -45,6 +45,7 @@ class MeshSyncService extends ChangeNotifier {
 
   MeshSyncService(this._client, this._ownerBridge, this._storage);
 
+  /// Return the verified relay version used as the next conditional-fetch watermark.
   int get lastVersion => _lastVersion;
 
   // -------------------------------------------------------------------------
@@ -66,7 +67,11 @@ class MeshSyncService extends ChangeNotifier {
       since: _lastVersion > 0 ? _lastVersion : null,
     );
     switch (result) {
-      case MeshFetchOk(envelope: final env, version: final v, updatedAt: final u):
+      case MeshFetchOk(
+        envelope: final env,
+        version: final v,
+        updatedAt: final u,
+      ):
         final applied = await _applyVerified(env, expectedOwnerPk: pk);
         if (applied) {
           _lastVersion = v;
@@ -214,12 +219,14 @@ class MeshSyncService extends ChangeNotifier {
     // looks like "I'm not listed" → self-revoke. Normalise on the way
     // out so the blob is uniformly base64 standard, end-to-end.
     final members = peers
-        .map((p) => MeshMember(
-              remoteEpk: toStandardB64(p.remoteEpk),
-              relayUrl: p.relayUrl,
-              pairedAt: p.pairedAt,
-              nickname: p.nickname,
-            ))
+        .map(
+          (p) => MeshMember(
+            remoteEpk: toStandardB64(p.remoteEpk),
+            relayUrl: p.relayUrl,
+            pairedAt: p.pairedAt,
+            nickname: p.nickname,
+          ),
+        )
         .toList(growable: false);
     final nextVersion = _lastVersion + 1;
     final blob = MeshBlob(
@@ -274,6 +281,7 @@ class MeshSyncService extends ChangeNotifier {
     });
   }
 
+  /// Stop foreground polling and release its timer; safe to call repeatedly.
   void stopPolling() {
     if (_pollTimer != null) {
       _pollTimer?.cancel();

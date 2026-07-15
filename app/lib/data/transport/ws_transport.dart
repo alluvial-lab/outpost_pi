@@ -34,6 +34,7 @@ final List<int> relayAuthDomainPrefix = utf8.encode(
   'outpost-pi-relay-auth-v1\n',
 );
 
+/// Describe WebSocket transport failure at the relay boundary.
 class WsTransportError implements Exception {
   final String message;
   const WsTransportError(this.message);
@@ -42,6 +43,10 @@ class WsTransportError implements Exception {
   String toString() => 'WsTransportError: $message';
 }
 
+/// Carry peer envelopes and relay control frames over one authenticated WebSocket.
+///
+/// [connect] completes only after challenge-response authentication; [close]
+/// owns the socket subscription, peer queue, and control stream lifecycle.
 class WsTransport implements PeerTransport, IControlLink {
   final WebSocketChannel _ws;
   final DebugLog? _debugLog;
@@ -65,7 +70,8 @@ class WsTransport implements PeerTransport, IControlLink {
     required String relayUrl,
     required String peerPubkey, // base64 standard or url — destination peer
     required SimpleKeyPair ed25519Key, // this device's Ed25519 long-term key
-    required String deviceId, // per-install id — relay closes prior same-device conns on reconnect
+    required String
+    deviceId, // per-install id — relay closes prior same-device conns on reconnect
     String activeRoom = 'main',
     DebugLog? debugLog,
   }) async {
@@ -354,6 +360,7 @@ class WsTransport implements PeerTransport, IControlLink {
   }
 }
 
+/// Classify an authenticated relay frame before it reaches peer or control state.
 @visibleForTesting
 enum WsInboundFrameKind {
   enqueue,
@@ -363,6 +370,7 @@ enum WsInboundFrameKind {
   dropMalformed,
 }
 
+/// Carry the validated demultiplexing result without reparsing the raw frame.
 @visibleForTesting
 final class WsInboundFrameDecision {
   final WsInboundFrameKind kind;
@@ -382,6 +390,10 @@ final class WsInboundFrameDecision {
   });
 }
 
+/// Validate and route one post-auth relay frame for the active Pi room.
+///
+/// Invalid JSON, unknown control types, and missing or mismatched room envelopes
+/// return an explicit drop decision so untrusted data cannot reach consumers.
 @visibleForTesting
 WsInboundFrameDecision demuxPostAuthInboundFrame({
   required String raw,

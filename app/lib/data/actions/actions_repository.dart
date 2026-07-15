@@ -93,10 +93,21 @@ class ActionFailure implements Exception {
   String toString() => 'ActionFailure: $message';
 }
 
+/// Dispatch typed Pi actions over the active channel and surface their outcome.
+///
+/// Calls fail with [ActionFailure] for offline, timeout, disconnect, or Pi-side
+/// action errors. The repository owns request correlation until disposal.
 abstract class IActionsRepository extends Repository {
+  /// Request transcript compaction for the active canonical session.
   Future<void> compact();
+
+  /// Start a new Pi session after the active session acknowledges the command.
   Future<void> newSession();
+
+  /// Select a provider/model pair for the active room and invalidate its cache.
   Future<void> setModel(String provider, String modelId);
+
+  /// Set the active room's reasoning level after the Pi acknowledges it.
   Future<void> setThinking(ThinkingLevel level);
 
   /// Fetches the model catalogue. When [forceRefresh] is `false`
@@ -113,6 +124,10 @@ abstract class IActionsRepository extends Repository {
   Stream<ActiveRoomMeta> get activeRoomMetaStream;
 }
 
+/// Implement action request/reply correlation against [ConnectionManager].
+///
+/// Subscriptions follow connection state, pending requests fail on disconnect,
+/// and model catalogues remain scoped to the active peer and room.
 class ActionsRepository extends Repository implements IActionsRepository {
   final ConnectionManager _conn;
   final Duration _timeout;

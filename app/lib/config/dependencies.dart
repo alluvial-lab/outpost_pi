@@ -53,6 +53,10 @@ final _injector = CustomInjector();
 /// Direct injector access — only for bootstrap, tests, and deep-link handlers.
 CustomInjector get injector => _injector;
 
+/// Register the app's dependency graph before any route or service resolves it.
+///
+/// Opens prerequisites first, then binds lifecycle-owned services and route-local
+/// ViewModel factories; [disposeDependencies] owns teardown of managed bindings.
 Future<void> setupDependencies() async {
   // Infrastructure singletons
   _injector.addInstance<PairingStorage>(PairingStorage());
@@ -346,9 +350,15 @@ class _CancelledError implements Exception {
   const _CancelledError();
 }
 
+/// Dispose every injector-owned service and repository during app shutdown.
 void disposeDependencies() => _injector.dispose();
 
-/// Bridges auto_injector and provider: creates a `ChangeNotifierProvider` that
+/// Bridge auto_injector and Provider with a route-owned ViewModel instance.
+///
+/// Each mounted provider resolves a fresh ViewModel; Provider disposes it when
+/// that route leaves the tree. This prevents screen state from becoming global.
+///
+/// Creates a `ChangeNotifierProvider` that
 /// asks the injector for a fresh `ViewModel<T>` instance on each route mount.
 class ViewmodelProvider<T extends ViewModel> extends ChangeNotifierProvider<T> {
   ViewmodelProvider({super.key, super.child})

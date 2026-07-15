@@ -1,12 +1,13 @@
 import 'package:app/domain/contracts/dismissed_update_store.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Persiste a versão de atualização dispensada numa chave própria do
-/// [FlutterSecureStorage] — o mesmo store que o app já usa pra
-/// pairing/preferences. Só uma String, sem serialização.
+/// Persist the dismissed update version in its own [FlutterSecureStorage] key.
+///
+/// This shares the app's existing secure store with pairing and preferences but
+/// stores only the version string, without serialization.
 class SecureDismissedUpdateStore implements DismissedUpdateStore {
   SecureDismissedUpdateStore([FlutterSecureStorage? store])
-      : _store = store ?? const FlutterSecureStorage();
+    : _store = store ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _store;
 

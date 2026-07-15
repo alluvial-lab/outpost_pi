@@ -5,6 +5,10 @@ import 'package:app/data/local/records/transcript_event_record.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
 import 'package:app/domain/transcript/transcript_event.dart';
 
+/// Persist canonical transcript events in per-session Hive logs.
+///
+/// Appends are idempotent by event ID, reads are sequence-ordered, and every
+/// event is rejected if its session ID disagrees with the addressed log.
 final class HiveTranscriptEventStore implements TranscriptEventStore {
   const HiveTranscriptEventStore(this._boxes);
 
@@ -81,17 +85,23 @@ final class HiveTranscriptEventStore implements TranscriptEventStore {
   TranscriptEventRecord? _recordFromBoxValue(dynamic value) {
     if (value == null) return null;
     if (value is TranscriptEventRecord) return value;
-    if (value is Map<String, Object?>) return TranscriptEventRecord.fromJson(value);
+    if (value is Map<String, Object?>) {
+      return TranscriptEventRecord.fromJson(value);
+    }
     if (value is Map) {
       return TranscriptEventRecord.fromJson(
         value.map((key, value) {
           if (key is! String) {
-            throw const FormatException('Transcript event record keys must be strings');
+            throw const FormatException(
+              'Transcript event record keys must be strings',
+            );
           }
           return MapEntry(key, value as Object?);
         }),
       );
     }
-    throw FormatException('Unsupported transcript event record value: ${value.runtimeType}');
+    throw FormatException(
+      'Unsupported transcript event record value: ${value.runtimeType}',
+    );
   }
 }
