@@ -12,32 +12,22 @@ import 'package:cockpit/app/core/domain/contracts/system_permissions.dart';
 import 'package:cockpit/app/core/env.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
-/// Kernel transversal — módulo **sem `path`** → binds root-owned (vivem o app
-/// inteiro, nunca descartados em navegação).
+/// Build the cross-cutting kernel as a pathless, root-owned module.
 ///
-/// Mora aqui o que é compartilhado **e** o que precisa resolver outro bind do
-/// core pelo construtor: um bind de **feature** (módulo com `path`) não enxerga o
-/// core na resolução do `auto_injector` — só o `provide` page-scoped e o próprio
-/// core enxergam. Por isso:
+/// Shared bindings and bindings whose constructors resolve other core
+/// dependencies live here. Root ownership keeps them alive for the entire app
+/// rather than disposing them during navigation.
 ///
-/// - [PiSpawnConfig]: o cockpit injeta para spawnar `pi --mode rpc`; o settings,
-///   para o `pi` efêmero de pareamento/revoke.
-/// - [PairingGatewayFactory] / [RevokeGatewayFactory]: criam um `pi --mode rpc`
-///   efêmero por dialog e recebem o [PiSpawnConfig] no construtor. Root-owned
-///   aqui, resolvem o config (mesmo escopo) e ficam visíveis ao
-///   `ConnectivityViewModel` (page-scoped) da feature settings.
-///
-/// O `SettingsStore`/`SettingsController` são **app-scoped** (construídos no
-/// `main`, antes do 1º frame → sem flash de tema), então não entram no grafo aqui.
-///
-/// - [LspServerPool]: pool **global** de language servers (LSP), compartilhado
-///   por todos os workspaces. Root-owned aqui; o `CockpitViewModel` (page-scoped)
-///   o injeta para abrir documentos e rotear diagnostics ao editor.
-///
-/// - [EnvironmentProbe] / [SystemPermissions]: compartilhados pelas duas
-///   features — o cockpit usa no checklist do agente (`SetupViewModel`) e o
-///   settings para ocultar abas remotas até o ambiente estar instalado e para a
-///   aba de Notificações. [EnvironmentProbeImpl] resolve o [PiSpawnConfig] daqui.
+/// - [PiSpawnConfig] configures both Cockpit RPC sessions and ephemeral pairing
+///   or revoke processes.
+/// - [PairingGatewayFactory] and [RevokeGatewayFactory] resolve that config in
+///   the same root scope and remain visible to page-scoped settings state.
+/// - `SettingsStore` and `SettingsController` are built before the first frame
+///   in `main`, so they deliberately do not enter this graph.
+/// - [LspServerPool] is shared across workspaces for document and diagnostic
+///   routing.
+/// - [EnvironmentProbe] and [SystemPermissions] serve setup surfaces in both
+///   features; [EnvironmentProbeImpl] resolves [PiSpawnConfig] here.
 Module buildCoreModule({required PiSpawnConfig config}) => createModule(
   register: (c) => c
     ..addInstance<PiSpawnConfig>(config)

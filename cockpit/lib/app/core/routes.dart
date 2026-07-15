@@ -1,6 +1,7 @@
-/// Constantes de path de navegação. Cada feature declara sua rota no seu próprio
-/// módulo (`createModule(path: …)`); estes consts só evitam strings mágicas nos
-/// call-sites de navegação (`context.pushNamed(RoutePaths.settings)`).
+/// Centralize navigation paths without centralizing feature route ownership.
+///
+/// Each feature declares its route in its own `createModule`; these constants
+/// only prevent magic strings at navigation call sites.
 abstract final class RoutePaths {
   static const String shell = '/';
   static const String settings = '/settings';

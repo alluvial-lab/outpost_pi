@@ -1,6 +1,7 @@
-/// Erro tipado das operações de conectividade (relay/aparelhos), já traduzido do
-/// mundo de I/O em `data/` — shell-out do `outpost-pi` ou leitura do config — para
-/// algo que a UI entende. Nunca vaza `Exception` cru nem `ProcessResult`.
+/// Carry a relay or device-connectivity failure translated into domain.
+///
+/// The `data/` layer converts outpost-pi process and configuration failures so
+/// the UI never receives raw `Exception` or `ProcessResult` values.
 class RelayError {
   const RelayError(this.message, {this.cause, this.stackTrace});
 

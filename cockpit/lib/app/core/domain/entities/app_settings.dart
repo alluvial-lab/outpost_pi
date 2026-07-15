@@ -1,13 +1,12 @@
-/// Modo de tema escolhido pelo usuário (mapeado pro `ThemeMode` do Flutter na
-/// camada de UI; o domínio não importa Flutter).
+/// Record the user's theme-mode choice without importing Flutter into domain.
 enum AppThemeMode { system, light, dark }
 
-/// Família do tema de syntax highlight do viewer de código. Cada família tem
-/// variante light/dark, resolvida pelo brilho do app.
+/// Select the code viewer's syntax theme family across light and dark variants.
 enum SyntaxThemeId { one, dracula, github }
 
-/// Preferências do app, persistidas localmente (Hive). Imutável; mudanças via
-/// [copyWith]. Fontes vazias (`null`) = usar os defaults do design.
+/// Represent immutable application preferences persisted locally through Hive.
+///
+/// Apply changes through [copyWith]. A `null` font selects the design default.
 class AppSettings {
   const AppSettings({
     this.themeMode = AppThemeMode.system,
@@ -27,46 +26,46 @@ class AppSettings {
 
   final AppThemeMode themeMode;
 
-  /// Família da fonte da interface (`null`/vazio = Space Grotesk/Hanken).
+  /// Interface font family; `null` or empty selects Space Grotesk/Hanken.
   final String? interfaceFont;
 
-  /// Tamanho base da UI (px). Os estilos escalam proporcionalmente.
+  /// Base UI size in pixels; styles scale proportionally.
   final double interfaceSize;
 
-  /// Família da fonte de código (`null`/vazio = JetBrains Mono).
+  /// Code font family; `null` or empty selects JetBrains Mono.
   final String? codeFont;
 
-  /// Tamanho da fonte de código (px) — viewer/diff/terminal.
+  /// Code font size in pixels for the viewer, diff, and terminal.
   final double codeSize;
 
-  /// Família da fonte do **terminal** (`null`/vazio = mono padrão do xterm). O
-  /// tamanho segue [codeSize].
+  /// Terminal font family; `null` or empty selects xterm's default monospace.
+  ///
+  /// Its size follows [codeSize].
   final String? terminalFont;
 
   final SyntaxThemeId syntaxTheme;
 
-  /// Fixa a mensagem do usuário no topo do chat enquanto a resposta rola
-  /// (sticky header por turno).
+  /// Keep the user's message pinned above a scrolling response for each turn.
   final bool pinUserMessage;
 
-  /// ID do último app usado para "Abrir" (ex: `'cursor'`, `'vscode'`, `'finder'`).
+  /// Identifier of the app most recently used for Open.
   final String? lastOpenAppId;
 
-  /// Override do comando do language server (LSP) por `languageId` (ex.:
-  /// `'dart' → 'dart language-server'`). Vazio/ausente = usa o default do
-  /// catálogo. Editado na seção "Language" das Configurações.
+  /// LSP command override by `languageId`, such as
+  /// `'dart' → 'dart language-server'`.
+  ///
+  /// Empty or absent entries use the catalog default configured under Language.
   final Map<String, String> lspCommands;
 
-  /// Comando de formatador **externo** por `languageId`, com placeholder
-  /// `%FILE%` (ex.: `'typescript' → 'prettier --write %FILE%'`). Quando
-  /// presente, tem precedência sobre o formatting do LSP. Vazio = usa o LSP.
+  /// External formatter command by `languageId`, with a `%FILE%` placeholder.
+  ///
+  /// An entry takes precedence over LSP formatting; an empty map uses the LSP.
   final Map<String, String> lspFormatters;
 
-  /// Formatar automaticamente ao salvar (Cmd+S).
+  /// Format automatically when saving with Cmd+S.
   final bool formatOnSave;
 
-  /// Disparar notificações do SO quando um agente termina um turno com a janela
-  /// fora de foco. Editado na aba "Notifications" das Configurações.
+  /// Send an OS notification when an agent finishes while the window is unfocused.
   final bool notificationsEnabled;
 
   AppSettings copyWith({

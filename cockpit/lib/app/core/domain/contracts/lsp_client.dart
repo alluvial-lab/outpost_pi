@@ -2,9 +2,10 @@ import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 import 'package:cockpit/app/core/domain/exceptions/lsp_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Como ligar um language server: o comando (binário + args) e o `languageId`
-/// LSP que o servidor atende. A tabela `lsp_launchers.dart` (Wave 2) produz uma
-/// destas por linguagem; na Wave 0 é construída na mão para o Dart.
+/// Describe how to launch a language server and identify its LSP language.
+///
+/// `lsp_launchers.dart` produces one specification per language; callers can
+/// also construct a specification directly for a custom server.
 class LspServerSpec {
   const LspServerSpec({
     required this.languageId,
@@ -12,37 +13,37 @@ class LspServerSpec {
     this.args = const <String>[],
   });
 
-  /// `languageId` do LSP (ex.: `dart`, `typescript`, `php`). Vai no `didOpen`.
+  /// LSP language identifier sent in `didOpen`, such as `dart` or `typescript`.
   final String languageId;
 
-  /// Caminho/nome do binário do servidor (resolvido no PATH antes de spawnar).
+  /// Server binary path or name, resolved on `PATH` before spawning.
   final String executable;
 
-  /// Argumentos fixos (ex.: `language-server`, `--stdio`).
+  /// Fixed server arguments, such as `language-server` or `--stdio`.
   final List<String> args;
 }
 
-/// Cliente de **um** language server (um processo, uma raiz de projeto). Fala
-/// JSON-RPC 2.0 com framing `Content-Length` por stdin/stdout. O pool
-/// (`LspServerPool`) é quem cria/reusa/descarta instâncias por
-/// `(linguagem, raiz)` — este contrato é a peça de baixo nível.
+/// Control one language-server process for one project root.
+///
+/// Communicates over stdin/stdout using JSON-RPC 2.0 with `Content-Length`
+/// framing. `LspServerPool` creates, reuses, and disposes clients by language
+/// and project root; this contract defines the lower-level process boundary.
 abstract class LspClient {
-  /// Diagnostics publicados pelo servidor (`textDocument/publishDiagnostics`),
-  /// um batch por documento a cada publicação. Broadcast.
+  /// Broadcast diagnostics published by the server, one batch per document.
   Stream<LspDiagnosticsBatch> get diagnostics;
 
   bool get isRunning;
 
-  /// Raiz absoluta do projeto que este servidor atende.
+  /// Absolute project root served by this process.
   String get rootPath;
 
-  /// Spawna o processo e faz o handshake (`initialize` → `initialized`).
+  /// Spawn the process and perform the `initialize` → `initialized` handshake.
   Future<Result<void, LspError>> start();
 
-  /// `textDocument/didOpen`. [path] é absoluto; vira `file://` URI internamente.
+  /// Send `textDocument/didOpen`, converting absolute [path] to a `file://` URI.
   Future<void> didOpen({required String path, required String text});
 
-  /// `textDocument/didChange` (full sync). [version] cresce a cada edição.
+  /// Send a full-sync `textDocument/didChange` with a monotonically increasing [version].
   Future<void> didChange({
     required String path,
     required String text,
@@ -52,23 +53,28 @@ abstract class LspClient {
   /// `textDocument/didClose`.
   Future<void> didClose({required String path});
 
-  /// Request JSON-RPC genérico (ex.: `textDocument/formatting` na Wave 3).
-  /// Lança/retorna falha em timeout ou erro do servidor.
+  /// Send a generic JSON-RPC request such as `textDocument/formatting`.
+  ///
+  /// Returns a failure when the request times out or the server reports an error.
   Future<Result<Object?, LspError>> request(
     String method,
     Map<String, dynamic> params,
   );
 
-  /// Encerra graciosamente (`shutdown`/`exit` → close stdin → SIGTERM → SIGKILL).
+  /// Shut down gracefully, escalating from LSP exit to process termination.
   Future<void> kill();
 
-  /// Rede de segurança síncrona (shutdown do app): mata o processo sem órfão.
+  /// Synchronously stop the process during app shutdown to prevent an orphan.
   void dispose();
 }
 
-/// Fábrica de [LspClient] — interface nomeada (não `Function()`) para seguir a
-/// regra de injeção `.new` do projeto (o parser do auto_injector quebra em
-/// `X Function()`). O pool injeta esta factory e cria um cliente por raiz.
+/// Create [LspClient] instances through a named, injectable factory.
+///
+/// The named contract supports the project's `.new` injection rule, which
+/// cannot reliably parse `X Function()` dependencies.
 abstract class LspClientFactory {
+  /// Create a fresh client for one server specification and project root.
+  ///
+  /// The caller owns the returned client's start, kill, and dispose lifecycle.
   LspClient create({required LspServerSpec spec, required String rootPath});
 }

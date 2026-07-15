@@ -1,10 +1,10 @@
-/// Entidades do LSP usadas pela UI e pelo gateway — desacopladas do wire
-/// JSON-RPC. Posições seguem a convenção do LSP: **base 0**, e `character` é
-/// contado em **code units UTF-16** (que é a mesma unidade da `String` Dart e
-/// dos offsets do Flutter — ver `CodeEditingController.offsetFor`).
+/// Define LSP entities shared by the UI and gateway, independent of JSON-RPC.
+///
+/// Positions are zero-based. `character` counts UTF-16 code units, matching
+/// Dart strings and Flutter offsets; see `CodeEditingController.offsetFor`.
 library;
 
-/// Posição num documento. `line` e `character` são base 0 (LSP).
+/// Represent a zero-based LSP position within a document.
 class LspPosition {
   const LspPosition(this.line, this.character);
 
@@ -19,7 +19,7 @@ class LspPosition {
   Map<String, dynamic> toJson() => {'line': line, 'character': character};
 }
 
-/// Intervalo `[start, end)` num documento.
+/// Represent a half-open `[start, end)` document range.
 class LspRange {
   const LspRange(this.start, this.end);
 
@@ -37,15 +37,16 @@ class LspRange {
   };
 }
 
-/// Severidade do diagnostic (LSP DiagnosticSeverity, base 1).
+/// Represent the one-based LSP `DiagnosticSeverity` values.
 enum LspSeverity {
   error,
   warning,
   info,
   hint;
 
-  /// Mapeia o inteiro do wire (1=error … 4=hint). Default `error` (defensivo:
-  /// um diagnostic sem severity é tratado como o mais grave).
+  /// Map the wire integer from 1 (error) through 4 (hint).
+  ///
+  /// Missing or invalid severity defaults defensively to [error].
   static LspSeverity fromWire(Object? value) {
     return switch ((value as num?)?.toInt()) {
       2 => LspSeverity.warning,
@@ -56,7 +57,7 @@ enum LspSeverity {
   }
 }
 
-/// Um diagnostic publicado pelo servidor (`textDocument/publishDiagnostics`).
+/// Represent one diagnostic from `textDocument/publishDiagnostics`.
 class LspDiagnostic {
   const LspDiagnostic({
     required this.range,
@@ -70,10 +71,10 @@ class LspDiagnostic {
   final LspSeverity severity;
   final String message;
 
-  /// Origem (ex.: `dart`, `eslint`). Mostrado junto da mensagem quando presente.
+  /// Optional source, such as `dart` or `eslint`, shown beside the message.
   final String? source;
 
-  /// Código do diagnostic (ex.: `unused_import`). Pode ser String ou número.
+  /// Optional diagnostic code normalized from either a string or number.
   final String? code;
 
   factory LspDiagnostic.fromJson(Map<String, dynamic> json) => LspDiagnostic(
@@ -85,11 +86,11 @@ class LspDiagnostic {
   );
 }
 
-/// Conjunto de diagnostics de um documento (`uri`) numa publicação.
+/// Group one publication's diagnostics for a document URI.
 class LspDiagnosticsBatch {
   const LspDiagnosticsBatch({required this.uri, required this.diagnostics});
 
-  /// URI do documento (`file:///...`).
+  /// Document URI, such as `file:///...`.
   final String uri;
   final List<LspDiagnostic> diagnostics;
 }

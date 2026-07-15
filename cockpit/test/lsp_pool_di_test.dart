@@ -5,21 +5,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Garante que o `LspServerPool` (e a `LspClientFactory` que ele injeta) resolvem
-/// pelo grafo de DI a partir de uma feature — o parser do auto_injector não pula
-/// parâmetro opcional com default, então o `ProjectRootFinder` NÃO pode estar no
-/// construtor do pool (regressão que estourava no build da rota).
+/// Verify that `LspServerPool` and its `LspClientFactory` resolve through DI
+/// from a feature. The auto_injector parser does not skip optional parameters
+/// with defaults, so `ProjectRootFinder` cannot be a pool constructor parameter;
+/// that regression previously failed while building the route.
 void main() {
-  testWidgets('LspServerPool resolve via core upward', (tester) async {
-    final core = buildCoreModule(
-      config: const PiSpawnConfig(executable: 'pi'),
-    );
+  testWidgets('LspServerPool resolves upward through core', (tester) async {
+    final core = buildCoreModule(config: const PiSpawnConfig(executable: 'pi'));
     final feature = createModule(
       path: '/',
       register: (c) => c.route(
         '/',
-        child: (ctx, s) =>
-            Text('lsp:${inject<LspServerPool>().runtimeType}'),
+        child: (ctx, s) => Text('lsp:${inject<LspServerPool>().runtimeType}'),
       ),
     );
     final app = createModule(
