@@ -4,12 +4,14 @@ import 'package:cockpit/app/cockpit/domain/contracts/git_status_reader.dart';
 import 'package:cockpit/app/cockpit/domain/entities/git_file_status.dart';
 import 'package:cockpit/app/cockpit/domain/entities/git_info.dart';
 
-/// Lê o estado git rodando o binário `git`. Como o app macOS **não herda o PATH
-/// do shell**, resolvemos o caminho do `git` por candidatos conhecidos (cacheado).
+/// Read repository status by running a resolved `git` executable.
+///
+/// Because a macOS app does not inherit the shell PATH, probes known executable
+/// locations once and caches the result.
 class GitStatusReaderImpl implements GitStatusReader {
   GitStatusReaderImpl();
 
-  String? _git; // caminho do binário, resolvido uma vez
+  String? _git; // Executable path, resolved once.
 
   static const List<String> _candidates = <String>[
     '/usr/bin/git',
@@ -23,7 +25,7 @@ class GitStatusReaderImpl implements GitStatusReader {
     for (final candidate in _candidates) {
       if (await File(candidate).exists()) return _git = candidate;
     }
-    return _git = 'git'; // último recurso: PATH
+    return _git = 'git'; // Last resort: PATH.
   }
 
   @override
@@ -31,7 +33,7 @@ class GitStatusReaderImpl implements GitStatusReader {
     try {
       final git = await _resolveGit();
 
-      // Branch atual — também serve de teste "é repo git?" (exit != 0 → não é).
+      // The current-branch lookup also determines whether the path is a Git repo.
       final branchRes = await Process.run(git, [
         '-C',
         path,
@@ -43,7 +45,7 @@ class GitStatusReaderImpl implements GitStatusReader {
       var branch = (branchRes.stdout as String).trim();
       if (branch.isEmpty) return null;
       if (branch == 'HEAD') {
-        // detached HEAD → mostra o short SHA no lugar do nome do branch.
+        // Show the short SHA instead of a branch name for detached HEAD.
         final shaRes = await Process.run(git, [
           '-C',
           path,
@@ -56,10 +58,9 @@ class GitStatusReaderImpl implements GitStatusReader {
             : 'HEAD';
       }
 
-      // Status por arquivo (`-z` = entradas separadas por NUL, paths crus sem
-      // aspas/escape). `--ignored` adiciona entradas `!!` (pastas ignoradas
-      // colapsadas — não recursa dentro, então é barato). Mapa path→status +
-      // set de raízes ignoradas; renames consomem o path antigo.
+      // Per-file status uses `-z` for NUL-separated entries and unquoted,
+      // unescaped paths. `--ignored` adds collapsed `!!` directory entries
+      // without recursively scanning them. Renames consume the old path token.
       final statusRes = await Process.run(git, [
         '-C',
         path,
@@ -76,9 +77,9 @@ class GitStatusReaderImpl implements GitStatusReader {
               const <String>{},
             );
 
-      // Ahead/behind vs upstream (sem fetch — reflete o último estado conhecido).
-      // `--count A...B` com `@{upstream}...HEAD` devolve "<behind>\t<ahead>";
-      // exit != 0 quando não há upstream configurado → fica 0/0.
+      // Compare with the upstream without fetching, so values reflect the last
+      // known refs. `--count A...B` with `@{upstream}...HEAD` returns
+      // "<behind>\t<ahead>"; no configured upstream leaves both values at zero.
       var ahead = 0;
       var behind = 0;
       final abRes = await Process.run(git, [
@@ -106,18 +107,17 @@ class GitStatusReaderImpl implements GitStatusReader {
         untrackedDirs: untrackedDirs,
       );
     } catch (_) {
-      return null; // git ausente / pasta inacessível
+      return null; // Git is unavailable or the directory cannot be accessed.
     }
   }
 
-  /// Parseia o output de `git status --porcelain=v1 -z`. Cada entrada é
-  /// `XY <path>` terminada por NUL; renames/copies (`R`/`C` no index) têm o
-  /// path de origem como uma entrada NUL extra, que ignoramos. Devolve:
-  /// (mapa path→status, raízes ignoradas, raízes de pasta untracked colapsada).
+  /// Parse `git status --porcelain=v1 -z` into status and collapsed-root sets.
   ///
-  /// `git` colapsa pastas totalmente novas/ignoradas numa única entrada com
-  /// barra final (`?? dir/`, `!! dir/`); guardamos a raiz pra colorir todos os
-  /// descendentes (que não são enumerados).
+  /// Each entry is NUL-terminated `XY <path>`. Index renames and copies (`R` or
+  /// `C`) include an extra old-path token, which is skipped. Git collapses
+  /// wholly new or ignored directories into one trailing-slash entry (`?? dir/`
+  /// or `!! dir/`), so their roots are retained to classify descendants that
+  /// Git does not enumerate.
   static (Map<String, GitFileStatus>, Set<String>, Set<String>)
   _parsePorcelainZ(String raw) {
     final out = <String, GitFileStatus>{};
@@ -126,23 +126,23 @@ class GitStatusReaderImpl implements GitStatusReader {
     final tokens = raw.split('\u0000');
     for (var i = 0; i < tokens.length; i++) {
       final entry = tokens[i];
-      if (entry.length < 4) continue; // "XY p" mínimo; '' final do split
+      if (entry.length < 4) continue; // Skip the final empty token.
       final x = entry[0];
       final y = entry[1];
-      var pathPart = entry.substring(3); // pula "XY "
-      // Rename/copy no index → o próximo token (NUL) é o path de origem; pula.
+      var pathPart = entry.substring(3); // Skip "XY ".
+      // An index rename/copy uses the next NUL token for the old path; skip it.
       if (x == 'R' || x == 'C') i++;
-      final isDir = pathPart.endsWith('/'); // pasta colapsada (?? ou !!)
+      final isDir = pathPart.endsWith('/'); // Collapsed `??` or `!!` directory.
       if (isDir) pathPart = pathPart.substring(0, pathPart.length - 1);
       if (pathPart.isEmpty) continue;
       if (x == '!' && y == '!') {
-        ignored.add(pathPart); // raiz ignorada (cobre descendentes)
+        ignored.add(pathPart); // Ignored root covers descendants.
         continue;
       }
       if (x == '?' && y == '?' && isDir) {
         untrackedDirs.add(
           pathPart,
-        ); // pasta nova colapsada → cobre descendentes
+        ); // Collapsed new directory covers descendants.
       }
       final status = _classify(x, y);
       if (status != null) out[pathPart] = status;
@@ -150,29 +150,30 @@ class GitStatusReaderImpl implements GitStatusReader {
     return (out, ignored, untrackedDirs);
   }
 
-  /// Mapeia os dois chars de status do porcelain pro nosso enum. A mudança no
-  /// working tree (`Y`) tem prioridade sobre o index (`X`) na cor exibida,
-  /// exceto conflito/deleção. Retorna `null` para `!!` (ignored) e estados que
-  /// não nos interessam colorir.
+  /// Map porcelain status characters to the display classification.
+  ///
+  /// Working-tree changes (`Y`) take display precedence over index changes
+  /// (`X`), except for conflicts and deletions. Returns `null` for `!!` and
+  /// states that do not need coloring.
   static GitFileStatus? _classify(String x, String y) {
     // Untracked.
     if (x == '?' && y == '?') return GitFileStatus.untracked;
-    // Ignored (só aparece com --ignored; defensivo).
+    // Ignored; present only with --ignored, checked defensively.
     if (x == '!' && y == '!') return null;
-    // Conflito: algum lado 'U', ou DD/AA (ambos add/delete).
+    // Conflict: either side is 'U', or both sides added/deleted.
     if (x == 'U' ||
         y == 'U' ||
         (x == 'D' && y == 'D') ||
         (x == 'A' && y == 'A')) {
       return GitFileStatus.conflict;
     }
-    // Deleção (index ou working tree).
+    // Deleted in either the index or working tree.
     if (x == 'D' || y == 'D') return GitFileStatus.deleted;
-    // Mudança no working tree (não staged) → modificado.
+    // An unstaged working-tree change is modified.
     if (y == 'M' || y == 'T' || y == 'R' || y == 'C') {
       return GitFileStatus.modified;
     }
-    // Mudança só no index → staged (inclui add 'A').
+    // An index-only change is staged, including an add (`A`).
     if (x == 'M' || x == 'T' || x == 'R' || x == 'C' || x == 'A') {
       return GitFileStatus.staged;
     }

@@ -2,16 +2,17 @@ import 'dart:io';
 
 import 'package:cockpit/app/cockpit/domain/contracts/file_searcher.dart';
 
-/// Indexa os arquivos de uma pasta (walk recursivo, pulando pastas pesadas) e
-/// filtra por relevância. O índice por raiz é **cacheado** com TTL curto pra não
-/// re-andar o disco a cada tecla.
+/// Index folder files with a bounded recursive walk and rank matching paths.
+///
+/// Skips hidden and expensive directories, and caches each root briefly to
+/// avoid walking the disk again for every keystroke.
 class FileSearcherImpl implements FileSearcher {
   FileSearcherImpl();
 
   static const int _maxFiles = 6000;
   static const Duration _ttl = Duration(seconds: 15);
 
-  /// Pastas ruidosas/pesadas que não entram no índice (além de qualquer `.dir`).
+  /// Noisy or expensive directories excluded in addition to hidden `.dir`s.
   static const Set<String> _ignored = <String>{
     'node_modules',
     'build',
@@ -48,11 +49,11 @@ class FileSearcherImpl implements FileSearcher {
       final base = lower.split('/').last;
       final int score;
       if (base.startsWith(q)) {
-        score = 0; // nome do arquivo começa com a query
+        score = 0; // Filename starts with the query.
       } else if (base.contains(q)) {
-        score = 1; // nome do arquivo contém a query
+        score = 1; // Filename contains the query.
       } else if (lower.contains(q)) {
-        score = 2; // o caminho contém a query
+        score = 2; // Full path contains the query.
       } else {
         continue;
       }
@@ -60,7 +61,7 @@ class FileSearcherImpl implements FileSearcher {
     }
     ranked.sort((a, b) {
       if (a.score != b.score) return a.score - b.score;
-      return a.path.length - b.path.length; // empate → caminho mais curto
+      return a.path.length - b.path.length; // Prefer shorter paths on a tie.
     });
     return ranked.take(limit).map((r) => r.path).toList();
   }
@@ -87,7 +88,7 @@ class FileSearcherImpl implements FileSearcher {
       try {
         entries = await dir.list(followLinks: false).toList();
       } catch (_) {
-        continue; // pasta sem permissão etc.
+        continue; // Skip directories that cannot be read.
       }
       for (final entity in entries) {
         final name = entity.path.split('/').last;
