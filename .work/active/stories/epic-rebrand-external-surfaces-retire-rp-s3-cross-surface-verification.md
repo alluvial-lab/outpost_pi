@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-external-surfaces-retire-rp-s3-cross-surface-verification
 kind: story
-stage: review
+stage: done
 tags: [rebrand, app, cockpit, site, rp-s3]
 parent: epic-rebrand-external-surfaces-retire-rp-s3
 depends_on: [epic-rebrand-external-surfaces-retire-rp-s3-runtime-update-noop, epic-rebrand-external-surfaces-retire-rp-s3-site-manifest-fallback, epic-rebrand-external-surfaces-retire-rp-s3-dormant-server-docs]
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Verify rp-s3 retirement across every owned surface

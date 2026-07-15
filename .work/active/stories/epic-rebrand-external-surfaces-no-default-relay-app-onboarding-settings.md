@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-external-surfaces-no-default-relay-app-onboarding-settings
 kind: story
-stage: review
+stage: done
 tags: [rebrand, app]
 parent: epic-rebrand-external-surfaces-no-default-relay
 depends_on: [epic-rebrand-external-surfaces-no-default-relay-app-resolution-handling]
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # Require a self-hosted relay in onboarding and settings
