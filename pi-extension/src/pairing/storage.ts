@@ -291,6 +291,7 @@ async function _writePeersFile(peers: PeerRecord[]): Promise<void> {
   }
 }
 
+/** Load the persisted pairing roster, returning an empty roster when it is absent or unreadable. */
 export async function listPeers(): Promise<PeerRecord[]> {
   await _hardenPeersFilePermissions();
   try {
@@ -302,6 +303,11 @@ export async function listPeers(): Promise<PeerRecord[]> {
   }
 }
 
+/**
+ * Persist a pairing record, replacing an existing entry for the same remote key atomically.
+ *
+ * @throws when the roster cannot be written.
+ */
 export async function addPeer(record: PeerRecord): Promise<void> {
   const peers = await listPeers();
   const idx = peers.findIndex((p) => p.remote_epk === record.remote_epk);
@@ -328,6 +334,11 @@ export async function listOwnerPubkeys(): Promise<string[]> {
   return [...seen];
 }
 
+/**
+ * Remove every pairing record for a remote key and report whether the roster changed.
+ *
+ * @throws when the updated roster cannot be written.
+ */
 export async function removePeer(remoteEpk: string): Promise<boolean> {
   const peers = await listPeers();
   const filtered = peers.filter((p) => p.remote_epk !== remoteEpk);

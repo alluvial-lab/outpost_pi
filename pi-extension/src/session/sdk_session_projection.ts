@@ -31,11 +31,13 @@ import {
   type LegacyAgentMessage,
 } from "./transcript_projection.js";
 
+/** Narrow the Pi APIs that can render extension messages and wake an agent turn. */
 export type AgentMessageApi = {
   sendMessage: (...args: Parameters<ExtensionAPI["sendMessage"]>) => void | Promise<void>;
   sendUserMessage: (...args: Parameters<ExtensionAPI["sendUserMessage"]>) => void | Promise<void>;
 };
 
+/** Represent the optional action and message capabilities captured from a fresh SDK session context. */
 export type FreshActionApi = Partial<AgentMessageApi> & Partial<ActionPi> & Partial<ActionCtx>;
 
 type RoomMetaPatch = {
@@ -45,6 +47,7 @@ type RoomMetaPatch = {
   working?: boolean;
 };
 
+/** Supply the authoritative session identity, queued state, and replay function for a history response. */
 export interface SessionHistorySnapshot {
   sessionStartedAt: number;
   sessionId: RemoteSessionId;
@@ -52,6 +55,7 @@ export interface SessionHistorySnapshot {
   history(inReplyTo: string, limit?: number): Extract<ServerMessage, { type: "session_history" }>;
 }
 
+/** Define side effects owned by the composition root while this projection owns session-derived state. */
 export interface SdkSessionProjectionOutputs {
   broadcast(message: ServerMessage): void;
   sendTo(sender: PeerChannel, message: ServerMessage): void;
@@ -67,11 +71,13 @@ export interface SdkSessionProjectionOutputs {
   deliveryDebugLog?: DeliveryDebugLog;
 }
 
+/** Report whether user ingress seeded a turn and provide rollback when downstream delivery fails. */
 export interface SeededUserTurn {
   seeded: boolean;
   rollback(): void;
 }
 
+/** Configure the composition-owned output port used by a session projection. */
 export interface SdkSessionProjectionOptions {
   outputs: SdkSessionProjectionOutputs;
 }
@@ -90,6 +96,7 @@ function isPromiseLike(value: unknown): value is PromiseLike<void> {
     typeof (value as { then?: unknown }).then === "function";
 }
 
+/** Narrow an unknown SDK surface to the message APIs required for remote delivery. */
 export function isAgentMessageApi(value: unknown): value is AgentMessageApi {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<AgentMessageApi>;
@@ -122,6 +129,7 @@ function recordArgs(value: unknown): Record<string, unknown> {
     : {};
 }
 
+/** Project fresh SDK lifecycle events into remote session, transcript, and turn state while rejecting stale capabilities. */
 export class SdkSessionProjection implements SdkSessionProjectionPort {
   private readonly issuer = new RemoteSessionIssuer();
   private sessionStartedAt: number | null = null;

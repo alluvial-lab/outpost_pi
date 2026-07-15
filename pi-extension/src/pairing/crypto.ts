@@ -10,6 +10,7 @@ import * as ed from "@noble/ed25519";
   return Uint8Array.from(h.digest());
 };
 
+/** Hold the long-term Ed25519 identity material used for relay authentication and pairing. */
 export interface Ed25519Keypair {
   publicKey: Uint8Array;
   secretKey: Uint8Array;
@@ -22,10 +23,12 @@ export function generateEd25519Keypair(): Ed25519Keypair {
   return { secretKey, publicKey: Buffer.from(publicKey) };
 }
 
+/** Sign opaque protocol bytes with an Ed25519 secret key. */
 export function ed25519Sign(sk: Uint8Array, msg: Uint8Array): Uint8Array {
   return Buffer.from(ed.sign(msg, sk));
 }
 
+/** Verify an Ed25519 signature over opaque protocol bytes without throwing for an invalid signature. */
 export function ed25519Verify(
   pk: Uint8Array,
   msg: Uint8Array,

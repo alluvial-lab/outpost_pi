@@ -43,6 +43,7 @@ export interface PiForwardClientEvents {
   envelope: [env: Envelope, fromPc: string];
 }
 
+/** Multiplex opaque cross-PC envelopes over a caller-owned relay and detach its listener during bridge shutdown. */
 export class PiForwardClient extends EventEmitter {
   private readonly onRelayMessage: (line: string) => void;
   private detached = false;

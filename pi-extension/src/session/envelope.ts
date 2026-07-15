@@ -40,6 +40,7 @@ export function uuidv7(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/** Report a JSONL envelope that fails the local routing protocol's structural validation. */
 export class EnvelopeError extends Error {
   constructor(message: string) {
     super(message);
@@ -47,10 +48,16 @@ export class EnvelopeError extends Error {
   }
 }
 
+/** Serialize an already-valid envelope as one newline-delimited JSON record. */
 export function serialize(env: Envelope): string {
   return JSON.stringify(env) + "\n";
 }
 
+/**
+ * Parse and validate one JSONL envelope for local routing.
+ *
+ * @throws {@link EnvelopeError} when JSON or required routing fields are invalid.
+ */
 export function parse(line: string): Envelope {
   let raw: unknown;
   try {

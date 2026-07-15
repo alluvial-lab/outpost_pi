@@ -38,11 +38,13 @@ export interface AttachBridgeOptions {
   log?: (msg: string) => void;
 }
 
+/** Expose the paired remote router and forward client attached to a leader broker. */
 export interface CrossPcBridge {
   brokerRemote: BrokerRemote;
   piForward: PiForwardClient;
 }
 
+/** Attach cross-PC routing to a leader broker without taking ownership of the caller's relay lifecycle. */
 export async function attachCrossPcBridge(opts: AttachBridgeOptions): Promise<CrossPcBridge> {
   const log = opts.log ?? ((): void => {});
   const piForward = new PiForwardClient(opts.relay);

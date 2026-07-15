@@ -1,6 +1,7 @@
 import type { ClientMessage } from "../protocol/types.js";
 import { isSessionScopedClientType } from "../protocol/session_scope.js";
 
+/** Return acceptance or the authoritative session identity needed to converge a stale client. */
 export type SessionGateResult =
   | { ok: true }
   | {
@@ -11,6 +12,7 @@ export type SessionGateResult =
       receivedSessionId: string | null;
     };
 
+/** Fail closed for session-scoped client frames whose session id differs from the active SDK session. */
 export function validateClientSession(
   msg: ClientMessage,
   currentSessionId: string,
