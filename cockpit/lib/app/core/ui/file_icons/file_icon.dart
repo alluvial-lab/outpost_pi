@@ -2,12 +2,12 @@ import 'package:cockpit/app/core/ui/file_icons/file_icon_map.g.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-/// Resolve o nome do ícone (material-icon-theme) de um arquivo a partir do nome
-/// completo. Espelha a precedência do VSCode: nome exato → extensão composta
-/// mais longa → extensão final → ícone padrão.
+/// Resolve a file's material-icon-theme icon name from its full name.
 ///
-/// Ex.: `app.module.ts` casa `module.ts` (angular) antes de `ts`; `.gitignore`
-/// casa pelo nome exato; `photo.PNG` é case-insensitive.
+/// Mirrors VS Code precedence: exact name → longest compound extension → final
+/// extension → default icon. For example, `app.module.ts` matches `module.ts`
+/// (Angular) before `ts`, `.gitignore` matches by exact name, and `photo.PNG`
+/// matches case-insensitively.
 String fileIconName(String fileName) {
   final lower = fileName.toLowerCase();
   final byName = kFileNameIcons[lower];
@@ -22,17 +22,17 @@ String fileIconName(String fileName) {
   return kDefaultFileIcon;
 }
 
-/// Resolve o ícone de uma pasta pelo nome (normalizado), variando entre os
-/// estados aberta/fechada.
+/// Resolve a folder icon from its normalized name and open/closed state.
 String folderIconName(String folderName, {bool open = false}) {
   final key = _normalizeFolder(folderName);
   final map = open ? kFolderOpenIcons : kFolderIcons;
   return map[key] ?? (open ? kDefaultFolderOpenIcon : kDefaultFolderIcon);
 }
 
-/// Normaliza o nome da pasta igual ao gerador do mapa: minúsculo, sem o
-/// envelope `__x__` e sem prefixos `.`/`_`/`-` (variantes que o
-/// material-icon-theme registra apontando pro mesmo ícone).
+/// Normalize a folder name like the map generator.
+///
+/// Lowercases the name, removes the `__x__` envelope, and strips leading
+/// `.`/`_`/`-` variants that material-icon-theme maps to the same icon.
 String _normalizeFolder(String name) {
   var s = name.toLowerCase();
   if (s.length > 4 && s.startsWith('__') && s.endsWith('__')) {
@@ -47,9 +47,10 @@ String _normalizeFolder(String name) {
 
 const String _kAssetDir = 'assets/file_icons';
 
-/// Ícone colorido (SVG do material-icon-theme) de um arquivo ou pasta. Mantém
-/// as cores originais do tema — **não** recebe tint (a seleção da linha é
-/// sinalizada pelo fundo/cor do texto, não pelo ícone).
+/// Render a file or folder's color material-icon-theme SVG.
+///
+/// Preserves the theme's original colors without tinting; row selection is
+/// indicated by the background and text color rather than the icon.
 class FileTypeIcon extends StatelessWidget {
   const FileTypeIcon.file(this.name, {super.key, this.size = 16})
     : _isFolder = false,
@@ -63,7 +64,7 @@ class FileTypeIcon extends StatelessWidget {
   }) : _isFolder = true,
        _open = open;
 
-  /// Nome do arquivo ou da pasta (basename, não o caminho).
+  /// File or folder basename, not its path.
   final String name;
   final double size;
   final bool _isFolder;
@@ -78,7 +79,7 @@ class FileTypeIcon extends StatelessWidget {
       '$_kAssetDir/$icon.svg',
       width: size,
       height: size,
-      // Reserva o espaço enquanto o asset decodifica (sem "pulo" na linha).
+      // Reserve space while the asset decodes to prevent row layout shifts.
       placeholderBuilder: (_) => SizedBox(width: size, height: size),
     );
   }

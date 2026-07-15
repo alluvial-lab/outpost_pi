@@ -4,14 +4,13 @@ import 'app_colors.dart';
 import 'app_typography.dart';
 import 'syntax_colors.dart';
 
-/// Carrega os tokens bespoke do Cockpit (cores, tipografia, syntax) na árvore.
+/// Install Cockpit's bespoke color, typography, and syntax tokens in the tree.
 ///
-/// Antes esses tokens eram Material `ThemeExtension`s lidos via
-/// `Theme.of(context).extension<…>()`. Como a raiz agora é `ShadcnApp`, o
-/// `ThemeData` do shadcn **não tem** `.extension<>()`, então ancoramos os tokens
-/// neste `InheritedWidget` próprio. A API de leitura segue idêntica —
-/// `context.colors` / `context.typo` / `context.syntax` (ver
-/// `theme_extensions.dart`).
+/// These tokens previously used Material `ThemeExtension`s accessed through
+/// `Theme.of(context).extension<…>()`. Because the root is now `ShadcnApp` and
+/// shadcn `ThemeData` has no `.extension<>()`, this dedicated `InheritedWidget`
+/// anchors them while preserving the `context.colors`, `context.typo`, and
+/// `context.syntax` accessors in `theme_extensions.dart`.
 @immutable
 class CockpitTheme extends InheritedWidget {
   const CockpitTheme({
@@ -31,7 +30,7 @@ class CockpitTheme extends InheritedWidget {
 
   static CockpitTheme of(BuildContext context) {
     final theme = maybeOf(context);
-    assert(theme != null, 'CockpitTheme não encontrado na árvore de widgets.');
+    assert(theme != null, 'CockpitTheme not found in the widget tree.');
     return theme!;
   }
 
