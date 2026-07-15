@@ -2,9 +2,10 @@ import 'package:cockpit/app/cockpit/domain/entities/agent_turn_projection.dart';
 import 'package:cockpit/app/cockpit/domain/entities/pi_model.dart';
 import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 
-/// Recorte do estado do agente vivo — de `get_state`. O Cockpit usa para
-/// preencher a seleção atual dos seletores (modelo + effort) ao bootar e para
-/// hidratar a projeção de turno.
+/// Snapshot of live agent state from `get_state`.
+///
+/// Cockpit uses it to initialize the model and effort selectors at startup and
+/// to hydrate the turn projection.
 class AgentSnapshot {
   const AgentSnapshot({
     required this.model,

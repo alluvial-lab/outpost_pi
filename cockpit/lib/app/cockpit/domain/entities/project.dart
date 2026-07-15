@@ -1,8 +1,9 @@
-/// Uma pasta que o usuário salvou como projeto (workspace). Os workspaces raiz
-/// são persistidos via Hive; as **worktrees** (forks) são `Project`s de runtime
-/// com [parentId] preenchido, derivados do git e **não** persistidos (a
-/// existência mora no git — ver `plan/42`, decisões 1 e 4).
-/// Agentes do Cockpit atuam em subpastas de [path].
+/// Represent a directory saved by the user as a workspace.
+///
+/// Root workspaces are persisted through Hive. **Worktrees** are runtime
+/// `Project` forks with [parentId], derived from Git and never persisted because
+/// Git owns their existence (see `plan/42`, decisions 1 and 4). Cockpit agents
+/// operate in subdirectories of [path].
 class Project {
   const Project({
     required this.id,
@@ -15,41 +16,45 @@ class Project {
     this.imagePath,
   });
 
-  /// Sentinela do [copyWith] para distinguir "não mexer em [imagePath]" de
-  /// "limpar [imagePath] (passar null)".
+  /// Sentinel allowing [copyWith] to distinguish preserving [imagePath] from
+  /// clearing it by passing `null`.
   static const Object unchanged = Object();
 
   final String id;
 
-  /// Nome de exibição (por padrão, o basename de [path]).
+  /// Display name, defaulting to the basename of [path].
   final String name;
 
-  /// Caminho absoluto da raiz do projeto.
+  /// Absolute path to the project root.
   final String path;
 
-  /// Cor do avatar (ARGB), atribuída na criação.
+  /// ARGB avatar color assigned when the project is created.
   final int colorValue;
 
   final DateTime createdAt;
 
-  /// `null` para um workspace raiz; o id do workspace pai quando este `Project`
-  /// é uma worktree (fork). Define o aninhamento no rail.
+  /// Parent workspace id for a worktree fork, or `null` for a root workspace.
+  ///
+  /// Defines nesting in the rail.
   final String? parentId;
 
-  /// Posição manual no rail (drag-drop de workspaces). Só relevante para
-  /// workspaces raiz — worktrees herdam a do pai e aninham embaixo dele.
-  /// Persistido; default `0` (dados antigos caem na ordem por [createdAt]).
+  /// Manual workspace position in the drag-and-drop rail.
+  ///
+  /// Only root workspaces use this persisted value; worktrees inherit their
+  /// parent's position and nest below it. The default `0` lets legacy data fall
+  /// back to [createdAt] ordering.
   final int order;
 
-  /// Caminho absoluto de uma imagem (PNG/JPG) que substitui o avatar
-  /// quadrado-com-inicial no rail. `null` = sem imagem. Persistido; se o arquivo
-  /// sumir/ilegível, a UI cai num placeholder de erro (ver `WorkspaceAvatar`).
+  /// Absolute path to a persisted PNG or JPG that replaces the initial avatar.
+  ///
+  /// `null` means no image. If the file is missing or unreadable, the UI uses
+  /// the `WorkspaceAvatar` error placeholder.
   final String? imagePath;
 
-  /// `true` quando este `Project` é uma worktree de outro workspace.
+  /// Return whether this project is another workspace's worktree.
   bool get isWorktree => parentId != null;
 
-  /// Inicial pro avatar da rail.
+  /// Derive the uppercase initial used by the rail avatar.
   String get initial => name.isNotEmpty ? name[0].toUpperCase() : '?';
 
   Project copyWith({

@@ -1,4 +1,4 @@
-/// Manifest de release (`latest.json` na VPS) — contrato com o CI/Site.
+/// Represent the release manifest (`latest.json` on the VPS) shared with CI and Site.
 ///
 /// Schema:
 /// ```json
@@ -25,9 +25,11 @@ class UpdateInfo {
   final String notes;
   final List<UpdateArtifact> artifacts;
 
-  /// Parseia o manifest. **Lança** `FormatException` se o shape estiver errado
-  /// (campos obrigatórios ausentes/tipo errado) — o checker trata como "sem
-  /// atualização" e silencia.
+  /// Parse the release manifest.
+  ///
+  /// Throws [FormatException] when required fields are absent or have invalid
+  /// types. The update checker treats this as no available update and suppresses
+  /// the error.
   factory UpdateInfo.fromJson(Object? json) {
     if (json is! Map) {
       throw const FormatException('manifest is not a JSON object');
@@ -50,8 +52,10 @@ class UpdateInfo {
     );
   }
 
-  /// Artefato que casa com [platform] + [format], preferindo [arch]. macOS é
-  /// universal, então o arch é ignorado lá. `null` se não houver match.
+  /// Select an artifact matching [platform] and [format], preferring [arch].
+  ///
+  /// Universal macOS artifacts provide the fallback regardless of architecture.
+  /// Returns `null` when the platform and format have no match.
   UpdateArtifact? artifactFor({
     required String platform,
     required String format,
@@ -64,7 +68,8 @@ class UpdateInfo {
     for (final a in matches) {
       if (a.arch == arch) return a;
     }
-    // Sem match exato de arch (ex.: macOS "universal") → primeiro do formato.
+    // Without an exact architecture match, use the first format match, such as
+    // macOS "universal".
     return matches.first;
   }
 }

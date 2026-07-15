@@ -1,7 +1,6 @@
 import 'package:cockpit/app/cockpit/domain/entities/git_file_status.dart';
 
-/// Estado git de um projeto (workspace): branch atual, posição relativa ao
-/// upstream (ahead/behind) e o status por arquivo sujo.
+/// Capture a workspace's Git branch, upstream divergence, and dirty paths.
 class GitInfo {
   const GitInfo({
     required this.branch,
@@ -12,34 +11,39 @@ class GitInfo {
     this.untrackedDirs = const <String>{},
   });
 
-  /// Branch atual (ou short SHA se detached HEAD).
+  /// Current branch, or the short SHA in detached HEAD state.
   final String branch;
 
-  /// Commits à **frente** do upstream (precisam de push). 0 se não há upstream.
+  /// Commits **ahead** of the upstream that need pushing; zero without an upstream.
   final int ahead;
 
-  /// Commits **atrás** do upstream (precisam de pull). 0 se não há upstream.
-  /// Reflete o último `fetch` conhecido — não buscamos do remoto sozinhos.
+  /// Commits **behind** the upstream that need pulling; zero without an upstream.
+  ///
+  /// Reflects the latest known `fetch`; Cockpit does not fetch automatically.
   final int behind;
 
-  /// Status por arquivo sujo. Chave = caminho **relativo à raiz do projeto**,
-  /// sempre com separador `/`. Vazio = árvore limpa.
+  /// Status of each dirty file, keyed by project-relative `/`-separated paths.
+  ///
+  /// An empty map denotes a clean tree.
   final Map<String, GitFileStatus> files;
 
-  /// Raízes ignoradas pelo `.gitignore` (caminhos relativos, sem barra final;
-  /// `git` colapsa pastas ignoradas → um caminho cobre tudo abaixo dele). Não
-  /// contam como sujo; só pintam a árvore de cinza.
+  /// Project-relative `.gitignore` roots without trailing slashes.
+  ///
+  /// Git collapses ignored directories, so one path covers all descendants.
+  /// These paths do not count as dirty and only dim the file tree.
   final Set<String> ignored;
 
-  /// Diretórios **untracked colapsados** pelo `git` (uma pasta totalmente nova
-  /// vira uma única entrada `?? dir/`; os filhos não são enumerados). Guardamos
-  /// a raiz (sem barra) pra colorir todos os descendentes como untracked.
+  /// Roots of **collapsed untracked directories** reported by Git.
+  ///
+  /// A wholly new directory becomes one `?? dir/` entry without enumerated
+  /// children. Storing the root without a trailing slash marks every descendant
+  /// as untracked.
   final Set<String> untrackedDirs;
 
-  /// `true` se [rel] (caminho relativo, separador `/`) está sob algo ignorado.
+  /// Return whether project-relative `/`-separated [rel] is under an ignored root.
   bool isIgnored(String rel) => _under(ignored, rel);
 
-  /// `true` se [rel] está sob um diretório untracked colapsado.
+  /// Return whether [rel] is under a collapsed untracked directory.
   bool isUntracked(String rel) => _under(untrackedDirs, rel);
 
   static bool _under(Set<String> roots, String rel) {
@@ -51,12 +55,12 @@ class GitInfo {
     return false;
   }
 
-  /// Nº de arquivos com mudança. 0 = árvore limpa.
+  /// Number of changed files; zero denotes a clean tree.
   int get dirtyCount => files.length;
 
   bool get isDirty => files.isNotEmpty;
 
-  /// `true` quando há divergência de commits com o upstream.
+  /// Return whether local and upstream commit positions differ.
   bool get hasUpstreamDiff => ahead > 0 || behind > 0;
 
   @override
