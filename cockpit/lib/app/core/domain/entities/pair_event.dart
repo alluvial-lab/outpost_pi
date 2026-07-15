@@ -1,16 +1,16 @@
-/// Eventos de uma sessão de pareamento (`/outpost-pi pair`), já tipados a partir
-/// das mensagens custom do outpost-pi no stream do `pi --mode rpc`.
+/// Represent typed events from an `/outpost-pi pair` session.
 ///
-/// O wire é uma mensagem `role: "custom"` (em `message_start`/`message_end`) com
-/// `customType` + `details` — traduzida em `data/` para estes tipos. A `ui/`
-/// nunca vê `Map<String,dynamic>` cru.
+/// The `data/` adapter translates `role: "custom"` messages carrying
+/// `customType` and `details` from the `pi --mode rpc` stream. The UI never
+/// receives an untyped `Map<String, dynamic>`.
 sealed class PairEvent {
   const PairEvent();
 }
 
-/// `outpost-pi:pair-code` — o código de pareamento (re)gerado. A [uri] é o que
-/// vira QR Code; os demais campos servem pro botão "copiar dados". Reemitido
-/// periodicamente (o código se renova) — basta atualizar o QR.
+/// Carry a newly generated `outpost-pi:pair-code` event.
+///
+/// [uri] becomes the QR code; the remaining fields support copying pairing
+/// details. Periodic renewal re-emits this event so callers can refresh the QR.
 final class PairCodeReady extends PairEvent {
   const PairCodeReady({
     required this.uri,
@@ -27,13 +27,13 @@ final class PairCodeReady extends PairEvent {
   final String? name;
 }
 
-/// `outpost-pi:paired` — um aparelho leu o QR e pareou. Encerra o fluxo.
+/// Signal that a device scanned the QR code and completed pairing.
 final class PairDevicePaired extends PairEvent {
   const PairDevicePaired({this.name});
   final String? name;
 }
 
-/// Falha ao iniciar/conduzir o pareamento (spawn, timeout, extensão ausente…).
+/// Report failure to start or conduct pairing, including timeout or missing extension.
 final class PairFailed extends PairEvent {
   const PairFailed(this.message);
   final String message;
