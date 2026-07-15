@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first
 kind: epic
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit, app, pi-extension, relay, site]
 parent: null
 depends_on: [epic-rebrand-to-outpost-pi]
