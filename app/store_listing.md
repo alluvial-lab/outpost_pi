@@ -1,13 +1,20 @@
-# Store Listings — Outpost-Pi (App Store + Google Play)
+# Store Listing Drafts — Outpost-Pi (App Store + Google Play)
 
 Reference copy for both store listings. Keep in sync when metadata changes.
 Google Play section is at the bottom; most copy is shared.
 
 - **iOS Bundle ID:** `dev.kevoun.outpostpi.app`
 - **Android applicationId:** `dev.kevoun.outpostpi`
-- **Apple Team:** `U843T2P7A2`
+- **Apple Team:** operator-owned, not yet provisioned; future CI must supply it via the `APPLE_TEAM_ID` secret
+- **iOS distribution:** unavailable until the operator-owned Apple Developer team and App Store listing are provisioned
 - **Min iOS:** 18.0 · **Min Android:** API 34 (Android 14)
 - **Platforms:** iPhone **+ iPad** (universal — iPad 13" screenshots required)
+
+The Xcode projects intentionally carry no committed `DEVELOPMENT_TEAM`.
+Unsigned/simulator builds remain available; local device/archive builds require
+the operator to select their own team in Xcode. `ExportOptions.plist` likewise
+omits `teamID`, so an automatic App Store export can only resolve the team from
+an operator-owned signed archive rather than an inherited repository default.
 
 > ⚠️ **Copy rule:** never claim "end-to-end encrypted". The relay still sees
 > plaintext traffic. The honest privacy story is **TLS + a self-hostable relay

@@ -22,7 +22,7 @@
 | Platform | Status |
 |---|---|
 | Google Play (Android) | _Coming soon — 0.1.0 is sideload-only (new applicationId)_ |
-| App Store (iOS) | [Download on the App Store](https://apps.apple.com/app/outpost-pi-coding-agent/id6773499691) |
+| App Store (iOS) | _Unavailable until operator-owned Apple signing and listing are provisioned_ |
 | APK (sideload, Android) | [GitHub Releases](https://github.com/KevounC/outpost_pi/releases) |
 
 ## What's in this repo
