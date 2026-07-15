@@ -155,7 +155,7 @@ foundation stays clean rather than baking in a guess.
    "stateless" line is superseded.
 
 3. **Daemon as first-class component.** The absorbed project's
-   `plan/00-decisions.md` recorded "Sem daemon no MVP." A substantial
+   `plan/00-decisions.md` recorded "No daemon in the MVP." A substantial
    `pi-extension/src/daemon/` module has shipped (supervisord, cron registry,
    RPC child, install, registry). The daemon is GA, first-class — the
    MVP-scoping decision was explicitly revisited and shipped. Resolved —

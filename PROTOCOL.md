@@ -1,62 +1,64 @@
 # Outpost-Pi — Protocol & Security
 
-Documentação canônica do protocolo Outpost-Pi e do modelo de proteção.
-Atualizada em 2026-06-09.
+Canonical documentation for the Outpost-Pi protocol and protection model.
+Updated 2026-06-09.
 
 ---
 
-## Visão de 30 segundos
+## 30-second overview
 
-- **Mesh de agentes coding** rodando em múltiplos PCs do mesmo usuário
-- **Cada PC** roda o `pi-extension` (Node.js daemon) com **uma Pi-key** Ed25519 no Keychain do sistema (macOS/Linux/Windows)
-- **Celular** é o **autenticador inicial** (estilo WhatsApp Web QR) — depois do pareamento, PCs operam autonomamente entre si
-- **Owner-key** Ed25519 vive no Keychain do celular (iOS Keychain / Android Block Store), sincroniza entre devices do mesmo Apple ID / Google Account
-- **Relay** WebSocket roteia envelopes JSON sobre TLS + armazena `mesh_versions` assinadas pelo Owner — ele pode ver o conteúdo atual dos envelopes, mas nunca decide membership e sempre verifica assinaturas
-- **Cross-PC routing** via prefix `<pc>:<peer>` no envelope; broker UDS local em cada PC, relay forward Pi-to-Pi via WS
+- **Coding-agent mesh** running across multiple PCs belonging to the same user
+- **Each PC** runs `pi-extension` (Node.js daemon) with **one Pi-key** Ed25519 key in the system Keychain (macOS/Linux/Windows)
+- **The mobile app** is the **initial authenticator** (WhatsApp Web QR style) — after pairing, PCs operate autonomously with one another
+- **Owner-key** Ed25519 lives in the mobile Keychain (iOS Keychain / Android Block Store), synced across devices under the same Apple ID / Google Account
+- **Relay** WebSocket routes JSON envelopes over TLS + stores Owner-signed `mesh_versions` — it can see the current envelope contents, but it never decides membership and always verifies signatures
+- **Cross-PC routing** uses the `<pc>:<peer>` prefix in the envelope; a local UDS broker runs on each PC, and the relay forwards Pi-to-Pi traffic over WS
 
 ---
 
-## Identidades
+## Identities
 
-| Chave | Algoritmo | Onde mora | Quem cria | Quem usa |
+| Key | Algorithm | Where it lives | Created by | Used by |
 |---|---|---|---|---|
-| **Owner-key** | Ed25519 | iOS Keychain (sync iCloud) / Android Block Store (sync Google) | App mobile no 1º boot | Assina `mesh_versions`, prova autoridade pra parear/revogar PCs |
-| **Pi-key** | Ed25519 | `@napi-rs/keyring` no PC (Keychain macOS / libsecret Linux / Credential Manager Windows). Fallback `~/.pi/remote/identity.json` (`0600`) com warning em sistemas headless | pi-extension no 1º boot | Autentica WS pro relay, assina envelopes cross-PC |
-| **App-key** | Ed25519 efêmera | RAM do app mobile | App por sessão de pareamento | Establishment de canal autenticado durante pair |
+| **Owner-key** | Ed25519 | iOS Keychain (iCloud sync) / Android Block Store (Google sync) | Mobile app on first boot | Signs `mesh_versions`; proves authority to pair/revoke PCs |
+| **Pi-key** | Ed25519 | `@napi-rs/keyring` on the PC (macOS Keychain / Linux libsecret / Windows Credential Manager). Fallback: `~/.pi/remote/identity.json` (`0600`) with a warning on headless systems | pi-extension on first boot | Authenticates WS to the relay; signs cross-PC envelopes |
+| **App-key** | Ephemeral Ed25519 | Mobile app RAM | App for each pairing session | Authenticated channel establishment during pairing |
 
-**Constraint fixada**: "1 Pi-key por PC; troca de hardware = re-pareamento". Não há migração de Pi-key entre máquinas. Owner-key compensa (Owner sincroniza cross-device via Keychain do sistema).
+**Fixed constraint**: "1 Pi-key per PC; hardware replacement = re-pairing." Pi-keys do not migrate between machines. The Owner-key compensates (the Owner syncs cross-device through the system Keychain).
 
 ---
 
-## Camadas do protocolo
+## Protocol layers
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Agent layer       Pi coding agent (futuro: Claude Code, OpenCode)  │
+│  Agent layer       Pi coding agent (future: Claude Code, OpenCode)  │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Envelope          {from, to, id, re, body}  — JSONL 5 campos       │
+│  Envelope          {from, to, id, re, body}  — 5-field JSONL        │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Routing           Local UDS broker  /  Cross-PC via relay forward  │
-│                    Prefix <pc>:<peer> distingue local vs remoto     │
+│                    Prefix <pc>:<peer> distinguishes local/remote    │
 ├─────────────────────────────────────────────────────────────────────┤
 │  ACK protocol      received | denied | timeout                      │
-│                    Wrapper TS responde sem custar token              │
-│                    Legacy busy é tratado defensivamente, não emitido │
+│                    TS wrapper replies without token cost            │
+│                    Legacy busy handled defensively; not emitted     │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Transport         UDS (local)  /  WebSocket sobre TLS (relay)      │
+│  Transport         UDS (local)  /  WebSocket over TLS (relay)       │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Trust             Ed25519 challenge-response                       │
-│                    Owner-sig em mesh_versions                       │
-│                    Auth handshake: app assina                         │
-│                    `outpost-pi-relay-auth-v1\n` ++ nonce (domain-      │
-│                    separated prefix) — evita signing-oracle do owner- │
-│                    key cross-protocol. Relay verifica o mesmo.       │
-│                    Hello frame carrega `device_id` (per-install):     │
-│                    relay fecha conn(s) anterior(s) do MESMO device   │
-│                    em duplicate auth (reconnect wifi→cellular deixa   │
-│                    TCP half-open) — recovery imediato, sem esperar    │
-│                    ping timeout (25s). Devices diferentes do mesmo   │
-│                    Owner (shared key via Keychain) coexistem.         │
+│                    Owner-sig on mesh_versions                       │
+│                    Auth handshake: app signs                        │
+│                    `outpost-pi-relay-auth-v1\n` ++ nonce (domain-   │
+│                    separated prefix) — prevents the owner-key from  │
+│                    becoming a cross-protocol signing oracle. Relay  │
+│                    verifies the same prefix. The hello frame carries│
+│                    per-install `device_id`; on duplicate auth, the  │
+│                    relay closes prior connection(s) for the SAME    │
+│                    device (a Wi-Fi→cellular reconnect can leave TCP │
+│                    half-open) for immediate recovery rather than    │
+│                    waiting for the 25s ping timeout. Different      │
+│                    devices for the same Owner (shared Keychain key) │
+│                    coexist.                                         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -64,7 +66,7 @@ Atualizada em 2026-06-09.
 
 ## Envelope
 
-Formato único pra todo o sistema. Funciona local (UDS) e cross-PC (relay forward).
+A single format for the entire system. It works locally (UDS) and cross-PC (relay forwarding).
 
 ```json
 {
@@ -77,37 +79,37 @@ Formato único pra todo o sistema. Funciona local (UDS) e cross-PC (relay forwar
 ```
 
 Naming:
-- **Local**: nome simples (`sess-3`, `agent-2`, `broker`)
-- **Cross-PC**: prefixado com `pc_label` do destino (`casa:sess-3`, `trab:agent-1`)
-- Quando entra no broker local destino, o prefix é stripped (sessão local não sabe seu próprio pc_label)
+- **Local**: simple name (`sess-3`, `agent-2`, `broker`)
+- **Cross-PC**: prefixed with the destination's `pc_label` (`casa:sess-3`, `trab:agent-1`)
+- When it enters the destination local broker, the prefix is stripped (the local session does not know its own `pc_label`)
 
-UUID v7 garante ordenação temporal sem coordenação.
+UUID v7 provides temporal ordering without coordination.
 
 ---
 
 ## ACK protocol
 
-Toda chamada de `agent_send` aguarda um ACK rápido (default 5s) gerado pelo **wrapper TypeScript** do peer destino — não pelo LLM. Custo: microsegundos local, milissegundos cross-PC.
+Every `agent_send` call waits for a quick ACK (default: 5s) generated by the destination peer's **TypeScript wrapper** — not by the LLM. Cost: microseconds locally, milliseconds cross-PC.
 
-| Status | Significado |
+| Status | Meaning |
 |---|---|
-| `received` | Broker/harness do peer aceitou o envelope; se o peer estiver em meio a um turn, a mensagem fica para o próximo turn |
-| `denied` | Peer recusou (ou destino não existe); abandona |
-| `busy` | **Legado/defensivo apenas**. O broker atual não emite `busy` para novo trabalho; mensagens para peers em meio a um turn são entregues ao harness e processadas no próximo turn. Se um broker antigo retornar `busy`, trate como entrega obsoleta/ambígua e atualize o peer em vez de projetar retry-on-busy. |
-| `timeout` | ACK não chegou em 5s; trata como transport error |
-| `transport_error` | Cross-PC apenas: relay reportou `offline`, `not_authorized`, ou `bad_envelope` |
+| `received` | The peer broker/harness accepted the envelope; if the peer is in the middle of a turn, the message waits for the next turn |
+| `denied` | The peer refused (or the destination does not exist); abandon it |
+| `busy` | **Legacy/defensive only**. The current broker does not emit `busy` for new work; messages to peers in the middle of a turn are delivered to the harness and processed in the next turn. If an old broker returns `busy`, treat it as obsolete/ambiguous delivery and update the peer rather than designing retry-on-busy. |
+| `timeout` | An ACK did not arrive within 5s; treat it as a transport error |
+| `transport_error` | Cross-PC only: the relay reported `offline`, `not_authorized`, or `bad_envelope` |
 
-**Reply de conteúdo** é assíncrona: peer responde com **outro send normal** carregando `re: <send-id-original>`. Sender vê a reply na inbox no próximo turn. Sem `agent_wait`, sem `agent_request` — padrão event-driven puro. `re` é correlação, não mecanismo de delivery.
+A **content reply** is asynchronous: the peer responds with **another normal send** carrying `re: <send-id-original>`. The sender sees the reply in its inbox on the next turn. There is no `agent_wait` or `agent_request` — it is a pure event-driven pattern. `re` is correlation, not a delivery mechanism.
 
-Detalhes em `plan/25-pc-mesh-bootstrap.md` seção "ACK protocol".
+Details in `plan/25-pc-mesh-bootstrap.md`, section "ACK protocol".
 
 ---
 
 ## Cross-PC routing
 
-Hoje cross-PC é mediado pelo relay (não P2P direto — fica pra futuro).
+Cross-PC traffic is currently mediated by the relay (not direct P2P — deferred to the future).
 
-### Frame wire WS (Pi-A → Relay)
+### WS wire frame (Pi-A → Relay)
 
 ```json
 {
@@ -118,10 +120,10 @@ Hoje cross-PC é mediado pelo relay (não P2P direto — fica pra futuro).
 }
 ```
 
-`to_room` direciona a entrega somente àquela sala do peer destino (room-targeted,
-não fanout peer-wide). `to_room` vazio/ausente → `transport_error: bad_envelope`.
+`to_room` targets delivery only to that destination peer room (room-targeted,
+not peer-wide fanout). An empty or absent `to_room` → `transport_error: bad_envelope`.
 
-### Frame entregue pelo relay (Relay → Pi-B)
+### Relay-delivered frame (Relay → Pi-B)
 
 ```json
 {
@@ -132,33 +134,33 @@ não fanout peer-wide). `to_room` vazio/ausente → `transport_error: bad_envelo
 }
 ```
 
-### Autorização (relay-side)
+### Authorization (relay-side)
 
-Antes de forwardar, relay consulta `mesh_versions`:
-- Pi-A e Pi-B estão na lista do **mesmo Owner**? Forward
-- Em Owners diferentes? `transport_error: not_authorized`
-- Pi-B sem WS ativa? `transport_error: offline`
+Before forwarding, the relay checks `mesh_versions`:
+- Are Pi-A and Pi-B in the list for the **same Owner**? Forward.
+- Different Owners? `transport_error: not_authorized`
+- Pi-B has no active WS? `transport_error: offline`
 
-Cache TTL 60s indexado por Pi-pubkey → set de irmãos.
+A 60s-TTL cache maps each Pi-pubkey to its sibling set.
 
-### Anti-spoof (broker-side)
+### Anti-spoofing (broker-side)
 
-Quando Pi-B recebe `pi_envelope_in`:
-- `from_pc` é ground truth técnico (pubkey verificada pelo relay)
-- `envelope.from` é address legível
-- Anti-spoof: `envelope.from` deve começar com prefix matching o `pc_label` correspondente a `from_pc` (lookup via siblings cache). Se não bate → drop + log
+When Pi-B receives `pi_envelope_in`:
+- `from_pc` is the technical ground truth (the relay verified the pubkey)
+- `envelope.from` is a human-readable address
+- Anti-spoofing: `envelope.from` must start with the prefix matching the `pc_label` for `from_pc` (looked up through the sibling cache). Otherwise, drop + log.
 
-### Transport errors como envelope
+### Transport errors as envelopes
 
-Erros não são frames WS custom — são envelopes normais com `from: "_relay"` + `body.type: "transport_error"`. Sender correlaciona via `re: <envelope-id>`. Mesma máquina ACK trata.
+Errors are not custom WS frames — they are normal envelopes with `from: "_relay"` + `body.type: "transport_error"`. The sender correlates them with `re: <envelope-id>`. The same-machine ACK handles them.
 
 ---
 
 ## Mesh membership
 
-`mesh_versions` é o "cartório" assinado pelo Owner.
+`mesh_versions` is the Owner-signed "registry office."
 
-### Estrutura
+### Structure
 
 ```json
 {
@@ -174,26 +176,26 @@ Erros não são frames WS custom — são envelopes normais com `from: "_relay"`
 
 ### Storage
 
-Relay armazena o blob inteiro em SQLite, indexado por `owner_pk_hash = SHA256(owner_pk)`.
+The relay stores the entire blob in SQLite, indexed by `owner_pk_hash = SHA256(owner_pk)`.
 
-- **POST /mesh/<hash>**: cliente publica nova versão (relay verifica assinatura + version monotônica)
-- **GET /mesh/<hash>**: cliente lê última versão; valida assinatura localmente
+- **POST /mesh/<hash>**: the client publishes a new version (the relay verifies the signature + monotonic version)
+- **GET /mesh/<hash>**: the client reads the latest version and validates the signature locally
 
-LWW (last-write-wins) em conflito concorrente. Anti-rollback via version monotônica.
+LWW (last-write-wins) resolves concurrent conflicts. Monotonic versioning prevents rollback.
 
 ### Self-revoke
 
-Pi-extension faz polling periódico. Se sua Pi-pubkey saiu de `members`, faz self-revoke (sai do mesh) graciosamente.
+The pi-extension polls periodically. If its Pi-pubkey is no longer in `members`, it self-revokes (leaves the mesh) gracefully.
 
-Detalhes em `plan/24-mesh-membership.md`.
+Details in `plan/24-mesh-membership.md`.
 
 ---
 
 ## App actions
 
-Vocabulário curado de ações tipadas que o app mobile invoca sobre a sessão do Pi pareado. **Não é** um picker genérico de slash commands — cada ação tem payload estruturado e mapeia pra uma API pública do SDK. Pi-extension lida; app não parseia nada.
+A curated vocabulary of typed actions that the mobile app invokes on the paired Pi session. This is **not** a generic slash-command picker — every action has a structured payload and maps to a public SDK API. The pi-extension handles it; the app parses nothing.
 
-| Action | ClientMessage | SDK call no pi-extension |
+| Action | ClientMessage | SDK call in pi-extension |
 |---|---|---|
 | Compact context | `session_compact` | `ctx.compact()` |
 | New session | `session_new` | `ctx.newSession()` |
@@ -201,7 +203,7 @@ Vocabulário curado de ações tipadas que o app mobile invoca sobre a sessão d
 | Set thinking | `thinking_set {level}` | `pi.setThinkingLevel(level)` |
 | List models | `list_models` | `ModelRegistry.getAvailable()` |
 
-### Wire — exemplos
+### Wire — examples
 
 ```json
 // Request
@@ -229,202 +231,202 @@ Vocabulário curado de ações tipadas que o app mobile invoca sobre a sessão d
 }
 ```
 
-### Thinking levels (enum fixo)
+### Thinking levels (fixed enum)
 
 ```
 "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
 ```
 
-`"xhigh"` só é honrado em famílias de modelo específicas (Anthropic 4.x reasoning, OpenAI o-series). Pi cai pra um nível vizinho quando não suporta — sem erro.
+`"xhigh"` is honored only by specific model families (Anthropic 4.x reasoning, OpenAI o-series). Pi falls back to a neighboring level when it is unsupported — without an error.
 
-### Side-effects
+### Side effects
 
-Os replies (`action_ok` / `models_list`) só confirmam dispatch. Efeitos visíveis chegam pelos canais normais:
-- Compact concluído → `agent_chunk`/`agent_done` no chat
-- Modelo trocado → evento `model_select` broadcast pra todos os owners conectados
-- Nova sessão → `pair_ok` (ou equivalente) com novo `session_started_at`
+Replies (`action_ok` / `models_list`) only confirm dispatch. Visible effects arrive through the normal channels:
+- Completed compaction → `agent_chunk`/`agent_done` in chat
+- Changed model → `model_select` event broadcast to all connected owners
+- New session → `pair_ok` (or equivalent) with a new `session_started_at`
 
-### Códigos `error` conhecidos (app↔Pi)
+### Known `error` codes (app↔Pi)
 
-`error.code` é string aberta: clientes devem tolerar códigos novos. Códigos conhecidos:
+`error.code` is an open string: clients must tolerate new codes. Known codes:
 
-| Código | Semântica |
+| Code | Meaning |
 |---|---|
-| `tool_approval_required` | Ação bloqueada aguardando aprovação de ferramenta |
-| `invalid_message` | Mensagem malformada ou inválida no boundary |
-| `unsupported_type` | Tipo de mensagem não suportado |
-| `too_large` | Payload excede limite aceito |
-| `rate_limited` | Remetente temporariamente limitado |
-| `timeout` | Operação excedeu janela de espera |
-| `internal_error` | Falha permanente no processamento local |
-| `session_mismatch` | Mensagem pertence a outra sessão remota. O Pi rejeita com fail-closed e retorna seu `session_id` atual; o app trata a resposta como sinal de convergência/controle (não como conteúdo de transcrição visível) — a rebind canônica e o `session_sync` são acionados pela rotação de metadados de sala, nunca pelo `session_id` do erro |
-| `delivery_pending` | Sinal transitório: a mensagem entrou durante troca de sessão e foi enfileirada para replay; o app mantém o balão pendente e aguarda o echo ou timeout estendido |
+| `tool_approval_required` | Action blocked while waiting for tool approval |
+| `invalid_message` | Malformed or invalid message at the boundary |
+| `unsupported_type` | Unsupported message type |
+| `too_large` | Payload exceeds the accepted limit |
+| `rate_limited` | Sender is temporarily limited |
+| `timeout` | Operation exceeded its wait window |
+| `internal_error` | Permanent local-processing failure |
+| `session_mismatch` | The message belongs to another remote session. Pi rejects it fail-closed and returns its current `session_id`; the app treats the response as a convergence/control signal (not visible transcript content) — canonical rebind and `session_sync` are triggered by room-metadata rotation, never by the error's `session_id` |
+| `delivery_pending` | Transient signal: the message arrived during a session transition and was queued for replay; the app keeps the bubble pending and waits for the echo or an extended timeout |
 
-### Por que ações tipadas em vez de picker genérico
+### Why typed actions rather than a generic picker
 
-O SDK `@mariozechner/pi-coding-agent` não expõe API genérica de invocação dos slash commands builtin (`/compact`, `/model`, `/fork`, `/copy`, etc.) — apenas alguns têm equivalente em `ExtensionContextActions`. Tentar espelhar o picker do TUI exigiria mirror manual da lista builtin + matriz de invocabilidade + UX de chip canonizado, com vários comandos sendo só hint informativo. Vocabulário tipado é mais simples, mais honesto, e cobre 100% das ações que fazem sentido em mobile. Padrão validado pelo adapter `pi-telegram` (mesmo abordagem: vocabulário curado, sem picker genérico).
+The `@mariozechner/pi-coding-agent` SDK does not expose a generic API to invoke built-in slash commands (`/compact`, `/model`, `/fork`, `/copy`, etc.) — only some have an equivalent in `ExtensionContextActions`. Mirroring the TUI picker would require manually mirroring the built-in list + invocability matrix + canonicalized chip UX, while several commands are only informational hints. A typed vocabulary is simpler, more honest, and covers 100% of the actions that make sense on mobile. The pattern is validated by the `pi-telegram` adapter (the same approach: curated vocabulary, no generic picker).
 
-Detalhes em `plan/28-pi-commands.md`.
+Details in `plan/28-pi-commands.md`.
 
 ---
 
-## Imagens (plan/30)
+## Images (plan/30)
 
-`user_message` aceita um anexo de imagem inline (uma por mensagem hoje),
-opcional e retrocompatível — mensagem só-texto não muda no fio.
+`user_message` accepts an inline image attachment (one per message for now),
+optional and backward-compatible — a text-only message is unchanged on the wire.
 
 ### Wire
-ClientMessage `user_message` ganha `images?`:
+ClientMessage `user_message` adds `images?`:
 
 ```jsonc
-{ "type": "user_message", "id": "msg-1", "text": "o que é isto?",
+{ "type": "user_message", "id": "msg-1", "text": "what is this?",
   "images": [{ "data": "<base64>", "mime": "image/jpeg" }] }
 ```
 
-`WireImage = { data: string /* base64 */, mime: string }`. O echo ServerMessage
-`user_message` (broadcast a todos os owners) também carrega `images`, pra cada
-device renderizar o mesmo balão.
+`WireImage = { data: string /* base64 */, mime: string }`. The echoed ServerMessage
+`user_message` (broadcast to all owners) also carries `images`, so every device
+renders the same bubble.
 
-### Mapeamento pro modelo
-O Pi monta o content multimodal do SDK na ordem **imagem(ns) → texto**:
+### Mapping to the model
+Pi constructs the SDK multimodal content in **image(s) → text** order:
 `[{ type:"image", data, mimeType: mime }, { type:"text", text }]` →
-`sendUserMessage(content)`. `mime` (wire) vira `mimeType` (SDK). Sem `images` →
-`sendUserMessage(text)` (string), idêntico ao anterior.
+`sendUserMessage(content)`. Wire `mime` becomes SDK `mimeType`. Without `images` →
+`sendUserMessage(text)` (a string), identical to the prior behavior.
 
-### Capacidade do modelo
-`WireModel` (em `models_list` / `current`) ganha `vision: boolean`, derivado de
-`Model.input.includes("image")`. O app desabilita o anexo quando o modelo ativo
-tem `vision:false`.
+### Model capability
+`WireModel` (in `models_list` / `current`) adds `vision: boolean`, derived from
+`Model.input.includes("image")`. The app disables attachment when the active model
+has `vision:false`.
 
-### Transporte
-A imagem vai **inline** na `user_message` (base64), dentro do envelope que já
-existe — **relay inalterado** (forward sem interpretar o payload, mas não E2E).
-Custo: double-base64 (~+77%), aceito nesta fatia por usar imagem comprimida
-(~150–400 KB). Histórico/`session_sync` trafega os bytes (decisão #8). Canal
-binário fica pra Trilha 2.
+### Transport
+The image travels **inline** in `user_message` (base64), inside the existing envelope —
+**the relay is unchanged** (it forwards without interpreting the payload, but it is not E2E).
+Cost: double-base64 (~+77%), accepted in this slice because it uses a compressed image
+(~150–400 KB). History/`session_sync` carries the bytes (decision #8). A binary channel
+is deferred to Track 2.
 
 ---
 
-## Mensagem enfileirada durante turn ativo
+## Message queued during an active turn
 
-Fila curta **Pi-side, em memória**: enquanto há turn ativo, o app pode guardar
-um próximo prompt textual. A Pi-extension envia quando o turn atual acaba. Não é
-fila offline do relay; restart perde o estado.
+A short **Pi-side, in-memory** queue: while a turn is active, the app can retain
+the next textual prompt. The pi-extension sends it when the current turn ends. This
+is not a relay offline queue; a restart loses the state.
 
 ### Wire
 
 ```jsonc
 // app → Pi-extension
-{ "type": "queued_message_set", "id": "msg-2", "text": "próximo prompt" }
+{ "type": "queued_message_set", "id": "msg-2", "text": "next prompt" }
 { "type": "queued_message_clear", "id": "clear-1" }
 
 // Pi-extension → app(s)
-{ "type": "queued_message_state", "id": "msg-2", "text": "próximo prompt" }
-{ "type": "queued_message_state" } // vazio
+{ "type": "queued_message_state", "id": "msg-2", "text": "next prompt" }
+{ "type": "queued_message_state" } // empty
 ```
 
-### Semântica
+### Semantics
 
-- `queued_message_set`: define/substitui uma pendência textual. `id` vira o id
-  do `user_message` drenado. App pode juntar múltiplos prompts com `\n`.
-- `queued_message_clear`: cancela a pendência.
-- Drain: quando `!turnActive && !currentTurnId`, limpa o estado, broadcasta
-  `queued_message_state` vazio, e processa como `user_message` normal
+- `queued_message_set`: sets/replaces a textual pending message. Its `id` becomes
+  the drained `user_message` id. The app can concatenate multiple prompts with `\n`.
+- `queued_message_clear`: cancels the pending message.
+- Drain: when `!turnActive && !currentTurnId`, clear the state, broadcast an empty
+  `queued_message_state`, and process it as a normal `user_message`
   (`echo user_message` + `sendUserMessage(text)`).
-- `session_sync`: envia o `queued_message_state` atual antes do histórico.
-- Só texto. `images` seguem apenas no `user_message` imediato.
-- Relay inalterado/opaco.
+- `session_sync`: sends the current `queued_message_state` before history.
+- Text only. `images` are supported only on the immediate `user_message`.
+- The relay remains unchanged/opaque.
 
 ---
 
-## Pareamento
+## Pairing
 
-QR code mostra Pi-pubkey + room hint + token de uso único.
+The QR code presents a Pi-pubkey + room hint + single-use token.
 
-1. App escaneia QR, conecta no relay como peer efêmero
-2. App envia `pair_request` assinado com **Owner-sk** (prova autoridade)
-3. Pi-extension valida assinatura, adiciona App-key na sua `peers.json` local
-4. App adiciona Pi-pubkey no seu `mesh_versions` local + publica versão nova no relay
-5. Pi-extension passa a aceitar mensagens daquele Owner
+1. The app scans the QR code and connects to the relay as an ephemeral peer.
+2. The app sends a `pair_request` signed with the **Owner-sk** (proof of authority).
+3. The pi-extension validates the signature and adds the App-key to its local `peers.json`.
+4. The app adds the Pi-pubkey to its local `mesh_versions` and publishes a new version to the relay.
+5. The pi-extension begins accepting messages from that Owner.
 
-Múltiplos Owners podem parear o mesmo PC (concomitância — `peers.json` aceita N entries).
+Multiple Owners can pair with the same PC (concurrency — `peers.json` accepts N entries).
 
-Detalhes em `plan/04-pairing.md`.
+Details in `plan/04-pairing.md`.
 
 ---
 
-## Modelo de proteção (Trust Model)
+## Protection model (Trust Model)
 
-### O que está protegido
+### What is protected
 
-- **Pareamento autenticado**: pair_request assinado pela Owner-sk; spoofing requer Owner-sk
-- **WS pro relay sobre TLS**: ninguém na rota (ISP, NAT, MITM clássico) vê o tráfego em claro
-- **Cross-PC autorização cripto**: relay só forwarda entre Pis-irmãos do mesmo Owner (verificado via Owner-sig em mesh_versions)
-- **Anti-spoof entre Pis**: broker rejeita envelopes onde `envelope.from` prefix não bate com `from_pc` autenticado
-- **Anti-rollback de membership**: version monotônica + assinatura impede relay/atacante de regredir mesh
-- **Pi-secret protegida**: Keychain do sistema (macOS Keychain / libsecret Linux desktop / Credential Manager Windows). Atacante precisa contexto do user logado E unlock do Keychain
-- **Owner-secret protegida**: iOS Keychain / Android Block Store, sincroniza via iCloud/Google account; recuperável trocando de device
+- **Authenticated pairing**: `pair_request` is signed by Owner-sk; spoofing requires Owner-sk.
+- **WS to the relay over TLS**: no one on the route (ISP, NAT, classic MITM) sees plaintext traffic.
+- **Cross-PC cryptographic authorization**: the relay forwards only between sibling Pis of the same Owner (verified through the Owner-sig in `mesh_versions`).
+- **Anti-spoofing between Pis**: the broker rejects envelopes whose `envelope.from` prefix does not match authenticated `from_pc`.
+- **Membership anti-rollback**: monotonic versioning + signature prevents a relay/attacker from rolling back the mesh.
+- **Pi secret protected**: system Keychain (macOS Keychain / desktop Linux libsecret / Windows Credential Manager). An attacker needs the logged-in user context AND Keychain unlock.
+- **Owner secret protected**: iOS Keychain / Android Block Store, synced through the iCloud/Google account; recoverable when changing devices.
 
-### O que NÃO está protegido (declarado honestamente)
+### What is NOT protected (stated honestly)
 
-- **Relay vê plaintext do conteúdo dos envelopes**. TLS protege em trânsito; relay armazena/encaminha em claro. Operador do relay vê quem manda pra quem + o conteúdo. Mitigação: **self-hosting** do relay (open source)
-- **Não há E2E** entre app e pi-extension nem entre Pis cross-PC. **Não afirmamos E2E em copy nenhuma do produto**
-- **Headless Linux** (Docker, VPS sem D-Bus session): Pi-key cai pra arquivo `0600` em disco com warning loud. Atacante com acesso ao user pode ler. Recomenda-se GNOME Keyring / KWallet pra hardening real
-- **Backup encriptado completo** (Time Machine, iCloud Drive criptografado etc) pode carregar a Keychain. Atacante precisa do user passphrase do backup
-- **Clone detection ainda não implementado**: 2 PCs com mesma Pi-key (via cópia de arquivo headless ou comprometimento) podem coexistir no relay sem alerta. Em roadmap (plan/27 Wave E3)
+- **The relay sees plaintext envelope contents**. TLS protects traffic in transit; the relay stores/forwards it in plaintext. The relay operator sees who sends to whom + the contents. Mitigation: **self-host** the relay (open source).
+- There is **no E2E** between the app and pi-extension or between cross-PC Pis. **We make no E2E claim in any product copy.**
+- **Headless Linux** (Docker, a VPS without a D-Bus session): the Pi-key falls back to a `0600` file on disk with a loud warning. An attacker with user access can read it. GNOME Keyring / KWallet is recommended for real hardening.
+- A **full encrypted backup** (Time Machine, encrypted iCloud Drive, etc.) can carry the Keychain. An attacker needs the backup user passphrase.
+- **Clone detection is not implemented yet**: two PCs with the same Pi-key (through a copied headless file or compromise) can coexist on the relay without an alert. On the roadmap (plan/27 Wave E3).
 
-### Threat model resumido
+### Summary threat model
 
-| Adversário | Capacidade | Protegido? |
+| Adversary | Capability | Protected? |
 |---|---|---|
-| Network passive | Sniff TLS | ✅ Sim (cipher TLS) |
-| Network active (MITM) | Sniff + inject | ✅ Sim (TLS + Ed25519 pairing) |
-| Operador do relay público | Lê tudo que passa, persiste | ⚠️ Parcial (mitigação: self-host) |
-| Outro user no PC do alvo | Lê filesystem do alvo | ✅ Sim (Keychain user-bound) |
-| Atacante com root no PC do alvo | Memory dump, processo injection | ❌ Não (modelo de threat aceitável: root = jogo perdido) |
-| Atacante com backup do disco | Restaura disco em outro Mac | ✅ Sim em macOS com FileVault on (recomendado) |
-| Atacante que rouba só `peers.json` | Vê metadata pública (Owner-pubkeys + nicks) | Privacy issue, não impersonation |
+| Network passive | Sniff TLS | ✅ Yes (TLS cipher) |
+| Network active (MITM) | Sniff + inject | ✅ Yes (TLS + Ed25519 pairing) |
+| Public relay operator | Reads everything that passes through; persists it | ⚠️ Partial (mitigation: self-host) |
+| Other user on the target PC | Reads target filesystem | ✅ Yes (user-bound Keychain) |
+| Attacker with root on target PC | Memory dump, process injection | ❌ No (acceptable threat model: root = game over) |
+| Attacker with a disk backup | Restores disk to another Mac | ✅ Yes on macOS with FileVault enabled (recommended) |
+| Attacker who steals only `peers.json` | Sees public metadata (Owner pubkeys + nicknames) | Privacy issue, not impersonation |
 
 ---
 
 ## Failure modes
 
-| Falha | Comportamento |
+| Failure | Behavior |
 |---|---|
-| Relay desconecta | pi-extension reconnect com backoff; agentes locais continuam falando entre si via UDS broker |
-| Pi-B offline durante envio cross-PC | Sender recebe `transport_error: offline` imediatamente. Sem queue offline no relay |
-| Pi-B em outro Owner | Sender recebe `transport_error: not_authorized` |
-| Owner revoga Pi-A da mesh | Pi-A detecta na próxima poll de mesh_versions, faz self-revoke, sai gracefully |
-| WS Pi reconecta frequente (NAT timeout) | Relay dedupa peer_online emit (transição offline→online apenas); cliente dedupa snapshots idênticos |
-| Relay crash | Tudo cross-PC para; agentes locais continuam funcionando (UDS) |
+| Relay disconnects | pi-extension reconnects with backoff; local agents continue communicating through the UDS broker |
+| Pi-B is offline during cross-PC send | Sender immediately receives `transport_error: offline`. There is no offline queue in the relay. |
+| Pi-B belongs to another Owner | Sender receives `transport_error: not_authorized` |
+| Owner revokes Pi-A from the mesh | Pi-A detects it at the next `mesh_versions` poll, self-revokes, and exits gracefully |
+| Pi WS reconnects frequently (NAT timeout) | Relay deduplicates `peer_online` emission (offline→online transition only); client deduplicates identical snapshots |
+| Relay crashes | All cross-PC traffic stops; local agents continue operating (UDS) |
 
 ---
 
-## Roadmap arquitetural (público)
+## Public architectural roadmap
 
-Curto prazo:
-- Wave E2: `chmod 0o600` em `peers.json` + atomic write
-- Wave E3: detecção de clone server-side (alerta quando 2 WS mesma Pi-pubkey de IPs diferentes)
+Short term:
+- Wave E2: `chmod 0o600` on `peers.json` + atomic write
+- Wave E3: server-side clone detection (alert when two WS connections for the same Pi-pubkey come from different IPs)
 
-Médio prazo:
-- **Wrappers de harness** (`outpost-pi claude`, `outpost-pi opencode`): outros agentes coding plugam no broker UDS local via wrapper, ganham mesh sem reimplementar protocolo
-- E2E cifragem do payload (Curve25519 + ChaCha20-Poly1305 entre App ↔ Pi; opcional cross-PC)
+Medium term:
+- **Harness wrappers** (`outpost-pi claude`, `outpost-pi opencode`): other coding agents connect to the local UDS broker through a wrapper, gaining mesh capability without reimplementing the protocol
+- E2E payload encryption (Curve25519 + ChaCha20-Poly1305 between App ↔ Pi; optional cross-PC)
 
-Longo prazo:
-- PC-to-PC direto via WebRTC/QUIC (relay vira fallback)
-- HW-bound Pi-key opcional via Secure Enclave (Apple Silicon) / TPM (Linux/Windows)
+Long term:
+- Direct PC-to-PC communication through WebRTC/QUIC (the relay becomes a fallback)
+- Optional hardware-bound Pi-key through Secure Enclave (Apple Silicon) / TPM (Linux/Windows)
 
 ---
 
-## Implementações de referência
+## Reference implementations
 
 - **Relay** (Rust, axum): [`relay/src/`](relay/src/)
 - **Pi-extension** (Node/TS): [`pi-extension/src/`](pi-extension/src/)
-- **App mobile** (Flutter): [`app/lib/`](app/lib/)
-- **Planos arquiteturais**: [`plan/`](plan/) (especialmente `plan/03-protocol.md`, `plan/23-owner-key-sync.md`, `plan/24-mesh-membership.md`, `plan/25-pc-mesh-bootstrap.md`)
+- **Mobile app** (Flutter): [`app/lib/`](app/lib/)
+- **Architectural plans**: [`plan/`](plan/) (especially `plan/03-protocol.md`, `plan/23-owner-key-sync.md`, `plan/24-mesh-membership.md`, `plan/25-pc-mesh-bootstrap.md`)
 
 ---
 
-## Reportar problemas de segurança
+## Report security issues
 
-[Definir canal] — por enquanto, abra issue marcando como `security` ou contate maintainers diretamente.
+[Define channel] — for now, open an issue marked `security` or contact the maintainers directly.
