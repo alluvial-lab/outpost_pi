@@ -5,32 +5,26 @@ import 'package:cockpit/app/core/env.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Prova empírica do que conversamos com o mantenedor do flutter_modular: um
-/// bind root-owned registrado via `add<T>(Impl.new)` (factory/lazy, NÃO
-/// `addInstance`) resolve uma dep que também é root-owned (`PiSpawnConfig` via
-/// `addInstance`) — core→core, mesmo escopo raiz.
+/// Verify the flutter_modular maintainer's root-scope resolution contract.
 ///
-/// Contraste com o que NÃO funciona (confirmado pelo mantenedor): o MESMO
-/// `add<T>(Impl.new)` num módulo de feature (com `path`) estoura
-/// "PiSpawnConfig not registered", porque o injector da feature é folha e não
-/// enxerga o core. Por isso essas factories moram no core, não no settings.
+/// A root-owned `add<T>(Impl.new)` binding resolves another root-owned
+/// dependency registered with `addInstance`. By contrast, placing the same
+/// factory in a pathful feature module cannot resolve `PiSpawnConfig`, so these
+/// factories remain in core rather than settings.
 void main() {
-  test(
-    'core add<T>(Impl.new) resolve PiSpawnConfig (core→core), incl. create()',
-    () {
-      const config = PiSpawnConfig(executable: 'pi');
-      final boot = bootstrapModule(buildCoreModule(config: config));
+  test('core add<T>(Impl.new) resolves PiSpawnConfig and create()', () {
+    const config = PiSpawnConfig(executable: 'pi');
+    final boot = bootstrapModule(buildCoreModule(config: config));
 
-      final pairing = boot.injector.get<PairingGatewayFactory>();
-      final revoke = boot.injector.get<RevokeGatewayFactory>();
+    final pairing = boot.injector.get<PairingGatewayFactory>();
+    final revoke = boot.injector.get<RevokeGatewayFactory>();
 
-      expect(pairing, isA<PairingGatewayFactory>());
-      expect(revoke, isA<RevokeGatewayFactory>());
+    expect(pairing, isA<PairingGatewayFactory>());
+    expect(revoke, isA<RevokeGatewayFactory>());
 
-      // create() constrói o gateway a partir do config injetado — se o construtor
-      // não tivesse resolvido o PiSpawnConfig, a resolução acima já teria estourado.
-      expect(pairing.create(), isA<PairingGateway>());
-      expect(revoke.create(), isA<RevokeGateway>());
-    },
-  );
+    // create() builds each gateway from the injected config. If construction
+    // had not resolved PiSpawnConfig, the lookups above would already fail.
+    expect(pairing.create(), isA<PairingGateway>());
+    expect(revoke.create(), isA<RevokeGateway>());
+  });
 }

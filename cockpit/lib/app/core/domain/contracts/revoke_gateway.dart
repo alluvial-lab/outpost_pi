@@ -1,19 +1,28 @@
 import 'package:cockpit/app/core/domain/exceptions/relay_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 
-/// Revoga um aparelho pareado via `pi --mode rpc` (não pelo CLI `outpost-pi`).
+/// Revoke a paired device through `pi --mode rpc`, not the outpost-pi CLI.
 ///
-/// Sobe um pi efêmero (com a extensão outpost-pi) e manda
-/// `/outpost-pi revoke <shortId>` — que **auto-liga o relay** e remove o peer
-/// (manda `bye` pro aparelho). Sucesso é detectado pelo `notify` `Revoked: …`;
-/// warnings viram [RelayError]. Contrato no domínio; a impl (Process) em `data/`.
+/// Starts an ephemeral Pi process with outpost-pi and sends
+/// `/outpost-pi revoke <shortId>`, which connects the relay and removes the
+/// peer. A `Revoked: …` notification confirms success; warnings become
+/// [RelayError] values. The process adapter lives in `data/`.
 abstract class RevokeGateway {
+  /// Revoke the device identified by [shortId] within [timeout].
+  ///
+  /// Returns [Success] after the confirmation notification, or [Failure] with
+  /// a [RelayError] when startup, relay feedback, process exit, or timeout
+  /// prevents confirmation. The ephemeral process is torn down before return.
   Future<Result<void, RelayError>> revoke(String shortId, {Duration timeout});
 }
 
-/// Cria uma [RevokeGateway] **nova por chamada** (cada revoke sobe seu próprio
-/// `pi --mode rpc`). Tipo nomeado (não `RevokeGateway Function()`) para ser
-/// auto-injetável via `.new` no `ConnectivityViewModel`.
+/// Create [RevokeGateway] instances through a named, injectable factory.
+///
+/// The named contract supports `.new` injection into `ConnectivityViewModel`.
 abstract class RevokeGatewayFactory {
+  /// Create a fresh gateway for one ephemeral revoke operation.
+  ///
+  /// Each returned gateway starts and tears down its own Pi process when
+  /// [RevokeGateway.revoke] runs.
   RevokeGateway create();
 }

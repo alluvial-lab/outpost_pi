@@ -1,34 +1,35 @@
 import 'package:cockpit/app/core/domain/entities/pair_event.dart';
 
-/// Uma sessão **efêmera** de pareamento de aparelho.
+/// Run one ephemeral device-pairing session.
 ///
-/// Sobe um `pi --mode rpc --no-session` (com a extensão outpost-pi), injeta um
-/// `OUTPOST_PI_DIRECT_CONFIG` de pareamento e dispara `/outpost-pi pair`. Os
-/// eventos custom do outpost-pi chegam tipados por [events]; [cancel] mata o
-/// processo (sem órfão) e limpa a pasta temporária.
+/// Starts `pi --mode rpc --no-session` with outpost-pi, injects a pairing
+/// `OUTPOST_PI_DIRECT_CONFIG`, and invokes `/outpost-pi pair`. Custom events
+/// arrive as typed values through [events]; [cancel] stops the process and
+/// removes its temporary directory.
 ///
-/// Uma instância = uma tentativa de pareamento (processo próprio). Contrato no
-/// domínio; a impl (Process/filesystem) mora em `data/`.
+/// Each instance owns one pairing attempt and its process. Process and file
+/// system details remain in the `data/` adapter.
 abstract class PairingGateway {
-  /// Stream dos eventos de pareamento ([PairCodeReady], [PairDevicePaired],
-  /// [PairFailed]). Broadcast; fecha quando a sessão encerra.
+  /// Broadcast pairing events and close the stream when the session ends.
   Stream<PairEvent> get events;
 
-  /// Sobe o processo e dispara o pareamento com a validade [ttl]. Falhas viram
-  /// um [PairFailed] em [events] (não lança).
+  /// Start pairing with validity period [ttl].
+  ///
+  /// Reports startup and session failures as [PairFailed] events rather than
+  /// throwing them to the caller.
   Future<void> start({Duration ttl});
 
-  /// Encerra a sessão: mata o processo e remove a pasta temporária.
+  /// End the session, stop its process, and remove its temporary directory.
   Future<void> cancel();
 }
 
-/// Cria uma [PairingGateway] **nova por chamada** (cada tentativa de pareamento
-/// sobe seu próprio processo efêmero). Contrato no domínio; a impl (que conhece
-/// o `PiSpawnConfig`) mora em `data/`.
+/// Create [PairingGateway] instances through a named, injectable factory.
 ///
-/// É um **tipo nomeado** de propósito (em vez de `PairingGateway Function()`):
-/// assim o `ConnectivityViewModel` pode ser auto-injetado via `.new` — o parser
-/// de parâmetros do `auto_injector` não lida com dois `T Function()` seguidos.
+/// The named contract lets `ConnectivityViewModel` use `.new` injection because
+/// `auto_injector` cannot parse consecutive `T Function()` dependencies.
 abstract class PairingGatewayFactory {
+  /// Create a fresh gateway for one ephemeral pairing attempt.
+  ///
+  /// The caller owns cancellation of the returned gateway and its process.
   PairingGateway create();
 }
