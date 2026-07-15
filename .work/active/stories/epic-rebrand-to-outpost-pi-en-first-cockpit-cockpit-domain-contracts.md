@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-domain-contracts
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-domain
 depends_on: []
@@ -56,3 +56,11 @@ rather than adding speculative API surface.
 - [ ] Every contract interface and every `Result`-returning method still has meaningful `///` documentation under `.agents/skills/documentation-conventions/SKILL.md`.
 - [ ] A targeted accented-Latin grep reports no matches in the 21 files, and a manual lexical review catches unaccented Portuguese residue.
 - [ ] `dart format` is run on the owned files; from `cockpit/`, `flutter analyze` and `flutter test` pass (or an exact environment failure is reported without weakening tests).
+
+## Implementation notes
+
+- Files changed: all 21 contract files listed in Scope under `cockpit/lib/app/cockpit/domain/contracts/`.
+- Tests added: none; this was a comment-only translation and documentation-quality pass.
+- Discrepancies from design: none. The story's audit found the required contract-interface and `Result` member docs already present, so no speculative member docs were added. The literal `~/.pi/agent/sessions/<cwd-codificado>/` remains unchanged despite its unaccented Portuguese placeholder because the story explicitly requires preserving code literals.
+- Verification: `dart format` completed on all 21 files with no formatting changes; `flutter analyze` passed with zero issues; the full `flutter test` suite passed with 241 tests; the targeted accented-Latin grep returned no matches; executable code outside comments is byte-equivalent after whitespace normalization.
+- Adjacent issues parked: none.

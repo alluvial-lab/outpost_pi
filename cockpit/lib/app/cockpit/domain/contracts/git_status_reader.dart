@@ -1,9 +1,12 @@
 import 'package:cockpit/app/cockpit/domain/entities/git_info.dart';
 
-/// Lê o estado git de uma pasta. Contrato no domínio; a impl (roda `git`) mora
-/// em `data/`.
+/// Read a folder's Git state.
+///
+/// This domain contract is implemented in `data/` by running `git`.
 abstract class GitStatusReader {
-  /// [GitInfo] do repo em [path], ou `null` se a pasta **não** é repositório git
-  /// (ou o git não está disponível).
+  /// Return [GitInfo] for the repository at [path].
+  ///
+  /// Returns `null` when the folder is **not** a Git repository or Git is
+  /// unavailable.
   Future<GitInfo?> read(String path);
 }
