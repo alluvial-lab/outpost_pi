@@ -1,7 +1,7 @@
 ---
 id: feature-outpost-pi-distribution-ownership-cockpit-identifiers
 kind: story
-stage: review
+stage: done
 tags: [rebrand, cockpit, release]
 parent: feature-outpost-pi-distribution-ownership
 depends_on: []
@@ -68,3 +68,13 @@ export PUB_CACHE=/home/agent/projects/remote_pi/.pub-cache
 It is outside this story's exact file scope; the CI-signing story owns its
 workflow/configuration migration. Consequently, a raw `rg 'Jacob Moura'
  cockpit/` also reports that configuration line until the CI-signing work lands.
+
+## Review (2026-07-15)
+
+**Verdict**: Approve - story verified by implement; fast-lane advance
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fast-lane: green build+test verification recorded by implement. Orchestrator re-verified the combined tree (extension 838 passed/3 skipped; relay all green; app analyze clean + 698 passed; protocol check + generate:rust:check clean; site lint+build clean).
