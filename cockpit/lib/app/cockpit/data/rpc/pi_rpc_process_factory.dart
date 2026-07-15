@@ -3,7 +3,10 @@ import 'package:cockpit/app/cockpit/data/rpc/pi_rpc_process.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/rpc_gateway_factory.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/rpc_process_gateway.dart';
 
-/// Cria um [PiRpcProcess] novo por agente (multiplexação da Wave 2).
+/// Create a dedicated [PiRpcProcess] for each agent.
+///
+/// Keeping one process per gateway preserves independent process lifecycle and
+/// request correlation when multiple agents run concurrently.
 class PiRpcProcessFactory implements RpcGatewayFactory {
   const PiRpcProcessFactory(this._config);
 
