@@ -3,8 +3,9 @@ import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Seletor de modelo com busca (o catálogo tem centenas). Devolve o [PiModel]
-/// escolhido, ou `null` se cancelar.
+/// Search the model catalog and choose a model.
+///
+/// Returns the selected [PiModel], or `null` when canceled.
 Future<PiModel?> showModelPicker(
   BuildContext context, {
   required List<PiModel> models,

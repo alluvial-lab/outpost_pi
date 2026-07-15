@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-ui-workspace-navigation-review
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-ui
 depends_on: []
@@ -89,3 +89,24 @@ export PUB_CACHE=~/projects/remote_pi/.pub-cache
 
 Review the word diff and every changed literal. The full cockpit test suite is
 the integrated parent gate.
+
+## Implementation notes
+
+- Files changed: the 15 PT-bearing widget files in scope (`agent_edit_dialog.dart`,
+  `cockpit_topbar.dart`, `confirm_dialog.dart`, `empty_pane.dart`,
+  `file_tree_panel.dart`, `history_dialog.dart`, `model_picker.dart`,
+  `pane_divider.dart`, `pane_view.dart`, `projects_rail.dart`,
+  `subfolder_dialog.dart`, `welcome_view.dart`, `workspace_avatar.dart`,
+  `workspace_settings_dialog.dart`, and `worktree_create_dialog.dart`).
+  `update_card.dart` and `widgets.dart` were audited and intentionally left
+  unchanged as Skip-tier surfaces.
+- Tests added: none; this is a comment/dartdoc and reviewed-copy change with no
+  behavior change.
+- Discrepancies from design: none. The PT branch placeholder was deliberately
+  changed from `feat/minha-feature` to `feat/my-feature`; all other literals,
+  identifiers, callbacks, validation, and navigation behavior were preserved.
+- Documentation audit: all exported widgets with 3+ constructor parameters and
+  exported dialog helpers in this shard retain concise EN intent/contract docs;
+  no filler docs were added to private implementation widgets, overrides, the
+  barrel, or `UpdateCard`.
+- Adjacent issues parked: none.

@@ -1,9 +1,9 @@
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Pane vazio ("Novo"): dois cards — "Novo agente" / "Novo terminal" — que
-/// abrem o seletor de subpasta. Visual de card (ícone + título + descrição),
-/// inspirado no launcher do Pi.
+/// Offer agent and terminal creation from an otherwise empty pane.
+///
+/// Each card delegates to the caller, which opens the subfolder picker.
 class EmptyPane extends StatelessWidget {
   const EmptyPane({
     super.key,
@@ -61,7 +61,7 @@ class EmptyPane extends StatelessWidget {
   }
 }
 
-/// Card clicável (hover destaca o fundo e a borda).
+/// Highlight a creation action card on hover.
 class _ActionCard extends StatefulWidget {
   const _ActionCard({
     required this.icon,

@@ -2,16 +2,16 @@ import 'package:cockpit/app/cockpit/ui/states/pane_node.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:flutter/widgets.dart';
 
-/// Handle de redimensionamento de pane. Preenche **toda** a área que recebe (o
-/// `Positioned` largo no `Stack` do split) para uma região de arraste generosa,
-/// mas desenha só uma **linha de 1px** centralizada — visual fino, pega larga.
-/// Vira accent ao passar o mouse / arrastar.
+/// Resize adjacent panes through a generous drag target and a thin divider.
+///
+/// The widget fills its positioned split area but paints only a centered
+/// one-pixel line, which uses the accent color while hovered or dragged.
 class PaneDivider extends StatefulWidget {
   const PaneDivider({super.key, required this.dir, required this.onDelta});
 
   final SplitDir dir;
 
-  /// Delta em pixels (dx para vertical, dy para horizontal).
+  /// Receives horizontal pixels for vertical splits and vertical pixels otherwise.
   final ValueChanged<double> onDelta;
 
   @override
