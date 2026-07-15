@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-ui-terminal-transcript-widgets
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, i18n, cockpit]
 parent: epic-rebrand-to-outpost-pi-en-first-cockpit-cockpit-ui
 depends_on: []
@@ -87,3 +87,24 @@ export PUB_CACHE=~/projects/remote_pi/.pub-cache
 
 Review the word diff and changed string literals; the full cockpit suite is the
 integrated parent gate.
+
+## Implementation notes
+
+- Files changed: all 13 owned widget files plus
+  `cockpit/test/ui/terminal_input_test.dart`.
+- Tests added: none; retained and translated all 14 existing terminal-input test
+  cases, including deliberate review of fixture prose while preserving escape
+  sequences, event flags, and assertions.
+- Discrepancies from design: none. Added purpose/composition dartdoc to
+  `AgentTranscript`, `CockpitTerminal`, and `CockpitTerminalGestureHandler`, and
+  preserved the xterm fork, cache, selection, and native-picture lifecycle
+  contracts on `CockpitTerminalState` and `CockpitTerminalRender`.
+- Verification: offline pub resolution passed; targeted terminal test passed
+  (14/14); `flutter analyze` passed with zero issues; full `flutter test` passed
+  (241 tests); formatter check passed for all owned files; accented-PT and manual
+  unaccented-PT sweeps found no remaining Portuguese prose.
+- Adjacent issues parked: none.
+- Rationale: kept upstream-style field docs and Flutter overrides unchanged, as
+  required, and translated only comments, dartdoc, test descriptions, and
+  natural-language fixture chunks so rendering and lifecycle behavior remain
+  unchanged.

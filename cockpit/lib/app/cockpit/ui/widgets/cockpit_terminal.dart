@@ -1,12 +1,11 @@
-// Fork do `TerminalView` do xterm (src/terminal_view.dart) pro cockpit. Cópia
-// quase literal: toda a fiação de teclado/IME/gestos/scroll/atalhos é a do xterm
-// (madura, sem regressão). A ÚNICA diferença é instanciar o nosso
-// [CockpitTerminalRender] (com cache de Picture por linha) em vez do
-// `RenderTerminal` original — ver cockpit_terminal_render.dart.
+// Fork of xterm's `TerminalView` (`src/terminal_view.dart`) for Cockpit. This is
+// deliberately near-verbatim so xterm retains ownership of mature keyboard,
+// IME, gesture, scroll, and shortcut behavior. The only difference is creating
+// [CockpitTerminalRender], with its per-line Picture cache, instead of xterm's
+// `RenderTerminal`; see cockpit_terminal_render.dart.
 //
-// Precisamos forkar o view (e não só o render) porque o `_TerminalView` privado
-// do xterm cria o `RenderTerminal` concreto lá dentro: não há ponto de injeção
-// pra trocar o render mantendo o view do pacote.
+// Forking the view is necessary because xterm's private `_TerminalView` creates
+// the concrete renderer internally and exposes no renderer injection point.
 //
 // ignore_for_file: implementation_imports
 import 'package:flutter/cupertino.dart';
@@ -32,6 +31,11 @@ import 'package:xterm/src/ui/themes.dart';
 import 'cockpit_terminal_gesture.dart';
 import 'cockpit_terminal_render.dart';
 
+/// Embed xterm input and scrolling around Cockpit's cached terminal renderer.
+///
+/// Preserves xterm's keyboard, IME, gesture, and shortcut contracts while
+/// substituting [CockpitTerminalRender] for painting. [TerminalPane] composes
+/// this widget when link handling and selection auto-scroll are required.
 class CockpitTerminal extends StatefulWidget {
   const CockpitTerminal(
     this.terminal, {
@@ -157,6 +161,10 @@ class CockpitTerminal extends StatefulWidget {
   State<CockpitTerminal> createState() => CockpitTerminalState();
 }
 
+/// Coordinate xterm input state with the Cockpit render-object boundary.
+///
+/// Owns focus, text input, shortcuts, and terminal listeners. Exposes the render
+/// object to the gesture adapter without leaking xterm's private view state.
 class CockpitTerminalState extends State<CockpitTerminal> {
   late FocusNode _focusNode;
 
@@ -174,11 +182,11 @@ class CockpitTerminalState extends State<CockpitTerminal> {
 
   late ScrollController _scrollController;
 
-  /// True quando a app (claude/vim) declarou mouse reporting com scroll
-  /// (`MouseMode.reportScroll`): nesse caso **ela** dona o scroll, então
-  /// desligamos o nosso `Scrollable` (vira `NeverScrollableScrollPhysics`) e
-  /// deixamos o [TerminalPane] encaminhar o wheel pra app. Atualizado por um
-  /// listener no terminal porque o mouse mode muda via sequência de escape.
+  /// Track when the terminal application owns scrolling through mouse reporting.
+  ///
+  /// In `MouseMode.reportScroll`, disable the local Scrollable and let
+  /// [TerminalPane] forward wheel input. A terminal listener keeps this current
+  /// because escape sequences can change mouse mode.
   bool _appOwnsScroll = false;
 
   CockpitTerminalRender get renderTerminal =>
@@ -197,9 +205,10 @@ class CockpitTerminalState extends State<CockpitTerminal> {
     super.initState();
   }
 
-  /// O mouse mode da app muda via escape (DECSET 1000/1002/1006…), processado em
-  /// `terminal.write`, que notifica os listeners. Só reconstruímos quando o bit
-  /// de "app dona o scroll" realmente vira — não a cada frame de output.
+  /// Rebuild only when escape processing changes application scroll ownership.
+  ///
+  /// `terminal.write` notifies listeners for every output frame, but DECSET
+  /// 1000/1002/1006 changes are the only updates relevant here.
   void _onTerminalMouseModeMaybeChanged() {
     final owns = widget.terminal.mouseMode.reportScroll;
     if (owns != _appOwnsScroll) {
@@ -257,8 +266,8 @@ class CockpitTerminalState extends State<CockpitTerminal> {
     Widget child = Scrollable(
       key: _scrollableKey,
       controller: _scrollController,
-      // App dona o scroll (claude/vim com mouse reporting) → não rolamos o nosso
-      // scrollback; o wheel é encaminhado pra app pelo [TerminalPane].
+      // When the application owns scrolling through mouse reporting, stop local
+      // scrollback and let TerminalPane forward wheel input.
       physics: _appOwnsScroll ? const NeverScrollableScrollPhysics() : null,
       viewportBuilder: (context, offset) {
         return _CockpitTerminalLeaf(

@@ -2,18 +2,19 @@ import 'dart:async';
 
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
-// `gpt_markdown` é um pacote Material: estiliza headings/links/code via
-// `Theme.of(context)` Material + uma `GptMarkdownThemeData` (ThemeExtension do
-// Material). Sob `ShadcnApp` não há Theme Material → ele cai no ThemeData()
-// claro (títulos escuros). Por isso embrulhamos só o markdown num Theme Material
-// (prefixo `m.`) com as nossas cores. O resto do app segue shadcn.
+// `gpt_markdown` is a Material package that styles headings, links, and code
+// through Material's `Theme.of(context)` plus `GptMarkdownThemeData`. ShadcnApp
+// supplies no Material theme, so the package falls back to light ThemeData with
+// dark headings. Wrap only the markdown in a Material theme (the `m.` prefix)
+// using Cockpit colors; the rest of the app remains shadcn.
 import 'package:flutter/material.dart' as m;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Renderiza o Markdown (GFM + code) da resposta do agente, com a identidade
-/// visual do Cockpit. Tolerante a markdown parcial (serve pro streaming).
+/// Render an agent response as GFM and code with Cockpit styling.
+///
+/// Tolerates partial Markdown so streaming responses can render incrementally.
 class AgentMarkdown extends StatelessWidget {
   const AgentMarkdown(this.data, {super.key});
 
@@ -24,11 +25,10 @@ class AgentMarkdown extends StatelessWidget {
     final colors = context.colors;
     final typo = context.typo;
     final brightness = Theme.of(context).brightness;
-    // Tema Material só pro gpt_markdown: headings/links/cores com a paleta do
-    // Cockpit (senão o pacote usa o ThemeData() claro → títulos escuros). A
-    // seleção de texto é provida pelos chamadores (transcript / file viewer),
-    // que envolvem o scrollable num `SelectionArea` — assim o auto-scroll segue
-    // o arraste da seleção.
+    // Give only gpt_markdown a Material theme using the Cockpit palette; without
+    // it the package uses light ThemeData and dark headings. Transcript and file
+    // viewer callers provide SelectionArea around scrolling so selection drags
+    // can auto-scroll.
     final base = brightness == Brightness.dark
         ? m.ThemeData.dark()
         : m.ThemeData.light();
@@ -59,7 +59,7 @@ class AgentMarkdown extends StatelessWidget {
       child: GptMarkdown(
         data,
         style: typo.body.copyWith(color: colors.text),
-        // `code` inline — fundo sutil, mono.
+        // Give inline `code` a subtle background and monospace text.
         highlightBuilder: (context, text, style) => Text(
           text,
           style: typo.mono.copyWith(
@@ -68,7 +68,7 @@ class AgentMarkdown extends StatelessWidget {
             backgroundColor: colors.panel3,
           ),
         ),
-        // Blocos ``` — card escuro com header (linguagem + copiar).
+        // Render fenced blocks as dark cards with language/copy headers.
         codeBuilder: (context, name, code, closed) =>
             _CodeBlock(language: name, code: code),
       ),
@@ -87,8 +87,8 @@ class _CodeBlock extends StatefulWidget {
 }
 
 class _CodeBlockState extends State<_CodeBlock> {
-  // Controller próprio pra a Scrollbar horizontal ficar sempre visível
-  // (thumbVisibility exige um controller compartilhado com o scroll view).
+  // Own a controller so the horizontal scrollbar can stay visible;
+  // thumbVisibility requires sharing it with the scroll view.
   final ScrollController _horizontal = ScrollController();
 
   @override
@@ -132,8 +132,7 @@ class _CodeBlockState extends State<_CodeBlock> {
               ],
             ),
           ),
-          // Scroll horizontal com barra **sempre visível** pra código que
-          // estoura a largura (linhas longas) — antes a barra não aparecia.
+          // Keep the horizontal scrollbar visible for code wider than the view.
           Scrollbar(
             controller: _horizontal,
             thumbVisibility: true,
