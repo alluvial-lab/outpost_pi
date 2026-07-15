@@ -12,24 +12,18 @@ Future<void> _toggleMaximize() async {
   }
 }
 
-/// Barra de título customizada (~46px): arrasta a janela e maximiza no
-/// duplo-clique, **sem atrasar o tap dos botões**.
+/// Render a draggable custom title bar that maximizes on double-click.
 ///
-/// O pulo do gato é manter o [DragToMoveArea] numa **camada de fundo** (atrás
-/// dos [children]) em vez de envelopá-los. O `DragToMoveArea` usa `onDoubleTap`,
-/// e o `DoubleTapGestureRecognizer` dele **segura a arena de gestos** por
-/// `kDoubleTapTimeout` (300ms) esperando um segundo clique. Se os botões forem
-/// descendentes dele, **todo** `onTap` herda esse atraso — o "input lag" de ~1s
-/// percebido ao fechar/minimizar/maximizar e nos toggles de pane.
-///
-/// Com o drag no fundo, os botões capturam o tap na hora; vãos, `Spacer` e
-/// textos da [Row] não absorvem o ponteiro e caem (translúcidos) pro fundo
-/// arrastável — então arrastar a janela e o duplo-clique-maximiza continuam
-/// funcionando em qualquer área vazia da barra.
+/// Keeps [DragToMoveArea] in a background layer behind [children] rather than
+/// wrapping them. Its `DoubleTapGestureRecognizer` holds the gesture arena for
+/// `kDoubleTapTimeout` while awaiting a second click; descendant buttons would
+/// inherit that delay. With dragging behind the controls, buttons receive taps
+/// immediately while gaps, `Spacer`, and [Row] text pass pointers through to the
+/// draggable layer. Empty title-bar areas therefore still drag and maximize.
 class WindowTitleBar extends StatelessWidget {
   const WindowTitleBar({super.key, required this.children});
 
-  /// Conteúdo da barra (semáforo, toggles, título, …). Vão direto numa [Row].
+  /// Title-bar controls and content placed directly in a [Row].
   final List<Widget> children;
 
   @override
@@ -43,14 +37,14 @@ class WindowTitleBar extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Fundo arrastável — ATRÁS dos botões (ver doc da classe).
+          // Keep the draggable background behind the buttons; see class docs.
           const Positioned.fill(
             child: DragToMoveArea(child: SizedBox.expand()),
           ),
-          // Camada interativa — botões disparam o onTap sem o hold da arena.
+          // The interactive layer receives taps without the gesture-arena hold.
           Positioned.fill(
             child: Padding(
-              // Windows/Linux: caption cola no canto direito (sem padding).
+              // On Windows/Linux, place caption controls flush right.
               padding: EdgeInsets.only(
                 left: 18,
                 right: Platform.isWindows || Platform.isLinux ? 0 : 12,
@@ -64,9 +58,10 @@ class WindowTitleBar extends StatelessWidget {
   }
 }
 
-/// Controles de janela **à esquerda** (convenção macOS): semáforo
-/// fechar/minimizar/maximizar. Em plataformas não-macOS não renderiza nada —
-/// no Windows os controles vão à direita via [WindowControlsTrailing].
+/// Render macOS-style close, minimize, and maximize controls on the left.
+///
+/// Renders nothing on non-macOS platforms; Windows controls appear on the right
+/// through [WindowControlsTrailing].
 class WindowControls extends StatefulWidget {
   const WindowControls({super.key});
 
@@ -114,10 +109,11 @@ class _WindowControlsState extends State<WindowControls> {
   }
 }
 
-/// Controles de janela **à direita** (convenção Windows/Linux): botões quadrados
-/// minimizar/maximizar/fechar, com hover de fundo (fechar fica vermelho). No
-/// macOS não renderiza nada (lá o semáforo fica à esquerda via [WindowControls]).
-/// Posicione no fim da topbar.
+/// Render Windows/Linux-style window controls at the right edge of the top bar.
+///
+/// Uses square minimize, maximize, and close buttons with hover backgrounds; the
+/// close button turns red. Renders nothing on macOS, where [WindowControls]
+/// provides left-side traffic-light controls.
 class WindowControlsTrailing extends StatelessWidget {
   const WindowControlsTrailing({super.key});
 

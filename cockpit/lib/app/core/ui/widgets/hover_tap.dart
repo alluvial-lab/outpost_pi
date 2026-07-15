@@ -1,14 +1,12 @@
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:flutter/widgets.dart';
 
-/// Substituto do Material `InkWell` para superfícies clicáveis custom (linhas de
-/// lista, itens de menu, chips): hover + clique **sem depender de Material**.
+/// Provide Material-free hover and tap behavior for custom clickable surfaces.
 ///
-/// O hover pinta um fundo sutil (default `context.colors.panel3`). Para ações de
-/// verdade (primária/secundária/destrutiva) use os `Button` do shadcn
-/// (`PrimaryButton`, `OutlineButton`, `GhostButton`, `DestructiveButton`,
-/// `IconButton`). Este widget cobre o caso "área clicável com realce de hover"
-/// que o `InkWell` resolvia — é o que o shadcn faz internamente via `Clickable`.
+/// Replaces `InkWell` for list rows, menu items, and chips, with a subtle hover
+/// background defaulting to `context.colors.panel3`. Use shadcn buttons for
+/// primary, secondary, or destructive actions; this widget covers generic
+/// clickable areas with hover emphasis, like shadcn's internal `Clickable`.
 class HoverTap extends StatefulWidget {
   const HoverTap({
     super.key,
@@ -27,13 +25,13 @@ class HoverTap extends StatefulWidget {
   final EdgeInsetsGeometry? padding;
   final BorderRadius borderRadius;
 
-  /// Fundo base (sem hover). `null` = transparente.
+  /// Base background when not hovered; `null` is transparent.
   final Color? color;
 
-  /// Fundo no hover. `null` → `context.colors.panel3`.
+  /// Hover background; `null` falls back to `context.colors.panel3`.
   final Color? hoverColor;
 
-  /// Borda opcional (constante em hover e repouso).
+  /// Optional border that remains constant at rest and on hover.
   final BoxBorder? border;
   final MouseCursor cursor;
 

@@ -3,10 +3,10 @@ import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:flutter/widgets.dart';
 import 'package:highlight/highlight.dart' as hl;
 
-/// Extensões cujo nome **não** bate com o id do highlight.js e cuja gramática
-/// não declara alias — precisam ser mapeadas na mão. As demais (rs, yml, sh,
-/// toml, rb, py, c, h, …) já são resolvidas pelos aliases das próprias
-/// gramáticas; e qualquer extensão desconhecida cai em texto puro (plaintext).
+/// Map extensions that differ from highlight.js IDs and declare no grammar alias.
+///
+/// Other extensions such as rs, yml, sh, toml, rb, py, c, and h resolve through
+/// grammar aliases; unknown extensions fall back to plain text.
 const Map<String, String> _extToLanguage = {
   'ts': 'typescript',
   'tsx': 'typescript',
@@ -23,12 +23,15 @@ const Map<String, String> _extToLanguage = {
   'xhtml': 'xml',
 };
 
-/// Teto pra ligar o highlight. Acima disso o parse + a árvore de spans não
-/// compensam (e o reader já corta arquivos em 2MB); cai no texto puro.
+/// Limit syntax highlighting to inputs where parsing and span trees are worthwhile.
+///
+/// Larger input falls back to plain text; the reader already truncates files at
+/// 2 MB.
 const int _kMaxHighlightChars = 200 * 1024;
 
-/// Um range de diagnostic já convertido para **offsets** lineares no texto
-/// (code units UTF-16) — ver `CodeEditingController.offsetFor`. `[start, end)`.
+/// Represent a diagnostic range as linear UTF-16 code-unit offsets.
+///
+/// Uses the half-open interval `[start, end)`.
 class DiagnosticRange {
   const DiagnosticRange(this.start, this.end, this.severity);
 
@@ -37,19 +40,19 @@ class DiagnosticRange {
   final LspSeverity severity;
 }
 
-/// Converte diagnostics do LSP (posições `line`/`character`, base 0, UTF-16) em
-/// [DiagnosticRange]s de offset linear sobre [text]. As code units UTF-16 do LSP
-/// batem 1:1 com a `String` Dart — é só aritmética de offset (nunca
-/// `.runes`/`.characters`). Posições defasadas são clampadas; ranges de largura
-/// zero viram 1 caractere para terem um glifo a sublinhar. Reusada pelo editor
-/// (via controller) e pelo viewer read-only.
+/// Convert zero-based LSP UTF-16 positions into linear [DiagnosticRange]s.
+///
+/// LSP UTF-16 code units map directly to Dart [String] offsets, so conversion
+/// uses offset arithmetic rather than `.runes` or `.characters`. Clamps stale
+/// positions and expands zero-width ranges to one character when possible so
+/// there is a glyph to underline. Shared by the editor and read-only viewer.
 List<DiagnosticRange> diagnosticRangesFor(
   String text,
   List<LspDiagnostic> diagnostics,
 ) {
   if (diagnostics.isEmpty) return const <DiagnosticRange>[];
 
-  // Índice de início de cada linha (offset logo após cada '\n').
+  // Index each line start at the offset immediately after its preceding `\n`.
   final lineStarts = <int>[0];
   for (var i = 0; i < text.length; i++) {
     if (text.codeUnitAt(i) == 0x0A) lineStarts.add(i + 1);
@@ -81,11 +84,12 @@ List<DiagnosticRange> diagnosticRangesFor(
   return ranges;
 }
 
-/// Constrói os spans coloridos de [source] para a linguagem [language] (a
-/// extensão do arquivo), aplicando o sublinhado ondulado dos [diagnostics] nos
-/// ranges cobertos. Retorna `null` apenas quando não há nada a pintar (sem
-/// linguagem **e** sem diagnostics, arquivo grande sem diagnostics, ou parse
-/// vazio sem diagnostics) — o chamador então renderiza o texto puro.
+/// Build highlighted spans for [source] and its file-extension [language].
+///
+/// Applies wavy underlines over covered [diagnostics]. Returns `null` only when
+/// there is nothing special to paint: no language and no diagnostics, oversized
+/// input without diagnostics, or an empty parse without diagnostics. The caller
+/// then renders plain text.
 TextSpan? buildCodeSpan(
   BuildContext context, {
   required String source,
@@ -96,8 +100,8 @@ TextSpan? buildCodeSpan(
   final palette = context.syntax;
   final leaves = _leavesOf(source, language, palette);
   if (leaves == null) {
-    // Sem highlight possível. Só vale construir spans se houver diagnostics
-    // para sublinhar; senão, deixa o chamador pintar o texto puro.
+    // Without syntax highlighting, only build spans when diagnostics need
+    // underlines; otherwise let the caller render plain text.
     if (diagnostics.isEmpty) return null;
     return TextSpan(
       style: baseStyle,
@@ -110,16 +114,19 @@ TextSpan? buildCodeSpan(
   );
 }
 
-/// Folha achatada da árvore do highlight.js: um trecho de texto + seu estilo
-/// (cor de syntax já resolvida). A ordem reconstrói o texto inteiro.
+/// Store one flattened highlight.js text leaf and its resolved syntax style.
+///
+/// Leaf order reconstructs the complete source text.
 class _Leaf {
   _Leaf(this.text, this.style);
   final String text;
   final TextStyle? style;
 }
 
-/// Parseia [source] e achata a árvore do highlight.js em folhas. Retorna `null`
-/// quando não dá pra destacar (sem linguagem, arquivo grande, parse vazio).
+/// Parse [source] and flatten the highlight.js tree into styled leaves.
+///
+/// Returns `null` when highlighting is unavailable because the language is
+/// absent, the input is oversized, or parsing yields no nodes.
 List<_Leaf>? _leavesOf(String source, String? language, SyntaxColors palette) {
   if (language == null || language.isEmpty) return null;
   if (source.length > _kMaxHighlightChars) return null;
@@ -135,8 +142,9 @@ List<_Leaf>? _leavesOf(String source, String? language, SyntaxColors palette) {
   return leaves;
 }
 
-/// Recursão que acumula o estilo herdado (containers do highlight.js aplicam
-/// `className` aos descendentes) e emite uma folha por `value`.
+/// Flatten a highlight.js node while accumulating inherited styles.
+///
+/// Container class names style their descendants; each node value emits one leaf.
 void _flatten(
   hl.Node node,
   TextStyle? inherited,
@@ -158,9 +166,10 @@ void _flatten(
   }
 }
 
-/// Corta as folhas nos limites dos diagnostics e funde o sublinhado ondulado nos
-/// sub-trechos cobertos (preservando a cor de syntax). Sem diagnostics, devolve
-/// os spans 1:1.
+/// Split leaves at diagnostic boundaries and merge wavy underlines into overlaps.
+///
+/// Preserves syntax colors and returns one span per leaf when diagnostics are
+/// absent.
 List<InlineSpan> _applyDiagnostics(
   List<_Leaf> leaves,
   List<DiagnosticRange> diagnostics,
@@ -178,7 +187,7 @@ List<InlineSpan> _applyDiagnostics(
     pos = end;
     if (leaf.text.isEmpty) continue;
 
-    // Pontos de corte = início/fim da folha + limites de diagnostics internos.
+    // Split at the leaf boundaries and any diagnostic boundaries within it.
     final cuts = <int>{start, end};
     for (final d in diagnostics) {
       if (d.end <= start || d.start >= end) continue;
@@ -203,8 +212,9 @@ List<InlineSpan> _applyDiagnostics(
   return out;
 }
 
-/// Severidade mais grave que cobre `[a, b)` (error > warning > info > hint), ou
-/// `null` se nenhum diagnostic cobre o trecho.
+/// Return the highest severity covering `[a, b)`.
+///
+/// Priority is error, warning, info, then hint; returns `null` when uncovered.
 LspSeverity? _coveringSeverity(
   List<DiagnosticRange> diagnostics,
   int a,
@@ -213,7 +223,7 @@ LspSeverity? _coveringSeverity(
   LspSeverity? result;
   for (final d in diagnostics) {
     if (d.start <= a && d.end >= b) {
-      // index menor = mais grave (error=0).
+      // A lower index is more severe (`error` is zero).
       if (result == null || d.severity.index < result.index) {
         result = d.severity;
       }
