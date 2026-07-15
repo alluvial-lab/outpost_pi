@@ -2,13 +2,11 @@ import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Pergunta em qual pasta dentro do projeto o agente vai atuar. Permite
-/// **navegar** pela árvore (entrar nas subpastas e voltar), sempre a partir da
-/// raiz do projeto — nunca acima dela. Devolve o caminho **relativo** escolhido
-/// (`''` = raiz), ou `null` se cancelar.
+/// Choose the project subfolder in which an agent or terminal will work.
 ///
-/// [loadSubfolders] devolve as subpastas imediatas de um caminho relativo
-/// (vazio = raiz). O dialog chama sob demanda a cada navegação.
+/// Navigation remains rooted within the project. Returns the selected relative
+/// path (`''` for the root), or `null` when canceled. [loadSubfolders] is called
+/// on demand with a relative path and must return its immediate subfolders.
 Future<String?> showSubfolderDialog(
   BuildContext context, {
   required String projectName,
@@ -38,7 +36,7 @@ class _SubfolderDialog extends StatefulWidget {
 }
 
 class _SubfolderDialogState extends State<_SubfolderDialog> {
-  /// Caminho relativo atual (vazio = raiz). Segmentos separados por `/`.
+  /// Current relative path, empty at the root and `/`-separated otherwise.
   String _rel = '';
   List<String> _children = const <String>[];
   bool _loading = true;
@@ -49,7 +47,7 @@ class _SubfolderDialogState extends State<_SubfolderDialog> {
     _load(_rel);
   }
 
-  /// Segmentos do caminho atual (`[]` = raiz).
+  /// Segments of the current path, empty at the root.
   List<String> get _segments =>
       _rel.isEmpty ? const <String>[] : _rel.split('/');
 
@@ -68,7 +66,7 @@ class _SubfolderDialogState extends State<_SubfolderDialog> {
 
   void _enter(String folder) => _load(_rel.isEmpty ? folder : '$_rel/$folder');
 
-  /// Navega para o caminho com os primeiros [depth] segmentos (0 = raiz).
+  /// Navigate to the prefix containing [depth] segments; zero selects the root.
   void _goToDepth(int depth) => _load(_segments.take(depth).join('/'));
 
   @override
@@ -113,7 +111,7 @@ class _SubfolderDialogState extends State<_SubfolderDialog> {
                       shrinkWrap: true,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       children: [
-                        // ".." volta um nível (some na raiz).
+                        // ".." moves up one level and is hidden at the root.
                         if (!atRoot)
                           _FolderRow(
                             icon: Icons.arrow_upward,
@@ -169,7 +167,7 @@ class _SubfolderDialogState extends State<_SubfolderDialog> {
   }
 }
 
-/// Trilha clicável: `projeto / seg1 / seg2`. Tocar num segmento navega até ele.
+/// Navigate directly through clickable project path segments.
 class _Breadcrumb extends StatelessWidget {
   const _Breadcrumb({
     required this.projectName,

@@ -1,14 +1,14 @@
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// Tela inicial quando ainda não há workspace. Diferente do antigo onboarding,
-/// **não** força instalar nada: o Cockpit serve como multiplexador de terminal
-/// sem o Pi. O checklist do ambiente de agente vive agora dentro da aba de
-/// agente (ver `AgentSetupChecklist`). Aqui só convidamos a criar um workspace.
+/// Invite the user to create a workspace when none exists.
+///
+/// This view does not require pi installation because Cockpit can still act as
+/// a terminal multiplexer; agent readiness is checked inside an agent tab.
 class WelcomeView extends StatelessWidget {
   const WelcomeView({super.key, required this.onCreateWorkspace});
 
-  /// Dispara o fluxo de criação (escolher pasta → dialog → criar).
+  /// Starts the folder selection, configuration, and workspace creation flow.
   final Future<void> Function() onCreateWorkspace;
 
   @override
