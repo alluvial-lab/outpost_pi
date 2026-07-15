@@ -1,7 +1,7 @@
 ---
 id: story-root-readme-provenance-acknowledgement
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, legal]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
@@ -23,3 +23,10 @@ Make both adjacent corrections:
 - rewrite the README **License** section to state that Outpost-Pi is licensed repository-wide under the root MIT `LICENSE`, without implying that the decision remains pending.
 
 Match the factual tone of `NOTICE`; do not imply current operational ownership, distribution identity, or endorsement by the upstream author. These intentional provenance occurrences are part of the keep-list for product-identifier cleanup.
+
+## Implementation notes
+- Files changed: `README.md`
+- Added an **Acknowledgements** section crediting `remote_pi` / Jacob Moura as the MIT-licensed foundation.
+- Rewrote the **License** section from the stale "per-package, repository-wide decision pending" text to state repository-wide MIT under root `LICENSE`.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
