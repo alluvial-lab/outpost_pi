@@ -39,16 +39,15 @@ import 'package:cockpit/app/cockpit/ui/states/pane_node.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/workspace_projection.dart';
 import 'package:flutter/foundation.dart';
 
-/// Controlador do shell: projetos, árvore de splits **por projeto**, sessões de
-/// agente, foco.
+/// Coordinate projects, per-project pane trees, live sessions, and focus.
 ///
-/// Cada projeto (workspace) tem o seu próprio documento ([WorkspaceDocument] em
-/// [_documents]); trocar de projeto só troca qual árvore é exibida (o `IndexedStack`
-/// na página mantém todas montadas → estado preservado). As abas/processos vivos
-/// vivem em [_workspace] e seguem rodando independente da UI.
+/// Each project owns a [WorkspaceDocument] in [_documents]. Switching projects
+/// changes only the displayed tree because the page keeps every tree mounted in
+/// an `IndexedStack`. Live tabs and processes remain owned by [_workspace] and
+/// continue independently of which tree is visible.
 ///
-/// As operações de pane agem no **projeto ativo** ([_selectedProjectId]) — o
-/// `IndexedStack` garante que só o projeto ativo é interativo.
+/// Pane operations apply only to the active project identified by
+/// [_selectedProjectId].
 class CockpitViewModel extends ChangeNotifier {
   CockpitViewModel(
     ProjectRepository projects,
@@ -108,50 +107,50 @@ class CockpitViewModel extends ChangeNotifier {
   final List<Project> _projectList = <Project>[];
   String? _selectedProjectId;
 
-  /// Documento de workspace por projeto (pane tree + foco + descritores de abas).
+  /// Hold pane shape, focus, and tab descriptors for each active project.
   final Map<String, WorkspaceDocument> _documents =
       <String, WorkspaceDocument>{};
 
-  /// Documentos de layout carregados do Hive no boot (lazy: o projeto só é
-  /// reconstruído quando selecionado). `null` = projeto sem layout salvo.
+  /// Cache layouts loaded from Hive until each project is activated lazily.
+  ///
+  /// A `null` value means the project has no saved layout.
   final Map<String, Map<String, dynamic>?> _savedLayouts =
       <String, Map<String, dynamic>?>{};
 
-  /// Debounce de gravação por projeto (o resize é arrasto contínuo).
+  /// Debounce persistence independently per project during continuous resize.
   final Map<String, Timer> _saveTimers = <String, Timer>{};
 
-  /// `true` enquanto reconstruímos um projeto — evita gravar layout meio-feito.
+  /// Suppress persistence while a project layout is only partially restored.
   bool _restoring = false;
 
-  /// Estado git por projeto (branch + sujos). `null` (ausente do mapa ou valor
-  /// null) = não é repo git → a rail mostra só o título.
+  /// Cache branch and dirty state per project.
+  ///
+  /// A missing or `null` value means the path is not a Git repository.
   final Map<String, GitInfo?> _gitInfo = <String, GitInfo?>{};
 
-  /// Status git por **caminho relativo** (arquivos + pastas agregadas), por
-  /// projeto. Derivado de [_gitInfo]; alimenta a coloração da árvore de
-  /// arquivos. Pasta agrega o estado mais forte dos descendentes ([
-  /// GitFileStatus.strongest]).
+  /// Index Git status by project-relative file and aggregated folder path.
+  ///
+  /// Folder entries carry the strongest descendant status through
+  /// [GitFileStatus.strongest] and drive file-tree coloring.
   final Map<String, Map<String, GitFileStatus>> _gitTree =
       <String, Map<String, GitFileStatus>>{};
 
-  /// Watcher do working tree do projeto **selecionado** (filesystem ao vivo).
-  /// Recriado ao trocar de projeto; debounce junta rajadas de eventos.
+  /// Watch the selected project's working tree and debounce filesystem bursts.
   StreamSubscription<FileSystemEvent>? _gitWatch;
   Timer? _gitWatchDebounce;
   String? _gitWatchPath;
 
-  /// Worktrees (forks) por workspace raiz, na ordem do `git worktree list`
-  /// (decisão 20). Reconciliado contra o git nos ganchos de refresh; a
-  /// existência mora no git, não no Hive (decisões 4, 17). Os mesmos `Project`s
-  /// também entram em [_projectList] (pro IndexedStack e o lookup).
+  /// Cache each root workspace's worktrees in `git worktree list` order.
+  ///
+  /// Git, not Hive, owns their existence. Reconciliation also adds the same
+  /// [Project] values to [_projectList] for lookup and the `IndexedStack`.
   final Map<String, List<Project>> _worktrees = <String, List<Project>>{};
 
-  /// Sobe a cada mutação na árvore (criar/renomear/deletar) — a `FileTreePanel`
-  /// lê isso como token de refresh pra reler as pastas abertas (passo 3 da UI).
+  /// Increment after filesystem mutations so `FileTreePanel` reloads open folders.
   int _fileTreeRevision = 0;
   int get fileTreeRevision => _fileTreeRevision;
 
-  /// Caminho do arquivo atualmente selecionado no FileTreePanel (para highlight).
+  /// Track the file-tree selection used for row highlighting.
   String? _selectedFileInTree;
   String? get selectedFileInTree => _selectedFileInTree;
 
@@ -160,13 +159,13 @@ class CockpitViewModel extends ChangeNotifier {
   bool _ready = false;
   int _seq = 0;
 
-  /// Espelha `AppSettings.notificationsEnabled` (app-scoped, fora do grafo desta
-  /// VM page-scoped). A `CockpitPage` empurra o valor do `SettingsController`.
-  /// Gateia o disparo de notificação de fim de turno.
+  /// Mirror the app-scoped notification preference into this page-scoped model.
   bool _notificationsEnabled = true;
+
+  /// Gate future end-of-turn desktop notifications with [value].
   void setNotificationsEnabled(bool value) => _notificationsEnabled = value;
 
-  /// Paleta dos avatares de projeto (cores do design).
+  /// Supply the design palette used for new project avatars.
   static const List<int> _palette = <int>[
     0xFF6E56CF,
     0xFFE5484D,
@@ -181,10 +180,10 @@ class CockpitViewModel extends ChangeNotifier {
   // ---- getters --------------------------------------------------------------
   List<Project> get projects => List<Project>.unmodifiable(_projectList);
 
-  /// Só os workspaces raiz (sem as worktrees) — o nível de topo do rail.
+  /// Return root workspaces in the user's persisted rail order.
   List<Project> get rootProjects {
     final roots = _projectList.where((p) => p.parentId == null).toList();
-    // Ordem manual do usuário (drag-drop); createdAt como desempate/fallback.
+    // Use creation time as a stable fallback for equal manual order values.
     roots.sort((a, b) {
       final byOrder = a.order.compareTo(b.order);
       return byOrder != 0 ? byOrder : a.createdAt.compareTo(b.createdAt);
@@ -192,16 +191,16 @@ class CockpitViewModel extends ChangeNotifier {
     return List<Project>.unmodifiable(roots);
   }
 
-  /// Worktrees (forks) de um workspace raiz, na ordem do git (vazio se nenhuma).
+  /// Return a root workspace's worktrees in Git order, or an empty list.
   List<Project> worktreesOf(String rootId) =>
       _worktrees[rootId] ?? const <Project>[];
 
   String? get selectedProjectId => _selectedProjectId;
   Project? get selectedProject => _projectById(_selectedProjectId);
 
-  /// Título pro topbar: `"<workspace> · <worktree>"` quando um fork está
-  /// selecionado (separador middle-dot U+00B7); só o nome do workspace caso
-  /// contrário. `null` quando nada está selecionado.
+  /// Build the selected top-bar title, including its parent for a worktree.
+  ///
+  /// Returns `null` when no project is selected.
   String? get selectedDisplayTitle {
     final p = selectedProject;
     if (p == null) return null;
@@ -211,20 +210,22 @@ class CockpitViewModel extends ChangeNotifier {
     return root == null ? p.name : '${root.name} · ${p.name}';
   }
 
-  /// `false` até [init] terminar de carregar os projetos do Hive.
+  /// Report whether [init] has finished loading and activating the workspace.
   bool get ready => _ready;
   bool get railVisible => _railVisible;
   bool get treeVisible => _treeVisible;
   List<LaunchableApp> get availableApps =>
       List<LaunchableApp>.unmodifiable(_availableApps);
+
+  /// Resolve a live tab resource by its workspace tab id.
   PaneItem? session(String id) => _workspace.item(id);
 
-  /// Estado git do projeto (branch + sujos), ou `null` se não for repo git.
+  /// Return branch and dirty state, or `null` for a non-Git project.
   GitInfo? gitInfo(String projectId) => _gitInfo[projectId];
 
-  /// Status git (cor) de um caminho **absoluto** dentro do projeto selecionado —
-  /// arquivo ou pasta (agregada). `null` = limpo/fora de repo. Usado pela árvore
-  /// de arquivos pra colorir cada linha.
+  /// Resolve display status for an absolute file or folder in the selected project.
+  ///
+  /// Returns `null` when the path is clean or outside a Git repository.
   GitFileStatus? gitStatusForPath(String absolutePath) {
     final pid = _selectedProjectId;
     if (pid == null) return null;
@@ -232,8 +233,8 @@ class CockpitViewModel extends ChangeNotifier {
     if (root == null) return null;
     final rel = _subOf(absolutePath, root);
     if (rel.isEmpty) return null;
-    // Mudança real (mapa agregado) vence; senão herda da raiz colapsada que
-    // cobre este caminho — pasta untracked nova vs. ignorado.
+    // Prefer explicit aggregated changes, then inherit untracked or ignored
+    // status from a collapsed root that covers this path.
     final dirty = _gitTree[pid]?[rel];
     if (dirty != null) return dirty;
     final info = _gitInfo[pid];
@@ -243,29 +244,25 @@ class CockpitViewModel extends ChangeNotifier {
     return null;
   }
 
-  /// Aba que o usuário está olhando.
+  /// Return the active tab in the focused pane.
   PaneItem? get focusedAgent {
     final id = _focusedAgentId;
     return id == null ? null : _workspace.item(id);
   }
 
-  /// Filhos de uma pasta (lazy-load da árvore de arquivos).
+  /// Lazily list children for a file-tree folder.
   Future<List<FileNode>> listChildren(String path) =>
       _fileSystem.children(path);
 
-  /// Arquivos de [cwd] que casam com [query] (autocomplete do `@`). Caminhos
-  /// relativos a [cwd].
+  /// Search [cwd] for relative paths matching an `@` autocomplete [query].
   Future<List<String>> searchFiles(String cwd, String query) =>
       _fileSearcher.search(cwd, query);
 
-  /// Abre um arquivo num viewer. Sem [inPane], usa a pane focada (duplo-clique
-  /// na árvore); com [inPane], abre naquela pane e a foca (arrastar arquivo →
-  /// pane). Binário/vídeo/grande demais → não abre.
+  /// Open a supported file in a viewer tab and focus its destination pane.
   ///
-  /// Se [isPreview] for `true` (padrão), usa o comportamento VSCode:
-  /// - Se já existe um preview aberto na pane, substitui o conteúdo
-  /// - Se a aba ativa é um preview, substitui em vez de criar nova aba
-  /// - Duplo-clique deve passar `isPreview: false` para criar aba normal
+  /// Without [inPane], uses the focused pane. Unsupported or oversized content
+  /// is ignored. When [isPreview] is `true`, reuses an existing preview where
+  /// possible; callers pass `false` for a pinned double-click tab.
   Future<void> openFile(
     String path, {
     String? inPane,
@@ -279,13 +276,12 @@ class CockpitViewModel extends ChangeNotifier {
     final leaf = findLeaf(document.root, paneId);
     if (leaf == null) return;
 
-    // Se isPreview, tenta reutilizar a aba de preview existente ou substituir a ativa.
-    // Se não é preview, cria uma aba normal (comportamento original).
+    // Reuse an existing preview when possible; pinned opens create normal tabs.
     FileViewerSession? previewCandidate;
     for (final tabId in leaf.tabs) {
       final item = _workspace.item(tabId);
       if (item is FileViewerSession) {
-        // Se já aberto, só seleciona (mas transforma preview em normal se não é preview).
+        // Select an existing viewer and pin it when requested.
         if (item.path == path) {
           if (!isPreview && item.isPreview) item.pin();
           _applyWorkspaceCommand(
@@ -297,14 +293,14 @@ class CockpitViewModel extends ChangeNotifier {
           );
           return;
         }
-        // Guarda o primeiro preview encontrado para possível reutilização.
+        // Retain the first preview as a reuse candidate.
         if (isPreview && item.isPreview && previewCandidate == null) {
           previewCandidate = item;
         }
       }
     }
 
-    // Se é preview e temos um candidato, reutiliza (substitui conteúdo).
+    // Reuse a preview candidate by replacing its content.
     if (isPreview && previewCandidate != null) {
       final replaced = await _workspace.replaceViewerPath(
         previewCandidate.id,
@@ -323,18 +319,17 @@ class CockpitViewModel extends ChangeNotifier {
       return;
     }
 
-    // Cria nova aba (preview ou normal).
+    // Create a new preview or pinned viewer.
     final viewer = await _workspace.createViewer(
       id: _nid('v'),
       projectId: projectId,
       path: path,
       isPreview: isPreview,
     );
-    if (viewer == null) return; // binário/vídeo/grande demais: não abre
+    if (viewer == null) return; // Ignore unsupported or oversized content.
     final viewerTab = WorkspaceTab.viewer(id: viewer.id, filePath: path);
 
-    // Se a pane só tem o placeholder vazio, substitui; senão adiciona aba.
-    // Se é preview e a aba ativa é um FileViewer, substitui em vez de adicionar.
+    // Replace an empty placeholder or active preview; otherwise append a tab.
     final current = _activeDocument?.root ?? document.root;
     final lf = findLeaf(current, paneId);
     final activeTabId = lf?.active;
@@ -343,7 +338,7 @@ class CockpitViewModel extends ChangeNotifier {
 
     late final bool applied;
     if (isPreview && activeTab is FileViewerSession && !activeTab.isPreview) {
-      // Preview substituiria aba normal → adiciona ao lado.
+      // Append beside a pinned viewer rather than replacing it.
       applied = _applyWorkspaceCommand(
         (doc) => WorkspaceDocumentCommands.appendTab(
           doc,
@@ -354,7 +349,7 @@ class CockpitViewModel extends ChangeNotifier {
     } else if (isPreview &&
         activeTab is FileViewerSession &&
         activeTab.isPreview) {
-      // Preview substituir outro preview → substitui a aba ativa.
+      // Replace the active preview with the new preview.
       applied = _applyWorkspaceCommand(
         (doc) => WorkspaceDocumentCommands.replaceActiveTab(
           doc,
@@ -363,7 +358,7 @@ class CockpitViewModel extends ChangeNotifier {
         ),
       );
     } else if (lf != null && only is AgentSession && only.isPlaceholder) {
-      // Placeholder vazio → substitui.
+      // Replace the empty placeholder.
       applied = _applyWorkspaceCommand(
         (doc) => WorkspaceDocumentCommands.replaceTab(
           doc,
@@ -373,7 +368,7 @@ class CockpitViewModel extends ChangeNotifier {
         ),
       );
     } else {
-      // Adiciona nova aba.
+      // Append a new viewer tab.
       applied = _applyWorkspaceCommand(
         (doc) => WorkspaceDocumentCommands.appendTab(
           doc,
@@ -385,26 +380,26 @@ class CockpitViewModel extends ChangeNotifier {
     if (!applied) _workspace.disposeTab(viewer.id);
   }
 
-  /// Seleciona um arquivo no FileTreePanel (atualiza o highlight).
+  /// Select a file-tree path and update its highlight.
   void selectFileInTree(String path) {
     _selectedFileInTree = path;
     notifyListeners();
   }
 
-  /// Grava o conteúdo editado de uma aba de viewer em disco e reclassifica o
-  /// `view` (markdown/texto/linguagem) com o conteúdo salvo. Retorna `true` no
-  /// sucesso. Sem trava: escrita concorrente do agente é last-write-wins (MVP).
+  /// Save viewer edits and refresh the content classification.
+  ///
+  /// Returns `true` on success. Concurrent agent writes remain last-write-wins.
   Future<bool> saveFile(String sessionId, String content) =>
       _workspace.saveViewer(sessionId, content);
 
-  // ---- LSP (diagnostics + formatação) ---------------------------------------
+  // ---- LSP (diagnostics and formatting) -------------------------------------
 
-  /// Diagnostics de todos os language servers (mesclados). O `FileViewer` filtra
-  /// pelo `uri` do seu documento. Ver [LspServerPool].
+  /// Stream merged diagnostics for file viewers to filter by document URI.
   Stream<LspDiagnosticsBatch> get lspDiagnostics => _lsp.diagnostics;
 
-  /// Abre [path] no LSP (didOpen). O fallback de raiz é o caminho do projeto —
-  /// usado quando o walk-up de marcadores não acha raiz (ex.: arquivo solto).
+  /// Open [path] in its language server with the project as fallback root.
+  ///
+  /// The fallback applies when marker discovery cannot find a nearer root.
   Future<void> lspOpenDocument(String path, String text, String projectId) =>
       _lsp.openDocument(
         path: path,
@@ -412,39 +407,38 @@ class CockpitViewModel extends ChangeNotifier {
         fallbackRoot: _projectById(projectId)?.path,
       );
 
-  /// Notifica edição (didChange, full sync).
+  /// Send a full-document `didChange` update to the language server.
   Future<void> lspChangeDocument(String path, String text) =>
       _lsp.changeDocument(path: path, text: text);
 
-  /// Fecha o documento no LSP (didClose + refcount).
+  /// Close a language-server document and release its pool reference.
   Future<void> lspCloseDocument(String path) => _lsp.closeDocument(path);
 
-  /// Aplica os overrides de comando do LSP (da tela "Language") no pool. Vale
-  /// para os próximos servidores spawnados; os já vivos seguem com o comando
-  /// anterior até reiniciarem.
+  /// Apply command overrides to language servers spawned after this call.
+  ///
+  /// Existing servers retain their previous command until restarted.
   void applyLspCommands(Map<String, String> commands) {
     _lsp.commandOverrides = commands;
   }
 
-  /// Pulsos de mudança de estado de servidores LSP (subiu/caiu/reiniciou). A
-  /// barra de status escuta isto pra atualizar ao vivo.
+  /// Stream language-server start, stop, and restart pulses for live status UI.
   Stream<void> get lspStatusChanges => _lsp.statusChanges;
 
-  /// Caminho do arquivo da aba focada, se for um viewer; senão `null` (a aba é
-  /// agente/terminal). Usado pela barra de status do LSP.
+  /// Return the focused viewer path, or `null` for non-file tabs.
   String? get focusedFilePath {
     final s = focusedAgent;
     return s is FileViewerSession ? s.path : null;
   }
 
-  /// Estado do LSP do arquivo focado (linguagem + rodando), ou `null` se a aba
-  /// não é um arquivo de código suportado → a barra fica vazia.
+  /// Return language and running state for the focused supported file.
+  ///
+  /// Returns `null` so the status bar stays empty for unsupported tab types.
   LspDocStatus? get focusedLspStatus {
     final path = focusedFilePath;
     return path == null ? null : _lsp.statusForPath(path);
   }
 
-  /// Reinicia o servidor LSP do arquivo focado.
+  /// Restart the language server associated with the focused file.
   Future<void> restartFocusedLsp() async {
     final path = focusedFilePath;
     if (path == null) return;
@@ -452,26 +446,27 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Reinicia os servidores de uma linguagem (após salvar novo comando na tela
-  /// "Language") — aplica a mudança nos servidores já vivos.
+  /// Restart every server for a language so a command override takes effect.
   Future<void> restartLspLanguage(String languageId) async {
     await _lsp.restartLanguage(languageId);
     notifyListeners();
   }
 
-  /// Formata [path] via LSP. Faz um `didChange` com [text] antes (flush do
-  /// debounce) pra o servidor formatar o conteúdo mais recente, e devolve os
-  /// edits a aplicar no buffer. Lista vazia = sem servidor / sem suporte / erro.
+  /// Format [path] against the latest [text] and return edits for the buffer.
+  ///
+  /// Flushes a full `didChange` first. An empty list means no server, no
+  /// formatting support, or an LSP failure.
   Future<List<LspTextEdit>> lspFormat(String path, String text) async {
     await _lsp.changeDocument(path: path, text: text);
     return _lsp.formatDocument(path);
   }
 
-  // ---- mutação de arquivos (criar / renomear / deletar) ---------------------
+  // ---- File mutations (create, rename, delete) ------------------------------
 
-  /// Cria um arquivo vazio chamado [name] dentro de [dirPath] e o abre no pane
-  /// (quando [open]). Valida o nome (não-vazio, sem `/`). Devolve a falha
-  /// (mensagem) pra UI mostrar inline. Refaz a árvore no sucesso.
+  /// Create and optionally open an empty file below [dirPath].
+  ///
+  /// Returns a validation or filesystem failure for inline display. Success
+  /// refreshes the file tree.
   Future<Result<void, String>> createFileIn(
     String dirPath,
     String name, {
@@ -488,7 +483,7 @@ class CockpitViewModel extends ChangeNotifier {
     return r;
   }
 
-  /// Cria uma pasta [name] dentro de [dirPath]. Refaz a árvore no sucesso.
+  /// Create a folder below [dirPath] and refresh the tree on success.
   Future<Result<void, String>> createDirIn(String dirPath, String name) async {
     final invalid = _validateName(name);
     if (invalid != null) return Failure(invalid);
@@ -497,8 +492,7 @@ class CockpitViewModel extends ChangeNotifier {
     return r;
   }
 
-  /// Renomeia [path] para [newName] (mesma pasta). As abas abertas do arquivo
-  /// (ou de descendentes, se for pasta) **seguem** o novo caminho.
+  /// Rename [path] within its parent and retarget affected viewer tabs.
   Future<Result<void, String>> renamePath(String path, String newName) async {
     final invalid = _validateName(newName);
     if (invalid != null) return Failure(invalid);
@@ -511,8 +505,9 @@ class CockpitViewModel extends ChangeNotifier {
     return r;
   }
 
-  /// Manda [path] pra lixeira. **Fecha antes** as abas do arquivo (ou de tudo
-  /// dentro da pasta), sem prompt de salvar — a deleção sobrepõe.
+  /// Close affected viewers and move [path] to the trash.
+  ///
+  /// Deletion takes precedence over unsaved-draft prompts.
   Future<Result<void, String>> deletePath(String path) async {
     _closeSessionsUnder(path);
     final r = await _fileMutator.moveToTrash(path);
@@ -525,7 +520,7 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// `null` se válido; senão a mensagem do erro. Nesta fase: sem aninhar (`/`).
+  /// Return a name validation message, or `null` when valid.
   String? _validateName(String name) {
     final n = name.trim();
     if (n.isEmpty) return 'Name cannot be empty.';
@@ -544,19 +539,17 @@ class CockpitViewModel extends ChangeNotifier {
     return i <= 0 ? path : path.substring(0, i);
   }
 
-  /// Um caminho é "sob" [root] se for ele mesmo ou um descendente (`root/...`).
+  /// Report whether a path is [root] itself or one of its descendants.
   bool _isUnder(String path, String root) =>
       path == root || path.startsWith('$root/');
 
-  /// Reaponta as abas de viewer afetadas por um rename de [from] → [to]: o
-  /// próprio arquivo e, se [from] for pasta, todos os descendentes (troca de
-  /// prefixo). Re-lê o conteúdo e re-arma o watcher no novo caminho.
+  /// Retarget viewers affected by a rename and reattach their file watchers.
   Future<void> _retargetSessions(String from, String to) =>
       _workspace.retargetViewersUnder(from, to);
 
-  /// Fecha (no projeto ativo) toda aba de viewer cujo arquivo está em/sob [path].
-  /// Coleta os pares (pane, aba) antes de fechar pra não mutar a árvore durante
-  /// a varredura. (Multi-projeto fica pra depois — a árvore opera no ativo.)
+  /// Close active-project viewers at or below [path].
+  ///
+  /// Collects pane-tab pairs before mutation so traversal remains stable.
   void _closeSessionsUnder(String path) {
     final tree = _activeTree;
     if (tree == null) return;
@@ -574,41 +567,45 @@ class CockpitViewModel extends ChangeNotifier {
     }
   }
 
-  /// Árvore do projeto (para renderizar cada folha do `IndexedStack`).
+  /// Return a project's pane tree for its `IndexedStack` child.
   PaneNode? tree(String projectId) => _documents[projectId]?.root;
 
-  /// Pane focada do projeto.
+  /// Return the focused pane id for a project.
   String? focusedPaneId(String projectId) =>
       _documents[projectId]?.focusedPaneId;
 
-  /// Nº de agentes do workspace que terminaram um turno e ainda não foram
-  /// vistos (badge de notificações).
+  /// Count completed agent turns not yet viewed in a workspace.
   int notificationCount(String projectId) => _workspace.items.where((item) {
     if (item is! AgentSession) return false;
     return item.projection.projectId == projectId && item.unseenFinish;
   }).length;
 
-  // ---- init -----------------------------------------------------------------
+  // ---- Initialization -------------------------------------------------------
+
+  /// Load projects and layouts, activate the initial selection, and start refreshes.
+  ///
+  /// Marks [ready] only after the selected workspace has been realized. Git,
+  /// worktree, and application discovery continue asynchronously afterward.
   Future<void> init() async {
     _projectList.addAll(await _projects.all());
-    // Carrega os layouts salvos (mas não reconstrói nada ainda — lazy).
+    // Load saved layouts without realizing their live resources yet.
     for (final project in _projectList) {
       _savedLayouts[project.id] = await _layoutStore.load(project.id);
     }
     _selectedProjectId = await _initialSelection();
-    // Só o projeto selecionado é ativado (sobe os processos) no boot.
+    // Realize live resources only for the initially selected project.
     final selected = _selectedProjectId;
     if (selected != null) await _activateProject(selected);
-    _startGitWatch(selected); // watcher ao vivo do projeto inicial
+    _startGitWatch(selected); // Watch the initial project's working tree.
     _ready = true;
     notifyListeners();
-    // Estado git + worktrees de todos os projetos (assíncrono — a rail atualiza
-    // conforme chega). Só há raízes no boot; os forks entram pela reconciliação.
+    // Refresh Git and worktrees asynchronously. Boot starts with roots only;
+    // reconciliation adds forks as results arrive.
     for (final project in _projectList) {
       unawaited(_refreshGit(project.id));
       unawaited(_refreshWorktrees(project.id));
     }
-    // Detecta IDEs instaladas (assíncrono — topbar atualiza ao chegar).
+    // Discover installed IDEs asynchronously and update the top bar on arrival.
     unawaited(
       _launcher.probe().then((apps) {
         _availableApps = apps;
@@ -617,8 +614,9 @@ class CockpitViewModel extends ChangeNotifier {
     );
   }
 
-  /// Workspace a pré-selecionar no boot: o último selecionado (se ainda existir);
-  /// senão — ou se der erro ao ler a preferência — o primeiro. `null` se vazio.
+  /// Resolve the initial root workspace from the last selection or first root.
+  ///
+  /// Returns `null` when no root exists and silently falls back on read failure.
   Future<String?> _initialSelection() async {
     final roots = rootProjects;
     if (roots.isEmpty) return null;
@@ -626,26 +624,28 @@ class CockpitViewModel extends ChangeNotifier {
       final last = await _projects.loadLastSelected();
       if (last != null && roots.any((p) => p.id == last)) return last;
     } catch (_) {
-      // erro ao ler a preferência → fallback silencioso pro primeiro.
+      // Fall back silently when the saved preference cannot be read.
     }
     return roots.first.id;
   }
 
-  /// Abre a pasta do projeto selecionado no [app] informado.
+  /// Open the selected project folder in [app], if a project is selected.
   Future<void> openProjectInApp(LaunchableApp app) async {
     final project = selectedProject;
     if (project == null) return;
     await _launcher.launch(app, project.path);
   }
 
-  /// Abre [path] no app padrão do SO ("Open with" do menu do file tree).
+  /// Open [path] with the operating system's default application.
   Future<void> openWithDefaultApp(String path) =>
       _launcher.openWithDefaultApp(path);
 
-  // ---- projects -------------------------------------------------------------
-  /// Cria (ou seleciona, se já existir) um workspace pra [path]. [name] e
-  /// [colorValue] permitem sobrescrever os defaults (fluxo "Criar Workspace",
-  /// onde o usuário edita nome/cor antes de confirmar).
+  // ---- Projects -------------------------------------------------------------
+
+  /// Create or select a workspace for [path].
+  ///
+  /// Optional identity values override folder-derived defaults. A new project
+  /// is persisted, activated, and scheduled for Git and worktree refresh.
   Future<Project> addProject(
     String path, {
     String? name,
@@ -664,15 +664,15 @@ class CockpitViewModel extends ChangeNotifier {
     final resolvedName = (name != null && name.trim().isNotEmpty)
         ? name.trim()
         : (basename.isEmpty ? path : basename);
-    // Cor pela contagem de raízes (forks não entram no rodízio da paleta).
+    // Rotate colors by root count; worktrees do not consume palette slots.
     final roots = _projectList.where((p) => p.parentId == null);
     final rootCount = roots.length;
-    // Entra no fim da lista (maior order + 1).
+    // Append after the greatest persisted root order.
     final nextOrder = roots.isEmpty
         ? 0
         : roots.map((p) => p.order).reduce(max) + 1;
     final project = Project(
-      id: path, // o caminho é único e estável entre reinícios
+      id: path, // The path is unique and stable across restarts.
       name: resolvedName,
       path: path,
       colorValue: colorValue ?? _palette[rootCount % _palette.length],
@@ -684,16 +684,19 @@ class CockpitViewModel extends ChangeNotifier {
     _selectedProjectId = project.id;
     await _projects.save(project);
     unawaited(_projects.saveLastSelected(project.id));
-    await _activateProject(project.id); // sem layout salvo → pane vazia
+    await _activateProject(project.id); // No layout produces an empty pane.
     unawaited(_refreshGit(project.id));
-    unawaited(_refreshWorktrees(project.id)); // pode já ter worktrees no disco
+    unawaited(
+      _refreshWorktrees(project.id),
+    ); // Discover existing disk worktrees.
     notifyListeners();
     return project;
   }
 
-  /// Altera nome, cor e/ou imagem do projeto e persiste. [imagePath] usa o
-  /// sentinel [Project.unchanged] como default — passe `null` para **remover** a
-  /// imagem, ou um caminho para defini-la.
+  /// Update and persist project identity fields.
+  ///
+  /// [imagePath] defaults to [Project.unchanged]; pass `null` to remove the
+  /// image or a path to replace it.
   Future<void> updateProject(
     String id, {
     String? name,
@@ -712,23 +715,23 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Reordena os workspaces raiz (drag-drop no rail): move [movedId] para antes
-  /// ou depois de [targetId] e persiste a nova sequência no campo `order`. As
-  /// worktrees acompanham o pai (herdam o `order` na reconciliação).
+  /// Reorder root workspaces around [targetId] and persist sequential order.
+  ///
+  /// Worktrees follow their parent during reconciliation.
   Future<void> reorderWorkspace(
     String movedId,
     String targetId, {
     required bool before,
   }) async {
     if (movedId == targetId) return;
-    final roots = rootProjects.toList(); // já ordenado por order
+    final roots = rootProjects.toList(); // Already sorted by persisted order.
     final from = roots.indexWhere((p) => p.id == movedId);
     if (from < 0 || roots.indexWhere((p) => p.id == targetId) < 0) return;
     final moved = roots.removeAt(from);
     var insertAt = roots.indexWhere((p) => p.id == targetId);
     if (!before) insertAt += 1;
     roots.insert(insertAt, moved);
-    // Reatribui order sequencial (0..n) e persiste cada raiz.
+    // Assign sequential order values and persist every root.
     for (var i = 0; i < roots.length; i++) {
       final updated = roots[i].copyWith(order: i);
       final idx = _projectList.indexWhere((p) => p.id == updated.id);
@@ -738,8 +741,11 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Remove a workspace from local state and terminate all of its live resources.
+  ///
+  /// Its disk folder is preserved; associated worktree runtimes are also closed.
   Future<void> removeProject(String id) async {
-    // Encerra as worktrees do workspace junto (não deixa fork órfão).
+    // Close worktree runtimes with their root so no live fork is orphaned.
     for (final fork in _worktrees.remove(id) ?? const <Project>[]) {
       _disposeProjectRuntime(fork.id);
       _projectList.removeWhere((p) => p.id == fork.id);
@@ -756,9 +762,7 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Encerra o runtime de um projeto (árvore de panes + sessões + foco + caches),
-  /// **sem** mexer em persistência. Usado ao remover um workspace e ao detectar
-  /// que uma worktree sumiu (mata `pi` + fecha panes — decisão 9).
+  /// Dispose a project's pane tree, sessions, focus, and caches without persistence changes.
   void _disposeProjectRuntime(String id) {
     final document = _documents.remove(id);
     if (document != null) {
@@ -770,9 +774,10 @@ class CockpitViewModel extends ChangeNotifier {
     _saveTimers.remove(id)?.cancel();
   }
 
-  /// Cria uma worktree [name] no workspace [rootId] (decisões 2, 3, 14, 15). Em
-  /// sucesso, reconcilia, **auto-seleciona** o fork (pane vazia) e o devolve; em
-  /// falha, devolve o erro do git pra mostrar inline no dialog (decisão 21).
+  /// Create and select a worktree below [rootId].
+  ///
+  /// On success, reconciles Git state and returns the selected fork with a
+  /// cloned layout. On failure, returns the Git error for inline display.
   Future<Result<Project, WorktreeOpError>> createWorktree(
     String rootId,
     String name,
@@ -786,10 +791,9 @@ class CockpitViewModel extends ChangeNotifier {
       case Failure(:final error):
         return Failure<Project, WorktreeOpError>(error);
       case Success(:final value):
-        // Clona a estrutura (panes/abas/posições) do pai pra o fork: mesma
-        // organização, pasta nova, sessões do zero (ver _cloneLayoutForWorktree).
+        // Clone the parent's pane layout into the new folder with fresh sessions.
         final clonedLayout = _cloneLayoutForWorktree(rootId);
-        await _refreshWorktrees(rootId); // insere o fork em _projectList
+        await _refreshWorktrees(rootId); // Insert the fork into project state.
         final fork = _projectById(value.path);
         if (fork == null) {
           return const Failure(
@@ -799,31 +803,29 @@ class CockpitViewModel extends ChangeNotifier {
           );
         }
         if (clonedLayout != null) {
-          // Vira o layout salvo do fork → _activateProject reconstrói a estrutura
-          // apontando pra fork.path. Persiste pra sobreviver a reload.
+          // Seed the fork's saved layout so activation rebuilds it at fork.path,
+          // and persist it across application restarts.
           _savedLayouts[fork.id] = clonedLayout;
           unawaited(_layoutStore.save(fork.id, clonedLayout));
         }
         selectProject(
           fork.id,
-        ); // auto-select → activate → reconstrói a estrutura
+        ); // Selection activates and realizes the cloned layout.
         return Success<Project, WorktreeOpError>(fork);
     }
   }
 
-  /// Branches locais + worktrees de [rootId], pra validação ao vivo do dialog
-  /// de criar (decisão 11).
+  /// Load local branches and worktrees for live creation-dialog validation.
   Future<WorktreeNamespace> worktreeNamespace(String rootId) async {
     final root = _projectById(rootId);
     if (root == null) return const WorktreeNamespace.empty();
     return _worktreeMgr.namespace(root.path);
   }
 
-  /// Remove o fork [forkId] (decisão 6): `git worktree remove` + `git branch -D`
-  /// via [WorktreeManager.remove]; em sucesso, reconcilia com `_refreshWorktrees`
-  /// — a **mesma** rotina do someço externo, que mata os `pi`, fecha as panes e
-  /// devolve a seleção pro pai (decisão 9). Em falha, devolve o erro do git pra
-  /// mostrar inline.
+  /// Remove a worktree and its branch, then reconcile project runtime state.
+  ///
+  /// Successful reconciliation terminates its agents, closes panes, and moves
+  /// selection to the parent. Failures preserve the Git error for inline display.
   Future<Result<void, WorktreeOpError>> removeWorktree(String forkId) async {
     final fork = _projectById(forkId);
     if (fork == null || fork.parentId == null) {
@@ -835,15 +837,17 @@ class CockpitViewModel extends ChangeNotifier {
     }
     final res = await _worktreeMgr.remove(root.path, fork.path, fork.name);
     if (res.isSuccess) {
-      // O fork sai do `git worktree list` → a reconciliação detecta o someço e
-      // dispara kill+close+volta-pro-pai (não duplicamos a rotina).
+      // Reconciliation observes its absence from `git worktree list` and owns
+      // process teardown, pane closure, and parent reselection.
       await _refreshWorktrees(fork.parentId!);
     }
     return res;
   }
 
-  /// `true` se a branch do fork [forkId] já foi mergeada — alimenta o aviso forte
-  /// de remoção (decisão 6). Em dúvida/erro, `false` (mostra o aviso por segurança).
+  /// Report whether a worktree branch is merged.
+  ///
+  /// Returns `false` on missing state or uncertainty so removal keeps the safer
+  /// unmerged-work warning.
   Future<bool> isWorktreeBranchMerged(String forkId) async {
     final fork = _projectById(forkId);
     if (fork == null || fork.parentId == null) return false;
@@ -852,22 +856,25 @@ class CockpitViewModel extends ChangeNotifier {
     return _worktreeMgr.isBranchMerged(root.path, fork.name);
   }
 
+  /// Select and lazily activate a project, moving Git watchers and refreshes.
   void selectProject(String id) {
     if (_selectedProjectId == id) return;
     _selectedProjectId = id;
-    // Persiste o workspace (raiz) pra pré-selecionar na próxima abertura.
+    // Persist the root workspace for selection on the next startup.
     unawaited(_projects.saveLastSelected(_rootOf(id)));
     _clearFocusedNotification();
-    unawaited(_activateProject(id)); // reconstrói (lazy) se ainda não ativo
-    _startGitWatch(id); // segue o working tree do novo projeto ao vivo
-    unawaited(_refreshGit(id)); // pode ter mudado desde a última vez
-    unawaited(_refreshWorktrees(_rootOf(id))); // reflete worktrees externas
+    unawaited(_activateProject(id)); // Realize lazily when not already active.
+    _startGitWatch(id); // Follow the newly selected working tree.
+    unawaited(_refreshGit(id)); // Refresh changes since the previous selection.
+    unawaited(
+      _refreshWorktrees(_rootOf(id)),
+    ); // Reflect external worktree changes.
     notifyListeners();
   }
 
-  /// Subpastas do projeto selecionado em [relativePath] (vazio = raiz), para o
-  /// seletor navegável de "onde o agente atua". [relativePath] usa `/` e fica
-  /// sempre **dentro** do root do projeto (o dialog não sobe acima dele).
+  /// List subfolders below the selected project for agent working-directory selection.
+  ///
+  /// [relativePath] uses `/`, stays within the project root, and defaults to it.
   Future<List<String>> subfolders([String relativePath = '']) async {
     final project = selectedProject;
     if (project == null) return const <String>[];
@@ -877,12 +884,13 @@ class CockpitViewModel extends ChangeNotifier {
     return _folders.subfolders(base);
   }
 
-  /// Sessões salvas do pi para uma pasta (histórico), mais recentes primeiro.
+  /// List saved Pi sessions for a directory, newest first.
   Future<List<SessionInfo>> historyFor(String cwd) =>
       _history.sessionsFor(cwd, withTitle: true);
 
-  /// Aplica nome e relay ao agente. Se houver mudança real e o processo estiver
-  /// rodando, reinicia com a nova config (preservando `sessionPath`).
+  /// Persist agent identity and relay settings.
+  ///
+  /// A live name change is also sent through the relay control channel.
   Future<void> saveAgentConfig(
     String sessionId, {
     required String agentName,
@@ -903,7 +911,9 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- agent / tab / split operations (projeto ativo) -----------------------
+  // ---- Agent, tab, and split operations for the active project --------------
+
+  /// Focus a pane and clear any completion marker on its active tab.
   void focus(String paneId) {
     _applyWorkspaceCommand(
       (document) =>
@@ -911,6 +921,7 @@ class CockpitViewModel extends ChangeNotifier {
     );
   }
 
+  /// Select a tab in [paneId] and make it the focused workspace target.
   void selectTab(String paneId, String agentId) {
     _applyWorkspaceCommand(
       (document) => WorkspaceDocumentCommands.selectTab(
@@ -921,9 +932,7 @@ class CockpitViewModel extends ChangeNotifier {
     );
   }
 
-  /// Abre uma aba "Novo" (placeholder vazio) na pane — o usuário escolhe ali
-  /// dentro se quer um agente ou um terminal (via [fillEmpty]). Mesma cara da
-  /// aba inicial de um workspace recém-aberto.
+  /// Append a "New" placeholder for later conversion by [fillEmpty].
   void newEmptyTab(String paneId) {
     final projectId = _selectedProjectId;
     final project = selectedProject;
@@ -939,10 +948,9 @@ class CockpitViewModel extends ChangeNotifier {
     if (!applied) _workspace.disposeTab(empty.id);
   }
 
-  /// Cria uma aba (agente ou terminal) direto na subpasta [subRelative] do
-  /// projeto ativo, na pane focada — **sem dialog**. Usada pelo menu de contexto
-  /// da árvore de arquivos. Se a pane focada está num placeholder "Novo" vazio,
-  /// substitui-o; senão, anexa uma aba nova e a ativa.
+  /// Create an agent or terminal directly in [subRelative] without a dialog.
+  ///
+  /// Replaces the active empty placeholder or appends and activates a new tab.
   void newTabIn(String subRelative, {required bool terminal}) {
     final document = _activeDocument;
     final project = selectedProject;
@@ -968,12 +976,12 @@ class CockpitViewModel extends ChangeNotifier {
     if (!applied) _workspace.disposeTab(s.id);
   }
 
-  /// Divide a pane criando um agente novo ao lado/abaixo.
+  /// Split a pane and create a matching agent or terminal beside it.
   void splitPane(String paneId, SplitDir dir, String subRelative) {
     final document = _activeDocument;
     final project = selectedProject;
     if (document == null || project == null) return;
-    // O novo pane espelha o tipo da aba ativa: terminal → terminal, agente → agente.
+    // Match the new pane to the active tab type: terminal or agent.
     final leaf = findLeaf(document.root, paneId);
     final active = leaf == null ? null : _workspace.item(leaf.active);
     final terminal = active is TerminalSession;
@@ -991,10 +999,9 @@ class CockpitViewModel extends ChangeNotifier {
     if (!applied) _workspace.disposeTab(s.id);
   }
 
-  // ---- drag & drop de abas --------------------------------------------------
+  // ---- Tab drag and drop ----------------------------------------------------
 
-  /// Move a aba [tabId] (de [srcPaneId]) pra dentro de [targetPaneId] como mais
-  /// uma aba (acoplar). A sessão **não** é morta — só muda de lugar.
+  /// Move [tabId] into [targetPaneId] without disposing its live session.
   void moveTabToPane(String srcPaneId, String tabId, String targetPaneId) {
     _applyWorkspaceCommand(
       (document) => WorkspaceDocumentCommands.moveTabToPane(
@@ -1006,9 +1013,10 @@ class CockpitViewModel extends ChangeNotifier {
     );
   }
 
-  /// Move a aba [tabId] (de [srcPaneId]) pra um **novo pane** criado dividindo
-  /// [targetPaneId] em [dir]. [before] = novo pane antes (esquerda/cima) ou
-  /// depois (direita/baixo). A sessão só muda de lugar (não é morta).
+  /// Move [tabId] into a new split beside [targetPaneId].
+  ///
+  /// [before] places the new pane left/above rather than right/below. The live
+  /// session is moved, not disposed.
   void moveTabToNewSplit(
     String srcPaneId,
     String tabId,
@@ -1030,9 +1038,9 @@ class CockpitViewModel extends ChangeNotifier {
     );
   }
 
-  /// Reordena a aba [tabId] dentro do **mesmo** pane, ou a insere numa posição
-  /// específica de **outro** pane. [index] é o slot desejado na lista de abas do
-  /// destino (0..len). A sessão só muda de lugar (não é morta).
+  /// Reorder [tabId] within a pane or insert it at [index] in another pane.
+  ///
+  /// Moving the tab preserves its live session.
   void moveTabToIndex(
     String srcPaneId,
     String tabId,
@@ -1050,7 +1058,7 @@ class CockpitViewModel extends ChangeNotifier {
     );
   }
 
-  /// Preenche uma pane vazia: troca o placeholder por um agente ou terminal.
+  /// Replace an empty placeholder with a live agent or terminal.
   void fillEmpty(
     String paneId,
     String emptyId,
@@ -1071,6 +1079,7 @@ class CockpitViewModel extends ChangeNotifier {
     if (!applied) _workspace.disposeTab(s.id);
   }
 
+  /// Close and dispose a tab, inserting an empty placeholder when required.
   void closeTab(String paneId, String agentId) {
     final projectId = _selectedProjectId;
     if (projectId == null) return;
@@ -1088,6 +1097,7 @@ class CockpitViewModel extends ChangeNotifier {
     }
   }
 
+  /// Close a pane and dispose tabs removed by the workspace command.
   void closePane(String paneId) {
     final projectId = _selectedProjectId;
     if (projectId == null) return;
@@ -1104,6 +1114,7 @@ class CockpitViewModel extends ChangeNotifier {
     }
   }
 
+  /// Resize a split through the canonical workspace command reducer.
   void resizeSplit(String splitId, double frac) {
     _applyWorkspaceCommand(
       (document) => WorkspaceDocumentCommands.resizeSplit(
@@ -1114,11 +1125,13 @@ class CockpitViewModel extends ChangeNotifier {
     );
   }
 
+  /// Toggle project-rail visibility for the current window session.
   void toggleRail() {
     _railVisible = !_railVisible;
     notifyListeners();
   }
 
+  /// Toggle file-tree visibility for the current window session.
   void toggleTree() {
     _treeVisible = !_treeVisible;
     notifyListeners();
@@ -1132,7 +1145,7 @@ class CockpitViewModel extends ChangeNotifier {
     return null;
   }
 
-  /// Id do workspace raiz dono de [id] (ele mesmo, se já for raiz).
+  /// Resolve the root workspace that owns [id], or [id] itself when already root.
   String _rootOf(String id) => _projectById(id)?.parentId ?? id;
 
   WorkspaceDocument? get _activeDocument =>
@@ -1200,10 +1213,9 @@ class CockpitViewModel extends ChangeNotifier {
           );
   }
 
-  // ---- notificações ---------------------------------------------------------
+  // ---- Notifications --------------------------------------------------------
 
-  /// Id do agente que o usuário está olhando (aba ativa da pane focada do
-  /// projeto selecionado).
+  /// Resolve the active tab id in the selected project's focused pane.
   String? get _focusedAgentId {
     final pid = _selectedProjectId;
     if (pid == null) return null;
@@ -1233,7 +1245,7 @@ class CockpitViewModel extends ChangeNotifier {
     );
   }
 
-  /// Limpa a notificação do agente que acabou de virar o focado.
+  /// Clear the unseen marker on the tab that just became focused.
   void _clearFocusedNotification() {
     final id = _focusedAgentId;
     if (id != null) _workspace.clearUnseen(id);
@@ -1248,15 +1260,16 @@ class CockpitViewModel extends ChangeNotifier {
     return WorkspaceTab.empty(id: id);
   }
 
-  // ---- persistência do layout ----------------------------------------------
+  // ---- Layout persistence --------------------------------------------------
 
-  /// Ativa um projeto (sobe os processos). Se há layout salvo, reconstrói a
-  /// árvore + sessões; senão, abre uma pane vazia. Idempotente: já-ativo é no-op.
+  /// Lazily realize a project's pane tree and live resources.
+  ///
+  /// A missing layout creates one empty pane. Activation is idempotent.
   Future<void> _activateProject(String id) async {
     if (_documents.containsKey(id)) return;
     final doc = _savedLayouts[id];
     if (doc == null) {
-      _initDocument(id); // síncrono — pane vazia padrão
+      _initDocument(id); // Synchronously create the default empty pane.
       return;
     }
     _restoring = true;
@@ -1292,8 +1305,7 @@ class CockpitViewModel extends ChangeNotifier {
     _setDocument(document);
   }
 
-  /// Avança `_seq` além de qualquer sufixo numérico dos ids restaurados, pra
-  /// `_nid` não colidir com ids reaproveitados.
+  /// Advance `_seq` beyond restored numeric suffixes to prevent id collisions.
   void _bumpSeqPast(Iterable<String> sessionIds, PaneNode tree) {
     var maxN = _seq;
     void scan(String id) {
@@ -1335,12 +1347,10 @@ class CockpitViewModel extends ChangeNotifier {
         : _workspace.documentWithLiveTabs(project, document);
   }
 
-  /// Clona a estrutura de panes/abas do projeto [rootId] num doc de layout novo:
-  /// **ids frescos**, **sem `sessionPath`** (sessões começam do zero) e **sem
-  /// viewers**. A árvore (splits/posições/frac) e o `sub` relativo de cada
-  /// agente/terminal são preservados — ao restaurar no fork, o `cwd` vira
-  /// `fork.path + sub`, ou seja, a mesma estrutura na pasta do worktree.
-  /// `null` se o root não tem layout (ou só tinha viewers).
+  /// Clone a root layout for a new worktree using fresh ids and sessions.
+  ///
+  /// Preserves split geometry and relative agent or terminal paths, removes
+  /// session paths and viewers, and returns `null` when no usable tabs remain.
   Map<String, dynamic>? _cloneLayoutForWorktree(String rootId) {
     final doc = _documents.containsKey(rootId)
         ? _serializeLayout(rootId)
@@ -1350,20 +1360,20 @@ class CockpitViewModel extends ChangeNotifier {
     final sessionsJson = doc['sessions'];
     if (treeJson is! Map || sessionsJson is! Map) return null;
 
-    // 1. Remapeia sessões: dropa viewers, remove sessionPath, id novo por tipo.
+    // 1. Remap sessions with fresh type-specific ids, omitting viewers and paths.
     final tabIdMap = <String, String>{};
     final newSessions = <String, dynamic>{};
     for (final entry in sessionsJson.entries) {
       final desc = Map<String, dynamic>.from(entry.value as Map);
-      if (desc['type'] == 'viewer') continue; // worktree não replica viewers
-      desc.remove('sessionPath'); // não continua sessão — começa do zero
+      if (desc['type'] == 'viewer') continue; // Worktrees do not clone viewers.
+      desc.remove('sessionPath'); // Start a fresh agent conversation.
       final newId = _nid(desc['type'] == 'terminal' ? 't' : 'a');
       tabIdMap[entry.key as String] = newId;
       newSessions[newId] = desc;
     }
     if (newSessions.isEmpty) return null;
 
-    // 2. Remapeia a árvore (ids de folha/split novos; abas via tabIdMap).
+    // 2. Remap leaf and split ids, resolving tabs through tabIdMap.
     final nodeIdMap = <String, String>{};
     final newTree = _remapTreeForClone(
       paneNodeFromJson(treeJson.cast<String, dynamic>()),
@@ -1391,8 +1401,8 @@ class CockpitViewModel extends ChangeNotifier {
           for (final t in node.tabs)
             if (tabIdMap[t] != null) tabIdMap[t]!,
         ];
-        // Folha que só tinha viewers fica vazia → o sanitize do restore põe um
-        // placeholder. `active` aqui é só um fallback inofensivo nesse caso.
+        // A viewer-only leaf stays empty until restore sanitization inserts a
+        // placeholder; `active` is only a harmless fallback in that case.
         final active =
             tabIdMap[node.active] ?? (tabs.isNotEmpty ? tabs.first : newId);
         return LeafPane(id: newId, tabs: tabs, active: active);
@@ -1408,14 +1418,10 @@ class CockpitViewModel extends ChangeNotifier {
     }
   }
 
-  /// Caminho de [cwd] relativo à raiz [root] do projeto ('' = raiz). Devolve
-  /// sempre com separador `/` (forma canônica interna).
+  /// Return [cwd] relative to project [root] using canonical `/` separators.
   ///
-  /// Normaliza `\`→`/` antes de comparar: no Windows os paths podem misturar
-  /// separadores (ex.: a pasta do worktree vem do git com `\`, enquanto os cwds
-  /// internos são montados com `/`). Sem isso o prefixo não casaria e o `sub`
-  /// sairia vazio — quebrando o posicionamento por subpasta (e a clonagem de
-  /// layout pro worktree).
+  /// Normalizing Windows separators before comparison preserves subfolder
+  /// placement when Git and internal paths use different separator styles.
   String _subOf(String cwd, String root) {
     final c = cwd.replaceAll('\\', '/');
     final r = root.replaceAll('\\', '/');
@@ -1433,16 +1439,16 @@ class CockpitViewModel extends ChangeNotifier {
     });
   }
 
-  /// (Re)lê o estado git de um projeto e atualiza a rail. Chamado no boot (todos),
-  /// ao selecionar e no fim de turno do agente (que pode ter mexido em arquivos).
+  /// Refresh a project's Git state after boot, selection, or an agent turn.
   Future<void> _refreshGit(String projectId) async {
     final project = _projectById(projectId);
     if (project == null) return;
     final info = await _gitReader.read(project.path);
-    // Evita rebuild se nada mudou (branch + ahead/behind + mapa de arquivos).
+    // Avoid rebuilding when branch, divergence, and file status are unchanged.
     final old = _gitInfo[projectId];
     if (old == info) {
-      _gitInfo[projectId] = info; // garante a chave mesmo sem mudança visível
+      _gitInfo[projectId] =
+          info; // Retain the key even without a visible change.
       return;
     }
     _gitInfo[projectId] = info;
@@ -1450,17 +1456,16 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Expande o mapa path→status (só arquivos) num índice que também cobre as
-  /// **pastas ancestrais**, cada uma com o estado mais forte dos descendentes.
+  /// Expand file statuses into ancestor folders using the strongest descendant.
   static Map<String, GitFileStatus> _buildGitTree(
     Map<String, GitFileStatus>? files,
   ) {
     if (files == null || files.isEmpty) return const <String, GitFileStatus>{};
     final tree = <String, GitFileStatus>{};
     for (final entry in files.entries) {
-      final path = entry.key; // relativo, separador '/'
+      final path = entry.key; // Project-relative path with `/` separators.
       tree[path] = GitFileStatus.strongest(tree[path], entry.value)!;
-      // Propaga pros ancestrais: 'a/b/c.dart' → 'a/b', 'a'.
+      // Propagate `a/b/c.dart` to ancestor entries `a/b` and `a`.
       var slash = path.lastIndexOf('/');
       while (slash > 0) {
         final dir = path.substring(0, slash);
@@ -1471,12 +1476,13 @@ class CockpitViewModel extends ChangeNotifier {
     return tree;
   }
 
-  /// (Re)inicia o watcher de filesystem do projeto **selecionado** → mantém a
-  /// árvore/branch atualizadas ao vivo conforme o disco muda (o agente edita
-  /// arquivos, troca de branch, comita). No-op se já observa esse mesmo path.
+  /// Move the filesystem watcher to the selected project's working tree.
+  ///
+  /// Keeps file and branch state live as agents edit, switch branches, or
+  /// commit. Reusing the same path is a no-op.
   void _startGitWatch(String? projectId) {
     final path = projectId == null ? null : _projectById(projectId)?.path;
-    if (path == _gitWatchPath) return; // já observando este projeto
+    if (path == _gitWatchPath) return; // This project is already watched.
     _gitWatch?.cancel();
     _gitWatchDebounce?.cancel();
     _gitWatch = null;
@@ -1487,18 +1493,19 @@ class CockpitViewModel extends ChangeNotifier {
           .watch(recursive: true)
           .listen((event) => _onGitFsEvent(projectId, event));
     } catch (_) {
-      _gitWatchPath = null; // pasta inacessível → sem watcher (refresh manual)
+      _gitWatchPath = null; // Inaccessible folders fall back to manual refresh.
     }
   }
 
-  /// Evento de filesystem do watcher. Filtra o ruído interno do `.git/` (o
-  /// próprio `git status` mexe em `index.lock` etc. → loop), exceto `HEAD` e
-  /// `index`, que sinalizam checkout/commit/staging. Debounce junta rajadas.
+  /// Filter internal `.git` watcher noise and debounce meaningful changes.
+  ///
+  /// `HEAD` and `index` remain visible because they signal checkout, commit,
+  /// or staging changes.
   void _onGitFsEvent(String projectId, FileSystemEvent event) {
     final p = event.path.replaceAll('\\', '/');
     final gitIdx = p.indexOf('/.git/');
     if (gitIdx != -1) {
-      final rest = p.substring(gitIdx + 6); // depois de '/.git/'
+      final rest = p.substring(gitIdx + 6); // Portion after `/.git/`.
       if (rest != 'HEAD' && rest != 'index') return;
     }
     _gitWatchDebounce?.cancel();
@@ -1507,10 +1514,10 @@ class CockpitViewModel extends ChangeNotifier {
     });
   }
 
-  /// Reconcilia as worktrees de um workspace raiz contra o git (decisões 4, 5,
-  /// 17, 20). Forks novos entram em [_projectList]; forks sumidos (por fora ou
-  /// via remove) têm o runtime encerrado (mata `pi` + fecha panes — decisão 9) e,
-  /// se selecionados, a seleção volta pro pai. Só notifica quando a lista muda.
+  /// Reconcile a root workspace's worktrees against Git.
+  ///
+  /// Adds new forks to project state, disposes missing fork runtimes, and moves
+  /// selection back to the parent when necessary. Notifies only on change.
   Future<void> _refreshWorktrees(String rootId) async {
     final root = _projectById(rootId);
     if (root == null || root.parentId != null) return;
@@ -1519,13 +1526,13 @@ class CockpitViewModel extends ChangeNotifier {
     final forks = <Project>[
       for (final Worktree w in wts)
         Project(
-          id: w.path, // o caminho é o id estável do fork
+          id: w.path, // The path is the fork's stable id.
           name: w.branch,
           path: w.path,
           colorValue: root.colorValue,
           createdAt: root.createdAt,
           parentId: rootId,
-          order: root.order, // aninha junto do pai
+          order: root.order, // Keep the fork nested with its parent.
         ),
     ];
 
@@ -1535,24 +1542,24 @@ class CockpitViewModel extends ChangeNotifier {
     final newIds = forks.map((f) => f.id).toSet();
     final oldIds = old.map((f) => f.id).toSet();
 
-    // Forks que sumiram → encerra runtime e tira de _projectList.
+    // Dispose missing forks and remove them from project state.
     var switched = false;
     for (final gone in old.where((f) => !newIds.contains(f.id))) {
       _disposeProjectRuntime(gone.id);
       _projectList.removeWhere((p) => p.id == gone.id);
       if (_selectedProjectId == gone.id) {
-        _selectedProjectId = rootId; // pai assume
+        _selectedProjectId = rootId; // Return selection to the parent.
         switched = true;
       }
     }
-    // Forks novos → entram em _projectList + carregam layout salvo (decisão 18).
+    // Add new forks and load any saved layout.
     for (final fresh in forks.where((f) => !oldIds.contains(f.id))) {
       _projectList.add(fresh);
       _savedLayouts[fresh.id] = await _layoutStore.load(fresh.id);
     }
     _worktrees[rootId] = forks;
 
-    // dirtyCount por fork (decisão 8) — cada um notifica se mudou.
+    // Refresh each fork's dirty state independently.
     for (final f in forks) {
       unawaited(_refreshGit(f.id));
     }
@@ -1568,8 +1575,9 @@ class CockpitViewModel extends ChangeNotifier {
 
   String _sanitizeName(String name) => name.replaceAll(' ', '-');
 
-  /// Toda mudança estrutural passa por aqui → agenda (debounced) a gravação do
-  /// layout do projeto ativo. Pulado durante a restauração (layout meio-feito).
+  /// Notify listeners and debounce persistence after structural changes.
+  ///
+  /// Persistence is skipped while a partially restored layout is active.
   @override
   void notifyListeners() {
     super.notifyListeners();

@@ -4,14 +4,11 @@ import 'package:cockpit/app/core/domain/contracts/environment_probe.dart';
 import 'package:cockpit/app/core/domain/entities/setup_check.dart';
 import 'package:flutter/foundation.dart';
 
-/// Estado das 3 checagens do ambiente de **agente** (pi + extensão outpost-pi +
-/// supervisor) + ações de re-checagem/instalação.
+/// Coordinate agent-environment checks and installation actions.
 ///
-/// Gate de "Create agent" = [agentReady] (o trio satisfeito; `notApplicable`
-/// conta como satisfeito). Os passos de instalação são re-checados sob demanda
-/// (botão por passo). Antes ficava no onboarding do boot; agora dispara só
-/// quando o usuário abre uma aba de agente (ver `AgentSetupChecklist`).
-/// Notificações saíram daqui — viraram aba própria nas Configurações.
+/// [agentReady] gates agent creation until Pi, the Outpost-Pi extension, and
+/// the supervisor are satisfied; `notApplicable` counts as satisfied. Checks
+/// run on demand when the user opens an agent tab, rather than during app boot.
 class SetupViewModel extends ChangeNotifier {
   SetupViewModel(this._env, this._installer);
 
@@ -24,34 +21,38 @@ class SetupViewModel extends ChangeNotifier {
 
   bool _disposed = false;
 
-  /// O trio satisfeito → habilita criar o agente.
+  /// Enable agent creation once all three environment checks are satisfied.
   bool get agentReady =>
       pi.satisfied && extension.satisfied && supervisor.satisfied;
 
-  /// Roda as 3 ao abrir o checklist do agente.
+  /// Recheck all agent prerequisites concurrently when the checklist opens.
   Future<void> recheckAll() async {
     await Future.wait([recheckPi(), recheckExtension(), recheckSupervisor()]);
   }
 
+  /// Recheck whether the Pi executable is installed.
   Future<void> recheckPi() => _run(
     (s) => pi = s,
     () async => await _env.piInstalled() ? CheckStatus.ok : CheckStatus.missing,
   );
 
+  /// Recheck whether the Outpost-Pi extension is installed.
   Future<void> recheckExtension() => _run(
     (s) => extension = s,
     () async =>
         await _env.extensionInstalled() ? CheckStatus.ok : CheckStatus.missing,
   );
 
+  /// Recheck whether the supervisor is installed.
   Future<void> recheckSupervisor() => _run(
     (s) => supervisor = s,
     () async =>
         await _env.supervisorInstalled() ? CheckStatus.ok : CheckStatus.missing,
   );
 
-  /// Botão "Instalar" do passo da extensão: roda `pi install npm:outpost-pi` e,
-  /// em caso de sucesso, re-checa a extensão (e o supervisor, agora possível).
+  /// Install the Outpost-Pi extension and refresh dependent checks.
+  ///
+  /// A successful install rechecks both the extension and the supervisor.
   Future<InstallResult> installExtension() async {
     final result = await _installer.installExtension();
     if (result.ok) {
@@ -61,16 +62,14 @@ class SetupViewModel extends ChangeNotifier {
     return result;
   }
 
-  /// Botão "Instalar" do passo do supervisor: roda o instalador via `node` e,
-  /// em caso de sucesso, re-checa o supervisor.
+  /// Install the supervisor through Node and recheck it on success.
   Future<InstallResult> installSupervisor() async {
     final result = await _installer.installSupervisor();
     if (result.ok) await recheckSupervisor();
     return result;
   }
 
-  /// Marca o passo como `checking`, roda [probe], grava o resultado. Resolve um
-  /// `bool`/`CheckStatus` de forma uniforme.
+  /// Mark a step as checking, run [probe], and publish its resulting status.
   Future<void> _run(
     void Function(CheckStatus) set,
     Future<CheckStatus> Function() probe,
