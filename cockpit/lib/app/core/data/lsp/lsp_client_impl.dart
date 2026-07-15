@@ -11,14 +11,16 @@ import 'package:cockpit/app/core/domain/exceptions/lsp_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 import 'package:flutter/foundation.dart';
 
-/// Implementação de [LspClient] sobre `dart:io` `Process`. Dona do ciclo de vida
-/// de **um** language server: spawn, escrita no stdin (framing
-/// [encodeLspMessage]), parse do stdout ([LspMessageDecoder]), handshake LSP,
-/// publish de diagnostics e kill limpo.
+/// Implement [LspClient] over a `dart:io` [Process].
 ///
-/// Espelha o padrão do `PiRpcProcess` (write-chain serializada, Completer por id,
-/// close-stdin→SIGTERM→SIGKILL). Difere no framing (Content-Length, não JSONL) e
-/// no id JSON-RPC (inteiro, não `req-N`).
+/// Owns the lifecycle of **one** language server: spawning it, writing framed
+/// messages to stdin with [encodeLspMessage], parsing stdout through
+/// [LspMessageDecoder], performing the LSP handshake, publishing diagnostics,
+/// and shutting it down cleanly.
+///
+/// Mirrors the `PiRpcProcess` pattern (serialized write chain, one completer per
+/// id, close stdin → SIGTERM → SIGKILL). It differs in framing (Content-Length,
+/// not JSONL) and JSON-RPC ids (integers, not `req-N`).
 class LspClientImpl implements LspClient {
   LspClientImpl({required this.spec, required this.rootPath});
 
@@ -30,11 +32,11 @@ class LspClientImpl implements LspClient {
   final StreamController<LspDiagnosticsBatch> _diagnostics =
       StreamController<LspDiagnosticsBatch>.broadcast();
 
-  /// Requests pendentes aguardando a `response` com o `id` correspondente.
+  /// Pending requests waiting for the response with the matching `id`.
   final Map<int, Completer<Object?>> _pending = <int, Completer<Object?>>{};
   int _seq = 0;
 
-  /// Serializa escritas no stdin (ver `PiRpcProcess._writeChain`).
+  /// Serialize writes to stdin (see `PiRpcProcess._writeChain`).
   Future<void> _writeChain = Future<void>.value();
 
   Process? _process;
@@ -54,8 +56,9 @@ class LspClientImpl implements LspClient {
       return const Failure(LspError('Language server already running.'));
     }
     try {
-      // Mesmo cuidado do pi: servers como typescript-language-server/intelephense
-      // são shims que precisam do `node` na PATH (GUI macOS não herda do shell).
+      // Apply the same precaution as pi: servers such as
+      // typescript-language-server/intelephense are shims that need `node` on
+      // PATH (macOS GUI apps do not inherit the shell environment).
       final env = await envWithNodeOnPath();
       final process = await Process.start(
         spec.executable,
@@ -92,9 +95,11 @@ class LspClientImpl implements LspClient {
     }
   }
 
-  /// `initialize` → `initialized`. Anuncia as capabilities mínimas que usamos
-  /// (publishDiagnostics e, na Wave 3, formatting). `positionEncoding` fica no
-  /// default (utf-16) — alinhado com as code units da `String` Dart.
+  /// Complete the `initialize` → `initialized` handshake.
+  ///
+  /// Advertises the minimum capabilities in use (publishDiagnostics and, in
+  /// Wave 3, formatting). Leaves `positionEncoding` at its default (UTF-16),
+  /// matching Dart [String] code units.
   Future<void> _handshake() async {
     final rootUri = Uri.directory(rootPath).toString();
     await _request('initialize', <String, dynamic>{
@@ -140,8 +145,8 @@ class LspClientImpl implements LspClient {
     if (!_initialized) return;
     _notify('textDocument/didChange', <String, dynamic>{
       'textDocument': <String, dynamic>{'uri': _uri(path), 'version': version},
-      // Full sync: mandamos o documento inteiro a cada edição (simples e
-      // suficiente pro tamanho de arquivo que o editor abre).
+      // Full sync sends the entire document after every edit. This is simple
+      // and sufficient for the file sizes opened by the editor.
       'contentChanges': <Map<String, dynamic>>[
         {'text': text},
       ],
@@ -174,7 +179,7 @@ class LspClientImpl implements LspClient {
   Future<void> kill() async {
     final process = _process;
     if (process == null) return;
-    // Caminho gracioso do LSP: shutdown (request) → exit (notify) → close stdin.
+    // Graceful LSP path: shutdown (request) → exit (notification) → close stdin.
     try {
       await _request(
         'shutdown',
@@ -219,7 +224,8 @@ class LspClientImpl implements LspClient {
   String _uri(String path) => Uri.file(path).toString();
 
   void _onMessage(Map<String, dynamic> message) {
-    // Resposta a um request nosso: tem `id` e (`result` ou `error`), sem `method`.
+    // A response to one of our requests has an `id` and either `result` or
+    // `error`, but no `method`.
     final id = message['id'];
     final method = message['method'];
     if (method == null && id is int) {
@@ -237,22 +243,22 @@ class LspClientImpl implements LspClient {
       return;
     }
 
-    // Request servidor→cliente (tem `id` E `method`): precisa de resposta pra
-    // não travar o servidor. Respondemos o mínimo viável.
+    // A server-to-client request has both `id` and `method`; it needs a
+    // response to avoid blocking the server. Return the minimum viable result.
     if (method is String && id != null) {
       _handleServerRequest(id, method);
       return;
     }
 
-    // Notificação servidor→cliente (tem `method`, sem `id`).
+    // A server-to-client notification has `method` but no `id`.
     if (method is String) _handleNotification(method, message['params']);
   }
 
   void _handleServerRequest(Object id, String method) {
     final Object? result = switch (method) {
-      // Configuração: devolve um item nulo por scope pedido (usa defaults).
+      // Configuration: return one null item per requested scope to use defaults.
       'workspace/configuration' => <Object?>[null],
-      // Registro dinâmico de capability: aceitamos (no-op do nosso lado).
+      // Dynamic capability registration is accepted as a client-side no-op.
       'client/registerCapability' ||
       'client/unregisterCapability' ||
       'window/workDoneProgress/create' => null,
@@ -275,7 +281,7 @@ class LspClientImpl implements LspClient {
         _diagnostics.add(LspDiagnosticsBatch(uri: uri, diagnostics: list));
       }
     }
-    // Demais notificações (logMessage, progress, …) são ignoradas por ora.
+    // Other notifications (logMessage, progress, …) are currently ignored.
   }
 
   Future<Object?> _request(String method, Map<String, dynamic> params) async {
@@ -307,8 +313,9 @@ class LspClientImpl implements LspClient {
     });
   }
 
-  /// Escreve uma mensagem no stdin, serializada com as demais (ver write-chain
-  /// do `PiRpcProcess`).
+  /// Write a message to stdin, serialized with all other writes.
+  ///
+  /// Uses the same write-chain pattern as `PiRpcProcess`.
   void _send(Map<String, dynamic> message) {
     final bytes = encodeLspMessage(message);
     final result = _writeChain.then((_) async {
@@ -350,7 +357,7 @@ class LspClientImpl implements LspClient {
   }
 }
 
-/// Implementação de [LspClientFactory] — cria um [LspClientImpl] por raiz.
+/// Create an [LspClientImpl] for each language-server root.
 class LspClientFactoryImpl implements LspClientFactory {
   const LspClientFactoryImpl();
 
