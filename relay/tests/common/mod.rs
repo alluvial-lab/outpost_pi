@@ -80,7 +80,8 @@ pub async fn connect_and_auth_with_room_and_device(
     let pubkey_b64 = B64.encode(vk.to_bytes());
 
     ws.send(Message::text(
-        json!({"type": "hello", "pubkey": pubkey_b64, "device_id": device_id, "room_id": room_id}).to_string(),
+        json!({"type": "hello", "pubkey": pubkey_b64, "device_id": device_id, "room_id": room_id})
+            .to_string(),
     ))
     .await
     .unwrap();
