@@ -12,6 +12,11 @@ import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+/// Reconcile connection and session state when the app returns to foreground.
+///
+/// An online connection rehydrates authoritative relay snapshots before asking
+/// SyncService for history. Retrying/offline connections resume their active
+/// peer or boot discovery, so cached UI state never substitutes for live state.
 @visibleForTesting
 Future<void> reconcileOnAppResume({
   required ConnectionManager connectionManager,

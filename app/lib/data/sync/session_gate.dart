@@ -1,6 +1,10 @@
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/protocol/protocol.dart';
 
+/// Explain whether an inbound server message may affect the active transcript.
+///
+/// Rejections retain boundary metadata for safe diagnostics without admitting
+/// foreign-session content into persistence or UI state.
 final class SessionGateDecision {
   const SessionGateDecision._({
     required this.accepted,
@@ -33,9 +37,14 @@ final class SessionGateDecision {
   final String? expectedSessionId;
 }
 
+/// Fail closed for server frames whose canonical session differs from active state.
 final class SessionGate {
   const SessionGate();
 
+  /// Accept non-session frames, but reject unknown, missing, or mismatched IDs.
+  ///
+  /// Callers must treat a rejection as a control boundary, not transcript data;
+  /// canonical room metadata is the only trusted source for later rebinding.
   SessionGateDecision accepts(ServerMessage message, RemoteSessionRef? active) {
     final messageType = typeOfServerMessage(message);
     if (!isSessionScopedServerType(messageType)) {

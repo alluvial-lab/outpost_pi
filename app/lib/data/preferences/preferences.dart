@@ -129,6 +129,7 @@ class Preferences extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// Persist tool-call visibility and notify listeners only when it changes.
   Future<void> setHideToolCalls(bool value) async {
     if (_hideToolCalls == value) return;
     _hideToolCalls = value;
@@ -136,6 +137,7 @@ class Preferences extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Persist or clear the selected peer/room target used by bootstrap routing.
   Future<void> setSelectedPeerEpk(String? value) async {
     final cleaned = (value != null && value.isNotEmpty) ? value : null;
     if (cleaned == _selectedPeerEpk) return;
@@ -174,6 +176,7 @@ class Preferences extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Persist onboarding completion for the boot redirect gate.
   Future<void> setOnboardingCompleted(bool value) async {
     if (_onboardingCompleted == value) return;
     _onboardingCompleted = value;
@@ -190,6 +193,7 @@ class Preferences extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Persist the global debug-capture toggle and notify reactive consumers.
   Future<void> setDebugLogging(bool value) async {
     if (_debugLogging == value) return;
     _debugLogging = value;

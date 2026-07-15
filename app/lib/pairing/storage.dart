@@ -17,9 +17,11 @@ class PersistedRoom {
   final String? name;
   final String? cwd;
   final int startedAt;
+
   /// Local-only override for [name]. When non-null, takes precedence
   /// in UI (long-press rename).
   final String? localName;
+
   /// Plan 18 — last-known model the Pi-extension is running with.
   /// Persisted so the subtitle survives cold starts.
   final String? model;
@@ -65,9 +67,7 @@ class PersistedRoom {
     localName: identical(localName, _unset)
         ? this.localName
         : localName as String?,
-    model: identical(model, _unset)
-        ? this.model
-        : model as String?,
+    model: identical(model, _unset) ? this.model : model as String?,
   );
 }
 
@@ -79,6 +79,10 @@ class PersistedRoom {
 // "keep current" (omit) from "set to null" (pass `null` explicitly).
 const Object _unset = Object();
 
+/// Persist one paired Pi's identity and locally learned connection metadata.
+///
+/// The remote EPK is the durable peer identity; room labels and relay details
+/// support reconnect and display but are not independent identities.
 class PeerRecord {
   // base64 Ed25519 pubkey of the Pi — the only peer identifier post-rollback.
   final String remoteEpk;
@@ -88,12 +92,14 @@ class PeerRecord {
   // Local-only display label (Pi does not know about this). Renders in
   // place of [sessionName] when set; null = use sessionName everywhere.
   final String? nickname;
+
   /// Plan 17 fix — Pi-side room id (cwd-session) this pairing is bound
   /// to. Set from `PairOk.roomId` on pair, or discovered lazily via
   /// `subscribe_rooms` for legacy peers persisted before this fix.
   /// `null` = not yet discovered; outbound sends fall back to 'main'
   /// while ConnectionManager runs the discovery once.
   final String? roomId;
+
   /// Plan/27 Wave A — agent harness reported by the PC at pair time.
   /// Surfaced as the "via Pi coding agent" subtitle on the PiCard.
   /// `null` for PeerRecords saved before the field existed; consumers
@@ -153,15 +159,9 @@ class PeerRecord {
     sessionName: sessionName ?? this.sessionName,
     relayUrl: relayUrl,
     pairedAt: pairedAt,
-    nickname: identical(nickname, _unset)
-        ? this.nickname
-        : nickname as String?,
-    roomId: identical(roomId, _unset)
-        ? this.roomId
-        : roomId as String?,
-    harness: identical(harness, _unset)
-        ? this.harness
-        : harness as PiHarness?,
+    nickname: identical(nickname, _unset) ? this.nickname : nickname as String?,
+    roomId: identical(roomId, _unset) ? this.roomId : roomId as String?,
+    harness: identical(harness, _unset) ? this.harness : harness as PiHarness?,
   );
 
   @override
@@ -177,14 +177,14 @@ class PeerRecord {
 
   @override
   int get hashCode => Object.hash(
-        remoteEpk,
-        sessionName,
-        relayUrl,
-        pairedAt,
-        nickname,
-        roomId,
-        harness,
-      );
+    remoteEpk,
+    sessionName,
+    relayUrl,
+    pairedAt,
+    nickname,
+    roomId,
+    harness,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +226,7 @@ class PairingStorage extends ChangeNotifier {
 
   String _peerKey(String remoteEpk) => '$_kPeersService:$remoteEpk';
 
+  /// Persist a paired peer, notify listeners, then trigger mesh publication.
   Future<void> savePeer(PeerRecord record) async {
     await _writePeer(record);
     _onPeersMutated?.call();
@@ -238,12 +239,14 @@ class PairingStorage extends ChangeNotifier {
   /// empty members list (see plan/24-fix-app-publish-race).
   Future<void> savePeerSilent(PeerRecord record) => _writePeer(record);
 
+  /// Load one peer record by its durable remote EPK, if it is still stored.
   Future<PeerRecord?> loadPeer(String remoteEpk) async {
     final raw = await _store.read(key: _peerKey(remoteEpk));
     if (raw == null) return null;
     return PeerRecord.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
+  /// Delete one peer, notify listeners, then trigger mesh publication.
   Future<void> deletePeer(String remoteEpk) async {
     await _erasePeer(remoteEpk);
     _onPeersMutated?.call();
@@ -266,14 +269,16 @@ class PairingStorage extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// List every stored peer record for bootstrap and mesh reconciliation.
   Future<List<PeerRecord>> listPeers() async {
     final all = await _store.readAll();
     final prefix = '$_kPeersService:';
     return all.entries
         .where((e) => e.key.startsWith(prefix))
-        .map((e) => PeerRecord.fromJson(
-          jsonDecode(e.value) as Map<String, dynamic>,
-        ))
+        .map(
+          (e) =>
+              PeerRecord.fromJson(jsonDecode(e.value) as Map<String, dynamic>),
+        )
         .toList();
   }
 
@@ -308,6 +313,7 @@ class PairingStorage extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Load cached rooms for a peer; an absent cache yields an empty list.
   Future<List<PersistedRoom>> loadRooms(String remoteEpk) async {
     final raw = await _store.read(key: _roomsKey(remoteEpk));
     if (raw == null) return const [];
@@ -317,6 +323,7 @@ class PairingStorage extends ChangeNotifier {
         .toList();
   }
 
+  /// Delete a peer's local room cache and notify reactive readers.
   Future<void> deleteRooms(String remoteEpk) async {
     await _store.delete(key: _roomsKey(remoteEpk));
     notifyListeners();

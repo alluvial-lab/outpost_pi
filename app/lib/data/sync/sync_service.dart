@@ -33,6 +33,11 @@ import 'package:app/protocol/protocol.dart';
 import 'package:app/protocol/uuid7.dart';
 import 'package:flutter/foundation.dart';
 
+/// Own the app-side transcript write pipeline and active-turn convergence.
+///
+/// Serializes canonical event persistence, materializes disposable Hive
+/// projections, subscribes to the active channel, and tears down timers and
+/// streams on disposal. UI reads its snapshots rather than mutating storage.
 class SyncService extends Service {
   final ConnectionManager _conn;
   final LocalBoxes _boxes;
@@ -153,15 +158,31 @@ class SyncService extends Service {
   // Public surface (commands + in-memory streams)
   // ---------------------------------------------------------------------------
 
+  /// Return the current in-memory assistant stream, if a turn is producing text.
   StreamingMessage? get streaming => _streaming;
+
+  /// Emit transient assistant stream snapshots; durable history comes from Hive.
   Stream<StreamingMessage?> get streamingStream => _streamingController.stream;
+
+  /// Emit non-transcript session control events for ViewModel coordination.
   Stream<SessionEvent> get events => _eventController.stream;
+
+  /// Return composer text queued by the active Pi session, if any.
   String? get queuedText => _queuedText;
+
+  /// Emit queued-composer state from local commands and Pi updates.
   Stream<String?> get queuedStream => _queuedController.stream;
 
+  /// Return the canonical in-memory turn state for the active session.
   TranscriptTurnView get turnView => _turnView;
+
+  /// Emit canonical turn snapshots as transcript and control events converge.
   Stream<TranscriptTurnView> get turnViewStream => _turnViewController.stream;
+
+  /// Project the active turn into compatibility UI state without duplicate flags.
   AppTurnProjection get turnProjection => _turnView.toAppProjection();
+
+  /// Emit compatibility UI projections derived from canonical turn snapshots.
   Stream<AppTurnProjection> get turnProjectionStream =>
       _turnViewController.stream.map((turn) => turn.toAppProjection());
 
@@ -174,8 +195,13 @@ class SyncService extends Service {
   /// `cancel` target for the in-flight reply (null when idle).
   String? get workingReplyTo => turnProjection.cancelTargetId;
 
+  /// Return the active peer identity while a room is bound, if known.
   String? get activeEpk => _activeEpk;
+
+  /// Return the active Pi room, defaulting to `main` before metadata arrives.
   String get activeRoomId => _activeRoomId;
+
+  /// Return the fully canonical active session required for transcript writes.
   RemoteSessionRef? get activeSessionRef => _activeRef;
 
   RemoteSessionRef? _resolveActiveRef(String epk, String roomId) {
@@ -255,6 +281,11 @@ class SyncService extends Service {
     _setTurnViewLocalOnly(TranscriptTurnView.idle);
   }
 
+  /// Append an optimistic user event and send it when the active room is live.
+  ///
+  /// Offline or stale-room sends remain held pending for reconnect retry and
+  /// eventually become visible failures; the method never sends without a
+  /// canonical session identity.
   Future<void> sendMessage(
     String text, {
     MessageImage? image,
@@ -280,7 +311,8 @@ class SyncService extends Service {
     // replay) if they time out.
     final ch = _conn.channel;
     final activeEpk = _activeEpk;
-    final held = ch == null ||
+    final held =
+        ch == null ||
         (activeEpk != null && !_conn.isRoomLive(activeEpk, _activeRoomId));
     // Optimistic pending row (#defaults: optimistic + dedupe by id).
     if (epk != null) {
@@ -489,6 +521,7 @@ class SyncService extends Service {
   Future<void> debugApplyHistory(SessionHistory history) =>
       _replayHistory(history);
 
+  /// Set the Pi-visible queued composer text when an active channel exists.
   Future<void> setQueuedMessage(String text) async {
     final ch = _conn.channel;
     if (ch == null) return;
@@ -500,6 +533,7 @@ class SyncService extends Service {
     );
   }
 
+  /// Clear local queued text and request the same clear from the active Pi.
   Future<void> clearQueuedMessage() async {
     final ch = _conn.channel;
     _setQueuedText(null);
@@ -509,6 +543,7 @@ class SyncService extends Service {
     await ch.send(QueuedMessageClear(id: _newId(), sessionId: ref.sessionId));
   }
 
+  /// Cancel the named active reply and disarm its local delivery backstop.
   Future<void> cancel(String targetId) async {
     // User-driven cancel of this message → disarm its no-echo backstop too.
     _pendingSendTimers.remove(targetId)?.cancel();
@@ -521,6 +556,7 @@ class SyncService extends Service {
     );
   }
 
+  /// Send one tool-approval decision to the active canonical session.
   Future<void> approveTool(String toolCallId, ApproveDecision decision) async {
     final ch = _conn.channel;
     if (ch == null) return;
@@ -538,6 +574,7 @@ class SyncService extends Service {
     // event stream. Do not mutate the disposable msgs projection directly here.
   }
 
+  /// Request authoritative session history, deferring until channel and session bind.
   void requestSync() {
     final ch = _conn.channel;
     final ref = _activeRef;
@@ -725,7 +762,12 @@ class SyncService extends Service {
             text: submitted.text,
             images: submitted.image == null
                 ? null
-                : [WireImage(data: submitted.image!.data, mime: submitted.image!.mime)],
+                : [
+                    WireImage(
+                      data: submitted.image!.data,
+                      mime: submitted.image!.mime,
+                    ),
+                  ],
           ),
         );
         // Re-arm the send-timeout from now (the original ts is stale).
@@ -848,7 +890,13 @@ class SyncService extends Service {
         );
         _setTurnIdle(preview: buffered.isEmpty ? null : buffered);
 
-      case AgentMessage(:final inReplyTo, :final text, :final ts, :final usage, :final messageId):
+      case AgentMessage(
+        :final inReplyTo,
+        :final text,
+        :final ts,
+        :final usage,
+        :final messageId,
+      ):
         // Identity-source (a): derive the SAME deterministic eventId/messageId
         // as session_history replay (AgentMessageEvt) so a live commit and
         // a replay of the same assistant message collapse to ONE Hive row
@@ -932,7 +980,11 @@ class SyncService extends Service {
         // duplicated-live-replay user-message follow-up.
         final userEventId = ts != null
             ? serverReplayEventId(
-                _activeTranscriptSessionId(), 'user_input', id, ts)
+                _activeTranscriptSessionId(),
+                'user_input',
+                id,
+                ts,
+              )
             : 'server:user_confirmed:$id';
         // ignore: discarded_futures
         _appendTranscriptEvent(
