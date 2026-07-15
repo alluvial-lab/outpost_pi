@@ -1,9 +1,9 @@
 # Outpost-Pi — Site (NextJS)
 
-Antes de editar ou revisar `site/`, leia a referência de stack em [`../.agents/skills/next-site/SKILL.md`](../.agents/skills/next-site/SKILL.md).
+Before editing or reviewing `site/`, read the stack reference in [`../.agents/skills/next-site/SKILL.md`](../.agents/skills/next-site/SKILL.md).
 
-Landing page institucional do Outpost-Pi. Apresenta projeto, links pro GitHub,
-documentação do MVP. **Apenas apresentação — não tem lógica de produto.**
+Outpost-Pi's institutional landing page. Presents the project, GitHub links,
+and MVP documentation. **Presentation only — it has no product logic.**
 
 ## Stack
 
@@ -12,57 +12,57 @@ documentação do MVP. **Apenas apresentação — não tem lógica de produto.*
 - TypeScript 5
 - Tailwind 4 (via `@tailwindcss/postcss`)
 - ESLint 9
-- Package manager: **pnpm** (com `allowBuilds` para `sharp` e `unrs-resolver` em `pnpm-workspace.yaml`)
+- Package manager: **pnpm** (with `allowBuilds` for `sharp` and `unrs-resolver` in `pnpm-workspace.yaml`)
 
-## Comandos
+## Commands
 
-- `pnpm install` — instala deps
-- `pnpm dev` — dev server em :3000
-- `pnpm build` — build de produção
-- `pnpm start` — serve build
+- `pnpm install` — installs dependencies
+- `pnpm dev` — dev server on :3000
+- `pnpm build` — production build
+- `pnpm start` — serves build
 - `pnpm lint` — ESLint
 
-## Convenções
+## Conventions
 
-- **Server Components por padrão** — só usar `"use client"` quando necessário (state, events, hooks)
-- **Pasta de rotas**: `src/app/` (App Router)
-- **Estilos**: Tailwind utility-first. Sem CSS modules / styled-components
-- **Imagens**: `next/image` com fallback estático onde possível
-- **Tipagem**: props de componentes sempre tipadas, sem `any`
+- **Server Components by default** — use `"use client"` only when needed (state, events, hooks)
+- **Routes directory**: `src/app/` (App Router)
+- **Styles**: utility-first Tailwind. No CSS modules / styled-components
+- **Images**: `next/image` with static fallback where possible
+- **Typing**: component props always typed, no `any`
 
-## NÃO fazer
+## Do NOT
 
-- Não adicionar features de produto (chat, pareamento, etc) — isso vai no `app/`
-- Não comitar `.next/`, `out/`, `node_modules/` (já no .gitignore raiz)
-- Não desabilitar lint pra fazer passar — corrigir o erro
-- Não introduzir backend (API routes) sem registrar plano
+- Do not add product features (chat, pairing, etc.) — that belongs in `app/`
+- Do not commit `.next/`, `out/`, `node_modules/` (already in the root .gitignore)
+- Do not disable lint to make it pass — fix the error
+- Do not introduce a backend (API routes) without recording a plan
 
-## Publicação (deploy)
+## Publishing (deploy)
 
-O site roda em produção (`outpost-pi.kevoun.com`) como **imagem Docker**,
-construída localmente a partir de `site/` (sem publicação em registry). O host
-de produção carrega a imagem local.
+The site runs in production (`outpost-pi.kevoun.com`) as a **Docker image**,
+built locally from `site/` (without publishing to a registry). The production host
+loads the local image.
 
 ```bash
-./build-docker.sh            # build local, tag :latest
-./build-docker.sh v1.2.3     # tag :v1.2.3 E :latest
+./build-docker.sh            # local build, :latest tag
+./build-docker.sh v1.2.3     # :v1.2.3 AND :latest tags
 ```
 
-O que o script faz: builda para a plataforma do host a partir do
-`Dockerfile` (multi-stage → `next build` com `output: "standalone"`, runtime
-`node:22-alpine` na porta 3000 com healthcheck em `/`) e carrega a imagem
-no daemon Docker local (sem `--push`).
+What the script does: builds for the host platform from the
+`Dockerfile` (multi-stage → `next build` with `output: "standalone"`,
+`node:22-alpine` runtime on port 3000 with healthcheck at `/`) and loads the image
+into the local Docker daemon (without `--push`).
 
-Pré-requisitos: **`docker login`** (Docker Hub) feito antes, e `docker buildx`
-(vem no Docker moderno). Sem login, o push falha no fim do build.
+Prerequisites: **`docker login`** (Docker Hub) performed first, and `docker buildx`
+(included in modern Docker). Without login, the push fails at the end of the build.
 
-Fluxo típico de publicação: commit + push no git → `pnpm lint && pnpm build`
-verdes → `./push-docker.sh` → o host redeploya da `:latest`. Passe uma versão
-(`vX.Y.Z`) quando quiser uma tag fixada além da `:latest`.
+Typical publishing flow: commit + push to git → `pnpm lint && pnpm build`
+green → `./push-docker.sh` → the host redeploys from `:latest`. Pass a version
+(`vX.Y.Z`) when you want a pinned tag in addition to `:latest`.
 
-## Modo orquestrado
+## Orchestrated mode
 
-Se receber um prompt começando com `[ORCH:<task-id>]`, leia
-`../.orchestration/INSTRUCTIONS.md` antes de qualquer outra ação. Esse marker
-indica que outro agente está coordenando o trabalho e tem regras específicas
-(onde escrever resultado, não comitar, etc).
+If you receive a prompt starting with `[ORCH:<task-id>]`, read
+`../.orchestration/INSTRUCTIONS.md` before any other action. This marker
+indicates another agent is coordinating the work and has specific rules
+(where to write results, do not commit, etc.).
