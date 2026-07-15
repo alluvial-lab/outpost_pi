@@ -1,30 +1,29 @@
-/// Estado git de **um** caminho (arquivo ou pasta agregada) na árvore.
+/// Represent the Git status of one path or an aggregated directory in the tree.
 ///
-/// A ordem da declaração é a **precedência** de severidade (do mais fraco ao
-/// mais forte): ao agregar uma pasta, vence o estado de maior `index`
-/// ([strongest]). Ex.: uma pasta com um untracked e um modified mostra
-/// `modified`; com um conflito, mostra `conflict`.
+/// Declaration order defines severity precedence from weakest to strongest.
+/// Directory aggregation uses [strongest], so the status with the greatest
+/// `index` wins. For example, a directory containing untracked and modified
+/// files is `modified`; one containing a conflict is `conflict`.
 enum GitFileStatus {
-  /// Ignorado pelo `.gitignore` (`!!`). O mais fraco — qualquer mudança real
-  /// vence na agregação de pasta.
+  /// Ignored by `.gitignore` (`!!`); any actual change wins aggregation.
   ignored,
 
-  /// Arquivo novo, ainda não rastreado (`??`).
+  /// New file that is not yet tracked (`??`).
   untracked,
 
-  /// Mudança no index (staged) sem mudança pendente no working tree.
+  /// Index change that is staged with no pending working-tree change.
   staged,
 
-  /// Mudança no working tree ainda não comitada (modificado/typechange).
+  /// Uncommitted working-tree change, including modification or type change.
   modified,
 
-  /// Removido (no index ou no working tree).
+  /// Removal from either the index or the working tree.
   deleted,
 
-  /// Conflito de merge (ambos os lados mexeram — `UU`, `AA`, `DD`, …).
+  /// Merge conflict where both sides changed the path (`UU`, `AA`, `DD`, etc.).
   conflict;
 
-  /// O mais severo entre dois estados (maior `index` vence). `null` é o vazio.
+  /// Return the more severe status by `index`, treating `null` as no status.
   static GitFileStatus? strongest(GitFileStatus? a, GitFileStatus? b) {
     if (a == null) return b;
     if (b == null) return a;

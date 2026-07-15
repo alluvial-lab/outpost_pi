@@ -1,62 +1,62 @@
-/// Versão de domínio do stream de stdout do `pi --mode rpc`.
+/// Represent the domain form of the `pi --mode rpc` stdout stream.
 ///
-/// A `ui/` e o domínio **nunca** veem o wire format cru (`Map<String,dynamic>`).
-/// O parse das linhas JSON acontece em `data/adapters/` e produz estes tipos.
-/// Schema real documentado em `docs/rpc-protocol.md` (descoberto empiricamente
-/// no spike do plano 37, pi 0.78.1).
+/// The domain and `ui/` never see the raw wire format (`Map<String,dynamic>`).
+/// `data/adapters/` parses JSON lines into these types. The observed schema is
+/// documented in `docs/rpc-protocol.md` from the Plan 37 spike against Pi 0.78.1.
 sealed class RpcEvent {
   const RpcEvent();
 }
 
-/// `agent_start` — o agente começou a processar um prompt.
+/// `agent_start` — the agent began processing a prompt.
 final class RpcAgentStart extends RpcEvent {
   const RpcAgentStart();
 }
 
-/// `agent_end` — o agente terminou o turno (volta a ficar ocioso).
+/// `agent_end` — the agent finished the turn and became idle.
 final class RpcAgentEnd extends RpcEvent {
   const RpcAgentEnd();
 }
 
-/// `turn_start` — começou uma rodada (resposta do assistant + tools).
+/// `turn_start` — an assistant-and-tools round began.
 final class RpcTurnStart extends RpcEvent {
   const RpcTurnStart();
 }
 
-/// `turn_end` — a rodada terminou.
+/// `turn_end` — the round ended.
 final class RpcTurnEnd extends RpcEvent {
   const RpcTurnEnd();
 }
 
-/// `message_update` com `assistantMessageEvent.type == "text_delta"`.
+/// `message_update` with `assistantMessageEvent.type == "text_delta"`.
 final class RpcTextDelta extends RpcEvent {
   const RpcTextDelta(this.delta);
   final String delta;
 }
 
-/// `message_update` com `assistantMessageEvent.type == "text_end"`.
+/// `message_update` with `assistantMessageEvent.type == "text_end"`.
 final class RpcTextEnd extends RpcEvent {
   const RpcTextEnd(this.content);
   final String content;
 }
 
-/// `message_start` com `role == "user"` — uma mensagem do usuário adicionada à
-/// sessão. Acontece tanto no envio local (eco do que digitamos) quanto quando
-/// a mensagem vem **de fora** (app/mesh). A UI usa pra mostrar a bolha das
-/// mensagens remotas; as locais já entram otimisticamente e são deduplicadas.
+/// `message_start` with `role == "user"` — a user message added to the session.
+///
+/// Emitted for both local sends (echoing typed input) and messages arriving
+/// **externally** from the app or mesh. The UI displays remote message bubbles;
+/// local messages are inserted optimistically and deduplicated.
 final class RpcUserMessage extends RpcEvent {
   const RpcUserMessage(this.text);
   final String text;
 }
 
-/// `message_update` com `assistantMessageEvent.type == "thinking_delta"`.
-/// (deepseek/raciocinadores emitem isto pelo RPC mesmo com thinking oculto na TUI.)
+/// `message_update` with `assistantMessageEvent.type == "thinking_delta"`.
+/// Reasoning models such as DeepSeek emit this through RPC even when thinking is hidden in the TUI.
 final class RpcThinkingDelta extends RpcEvent {
   const RpcThinkingDelta(this.delta);
   final String delta;
 }
 
-/// `tool_execution_start` — uma tool começou a executar.
+/// `tool_execution_start` — a tool began executing.
 final class RpcToolStart extends RpcEvent {
   const RpcToolStart({
     required this.toolCallId,
@@ -68,7 +68,7 @@ final class RpcToolStart extends RpcEvent {
   final Map<String, dynamic> args;
 }
 
-/// `tool_execution_end` — uma tool terminou (com o texto do resultado).
+/// `tool_execution_end` — a tool finished with result text.
 final class RpcToolEnd extends RpcEvent {
   const RpcToolEnd({
     required this.toolCallId,
@@ -82,7 +82,7 @@ final class RpcToolEnd extends RpcEvent {
   final String resultText;
 }
 
-/// `response` — ACK (ou erro) de um comando que mandamos pelo stdin.
+/// `response` — acknowledgement or error for a command sent over stdin.
 final class RpcCommandResponse extends RpcEvent {
   const RpcCommandResponse({
     required this.command,
@@ -94,16 +94,20 @@ final class RpcCommandResponse extends RpcEvent {
   final String? error;
 }
 
-/// Falha do turno reportada via `stopReason: "error"` na mensagem do assistant
-/// (ex.: `errorMessage: "Connection error."` quando o provider está fora do ar).
-/// Vem nos eventos `message_end`/`agent_end`, não nos deltas.
+/// Turn failure reported by `stopReason: "error"` in the assistant message.
+///
+/// For example, an unavailable provider may report
+/// `errorMessage: "Connection error."`. This arrives in `message_end` or
+/// `agent_end`, not in deltas.
 final class RpcStreamError extends RpcEvent {
   const RpcStreamError(this.message);
   final String message;
 }
 
-/// `auto_retry_start` — o pi vai retentar após um erro transitório
-/// (overloaded, rate-limit, 5xx, conexão recusada). `delayMs` é o backoff.
+/// `auto_retry_start` — Pi will retry after a transient failure.
+///
+/// Covers overload, rate limits, 5xx responses, and refused connections;
+/// `delayMs` is the backoff.
 final class RpcAutoRetry extends RpcEvent {
   const RpcAutoRetry({
     required this.attempt,
@@ -117,35 +121,41 @@ final class RpcAutoRetry extends RpcEvent {
   final String message;
 }
 
-/// Texto cru do stderr do child (warnings do pi, ex.: "model not found").
-/// **Não** é protocolo — é diagnóstico, mantido separado do stdout JSONL.
+/// Raw child-process stderr, such as a Pi "model not found" warning.
+///
+/// This is diagnostic output, **not** protocol data, and remains separate from
+/// JSONL stdout.
 final class RpcDiagnostic extends RpcEvent {
   const RpcDiagnostic(this.text);
   final String text;
 }
 
-/// O child process terminou (saída limpa ou crash). `code == 0` é encerramento
-/// gracioso (fechar o stdin já basta — ver spike).
+/// The child process exited cleanly or crashed.
+///
+/// `code == 0` denotes graceful shutdown; closing stdin is sufficient, as
+/// established by the spike.
 final class RpcProcessExit extends RpcEvent {
   const RpcProcessExit(this.code);
   final int code;
 }
 
-/// Nível de um [RpcNotice] (`extension_ui_request` method `notify`).
+/// Classify the severity of an [RpcNotice] from `extension_ui_request` method `notify`.
 enum RpcNoticeLevel { info, warning, error }
 
-/// `extension_ui_request` method `notify` — aviso fire-and-forget da extensão
-/// (status do mesh, "QR ready", erros). Não espera resposta.
+/// `extension_ui_request` method `notify` — a fire-and-forget extension notice.
+///
+/// Carries mesh status, "QR ready", or errors and expects no response.
 final class RpcNotice extends RpcEvent {
   const RpcNotice(this.message, this.level);
   final String message;
   final RpcNoticeLevel level;
 }
 
-/// `extension_ui_request` interativo (`select` / `confirm` / `input` / `editor`)
-/// — a extensão pede uma escolha ao usuário e **espera** um
-/// `extension_ui_response` com o mesmo [id] no stdin. Sem resposta, a extensão
-/// fica pendurada (ou resolve no timeout dela).
+/// Interactive `extension_ui_request` for `select`, `confirm`, `input`, or `editor`.
+///
+/// The extension requests user input and **waits** for an
+/// `extension_ui_response` with the same [id] on stdin. Without a response, the
+/// extension remains pending until its own timeout.
 final class RpcUiRequest extends RpcEvent {
   const RpcUiRequest({
     required this.id,
@@ -162,11 +172,11 @@ final class RpcUiRequest extends RpcEvent {
   final String? title;
   final String? message; // confirm
   final String? placeholder; // input/editor — hint
-  final String? defaultValue; // input/editor — valor inicial (prefill)
+  final String? defaultValue; // input/editor — initial prefilled value
   final List<String> options; // select
 }
 
-/// Estado da conexão do relay para [RpcRelayState].
+/// Describe relay connectivity for [RpcRelayState].
 enum RelayStatus { connected, reconnecting, disconnected }
 
 /// Canonical custom event names from `protocol/schema/cockpit-control.schema.json`.
@@ -189,10 +199,10 @@ enum RpcControlOverlayEventType {
   }
 }
 
-/// `message_start` com `role:"custom"` e `customType:"outpost-pi:relay-state"`.
+/// `message_start` with `role:"custom"` and `customType:"outpost-pi:relay-state"`.
 ///
-/// Emitido em toda transição do relay (liga, queda → reconnecting, desliga,
-/// reconexão) e em resposta ao controle `relay:status`.
+/// Emitted for every relay transition: enabled, dropped into reconnecting,
+/// disabled, or reconnected. Also emitted in response to `relay:status` control.
 final class RpcRelayState extends RpcEvent {
   const RpcRelayState({
     required this.status,
@@ -207,11 +217,12 @@ final class RpcRelayState extends RpcEvent {
   final String? room;
 }
 
-/// `message_start` com `role:"custom"` e `customType:"outpost-pi:name-assigned"`.
+/// `message_start` with `role:"custom"` and `customType:"outpost-pi:name-assigned"`.
 ///
-/// Emitido pelo broker ao entrar no mesh: o broker pode ter atribuído um nome
-/// diferente do pedido (`agent_name`) para evitar colisão (ex.: "Proj" → "Proj#2").
-/// Quando [changed] é `false`, [assigned] == o nome original — sem ação necessária.
+/// Emitted by the broker when joining the mesh. The broker may assign a name
+/// different from the requested `agent_name` to avoid a collision, such as
+/// "Proj" → "Proj#2". When [changed] is `false`, [assigned] equals the original
+/// name and requires no action.
 final class RpcNameAssigned extends RpcEvent {
   const RpcNameAssigned({
     required this.assigned,
@@ -219,20 +230,20 @@ final class RpcNameAssigned extends RpcEvent {
     this.requested,
   });
 
-  /// Nome pedido pelo usuário antes de eventual resolução de colisão.
+  /// Name requested by the user before any collision resolution.
   final String? requested;
 
-  /// Nome efetivo atribuído pelo broker (o que aparece no mesh).
+  /// Effective name assigned by the broker and displayed in the mesh.
   final String assigned;
 
-  /// `true` quando o broker mudou o nome pedido por colisão.
+  /// Whether the broker changed the requested name to resolve a collision.
   final bool changed;
 }
 
-/// `message_start` com `customType:"outpost-pi:pair-code"`.
+/// `message_start` with `customType:"outpost-pi:pair-code"`.
 ///
-/// Carrega os dados estruturados para o Cockpit renderizar/copiar o QR sem
-/// raspar o texto de display do Pi.
+/// Carry structured data so Cockpit can render or copy the QR code without
+/// scraping Pi's display text.
 final class RpcPairCode extends RpcEvent {
   const RpcPairCode({
     required this.uri,
@@ -249,7 +260,7 @@ final class RpcPairCode extends RpcEvent {
   final String name;
 }
 
-/// `message_start` com `customType:"outpost-pi:paired"`.
+/// `message_start` with `customType:"outpost-pi:paired"`.
 final class RpcPaired extends RpcEvent {
   const RpcPaired({
     required this.name,
@@ -262,16 +273,17 @@ final class RpcPaired extends RpcEvent {
   final int pairedAt;
 }
 
-/// `message_start` com `customType:"outpost-pi:mesh-revoked"`.
+/// `message_start` with `customType:"outpost-pi:mesh-revoked"`.
 final class RpcMeshRevoked extends RpcEvent {
   const RpcMeshRevoked({this.details});
 
   final Map<String, dynamic>? details;
 }
 
-/// Qualquer evento ainda não mapeado (compaction, retry, queue_update, deltas
-/// de toolcall, message_start/end, setStatus/setTitle...). A UI ignora com
-/// segurança — nunca crasha.
+/// Preserve any event not yet mapped, including compaction, retry, queue updates,
+/// tool-call deltas, message boundaries, and status or title changes.
+///
+/// The UI safely ignores these events rather than crashing.
 final class RpcUnknown extends RpcEvent {
   const RpcUnknown(this.type, [this.raw = '']);
   final String type;

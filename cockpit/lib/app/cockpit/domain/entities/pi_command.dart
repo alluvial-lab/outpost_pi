@@ -1,6 +1,7 @@
-/// Um slash command disponível no agente (vem de `get_commands`). No pi, os
-/// comandos são providos por **extensions**; o `name` pode ter espaço (ex.:
-/// `outpost-pi setup`). Invocado mandando `/<name>` como prompt.
+/// Describe a slash command available from `get_commands`.
+///
+/// Pi extensions provide these commands, and `name` may contain spaces, such as
+/// `outpost-pi setup`. Invoke one by sending `/<name>` as the prompt.
 class PiCommand {
   const PiCommand({required this.name, required this.description});
 

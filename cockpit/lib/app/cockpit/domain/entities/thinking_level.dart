@@ -1,8 +1,8 @@
-/// Nível de raciocínio (effort) do modelo — comando `set_thinking_level`.
+/// Represent model reasoning effort for the `set_thinking_level` command.
 ///
-/// A escada canônica vai de [off] a [xhigh]. **Quais níveis um modelo aceita** é
-/// derivado do `thinkingLevelMap` dele (ver [availableFor]); o que vai no fio é
-/// sempre o nome canônico (o pi mapeia pro provider internamente).
+/// The canonical ladder runs from [off] through [xhigh]. [availableFor] derives
+/// model support from its `thinkingLevelMap`. The wire always carries the
+/// canonical name, which Pi maps to the provider internally.
 enum ThinkingLevel {
   off,
   minimal,
@@ -11,10 +11,10 @@ enum ThinkingLevel {
   high,
   xhigh;
 
-  /// String que vai no fio (`{"type":"set_thinking_level","level":"high"}`).
+  /// Canonical string sent on the wire (`{"type":"set_thinking_level","level":"high"}`).
   String get wire => name;
 
-  /// Rótulo (em inglês, como o usuário pediu).
+  /// English label displayed to the user.
   String get label => switch (this) {
     ThinkingLevel.off => 'off',
     ThinkingLevel.minimal => 'minimal',
@@ -30,10 +30,11 @@ enum ThinkingLevel {
         orElse: () => ThinkingLevel.off,
       );
 
-  /// Níveis que **este modelo** aceita, derivados do `thinkingLevelMap`: um
-  /// nível fica de fora só quando aparece no mapa com valor `null` (o modelo
-  /// declara que não o suporta). Chaves ausentes ficam disponíveis por padrão;
-  /// mapa vazio → a escada inteira.
+  /// Return the levels accepted by a model according to `thinkingLevelMap`.
+  ///
+  /// A level is excluded only when the map contains it with a `null` value.
+  /// Missing keys remain available by default, and an empty map enables the
+  /// entire ladder.
   static List<ThinkingLevel> availableFor(Map<String, String?> map) {
     if (map.isEmpty) return values;
     return [

@@ -1,6 +1,7 @@
-/// Erro tipado da camada de processo RPC, já traduzido do mundo de I/O
-/// (`data/`) para algo que o domínio e a UI entendem. Nunca vaza `Exception`
-/// cru nem `Map<String,dynamic>`.
+/// Represent an RPC process failure translated from the I/O adapter boundary.
+///
+/// This domain-safe form prevents raw `Exception` and `Map<String,dynamic>`
+/// values from leaking out of `data/` into the domain or UI.
 class RpcError {
   const RpcError(this.message, {this.cause, this.stackTrace});
 

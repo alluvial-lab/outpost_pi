@@ -1,14 +1,15 @@
-/// Uso da janela de contexto — de `get_session_stats` (`contextUsage`).
+/// Context-window usage reported by `get_session_stats` (`contextUsage`).
 class ContextUsage {
   const ContextUsage({this.tokens, required this.contextWindow, this.percent});
 
-  /// Tokens estimados no contexto atual. `null` logo após compaction.
+  /// Estimated tokens in the current context; `null` immediately after compaction.
   final int? tokens;
 
-  /// Tamanho total da janela em tokens.
+  /// Total context-window size in tokens.
   final int contextWindow;
 
-  /// Percentual usado na escala **0–100** (ex.: `0.1578` = 0,16%). `null`
-  /// logo após compaction, até a próxima resposta do assistant.
+  /// Percentage used on the **0–100** scale (for example, `0.1578` = 0.16%).
+  ///
+  /// Remains `null` after compaction until the next assistant response.
   final double? percent;
 }
