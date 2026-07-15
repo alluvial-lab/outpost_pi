@@ -1,14 +1,14 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-prose-surfaces
 kind: feature
-stage: review
+stage: done
 tags: [rebrand, docs, i18n, prose]
 parent: epic-rebrand-to-outpost-pi-en-first
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 ---
 
 # EN-first — cross-cutting prose surfaces (branding, docs, CLAUDE.md, config)
@@ -90,3 +90,20 @@ config — excluding historical CHANGELOG entries that record the migration
 
 <!-- The design pass (`/agile-workflow:feature-design`) will fill in the
 per-file translation plan and the CHANGELOG-historical-entry exclusion rule. -->
+
+## Review (2026-07-15, standard, cross-model fresh-context)
+
+Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
+orchestrator). One balanced pass over the integrated feature diff
+(`c346e28..HEAD -- branding/ docs/ cockpit/linux/`).
+
+### Findings (adjudicated)
+- **Important — missed ASCII-only Portuguese in Linux packaging** (`cockpit/linux/cockpit.desktop:5`): `Comment=Cliente desktop do Outpost-Pi — GUI multi-pane sobre o motor do Pi` was missed because the feature's verification used an accented-character scan only, which cannot catch ASCII PT. Translated to `Comment=Outpost-Pi desktop client — multi-pane GUI over the Pi engine`. **Fixed.** Sibling `metainfo.xml` and `make_config.yaml` were already English.
+- No other findings.
+
+### Verification of fixes
+- Re-scan of `cockpit/linux/` for residual PT (accented + ASCII tokens) clean; only all-English strings remain.
+- No build gate (`.desktop` is packaging metadata).
+
+### Verdict
+Approve. Advanced `review → done`.
