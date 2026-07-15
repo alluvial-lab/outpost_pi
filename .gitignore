@@ -10,8 +10,8 @@
 !.research/
 !.research/**
 
-# orchestration: results são efêmeros (logs de execução de cada task);
-# INSTRUCTIONS.md e contracts/ ficam versionados (contrato compartilhado).
+# orchestration: results are ephemeral (per-task execution logs);
+# INSTRUCTIONS.md and contracts/ are versioned (shared contract).
 .orchestration/results/*
 !.orchestration/results/.gitkeep
 
