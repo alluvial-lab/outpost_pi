@@ -86,6 +86,7 @@ interface SiblingInfo {
   pcPubkey: string;
 }
 
+/** Compose a local session peer with an optional leader-owned cross-PC bridge; {@link close} releases every resource it owns. */
 export class MeshNode {
   private readonly peer_: SessionPeer;
   private readonly log: (msg: string) => void;

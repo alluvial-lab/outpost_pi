@@ -1,6 +1,7 @@
 import type { SessionHistoryEvent, Usage, WireImage } from "../protocol/types.js";
 import type { TranscriptEvent } from "./transcript_event.js";
 
+/** Describe the permissive SDK history shape accepted only at the legacy-to-canonical transcript boundary. */
 export type LegacyAgentMessage = {
   role: "user" | "assistant" | "toolResult" | "compaction" | "compactionSummary" | string;
   content?: unknown;
@@ -13,6 +14,7 @@ export type LegacyAgentMessage = {
   tokensBefore?: number;
 };
 
+/** Return a bounded wire-history projection and whether earlier canonical events were omitted. */
 export type SessionHistoryProjection = {
   events: SessionHistoryEvent[];
   truncated: boolean;
@@ -29,6 +31,7 @@ type LegacyAdapterInput = {
   messages: readonly LegacyAgentMessage[];
 };
 
+/** Append a canonical event unless its stable event id is already present. */
 export function appendTranscriptEvent(
   events: readonly TranscriptEvent[],
   event: TranscriptEvent,
@@ -37,6 +40,7 @@ export function appendTranscriptEvent(
   return [...events, event];
 }
 
+/** Project one session's canonical events to a bounded, deduplicated wire history. */
 export function projectSessionHistory(input: ProjectSessionHistoryInput): SessionHistoryProjection {
   const deduped = dedupeTranscriptEvents(input.events)
     .filter((event) => event.sessionId === input.sessionId);
@@ -49,6 +53,7 @@ export function projectSessionHistory(input: ProjectSessionHistoryInput): Sessio
   };
 }
 
+/** Map canonical transcript facts into replayable wire events while preserving their stable identities. */
 export function transcriptEventsToSessionHistory(
   events: readonly TranscriptEvent[],
 ): SessionHistoryEvent[] {
@@ -136,6 +141,7 @@ export function transcriptEventsToSessionHistory(
   return out;
 }
 
+/** Convert permissive persisted SDK messages into canonical replay events for one remote session. */
 export function mapLegacyAgentMessagesToTranscriptEvents(input: LegacyAdapterInput): TranscriptEvent[] {
   const events: TranscriptEvent[] = [];
   let lastUserId: string | null = null;
@@ -230,6 +236,7 @@ export function mapLegacyAgentMessagesToTranscriptEvents(input: LegacyAdapterInp
   return events;
 }
 
+/** Extract text content from a legacy SDK content value, ignoring non-text blocks. */
 export function stringifyContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -242,6 +249,7 @@ export function stringifyContent(content: unknown): string {
     .join("");
 }
 
+/** Normalize a legacy tool result into the text preserved by transcript replay. */
 export function stringifyToolResult(value: unknown): string {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return stringifyContent(value);
@@ -254,6 +262,7 @@ export function stringifyToolResult(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
+/** Extract wire-image attachments from legacy multimodal SDK content. */
 export function imagesFromContent(content: unknown): WireImage[] {
   if (!Array.isArray(content)) return [];
   const out: WireImage[] = [];
@@ -267,6 +276,7 @@ export function imagesFromContent(content: unknown): WireImage[] {
   return out;
 }
 
+/** Derive the stable event id shared by live delivery and replay for one session fact. */
 export function deterministicTranscriptEventId(
   sessionId: string,
   kind: TranscriptEvent["kind"],

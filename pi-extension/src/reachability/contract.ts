@@ -6,6 +6,7 @@ export const REACHABILITY_STATES = [
   "retrying",
 ] as const;
 
+/** Name one state in the canonical relay reachability state machine. */
 export type ReachabilityState = (typeof REACHABILITY_STATES)[number];
 
 export const REACHABILITY_DISPLAY_NAMES: Record<ReachabilityState, string> = {
@@ -18,6 +19,7 @@ export const REACHABILITY_DISPLAY_NAMES: Record<ReachabilityState, string> = {
 
 export const REACHABILITY_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
 
+/** Select the bounded canonical reconnect delay, clamping non-finite or negative attempts to the first slot. */
 export function reachabilityBackoffMs(attempt: number): number {
   const safeAttempt = Number.isFinite(attempt) ? Math.max(0, Math.trunc(attempt)) : 0;
   return REACHABILITY_BACKOFF_MS[
@@ -49,5 +51,7 @@ export const REACHABILITY_TRANSITIONS = [
   ["retrying", "retry_disabled", "offline"],
 ] as const satisfies readonly (readonly [ReachabilityState, string, ReachabilityState])[];
 
+/** Describe one legal transition in the canonical reachability state machine. */
 export type ReachabilityTransition = (typeof REACHABILITY_TRANSITIONS)[number];
+/** Name an event accepted by the canonical reachability state machine. */
 export type ReachabilityEvent = ReachabilityTransition[1];
