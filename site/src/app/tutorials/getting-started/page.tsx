@@ -50,20 +50,11 @@ export default function GettingStartedTutorial() {
               >
                 App Store
               </a>
-              ,{" "}
-              <a
-                className="text-accent underline"
-                href="https://play.google.com/store/apps/details?id=work.jacobmoura.remotepi"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Google Play
-              </a>
-              , or the{" "}
+              {" "}or the{" "}
               <Link className="text-accent underline" href="/download">
                 Android APK
               </Link>{" "}
-              direct download.
+              direct download (Google Play for the new listing is coming soon).
             </li>
           </ul>
           <p className="text-sm">
