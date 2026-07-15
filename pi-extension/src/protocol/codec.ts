@@ -6,6 +6,7 @@ import {
 } from "./generated/protocol.generated.js";
 import type { ClientMessage, ServerMessage } from "./types.js";
 
+/** Report an invalid JSON/message shape or a message type outside the generated allowlist. */
 export class DecodeError extends Error {
   constructor(
     public readonly code: "invalid_message" | "unsupported_type",
@@ -16,10 +17,16 @@ export class DecodeError extends Error {
   }
 }
 
+/** Encode one validated client message as a newline-delimited JSON frame. */
 export function encodeClient(msg: ClientMessage): string {
   return JSON.stringify(msg) + "\n";
 }
 
+/**
+ * Decode a server frame against the generated allowlist.
+ *
+ * @throws {@link DecodeError} when JSON, shape, or type validation fails.
+ */
 export function decodeServer(line: string): ServerMessage {
   const obj = parseJsonLine(line);
   const type = readType(obj);
@@ -32,6 +39,11 @@ export function decodeServer(line: string): ServerMessage {
   return obj;
 }
 
+/**
+ * Decode a client frame against the generated allowlist.
+ *
+ * @throws {@link DecodeError} when JSON, shape, or type validation fails.
+ */
 export function decodeClient(line: string): ClientMessage {
   const obj = parseJsonLine(line);
   const type = readType(obj);

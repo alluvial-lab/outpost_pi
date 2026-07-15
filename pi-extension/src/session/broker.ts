@@ -172,6 +172,7 @@ interface SystemBody {
   peers_detailed?: PeerInfo[];
 }
 
+/** Own a leader's UDS peer registry and route local or delegated cross-PC envelopes until {@link close} releases its sockets. */
 export class Broker {
   private readonly peers = new Map<string, PeerConn>();
   private readonly auditPath?: string;
