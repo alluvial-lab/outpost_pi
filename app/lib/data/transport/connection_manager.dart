@@ -47,29 +47,35 @@ import 'package:app/protocol/protocol.dart';
 // Status model
 // ---------------------------------------------------------------------------
 
+/// Represent the relay connection lifecycle consumed by UI and services.
 sealed class ConnectionStatus {
   const ConnectionStatus();
 }
 
+/// No paired peer is currently selected for connection.
 class StatusNoPeer extends ConnectionStatus {
   const StatusNoPeer();
 }
 
+/// A connection attempt is in flight; no channel may be used yet.
 class StatusConnecting extends ConnectionStatus {
   const StatusConnecting();
 }
 
+/// A live relay channel is available for the active peer and room.
 class StatusOnline extends ConnectionStatus {
   final IChannel channel;
   const StatusOnline(this.channel);
 }
 
+/// A retryable connection failure is waiting for its backoff deadline.
 class StatusRetrying extends ConnectionStatus {
   final Duration nextRetry;
   final int attempt; // 0-based
   const StatusRetrying({required this.nextRetry, required this.attempt});
 }
 
+/// Connection is unavailable, optionally requiring user recovery before retry.
 class StatusOffline extends ConnectionStatus {
   final String reason;
   final bool canRetry;
@@ -85,6 +91,7 @@ class StatusOffline extends ConnectionStatus {
 typedef ConnectionFactory =
     Future<IChannel> Function(PeerRecord peer, CancelToken cancel);
 
+/// Let connection factories abandon work after their lifecycle is superseded.
 class CancelToken {
   bool _cancelled = false;
   bool get isCancelled => _cancelled;
@@ -95,6 +102,11 @@ class CancelToken {
 // ConnectionManager
 // ---------------------------------------------------------------------------
 
+/// Own relay connection state, retry timers, room snapshots, and teardown.
+///
+/// This service is the authority for connection liveness. It rehydrates relay
+/// snapshots after reconnect and disposes channels, subscriptions, and timers
+/// together so stale transports cannot update a replacement session.
 class ConnectionManager extends Service {
   final ConnectionFactory _factory;
   final PairingStorage _storage;
@@ -199,9 +211,13 @@ class ConnectionManager extends Service {
   @visibleForTesting
   void debugRunWatchdog() => _runWatchdog();
 
+  /// Return the current connection lifecycle snapshot.
   ConnectionStatus get status => _status;
+
+  /// Emit each connection lifecycle transition for reactive consumers.
   Stream<ConnectionStatus> get statusStream => _statusController.stream;
 
+  /// Return the active peer channel only while the manager is online.
   IChannel? get channel =>
       _status is StatusOnline ? (_status as StatusOnline).channel : null;
 
@@ -237,6 +253,7 @@ class ConnectionManager extends Service {
   Stream<Map<String, List<RoomInfo>>> get roomsStream =>
       _roomsController.stream;
 
+  /// Return an immutable snapshot of cached rooms keyed by standard-base64 EPK.
   Map<String, List<RoomInfo>> get roomsSnapshot => _roomsSnapshot();
 
   /// Rooms for a single peer (or empty list if none known yet). Accepts
@@ -415,7 +432,7 @@ class ConnectionManager extends Service {
     await _connect(target);
   }
 
-  // Connect to a specific peer (used after fresh pairing).
+  /// Connect to a specific paired peer, replacing any pending retry path.
   Future<void> connectTo(PeerRecord peer) => _connect(peer);
 
   /// Idempotent switch to another paired peer. If `peer` already matches
@@ -432,9 +449,10 @@ class ConnectionManager extends Service {
     await _connect(peer);
   }
 
-  // Adopt a channel that was established by an external flow (e.g. the
-  // pairing handshake). Skips the factory entirely — the channel is already
-  // connected and ready for use.
+  /// Adopt a channel created by an external flow such as pairing.
+  ///
+  /// Skips the factory because the channel is ready, binds its room before
+  /// consuming frames, and takes over all retry, ping, and teardown ownership.
   //
   // Mirrors `_connect`'s room binding: `_activeRoomId` is set from
   // `peer.roomId` (which pairing always populates) and pushed down to the
@@ -478,7 +496,7 @@ class ConnectionManager extends Service {
     _replaySubscriptions();
   }
 
-  // Permanently disconnect and go to NoPeer.
+  /// Permanently close the active channel and return to the no-peer state.
   Future<void> disconnect() => _teardownActive(emitNoPeer: true);
 
   /// Shared implementation between [disconnect] and [switchTo]. When

@@ -57,8 +57,10 @@ class LocalBoxes {
     await runtime.clear(); // VOLATILE — zero on boot (#3)
   }
 
+  /// Return the durable cross-session index used by Home projections.
   Box<dynamic> sessionsIndexBox() => Hive.box<dynamic>(_kSessionsIndex);
 
+  /// Return the volatile connection and presence snapshot box.
   Box<dynamic> runtimeBox() => Hive.box<dynamic>(_kRuntime);
 
   /// Per-session message box. Lazily opened; idempotent (returns the already
@@ -70,15 +72,18 @@ class LocalBoxes {
   Box<dynamic> openMsgsBox(RemoteSessionRef ref) =>
       Hive.box<dynamic>(msgsBoxName(ref));
 
+  /// Whether the canonical session's disposable message projection is open.
   bool isMsgsBoxOpen(RemoteSessionRef ref) => Hive.isBoxOpen(msgsBoxName(ref));
 
   /// Per canonical transcript session event log. Lazily opened; idempotent.
   Future<Box<dynamic>> transcriptEventsBox(TranscriptSessionKey key) =>
       Hive.openBox<dynamic>(transcriptEventsBoxName(key));
 
+  /// Return an already-open canonical transcript event log.
   Box<dynamic> openTranscriptEventsBox(TranscriptSessionKey key) =>
       Hive.box<dynamic>(transcriptEventsBoxName(key));
 
+  /// Whether the canonical transcript event log is currently open.
   bool isTranscriptEventsBoxOpen(TranscriptSessionKey key) =>
       Hive.isBoxOpen(transcriptEventsBoxName(key));
 
@@ -87,9 +92,11 @@ class LocalBoxes {
   static String msgsBoxName(RemoteSessionRef ref) =>
       'msgs_${_safe(toAppEpk(ref.peerEpk))}__${_safe(ref.roomId)}__${_safe(ref.sessionId)}';
 
+  /// Derive the deterministic Hive box name for one canonical event stream.
   static String transcriptEventsBoxName(TranscriptSessionKey key) =>
       'transcript_events_${_safe(toAppEpk(key.peerId))}__${_safe(key.roomId)}__${_safe(key.sessionId)}';
 
+  /// Derive the shared index key for a canonical remote session.
   static String sessionKey(RemoteSessionRef ref) => ref.storageKey;
 
   /// Runtime reachability is room-scoped, not transcript-scoped.

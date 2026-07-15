@@ -217,7 +217,6 @@ class SpeechToTextService implements SpeechService {
         firstWhere((s) => s == 'en_US') ??
         firstWhere((s) => s.split('_').first == 'en');
   }
-
 }
 
 /// Maps the plugin's raw `onSoundLevelChange` value to the `0..1` envelope the
@@ -264,7 +263,10 @@ class SoundLevelScale {
 // Plugin seam
 // ---------------------------------------------------------------------------
 
+/// Receive partial or final recognition text from the platform plugin.
 typedef SttResultCallback = void Function(String words, bool isFinal);
+
+/// Receive one raw platform sound-level measurement during capture.
 typedef SttLevelCallback = void Function(double level);
 
 /// Thin seam over the `speech_to_text` plugin so [SpeechToTextService]'s logic
@@ -274,6 +276,7 @@ abstract class SttPlugin {
   /// first call). Returns false if unavailable or permission denied.
   Future<bool> initialize();
 
+  /// Report whether native microphone and speech access is currently granted.
   Future<bool> hasPermission();
 
   /// Recognition locale ids supported on this device (e.g. `pt_BR`, `en_US`).
@@ -288,8 +291,10 @@ abstract class SttPlugin {
     required SttLevelCallback onLevel,
   });
 
+  /// Stop recognition while retaining the plugin's final transcript result.
   Future<void> stop();
 
+  /// Abort recognition and discard plugin-side partial recognition state.
   Future<void> cancel();
 }
 
