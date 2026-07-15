@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('split tree', () {
-    test('leaves enumera todas as folhas', () {
+    test('leaves enumerates every leaf', () {
       final tree = SplitPane(
         id: 's1',
         dir: SplitDir.vertical,
@@ -14,7 +14,7 @@ void main() {
       expect(leaves(tree).map((l) => l.id), ['p1', 'p2']);
     });
 
-    test('splitLeaf transforma a folha num split', () {
+    test('splitLeaf transforms a leaf into a split', () {
       const tree = LeafPane(id: 'p1', tabs: ['a'], active: 'a');
       final out = splitLeaf(
         tree,
@@ -26,7 +26,7 @@ void main() {
       expect(leaves(out).length, 2);
     });
 
-    test('removeLeaf faz o irmão expandir', () {
+    test('removeLeaf expands the sibling', () {
       final tree = SplitPane(
         id: 's1',
         dir: SplitDir.vertical,
@@ -39,7 +39,7 @@ void main() {
       expect((out as LeafPane).id, 'p2');
     });
 
-    test('updateLeaf altera só a folha alvo', () {
+    test('updateLeaf changes only the target leaf', () {
       const tree = LeafPane(id: 'p1', tabs: ['a'], active: 'a');
       final out = updateLeaf(
         tree,
@@ -50,7 +50,7 @@ void main() {
       expect(out.active, 'b');
     });
 
-    test('setFrac ajusta a proporção do split certo', () {
+    test('setFrac adjusts the target split proportion', () {
       final tree = SplitPane(
         id: 's1',
         dir: SplitDir.horizontal,
@@ -62,7 +62,7 @@ void main() {
       expect(out.frac, 0.3);
     });
 
-    test('splitLeaf before:true põe o novo pane antes (a)', () {
+    test('splitLeaf before:true places the new pane first', () {
       const tree = LeafPane(id: 'p1', tabs: ['a'], active: 'a');
       final out =
           splitLeaf(
@@ -79,43 +79,46 @@ void main() {
       expect((out.b as LeafPane).id, 'p1');
     });
 
-    test('splitLeaf splitId customizado e novo pane depois por padrão', () {
-      const tree = LeafPane(id: 'p1', tabs: ['a'], active: 'a');
-      final out =
-          splitLeaf(
-                tree,
-                'p1',
-                SplitDir.vertical,
-                const LeafPane(id: 'p2', tabs: ['b'], active: 'b'),
-                splitId: 'unico-1',
-              )
-              as SplitPane;
-      expect(out.id, 'unico-1');
-      expect((out.b as LeafPane).id, 'p2');
-    });
+    test(
+      'splitLeaf uses a custom splitId and appends the new pane by default',
+      () {
+        const tree = LeafPane(id: 'p1', tabs: ['a'], active: 'a');
+        final out =
+            splitLeaf(
+                  tree,
+                  'p1',
+                  SplitDir.vertical,
+                  const LeafPane(id: 'p2', tabs: ['b'], active: 'b'),
+                  splitId: 'unique-1',
+                )
+                as SplitPane;
+        expect(out.id, 'unique-1');
+        expect((out.b as LeafPane).id, 'p2');
+      },
+    );
 
-    test('reorderTabs move pra frente (ajuste pós-remoção)', () {
+    test('reorderTabs moves forward and adjusts for removal', () {
       expect(reorderTabs(['a', 'b', 'c', 'd'], 'a', 3), ['b', 'c', 'a', 'd']);
     });
 
-    test('reorderTabs move pra trás', () {
+    test('reorderTabs moves backward', () {
       expect(reorderTabs(['a', 'b', 'c', 'd'], 'd', 1), ['a', 'd', 'b', 'c']);
     });
 
-    test('reorderTabs no slot da própria posição é no-op', () {
+    test("reorderTabs is a no-op at the tab's current position", () {
       expect(reorderTabs(['a', 'b', 'c'], 'b', 1), ['a', 'b', 'c']);
       expect(reorderTabs(['a', 'b', 'c'], 'b', 2), ['a', 'b', 'c']);
     });
 
-    test('reorderTabs pro fim', () {
+    test('reorderTabs moves to the end', () {
       expect(reorderTabs(['a', 'b', 'c'], 'a', 3), ['b', 'c', 'a']);
     });
 
-    test('reorderTabs id ausente devolve inalterado', () {
+    test('reorderTabs returns an unchanged list when the id is absent', () {
       expect(reorderTabs(['a', 'b'], 'z', 0), ['a', 'b']);
     });
 
-    test('paneNodeToJson/FromJson faz round-trip da árvore', () {
+    test('paneNodeToJson and paneNodeFromJson round-trip the tree', () {
       final tree = SplitPane(
         id: 's1',
         dir: SplitDir.horizontal,
@@ -144,7 +147,7 @@ void main() {
       expect(leaves(back).map((l) => l.id), ['p1', 'p2', 'p3']);
     });
 
-    test('paneNodeFromJson reconstrói uma folha simples', () {
+    test('paneNodeFromJson reconstructs a simple leaf', () {
       final json = paneNodeToJson(
         const LeafPane(id: 'p1', tabs: ['x'], active: 'x'),
       );
@@ -154,7 +157,7 @@ void main() {
       expect(back.tabs, ['x']);
     });
 
-    test('mover a última aba esvazia a folha → irmão expande', () {
+    test('moving the last tab empties its leaf and expands the sibling', () {
       final tree = SplitPane(
         id: 's1',
         dir: SplitDir.vertical,
