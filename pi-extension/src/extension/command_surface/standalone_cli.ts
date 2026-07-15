@@ -19,6 +19,7 @@ import type { CronCommands } from "./cron_commands.js";
 import type { DaemonCommands, UiCtx } from "./daemon_commands.js";
 import type { ServiceCommands } from "./service_commands.js";
 
+/** Provide the command operations exposed by the process-level Outpost-Pi CLI. */
 export interface StandaloneCliDeps {
   readonly devices: () => Promise<void>;
   readonly revoke: (shortid: string) => Promise<void>;
@@ -36,6 +37,7 @@ interface StoredPeer {
   readonly remote_epk: string;
 }
 
+/** Supply infrastructure adapters used to assemble a standalone CLI dependency set. */
 export interface StandaloneCliAdapterDeps {
   readonly commandSurface: OutpostPiCommandSurfaceHarness;
   readonly listPeers: () => Promise<StoredPeer[]>;
@@ -50,6 +52,7 @@ export interface StandaloneCliAdapterDeps {
   readonly restartSupervisor: () => void;
 }
 
+/** Assemble standalone CLI operations from injected storage, mesh, and service adapters. */
 export function createStandaloneCliDeps(input: StandaloneCliAdapterDeps): StandaloneCliDeps {
   // The harness is part of the CLI bootstrap contract: index.ts passes the same
   // command-surface test seam used by compatibility exports, so future CLI
@@ -98,6 +101,7 @@ export function isDirectRun(importMetaUrl: string, argv1: string | undefined): b
   }
 }
 
+/** Dispatch one standalone CLI invocation through injected command operations. */
 export async function runStandaloneOutpostPiCli(
   argv: readonly string[],
   deps: StandaloneCliDeps,
@@ -210,6 +214,7 @@ function remotePiCliHelpText(): string {
   ].join("\n");
 }
 
+/** Launch Claude with an ephemeral Outpost-Pi mesh MCP configuration, terminating on missing build output. */
 export async function launchClaudeCli(args: string[], entrypointUrl: string): Promise<void> {
   // Contract: `outpost-pi claude [cwd] [claude-flags...]`. The optional cwd is
   // ONLY the leading positional (first token, not a flag); everything after it

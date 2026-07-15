@@ -14,6 +14,7 @@ import type { PeerChannel } from "../transport/peer_channel.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import type { RelayConnectivity } from "./types.js";
 
+/** Guard asynchronous runtime work so a disposed session epoch cannot publish or reconnect. */
 export interface RuntimeEpoch {
   readonly id: number;
   readonly disposed: boolean;
@@ -21,12 +22,14 @@ export interface RuntimeEpoch {
   dispose(): void;
 }
 
+/** Provide the minimal UI effects available to a lifecycle-owned runtime. */
 export interface RuntimeUiPort {
   notify(message: string, type?: "info" | "warning" | "error"): void;
   setStatus(key: string, value: string | undefined): void;
   setTitle(title: string): void;
 }
 
+/** Provide the authenticated room context required to open a relay transport. */
 export interface RelayStartInput {
   relayUrl: string;
   keypair?: Ed25519Keypair;
@@ -34,11 +37,13 @@ export interface RelayStartInput {
   roomMeta?: RoomMeta;
 }
 
+/** Return the live relay connection and its effective room after transport startup. */
 export interface RelayStartResult {
   relay: RelayClient;
   roomId?: string;
 }
 
+/** Describe the mesh-side bridge lifecycle controlled by the relay transport. */
 export interface CrossPcBridgeMeshNode {
   attachBridge(opts: {
     relay: RelayClient;
@@ -49,15 +54,18 @@ export interface CrossPcBridgeMeshNode {
   detachBridge(): void;
 }
 
+/** Lazily resolve the live mesh and identity required to attach cross-PC forwarding. */
 export interface CrossPcBridgeInput {
   meshNode(): CrossPcBridgeMeshNode | null;
   keypair(): Ed25519Keypair | null;
 }
 
+/** Expose a relay-backed owner channel whose listeners can be explicitly detached. */
 export interface RelayPeerChannel extends PeerChannel {
   detach(): void;
 }
 
+/** Define routing callbacks and peer identity for a newly created relay owner channel. */
 export interface RelayPeerChannelInput {
   peerId: string;
   roomId?: string;
@@ -65,6 +73,7 @@ export interface RelayPeerChannelInput {
   onDisconnect(peerId: string): void;
 }
 
+/** Own relay connection, reconnect, room metadata, and cross-PC bridge lifecycle for one runtime. */
 export interface RelayTransportPort {
   status(): RelayConnectivity;
   start(input: RelayStartInput): Promise<RelayStartResult>;
@@ -76,6 +85,7 @@ export interface RelayTransportPort {
   detachCrossPcBridge(): void;
 }
 
+/** Provide the live relay and routing callbacks required to attach one app owner. */
 export interface AttachOwnerInput {
   relay: RelayClient;
   peerId: string;
@@ -84,6 +94,7 @@ export interface AttachOwnerInput {
   onDisconnect?(peerId: string): void;
 }
 
+/** Manage per-owner channels while preserving broadcast, routing, and teardown ownership. */
 export interface OwnerMultiplexerPort {
   activeCount(): number;
   attach(input: AttachOwnerInput): PeerChannel;
@@ -93,6 +104,7 @@ export interface OwnerMultiplexerPort {
   lateAttachTargets(): readonly PeerChannel[];
 }
 
+/** Distinguish delivered, retryable lifecycle-window, and permanent agent wake outcomes. */
 export interface WakeAgentResult {
   ok: boolean;
   detail?: string;
@@ -106,6 +118,7 @@ export interface WakeAgentResult {
   recoverable?: boolean;
 }
 
+/** Project Pi SDK session effects while owning stale-context invalidation across replacements. */
 export interface SdkSessionProjectionPort {
   /** Set the room id for delivery-log correlation. Called when `_myRoomId` is
    *  bound (the projection is constructed before the room is known). */
@@ -125,11 +138,13 @@ export interface SdkSessionProjectionPort {
   onSessionLifecycle?(reason: string, sessionIdTail: string): void;
 }
 
+/** Represent the composed runtime epoch and port graph visible to command registration. */
 export interface OutpostPiRuntime {
   readonly epoch: RuntimeEpoch;
   readonly ports: OutpostPiRuntimePorts;
 }
 
+/** Register command adapters and coordinate their session-start and shutdown hooks. */
 export interface CommandSurfacePort {
   register(pi: ExtensionAPI, runtime: OutpostPiRuntime): void;
   ensureStarted?(ctx: ExtensionContext): void | Promise<void>;
@@ -137,6 +152,7 @@ export interface CommandSurfacePort {
   closeMesh?(): Promise<void>;
 }
 
+/** Group the lifecycle-owned adapter ports required to compose an extension runtime. */
 export interface OutpostPiRuntimePorts {
   relay: RelayTransportPort;
   owners: OwnerMultiplexerPort;

@@ -90,10 +90,12 @@ export type ControlReplyFor<Op extends ControlRequest["op"]> =
 
 const TRAILING_NEWLINE = "\n";
 
+/** Serialize one supervisor request as its newline-delimited control-plane frame. */
 export function encodeRequest(req: ControlRequest): string {
   return JSON.stringify(req) + TRAILING_NEWLINE;
 }
 
+/** Serialize one supervisor reply as its newline-delimited control-plane frame. */
 export function encodeReply<T>(reply: ControlReply<T>): string {
   return JSON.stringify(reply) + TRAILING_NEWLINE;
 }
@@ -119,6 +121,10 @@ export function parseRequest(line: string): ControlRequest {
   return obj as ControlRequest;
 }
 
+/** Decode a supervisor reply boundary frame.
+ *
+ * @throws `Error` when the frame is not a JSON object with a boolean `ok` discriminator.
+ */
 export function parseReply(line: string): ControlReply<unknown> {
   let obj: unknown;
   try { obj = JSON.parse(line); }

@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi-en-first-pi-extension-jsdoc-composition-daemon
 kind: story
-stage: implementing
+stage: review
 tags: [rebrand, docs, pi-extension]
 parent: epic-rebrand-to-outpost-pi-en-first-pi-extension
 depends_on: []
@@ -48,8 +48,16 @@ change implementation, signatures, generated files, or test-only exports.
 
 ## Acceptance criteria
 
-- [ ] Every listed Always-tier export has concise English JSDoc with lifecycle,
+- [x] Every listed Always-tier export has concise English JSDoc with lifecycle,
   side-effect, error, or boundary meaning where relevant.
-- [ ] JSDoc on ports explains the contract without mirroring TypeScript fields.
-- [ ] No code behavior or generated artifact changes.
-- [ ] Relevant daemon/extension tests and final feature verification pass.
+- [x] JSDoc on ports explains the contract without mirroring TypeScript fields.
+- [x] No code behavior or generated artifact changes.
+- [x] Relevant daemon/extension tests and final feature verification pass.
+
+## Implementation notes
+
+- Files changed: `pi-extension/src/actions/handlers.ts`, `pi-extension/src/config.ts`, `pi-extension/src/daemon/{client,control_protocol,cron_registry,install,registry,rpc_child,supervisor}.ts`, `pi-extension/src/extension/command_surface.ts`, `pi-extension/src/extension/command_surface/{commands,control_commands,local_mesh_commands,standalone_cli}.ts`, and `pi-extension/src/extension/{composition_root,legacy_ports,owner_multiplexer,ports,relay_transport,runtime_coordinator,types}.ts`.
+- Tests added: none; this is documentation-only work.
+- Discrepancies from design: none. Existing adequate JSDoc was retained and tightened with error contracts where relevant; Skip-tier DTOs, test seams, helpers, and generated files were not changed.
+- Adjacent issues parked: none.
+- Verification: `COREPACK_HOME=/tmp/corepack-home corepack pnpm typecheck`, `COREPACK_HOME=/tmp/corepack-home corepack pnpm test` (51 files, 837 passed, 3 skipped), and `COREPACK_HOME=/tmp/corepack-home corepack pnpm build` passed.

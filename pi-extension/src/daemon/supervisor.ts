@@ -102,9 +102,10 @@ export interface SupervisorOptions {
   piBin?: string;
 }
 
-/** Pure decision for `fireJob` (plan/39) — picks the action from the daemon's
- *  liveness/busy state + the job's flags. Tested in isolation for all 4 ramos. */
+/** Describe the delivery decision for a scheduled daemon prompt. */
 export type FireAction = "send" | "wake_and_send" | "skip_down" | "skip_busy";
+
+/** Choose whether a scheduled prompt should deliver, wake its daemon, or skip safely. */
 export function decideFireAction(o: {
   running: boolean;
   busy: boolean;
@@ -124,6 +125,7 @@ interface ChildSlot {
   restartAttempt: number;
 }
 
+/** Own the daemon fleet, its control socket, cron schedules, and orderly process teardown. */
 export class Supervisor {
   private server: Server | null = null;
   private readonly children = new Map<string, ChildSlot>();

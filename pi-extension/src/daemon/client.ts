@@ -26,6 +26,7 @@ import { usesNamedPipe } from "../session/ipc.js";
 const CONNECT_TIMEOUT_MS = 1000;
 const REPLY_TIMEOUT_MS = 5000;
 
+/** Report that the local supervisor control socket cannot accept a request. */
 export class SupervisorOfflineError extends Error {
   constructor(public readonly sockPath: string) {
     super(
@@ -39,10 +40,8 @@ export class SupervisorOfflineError extends Error {
 /**
  * Sends a single request and returns the typed reply data.
  *
- * Throws:
- *   - `SupervisorOfflineError` when the supervisor isn't reachable.
- *   - `Error` from `parseReply` when the reply line is malformed.
- *   - The supervisor's own error string when `ok: false`.
+ * @throws `SupervisorOfflineError` when the supervisor is unreachable.
+ * @throws `Error` when the reply is malformed or the supervisor rejects the request.
  */
 export async function callSupervisor<Op extends ControlRequest["op"]>(
   req: Extract<ControlRequest, { op: Op }>,
