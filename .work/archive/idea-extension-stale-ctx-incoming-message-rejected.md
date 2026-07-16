@@ -1,5 +1,7 @@
 ---
 id: idea-extension-stale-ctx-incoming-message-rejected
+status: superseded
+superseded_by: feature-session-stable-message-delivery
 created: 2026-07-03
 updated: 2026-07-03
 tags: [pi-extension, app, bug, lifecycle]

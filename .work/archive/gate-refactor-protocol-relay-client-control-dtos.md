@@ -1,5 +1,8 @@
 ---
 id: gate-refactor-protocol-relay-client-control-dtos
+status: duplicate
+duplicate_of: gate-refactor-protocol-contract-relay-client-island
+folded_into: gate-refactor-protocol-contract-relay-client-island
 kind: story
 stage: implementing
 tags: []

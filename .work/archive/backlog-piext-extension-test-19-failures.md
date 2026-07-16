@@ -1,5 +1,7 @@
 ---
 id: backlog-piext-extension-test-19-failures
+status: superseded
+superseded_by: commit 9aa2c42
 created: 2026-06-30
 updated: 2026-06-30
 resolved: 2026-06-30
