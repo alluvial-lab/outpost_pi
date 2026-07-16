@@ -1,5 +1,7 @@
 ---
 id: gate-docs-auto-retry-event-drift
+status: superseded
+superseded_by: cockpit-v1.6.0 (rpc-protocol.md corrected)
 kind: story
 stage: drafting
 tags: [documentation]
