@@ -1,5 +1,7 @@
 ---
 id: idea-mobile-user-message-not-delivered-timeout
+status: superseded
+superseded_by: story-fix-resumed-session-echo-gate-rejection
 created: 2026-07-03
 updated: 2026-07-03
 tags: [app, pi-extension, bug, lifecycle]
