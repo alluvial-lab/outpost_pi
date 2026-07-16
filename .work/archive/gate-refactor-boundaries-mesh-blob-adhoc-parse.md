@@ -1,5 +1,8 @@
 ---
 id: gate-refactor-boundaries-mesh-blob-adhoc-parse
+status: duplicate
+duplicate_of: gate-refactor-boundaries-ad-hoc-wire-parse-pi-forward
+folded_into: gate-refactor-boundaries-ad-hoc-wire-parse-pi-forward
 kind: story
 stage: drafting
 tags: []

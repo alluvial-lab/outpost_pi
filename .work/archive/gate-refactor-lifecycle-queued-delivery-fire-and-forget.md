@@ -1,5 +1,8 @@
 ---
 id: gate-refactor-lifecycle-queued-delivery-fire-and-forget
+status: duplicate
+duplicate_of: gate-refactor-lifecycle-queued-delivery-promise
+folded_into: gate-refactor-lifecycle-queued-delivery-promise
 kind: story
 stage: drafting
 tags: []

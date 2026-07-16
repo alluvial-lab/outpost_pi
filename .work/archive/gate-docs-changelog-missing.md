@@ -1,5 +1,7 @@
 ---
 id: gate-docs-changelog-missing
+status: superseded
+superseded_by: cockpit-v1.6.0 (CHANGELOG entry added)
 kind: story
 stage: drafting
 tags: [documentation]

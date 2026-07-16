@@ -1,5 +1,7 @@
 ---
 id: idea-extension-pumps-into-dead-app-peer
+status: superseded
+superseded_by: story-extension-suspend-fanout-on-peer-offline
 created: 2026-07-02
 updated: 2026-07-09
 tags: [pi-extension, relay, bug, lifecycle]
