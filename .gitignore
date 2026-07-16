@@ -10,6 +10,12 @@
 !.research/
 !.research/**
 
+# work-view binary is a plugin-managed build artifact — the agile-workflow
+# plugin installs the platform-appropriate Rust binary (or its bundled bash
+# fallback) into .work/bin/ on demand. Do not commit a platform-specific
+# binary or the stale fallback copy; the plugin owns this path.
+.work/bin/
+
 # orchestration: results are ephemeral (per-task execution logs);
 # INSTRUCTIONS.md and contracts/ are versioned (shared contract).
 .orchestration/results/*
