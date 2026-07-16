@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-14
+updated: 2026-07-16
 ---
 
 # Rebrand the fork: remote_pi → Outpost-Pi
@@ -213,8 +213,9 @@ roll-forward.
   version-number claim.
 - **Paired-wire story — `app-0.1.0 ↔ relay-0.1.0 ↔ extension-0.1.0`.**
   All three ship together as one breaking release; mixed versions break (same
-  discipline as the existing `app-v1.2.0 ↔ relay-0.2.0` and
-  `relay-0.2.0 ↔ extension-0.6.0` pairings).
+  discipline as the prior pre-rebrand paired-wire releases, whose tags were
+  deleted at the 0.1.0 reset; retained bodies remain under
+  `.work/releases/`).
 - **Auth domain string — rename in place to `outpost-pi-relay-auth-v1\n`,
   keep v1.** The literal is renamed but the version suffix stays `v1`. Bumping
   to `v2` would be semver noise; the wire boundary moved with the version
