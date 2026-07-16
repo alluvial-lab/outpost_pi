@@ -78,11 +78,17 @@ This fork ships per-component semver. Components and their tag prefixes:
 
 | Component | Tag prefix | Current shipped |
 |-----------|-----------|----------------|
-| `app` (Flutter mobile) | `app-v` | `app-v1.1.0` |
-| `cockpit` (Flutter desktop) | `cockpit-v` | `cockpit-v1.5.1` |
-| `pi-extension` (Node/TS daemon) | `extension-` (no `v`) | `extension-0.5.3` |
-| `relay` (Rust relay) | `relay-` (no `v`) | (none yet) |
-| repo (cross-cutting / docs / research) | `v` | `v0.4.0` |
+| `app` (Flutter mobile) | `app-v` | `app-v0.1.0` |
+| `cockpit` (Flutter desktop) | `cockpit-v` | `cockpit-v0.1.0` |
+| `pi-extension` (Node/TS daemon) | `extension-` (no `v`) | `extension-0.1.0` |
+| `relay` (Rust relay) | `relay-` (no `v`) | `relay-0.1.0` |
+| repo (cross-cutting / docs / research) | `v` | `v0.1.0` |
+
+The fork reset all components to `0.1.0` at the Outpost-Pi rebrand
+(`release-v0.1.0`, 2026-07-12). Earlier pre-rebrand component tags
+(`app-v1.x`, `cockpit-v1.x`, `extension-0.5.x`, `relay-0.1.0`, `v0.4.0`/`v0.5.0`/`v0.6.0`)
+were deleted; the retained item bodies under `.work/releases/` for those
+old generations remain as historical record.
 
 ### Attribution rule
 
