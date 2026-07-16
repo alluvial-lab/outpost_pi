@@ -1,5 +1,7 @@
 ---
 id: story-app-teardown-socket-on-send-timeout
+status: superseded
+superseded_by: story-app-half-open-socket-swallows-sends-arrives-late (option 1)
 created: 2026-07-13
 updated: 2026-07-13
 tags: [app, bug, lifecycle, transport]

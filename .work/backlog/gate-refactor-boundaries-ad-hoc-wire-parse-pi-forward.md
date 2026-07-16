@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-boundaries-ad-hoc-wire-parse-pi-forward
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-16
 tags: [relay]
 ---
 
@@ -24,3 +24,10 @@ Medium
 
 ## Fix
 Design an authored or generated mesh-members DTO at the mesh-storage boundary, with deliberate malformed-member behavior, then pass the typed member identities into authorization. Do not claim an existing generated relay frame represents this interior blob.
+
+## Consolidated from
+`gate-refactor-boundaries-mesh-blob-adhoc-parse` (duplicate, archived 2026-07-15).
+That item corroborated the same `MeshAuthCache::members_of` gap at
+`pi_forward.rs:106` (this item cites `:97`) and noted the `.as_array()`
+navigation; folded here. It had leaked into backlog as a malformed
+`stage: drafting` item.
