@@ -55,6 +55,11 @@ class _FakeChannel implements IChannel, IControlLink {
 }
 
 /// A room-aware channel that records active-room propagation.
+class _FailingCloseChannel extends _FakeChannel {
+  @override
+  Future<void> close() => Future<void>.error(StateError('close failed'));
+}
+
 class _RecordingChannel extends _FakeChannel implements IActiveRoomTarget {
   final List<String> setActiveRoomCalls = <String>[];
 
@@ -254,6 +259,24 @@ void main() {
   // propagate it to the channel, so a freshly-paired channel could demux
   // post-auth frames against the stale `'main'` default and drop real-room
   // envelopes as `room-mismatch`. It must now mirror `_connect`.
+  group('ConnectionManager best-effort close', () {
+    test('a replaced channel close failure does not abort adoption', () async {
+      final conn = ConnectionManager(
+        factory: (_, _) async => _FakeChannel(),
+        storage: _FakeStorage(),
+        emitDebounce: Duration.zero,
+      );
+      conn.adopt(_FailingCloseChannel(), _peer);
+
+      final replacement = _FakeChannel();
+      conn.adopt(replacement, _peer);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(conn.channel, same(replacement));
+      conn.dispose();
+    });
+  });
+
   group('ConnectionManager adopt binds the active room', () {
     test('adopt sets activeRoomId from peer.roomId and propagates it', () {
       const peer = PeerRecord(
