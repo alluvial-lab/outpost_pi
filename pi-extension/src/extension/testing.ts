@@ -1,7 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ClientMessage } from "../protocol/types.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
-import type { RestartStep } from "./command_surface/supervisor_restart.js";
 import type { OwnerMultiplexer } from "./owner_multiplexer.js";
 
 export interface OwnerMultiplexerTestHarness {
@@ -41,20 +40,5 @@ export interface OutpostPiTestHarness {
 export function createOutpostPiTestHarness(
   deps: OutpostPiTestHarness,
 ): OutpostPiTestHarness {
-  return deps;
-}
-
-export interface OutpostPiCommandSurfaceHarness {
-  connect(ctx: unknown): Promise<void>;
-  stop(ctx: unknown): Promise<void>;
-  state(): "idle" | "started" | "paired";
-  handleControl(cmd: string): Promise<void>;
-  resetCwdLock(): void;
-  restartSupervisorCommand(platform: NodeJS.Platform, uid: number): RestartStep[] | null;
-}
-
-export function createOutpostPiCommandSurfaceHarness(
-  deps: OutpostPiCommandSurfaceHarness,
-): OutpostPiCommandSurfaceHarness {
   return deps;
 }

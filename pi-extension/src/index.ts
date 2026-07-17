@@ -64,10 +64,8 @@ import { RelayClient, RoomAlreadyOpenError } from "./transport/relay_client.js";
 import type { PeerChannel, PlainPeerChannel } from "./transport/peer_channel.js";
 import { OwnerMultiplexer } from "./extension/owner_multiplexer.js";
 import {
-  createOutpostPiCommandSurfaceHarness,
   createOutpostPiTestHarness,
   type OwnerMultiplexerTestHarness,
-  type OutpostPiCommandSurfaceHarness,
   type OutpostPiTestHarness,
 } from "./extension/testing.js";
 import { createCommandSurface } from "./extension/command_surface.js";
@@ -79,7 +77,7 @@ import { PairingCommands } from "./extension/command_surface/pairing_commands.js
 import { PairingCoordinator } from "./extension/command_surface/pairing_coordinator.js";
 import { RelayCommands } from "./extension/command_surface/relay_commands.js";
 import { ServiceCommands } from "./extension/command_surface/service_commands.js";
-import { restartSupervisor, restartSupervisorCommand } from "./extension/command_surface/supervisor_restart.js";
+import { restartSupervisor } from "./extension/command_surface/supervisor_restart.js";
 import { createStandaloneCliDeps, isDirectRun, launchClaudeCli, runStandaloneOutpostPiCli } from "./extension/command_surface/standalone_cli.js";
 import { probeListPeers } from "./extension/probe_list_peers.js";
 export { probeListPeers } from "./extension/probe_list_peers.js";
@@ -918,15 +916,6 @@ function getStateForTest(): "idle" | "started" | "paired" {
   if (_state === "idle") return "idle";
   return _owners.activeCount() > 0 ? "paired" : "started";
 }
-
-export const commandSurfaceHarness: OutpostPiCommandSurfaceHarness = createOutpostPiCommandSurfaceHarness({
-  connect: (ctx) => connectForTest(ctx),
-  stop: (ctx) => stopForTest(ctx),
-  state: () => getStateForTest(),
-  handleControl: (cmd) => _handleControl(cmd),
-  resetCwdLock: () => _resetCwdLockForTest(),
-  restartSupervisorCommand: (platform, uid) => restartSupervisorCommand(platform, uid),
-});
 
 /** Test-only: number of owners currently attached via PlainPeerChannel. */
 export const _getActivePeerCountForTest = (): number => ownerHarness.activeOwnerCount();
@@ -2926,7 +2915,6 @@ export function _mapAgentMessagesToEvents(
 
 if (isDirectRun(import.meta.url, process.argv[1])) {
   await runStandaloneOutpostPiCli(process.argv, createStandaloneCliDeps({
-    commandSurface: commandSurfaceHarness,
     listPeers: () => listPeers(),
     removePeer: (remoteEpk) => removePeer(remoteEpk),
     saveRelayConfig: (url) => { saveConfig({ relay: url }); },
