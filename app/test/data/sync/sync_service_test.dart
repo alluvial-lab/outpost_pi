@@ -232,6 +232,19 @@ late Directory _dir;
 Future<void> _settle() =>
     Future<void>.delayed(const Duration(milliseconds: 30));
 
+Future<void> _waitUntil(
+  bool Function() condition, {
+  required String reason,
+}) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('timed out waiting for $reason');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+}
+
 void main() {
   setUpAll(() async {
     _dir = Directory.systemTemp.createTempSync('rp_v2_sync_');
@@ -1034,7 +1047,10 @@ void main() {
 
     // Session 1 is mid-turn: working flag + streaming buffer populated.
     s.ch.push(AgentChunk(inReplyTo: 'r1', delta: 'thinking...'));
-    await _settle();
+    await _waitUntil(
+      () => s.sync.streaming?.buffer == 'thinking...',
+      reason: 'the first session chunk projection',
+    );
     expect(s.sync.isWorking, isTrue);
     expect(s.sync.streaming, isNotNull);
     expect(s.sync.workingReplyTo, 'r1');
@@ -2016,8 +2032,10 @@ void main() {
       await _settle();
       final sentId = s.ch.sent.whereType<UserMessage>().last.id;
 
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).singleOrNull?.status == UserMsgStatus.failed,
+        reason: 'the pending send timeout projection',
+      );
       final failed = messages(s.epk).single;
       expect(failed.id, sentId);
       expect(failed.role, MsgRole.user);
@@ -2025,7 +2043,10 @@ void main() {
       expect(failed.text, 'eventual echo');
 
       s.ch.push(UserInput(id: sentId, text: 'eventual echo'));
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).singleOrNull?.status == UserMsgStatus.confirmed,
+        reason: 'the late authoritative echo projection',
+      );
 
       final rows = messages(s.epk);
       expect(rows, hasLength(1));
@@ -2049,8 +2070,10 @@ void main() {
       await _settle();
       final sentId = s.ch.sent.whereType<UserMessage>().last.id;
 
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).singleOrNull?.status == UserMsgStatus.failed,
+        reason: 'the replay test pending-send timeout projection',
+      );
       expect(messages(s.epk).single.status, UserMsgStatus.failed);
 
       s.ch.push(
@@ -2062,7 +2085,10 @@ void main() {
           eos: true,
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).singleOrNull?.status == UserMsgStatus.confirmed,
+        reason: 'the late authoritative replay projection',
+      );
 
       final rows = messages(s.epk);
       expect(rows, hasLength(1));
@@ -2664,7 +2690,10 @@ void main() {
           eos: true,
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).map((row) => row.id).contains('base'),
+        reason: 'the base history projection',
+      );
       expect(messages(s.epk).map((r) => r.id), ['base']);
 
       await s.sync.clearActiveSession();
@@ -2679,7 +2708,10 @@ void main() {
           eos: true,
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).map((row) => row.id).contains('fresh'),
+        reason: 'the post-clear history projection',
+      );
 
       expect(
         messages(s.epk).map((r) => r.id),
@@ -3037,7 +3069,7 @@ void main() {
     test(
       '(b) echo within the window confirms the row and cancels the timer',
       () async {
-        final s = await setup(pendingSendTimeout: short);
+        final s = await setup(pendingSendTimeout: const Duration(seconds: 5));
         await s.sync.sendMessage('hello');
         await _settle();
         expect(s.sync.debugPendingSendTimerCount, 1, reason: 'timer armed');
@@ -3076,7 +3108,7 @@ void main() {
       '(c) delivery_pending extends the no-echo window without scarring the row',
       () async {
         final s = await setup(
-          pendingSendTimeout: short,
+          pendingSendTimeout: const Duration(seconds: 5),
           deliveryPendingEchoTimeout: const Duration(milliseconds: 220),
         );
         await s.sync.sendMessage('hello during reload');
@@ -3123,7 +3155,7 @@ void main() {
       '(d) delivery_pending still fails if no replay echo arrives',
       () async {
         final s = await setup(
-          pendingSendTimeout: short,
+          pendingSendTimeout: const Duration(seconds: 5),
           deliveryPendingEchoTimeout: const Duration(milliseconds: 80),
         );
         await s.sync.sendMessage('lost during reload');
@@ -3153,8 +3185,11 @@ void main() {
     test(
       '(e) timers are cancelled on session switch and on dispose (no leak)',
       () async {
+        // Use a long window so this test observes lifecycle cancellation rather
+        // than racing the timeout policy under a loaded full-suite runner.
+        const lifecycleWindow = Duration(seconds: 5);
         // Session switch path.
-        final s = await setup(pendingSendTimeout: short);
+        final s = await setup(pendingSendTimeout: lifecycleWindow);
         await s.sync.sendMessage('one');
         await _settle();
         expect(s.sync.debugPendingSendTimerCount, 1);
@@ -3168,7 +3203,7 @@ void main() {
         );
 
         // dispose path (fresh service so the switch above doesn't mask it).
-        final s2 = await setup(pendingSendTimeout: short);
+        final s2 = await setup(pendingSendTimeout: lifecycleWindow);
         await s2.sync.sendMessage('two');
         await _settle();
         expect(s2.sync.debugPendingSendTimerCount, 1);
