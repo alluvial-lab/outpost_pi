@@ -1,7 +1,7 @@
 ---
 id: feature-app-async-lifecycle-ownership
 kind: feature
-stage: drafting
+stage: implementing
 tags: [app, lifecycle]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
@@ -17,362 +17,763 @@ updated: 2026-07-17
 
 Eleven gate findings across `app/` describe the same defect class: the mobile
 app launches, retries, and persists through async futures that are never
-awaited, returned, or given error handling. Failures vanish silently, which
-breaks lifecycle convergence (the `working` state does not reliably settle
-false on error) and masks the exact reconnect/persistence bugs the
-`epic-remote-session-resilience-refactor` exists to fix. This feature
-establishes explicit ownership — `unawaited(...).catchError(...)` or an owned
-async boundary — for every discarded app-side future:
+awaited, returned, or given error handling. Failures vanish silently. Some of
+those paths can leave lifecycle state stale; others lose cold-start metadata or
+hide a failed recovery attempt. This feature gives each discarded future an
+owner-local policy rather than introducing an app-wide async helper.
 
-- `gate-cruft-dynamic-setactiveroom-fallback` — silent dynamic transport fallback for `setActiveRoom`
-- `gate-cruft-empty-catch-old-channel-close` — empty catch around old channel close during adopt
-- `gate-cruft-enqueue-drops-write-errors` — `_enqueue` drops write-chain exceptions
-- `gate-cruft-room-adoption-persist-dropped` — legacy room-adoption persistence failures dropped
-- `gate-refactor-lifecycle-app-router-floating-boot` — router starts `ConnectionManager.boot` as an unguarded future
-- `gate-refactor-lifecycle-chat-bootstrap-floating` — `ChatViewModel` constructor discards bootstrap failures
-- `gate-refactor-lifecycle-connection-retry-floating` — connection retry timer discards the reconnect future
-- `gate-refactor-lifecycle-peer-mesh-publish-dropped` — peer mutation hook drops async mesh publish failures
-- `gate-refactor-lifecycle-room-persist-fire-and-forget` — room persistence writes are fire-and-forget
-- `gate-refactor-lifecycle-sync-service-floating-rebinds` — `SyncService` drops lifecycle-sensitive async rebind futures
-- `gate-refactor-lifecycle-transcript-write-futures-discarded` — transcript write futures discarded from server-message handlers
+The findings are:
 
-## Simplification opportunity
+- `gate-cruft-dynamic-setactiveroom-fallback`
+- `gate-cruft-empty-catch-old-channel-close`
+- `gate-cruft-enqueue-drops-write-errors`
+- `gate-cruft-room-adoption-persist-dropped`
+- `gate-refactor-lifecycle-app-router-floating-boot`
+- `gate-refactor-lifecycle-chat-bootstrap-floating`
+- `gate-refactor-lifecycle-connection-retry-floating`
+- `gate-refactor-lifecycle-peer-mesh-publish-dropped`
+- `gate-refactor-lifecycle-room-persist-fire-and-forget`
+- `gate-refactor-lifecycle-sync-service-floating-rebinds`
+- `gate-refactor-lifecycle-transcript-write-futures-discarded`
 
-Converge `working`/connection state to false on every error exit path (the
-lifecycle-ownership rule in `.agents/rules/code-design.md`); the discarded
-futures are the structural reason the state machine doesn't converge on
-failure. No public-surface behavior change.
+## Routing correction and parent fit
 
-## Source
+A refactor-design pass correctly removed the `[refactor]` tag. Startup recovery,
+visible persistence degradation, retry policy, and failure-state convergence are
+observable behavior changes. Two preliminary units remain behavior-preserving
+quick wins.
 
-Promoted from backlog by `scope` (2026-07-15) as a child of
-`epic-remote-session-resilience-refactor` — mobile UI state robustness is the
-epic's stated scope. 11 `gate-refactor-lifecycle-*` / `gate-cruft-*` findings
-from the v0.6.0 release `gate-refactor` (lifecycle library) and `gate-cruft` passes.
+The parent `epic-remote-session-resilience-refactor` cautions against new
+refactor-scale work. The assignment remains sensible because this is a bounded
+app-side resilience patch sourced from that epic's lifecycle findings, not a new
+architecture arc. It does not split `SyncService`, replace the app state model,
+or compete with the `epic-bold-*` reconception.
 
-## Misroute note (2026-07-16 refactor-design pass)
+## Current-state verification
 
-**Retagged `[refactor]` → feature-design.** A fresh-context refactor-design
-pass found the feature's central goals — surfacing previously ignored
-failures, adding retry/recovery, converging UI/connection state after
-failure — change observable error and lifecycle behavior. The `[refactor]`
-black-box test fails for 4 of 6 steps. Two preliminary steps remain valid
-pure refactors (Step 1 typed active-room capability, Step 2 best-effort
-ownership cleanup) and should be executed first as quick wins within
-feature-design. A global `unawaited(...).catchError(...)` utility should NOT
-be introduced — error recovery differs between boot, connection retry,
-transcript persistence, mesh publication, and teardown; prefer
-owner-local boundaries.
+The refactor pass's mapping remains current on 2026-07-17:
 
-The brief's claim that all eleven findings directly prevent `working` from
-settling false is **not supported by current code** — `ErrorMessage` and
-terminal handlers synchronously idle the turn, and
-`app/test/data/sync/sync_service_test.dart:1988-2070` verifies convergence.
-Several findings concern diagnostics, cold-start persistence, or ordering
-rather than the live `working` flag. feature-design must re-validate each.
+- Router boot sets `_ready` before launching an unowned
+  `ConnectionManager.boot` at `app/lib/routing/app_router.dart:102-119`; the
+  top-level `boot.load(...)` is also discarded at `:171-178`.
+- `ConnectionManager.boot` at
+  `app/lib/data/transport/connection_manager.dart:395-438` awaits cache restore
+  and the first connect attempt. Expected network failures are converted to
+  retry state inside `_connect` (`:568-626`), so awaiting `boot` does not mean
+  waiting until the peer is online.
+- `ChatViewModel` launches `_bootstrap()` from its constructor at
+  `app/lib/ui/chat/viewmodels/chat_viewmodel.dart:73-74`; room updates launch
+  `_refreshSessionBinding()` at `:68-70`. Disposal guards exist after some
+  awaits (`:127`, `:143`, `:149`, `:161`) but no failure owner exists.
+- Room-cache persistence is launched independently at
+  `connection_manager.dart:744,816,873,1032,1044,1080`; the write performs
+  multiple reads before `saveRooms` at `:1115-1150`, so older writes can land
+  after newer snapshots. Legacy-room persistence is swallowed at `:1222-1226`.
+- `SyncService` independently launches online activation/rebind/resend at
+  `app/lib/data/sync/sync_service.dart:653,697,709`, transcript work at
+  `:817-1181`, and history replay at `:1134-1135`. `_enqueue` keeps its chain
+  alive by swallowing the prior error at `:1741-1744`, while `_writeRuntime`
+  fails to await Hive `put` at `:1713-1720`.
+- Existing convergence coverage at
+  `app/test/data/sync/sync_service_test.dart:1988-2070` proves success, protocol
+  error, cancellation, compaction, and replay settle idle. It does not inject
+  `TranscriptEventStore` or Hive write failures.
+- `PairingStorage` deliberately exposes a synchronous post-commit hook at
+  `app/lib/pairing/storage.dart:204-252`; DI discards `meshSync.publish()` at
+  `app/lib/config/dependencies.dart:118-120`. `MeshSyncService.publish` returns
+  typed outcomes at `app/lib/data/mesh/mesh_sync_service.dart:176-261`, so most
+  failures do not throw. The last-peer revoke separately discards an explicit
+  `publish(allowEmpty: true)` at
+  `app/lib/ui/settings/viewmodels/settings_viewmodel.dart:118-134`.
 
-Parent-link note: `epic-remote-session-resilience-refactor`'s body cautions
-against adding new refactor-scale work there; feature-design should confirm
-this feature's parent assignment during its own pass.
+The earlier brief overstated the `working` impact. Protocol terminal handlers
+already set idle synchronously, and the cited tests prove that path. This design
+keeps that guarantee while separately addressing startup, cache consistency,
+write diagnostics, and replay recovery.
 
-## Refactor Overview
+## Design decisions
 
-### Five-lens scan summary
+- **Router readiness includes `ConnectionManager.boot` completion, not online
+  reachability.** `_BootState.load` awaits the initial cache restore and connect
+  attempt before routing to Home. Retryable relay failures still resolve
+  `boot()` into `StatusRetrying`; the splash never waits for an online peer.
+- **Boot failures stay on `/boot` with an inline Retry action.** Preferences,
+  unexpected identity, peer/storage, and connection-bootstrap failures map to a
+  private typed boot stage and a safe user message. `SyncUnavailableResult`
+  keeps the existing `/sync-required` route. A normal relay/network failure is
+  rendered later through `ConnectionStatus`, not as a boot failure.
+- **Boot runs are generation-guarded.** Retry, Owner-key replacement, and
+  disposal invalidate the previous run. Every async gap checks the run id before
+  mutating router state or installing the identity watcher.
+- **`ChatViewModel` exposes an awaited, idempotent `initialize()`.** Provider
+  construction still starts it because Provider factories are synchronous, but
+  the constructor uses `unawaited(initialize())` only because `initialize`
+  catches and projects every failure. Tests and Retry UI can await the same
+  method directly.
+- **Chat bootstrap/rebind failure uses a new recoverable state, not
+  `ChatFatalError`.** `ChatInitializationFailed` means the selected session
+  could not be loaded or bound and offers Retry. `ChatFatalError` remains the
+  re-pair-only state. A failed canonical-session rebind fails closed rather than
+  continuing to display a possibly stale session projection.
+- **Chat initialization is generation-guarded and serialized.** Dispose or a
+  newer retry invalidates an in-flight storage/connection/sync run; subscriptions
+  and state are installed only for the latest run. Room-driven rebinds share the
+  same owned serialized boundary instead of racing constructor bootstrap.
+- **Room-cache writes are per-peer, latest-wins drains.** A new request bumps a
+  peer revision. One worker per peer reads and writes the latest snapshot; it
+  skips a final write when disposed or superseded. No global future helper is
+  added.
+- **Room-cache write failure is diagnostic and non-retrying until the next
+  mutation.** The cache is non-authoritative and the relay will hydrate it; an
+  automatic retry loop would add lifecycle cost. The immediate in-memory room
+  projection remains visible, the failure is recorded, and the next mutation
+  starts a fresh drain.
+- **Legacy-room persistence gets one bounded retry.** Unlike ordinary room
+  cache, the selected room controls future routing. The manager retries once
+  after a short owned timer, then records a diagnostic and leaves the current
+  in-memory room active. A later app boot can rediscover it.
+- **Channel-close failure is log-only; unexpected reconnect escape is
+  log-and-watchdog-recover.** Adoption/disposal never waits or retries a close
+  that may belong to a replaced channel. Expected `_connect` failures continue
+  to become retry state. If an error escapes that boundary, it is diagnosed and
+  the existing watchdog may restart the chain, provided the manager is still
+  live.
+- **Sync commands and detached writes have separate contracts.** Public command
+  methods and explicit lifecycle methods return/await persistence errors.
+  Stream/timer handlers submit work through a named `SyncService` detached
+  boundary that catches, diagnoses, keeps the serializer alive, and applies a
+  convergence/recovery policy.
+- **Detached transcript failure is visible but does not invent a transcript
+  row.** `SyncService` emits an in-memory `SessionPersistenceDegraded` event,
+  logs a privacy-safe diagnostic, and requests authoritative `session_sync`.
+  `ChatReady` shows a small retryable persistence banner. A later successful
+  transcript write emits `SessionPersistenceRecovered` and clears it. Creating
+  a fake row in the failed event store would establish a second truth and is
+  rejected.
+- **Terminal state converges independently of persistence.** `agent_done`,
+  protocol error, cancel, send timeout, disconnect, and session replacement set
+  the in-memory turn idle even if their event-store write fails. Non-terminal
+  chunk/tool write failures do not falsely idle a still-running turn; they use
+  the visible degraded state plus replay recovery.
+- **Session activation precedes resend/replay.** Room-change work is serialized
+  as `activate → stale check → resend held messages → request/replay sync`.
+  Online activation, history replay, and every loop with an async read validate
+  `_disposed`, lifecycle generation, and captured `RemoteSessionRef` after each
+  async gap.
+- **Runtime Hive writes are truly serialized.** `_boxes.runtimeBox().put(...)`
+  is awaited inside the write operation. Runtime-write failure is diagnostic
+  and retries on the next status/presence update; it does not create a chat
+  transcript warning.
+- **Peer mutation publication queues retry; it does not pull over a pending
+  local mutation.** Transient `MeshPublishFailure`, a second conflict, or an
+  unexpected exception leaves one coalesced mutation pending and schedules an
+  owned retry. `pullOnDemand` defers while that local publication is pending,
+  except for the private conflict-rebase pull. Permanent bad-request,
+  forbidden, or too-large outcomes are diagnosed and not retried.
+- **The peer hook carries mutation intent.** `PeerMutationKind.upsert/delete`
+  lets `MeshSyncService` safely allow an empty publish after a real delete. The
+  Settings revoke path returns to normal `deletePeer`, and its duplicate
+  fire-and-forget mesh dependency disappears. Pull/apply continues using silent
+  storage methods and never republishes.
 
-- **Elimination First:** remove dynamic dispatch catches, redundant `Future(() async { ... })`, no-op `.then((_) {})`, and lint suppressions where ownership is already explicit.
-- **Code Smells:** `SyncService` is a large multi-responsibility module, but splitting it is outside this focused feature and would increase risk.
-- **Missing Abstractions:** the app lacks a typed optional active-room capability and owner-local async boundaries for serialized writes/rebinds.
-- **Pattern Violations:** discarded futures violate lifecycle ownership; dynamic room targeting violates typed-boundary guidance.
-- **Dead Weight:** the lint ignores and `_storage.savePeer(...).then((_) {})` are removable. A new app-wide generic future helper would add more concept than value.
+No operator-only product direction question remains. These choices preserve the
+local-first and relay-authoritative contracts while choosing reversible,
+owner-local recovery policies.
 
-## Refactor Steps
+## Architectural choice
 
-### Step 1: Replace dynamic active-room dispatch with a typed optional capability
-**Priority:** High
-**Risk:** Low
-**Source Lens:** Missing abstraction / pattern drift
-**Files:** `app/lib/data/transport/channel.dart`, `app/lib/data/transport/connection_manager.dart`, `app/lib/data/transport/peer_channel.dart`, `app/lib/data/transport/ws_transport.dart`, `app/lib/pairing/pair_request_flow.dart`, `app/test/data/transport/connection_manager_test.dart`, `app/test/pairing/pair_request_flow_test.dart`
-**Stories covered:** `gate-cruft-dynamic-setactiveroom-fallback`
+### Considered approaches
 
-**Current State:**
-```dart
-// connection_manager.dart:302-312
-void _propagateActiveRoom(String roomId, IChannel link) {
-  try {
-    (link as dynamic).setActiveRoom(roomId);
-  } catch (_) {
-    // Tests / non-WS transports — fine to ignore.
-  }
-}
-```
-The same dynamic/catch pattern exists in `peer_channel.dart:65-71` and `pair_request_flow.dart:114-120`. `IChannel` exposes only `serverMessages`, `send`, `close`.
+1. **Add `catchError` at every call site.** This is the smallest diff, but it
+   leaves ordering undefined, duplicates policy, and cannot prevent stale writes
+   after session replacement.
+2. **Introduce one global safe-unawaited helper.** This removes lint noise but
+   erases the distinction between boot recovery, cache persistence, transcript
+   convergence, mesh retry, and teardown. It optimizes for syntax rather than
+   ownership.
+3. **Use owner-local async boundaries with typed diagnostics and generation
+   guards.** Router/Chat own startup, `ConnectionManager` owns room cache and
+   retry teardown, `SyncService` owns serialized transcript work, and
+   `MeshSyncService` owns post-mutation publication.
 
-**Target State:**
+**Choice: option 3.** It follows existing service/ViewModel boundaries, keeps
+failure policy next to the state it can repair, and adds no cross-app execution
+abstraction. The only shared addition is a typed privacy-safe diagnostic event,
+not a future runner.
+
+**Trickiest unit:** Unit 5, because transcript persistence, live turn state,
+session replacement, and reconnect replay must remain ordered without making
+stream listeners `async` or creating a second transcript truth.
+
+## Implementation Units
+
+### Unit 1: Typed optional active-room capability (quick win)
+
+**Story:** existing `gate-cruft-dynamic-setactiveroom-fallback`
+
+**Files:**
+
+- `app/lib/data/transport/channel.dart`
+- `app/lib/data/transport/connection_manager.dart`
+- `app/lib/data/transport/peer_channel.dart`
+- `app/lib/data/transport/ws_transport.dart`
+- `app/lib/pairing/pair_request_flow.dart`
+- `app/test/data/transport/connection_manager_test.dart`
+- `app/test/pairing/pair_request_flow_test.dart`
+
 ```dart
 abstract interface class IActiveRoomTarget {
   void setActiveRoom(String roomId);
 }
 
 void _propagateActiveRoom(String roomId, IChannel link) {
-  if (link is IActiveRoomTarget) {
-    link.setActiveRoom(roomId);
-  }
+  if (link case IActiveRoomTarget target) target.setActiveRoom(roomId);
 }
 ```
-`PlainPeerChannel` and `WsTransport` implement `IActiveRoomTarget`; pairing and channel adapters test the capability rather than relying on dynamic duck typing.
 
-**Implementation Notes:**
-- Keep this capability optional so in-memory test transports remain valid without room targeting.
-- Update `_RecordingChannel` in `connection_manager_test.dart:57-65` to implement the capability explicitly.
-- Preserve the existing unsupported-transport no-op behavior. Do not add logging in this step.
-- Do not make `setActiveRoom` mandatory on every `IChannel` or `PeerTransport`.
+`PlainPeerChannel` and `WsTransport` implement the optional capability. Pairing
+and connection code test the capability; unsupported test/in-memory transports
+remain no-ops.
 
-**Acceptance Criteria:**
-- [ ] No `dynamic` call to `setActiveRoom` remains in `app/lib/`.
+**Error surface:** none; this is behavior-preserving and removes the blanket
+`dynamic` catches.
+
+**Acceptance criteria:**
+
+- [ ] No dynamic `setActiveRoom` call remains in `app/lib/`.
 - [ ] Unsupported transports remain silent no-ops.
-- [ ] Existing active-room propagation tests at `connection_manager_test.dart:261-297` still pass.
-- [ ] `flutter analyze` passes without new ignores.
-- [ ] `flutter test test/data/transport/connection_manager_test.dart test/pairing/pair_request_flow_test.dart` passes.
-- [ ] No protocol shape, routing timing, or user-visible behavior changes.
+- [ ] Active-room propagation tests at
+      `connection_manager_test.dart:261-297` remain green with an explicitly
+      typed recording channel.
+- [ ] No wire, timing, or UI behavior changes.
 
-**Rollback:** Revert the capability interface and restore the three dynamic calls as one isolated commit.
+### Unit 2: Normalize best-effort close/retry ownership (quick win)
 
-### Step 2: Normalize already-owned best-effort work without changing failure policy
-**Priority:** Medium
-**Risk:** Low
-**Source Lens:** Elimination / dead weight / pattern drift
-**Files:** `app/lib/data/transport/connection_manager.dart`, `app/test/data/transport/connection_manager_test.dart`
-**Stories covered:** pure portion of `gate-cruft-empty-catch-old-channel-close`, pure portion of `gate-cruft-room-adoption-persist-dropped`, structural portion of `gate-refactor-lifecycle-connection-retry-floating`
+**Story:** existing `gate-cruft-empty-catch-old-channel-close` (also covers the
+structural portions of `gate-cruft-room-adoption-persist-dropped` and
+`gate-refactor-lifecycle-connection-retry-floating`)
 
-**Current State:**
-```dart
-// connection_manager.dart:473-478
-Future(() async {
-  try {
-    await old.close();
-  } catch (_) {}
-});
+**Files:**
 
-// connection_manager.dart:1222-1226
-_storage.savePeer(updated).then((_) {}).catchError((Object e, StackTrace _) {});
+- `app/lib/data/transport/connection_manager.dart`
+- `app/test/data/transport/connection_manager_test.dart`
 
-// connection_manager.dart:1317-1321
-_retryTimer = Timer(delay, () {
-  _retryTimer = null;
-  _reachability.onRetryTimerFired();
-  _connect(peer);
-});
-```
-Expected connect failures are already owned by `_connect` (`573-626`), which catches and schedules retry.
-
-**Target State:**
 ```dart
 void _closeBestEffort(IChannel channel) {
   unawaited(channel.close().catchError((Object _, StackTrace __) {}));
 }
-// adopt: _closeBestEffort(old);
-// legacy-room migration: preserve the existing non-fatal swallow
-unawaited(_storage.savePeer(updated).catchError((Object _, StackTrace __) {}));
-// retry: expected failures are handled inside _connect
+
+unawaited(
+  _storage.savePeer(updated).catchError((Object _, StackTrace __) {}),
+);
+
+// Expected connect failures are converted to retry state inside _connect.
 unawaited(_connect(peer));
 ```
 
-**Implementation Notes:**
-- Reuse `_closeBestEffort` from both `adopt` and synchronous `dispose`; do not add a global future utility.
-- Remove the redundant `Future` allocation and `.then((_) {})`.
-- Keep the exact current failure policy: close and migration-persistence failures remain non-fatal and unreported.
-- Add a short comment at the retry call explaining that `_connect` owns expected failure-to-retry conversion.
-- Any request to log these failures belongs in Step 4 (feature-design).
+Remove the redundant `Future(() async { ... })`, no-op `.then`, and local lint
+ignores while preserving the exact current silent/non-fatal policy. Unit 4 then
+adds the explicitly behavior-changing diagnostics and bounded legacy retry;
+implementation may land Units 2 and 4 in one cohesive edit while preserving
+their separate acceptance checkpoints.
 
-**Acceptance Criteria:**
-- [ ] The old channel still closes asynchronously without delaying `adopt`.
-- [ ] A close failure does not block adoption or disposal.
-- [ ] Legacy-room persistence remains non-fatal.
-- [ ] Retry timing, attempt count, and status transitions are unchanged.
-- [ ] The three local lint suppressions and no-op `.then` are removed.
-- [ ] `flutter analyze` and `flutter test test/data/transport/connection_manager_test.dart` pass.
+**Error surface:** none in this quick win. Expected connect failure still becomes
+`StatusRetrying`; close and legacy-save failures remain silent until Unit 4.
 
-**Rollback:** Revert the local helper and restore each prior inline expression; no data migration is involved.
+**Acceptance criteria:**
 
-### Step 3: Retag startup initialization ownership for feature-design
-**Priority:** High
-**Risk:** High
-**Source Lens:** Lifecycle pattern violation / missing owned boundary
-**Files:** `app/lib/routing/app_router.dart`, `app/lib/ui/chat/viewmodels/chat_viewmodel.dart`, `app/lib/ui/chat/states/chat_state.dart` (if a new error state is chosen), `app/test/ui/chat/chat_viewmodel_test.dart`, router/bootstrap tests to be added by feature-design
-**Stories covered:** `gate-refactor-lifecycle-app-router-floating-boot`, `gate-refactor-lifecycle-chat-bootstrap-floating`
+- [ ] Adoption never waits for old-channel close.
+- [ ] Close failure cannot abort adoption or synchronous disposal.
+- [ ] Retry timing and attempt accounting are unchanged.
+- [ ] The redundant future allocation, no-op `.then`, and cited lint ignores are
+      removed.
 
-**Current State:**
+### Unit 3: Router and Chat startup ownership
+
+**Story:** `feature-app-async-lifecycle-ownership-startup-ownership`
+
+**Files:**
+
+- `app/lib/routing/app_router.dart`
+- `app/lib/ui/chat/viewmodels/chat_viewmodel.dart`
+- `app/lib/ui/chat/states/chat_state.dart`
+- `app/lib/ui/chat/chat_page.dart`
+- `app/test/routing/app_router_test.dart` (new)
+- `app/test/ui/chat/chat_viewmodel_test.dart`
+
 ```dart
-// app_router.dart:118-119
-conn.boot(preferredEpk: selected);
-// app_router.dart:171-178
-boot.load(...);
-// chat_viewmodel.dart:73-74
-_bootstrap();
-```
-`_BootState.load` marks itself ready before starting the connection (`app_router.dart:100-119`). `ChatViewModel._bootstrap` performs storage load, connection switching, sync activation, and subscription binding (`chat_viewmodel.dart:118-180`).
+enum _BootFailureStage { preferences, identity, storage, connection }
 
-**Target State:**
-```text
-RETAG FOR FEATURE-DESIGN — do not implement as a pure refactor.
+final class _BootFailure {
+  const _BootFailure(this.stage, this.message);
+  final _BootFailureStage stage;
+  final String message;
+}
 
-Feature-design must choose and test:
-1. Whether router readiness includes completion of ConnectionManager.boot.
-2. What route/state is shown when preferences, identity, storage, or connection boot fails.
-3. Whether ChatViewModel exposes an awaited initialize() boundary or catches constructor-started bootstrap internally.
-4. Which existing or new ChatState represents bootstrap failure.
-5. How dispose/session replacement invalidates an in-flight bootstrap.
-```
+class _BootState extends ChangeNotifier {
+  Future<void> load(
+    PairingStorage storage,
+    ConnectionManager conn,
+    Preferences prefs,
+    OwnerIdentityBridge ownerBridge,
+    MeshSyncService meshSync, {
+    void Function()? installWatcherAfterBoot,
+  });
 
-**Implementation Notes:**
-- Do not merely attach an empty `catchError`; that could suppress errors currently delivered to the zone while leaving the UI stuck.
-- If router connection boot remains background work, its owner must define explicit recovery and stale-run guards.
-- If chat initialization stays constructor-started, `_bootstrap` itself must catch failures, verify `_disposed`, and emit a chosen terminal/retry state.
-- The rooms-stream call at `chat_viewmodel.dart:69` also launches `_refreshSessionBinding` and should follow the same owner policy.
+  void invalidate();
+  _BootFailure? get failure;
+  bool get loading;
+}
 
-**Acceptance Criteria:**
-- [ ] Router boot failure has a specified recoverable state and does not leave `/boot` permanently unresolved.
-- [ ] Chat bootstrap failure has a specified UI state and cannot publish after disposal.
-- [ ] Tests cover disposal during bootstrap and storage/activation failure.
-- [ ] Existing successful bootstrap behavior remains covered.
-- [ ] Full `flutter analyze` and `flutter test` pass.
+final class ChatInitializationFailed extends ChatState {
+  const ChatInitializationFailed(this.message);
+  final String message;
+}
 
-### Step 4: Retag ConnectionManager persistence and teardown observability
-**Priority:** High
-**Risk:** Medium
-**Source Lens:** Lifecycle ownership / missing owner-local abstraction
-**Files:** `app/lib/data/transport/connection_manager.dart`, `app/lib/domain/contracts/debug_log.dart` (if diagnostics are selected), `app/test/data/transport/connection_manager_test.dart`, `app/test/domain/contracts/debug_log_test.dart` (if a diagnostic variant is added)
-**Stories covered:** behavioral portion of `gate-cruft-empty-catch-old-channel-close`, behavioral portion of `gate-cruft-room-adoption-persist-dropped`, `gate-refactor-lifecycle-room-persist-fire-and-forget`, optional unexpected-error portion of `gate-refactor-lifecycle-connection-retry-floating`
-
-**Current State:** Room writes are launched independently at `connection_manager.dart:744,816,873,1032,1044,1080`. `_persistRoomsForPeer` performs several async reads before writing at `1115-1150`, so overlapping calls can complete out of order and survive service disposal. Legacy room adoption explicitly swallows save failure at `1218-1226`.
-
-**Target State:**
-```text
-RETAG FOR FEATURE-DESIGN.
-
-Define one ConnectionManager-owned policy for:
-- per-peer room-write serialization/coalescing;
-- stale/disposed checks before final persistence;
-- close-failure diagnostics while adoption remains non-blocking;
-- legacy-room save retry or explicit non-retry diagnostics;
-- unexpected retry-loop failures.
-```
-
-**Implementation Notes:**
-- A private per-peer persistence boundary is preferable to a global future helper.
-- Preserve current immediate in-memory room projection unless feature-design explicitly chooses rollback on persistence failure.
-- Persisted rooms currently do not restore `working`; this finding primarily affects cached room metadata and cold-start consistency.
-- If adding a `DebugEvent`, use a typed, privacy-safe variant rather than free-form messages.
-- Do not block synchronous `dispose` waiting for storage/network completion.
-
-**Acceptance Criteria:**
-- [ ] Every room-persistence launch routes through one ConnectionManager-owned boundary.
-- [ ] Two rapid updates for one peer cannot persist an older snapshot after a newer one.
-- [ ] Teardown behavior for pending persistence is explicitly specified and tested.
-- [ ] Close and migration failures follow the chosen diagnostic/retry policy.
-- [ ] Reconnect and room-working projection tests remain green.
-- [ ] `flutter analyze`, targeted connection tests, and full `flutter test` pass.
-
-### Step 5: Retag SyncService write, rebind, and transcript failure semantics
-**Priority:** High
-**Risk:** High
-**Source Lens:** Missing abstraction / lifecycle ownership / code smell
-**Files:** `app/lib/data/sync/sync_service.dart`, `app/lib/domain/contracts/debug_log.dart` (if diagnostics are added), `app/test/data/sync/sync_service_test.dart`, `app/test/data/sync/session_history_replay_test.dart`, `app/test/ui/chat/chat_viewmodel_test.dart`
-**Stories covered:** `gate-cruft-enqueue-drops-write-errors`, `gate-refactor-lifecycle-sync-service-floating-rebinds`, `gate-refactor-lifecycle-transcript-write-futures-discarded`
-
-**Current State:**
-```dart
-// sync_service.dart:1741-1744
-Future<void> _enqueue(Future<void> Function() op) {
-  final next = _writeChain.then((_) => op());
-  _writeChain = next.catchError((Object _, StackTrace _) {});
-  return next;
+class ChatViewModel extends ViewModel<ChatState> {
+  Future<void> initialize();
+  Future<void> _initializeRun(int generation);
+  Future<void> _refreshSessionBinding(int generation);
+  bool _isCurrentRun(int generation);
 }
 ```
-Transcript handlers enqueue writes without awaiting them at `sync_service.dart:817-1181`. Rebind and lifecycle work is independently launched at `430,455,653,697,709,1129,1134`. `_writeRuntime` also fails to await Hive's `put` inside its supposedly serialized closure at `1713-1720`.
 
-**Target State:**
-```text
-RETAG FOR FEATURE-DESIGN.
+Implementation notes:
 
-Create SyncService-owned boundaries that distinguish:
-1. Awaited commands — caller receives persistence failure.
-2. Detached serialized writes — queue remains alive, failure is diagnosed, and the chosen state-convergence action runs.
-3. Ordering-critical lifecycle work — activation/rebind completes before resend, replay, or subsequent session-dependent work.
-4. Stale-session work — exits after every async gap without mutating the replacement session.
-```
+- `_BootState.load` sets loading, clears the prior failure, increments a run id,
+  and catches each phase separately. It awaits `conn.boot` before setting ready.
+- `buildRouter` starts `unawaited(boot.load(...))`; that future is safe because
+  `load` never leaks a failure. `/boot` switches from spinner to a concise error
+  and Retry button. The redirect checks failure before ready.
+- Identity sync-unavailable remains a normal typed branch to
+  `/sync-required`; mesh fetch returning `false` remains a local-cache fallback.
+  A thrown storage/crypto failure is a boot error.
+- `ChatViewModel` constructor uses `unawaited(initialize())`; `initialize`
+  catches by phase, invalidates superseded work, and emits
+  `ChatInitializationFailed` only for the current run. Retry awaits the same
+  method.
+- Initial and rooms-stream rebinds share one serialized/generation-guarded path.
+  A rebind failure cancels session-scoped message/runtime subscriptions before
+  showing failure so old-session rows cannot masquerade as current.
+- `dispose` increments the generation before cancelling subscriptions; no
+  completion after that point may emit or install a subscription.
 
-**Implementation Notes:**
-- Keep `_enqueue` as the single write serializer, but make the detached error policy explicit and named.
-- Await `_boxes.runtimeBox().put(...)` inside the queued operation; this changes serialization behavior and therefore belongs here, not in the pure steps.
-- Do not turn stream listeners into bare `async` callbacks; stream delivery does not await them.
-- Activation triggered by `_onRoomsChanged` must complete before `_resendHeldPendingMessages` if that ordering is selected.
-- Server-message handlers need one consistent transcript-write entrypoint rather than thirteen repeated lint suppressions.
-- Preserve stale-session checks around `RemoteSessionRef`.
-- Existing convergence coverage at `sync_service_test.dart:1988-2070` is useful but does not inject event-store/Hive failures; add failing-adapter tests.
+**Error surface:** safe phase-specific text on `/boot`; recoverable
+`ChatInitializationFailed` with Retry in Chat. Technical details stay out of UI.
 
-**Acceptance Criteria:**
-- [ ] No `discarded_futures` suppression remains in `SyncService`.
-- [ ] Every detached operation is routed through a named owner boundary.
-- [ ] The write queue continues accepting later operations after one failure.
-- [ ] Runtime-box writes are actually part of queue completion.
-- [ ] Rebind/resend/replay ordering is deterministic and covered by tests.
-- [ ] Injected transcript-write failure follows the selected observable policy and leaves `working` converged as specified.
-- [ ] Old-session writes cannot land in the replacement session.
-- [ ] `flutter analyze`, targeted sync/chat tests, and full `flutter test` pass.
+**Acceptance criteria:**
 
-### Step 6: Retag mesh mutation publication ownership
-**Priority:** Medium
-**Risk:** Medium
-**Source Lens:** Ports and adapters / lifecycle ownership
-**Files:** `app/lib/config/dependencies.dart`, `app/lib/data/mesh/mesh_sync_service.dart`, `app/lib/pairing/storage.dart`, `app/test/data/mesh/mesh_sync_service_test.dart`, `app/test/pairing/storage_test.dart`
-**Stories covered:** `gate-refactor-lifecycle-peer-mesh-publish-dropped`
+- [ ] Router does not leave `/boot` until preferences, identity, peer list,
+      cache restore, and the initial `ConnectionManager.boot` attempt settle.
+- [ ] Retryable network connect failure routes to Home with `StatusRetrying`;
+      preferences/identity/storage/bootstrap exceptions stay on `/boot` with
+      Retry.
+- [ ] A stale boot run cannot install a watcher or publish ready after retry,
+      Owner-key replacement, or disposal.
+- [ ] Chat storage, connection switch, and sync activation failures become
+      `ChatInitializationFailed` and are retryable.
+- [ ] Dispose or a newer initialization prevents every stale completion and
+      subscription install.
+- [ ] Successful bootstrap behavior and no-peer behavior remain covered.
 
-**Current State:**
+### Unit 4: Connection persistence and teardown observability
+
+**Story:** `feature-app-async-lifecycle-ownership-connection-persistence`
+
+**Files:**
+
+- `app/lib/data/transport/connection_manager.dart`
+- `app/lib/domain/contracts/debug_log.dart`
+- `app/test/data/transport/connection_manager_test.dart`
+- `app/test/domain/contracts/debug_log_test.dart`
+- `app/test/data/debug/debug_capture_routing_test.dart`
+
 ```dart
-// dependencies.dart:118-120
-_storage.attachPeerMutationHook(() {
-  meshSync.publish();
-});
+enum DebugTag {
+  // existing tags omitted
+  lifecycleFailure,
+}
+
+enum LifecycleOperation {
+  channelClose,
+  roomCachePersist,
+  legacyRoomPersist,
+  retryConnect,
+  transcriptWrite,
+  runtimeWrite,
+  sessionRebind,
+  meshPublish,
+}
+
+final class LifecycleFailureEvent extends DebugEvent {
+  const LifecycleFailureEvent({
+    required super.ts,
+    required this.operation,
+    required this.reason,
+    this.peerTail,
+    this.room,
+    this.sessionIdTail,
+    this.retryScheduled = false,
+  }) : super(tag: DebugTag.lifecycleFailure);
+
+  final LifecycleOperation operation;
+  final String reason;
+  final String? peerTail;
+  final String? room;
+  final String? sessionIdTail;
+  final bool retryScheduled;
+}
+
+class ConnectionManager extends Service {
+  void _scheduleRoomPersistence(String peerKey);
+  Future<void> _drainRoomPersistence(String peerKey);
+  Future<void> _persistLatestRoomSnapshot(String peerKey, int revision);
+  Future<void> _persistLegacyRoomWithRetry(PeerRecord updated);
+  void _closeBestEffort(IChannel channel, {required String operation});
+}
 ```
-`PairingStorage` deliberately defines a synchronous post-commit hook at `storage.dart:204-224`. `MeshSyncService.publish` returns typed failure variants at `mesh_sync_service.dart:176-194,241-261`; routine failures generally do not throw.
 
-**Target State:**
-```text
-RETAG FOR FEATURE-DESIGN.
+Implementation notes:
 
-Move post-mutation publication ownership into MeshSyncService, for example a
-publishAfterPeerMutation boundary that:
-- awaits publish internally;
-- inspects MeshPublishResult rather than only catching exceptions;
-- applies the selected diagnostic/reconciliation policy;
-- catches unexpected storage/crypto/network exceptions;
-- preserves PairingStorage's local-write-first, non-blocking contract.
+- The diagnostic event is the shared typed record required by the existing
+  `DebugLog` registry. It is not a shared async executor. Its `reason` is
+  clamped, and it carries no body, image, tool args/results, full key, or full
+  session id.
+- `_scheduleRoomPersistence` increments a revision and starts at most one drain
+  per canonical peer key. The drain coalesces bursts. After `listPeers` and
+  `loadRooms`, it checks `_disposed` and that its revision is still latest
+  before `saveRooms`; otherwise it loops on the newest snapshot.
+- An ordinary cache-write failure records `roomCachePersist`, ends that drain,
+  and leaves the next mutation eligible to start another. In-memory rooms are
+  never rolled back.
+- Legacy room persistence records the first failure and schedules one owned
+  retry timer. A second failure is recorded with `retryScheduled:false`.
+- `dispose` marks disposed before cancelling timers/subscriptions and before
+  best-effort close. Pending drains observe the flag and do not begin a final
+  write; an already-entered platform write is allowed to complete.
+- Retry callbacks check disposed/current peer before connecting. An unexpected
+  `_connect` escape records `retryConnect`; the existing watchdog is the
+  recovery mechanism rather than a second retry loop.
+
+**Error surface:** typed debug diagnostics. Cache state remains immediately
+visible in memory; teardown remains non-blocking; connection status keeps its
+existing retry/offline UI.
+
+**Acceptance criteria:**
+
+- [ ] All six room-persistence launch sites use `_scheduleRoomPersistence`.
+- [ ] Rapid updates for one peer cannot persist an older snapshot after a newer
+      one; different peers do not block one another.
+- [ ] A disposed or superseded drain does not start a final storage write.
+- [ ] One failed cache write is diagnosed, does not roll back UI, and a later
+      mutation retries.
+- [ ] Legacy-room save retries once, then diagnoses final failure.
+- [ ] Close failure is diagnosed without blocking adoption/disposal; unexpected
+      reconnect escape is diagnosed without bypassing lifecycle guards.
+- [ ] The debug registry's exhaustive variant/privacy tests cover the new event.
+
+### Unit 5: Sync write, rebind, transcript failure, and convergence semantics
+
+**Story:** `feature-app-async-lifecycle-ownership-sync-failure-semantics`
+
+**Files:**
+
+- `app/lib/data/sync/sync_service.dart`
+- `app/lib/data/sync/sync_events.dart`
+- `app/lib/domain/contracts/debug_log.dart`
+- `app/lib/ui/chat/viewmodels/chat_viewmodel.dart`
+- `app/lib/ui/chat/states/chat_state.dart`
+- `app/lib/ui/chat/chat_page.dart`
+- `app/test/data/sync/sync_service_test.dart`
+- `app/test/data/sync/session_history_replay_test.dart`
+- `app/test/ui/chat/chat_viewmodel_test.dart`
+
+```dart
+final class SessionPersistenceDegraded extends SessionEvent {
+  const SessionPersistenceDegraded(this.message);
+  final String message;
+}
+
+final class SessionPersistenceRecovered extends SessionEvent {
+  const SessionPersistenceRecovered();
+}
+
+class SyncService extends Service {
+  Future<void> _enqueue(Future<void> Function() operation);
+
+  void _runDetachedWrite({
+    required LifecycleOperation operation,
+    required Future<void> Function() write,
+    RemoteSessionRef? expectedRef,
+    bool requestReplayOnFailure = false,
+  });
+
+  Future<void> _handleRoomsChanged();
+  Future<void> _onlineActivated();
+  bool _isCurrentLifecycle(int generation, [RemoteSessionRef? ref]);
+}
+
+final class ChatReady extends ChatState {
+  const ChatReady({
+    required this.messages,
+    // existing fields omitted
+    this.persistenceWarning,
+  });
+  final String? persistenceWarning;
+}
 ```
 
-**Implementation Notes:**
-- Keep `PairingStorage` independent of mesh/network implementation details.
-- Do not make `savePeer` await relay publication; that would change its local-first contract and couple storage availability to network availability.
-- Decide whether typed publish failure merely records diagnostics, schedules a pull, or queues a retry. Each is behavior-changing.
-- Preserve the existing empty-members safety net and `_publishing` stampede guard.
+Implementation notes:
 
-**Acceptance Criteria:**
-- [ ] The DI callback delegates to an explicitly owned MeshSyncService boundary.
-- [ ] Every `MeshPublishResult` variant has an intentional disposition.
-- [ ] Unexpected exceptions do not escape an unowned future.
-- [ ] Local peer mutation still completes before background publication.
-- [ ] Pull/apply does not re-enter publish.
-- [ ] Existing publish-race, conflict, and empty-members tests remain green.
-- [ ] New tests cover the selected typed-failure and thrown-error policies.
-- [ ] `flutter analyze` and full `flutter test` pass.
+- `_enqueue` still returns the real operation future so awaited callers observe
+  failure. It stores an error-absorbing continuation only as the predecessor for
+  the next queued operation, ensuring one failure cannot poison later writes.
+- `_runDetachedWrite` is private to `SyncService`. It owns stream/timer work,
+  records `LifecycleFailureEvent`, emits degradation once, and optionally calls
+  `requestSync`. A successful transcript operation clears the degraded latch and
+  emits recovery.
+- Replace each transcript lint suppression with the named detached boundary.
+  Preserve event ordering by batching logically terminal pairs (`Cancelled`,
+  protocol error) through `_appendTranscriptEvents` as today.
+- Terminal handlers set/retain idle independently of persistence completion.
+  `_failPendingSend` uses `try/finally` so stream and turn state settle even if
+  the failure row cannot be stored.
+- `_onRoomsChanged` queues one owned lifecycle operation: resolve ref, await
+  `activate` when changed, validate generation/ref, then resend held messages,
+  then request sync. It must not start activation and resend as sibling futures.
+- `_onlineActivated`, `_resendHeldPendingMessages`, `_replayHistory`, and loops
+  over event-store results re-check disposed/generation/ref after every await.
+- `dispose` sets `_disposed` and increments generation before closing streams.
+  Queued storage operations may finish I/O but cannot publish state for the
+  replacement/disposed session.
+- Await `runtimeBox().put` inside the queued closure. Runtime failure logs only;
+  the next connection/presence event retries it.
+- `ChatViewModel` maps persistence degraded/recovered events into
+  `ChatReady.persistenceWarning`; `ChatPage` reuses its existing banner style
+  with a Retry Sync action. It preserves transcript rows and disables no command
+  solely because the cache is degraded.
+
+**Error surface:** transcript degradation is both a typed debug event and a
+visible, retryable chat banner. No fake transcript row is created. Runtime-only
+failure is debug-only. Terminal turn state remains idle where required.
+
+**Acceptance criteria:**
+
+- [ ] No `discarded_futures` suppression remains in `SyncService` for the cited
+      paths; every detached operation names an owner policy.
+- [ ] Awaited command/lifecycle callers receive write failures, while later
+      queued operations still execute after one failure.
+- [ ] Runtime Hive `put` is part of queue completion.
+- [ ] Activation completes before held-message resend and replay for the new
+      session.
+- [ ] Old-session work cannot append, emit recovery/degradation, install state,
+      or send after an async gap.
+- [ ] Injected transcript-store failure emits one visible degraded signal,
+      requests replay, and a subsequent successful write clears the warning.
+- [ ] Injected failure on a terminal event still leaves `working:false`; an
+      injected non-terminal write failure does not falsely idle an active turn.
+- [ ] Existing convergence coverage at `sync_service_test.dart:1988-2070`
+      remains green and is extended with failing-adapter/Hive cases.
+
+### Unit 6: Mesh mutation publication ownership
+
+**Story:** `feature-app-async-lifecycle-ownership-mesh-publication`
+
+**Files:**
+
+- `app/lib/pairing/storage.dart`
+- `app/lib/data/mesh/mesh_sync_service.dart`
+- `app/lib/config/dependencies.dart`
+- `app/lib/ui/settings/viewmodels/settings_viewmodel.dart`
+- `app/lib/domain/contracts/debug_log.dart`
+- `app/test/pairing/storage_test.dart`
+- `app/test/data/mesh/mesh_sync_service_test.dart`
+- `app/test/ui/settings/settings_viewmodel_test.dart`
+
+```dart
+enum PeerMutationKind { upsert, delete }
+typedef PeerMutationHook = void Function(PeerMutationKind kind);
+
+class PairingStorage extends ChangeNotifier {
+  void attachPeerMutationHook(PeerMutationHook? hook);
+}
+
+class MeshSyncService extends ChangeNotifier {
+  void publishAfterPeerMutation(PeerMutationKind kind);
+  Future<void> _drainPendingMutationPublish();
+  void _scheduleMutationPublishRetry();
+}
+```
+
+Implementation notes:
+
+- `savePeer` emits `upsert`; `deletePeer` emits `delete`; silent methods remain
+  hook-free. DI attaches `meshSync.publishAfterPeerMutation` directly.
+- The boundary marks a local mutation pending and starts at most one drain. A
+  mutation arriving during publish coalesces into one more snapshot publish,
+  so `_publishing` no longer turns a real mutation into an ignored
+  `already in flight` result.
+- Delete permits empty membership because only explicit local deletion reaches
+  this hook; pull/apply remains silent. Settings returns to `deletePeer` and
+  removes its optional `MeshSyncService` dependency and explicit discarded
+  publish.
+- `MeshPublishOk` clears the pending snapshot if no newer mutation arrived.
+  Conflict uses the existing private pull/rebase/retry. A final conflict and
+  `MeshPublishFailure` keep pending and schedule the owned coalesced retry.
+  Bad-request/forbidden/too-large are permanent: diagnose, clear the retry, and
+  do not spin.
+- `pullOnDemand` first drains or defers behind pending local publication so a
+  failed publish cannot be overwritten by a normal pull. The conflict-rebase
+  path uses a private pull that is allowed during publication.
+- Unexpected exceptions are caught at this boundary, diagnosed as
+  `meshPublish`, and treated as transient. Retry timer, drain, and notification
+  all check `_disposed`; `dispose` cancels the timer.
+
+**Error surface:** typed privacy-safe diagnostics. Local peer mutation remains
+immediate/non-blocking. Transient publication recovers in the background;
+permanent typed failures do not loop.
+
+**Acceptance criteria:**
+
+- [ ] The DI hook delegates to `publishAfterPeerMutation` with no discarded
+      future.
+- [ ] Every `MeshPublishResult` variant has an explicit disposition.
+- [ ] A mutation during publish causes one follow-up publish rather than an
+      ignored `already in flight` result.
+- [ ] Transient/exception failure queues one coalesced retry; permanent typed
+      failure logs and does not retry.
+- [ ] Normal pulls cannot overwrite a pending local mutation; conflict rebase
+      still works.
+- [ ] Last-peer revoke publishes `members=[]` through mutation intent and no
+      longer performs a duplicate explicit publish from Settings.
+- [ ] Pull/apply silent writes do not re-enter publication; dispose cancels
+      retry/drain publication state.
 
 ## Implementation Order
 
-1. **Retag done:** `refactor` removed from tags; feature routes to feature-design.
-2. **Step 1:** typed active-room capability (pure refactor — quick win).
-3. **Step 2:** behavior-preserving best-effort ownership cleanup (pure refactor — quick win).
-4. **Step 3:** router and ChatViewModel startup ownership (feature-design).
-5. **Step 4:** ConnectionManager persistence/teardown policy (feature-design).
-6. **Step 5:** SyncService serialization, rebind ordering, transcript failure, convergence policy (feature-design).
-7. **Step 6:** mesh mutation publication ownership (feature-design).
-8. Verify from `app/`: `flutter analyze`, `flutter test`, then `flutter build apk --debug` smoke if the environment permits.
+1. `gate-cruft-dynamic-setactiveroom-fallback` — typed active-room capability.
+2. `gate-cruft-empty-catch-old-channel-close` — local best-effort cleanup
+   (land cohesively with Unit 4 diagnostics if preferable).
+3. `feature-app-async-lifecycle-ownership-startup-ownership` — router and Chat
+   startup ownership.
+4. `feature-app-async-lifecycle-ownership-connection-persistence` — per-peer
+   cache drain plus shared typed lifecycle diagnostic.
+5. `feature-app-async-lifecycle-ownership-sync-failure-semantics` — ordered
+   rebind/write/replay and visible degradation.
+6. `feature-app-async-lifecycle-ownership-mesh-publication` — typed mutation
+   hook and queued publication retry.
+7. Close the remaining gate findings as provenance checkpoints when their
+   mapped unit's acceptance evidence is green.
+
+The behavior-story dependency graph is:
+
+- startup ownership: `depends_on: []`
+- connection persistence: `depends_on: [startup ownership]`
+- sync failure semantics: `depends_on: [connection persistence]`
+- mesh publication: `depends_on: [connection persistence]`
+
+This ordering also avoids concurrent edits to the shared `DebugEvent` registry.
+The parent feature remains the normal single-worker implementation/review bundle;
+stories are checkpoints, not parallel agent assignments.
+
+Cycle validation note: `.work/bin/work-view --blocking` was attempted for all
+four new stories but the repository-wide scan is currently blocked by unrelated
+pre-existing malformed frontmatter in
+`.work/archive/story-document-deferred-relay-volume-cutover.md` and duplicate
+`updated` fields in two retained `v0.1.0` release stories. A direct inbound-id
+scan found no pre-existing reference to any new story; the declared graph above
+is acyclic (`startup → connection → {sync, mesh}`).
+
+## Simplification
+
+- Remove three dynamic room-targeting catches, redundant `Future` allocation,
+  no-op `.then`, and cited lint suppressions.
+- Keep `SyncService` intact; splitting it is a separate architectural effort and
+  would obscure this failure-semantics change.
+- Do not add a global `safeUnawaited`/future extension. Each owner retains its
+  policy.
+- Consolidate Settings revoke publication into the canonical peer-mutation hook,
+  removing its optional mesh dependency and duplicate publish path.
+- Keep `PairingStorage` synchronous/local-first and network-independent; it emits
+  mutation intent only.
+
+## Mockups
+
+No mockup is required. `/boot` failure, Chat initialization failure, and the
+persistence warning are minor compositions that reuse the existing `_EmptyState`,
+Retry action, and banner visual patterns; there is no new screen or journey.
+
+## Testing
+
+Smallest useful surface:
+
+- **Router interface tests** (`app/test/routing/app_router_test.dart`): deferred
+  fakes prove routing waits for boot, retryable network state reaches Home, each
+  thrown phase remains on `/boot`, Retry starts a new generation, and stale runs
+  cannot publish ready.
+- **Chat regression tests** (`chat_viewmodel_test.dart`): failing storage and
+  failing `SyncService.activate`, dispose during each await, retry success, and
+  room rebind failure cannot retain old-session rows.
+- **Connection boundary tests** (`connection_manager_test.dart`): controlled
+  storage completers prove latest-wins per-peer ordering; a failing adapter
+  proves next-mutation retry; close/legacy/retry failures produce the typed
+  diagnostic and obey bounded policy.
+- **Sync failing-adapter tests** (`sync_service_test.dart`): inject a
+  `TranscriptEventStore` that fails one append/read and then recovers; assert
+  the queue continues, degraded/recovered events occur once, replay is requested,
+  terminal failure converges idle, and stale-session work cannot publish after
+  release of a completer. Use a controlled Hive failure for runtime `put` to
+  prove it is awaited and diagnosed.
+- **Preserve existing convergence tests** at
+  `sync_service_test.dart:1988-2070`; extend them rather than replacing their
+  success/error/cancel/compaction evidence.
+- **Mesh interface tests** (`mesh_sync_service_test.dart` and
+  `storage_test.dart`): mutation kind delivery, in-flight coalescing, transient
+  retry, permanent no-retry, last-peer empty publication, pull deferral, silent
+  apply non-reentrancy, and disposal cancellation.
+- **Debug contract tests**: add the new diagnostic to the exhaustive sealed
+  switch, field allow-list, value clamp, and capture-site registry.
+
+No test should assert private scheduling mechanics when an externally visible
+boundary (ordered storage calls, emitted state/event, result disposition) is
+available. No existing useful test is slated for removal.
+
+## Risks
+
+- **Riskiest assumption:** authoritative replay remains available after local
+  transcript persistence recovers. If the Pi/session is gone, the visible
+  degraded banner must remain rather than pretending recovery succeeded.
+- **Failure condition:** a terminal handler still couples idle transition to a
+  successful store append, leaving a stuck working projection under injected
+  failure. The implementation must set idle outside/inside `finally` and prove
+  it with the failing store.
+- **Failure condition:** a pending local mesh mutation is pulled over before its
+  retry, resurrecting a deleted peer. Pull deferral plus the private conflict
+  rebase path is mandatory.
+- **Failure condition:** generation checks occur only at method entry. Every
+  async gap that precedes state mutation, subscription install, send, or final
+  persistence must revalidate.
+- **Fallback if the ordered Sync lifecycle boundary proves too entangled:** land
+  transcript detached-write diagnostics/convergence first, retain the current
+  rebind triggers behind one generation guard, and split activation-before-
+  resend into a follow-up without introducing parallel async callbacks.
+- **Fallback if mesh retry coordination is unsafe:** keep the owned result
+  inspection and diagnostics, disable automatic pulls while dirty, and retry
+  only on foreground resume/local mutation. Do not revert to dropped publish
+  futures.
+- **Least certain area:** platform secure-storage writes already entered before
+  disposal cannot be cancelled. The guarantee is therefore “do not begin a
+  final write after invalidation,” not cancellation of an in-flight plugin call.
+
+## Verification
+
+Run from `app/`:
+
+```bash
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+The build smoke may be skipped only for an explicit environment/resource reason;
+analyze and the full test suite remain required.
