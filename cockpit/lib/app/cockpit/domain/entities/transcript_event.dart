@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
+
 sealed class CockpitTranscriptEvent {
   const CockpitTranscriptEvent({
     required this.eventId,
@@ -129,7 +131,7 @@ final class CockpitToolRequested extends CockpitTranscriptEvent {
 
   final String toolCallId;
   final String tool;
-  final Map<String, Object?> args;
+  final RpcJsonObject args;
 }
 
 final class CockpitToolFinished extends CockpitTranscriptEvent {

@@ -10,6 +10,7 @@ import 'package:cockpit/app/cockpit/domain/entities/pi_command.dart';
 import 'package:cockpit/app/cockpit/domain/entities/pi_model.dart';
 import 'package:cockpit/app/cockpit/domain/entities/prompt_image.dart';
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
+import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_message.dart';
@@ -209,10 +210,12 @@ void main() {
 
       gateway
         ..emit(
-          const RpcToolStart(
+          RpcToolStart(
             toolCallId: 'tool-1',
             toolName: 'read_file',
-            args: <String, dynamic>{'path': 'README.md'},
+            args: RpcJsonObject.tryFromWire(const <String, dynamic>{
+              'path': 'README.md',
+            })!,
           ),
         )
         ..emit(
@@ -269,7 +272,9 @@ void main() {
           ts: _ts,
           toolCallId: 'tool-1',
           tool: 'read_file',
-          args: const <String, Object?>{'path': 'README.md'},
+          args: RpcJsonObject.tryFromWire(const <String, Object?>{
+            'path': 'README.md',
+          })!,
         ),
         CockpitToolFinished(
           eventId: 'history:tool-end',
@@ -312,10 +317,10 @@ void main() {
       gateway
         ..emit(const RpcTextDelta('old partial'))
         ..emit(
-          const RpcToolStart(
+          RpcToolStart(
             toolCallId: 'old-tool',
             toolName: 'old_tool',
-            args: <String, dynamic>{},
+            args: RpcJsonObject.empty,
           ),
         )
         ..emit(const RpcAgentEnd());
