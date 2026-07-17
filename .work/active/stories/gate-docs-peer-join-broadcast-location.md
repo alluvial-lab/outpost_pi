@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-repair-current-state-docs
-stage: drafting
+stage: done
 id: gate-docs-peer-join-broadcast-location
 tags: [documentation]
 depends_on: []
 gate_origin: docs
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-16
 ---
 
 # `peer_joined/peer_left` broadcast comment points to wrong module

@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-repair-current-state-docs
-stage: drafting
+stage: done
 id: gate-cruft-protocol-facade-stale-schema-ir-comment
 tags: [cleanup]
 depends_on: []
 gate_origin: cruft
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-16
 ---
 
 # Correct stale protocol facade claim about relay-control schema coverage

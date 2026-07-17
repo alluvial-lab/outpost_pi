@@ -2,10 +2,10 @@
 kind: story
 release_binding: null
 parent: feature-repair-current-state-docs
-stage: drafting
+stage: done
 id: gate-docs-relay-ct-limit-1mib-stale
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-16
 tags: [documentation]
 ---
 
