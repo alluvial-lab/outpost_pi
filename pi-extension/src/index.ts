@@ -85,8 +85,7 @@ export { restartSupervisorCommand as _restartSupervisorCommand } from "./extensi
 export type { RestartStep } from "./extension/command_surface/supervisor_restart.js";
 import { createOutpostPiExtensionRuntime } from "./extension/composition_root.js";
 import { getOutpostPiRuntimeCoordinator } from "./extension/runtime_coordinator.js";
-import { createLegacyIndexPorts, type LegacyIndexDeps } from "./extension/legacy_ports.js";
-import type { CommandSurfacePort, WakeAgentResult } from "./extension/ports.js";
+import type { CommandSurfacePort, OutpostPiRuntimePorts, WakeAgentResult } from "./extension/ports.js";
 import { SdkSessionProjection } from "./session/sdk_session_projection.js";
 import { createDeliveryDebugLog, idTail } from "./session/delivery_debug_log.js";
 import type { DeliveryDebugLog } from "./session/delivery_debug_log.js";
@@ -1230,8 +1229,8 @@ const _sdkSessionProjection: SdkSessionProjection = new SdkSessionProjection({
 });
 
 const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
-  const legacyPorts = createLegacyIndexPorts(createIndexDeps());
-  const legacyRuntime = createOutpostPiExtensionRuntime(pi, legacyPorts);
+  const runtimePorts = createRuntimePorts();
+  const runtime = createOutpostPiExtensionRuntime(pi, runtimePorts);
   // Every ordinary SDK event is factory-local. Satellite/child factories still
   // register a complete extension surface, but their callbacks cannot mutate
   // the phone-facing process singleton.
@@ -1244,7 +1243,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
             callback: (...args: unknown[]) => unknown,
           ) => void;
           register(event, (...args: unknown[]) => {
-            if (!legacyRuntime.isOwner()) return undefined;
+            if (!runtime.isOwner()) return undefined;
             return handler(...args);
           });
         };
@@ -1258,7 +1257,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
           register(name, {
             ...options,
             handler: (...args: unknown[]) => {
-              if (!legacyRuntime.isOwner()) return undefined;
+              if (!runtime.isOwner()) return undefined;
               return options.handler(...args);
             },
           });
@@ -1571,16 +1570,16 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // Ownership is claimed at session_start and released at session_shutdown.
   // Only the exact owner lease may publish/clear process-global SDK state or
   // tear down relay/mesh resources.
-  legacyRuntime.registerLifecycle();
+  runtime.registerLifecycle();
 
   // ── Commands ──────────────────────────────────────────────────────────────
-  legacyRuntime.ports.commands.register(ownerPi, legacyRuntime);
+  runtime.ports.commands.register(ownerPi, runtime);
 
 };
 
 export default extension;
 
-function createIndexDeps(): LegacyIndexDeps {
+function createRuntimePorts(): OutpostPiRuntimePorts {
   return {
     relay: {
       status: _relayStatus,
@@ -1605,8 +1604,6 @@ function createIndexDeps(): LegacyIndexDeps {
       onOuterMessage: (handler) => _relayTransport.onOuterMessage(handler),
       attachCrossPcBridge: (input) => _relayTransport.attachCrossPcBridge(input),
       detachCrossPcBridge: () => { _relayTransport.detachCrossPcBridge(); },
-      relay: () => _relayTransport.currentRelayForOwnerChannels(),
-      setRelay: () => { /* relay ownership lives in relay_transport.ts */ },
     },
     owners: {
       activeCount: () => _owners.activeCount(),
@@ -1673,7 +1670,7 @@ function createIndexDeps(): LegacyIndexDeps {
       },
     },
     commands: {
-      register: (boundPi, runtime) => { createLegacyCommandSurface().register(boundPi, runtime); },
+      register: (boundPi, runtime) => { createRuntimeCommandSurface().register(boundPi, runtime); },
       ensureStarted: (ctx) => {
         if (!_disposed) return;
         _disposed = false;
@@ -1695,7 +1692,7 @@ function createIndexDeps(): LegacyIndexDeps {
   };
 }
 
-function createLegacyCommandSurface(): CommandSurfacePort {
+function createRuntimeCommandSurface(): CommandSurfacePort {
   return createCommandSurface({
     deployAgentNetworkSkill: _deployAgentNetworkSkill,
     refreshPairingsCache: () => { void _owners.refreshPairingsCache(); },
