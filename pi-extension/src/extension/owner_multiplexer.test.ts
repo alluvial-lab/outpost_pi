@@ -1,7 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { OwnerMultiplexer, type CreateOwnerChannelInput, type OwnerMultiplexerDeps, type PeerChannelHandle } from "./owner_multiplexer.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
-import type { RelayClient } from "../transport/relay_client.js";
 
 class FakeOwnerChannel implements PeerChannelHandle {
   readonly sent: ServerMessage[] = [];
@@ -74,15 +73,13 @@ function makeMultiplexer() {
   };
 }
 
-const fakeRelay = {} as RelayClient;
-
 describe("OwnerMultiplexer", () => {
   test("reattaching the same owner replaces the stale channel", () => {
     const { mux, channels } = makeMultiplexer();
     const onMessage = vi.fn();
 
-    const first = mux.attach({ relay: fakeRelay, peerId: "owner-1", onMessage });
-    const second = mux.attach({ relay: fakeRelay, peerId: "owner-1", onMessage });
+    const first = mux.attach({ peerId: "owner-1", onMessage });
+    const second = mux.attach({ peerId: "owner-1", onMessage });
 
     expect(first).not.toBe(second);
     expect(channels[0]!.detached).toBe(true);
@@ -95,8 +92,8 @@ describe("OwnerMultiplexer", () => {
   test("broadcast fans out to every active owner channel", () => {
     const { mux, channels } = makeMultiplexer();
     const onMessage = vi.fn();
-    mux.attach({ relay: fakeRelay, peerId: "owner-a", onMessage });
-    mux.attach({ relay: fakeRelay, peerId: "owner-b", onMessage });
+    mux.attach({ peerId: "owner-a", onMessage });
+    mux.attach({ peerId: "owner-b", onMessage });
 
     const message: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "hello" };
     mux.broadcast(message);
@@ -108,8 +105,8 @@ describe("OwnerMultiplexer", () => {
   test("peer_offline suspends only that peer and peer_online resumes fan-out", () => {
     const { mux, channels } = makeMultiplexer();
     const onMessage = vi.fn();
-    mux.attach({ relay: fakeRelay, peerId: "owner-a", onMessage });
-    mux.attach({ relay: fakeRelay, peerId: "owner-b", onMessage });
+    mux.attach({ peerId: "owner-a", onMessage });
+    mux.attach({ peerId: "owner-b", onMessage });
 
     expect(mux.markPeerOffline("owner-a", 123)).toBe(true);
     const droppedForA: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "while offline" };
@@ -129,7 +126,7 @@ describe("OwnerMultiplexer", () => {
   test("suspend/resume diagnostic is one-shot and not emitted per dropped frame", () => {
     const { mux, fanoutPresenceChanged } = makeMultiplexer();
     const onMessage = vi.fn();
-    mux.attach({ relay: fakeRelay, peerId: "owner-a", onMessage });
+    mux.attach({ peerId: "owner-a", onMessage });
 
     const first: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "first" };
     const second: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "second" };
@@ -158,10 +155,10 @@ describe("OwnerMultiplexer", () => {
   test("reattach during an active turn clears stale offline state and remains a late-attach target", () => {
     const { mux, channels, fanoutPresenceChanged } = makeMultiplexer();
     const onMessage = vi.fn();
-    mux.attach({ relay: fakeRelay, peerId: "owner-a", onMessage, turnActive: true });
+    mux.attach({ peerId: "owner-a", onMessage, turnActive: true });
     mux.markPeerOffline("owner-a", 123);
 
-    const reattached = mux.attach({ relay: fakeRelay, peerId: "owner-a", onMessage, turnActive: true });
+    const reattached = mux.attach({ peerId: "owner-a", onMessage, turnActive: true });
     const message: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "resumed" };
     mux.broadcast(message);
 
@@ -178,8 +175,8 @@ describe("OwnerMultiplexer", () => {
   test("detaching one owner preserves the other owner channel", () => {
     const { mux, channels } = makeMultiplexer();
     const onMessage = vi.fn();
-    mux.attach({ relay: fakeRelay, peerId: "owner-a", onMessage });
-    mux.attach({ relay: fakeRelay, peerId: "owner-b", onMessage });
+    mux.attach({ peerId: "owner-a", onMessage });
+    mux.attach({ peerId: "owner-b", onMessage });
 
     const result = mux.disconnectOwner("owner-a");
 
@@ -198,7 +195,6 @@ describe("OwnerMultiplexer", () => {
 
     await mux.handleOuterLine({
       line: JSON.stringify({ peer: "known-owner", room: "room-1", ct: encodeClientMessage(message) }),
-      relay: fakeRelay,
       roomId: "room-1",
       turnActive: () => false,
       isCurrent: () => true,
@@ -220,7 +216,6 @@ describe("OwnerMultiplexer", () => {
     const sendToPeer = vi.fn();
     const onMessage = vi.fn();
     const inputBase = {
-      relay: fakeRelay,
       roomId: "room-1",
       turnActive: () => false,
       isCurrent: () => true,

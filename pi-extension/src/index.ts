@@ -314,8 +314,8 @@ let _stopOwnerControl: (() => void) | null = null;
 
 function _ensureOwnerIngressListener(): void {
   if (!_stopOwnerIngress) {
-    _stopOwnerIngress = _relayTransport.onOuterMessage((line) => {
-      void _handleOwnerOuterLine(line);
+    _stopOwnerIngress = _relayTransport.onOuterMessage((line, isCurrent) => {
+      void _handleOwnerOuterLine(line, isCurrent);
     });
   }
   if (!_stopOwnerControl) {
@@ -349,19 +349,15 @@ function _handleRelayControlFrame(frame: RelayControlFrame): void {
   }
 }
 
-async function _handleOwnerOuterLine(line: string): Promise<void> {
-  const currentRelay = _relayTransport.currentRelayForOwnerChannels();
-  if (!currentRelay) return;
+async function _handleOwnerOuterLine(
+  line: string,
+  connectionIsCurrent: () => boolean,
+): Promise<void> {
   await _owners.handleOuterLine({
     line,
-    relay: currentRelay,
     roomId: _myRoomId ?? undefined,
     turnActive: () => _turnProjection().working,
-    isCurrent: () => (
-      !_disposed &&
-      _state === "started" &&
-      currentRelay === _relayTransport.currentRelayForOwnerChannels()
-    ),
+    isCurrent: () => !_disposed && _state === "started" && connectionIsCurrent(),
     onMessage: (message, sender) => _routeClientMessageFrom(
       sender as PlainPeerChannel,
       message,
@@ -373,10 +369,7 @@ async function _handleOwnerOuterLine(line: string): Promise<void> {
 }
 
 function _syncOwnerPresenceSubscription(): void {
-  _relayTransport.currentRelayForOwnerChannels()?.sendControl({
-    type: "subscribe_presence",
-    peers: _owners.peerIds(),
-  });
+  _relayTransport.subscribePresence(_owners.peerIds());
 }
 
 function _sendOwnerMessageToPeer(peerId: string, message: ServerMessage): void {
@@ -404,60 +397,17 @@ function _sendOwnerMessageToPeer(peerId: string, message: ServerMessage): void {
 
 const _pairingCoordinator = new PairingCoordinator({
   getState: () => _state,
-  setState: (state) => { _state = state; },
-  relay: () => _relayTransport.currentRelayForOwnerChannels(),
-  setRelay: () => { /* relay ownership lives in relay_transport.ts */ },
-  relayUrl: () => _relayTransport.currentRelayUrl(),
-  setRelayUrl: () => { /* relay URL ownership lives in relay_transport.ts */ },
+  startRelay: (ctx) => _startRelayViaTransport(ctx),
+  isRelayConnected: () => _relayTransport.status() === "connected",
   roomId: () => _myRoomId,
-  setRoomId: (roomId) => { _myRoomId = roomId; _sdkSessionProjection.setRoomId(roomId); },
-  roomMeta: () => _myRoomMeta,
-  setRoomMeta: (meta) => { _myRoomMeta = meta as typeof _myRoomMeta; },
-  sessionStartedAt: () => _sdkSessionProjection.sessionStartedAtValue(),
-  setSessionStartedAt: (ts) => { _sdkSessionProjection.setSessionStartedAt(ts); },
-  currentModel: () => _currentModel,
-  setCurrentModel: (model) => { _currentModel = model; },
-  currentThinking: () => _currentThinking,
-  setCurrentThinking: (thinking) => { _currentThinking = thinking; },
-  currentThinkingLevel: () => _pi?.getThinkingLevel() as ThinkingLevel | undefined,
   displayName: (cwd) => _displayName(cwd),
-  currentRemoteSessionId: (ctx) => _currentRemoteSessionId(ctx),
-  withCurrentSession: (msg) => _withCurrentSession(msg),
-  currentPairingSession: () => _currentPairingSessionSnapshot(),
-  isDisposed: () => _disposed,
-  turnWorking: () => _turnProjection().working,
   owners: _owners,
   ownerHas: (peerId) => _owners.has(peerId),
-  ownerActiveCount: () => _owners.activeCount(),
   refreshPairingsCache: () => { void _owners.refreshPairingsCache(); },
-  onOwnerAttached: ({ peerId, peerName, activeCount }) => {
-    _sdkSessionProjection.recordOwnerAttached(peerId);
-    _notify(
-      `[outpost-pi] Owner attached: peer=${peerId.slice(0, 8)}, name=${peerName} ` +
-      `(${activeCount} active)`,
-      "info",
-    );
-  },
-  onOwnerPaired: ({ peerId, peerName, pairedAt }) => {
-    _sendPiMessage({
-      customType: "outpost-pi:paired",
-      content: `Paired with ${peerName}`,
-      details: { name: peerName, peerId, pairedAt },
-      display: false,
-    }, undefined, "paired");
-  },
-  onPeerDisconnect: (peerId) => _onPeerDisconnect(peerId),
-  handleClientMessage: (sender, message) => _sdkSessionProjection.handleClientMessage(sender, message),
   joinLocalMesh: async (ctx) => { if (!_meshNode) await _cmdJoin(ctx); },
-  refreshFooter: (ctx) => _refreshFooter(ctx),
-  notify: (message, type, ctx) => _notify(message, type, ctx),
   sendPiMessage: (message, options, label) => _sendPiMessage(message, options, label),
-  onRelayClose: () => _onRelayClose(),
-  attachBridgeIfReady: () => _attachBridgeIfReady(),
-  emitRelayState: (force) => _emitRelayState(force),
   setSiblings: (siblings) => { _meshNode?.setSiblings(siblings); },
 });
-_pairingCoordinator.startRelay = (ctx) => _startRelayViaTransport(ctx);
 
 const _pairingCommands = new PairingCommands(_pairingCoordinator);
 const _relayCommands = new RelayCommands(_pairingCoordinator);
@@ -1012,8 +962,8 @@ function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): void {
  * transcript events, and relay-transport-owned retry state so the session can resume on reconnect.
  *
  * Peer (app) reconnect after a successful relay reconnect is handled by the
- * existing auto-listener via `peers.json` lookup, so we don't need to track
- * the prior peer here; we just go back to `started` and wait.
+ * transport-owned ingress subscription via `peers.json` lookup, so we don't
+ * need to track the prior peer here; we just go back to `started` and wait.
  */
 function _onRelayClose(): void {
   if (_state === "idle") return;  // already torn down (e.g. /outpost-pi stop)
@@ -1023,7 +973,7 @@ function _onRelayClose(): void {
   // message. Only per-owner channels are relay-socket-specific.
 
   // Detach every per-owner channel — relay is gone, none can route. The
-  // auto-listener re-attaches owners after `_attemptReconnect` succeeds
+  // ingress handler re-attaches owners after `_attemptReconnect` succeeds
   // (via the same known-peer + pair_request paths used on first connect).
   // Relay drop is not an explicit stop: do not send bye and do not clear
   // session history or reconnect-owned state.
@@ -1602,6 +1552,8 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
         });
       },
       onOuterMessage: (handler) => _relayTransport.onOuterMessage(handler),
+      createPeerChannel: (input) => _relayTransport.createPeerChannel(input),
+      subscribePresence: (peers) => _relayTransport.subscribePresence(peers),
       attachCrossPcBridge: (input) => _relayTransport.attachCrossPcBridge(input),
       detachCrossPcBridge: () => { _relayTransport.detachCrossPcBridge(); },
     },
@@ -1856,15 +1808,6 @@ async function _cmdSetup(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<voi
   await _localMeshCommands.setup(ctx);
 }
 
-type PairingCoordinatorRelayInternals = {
-  cachedEd25519: Ed25519Keypair | null;
-  ensureSelfRevoke(relayUrl: string, edKp: Ed25519Keypair): void;
-};
-
-function _pairingCoordinatorInternals(): PairingCoordinatorRelayInternals {
-  return _pairingCoordinator as unknown as PairingCoordinatorRelayInternals;
-}
-
 async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
   if (_state !== "idle") {
     ctx.ui.notify("[outpost-pi] Already started.", "warning");
@@ -1897,7 +1840,7 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
     }
     throw err;
   }
-  _pairingCoordinatorInternals().cachedEd25519 = edKp;
+  _pairingCoordinator.recordCurrentKeypair(edKp);
 
   const myShort = Buffer.from(edKp.publicKey).toString("base64").slice(0, 8);
   const cwd = "cwd" in ctx && typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
@@ -1967,7 +1910,7 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
   _sdkSessionProjection.ensureSessionStarted();
   _refreshFooter(ctx);
 
-  _pairingCoordinatorInternals().ensureSelfRevoke(relayUrl, edKp);
+  _pairingCoordinator.startSelfRevoke(relayUrl, edKp);
   _attachBridgeIfReady();
   _emitRelayState();
   ctx.ui.notify(`[outpost-pi] state: started (peer=${myShort}) — Connected to relay ${relayUrl}`, "info");
@@ -1980,9 +1923,9 @@ async function _cmdStart(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<voi
 /**
  * `/outpost-pi pair` — always generates a fresh QR when the relay is up.
  *
- * The coordinator owns QR token issuance, relay auto-listening, known-peer
- * reconnect, and pair_request handling so owner/session attachment flows
- * through the owner/session ports instead of mutating index state directly.
+ * The coordinator owns QR token issuance and relay-dependent command policy;
+ * transport/owner ports route known-peer reconnect and pair_request handling
+ * through owner/session ports instead of mutating index state directly.
  */
 async function _cmdPair(ctx: Pick<ExtensionContext, "ui" | "cwd">, args = ""): Promise<void> {
   await _pairingCommands.pair(ctx, args);

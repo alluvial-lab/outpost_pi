@@ -118,7 +118,7 @@ describe("relay transport control frames", () => {
 
   test("dispatchRelayMessage still forwards raw control-frame lines to outerMessageHandlers", async () => {
     // The raw relay-message path (outerMessageHandlers) must still receive every
-    // line — including control frames — so the legacy envelope path is
+    // line — including control frames — so the owner-envelope path is
     // preserved. A control frame lacks `ct`, so decodeOuterEnvelope returns
     // null and it's ignored; the point is the line is still forwarded.
     const { transport, relays } = makeTransport();
@@ -134,5 +134,41 @@ describe("relay transport control frames", () => {
     expect(outerLines).toHaveLength(2);
     expect(outerLines[0]).toContain("peer_offline");
     expect(outerLines[1]).toContain("envelope");
+  });
+
+  test("outer-message freshness expires on relay replacement and close", async () => {
+    const { transport, relays } = makeTransport();
+    const freshness: Array<() => boolean> = [];
+    transport.onOuterMessage((_line, isCurrent) => freshness.push(isCurrent));
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    expect(relays[0]!.listenerCount("message")).toBe(1);
+    relays[0]!.emit("message", JSON.stringify({ peer: "owner-a", ct: "first" }));
+    expect(freshness[0]?.()).toBe(true);
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    expect(freshness[0]?.()).toBe(false);
+    expect(relays[0]!.listenerCount("message")).toBe(0);
+    expect(relays[1]!.listenerCount("message")).toBe(1);
+    relays[1]!.emit("message", JSON.stringify({ peer: "owner-a", ct: "second" }));
+    expect(freshness[1]?.()).toBe(true);
+
+    relays[1]!.emit("close");
+    expect(freshness[1]?.()).toBe(false);
+    expect(relays[1]!.listenerCount("message")).toBe(0);
+    transport.stop();
+  });
+
+  test("presence subscription emits the canonical control frame", async () => {
+    const { transport, relays } = makeTransport();
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+
+    transport.subscribePresence(["owner-a", "owner-b"]);
+
+    expect(relays[0]!.sendControl).toHaveBeenCalledWith({
+      type: "subscribe_presence",
+      peers: ["owner-a", "owner-b"],
+    });
+    transport.stop();
   });
 });
