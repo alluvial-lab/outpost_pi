@@ -1,7 +1,6 @@
 import { decodeClient } from "../protocol/codec.js";
 import type { ByeReason, ClientMessage, PairErrorCode, ServerMessage } from "../protocol/types.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
-import type { RelayClient } from "../transport/relay_client.js";
 import type { AttachOwnerInput, OwnerMultiplexerPort } from "./ports.js";
 
 /** Extend a relay peer channel with explicit listener teardown owned by the multiplexer. */
@@ -109,7 +108,6 @@ interface OwnerOuterEnvelope {
 /** Carry relay ingress dependencies for decoding and routing one owner envelope. */
 export interface OwnerOuterLineInput {
   line: string;
-  relay: RelayClient;
   roomId?: string;
   turnActive(): boolean;
   isCurrent(): boolean;
@@ -289,7 +287,6 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     if (!input.isCurrent()) return;
     if (known) {
       const channel = this.attach({
-        relay: input.relay,
         peerId: outer.peer,
         peerName: known.name,
         roomId: input.roomId,
@@ -338,7 +335,6 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     if (!input.isCurrent()) return;
 
     this.attach({
-      relay: input.relay,
       peerId,
       peerName: inner.device_name,
       roomId: input.roomId,
@@ -373,7 +369,6 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
 
     let channel: PeerChannelHandle | null = null;
     channel = this.deps.createChannel({
-      relay: input.relay,
       peerId: input.peerId,
       roomId: input.roomId,
       onMessage: (message) => this.routeFrom(channel as PeerChannelHandle, message),

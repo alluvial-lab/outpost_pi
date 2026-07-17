@@ -12,6 +12,8 @@ function ports(): OutpostPiRuntimePorts {
       stop: vi.fn(),
       sendRoomMeta: vi.fn(),
       onOuterMessage: vi.fn(() => vi.fn()),
+      createPeerChannel: vi.fn(),
+      subscribePresence: vi.fn(),
       attachCrossPcBridge: vi.fn(),
       detachCrossPcBridge: vi.fn(),
     },
