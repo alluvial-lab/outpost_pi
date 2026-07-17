@@ -2,7 +2,7 @@
 
 `protocol/schema/` is the canonical schema source for generated protocol work. It is intentionally a repo-root package because the wire spans the Pi extension, mobile app, relay, cockpit control overlay, and future code generators.
 
-The committed source is **JSON Schema 2020-12** plus Outpost-Pi generator metadata under `x-outpost-pi`. Runtime consumers are not switched by the schema-source Step 1 story; current TS/Dart/Rust mirrors remain live until their generator/adoption stories land.
+The committed source is **JSON Schema 2020-12** plus Outpost-Pi generator metadata under `x-outpost-pi`. Generated TS/Dart/Rust consumers derive from these schemas; the `relayControl` family carries the relay auth-domain prefix under `x-outpost-pi.authDomainPrefix`.
 
 ## Why JSON Schema first
 
@@ -28,7 +28,7 @@ Rejected alternatives for this fork-private bold refactor:
 Profiles:
 
 - `compat` describes the current compatibility wire.
-- `canonical-session` records the future `session_id`/`turn_id` enforcement target without changing live behavior in this step.
+- `canonical-session` records the `session_id`/`turn_id` enforcement target.
 
 ## Commands
 

@@ -22,7 +22,7 @@ Updated 2026-06-09.
 |---|---|---|---|---|
 | **Owner-key** | Ed25519 | iOS Keychain (iCloud sync) / Android Block Store (Google sync) | Mobile app on first boot | Signs `mesh_versions`; proves authority to pair/revoke PCs |
 | **Pi-key** | Ed25519 | `@napi-rs/keyring` on the PC (macOS Keychain / Linux libsecret / Windows Credential Manager). Fallback: `~/.pi/remote/identity.json` (`0600`) with a warning on headless systems | pi-extension on first boot | Authenticates WS to the relay; signs cross-PC envelopes |
-| **App-key** | Ephemeral Ed25519 | Mobile app RAM | App for each pairing session | Authenticated channel establishment during pairing |
+| **App-key** | Ephemeral Ed25519 | Mobile app RAM | App for each pairing session | In-memory channel key; the pairing flow no longer signs the inner `pair_request` (authority is the authenticated relay transport) |
 
 **Fixed constraint**: "1 Pi-key per PC; hardware replacement = re-pairing." Pi-keys do not migrate between machines. The Owner-key compensates (the Owner syncs cross-device through the system Keychain).
 
@@ -343,13 +343,21 @@ is not a relay offline queue; a restart loses the state.
 
 The QR code presents a Pi-pubkey + room hint + single-use token.
 
-1. The app scans the QR code and connects to the relay as an ephemeral peer.
-2. The app sends a `pair_request` signed with the **Owner-sk** (proof of authority).
-3. The pi-extension validates the signature and adds the App-key to its local `peers.json`.
-4. The app adds the Pi-pubkey to its local `mesh_versions` and publishes a new version to the relay.
+1. The app scans the QR code and opens a WebSocket to the relay, authenticating
+   with the persisted **Owner-sk** via the relay's Ed25519 challenge-response
+   (`outpost-pi-relay-auth-v1\n` ++ nonce). The WebSocket is the authenticated
+   transport; no inner message signature is needed.
+2. Over that authenticated channel, the app sends a `pair_request` carrying only
+   `{ type, id, token, device_name }` — the single-use token from the QR code,
+   not a signature. The token proves the app saw the same QR the Pi displayed.
+3. The pi-extension validates the token against the one it minted and records
+   the pairing in its local `peers.json`.
+4. The app adds the Pi-pubkey to its local `mesh_versions` and publishes a new
+   version to the relay.
 5. The pi-extension begins accepting messages from that Owner.
 
-Multiple Owners can pair with the same PC (concurrency — `peers.json` accepts N entries).
+Multiple Owners can pair with the same PC (concurrency — `peers.json` accepts
+N entries).
 
 Details in `plan/04-pairing.md`.
 
@@ -359,7 +367,11 @@ Details in `plan/04-pairing.md`.
 
 ### What is protected
 
-- **Authenticated pairing**: `pair_request` is signed by Owner-sk; spoofing requires Owner-sk.
+- **Authenticated pairing transport**: the app reaches the relay only through
+  the Owner-key challenge-response (`outpost-pi-relay-auth-v1`); a spoofed
+  pairing requires the Owner-sk. The inner `pair_request` carries a single-use
+  QR token (not a signature) — authority comes from the authenticated transport,
+  not from signing the inner message.
 - **WS to the relay over TLS**: no one on the route (ISP, NAT, classic MITM) sees plaintext traffic.
 - **Cross-PC cryptographic authorization**: the relay forwards only between sibling Pis of the same Owner (verified through the Owner-sig in `mesh_versions`).
 - **Anti-spoofing between Pis**: the broker rejects envelopes whose `envelope.from` prefix does not match authenticated `from_pc`.
