@@ -191,6 +191,12 @@ class PeerRecord {
 // PairingStorage
 // ---------------------------------------------------------------------------
 
+/// The local peer-set mutation that should be published to the Owner mesh.
+enum PeerMutationKind { upsert, delete }
+
+/// Synchronous notification after a local peer mutation has committed.
+typedef PeerMutationHook = void Function(PeerMutationKind kind);
+
 /// Pairing storage with change notification.
 ///
 /// Mutations to the peer set (`savePeer`, `deletePeer`) and to the
@@ -201,24 +207,22 @@ class PeerRecord {
 class PairingStorage extends ChangeNotifier {
   final FlutterSecureStorage _store;
 
-  /// Plan 24 — optional fire-and-forget hook that runs after every
-  /// peer mutation (`savePeer` / `deletePeer`). The `MeshSyncService`
-  /// registers this so changes propagate to the relay's
-  /// `mesh_versions` row in the background. Failures of the hook are
-  /// the hook's problem — local mutation is already committed and
-  /// observers were notified by the time the hook fires.
+  /// Plan 24 — optional synchronous hook that runs after every local peer
+  /// mutation. The hook receives enough intent for its owner to distinguish a
+  /// legitimate last-peer deletion from an accidental empty snapshot.
   ///
-  /// Room mutations are intentionally NOT hooked — rooms are a
-  /// per-device cache, not synced membership.
-  void Function()? _onPeersMutated;
+  /// Room mutations are intentionally NOT hooked — rooms are a per-device
+  /// cache, not synced membership. The mesh apply path uses the silent peer
+  /// methods below so relay hydration cannot re-enter publication.
+  PeerMutationHook? _onPeersMutated;
 
   PairingStorage([FlutterSecureStorage? store])
     : _store = store ?? const FlutterSecureStorage();
 
-  /// Plug the mesh-publish callback. The hook fires after the local
-  /// write completes and after [notifyListeners], so UI sees the
-  /// change before the relay does. Pass `null` to detach.
-  void attachPeerMutationHook(void Function()? hook) {
+  /// Plug the mesh-publish callback. The hook fires after the local write and
+  /// [notifyListeners], so UI sees the change before publication starts.
+  /// Pass `null` to detach.
+  void attachPeerMutationHook(PeerMutationHook? hook) {
     _onPeersMutated = hook;
   }
 
@@ -229,7 +233,7 @@ class PairingStorage extends ChangeNotifier {
   /// Persist a paired peer, notify listeners, then trigger mesh publication.
   Future<void> savePeer(PeerRecord record) async {
     await _writePeer(record);
-    _onPeersMutated?.call();
+    _onPeersMutated?.call(PeerMutationKind.upsert);
   }
 
   /// Same as [savePeer] but skips the mutation hook. Used by the
@@ -249,7 +253,7 @@ class PairingStorage extends ChangeNotifier {
   /// Delete one peer, notify listeners, then trigger mesh publication.
   Future<void> deletePeer(String remoteEpk) async {
     await _erasePeer(remoteEpk);
-    _onPeersMutated?.call();
+    _onPeersMutated?.call(PeerMutationKind.delete);
   }
 
   /// Same as [deletePeer] but skips the mutation hook — see

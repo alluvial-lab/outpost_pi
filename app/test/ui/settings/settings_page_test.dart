@@ -128,7 +128,7 @@ _pumpSettings(
   await prefs.load();
   final storage = _FakeStorage([]);
   final conn = _conn(storage: storage);
-  final vm = SettingsViewModel(storage, prefs, conn, null, debugLog);
+  final vm = SettingsViewModel(storage, prefs, conn, debugLog);
 
   await tester.pumpWidget(
     MultiProvider(
