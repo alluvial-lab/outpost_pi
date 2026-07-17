@@ -40,6 +40,6 @@ corepack pnpm --dir protocol check
 corepack pnpm --dir protocol list-types
 ```
 
-`check` fails when a fixture violates its family schema or when a configured fixture file is empty/missing. `list-types` prints JSON entries with `family`, `transport`, discriminator (`type`, `customType`, or `untagged`), schema ref, and profile-required fields. The TS, Dart, and Rust generator stories consume this catalog instead of re-discovering message names independently.
+`check` fails when a fixture violates its family schema, when a configured fixture file is empty/missing, or when a `tools/protocol-codegen/src/index.test.ts` unit test fails. `list-types` prints JSON entries with `family`, `transport`, discriminator (`type`, `customType`, or `untagged`), schema ref, and profile-required fields. The TS, Dart, and Rust generator stories consume this catalog instead of re-discovering message names independently.
 
 `.orchestration/contracts/` remains a legacy cross-language reference until generated consumers replace it; do not delete it as part of schema-source work.
