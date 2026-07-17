@@ -46,6 +46,9 @@ class ChatReady extends ChatState {
   final bool isWorking;
   final String? queuedText;
 
+  /// Local transcript persistence warning; null while writes are healthy.
+  final String? persistenceWarning;
+
   const ChatReady({
     required this.messages,
     this.streaming,
@@ -55,6 +58,7 @@ class ChatReady extends ChatState {
     this.peerPresence = const PresenceUnknown(),
     this.isWorking = false,
     this.queuedText,
+    this.persistenceWarning,
   });
 
   ChatReady copyWith({
@@ -66,9 +70,11 @@ class ChatReady extends ChatState {
     PresenceState? peerPresence,
     bool? isWorking,
     String? queuedText,
+    String? persistenceWarning,
     bool clearStreaming = false,
     bool clearPeerOffline = false,
     bool clearQueuedText = false,
+    bool clearPersistenceWarning = false,
   }) => ChatReady(
     messages: messages ?? this.messages,
     streaming: clearStreaming ? null : (streaming ?? this.streaming),
@@ -80,6 +86,9 @@ class ChatReady extends ChatState {
     peerPresence: peerPresence ?? this.peerPresence,
     isWorking: isWorking ?? this.isWorking,
     queuedText: clearQueuedText ? null : (queuedText ?? this.queuedText),
+    persistenceWarning: clearPersistenceWarning
+        ? null
+        : (persistenceWarning ?? this.persistenceWarning),
   );
 
   @override
@@ -92,7 +101,8 @@ class ChatReady extends ChatState {
       other.peerOfflineReason == peerOfflineReason &&
       other.peerPresence.runtimeType == peerPresence.runtimeType &&
       other.isWorking == isWorking &&
-      other.queuedText == queuedText;
+      other.queuedText == queuedText &&
+      other.persistenceWarning == persistenceWarning;
 
   @override
   int get hashCode => Object.hash(
@@ -104,6 +114,7 @@ class ChatReady extends ChatState {
     peerPresence.runtimeType,
     isWorking,
     queuedText,
+    persistenceWarning,
   );
 }
 

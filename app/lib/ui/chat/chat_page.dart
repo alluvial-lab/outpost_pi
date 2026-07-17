@@ -73,6 +73,13 @@ class ChatPage extends StatelessWidget {
             // surfaces those, and stacking duplicates noise the surface.
             if (state is ChatReady && state.pairingRevoked)
               _RevokedBanner(onRePair: () => context.go('/pair')),
+            if (state is ChatReady &&
+                state.persistenceWarning != null &&
+                !state.pairingRevoked)
+              _PersistenceWarningBanner(
+                message: state.persistenceWarning!,
+                onRetry: vm.retryPersistenceSync,
+              ),
             Expanded(child: _buildBody(context, state, vm)),
             _buildInput(context, state, vm),
           ],
@@ -629,6 +636,39 @@ class _EmptyState extends StatelessWidget {
               child: Text(actionLabel!),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PersistenceWarningBanner extends StatelessWidget {
+  const _PersistenceWarningBanner({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: double.infinity,
+      color: colors.warning.withValues(alpha: 0.12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Icon(LucideIcons.databaseBackup, color: colors.warning, size: 15),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 12, color: colors.text),
+            ),
+          ),
+          TextButton(onPressed: onRetry, child: const Text('Retry sync')),
         ],
       ),
     );

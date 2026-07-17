@@ -43,6 +43,8 @@ class SyncService extends Service {
   final LocalBoxes _boxes;
   final TranscriptEventStore _eventStore;
   final DebugLog? _debugLog;
+  final Future<void> Function(String key, Map<String, dynamic> value)?
+  _runtimeRecordWriter;
   final SessionGate _sessionGate = const SessionGate();
 
   StreamSubscription<ConnectionStatus>? _connSub;
@@ -70,6 +72,10 @@ class SyncService extends Service {
 
   // Serialise box mutations so concurrent async writes stay ordered.
   Future<void> _writeChain = Future<void>.value();
+  Future<void> _lifecycleChain = Future<void>.value();
+  bool _disposed = false;
+  int _lifecycleGeneration = 0;
+  RemoteSessionRef? _persistenceDegradedRef;
 
   // Streaming — in-memory only (#7).
   final StringBuffer _chunkBuffer = StringBuffer();
@@ -144,12 +150,21 @@ class SyncService extends Service {
     this._boxes, {
     TranscriptEventStore? transcriptEventStore,
     DebugLog? debugLog,
+    Future<void> Function(String key, Map<String, dynamic> value)?
+    runtimeRecordWriter,
     this.pendingSendTimeout = const Duration(seconds: 20),
     this.deliveryPendingEchoTimeout = const Duration(seconds: 60),
   }) : _eventStore = transcriptEventStore ?? HiveTranscriptEventStore(_boxes),
-       _debugLog = debugLog {
+       _debugLog = debugLog,
+       _runtimeRecordWriter = runtimeRecordWriter {
     _connSub = _conn.statusStream.listen(_onStatus);
-    _roomsSub = _conn.roomsStream.listen((_) => _onRoomsChanged());
+    _roomsSub = _conn.roomsStream.listen((_) {
+      _writeRuntime();
+      _scheduleLifecycleOperation(
+        LifecycleOperation.sessionRebind,
+        _handleRoomsChanged,
+      );
+    });
     _presenceSub = _conn.presenceStream.listen((_) => _writeRuntime());
     _onStatus(_conn.status); // replay current
   }
@@ -220,11 +235,25 @@ class SyncService extends Service {
   /// reachability can still update, but transcript persistence waits for the
   /// full [RemoteSessionRef].
   Future<void> activate(String epk, String roomId) async {
+    if (_disposed) return;
     final room = roomId.isEmpty ? 'main' : roomId;
     final nextRef = _resolveActiveRef(epk, room);
     final sameRoom = _activeEpk == epk && _activeRoomId == room;
     final sameRef = _activeRef == nextRef;
     if (sameRoom && sameRef && _indexLoaded) return;
+
+    final generation = ++_lifecycleGeneration;
+    await _activateForGeneration(epk, room, nextRef, generation);
+  }
+
+  Future<void> _activateForGeneration(
+    String epk,
+    String room,
+    RemoteSessionRef? nextRef,
+    int generation,
+  ) async {
+    if (!_isCurrentLifecycle(generation)) return;
+    final previousRef = _activeRef;
 
     // Genuine session switch or session-id rotation: drop in-memory turn state
     // and projection buffers so the previous canonical transcript cannot bleed
@@ -236,29 +265,20 @@ class SyncService extends Service {
     _activeEpk = epk;
     _activeRoomId = room;
     _activeRef = nextRef;
+    if (previousRef != nextRef) _clearPersistenceDegradationForReplacement();
     // Capability is per-active-session, not process-global: a prior peer that
     // sent deterministic agent_message(ts) must not cause a later legacy
-    // peer's AgentDone/ToolRequest fallback to be suppressed (which would
-    // lose real text). Re-latch on the first agent_message(ts) from THIS
-    // session. See story-mobile-connection-flapping-drops-identity-frames
-    // Layer 2 review finding.
+    // peer's AgentDone/ToolRequest fallback to be suppressed.
     _extensionSendsDeterministicAgentMessage = false;
     _indexLoaded = false;
     _idToSeq.clear();
     _nextSeq = 0;
 
     if (nextRef != null) {
-      await _loadIndex(nextRef);
-      await _materializeTranscriptProjectionForRef(nextRef);
-    }
-    // If a session_sync was requested while no ref was bound yet (online edge
-    // before the session id was known), drain it now that activate() has one.
-    // Without this, a suppressed-row turn whose reconnect fired before the
-    // ref was known would never get its replay backfill. See
-    // story-mobile-connection-flapping-drops-identity-frames Layer 2 review
-    // finding (reconnect backfill guarantee).
-    if (_pendingSyncRequest && nextRef != null) {
-      requestSync();
+      await _loadIndex(nextRef, generation);
+      if (!_isCurrentLifecycle(generation, nextRef)) return;
+      await _materializeTranscriptProjectionForRef(nextRef, generation);
+      if (!_isCurrentLifecycle(generation, nextRef)) return;
     }
     _writeRuntime();
   }
@@ -427,14 +447,18 @@ class SyncService extends Service {
   /// bubble with a visible failure and unwind only the turn state that belongs
   /// to THIS `id`.
   void _onSendTimeout(String id, RemoteSessionRef expectedRef) {
-    // ignore: discarded_futures
-    _failPendingSend(
-      id,
-      code: 'send_timeout',
-      message:
-          'Message was not confirmed by the Pi. It may not have been delivered.',
-      debugDetail: 'no echo in ${pendingSendTimeout.inSeconds}s',
+    _runDetachedWrite(
+      operation: LifecycleOperation.transcriptWrite,
+      write: () => _failPendingSend(
+        id,
+        code: 'send_timeout',
+        message:
+            'Message was not confirmed by the Pi. It may not have been delivered.',
+        debugDetail: 'no echo in ${pendingSendTimeout.inSeconds}s',
+        expectedRef: expectedRef,
+      ),
       expectedRef: expectedRef,
+      requestReplayOnFailure: true,
     );
   }
 
@@ -452,15 +476,19 @@ class SyncService extends Service {
   }
 
   void _onDeliveryPendingTimeout(String id, RemoteSessionRef expectedRef) {
-    // ignore: discarded_futures
-    _failPendingSend(
-      id,
-      code: 'send_timeout',
-      message:
-          'Message was not confirmed by the Pi. It may not have been delivered.',
-      debugDetail:
-          'no echo after delivery_pending in ${deliveryPendingEchoTimeout.inSeconds}s',
+    _runDetachedWrite(
+      operation: LifecycleOperation.transcriptWrite,
+      write: () => _failPendingSend(
+        id,
+        code: 'send_timeout',
+        message:
+            'Message was not confirmed by the Pi. It may not have been delivered.',
+        debugDetail:
+            'no echo after delivery_pending in ${deliveryPendingEchoTimeout.inSeconds}s',
+        expectedRef: expectedRef,
+      ),
       expectedRef: expectedRef,
+      requestReplayOnFailure: true,
     );
   }
 
@@ -474,33 +502,35 @@ class SyncService extends Service {
     if (expectedRef != null && !_isStillActive(expectedRef)) return;
     _pendingSendTimers.remove(id)?.cancel();
     if (expectedRef != null && !_isStillActive(expectedRef)) return;
-    await _appendTranscriptEvent(
-      UserMessageFailed(
-        eventId: 'local:user_failed:$id:$code',
-        sessionId: expectedRef?.sessionId ?? _activeTranscriptSessionId(),
-        ts: DateTime.now(),
-        clientMessageId: id,
-        code: code,
-        message: message,
-      ),
-    );
-    if (expectedRef != null && !_isStillActive(expectedRef)) return;
-    // Clear the thinking cursor only if it's seeded for this message.
-    if (_streaming?.inReplyTo == id) _emitStreaming(null);
-    // Clear working ONLY if this id owns it — never knock down a turn that a
-    // different (echoed) message is already driving.
-    if (turnProjection.cancelTargetId == id) _setTurnIdle();
-    debugPrint(
-      '[msg-failed] id=$id code=$code detail=${debugDetail ?? message}',
-    );
-    _logDebug(
-      MsgFailedEvent(
-        ts: DateTime.now(),
-        id: id,
-        code: code,
-        detail: _shortReason(debugDetail ?? message),
-      ),
-    );
+    try {
+      await _appendTranscriptEvent(
+        UserMessageFailed(
+          eventId: 'local:user_failed:$id:$code',
+          sessionId: expectedRef?.sessionId ?? _activeTranscriptSessionId(),
+          ts: DateTime.now(),
+          clientMessageId: id,
+          code: code,
+          message: message,
+        ),
+      );
+    } finally {
+      if (expectedRef == null || _isStillActive(expectedRef)) {
+        // Terminal in-memory convergence is independent of durable storage.
+        if (_streaming?.inReplyTo == id) _emitStreaming(null);
+        if (turnProjection.cancelTargetId == id) _setTurnIdle();
+        debugPrint(
+          '[msg-failed] id=$id code=$code detail=${debugDetail ?? message}',
+        );
+        _logDebug(
+          MsgFailedEvent(
+            ts: DateTime.now(),
+            id: id,
+            code: code,
+            detail: _shortReason(debugDetail ?? message),
+          ),
+        );
+      }
+    }
   }
 
   void _cancelAllSendTimers() {
@@ -598,16 +628,20 @@ class SyncService extends Service {
   Future<void> clearActiveSession() async {
     final ref = _activeRef;
     if (ref == null) return;
+    final generation = _lifecycleGeneration;
     // Session wiped → any optimistic sends are moot; disarm their backstops.
     _cancelAllSendTimers();
     await _enqueue(() async {
-      if (!_isStillActive(ref)) return;
+      if (!_isCurrentLifecycle(generation, ref)) return;
       final box = await _boxes.msgsBox(ref);
+      if (!_isCurrentLifecycle(generation, ref)) return;
       await box.clear();
+      if (!_isCurrentLifecycle(generation, ref)) return;
       _idToSeq.clear();
       _nextSeq = 0;
       _indexLoaded = true;
-      await _clearTranscriptEventsForRef(ref);
+      await _clearTranscriptEventsForRef(ref, generation);
+      if (!_isCurrentLifecycle(generation, ref)) return;
       await _rewriteMessageProjectionInWriteChain(
         ref,
         const TranscriptProjection(
@@ -615,7 +649,9 @@ class SyncService extends Service {
           turn: TranscriptTurnView.idle,
         ),
         const <TranscriptEvent>[],
+        generation,
       );
+      if (!_isCurrentLifecycle(generation, ref)) return;
       // Session-clear is a `session_new` wipe boundary: a clear during an
       // active turn would otherwise leave the turn projection / streaming
       // cursor stuck on a stale cancel target. Reset the whole-turn state so
@@ -633,31 +669,21 @@ class SyncService extends Service {
     _msgSub?.cancel();
     _msgSub = null;
     if (s is StatusOnline) {
-      // Plan/32f — bind this stream's writes to the PEER that owns the
-      // channel RIGHT NOW. After a `switchTo`, a late frame from the OLD
-      // peer's channel must not land in the NEW session's box: `_activeEpk`
-      // has already moved (the chat calls `activate()` before `switchTo`), so
-      // a straggler chat-1 frame would otherwise be written to chat-2's box
-      // and bleed across until chat-2's history re-applied. We capture the
-      // origin epk here and drop frames whose origin is no longer active.
-      //
-      // We gate on epk only — NOT room: rooms of the same peer share one
-      // channel and `_onStatus` doesn't re-fire on a same-peer room switch
-      // (the transport already demuxes by room), so a room gate would wrongly
-      // drop everything after switching cwds on the same Mac.
+      // Capture the peer that owns this channel so late frames from a replaced
+      // connection cannot land in the newly selected session.
       final originEpk = _conn.activePeer?.remoteEpk;
       _msgSub = s.channel.serverMessages.listen(
         (msg) => _onServerMessage(msg, originEpk),
         onError: (Object _, StackTrace _) {},
       );
-      // ignore: discarded_futures
-      _onlineActivated();
+      _scheduleLifecycleOperation(
+        LifecycleOperation.sessionRebind,
+        _onlineActivated,
+      );
     } else {
-      // Any non-online edge is a reliability boundary: clear the active
-      // room-local stream/working state immediately so the old room doesn't
-      // keep a stale cancel target/cursor while the relay reconnects. Keep
-      // pending-send backstops armed so a disconnect can still become a visible
-      // failure if no echo ever arrives.
+      _lifecycleGeneration++;
+      // Disconnect is terminal for the in-memory turn regardless of whether a
+      // pending persistence operation eventually succeeds.
       _resetTurnState(clearPendingSendTimers: false);
       _setTurnIdle();
     }
@@ -665,49 +691,47 @@ class SyncService extends Service {
   }
 
   Future<void> _onlineActivated() async {
+    if (_disposed || _conn.status is! StatusOnline) return;
     final peer = _conn.activePeer;
+    var generation = _lifecycleGeneration;
     if (peer != null && _activeEpk == null) {
-      await activate(peer.remoteEpk, _conn.activeRoomId);
+      generation = ++_lifecycleGeneration;
+      final room = _conn.activeRoomId;
+      final ref = _resolveActiveRef(peer.remoteEpk, room);
+      await _activateForGeneration(peer.remoteEpk, room, ref, generation);
+      if (!_isCurrentLifecycle(generation, ref)) return;
     }
+    if (!_isCurrentLifecycle(generation)) return;
     _syncDebounce?.cancel();
-    _syncDebounce = Timer(const Duration(milliseconds: 200), requestSync);
+    _syncDebounce = Timer(const Duration(milliseconds: 200), () {
+      if (!_disposed && generation == _lifecycleGeneration) requestSync();
+    });
     if (_pendingSyncRequest) requestSync();
   }
 
-  void _onRoomsChanged() {
-    _writeRuntime();
+  Future<void> _handleRoomsChanged() async {
+    if (_disposed) return;
     final epk = _activeEpk;
+    final room = _activeRoomId;
     if (epk == null) return;
-    final nextRef = _resolveActiveRef(epk, _activeRoomId);
-    if (nextRef != _activeRef) {
-      // A Pi `/new`, `/resume`, or daemon replacement can rotate the canonical
-      // session id while the relay room stays the same. Rebind persistence to
-      // the new session-scoped box and clear in-memory turn state.
-      //
-      // Arm the deferred-sync latch BEFORE activate so the newly canonical
-      // session deterministically receives `session_sync` after rebind. This
-      // is the legitimate re-sync path: room metadata — not a foreign
-      // `session_mismatch` error's untrusted session id — drives canonical
-      // rebind and backfill. `activate` drains the latch after the new
-      // session box is bound. See story-foreign-session-user-message-tolerance.
+    var generation = _lifecycleGeneration;
+    var expectedRef = _activeRef;
+    final nextRef = _resolveActiveRef(epk, room);
+    final sessionChanged = nextRef != expectedRef;
+    if (sessionChanged) {
       _pendingSyncRequest = true;
-      // Clear the re-send guard on session switch — a new session's held
-      // messages are eligible for re-send (different session, different ids).
       _resentHeldPendingIds.clear();
-      // ignore: discarded_futures
-      activate(epk, _activeRoomId);
+      generation = ++_lifecycleGeneration;
+      expectedRef = nextRef;
+      await _activateForGeneration(epk, room, nextRef, generation);
+      if (!_isCurrentLifecycle(generation, expectedRef)) return;
     }
-    // Re-send messages held pending (option-1 guard / offline branch) that
-    // were never written to the channel. This fires on room-snapshot changes
-    // — including a RoomAnnounced that re-marks the active room live after a
-    // reconnect — so the re-send happens once the room is actually reachable,
-    // not just when the WS comes up. (story-app-reattempt-held-pending-on-
-    // reconnect.) The method's internal isRoomLive guard makes this a no-op
-    // when the room is still offline. Safe now that the Pi dedupes
-    // user_message by (session_id, msg.id) — a re-sent message that already
-    // landed is re-echoed without re-waking the agent.
-    // ignore: discarded_futures
-    _resendHeldPendingMessages();
+
+    if (expectedRef != null) {
+      await _resendHeldPendingMessages(generation, expectedRef);
+      if (!_isCurrentLifecycle(generation, expectedRef)) return;
+    }
+    if (sessionChanged || _pendingSyncRequest) requestSync();
   }
 
   /// Re-send messages whose `UserMessageSubmitted` event has `held: true`
@@ -717,9 +741,11 @@ class SyncService extends Service {
   /// is re-sent at most once per session (`_resentHeldPendingIds`) to
   /// prevent the self-retrigger loop (the re-send's own `working:true`
   /// room_meta update re-fires `_onRoomsChanged`).
-  Future<void> _resendHeldPendingMessages() async {
-    final ref = _activeRef;
-    if (ref == null) return;
+  Future<void> _resendHeldPendingMessages(
+    int generation,
+    RemoteSessionRef ref,
+  ) async {
+    if (!_isCurrentLifecycle(generation, ref)) return;
     final ch = _conn.channel;
     if (ch == null) return; // still offline — nothing to do
     final activeEpk = _activeEpk;
@@ -732,10 +758,7 @@ class SyncService extends Service {
       sessionId: ref.sessionId,
     );
     final events = await _eventStore.readSession(key);
-    // Post-await lifecycle validation: if the active ref changed during the
-    // async read (session switch / room switch), bail — the events we read
-    // belong to a session we may no longer be driving.
-    if (_activeRef != ref) return;
+    if (!_isCurrentLifecycle(generation, ref)) return;
     final confirmedIds = <String>{};
     final heldPending = <UserMessageSubmitted>[];
     for (final e in events) {
@@ -751,10 +774,12 @@ class SyncService extends Service {
       if (_resentHeldPendingIds.contains(id)) continue; // in-flight this sweep
       // Re-verify the channel is still the active one (could have rotated
       // during the loop). Reuses the ORIGINAL id so the echo/replay dedupes.
+      if (!_isCurrentLifecycle(generation, ref)) return;
       final currentCh = _conn.channel;
       if (currentCh == null) break;
       _resentHeldPendingIds.add(id); // in-flight guard for this sweep
       try {
+        if (!_isCurrentLifecycle(generation, ref)) return;
         await currentCh.send(
           UserMessage(
             id: id,
@@ -770,10 +795,12 @@ class SyncService extends Service {
                   ],
           ),
         );
+        if (!_isCurrentLifecycle(generation, ref)) return;
         // Re-arm the send-timeout from now (the original ts is stale).
         _armSendTimeout(id, DateTime.now());
         debugPrint('[msg-resend] id=$id (held-pending re-sent on reconnect)');
       } catch (err) {
+        if (!_isCurrentLifecycle(generation, ref)) return;
         // Remove from in-flight so a later healthy reconnect can retry —
         // a failed re-send must NOT be permanently suppressed.
         _resentHeldPendingIds.remove(id);
@@ -812,17 +839,20 @@ class SyncService extends Service {
       _disarmGateRejectedUserInputEcho(msg);
       return;
     }
+    final expectedRef = _activeRef;
     switch (msg) {
       case AgentChunk(:final inReplyTo, :final delta):
-        // ignore: discarded_futures
-        _appendTranscriptEvent(
-          AssistantDeltaReceived(
-            eventId: 'server:assistant_delta:$inReplyTo:${uuid7()}',
-            sessionId: _activeTranscriptSessionId(),
-            ts: DateTime.now(),
-            replyTo: inReplyTo,
-            delta: delta,
+        _runDetachedTranscriptWrite(
+          () => _appendTranscriptEvent(
+            AssistantDeltaReceived(
+              eventId: 'server:assistant_delta:$inReplyTo:${uuid7()}',
+              sessionId: _activeTranscriptSessionId(),
+              ts: DateTime.now(),
+              replyTo: inReplyTo,
+              delta: delta,
+            ),
           ),
+          expectedRef: expectedRef,
         );
         _setTurnActive(status: AppTurnStatus.streaming, replyTo: inReplyTo);
 
@@ -851,19 +881,12 @@ class SyncService extends Service {
         final deterministicExpectedButDropped =
             !committedViaAgentMessage &&
             _extensionSendsDeterministicAgentMessage;
+        final terminalEvents = <TranscriptEvent>[];
+        if (buffered.isNotEmpty) _emitStreaming(null);
         if (buffered.isNotEmpty &&
             !committedViaAgentMessage &&
             !deterministicExpectedButDropped) {
-          // Clear the streaming buffer synchronously so a second flush
-          // (ToolRequest re-flush, or a straggler AgentChunk) cannot
-          // re-commit the same text under a new random eventId. The
-          // projection's later `streaming = null` (from this committed
-          // event) becomes a confirming no-op rather than the only
-          // clearing path — see `story-mobile-assistant-message-duplicated-
-          // live-replay` decision 2.
-          _emitStreaming(null);
-          // ignore: discarded_futures
-          _appendTranscriptEvent(
+          terminalEvents.add(
             AssistantMessageCommitted(
               eventId: 'server:assistant_committed:$inReplyTo:${uuid7()}',
               sessionId: _activeTranscriptSessionId(),
@@ -873,20 +896,18 @@ class SyncService extends Service {
               text: buffered,
             ),
           );
-        } else if (buffered.isNotEmpty) {
-          // Deterministic commit already happened via `agent_message`, OR
-          // the deterministic frame was dropped mid-flap and the replay
-          // will fill it — either way, just clear the streaming buffer.
-          _emitStreaming(null);
         }
-        // ignore: discarded_futures
-        _appendTranscriptEvent(
+        terminalEvents.add(
           AssistantDoneReceived(
             eventId: 'server:assistant_done:$inReplyTo:${uuid7()}',
             sessionId: _activeTranscriptSessionId(),
             ts: DateTime.now(),
             replyTo: inReplyTo,
           ),
+        );
+        _runDetachedTranscriptWrite(
+          () => _appendTranscriptEvents(terminalEvents),
+          expectedRef: expectedRef,
         );
         _setTurnIdle(preview: buffered.isEmpty ? null : buffered);
 
@@ -920,39 +941,43 @@ class SyncService extends Service {
           // (AgentMessageEvt). See story-mobile-assistant-message-
           // duplicated-live-replay decision 1.
           final stableKey = messageId ?? inReplyTo;
-          // ignore: discarded_futures
-          _appendTranscriptEvent(
-            AssistantMessageCommitted(
-              eventId: serverReplayEventId(
-                sessionId,
-                'agent_message',
-                stableKey,
-                ts,
+          _runDetachedTranscriptWrite(
+            () => _appendTranscriptEvent(
+              AssistantMessageCommitted(
+                eventId: serverReplayEventId(
+                  sessionId,
+                  'agent_message',
+                  stableKey,
+                  ts,
+                ),
+                sessionId: sessionId,
+                ts: DateTime.fromMillisecondsSinceEpoch(ts),
+                messageId: serverReplayMessageId(
+                  sessionId,
+                  'agent_message',
+                  stableKey,
+                  ts,
+                ),
+                replyTo: inReplyTo,
+                text: text,
+                usage: usage,
               ),
-              sessionId: sessionId,
-              ts: DateTime.fromMillisecondsSinceEpoch(ts),
-              messageId: serverReplayMessageId(
-                sessionId,
-                'agent_message',
-                stableKey,
-                ts,
-              ),
-              replyTo: inReplyTo,
-              text: text,
-              usage: usage,
             ),
+            expectedRef: expectedRef,
           );
         } else {
-          // ignore: discarded_futures
-          _appendTranscriptEvent(
-            AssistantMessageCommitted(
-              eventId: 'server:assistant_message:$inReplyTo:${uuid7()}',
-              sessionId: _activeTranscriptSessionId(),
-              ts: DateTime.now(),
-              messageId: 'agent_$inReplyTo',
-              replyTo: inReplyTo,
-              text: text,
+          _runDetachedTranscriptWrite(
+            () => _appendTranscriptEvent(
+              AssistantMessageCommitted(
+                eventId: 'server:assistant_message:$inReplyTo:${uuid7()}',
+                sessionId: _activeTranscriptSessionId(),
+                ts: DateTime.now(),
+                messageId: 'agent_$inReplyTo',
+                replyTo: inReplyTo,
+                text: text,
+              ),
             ),
+            expectedRef: expectedRef,
           );
         }
 
@@ -986,22 +1011,24 @@ class SyncService extends Service {
                 ts,
               )
             : 'server:user_confirmed:$id';
-        // ignore: discarded_futures
-        _appendTranscriptEvent(
-          UserMessageConfirmed(
-            eventId: userEventId,
-            sessionId: _activeTranscriptSessionId(),
-            ts: ts != null
-                ? DateTime.fromMillisecondsSinceEpoch(ts)
-                : DateTime.now(),
-            clientMessageId: id,
-            text: text,
-            image: image == null
-                ? null
-                : MessageImage(data: image.data, mime: image.mime),
-            streamingBehavior: streamingBehavior,
+        _runDetachedTranscriptWrite(
+          () => _appendTranscriptEvent(
+            UserMessageConfirmed(
+              eventId: userEventId,
+              sessionId: _activeTranscriptSessionId(),
+              ts: ts != null
+                  ? DateTime.fromMillisecondsSinceEpoch(ts)
+                  : DateTime.now(),
+              clientMessageId: id,
+              text: text,
+              image: image == null
+                  ? null
+                  : MessageImage(data: image.data, mime: image.mime),
+              streamingBehavior: streamingBehavior,
+            ),
+            preserveTurnState: true,
           ),
-          preserveTurnState: true,
+          expectedRef: expectedRef,
         );
         // Steering input should not start/replace the working turn bubble.
         if (streamingBehavior == UserMessageStreamingBehavior.steer) {
@@ -1027,6 +1054,7 @@ class SyncService extends Service {
         // BEFORE the tool, so "narration → command → narration" renders in
         // order instead of all text landing after the commands.
         final buffered = _streaming?.buffer ?? '';
+        final toolEvents = <TranscriptEvent>[];
         if (buffered.isNotEmpty) {
           // Identity-source (a) guard: if a deterministic `agent_message`
           // (from the extension's `message_end`) already committed this
@@ -1055,8 +1083,7 @@ class SyncService extends Service {
           _emitStreaming(null);
           if (!committedViaAgentMessage &&
               !_extensionSendsDeterministicAgentMessage) {
-            // ignore: discarded_futures
-            _appendTranscriptEvent(
+            toolEvents.add(
               AssistantMessageCommitted(
                 eventId: 'server:assistant_committed:$toolCallId:${uuid7()}',
                 sessionId: _activeTranscriptSessionId(),
@@ -1068,8 +1095,7 @@ class SyncService extends Service {
             );
           }
         }
-        // ignore: discarded_futures
-        _appendTranscriptEvent(
+        toolEvents.add(
           ToolRequested(
             eventId: 'server:tool_requested:$toolCallId',
             sessionId: _activeTranscriptSessionId(),
@@ -1079,18 +1105,24 @@ class SyncService extends Service {
             args: _objectMap(args),
           ),
         );
+        _runDetachedTranscriptWrite(
+          () => _appendTranscriptEvents(toolEvents),
+          expectedRef: expectedRef,
+        );
 
       case ToolResult(:final toolCallId, :final result, :final error):
-        // ignore: discarded_futures
-        _appendTranscriptEvent(
-          ToolFinished(
-            eventId: 'server:tool_finished:$toolCallId',
-            sessionId: _activeTranscriptSessionId(),
-            ts: DateTime.now(),
-            toolCallId: toolCallId,
-            result: result,
-            error: error,
+        _runDetachedTranscriptWrite(
+          () => _appendTranscriptEvent(
+            ToolFinished(
+              eventId: 'server:tool_finished:$toolCallId',
+              sessionId: _activeTranscriptSessionId(),
+              ts: DateTime.now(),
+              toolCallId: toolCallId,
+              result: result,
+              error: error,
+            ),
           ),
+          expectedRef: expectedRef,
         );
 
       case Cancelled(:final targetId):
@@ -1100,23 +1132,25 @@ class SyncService extends Service {
         // still only a local optimistic send, materialize it as failed through
         // the event log; confirmed history stays visible and the terminal done
         // event converges the turn idle through the projection.
-        // ignore: discarded_futures
-        _appendTranscriptEvents(<TranscriptEvent>[
-          UserMessageFailed(
-            eventId: 'server:user_cancelled:$targetId',
-            sessionId: _activeTranscriptSessionId(),
-            ts: DateTime.now(),
-            clientMessageId: targetId,
-            code: 'cancelled',
-            message: 'Message was cancelled before delivery was confirmed.',
-          ),
-          AssistantDoneReceived(
-            eventId: 'server:assistant_cancelled:$targetId:${uuid7()}',
-            sessionId: _activeTranscriptSessionId(),
-            ts: DateTime.now(),
-            replyTo: targetId,
-          ),
-        ]);
+        _runDetachedTranscriptWrite(
+          () => _appendTranscriptEvents(<TranscriptEvent>[
+            UserMessageFailed(
+              eventId: 'server:user_cancelled:$targetId',
+              sessionId: _activeTranscriptSessionId(),
+              ts: DateTime.now(),
+              clientMessageId: targetId,
+              code: 'cancelled',
+              message: 'Message was cancelled before delivery was confirmed.',
+            ),
+            AssistantDoneReceived(
+              eventId: 'server:assistant_cancelled:$targetId:${uuid7()}',
+              sessionId: _activeTranscriptSessionId(),
+              ts: DateTime.now(),
+              replyTo: targetId,
+            ),
+          ]),
+          expectedRef: expectedRef,
+        );
         _setTurnIdle();
 
       case Bye(:final rawReason):
@@ -1126,13 +1160,17 @@ class SyncService extends Service {
         _setTurnIdle();
         final peer = _conn.activePeer;
         if (peer != null) {
-          // ignore: discarded_futures
-          _conn.switchTo(peer);
+          _scheduleLifecycleOperation(
+            LifecycleOperation.sessionRebind,
+            () => _conn.switchTo(peer),
+          );
         }
 
       case SessionHistory():
-        // ignore: discarded_futures
-        _replayHistory(msg);
+        _runDetachedTranscriptWrite(
+          () => _replayHistory(msg),
+          expectedRef: expectedRef,
+        );
 
       case ErrorMessage(:final inReplyTo, :final code, :final message):
         if (code == 'delivery_pending') {
@@ -1158,36 +1196,41 @@ class SyncService extends Service {
         }
         _discardStreamingState();
         _setTurnIdle();
-        // ignore: discarded_futures
-        _appendTranscriptEvents(<TranscriptEvent>[
-          AssistantMessageCommitted(
-            eventId: 'server:error_message:${uuid7()}',
-            sessionId: _activeTranscriptSessionId(),
-            ts: DateTime.now(),
-            messageId: 'err_${uuid7()}',
-            replyTo: inReplyTo ?? 'error',
-            text: '⚠ $code: $message',
-          ),
-          AssistantDoneReceived(
-            eventId: 'server:error_done:${uuid7()}',
-            sessionId: _activeTranscriptSessionId(),
-            ts: DateTime.now(),
-            replyTo: inReplyTo ?? 'error',
-          ),
-        ]);
+        _runDetachedTranscriptWrite(
+          () => _appendTranscriptEvents(<TranscriptEvent>[
+            AssistantMessageCommitted(
+              eventId: 'server:error_message:${uuid7()}',
+              sessionId: _activeTranscriptSessionId(),
+              ts: DateTime.now(),
+              messageId: 'err_${uuid7()}',
+              replyTo: inReplyTo ?? 'error',
+              text: '⚠ $code: $message',
+            ),
+            AssistantDoneReceived(
+              eventId: 'server:error_done:${uuid7()}',
+              sessionId: _activeTranscriptSessionId(),
+              ts: DateTime.now(),
+              replyTo: inReplyTo ?? 'error',
+            ),
+          ]),
+          expectedRef: expectedRef,
+        );
 
       case Compaction(:final summary, :final tokensBefore, :final ts):
-        // ignore: discarded_futures
-        _appendTranscriptEvent(
-          CompactionRecorded(
-            eventId: 'server:compaction:${ts ?? uuid7()}',
-            sessionId: _activeTranscriptSessionId(),
-            ts: ts != null
-                ? DateTime.fromMillisecondsSinceEpoch(ts)
-                : DateTime.now(),
-            summary: summary,
-            tokensBefore: tokensBefore,
+        _setTurnIdle();
+        _runDetachedTranscriptWrite(
+          () => _appendTranscriptEvent(
+            CompactionRecorded(
+              eventId: 'server:compaction:${ts ?? uuid7()}',
+              sessionId: _activeTranscriptSessionId(),
+              ts: ts != null
+                  ? DateTime.fromMillisecondsSinceEpoch(ts)
+                  : DateTime.now(),
+              summary: summary,
+              tokensBefore: tokensBefore,
+            ),
           ),
+          expectedRef: expectedRef,
         );
 
       case Pong():
@@ -1241,6 +1284,65 @@ class SyncService extends Service {
 
   void _logDebug(DebugEvent event) => _debugLog?.log(event);
 
+  bool _isCurrentLifecycle(int generation, [RemoteSessionRef? expectedRef]) =>
+      !_disposed &&
+      generation == _lifecycleGeneration &&
+      (expectedRef == null ||
+          (_activeRef == expectedRef &&
+              _resolveActiveRef(expectedRef.peerEpk, expectedRef.roomId) ==
+                  expectedRef));
+
+  void _logLifecycleFailure(
+    LifecycleOperation operation,
+    Object error, {
+    RemoteSessionRef? expectedRef,
+  }) {
+    final reason = error.runtimeType.toString();
+    final peer = expectedRef?.peerEpk ?? _activeEpk;
+    final sessionId = expectedRef?.sessionId;
+    _logDebug(
+      LifecycleFailureEvent(
+        ts: DateTime.now(),
+        operation: operation,
+        reason: reason.isEmpty ? 'unknown_error' : reason,
+        peerTail: peer == null
+            ? null
+            : (peer.length <= 8 ? peer : peer.substring(peer.length - 8)),
+        room: expectedRef?.roomId ?? _activeRoomId,
+        sessionIdTail: _sessionIdTail(sessionId),
+      ),
+    );
+  }
+
+  bool _markPersistenceDegraded(RemoteSessionRef ref) {
+    if (_persistenceDegradedRef == ref || !_isStillActive(ref)) return false;
+    _persistenceDegradedRef = ref;
+    if (!_eventController.isClosed) {
+      _eventController.add(
+        const SessionPersistenceDegraded(
+          'Messages could not be saved on this device.',
+        ),
+      );
+    }
+    return true;
+  }
+
+  void _markPersistenceRecovered(RemoteSessionRef ref) {
+    if (_persistenceDegradedRef != ref || !_isStillActive(ref)) return;
+    _persistenceDegradedRef = null;
+    if (!_eventController.isClosed) {
+      _eventController.add(const SessionPersistenceRecovered());
+    }
+  }
+
+  void _clearPersistenceDegradationForReplacement() {
+    if (_persistenceDegradedRef == null) return;
+    _persistenceDegradedRef = null;
+    if (!_eventController.isClosed) {
+      _eventController.add(const SessionPersistenceRecovered());
+    }
+  }
+
   /// Plan/32 — persist a compaction as a system row so it renders a system
   /// bubble in the chat and survives a re-sync. Keyed by `ts` when present so
   /// the live message and its history replay collapse to one row.
@@ -1258,19 +1360,25 @@ class SyncService extends Service {
     Iterable<TranscriptEvent> events, {
     bool preserveTurnState = false,
   }) async {
-    final key = _activeTranscriptKeyOrNull();
-    if (key == null) return;
+    final ref = _activeRef;
+    if (ref == null) return;
+    final generation = _lifecycleGeneration;
+    final key = _transcriptKeyForRef(ref);
     final batch = events
         .where((event) => event.sessionId == key.sessionId)
         .toList(growable: false);
     if (batch.isEmpty) return;
 
     await _enqueue(() async {
-      final ref = _activeRef;
-      if (ref == null || !_sameTranscriptKey(key, ref)) return;
+      if (!_isCurrentLifecycle(generation, ref)) return;
       final result = await _eventStore.appendAll(key, batch);
-      if (result.appended == 0) return;
+      if (!_isCurrentLifecycle(generation, ref)) return;
+      if (result.appended == 0) {
+        _markPersistenceRecovered(ref);
+        return;
+      }
       final log = await _eventStore.readSession(key);
+      if (!_isCurrentLifecycle(generation, ref)) return;
       final projection = deriveTranscriptProjection(
         sessionId: key.sessionId,
         events: log,
@@ -1279,38 +1387,53 @@ class SyncService extends Service {
         _emitStreaming(projection.streaming);
         _setTurnView(projection.turn);
       }
-      await _rewriteMessageProjectionInWriteChain(ref, projection, log);
+      await _rewriteMessageProjectionInWriteChain(
+        ref,
+        projection,
+        log,
+        generation,
+      );
+      if (_isCurrentLifecycle(generation, ref)) {
+        _markPersistenceRecovered(ref);
+      }
     });
   }
 
-  Future<void> _materializeTranscriptProjectionForRef(RemoteSessionRef ref) {
+  Future<void> _materializeTranscriptProjectionForRef(
+    RemoteSessionRef ref,
+    int generation,
+  ) {
     final key = _transcriptKeyForRef(ref);
     return _enqueue(() async {
-      if (!_isStillActive(ref)) return;
+      if (!_isCurrentLifecycle(generation, ref)) return;
       final log = await _eventStore.readSession(key);
+      if (!_isCurrentLifecycle(generation, ref)) return;
       final projection = deriveTranscriptProjection(
         sessionId: key.sessionId,
         events: log,
       );
       _emitStreaming(projection.streaming);
       _setTurnView(projection.turn);
-      await _rewriteMessageProjectionInWriteChain(ref, projection, log);
+      await _rewriteMessageProjectionInWriteChain(
+        ref,
+        projection,
+        log,
+        generation,
+      );
+      if (_isCurrentLifecycle(generation, ref)) {
+        _markPersistenceRecovered(ref);
+      }
     });
   }
 
-  Future<void> _clearTranscriptEventsForRef(RemoteSessionRef ref) async {
+  Future<void> _clearTranscriptEventsForRef(
+    RemoteSessionRef ref,
+    int generation,
+  ) async {
     final key = _transcriptKeyForRef(ref);
     final box = await _boxes.transcriptEventsBox(key);
+    if (!_isCurrentLifecycle(generation, ref)) return;
     await box.clear();
-  }
-
-  /// Canonical transcript key for the active session, or null while relay
-  /// room state is known but the SDK `session_id` is not. The null path is a
-  /// compatibility-only quarantine: transcript events/projections must wait
-  /// rather than falling back to old peer+room boxes.
-  TranscriptSessionKey? _activeTranscriptKeyOrNull() {
-    final ref = _activeRef;
-    return ref == null ? null : _transcriptKeyForRef(ref);
   }
 
   TranscriptSessionKey _transcriptKeyForRef(RemoteSessionRef ref) =>
@@ -1329,16 +1452,20 @@ class SyncService extends Service {
     RemoteSessionRef ref,
     TranscriptProjection projection,
     List<TranscriptEvent> log,
+    int generation,
   ) async {
-    if (!_isStillActive(ref)) return;
+    if (!_isCurrentLifecycle(generation, ref)) return;
     final desired = <MessageRecord>[
       for (var i = 0; i < projection.messages.length; i++)
         _recordFromProjectedMessage(projection.messages[i], i, log),
     ];
     final box = await _boxes.msgsBox(ref);
+    if (!_isCurrentLifecycle(generation, ref)) return;
     for (final k in box.keys.toList()) {
+      if (!_isCurrentLifecycle(generation, ref)) return;
       if ((k as num).toInt() >= desired.length) {
         await box.delete(k);
+        if (!_isCurrentLifecycle(generation, ref)) return;
       }
     }
     for (var i = 0; i < desired.length; i++) {
@@ -1348,9 +1475,12 @@ class SyncService extends Service {
           ? null
           : MessageRecord.fromJson(_coerce(curRaw)).toJson();
       if (curJson == null || !_sameMessageRecordJson(curJson, newJson)) {
+        if (!_isCurrentLifecycle(generation, ref)) return;
         await box.put(i, newJson);
+        if (!_isCurrentLifecycle(generation, ref)) return;
       }
     }
+    if (!_isCurrentLifecycle(generation, ref)) return;
     _idToSeq
       ..clear()
       ..addEntries([
@@ -1470,8 +1600,10 @@ class SyncService extends Service {
   }
 
   Future<void> _replayHistory(SessionHistory history) async {
-    final key = _activeTranscriptKeyOrNull();
-    if (key == null) return;
+    final ref = _activeRef;
+    if (ref == null) return;
+    final generation = _lifecycleGeneration;
+    final key = _transcriptKeyForRef(ref);
     if (history.sessionId != key.sessionId) return;
     if (_isStaleHistory(history.sessionStartedAt)) return;
 
@@ -1481,8 +1613,10 @@ class SyncService extends Service {
     );
 
     await _enqueue(() async {
-      final ref = _activeRef;
-      if (ref == null || !_sameTranscriptKey(key, ref)) return;
+      if (!_isCurrentLifecycle(generation, ref) ||
+          !_sameTranscriptKey(key, ref)) {
+        return;
+      }
       if (history.sessionId != key.sessionId) return;
       // Re-check inside the serialized write boundary: two replay batches can
       // race in from reconnect/status streams, and a stale boundary must be
@@ -1497,10 +1631,13 @@ class SyncService extends Service {
       // eventIds in one SessionHistory would both log dropped:false even
       // though appendAll skips the second — a false-negative exactly in the
       // collision case the ring log exists to diagnose.
+      final existing = await _eventStore.readSession(key);
+      if (!_isCurrentLifecycle(generation, ref)) return;
       final seenEventIds = <String>{
-        for (final event in await _eventStore.readSession(key)) event.eventId,
+        for (final event in existing) event.eventId,
       };
       final result = await _eventStore.appendAll(key, replayEvents);
+      if (!_isCurrentLifecycle(generation, ref)) return;
       for (final event in replayEvents) {
         final dropped = !seenEventIds.add(event.eventId);
         _logDebug(
@@ -1514,15 +1651,29 @@ class SyncService extends Service {
       }
       if (result.appended > 0) {
         final log = await _eventStore.readSession(key);
+        if (!_isCurrentLifecycle(generation, ref)) return;
         final projection = deriveTranscriptProjection(
           sessionId: key.sessionId,
           events: log,
         );
         _emitStreaming(projection.streaming);
         _setTurnView(projection.turn);
-        await _rewriteMessageProjectionInWriteChain(ref, projection, log);
+        await _rewriteMessageProjectionInWriteChain(
+          ref,
+          projection,
+          log,
+          generation,
+        );
+        if (!_isCurrentLifecycle(generation, ref)) return;
       }
-      await _acceptHistoryBoundaryInWriteChain(ref, history.sessionStartedAt);
+      await _acceptHistoryBoundaryInWriteChain(
+        ref,
+        history.sessionStartedAt,
+        generation,
+      );
+      if (_isCurrentLifecycle(generation, ref)) {
+        _markPersistenceRecovered(ref);
+      }
     });
   }
 
@@ -1533,7 +1684,9 @@ class SyncService extends Service {
   Future<void> _acceptHistoryBoundaryInWriteChain(
     RemoteSessionRef ref,
     int sessionStartedAt,
+    int generation,
   ) async {
+    if (!_isCurrentLifecycle(generation, ref)) return;
     if (_acceptedSessionStartedAtHighWater != null &&
         sessionStartedAt <= _acceptedSessionStartedAtHighWater!) {
       return;
@@ -1552,6 +1705,7 @@ class SyncService extends Service {
           roomId: ref.roomId,
           sessionId: ref.sessionId,
         );
+    if (!_isCurrentLifecycle(generation, ref)) return;
     await idx.put(
       key,
       base
@@ -1570,10 +1724,11 @@ class SyncService extends Service {
 
   String _key(MsgRole role, String id) => '${role.name}:$id';
 
-  Future<void> _loadIndex(RemoteSessionRef ref) {
+  Future<void> _loadIndex(RemoteSessionRef ref, int generation) {
     return _enqueue(() async {
-      if (!_isStillActive(ref)) return;
+      if (!_isCurrentLifecycle(generation, ref)) return;
       final box = await _boxes.msgsBox(ref);
+      if (!_isCurrentLifecycle(generation, ref)) return;
       final idx = _boxes.sessionsIndexBox();
       final indexRaw = idx.get(LocalBoxes.sessionKey(ref));
       final indexRecord = indexRaw is Map<String, dynamic>
@@ -1586,6 +1741,7 @@ class SyncService extends Service {
       _idToSeq.clear();
       _nextSeq = 0;
       for (final k in box.keys) {
+        if (!_isCurrentLifecycle(generation, ref)) return;
         final seq = (k as num).toInt();
         final r = MessageRecord.fromJson(_coerce(box.get(k)));
         _idToSeq[_key(r.role, r.id)] = seq;
@@ -1675,24 +1831,28 @@ class SyncService extends Service {
   void _updateIndex(SessionIndexRecord Function(SessionIndexRecord cur) build) {
     final ref = _activeRef;
     if (ref == null) return;
-    // ignore: discarded_futures
-    _enqueue(() async {
-      if (!_isStillActive(ref)) return;
-      final idx = _boxes.sessionsIndexBox();
-      final key = LocalBoxes.sessionKey(ref);
-      final raw = idx.get(key);
-      final cur = raw is Map
-          ? SessionIndexRecord.tryFromJson(raw.cast<String, dynamic>())
-          : null;
-      final base =
-          cur ??
-          SessionIndexRecord(
-            epk: ref.peerEpk,
-            roomId: ref.roomId,
-            sessionId: ref.sessionId,
-          );
-      await idx.put(key, build(base).toJson());
-    });
+    _runDetachedWrite(
+      operation: LifecycleOperation.runtimeWrite,
+      write: () => _enqueue(() async {
+        if (!_isStillActive(ref)) return;
+        final idx = _boxes.sessionsIndexBox();
+        final key = LocalBoxes.sessionKey(ref);
+        final raw = idx.get(key);
+        final cur = raw is Map
+            ? SessionIndexRecord.tryFromJson(raw.cast<String, dynamic>())
+            : null;
+        final base =
+            cur ??
+            SessionIndexRecord(
+              epk: ref.peerEpk,
+              roomId: ref.roomId,
+              sessionId: ref.sessionId,
+            );
+        if (!_isStillActive(ref)) return;
+        await idx.put(key, build(base).toJson());
+      }),
+      expectedRef: ref,
+    );
   }
 
   void _writeRuntime() {
@@ -1710,13 +1870,24 @@ class SyncService extends Service {
     final presence = (s is StatusOnline && _conn.isRoomLive(epk, room))
         ? RuntimePresence.alive
         : (s is StatusOnline ? RuntimePresence.stale : RuntimePresence.unknown);
-    // ignore: discarded_futures
-    _enqueue(() async {
-      _boxes.runtimeBox().put(
-        LocalBoxes.runtimeKey(epk, room),
-        RuntimeRecord(connection: conn, presence: presence).toJson(),
-      );
-    });
+    _runDetachedWrite(
+      operation: LifecycleOperation.runtimeWrite,
+      write: () => _enqueue(() async {
+        if (_activeEpk != epk || _activeRoomId != room) return;
+        final key = LocalBoxes.runtimeKey(epk, room);
+        final value = RuntimeRecord(
+          connection: conn,
+          presence: presence,
+        ).toJson();
+        final writer = _runtimeRecordWriter;
+        if (writer == null) {
+          await _boxes.runtimeBox().put(key, value);
+        } else {
+          await writer(key, value);
+        }
+      }),
+      expectedRef: _activeRef,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1738,9 +1909,89 @@ class SyncService extends Service {
 
   // ---------------------------------------------------------------------------
 
-  Future<void> _enqueue(Future<void> Function() op) {
-    final next = _writeChain.then((_) => op());
-    _writeChain = next.catchError((Object _, StackTrace _) {});
+  void _runDetachedTranscriptWrite(
+    Future<void> Function() write, {
+    RemoteSessionRef? expectedRef,
+  }) {
+    _runDetachedWrite(
+      operation: LifecycleOperation.transcriptWrite,
+      write: write,
+      expectedRef: expectedRef,
+      requestReplayOnFailure: true,
+    );
+  }
+
+  void _runDetachedWrite({
+    required LifecycleOperation operation,
+    required Future<void> Function() write,
+    RemoteSessionRef? expectedRef,
+    bool requestReplayOnFailure = false,
+  }) {
+    final generation = _lifecycleGeneration;
+    unawaited(
+      _observeDetachedWrite(
+        operation: operation,
+        write: write,
+        generation: generation,
+        expectedRef: expectedRef,
+        requestReplayOnFailure: requestReplayOnFailure,
+      ),
+    );
+  }
+
+  Future<void> _observeDetachedWrite({
+    required LifecycleOperation operation,
+    required Future<void> Function() write,
+    required int generation,
+    RemoteSessionRef? expectedRef,
+    required bool requestReplayOnFailure,
+  }) async {
+    if (!_isCurrentLifecycle(generation, expectedRef)) return;
+    try {
+      await write();
+    } on Object catch (error) {
+      if (!_isCurrentLifecycle(generation, expectedRef)) return;
+      _logLifecycleFailure(operation, error, expectedRef: expectedRef);
+      if (operation == LifecycleOperation.transcriptWrite &&
+          expectedRef != null) {
+        final newlyDegraded = _markPersistenceDegraded(expectedRef);
+        if (newlyDegraded && requestReplayOnFailure) requestSync();
+      }
+    }
+  }
+
+  void _scheduleLifecycleOperation(
+    LifecycleOperation operation,
+    Future<void> Function() run,
+  ) {
+    final next = _lifecycleChain.then((_) async {
+      if (_disposed) return;
+      await run();
+    });
+    _lifecycleChain = next.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    unawaited(_observeLifecycleOperation(next, operation));
+  }
+
+  Future<void> _observeLifecycleOperation(
+    Future<void> operation,
+    LifecycleOperation lifecycleOperation,
+  ) async {
+    try {
+      await operation;
+    } on Object catch (error) {
+      if (_disposed) return;
+      _logLifecycleFailure(lifecycleOperation, error, expectedRef: _activeRef);
+    }
+  }
+
+  Future<void> _enqueue(Future<void> Function() operation) {
+    final next = _writeChain.then((_) => operation());
+    // Keep the predecessor usable after failure while returning [next] so an
+    // awaited caller still receives the real persistence error.
+    _writeChain = next.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return next;
   }
 
@@ -1782,6 +2033,9 @@ class SyncService extends Service {
 
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _lifecycleGeneration++;
     _resetTurnState(clearPendingSendTimers: true);
     _flushTimer?.cancel();
     _syncDebounce?.cancel();

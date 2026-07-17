@@ -58,6 +58,7 @@ class ChatViewModel extends ViewModel<ChatState> {
   RuntimeRecord _runtime = const RuntimeRecord();
   bool _pairingRevoked = false;
   String? _peerOfflineReason;
+  String? _persistenceWarning;
   ConnectionStatus? _lastStatus;
 
   ChatViewModel(this._read, this._sync, this._conn, this._prefs, this._storage)
@@ -365,6 +366,10 @@ class ChatViewModel extends ViewModel<ChatState> {
       _pairingRevoked = true;
     } else if (e is PeerWentOffline) {
       _peerOfflineReason = e.rawReason;
+    } else if (e is SessionPersistenceDegraded) {
+      _persistenceWarning = e.message;
+    } else if (e is SessionPersistenceRecovered) {
+      _persistenceWarning = null;
     }
     _recompute();
   }
@@ -405,6 +410,7 @@ class ChatViewModel extends ViewModel<ChatState> {
       peerPresence: peerPresence,
       isWorking: isWorking,
       queuedText: _queuedText,
+      persistenceWarning: _persistenceWarning,
     );
   }
 
@@ -425,6 +431,9 @@ class ChatViewModel extends ViewModel<ChatState> {
       _sync.approveTool(toolCallId, decision);
 
   Future<void> clearActiveSession() => _sync.clearActiveSession();
+
+  /// Request authoritative replay after a local persistence warning.
+  void retryPersistenceSync() => _sync.requestSync();
 
   Future<void> reconnect() async {
     final peer = _activePeer;
