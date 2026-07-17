@@ -18,3 +18,15 @@ class PeerWentOffline extends SessionEvent {
   final String rawReason;
   const PeerWentOffline(this.rawReason);
 }
+
+/// Signal that the current transcript could not be persisted locally.
+final class SessionPersistenceDegraded extends SessionEvent {
+  const SessionPersistenceDegraded(this.message);
+
+  final String message;
+}
+
+/// Signal that a later transcript operation proved persistence recovered.
+final class SessionPersistenceRecovered extends SessionEvent {
+  const SessionPersistenceRecovered();
+}

@@ -1,7 +1,7 @@
 ---
 id: feature-app-async-lifecycle-ownership-sync-failure-semantics
 kind: story
-stage: implementing
+stage: done
 tags: [app, lifecycle]
 parent: feature-app-async-lifecycle-ownership
 depends_on: [feature-app-async-lifecycle-ownership-connection-persistence]
@@ -43,12 +43,33 @@ inventing a second transcript truth.
 
 ## Acceptance evidence
 
-- [ ] A fail-once `TranscriptEventStore` proves queue continuation,
+- [x] A fail-once `TranscriptEventStore` proves queue continuation,
       degraded/recovered signaling, replay request, and terminal idle
       convergence.
-- [ ] Controlled stale-session tests prove no old-session write, send, or emit
+- [x] Controlled stale-session tests prove no old-session write, send, or emit
       lands after replacement/disposal.
-- [ ] Runtime Hive failure proves `put` is awaited and diagnosed.
-- [ ] Existing convergence tests at `sync_service_test.dart:1988-2070` remain
+- [x] Runtime Hive failure proves `put` is awaited and diagnosed.
+- [x] Existing convergence tests at `sync_service_test.dart:1988-2070` remain
       green with added failure injection.
-- [ ] Targeted sync/chat tests and `flutter analyze` pass.
+- [x] Targeted sync/chat tests and `flutter analyze` pass.
+
+## Implementation
+
+- Execution capability: inline, highest-rigor lifecycle implementation; the
+  ordering and convergence model stayed in one context.
+- Review weight: standard (caller workflow default; feature-level review only).
+- Files changed: Sync service/events, Chat state/ViewModel/page, and focused
+  Sync/Chat tests.
+- Tests added: fail-once append/read recovery, one-shot degraded/recovered
+  signaling, replay request, terminal vs non-terminal convergence, stale
+  append/send suppression, awaited runtime writer, and Chat warning projection.
+- Simplification: all cited discarded transcript/rebind futures now terminate
+  in named Sync-owned boundaries; terminal event pairs are batched; the obsolete
+  active-key helper and lint suppressions were removed.
+- Discrepancies from design: runtime `put` is tested through an injected
+  writer seam around the real awaited queue boundary rather than corrupting a
+  process-global Hive box; production still calls and awaits Hive directly.
+- Adjacent issues parked: none.
+
+Verification: 101 focused Sync/replay/Chat tests and
+`flutter analyze lib test` passed. Existing convergence coverage remains green.

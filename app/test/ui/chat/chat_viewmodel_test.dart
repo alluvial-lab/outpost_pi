@@ -8,6 +8,7 @@ import 'package:app/data/local/boxes.dart';
 import 'package:app/data/local/records/message_record.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/repositories/session_read_repository.dart';
+import 'package:app/data/sync/sync_events.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
@@ -170,6 +171,23 @@ class _FailingWatchReadRepository extends SessionReadRepository {
   }
 }
 
+class _EventSyncService extends SyncService {
+  _EventSyncService(super.connectionManager, super.boxes);
+
+  final eventController = StreamController<SessionEvent>.broadcast();
+
+  @override
+  Stream<SessionEvent> get events => eventController.stream;
+
+  void emitEvent(SessionEvent event) => eventController.add(event);
+
+  @override
+  void dispose() {
+    eventController.close();
+    super.dispose();
+  }
+}
+
 class _ControlledActivateSyncService extends SyncService {
   _ControlledActivateSyncService(super.connectionManager, super.boxes);
 
@@ -247,6 +265,46 @@ void main() {
       conn.dispose();
     },
   );
+
+  test('persistence degradation is visible and clears on recovery', () async {
+    final ch = _FakeChannel();
+    final storage = _FakeStorage();
+    final conn = ConnectionManager(
+      factory: (_, _) async => ch,
+      storage: storage,
+    );
+    final boxes = LocalBoxes();
+    final sync = _EventSyncService(conn, boxes);
+    final prefs = Preferences(_FakeSecureStorage());
+    await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+    await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+    await _adoptWithSession(conn, ch);
+    final vm = ChatViewModel(
+      SessionReadRepository(boxes),
+      sync,
+      conn,
+      prefs,
+      storage,
+    );
+    await vm.initialize();
+
+    sync.emitEvent(
+      const SessionPersistenceDegraded('Local persistence unavailable.'),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(
+      (vm.state as ChatReady).persistenceWarning,
+      'Local persistence unavailable.',
+    );
+
+    sync.emitEvent(const SessionPersistenceRecovered());
+    await Future<void>.delayed(Duration.zero);
+    expect((vm.state as ChatReady).persistenceWarning, isNull);
+
+    vm.dispose();
+    sync.dispose();
+    conn.dispose();
+  });
 
   test('activation failure becomes ChatInitializationFailed', () async {
     final ch = _FakeChannel();
