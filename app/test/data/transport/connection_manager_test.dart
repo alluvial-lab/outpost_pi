@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/relay_config.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
@@ -27,6 +28,60 @@ class _FakeStorage extends PairingStorage {
 
   @override
   Future<List<PersistedRoom>> loadRooms(String epk) async => const [];
+}
+
+class _ControlledStorage extends PairingStorage {
+  _ControlledStorage(this.peers);
+
+  final List<PeerRecord> peers;
+  final Map<String, Completer<List<PersistedRoom>>> blockedLoads = {};
+  final List<(String, List<PersistedRoom>)> roomWrites = [];
+  final List<PeerRecord> peerWrites = [];
+  int roomFailuresRemaining = 0;
+  int peerFailuresRemaining = 0;
+
+  @override
+  Future<List<PeerRecord>> listPeers() async => peers;
+
+  @override
+  Future<List<PersistedRoom>> loadRooms(String epk) async {
+    final blocker = blockedLoads.remove(epk);
+    return blocker == null ? const [] : blocker.future;
+  }
+
+  @override
+  Future<void> saveRooms(String epk, List<PersistedRoom> rooms) async {
+    if (roomFailuresRemaining > 0) {
+      roomFailuresRemaining--;
+      throw StateError('room write failed');
+    }
+    roomWrites.add((epk, List<PersistedRoom>.of(rooms)));
+  }
+
+  @override
+  Future<void> savePeer(PeerRecord peer) async {
+    peerWrites.add(peer);
+    if (peerFailuresRemaining > 0) {
+      peerFailuresRemaining--;
+      throw StateError('peer write failed');
+    }
+  }
+}
+
+class _RecordingDebugLog implements DebugLog {
+  final List<DebugEvent> events = [];
+
+  @override
+  void log(DebugEvent event) => events.add(event);
+
+  @override
+  Future<String?> export() async => null;
+
+  @override
+  Future<void> clear() async => events.clear();
+
+  @override
+  void dispose() {}
 }
 
 class _FakeChannel implements IChannel, IControlLink {
@@ -221,6 +276,199 @@ void main() {
       expect(s.conn.isRoomWorking('epk_projection', 'main'), isFalse);
       s.conn.dispose();
     });
+  });
+
+  group('ConnectionManager room persistence ownership', () {
+    test('coalesces one peer to the latest snapshot before writing', () async {
+      final peer = _peer.copyWith(roomId: 'main');
+      final storage = _ControlledStorage([peer]);
+      final firstLoad = Completer<List<PersistedRoom>>();
+      storage.blockedLoads[peer.remoteEpk] = firstLoad;
+      final channel = _FakeChannel();
+      final conn = ConnectionManager(
+        factory: (_, _) async => channel,
+        storage: storage,
+        emitDebounce: Duration.zero,
+      );
+      conn.adopt(channel, peer);
+
+      channel.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_projection',
+          roomId: 'old-room',
+          startedAt: 1,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      channel.pushControl(
+        const RoomsSnapshot(
+          peer: 'epk_projection',
+          rooms: [RoomInfo(roomId: 'new-room', startedAt: 2)],
+        ),
+      );
+      firstLoad.complete(const []);
+      await _settle();
+
+      expect(storage.roomWrites, hasLength(1));
+      expect(storage.roomWrites.single.$2.map((room) => room.roomId), [
+        'old-room',
+        'new-room',
+      ]);
+      conn.dispose();
+    });
+
+    test('a blocked peer does not delay another peer drain', () async {
+      final peerA = _peer.copyWith(roomId: 'main');
+      const peerB = PeerRecord(
+        remoteEpk: 'peer-b',
+        sessionName: 'Pi B',
+        relayUrl: 'ws://localhost',
+        pairedAt: '2026-01-01T00:00:00Z',
+        roomId: 'main',
+      );
+      final storage = _ControlledStorage([peerA, peerB]);
+      final blockedA = Completer<List<PersistedRoom>>();
+      storage.blockedLoads[peerA.remoteEpk] = blockedA;
+      final channel = _FakeChannel();
+      final conn = ConnectionManager(
+        factory: (_, _) async => channel,
+        storage: storage,
+        emitDebounce: Duration.zero,
+      );
+      conn.adopt(channel, peerA);
+
+      channel.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_projection',
+          roomId: 'a-room',
+          startedAt: 1,
+        ),
+      );
+      channel.pushControl(
+        const RoomAnnounced(peer: 'peer-b', roomId: 'b-room', startedAt: 1),
+      );
+      await _settle();
+
+      expect(storage.roomWrites.map((write) => write.$1), ['peer-b']);
+      blockedA.complete(const []);
+      await _settle();
+      expect(storage.roomWrites.map((write) => write.$1), [
+        'peer-b',
+        'epk_projection',
+      ]);
+      conn.dispose();
+    });
+
+    test('diagnoses one failure and retries on the next mutation', () async {
+      final peer = _peer.copyWith(roomId: 'main');
+      final storage = _ControlledStorage([peer])..roomFailuresRemaining = 1;
+      final log = _RecordingDebugLog();
+      final channel = _FakeChannel();
+      final conn = ConnectionManager(
+        factory: (_, _) async => channel,
+        storage: storage,
+        debugLog: log,
+        emitDebounce: Duration.zero,
+      );
+      conn.adopt(channel, peer);
+
+      channel.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_projection',
+          roomId: 'first',
+          startedAt: 1,
+        ),
+      );
+      await _settle();
+      expect(storage.roomWrites, isEmpty);
+      expect(
+        log.events.whereType<LifecycleFailureEvent>().single.operation,
+        LifecycleOperation.roomCachePersist,
+      );
+
+      channel.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_projection',
+          roomId: 'second',
+          startedAt: 2,
+        ),
+      );
+      await _settle();
+      expect(storage.roomWrites, hasLength(1));
+      expect(
+        storage.roomWrites.single.$2.map((room) => room.roomId),
+        containsAll(['first', 'second']),
+      );
+      conn.dispose();
+    });
+
+    test(
+      'dispose prevents a blocked drain from starting its final write',
+      () async {
+        final peer = _peer.copyWith(roomId: 'main');
+        final storage = _ControlledStorage([peer]);
+        final blocked = Completer<List<PersistedRoom>>();
+        storage.blockedLoads[peer.remoteEpk] = blocked;
+        final channel = _FakeChannel();
+        final conn = ConnectionManager(
+          factory: (_, _) async => channel,
+          storage: storage,
+          emitDebounce: Duration.zero,
+        );
+        conn.adopt(channel, peer);
+        channel.pushControl(
+          const RoomAnnounced(
+            peer: 'epk_projection',
+            roomId: 'blocked',
+            startedAt: 1,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        conn.dispose();
+        blocked.complete(const []);
+        await _settle();
+
+        expect(storage.roomWrites, isEmpty);
+      },
+    );
+
+    test(
+      'legacy-room persistence retries once and diagnoses both failures',
+      () async {
+        final storage = _ControlledStorage(const [_peer])
+          ..peerFailuresRemaining = 2;
+        final log = _RecordingDebugLog();
+        final channel = _FakeChannel();
+        final conn = ConnectionManager(
+          factory: (_, _) async => channel,
+          storage: storage,
+          debugLog: log,
+          emitDebounce: Duration.zero,
+        );
+        conn.adopt(channel, _peer);
+        channel.pushControl(
+          const RoomAnnounced(
+            peer: 'epk_projection',
+            roomId: 'discovered',
+            startedAt: 1,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 320));
+
+        expect(storage.peerWrites, hasLength(2));
+        final failures = log.events
+            .whereType<LifecycleFailureEvent>()
+            .where(
+              (event) =>
+                  event.operation == LifecycleOperation.legacyRoomPersist,
+            )
+            .toList();
+        expect(failures, hasLength(2));
+        expect(failures.map((event) => event.retryScheduled), [true, false]);
+        conn.dispose();
+      },
+    );
   });
 
   group('ConnectionManager unconfigured relay', () {

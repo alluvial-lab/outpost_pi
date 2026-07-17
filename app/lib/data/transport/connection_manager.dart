@@ -151,6 +151,10 @@ class ConnectionManager extends Service {
   CancelToken? _connectCancel;
   StreamSubscription<ServerMessage>? _channelSub;
   StreamSubscription<ControlInbound>? _controlSub;
+  bool _disposed = false;
+  final Map<String, int> _roomPersistenceRevision = <String, int>{};
+  final Set<String> _roomPersistenceDraining = <String>{};
+  Timer? _legacyRoomRetryTimer;
   // List currently subscribed for presence (so reconnect can replay it).
   List<String> _subscribedEpks = const [];
   final ReachabilityAdapter _reachability = ReachabilityAdapter();
@@ -196,6 +200,7 @@ class ConnectionManager extends Service {
   }
 
   void _runWatchdog() {
+    if (_disposed) return;
     final peer = _activePeer;
     if (peer == null) return;
     if (_status is StatusOnline) return;
@@ -516,11 +521,15 @@ class ConnectionManager extends Service {
 
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _clearActiveRoomWorking();
     _cancelRetry();
     _cancelPing();
     _watchdogTimer?.cancel();
     _watchdogTimer = null;
+    _legacyRoomRetryTimer?.cancel();
+    _legacyRoomRetryTimer = null;
     _presenceEmitTimer?.cancel();
     _presenceEmitTimer = null;
     _roomsEmitTimer?.cancel();
@@ -726,8 +735,7 @@ class ConnectionManager extends Service {
         _logRoomSnapshot(room: roomId, working: next.working);
         roomsDirty = true;
         // Persist the new view so cold restart shows the same tiles.
-        // ignore: unawaited_futures
-        _persistRoomsForPeer(key);
+        _scheduleRoomPersistence(key);
         // Plan 17 fix — legacy discovery: if the active peer has no
         // persisted roomId yet (PeerRecord saved before this fix or
         // QR without `rm`), adopt the first room we learn about as
@@ -798,8 +806,7 @@ class ConnectionManager extends Service {
         );
         _logRoomSnapshot(room: roomId, working: nextWorking);
         roomsDirty = true;
-        // ignore: unawaited_futures
-        _persistRoomsForPeer(key);
+        _scheduleRoomPersistence(key);
       case RoomsSnapshot(:final peer, :final rooms):
         final key = toStandardB64(peer);
         // Merge snapshot into cache: add unknown rooms, refresh
@@ -855,8 +862,7 @@ class ConnectionManager extends Service {
           );
         }
         roomsDirty = true;
-        // ignore: unawaited_futures
-        _persistRoomsForPeer(key);
+        _scheduleRoomPersistence(key);
         // Same legacy-discovery hook as RoomAnnounced.
         if (rooms.isNotEmpty) {
           _maybeAdoptLegacyRoom(key, rooms.first.roomId);
@@ -1014,8 +1020,7 @@ class ConnectionManager extends Service {
       ),
     );
     _scheduleRoomsEmit();
-    // ignore: unawaited_futures
-    _persistRoomsForPeer(key);
+    _scheduleRoomPersistence(key);
   }
 
   void _clearRoomWorking(String epk, String roomId) {
@@ -1026,8 +1031,7 @@ class ConnectionManager extends Service {
     if (idx < 0 || !list[idx].working) return;
     list[idx] = list[idx].copyWith(working: false);
     _scheduleRoomsEmit();
-    // ignore: unawaited_futures
-    _persistRoomsForPeer(key);
+    _scheduleRoomPersistence(key);
   }
 
   void _clearActiveRoomWorking() {
@@ -1062,8 +1066,7 @@ class ConnectionManager extends Service {
     }
     _roomsByPeer[key] = list;
     (_liveRoomIds[key] ??= <String>{}).add(msg.roomId);
-    // ignore: unawaited_futures
-    _persistRoomsForPeer(key);
+    _scheduleRoomPersistence(key);
     _maybeAdoptLegacyRoom(key, msg.roomId);
     _scheduleRoomsEmit();
   }
@@ -1098,38 +1101,86 @@ class ConnectionManager extends Service {
     }
   }
 
-  Future<void> _persistRoomsForPeer(String peerKey) async {
+  void _scheduleRoomPersistence(String peerKey) {
+    if (_disposed) return;
+    _roomPersistenceRevision[peerKey] =
+        (_roomPersistenceRevision[peerKey] ?? 0) + 1;
+    _startRoomPersistenceDrain(peerKey);
+  }
+
+  void _startRoomPersistenceDrain(String peerKey) {
+    if (_disposed || !_roomPersistenceDraining.add(peerKey)) return;
+    unawaited(_drainRoomPersistence(peerKey));
+  }
+
+  Future<void> _drainRoomPersistence(String peerKey) async {
+    var observedRevision = _roomPersistenceRevision[peerKey] ?? 0;
+    try {
+      while (!_disposed) {
+        observedRevision = _roomPersistenceRevision[peerKey] ?? 0;
+        try {
+          await _persistLatestRoomSnapshot(peerKey, observedRevision);
+        } on Object catch (error) {
+          _logLifecycleFailure(
+            LifecycleOperation.roomCachePersist,
+            error,
+            peerTail: _peerTail(peerKey),
+          );
+          break;
+        }
+        if (_disposed ||
+            _roomPersistenceRevision[peerKey] == observedRevision) {
+          break;
+        }
+      }
+    } finally {
+      _roomPersistenceDraining.remove(peerKey);
+      // A mutation that arrived while the worker was failing/removing itself
+      // is a new retry opportunity. Without this check that mutation could see
+      // the old worker and be stranded until a third update.
+      if (!_disposed &&
+          (_roomPersistenceRevision[peerKey] ?? 0) != observedRevision) {
+        _startRoomPersistenceDrain(peerKey);
+      }
+    }
+  }
+
+  Future<void> _persistLatestRoomSnapshot(String peerKey, int revision) async {
     final peers = await _storage.listPeers();
+    if (_disposed || _roomPersistenceRevision[peerKey] != revision) return;
+
     PeerRecord? match;
-    for (final p in peers) {
-      if (toStandardB64(p.remoteEpk) == peerKey) {
-        match = p;
+    for (final peer in peers) {
+      if (toStandardB64(peer.remoteEpk) == peerKey) {
+        match = peer;
         break;
       }
     }
     if (match == null) return;
-    final list = _roomsByPeer[peerKey] ?? const <RoomInfo>[];
-    // Read the current on-disk localNames so we don't drop the user's
-    // long-press rename when we re-persist in response to a wire
-    // metadata refresh.
+
+    // Read the current on-disk localNames so metadata refreshes do not drop a
+    // user's local rename.
     final existing = await _storage.loadRooms(match.remoteEpk);
+    if (_disposed || _roomPersistenceRevision[peerKey] != revision) return;
     final localById = {
-      for (final p in existing)
-        if (p.localName != null && p.localName!.isNotEmpty)
-          p.roomId: p.localName!,
+      for (final room in existing)
+        if (room.localName != null && room.localName!.isNotEmpty)
+          room.roomId: room.localName!,
     };
-    final persisted = list
+    final rooms = _roomsByPeer[peerKey] ?? const <RoomInfo>[];
+    final persisted = rooms
         .map(
-          (r) => PersistedRoom(
-            roomId: r.roomId,
-            name: r.name,
-            cwd: r.cwd,
-            startedAt: r.startedAt,
-            localName: localById[r.roomId],
-            model: r.model,
+          (room) => PersistedRoom(
+            roomId: room.roomId,
+            name: room.name,
+            cwd: room.cwd,
+            startedAt: room.startedAt,
+            localName: localById[room.roomId],
+            model: room.model,
           ),
         )
         .toList();
+    if (_disposed || _roomPersistenceRevision[peerKey] != revision) return;
     await _storage.saveRooms(match.remoteEpk, persisted);
   }
 
@@ -1201,13 +1252,51 @@ class ConnectionManager extends Service {
     if (cur is StatusOnline) {
       _propagateActiveRoom(discoveredRoom, cur.channel);
     }
-    // Persist asynchronously — failure here is non-fatal (next discovery
-    // round will re-adopt).
     final updated = active.copyWith(roomId: discoveredRoom);
     _activePeer = updated;
-    unawaited(
-      _storage.savePeer(updated).catchError((Object _, StackTrace _) {}),
-    );
+    unawaited(_persistLegacyRoomWithRetry(updated));
+  }
+
+  Future<void> _persistLegacyRoomWithRetry(PeerRecord updated) async {
+    try {
+      await _storage.savePeer(updated);
+    } on Object catch (error) {
+      if (_disposed || !_isCurrentLegacyRoom(updated)) return;
+      _logLifecycleFailure(
+        LifecycleOperation.legacyRoomPersist,
+        error,
+        peerTail: _peerTail(updated.remoteEpk),
+        room: updated.roomId,
+        retryScheduled: true,
+      );
+      _legacyRoomRetryTimer?.cancel();
+      _legacyRoomRetryTimer = Timer(const Duration(milliseconds: 250), () {
+        _legacyRoomRetryTimer = null;
+        if (_disposed || !_isCurrentLegacyRoom(updated)) return;
+        unawaited(_retryLegacyRoomPersistence(updated));
+      });
+    }
+  }
+
+  Future<void> _retryLegacyRoomPersistence(PeerRecord updated) async {
+    try {
+      await _storage.savePeer(updated);
+    } on Object catch (error) {
+      if (_disposed || !_isCurrentLegacyRoom(updated)) return;
+      _logLifecycleFailure(
+        LifecycleOperation.legacyRoomPersist,
+        error,
+        peerTail: _peerTail(updated.remoteEpk),
+        room: updated.roomId,
+      );
+    }
+  }
+
+  bool _isCurrentLegacyRoom(PeerRecord expected) {
+    final current = _activePeer;
+    return current != null &&
+        current.remoteEpk == expected.remoteEpk &&
+        current.roomId == expected.roomId;
   }
 
   /// On (re)connect, re-send the last subscribe_presence so the relay
@@ -1289,6 +1378,7 @@ class ConnectionManager extends Service {
   }
 
   void _scheduleRetry(PeerRecord peer) {
+    if (_disposed) return;
     if (!_reachability.waitingForRetry) {
       _reachability.onConnectFailedRetryable();
     }
@@ -1300,13 +1390,47 @@ class ConnectionManager extends Service {
     _retryTimer?.cancel();
     _retryTimer = Timer(delay, () {
       _retryTimer = null;
+      if (_disposed || _activePeer?.remoteEpk != peer.remoteEpk) return;
       _reachability.onRetryTimerFired();
-      unawaited(_connect(peer));
+      unawaited(_connectRetryOwned(peer));
     });
   }
 
+  Future<void> _connectRetryOwned(PeerRecord peer) async {
+    try {
+      await _connect(peer);
+    } on Object catch (error) {
+      if (_disposed || _activePeer?.remoteEpk != peer.remoteEpk) return;
+      _logLifecycleFailure(
+        LifecycleOperation.retryConnect,
+        error,
+        peerTail: _peerTail(peer.remoteEpk),
+        room: peer.roomId,
+      );
+    }
+  }
+
   void _closeBestEffort(IChannel channel) {
-    unawaited(channel.close().catchError((Object _, StackTrace _) {}));
+    final peerTail = _peerTail(_activePeer?.remoteEpk);
+    final room = _activeRoomId;
+    unawaited(_closeOwned(channel, peerTail: peerTail, room: room));
+  }
+
+  Future<void> _closeOwned(
+    IChannel channel, {
+    String? peerTail,
+    String? room,
+  }) async {
+    try {
+      await channel.close();
+    } on Object catch (error) {
+      _logLifecycleFailure(
+        LifecycleOperation.channelClose,
+        error,
+        peerTail: peerTail,
+        room: room,
+      );
+    }
   }
 
   void _startPing(PeerRecord peer, IChannel ch) {
@@ -1455,6 +1579,26 @@ class ConnectionManager extends Service {
   }
 
   void _logDebug(DebugEvent event) => _debugLog?.log(event);
+
+  void _logLifecycleFailure(
+    LifecycleOperation operation,
+    Object error, {
+    String? peerTail,
+    String? room,
+    bool retryScheduled = false,
+  }) {
+    final type = error.runtimeType.toString();
+    _logDebug(
+      LifecycleFailureEvent(
+        ts: DateTime.now(),
+        operation: operation,
+        reason: type.isEmpty ? 'unknown_error' : type,
+        peerTail: peerTail,
+        room: room,
+        retryScheduled: retryScheduled,
+      ),
+    );
+  }
 
   static String? _peerTail(String? epk) {
     if (epk == null || epk.isEmpty) return null;
