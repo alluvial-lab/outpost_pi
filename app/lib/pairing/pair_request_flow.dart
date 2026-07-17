@@ -11,6 +11,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/relay_config.dart';
 import 'package:app/protocol/protocol.dart' show PairOk;
 import 'package:app/protocol/uuid7.dart';
@@ -112,11 +113,8 @@ Future<PairingResult> performPairing({
   // that don't carry `rm`, falls back to 'main' — the new
   // ConnectionManager discovery flow patches it up afterwards.
   final pairingRoomId = qr.roomId ?? 'main';
-  try {
-    (transport as dynamic).setActiveRoom(pairingRoomId);
-  } catch (_) {
-    // Non-WS transports (tests with in-memory pipes) don't track room —
-    // routing is symbolic there, so no harm done.
+  if (transport case IActiveRoomTarget target) {
+    target.setActiveRoom(pairingRoomId);
   }
 
   final id = uuid7();

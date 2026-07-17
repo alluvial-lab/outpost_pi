@@ -300,15 +300,8 @@ class ConnectionManager extends Service {
   }
 
   void _propagateActiveRoom(String roomId, IChannel link) {
-    // Sends a synthetic control frame ourselves NOT to the relay — we
-    // just need a hook into the transport. PlainPeerChannel exposes
-    // `setActiveRoom` via a hidden interface; for typing simplicity we
-    // try the dynamic call. If the transport doesn't support it, we
-    // silently skip and the default 'main' room is used.
-    try {
-      (link as dynamic).setActiveRoom(roomId);
-    } catch (_) {
-      // Tests / non-WS transports — fine to ignore.
+    if (link case IActiveRoomTarget target) {
+      target.setActiveRoom(roomId);
     }
   }
 
