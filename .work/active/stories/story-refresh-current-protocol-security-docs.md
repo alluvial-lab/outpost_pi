@@ -1,14 +1,14 @@
 ---
 id: story-refresh-current-protocol-security-docs
 kind: story
-stage: implementing
+stage: done
 tags: [docs, protocol, security, app, pi-extension]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-15
-updated: 2026-07-14
+updated: 2026-07-16
 ---
 
 # Refresh current protocol and pairing-security documentation
