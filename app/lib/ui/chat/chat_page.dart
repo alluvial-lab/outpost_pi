@@ -353,6 +353,12 @@ class ChatPage extends StatelessWidget {
         icon: LucideIcons.refreshCw,
         message: 'Connecting…',
       ),
+      ChatInitializationFailed(:final message) => _EmptyState(
+        icon: LucideIcons.circleAlert,
+        message: message,
+        actionLabel: 'Retry',
+        onAction: vm.initialize,
+      ),
       ChatFatalError(:final message) => _EmptyState(
         icon: LucideIcons.circleAlert,
         message: message,
