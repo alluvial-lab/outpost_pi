@@ -51,7 +51,7 @@ class WsTransportError implements Exception {
 ///
 /// [connect] completes only after challenge-response authentication; [close]
 /// owns the socket subscription, peer queue, and control stream lifecycle.
-class WsTransport implements PeerTransport, IControlLink {
+class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
   final WebSocketChannel _ws;
   final DebugLog? _debugLog;
   final _queue = _MsgQueue();
@@ -324,6 +324,7 @@ class WsTransport implements PeerTransport, IControlLink {
 
   /// Override the destination room (Pi side). The app remains on the
   /// 'main' room itself (that's what we sent in `hello.room_id`).
+  @override
   void setActiveRoom(String room) {
     if (room == _activeRoom) {
       return;

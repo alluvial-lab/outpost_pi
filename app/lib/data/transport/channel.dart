@@ -15,6 +15,15 @@ abstract class IChannel {
   Future<void> close();
 }
 
+/// Optionally retarget peer envelopes to a different Pi room.
+///
+/// Channels and byte transports without room-aware routing remain valid and
+/// callers must treat the capability as a no-op when it is absent.
+abstract interface class IActiveRoomTarget {
+  /// Route subsequent peer envelopes to [roomId].
+  void setActiveRoom(String roomId);
+}
+
 /// Optionally exchange raw relay control frames beside typed peer messages.
 ///
 /// [ConnectionManager] uses this capability for presence and room hydration;
