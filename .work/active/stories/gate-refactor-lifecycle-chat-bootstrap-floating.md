@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-app-async-lifecycle-ownership
-stage: drafting
+stage: done
 id: gate-refactor-lifecycle-chat-bootstrap-floating
 tags: []
 depends_on: []
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-17
 ---
 
 # ChatViewModel constructor discards bootstrap failures
@@ -30,3 +30,10 @@ The constructor calls async `_bootstrap()` behind `// ignore: discarded_futures`
 
 ## Fix
 Launch bootstrap through an explicit unawaited wrapper that catches/logs and emits an error/no-peer state, or move bootstrap into an awaited lifecycle method owned by the caller.
+
+## Implementation
+
+Closed by `feature-app-async-lifecycle-ownership-startup-ownership`:
+`ChatViewModel.initialize()` is awaited, idempotent while active,
+generation-guarded, and projects failures as retryable
+`ChatInitializationFailed`. Focused Chat lifecycle tests and analysis pass.
