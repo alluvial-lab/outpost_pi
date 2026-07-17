@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:app/data/transport/channel.dart';
 import 'package:app/pairing/pair_request_flow.dart';
 import 'package:app/pairing/qr_scanner.dart';
 import 'package:app/pairing/storage.dart';
@@ -17,6 +18,7 @@ class _Q {
       _buf.add(d);
     }
   }
+
   Future<Uint8List> next() {
     if (_buf.isNotEmpty) return Future.value(_buf.removeAt(0));
     final c = Completer<Uint8List>();
@@ -37,6 +39,16 @@ class _MemTransport implements PeerTransport {
   Future<void> close() async {}
 }
 
+class _RoomAwareMemTransport extends _MemTransport
+    implements IActiveRoomTarget {
+  _RoomAwareMemTransport({required super.send, required super.recv});
+
+  final List<String> activeRooms = <String>[];
+
+  @override
+  void setActiveRoom(String roomId) => activeRooms.add(roomId);
+}
+
 class _FakeStorage extends PairingStorage {
   final List<PeerRecord> saved = [];
 
@@ -48,41 +60,34 @@ class _FakeStorage extends PairingStorage {
 }
 
 QrPairPayload _qr({String? relayUrl}) => QrPairPayload(
-      token: 'AAAAAAAAAAAAAAAAAAAAAA',
-      epk: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-      sessionName: 'Pi',
-      relayUrl: relayUrl,
-    );
+  token: 'AAAAAAAAAAAAAAAAAAAAAA',
+  epk: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  sessionName: 'Pi',
+  relayUrl: relayUrl,
+);
 
 void main() {
   group('performPairing — relay mismatch (plan 14)', () {
-    test(
-      'throws PairingError(relay_mismatch) when qr.relayUrl differs '
-      'from currentRelayUrl',
-      () async {
-        final q1 = _Q();
-        final q2 = _Q();
-        final transport = _MemTransport(send: q1, recv: q2);
-        final qr = _qr(relayUrl: 'wss://other-relay.example');
+    test('throws PairingError(relay_mismatch) when qr.relayUrl differs '
+        'from currentRelayUrl', () async {
+      final q1 = _Q();
+      final q2 = _Q();
+      final transport = _MemTransport(send: q1, recv: q2);
+      final qr = _qr(relayUrl: 'wss://other-relay.example');
 
-        await expectLater(
-          performPairing(
-            qr: qr,
-            transport: transport,
-            storage: _FakeStorage(),
-            deviceName: 'phone',
-            currentRelayUrl: 'wss://my-relay.example',
-          ),
-          throwsA(
-            isA<PairingError>().having(
-              (e) => e.code,
-              'code',
-              'relay_mismatch',
-            ),
-          ),
-        );
-      },
-    );
+      await expectLater(
+        performPairing(
+          qr: qr,
+          transport: transport,
+          storage: _FakeStorage(),
+          deviceName: 'phone',
+          currentRelayUrl: 'wss://my-relay.example',
+        ),
+        throwsA(
+          isA<PairingError>().having((e) => e.code, 'code', 'relay_mismatch'),
+        ),
+      );
+    });
 
     test(
       'proceeds when qr.relayUrl matches currentRelayUrl (legacy QR)',
@@ -98,11 +103,17 @@ void main() {
         unawaited(() async {
           final raw = await pi.receive();
           final req = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
-          await pi.send(Uint8List.fromList(utf8.encode(jsonEncode({
-            'type': 'pair_ok',
-            'in_reply_to': req['id'],
-            'session_name': 'Pi',
-          }))));
+          await pi.send(
+            Uint8List.fromList(
+              utf8.encode(
+                jsonEncode({
+                  'type': 'pair_ok',
+                  'in_reply_to': req['id'],
+                  'session_name': 'Pi',
+                }),
+              ),
+            ),
+          );
         }());
 
         final result = await performPairing(
@@ -124,7 +135,7 @@ void main() {
         final q1 = _Q();
         final q2 = _Q();
         final pi = _MemTransport(send: q1, recv: q2);
-        final app = _MemTransport(send: q2, recv: q1);
+        final app = _RoomAwareMemTransport(send: q2, recv: q1);
         final storage = _FakeStorage();
         // QR carries the Pi-side room id explicitly.
         final qr = QrPairPayload(
@@ -137,13 +148,19 @@ void main() {
         unawaited(() async {
           final raw = await pi.receive();
           final req = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
-          await pi.send(Uint8List.fromList(utf8.encode(jsonEncode({
-            'type': 'pair_ok',
-            'in_reply_to': req['id'],
-            'session_name': 'Pi',
-            'session_started_at': 1700000000000,
-            'room_id': 'room-from-pair-ok',
-          }))));
+          await pi.send(
+            Uint8List.fromList(
+              utf8.encode(
+                jsonEncode({
+                  'type': 'pair_ok',
+                  'in_reply_to': req['id'],
+                  'session_name': 'Pi',
+                  'session_started_at': 1700000000000,
+                  'room_id': 'room-from-pair-ok',
+                }),
+              ),
+            ),
+          );
         }());
 
         final result = await performPairing(
@@ -154,6 +171,7 @@ void main() {
           currentRelayUrl: 'wss://relay.example',
         );
 
+        expect(app.activeRooms, ['room-from-qr']);
         // pair_ok.room_id wins over qr.roomId.
         expect(result.peer.roomId, 'room-from-pair-ok');
         expect(storage.saved.single.roomId, 'room-from-pair-ok');
@@ -177,13 +195,19 @@ void main() {
         unawaited(() async {
           final raw = await pi.receive();
           final req = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
-          await pi.send(Uint8List.fromList(utf8.encode(jsonEncode({
-            'type': 'pair_ok',
-            'in_reply_to': req['id'],
-            'session_name': 'Pi',
-            'session_started_at': 1700000000000,
-            // No 'room_id' — legacy Pi behaviour.
-          }))));
+          await pi.send(
+            Uint8List.fromList(
+              utf8.encode(
+                jsonEncode({
+                  'type': 'pair_ok',
+                  'in_reply_to': req['id'],
+                  'session_name': 'Pi',
+                  'session_started_at': 1700000000000,
+                  // No 'room_id' — legacy Pi behaviour.
+                }),
+              ),
+            ),
+          );
         }());
 
         final result = await performPairing(
@@ -198,37 +222,43 @@ void main() {
       },
     );
 
-    test(
-      'proceeds when qr.relayUrl is null (new-format QR) — saves '
-      'currentRelayUrl on the PeerRecord',
-      () async {
-        final q1 = _Q();
-        final q2 = _Q();
-        final pi = _MemTransport(send: q1, recv: q2);
-        final app = _MemTransport(send: q2, recv: q1);
-        final qr = _qr();
-        final storage = _FakeStorage();
+    test('proceeds when qr.relayUrl is null (new-format QR) — saves '
+        'currentRelayUrl on the PeerRecord', () async {
+      final q1 = _Q();
+      final q2 = _Q();
+      final pi = _MemTransport(send: q1, recv: q2);
+      final app = _MemTransport(send: q2, recv: q1);
+      final qr = _qr();
+      final storage = _FakeStorage();
 
-        unawaited(() async {
-          final raw = await pi.receive();
-          final req = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
-          await pi.send(Uint8List.fromList(utf8.encode(jsonEncode({
-            'type': 'pair_ok',
-            'in_reply_to': req['id'],
-            'session_name': 'Pi',
-          }))));
-        }());
-
-        final result = await performPairing(
-          qr: qr,
-          transport: app,
-          storage: storage,
-          deviceName: 'phone',
-          currentRelayUrl: 'wss://relay.outpost-pi.dev',
+      unawaited(() async {
+        final raw = await pi.receive();
+        final req = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
+        await pi.send(
+          Uint8List.fromList(
+            utf8.encode(
+              jsonEncode({
+                'type': 'pair_ok',
+                'in_reply_to': req['id'],
+                'session_name': 'Pi',
+              }),
+            ),
+          ),
         );
-        expect(result.peer.relayUrl, 'wss://relay.outpost-pi.dev',
-            reason: 'when QR lacks r=, persist currentRelayUrl');
-      },
-    );
+      }());
+
+      final result = await performPairing(
+        qr: qr,
+        transport: app,
+        storage: storage,
+        deviceName: 'phone',
+        currentRelayUrl: 'wss://relay.outpost-pi.dev',
+      );
+      expect(
+        result.peer.relayUrl,
+        'wss://relay.outpost-pi.dev',
+        reason: 'when QR lacks r=, persist currentRelayUrl',
+      );
+    });
   });
 }

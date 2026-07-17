@@ -54,14 +54,11 @@ class _FakeChannel implements IChannel, IControlLink {
   void pushControl(ControlInbound frame) => _control.add(frame);
 }
 
-/// A _FakeChannel that records `setActiveRoom` calls so tests can assert the
-/// ConnectionManager propagated the active room down to the transport.
-/// `setActiveRoom` is not part of `IChannel` — `ConnectionManager` reaches
-/// it via dynamic dispatch (`_propagateActiveRoom`), so this fake simply
-/// declares the same method shape `PlainPeerChannel` does.
-class _RecordingChannel extends _FakeChannel {
+/// A room-aware channel that records active-room propagation.
+class _RecordingChannel extends _FakeChannel implements IActiveRoomTarget {
   final List<String> setActiveRoomCalls = <String>[];
 
+  @override
   void setActiveRoom(String roomId) => setActiveRoomCalls.add(roomId);
 }
 
