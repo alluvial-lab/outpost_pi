@@ -1,7 +1,7 @@
 ---
 id: feature-retire-legacy-piext-composition-seams
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, refactor, cleanup]
 parent: null
 depends_on: []
@@ -161,3 +161,28 @@ Four cohesive cleanup steps, each mapping to one existing child story.
 4. `gate-cruft-relay-owner-channel-bridge` — remove the concrete relay escape hatch after the canonical graph is the sole composition boundary.
 
 Steps are sequential (every step touches `index.ts`; step 4 has historically sensitive listener/reconnect behavior). Each step committable in isolation. The 4 existing child stories map 1:1 to these steps — no new child stories needed.
+
+## Implementation
+
+Completed all four child checkpoints in order. The named test harness is now the
+sole index test seam; the unused standalone command harness is gone;
+`createRuntimePorts()` is the direct canonical graph and `legacy_ports.ts` was
+deleted; and relay owner ingress no longer escapes through a concrete
+`RelayClient`. Transport-owned generation predicates now invalidate stale async
+ingress on replacement/close, with owner-channel creation and presence
+subscription kept behind the relay port. `PairingCoordinator` delegates relay
+startup/status and owns only keypair/self-revoke command policy.
+
+Integrated verification from `pi-extension/`:
+
+- `./node_modules/.bin/tsc --noEmit` — passed.
+- Focused transport/owner ingress suites — passed, including 17/17 critical
+  extension ingress/reconnect cases, 8/8 owner-multiplexer cases, and 7/7
+  relay-transport cases.
+- `./node_modules/.bin/vitest run` — 837 passed, 3 skipped, 8 environment
+  failures: seven `src/session/cwd_lock.test.ts` cases cannot create
+  `/tmp/rp-cwdlock-*` because `/tmp` is read-only, and the tracked
+  `env-ext-test-cwd-lock-ordering-flake` prevents the same-name extension test's
+  first lock acquisition. No product assertion related to this feature failed.
+- `./node_modules/.bin/tsc` — passed; generated `dist/` remains ignored and
+  uncommitted.
