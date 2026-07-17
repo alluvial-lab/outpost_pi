@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app/data/transport/epk_encoding.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:flutter/foundation.dart';
@@ -25,17 +26,22 @@ class MeshSyncService extends ChangeNotifier {
   final MeshClient _client;
   final OwnerIdentityBridge _ownerBridge;
   final PairingStorage _storage;
+  final DebugLog? _debugLog;
+  final Duration _mutationRetryDelay;
 
   /// Last version we observed locally — used as the `since` query
   /// parameter on subsequent fetches so the relay can short-circuit
   /// to 304. Reset to 0 when the Owner key changes (sync drift).
   int _lastVersion = 0;
 
-  /// True while a publish is in flight. Used by mutation paths to
-  /// avoid stampeding the relay; the queued change is picked up by
-  /// the next fetch loop instead.
+  /// True while any direct or mutation-owned publication is in flight.
   bool _publishing = false;
 
+  int _mutationRevision = 0;
+  bool _mutationPending = false;
+  PeerMutationKind? _pendingMutationKind;
+  bool _mutationDrainRunning = false;
+  Timer? _mutationRetryTimer;
   Timer? _pollTimer;
   bool _disposed = false;
 
@@ -43,7 +49,14 @@ class MeshSyncService extends ChangeNotifier {
   /// render "last synced ... ago" if it wants to.
   int? lastUpdatedAt;
 
-  MeshSyncService(this._client, this._ownerBridge, this._storage);
+  MeshSyncService(
+    this._client,
+    this._ownerBridge,
+    this._storage, {
+    DebugLog? debugLog,
+    Duration mutationRetryDelay = const Duration(seconds: 5),
+  }) : _debugLog = debugLog,
+       _mutationRetryDelay = mutationRetryDelay;
 
   /// Return the verified relay version used as the next conditional-fetch watermark.
   int get lastVersion => _lastVersion;
@@ -56,7 +69,17 @@ class MeshSyncService extends ChangeNotifier {
   /// links. Returns `true` if the local cache now reflects a
   /// successfully-verified relay version (including 304 "we're up to
   /// date" and 404 "relay never had data"); `false` on failure.
-  Future<bool> pullOnDemand() async {
+  Future<bool> pullOnDemand() {
+    if (_disposed) return Future.value(false);
+    if (_mutationPending) {
+      _startMutationPublishDrain();
+      return Future.value(false);
+    }
+    return _pullOnDemand(allowPendingMutation: false);
+  }
+
+  Future<bool> _pullOnDemand({required bool allowPendingMutation}) async {
+    if (_disposed || (_mutationPending && !allowPendingMutation)) return false;
     final pk = _ownerBridge.currentOwnerPk;
     if (pk == null) {
       return false;
@@ -66,6 +89,7 @@ class MeshSyncService extends ChangeNotifier {
       hash,
       since: _lastVersion > 0 ? _lastVersion : null,
     );
+    if (_disposed) return false;
     switch (result) {
       case MeshFetchOk(
         envelope: final env,
@@ -73,7 +97,7 @@ class MeshSyncService extends ChangeNotifier {
         updatedAt: final u,
       ):
         final applied = await _applyVerified(env, expectedOwnerPk: pk);
-        if (applied) {
+        if (applied && !_disposed) {
           _lastVersion = v;
           lastUpdatedAt = u;
           notifyListeners();
@@ -174,6 +198,7 @@ class MeshSyncService extends ChangeNotifier {
   /// non-zero version watermark" — every other caller leaves the
   /// default `false` so the safety net still protects against races.
   Future<MeshPublishResult> publish({bool allowEmpty = false}) async {
+    if (_disposed) return const MeshPublishFailure('disposed');
     if (_publishing) {
       return const MeshPublishFailure('already in flight');
     }
@@ -190,6 +215,7 @@ class MeshSyncService extends ChangeNotifier {
       );
     } finally {
       _publishing = false;
+      _startMutationPublishDrain();
     }
   }
 
@@ -199,6 +225,7 @@ class MeshSyncService extends ChangeNotifier {
     required bool allowEmpty,
   }) async {
     final peers = await _storage.listPeers();
+    if (_disposed) return const MeshPublishFailure('disposed');
     // Safety net (plan/24-fix-app-publish-race): never overwrite a
     // non-empty membership with members=[] UNLESS the caller opted in
     // via [allowEmpty]. The only legitimate "empty on top of non-zero
@@ -236,9 +263,13 @@ class MeshSyncService extends ChangeNotifier {
       members: members,
     );
     final keyPair = await _ownerBridge.requireKeyPair();
+    if (_disposed) return const MeshPublishFailure('disposed');
     final envelope = await blob.signWith(keyPair);
+    if (_disposed) return const MeshPublishFailure('disposed');
     final hash = await MeshClient.ownerPkHash(pk);
+    if (_disposed) return const MeshPublishFailure('disposed');
     final result = await _client.publish(hash, envelope);
+    if (_disposed) return const MeshPublishFailure('disposed');
     switch (result) {
       case MeshPublishOk(version: final v, updatedAt: final u):
         _lastVersion = v;
@@ -247,7 +278,8 @@ class MeshSyncService extends ChangeNotifier {
         return result;
       case MeshPublishConflict():
         if (!refetchOnConflict) return result;
-        await pullOnDemand();
+        await _pullOnDemand(allowPendingMutation: true);
+        if (_disposed) return const MeshPublishFailure('disposed');
         return _publishOnce(
           pk,
           refetchOnConflict: false,
@@ -260,6 +292,132 @@ class MeshSyncService extends ChangeNotifier {
       case MeshPublishFailure():
         return result;
     }
+  }
+
+  /// Queue publication after a committed local peer mutation.
+  ///
+  /// The callback is deliberately synchronous so [PairingStorage] never owns a
+  /// network future. This service owns result inspection, coalescing, retry,
+  /// diagnostics, and disposal for the asynchronous publication drain.
+  void publishAfterPeerMutation(PeerMutationKind kind) {
+    if (_disposed) return;
+    _mutationRevision += 1;
+    _mutationPending = true;
+    _pendingMutationKind = kind;
+    _mutationRetryTimer?.cancel();
+    _mutationRetryTimer = null;
+    _startMutationPublishDrain();
+  }
+
+  void _startMutationPublishDrain() {
+    if (_disposed ||
+        !_mutationPending ||
+        _publishing ||
+        _mutationDrainRunning ||
+        _mutationRetryTimer != null) {
+      return;
+    }
+    _mutationDrainRunning = true;
+    unawaited(_drainPendingMutationPublish());
+  }
+
+  Future<void> _drainPendingMutationPublish() async {
+    try {
+      while (!_disposed && _mutationPending) {
+        final revision = _mutationRevision;
+        final kind = _pendingMutationKind!;
+        _publishing = true;
+        MeshPublishResult result;
+        try {
+          final pk = _ownerBridge.currentOwnerPk;
+          result = pk == null
+              ? const MeshPublishFailure('owner pk not loaded')
+              : await _publishOnce(
+                  pk,
+                  refetchOnConflict: true,
+                  allowEmpty: kind == PeerMutationKind.delete,
+                );
+        } catch (_) {
+          if (_disposed) return;
+          _diagnoseMutationPublish(
+            reason: 'unexpected publish exception',
+            retryScheduled: true,
+          );
+          _scheduleMutationPublishRetry();
+          return;
+        } finally {
+          _publishing = false;
+        }
+        if (_disposed) return;
+
+        switch (result) {
+          case MeshPublishOk():
+            if (revision == _mutationRevision) {
+              _mutationPending = false;
+              _pendingMutationKind = null;
+            }
+            continue;
+          case MeshPublishFailure():
+            _diagnoseMutationPublish(
+              reason: 'transient publish failure',
+              retryScheduled: true,
+            );
+            _scheduleMutationPublishRetry();
+            return;
+          case MeshPublishConflict():
+            _diagnoseMutationPublish(
+              reason: 'conflict after rebase',
+              retryScheduled: true,
+            );
+            _scheduleMutationPublishRetry();
+            return;
+          case MeshPublishBadRequest():
+            _stopMutationPublishAfterPermanentFailure('bad request');
+            return;
+          case MeshPublishForbidden():
+            _stopMutationPublishAfterPermanentFailure('forbidden');
+            return;
+          case MeshPublishTooLarge():
+            _stopMutationPublishAfterPermanentFailure('too large');
+            return;
+        }
+      }
+    } finally {
+      _mutationDrainRunning = false;
+      if (!_disposed && _mutationPending && _mutationRetryTimer == null) {
+        _startMutationPublishDrain();
+      }
+    }
+  }
+
+  void _stopMutationPublishAfterPermanentFailure(String reason) {
+    _diagnoseMutationPublish(reason: reason, retryScheduled: false);
+    _mutationPending = false;
+    _pendingMutationKind = null;
+    _mutationRetryTimer?.cancel();
+    _mutationRetryTimer = null;
+  }
+
+  void _scheduleMutationPublishRetry() {
+    if (_disposed || !_mutationPending || _mutationRetryTimer != null) return;
+    _mutationRetryTimer = Timer(_mutationRetryDelay, () {
+      _mutationRetryTimer = null;
+      _startMutationPublishDrain();
+    });
+  }
+
+  void _diagnoseMutationPublish({
+    required String reason,
+    required bool retryScheduled,
+  }) {
+    _debugLog?.log(
+      LifecycleFailureEvent(
+        ts: DateTime.now().toUtc(),
+        operation: LifecycleOperation.meshPublish,
+        reason: reason,
+        retryScheduled: retryScheduled,
+      ),
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -300,6 +458,11 @@ class MeshSyncService extends ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _mutationRevision += 1;
+    _mutationPending = false;
+    _pendingMutationKind = null;
+    _mutationRetryTimer?.cancel();
+    _mutationRetryTimer = null;
     stopPolling();
     super.dispose();
   }

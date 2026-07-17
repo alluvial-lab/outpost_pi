@@ -113,12 +113,12 @@ Future<void> setupDependencies() async {
     meshClient,
     ownerBridge,
     _injector.get<PairingStorage>(),
+    debugLog: _injector.get<DebugLog>(),
   );
   _injector.addInstance<MeshSyncService>(meshSync);
-  _injector.get<PairingStorage>().attachPeerMutationHook(() {
-    // ignore: unawaited_futures
-    meshSync.publish();
-  });
+  _injector.get<PairingStorage>().attachPeerMutationHook(
+    meshSync.publishAfterPeerMutation,
+  );
 
   // ConnectionManager — factory function injected manually (function typedefs
   // cannot be resolved by auto_injector via Type.new).
@@ -184,7 +184,6 @@ Future<void> setupDependencies() async {
       _injector.get<PairingStorage>(),
       _injector.get<Preferences>(),
       _injector.get<ConnectionManager>(),
-      _injector.get<MeshSyncService>(),
       _injector.get<DebugLog>(),
     ),
   );
