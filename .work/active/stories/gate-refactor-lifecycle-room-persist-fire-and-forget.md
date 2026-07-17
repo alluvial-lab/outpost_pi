@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-app-async-lifecycle-ownership
-stage: drafting
+stage: done
 id: gate-refactor-lifecycle-room-persist-fire-and-forget
 tags: []
 depends_on: []
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-17
 ---
 
 # Room persistence writes are fire-and-forget without error handling
@@ -30,3 +30,10 @@ _persistRoomsForPeer(key) is called from control-frame handling with only a lint
 
 ## Fix
 needs analysis
+
+## Implementation
+
+Closed by `feature-app-async-lifecycle-ownership-connection-persistence`: all
+six room-cache mutation sites now feed one latest-wins drain per peer with
+staleness/disposal guards and typed failure diagnostics. Controlled storage
+ordering tests and analysis pass.
