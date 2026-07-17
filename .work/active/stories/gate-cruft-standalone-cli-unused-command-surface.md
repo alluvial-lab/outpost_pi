@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-retire-legacy-piext-composition-seams
-stage: drafting
+stage: done
 id: gate-cruft-standalone-cli-unused-command-surface
 tags: [cleanup]
 depends_on: []
 gate_origin: cruft
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-17
 ---
 
 # Remove unused standalone CLI command-surface dependency
@@ -39,3 +39,10 @@ export interface StandaloneCliAdapterDeps {
 
 ## Removal
 Either make standalone CLI commands use `input.commandSurface` for the paths it was meant to route, or remove the dependency and the `void input.commandSurface` suppression until a real consumer exists.
+
+## Implementation
+
+Removed the unused standalone-CLI `commandSurface` input and deleted its dead
+harness type, factory, instance, and imports. The standalone dispatcher remains
+wired only to its consumed adapters. `./node_modules/.bin/tsc --noEmit` passed,
+and the focused standalone dispatcher test passed.
