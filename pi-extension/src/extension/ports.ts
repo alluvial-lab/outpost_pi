@@ -37,9 +37,8 @@ export interface RelayStartInput {
   roomMeta?: RoomMeta;
 }
 
-/** Return the live relay connection and its effective room after transport startup. */
+/** Return the effective room after transport startup. */
 export interface RelayStartResult {
-  relay: RelayClient;
   roomId?: string;
 }
 
@@ -79,15 +78,15 @@ export interface RelayTransportPort {
   start(input: RelayStartInput): Promise<RelayStartResult>;
   stop(reason?: ByeReason): void;
   sendRoomMeta(patch: Partial<RoomMeta> & { working?: boolean; thinking?: ThinkingLevel }): void;
-  onOuterMessage(handler: (line: string) => void | Promise<void>): () => void;
-  createPeerChannel?(input: RelayPeerChannelInput): RelayPeerChannel;
+  onOuterMessage(handler: (line: string, isCurrent: () => boolean) => void | Promise<void>): () => void;
+  createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel;
+  subscribePresence(peers: readonly string[]): void;
   attachCrossPcBridge(input: CrossPcBridgeInput): Promise<void>;
   detachCrossPcBridge(): void;
 }
 
-/** Provide the live relay and routing callbacks required to attach one app owner. */
+/** Provide the routing callbacks required to attach one app owner. */
 export interface AttachOwnerInput {
-  relay: RelayClient;
   peerId: string;
   roomId?: string;
   onMessage(message: ClientMessage, sender: PeerChannel): void | Promise<void>;

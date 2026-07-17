@@ -53,19 +53,12 @@ export interface RelayTransportDeps {
 }
 
 /** Expose the concrete relay adapter's extended startup, control-frame, and diagnostics contract. */
-export interface RelayTransportAdapter extends Omit<RelayTransportPort, "start" | "createPeerChannel"> {
+export interface RelayTransportAdapter extends Omit<RelayTransportPort, "start"> {
   start(input: RelayTransportStartInput): Promise<RelayStartResult>;
-  createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel;
   onControlFrame(handler: (frame: RelayControlFrame) => void | Promise<void>): () => void;
   emitRelayState(force?: boolean): void;
   hasPendingReconnect(): boolean;
   currentRelayUrl(): string | null;
-  /**
-   * @internal Temporary owner-channel bridge while legacy call sites still need
-   * direct access to the live RelayClient. Remove when owner ingress is fully
-   * routed through RelayTransportPort.
-   */
-  currentRelayForOwnerChannels(): RelayClient | null;
 }
 
 export const RELAY_TRANSPORT_REACHABILITY = {
@@ -148,8 +141,19 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   let isDisposed: (() => boolean) | null = null;
   let onUnexpectedClose: (() => void) | null = null;
   let onConnected: ((relay: RelayClient) => void | Promise<void>) | null = null;
-  const outerMessageHandlers = new Set<(line: string) => void | Promise<void>>();
+  const outerMessageHandlers = new Set<(
+    line: string,
+    isCurrent: () => boolean,
+  ) => void | Promise<void>>();
   const controlFrameHandlers = new Set<(frame: RelayControlFrame) => void | Promise<void>>();
+  type RelayBinding = {
+    relay: RelayClient;
+    generation: number;
+    onMessage(line: string): void;
+    onClose(): void;
+  };
+  let relayBinding: RelayBinding | null = null;
+  let nextRelayGeneration = 1;
   type BridgeAttachment = {
     relay: RelayClient;
     relayUrl: string;
@@ -192,14 +196,29 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     deps.emitRelayState(snapshot());
   }
 
+  function connectionIsCurrent(binding: RelayBinding): boolean {
+    return relayBinding?.generation === binding.generation &&
+      relay === binding.relay && !stopping && !isDisposed?.();
+  }
+
   function bindRelay(next: RelayClient): void {
-    next.on("message", dispatchRelayMessage);
-    next.on("close", onRelayClose);
+    const binding = {
+      relay: next,
+      generation: nextRelayGeneration++,
+      onMessage: (line: string) => dispatchRelayMessage(line, () => connectionIsCurrent(binding)),
+      onClose: () => onRelayClose(binding),
+    } satisfies RelayBinding;
+    relayBinding = binding;
+    next.on("message", binding.onMessage);
+    next.on("close", binding.onClose);
   }
 
   function unbindRelay(current: RelayClient): void {
-    current.off("close", onRelayClose);
-    current.off("message", dispatchRelayMessage);
+    const binding = relayBinding;
+    if (!binding || binding.relay !== current) return;
+    relayBinding = null;
+    current.off("close", binding.onClose);
+    current.off("message", binding.onMessage);
   }
 
   function clearReconnectTimer(): void {
@@ -208,13 +227,11 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     reconnectTimer = null;
   }
 
-  function onRelayClose(): void {
-    if (stopping || !relayUrl) return;
+  function onRelayClose(binding: RelayBinding): void {
+    if (!connectionIsCurrent(binding) || !relayUrl) return;
     detachCrossPcBridge();
-    if (relay) {
-      unbindRelay(relay);
-      relay = null;
-    }
+    unbindRelay(binding.relay);
+    relay = null;
     onUnexpectedClose?.();
     emitRelayState();
     scheduleReconnect();
@@ -289,7 +306,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
       void attachCrossPcBridge(crossPcBridgeInput);
     }
     emitRelayState();
-    return { relay: nextRelay, roomId: input.roomId };
+    return { roomId: input.roomId };
   }
 
   function stop(_reason?: ByeReason): void {
@@ -320,7 +337,9 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     relay?.sendControl({ type: "room_meta_update", room_id: roomId, meta: patch });
   }
 
-  function onOuterMessage(handler: (line: string) => void | Promise<void>): () => void {
+  function onOuterMessage(
+    handler: (line: string, isCurrent: () => boolean) => void | Promise<void>,
+  ): () => void {
     outerMessageHandlers.add(handler);
     return () => {
       outerMessageHandlers.delete(handler);
@@ -334,7 +353,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     };
   }
 
-  function dispatchRelayMessage(line: string): void {
+  function dispatchRelayMessage(line: string, isCurrent: () => boolean): void {
     const frame = decodeRelayControlFrame(line);
     if (frame) {
       for (const handler of controlFrameHandlers) {
@@ -342,7 +361,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
       }
     }
     for (const handler of outerMessageHandlers) {
-      void handler(line);
+      void handler(line, isCurrent);
     }
   }
 
@@ -355,6 +374,10 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
       (message) => { void input.onMessage(message); },
       () => input.onDisconnect(input.peerId),
     );
+  }
+
+  function subscribePresence(peers: readonly string[]): void {
+    relay?.sendControl({ type: "subscribe_presence", peers: [...peers] });
   }
 
   function bridgeKeyId(nextKeypair: Ed25519Keypair): string {
@@ -461,12 +484,12 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     sendRoomMeta,
     onOuterMessage,
     createPeerChannel,
+    subscribePresence,
     onControlFrame,
     attachCrossPcBridge,
     detachCrossPcBridge,
     emitRelayState,
     hasPendingReconnect: () => reconnectTimer !== null,
     currentRelayUrl: () => relayUrl,
-    currentRelayForOwnerChannels: () => relay,
   };
 }
