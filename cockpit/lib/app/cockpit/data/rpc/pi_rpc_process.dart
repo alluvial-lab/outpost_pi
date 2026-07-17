@@ -14,6 +14,7 @@ import 'package:cockpit/app/cockpit/domain/entities/pi_command.dart';
 import 'package:cockpit/app/cockpit/domain/entities/pi_model.dart';
 import 'package:cockpit/app/cockpit/domain/entities/prompt_image.dart';
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
+import 'package:cockpit/app/cockpit/domain/entities/rpc_ui_response.dart';
 import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
 import 'package:cockpit/app/cockpit/data/rpc/pi_process_registry.dart';
@@ -151,17 +152,13 @@ class PiRpcProcess implements RpcProcessGateway {
   @override
   Future<Result<void, RpcError>> respondUi(
     String id,
-    Map<String, dynamic> response,
+    RpcUiResponse response,
   ) async {
     final process = _process;
     if (process == null) {
       return const Failure(RpcError('No agent running.'));
     }
-    final command = <String, dynamic>{
-      'type': 'extension_ui_response',
-      'id': id,
-      ...response,
-    };
+    final command = _schemaUiResponse(id, response);
     try {
       await _writeLine('${jsonEncode(command)}\n');
       return const Success(null);
@@ -410,6 +407,24 @@ class PiRpcProcess implements RpcProcessGateway {
         'message': jsonEncode(_schemaControlEnvelope(command)),
       };
 
+  static Map<String, Object?> _schemaUiResponse(
+    String id,
+    RpcUiResponse response,
+  ) {
+    final payload = switch (response) {
+      RpcUiValueResponse(:final value) => <String, Object?>{'value': value},
+      RpcUiConfirmationResponse(:final confirmed) => <String, Object?>{
+        'confirmed': confirmed,
+      },
+      RpcUiCancelledResponse() => <String, Object?>{'cancelled': true},
+    };
+    return <String, Object?>{
+      'type': 'extension_ui_response',
+      'id': id,
+      ...payload,
+    };
+  }
+
   static Map<String, dynamic> _schemaControlEnvelope(PiControlCommand command) {
     final envelope = <String, dynamic>{
       'type': _controlEnvelopeType,
@@ -461,3 +476,9 @@ class PiRpcProcess implements RpcProcessGateway {
 @visibleForTesting
 Map<String, dynamic> schemaControlPromptForTesting(PiControlCommand command) =>
     PiRpcProcess._schemaControlPrompt(command);
+
+@visibleForTesting
+Map<String, Object?> schemaUiResponseForTesting(
+  String id,
+  RpcUiResponse response,
+) => PiRpcProcess._schemaUiResponse(id, response);

@@ -12,6 +12,7 @@ import 'package:cockpit/app/cockpit/domain/entities/pi_command.dart';
 import 'package:cockpit/app/cockpit/domain/entities/pi_model.dart';
 import 'package:cockpit/app/cockpit/domain/entities/prompt_image.dart';
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
+import 'package:cockpit/app/cockpit/domain/entities/rpc_ui_response.dart';
 import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
 import 'package:cockpit/app/cockpit/domain/exceptions/rpc_error.dart';
@@ -228,7 +229,7 @@ final class AgentProcessController {
   /// Returns `null` when no process exists and preserves RPC failures.
   Future<Result<void, RpcError>?> respondUi(
     String id,
-    Map<String, dynamic> response,
+    RpcUiResponse response,
   ) async => _gateway?.respondUi(id, response);
 
   /// Send an Outpost-Pi control command outside the LLM transcript.

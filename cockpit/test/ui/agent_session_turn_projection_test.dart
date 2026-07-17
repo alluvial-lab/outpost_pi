@@ -10,6 +10,7 @@ import 'package:cockpit/app/cockpit/domain/entities/pi_command.dart';
 import 'package:cockpit/app/cockpit/domain/entities/pi_model.dart';
 import 'package:cockpit/app/cockpit/domain/entities/prompt_image.dart';
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
+import 'package:cockpit/app/cockpit/domain/entities/rpc_ui_response.dart';
 import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
@@ -629,7 +630,7 @@ final class _RpcGateway implements RpcProcessGateway {
   @override
   Future<Result<void, RpcError>> respondUi(
     String id,
-    Map<String, dynamic> response,
+    RpcUiResponse response,
   ) async => const Success(null);
 
   @override

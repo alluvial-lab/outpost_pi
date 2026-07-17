@@ -5,6 +5,7 @@ import 'package:cockpit/app/cockpit/domain/entities/pi_command.dart';
 import 'package:cockpit/app/cockpit/domain/entities/pi_model.dart';
 import 'package:cockpit/app/cockpit/domain/entities/prompt_image.dart';
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
+import 'package:cockpit/app/cockpit/domain/entities/rpc_ui_response.dart';
 import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
 import 'package:cockpit/app/cockpit/domain/exceptions/rpc_error.dart';
@@ -63,12 +64,11 @@ abstract class RpcProcessGateway implements Service {
   /// Respond to an interactive `extension_ui_request` for select, confirm,
   /// input, or editor UI.
   ///
-  /// Writes `{type:"extension_ui_response", id, ...response}` to stdin.
-  /// [response] is `{value:…}`, `{confirmed:…}`, or `{cancelled:true}`.
-  Future<Result<void, RpcError>> respondUi(
-    String id,
-    Map<String, dynamic> response,
-  );
+  /// Write an interactive UI response to stdin.
+  ///
+  /// The adapter serializes [response] into the wire keys for
+  /// `{type:"extension_ui_response", id, ...payload}`.
+  Future<Result<void, RpcError>> respondUi(String id, RpcUiResponse response);
 
   /// Stop the child process cleanly without leaving an orphan.
   ///
