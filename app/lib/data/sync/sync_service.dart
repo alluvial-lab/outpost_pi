@@ -75,6 +75,7 @@ class SyncService extends Service {
   Future<void> _lifecycleChain = Future<void>.value();
   bool _disposed = false;
   int _lifecycleGeneration = 0;
+  int _turnProjectionEpoch = 0;
   RemoteSessionRef? _persistenceDegradedRef;
 
   // Streaming — in-memory only (#7).
@@ -228,7 +229,7 @@ class SyncService extends Service {
     return RemoteSessionRef(peerEpk: epk, roomId: roomId, sessionId: sessionId);
   }
 
-  bool _isStillActive(RemoteSessionRef ref) => _activeRef == ref;
+  bool _isStillActive(RemoteSessionRef ref) => !_disposed && _activeRef == ref;
 
   /// Bind the writer to a canonical remote session. The `(peer, room)` pair
   /// may be known before the Pi reports a `session_id`; in that state runtime
@@ -311,6 +312,7 @@ class SyncService extends Service {
     MessageImage? image,
     UserMessageStreamingBehavior? streamingBehavior,
   }) async {
+    final generation = _lifecycleGeneration;
     final ref = _activeRef;
     final epk = _activeEpk;
     final id = _newId();
@@ -329,17 +331,17 @@ class SyncService extends Service {
     // which failed/pending rows to re-send. Messages that WERE written to
     // the channel are left to the late-confirmation path (SessionHistory
     // replay) if they time out.
-    final ch = _conn.channel;
+    final initialChannel = _conn.channel;
     final activeEpk = _activeEpk;
     final held =
-        ch == null ||
+        initialChannel == null ||
         (activeEpk != null && !_conn.isRoomLive(activeEpk, _activeRoomId));
     // Optimistic pending row (#defaults: optimistic + dedupe by id).
     if (epk != null) {
       await _appendTranscriptEvent(
         UserMessageSubmitted(
           eventId: 'local:user_submitted:$id',
-          sessionId: _activeTranscriptSessionId(),
+          sessionId: ref.sessionId,
           ts: now,
           clientMessageId: id,
           text: text,
@@ -348,6 +350,11 @@ class SyncService extends Service {
         ),
         preserveTurnState: isSteer,
       );
+      if (!_isCurrentLifecycle(generation, ref) ||
+          !identical(_conn.channel, initialChannel) ||
+          (!held && !_conn.isRoomLive(ref.peerEpk, ref.roomId))) {
+        return;
+      }
       if (!isSteer) {
         _setTurnActive(
           status: AppTurnStatus.working,
@@ -382,9 +389,15 @@ class SyncService extends Service {
     // message pending exactly like the offline branch so it fails visibly
     // (or re-attempts on the next healthy connection) instead of vanishing
     // into a dead send buffer.
-    // (The `held` flag above already captures this; the branch above returns
-    // before reaching here. This comment is retained for the option-1
-    // provenance.)
+    final sendChannel = _conn.channel;
+    if (!_isCurrentLifecycle(generation, ref) ||
+        sendChannel == null ||
+        !identical(sendChannel, initialChannel) ||
+        _activeEpk != ref.peerEpk ||
+        _activeRoomId != ref.roomId ||
+        !_conn.isRoomLive(ref.peerEpk, ref.roomId)) {
+      return;
+    }
     // Seed an EMPTY streaming buffer so the blinking cursor shows during the
     // "thinking" gap before the first agent_chunk (pre-31 behavior). In-memory
     // only (#7) — never written to the DB. agent_chunk appends; agent_done
@@ -405,7 +418,7 @@ class SyncService extends Service {
       ),
     );
     try {
-      await ch.send(
+      await sendChannel.send(
         UserMessage(
           id: id,
           sessionId: sessionId,
@@ -424,6 +437,7 @@ class SyncService extends Service {
             'Message could not be sent to the Pi. Check the connection and try again.',
         debugDetail: err,
         expectedRef: ref,
+        expectedGeneration: generation,
       );
     }
   }
@@ -498,10 +512,12 @@ class SyncService extends Service {
     required String message,
     Object? debugDetail,
     RemoteSessionRef? expectedRef,
+    int? expectedGeneration,
   }) async {
-    if (expectedRef != null && !_isStillActive(expectedRef)) return;
+    final generation = expectedGeneration ?? _lifecycleGeneration;
+    if (!_isCurrentLifecycle(generation, expectedRef)) return;
     _pendingSendTimers.remove(id)?.cancel();
-    if (expectedRef != null && !_isStillActive(expectedRef)) return;
+    if (!_isCurrentLifecycle(generation, expectedRef)) return;
     try {
       await _appendTranscriptEvent(
         UserMessageFailed(
@@ -514,7 +530,7 @@ class SyncService extends Service {
         ),
       );
     } finally {
-      if (expectedRef == null || _isStillActive(expectedRef)) {
+      if (_isCurrentLifecycle(generation, expectedRef)) {
         // Terminal in-memory convergence is independent of durable storage.
         if (_streaming?.inReplyTo == id) _emitStreaming(null);
         if (turnProjection.cancelTargetId == id) _setTurnIdle();
@@ -882,7 +898,7 @@ class SyncService extends Service {
             !committedViaAgentMessage &&
             _extensionSendsDeterministicAgentMessage;
         final terminalEvents = <TranscriptEvent>[];
-        if (buffered.isNotEmpty) _emitStreaming(null);
+        if (_streaming != null) _emitStreaming(null);
         if (buffered.isNotEmpty &&
             !committedViaAgentMessage &&
             !deterministicExpectedButDropped) {
@@ -1292,6 +1308,14 @@ class SyncService extends Service {
               _resolveActiveRef(expectedRef.peerEpk, expectedRef.roomId) ==
                   expectedRef));
 
+  bool _canPublishTurnProjection(
+    int generation,
+    RemoteSessionRef ref,
+    int projectionEpoch,
+  ) =>
+      projectionEpoch == _turnProjectionEpoch &&
+      _isCurrentLifecycle(generation, ref);
+
   void _logLifecycleFailure(
     LifecycleOperation operation,
     Object error, {
@@ -1363,6 +1387,7 @@ class SyncService extends Service {
     final ref = _activeRef;
     if (ref == null) return;
     final generation = _lifecycleGeneration;
+    final projectionEpoch = _turnProjectionEpoch;
     final key = _transcriptKeyForRef(ref);
     final batch = events
         .where((event) => event.sessionId == key.sessionId)
@@ -1383,7 +1408,8 @@ class SyncService extends Service {
         sessionId: key.sessionId,
         events: log,
       );
-      if (!preserveTurnState) {
+      if (!preserveTurnState &&
+          _canPublishTurnProjection(generation, ref, projectionEpoch)) {
         _emitStreaming(projection.streaming);
         _setTurnView(projection.turn);
       }
@@ -1404,6 +1430,7 @@ class SyncService extends Service {
     int generation,
   ) {
     final key = _transcriptKeyForRef(ref);
+    final projectionEpoch = _turnProjectionEpoch;
     return _enqueue(() async {
       if (!_isCurrentLifecycle(generation, ref)) return;
       final log = await _eventStore.readSession(key);
@@ -1412,8 +1439,10 @@ class SyncService extends Service {
         sessionId: key.sessionId,
         events: log,
       );
-      _emitStreaming(projection.streaming);
-      _setTurnView(projection.turn);
+      if (_canPublishTurnProjection(generation, ref, projectionEpoch)) {
+        _emitStreaming(projection.streaming);
+        _setTurnView(projection.turn);
+      }
       await _rewriteMessageProjectionInWriteChain(
         ref,
         projection,
@@ -1603,6 +1632,7 @@ class SyncService extends Service {
     final ref = _activeRef;
     if (ref == null) return;
     final generation = _lifecycleGeneration;
+    final projectionEpoch = _turnProjectionEpoch;
     final key = _transcriptKeyForRef(ref);
     if (history.sessionId != key.sessionId) return;
     if (_isStaleHistory(history.sessionStartedAt)) return;
@@ -1656,8 +1686,10 @@ class SyncService extends Service {
           sessionId: key.sessionId,
           events: log,
         );
-        _emitStreaming(projection.streaming);
-        _setTurnView(projection.turn);
+        if (_canPublishTurnProjection(generation, ref, projectionEpoch)) {
+          _emitStreaming(projection.streaming);
+          _setTurnView(projection.turn);
+        }
         await _rewriteMessageProjectionInWriteChain(
           ref,
           projection,
@@ -1819,8 +1851,10 @@ class SyncService extends Service {
     );
   }
 
-  void _setTurnIdle({String? preview}) =>
-      _setTurnView(TranscriptTurnView.idle, preview: preview);
+  void _setTurnIdle({String? preview}) {
+    _turnProjectionEpoch += 1;
+    _setTurnView(TranscriptTurnView.idle, preview: preview);
+  }
 
   bool _sameTurnView(TranscriptTurnView left, TranscriptTurnView right) =>
       left.status == right.status &&
@@ -1831,10 +1865,11 @@ class SyncService extends Service {
   void _updateIndex(SessionIndexRecord Function(SessionIndexRecord cur) build) {
     final ref = _activeRef;
     if (ref == null) return;
+    final generation = _lifecycleGeneration;
     _runDetachedWrite(
       operation: LifecycleOperation.runtimeWrite,
       write: () => _enqueue(() async {
-        if (!_isStillActive(ref)) return;
+        if (!_isCurrentLifecycle(generation, ref)) return;
         final idx = _boxes.sessionsIndexBox();
         final key = LocalBoxes.sessionKey(ref);
         final raw = idx.get(key);
@@ -1848,7 +1883,7 @@ class SyncService extends Service {
               roomId: ref.roomId,
               sessionId: ref.sessionId,
             );
-        if (!_isStillActive(ref)) return;
+        if (!_isCurrentLifecycle(generation, ref)) return;
         await idx.put(key, build(base).toJson());
       }),
       expectedRef: ref,
@@ -1859,6 +1894,8 @@ class SyncService extends Service {
     final epk = _activeEpk;
     if (epk == null) return;
     final room = _activeRoomId;
+    final ref = _activeRef;
+    final generation = _lifecycleGeneration;
     final s = _conn.status;
     final conn = switch (s) {
       StatusOnline() => RuntimeConnection.online,
@@ -1873,20 +1910,29 @@ class SyncService extends Service {
     _runDetachedWrite(
       operation: LifecycleOperation.runtimeWrite,
       write: () => _enqueue(() async {
-        if (_activeEpk != epk || _activeRoomId != room) return;
+        if (!_isCurrentLifecycle(generation, ref) ||
+            _activeEpk != epk ||
+            _activeRoomId != room) {
+          return;
+        }
         final key = LocalBoxes.runtimeKey(epk, room);
         final value = RuntimeRecord(
           connection: conn,
           presence: presence,
         ).toJson();
         final writer = _runtimeRecordWriter;
+        if (!_isCurrentLifecycle(generation, ref) ||
+            _activeEpk != epk ||
+            _activeRoomId != room) {
+          return;
+        }
         if (writer == null) {
           await _boxes.runtimeBox().put(key, value);
         } else {
           await writer(key, value);
         }
       }),
-      expectedRef: _activeRef,
+      expectedRef: ref,
     );
   }
 
