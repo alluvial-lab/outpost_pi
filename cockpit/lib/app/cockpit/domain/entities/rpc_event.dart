@@ -1,3 +1,5 @@
+import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
+
 /// Represent the domain form of the `pi --mode rpc` stdout stream.
 ///
 /// The domain and `ui/` never see the raw wire format (`Map<String,dynamic>`).
@@ -65,7 +67,7 @@ final class RpcToolStart extends RpcEvent {
   });
   final String toolCallId;
   final String toolName;
-  final Map<String, dynamic> args;
+  final RpcJsonObject args;
 }
 
 /// `tool_execution_end` — a tool finished with result text.
@@ -277,7 +279,7 @@ final class RpcPaired extends RpcEvent {
 final class RpcMeshRevoked extends RpcEvent {
   const RpcMeshRevoked({this.details});
 
-  final Map<String, dynamic>? details;
+  final RpcJsonObject? details;
 }
 
 /// Preserve any event not yet mapped, including compaction, retry, queue updates,
