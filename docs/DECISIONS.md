@@ -90,7 +90,7 @@ resolved they move here.
 | **Envelope (mesh + cross-PC)** | `{from, to, id, re, body}` with UUIDv7 ids. Local UDS and cross-PC relay forwards use the same envelope shape; cross-PC wraps it in `pi_envelope`/`pi_envelope_in` frames carrying `to_pc`/`from_pc` Pi-pubkeys. |
 | **Cockpit↔pi control RPC** | Folded into the generated schema by `epic-bold-generated-protocol-cockpit-control-rpc`, retiring the former private NUL-prefix string RPC (`\x00remote-pi-ctrl:...`). |
 | **No protocol version field** | v1 implicit. Add `v` only when v2 surfaces and requires migration. |
-| **1 MiB message limit** | Relay rejects larger. |
+| **4 MiB default message limit** | Relay rejects outer envelopes larger. Configurable via `RELAY_MAX_CT_MIB` env (read once at startup in `relay/src/protocol/outer.rs`); defaults to 4 MiB. The pre-rebrand default was 1 MiB. |
 | **ErrorCode is open** | `KnownErrorCode | (string & {})` — receivers tolerate unknown codes for forward-compat. |
 
 ## Crypto and trust
