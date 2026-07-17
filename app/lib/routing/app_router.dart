@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app/config/dependencies.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
@@ -25,32 +27,50 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-// Boot decision is async — _BootState is a ChangeNotifier used as
-// refreshListenable so the router redirects once the storage check finishes.
-class _BootState extends ChangeNotifier {
+/// Identify the boot phase whose retryable failure is shown on `/boot`.
+enum BootFailureStage { preferences, identity, storage, connection }
+
+/// Carry a safe boot failure without exposing its underlying exception.
+final class BootFailure {
+  const BootFailure(this.stage, this.message);
+
+  final BootFailureStage stage;
+  final String message;
+}
+
+/// Own generation-guarded router bootstrap and its retryable failure state.
+///
+/// The router uses this as `refreshListenable`; tests exercise the same public
+/// boundary so boot completion cannot drift from redirect readiness.
+class BootState extends ChangeNotifier {
   bool _ready = false;
   bool _hasPeer = false;
   bool _onboarded = false;
   bool _syncAvailable = true;
   bool _identityWasGenerated = false;
+  bool _loading = false;
+  bool _disposed = false;
+  int _generation = 0;
+  BootFailure? _failure;
 
   bool get ready => _ready;
   bool get hasPeer => _hasPeer;
   bool get onboarded => _onboarded;
   bool get syncAvailable => _syncAvailable;
+  bool get loading => _loading;
+  BootFailure? get failure => _failure;
 
   /// True when this run is the very first time the Owner key materialised
   /// on this account (the bridge just generated it). Restored identities
   /// — anything coming back from iCloud Keychain / Block Store, including
   /// the "reinstalled the app on the same device" case where the platform
   /// re-hands the previous key — set this to false.
-  ///
-  /// Drives the redirect: only fresh identities **and** an empty peer
-  /// list get sent to the onboarding stepper; everything else lands on
-  /// /home (which itself shows a friendly "pair your first Pi" state
-  /// when peers is empty).
   bool get identityWasGenerated => _identityWasGenerated;
 
+  /// Restore local boot state and settle the initial connection attempt.
+  ///
+  /// Expected relay failures are projected by [ConnectionManager] as retrying;
+  /// exceptions at a boot phase remain owned here and become retryable UI.
   Future<void> load(
     PairingStorage storage,
     ConnectionManager conn,
@@ -59,16 +79,43 @@ class _BootState extends ChangeNotifier {
     MeshSyncService meshSync, {
     void Function()? installWatcherAfterBoot,
   }) async {
-    await prefs.load();
+    if (_disposed) return;
+    final generation = ++_generation;
+    _ready = false;
+    _failure = null;
+    _loading = true;
+    _hasPeer = false;
+    _onboarded = false;
+    _identityWasGenerated = false;
+    notifyListeners();
 
-    // Plan 23 — block bootstrap until the platform's key-sync surface
-    // (iCloud Keychain / Block Store) is usable AND we have an
-    // Owner-key (loaded or freshly generated). If sync is off, the
-    // router redirects to /sync-required and the user retries from
-    // there once they flip the toggle in Settings.
-    final ownerResult = await ownerBridge.boot();
+    try {
+      await prefs.load();
+    } on Object {
+      _fail(
+        generation,
+        BootFailureStage.preferences,
+        'Could not load app settings. Try again.',
+      );
+      return;
+    }
+    if (!_isCurrent(generation)) return;
+
+    OwnerIdentityBootResult ownerResult;
+    try {
+      ownerResult = await ownerBridge.boot();
+    } on Object {
+      _fail(
+        generation,
+        BootFailureStage.identity,
+        'Could not load your synced identity. Try again.',
+      );
+      return;
+    }
+    if (!_isCurrent(generation)) return;
     if (ownerResult is SyncUnavailableResult) {
       _syncAvailable = false;
+      _loading = false;
       _ready = true;
       notifyListeners();
       return;
@@ -77,58 +124,105 @@ class _BootState extends ChangeNotifier {
     _identityWasGenerated =
         ownerResult is IdentityReady && ownerResult.generated;
 
-    // Install the platform-sync watcher *after* boot completes so its
-    // initial-emit race (see OwnerIdentityBridge.startWatching) can't
-    // ever observe a null _current. The bridge has its own defence
-    // for the null case; this is the belt to its suspenders.
-    installWatcherAfterBoot?.call();
+    List<PeerRecord> peers;
+    try {
+      // A false pull result means relay-unavailable local-cache fallback. Only
+      // an unexpected thrown storage/crypto failure blocks boot.
+      await meshSync.pullOnDemand();
+      if (!_isCurrent(generation)) return;
+      peers = await storage.listPeers();
+      if (!_isCurrent(generation)) return;
+      _hasPeer = peers.isNotEmpty;
+      if (_hasPeer && !prefs.onboardingCompleted) {
+        await prefs.setOnboardingCompleted(true);
+        if (!_isCurrent(generation)) return;
+      }
+      _onboarded = prefs.onboardingCompleted;
 
-    // Plan 24 — pull mesh_versions from the relay BEFORE listing peers
-    // so a reinstall on a new device materialises the same membership
-    // the user had on the old one. Failure (offline, relay down, 4xx)
-    // is logged inside the service and we fall back gracefully on the
-    // local cache.
-    await meshSync.pullOnDemand();
+      if (_hasPeer) {
+        var selected = prefs.selectedPeerEpk;
+        if (selected == null ||
+            !peers.any((peer) => peer.remoteEpk == selected)) {
+          selected = peers.first.remoteEpk;
+          await prefs.setSelectedPeerEpk(selected);
+          if (!_isCurrent(generation)) return;
+        }
 
-    final peers = await storage.listPeers();
-    _hasPeer = peers.isNotEmpty;
-    // Plan 14: a user who already has a peer is implicitly onboarded —
-    // they paired in an earlier app version that predates the
-    // onboarding flow. Auto-flip the flag so they don't re-run it.
-    if (_hasPeer && !prefs.onboardingCompleted) {
-      await prefs.setOnboardingCompleted(true);
+        try {
+          await conn.boot(preferredEpk: selected);
+        } on Object {
+          _fail(
+            generation,
+            BootFailureStage.connection,
+            'Could not start the connection. Try again.',
+          );
+          return;
+        }
+        if (!_isCurrent(generation)) return;
+      }
+    } on Object {
+      _fail(
+        generation,
+        BootFailureStage.storage,
+        'Could not restore paired devices. Try again.',
+      );
+      return;
     }
-    _onboarded = prefs.onboardingCompleted;
+
+    try {
+      if (!_isCurrent(generation)) return;
+      installWatcherAfterBoot?.call();
+    } on Object {
+      _fail(
+        generation,
+        BootFailureStage.identity,
+        'Could not watch your synced identity. Try again.',
+      );
+      return;
+    }
+    if (!_isCurrent(generation)) return;
+    _loading = false;
     _ready = true;
     notifyListeners();
-    // Plan 13: `Preferences.selectedPeerEpk` is the authoritative
-    // pointer to the peer the user wants connected. On a fresh install
-    // it's null — default to `peers.first` so subsequent boot()s have a
-    // stable target and the user lands on a deterministic chat.
-    if (_hasPeer) {
-      var selected = prefs.selectedPeerEpk;
-      if (selected == null) {
-        selected = peers.first.remoteEpk;
-        await prefs.setSelectedPeerEpk(selected);
-      } else if (!peers.any((p) => p.remoteEpk == selected)) {
-        // Selected peer was revoked / no longer in storage — fall back.
-        selected = peers.first.remoteEpk;
-        await prefs.setSelectedPeerEpk(selected);
-      }
-      // ignore: unawaited_futures
-      conn.boot(preferredEpk: selected);
-    }
   }
 
-  /// Plan 23 — invoked by the OwnerIdentityBridge watch listener when
-  /// platform sync delivers a different Owner-pk. We reset to the
-  /// "no-state" view; the next `load()` call (triggered when the user
-  /// returns to /boot) will repopulate from the freshly-wiped storage.
-  void onOwnerKeyReplaced() {
+  bool _isCurrent(int generation) => !_disposed && generation == _generation;
+
+  void _fail(int generation, BootFailureStage stage, String message) {
+    if (!_isCurrent(generation)) return;
+    _loading = false;
     _ready = false;
+    _failure = BootFailure(stage, message);
+    notifyListeners();
+  }
+
+  /// Project a failed Owner-key reset without leaking callback errors.
+  void failOwnerReset() {
+    _fail(
+      _generation,
+      BootFailureStage.connection,
+      'Could not reset the previous connection. Try again.',
+    );
+  }
+
+  /// Invalidate in-flight work before retry or Owner-key replacement.
+  void invalidate() {
+    if (_disposed) return;
+    _generation++;
+    _ready = false;
+    _loading = false;
+    _failure = null;
     _hasPeer = false;
     _onboarded = false;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _generation++;
+    super.dispose();
   }
 }
 
@@ -139,7 +233,7 @@ GoRouter buildRouter(
   OwnerIdentityBridge ownerBridge,
   MeshSyncService meshSync,
 ) {
-  final boot = _BootState();
+  final boot = BootState();
 
   // Plan 23 — watch for Owner-key drift on the sync surface. When the
   // platform delivers a different keypair (restored on a new device,
@@ -149,7 +243,7 @@ GoRouter buildRouter(
   // first fetch against the new Owner-pk would use a stale `since`.
   //
   // Hook is captured here but only installed AFTER boot() succeeds —
-  // see _BootState.load's `installWatcherAfterBoot` parameter. That
+  // see BootState.load's `installWatcherAfterBoot` parameter. That
   // ordering matters: the platform plugin emits an initial blob the
   // moment we subscribe; we must have `_current` populated by boot()
   // first, otherwise the bridge would see "different owner_pk" (vs
@@ -160,21 +254,48 @@ GoRouter buildRouter(
     watcherInstalled = true;
     ownerBridge.startWatching(
       onReset: () async {
-        await conn.disconnect();
-        meshSync.resetVersionWatermark();
-        boot.onOwnerKeyReplaced();
-        await boot.load(storage, conn, prefs, ownerBridge, meshSync);
+        boot.invalidate();
+        try {
+          await conn.disconnect();
+          meshSync.resetVersionWatermark();
+          await boot.load(
+            storage,
+            conn,
+            prefs,
+            ownerBridge,
+            meshSync,
+            installWatcherAfterBoot: installWatcher,
+          );
+        } on Object {
+          boot.failOwnerReset();
+        }
       },
     );
   }
 
-  boot.load(
-    storage,
-    conn,
-    prefs,
-    ownerBridge,
-    meshSync,
-    installWatcherAfterBoot: installWatcher,
+  void retryBoot() {
+    boot.invalidate();
+    unawaited(
+      boot.load(
+        storage,
+        conn,
+        prefs,
+        ownerBridge,
+        meshSync,
+        installWatcherAfterBoot: installWatcher,
+      ),
+    );
+  }
+
+  unawaited(
+    boot.load(
+      storage,
+      conn,
+      prefs,
+      ownerBridge,
+      meshSync,
+      installWatcherAfterBoot: installWatcher,
+    ),
   );
 
   // Plan 24 — start foreground polling. The router doesn't have
@@ -187,7 +308,9 @@ GoRouter buildRouter(
     initialLocation: '/boot',
     refreshListenable: boot,
     redirect: (context, state) {
-      if (!boot.ready) return '/boot';
+      if (boot.failure != null || !boot.ready) {
+        return state.uri.path == '/boot' ? null : '/boot';
+      }
       // Sync-required gate is sticky until the user toggles iCloud /
       // Backup on and taps "Check again". Don't redirect away from
       // /sync-required while the bridge still reports unavailable.
@@ -210,8 +333,11 @@ GoRouter buildRouter(
       return null;
     },
     routes: [
-      // Splash while boot.load() is in flight
-      GoRoute(path: '/boot', builder: (ctx, st) => const _BootSplash()),
+      // Splash while boot.load() is in flight; phase failures remain here.
+      GoRoute(
+        path: '/boot',
+        builder: (ctx, st) => _BootSplash(state: boot, onRetry: retryBoot),
+      ),
 
       // Plan 23 — first-launch gate when iCloud Keychain / Google
       // Backup is off. Sticky route: redirect keeps the user here
@@ -413,21 +539,62 @@ class _DetailPane extends StatelessWidget {
 }
 
 class _BootSplash extends StatelessWidget {
-  const _BootSplash();
+  const _BootSplash({required this.state, required this.onRetry});
+
+  final BootState state;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.colors.bg,
-      body: Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(
-            color: context.colors.accent,
-            strokeWidth: 2,
-          ),
-        ),
+      body: AnimatedBuilder(
+        animation: state,
+        builder: (context, _) {
+          final failure = state.failure;
+          if (failure != null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 32,
+                      color: context.colors.error,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      failure.message,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: context.colors.text,
+                        fontFamily: kMonoFamily,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: state.loading ? null : onRetry,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          return Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                color: context.colors.accent,
+                strokeWidth: 2,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
