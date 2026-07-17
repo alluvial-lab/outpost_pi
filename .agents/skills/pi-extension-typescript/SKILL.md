@@ -103,8 +103,7 @@ Hooks actually used across the extension include: [remote-pi-index-lifecycle]{1}
 - `agent_end` — finalizes `agent_done`.
 - `turn_start` / `turn_end` — publish `room_meta.working`.
 - `session_before_compact` / `session_compact` — bracket compact working-state and add synthetic history marker.
-- `session_start` / `session_shutdown` — capture the freshest session-bound context and tear down stale outgoing instance. These are registered in `pi-extension/src/extension/composition_root.ts` via `registerLifecycleHooks(pi, ports, ...)`, not directly in `src/index.ts`; `index.ts` is the composition entrypoint that wires the `RemotePiRuntimePorts` seam and invokes `registerLifecycleHooks`.
-- `session_start` — capture the freshest session-bound context.
+- `session_start` / `session_shutdown` — capture the freshest session-bound context and tear down stale outgoing instance. These are registered in `pi-extension/src/extension/composition_root.ts` via `registerLifecycleHooks(pi, ports, ...)`, not directly in `src/index.ts`; `index.ts` is the composition entrypoint that wires the `OutpostPiRuntimePorts` seam and invokes `registerLifecycleHooks`.
 - `session_shutdown` — tear down stale outgoing instance.
 
 Session action helpers use `ctx.compact()`, `ctx.newSession({ withSession })`, `ctx.getModel()`, `ctx.abort()`, `pi.setModel(model)`, `pi.setThinkingLevel(level)`, and `SettingsManager.create(cwd)`. `ctx.getModel()` is used defensively in source even though it is less prominently documented than core lifecycle hooks; verify SDK types before changing that call path. [remote-pi-index-lifecycle]{1}
