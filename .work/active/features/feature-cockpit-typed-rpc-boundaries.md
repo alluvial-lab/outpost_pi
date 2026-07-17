@@ -1,7 +1,7 @@
 ---
 id: feature-cockpit-typed-rpc-boundaries
 kind: feature
-stage: implementing
+stage: review
 tags: [cockpit, refactor, protocol]
 parent: null
 depends_on: []
@@ -181,3 +181,27 @@ static Map<String, Object?> _schemaUiResponse(String id, RpcUiResponse response)
 2. `gate-refactor-boundaries-ambiguous-map-rpc-gateway-respondui` — introduce sealed UI response, centralize outgoing wire serialization in `PiRpcProcess`.
 
 One feature-owning implementation worker for both steps. Existing child stories are sequential verification checkpoints, not separate ownership units.
+
+## Implementation Summary
+
+Both boundary refactors are implemented without changing the Cockpit wire
+contract or runtime fallback behavior:
+
+- Added `RpcJsonObject` with shallow top-level immutability and boundary
+  conversion. Tool args and mesh-revoked details now remain typed through live
+  events, history replay, transcript events, projection, and tool-card JSON
+  rendering. Non-object args still use the shared empty object; absent or
+  non-object mesh details remain `null`.
+- Added sealed `RpcUiResponse` variants and threaded them through the gateway,
+  process controller, session, and transcript UI. `PiRpcProcess` is the sole
+  serializer for `value`, `confirmed`, and `cancelled` wire keys; labels remain
+  presentation-only.
+- Updated focused mapper, projection immutability, UI serialization, session,
+  workspace, and gateway fake coverage.
+
+Verification from `cockpit/`:
+
+- `PUB_CACHE=/home/agent/projects/outpost_pi/.pub-cache ~/projects/outpost_pi/.tools/flutter/bin/flutter analyze lib test` — passed.
+- Focused RPC mapper/transcript/UI/process/workspace tests — passed (34 tests).
+- `PUB_CACHE=/home/agent/projects/outpost_pi/.pub-cache ~/projects/outpost_pi/.tools/flutter/bin/flutter analyze` — passed.
+- `PUB_CACHE=/home/agent/projects/outpost_pi/.pub-cache ~/projects/outpost_pi/.tools/flutter/bin/flutter test` — passed (243 tests).
