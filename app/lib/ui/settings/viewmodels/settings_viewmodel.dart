@@ -1,4 +1,3 @@
-import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/relay_config.dart';
@@ -16,22 +15,10 @@ class SettingsViewModel extends ViewModel<SettingsState> {
   final Preferences _prefs;
   final ConnectionManager _conn;
   final DebugLog? _debugLog;
-
-  /// Optional in tests; required in production. The revoke flow drives
-  /// it explicitly with `allowEmpty:true` so a revoke of the last
-  /// remaining peer still propagates to the relay — without it, the
-  /// safety net in [MeshSyncService] refuses to publish members=[] and
-  /// the next `pullOnDemand` resurrects the peer from the stale blob.
-  final MeshSyncService? _meshSync;
   bool _disposed = false;
 
-  SettingsViewModel(
-    this._storage,
-    this._prefs,
-    this._conn, [
-    this._meshSync,
-    this._debugLog,
-  ]) : super(const SettingsLoading()) {
+  SettingsViewModel(this._storage, this._prefs, this._conn, [this._debugLog])
+    : super(const SettingsLoading()) {
     _load();
   }
 
@@ -120,18 +107,11 @@ class SettingsViewModel extends ViewModel<SettingsState> {
     if (_prefs.selectedPeerEpk == epk) {
       await _prefs.setSelectedPeerEpk(null);
     }
-    // Use the SILENT delete so the storage mutation hook does not
-    // auto-publish a members=[] blob through the safety-net guard
-    // (which would refuse it for the last-peer case and leave the
-    // relay holding stale state). We publish ourselves below with
-    // `allowEmpty:true` — the only place in the app that opts out of
-    // the empty-on-existing safety net.
-    await _storage.deletePeerSilent(epk);
+    // The normal delete emits typed mutation intent. MeshSyncService owns the
+    // asynchronous publication and may therefore publish members=[] safely
+    // when this was the final peer; Settings owns no network future.
+    await _storage.deletePeer(epk);
     final remaining = await _storage.listPeers();
-    if (_meshSync != null) {
-      // ignore: unawaited_futures
-      _meshSync.publish(allowEmpty: remaining.isEmpty);
-    }
     _conn.subscribeToPeers(remaining.map((p) => p.remoteEpk).toList());
     // If the revoked peer was the one currently driving the connection,
     // tear it down so we don't keep talking to a peer the user just
