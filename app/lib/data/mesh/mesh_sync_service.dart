@@ -78,26 +78,41 @@ class MeshSyncService extends ChangeNotifier {
     return _pullOnDemand(allowPendingMutation: false);
   }
 
-  Future<bool> _pullOnDemand({required bool allowPendingMutation}) async {
-    if (_disposed || (_mutationPending && !allowPendingMutation)) return false;
+  Future<bool> _pullOnDemand({
+    required bool allowPendingMutation,
+    int? expectedMutationRevision,
+  }) async {
+    final mutationRevision = expectedMutationRevision ?? _mutationRevision;
     final pk = _ownerBridge.currentOwnerPk;
-    if (pk == null) {
+    if (pk == null ||
+        !_isPullCurrent(mutationRevision, allowPendingMutation, pk)) {
       return false;
     }
     final hash = await MeshClient.ownerPkHash(pk);
+    if (!_isPullCurrent(mutationRevision, allowPendingMutation, pk)) {
+      return false;
+    }
     final result = await _client.fetch(
       hash,
       since: _lastVersion > 0 ? _lastVersion : null,
     );
-    if (_disposed) return false;
+    if (!_isPullCurrent(mutationRevision, allowPendingMutation, pk)) {
+      return false;
+    }
     switch (result) {
       case MeshFetchOk(
         envelope: final env,
         version: final v,
         updatedAt: final u,
       ):
-        final applied = await _applyVerified(env, expectedOwnerPk: pk);
-        if (applied && !_disposed) {
+        final applied = await _applyVerified(
+          env,
+          expectedOwnerPk: pk,
+          mutationRevision: mutationRevision,
+          allowPendingMutation: allowPendingMutation,
+        );
+        if (applied &&
+            _isPullCurrent(mutationRevision, allowPendingMutation, pk)) {
           _lastVersion = v;
           lastUpdatedAt = u;
           notifyListeners();
@@ -105,12 +120,25 @@ class MeshSyncService extends ChangeNotifier {
         }
         return false;
       case MeshFetchNotModified():
-        return true;
+        return _isPullCurrent(mutationRevision, allowPendingMutation, pk);
       case MeshFetchNotFound():
-        return true;
+        return _isPullCurrent(mutationRevision, allowPendingMutation, pk);
       case MeshFetchFailure():
         return false;
     }
+  }
+
+  bool _isPullCurrent(
+    int mutationRevision,
+    bool allowPendingMutation,
+    Uint8List expectedOwnerPk,
+  ) {
+    final currentOwnerPk = _ownerBridge.currentOwnerPk;
+    return !_disposed &&
+        mutationRevision == _mutationRevision &&
+        (allowPendingMutation || !_mutationPending) &&
+        currentOwnerPk != null &&
+        _bytesEqual(currentOwnerPk, expectedOwnerPk);
   }
 
   /// Verify the envelope, parse, and overwrite the local storage with
@@ -120,17 +148,33 @@ class MeshSyncService extends ChangeNotifier {
   Future<bool> _applyVerified(
     MeshEnvelope env, {
     required Uint8List expectedOwnerPk,
+    required int mutationRevision,
+    required bool allowPendingMutation,
   }) async {
     final ok = await MeshBlob.verifyEnvelope(env);
-    if (!ok) {
+    if (!ok ||
+        !_isPullCurrent(
+          mutationRevision,
+          allowPendingMutation,
+          expectedOwnerPk,
+        )) {
       return false;
     }
     final blob = MeshBlob.fromCanonicalBytes(env.blob);
-    if (!_bytesEqual(blob.ownerPk, expectedOwnerPk)) {
+    if (!_bytesEqual(blob.ownerPk, expectedOwnerPk) ||
+        !_isPullCurrent(
+          mutationRevision,
+          allowPendingMutation,
+          expectedOwnerPk,
+        )) {
       return false;
     }
-    await _replaceLocalCacheWith(blob);
-    return true;
+    return _replaceLocalCacheWith(
+      blob,
+      expectedOwnerPk: expectedOwnerPk,
+      mutationRevision: mutationRevision,
+      allowPendingMutation: allowPendingMutation,
+    );
   }
 
   /// Overwrite local peers + nicknames with what the relay says.
@@ -146,12 +190,21 @@ class MeshSyncService extends ChangeNotifier {
   /// `publish()` could observe an empty PairingStorage and ship
   /// members=[] — the bug reproduced by the user, where pi-extension
   /// self-revoked after the app silently published v2 empty.
-  Future<void> _replaceLocalCacheWith(MeshBlob blob) async {
-    final existing = {
-      for (final p in await _storage.listPeers()) p.remoteEpk: p,
-    };
+  Future<bool> _replaceLocalCacheWith(
+    MeshBlob blob, {
+    required Uint8List expectedOwnerPk,
+    required int mutationRevision,
+    required bool allowPendingMutation,
+  }) async {
+    bool current() =>
+        _isPullCurrent(mutationRevision, allowPendingMutation, expectedOwnerPk);
+
+    final peers = await _storage.listPeers();
+    if (!current()) return false;
+    final existing = {for (final p in peers) p.remoteEpk: p};
     final keep = <String>{};
     for (final m in blob.members) {
+      if (!current()) return false;
       keep.add(m.remoteEpk);
       final prev = existing[m.remoteEpk];
       final next = PeerRecord(
@@ -164,14 +217,52 @@ class MeshSyncService extends ChangeNotifier {
       );
       if (prev == null || !_peerEqualsForMesh(prev, next)) {
         await _storage.savePeerSilent(next);
+        if (!current()) return false;
       }
     }
     for (final p in existing.values) {
+      if (!current()) return false;
       if (!keep.contains(p.remoteEpk)) {
         await _storage.deletePeerSilent(p.remoteEpk);
+        if (!current()) return false;
         await _storage.deleteRooms(p.remoteEpk);
+        if (!current()) return false;
       }
     }
+    return current();
+  }
+
+  Future<bool> _restoreProtectedLocalSnapshot(
+    List<PeerRecord> protectedPeers, {
+    required Uint8List expectedOwnerPk,
+    required int mutationRevision,
+  }) async {
+    bool current() => _isPullCurrent(mutationRevision, true, expectedOwnerPk);
+
+    final currentPeers = await _storage.listPeers();
+    if (!current()) return false;
+    final existing = {for (final peer in currentPeers) peer.remoteEpk: peer};
+    final protectedByEpk = {
+      for (final peer in protectedPeers) peer.remoteEpk: peer,
+    };
+    for (final peer in protectedPeers) {
+      if (!current()) return false;
+      final stored = existing[peer.remoteEpk];
+      if (stored == null || stored != peer) {
+        await _storage.savePeerSilent(peer);
+        if (!current()) return false;
+      }
+    }
+    for (final peer in currentPeers) {
+      if (!current()) return false;
+      if (!protectedByEpk.containsKey(peer.remoteEpk)) {
+        await _storage.deletePeerSilent(peer.remoteEpk);
+        if (!current()) return false;
+        await _storage.deleteRooms(peer.remoteEpk);
+        if (!current()) return false;
+      }
+    }
+    return current();
   }
 
   /// Compare the mesh-controlled fields only — `sessionName` and
@@ -278,8 +369,24 @@ class MeshSyncService extends ChangeNotifier {
         return result;
       case MeshPublishConflict():
         if (!refetchOnConflict) return result;
-        await _pullOnDemand(allowPendingMutation: true);
-        if (_disposed) return const MeshPublishFailure('disposed');
+        final rebaseRevision = _mutationRevision;
+        final protectedLocalSnapshot = await _storage.listPeers();
+        if (!_isPullCurrent(rebaseRevision, true, pk)) return result;
+        final pulled = await _pullOnDemand(
+          allowPendingMutation: true,
+          expectedMutationRevision: rebaseRevision,
+        );
+        if (!pulled || !_isPullCurrent(rebaseRevision, true, pk)) {
+          return result;
+        }
+        final restored = await _restoreProtectedLocalSnapshot(
+          protectedLocalSnapshot,
+          expectedOwnerPk: pk,
+          mutationRevision: rebaseRevision,
+        );
+        if (!restored || !_isPullCurrent(rebaseRevision, true, pk)) {
+          return result;
+        }
         return _publishOnce(
           pk,
           refetchOnConflict: false,
