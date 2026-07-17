@@ -5,7 +5,6 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { OutpostPiCommandSurfaceHarness } from "../testing.js";
 import {
   isValidRelayUrl,
   isWebSocketScheme,
@@ -39,7 +38,6 @@ interface StoredPeer {
 
 /** Supply infrastructure adapters used to assemble a standalone CLI dependency set. */
 export interface StandaloneCliAdapterDeps {
-  readonly commandSurface: OutpostPiCommandSurfaceHarness;
   readonly listPeers: () => Promise<StoredPeer[]>;
   readonly removePeer: (remoteEpk: string) => Promise<boolean>;
   readonly saveRelayConfig: (url: string) => void;
@@ -54,10 +52,6 @@ export interface StandaloneCliAdapterDeps {
 
 /** Assemble standalone CLI operations from injected storage, mesh, and service adapters. */
 export function createStandaloneCliDeps(input: StandaloneCliAdapterDeps): StandaloneCliDeps {
-  // The harness is part of the CLI bootstrap contract: index.ts passes the same
-  // command-surface test seam used by compatibility exports, so future CLI
-  // commands can route through that stable seam without re-opening index.ts.
-  void input.commandSurface;
   return {
     devices: async () => {
       const peers = await input.listPeers();
