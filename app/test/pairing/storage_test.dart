@@ -213,6 +213,39 @@ void main() {
     });
   });
 
+  group('PairingStorage peer mutation hook', () {
+    const peer = PeerRecord(
+      remoteEpk: 'epk-hook',
+      sessionName: 'hook',
+      relayUrl: 'ws://x',
+      pairedAt: '2026-01-01T00:00:00Z',
+    );
+
+    test('save and delete emit typed mutation intent after commit', () async {
+      final storage = PairingStorage(_FakeSecureStorage());
+      final mutations = <PeerMutationKind>[];
+      storage.attachPeerMutationHook(mutations.add);
+
+      await storage.savePeer(peer);
+      expect(await storage.loadPeer(peer.remoteEpk), peer);
+      await storage.deletePeer(peer.remoteEpk);
+      expect(await storage.loadPeer(peer.remoteEpk), isNull);
+
+      expect(mutations, [PeerMutationKind.upsert, PeerMutationKind.delete]);
+    });
+
+    test('silent mesh-apply methods never emit mutation intent', () async {
+      final storage = PairingStorage(_FakeSecureStorage());
+      final mutations = <PeerMutationKind>[];
+      storage.attachPeerMutationHook(mutations.add);
+
+      await storage.savePeerSilent(peer);
+      await storage.deletePeerSilent(peer.remoteEpk);
+
+      expect(mutations, isEmpty);
+    });
+  });
+
   group('PairingStorage.wipeAll (plan 23 sync-reset)', () {
     test('clears every peer + every persisted rooms entry', () async {
       final fake = _FakeSecureStorage();

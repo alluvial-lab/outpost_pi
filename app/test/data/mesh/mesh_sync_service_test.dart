@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:app/data/mesh/mesh_blob.dart';
 import 'package:app/data/mesh/mesh_client.dart';
+import 'package:app/data/mesh/mesh_envelope.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:cryptography/cryptography.dart';
@@ -74,6 +77,68 @@ class _Reply {
   final String body;
   const _Reply(this.status, this.body);
 }
+
+class _FakeDebugLog implements DebugLog {
+  final events = <DebugEvent>[];
+
+  @override
+  void log(DebugEvent event) => events.add(event);
+
+  @override
+  Future<String?> export() async => null;
+
+  @override
+  Future<void> clear() async => events.clear();
+
+  @override
+  void dispose() {}
+}
+
+class _ScriptedMeshClient extends MeshClient {
+  _ScriptedMeshClient({
+    required List<Future<MeshPublishResult> Function()> publishScripts,
+  }) : _publishScripts = publishScripts,
+       super(baseUrlProvider: () => 'https://relay.example');
+
+  final List<Future<MeshPublishResult> Function()> _publishScripts;
+  final publishedEnvelopes = <MeshEnvelope>[];
+  final Map<int, Completer<void>> _publishWaiters = {};
+  int publishCalls = 0;
+  int fetchCalls = 0;
+
+  Future<void> waitForPublishCount(int count) {
+    if (publishCalls >= count) return Future.value();
+    return (_publishWaiters[count] ??= Completer<void>()).future;
+  }
+
+  @override
+  Future<MeshPublishResult> publish(
+    String hash,
+    MeshEnvelope envelope,
+  ) async {
+    publishedEnvelopes.add(envelope);
+    publishCalls += 1;
+    _publishWaiters.remove(publishCalls)?.complete();
+    final index = publishCalls - 1;
+    if (index >= _publishScripts.length) {
+      throw StateError('unexpected publish call $publishCalls');
+    }
+    return _publishScripts[index]();
+  }
+
+  @override
+  Future<MeshFetchResult> fetch(String hash, {int? since}) async {
+    fetchCalls += 1;
+    return const MeshFetchNotFound();
+  }
+}
+
+const _testPeer = PeerRecord(
+  remoteEpk: 'ZXBrLW1lc2g=',
+  sessionName: 'mesh',
+  relayUrl: 'https://relay.example',
+  pairedAt: '2026-07-17T00:00:00Z',
+);
 
 Future<({SimpleKeyPair keyPair, Uint8List ownerPk})> _newOwner() async {
   final ed = Ed25519();
@@ -418,10 +483,7 @@ void main() {
 
       // Wire the production hook on the storage so this test exercises
       // the real ciclo-pull-apply-savePeer-hook path.
-      storage.attachPeerMutationHook(() {
-        // ignore: unawaited_futures
-        svc.publish();
-      });
+      storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
       await svc.pullOnDemand();
 
@@ -616,10 +678,9 @@ void main() {
       final svc = MeshSyncService(client, bridge, storage);
 
       var hookCalls = 0;
-      storage.attachPeerMutationHook(() {
+      storage.attachPeerMutationHook((kind) {
         hookCalls++;
-        // ignore: unawaited_futures
-        svc.publish();
+        svc.publishAfterPeerMutation(kind);
       });
 
       // Simulate a real local mutation (e.g. PairingViewModel saving a
@@ -636,6 +697,284 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(hookCalls, 1);
       expect(s.adapter.postCount, greaterThanOrEqualTo(1));
+    });
+  });
+
+  group('MeshSyncService mutation publication ownership', () {
+    test('mutations during publish coalesce into one latest follow-up', () async {
+      final owner = await _newOwner();
+      final storage = PairingStorage(_FakeSecureStorage());
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final firstResult = Completer<MeshPublishResult>();
+      final client = _ScriptedMeshClient(
+        publishScripts: [
+          () => firstResult.future,
+          () async => const MeshPublishOk(version: 2, updatedAt: 2),
+        ],
+      );
+      final svc = MeshSyncService(client, bridge, storage);
+      storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+      await storage.savePeer(_testPeer);
+      await client.waitForPublishCount(1);
+      await storage.savePeer(_testPeer.copyWith(sessionName: 'newer'));
+      await storage.savePeer(
+        _testPeer.copyWith(sessionName: 'newest', nickname: 'latest'),
+      );
+
+      firstResult.complete(const MeshPublishOk(version: 1, updatedAt: 1));
+      await client.waitForPublishCount(2);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(client.publishCalls, 2);
+      final followUp = MeshBlob.fromCanonicalBytes(
+        client.publishedEnvelopes[1].blob,
+      );
+      expect(followUp.members.single.nickname, 'latest');
+      svc.dispose();
+    });
+
+    test('transient failure retries once and diagnoses owned retry', () async {
+      final owner = await _newOwner();
+      final storage = PairingStorage(_FakeSecureStorage());
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final log = _FakeDebugLog();
+      final client = _ScriptedMeshClient(
+        publishScripts: [
+          () async => const MeshPublishFailure('sensitive network detail'),
+          () async => const MeshPublishOk(version: 1, updatedAt: 1),
+        ],
+      );
+      final svc = MeshSyncService(
+        client,
+        bridge,
+        storage,
+        debugLog: log,
+        mutationRetryDelay: const Duration(milliseconds: 1),
+      );
+      storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+      await storage.savePeer(_testPeer);
+      await client.waitForPublishCount(2);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(client.publishCalls, 2);
+      final failure = log.events.whereType<LifecycleFailureEvent>().single;
+      expect(failure.operation, LifecycleOperation.meshPublish);
+      expect(failure.retryScheduled, isTrue);
+      expect(failure.reason, isNot(contains('sensitive')));
+      svc.dispose();
+    });
+
+    test('permanent typed outcomes diagnose and never retry', () async {
+      final outcomes = <MeshPublishResult>[
+        const MeshPublishBadRequest('untrusted relay body'),
+        const MeshPublishForbidden(),
+        const MeshPublishTooLarge(),
+      ];
+
+      for (final outcome in outcomes) {
+        final owner = await _newOwner();
+        final storage = PairingStorage(_FakeSecureStorage());
+        final bridge = await _bootedBridge(
+          storage,
+          owner.keyPair,
+          owner.ownerPk,
+        );
+        final log = _FakeDebugLog();
+        final client = _ScriptedMeshClient(
+          publishScripts: [() async => outcome],
+        );
+        final svc = MeshSyncService(
+          client,
+          bridge,
+          storage,
+          debugLog: log,
+          mutationRetryDelay: const Duration(milliseconds: 1),
+        );
+        storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+        await storage.savePeer(_testPeer);
+        await client.waitForPublishCount(1);
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        expect(client.publishCalls, 1, reason: '$outcome must be permanent');
+        final failure = log.events.whereType<LifecycleFailureEvent>().single;
+        expect(failure.operation, LifecycleOperation.meshPublish);
+        expect(failure.retryScheduled, isFalse);
+        expect(failure.reason, isNot(contains('untrusted')));
+        svc.dispose();
+      }
+    });
+
+    test('second conflict remains pending after private rebase pull', () async {
+      final owner = await _newOwner();
+      final storage = PairingStorage(_FakeSecureStorage());
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final log = _FakeDebugLog();
+      final client = _ScriptedMeshClient(
+        publishScripts: [
+          () async => const MeshPublishConflict(),
+          () async => const MeshPublishConflict(),
+        ],
+      );
+      final svc = MeshSyncService(
+        client,
+        bridge,
+        storage,
+        debugLog: log,
+        mutationRetryDelay: const Duration(days: 1),
+      );
+      storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+      await storage.savePeer(_testPeer);
+      await client.waitForPublishCount(2);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(client.fetchCalls, 1, reason: 'conflict rebase pull stays allowed');
+      expect(client.publishCalls, 2);
+      expect(
+        log.events.whereType<LifecycleFailureEvent>().single.retryScheduled,
+        isTrue,
+      );
+      svc.dispose();
+    });
+
+    test('unexpected throw is transient and privacy-safe', () async {
+      final owner = await _newOwner();
+      final storage = PairingStorage(_FakeSecureStorage());
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final log = _FakeDebugLog();
+      final client = _ScriptedMeshClient(
+        publishScripts: [
+          () => Future<MeshPublishResult>.error(
+            StateError('must-not-log-full-owner-key'),
+          ),
+          () async => const MeshPublishOk(version: 1, updatedAt: 1),
+        ],
+      );
+      final svc = MeshSyncService(
+        client,
+        bridge,
+        storage,
+        debugLog: log,
+        mutationRetryDelay: const Duration(milliseconds: 1),
+      );
+      storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+      await storage.savePeer(_testPeer);
+      await client.waitForPublishCount(2);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      final failure = log.events.whereType<LifecycleFailureEvent>().single;
+      expect(failure.retryScheduled, isTrue);
+      expect(failure.reason, isNot(contains('owner-key')));
+      svc.dispose();
+    });
+
+    test('normal pull defers while a local publication remains pending', () async {
+      final owner = await _newOwner();
+      final storage = PairingStorage(_FakeSecureStorage());
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final client = _ScriptedMeshClient(
+        publishScripts: [
+          () async => const MeshPublishFailure('offline'),
+        ],
+      );
+      final svc = MeshSyncService(
+        client,
+        bridge,
+        storage,
+        mutationRetryDelay: const Duration(days: 1),
+      );
+      storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+      await storage.savePeer(_testPeer);
+      await client.waitForPublishCount(1);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(await svc.pullOnDemand(), isFalse);
+      expect(client.fetchCalls, 0);
+      expect(client.publishCalls, 1);
+      svc.dispose();
+    });
+
+    test('last-peer delete publishes members=[] exactly once', () async {
+      final owner = await _newOwner();
+      final storage = PairingStorage(_FakeSecureStorage());
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final client = _ScriptedMeshClient(
+        publishScripts: [
+          () async => const MeshPublishOk(version: 1, updatedAt: 1),
+          () async => const MeshPublishOk(version: 2, updatedAt: 2),
+        ],
+      );
+      final svc = MeshSyncService(client, bridge, storage);
+      storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+      await storage.savePeer(_testPeer);
+      await client.waitForPublishCount(1);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await storage.deletePeer(_testPeer.remoteEpk);
+      await client.waitForPublishCount(2);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(client.publishCalls, 2);
+      final deletion = MeshBlob.fromCanonicalBytes(
+        client.publishedEnvelopes[1].blob,
+      );
+      expect(deletion.members, isEmpty);
+      svc.dispose();
+    });
+
+    test('dispose suppresses an in-flight drain follow-up and notification', () async {
+      final owner = await _newOwner();
+      final storage = PairingStorage(_FakeSecureStorage());
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final firstResult = Completer<MeshPublishResult>();
+      final client = _ScriptedMeshClient(
+        publishScripts: [() => firstResult.future],
+      );
+      final svc = MeshSyncService(client, bridge, storage);
+      var notifications = 0;
+      svc.addListener(() => notifications += 1);
+      storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+      await storage.savePeer(_testPeer);
+      await client.waitForPublishCount(1);
+      await storage.savePeer(_testPeer.copyWith(sessionName: 'newer'));
+      svc.dispose();
+      firstResult.complete(const MeshPublishOk(version: 1, updatedAt: 1));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(client.publishCalls, 1);
+      expect(notifications, 0);
+      expect(svc.lastVersion, 0);
+    });
+
+    test('dispose cancels a pending publication retry', () async {
+      final owner = await _newOwner();
+      final storage = PairingStorage(_FakeSecureStorage());
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final client = _ScriptedMeshClient(
+        publishScripts: [
+          () async => const MeshPublishFailure('offline'),
+        ],
+      );
+      final svc = MeshSyncService(
+        client,
+        bridge,
+        storage,
+        mutationRetryDelay: const Duration(milliseconds: 5),
+      );
+      storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+      await storage.savePeer(_testPeer);
+      await client.waitForPublishCount(1);
+      svc.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(client.publishCalls, 1);
     });
   });
 }

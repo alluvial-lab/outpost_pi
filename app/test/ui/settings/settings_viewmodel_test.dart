@@ -33,6 +33,8 @@ ConnectionManager _conn({_FakeStorage? storage, ConnectionFactory? factory}) {
 
 class _FakeStorage extends PairingStorage {
   List<PeerRecord> peers;
+  var deleteCalls = 0;
+  var silentDeleteCalls = 0;
   _FakeStorage(this.peers);
 
   @override
@@ -45,11 +47,13 @@ class _FakeStorage extends PairingStorage {
 
   @override
   Future<void> deletePeer(String epk) async {
+    deleteCalls += 1;
     peers = peers.where((p) => p.remoteEpk != epk).toList();
   }
 
   @override
   Future<void> deletePeerSilent(String epk) async {
+    silentDeleteCalls += 1;
     peers = peers.where((p) => p.remoteEpk != epk).toList();
   }
 
@@ -174,6 +178,8 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         expect(storage.peers, isEmpty);
+        expect(storage.deleteCalls, 1);
+        expect(storage.silentDeleteCalls, 0);
         expect(prefs.selectedPeerEpk, isNull);
         expect(vm.state, isA<SettingsNoPeer>());
 
@@ -286,7 +292,6 @@ void main() {
           _FakeStorage([]),
           prefs,
           _conn(),
-          null,
           debugLog,
         );
         await Future<void>.delayed(Duration.zero);
