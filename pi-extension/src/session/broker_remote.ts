@@ -462,7 +462,7 @@ export class BrokerRemote implements RemoteRouter {
     if (bodyType === "peers_request") {
       // Always query the broker directly for the current peer list. We
       // can't rely on `lastLocalPeers` because that cache is fed by the
-      // `peer_joined`/`peer_left` broadcast in index.ts — and the broker
+      // `peer_joined`/`peer_left` broadcast in `session/broker.ts` — and the broker
       // never delivers a `peer_joined` to the peer that just joined (see
       // `_broadcastSystem(..., excludeName=assigned)`). In a single-peer
       // mesh, no event ever fires → `lastLocalPeers` stays `[]` →

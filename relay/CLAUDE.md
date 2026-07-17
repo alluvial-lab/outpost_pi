@@ -27,7 +27,7 @@ Before editing or reviewing relay code, read the agent-neutral Rust relay refere
 
 - **Errors**: `anyhow::Result<()>` in `main`, `thiserror::Error` in internal libraries
 - **Async**: everything through `tokio::spawn` / `tokio::select!`, no `std::thread`
-- **Logging**: `tracing::info_span!` spans in handlers; `info!`/`warn!`/`error!`
+- **Logging**: `info!`/`warn!`/`error!` with fields directly in handlers (no `info_span!`); spans are reserved for cross-handler trace context, not per-call handler logging
 - **No `unwrap()`** in production code. Use `?` and propagate.
 - **No unnecessary `clone()`** — pass `&` where possible
 
