@@ -197,17 +197,22 @@ class BootState extends ChangeNotifier {
   }
 
   /// Project a failed Owner-key reset without leaking callback errors.
-  void failOwnerReset() {
+  void failOwnerReset(int generation) {
     _fail(
-      _generation,
+      generation,
       BootFailureStage.connection,
       'Could not reset the previous connection. Try again.',
     );
   }
 
+  /// Return whether [generation] still owns boot continuation side effects.
+  bool isCurrentGeneration(int generation) => _isCurrent(generation);
+
   /// Invalidate in-flight work before retry or Owner-key replacement.
-  void invalidate() {
-    if (_disposed) return;
+  ///
+  /// Returns the new generation token, or `null` after disposal.
+  int? invalidate() {
+    if (_disposed) return null;
     _generation++;
     _ready = false;
     _loading = false;
@@ -215,6 +220,7 @@ class BootState extends ChangeNotifier {
     _hasPeer = false;
     _onboarded = false;
     notifyListeners();
+    return _generation;
   }
 
   @override
@@ -226,7 +232,43 @@ class BootState extends ChangeNotifier {
   }
 }
 
-GoRouter buildRouter(
+/// Own the router and the boot state/listeners created alongside it.
+///
+/// The app root must dispose this owner before disposing injected services so
+/// no boot or Owner-reset continuation can outlive the application surface.
+final class AppRouterOwner {
+  AppRouterOwner({
+    required this.router,
+    required this.bootState,
+    required VoidCallback retryBoot,
+    required VoidCallback stopPolling,
+  }) : _retryBoot = retryBoot,
+       _stopPolling = stopPolling;
+
+  final GoRouter router;
+  final BootState bootState;
+  final VoidCallback _retryBoot;
+  final VoidCallback _stopPolling;
+  bool _disposed = false;
+
+  /// Start a fresh generation-guarded boot run.
+  void retryBoot() {
+    if (_disposed) return;
+    _retryBoot();
+  }
+
+  /// Tear down router listeners, boot work, and router-owned mesh polling.
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    router.dispose();
+    bootState.dispose();
+    _stopPolling();
+  }
+}
+
+/// Build the app router together with its explicitly owned boot lifecycle.
+AppRouterOwner buildRouter(
   PairingStorage storage,
   ConnectionManager conn,
   Preferences prefs,
@@ -251,12 +293,13 @@ GoRouter buildRouter(
   var watcherInstalled = false;
   void installWatcher() {
     if (watcherInstalled) return;
-    watcherInstalled = true;
     ownerBridge.startWatching(
       onReset: () async {
-        boot.invalidate();
+        final resetGeneration = boot.invalidate();
+        if (resetGeneration == null) return;
         try {
           await conn.disconnect();
+          if (!boot.isCurrentGeneration(resetGeneration)) return;
           meshSync.resetVersionWatermark();
           await boot.load(
             storage,
@@ -267,10 +310,11 @@ GoRouter buildRouter(
             installWatcherAfterBoot: installWatcher,
           );
         } on Object {
-          boot.failOwnerReset();
+          boot.failOwnerReset(resetGeneration);
         }
       },
     );
+    watcherInstalled = true;
   }
 
   void retryBoot() {
@@ -304,7 +348,7 @@ GoRouter buildRouter(
   // this initial start covers the "app launched in foreground" case.
   meshSync.startPolling();
 
-  return GoRouter(
+  final router = GoRouter(
     initialLocation: '/boot',
     refreshListenable: boot,
     redirect: (context, state) {
@@ -502,6 +546,12 @@ GoRouter buildRouter(
             ViewmodelProvider<SettingsViewModel>(child: const SettingsPage()),
       ),
     ],
+  );
+  return AppRouterOwner(
+    router: router,
+    bootState: boot,
+    retryBoot: retryBoot,
+    stopPolling: meshSync.stopPolling,
   );
 }
 
