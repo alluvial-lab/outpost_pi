@@ -1,7 +1,7 @@
 ---
 id: epic-rebrand-to-outpost-pi
 kind: epic
-stage: implementing
+stage: done
 tags: [rebrand, fork-posture, pi-extension, app, relay, cockpit, site, docs]
 parent: null
 depends_on: []
