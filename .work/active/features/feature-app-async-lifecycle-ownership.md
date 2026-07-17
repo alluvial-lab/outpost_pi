@@ -815,3 +815,90 @@ Implementation discrepancies: no product-design fallback was needed. The only
 verification adjustment was serializing the complete Flutter suite because its
 legacy fixed-delay tests are scheduler-sensitive under the default parallel
 runner; focused suites and the complete serial run are green.
+
+## Review findings (fresh-context review, gpt-5.6-sol, standard weight)
+
+Review verdict: `needs fixes`. Six receiver-confirmed current-cycle findings
+(all verified by the orchestrator against current code). These must be fixed
+before this feature closes.
+
+### Blocker 1 — stale `sendMessage` can mutate/send into a replaced session
+`app/lib/data/sync/sync_service.dart:339-408`. After awaiting
+`_appendTranscriptEvent()` at :339, the method does not revalidate
+disposal/lifecycle generation/captured ref/channel identity before
+`_setTurnActive()` :352, `_armSendTimeout()` :364, `_emitStreaming()` :395,
+and `ch.send()` :408. A session rotation during persistence can arm a timer
+for the new session and send the old message through a replaced channel.
+**Fix:** capture generation/ref, revalidate after the append, reacquire/revalidate
+the active channel + room liveness immediately before sending; add a
+completer-gated rotation/disposal regression test.
+
+### Blocker 2 — terminal idle can be reopened by an older queued non-terminal projection
+`app/lib/data/sync/sync_service.dart:844-912, 1372-1388`. `AgentDone` queues
+its terminal append and immediately sets idle at :912. An earlier blocked
+`AgentChunk` append can subsequently complete and execute
+`_setTurnView(projection.turn)` at :1388, restoring streaming/working. If the
+queued terminal append then fails, the turn remains working despite the
+terminal event. Error/cancel/compaction have the same queue-order hazard.
+**Fix:** introduce a turn/projection epoch or otherwise prevent pre-terminal
+writes from publishing turn state after a terminal transition. Add a
+deterministic test: block a non-terminal append, deliver a terminal event,
+release the old append, then fail the terminal append and still assert idle.
+
+### Blocker 3 — normal mesh pulls can overwrite mutations that become pending during fetch; conflict rebase also loses intent
+`app/lib/data/mesh/mesh_sync_service.dart:87-103, 124-172, 279-286`. Pull
+deferral is checked only before the request. After `_client.fetch()` at :88,
+`_mutationPending` is not rechecked before `_applyVerified()` at :99 or during
+its storage awaits. A mutation committed while fetch/apply is in flight can be
+overwritten by the relay snapshot. The private conflict pull has the deeper
+version of this problem: it applies the relay snapshot and retains only
+`PeerMutationKind`, so a deletion/update can be erased before the retry
+snapshots storage.
+**Fix:** generation-guard normal pull application across every async gap. For
+conflict rebase, retain and reapply/merge the actual local mutation or a
+protected local snapshot before retrying. Test both a gated normal fetch
+followed by mutation and a last-peer deletion receiving a conflict.
+
+### Material 4 — additional Sync stale-completion guards omit disposal/generation
+`app/lib/data/sync/sync_service.dart:231, 495-520, 1831-1886`. `_isStillActive()`
+checks only `_activeRef`. `_failPendingSend()` can resume after its await at
+:506 and mutate streaming/turn state at :519-520 after disposal. `_updateIndex`
+and `_writeRuntime` queued closures check only ref equality or peer/room before
+beginning `put`; they can start writes after disposal or lifecycle invalidation.
+**Fix:** use captured generation plus `_isCurrentLifecycle(generation, ref)`
+after `_failPendingSend`'s await and immediately before every queued `put`.
+
+### Material 5 — router boot lifecycle has no production teardown, and Owner-reset continuation is unguarded
+`app/lib/routing/app_router.dart:236, 256-269`; `app/lib/main.dart:78-81`. The
+locally created `BootState` has no production owner calling `dispose()`; only
+tests do. The Owner-reset callback awaits `conn.disconnect()` at :259 then
+resets the mesh watermark/starts another boot without validating this reset run
+is still current. Overlapping reset/disposal can resume stale work.
+**Fix:** give router boot state an explicit app-owned teardown path and
+generation-guard the reset continuation after `disconnect`. Set
+`watcherInstalled` only after `startWatching` succeeds so Retry can recover a
+synchronous watcher-install failure.
+
+### Material 6 — scheduler "hardening" weakened two timeout assertions
+`app/test/data/sync/sync_service_test.dart:3070-3101, 3108-3142`. Tests (b) and
+(c) changed `pendingSendTimeout` from 60ms to 5s while still waiting only 140ms.
+Test (b) no longer waits past the timeout, so it cannot prove a
+removed-but-not-cancelled timer won't fire. Test (c) no longer waits past the
+original timeout, so it cannot prove `delivery_pending` replaced/extended that
+timer.
+**Fix:** restore proof of those guarantees using an injected/fake timer or waits
+that cross the configured original deadline with deterministic completion
+polling.
+
+### Review invariant summary
+- Generation guards at every async-gap-before-mutation/send/persistence: FAIL
+  (findings 1, 3, 4, 5)
+- Terminal convergence independent of persistence: FAIL (finding 2)
+- Latest-wins per-peer persistence: PASS
+- Mesh coalescing + permanent-no-retry individually PASS; overall mesh safety
+  FAILS (pull deferral/rebase racy — finding 3)
+- Boot readiness: FAIL overall (teardown/reset — finding 5)
+- No BuildContext-after-await-without-mounted in changed UI: PASS
+- Test-integrity: MIXED — good hardening overall (Completer gates, _waitUntil
+  polling, convergence preserved), but finding 6 materially weakened two
+  timer-policy proofs.
