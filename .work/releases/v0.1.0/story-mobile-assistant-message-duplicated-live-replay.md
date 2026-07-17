@@ -10,7 +10,6 @@ depends_on: []
 release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-07
 confirmed_root_cause: 2026-07-03
 implemented: 2026-07-06
 ---
