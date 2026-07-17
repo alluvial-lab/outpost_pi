@@ -13,31 +13,34 @@ Pi process. It talks to the extension over the Pi control RPC channel
 (`\x00outpost-pi-ctrl:` control frames + the generated `outpost_pi_control`
 schema), not over the relay.
 
-## Setup / build / run
-
-Requires Flutter and a JDK; see the project root `AGENTS.md` for the toolchain
-versions used on the dev VM.
-
-```bash
-# from cockpit/
-flutter pub get
-flutter analyze
-flutter test
-flutter build macos     # or windows / linux
-```
-
 ## Key surfaces
 
 - **Workspace / transcript** — agent session view, terminal/PTY, file browser.
-- **Settings** — relay endpoint, owner identity, daemon/auto-start config.
+- **Settings** — relay endpoint, daemon/auto-start config.
 - **Remote-session control** — the control-RPC channel to the Pi extension.
+
+## Setup / build / run
+
+Flutter is **not** on `PATH` on the dev VM, and Cockpit needs `pub get --offline`
+(three deps are git-overridden). The full, current build workflow — toolchain
+paths, `PUB_CACHE`, and the exact commands — lives in
+`.agents/skills/flutter-desktop-cockpit/SKILL.md`; read it before building or
+testing. In short:
+
+```bash
+export PUB_CACHE=~/projects/outpost_pi/.pub-cache
+~/projects/outpost_pi/.tools/flutter/bin/flutter pub get --offline
+~/projects/outpost_pi/.tools/flutter/bin/flutter analyze
+~/projects/outpost_pi/.tools/flutter/bin/flutter test
+```
 
 ## Canonical references
 
 - `AGENTS.md` (repo root) — build/test commands, deployment, paired-wire cutover.
 - `cockpit/CLAUDE.md` — cockpit-specific workflow and module layout.
 - `.agents/skills/flutter-desktop-cockpit/SKILL.md` — Flutter desktop lifecycle,
-  shadcn/modular/Hive patterns, terminal/PTY, and plugin surfaces.
+  shadcn/modular/Hive patterns, terminal/PTY, plugin surfaces, and the full
+  dev-VM build/test command set.
 
 This README is operator orientation. For agent routing, workflow, and
 implementation rules, see `CLAUDE.md` and the skill reference above.
