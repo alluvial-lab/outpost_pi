@@ -94,7 +94,7 @@ pi.on("turn_end", async (event, ctx) => {
 });
 ```
 
-Hooks actually used in `src/index.ts` include: [remote-pi-index-lifecycle]{1}
+Hooks actually used across the extension include: [remote-pi-index-lifecycle]{1}
 
 - `input` — mirrors terminal/RPC input; `CTRL_PREFIX` control messages are swallowed before they become LLM turns.
 - `model_select` / `thinking_level_select` — cache current model/thinking and publish `room_meta_update`.
@@ -103,6 +103,7 @@ Hooks actually used in `src/index.ts` include: [remote-pi-index-lifecycle]{1}
 - `agent_end` — finalizes `agent_done`.
 - `turn_start` / `turn_end` — publish `room_meta.working`.
 - `session_before_compact` / `session_compact` — bracket compact working-state and add synthetic history marker.
+- `session_start` / `session_shutdown` — capture the freshest session-bound context and tear down stale outgoing instance. These are registered in `pi-extension/src/extension/composition_root.ts` via `registerLifecycleHooks(pi, ports, ...)`, not directly in `src/index.ts`; `index.ts` is the composition entrypoint that wires the `RemotePiRuntimePorts` seam and invokes `registerLifecycleHooks`.
 - `session_start` — capture the freshest session-bound context.
 - `session_shutdown` — tear down stale outgoing instance.
 
