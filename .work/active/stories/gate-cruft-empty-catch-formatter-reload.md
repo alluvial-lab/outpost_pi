@@ -1,10 +1,10 @@
 ---
 kind: story
 release_binding: null
-parent: feature-cockpit-async-action-ownership
+parent: null
 stage: drafting
 id: gate-cruft-empty-catch-formatter-reload
-tags: [cleanup]
+tags: [cockpit, bug]
 depends_on: []
 gate_origin: cruft
 created: 2026-07-01
