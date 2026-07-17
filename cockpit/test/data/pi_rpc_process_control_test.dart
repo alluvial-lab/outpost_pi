@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cockpit/app/cockpit/data/rpc/pi_rpc_process.dart';
 import 'package:cockpit/app/cockpit/domain/entities/pi_command.dart';
+import 'package:cockpit/app/cockpit/domain/entities/rpc_ui_response.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -24,6 +25,47 @@ void main() {
         });
       },
     );
+
+    test('serializes every UI response variant at the process boundary', () {
+      expect(
+        schemaUiResponseForTesting('value-id', const RpcUiValueResponse('ok')),
+        <String, Object?>{
+          'type': 'extension_ui_response',
+          'id': 'value-id',
+          'value': 'ok',
+        },
+      );
+      expect(
+        schemaUiResponseForTesting(
+          'yes-id',
+          const RpcUiConfirmationResponse(true),
+        ),
+        <String, Object?>{
+          'type': 'extension_ui_response',
+          'id': 'yes-id',
+          'confirmed': true,
+        },
+      );
+      expect(
+        schemaUiResponseForTesting(
+          'no-id',
+          const RpcUiConfirmationResponse(false),
+        ),
+        <String, Object?>{
+          'type': 'extension_ui_response',
+          'id': 'no-id',
+          'confirmed': false,
+        },
+      );
+      expect(
+        schemaUiResponseForTesting('cancel-id', const RpcUiCancelledResponse()),
+        <String, Object?>{
+          'type': 'extension_ui_response',
+          'id': 'cancel-id',
+          'cancelled': true,
+        },
+      );
+    });
 
     test('emits rename controls with the schema name argument', () {
       final prompt = schemaControlPromptForTesting(

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cockpit/app/cockpit/domain/entities/rpc_ui_response.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_message.dart';
 import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 import 'package:cockpit/app/cockpit/ui/session/agent_entry.dart';
@@ -23,7 +24,7 @@ const double _kChatMaxWidth = 920;
 ///
 /// Connect this callback to `AgentSession.respondUi`.
 typedef UiResponder =
-    void Function(String id, Map<String, dynamic> response, String label);
+    void Function(String id, RpcUiResponse response, String label);
 
 /// Project an agent event stream into a selectable, scrollable conversation.
 ///
@@ -796,8 +797,8 @@ class _UiRequestCardState extends State<_UiRequestCard> {
     super.dispose();
   }
 
-  void _respond(Map<String, dynamic> body, String label) =>
-      widget.onRespond?.call(widget.entry.id, body, label);
+  void _respond(RpcUiResponse response, String label) =>
+      widget.onRespond?.call(widget.entry.id, response, label);
 
   @override
   Widget build(BuildContext context) {
@@ -866,7 +867,7 @@ class _UiRequestCardState extends State<_UiRequestCard> {
             alignment: Alignment.centerLeft,
             child: GhostButton(
               onPressed: () =>
-                  _respond(<String, dynamic>{'cancelled': true}, 'cancelled'),
+                  _respond(const RpcUiCancelledResponse(), 'cancelled'),
               child: Text(
                 'Cancel',
                 style: context.typo.label.copyWith(color: colors.text3),
@@ -888,14 +889,14 @@ class _UiRequestCardState extends State<_UiRequestCard> {
               label: 'No',
               filled: false,
               onTap: () =>
-                  _respond(<String, dynamic>{'confirmed': false}, 'No'),
+                  _respond(const RpcUiConfirmationResponse(false), 'No'),
             ),
             const SizedBox(width: 8),
             _ChoiceButton(
               label: 'Yes',
               filled: true,
               onTap: () =>
-                  _respond(<String, dynamic>{'confirmed': true}, 'Yes'),
+                  _respond(const RpcUiConfirmationResponse(true), 'Yes'),
             ),
           ],
         );
@@ -907,7 +908,7 @@ class _UiRequestCardState extends State<_UiRequestCard> {
           onSubmit: () {
             final v = _input.text.trim();
             if (v.isEmpty) return;
-            _respond(<String, dynamic>{'value': v}, v);
+            _respond(RpcUiValueResponse(v), v);
           },
         );
       case 'select':
@@ -920,8 +921,7 @@ class _UiRequestCardState extends State<_UiRequestCard> {
               _ChoiceButton(
                 label: option,
                 filled: false,
-                onTap: () =>
-                    _respond(<String, dynamic>{'value': option}, option),
+                onTap: () => _respond(RpcUiValueResponse(option), option),
               ),
           ],
         );
