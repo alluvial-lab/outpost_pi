@@ -1,7 +1,7 @@
 ---
 id: feature-app-async-lifecycle-ownership
 kind: feature
-stage: implementing
+stage: review
 tags: [app, lifecycle]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
@@ -777,3 +777,41 @@ flutter build apk --debug
 
 The build smoke may be skipped only for an explicit environment/resource reason;
 analyze and the full test suite remain required.
+
+## Implementation
+
+Completed all six units and closed all eleven originating gate findings.
+
+- Added typed active-room capability and owned channel teardown diagnostics.
+- Made router and Chat startup awaited, retryable, serialized, and generation
+  guarded.
+- Added per-peer latest-wins room persistence, bounded legacy-room retry, and
+  lifecycle-safe reconnect handling.
+- Made Sync writes/rebind/replay ordered and observable, including transcript
+  degradation/recovery UI and terminal idle convergence under failed writes.
+- Added typed peer mutation intent plus a coalescing, retrying mesh publication
+  drain; normal pulls defer behind dirty local membership, and Settings no
+  longer owns a duplicate mesh future.
+- Hardened the newly exercised Sync lifecycle tests to wait for observable
+  projections instead of assuming a fixed scheduler delay. The default parallel
+  Flutter runner still exposed unrelated fixed-delay sensitivity at rotating
+  legacy assertions, so the authoritative complete run used one test worker.
+
+Integrated review found no remaining material blocker in the implemented
+surfaces. No protocol or persistence schema changed, and no generated artifact
+is committed.
+
+Verification from `app/`:
+
+- `flutter analyze lib test` — passed with no issues.
+- Focused router, Chat, connection, debug-contract, Sync/replay, pairing storage,
+  mesh, and Settings suites — passed.
+- `flutter test --concurrency=1` — 732 tests passed.
+- `flutter build apk --debug` — passed; generated
+  `build/app/outputs/flutter-apk/app-debug.apk` after redirecting read-only
+  Gradle/Android/Kotlin runtime directories to disposable writable paths.
+
+Implementation discrepancies: no product-design fallback was needed. The only
+verification adjustment was serializing the complete Flutter suite because its
+legacy fixed-delay tests are scheduler-sensitive under the default parallel
+runner; focused suites and the complete serial run are green.
