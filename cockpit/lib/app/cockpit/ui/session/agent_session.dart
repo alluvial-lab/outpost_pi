@@ -10,6 +10,7 @@ import 'package:cockpit/app/cockpit/domain/entities/pi_command.dart';
 import 'package:cockpit/app/cockpit/domain/entities/pi_model.dart';
 import 'package:cockpit/app/cockpit/domain/entities/prompt_image.dart';
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
+import 'package:cockpit/app/cockpit/domain/entities/rpc_ui_response.dart';
 import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_message.dart';
@@ -711,7 +712,7 @@ class AgentSession extends PaneItem {
   ///
   /// [response] carries `value`, `confirmed`, or `cancelled`; [label] is the
   /// human-readable result retained on the resolved card.
-  void respondUi(String id, Map<String, dynamic> response, String label) {
+  void respondUi(String id, RpcUiResponse response, String label) {
     final entry = _openUiRequests.remove(id);
     if (entry != null) {
       entry.resolved = true;
