@@ -144,7 +144,10 @@ class _MemoryTranscriptStore implements TranscriptEventStore {
   final Map<String, List<TranscriptEvent>> _events = {};
   bool failNextAppend = false;
   bool failNextRead = false;
+  int appendCalls = 0;
+  int? failAppendCall;
   Completer<void>? appendGate;
+  Completer<void>? appendStarted;
   Completer<void>? readGate;
   Completer<void>? readStarted;
 
@@ -156,10 +159,16 @@ class _MemoryTranscriptStore implements TranscriptEventStore {
     TranscriptSessionKey key,
     Iterable<TranscriptEvent> events,
   ) async {
+    appendCalls += 1;
+    final started = appendStarted;
+    if (started != null && !started.isCompleted) started.complete();
     final gate = appendGate;
     if (gate != null) {
       appendGate = null;
       await gate.future;
+    }
+    if (failAppendCall == appendCalls) {
+      throw StateError('append failed on call $appendCalls');
     }
     if (failNextAppend) {
       failNextAppend = false;
@@ -2351,6 +2360,111 @@ void main() {
       await sub.cancel();
       s.conn.dispose();
       s.sync.dispose();
+    },
+  );
+
+  test(
+    'sendMessage append completion cannot mutate or send after channel replacement',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      final appendGate = Completer<void>();
+      final appendStarted = Completer<void>();
+      store
+        ..appendGate = appendGate
+        ..appendStarted = appendStarted;
+
+      final sending = s.sync.sendMessage('belongs to the old channel');
+      await appendStarted.future.timeout(const Duration(seconds: 1));
+
+      final replacement = _FakeChannel()..defaultSessionId = 'replacement';
+      s.conn.adopt(
+        replacement,
+        const PeerRecord(
+          remoteEpk: 'replacement-peer',
+          sessionName: 'Replacement',
+          relayUrl: 'ws://localhost',
+          pairedAt: '2026-01-01T00:00:00Z',
+        ),
+      );
+      appendGate.complete();
+      await sending;
+
+      expect(s.ch.sent.whereType<UserMessage>(), isEmpty);
+      expect(replacement.sent.whereType<UserMessage>(), isEmpty);
+      expect(s.sync.debugPendingSendTimerCount, 0);
+      expect(s.sync.turnProjection.working, isFalse);
+
+      s.sync.dispose();
+      s.conn.dispose();
+    },
+  );
+
+  test(
+    'sendMessage append completion cannot mutate or send after disposal',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      final appendGate = Completer<void>();
+      final appendStarted = Completer<void>();
+      store
+        ..appendGate = appendGate
+        ..appendStarted = appendStarted;
+
+      final sending = s.sync.sendMessage('disposed before persistence returns');
+      await appendStarted.future.timeout(const Duration(seconds: 1));
+      s.sync.dispose();
+      appendGate.complete();
+      await sending;
+
+      expect(s.ch.sent.whereType<UserMessage>(), isEmpty);
+      expect(s.sync.debugPendingSendTimerCount, 0);
+      expect(s.sync.turnProjection.working, isFalse);
+
+      s.conn.dispose();
+    },
+  );
+
+  test(
+    'terminal epoch keeps idle when an older chunk completes before a failed terminal append',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      final sessionEvents = <SessionEvent>[];
+      final sub = s.sync.events.listen(sessionEvents.add);
+      final appendGate = Completer<void>();
+      final appendStarted = Completer<void>();
+      store
+        ..appendGate = appendGate
+        ..appendStarted = appendStarted;
+
+      s.ch.push(AgentChunk(inReplyTo: 'epoch-turn', delta: 'stale partial'));
+      await appendStarted.future.timeout(const Duration(seconds: 1));
+      expect(s.sync.turnProjection.working, isTrue);
+
+      store.failAppendCall = 2;
+      s.ch.push(AgentDone(inReplyTo: 'epoch-turn'));
+      await _waitUntil(
+        () => !s.sync.turnProjection.working,
+        reason: 'the synchronous terminal idle transition',
+      );
+
+      appendGate.complete();
+      await _waitUntil(
+        () => store.appendCalls >= 2,
+        reason: 'the queued terminal append attempt',
+      );
+      await _waitUntil(
+        () => sessionEvents.whereType<SessionPersistenceDegraded>().isNotEmpty,
+        reason: 'the failed terminal append diagnostic',
+      );
+
+      expect(s.sync.turnProjection.working, isFalse);
+      expect(s.sync.streaming, isNull);
+
+      await sub.cancel();
+      s.sync.dispose();
+      s.conn.dispose();
     },
   );
 
