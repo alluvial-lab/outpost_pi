@@ -5,11 +5,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:app/data/local/boxes.dart';
+import 'package:app/data/local/records/message_record.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/repositories/session_read_repository.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
@@ -136,6 +138,52 @@ class _FakeStorage extends PairingStorage {
   Future<void> deleteRooms(String epk) async => _rooms.remove(epk);
 }
 
+class _FailOnceStorage extends _FakeStorage {
+  bool failNextLoad = true;
+
+  @override
+  Future<PeerRecord?> loadPeer(String epk) async {
+    if (failNextLoad) {
+      failNextLoad = false;
+      throw StateError('load failed');
+    }
+    return super.loadPeer(epk);
+  }
+}
+
+class _DeferredStorage extends _FakeStorage {
+  final loadCompleter = Completer<PeerRecord?>();
+
+  @override
+  Future<PeerRecord?> loadPeer(String epk) => loadCompleter.future;
+}
+
+class _FailingWatchReadRepository extends SessionReadRepository {
+  _FailingWatchReadRepository(super.boxes);
+
+  bool failWatch = false;
+
+  @override
+  Stream<List<MessageRecord>> watchMessages(RemoteSessionRef ref) {
+    if (failWatch) throw StateError('watch failed');
+    return super.watchMessages(ref);
+  }
+}
+
+class _ControlledActivateSyncService extends SyncService {
+  _ControlledActivateSyncService(super.connectionManager, super.boxes);
+
+  bool failActivation = false;
+
+  @override
+  Future<void> activate(String epk, String roomId) {
+    if (failActivation) {
+      return Future<void>.error(StateError('activation failed'));
+    }
+    return super.activate(epk, roomId);
+  }
+}
+
 late Directory _dir;
 int _sessionCounter = 0;
 
@@ -163,6 +211,141 @@ void main() {
   tearDownAll(() async {
     await Hive.close();
     await _dir.delete(recursive: true);
+  });
+
+  test(
+    'initialization failure is retryable through the awaited owner',
+    () async {
+      final ch = _FakeChannel();
+      final storage = _FailOnceStorage();
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+      );
+      final boxes = LocalBoxes();
+      final sync = SyncService(conn, boxes);
+      final prefs = Preferences(_FakeSecureStorage());
+      await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+      await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+      await _adoptWithSession(conn, ch);
+
+      final vm = ChatViewModel(
+        SessionReadRepository(boxes),
+        sync,
+        conn,
+        prefs,
+        storage,
+      );
+      await vm.initialize();
+      expect(vm.state, isA<ChatInitializationFailed>());
+
+      await vm.initialize();
+      expect(vm.state, isA<ChatReady>());
+
+      vm.dispose();
+      sync.dispose();
+      conn.dispose();
+    },
+  );
+
+  test('activation failure becomes ChatInitializationFailed', () async {
+    final ch = _FakeChannel();
+    final storage = _FakeStorage();
+    final conn = ConnectionManager(
+      factory: (_, _) async => ch,
+      storage: storage,
+    );
+    final boxes = LocalBoxes();
+    final prefs = Preferences(_FakeSecureStorage());
+    await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+    await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+    await _adoptWithSession(conn, ch);
+    final sync = _ControlledActivateSyncService(conn, boxes)
+      ..failActivation = true;
+
+    final vm = ChatViewModel(
+      SessionReadRepository(boxes),
+      sync,
+      conn,
+      prefs,
+      storage,
+    );
+    await vm.initialize();
+
+    expect(vm.state, isA<ChatInitializationFailed>());
+    vm.dispose();
+    sync.dispose();
+    conn.dispose();
+  });
+
+  test('dispose invalidates a deferred storage completion', () async {
+    final ch = _FakeChannel();
+    final storage = _DeferredStorage();
+    final conn = ConnectionManager(
+      factory: (_, _) async => ch,
+      storage: storage,
+    );
+    final boxes = LocalBoxes();
+    final sync = SyncService(conn, boxes);
+    final prefs = Preferences(_FakeSecureStorage());
+    await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+    await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+    await _adoptWithSession(conn, ch);
+
+    final vm = ChatViewModel(
+      SessionReadRepository(boxes),
+      sync,
+      conn,
+      prefs,
+      storage,
+    );
+    final initialization = vm.initialize();
+    vm.dispose();
+    storage.loadCompleter.complete(_peer);
+    await initialization;
+
+    expect(vm.state, isNot(isA<ChatInitializationFailed>()));
+    sync.dispose();
+    conn.dispose();
+  });
+
+  test('failed session rotation clears old rows and fails closed', () async {
+    final ch = _FakeChannel();
+    final storage = _FakeStorage();
+    final conn = ConnectionManager(
+      factory: (_, _) async => ch,
+      storage: storage,
+    );
+    final boxes = LocalBoxes();
+    final sync = SyncService(conn, boxes);
+    final read = _FailingWatchReadRepository(boxes);
+    final prefs = Preferences(_FakeSecureStorage());
+    await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+    await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+    await _adoptWithSession(conn, ch);
+
+    final vm = ChatViewModel(read, sync, conn, prefs, storage);
+    await vm.initialize();
+    ch.push(UserInput(id: 'before-rotation', text: 'old row'));
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect((vm.state as ChatReady).messages, isNotEmpty);
+
+    read.failWatch = true;
+    ch.pushRaw(
+      PairOk(
+        inReplyTo: 'rotation',
+        sessionName: 'Pi',
+        sessionStartedAt: DateTime.now().millisecondsSinceEpoch,
+        roomId: 'main',
+        sessionId: 'failed-rotation-session',
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+
+    expect(vm.state, isA<ChatInitializationFailed>());
+    vm.dispose();
+    sync.dispose();
+    conn.dispose();
   });
 
   test('a message written to the DB surfaces in ChatState', () async {
@@ -339,7 +522,7 @@ void main() {
         sessionId: rotatedSession,
       ),
     );
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
 
     expect(
       (vm.state as ChatReady).messages.whereType<UserMsg>().map((m) => m.text),
