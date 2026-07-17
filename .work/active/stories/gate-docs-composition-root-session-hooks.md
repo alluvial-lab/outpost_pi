@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-repair-current-state-docs
-stage: drafting
+stage: done
 id: gate-docs-composition-root-session-hooks
 tags: [documentation]
 depends_on: []
 gate_origin: docs
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-16
 ---
 
 # Pi extension lifecycle hooks were moved out of `src/index.ts`

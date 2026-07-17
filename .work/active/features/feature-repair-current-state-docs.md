@@ -1,7 +1,7 @@
 ---
 id: feature-repair-current-state-docs
 kind: feature
-stage: drafting
+stage: done
 tags: [docs, pi-extension, relay, cockpit, prose]
 parent: null
 depends_on: []
