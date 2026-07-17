@@ -1,7 +1,7 @@
 ---
 id: feature-app-async-lifecycle-ownership-startup-ownership
 kind: story
-stage: implementing
+stage: done
 tags: [app, lifecycle]
 parent: feature-app-async-lifecycle-ownership
 depends_on: []
@@ -38,10 +38,29 @@ and incapable of publishing after retry/session replacement/disposal.
 
 ## Acceptance evidence
 
-- [ ] Router tests cover each failing phase, retry success, network retry state,
+- [x] Router tests cover each failing phase, retry success, network retry state,
       and invalidated run completion.
-- [ ] Chat tests cover storage/activation failure, disposal during bootstrap,
+- [x] Chat tests cover storage/activation failure, disposal during bootstrap,
       retry, and rebind failure after session replacement.
-- [ ] Successful boot, sync-required, no-peer, and normal Chat initialization
+- [x] Successful boot, sync-required, no-peer, and normal Chat initialization
       remain green.
-- [ ] Targeted tests and `flutter analyze` pass.
+- [x] Targeted tests and `flutter analyze` pass.
+
+## Implementation
+
+- Execution capability: inline, high-rigor lifecycle implementation; one owner
+  retained router/Chat generation context end to end.
+- Review weight: standard (caller workflow default; feature-level review only).
+- Files changed: `app_router.dart`, Chat state/ViewModel/page, router and Chat
+  lifecycle tests.
+- Tests added: boot phase/retry/stale-run/disposal coverage plus Chat
+  load/activation/rebind/disposal failure coverage.
+- Simplification: constructor and room-stream discarded futures now terminate in
+  explicit owner-local boundaries; stale session subscriptions are cleared.
+- Discrepancies from design: `BootState` is public within the routing library so
+  tests exercise the real readiness boundary without constructing all Home DI;
+  it is not re-exported as an app API.
+- Adjacent issues parked: none.
+
+Verification: `flutter test test/routing/app_router_test.dart
+ test/ui/chat/chat_viewmodel_test.dart` and `flutter analyze lib test` passed.

@@ -31,6 +31,7 @@ class ChatReady extends ChatState {
   // shows banner offering manual reconnect. `peerOfflineReason` is the
   // raw wire reason (peer_stop / session_replaced / shutdown / …).
   final String? peerOfflineReason;
+
   /// Live relay-reported presence of the active peer. When the peer is
   /// [PresenceOffline] the chat enters read-only mode (history visible,
   /// input disabled). Defaults to [PresenceUnknown] until the relay
@@ -68,19 +69,18 @@ class ChatReady extends ChatState {
     bool clearStreaming = false,
     bool clearPeerOffline = false,
     bool clearQueuedText = false,
-  }) =>
-      ChatReady(
-        messages: messages ?? this.messages,
-        streaming: clearStreaming ? null : (streaming ?? this.streaming),
-        isOffline: isOffline ?? this.isOffline,
-        pairingRevoked: pairingRevoked ?? this.pairingRevoked,
-        peerOfflineReason: clearPeerOffline
-            ? null
-            : (peerOfflineReason ?? this.peerOfflineReason),
-        peerPresence: peerPresence ?? this.peerPresence,
-        isWorking: isWorking ?? this.isWorking,
-        queuedText: clearQueuedText ? null : (queuedText ?? this.queuedText),
-      );
+  }) => ChatReady(
+    messages: messages ?? this.messages,
+    streaming: clearStreaming ? null : (streaming ?? this.streaming),
+    isOffline: isOffline ?? this.isOffline,
+    pairingRevoked: pairingRevoked ?? this.pairingRevoked,
+    peerOfflineReason: clearPeerOffline
+        ? null
+        : (peerOfflineReason ?? this.peerOfflineReason),
+    peerPresence: peerPresence ?? this.peerPresence,
+    isWorking: isWorking ?? this.isWorking,
+    queuedText: clearQueuedText ? null : (queuedText ?? this.queuedText),
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -96,15 +96,29 @@ class ChatReady extends ChatState {
 
   @override
   int get hashCode => Object.hash(
-        messages,
-        streaming,
-        isOffline,
-        pairingRevoked,
-        peerOfflineReason,
-        peerPresence.runtimeType,
-        isWorking,
-        queuedText,
-      );
+    messages,
+    streaming,
+    isOffline,
+    pairingRevoked,
+    peerOfflineReason,
+    peerPresence.runtimeType,
+    isWorking,
+    queuedText,
+  );
+}
+
+/// A recoverable failure while loading or rebinding the selected session.
+final class ChatInitializationFailed extends ChatState {
+  const ChatInitializationFailed(this.message);
+
+  final String message;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChatInitializationFailed && other.message == message;
+
+  @override
+  int get hashCode => message.hashCode;
 }
 
 // Permanent offline — must re-pair.

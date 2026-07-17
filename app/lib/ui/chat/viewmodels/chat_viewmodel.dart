@@ -43,6 +43,12 @@ class ChatViewModel extends ViewModel<ChatState> {
   RemoteSessionRef? _activeSessionRef;
   bool _bootstrapping = true;
   bool _disposed = false;
+  bool _initialized = false;
+  int _generation = 0;
+  Future<void>? _initializeFuture;
+  int? _initializeFutureGeneration;
+  Future<void> _bindingChain = Future<void>.value();
+  String? _initializationFailure;
 
   List<ChatMessage> _messages = const [];
   StreamingMessage? _streaming;
@@ -66,12 +72,13 @@ class ChatViewModel extends ViewModel<ChatState> {
     _queuedSub = _sync.queuedStream.listen(_onQueued);
     _eventSub = _sync.events.listen(_onEvent);
     _roomsSub = _conn.roomsStream.listen((_) {
-      unawaited(_refreshSessionBinding());
+      unawaited(_handleRoomsChanged());
       _recompute();
     });
     _statusSub = _conn.statusStream.listen(_onStatus);
-    // ignore: discarded_futures
-    _bootstrap();
+    // Provider factories are synchronous. initialize owns and projects every
+    // failure, so this detached constructor launch cannot leak an error.
+    unawaited(initialize());
   }
 
   // --- AppBar-facing getters (relay/connection queries, not message data) ---
@@ -115,21 +122,67 @@ class ChatViewModel extends ViewModel<ChatState> {
 
   // ---------------------------------------------------------------------------
 
-  Future<void> _bootstrap() async {
+  /// Initialize the selected chat once and project recoverable failures.
+  ///
+  /// Concurrent callers share one run. A retry after failure starts a fresh
+  /// generation; disposal and newer generations prevent stale subscriptions.
+  Future<void> initialize() {
+    if (_disposed || (_initialized && _initializationFailure == null)) {
+      return Future<void>.value();
+    }
+    final running = _initializeFuture;
+    if (running != null) return running;
+
+    final generation = ++_generation;
+    _bootstrapping = true;
+    _initialized = false;
+    _initializationFailure = null;
+    final future = _initializeOwned(generation);
+    _initializeFuture = future;
+    _initializeFutureGeneration = generation;
+    return future;
+  }
+
+  Future<void> _initializeOwned(int generation) async {
+    try {
+      await _initializeRun(generation);
+    } on Object {
+      await _projectInitializationFailure(generation);
+    } finally {
+      if (_initializeFutureGeneration == generation) {
+        _initializeFuture = null;
+        _initializeFutureGeneration = null;
+      }
+    }
+  }
+
+  Future<void> _initializeRun(int generation) async {
+    await _cancelProjectionSubscriptions();
+    if (!_isCurrentRun(generation)) return;
+    _activePeer = null;
+    _activeSessionRef = null;
+    _messages = const [];
+    _runtime = const RuntimeRecord();
+    _connectionResolved = false;
+
     final epk = _prefs.selectedPeerEpk;
     final roomId = _prefs.selectedRoomId ?? 'main';
     if (epk == null) {
       _bootstrapping = false;
+      _initialized = true;
       emit(const ChatNoPeer());
       return;
     }
+
     final peer = await _storage.loadPeer(epk);
-    if (_disposed) return;
+    if (!_isCurrentRun(generation)) return;
     if (peer == null) {
       _bootstrapping = false;
+      _initialized = true;
       emit(const ChatNoPeer());
       return;
     }
+
     final sessionPeer = peer.copyWith(roomId: roomId);
     _activePeer = sessionPeer;
     _activeRoomId = roomId;
@@ -140,46 +193,116 @@ class ChatViewModel extends ViewModel<ChatState> {
     _conn.switchRoom(roomId);
     if (_conn.activePeer?.remoteEpk != sessionPeer.remoteEpk) {
       await _conn.switchTo(sessionPeer);
-      if (_disposed) return;
+      if (!_isCurrentRun(generation)) return;
+      if (_activePeer != sessionPeer || _activeRoomId != roomId) return;
       _conn.switchRoom(roomId);
     }
 
-    // Bind the writer + watch the canonical session-scoped DB for this room.
-    await _refreshSessionBinding();
-    if (_disposed) return;
-    _runtimeSub = _read.watchRuntime(epk, roomId).listen(_onRuntime);
+    await _serializeSessionBinding(generation);
+    if (!_isCurrentRun(generation)) return;
+    if (_activePeer != sessionPeer || _activeRoomId != roomId) return;
+
+    _runtimeSub = _read.watchRuntime(epk, roomId).listen((runtime) {
+      if (_isCurrentRun(generation) &&
+          _activePeer?.remoteEpk == epk &&
+          _activeRoomId == roomId) {
+        _onRuntime(runtime);
+      }
+    });
 
     _bootstrapping = false;
+    _initialized = true;
     _sync.requestSync();
     _recompute();
   }
 
-  Future<void> _refreshSessionBinding() async {
-    final peer = _activePeer;
-    if (peer == null) return;
-    await _sync.activate(peer.remoteEpk, _activeRoomId);
-    if (_disposed) return;
+  Future<void> _serializeSessionBinding(int generation) {
+    final operation = _bindingChain.then((_) async {
+      if (!_isCurrentRun(generation)) return;
+      await _refreshSessionBinding(generation);
+    });
+    _bindingChain = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return operation;
+  }
 
-    // Plan/32f — now that the writer owns THIS canonical session (activate
-    // reset the turn state on a switch/rotation), seed the in-memory
-    // streaming/working from it. Doing this after activate avoids inheriting
-    // the previous chat's bubble/pill.
+  Future<void> _refreshSessionBinding(int generation) async {
+    final peer = _activePeer;
+    final roomId = _activeRoomId;
+    if (peer == null || !_isCurrentRun(generation)) return;
+
+    await _sync.activate(peer.remoteEpk, roomId);
+    if (!_isCurrentRun(generation)) return;
+    if (_activePeer != peer || _activeRoomId != roomId) return;
+
+    // Seed only after activate owns this canonical session, avoiding a frame of
+    // streaming/working state inherited from the previously selected chat.
     _streaming = _sync.streaming;
     _transcriptTurn = _sync.turnView;
     _queuedText = _sync.queuedText;
     _updateTurnProjection();
 
     final ref = _sync.activeSessionRef;
-    if (ref == _activeSessionRef) return;
-    _activeSessionRef = ref;
-    await _msgsSub?.cancel();
+    if (ref == _activeSessionRef) {
+      _recompute();
+      return;
+    }
+
+    final previous = _msgsSub;
     _msgsSub = null;
+    _activeSessionRef = null;
     _messages = const [];
+    await previous?.cancel();
+    if (!_isCurrentRun(generation)) return;
+    if (_activePeer != peer || _activeRoomId != roomId) return;
+
+    _activeSessionRef = ref;
     if (ref != null) {
-      _msgsSub = _read.watchMessages(ref).listen(_onMessages);
+      _msgsSub = _read.watchMessages(ref).listen((rows) {
+        if (_isCurrentRun(generation) && _activeSessionRef == ref) {
+          _onMessages(rows);
+        }
+      });
     }
     _recompute();
   }
+
+  Future<void> _handleRoomsChanged() async {
+    final generation = _generation;
+    if (!_isCurrentRun(generation) || _activePeer == null) return;
+    try {
+      await _serializeSessionBinding(generation);
+    } on Object {
+      await _projectInitializationFailure(generation);
+    }
+  }
+
+  Future<void> _projectInitializationFailure(int generation) async {
+    if (!_isCurrentRun(generation)) return;
+    final failureGeneration = ++_generation;
+    _bootstrapping = false;
+    _initialized = false;
+    _activePeer = null;
+    _activeSessionRef = null;
+    _messages = const [];
+    await _cancelProjectionSubscriptions();
+    if (_disposed || failureGeneration != _generation) return;
+    _initializationFailure = 'Could not load this chat. Try again.';
+    emit(ChatInitializationFailed(_initializationFailure!));
+  }
+
+  Future<void> _cancelProjectionSubscriptions() async {
+    final messages = _msgsSub;
+    final runtime = _runtimeSub;
+    _msgsSub = null;
+    _runtimeSub = null;
+    await messages?.cancel();
+    await runtime?.cancel();
+  }
+
+  bool _isCurrentRun(int generation) => !_disposed && generation == _generation;
 
   void _onMessages(List<MessageRecord> rows) {
     _messages = [for (final r in rows) r.toChatMessage()];
@@ -253,6 +376,10 @@ class ChatViewModel extends ViewModel<ChatState> {
   }
 
   ChatState _compose() {
+    final initializationFailure = _initializationFailure;
+    if (initializationFailure != null) {
+      return ChatInitializationFailed(initializationFailure);
+    }
     // No "loading"/connecting screen — once a peer is selected we always
     // render ChatReady (empty until the DB/stream delivers rows) and just
     // replace it as updates arrive. The connecting/offline status is shown
@@ -311,7 +438,9 @@ class ChatViewModel extends ViewModel<ChatState> {
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
+    _generation++;
     _msgsSub?.cancel();
     _runtimeSub?.cancel();
     _streamingSub?.cancel();
