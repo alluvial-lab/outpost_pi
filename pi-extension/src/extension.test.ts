@@ -151,10 +151,8 @@ vi.mock("./pairing/qr.js", async (importOriginal) => {
 // Import AFTER mocks
 const {
   default: extension,
-  _getState,
   outpostPiTestHarness,
   _onPeerDisconnect,
-  routeClientMessage,
   _routeClientMessageFrom,
   _mapAgentMessagesToEvents,
   _setMessageBufferForTest,
@@ -166,7 +164,6 @@ const {
   _setPiForTest,
   _getCurrentTurnIdForTest,
   _getTurnProjectionForTest,
-  _connectForTest,
   _hasActivePeerForTest,
   _getActivePeerCountForTest,
   _restartSupervisorCommand,
@@ -466,11 +463,10 @@ describe("state machine + pair_request flow", () => {
     captureHandler("outpost-pi");
     await outpostPiTestHarness.connect(makeMockCtx());
     expect(outpostPiTestHarness.state()).toBe("started");
-    expect(_getState()).toBe(outpostPiTestHarness.state());
   });
 
   test("pair without start → warning, state stays idle", async () => {
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
     // Isolated empty cwd so `localConfigExists` is deterministically false on
     // every OS. The old fake path (`/home/user/...`) is non-writable on macOS
     // (config never exists → first-time path) but writable on Windows (a config
@@ -480,7 +476,7 @@ describe("state machine + pair_request flow", () => {
     const ctx = makeMockCtx(cwd);
     await pair("", ctx);
     expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Run /outpost-pi"), "warning");
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
     rmSync(cwd, { recursive: true, force: true });
   });
 
@@ -489,8 +485,8 @@ describe("state machine + pair_request flow", () => {
     const APP_PEER_ID = "valid-app-peer-base64";
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
-    expect(_getState()).toBe("started");
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(outpostPiTestHarness.state()).toBe("started");
 
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
       type: "pair_request",
@@ -499,7 +495,7 @@ describe("state machine + pair_request flow", () => {
       device_name: "iPhone do Jacob",
     }));
 
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 
     // pair_ok must have been sent back to the app peer
     const sent = relayRef.current!.send.mock.calls.map((c) => c[0] as string);
@@ -547,8 +543,8 @@ describe("state machine + pair_request flow", () => {
     const APP_PEER_ID = "cross-room-pair-peer";
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
-    expect(_getState()).toBe("started");
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(outpostPiTestHarness.state()).toBe("started");
 
     // Relay-delivered shape: room = sender's auth room ('main'), not the Pi's.
     relayRef.current!.emit("message", makeRelayDeliveredLine(APP_PEER_ID, "main", {
@@ -558,7 +554,7 @@ describe("state machine + pair_request flow", () => {
       device_name: "Cross-room Phone",
     }));
 
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 
     const sent = relayRef.current!.send.mock.calls.map((c) => c[0] as string);
     const pairOks = sent.map(decodeSentCt).filter((d) => d.inner.type === "pair_ok");
@@ -580,7 +576,7 @@ describe("state machine + pair_request flow", () => {
     };
 
     captureHandler("outpost-pi");
-    await _connectForTest(ctx);
+    await outpostPiTestHarness.connect(ctx);
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
       type: "pair_request",
       id: "req-sdk-session",
@@ -588,7 +584,7 @@ describe("state machine + pair_request flow", () => {
       device_name: "Phone",
     }));
 
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
     const pairOk = relayRef.current!.send.mock.calls
       .map((c) => c[0] as string)
       .map(decodeSentCt)
@@ -602,7 +598,7 @@ describe("state machine + pair_request flow", () => {
     const APP_PEER_ID = "stale-token-peer";
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
       type: "pair_request",
@@ -613,7 +609,7 @@ describe("state machine + pair_request flow", () => {
 
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
     expect(_addedPeers).toHaveLength(0);
 
     const sent = relayRef.current!.send.mock.calls.map((c) => c[0] as string);
@@ -643,17 +639,17 @@ describe("state machine + pair_request flow", () => {
     const APP_PEER_B = "peer-b";
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     // First pair_request from peer A → ok
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_A, {
       type: "pair_request", id: "req-a", token: "test-token", device_name: "Phone A",
     }));
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 
     // Disconnect so we're back in started state for the second attempt
     _onPeerDisconnect();
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
 
     // Second pair_request from peer B with same token → consumed
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_B, {
@@ -661,7 +657,7 @@ describe("state machine + pair_request flow", () => {
     }));
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(_getState()).toBe("started");  // didn't transition
+    expect(outpostPiTestHarness.state()).toBe("started");  // didn't transition
     const sent = relayRef.current!.send.mock.calls.map((c) => c[0] as string);
     const errs = sent.map(decodeSentCt).filter((d) =>
       d.inner.type === "pair_error" && d.inner["in_reply_to"] === "req-b",
@@ -675,13 +671,13 @@ describe("state machine + pair_request flow", () => {
     const APP_PEER_ID = "already-paired";
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     // First pair_request → paired
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
       type: "pair_request", id: "req-1", token: "test-token", device_name: "Phone",
     }));
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
@@ -692,7 +688,7 @@ describe("state machine + pair_request flow", () => {
     }));
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(_getState()).toBe("paired");
+    expect(outpostPiTestHarness.state()).toBe("paired");
     // No additional outbound messages from this second pair_request
     expect(relayRef.current!.send.mock.calls.length).toBe(sendsBefore);
   });
@@ -706,15 +702,15 @@ describe("state machine + pair_request flow", () => {
     });
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
-    expect(_getState()).toBe("started");
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(outpostPiTestHarness.state()).toBe("started");
     expect(relayRef.current!.listenerCount("message")).toBe(1);
 
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
       type: "ping", id: "ping-reconnect",
     }));
 
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
     const pongs = relayRef.current!.send.mock.calls
       .map((c) => c[0] as string)
       .map(decodeSentCt)
@@ -725,27 +721,27 @@ describe("state machine + pair_request flow", () => {
 
   test("unknown peer non-pair message → state stays started, no peer added", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     relayRef.current!.emit("message", makeInnerLine("unknown-peer", {
       type: "ping", id: "ping-x",
     }));
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
     expect(_addedPeers).toHaveLength(0);
   });
 
   test("unknown peer + user_message → relay receives error{unknown_peer}", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     relayRef.current!.emit("message", makeInnerLine("revoked-peer", {
       type: "user_message", id: "msg-x", text: "are you there",
     }));
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
     const sent = relayRef.current!.send.mock.calls.map((c) => c[0] as string);
     const errors = sent.map(decodeSentCt).filter((d) =>
       d.inner.type === "error" && d.inner["code"] === "unknown_peer",
@@ -764,7 +760,7 @@ describe("state machine + pair_request flow", () => {
     // error{unknown_peer}. Use token_unknown to keep peer unknown afterwards.
     _tokenStatus = "unknown";
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     relayRef.current!.emit("message", makeInnerLine("stranger", {
       type: "pair_request", id: "req-stranger", token: "test-token", device_name: "Stranger",
@@ -788,21 +784,21 @@ describe("state machine + pair_request flow", () => {
     const APP_PEER_ID = "disco-peer";
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
       type: "pair_request", id: "req-1", token: "test-token", device_name: "Phone",
     }));
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 
     _onPeerDisconnect();
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
 
     // Reconnect via a ping (known peer now) → paired again
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
       type: "ping", id: "ping-reconnect",
     }));
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
   });
 });
 
@@ -919,7 +915,7 @@ describe("/outpost-pi revoke", () => {
 
     // Revoke now requires the relay (mirrors pair) — bring it up first.
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
@@ -937,7 +933,7 @@ describe("/outpost-pi revoke", () => {
     _knownPeers.push({ name: "Phone", remote_epk: "cccc3333", paired_at: "now" });
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
@@ -956,7 +952,7 @@ describe("/outpost-pi revoke", () => {
     _knownPeers.push({ name: "B", remote_epk: "prefix02_BBBB", paired_at: "now" });
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
@@ -978,7 +974,7 @@ describe("/outpost-pi revoke", () => {
     const ACTIVE_PEER = "activepeer_xxxx";
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     relayRef.current!.emit("message", JSON.stringify({
       peer: ACTIVE_PEER,
@@ -986,7 +982,7 @@ describe("/outpost-pi revoke", () => {
         type: "pair_request", id: "req-1", token: "test-token", device_name: "Active Phone",
       })).toString("base64"),
     }));
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 
     const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
@@ -994,7 +990,7 @@ describe("/outpost-pi revoke", () => {
 
     // Channel torn down, but relay still listening for new pairings.
     expect(_hasActivePeerForTest(ACTIVE_PEER)).toBe(false);
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
     expect(_removedPeers).toEqual([ACTIVE_PEER]);
     expect(_knownPeers).toHaveLength(0);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
@@ -1008,7 +1004,7 @@ describe("/outpost-pi revoke", () => {
     const ACTIVE_PEER = "iamthe_activeone";
     _knownPeers.push({ name: "Idle Peer", remote_epk: "idle_idle", paired_at: "now" });
 
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     relayRef.current!.emit("message", JSON.stringify({
       peer: ACTIVE_PEER,
@@ -1016,7 +1012,7 @@ describe("/outpost-pi revoke", () => {
         type: "pair_request", id: "req-1", token: "test-token", device_name: "Active Phone",
       })).toString("base64"),
     }));
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 
     const devices = captureHandler("outpost-pi devices");
     const ctx = makeMockCtx();
@@ -1029,7 +1025,7 @@ describe("/outpost-pi revoke", () => {
   });
 });
 
-// Removed obsolete _state_isIdle helper — tests now check _getState() or
+// Removed obsolete _state_isIdle helper — tests now check outpostPiTestHarness.state() or
 // _hasActivePeerForTest directly. Kept the void below to anchor the new
 // `_getActivePeerCountForTest` import so it isn't flagged as unused even
 // when only some tests in this file consume it.
@@ -1062,14 +1058,14 @@ function captureEventHandler(eventName: string): EventHandler {
 
 async function _pairForTest(appPeerId: string): Promise<void> {
   captureHandler("outpost-pi");
-  await _connectForTest(makeMockCtx());
+  await outpostPiTestHarness.connect(makeMockCtx());
   relayRef.current!.emit("message", JSON.stringify({
     peer: appPeerId,
     ct: Buffer.from(JSON.stringify({
       type: "pair_request", id: "req-1", token: "test-token", device_name: "Phone",
     })).toString("base64"),
   }));
-  await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+  await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 }
 
 /** Adds a second pair_request from a new peer to an already-running Pi.
@@ -1092,14 +1088,14 @@ async function _pairForTestWithCtx(
   connectCtx: { ui: { notify: ReturnType<typeof vi.fn> }; cwd?: string; abort?: ReturnType<typeof vi.fn> },
 ): Promise<void> {
   captureHandler("outpost-pi");
-  await _connectForTest(connectCtx);
+  await outpostPiTestHarness.connect(connectCtx);
   relayRef.current!.emit("message", JSON.stringify({
     peer: appPeerId,
     ct: Buffer.from(JSON.stringify({
       type: "pair_request", id: "req-1", token: "test-token", device_name: "Phone",
     })).toString("base64"),
   }));
-  await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+  await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 }
 
 // ── Multi-channel (plan/24 W2D) ──────────────────────────────────────────────
@@ -1142,7 +1138,7 @@ describe("multi-channel broadcast (W2D)", () => {
     // Isolated empty cwd → no local config on every OS, so we expect the
     // focused first-time message instead of an auto-bootstrap. (Fresh tmpdir —
     // see the "pair without start" test for the cross-platform rationale.)
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
     const cwd = mkdtempSync(join(tmpdir(), "pi-ext-cwd-"));
     const pair = captureHandler("outpost-pi pair");
     const ctx = makeMockCtx(cwd);
@@ -1326,7 +1322,7 @@ describe("multi-channel broadcast (W2D)", () => {
     expect(sent.some((d) => d.peer === "ownerB__abcdefghij" && d.inner.type === "bye")).toBe(false);
     expect(_hasActivePeerForTest("ownerA__1234567890")).toBe(false);
     expect(_hasActivePeerForTest("ownerB__abcdefghij")).toBe(true);
-    expect(_getState()).toBe("paired");  // derived: at least one owner still on
+    expect(outpostPiTestHarness.state()).toBe("paired");  // derived: at least one owner still on
   });
 
   test("footer snapshot shows active owner and paired relay after pairing", async () => {
@@ -1336,7 +1332,7 @@ describe("multi-channel broadcast (W2D)", () => {
       abort: vi.fn(),
     };
     captureHandler("outpost-pi");
-    await _connectForTest(ctx as ReturnType<typeof makeMockCtx> & typeof ctx);
+    await outpostPiTestHarness.connect(ctx as ReturnType<typeof makeMockCtx> & typeof ctx);
     const status = captureHandler("outpost-pi status");
     await status("", ctx as ReturnType<typeof makeMockCtx> & typeof ctx);
     ctx.ui.setStatus.mockClear();
@@ -2582,8 +2578,8 @@ describe("user_input mirroring", () => {
       paired_at: new Date().toISOString(),
     });
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-late-attach"));
-    expect(_getState()).toBe("started");
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-late-attach"));
+    expect(outpostPiTestHarness.state()).toBe("started");
 
     const onTurnStart = captureEventHandler("turn_start");
     const onInput = captureEventHandler("input");
@@ -2601,7 +2597,7 @@ describe("user_input mirroring", () => {
       peer,
       ct: Buffer.from(JSON.stringify({ type: "ping", id: "late-ping" })).toString("base64"),
     }));
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
     const sendsBeforeStream = relayRef.current!.send.mock.calls.length;
     const controlsBeforeFinish = relayRef.current!.sendControl.mock.calls.length;
 
@@ -2661,7 +2657,7 @@ describe("user_input mirroring", () => {
       paired_at: new Date().toISOString(),
     });
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-late-sync"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-late-sync"));
     _setMessageBufferForTest([]);
     _setTranscriptEventsForTest([]);
 
@@ -2929,7 +2925,7 @@ describe("tool visibility", () => {
   });
 
   test("tool_execution_start ignored when _peerChannel is null (idle state)", () => {
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
 
     const onToolStart = captureEventHandler("tool_execution_start");
     onToolStart({
@@ -3202,9 +3198,9 @@ describe("/outpost-pi set-relay + config", () => {
     const relayCountBeforeStart = relayInstances.length;
     const ctx = makeMockCtx();
 
-    await _connectForTest(ctx);
+    await outpostPiTestHarness.connect(ctx);
 
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
     expect(relayInstances).toHaveLength(relayCountBeforeStart);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining("/outpost-pi set-relay <url>"),
@@ -3218,9 +3214,9 @@ describe("/outpost-pi set-relay + config", () => {
 
     captureHandler("outpost-pi");
     const ctx = makeMockCtx();
-    await _connectForTest(ctx);
+    await outpostPiTestHarness.connect(ctx);
 
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
     // The "Connecting to relay <url>" notify shows the canonical http(s)://
     // form. Transport converts to ws(s):// internally before opening WS.
     expect(ctx.ui.notify).toHaveBeenCalledWith(
@@ -3516,7 +3512,7 @@ describe("rooms wiring", () => {
     };
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-test-room"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-test-room"));
 
     expect(capturedOpts).toHaveLength(1);
     const opts = capturedOpts[0] as { roomId?: string; roomMeta?: { name: string; cwd: string } };
@@ -3533,12 +3529,12 @@ describe("rooms wiring", () => {
     };
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-A"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-A"));
 
     const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
 
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-B"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-B"));
 
     expect(capturedOpts).toHaveLength(2);
     expect(capturedOpts[0]!.roomId).not.toBe(capturedOpts[1]!.roomId);
@@ -3551,18 +3547,18 @@ describe("rooms wiring", () => {
 
     captureHandler("outpost-pi");
     const ctx = makeMockCtx("/tmp/outpost-pi-dup");
-    await _connectForTest(ctx);
+    await outpostPiTestHarness.connect(ctx);
 
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining("Already running in this cwd"),
       "error",
     );
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
   });
 
   test("PeerChannel outer envelope carries `room` (relay-0.2.0 requires it for routing)", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-room-test"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-room-test"));
 
     relayRef.current!.emit("message", JSON.stringify({
       peer: "peer-room-test",
@@ -3570,7 +3566,7 @@ describe("rooms wiring", () => {
         type: "pair_request", id: "req-1", token: "test-token", device_name: "Phone",
       })).toString("base64"),
     }));
-    await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+    await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 
     // Trigger a channel-sent frame via ping (post-pair).
     relayRef.current!.emit("message", JSON.stringify({
@@ -3629,7 +3625,7 @@ describe("session sync", () => {
     _setSessionStartedAtForTest(null); // simulate edge: paired but no session
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "req-1", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
@@ -3662,7 +3658,7 @@ describe("session sync", () => {
     ]);
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "req-2", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
@@ -3690,7 +3686,7 @@ describe("session sync", () => {
     _setMessageBufferForTest(messages);
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "req-3", session_id: currentSessionIdFromSends(), limit: 3 },
       { abort: () => undefined },
     );
@@ -3720,7 +3716,7 @@ describe("session sync", () => {
     _setMessageBufferForTest(messages);
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "req-4", session_id: currentSessionIdFromSends(), limit: 100 },
       { abort: () => undefined },
     );
@@ -3751,7 +3747,7 @@ describe("session sync", () => {
     );
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "req-5", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
@@ -3778,7 +3774,7 @@ describe("session sync", () => {
     );
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "req-6", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
@@ -3808,7 +3804,7 @@ describe("session sync", () => {
     );
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "req-7", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
@@ -3969,13 +3965,13 @@ describe("bye on teardown", () => {
     // After the bye, no more sends to that peer (channel detached)
     const afterBye = decoded.slice(byeIdx + 1);
     expect(afterBye).toHaveLength(0);
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
   });
 
   test("started (no peer paired) + /outpost-pi stop → no bye sent (channel is null)", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
-    expect(_getState()).toBe("started");
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(outpostPiTestHarness.state()).toBe("started");
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
     const stop = captureHandler("outpost-pi stop");
@@ -3984,7 +3980,7 @@ describe("bye on teardown", () => {
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const byes = sent.map(decodeSentCt).filter((d) => d.inner.type === "bye");
     expect(byes).toHaveLength(0);
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
   });
 
   test("revoke of attached owner → channel sees bye{session_replaced}, relay stays started", async () => {
@@ -4004,7 +4000,7 @@ describe("bye on teardown", () => {
     // Multi-channel (W2D): only this owner's channel is closed; the relay
     // stays up, ready for new pairings. Pre-W2D this dropped to idle.
     expect(_hasActivePeerForTest(ACTIVE)).toBe(false);
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
   });
 });
 
@@ -4042,8 +4038,8 @@ describe("session_shutdown teardown", () => {
 
   test("firing session_shutdown while started tears down mesh bridge + relay → idle", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
-    expect(_getState()).toBe("started");
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(outpostPiTestHarness.state()).toBe("started");
     const relay = relayRef.current!;
 
     const shutdown = captureEventHandler("session_shutdown");
@@ -4053,7 +4049,7 @@ describe("session_shutdown teardown", () => {
     // so the re-evaluated instance starts from a clean slate (one connection).
     expect(relay.close).toHaveBeenCalled();
     expect(_hasMeshNodeForTest()).toBe(false);
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
   });
 
   test("session_shutdown during an active turn clears working, cancel target, late attach, and queued state", async () => {
@@ -4090,9 +4086,9 @@ describe("session_shutdown teardown", () => {
 
   test("firing session_shutdown while idle is a no-op (no throw)", async () => {
     const shutdown = captureEventHandler("session_shutdown");
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
     await expect(shutdown({ type: "session_shutdown", reason: "quit" })).resolves.toBeUndefined();
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
   });
 
   // Race guard: the daemon defers its connect (`setTimeout(_cmdRoot, 0)`), so a
@@ -4107,9 +4103,9 @@ describe("session_shutdown teardown", () => {
     // post-connect `_disposed` guard closes the relay instead of promoting it
     // to a ghost that holds the room.
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
     expect(_hasMeshNodeForTest()).toBe(false);
-    expect(_getState()).toBe("idle");                 // relay never became "started"
+    expect(outpostPiTestHarness.state()).toBe("idle");                 // relay never became "started"
     expect(relayRef.current?.close).toHaveBeenCalled(); // ghost WS closed → room freed
   });
 
@@ -4129,11 +4125,11 @@ describe("session_shutdown teardown", () => {
       new Promise<void>((resolve) => { releaseConnect = resolve; });
 
     // Kick off the connect but do NOT await — it blocks inside relay.connect().
-    const connecting = _connectForTest(makeMockCtx());
+    const connecting = outpostPiTestHarness.connect(makeMockCtx());
     // Wait until _cmdJoin finished and _cmdStart constructed + called connect.
     await vi.waitFor(() => expect(relayRef.current).not.toBeNull(), { timeout: 3000 });
     const relay = relayRef.current!;
-    expect(_getState()).toBe("idle");  // still mid-connect — not yet "started"
+    expect(outpostPiTestHarness.state()).toBe("idle");  // still mid-connect — not yet "started"
 
     // session_shutdown fires mid-connect (the outgoing instance is discarded).
     const shutdown = captureEventHandler("session_shutdown");
@@ -4144,7 +4140,7 @@ describe("session_shutdown teardown", () => {
     await connecting;
 
     expect(relay.close).toHaveBeenCalled();  // ghost WS closed → room available
-    expect(_getState()).toBe("idle");         // never transitioned to "started"
+    expect(outpostPiTestHarness.state()).toBe("idle");         // never transitioned to "started"
   });
 
   test("app user_message after session_shutdown does not call stale pi API", async () => {
@@ -4423,8 +4419,8 @@ describe("session_shutdown teardown", () => {
 
   test("known-peer reconnect resolving after session_shutdown does not attach a ghost owner", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
-    expect(_getState()).toBe("started");
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(outpostPiTestHarness.state()).toBe("started");
     const relay = relayRef.current!;
     _knownPeers.push({ name: "Phone", remote_epk: "owner-race-known", paired_at: new Date().toISOString() });
 
@@ -4456,8 +4452,8 @@ describe("session_shutdown teardown", () => {
 
   test("pair_request resolving after session_shutdown does not attach or reply from the stale relay", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
-    expect(_getState()).toBe("started");
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(outpostPiTestHarness.state()).toBe("started");
     const relay = relayRef.current!;
 
     const storage = await import("./pairing/storage.js");
@@ -4492,7 +4488,7 @@ describe("session_shutdown teardown", () => {
   test("after a clean reset, connect works again (flag is per-instance, not sticky)", async () => {
     // beforeEach already reset _disposed → a fresh connect must join the mesh.
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
     expect(_hasMeshNodeForTest()).toBe(true);
   });
 });
@@ -4537,7 +4533,7 @@ describe("outpost-pi:name-assigned event", () => {
     const ctx = makeMockCtx(
       `/tmp/outpost-pi-name-assigned-${process.pid}-${Date.now()}`,
     );
-    await _connectForTest(ctx);
+    await outpostPiTestHarness.connect(ctx);
     expect(_hasMeshNodeForTest()).toBe(true); // join succeeded → emit ran
 
     const ev = sendMessage.mock.calls
@@ -4650,7 +4646,7 @@ describe("relay control channel + relay-state event", () => {
     const sendMessage = vi.fn();
     captureHandler("outpost-pi");
     _setPiForTest(makeSpyPi(sendMessage));
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
 
     await _handleControl("relay:status");
 
@@ -4666,31 +4662,31 @@ describe("relay control channel + relay-state event", () => {
     _setPiForTest(makeSpyPi(sendMessage));
 
     await _handleControl("relay:on");
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
     expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "connected", connected: true });
 
     sendMessage.mockClear();
     await _handleControl("relay:off");
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
     expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "disconnected", connected: false });
   });
 
   test("relay:toggle flips idle → started → idle", async () => {
     captureHandler("outpost-pi");
     _setPiForTest(makeSpyPi(vi.fn()));
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
     await _handleControl("relay:toggle");
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
     await _handleControl("relay:toggle");
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
   });
 
   test("rename:<name> renames live (broker re-register + relay swap), process/session survive", async () => {
     const sendMessage = vi.fn();
     captureHandler("outpost-pi");
     _setPiForTest(makeSpyPi(sendMessage));
-    await _connectForTest(makeMockCtx());
-    expect(_getState()).toBe("started");
+    await outpostPiTestHarness.connect(makeMockCtx());
+    expect(outpostPiTestHarness.state()).toBe("started");
     expect(_hasMeshNodeForTest()).toBe(true);
 
     sendMessage.mockClear();
@@ -4698,7 +4694,7 @@ describe("relay control channel + relay-state event", () => {
 
     // The mesh node + relay survive (no process restart); relay back up.
     expect(_hasMeshNodeForTest()).toBe(true);
-    expect(_getState()).toBe("started");
+    expect(outpostPiTestHarness.state()).toBe("started");
     // Cockpit is told the new effective name via outpost-pi:name-assigned.
     const ev = sendMessage.mock.calls
       .map((c) => c[0] as { customType?: string; display?: boolean; details?: Record<string, unknown> })
@@ -4807,14 +4803,14 @@ describe("relay reconnect", () => {
     vi.useFakeTimers();
     try {
       captureHandler("outpost-pi");
-      await _connectForTest(makeMockCtx());
+      await outpostPiTestHarness.connect(makeMockCtx());
       expect(relayInstances).toHaveLength(1);
-      expect(_getState()).toBe("started");
+      expect(outpostPiTestHarness.state()).toBe("started");
 
       relayInstances[0]!.emit("close");
       expect(_hasPendingReconnect()).toBe(true);
       // State stays 'started' during reconnect window (not idle)
-      expect(_getState()).toBe("started");
+      expect(outpostPiTestHarness.state()).toBe("started");
       // Still only 1 RelayClient constructed
       expect(relayInstances).toHaveLength(1);
 
@@ -4822,7 +4818,7 @@ describe("relay reconnect", () => {
       // Reconnect attempt fired
       expect(relayInstances).toHaveLength(2);
       expect(_hasPendingReconnect()).toBe(false);
-      expect(_getState()).toBe("started");
+      expect(outpostPiTestHarness.state()).toBe("started");
     } finally {
       vi.useRealTimers();
     }
@@ -4945,7 +4941,7 @@ describe("relay reconnect", () => {
     vi.useFakeTimers();
     try {
       captureHandler("outpost-pi");
-      await _connectForTest(makeMockCtx());
+      await outpostPiTestHarness.connect(makeMockCtx());
       expect(relayInstances).toHaveLength(1);
 
       // From here on, every new MockRelay.connect rejects.
@@ -4968,7 +4964,7 @@ describe("relay reconnect", () => {
     vi.useFakeTimers();
     try {
       captureHandler("outpost-pi");
-      await _connectForTest(makeMockCtx());
+      await outpostPiTestHarness.connect(makeMockCtx());
       expect(relayInstances).toHaveLength(1);
 
       relayInstances[0]!.emit("close");
@@ -4977,7 +4973,7 @@ describe("relay reconnect", () => {
       const stop = captureHandler("outpost-pi stop");
       await stop("", makeMockCtx());
       expect(_hasPendingReconnect()).toBe(false);
-      expect(_getState()).toBe("idle");
+      expect(outpostPiTestHarness.state()).toBe("idle");
 
       // Advance well past the largest backoff — no new attempt
       await vi.advanceTimersByTimeAsync(60_000);
@@ -4998,16 +4994,16 @@ describe("relay reconnect", () => {
       });
 
       captureHandler("outpost-pi");
-      await _connectForTest(makeMockCtx());
+      await outpostPiTestHarness.connect(makeMockCtx());
       relayInstances[0]!.emit("message", makeInnerLine(APP_PEER_ID, {
         type: "ping", id: "before-drop",
       }));
-      await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+      await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
       expect(_hasActivePeerForTest(APP_PEER_ID)).toBe(true);
       expect(relayInstances[0]!.listenerCount("message")).toBe(2);
 
       relayInstances[0]!.emit("close");
-      expect(_getState()).toBe("started");
+      expect(outpostPiTestHarness.state()).toBe("started");
       expect(_hasActivePeerForTest(APP_PEER_ID)).toBe(false);
       expect(relayInstances[0]!.listenerCount("message")).toBe(0);
 
@@ -5018,7 +5014,7 @@ describe("relay reconnect", () => {
       relayInstances[1]!.emit("message", makeInnerLine(APP_PEER_ID, {
         type: "ping", id: "after-reconnect",
       }));
-      await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+      await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
       expect(_hasActivePeerForTest(APP_PEER_ID)).toBe(true);
       const pongs = relayInstances[1]!.send.mock.calls
         .map((c) => c[0] as string)
@@ -5043,11 +5039,11 @@ describe("relay reconnect", () => {
         sessionManager: { getSessionId: () => "sdk-session-preserve" },
       };
       captureHandler("outpost-pi");
-      await _connectForTest(ctx);
+      await outpostPiTestHarness.connect(ctx);
       relayInstances[0]!.emit("message", makeInnerLine(APP_PEER_ID, {
         type: "pair_request", id: "req-preserve", token: "test-token", device_name: "Phone",
       }));
-      await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+      await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
       expect(currentSessionIdFromSends()).toBe("sdk-session-preserve");
       _setSessionStartedAtForTest(sessionTs);
       _setMessageBufferForTest([
@@ -5073,7 +5069,7 @@ describe("relay reconnect", () => {
       relayInstances[1]!.emit("message", makeInnerLine(APP_PEER_ID, {
         type: "ping", id: "after-reconnect-preserve",
       }));
-      await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+      await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 
       const sendsBefore = relayInstances[1]!.send.mock.calls.length;
       relayInstances[1]!.emit("message", makeInnerLine(APP_PEER_ID, {
@@ -5104,7 +5100,7 @@ describe("relay reconnect", () => {
     vi.useFakeTimers();
     try {
       captureHandler("outpost-pi");
-      await _connectForTest(makeMockCtx());
+      await outpostPiTestHarness.connect(makeMockCtx());
 
       // First close → reconnect after 1s (succeeds)
       relayInstances[0]!.emit("close");
@@ -5185,7 +5181,7 @@ describe("cumulative transcript event log", () => {
     const sessionTs = baseTs;
     _setSessionStartedAtForTest(sessionTs);
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "mt-1", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
@@ -5240,7 +5236,7 @@ describe("cumulative transcript event log", () => {
     expect(_getTranscriptEventsForTest()).toHaveLength(2);
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "scope-1", session_id: sessionId },
       { abort: () => undefined },
     );
@@ -5280,7 +5276,7 @@ describe("cumulative transcript event log", () => {
     ]);
 
     const firstSends = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "stable-req-a", session_id: sessionId, limit: 50 },
       { abort: () => undefined },
     );
@@ -5290,7 +5286,7 @@ describe("cumulative transcript event log", () => {
       .find((d) => d.inner.type === "session_history")!;
 
     const secondSends = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "stable-req-b", session_id: sessionId, limit: 50 },
       { abort: () => undefined },
     );
@@ -5359,7 +5355,7 @@ describe("cumulative transcript event log", () => {
     ]);
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "replay-contract-sync", session_id: sessionId, limit: 50 },
       { abort: () => undefined },
     );
@@ -5441,7 +5437,7 @@ describe("cumulative transcript event log", () => {
     ]);
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "fixture-sync", session_id: sessionId, limit: 50 },
       { abort: () => undefined },
     );
@@ -5489,7 +5485,7 @@ describe("cumulative transcript event log", () => {
 
     _setSessionStartedAtForTest(baseTs);
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "mix-1", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
@@ -5542,7 +5538,7 @@ describe("cumulative transcript event log", () => {
 
     _setSessionStartedAtForTest(ts);
     const sendsBefore = relayRef.current!.send.mock.calls.length;
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "t-1", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
@@ -5568,14 +5564,14 @@ describe("cumulative transcript event log", () => {
     expect(_getTranscriptEventsForTest()).toHaveLength(2);
 
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     expect(_getTranscriptEventsForTest()).toHaveLength(2);  // PRESERVED
   });
 
   test("_goIdle preserves transcript events + sessionStartedAt across /outpost-pi stop", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
 
     const onMsgEnd = captureEventHandler("message_end");
     onMsgEnd({ type: "message_end", message: { role: "user", content: "x", timestamp: 100 } });
@@ -5584,7 +5580,7 @@ describe("cumulative transcript event log", () => {
 
     const stop = captureHandler("outpost-pi stop");
     await stop("", makeMockCtx());
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
     expect(_getTranscriptEventsForTest()).toHaveLength(2);  // PRESERVED across stop
 
     // Simulate terminal turn during idle window
@@ -5593,7 +5589,7 @@ describe("cumulative transcript event log", () => {
     expect(_getTranscriptEventsForTest()).toHaveLength(4);
 
     // Start again → transcript event log still has all 4
-    await _connectForTest(makeMockCtx());
+    await outpostPiTestHarness.connect(makeMockCtx());
     expect(_getTranscriptEventsForTest()).toHaveLength(4);
   });
 
@@ -5601,7 +5597,7 @@ describe("cumulative transcript event log", () => {
     vi.useFakeTimers();
     try {
       captureHandler("outpost-pi");
-      await _connectForTest(makeMockCtx());
+      await outpostPiTestHarness.connect(makeMockCtx());
 
       const onMsgEnd = captureEventHandler("message_end");
       onMsgEnd({ type: "message_end", message: { role: "user", content: "x", timestamp: 100 } });
@@ -5664,7 +5660,7 @@ describe("model meta", () => {
       abort: vi.fn(),
       model: { id: "claude-sonnet-4-5", name: "claude-sonnet-4.5" },
     } as unknown as ReturnType<typeof makeMockCtx>;
-    await _connectForTest(ctx);
+    await outpostPiTestHarness.connect(ctx);
 
     expect(capturedOpts).toHaveLength(1);
     expect(capturedOpts[0]!.roomMeta?.model).toBe("claude-sonnet-4.5");
@@ -5688,7 +5684,7 @@ describe("model meta", () => {
       abort: vi.fn(),
       getModel: () => ({ id: "claude-opus-4-8", name: "claude-opus-4.8" }),
     } as unknown as ReturnType<typeof makeMockCtx>;
-    await _connectForTest(ctx);
+    await outpostPiTestHarness.connect(ctx);
 
     expect(capturedOpts).toHaveLength(1);
     expect(capturedOpts[0]!.roomMeta?.model).toBe("claude-opus-4.8");
@@ -5707,7 +5703,7 @@ describe("model meta", () => {
       };
 
       captureHandler("outpost-pi");
-      await _connectForTest(makeMockCtx("/tmp/outpost-pi-no-model"));
+      await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-no-model"));
 
       expect(capturedOpts).toHaveLength(1);
       expect(capturedOpts[0]!.roomMeta?.model).toBeUndefined();
@@ -5736,7 +5732,7 @@ describe("model meta", () => {
       };
 
       captureHandler("outpost-pi");
-      await _connectForTest(makeMockCtx(cwd));  // ctx has no model/getModel
+      await outpostPiTestHarness.connect(makeMockCtx(cwd));  // ctx has no model/getModel
 
       expect(capturedOpts).toHaveLength(1);
       // The test registry won't know "acme-model-zzz" → falls back to the id.
@@ -5750,7 +5746,7 @@ describe("model meta", () => {
 
   test("pi.on('model_select') fires room_meta_update via relay.sendControl", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-model-switch"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-model-switch"));
 
     const onModelSelect = captureEventHandler("model_select");
     onModelSelect({
@@ -5771,7 +5767,7 @@ describe("model meta", () => {
 
   test("plan/32: pi.on('turn_start') publishes working=true via room_meta_update", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-working-on"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-working-on"));
 
     const onTurnStart = captureEventHandler("turn_start");
     onTurnStart({ type: "turn_start", turnIndex: 0, timestamp: 0 });
@@ -5790,7 +5786,7 @@ describe("model meta", () => {
   // open. Real child denial is covered by runtime_coordinator integration tests.
   test("subagent content gate does not suppress an approved successor session binding", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-subagent-session-start"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-subagent-session-start"));
 
     const onToolStart = captureEventHandler("tool_execution_start");
     const onSessionStart = captureEventHandler("session_start");
@@ -5832,7 +5828,7 @@ describe("model meta", () => {
 
   test("plan/32: pi.on('turn_end') publishes working=false via room_meta_update", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-working-off"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-working-off"));
 
     const onTurnEnd = captureEventHandler("turn_end");
     onTurnEnd({ type: "turn_end", turnIndex: 0 });
@@ -5846,7 +5842,7 @@ describe("model meta", () => {
 
   test("plan/32: pi.on('session_before_compact') publishes working=true", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-compact-working"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-compact-working"));
 
     const onBefore = captureEventHandler("session_before_compact");
     onBefore({ type: "session_before_compact" });
@@ -5860,7 +5856,7 @@ describe("model meta", () => {
 
   test("model_select with no model.name falls back to model.id", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-model-fallback"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-model-fallback"));
 
     const onModelSelect = captureEventHandler("model_select");
     onModelSelect({
@@ -5877,7 +5873,7 @@ describe("model meta", () => {
 
   test("model_select with no model (undefined) is silently ignored", async () => {
     captureHandler("outpost-pi");
-    await _connectForTest(makeMockCtx("/tmp/outpost-pi-model-noop"));
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-model-noop"));
 
     const sendControlBefore = relayRef.current!.sendControl.mock.calls.length;
     const onModelSelect = captureEventHandler("model_select");
@@ -5901,7 +5897,7 @@ describe("model meta", () => {
         abort: vi.fn(),
         model: { id: "claude-sonnet-4-5", name: "claude-sonnet-4.5" },
       } as unknown as ReturnType<typeof makeMockCtx>;
-      await _connectForTest(ctx);
+      await outpostPiTestHarness.connect(ctx);
 
       expect(capturedOpts).toHaveLength(1);
       const initialRoomId = capturedOpts[0]!.roomId!;
@@ -5938,7 +5934,7 @@ describe("model meta", () => {
         abort: vi.fn(),
         model: { id: "claude-sonnet-4-5", name: "claude-sonnet-4.5" },
       } as unknown as ReturnType<typeof makeMockCtx>;
-      await _connectForTest(ctx);
+      await outpostPiTestHarness.connect(ctx);
 
       // User switches model
       const onModelSelect = captureEventHandler("model_select");
@@ -5974,7 +5970,7 @@ describe("model meta", () => {
         abort: vi.fn(),
         model: { id: "claude-sonnet-4-5", name: "claude-sonnet-4.5" },
       } as unknown as ReturnType<typeof makeMockCtx>;
-      await _connectForTest(ctx);
+      await outpostPiTestHarness.connect(ctx);
 
       const onModelSelect = captureEventHandler("model_select");
       onModelSelect({

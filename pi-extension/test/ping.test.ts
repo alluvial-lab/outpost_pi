@@ -78,10 +78,8 @@ vi.mock("../src/transport/relay_client.js", () => ({
 
 const {
   default: extension,
-  _getState,
-  routeClientMessage,
+  outpostPiTestHarness,
   _startRelayForTest,
-  _stopForTest,
 } = await import("../src/index.js");
 
 import type { ExtensionAPI, ExtensionFactory } from "@mariozechner/pi-coding-agent";
@@ -125,7 +123,7 @@ async function pairUp(): Promise<void> {
   (extension as ExtensionFactory)(pi);
 
   await _startRelayForTest(makeMockCtx());
-  expect(_getState()).toBe("started");
+  expect(outpostPiTestHarness.state()).toBe("started");
 
   // Inject a pair_request
   relayRef.current!.emit("message", makeInnerLine("app-peer-001", {
@@ -136,7 +134,7 @@ async function pairUp(): Promise<void> {
   }));
 
   // Wait for paired
-  await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
+  await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -147,12 +145,12 @@ describe("ping → pong roundtrip", () => {
     relayRef.current = null;
 
     // Stop any active session first (idempotent — safe when already idle).
-    await _stopForTest(makeMockCtx());
+    await outpostPiTestHarness.stop(makeMockCtx());
   });
 
   test("ping from paired peer → pong sent back with matching in_reply_to", async () => {
     await pairUp();
-    expect(_getState()).toBe("paired");
+    expect(outpostPiTestHarness.state()).toBe("paired");
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
@@ -236,10 +234,10 @@ describe("ping → pong roundtrip", () => {
 
   test("ping in idle state (no relay) → no crash, no pong", async () => {
     // Don't start at all — state is "idle"
-    expect(_getState()).toBe("idle");
+    expect(outpostPiTestHarness.state()).toBe("idle");
 
     // routeClientMessage with no _peerChannel should return early
-    routeClientMessage(
+    outpostPiTestHarness.routeClientMessage(
       { type: "ping", id: "ping-idle" },
       { abort: vi.fn() },
     );

@@ -2718,13 +2718,6 @@ export const outpostPiTestHarness: OutpostPiTestHarness = createOutpostPiTestHar
   routeClientMessage: (message, ctx) => routeClientMessageForTest(message, ctx),
 });
 
-// Legacy compatibility aliases. Keep these private test exports available while
-// new tests migrate to the named harness above.
-export const _connectForTest = outpostPiTestHarness.connect;
-export const _stopForTest = outpostPiTestHarness.stop;
-export const _getState = outpostPiTestHarness.state;
-export const routeClientMessage = outpostPiTestHarness.routeClientMessage;
-
 // ── session_sync handler + helpers ────────────────────────────────────────────
 
 /**
