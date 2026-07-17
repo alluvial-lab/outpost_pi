@@ -6,6 +6,7 @@ import 'package:cockpit/app/cockpit/domain/entities/pi_model.dart';
 import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_message.dart';
+import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 
 /// Map RPC request/response `data` payloads into domain entities.
 ///
@@ -208,7 +209,9 @@ class RpcDataMapper {
                     ts: ts,
                     toolCallId: id,
                     tool: block['name'] as String? ?? '?',
-                    args: _asObjectMap(block['arguments']),
+                    args:
+                        RpcJsonObject.tryFromWire(block['arguments']) ??
+                        RpcJsonObject.empty,
                   ),
                 );
             }
@@ -252,12 +255,5 @@ class RpcDataMapper {
           .join('\n');
     }
     return '';
-  }
-
-  Map<String, Object?> _asObjectMap(Object? value) {
-    if (value is Map) {
-      return value.map((key, v) => MapEntry(key.toString(), v));
-    }
-    return const <String, Object?>{};
   }
 }
