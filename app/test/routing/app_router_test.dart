@@ -83,6 +83,8 @@ class _BootIdentityBridge extends OwnerIdentityBridge {
   OwnerIdentityBootResult result = IdentityReady(_identity, generated: false);
   Object? bootError;
   int watcherInstalls = 0;
+  int watcherFailuresRemaining = 0;
+  Future<void> Function()? resetCallback;
 
   @override
   Future<OwnerIdentityBootResult> boot() async {
@@ -94,6 +96,11 @@ class _BootIdentityBridge extends OwnerIdentityBridge {
   @override
   void startWatching({required Future<void> Function() onReset}) {
     watcherInstalls++;
+    if (watcherFailuresRemaining > 0) {
+      watcherFailuresRemaining--;
+      throw StateError('watcher install failed');
+    }
+    resetCallback = onReset;
   }
 }
 
@@ -106,6 +113,7 @@ class _BootMeshSync extends MeshSyncService {
       );
 
   Object? pullError;
+  int resetVersionCalls = 0;
 
   @override
   Future<bool> pullOnDemand() async {
@@ -116,6 +124,15 @@ class _BootMeshSync extends MeshSyncService {
 
   @override
   void startPolling({Duration interval = const Duration(seconds: 60)}) {}
+
+  @override
+  void stopPolling() {}
+
+  @override
+  void resetVersionWatermark() {
+    resetVersionCalls++;
+    super.resetVersionWatermark();
+  }
 }
 
 class _BootConnectionManager extends ConnectionManager {
@@ -126,8 +143,11 @@ class _BootConnectionManager extends ConnectionManager {
       );
 
   Completer<void>? bootGate;
+  Completer<void>? disconnectGate;
+  Completer<void>? disconnectStarted;
   Object? bootError;
   int bootCalls = 0;
+  int disconnectCalls = 0;
 
   @override
   Future<void> boot({String? preferredEpk}) async {
@@ -136,6 +156,15 @@ class _BootConnectionManager extends ConnectionManager {
     if (gate != null) await gate.future;
     final error = bootError;
     if (error != null) throw error;
+  }
+
+  @override
+  Future<void> disconnect() async {
+    disconnectCalls++;
+    final started = disconnectStarted;
+    if (started != null && !started.isCompleted) started.complete();
+    final gate = disconnectGate;
+    if (gate != null) await gate.future;
   }
 }
 
@@ -155,6 +184,19 @@ Future<void> _load(
   mesh,
   installWatcherAfterBoot: installWatcher,
 );
+
+Future<void> _waitUntil(
+  bool Function() condition, {
+  required String reason,
+}) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('timed out waiting for $reason');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+}
 
 void main() {
   test(
@@ -353,4 +395,72 @@ void main() {
     identity.dispose();
     mesh.dispose();
   });
+
+  test(
+    'router owner retries a synchronous watcher installation failure',
+    () async {
+      final storage = _BootStorage();
+      final prefs = _BootPreferences();
+      final identity = _BootIdentityBridge(storage)
+        ..watcherFailuresRemaining = 1;
+      final mesh = _BootMeshSync(identity, storage);
+      final connection = _BootConnectionManager(storage);
+      final owner = buildRouter(storage, connection, prefs, identity, mesh);
+
+      await _waitUntil(
+        () => owner.bootState.failure?.stage == BootFailureStage.identity,
+        reason: 'the first watcher installation failure',
+      );
+      expect(identity.watcherInstalls, 1);
+
+      owner.retryBoot();
+      await _waitUntil(
+        () => owner.bootState.ready,
+        reason: 'boot retry after watcher installation failure',
+      );
+      expect(identity.watcherInstalls, 2);
+      expect(identity.resetCallback, isNotNull);
+
+      owner.dispose();
+      connection.dispose();
+      identity.dispose();
+      mesh.dispose();
+    },
+  );
+
+  test(
+    'router owner disposal invalidates an Owner reset blocked in disconnect',
+    () async {
+      final storage = _BootStorage(peers: const [_peer]);
+      final prefs = _BootPreferences();
+      final identity = _BootIdentityBridge(storage);
+      final mesh = _BootMeshSync(identity, storage);
+      final disconnectGate = Completer<void>();
+      final disconnectStarted = Completer<void>();
+      final connection = _BootConnectionManager(storage)
+        ..disconnectGate = disconnectGate
+        ..disconnectStarted = disconnectStarted;
+      final owner = buildRouter(storage, connection, prefs, identity, mesh);
+
+      await _waitUntil(
+        () => owner.bootState.ready && identity.resetCallback != null,
+        reason: 'the initial boot and watcher installation',
+      );
+      expect(connection.bootCalls, 1);
+
+      final resetting = identity.resetCallback!();
+      await disconnectStarted.future.timeout(const Duration(seconds: 1));
+      owner.dispose();
+      disconnectGate.complete();
+      await resetting;
+
+      expect(mesh.resetVersionCalls, 0);
+      expect(connection.bootCalls, 1);
+      expect(owner.bootState.ready, isFalse);
+
+      connection.dispose();
+      identity.dispose();
+      mesh.dispose();
+    },
+  );
 }
