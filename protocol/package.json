@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Canonical JSON Schema source for Outpost-Pi protocol code generation",
   "scripts": {
-    "check": "node --import tsx scripts/check-fixtures.ts",
+    "check": "node --import tsx scripts/check-fixtures.ts && npm run check:tests",
+    "check:tests": "node --import tsx --test ../tools/protocol-codegen/src/index.test.ts",
     "list-types": "node --import tsx scripts/list-types.ts",
     "generate:rust": "node --import tsx scripts/list-types.ts | node ../tools/protocol-codegen/bin/protocol-codegen.mjs --target rust --schema - --out-dir ../relay/src/protocol/generated",
     "generate:rust:check": "node --import tsx scripts/list-types.ts | node ../tools/protocol-codegen/bin/protocol-codegen.mjs --target rust --schema - --out-dir ../relay/src/protocol/generated --check"

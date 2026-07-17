@@ -1,14 +1,14 @@
 ---
 id: story-wire-protocol-codegen-tests-into-check
 kind: story
-stage: implementing
+stage: done
 tags: [protocol, testing]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-15
-updated: 2026-07-14
+updated: 2026-07-16
 ---
 
 # Run protocol-codegen unit tests from canonical verification
