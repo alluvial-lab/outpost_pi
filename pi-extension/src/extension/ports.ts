@@ -120,9 +120,6 @@ export interface WakeAgentResult {
 
 /** Project Pi SDK session effects while owning stale-context invalidation across replacements. */
 export interface SdkSessionProjectionPort {
-  /** Set the room id for delivery-log correlation. Called when `_myRoomId` is
-   *  bound (the projection is constructed before the room is known). */
-  setRoomId(roomId: string | null): void;
   bindApi(pi: ExtensionAPI): void;
   bindCommandContext(ctx: ExtensionCommandContext): void;
   bindSessionContext(ctx: ExtensionContext): void;
