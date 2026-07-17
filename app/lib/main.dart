@@ -60,7 +60,7 @@ class OutpostPiApp extends StatefulWidget {
 
 class _OutpostPiAppState extends State<OutpostPiApp>
     with WidgetsBindingObserver {
-  late final _router = buildRouter(
+  late final _routerOwner = buildRouter(
     injector.get<PairingStorage>(),
     injector.get<ConnectionManager>(),
     injector.get<Preferences>(),
@@ -77,6 +77,7 @@ class _OutpostPiAppState extends State<OutpostPiApp>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _routerOwner.dispose();
     disposeDependencies();
     super.dispose();
   }
@@ -137,7 +138,7 @@ class _OutpostPiAppState extends State<OutpostPiApp>
           theme: buildLightTheme(),
           darkTheme: buildDarkTheme(),
           themeMode: prefs.themeMode,
-          routerConfig: _router,
+          routerConfig: _routerOwner.router,
           debugShowCheckedModeBanner: false,
         ),
       ),
