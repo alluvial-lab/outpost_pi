@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-app-async-lifecycle-ownership
-stage: drafting
+stage: done
 id: gate-refactor-lifecycle-app-router-floating-boot
 tags: []
 depends_on: []
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-17
 ---
 
 # App router starts ConnectionManager.boot as an unguarded future
@@ -30,3 +30,10 @@ Medium
 
 ## Fix
 Decide whether boot must complete before routing continues; either await it in the bootstrap flow or wrap it in `unawaited(conn.boot(...).catchError(...))` with explicit logging/recovery semantics.
+
+## Implementation
+
+Closed by `feature-app-async-lifecycle-ownership-startup-ownership`: router
+readiness now awaits cache restore and the initial connect attempt, while typed
+phase failures remain on `/boot` with Retry. Router lifecycle tests and
+`flutter analyze lib test` pass.
