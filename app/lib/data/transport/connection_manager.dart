@@ -462,13 +462,7 @@ class ConnectionManager extends Service {
     _controlSub?.cancel();
     _controlSub = null;
     if (_status is StatusOnline) {
-      final old = (_status as StatusOnline).channel;
-      // ignore: unawaited_futures
-      Future(() async {
-        try {
-          await old.close();
-        } catch (_) {}
-      });
+      _closeBestEffort((_status as StatusOnline).channel);
     }
     _reachability.onRelayConnectionEstablished();
     _activePeer = peer;
@@ -542,8 +536,7 @@ class ConnectionManager extends Service {
     _controlSub = null;
     final active = _status;
     if (active is StatusOnline) {
-      // Close cannot block in a sync dispose; fire-and-forget with error swallow.
-      unawaited(active.channel.close().catchError((Object _) {}));
+      _closeBestEffort(active.channel);
     }
     _reachability.onStopRequested();
     _statusController.close();
@@ -1212,11 +1205,9 @@ class ConnectionManager extends Service {
     // round will re-adopt).
     final updated = active.copyWith(roomId: discoveredRoom);
     _activePeer = updated;
-    // ignore: unawaited_futures
-    _storage
-        .savePeer(updated)
-        .then((_) {})
-        .catchError((Object e, StackTrace _) {});
+    unawaited(
+      _storage.savePeer(updated).catchError((Object _, StackTrace _) {}),
+    );
   }
 
   /// On (re)connect, re-send the last subscribe_presence so the relay
@@ -1310,8 +1301,12 @@ class ConnectionManager extends Service {
     _retryTimer = Timer(delay, () {
       _retryTimer = null;
       _reachability.onRetryTimerFired();
-      _connect(peer);
+      unawaited(_connect(peer));
     });
+  }
+
+  void _closeBestEffort(IChannel channel) {
+    unawaited(channel.close().catchError((Object _, StackTrace _) {}));
   }
 
   void _startPing(PeerRecord peer, IChannel ch) {
