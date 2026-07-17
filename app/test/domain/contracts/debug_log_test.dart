@@ -28,6 +28,14 @@ const Map<DebugTag, Set<String>> kAllowedKeys = {
   DebugTag.roomSnapshot: {'room', 'presenceCount', 'working'},
   DebugTag.workingConv: {'room', 'working', 'reason'},
   DebugTag.replayDedup: {'sessionId', 'eventIdTail', 'dropped'},
+  DebugTag.lifecycleFailure: {
+    'operation',
+    'reason',
+    'peerTail',
+    'room',
+    'sessionIdTail',
+    'retryScheduled',
+  },
 };
 
 /// Universal keys every variant emits.
@@ -62,6 +70,7 @@ DebugTag tagOf(DebugEvent event) {
     RoomSnapshotEvent() => DebugTag.roomSnapshot,
     WorkingConvEvent() => DebugTag.workingConv,
     ReplayDedupEvent() => DebugTag.replayDedup,
+    LifecycleFailureEvent() => DebugTag.lifecycleFailure,
   };
 }
 
@@ -124,6 +133,15 @@ void main() {
         sessionId: huge,
         eventIdTail: huge,
         dropped: true,
+      ),
+      LifecycleFailureEvent(
+        ts: now,
+        operation: LifecycleOperation.transcriptWrite,
+        reason: huge,
+        peerTail: huge,
+        room: huge,
+        sessionIdTail: huge,
+        retryScheduled: true,
       ),
     ];
   }
