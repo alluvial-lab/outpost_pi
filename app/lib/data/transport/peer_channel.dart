@@ -30,7 +30,7 @@ class PeerChannelError implements Exception {
 ///
 /// Starts receiving on the first server-message subscription, forwards unknown
 /// wire types as typed errors, and owns transport/controller closure.
-class PlainPeerChannel implements IChannel, IControlLink {
+class PlainPeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
   final PeerTransport _transport;
   final DebugLog? _debugLog;
 
@@ -59,15 +59,11 @@ class PlainPeerChannel implements IChannel, IControlLink {
     if (t is IControlLink) (t as IControlLink).sendControl(json);
   }
 
-  /// Plan 17 — propagate the active Pi-side room to the underlying
-  /// transport so subsequent `send`s carry the right outer `room` field.
-  /// No-op when the transport doesn't support it (in-memory test fakes).
+  /// Propagate the active Pi-side room to a room-aware byte transport.
+  @override
   void setActiveRoom(String roomId) {
-    final t = _transport;
-    try {
-      (t as dynamic).setActiveRoom(roomId);
-    } catch (_) {
-      // Non-WS transports don't track rooms — fine to ignore.
+    if (_transport case IActiveRoomTarget target) {
+      target.setActiveRoom(roomId);
     }
   }
 
