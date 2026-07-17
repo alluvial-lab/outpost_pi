@@ -1,4 +1,5 @@
 import 'package:cockpit/app/cockpit/domain/entities/transcript_message.dart';
+import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/agent_transcript.dart';
 import 'package:cockpit/app/core/domain/contracts/settings_store.dart';
 import 'package:cockpit/app/core/domain/entities/app_settings.dart';
@@ -22,14 +23,18 @@ void main() {
           ProjectedToolMessage(
             callId: 'tool-1',
             name: 'read_file',
-            args: const <String, dynamic>{'path': 'README.md'},
+            args: RpcJsonObject.tryFromWire(const <String, dynamic>{
+              'path': 'README.md',
+            })!,
             status: ToolProjectionStatus.completed,
             resultText: 'ok',
           ),
           ProjectedToolMessage(
             callId: 'tool-2',
             name: 'write_file',
-            args: const <String, dynamic>{'path': 'BROKEN.md'},
+            args: RpcJsonObject.tryFromWire(const <String, dynamic>{
+              'path': 'BROKEN.md',
+            })!,
             status: ToolProjectionStatus.error,
             resultText: 'failed',
           ),

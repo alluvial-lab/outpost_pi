@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'transcript_event.dart';
+import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 
 /// Immutable message produced by folding Cockpit transcript events.
 ///
@@ -37,17 +38,17 @@ final class ProjectedThinkingMessage extends ProjectedTranscriptMessage {
 enum ToolProjectionStatus { running, completed, error }
 
 final class ProjectedToolMessage extends ProjectedTranscriptMessage {
-  ProjectedToolMessage({
+  const ProjectedToolMessage({
     required this.callId,
     required this.name,
-    required Map<String, dynamic> args,
+    required this.args,
     required this.status,
     this.resultText = '',
-  }) : args = Map<String, dynamic>.unmodifiable(args);
+  });
 
   final String callId;
   final String name;
-  final Map<String, dynamic> args;
+  final RpcJsonObject args;
   final ToolProjectionStatus status;
   final String resultText;
 }
@@ -182,7 +183,7 @@ CockpitTranscriptProjection deriveCockpitTranscript(
           ProjectedToolMessage(
             callId: toolCallId,
             name: tool,
-            args: _dynamicMap(args),
+            args: args,
             status: ToolProjectionStatus.running,
           ),
         );
@@ -212,10 +213,6 @@ CockpitTranscriptProjection deriveCockpitTranscript(
     entries: List<ProjectedTranscriptMessage>.unmodifiable(entries),
     turn: turn,
   );
-}
-
-Map<String, dynamic> _dynamicMap(Map<String, Object?> value) {
-  return value.map((key, v) => MapEntry(key, v));
 }
 
 String _resultText(Object? result) {
