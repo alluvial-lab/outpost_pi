@@ -25,6 +25,19 @@ enum DebugTag {
   roomSnapshot,
   workingConv,
   replayDedup,
+  lifecycleFailure,
+}
+
+/// Name owner-local async operations without accepting free-form site labels.
+enum LifecycleOperation {
+  channelClose,
+  roomCachePersist,
+  legacyRoomPersist,
+  retryConnect,
+  transcriptWrite,
+  runtimeWrite,
+  sessionRebind,
+  meshPublish,
 }
 
 /// Typed diagnostic event. Each variant owns its allowed fields and its scrub.
@@ -346,6 +359,38 @@ final class ReplayDedupEvent extends DebugEvent {
     'sessionId': _cap(sessionId),
     if (eventIdTail != null) 'eventIdTail': _cap(eventIdTail!),
     'dropped': dropped,
+  };
+}
+
+/// Record a privacy-safe failure at an owner-local async lifecycle boundary.
+final class LifecycleFailureEvent extends DebugEvent {
+  const LifecycleFailureEvent({
+    required super.ts,
+    required this.operation,
+    required this.reason,
+    this.peerTail,
+    this.room,
+    this.sessionIdTail,
+    this.retryScheduled = false,
+  }) : super(tag: DebugTag.lifecycleFailure);
+
+  final LifecycleOperation operation;
+  final String reason;
+  final String? peerTail;
+  final String? room;
+  final String? sessionIdTail;
+  final bool retryScheduled;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'tag': tag.name,
+    'ts': ts.toUtc().toIso8601String(),
+    'operation': operation.name,
+    'reason': _cap(reason),
+    if (peerTail != null) 'peerTail': _cap(peerTail!),
+    if (room != null) 'room': _cap(room!),
+    if (sessionIdTail != null) 'sessionIdTail': _cap(sessionIdTail!),
+    'retryScheduled': retryScheduled,
   };
 }
 

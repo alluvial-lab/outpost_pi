@@ -162,6 +162,11 @@ class _FakeChannel implements IChannel, IControlLink {
   }
 }
 
+class _FailingCloseChannel extends _FakeChannel {
+  @override
+  Future<void> close() => Future<void>.error(StateError('close failed'));
+}
+
 late Directory _boxesDir;
 
 Future<void> _settle() =>
@@ -371,7 +376,7 @@ void main() {
         relayUrl: relay.uri.toString(),
         peerPubkey: 'peer-a',
         ed25519Key: keyPair,
-      deviceId: 'test-device',
+        deviceId: 'test-device',
         debugLog: log,
       );
       // Receive the one enqueueable frame — there is none in this batch
@@ -451,7 +456,7 @@ void main() {
         relayUrl: relay.uri.toString(),
         peerPubkey: 'peer-a',
         ed25519Key: keyPair,
-      deviceId: 'test-device',
+        deviceId: 'test-device',
         activeRoom: realRoom,
         debugLog: log,
       );
@@ -467,8 +472,7 @@ void main() {
       );
       expect(envelope.bytes, payload.length);
       final mismatch = log.events.whereType<WsInEvent>().where(
-        (event) =>
-            event.kind == 'envelope' && event.stage == 'room-mismatch',
+        (event) => event.kind == 'envelope' && event.stage == 'room-mismatch',
       );
       expect(
         mismatch,
@@ -657,6 +661,31 @@ void main() {
       );
 
       s.conn.dispose();
+    },
+  );
+
+  test(
+    'ConnectionManager routes close failure through lifecycle diagnostics',
+    () async {
+      final log = _FakeDebugLog();
+      final conn = ConnectionManager(
+        factory: (_, _) async => _FakeChannel(),
+        storage: _FakeStorage(),
+        debugLog: log,
+      );
+      conn.adopt(_FailingCloseChannel(), _peer);
+      conn.adopt(_FakeChannel(), _peer);
+      await _settle();
+
+      final failure = _assertEvent<LifecycleFailureEvent>(
+        log.events,
+        DebugTag.lifecycleFailure,
+        where: (event) => event.operation == LifecycleOperation.channelClose,
+      );
+      expect(failure.reason, 'StateError');
+      expect(failure.retryScheduled, isFalse);
+
+      conn.dispose();
     },
   );
 
@@ -1259,6 +1288,13 @@ void main() {
         DebugTag.sessionSync,
         'request-failed',
         (e) => e is SessionSyncEvent && (e.err?.isNotEmpty ?? false),
+      ),
+      (
+        DebugTag.lifecycleFailure,
+        'channel-close',
+        (e) =>
+            e is LifecycleFailureEvent &&
+            e.operation == LifecycleOperation.channelClose,
       ),
       // replay-dedup both dropped=false (new) and dropped=true (dedup).
       (

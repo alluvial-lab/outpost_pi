@@ -1,7 +1,7 @@
 ---
 id: feature-app-async-lifecycle-ownership-connection-persistence
 kind: story
-stage: implementing
+stage: done
 tags: [app, lifecycle]
 parent: feature-app-async-lifecycle-ownership
 depends_on: [feature-app-async-lifecycle-ownership-startup-ownership]
@@ -39,10 +39,29 @@ and privacy-safe diagnostics for close/persistence/unexpected retry failures.
 
 ## Acceptance evidence
 
-- [ ] Controlled completions prove older snapshots cannot land after newer ones
+- [x] Controlled completions prove older snapshots cannot land after newer ones
       for one peer and separate peers do not block each other.
-- [ ] Failing storage proves next-mutation retry and bounded legacy retry.
-- [ ] Close/retry failures emit the expected typed diagnostic without changing
+- [x] Failing storage proves next-mutation retry and bounded legacy retry.
+- [x] Close/retry failures emit the expected typed diagnostic without changing
       adoption/disposal/retry guarantees.
-- [ ] Debug event exhaustiveness, allow-list, clamp, and capture-site tests pass.
-- [ ] Targeted connection/debug tests and `flutter analyze` pass.
+- [x] Debug event exhaustiveness, allow-list, clamp, and capture-site tests pass.
+- [x] Targeted connection/debug tests and `flutter analyze` pass.
+
+## Implementation
+
+- Execution capability: inline, high-rigor persistence/lifecycle work to retain
+  one ordering model across cache, retry, teardown, and diagnostics.
+- Review weight: standard (caller workflow default; feature-level review only).
+- Files changed: `connection_manager.dart`, typed debug contract, and focused
+  connection/debug registry/capture tests.
+- Tests added: per-peer latest-wins coalescing, peer independence,
+  next-mutation retry, disposal guard, bounded legacy retry, and close capture.
+- Simplification: six independent room-save launches now use one per-peer drain;
+  silent close/retry/persistence failure paths share the typed diagnostic.
+- Discrepancies from design: unexpected retry escape is owned and diagnosed by
+  `_connectRetryOwned`; the factory's existing expected-error catch makes that
+  escape unreachable through normal public test inputs.
+- Adjacent issues parked: none.
+
+Verification: focused connection/debug tests (39 tests) and
+`flutter analyze lib test` passed.
