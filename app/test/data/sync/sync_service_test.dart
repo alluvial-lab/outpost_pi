@@ -9,10 +9,12 @@ import 'package:app/data/local/records/message_record.dart';
 import 'package:app/data/local/records/runtime_record.dart';
 import 'package:app/data/local/records/session_index_record.dart';
 import 'package:app/data/repositories/session_read_repository.dart';
+import 'package:app/data/sync/sync_events.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/session_state.dart';
@@ -138,6 +140,85 @@ class _FakeChannel implements IChannel, IControlLink {
   }
 }
 
+class _MemoryTranscriptStore implements TranscriptEventStore {
+  final Map<String, List<TranscriptEvent>> _events = {};
+  bool failNextAppend = false;
+  bool failNextRead = false;
+  Completer<void>? appendGate;
+  Completer<void>? readGate;
+  Completer<void>? readStarted;
+
+  List<TranscriptEvent> eventsFor(TranscriptSessionKey key) =>
+      List<TranscriptEvent>.of(_events[key.durableKey] ?? const []);
+
+  @override
+  Future<AppendTranscriptEventsResult> appendAll(
+    TranscriptSessionKey key,
+    Iterable<TranscriptEvent> events,
+  ) async {
+    final gate = appendGate;
+    if (gate != null) {
+      appendGate = null;
+      await gate.future;
+    }
+    if (failNextAppend) {
+      failNextAppend = false;
+      throw StateError('append failed');
+    }
+    final batch = events.toList(growable: false);
+    final log = _events.putIfAbsent(key.durableKey, () => []);
+    final ids = log.map((event) => event.eventId).toSet();
+    var appended = 0;
+    for (final event in batch) {
+      if (ids.add(event.eventId)) {
+        log.add(event);
+        appended++;
+      }
+    }
+    return AppendTranscriptEventsResult(
+      received: batch.length,
+      appended: appended,
+      skipped: batch.length - appended,
+    );
+  }
+
+  @override
+  Future<List<TranscriptEvent>> readSession(TranscriptSessionKey key) async {
+    final gate = readGate;
+    if (gate != null) {
+      readGate = null;
+      final started = readStarted;
+      if (started != null && !started.isCompleted) started.complete();
+      await gate.future;
+    }
+    if (failNextRead) {
+      failNextRead = false;
+      throw StateError('read failed');
+    }
+    return List<TranscriptEvent>.of(_events[key.durableKey] ?? const []);
+  }
+
+  @override
+  Stream<List<TranscriptEvent>> watchSession(TranscriptSessionKey key) =>
+      const Stream<List<TranscriptEvent>>.empty();
+}
+
+class _RecordingDebugLog implements DebugLog {
+  final List<DebugEvent> events = [];
+
+  @override
+  void log(DebugEvent event) => events.add(event);
+
+  @override
+  Future<String?> export() async => null;
+
+  @override
+  Future<void> clear() async => events.clear();
+
+  @override
+  void dispose() {}
+}
+
 class _FakeStorage extends PairingStorage {
   @override
   Future<List<PeerRecord>> listPeers() async => const [];
@@ -173,6 +254,10 @@ void main() {
   setup({
     Duration pendingSendTimeout = const Duration(seconds: 20),
     Duration deliveryPendingEchoTimeout = const Duration(seconds: 60),
+    TranscriptEventStore? transcriptEventStore,
+    DebugLog? debugLog,
+    Future<void> Function(String key, Map<String, dynamic> value)?
+    runtimeRecordWriter,
   }) async {
     final ch = _FakeChannel();
     final conn = ConnectionManager(
@@ -183,6 +268,9 @@ void main() {
     final sync = SyncService(
       conn,
       boxes,
+      transcriptEventStore: transcriptEventStore,
+      debugLog: debugLog,
+      runtimeRecordWriter: runtimeRecordWriter,
       pendingSendTimeout: pendingSendTimeout,
       deliveryPendingEchoTimeout: deliveryPendingEchoTimeout,
     );
@@ -1062,8 +1150,9 @@ void main() {
       s.ch.push(AgentDone(inReplyTo: 'u1'));
       await _settle();
 
-      final assistantRows =
-          messages(s.epk).where((r) => r.role == MsgRole.assistant).toList();
+      final assistantRows = messages(
+        s.epk,
+      ).where((r) => r.role == MsgRole.assistant).toList();
       final shared = assistantRows.where((r) => r.text == 'shared text');
       expect(
         shared.length,
@@ -1074,8 +1163,9 @@ void main() {
             'the second flush re-committed the same buffer under a new random '
             'eventId (the ×N amplification root cause).',
       );
-      final toolRows =
-          messages(s.epk).where((r) => r.role == MsgRole.tool).toList();
+      final toolRows = messages(
+        s.epk,
+      ).where((r) => r.role == MsgRole.tool).toList();
       expect(toolRows.length, 2, reason: 'both tool calls are recorded');
       s.conn.dispose();
       s.sync.dispose();
@@ -1097,32 +1187,34 @@ void main() {
       // Live assistant message carrying the SDK ts (the extension's
       // message_end-driven broadcast). Commits with a deterministic eventId.
       const liveTs = 2000;
-      s.ch.push(const AgentMessage(
-        inReplyTo: 'u1',
-        text: 'hello back',
-        ts: liveTs,
-      ));
+      s.ch.push(
+        const AgentMessage(inReplyTo: 'u1', text: 'hello back', ts: liveTs),
+      );
       await _settle();
-      final afterLive =
-          messages(s.epk).where((r) => r.role == MsgRole.assistant).length;
+      final afterLive = messages(
+        s.epk,
+      ).where((r) => r.role == MsgRole.assistant).length;
       expect(afterLive, 1, reason: 'live agent_message commits one row');
 
       // Replay the SAME assistant message via session_history. Under the
       // old random-id live scheme this would add a SECOND row (incompatible
       // eventIds). With deterministic identity it must collapse.
-      s.ch.push(SessionHistory(
-        inReplyTo: 'sync1',
-        sessionStartedAt: 0,
-        events: const [
-          UserInputEvt(ts: 1, id: 'u1', text: 'hi'),
-          AgentMessageEvt(ts: liveTs, inReplyTo: 'u1', text: 'hello back'),
-        ],
-        eos: true,
-      ));
+      s.ch.push(
+        SessionHistory(
+          inReplyTo: 'sync1',
+          sessionStartedAt: 0,
+          events: const [
+            UserInputEvt(ts: 1, id: 'u1', text: 'hi'),
+            AgentMessageEvt(ts: liveTs, inReplyTo: 'u1', text: 'hello back'),
+          ],
+          eos: true,
+        ),
+      );
       await _settle();
 
-      final assistantRows =
-          messages(s.epk).where((r) => r.role == MsgRole.assistant).toList();
+      final assistantRows = messages(
+        s.epk,
+      ).where((r) => r.role == MsgRole.assistant).toList();
       expect(
         assistantRows.length,
         1,
@@ -1159,11 +1251,9 @@ void main() {
       await _settle();
       // Live agent_message(ts) from message_end — commits deterministically.
       const liveTs = 2000;
-      s.ch.push(const AgentMessage(
-        inReplyTo: 'u1',
-        text: 'narration text',
-        ts: liveTs,
-      ));
+      s.ch.push(
+        const AgentMessage(inReplyTo: 'u1', text: 'narration text', ts: liveTs),
+      );
       await _settle();
       // ToolRequest arrives AFTER the deterministic commit. Under the old
       // code this re-committed the buffer with a random uuid → second row.
@@ -1172,11 +1262,10 @@ void main() {
       s.ch.push(AgentDone(inReplyTo: 'u1'));
       await _settle();
 
-      final assistantRows = messages(s.epk)
-          .where((r) => r.role == MsgRole.assistant)
-          .toList();
-      final narration =
-          assistantRows.where((r) => r.text == 'narration text');
+      final assistantRows = messages(
+        s.epk,
+      ).where((r) => r.role == MsgRole.assistant).toList();
+      final narration = assistantRows.where((r) => r.text == 'narration text');
       expect(
         narration.length,
         1,
@@ -1207,54 +1296,52 @@ void main() {
   // random-uuid fallback is SUPPRESSED; the reconnect replay fills the row
   // deterministically. This test simulates the dropped-frame turn by NOT
   // sending agent_message(ts), then delivering the replay.
-  test(
-    'dropped agent_message(ts) mid-flap: ToolRequest/AgentDone suppress '
-    'random-uuid fallback; replay fills deterministically',
-    () async {
-      final s = await setup();
-      s.ch.push(UserInput(id: 'u1', text: 'go'));
-      await _settle();
-      // Latch the capability: a PRIOR turn delivered agent_message(ts),
-      // proving the extension emits deterministic identity frames.
-      const priorTs = 1000;
-      s.ch.push(const AgentMessage(
-        inReplyTo: 'u1',
-        text: 'prior turn text',
-        ts: priorTs,
-      ));
-      await _settle();
-      s.ch.push(AgentDone(inReplyTo: 'u1'));
-      await _settle();
+  test('dropped agent_message(ts) mid-flap: ToolRequest/AgentDone suppress '
+      'random-uuid fallback; replay fills deterministically', () async {
+    final s = await setup();
+    s.ch.push(UserInput(id: 'u1', text: 'go'));
+    await _settle();
+    // Latch the capability: a PRIOR turn delivered agent_message(ts),
+    // proving the extension emits deterministic identity frames.
+    const priorTs = 1000;
+    s.ch.push(
+      const AgentMessage(inReplyTo: 'u1', text: 'prior turn text', ts: priorTs),
+    );
+    await _settle();
+    s.ch.push(AgentDone(inReplyTo: 'u1'));
+    await _settle();
 
-      // Next turn: the agent_message(ts) frame is DROPPED (flap hit during
-      // message_end→tool_execution_start). Only streaming chunks + the
-      // ToolRequest arrive.
-      s.ch.push(UserInput(id: 'u2', text: 'next'));
-      await _settle();
-      s.ch.push(const AgentChunk(inReplyTo: 'u2', delta: 'narration text'));
-      await _settle();
-      // No agent_message(ts) arrives — it was dropped.
-      s.ch.push(const ToolRequest(toolCallId: 'tc1', tool: 'Read', args: {}));
-      await _settle();
-      s.ch.push(AgentDone(inReplyTo: 'u2'));
-      await _settle();
+    // Next turn: the agent_message(ts) frame is DROPPED (flap hit during
+    // message_end→tool_execution_start). Only streaming chunks + the
+    // ToolRequest arrive.
+    s.ch.push(UserInput(id: 'u2', text: 'next'));
+    await _settle();
+    s.ch.push(const AgentChunk(inReplyTo: 'u2', delta: 'narration text'));
+    await _settle();
+    // No agent_message(ts) arrives — it was dropped.
+    s.ch.push(const ToolRequest(toolCallId: 'tc1', tool: 'Read', args: {}));
+    await _settle();
+    s.ch.push(AgentDone(inReplyTo: 'u2'));
+    await _settle();
 
-      // Before the replay: the dropped-frame turn must NOT have committed a
-      // random-uuid row for 'narration text'.
-      final beforeReplay =
-          messages(s.epk).where((r) => r.text == 'narration text');
-      expect(
-        beforeReplay,
-        isEmpty,
-        reason:
-            'The dropped agent_message(ts) frame must not trigger a '
-            'random-uuid fallback commit (it would dupe against the replay).',
-      );
+    // Before the replay: the dropped-frame turn must NOT have committed a
+    // random-uuid row for 'narration text'.
+    final beforeReplay = messages(
+      s.epk,
+    ).where((r) => r.text == 'narration text');
+    expect(
+      beforeReplay,
+      isEmpty,
+      reason:
+          'The dropped agent_message(ts) frame must not trigger a '
+          'random-uuid fallback commit (it would dupe against the replay).',
+    );
 
-      // Reconnect session_sync delivers the deterministic replay for the
-      // dropped turn.
-      const liveTs = 2000;
-      s.ch.push(SessionHistory(
+    // Reconnect session_sync delivers the deterministic replay for the
+    // dropped turn.
+    const liveTs = 2000;
+    s.ch.push(
+      SessionHistory(
         inReplyTo: 'sync1',
         sessionStartedAt: 0,
         events: const [
@@ -1262,135 +1349,130 @@ void main() {
           AgentMessageEvt(ts: liveTs, inReplyTo: 'u2', text: 'narration text'),
         ],
         eos: true,
-      ));
-      await _settle();
+      ),
+    );
+    await _settle();
 
-      final narration =
-          messages(s.epk).where((r) => r.text == 'narration text');
-      expect(
-        narration.length,
-        1,
-        reason:
-            'After the replay, the dropped turn renders exactly once '
-            '(deterministic replay row). No random-uuid live row survives '
-            'to dupe against it.',
-      );
-      s.conn.dispose();
-      s.sync.dispose();
-    },
-  );
+    final narration = messages(s.epk).where((r) => r.text == 'narration text');
+    expect(
+      narration.length,
+      1,
+      reason:
+          'After the replay, the dropped turn renders exactly once '
+          '(deterministic replay row). No random-uuid live row survives '
+          'to dupe against it.',
+    );
+    s.conn.dispose();
+    s.sync.dispose();
+  });
 
   // Counter-test for the legacy-extension path: an extension that NEVER
   // sends agent_message(ts) must still get its streamed buffer committed at
   // AgentDone (the capability flag stays false → fallback is NOT
   // suppressed). Guards against the Layer 2 fix over-suppressing for legacy
   // peers.
-  test(
-    'legacy extension (no agent_message(ts) ever): AgentDone still commits '
-    'the streamed buffer',
-    () async {
-      final s = await setup();
-      s.ch.push(UserInput(id: 'u1', text: 'go'));
-      await _settle();
-      // No agent_message(ts) ever arrives — legacy extension.
-      s.ch.push(const AgentChunk(inReplyTo: 'u1', delta: 'hello world'));
-      await _settle();
-      s.ch.push(AgentDone(inReplyTo: 'u1'));
-      await _settle();
+  test('legacy extension (no agent_message(ts) ever): AgentDone still commits '
+      'the streamed buffer', () async {
+    final s = await setup();
+    s.ch.push(UserInput(id: 'u1', text: 'go'));
+    await _settle();
+    // No agent_message(ts) ever arrives — legacy extension.
+    s.ch.push(const AgentChunk(inReplyTo: 'u1', delta: 'hello world'));
+    await _settle();
+    s.ch.push(AgentDone(inReplyTo: 'u1'));
+    await _settle();
 
-      final narration =
-          messages(s.epk).where((r) => r.text == 'hello world');
-      expect(
-        narration.length,
-        1,
-        reason:
-            'A legacy extension that never sends agent_message(ts) must '
-            'still commit the streamed buffer at AgentDone (random-uuid '
-            'fallback). The Layer 2 suppression only applies once the '
-            'capability is latched.',
-      );
-      s.conn.dispose();
-      s.sync.dispose();
-    },
-  );
+    final narration = messages(s.epk).where((r) => r.text == 'hello world');
+    expect(
+      narration.length,
+      1,
+      reason:
+          'A legacy extension that never sends agent_message(ts) must '
+          'still commit the streamed buffer at AgentDone (random-uuid '
+          'fallback). The Layer 2 suppression only applies once the '
+          'capability is latched.',
+    );
+    s.conn.dispose();
+    s.sync.dispose();
+  });
 
   // Mixed-peer regression (review finding on Layer 2): the capability flag
   // is per-active-session, NOT process-global. A peer A that sent
   // agent_message(ts) (latching the flag) must NOT suppress the random-uuid
   // fallback for a later legacy peer B on a different session. activate()
   // resets the flag, so B's streamed buffer commits at AgentDone.
-  test(
-    'capability flag is per-session: prior fixed peer does not suppress '
-    'a later legacy peer\'s fallback',
-    () async {
-      final s = await setup();
-      // Peer A: fixed extension — latches the capability flag.
-      s.ch.push(UserInput(id: 'u1', text: 'go'));
-      await _settle();
-      const priorTs = 1000;
-      s.ch.push(const AgentMessage(
+  test('capability flag is per-session: prior fixed peer does not suppress '
+      'a later legacy peer\'s fallback', () async {
+    final s = await setup();
+    // Peer A: fixed extension — latches the capability flag.
+    s.ch.push(UserInput(id: 'u1', text: 'go'));
+    await _settle();
+    const priorTs = 1000;
+    s.ch.push(
+      const AgentMessage(
         inReplyTo: 'u1',
         text: 'peer A deterministic text',
         ts: priorTs,
-      ));
-      await _settle();
-      s.ch.push(AgentDone(inReplyTo: 'u1'));
-      await _settle();
+      ),
+    );
+    await _settle();
+    s.ch.push(AgentDone(inReplyTo: 'u1'));
+    await _settle();
 
-      // Switch to peer B (a different session). adopt a channel for epkB so
-      // conn.activePeer == epkB (frames are not origin-gated), push a PairOk
-      // to bind epkB's session id, then activate() — which must reset the
-      // capability flag.
-      const epkB = 'epk_legacy_peer_zzz';
-      _sessionByEpk[epkB] = 'session-legacy-peer';
-      final chB = _FakeChannel();
-      chB.defaultSessionId = 'session-legacy-peer';
-      s.conn.adopt(
-        chB,
-        PeerRecord(
-          remoteEpk: epkB,
-          sessionName: 'Pi',
-          relayUrl: 'ws://localhost',
-          pairedAt: '2026-01-01T00:00:00Z',
-        ),
-      );
-      await _settle();
-      chB.pushRaw(
-        PairOk(
-          inReplyTo: 'pairB',
-          sessionName: 'Pi',
-          sessionStartedAt: DateTime.now().millisecondsSinceEpoch,
-          roomId: 'main',
-          sessionId: 'session-legacy-peer',
-        ),
-      );
-      await _settle(); // ConnectionManager learns epkB's active session id
-      await s.sync.activate(epkB, 'main');
-      await _settle();
+    // Switch to peer B (a different session). adopt a channel for epkB so
+    // conn.activePeer == epkB (frames are not origin-gated), push a PairOk
+    // to bind epkB's session id, then activate() — which must reset the
+    // capability flag.
+    const epkB = 'epk_legacy_peer_zzz';
+    _sessionByEpk[epkB] = 'session-legacy-peer';
+    final chB = _FakeChannel();
+    chB.defaultSessionId = 'session-legacy-peer';
+    s.conn.adopt(
+      chB,
+      PeerRecord(
+        remoteEpk: epkB,
+        sessionName: 'Pi',
+        relayUrl: 'ws://localhost',
+        pairedAt: '2026-01-01T00:00:00Z',
+      ),
+    );
+    await _settle();
+    chB.pushRaw(
+      PairOk(
+        inReplyTo: 'pairB',
+        sessionName: 'Pi',
+        sessionStartedAt: DateTime.now().millisecondsSinceEpoch,
+        roomId: 'main',
+        sessionId: 'session-legacy-peer',
+      ),
+    );
+    await _settle(); // ConnectionManager learns epkB's active session id
+    await s.sync.activate(epkB, 'main');
+    await _settle();
 
-      // Peer B: legacy extension — only streams chunks, never agent_message(ts).
-      chB.push(UserInput(id: 'u2', text: 'next'));
-      await _settle();
-      chB.push(const AgentChunk(inReplyTo: 'u2', delta: 'peer B streamed text'));
-      await _settle();
-      chB.push(AgentDone(inReplyTo: 'u2'));
-      await _settle();
+    // Peer B: legacy extension — only streams chunks, never agent_message(ts).
+    chB.push(UserInput(id: 'u2', text: 'next'));
+    await _settle();
+    chB.push(const AgentChunk(inReplyTo: 'u2', delta: 'peer B streamed text'));
+    await _settle();
+    chB.push(AgentDone(inReplyTo: 'u2'));
+    await _settle();
 
-      final narration =
-          messages(epkB).where((r) => r.text == 'peer B streamed text');
-      expect(
-        narration.length,
-        1,
-        reason:
-            'After activate() to a new session, the capability flag must be '
-            'reset so a legacy peer (no agent_message(ts)) still commits its '
-            'streamed buffer at AgentDone. If the flag leaked from peer A, '
-            'this text would be wrongly suppressed (lost).',
-      );
-      s.conn.dispose();
-      s.sync.dispose();
-    },
-  );
+    final narration = messages(
+      epkB,
+    ).where((r) => r.text == 'peer B streamed text');
+    expect(
+      narration.length,
+      1,
+      reason:
+          'After activate() to a new session, the capability flag must be '
+          'reset so a legacy peer (no agent_message(ts)) still commits its '
+          'streamed buffer at AgentDone. If the flag leaked from peer A, '
+          'this text would be wrongly suppressed (lost).',
+    );
+    s.conn.dispose();
+    s.sync.dispose();
+  });
 
   // Regression for the multi-block collision the deep review caught.
   // A single SDK assistant message with MULTIPLE text blocks shares
@@ -1408,22 +1490,27 @@ void main() {
       await _settle();
       const liveTs = 3000;
       // Two text blocks in the same SDK assistant message (same ts).
-      s.ch.push(const AgentMessage(
-        inReplyTo: 'u1',
-        text: 'first block',
-        ts: liveTs,
-        messageId: 'sync_3000:assistant:0',
-      ));
-      s.ch.push(const AgentMessage(
-        inReplyTo: 'u1',
-        text: 'second block',
-        ts: liveTs,
-        messageId: 'sync_3000:assistant:1',
-      ));
+      s.ch.push(
+        const AgentMessage(
+          inReplyTo: 'u1',
+          text: 'first block',
+          ts: liveTs,
+          messageId: 'sync_3000:assistant:0',
+        ),
+      );
+      s.ch.push(
+        const AgentMessage(
+          inReplyTo: 'u1',
+          text: 'second block',
+          ts: liveTs,
+          messageId: 'sync_3000:assistant:1',
+        ),
+      );
       await _settle();
 
-      final assistantRows =
-          messages(s.epk).where((r) => r.role == MsgRole.assistant).toList();
+      final assistantRows = messages(
+        s.epk,
+      ).where((r) => r.role == MsgRole.assistant).toList();
       expect(
         assistantRows.length,
         2,
@@ -1433,10 +1520,10 @@ void main() {
             '(keyed only on inReplyTo+ts) so Hive deduped the second away '
             '→ message loss.',
       );
-      expect(
-        assistantRows.map((r) => r.text).toSet(),
-        {'first block', 'second block'},
-      );
+      expect(assistantRows.map((r) => r.text).toSet(), {
+        'first block',
+        'second block',
+      });
       s.conn.dispose();
       s.sync.dispose();
     },
@@ -1455,47 +1542,53 @@ void main() {
       // Live user_input echo carrying the SDK ts (the extension's
       // message_end-driven broadcast).
       const liveTs = 4000;
-      s.ch.push(const UserInput(
-        id: 'local_user1',
-        text: 'hello from phone',
-        ts: liveTs,
-      ));
+      s.ch.push(
+        const UserInput(
+          id: 'local_user1',
+          text: 'hello from phone',
+          ts: liveTs,
+        ),
+      );
       await _settle();
-      final afterLive =
-          messages(s.epk).where((r) => r.role == MsgRole.user).length;
+      final afterLive = messages(
+        s.epk,
+      ).where((r) => r.role == MsgRole.user).length;
       expect(afterLive, 1, reason: 'live user_input commits one row');
 
       // Replay the SAME user message via session_history. Under the old
       // scheme this would add a SECOND event-store row (incompatible
       // eventIds). With deterministic identity it collapses (and the
       // projection guard dedupes by id regardless).
-      s.ch.push(SessionHistory(
-        inReplyTo: 'sync1',
-        sessionStartedAt: 0,
-        events: const [
-          UserInputEvt(ts: liveTs, id: 'local_user1', text: 'hello from phone'),
-        ],
-        eos: true,
-      ));
+      s.ch.push(
+        SessionHistory(
+          inReplyTo: 'sync1',
+          sessionStartedAt: 0,
+          events: const [
+            UserInputEvt(
+              ts: liveTs,
+              id: 'local_user1',
+              text: 'hello from phone',
+            ),
+          ],
+          eos: true,
+        ),
+      );
       await _settle();
 
-      final userRows =
-          messages(s.epk).where((r) => r.role == MsgRole.user).toList();
-      expect(
-        userRows.length,
-        1,
-        reason: 'projection dedupes by id regardless',
-      );
+      final userRows = messages(
+        s.epk,
+      ).where((r) => r.role == MsgRole.user).toList();
+      expect(userRows.length, 1, reason: 'projection dedupes by id regardless');
       // The real convergence is in the event store: a live + replay for the
       // same (id, ts) must collapse to ONE UserMessageConfirmed event, not
       // two with incompatible eventIds. Pre-fix this was 2 (bloat); post-fix 1.
       final userConfirmedEvents =
           (await s.sync.debugTranscriptEventStore.readSession(
-        transcriptKeyFor(s.epk),
-      ))
-          .whereType<UserMessageConfirmed>()
-          .where((e) => e.clientMessageId == 'local_user1')
-          .toList();
+                transcriptKeyFor(s.epk),
+              ))
+              .whereType<UserMessageConfirmed>()
+              .where((e) => e.clientMessageId == 'local_user1')
+              .toList();
       expect(
         userConfirmedEvents.length,
         1,
@@ -1528,37 +1621,43 @@ void main() {
       // The message_end-driven user_input for a workstation-typed message.
       // id is the turnId (local_-prefixed), ts is the SDK timestamp.
       const liveTs = 5000;
-      s.ch.push(const UserInput(
-        id: 'local_workstation_turn',
-        text: 'restarted pi and loaded the apk',
-        ts: liveTs,
-      ));
+      s.ch.push(
+        const UserInput(
+          id: 'local_workstation_turn',
+          text: 'restarted pi and loaded the apk',
+          ts: liveTs,
+        ),
+      );
       await _settle();
-      final afterLive =
-          messages(s.epk).where((r) => r.role == MsgRole.user).length;
+      final afterLive = messages(
+        s.epk,
+      ).where((r) => r.role == MsgRole.user).length;
       expect(afterLive, 1, reason: 'single user_input commits one row');
 
       // Replay the same message via session_history — must collapse.
-      s.ch.push(SessionHistory(
-        inReplyTo: 'sync1',
-        sessionStartedAt: 0,
-        events: const [
-          UserInputEvt(
+      s.ch.push(
+        SessionHistory(
+          inReplyTo: 'sync1',
+          sessionStartedAt: 0,
+          events: const [
+            UserInputEvt(
               ts: liveTs,
               id: 'local_workstation_turn',
-              text: 'restarted pi and loaded the apk'),
-        ],
-        eos: true,
-      ));
+              text: 'restarted pi and loaded the apk',
+            ),
+          ],
+          eos: true,
+        ),
+      );
       await _settle();
 
       final userConfirmedEvents =
           (await s.sync.debugTranscriptEventStore.readSession(
-        transcriptKeyFor(s.epk),
-      ))
-          .whereType<UserMessageConfirmed>()
-          .where((e) => e.clientMessageId == 'local_workstation_turn')
-          .toList();
+                transcriptKeyFor(s.epk),
+              ))
+              .whereType<UserMessageConfirmed>()
+              .where((e) => e.clientMessageId == 'local_workstation_turn')
+              .toList();
       expect(
         userConfirmedEvents.length,
         1,
@@ -2067,6 +2166,303 @@ void main() {
 
       s.conn.dispose();
       sync2.dispose();
+    },
+  );
+
+  test(
+    'detached transcript failure degrades once, requests replay, recovers, and preserves turn convergence',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final debug = _RecordingDebugLog();
+      final s = await setup(transcriptEventStore: store, debugLog: debug);
+      final sessionEvents = <SessionEvent>[];
+      final sub = s.sync.events.listen(sessionEvents.add);
+      s.ch.sent.clear();
+
+      s.ch.push(UserInput(id: 'failure-u1', text: 'keep working'));
+      await _settle();
+      expect(s.sync.isWorking, isTrue);
+
+      store.failNextAppend = true;
+      s.ch.push(AgentChunk(inReplyTo: 'failure-u1', delta: 'partial'));
+      await _settle();
+      expect(
+        s.sync.isWorking,
+        isTrue,
+        reason: 'a non-terminal persistence failure must not idle the turn',
+      );
+      expect(
+        sessionEvents.whereType<SessionPersistenceDegraded>(),
+        hasLength(1),
+      );
+      expect(s.ch.sent.whereType<SessionSync>(), hasLength(1));
+      expect(
+        debug.events.whereType<LifecycleFailureEvent>().where(
+          (event) => event.operation == LifecycleOperation.transcriptWrite,
+        ),
+        hasLength(1),
+      );
+
+      store.failNextAppend = true;
+      s.ch.push(
+        ToolResult(toolCallId: 'tool-failure', result: const {'ok': true}),
+      );
+      await _settle();
+      expect(
+        sessionEvents.whereType<SessionPersistenceDegraded>(),
+        hasLength(1),
+        reason: 'the visible warning is latched rather than repeated',
+      );
+
+      s.ch.push(
+        AgentMessage(
+          inReplyTo: 'failure-u1',
+          text: 'recovered write',
+          ts: 1700000001000,
+        ),
+      );
+      await _settle();
+      expect(
+        sessionEvents.whereType<SessionPersistenceRecovered>(),
+        hasLength(1),
+      );
+
+      store.failNextAppend = true;
+      s.ch.push(AgentDone(inReplyTo: 'failure-u1'));
+      await _settle();
+      expect(
+        s.sync.isWorking,
+        isFalse,
+        reason: 'terminal state settles idle even when its append fails',
+      );
+      expect(
+        store
+            .eventsFor(transcriptKeyFor(s.epk))
+            .whereType<AssistantDoneReceived>(),
+        isEmpty,
+        reason: 'a failed append does not invent a transcript row',
+      );
+
+      await sub.cancel();
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test('a fail-once transcript read recovers on the next replay', () async {
+    final store = _MemoryTranscriptStore();
+    final s = await setup(transcriptEventStore: store);
+    final sessionEvents = <SessionEvent>[];
+    final sub = s.sync.events.listen(sessionEvents.add);
+    final history = SessionHistory(
+      sessionId: s.sessionId,
+      inReplyTo: 'read-recovery',
+      sessionStartedAt: 1000,
+      events: const [UserInputEvt(ts: 1, id: 'read-u1', text: 'history')],
+      eos: true,
+    );
+
+    store.failNextRead = true;
+    s.ch.push(history);
+    await _settle();
+    expect(sessionEvents.whereType<SessionPersistenceDegraded>(), hasLength(1));
+
+    s.ch.push(history);
+    await _settle();
+    expect(
+      sessionEvents.whereType<SessionPersistenceRecovered>(),
+      hasLength(1),
+    );
+    expect(store.eventsFor(transcriptKeyFor(s.epk)), isNotEmpty);
+
+    await sub.cancel();
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
+  test(
+    'stale append completion cannot diagnose or publish after rotation',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final debug = _RecordingDebugLog();
+      final s = await setup(transcriptEventStore: store, debugLog: debug);
+      final sessionEvents = <SessionEvent>[];
+      final sub = s.sync.events.listen(sessionEvents.add);
+      final gate = Completer<void>();
+      store
+        ..appendGate = gate
+        ..failNextAppend = true;
+
+      s.ch.push(AgentChunk(inReplyTo: 'old-turn', delta: 'stale'));
+      await Future<void>.delayed(Duration.zero);
+      const rotated = 'stale-completion-rotated';
+      _sessionByEpk[s.epk] = rotated;
+      s.ch.defaultSessionId = rotated;
+      s.ch.pushRaw(
+        PairOk(
+          inReplyTo: 'rotate-stale-completion',
+          sessionName: 'Pi',
+          sessionStartedAt: DateTime.now().millisecondsSinceEpoch,
+          roomId: 'main',
+          sessionId: rotated,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+      gate.complete();
+      await _settle();
+      await _settle();
+
+      expect(sessionEvents.whereType<SessionPersistenceDegraded>(), isEmpty);
+      expect(
+        debug.events.whereType<LifecycleFailureEvent>().where(
+          (event) => event.operation == LifecycleOperation.transcriptWrite,
+        ),
+        isEmpty,
+        reason: 'the old session completion cannot publish diagnostics',
+      );
+      expect(s.sync.activeSessionRef?.sessionId, rotated);
+
+      await sub.cancel();
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test('stale held-message read cannot send after session rotation', () async {
+    final store = _MemoryTranscriptStore();
+    final s = await setup(transcriptEventStore: store);
+    s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 1));
+    await _settle();
+    await s.sync.sendMessage('held for stale read');
+    await _settle();
+    final held = store
+        .eventsFor(transcriptKeyFor(s.epk))
+        .whereType<UserMessageSubmitted>()
+        .single;
+    expect(held.held, isTrue);
+    s.ch.sent.clear();
+
+    final readGate = Completer<void>();
+    final readStarted = Completer<void>();
+    store
+      ..readGate = readGate
+      ..readStarted = readStarted;
+    s.ch.pushControl(
+      RoomAnnounced(
+        peer: s.epk,
+        roomId: 'main',
+        sessionId: s.sessionId,
+        startedAt: 2,
+      ),
+    );
+    await readStarted.future.timeout(const Duration(seconds: 1));
+
+    const rotated = 'held-read-rotated';
+    _sessionByEpk[s.epk] = rotated;
+    s.ch.defaultSessionId = rotated;
+    s.ch.pushRaw(
+      PairOk(
+        inReplyTo: 'rotate-held-read',
+        sessionName: 'Pi',
+        sessionStartedAt: DateTime.now().millisecondsSinceEpoch,
+        roomId: 'main',
+        sessionId: rotated,
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    readGate.complete();
+    await _settle();
+    await _settle();
+    await _settle();
+
+    expect(
+      s.ch.sent.whereType<UserMessage>().where(
+        (message) => message.id == held.clientMessageId,
+      ),
+      isEmpty,
+      reason: 'the old-session held message must not send after rotation',
+    );
+    expect(s.sync.activeSessionRef?.sessionId, rotated);
+    final syncs = s.ch.sent.whereType<SessionSync>().toList();
+    expect(syncs, isNotEmpty);
+    expect(
+      syncs,
+      everyElement(
+        predicate<SessionSync>((message) => message.sessionId == rotated),
+      ),
+    );
+
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
+  test(
+    'runtime put is awaited in the queue and diagnosed on failure',
+    () async {
+      Completer<void>? putGate;
+      Completer<void>? putStarted;
+      var failNextPut = false;
+      final debug = _RecordingDebugLog();
+      final s = await setup(
+        debugLog: debug,
+        runtimeRecordWriter: (key, value) async {
+          final started = putStarted;
+          if (started != null && !started.isCompleted) started.complete();
+          final gate = putGate;
+          if (gate != null) await gate.future;
+          if (failNextPut) {
+            failNextPut = false;
+            throw StateError('runtime put failed');
+          }
+        },
+      );
+
+      putGate = Completer<void>();
+      putStarted = Completer<void>();
+      s.ch.pushControl(
+        RoomMetaUpdated(
+          peer: s.epk,
+          roomId: 'main',
+          working: true,
+          hasModel: false,
+          hasThinking: false,
+          hasSessionId: false,
+        ),
+      );
+      await putStarted.future.timeout(const Duration(seconds: 1));
+
+      var sendCompleted = false;
+      final send = s.sync
+          .sendMessage('queued behind runtime put')
+          .then((_) => sendCompleted = true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(sendCompleted, isFalse);
+      putGate.complete();
+      putGate = null;
+      await send;
+      expect(sendCompleted, isTrue);
+
+      failNextPut = true;
+      s.ch.pushControl(
+        RoomMetaUpdated(
+          peer: s.epk,
+          roomId: 'main',
+          working: false,
+          hasModel: false,
+          hasThinking: false,
+          hasSessionId: false,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(
+        debug.events.whereType<LifecycleFailureEvent>().where(
+          (event) => event.operation == LifecycleOperation.runtimeWrite,
+        ),
+        isNotEmpty,
+      );
+
+      s.conn.dispose();
+      s.sync.dispose();
     },
   );
 
@@ -2892,155 +3288,152 @@ void main() {
       s.sync.dispose();
     });
 
-    test(
-      '(i) half-open socket: room marked offline holds the send pending '
-      'instead of writing into a dead WS',
-      () async {
-        // Reproduces story-app-half-open-socket-swallows-sends-arrives-late:
-        // the capture showed the app send into a WS that was StatusOnline
-        // but whose room was already proven unreachable (3 missed pongs →
-        // _markActiveRoomOffline, equivalent here to a RoomEnded push).
-        // The message then sat in the dead send buffer and arrived at the
-        // PC minutes late, after the 20s echo timeout had already marked
-        // the row failed. The fix gates sendMessage on isRoomLive: when
-        // the room is not live, hold the message pending (same as the
-        // offline branch) rather than writing into the dead socket.
-        final s = await setup(pendingSendTimeout: short);
-        expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
-        expect(s.conn.status, isA<StatusOnline>(), reason: 'WS online');
+    test('(i) half-open socket: room marked offline holds the send pending '
+        'instead of writing into a dead WS', () async {
+      // Reproduces story-app-half-open-socket-swallows-sends-arrives-late:
+      // the capture showed the app send into a WS that was StatusOnline
+      // but whose room was already proven unreachable (3 missed pongs →
+      // _markActiveRoomOffline, equivalent here to a RoomEnded push).
+      // The message then sat in the dead send buffer and arrived at the
+      // PC minutes late, after the 20s echo timeout had already marked
+      // the row failed. The fix gates sendMessage on isRoomLive: when
+      // the room is not live, hold the message pending (same as the
+      // offline branch) rather than writing into the dead socket.
+      final s = await setup(pendingSendTimeout: short);
+      expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
+      expect(s.conn.status, isA<StatusOnline>(), reason: 'WS online');
 
-        // A control RoomEnded for the active room marks it offline while
-        // the WS stays StatusOnline (the half-open state). The rooms emit
-        // is debounced; poll the live-set getter directly (robust across
-        // suite ordering) instead of awaiting roomsStream.first.
-        s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 0));
-        for (var i = 0; i < 50 && s.conn.isRoomLive(s.epk, 'main'); i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 4));
-        }
-        expect(s.conn.isRoomLive(s.epk, 'main'), isFalse);
-        expect(s.conn.status, isA<StatusOnline>(), reason: 'WS still online');
+      // A control RoomEnded for the active room marks it offline while
+      // the WS stays StatusOnline (the half-open state). The rooms emit
+      // is debounced; poll the live-set getter directly (robust across
+      // suite ordering) instead of awaiting roomsStream.first.
+      s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 0));
+      for (var i = 0; i < 50 && s.conn.isRoomLive(s.epk, 'main'); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 4));
+      }
+      expect(s.conn.isRoomLive(s.epk, 'main'), isFalse);
+      expect(s.conn.status, isA<StatusOnline>(), reason: 'WS still online');
 
-        // Send into the half-open socket: must be held pending, NOT written
-        // to the channel.
-        await s.sync.sendMessage('into the dead socket');
-        await _settle();
+      // Send into the half-open socket: must be held pending, NOT written
+      // to the channel.
+      await s.sync.sendMessage('into the dead socket');
+      await _settle();
 
-        expect(
-          s.ch.sent.whereType<UserMessage>(),
-          isEmpty,
-          reason: 'must not write into a socket whose room is proven offline',
-        );
-        final rows = messages(s.epk);
-        expect(rows, hasLength(1), reason: 'held-pending row written');
-        expect(rows.single.pending, isTrue);
-        expect(rows.single.text, 'into the dead socket');
-        expect(
-          s.sync.debugPendingSendTimerCount,
-          1,
-          reason: 'timeout armed for the held-pending row',
-        );
-        // Await the short send timeout so it fires and fails the held row
-        // BEFORE dispose — otherwise the pending timer fires into a disposed
-        // SyncService mid-suite and contaminates later tests (the shared
-        // Hive box + process-wide timer queue outlive a single test).
-        await Future<void>.delayed(const Duration(milliseconds: 140));
-        await _settle();
-        expect(messages(s.epk).single.status, UserMsgStatus.failed);
-        expect(s.sync.debugPendingSendTimerCount, 0);
-        s.conn.dispose();
-        s.sync.dispose();
-      },
-    );
+      expect(
+        s.ch.sent.whereType<UserMessage>(),
+        isEmpty,
+        reason: 'must not write into a socket whose room is proven offline',
+      );
+      final rows = messages(s.epk);
+      expect(rows, hasLength(1), reason: 'held-pending row written');
+      expect(rows.single.pending, isTrue);
+      expect(rows.single.text, 'into the dead socket');
+      expect(
+        s.sync.debugPendingSendTimerCount,
+        1,
+        reason: 'timeout armed for the held-pending row',
+      );
+      // Await the short send timeout so it fires and fails the held row
+      // BEFORE dispose — otherwise the pending timer fires into a disposed
+      // SyncService mid-suite and contaminates later tests (the shared
+      // Hive box + process-wide timer queue outlive a single test).
+      await Future<void>.delayed(const Duration(milliseconds: 140));
+      await _settle();
+      expect(messages(s.epk).single.status, UserMsgStatus.failed);
+      expect(s.sync.debugPendingSendTimerCount, 0);
+      s.conn.dispose();
+      s.sync.dispose();
+    });
 
-    test(
-      '(ii) held-pending message is re-sent on reconnect after timing out '
-      '(option 4)',
-      () async {
-        // Reproduces story-app-reattempt-held-pending-on-reconnect:
-        // option 1's held-pending guard says it 're-attempts on the next
-        // healthy connection' but the re-attempt was never implemented. A
-        // message held because the room was offline (never written to the
-        // channel) just failed at send_timeout and stayed failed — even
-        // though re-sending on reconnect would deliver it. Late-confirmation
-        // (SessionHistory replay) can't help because the message never
-        // reached the Pi. Safe now that the Pi dedupes user_message by
-        // (session_id, msg.id) — a re-sent message that already landed is
-        // re-echoed without re-waking the agent.
-        const short = Duration(milliseconds: 60);
-        final s = await setup(pendingSendTimeout: short);
-        expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
+    test('(ii) held-pending message is re-sent on reconnect after timing out '
+        '(option 4)', () async {
+      // Reproduces story-app-reattempt-held-pending-on-reconnect:
+      // option 1's held-pending guard says it 're-attempts on the next
+      // healthy connection' but the re-attempt was never implemented. A
+      // message held because the room was offline (never written to the
+      // channel) just failed at send_timeout and stayed failed — even
+      // though re-sending on reconnect would deliver it. Late-confirmation
+      // (SessionHistory replay) can't help because the message never
+      // reached the Pi. Safe now that the Pi dedupes user_message by
+      // (session_id, msg.id) — a re-sent message that already landed is
+      // re-echoed without re-waking the agent.
+      const short = Duration(milliseconds: 60);
+      final s = await setup(pendingSendTimeout: short);
+      expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
 
-        // Mark the room offline (the half-open state) so the send is held.
-        s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 0));
-        for (var i = 0; i < 50 && s.conn.isRoomLive(s.epk, 'main'); i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 4));
-        }
-        expect(s.conn.isRoomLive(s.epk, 'main'), isFalse);
-        expect(s.conn.status, isA<StatusOnline>(), reason: 'WS still online');
+      // Mark the room offline (the half-open state) so the send is held.
+      s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 0));
+      for (var i = 0; i < 50 && s.conn.isRoomLive(s.epk, 'main'); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 4));
+      }
+      expect(s.conn.isRoomLive(s.epk, 'main'), isFalse);
+      expect(s.conn.status, isA<StatusOnline>(), reason: 'WS still online');
 
-        // Send into the offline room: held pending (NOT written to channel).
-        await s.sync.sendMessage('held and later re-sent');
-        await _settle();
-        expect(
-          s.ch.sent.whereType<UserMessage>(),
-          isEmpty,
-          reason: 'held pending — not written to the dead socket',
-        );
-        final rows = messages(s.epk);
-        expect(rows, hasLength(1));
-        expect(rows.single.pending, isTrue);
+      // Send into the offline room: held pending (NOT written to channel).
+      await s.sync.sendMessage('held and later re-sent');
+      await _settle();
+      expect(
+        s.ch.sent.whereType<UserMessage>(),
+        isEmpty,
+        reason: 'held pending — not written to the dead socket',
+      );
+      final rows = messages(s.epk);
+      expect(rows, hasLength(1));
+      expect(rows.single.pending, isTrue);
 
-        // Wait for the short send_timeout to fire → row fails.
-        await Future<void>.delayed(const Duration(milliseconds: 140));
-        await _settle();
-        expect(messages(s.epk).single.status, UserMsgStatus.failed);
+      // Wait for the short send_timeout to fire → row fails.
+      await Future<void>.delayed(const Duration(milliseconds: 140));
+      await _settle();
+      expect(messages(s.epk).single.status, UserMsgStatus.failed);
 
-        // Reconnect with a fresh, healthy channel (room live again).
-        final reconnect = _FakeChannel()..defaultSessionId = s.sessionId;
-        s.conn.adopt(
-          reconnect,
-          PeerRecord(
-            remoteEpk: s.epk,
-            sessionName: 'Pi',
-            relayUrl: 'ws://localhost',
-            pairedAt: '2026-01-01T00:00:00Z',
-          ),
-        );
-        // The relay re-announces the room on reconnect, re-marking it live
-        // (RoomEnded had removed it from _liveRoomIds). Without this, the
-        // re-send guard (isRoomLive) would still see the room as offline.
-        reconnect.pushControl(
-          RoomAnnounced(
-            peer: s.epk,
-            roomId: 'main',
-            startedAt: 1,
-            sessionId: s.sessionId,
-          ),
-        );
-        await _settle();
-        expect(s.conn.isRoomLive(s.epk, 'main'), isTrue,
-            reason: 'room re-announced on reconnect');
-        await _settle();
+      // Reconnect with a fresh, healthy channel (room live again).
+      final reconnect = _FakeChannel()..defaultSessionId = s.sessionId;
+      s.conn.adopt(
+        reconnect,
+        PeerRecord(
+          remoteEpk: s.epk,
+          sessionName: 'Pi',
+          relayUrl: 'ws://localhost',
+          pairedAt: '2026-01-01T00:00:00Z',
+        ),
+      );
+      // The relay re-announces the room on reconnect, re-marking it live
+      // (RoomEnded had removed it from _liveRoomIds). Without this, the
+      // re-send guard (isRoomLive) would still see the room as offline.
+      reconnect.pushControl(
+        RoomAnnounced(
+          peer: s.epk,
+          roomId: 'main',
+          startedAt: 1,
+          sessionId: s.sessionId,
+        ),
+      );
+      await _settle();
+      expect(
+        s.conn.isRoomLive(s.epk, 'main'),
+        isTrue,
+        reason: 'room re-announced on reconnect',
+      );
+      await _settle();
 
-        // The held-pending message is re-sent on the new channel (with the
-        // ORIGINAL id so the echo dedupes). Without option 4, nothing is
-        // re-sent and the row stays failed forever.
-        final resent = reconnect.sent.whereType<UserMessage>();
-        expect(
-          resent,
-          hasLength(1),
-          reason: 'held-pending message re-sent on reconnect',
-        );
-        expect(resent.single.text, 'held and later re-sent');
-        expect(
-          resent.single.id,
-          rows.single.id,
-          reason: 're-send reuses the original id so echo/replay dedupes',
-        );
-        s.conn.dispose();
-        s.sync.dispose();
-      },
-    );
+      // The held-pending message is re-sent on the new channel (with the
+      // ORIGINAL id so the echo dedupes). Without option 4, nothing is
+      // re-sent and the row stays failed forever.
+      final resent = reconnect.sent.whereType<UserMessage>();
+      expect(
+        resent,
+        hasLength(1),
+        reason: 'held-pending message re-sent on reconnect',
+      );
+      expect(resent.single.text, 'held and later re-sent');
+      expect(
+        resent.single.id,
+        rows.single.id,
+        reason: 're-send reuses the original id so echo/replay dedupes',
+      );
+      s.conn.dispose();
+      s.sync.dispose();
+    });
 
     test(
       '(iii) a failed held-pending re-send is retryable on a later reconnect',
@@ -3081,7 +3474,12 @@ void main() {
           ),
         );
         reconnect1.pushControl(
-          RoomAnnounced(peer: s.epk, roomId: 'main', startedAt: 1, sessionId: s.sessionId),
+          RoomAnnounced(
+            peer: s.epk,
+            roomId: 'main',
+            startedAt: 1,
+            sessionId: s.sessionId,
+          ),
         );
         await _settle();
         await _settle();
@@ -3108,7 +3506,13 @@ void main() {
         // by reconnect1's announce). working:true models the Pi accepting
         // the re-sent message.
         reconnect2.pushControl(
-          RoomAnnounced(peer: s.epk, roomId: 'main', startedAt: 2, sessionId: s.sessionId, working: true),
+          RoomAnnounced(
+            peer: s.epk,
+            roomId: 'main',
+            startedAt: 2,
+            sessionId: s.sessionId,
+            working: true,
+          ),
         );
         await _settle();
         await _settle();
@@ -3376,17 +3780,22 @@ void main() {
         );
         await _settle();
 
-        final assistantTexts = messages(s.epk)
-            .where((m) => m.role == MsgRole.assistant)
-            .map((m) => m.text);
-        expect(assistantTexts, isNot(contains(startsWith('⚠ session_mismatch'))));
+        final assistantTexts = messages(
+          s.epk,
+        ).where((m) => m.role == MsgRole.assistant).map((m) => m.text);
+        expect(
+          assistantTexts,
+          isNot(contains(startsWith('⚠ session_mismatch'))),
+        );
         expect(assistantTexts, isEmpty);
         // Active session is unchanged; no sync targets the foreign id.
         expect(s.sync.activeSessionRef?.sessionId, s.sessionId);
         expect(
           s.ch.sent.whereType<SessionSync>(),
           everyElement(
-            predicate<SessionSync>((m) => m.sessionId != 'session_foreign_duplicate'),
+            predicate<SessionSync>(
+              (m) => m.sessionId != 'session_foreign_duplicate',
+            ),
           ),
         );
         // The foreign mismatch must not disturb the pending send's timer —
@@ -3420,10 +3829,13 @@ void main() {
         );
         await _settle();
 
-        final assistantTexts = messages(s.epk)
-            .where((m) => m.role == MsgRole.assistant)
-            .map((m) => m.text);
-        expect(assistantTexts, isNot(contains(startsWith('⚠ session_mismatch'))));
+        final assistantTexts = messages(
+          s.epk,
+        ).where((m) => m.role == MsgRole.assistant).map((m) => m.text);
+        expect(
+          assistantTexts,
+          isNot(contains(startsWith('⚠ session_mismatch'))),
+        );
         expect(assistantTexts, isEmpty);
         s.conn.dispose();
         s.sync.dispose();
