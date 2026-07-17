@@ -5,6 +5,7 @@ import 'package:cockpit/app/cockpit/data/adapters/rpc_data_mapper.dart';
 import 'package:cockpit/app/cockpit/domain/entities/agent_turn_projection.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_message.dart';
+import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -52,7 +53,9 @@ void main() {
           ts: DateTime.utc(2026),
           toolCallId: 'tool-1',
           tool: 'read',
-          args: const <String, Object?>{'path': 'README.md'},
+          args: RpcJsonObject.tryFromWire(const <String, Object?>{
+            'path': 'README.md',
+          })!,
         ),
         CockpitToolFinished(
           eventId: 'e7',
@@ -101,7 +104,7 @@ void main() {
           ts: DateTime.utc(2026),
           toolCallId: 'tool-1',
           tool: 'read',
-          args: args,
+          args: RpcJsonObject.tryFromWire(args)!,
         ),
       ]);
 
@@ -109,8 +112,11 @@ void main() {
       final tool = projection.entries.single as ProjectedToolMessage;
 
       expect(tool.status, ToolProjectionStatus.running);
-      expect(tool.args['path'], 'README.md');
-      expect(() => tool.args['path'] = 'changed.md', throwsUnsupportedError);
+      expect(tool.args.values['path'], 'README.md');
+      expect(
+        () => tool.args.values['path'] = 'changed.md',
+        throwsUnsupportedError,
+      );
     });
 
     test('event log dedupes hydration and filters by session', () {
@@ -447,8 +453,7 @@ CockpitTranscriptEvent? _cockpitEventFromJson(Map<String, Object?> json) {
       ts: ts,
       toolCallId: json['toolCallId'] as String,
       tool: json['tool'] as String,
-      args:
-          (json['args'] as Map<String, Object?>?) ?? const <String, Object?>{},
+      args: RpcJsonObject.tryFromWire(json['args']) ?? RpcJsonObject.empty,
     ),
     'tool_finished' => CockpitToolFinished(
       eventId: eventId,

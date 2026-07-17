@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cockpit/app/cockpit/domain/entities/transcript_message.dart';
+import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 import 'package:cockpit/app/cockpit/ui/session/agent_entry.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/agent_markdown.dart';
 import 'package:cockpit/app/core/ui/file_icons/file_icons.dart';
@@ -651,7 +652,7 @@ class _ToolCard extends StatelessWidget {
   });
 
   final String name;
-  final Map<String, dynamic> args;
+  final RpcJsonObject args;
   final ToolProjectionStatus status;
   final String resultText;
 
@@ -661,7 +662,7 @@ class _ToolCard extends StatelessWidget {
     final done = status != ToolProjectionStatus.running;
     final isError = status == ToolProjectionStatus.error;
     final accent = isError ? colors.error : colors.ok;
-    final argsText = args.isEmpty ? '' : jsonEncode(args);
+    final argsText = args.values.isEmpty ? '' : jsonEncode(args.values);
     final hasResult = done && resultText.isNotEmpty;
 
     return Padding(

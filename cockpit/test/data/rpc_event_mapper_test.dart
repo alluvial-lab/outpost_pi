@@ -1,5 +1,6 @@
 import 'package:cockpit/app/cockpit/data/adapters/rpc_event_mapper.dart';
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
+import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -40,7 +41,37 @@ void main() {
       expect(nameAssigned.changed, isTrue);
     });
 
+    test('preserves tool arguments and uses an empty object fallback', () {
+      final tool = mapper.fromJson(<String, dynamic>{
+        'type': 'tool_execution_start',
+        'toolCallId': 'tool-1',
+        'toolName': 'read_file',
+        'args': <Object?, Object?>{'path': 'README.md', 7: true},
+      });
+      expect(tool, isA<RpcToolStart>());
+      expect((tool as RpcToolStart).args.values, <String, Object?>{
+        'path': 'README.md',
+        '7': true,
+      });
+
+      final emptyTool = mapper.fromJson(<String, dynamic>{
+        'type': 'tool_execution_start',
+        'args': 'not-an-object',
+      });
+      expect((emptyTool as RpcToolStart).args, same(RpcJsonObject.empty));
+    });
+
     test('maps pair-code, paired, and mesh-revoked schema neighbors', () {
+      final meshWithDetails = mapper.fromJson(
+        _customMessage('outpost-pi:mesh-revoked', <String, Object?>{
+          'reason': 'removed',
+          'future': <Object?>[1, 'two'],
+        }),
+      );
+      expect((meshWithDetails as RpcMeshRevoked).details?.values, {
+        'reason': 'removed',
+        'future': <Object?>[1, 'two'],
+      });
       final pairCode = mapper.fromJson(
         _customMessage('outpost-pi:pair-code', <String, Object?>{
           'uri': 'outpost-pi://pair?token=abc',
@@ -85,6 +116,11 @@ void main() {
       );
       expect(meshRevoked, isA<RpcMeshRevoked>());
       expect((meshRevoked as RpcMeshRevoked).details, isNull);
+
+      final nonMapDetails = mapper.fromJson(
+        _customMessage('outpost-pi:mesh-revoked', 'not-an-object' as dynamic),
+      );
+      expect((nonMapDetails as RpcMeshRevoked).details, isNull);
     });
 
     test('keeps unknown custom event types isolated as RpcUnknown', () {
@@ -103,10 +139,7 @@ void main() {
   });
 }
 
-Map<String, dynamic> _customMessage(
-  String customType,
-  Map<String, Object?>? details,
-) {
+Map<String, dynamic> _customMessage(String customType, Object? details) {
   final message = <String, dynamic>{
     'role': 'custom',
     'customType': customType,

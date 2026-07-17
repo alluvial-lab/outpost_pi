@@ -1,4 +1,5 @@
 import 'package:cockpit/app/cockpit/domain/entities/rpc_event.dart';
+import 'package:cockpit/app/cockpit/domain/value_objects/rpc_json_object.dart';
 
 /// Map raw JSON lines from `pi --mode rpc` stdout into typed [RpcEvent]s.
 ///
@@ -32,7 +33,7 @@ class RpcEventMapper {
         return RpcToolStart(
           toolCallId: json['toolCallId'] as String? ?? '',
           toolName: json['toolName'] as String? ?? '?',
-          args: _asStringMap(json['args']),
+          args: RpcJsonObject.tryFromWire(json['args']) ?? RpcJsonObject.empty,
         );
 
       case 'tool_execution_end':
@@ -89,46 +90,47 @@ class RpcEventMapper {
     if (message['role'] != 'custom') return const RpcUnknown('message_start');
 
     final customType = message['customType'] as String?;
-    final details = _detailsMap(message['details']);
+    final details = RpcJsonObject.tryFromWire(message['details']);
+    final detailValues = details?.values;
 
     switch (RpcControlOverlayEventType.fromWire(customType)) {
       case RpcControlOverlayEventType.relayState:
-        if (details == null) {
+        if (detailValues == null) {
           return const RpcUnknown('message_start:relay-state:no-details');
         }
-        final statusStr = details['status'] as String?;
+        final statusStr = detailValues['status'] as String?;
         return RpcRelayState(
           status: switch (statusStr) {
             'connected' => RelayStatus.connected,
             'reconnecting' => RelayStatus.reconnecting,
             _ => RelayStatus.disconnected,
           },
-          connected: details['connected'] == true,
-          relayUrl: _nonEmptyString(details['relayUrl']),
-          room: _nonEmptyString(details['room']),
+          connected: detailValues['connected'] == true,
+          relayUrl: _nonEmptyString(detailValues['relayUrl']),
+          room: _nonEmptyString(detailValues['room']),
         );
       case RpcControlOverlayEventType.nameAssigned:
-        if (details == null) {
+        if (detailValues == null) {
           return const RpcUnknown('message_start:name-assigned:no-details');
         }
-        final assigned = _nonEmptyString(details['assigned']);
+        final assigned = _nonEmptyString(detailValues['assigned']);
         if (assigned == null) {
           return const RpcUnknown('message_start:name-assigned:no-assigned');
         }
         return RpcNameAssigned(
-          requested: _nonEmptyString(details['requested']),
+          requested: _nonEmptyString(detailValues['requested']),
           assigned: assigned,
-          changed: details['changed'] == true,
+          changed: detailValues['changed'] == true,
         );
       case RpcControlOverlayEventType.pairCode:
-        if (details == null) {
+        if (detailValues == null) {
           return const RpcUnknown('message_start:pair-code:no-details');
         }
-        final uri = _nonEmptyString(details['uri']);
-        final token = _nonEmptyString(details['token']);
-        final expiresAt = _int(details['expiresAt']);
-        final roomId = _nonEmptyString(details['roomId']);
-        final name = _nonEmptyString(details['name']);
+        final uri = _nonEmptyString(detailValues['uri']);
+        final token = _nonEmptyString(detailValues['token']);
+        final expiresAt = _int(detailValues['expiresAt']);
+        final roomId = _nonEmptyString(detailValues['roomId']);
+        final name = _nonEmptyString(detailValues['name']);
         if (uri == null ||
             token == null ||
             expiresAt == null ||
@@ -144,12 +146,12 @@ class RpcEventMapper {
           name: name,
         );
       case RpcControlOverlayEventType.paired:
-        if (details == null) {
+        if (detailValues == null) {
           return const RpcUnknown('message_start:paired:no-details');
         }
-        final name = _nonEmptyString(details['name']);
-        final peerId = _nonEmptyString(details['peerId']);
-        final pairedAt = _int(details['pairedAt']);
+        final name = _nonEmptyString(detailValues['name']);
+        final peerId = _nonEmptyString(detailValues['peerId']);
+        final pairedAt = _int(detailValues['pairedAt']);
         if (name == null || peerId == null || pairedAt == null) {
           return const RpcUnknown('message_start:paired:invalid-details');
         }
@@ -243,11 +245,6 @@ class RpcEventMapper {
 
   int? _int(Object? value) => value is num ? value.toInt() : null;
 
-  Map<String, dynamic>? _detailsMap(Object? value) {
-    if (value is! Map) return null;
-    return value.map((key, v) => MapEntry(key.toString(), v));
-  }
-
   /// Resolve the initial field value from `placeholder.defaultValue`,
   /// `defaultValue`, or `prefill`.
   ///
@@ -278,13 +275,6 @@ class RpcEventMapper {
         // text_start/thinking_start/toolcall_*/done/error remain ignored in the MVP.
         return RpcUnknown('message_update:${eventType ?? "?"}');
     }
-  }
-
-  Map<String, dynamic> _asStringMap(Object? value) {
-    if (value is Map) {
-      return value.map((key, v) => MapEntry(key.toString(), v));
-    }
-    return const {};
   }
 
   /// Concatenate text from a `{content: [{type:"text", text:...}]}` payload.
