@@ -97,18 +97,27 @@ class _FakeDebugLog implements DebugLog {
 class _ScriptedMeshClient extends MeshClient {
   _ScriptedMeshClient({
     required List<Future<MeshPublishResult> Function()> publishScripts,
+    List<Future<MeshFetchResult> Function()> fetchScripts = const [],
   }) : _publishScripts = publishScripts,
+       _fetchScripts = fetchScripts,
        super(baseUrlProvider: () => 'https://relay.example');
 
   final List<Future<MeshPublishResult> Function()> _publishScripts;
+  final List<Future<MeshFetchResult> Function()> _fetchScripts;
   final publishedEnvelopes = <MeshEnvelope>[];
   final Map<int, Completer<void>> _publishWaiters = {};
+  final Map<int, Completer<void>> _fetchWaiters = {};
   int publishCalls = 0;
   int fetchCalls = 0;
 
   Future<void> waitForPublishCount(int count) {
     if (publishCalls >= count) return Future.value();
     return (_publishWaiters[count] ??= Completer<void>()).future;
+  }
+
+  Future<void> waitForFetchCount(int count) {
+    if (fetchCalls >= count) return Future.value();
+    return (_fetchWaiters[count] ??= Completer<void>()).future;
   }
 
   @override
@@ -129,7 +138,10 @@ class _ScriptedMeshClient extends MeshClient {
   @override
   Future<MeshFetchResult> fetch(String hash, {int? since}) async {
     fetchCalls += 1;
-    return const MeshFetchNotFound();
+    _fetchWaiters.remove(fetchCalls)?.complete();
+    final index = fetchCalls - 1;
+    if (index >= _fetchScripts.length) return const MeshFetchNotFound();
+    return _fetchScripts[index]();
   }
 }
 
@@ -139,6 +151,19 @@ const _testPeer = PeerRecord(
   relayUrl: 'https://relay.example',
   pairedAt: '2026-07-17T00:00:00Z',
 );
+
+Future<void> _waitUntil(
+  bool Function() condition, {
+  required String reason,
+}) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('timed out waiting for $reason');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+}
 
 Future<({SimpleKeyPair keyPair, Uint8List ownerPk})> _newOwner() async {
   final ed = Ed25519();
@@ -871,6 +896,124 @@ void main() {
       expect(failure.reason, isNot(contains('owner-key')));
       svc.dispose();
     });
+
+    test(
+      'normal pull aborts when a local mutation becomes pending during fetch',
+      () async {
+        final owner = await _newOwner();
+        final storage = PairingStorage(_FakeSecureStorage());
+        final bridge = await _bootedBridge(
+          storage,
+          owner.keyPair,
+          owner.ownerPk,
+        );
+        final relayBlob = MeshBlob(
+          version: 1,
+          issuedAt: 1,
+          ownerPk: owner.ownerPk,
+        );
+        final relayEnvelope = await relayBlob.signWith(owner.keyPair);
+        final fetchResult = Completer<MeshFetchResult>();
+        final publishResult = Completer<MeshPublishResult>();
+        final client = _ScriptedMeshClient(
+          publishScripts: [() => publishResult.future],
+          fetchScripts: [() => fetchResult.future],
+        );
+        final svc = MeshSyncService(client, bridge, storage);
+        storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+        final pulling = svc.pullOnDemand();
+        await client.waitForFetchCount(1);
+        await storage.savePeer(_testPeer);
+        fetchResult.complete(
+          MeshFetchOk(
+            envelope: relayEnvelope,
+            version: 1,
+            updatedAt: 1,
+          ),
+        );
+
+        expect(await pulling, isFalse);
+        expect(
+          (await storage.listPeers()).map((peer) => peer.remoteEpk),
+          [_testPeer.remoteEpk],
+          reason: 'the fetched empty snapshot must not erase the new peer',
+        );
+
+        svc.dispose();
+        if (!publishResult.isCompleted) {
+          publishResult.complete(const MeshPublishFailure('disposed'));
+        }
+      },
+    );
+
+    test(
+      'last-peer deletion survives conflict pull and retries as members=[]',
+      () async {
+        final owner = await _newOwner();
+        final storage = PairingStorage(_FakeSecureStorage());
+        final bridge = await _bootedBridge(
+          storage,
+          owner.keyPair,
+          owner.ownerPk,
+        );
+        final relayBlob = MeshBlob(
+          version: 2,
+          issuedAt: 2,
+          ownerPk: owner.ownerPk,
+          members: const [
+            MeshMember(
+              remoteEpk: 'ZXBrLW1lc2g=',
+              relayUrl: 'https://relay.example',
+              pairedAt: '2026-07-17T00:00:00Z',
+            ),
+          ],
+        );
+        final relayEnvelope = await relayBlob.signWith(owner.keyPair);
+        final client = _ScriptedMeshClient(
+          publishScripts: [
+            () async => const MeshPublishOk(version: 1, updatedAt: 1),
+            () async => const MeshPublishConflict(),
+            () async => const MeshPublishOk(version: 3, updatedAt: 3),
+          ],
+          fetchScripts: [
+            () async => MeshFetchOk(
+              envelope: relayEnvelope,
+              version: 2,
+              updatedAt: 2,
+            ),
+          ],
+        );
+        final svc = MeshSyncService(client, bridge, storage);
+        storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+
+        await storage.savePeer(_testPeer);
+        await client.waitForPublishCount(1);
+        await _waitUntil(
+          () => svc.lastVersion == 1,
+          reason: 'the initial peer publication',
+        );
+
+        await storage.deletePeer(_testPeer.remoteEpk);
+        await client.waitForPublishCount(3);
+        await _waitUntil(
+          () => svc.lastVersion == 3,
+          reason: 'the rebased deletion retry',
+        );
+
+        expect(client.fetchCalls, 1);
+        expect(await storage.listPeers(), isEmpty);
+        final retry = MeshBlob.fromCanonicalBytes(
+          client.publishedEnvelopes[2].blob,
+        );
+        expect(
+          retry.members,
+          isEmpty,
+          reason: 'the conflict pull must not resurrect the deleted last peer',
+        );
+        svc.dispose();
+      },
+    );
 
     test('normal pull defers while a local publication remains pending', () async {
       final owner = await _newOwner();
