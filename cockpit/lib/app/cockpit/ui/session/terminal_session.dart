@@ -10,7 +10,7 @@ import 'package:xterm/xterm.dart';
 /// Own a terminal tab that connects a PTY shell to an xterm [Terminal].
 ///
 /// `TerminalView` renders [terminal], while this session owns the gateway and
-/// kills the PTY during [dispose] so no child process is orphaned.
+/// kills the PTY during [close] so no child process is orphaned.
 class TerminalSession extends PaneItem {
   TerminalSession({
     required this.id,
@@ -106,9 +106,10 @@ class TerminalSession extends PaneItem {
   }
 
   @override
-  Future<void> dispose() async {
+  Future<void> close() async {
     await _sub?.cancel();
+    _sub = null;
     await _gateway.kill();
-    super.dispose();
+    await super.close();
   }
 }

@@ -19,4 +19,12 @@ abstract class PaneItem extends ChangeNotifier {
   /// Public change hook for the workspace projection, which owns live tab
   /// resources but is not itself a [ChangeNotifier] subclass.
   void notifyItemChanged() => notifyListeners();
+
+  /// Release asynchronous pane resources, then dispose notifier state.
+  ///
+  /// Subclasses with live processes or subscriptions await them before calling
+  /// `super.close()`. [WorkspaceProjection] is the owner of this contract.
+  Future<void> close() async {
+    super.dispose();
+  }
 }

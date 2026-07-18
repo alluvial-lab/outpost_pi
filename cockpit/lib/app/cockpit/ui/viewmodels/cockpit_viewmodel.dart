@@ -31,6 +31,7 @@ import 'package:cockpit/app/core/data/lsp/lsp_server_pool.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_text_edit.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 import 'package:cockpit/app/core/domain/result.dart';
+import 'package:cockpit/app/core/ui/async_action.dart';
 import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/file_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/pane_item.dart';
@@ -377,7 +378,7 @@ class CockpitViewModel extends ChangeNotifier {
         ),
       );
     }
-    if (!applied) _workspace.disposeTab(viewer.id);
+    if (!applied) await _workspace.disposeTab(viewer.id);
   }
 
   /// Select a file-tree path and update its highlight.
@@ -747,10 +748,10 @@ class CockpitViewModel extends ChangeNotifier {
   Future<void> removeProject(String id) async {
     // Close worktree runtimes with their root so no live fork is orphaned.
     for (final fork in _worktrees.remove(id) ?? const <Project>[]) {
-      _disposeProjectRuntime(fork.id);
+      await _disposeProjectRuntime(fork.id);
       _projectList.removeWhere((p) => p.id == fork.id);
     }
-    _disposeProjectRuntime(id);
+    await _disposeProjectRuntime(id);
     _projectList.removeWhere((p) => p.id == id);
     if (_selectedProjectId == id || _projectById(_selectedProjectId) == null) {
       _selectedProjectId = rootProjects.isEmpty ? null : rootProjects.first.id;
@@ -763,15 +764,15 @@ class CockpitViewModel extends ChangeNotifier {
   }
 
   /// Dispose a project's pane tree, sessions, focus, and caches without persistence changes.
-  void _disposeProjectRuntime(String id) {
+  Future<void> _disposeProjectRuntime(String id) async {
     final document = _documents.remove(id);
-    if (document != null) {
-      _workspace.disposeProject(document);
-    }
     _savedLayouts.remove(id);
     _gitInfo.remove(id);
     _gitTree.remove(id);
     _saveTimers.remove(id)?.cancel();
+    if (document != null) {
+      await _workspace.disposeProject(document);
+    }
   }
 
   /// Create and select a worktree below [rootId].
@@ -945,7 +946,7 @@ class CockpitViewModel extends ChangeNotifier {
         tab: _workspace.descriptorFor(empty, project),
       ),
     );
-    if (!applied) _workspace.disposeTab(empty.id);
+    if (!applied) ownAsync(_workspace.disposeTab(empty.id));
   }
 
   /// Create an agent or terminal directly in [subRelative] without a dialog.
@@ -973,7 +974,7 @@ class CockpitViewModel extends ChangeNotifier {
             )
           : WorkspaceDocumentCommands.appendTab(doc, paneId: leaf.id, tab: tab),
     );
-    if (!applied) _workspace.disposeTab(s.id);
+    if (!applied) ownAsync(_workspace.disposeTab(s.id));
   }
 
   /// Split a pane and create a matching agent or terminal beside it.
@@ -996,7 +997,7 @@ class CockpitViewModel extends ChangeNotifier {
         newSplitId: _nid('sp'),
       ),
     );
-    if (!applied) _workspace.disposeTab(s.id);
+    if (!applied) ownAsync(_workspace.disposeTab(s.id));
   }
 
   // ---- Tab drag and drop ----------------------------------------------------
@@ -1076,7 +1077,7 @@ class CockpitViewModel extends ChangeNotifier {
         replacement: _workspace.descriptorFor(s, project),
       ),
     );
-    if (!applied) _workspace.disposeTab(s.id);
+    if (!applied) ownAsync(_workspace.disposeTab(s.id));
   }
 
   /// Close and dispose a tab, inserting an empty placeholder when required.
@@ -1093,7 +1094,7 @@ class CockpitViewModel extends ChangeNotifier {
       ),
     );
     if (!applied || !(_activeDocument?.tabs.containsKey(empty.id) ?? false)) {
-      _workspace.disposeTab(empty.id);
+      ownAsync(_workspace.disposeTab(empty.id));
     }
   }
 
@@ -1110,7 +1111,7 @@ class CockpitViewModel extends ChangeNotifier {
       ),
     );
     if (!applied || !(_activeDocument?.tabs.containsKey(empty.id) ?? false)) {
-      _workspace.disposeTab(empty.id);
+      ownAsync(_workspace.disposeTab(empty.id));
     }
   }
 
@@ -1169,7 +1170,7 @@ class CockpitViewModel extends ChangeNotifier {
     if (!changed) return false;
     _setDocument(result.document);
     for (final id in result.disposeTabIds) {
-      _workspace.disposeTab(id);
+      ownAsync(_workspace.disposeTab(id));
     }
     _clearFocusedNotification();
     notifyListeners();
@@ -1545,7 +1546,7 @@ class CockpitViewModel extends ChangeNotifier {
     // Dispose missing forks and remove them from project state.
     var switched = false;
     for (final gone in old.where((f) => !newIds.contains(f.id))) {
-      _disposeProjectRuntime(gone.id);
+      await _disposeProjectRuntime(gone.id);
       _projectList.removeWhere((p) => p.id == gone.id);
       if (_selectedProjectId == gone.id) {
         _selectedProjectId = rootId; // Return selection to the parent.
@@ -1594,7 +1595,7 @@ class CockpitViewModel extends ChangeNotifier {
       t.cancel();
     }
     _saveTimers.clear();
-    _workspace.dispose();
+    ownAsync(_workspace.dispose());
     super.dispose();
   }
 }

@@ -42,7 +42,7 @@ void main() {
     expect(session.isBusy, isFalse);
     expect(session.projection.turn.startedAt, isNull);
 
-    await session.dispose();
+    await session.close();
   });
 
   test('stream errors converge to not working and clear startedAt', () async {
@@ -60,7 +60,7 @@ void main() {
     expect(session.isBusy, isFalse);
     expect(session.projection.turn.startedAt, isNull);
 
-    await session.dispose();
+    await session.close();
   });
 
   test('stop abort acknowledgement converges to idle', () async {
@@ -79,7 +79,7 @@ void main() {
     expect(session.isBusy, isFalse);
     expect(session.projection.turn.startedAt, isNull);
 
-    await session.dispose();
+    await session.close();
   });
 
   test('process exit marks the turn stale and not working', () async {
@@ -97,7 +97,7 @@ void main() {
     expect(session.isBusy, isFalse);
     expect(session.projection.turn.startedAt, isNull);
 
-    await session.dispose();
+    await session.close();
   });
 
   test('restored history load clears a legacy streaming snapshot', () async {
@@ -123,7 +123,7 @@ void main() {
     expect(session.isBusy, isFalse);
     expect(session.projection.turn.startedAt, isNull);
 
-    await session.dispose();
+    await session.close();
   });
 
   test(
@@ -177,7 +177,7 @@ void main() {
         ),
       );
 
-      await session.dispose();
+      await session.close();
     },
   );
 
@@ -200,7 +200,7 @@ void main() {
         isA<ProjectedAssistantTextMessage>(),
       );
 
-      await session.dispose();
+      await session.close();
     },
   );
 
@@ -236,7 +236,7 @@ void main() {
       expect(tools.single.status, ToolProjectionStatus.completed);
       expect(tools.single.resultText, 'ok');
 
-      await session.dispose();
+      await session.close();
     },
   );
 
@@ -250,7 +250,7 @@ void main() {
     expect(users, hasLength(1));
     expect(users.single.text, 'hello');
 
-    await session.dispose();
+    await session.close();
   });
 
   test(
@@ -305,7 +305,7 @@ void main() {
       expect(tools.single.status, ToolProjectionStatus.completed);
       expect(tools.single.resultText, 'ok');
 
-      await session.dispose();
+      await session.close();
     },
   );
 
@@ -364,7 +364,7 @@ void main() {
         ),
       );
 
-      await session.dispose();
+      await session.close();
     },
   );
 
@@ -384,7 +384,7 @@ void main() {
     expect(session.projection.turn.working, isFalse);
     expect(session.projection.turn.startedAt, isNull);
 
-    await session.dispose();
+    await session.close();
   });
 
   test('restart kill marks the turn stale and not working', () async {
@@ -405,7 +405,7 @@ void main() {
   });
 
   test(
-    'dispose converges an active turn and tears down the controller path',
+    'close converges an active turn and tears down the controller path',
     () async {
       final (session, gateway) = await _bootSession();
 
@@ -413,7 +413,7 @@ void main() {
         ..emit(const RpcAgentStart())
         ..emit(const RpcTextDelta('partial'));
 
-      await session.dispose();
+      await session.close();
 
       expect(gateway.killCount, 1);
       expect(gateway.disposeCount, 1);
@@ -455,7 +455,7 @@ void main() {
       ..emit(const RpcProcessExit(1));
     expect(completions, 1);
 
-    await session.dispose();
+    await session.close();
   });
 
   test(
@@ -490,7 +490,7 @@ void main() {
       expect(session.isAlive, session.projection.isAlive);
       expect(session.isBusy, session.projection.isBusy);
 
-      await session.dispose();
+      await session.close();
     },
   );
 }
