@@ -1626,7 +1626,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
       ensureStarted: (ctx) => {
         if (!_disposed) return;
         _disposed = false;
-        void _cmdRoot(ctx);
+        _startRootInBackground(ctx, "session-start");
       },
       prepareSessionShutdown: () => {
         _disposed = true;
@@ -1729,7 +1729,7 @@ function _startDaemonMode(): void {
     ui: _headlessUi(),
     cwd: process.cwd(),
   } as unknown as Pick<ExtensionContext, "ui" | "cwd">;
-  setTimeout(() => { void _cmdRoot(daemonCtx); }, 0);
+  setTimeout(() => { _startRootInBackground(daemonCtx, "daemon-start"); }, 0);
 }
 
 const _localMeshCommands = new LocalMeshCommands({
@@ -1798,6 +1798,16 @@ function _cmdStatus(ctx: Pick<ExtensionContext, "ui">): void {
 
 async function _cmdPeers(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
   await _localMeshCommands.peers(ctx);
+}
+
+/** Start the local mesh root in the background and consume its failure at this boundary. */
+function _startRootInBackground(
+  ctx: Pick<ExtensionContext, "ui" | "cwd">,
+  origin: "session-start" | "daemon-start" | "session-replacement",
+): void {
+  void _cmdRoot(ctx).catch((error: unknown) => {
+    console.error(`[outpost-pi] ${origin} auto-start failed: ${String(error)}`);
+  });
 }
 
 async function _cmdRoot(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
@@ -2592,7 +2602,10 @@ export function _routeClientMessageFrom(
           _bindReplacementSessionContext(freshCtx);
           if (_disposed && _messageApi) {
             _disposed = false;
-            void _cmdRoot(freshCtx as unknown as Pick<ExtensionContext, "ui" | "cwd">);
+            _startRootInBackground(
+              freshCtx as unknown as Pick<ExtensionContext, "ui" | "cwd">,
+              "session-replacement",
+            );
           }
         },
       ).then((created) => {
