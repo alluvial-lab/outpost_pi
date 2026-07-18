@@ -1,3 +1,4 @@
+import 'package:cockpit/app/core/ui/async_action.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/settings/domain/entities/cron_job.dart';
 import 'package:cockpit/app/settings/ui/cron_viewmodel.dart';
@@ -34,7 +35,7 @@ class _CronLogDialogState extends State<CronLogDialog> {
   @override
   void initState() {
     super.initState();
-    _load();
+    ownAsync(_load());
   }
 
   Future<void> _load() async {
