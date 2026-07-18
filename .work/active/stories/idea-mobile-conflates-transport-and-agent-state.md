@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-tui-parity-chat-resilience
-stage: drafting
 id: idea-mobile-conflates-transport-and-agent-state
-created: 2026-07-02
-updated: 2026-07-02
+kind: story
+stage: drafting
 tags: [app, pi-extension, ux, design, architecture]
+parent: feature-mobile-tui-parity-chat-resilience
+depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
+release_binding: null
+gate_origin: null
+created: 2026-07-02
+updated: 2026-07-18
 ---
 
 # Mobile status pill conflates transport/connection state with agent/turn state
@@ -125,3 +127,13 @@ projections of it:
 
 Fixing this properly subsumes both; fixing them piecemeal without this
 correction would leave the conflation in place.
+
+## Design
+
+**Disposition: structurally subsumed / provenance.** The implementation
+checkpoint is
+`feature-mobile-tui-parity-chat-resilience-status-projection`. It replaces the
+flattened booleans and priority label with a composed transport + existing
+`AppTurnProjection` + steering model. This finding closes when that unit's
+independent-axis, awaiting-tool Stop, and steering-indicator evidence is green;
+it does not receive a second implementation patch.

@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-tui-parity-chat-resilience
-stage: drafting
 id: idea-mobile-outgoing-message-swallowed
-created: 2026-07-02
-updated: 2026-07-02
+kind: story
+stage: drafting
 tags: [app, pi-extension, relay, bug]
+parent: feature-mobile-tui-parity-chat-resilience
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-07-02
+updated: 2026-07-18
 ---
 
 # Mobile: outgoing user message swallowed (not delivered, not surfaced)
@@ -63,3 +65,19 @@ the channel.
 - `idea-extension-pumps-into-dead-app-peer` — the dead-window during which
   this likely occurred.
 - `idea-mobile-drop-slow-recovery` — the ~5 min recovery window.
+
+## Design
+
+**Disposition: parked live-repro.** Silent loss during a network transition is
+not confidently the same defect as the reproducible navigation-time
+send-confirmation bug.
+
+## Parked
+
+Live-repro-only; leave at `stage: drafting`. Route to
+`feature-reconnect-reproduction` on the next physical drop test. Correlate the
+app `msg-send` ID with relay `env_id_tail` and extension `app user_message id`
+to locate the loss before choosing retry, queue, or error-surface semantics. If
+the trace instead reproduces the normal-navigation timeout/duplication path,
+link it to `idea-mobile-message-duplication-send-timeout`; do not add an offline
+send queue speculatively.

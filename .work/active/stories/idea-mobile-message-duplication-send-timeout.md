@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-tui-parity-chat-resilience
-stage: drafting
 id: idea-mobile-message-duplication-send-timeout
-created: 2026-06-29
-updated: 2026-06-29
+kind: story
+stage: drafting
 tags: [app, pi-extension, bug]
+parent: feature-mobile-tui-parity-chat-resilience
+depends_on: [idea-mobile-chat-reorder-on-return, idea-mobile-chat-blank-on-tab-return]
+release_binding: null
+gate_origin: null
+created: 2026-06-29
+updated: 2026-07-18
 ---
 
 # Mobile: message duplication + send_timeout confirmation bug
@@ -99,3 +101,17 @@ re-enter-session. Right now `sending` can stick and then fall back to a false
 chat screen/listener and dies when navigated away from, so its confirmation
 never resolves; re-entering the session rehydrates from a source that doesn't
 reflect the real delivered state.
+
+## Design
+
+**Disposition: distinct bug / implementation Unit 5.** Pin the exact
+send→back while pending→re-enter sequence with a controlled channel, echo, and
+timer. The process-owned `SyncService`, not a route listener, must own pending
+confirmation across navigation. Optimistic submission, delivery echo,
+canonical confirmation, timeout, late confirmation, and replay must project one
+stable message ID. A real echo cancels the timer even if the original route was
+disposed; timeout marks the existing row failed once; late confirmation wins
+without reinsertion. Current deterministic identity and lifecycle work may
+already satisfy the regression, in which case close with evidence and no
+production change. Touch extension ACK/echo behavior only if the test proves an
+ID-correlation defect.

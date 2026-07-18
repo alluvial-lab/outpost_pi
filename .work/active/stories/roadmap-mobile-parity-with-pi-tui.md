@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-tui-parity-chat-resilience
-stage: drafting
 id: roadmap-mobile-parity-with-pi-tui
-created: 2026-07-02
-updated: 2026-07-02
+kind: story
+stage: drafting
 tags: [app, ux, roadmap, parity]
+parent: feature-mobile-tui-parity-chat-resilience
+depends_on: [idea-mobile-message-duplication-send-timeout]
+release_binding: null
+gate_origin: null
+created: 2026-07-02
+updated: 2026-07-18
 ---
 
 # Roadmap: bring the mobile experience up to parity with the pi TUI
@@ -105,3 +107,13 @@ this into tracked work.
   send-confirmation bug; belongs in the same parity audit.
 - `idea-cross-side-logging-for-debug` — would help reproduce several of the
   above (swallowed message, slow recovery attribution).
+
+## Design
+
+**Disposition: roadmap umbrella.** This item is not an implementation unit. Its
+status/control, steering/order, resume-hydration, and send-confirmation slices
+are represented by the parent feature's five units. Close it as provenance when
+`idea-mobile-message-duplication-send-timeout` completes (that dependency is the
+DAG leaf that follows both the ordering and hydration branches). Any future TUI
+parity observation must be scoped as a concrete new item rather than extending
+this umbrella indefinitely.

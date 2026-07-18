@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-tui-parity-chat-resilience
-stage: drafting
 id: idea-mobile-no-steering-indicator-when-queued
-created: 2026-07-02
-updated: 2026-07-02
+kind: story
+stage: drafting
 tags: [app, pi-extension, ux, bug]
+parent: feature-mobile-tui-parity-chat-resilience
+depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
+release_binding: null
+gate_origin: null
+created: 2026-07-02
+updated: 2026-07-18
 ---
 
 # Mobile: no "steering/queued" indicator when sending a message while agent is working
@@ -71,3 +73,15 @@ looks identical to plain working.
 Distinct from `idea-mobile-no-stop-button-while-awaiting-tool` (that's the
 Stop-button-during-tool-execution gap; this is the queued-message indicator
 gap).
+
+## Design
+
+**Disposition: structurally subsumed / provenance.** Current `InputBar` already
+contains a queued preview for `queued_message_state`, but ordinary
+`user_message(streaming_behavior: steer)` is not a first-class Chat status.
+`feature-mobile-tui-parity-chat-resilience-status-projection` adds typed
+`SteeringProjection` beside transport and turn state so pending steering cannot
+be hidden by the AppBar priority chain. Close this finding when one accepted
+steer produces one visible pending indicator without replacing the active turn.
+The separate pickup/reorder semantics remain in
+`idea-mobile-queued-message-does-not-reorder`.
