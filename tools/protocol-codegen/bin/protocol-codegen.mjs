@@ -929,6 +929,18 @@ function emitRustControl(entries, schemaPath) {
   }
   lines.push('}');
   lines.push('');
+  lines.push('impl RelayControlFrame {');
+  lines.push("    pub const fn wire_type(&self) -> &'static str {");
+  lines.push('        match self {');
+  for (const type of clientControlTypes) {
+    const variant = rustVariantName(type);
+    const pattern = type === 'room_meta_update' ? `Self::${variant}(..)` : `Self::${variant} { .. }`;
+    lines.push(`            ${pattern} => "${type}",`);
+  }
+  lines.push('        }');
+  lines.push('    }');
+  lines.push('}');
+  lines.push('');
   lines.push('pub const RELAY_CONTROL_FRAME_TYPES: &[&str] = &[');
   for (const type of clientControlTypes) lines.push(`    "${type}",`);
   lines.push('];');

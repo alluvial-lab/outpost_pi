@@ -402,6 +402,9 @@ mod tests {
         ];
 
         assert_eq!(covered_variants.len(), RELAY_CONTROL_FRAME_TYPES.len());
+        for frame in &covered_variants {
+            assert!(RELAY_CONTROL_FRAME_TYPES.contains(&frame.wire_type()));
+        }
     }
 
     #[test]
