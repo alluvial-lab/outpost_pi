@@ -225,6 +225,36 @@ Separated Flutter's synchronous notifier disposal from asynchronous pane-resourc
 
 `gate-cruft-empty-catch-formatter-reload` was already detached and retagged `[cockpit, bug]` by the design commit; its behavior-changing error-reporting recommendation was not implemented.
 
+## Review findings (fresh-context review, gpt-5.6-sol, standard weight)
+
+Review verdict: `needs fixes`. One blocker (verified by the orchestrator against
+current code). This must be fixed before this feature closes.
+
+### Blocker — detached `_bootAgent` future not owned by `close()`
+`cockpit/lib/app/cockpit/ui/viewmodels/workspace_projection.dart:209,296-301,411-417`;
+`cockpit/lib/app/cockpit/ui/session/agent_session.dart:246-268`.
+`createAgent()` detaches boot before `_history.sessionsFor()` completes
+(`unawaited(_bootAgent(...))` at :209). If the tab closes during that I/O,
+`AgentSession.close()` can dispose the notifier and complete; afterward
+`_bootAgent` resumes and `AgentSession.boot()` calls `notifyListeners()` on the
+disposed session. Thus the close future does not represent complete pane shutdown.
+**Fix:** make startup pane-owned and close-aware: cancel/invalidate it before
+teardown and ensure its continuation cannot touch a closed session, or await its
+convergence from `close()`. Add a gated-history regression test that closes
+during startup and proves immediate removal, no post-close boot/error, and
+correct close completion.
+
+### Review invariant summary
+- `ownAsync` forwards to Zone exactly once (no swallow, no new presentation): PASS
+- `ownedAsyncAction` invokes once + preserves synchronous exceptions: PASS
+- No `PaneItem` subclass has async `dispose()` override: PASS
+- `disposeTab` removes immediately + awaits watcher + current `close()`: PASS, but
+  does not account for detached pane startup: FAIL (blocker above)
+- Sync callers use `ownAsync` not bare discard: PASS
+- `disposable.dart` not widened: PASS
+- No new user-visible error behavior: PASS
+- formatter-reload retagged not implemented: PASS
+
 ## Verification
 
 - `flutter analyze` — passed with zero issues.
