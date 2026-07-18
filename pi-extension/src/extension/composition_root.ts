@@ -101,7 +101,7 @@ export function registerLifecycleHooks(
     ports.session.bindSessionContext(ctx);
     ports.session.onSessionLifecycle?.(reason, tail(sessionId));
     if (!epoch.isCurrent()) return;
-    void ports.commands.ensureStarted?.(ctx);
+    ports.commands.ensureStarted?.(ctx);
   });
 
   pi.on("session_shutdown", async (_event?: unknown) => {
