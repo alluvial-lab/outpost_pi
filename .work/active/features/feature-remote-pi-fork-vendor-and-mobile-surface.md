@@ -1,14 +1,14 @@
 ---
 id: feature-remote-pi-fork-vendor-and-mobile-surface
 kind: feature
-stage: drafting
+stage: done
 tags: [pi-extension, app, workflow]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-06-27
-updated: 2026-06-29
+updated: 2026-07-18
 ---
 
 # Remote-pi fork, local vendor switch, and mobile-surface development
@@ -59,8 +59,8 @@ The current `remote-pi` mobile path is workable but now has two separate needs:
 - [`story-remote-pi-android-build-smoke`](../releases/app-v1.1.1/story-remote-pi-android-build-smoke.md) — shipped `app-v1.1.1`. Proved
   the Flutter app can build locally and pair against the current relay.
 - [`story-remote-pi-mobile-mode-client-slice`](../stories/story-remote-pi-mobile-mode-client-slice.md)
-  — still drafting. Only after the build path is known, add one thin in-app control slice if plain-text mobile mode
-  is not enough.
+  — closed as a conditional provenance checkpoint during the 2026-07-18 reconciliation; no client slice was
+  justified by observed use.
 
 ## Acceptance
 
@@ -69,3 +69,40 @@ The current `remote-pi` mobile path is workable but now has two separate needs:
 - The stale-context fix lives as source changes in the fork and passes `pi-extension` verification.
 - The Android app build/pairing path is known, or blockers are recorded.
 - Fork-vs-upstream-contribution recommendation is recorded before long-lived divergence.
+
+## Reconciliation (2026-07-18)
+
+### As-built state
+
+The four unconditional child stories shipped:
+
+- The Pi development package switched to the local vendor checkout with the npm source retained as a rollback.
+- The stale-context failure was investigated and the fix was carried into the current fork source, including
+  stale-safe UI/message handling and session-shutdown context clearing.
+- The Android build and live pairing path was proven, including the VM toolchain and repeatable build recipe.
+
+The fork/vendor boundary is now the current repository itself: `origin` is configured for the
+`KevounC/outpost_pi` GitHub repository (via its SSH URL, equivalent to the HTTPS target recorded in `AGENTS.md`),
+with the upstream `jacobaraujo7/remote_pi` remote retained for reference. The stale-context implementation is
+present in `pi-extension/src/`, and the Android path is documented in `AGENTS.md` and
+`.agents/skills/flutter-mobile/SKILL.md`.
+
+### Remaining work
+
+`story-remote-pi-mobile-mode-client-slice` is conditional and its condition was not met. The app already has a
+plain text chat input, and no real-use evidence shows that sending the existing semantic mobile-mode commands
+(`mobile on`, `mobile off`, or `mobile status`) is insufficient. There is also no mobile-mode wire contract in
+this fork that would justify inventing a second protocol surface. The sibling
+`feature-mobile-native-session-process-control` owns first-class mobile session/process actions; it does not
+make mobile mode the same concern, but it is the appropriate home for any future explicit action-surface work
+if real use demonstrates a need.
+
+The remaining story is therefore advanced to `done` as a provenance checkpoint, with no implementation or
+upstream/private-carry decision required. A future observed usability failure can reopen this as a focused
+follow-up with evidence and a concrete command contract.
+
+### Decision
+
+Close this feature as complete. The fork, local vendor switch, stale-context source fix, and Android build/pair
+smoke are all as-built; the only deferred UI slice remains an unsubstantiated conditional. Do not manufacture a
+Quick Action or broaden the protocol merely to consume the last drafting child.
