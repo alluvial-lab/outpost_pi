@@ -3183,8 +3183,9 @@ void main() {
     test(
       '(b) echo within the window confirms the row and cancels the timer',
       () async {
-        final s = await setup(pendingSendTimeout: const Duration(seconds: 5));
+        final s = await setup(pendingSendTimeout: short);
         await s.sync.sendMessage('hello');
+        final originalDeadline = DateTime.now().add(short);
         await _settle();
         expect(s.sync.debugPendingSendTimerCount, 1, reason: 'timer armed');
         final id = s.ch.sent.whereType<UserMessage>().last.id;
@@ -3204,8 +3205,14 @@ void main() {
           reason: 'echo cancelled timer',
         );
 
-        // Wait PAST the timeout — the cancelled timer must NOT remove the row.
-        await Future<void>.delayed(const Duration(milliseconds: 140));
+        // Cross the configured timeout deadline — the cancelled timer must not
+        // replace the confirmed row even if a removed callback was still queued.
+        await _waitUntil(
+          () => DateTime.now().isAfter(
+            originalDeadline.add(const Duration(milliseconds: 40)),
+          ),
+          reason: 'the cancelled pending-send timer deadline',
+        );
         await _settle();
         expect(
           messages(s.epk),
@@ -3222,10 +3229,11 @@ void main() {
       '(c) delivery_pending extends the no-echo window without scarring the row',
       () async {
         final s = await setup(
-          pendingSendTimeout: const Duration(seconds: 5),
-          deliveryPendingEchoTimeout: const Duration(milliseconds: 220),
+          pendingSendTimeout: short,
+          deliveryPendingEchoTimeout: const Duration(milliseconds: 500),
         );
         await s.sync.sendMessage('hello during reload');
+        final originalDeadline = DateTime.now().add(short);
         await _settle();
         final id = s.ch.sent.whereType<UserMessage>().last.id;
         expect(s.sync.debugPendingSendTimerCount, 1, reason: 'timer armed');
@@ -3245,10 +3253,14 @@ void main() {
           reason: 'original timer was replaced by the extended pending timer',
         );
 
-        // Wait past the original 60 ms timeout. The transient signal must not
-        // turn into a permanent failed bubble while the extension replay queue
-        // still has time to drain.
-        await Future<void>.delayed(const Duration(milliseconds: 140));
+        // Cross the original 60 ms deadline. The replacement timer must keep
+        // the row pending while the extension replay queue still has time.
+        await _waitUntil(
+          () => DateTime.now().isAfter(
+            originalDeadline.add(const Duration(milliseconds: 40)),
+          ),
+          reason: 'the original pending-send timer deadline',
+        );
         await _settle();
         expect(messages(s.epk), hasLength(1));
         expect(messages(s.epk).single.pending, isTrue);
