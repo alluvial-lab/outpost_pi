@@ -408,9 +408,11 @@ final class WorkspaceProjection {
     Project project,
     String? restoreSessionPath,
   ) async {
-    session.sessionBaseline = (await _history.sessionsFor(
+    final baseline = (await _history.sessionsFor(
       session.workingDirectory,
     )).map((entry) => entry.path).toSet();
+    if (session.isClosed) return;
+    session.sessionBaseline = baseline;
     await session.boot(
       environment: _buildDirectConfig(session, project),
       restoreSessionPath: restoreSessionPath,

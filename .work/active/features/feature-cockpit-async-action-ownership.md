@@ -261,3 +261,26 @@ correct close completion.
 - `flutter test` — passed, 249 tests.
 - Targeted async-action, settings, agent-session, workspace-projection, and Cockpit workspace command/document suites — passed.
 - `flutter build macos` — unavailable on this Linux host (`flutter build` has no `macos` subcommand); no macOS toolchain smoke was possible.
+
+## Corrective follow-up
+
+Closed the review blocker by invalidating agent startup as soon as
+`AgentSession.close()` begins. `AgentSession.boot()` now short-circuits before
+and after process startup when closed, late notifier publications are ignored,
+and boot-time control/transcript continuations re-check closure after async
+gaps. `WorkspaceProjection._bootAgent()` also checks closure after the gated
+session-history read, before assigning the baseline or invoking `boot()`. This
+preserves immediate tab removal while ensuring a released startup continuation
+cannot mutate or notify a disposed session.
+
+Added `disposeTab invalidates agent boot blocked on session history`, which uses
+a `Completer<List<SessionInfo>>` to hold `_history.sessionsFor()`, closes the tab
+before releasing it, and proves immediate projection removal, completed close,
+no post-close notification/zone error, and no RPC gateway creation after the
+history continuation resumes.
+
+Corrective verification from `cockpit/`:
+
+- `flutter analyze` — passed with zero issues.
+- `flutter test` — passed, 250 tests.
+- Targeted workspace-projection and agent-session lifecycle tests — passed, 25 tests.

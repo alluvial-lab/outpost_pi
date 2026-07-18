@@ -116,6 +116,8 @@ class AgentSession extends PaneItem {
 
   final AgentProcessController _process;
   StreamSubscription<AgentSessionSignal>? _signalSub;
+  bool _closed = false;
+  Future<void>? _closeFuture;
 
   /// Track the Pi session file owned by this agent.
   ///
@@ -237,6 +239,16 @@ class AgentSession extends PaneItem {
 
   // ---- lifecycle ------------------------------------------------------------
 
+  /// Report whether pane shutdown has begun.
+  bool get isClosed => _closed;
+
+  /// Ignore late async publications once pane shutdown begins.
+  @override
+  void notifyListeners() {
+    if (_closed) return;
+    super.notifyListeners();
+  }
+
   /// Start `pi --mode rpc` in [workingDirectory] and project its event stream.
   ///
   /// [environment] is merged with the parent process environment, allowing
@@ -247,7 +259,7 @@ class AgentSession extends PaneItem {
     Map<String, String>? environment,
     String? restoreSessionPath,
   }) async {
-    if (_status == AgentStatus.booting || isAlive) return;
+    if (_closed || _status == AgentStatus.booting || isAlive) return;
     debugPrint('[agent-boot] boot() id=$id cwd=$workingDirectory');
     _status = AgentStatus.booting;
     _turn = AgentTurnProjection.idle;
@@ -265,7 +277,7 @@ class AgentSession extends PaneItem {
         restoreSessionPath: restoreSessionPath,
       ),
     );
-    if (!_process.isRunning) return;
+    if (_closed || !_process.isRunning) return;
     _addInfo('agent ready in $workingDirectory');
     unawaited(_loadControls());
     unawaited(_syncRelayStatus());
@@ -428,7 +440,7 @@ class AgentSession extends PaneItem {
     if (!_process.isRunning) return;
 
     final result = await _process.getMessages(sessionId: sessionPath);
-    if (result == null) return;
+    if (_closed || result == null) return;
     result.fold(
       (events) {
         _entries.clear();
@@ -478,7 +490,14 @@ class AgentSession extends PaneItem {
 
   /// Kill the process and release all session resources when its tab closes.
   @override
-  Future<void> close() async {
+  Future<void> close() {
+    final closing = _closeFuture;
+    if (closing != null) return closing;
+    _closed = true;
+    return _closeFuture = _closeResources();
+  }
+
+  Future<void> _closeResources() async {
     await _process.dispose();
     await _signalSub?.cancel();
     _signalSub = null;
@@ -500,12 +519,15 @@ class AgentSession extends PaneItem {
   }
 
   Future<void> _loadControls() async {
-    if (!_process.isRunning) return;
+    if (_closed || !_process.isRunning) return;
     final modelsResult = await _process.availableModels();
+    if (_closed) return;
     modelsResult?.fold((list) => _models = list, (_) {});
     final commandsResult = await _process.commands();
+    if (_closed) return;
     commandsResult?.fold((list) => _commands = list, (_) {});
     final stateResult = await _process.state();
+    if (_closed) return;
     stateResult?.fold((snapshot) {
       _model = snapshot.model;
       _thinking = snapshot.thinkingLevel;
@@ -526,26 +548,30 @@ class AgentSession extends PaneItem {
   /// RPC failures are ignored because a persisted model may no longer exist;
   /// in that case the UI keeps Pi's default.
   Future<void> _applyPreferred() async {
-    if (!_process.isRunning) return;
+    if (_closed || !_process.isRunning) return;
     final pid = preferredModelId;
     if (pid != null) {
       final target = _models.where((m) => m.id == pid).firstOrNull;
       if (target != null && target != _model) {
         final r = await _process.setModel(target);
+        if (_closed) return;
         r?.fold((applied) => _model = applied, (_) {});
         notifyListeners();
       }
     }
+    if (_closed) return;
     if (preferredThinking != _thinking) {
       final r = await _process.setThinkingLevel(preferredThinking);
+      if (_closed) return;
       r?.fold((_) => _thinking = preferredThinking, (_) {});
       notifyListeners();
     }
   }
 
   Future<void> _refreshStats() async {
-    if (!_process.isRunning || !isAlive) return;
+    if (_closed || !_process.isRunning || !isAlive) return;
     final result = await _process.sessionStats();
+    if (_closed) return;
     result?.fold((usage) {
       if (usage != null) _ctx = usage;
     }, (_) {});
