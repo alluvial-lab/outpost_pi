@@ -1,5 +1,8 @@
 use std::collections::BTreeSet;
 
+use relay::protocol::generated::control::{
+    RELAY_SERVER_CONTROL_FRAME_TYPES, RelayServerControlFrame,
+};
 use relay::protocol::generated::cross_pc::{CROSS_PC_TYPES, CrossPcFrame};
 use relay::protocol::generated::mesh::{
     MeshEnvelopeWire, MeshGetQuery, MeshGetResponse, MeshPostResponse,
@@ -63,6 +66,36 @@ fn cross_pc_fixture_round_trips_through_generated_types() {
     assert_eq!(
         seen_types, generated_types,
         "cross-PC fixtures and generated variant registry must stay in parity"
+    );
+}
+
+#[test]
+fn relay_server_control_fixture_round_trips_through_generated_types() {
+    let values = jsonl_values(include_str!(
+        "../../protocol/fixtures/relay/relay-control.jsonl"
+    ));
+    let generated_types = RELAY_SERVER_CONTROL_FRAME_TYPES
+        .iter()
+        .map(|frame_type| (*frame_type).to_string())
+        .collect::<BTreeSet<_>>();
+    let mut seen_types = BTreeSet::new();
+
+    for value in values {
+        let Some(frame_type) = value.get("type").and_then(Value::as_str) else {
+            continue;
+        };
+        if !generated_types.contains(frame_type) {
+            continue;
+        }
+
+        let round_tripped = round_trip::<RelayServerControlFrame>(&value);
+        assert_eq!(round_tripped, value, "{frame_type} changed on round trip");
+        seen_types.insert(frame_type.to_string());
+    }
+
+    assert_eq!(
+        seen_types, generated_types,
+        "relay-control fixture must cover every generated outbound variant"
     );
 }
 
