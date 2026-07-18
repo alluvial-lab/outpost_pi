@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-cockpit-async-action-ownership
-stage: drafting
+stage: done
 id: gate-refactor-lifecycle-unguarded-async-connectivity-save
 tags: []
 depends_on: []
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-18
 ---
 
 # Relay save action discards its async save future
@@ -30,3 +30,9 @@ _save() is async but submit/save UI callbacks invoke it without explicit future 
 
 ## Fix
 Needs analysis: wrap with unawaited(_save()) plus internal error handling, or route through an awaited command helper.
+
+## Implementation
+
+Added the shared `ownAsync` / `ownedAsyncAction` core UI boundary and zone-forwarding regression coverage. Connectivity lifecycle loads, relay save/check callbacks, pairing/revoke launches, and the shared reload control now explicitly own their detached futures without changing existing error presentation or mounted-guard behavior.
+
+Verification: `flutter test test/ui/async_action_test.dart test/settings/connectivity_settings_panel_test.dart` passed.
