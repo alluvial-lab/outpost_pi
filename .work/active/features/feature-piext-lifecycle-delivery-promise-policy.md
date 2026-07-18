@@ -9,7 +9,7 @@ release_binding: null
 gate_origin: refactor
 created: 2026-07-15
 updated: 2026-07-18
-reviewed: 2026-07-18 (standard, gpt-5.6-sol fresh-context → ready, no findings)
+reviewed: "2026-07-18 (standard, gpt-5.6-sol fresh-context → ready, no findings)"
 ---
 
 # Pi-extension: failure policy for lifecycle and delivery promises
