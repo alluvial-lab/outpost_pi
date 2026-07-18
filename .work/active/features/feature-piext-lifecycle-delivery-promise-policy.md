@@ -1,14 +1,14 @@
 ---
 id: feature-piext-lifecycle-delivery-promise-policy
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, refactor, lifecycle]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
 release_binding: null
 gate_origin: refactor
 created: 2026-07-15
-updated: 2026-07-17
+updated: 2026-07-18
 ---
 
 # Pi-extension: failure policy for lifecycle and delivery promises
@@ -226,3 +226,42 @@ function _dispatchControlFrame(frame: ParsedControlFrame): void {
 4. Verify from `pi-extension/`: `corepack pnpm exec vitest run src/session/sdk_session_projection.test.ts src/extension/composition_root.test.ts src/extension.test.ts`, `corepack pnpm typecheck`, `corepack pnpm test`, `corepack pnpm build`.
 
 One feature-owning implementation worker; the 3 stories are sequential verification checkpoints, not separate ownership units.
+
+## Implementation
+
+Completed all three lifecycle failure-policy checkpoints:
+
+- queued delivery now takes an explicit rejection observer; production logs the
+  queued id and error while preserving synchronous throws, queue clearing, and
+  the existing no-retry/no-protocol-error policy;
+- `CommandSurfacePort.ensureStarted` is synchronous, and all three background
+  `_cmdRoot` launches use `_startRootInBackground` with origin-labelled,
+  consumed rejection logs; the slash-command path remains awaited;
+- control-frame dispatch remains synchronous and immediately swallows input,
+  while its async command rejection is consumed by a payload-free operator log.
+
+No phone-visible error, requeue, turn rollback, Cockpit failure event, or Pi
+extension-error propagation was added.
+
+Verification from `pi-extension/`:
+
+- Passing: `./node_modules/.bin/tsc --noEmit`.
+- Passing targeted lifecycle coverage:
+  `./node_modules/.bin/vitest run src/session/sdk_session_projection.test.ts
+  src/extension/composition_root.test.ts src/extension.test.ts -t 'control
+  dispatch observes unexpected async command rejection|input hook swallows a
+  CTRL_PREFIX|legacy CTRL_PREFIX input dispatches relay status|structured
+  outpost_pi_control input is swallowed'`.
+- Passing focused suites: `./node_modules/.bin/vitest run
+  src/session/sdk_session_projection.test.ts` (42),
+  `src/extension/composition_root.test.ts` (4), and the control rejection
+  focused extension selection (4).
+- Full `./node_modules/.bin/vitest run`: 843 passed, 8 failed, 3 skipped.
+  Failures are the documented read-only `/tmp` `cwd_lock.test.ts` failures
+  (7) plus the documented stale same-name lock assertion in
+  `extension.test.ts`; no changed-scope test failed.
+- Passing build: `./node_modules/.bin/tsc` (generated `dist/` remains ignored).
+
+The prescribed combined lifecycle command was also attempted; its extension
+suite encountered the same read-only/stale-lock environment cascade, while the
+focused changed-scope tests above passed.
