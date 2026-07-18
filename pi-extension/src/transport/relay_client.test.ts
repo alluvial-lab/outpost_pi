@@ -96,6 +96,41 @@ describe("RelayClient", () => {
     client.close();
   });
 
+  test("connect: preserves the narrower room metadata hello contract", async () => {
+    const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
+    const connecting = client.connect({
+      roomId: "room-1",
+      roomMeta: {
+        name: "main",
+        cwd: "/work",
+        session_id: "session-1",
+        model: "model-1",
+        thinking: "high",
+        working: true,
+      },
+    });
+    await vi.waitFor(() => expect(currentWs().sent.length).toBeGreaterThan(0));
+    simulateChallenge(currentWs());
+    await connecting;
+
+    expect(JSON.parse(currentWs().sent[0] ?? "null")).toEqual({
+      type: "hello",
+      pubkey: Buffer.from(keypair.publicKey).toString("base64"),
+      device_id: "test-device",
+      room_id: "room-1",
+      room_meta: {
+        name: "main",
+        cwd: "/work",
+        session_id: "session-1",
+        model: "model-1",
+        thinking: "high",
+        working: true,
+      },
+    });
+
+    client.close();
+  });
+
   test("connect: sends auth with 64-byte Ed25519 signature", async () => {
     const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
     await connectWithAuth(client);
