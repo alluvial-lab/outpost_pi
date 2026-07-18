@@ -12,6 +12,7 @@ import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart';
 import 'package:cockpit/app/core/ui/widgets/app_menu.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/model_picker.dart';
+import 'package:cockpit/app/core/ui/async_action.dart';
 import 'package:cockpit/app/core/ui/file_icons/file_icons.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
@@ -324,10 +325,10 @@ class _AgentComposerState extends State<AgentComposer> {
   bool _runBuiltin(String name) {
     switch (name) {
       case 'new':
-        widget.session.startNewSession();
+        ownAsync(widget.session.startNewSession());
         return true;
       case 'compact':
-        widget.session.compact();
+        ownAsync(widget.session.compact());
         return true;
       default:
         return false;
@@ -382,7 +383,7 @@ class _AgentComposerState extends State<AgentComposer> {
     } else if (_fileOpen) {
       _acceptFile(_index);
     } else {
-      _submit();
+      ownAsync(_submit());
     }
   }
 
@@ -459,7 +460,7 @@ class _AgentComposerState extends State<AgentComposer> {
     final session = widget.session;
     final projection = session.projection;
     if (projection.turn.canStop) {
-      session.stop();
+      await session.stop();
       return;
     }
     final typed = _controller.text.trim();
@@ -498,7 +499,7 @@ class _AgentComposerState extends State<AgentComposer> {
       images.add(PromptImage(data: base64Encode(png), mimeType: 'image/png'));
     }
 
-    session.send(message, images: images);
+    await session.send(message, images: images);
   }
 
   /// Re-encode [bytes] as a standard 8-bit sRGB PNG.
@@ -564,7 +565,7 @@ class _AgentComposerState extends State<AgentComposer> {
       },
       onDragDone: (detail) {
         if (_osDragOver) setState(() => _osDragOver = false);
-        _onOsDrop(detail.files);
+        ownAsync(_onOsDrop(detail.files));
         _restoreInputFocus();
       },
       child: DragTarget<String>(
@@ -618,11 +619,15 @@ class _AgentComposerState extends State<AgentComposer> {
                         const SingleActivator(
                           LogicalKeyboardKey.keyV,
                           meta: true,
-                        ): _pasteFromClipboard,
+                        ): ownedAsyncAction(
+                          _pasteFromClipboard,
+                        ),
                         const SingleActivator(
                           LogicalKeyboardKey.keyV,
                           control: true,
-                        ): _pasteFromClipboard,
+                        ): ownedAsyncAction(
+                          _pasteFromClipboard,
+                        ),
                         if (_overlayOpen) ...{
                           const SingleActivator(
                             LogicalKeyboardKey.arrowDown,
@@ -669,7 +674,7 @@ class _AgentComposerState extends State<AgentComposer> {
                       _BarIcon(
                         icon: Icons.add,
                         tooltip: 'Attach file',
-                        onTap: _pickAttachment,
+                        onTap: ownedAsyncAction(_pickAttachment),
                       ),
                       _ModelChip(session: session, enabled: controlsEnabled),
                       // Show effort only for reasoning models that Pi can use it with.
@@ -684,7 +689,7 @@ class _AgentComposerState extends State<AgentComposer> {
                       _SendButton(
                         streaming: canStop,
                         ready: _hasText || _attachments.isNotEmpty,
-                        onTap: _submit,
+                        onTap: ownedAsyncAction(_submit),
                       ),
                     ],
                   ),
@@ -883,14 +888,14 @@ class _ModelChip extends StatelessWidget {
       iconColor: context.colors.accentText,
       label: model?.name ?? 'model',
       enabled: enabled && controls.models.isNotEmpty,
-      onTap: () async {
+      onTap: ownedAsyncAction(() async {
         final picked = await showModelPicker(
           context,
           models: controls.models,
           current: model,
         );
-        if (picked != null) session.changeModel(picked);
-      },
+        if (picked != null) await session.changeModel(picked);
+      }),
     );
   }
 }
@@ -920,7 +925,7 @@ class _EffortChip extends StatelessWidget {
           ),
       ],
     );
-    if (level != null) session.changeThinking(level);
+    if (level != null) await session.changeThinking(level);
   }
 
   @override
@@ -929,7 +934,7 @@ class _EffortChip extends StatelessWidget {
       icon: Icons.psychology_alt_outlined,
       label: session.projection.controls.thinkingLevel.label,
       enabled: enabled,
-      onTap: () => _show(context),
+      onTap: ownedAsyncAction(() => _show(context)),
     );
   }
 }
@@ -1239,8 +1244,10 @@ class _RelayButton extends StatelessWidget {
       child: HoverTap(
         borderRadius: BorderRadius.circular(5),
         onTap: session.projection.isAlive
-            ? () => session.sendRelayControl(
-                PiControlCommand.relay(PiRelayControlAction.toggle),
+            ? ownedAsyncAction(
+                () => session.sendRelayControl(
+                  PiControlCommand.relay(PiRelayControlAction.toggle),
+                ),
               )
             : null,
         child: SizedBox(
