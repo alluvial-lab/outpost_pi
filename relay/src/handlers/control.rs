@@ -57,21 +57,34 @@ impl<'actor> ControlHandlers<'actor> {
     }
 
     pub(crate) async fn handle(&mut self, frame: RelayControlFrame) -> ActorDispatch {
+        let frame_type = frame.wire_type();
         match frame {
-            RelayControlFrame::SubscribePresence { peers } => self.subscribe_presence(peers).await,
-            RelayControlFrame::UnsubscribePresence { peers } => {
-                self.unsubscribe_presence(peers).await
+            RelayControlFrame::SubscribePresence { peers } => {
+                self.subscribe_presence(frame_type, peers).await
             }
-            RelayControlFrame::PresenceCheck { peers } => self.presence_check(peers).await,
-            RelayControlFrame::SubscribeRooms { peers } => self.subscribe_rooms(peers).await,
-            RelayControlFrame::UnsubscribeRooms { peers } => self.unsubscribe_rooms(peers).await,
-            RelayControlFrame::RoomsCheck { peers } => self.rooms_check(peers).await,
+            RelayControlFrame::UnsubscribePresence { peers } => {
+                self.unsubscribe_presence(frame_type, peers).await
+            }
+            RelayControlFrame::PresenceCheck { peers } => {
+                self.presence_check(frame_type, peers).await
+            }
+            RelayControlFrame::SubscribeRooms { peers } => {
+                self.subscribe_rooms(frame_type, peers).await
+            }
+            RelayControlFrame::UnsubscribeRooms { peers } => {
+                self.unsubscribe_rooms(frame_type, peers).await
+            }
+            RelayControlFrame::RoomsCheck { peers } => self.rooms_check(frame_type, peers).await,
             RelayControlFrame::RoomMetaUpdate(frame) => self.room_meta_update(frame).await,
         }
     }
 
-    async fn subscribe_presence(&mut self, peers: Vec<String>) -> ActorDispatch {
-        let Some(peers) = self.bounded_peers("subscribe_presence", peers) else {
+    async fn subscribe_presence(
+        &mut self,
+        frame_type: &'static str,
+        peers: Vec<String>,
+    ) -> ActorDispatch {
+        let Some(peers) = self.bounded_peers(frame_type, peers) else {
             return ActorDispatch::Continue;
         };
         self.actor
@@ -88,8 +101,12 @@ impl<'actor> ControlHandlers<'actor> {
         ActorDispatch::Continue
     }
 
-    async fn unsubscribe_presence(&mut self, peers: Vec<String>) -> ActorDispatch {
-        let Some(peers) = self.bounded_peers("unsubscribe_presence", peers) else {
+    async fn unsubscribe_presence(
+        &mut self,
+        frame_type: &'static str,
+        peers: Vec<String>,
+    ) -> ActorDispatch {
+        let Some(peers) = self.bounded_peers(frame_type, peers) else {
             return ActorDispatch::Continue;
         };
         self.actor
@@ -99,11 +116,15 @@ impl<'actor> ControlHandlers<'actor> {
         ActorDispatch::Continue
     }
 
-    async fn presence_check(&mut self, peers: Vec<String>) -> ActorDispatch {
-        let Some(peers) = self.bounded_peers("presence_check", peers) else {
+    async fn presence_check(
+        &mut self,
+        frame_type: &'static str,
+        peers: Vec<String>,
+    ) -> ActorDispatch {
+        let Some(peers) = self.bounded_peers(frame_type, peers) else {
             return ActorDispatch::Continue;
         };
-        if !self.actor.allow_control_check("presence_check", &peers) {
+        if !self.actor.allow_control_check(frame_type, &peers) {
             return ActorDispatch::Continue;
         }
         let states = self
@@ -114,8 +135,12 @@ impl<'actor> ControlHandlers<'actor> {
         self.actor.emit_deduped_presence(states)
     }
 
-    async fn subscribe_rooms(&mut self, peers: Vec<String>) -> ActorDispatch {
-        let Some(peers) = self.bounded_peers("subscribe_rooms", peers) else {
+    async fn subscribe_rooms(
+        &mut self,
+        frame_type: &'static str,
+        peers: Vec<String>,
+    ) -> ActorDispatch {
+        let Some(peers) = self.bounded_peers(frame_type, peers) else {
             return ActorDispatch::Continue;
         };
         self.actor
@@ -125,8 +150,12 @@ impl<'actor> ControlHandlers<'actor> {
         ActorDispatch::Continue
     }
 
-    async fn unsubscribe_rooms(&mut self, peers: Vec<String>) -> ActorDispatch {
-        let Some(peers) = self.bounded_peers("unsubscribe_rooms", peers) else {
+    async fn unsubscribe_rooms(
+        &mut self,
+        frame_type: &'static str,
+        peers: Vec<String>,
+    ) -> ActorDispatch {
+        let Some(peers) = self.bounded_peers(frame_type, peers) else {
             return ActorDispatch::Continue;
         };
         self.actor
@@ -136,11 +165,11 @@ impl<'actor> ControlHandlers<'actor> {
         ActorDispatch::Continue
     }
 
-    async fn rooms_check(&mut self, peers: Vec<String>) -> ActorDispatch {
-        let Some(peers) = self.bounded_peers("rooms_check", peers) else {
+    async fn rooms_check(&mut self, frame_type: &'static str, peers: Vec<String>) -> ActorDispatch {
+        let Some(peers) = self.bounded_peers(frame_type, peers) else {
             return ActorDispatch::Continue;
         };
-        if !self.actor.allow_control_check("rooms_check", &peers) {
+        if !self.actor.allow_control_check(frame_type, &peers) {
             return ActorDispatch::Continue;
         }
         self.actor.emit_deduped_room_snapshots(peers)
