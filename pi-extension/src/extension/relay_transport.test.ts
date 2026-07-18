@@ -159,6 +159,20 @@ describe("relay transport control frames", () => {
     transport.stop();
   });
 
+  test("room metadata updates emit the generated frame's exact wire shape", async () => {
+    const { transport, relays } = makeTransport();
+    await transport.start({ relayUrl: "ws://relay.test", keypair, roomId: "room-1" });
+
+    transport.sendRoomMeta({ model: "model-1", thinking: "high", working: false });
+
+    expect(relays[0]!.sendControl).toHaveBeenCalledWith({
+      type: "room_meta_update",
+      room_id: "room-1",
+      meta: { model: "model-1", thinking: "high", working: false },
+    });
+    transport.stop();
+  });
+
   test("presence subscription emits the canonical control frame", async () => {
     const { transport, relays } = makeTransport();
     await transport.start({ relayUrl: "ws://relay.test", keypair });
