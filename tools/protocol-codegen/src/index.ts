@@ -37,6 +37,7 @@ export interface OutpostPiIrVariant {
   interfaceName: string;
   schemaRef: string;
   fields: OutpostPiIrField[];
+  sessionScoped: boolean;
   validationFunctionName: string;
   validationFunctionBody: string;
 }
@@ -533,6 +534,13 @@ function discriminatorValues(schema: JsonObject): Array<{ discriminator: string;
   return [];
 }
 
+function isCanonicalSessionScoped(schema: JsonObject): boolean {
+  const metadata = optionalObject(schema["x-outpost-pi"]);
+  const profileRequired = optionalObject(metadata?.profileRequired);
+  const requiredFields = profileRequired?.["canonical-session"];
+  return Array.isArray(requiredFields) && requiredFields.includes("session_id");
+}
+
 async function variantsForFamily(family: OutpostPiManifestFamily, familySchemaPath: string, protocolRoot: string, cache: DocumentCache, profile: string): Promise<OutpostPiIrVariant[]> {
   const root = await readDocument(familySchemaPath, cache);
   const oneOf = Array.isArray(root.oneOf) ? root.oneOf : undefined;
@@ -564,6 +572,7 @@ async function variantsForFamily(family: OutpostPiManifestFamily, familySchemaPa
         interfaceName,
         schemaRef: `${family.schema}#oneOf/${index}`,
         fields: await fieldsForVariant(schema, path, protocolRoot, cache, profile),
+        sessionScoped: isCanonicalSessionScoped(schema),
         validationFunctionName: validatorFunctionNameForInterface(interfaceName),
         validationFunctionBody: await validatorFunctionBodyForSchema(schema, path, protocolRoot, cache, profile),
       });
@@ -643,6 +652,7 @@ async function appPiServerSharedTypes(
       interfaceName: name,
       schemaRef: `app-pi-server.schema.json#/$defs/sessionHistoryEvent/oneOf/${index}`,
       fields,
+      sessionScoped: isCanonicalSessionScoped(schema),
       validationFunctionName: validatorFunctionNameForInterface(name),
       validationFunctionBody: await validatorFunctionBodyForSchema(schema, path, protocolRoot, cache, profile),
     });
@@ -879,6 +889,8 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     if (publicRegistry) {
       sections.push(...emitRegistryConst(publicRegistry.constName, family.variants));
       sections.push(`export type ${publicRegistry.typeName} = (typeof ${publicRegistry.constName})[number];`);
+      const sessionScopedConstName = `SESSION_SCOPED_${publicRegistry.constName}`;
+      sections.push(...emitRegistryConst(sessionScopedConstName, family.variants.filter((variant) => variant.sessionScoped)));
       sections.push(`export const ${constName} = ${publicRegistry.constName};`);
       sections.push(`export type ${typeName} = ${publicRegistry.typeName};`);
     } else {

@@ -20,6 +20,8 @@ interface GeneratedProtocolModule {
   readonly RELAY_AUTH_DOMAIN_PREFIX?: string;
   readonly CLIENT_MESSAGE_TYPES?: readonly string[];
   readonly SERVER_MESSAGE_TYPES?: readonly string[];
+  readonly SESSION_SCOPED_CLIENT_MESSAGE_TYPES?: readonly string[];
+  readonly SESSION_SCOPED_SERVER_MESSAGE_TYPES?: readonly string[];
   readonly SESSION_HISTORY_EVENT_TYPES?: readonly string[];
   isClientMessage?(value: unknown): boolean;
   isServerMessage?(value: unknown): boolean;
@@ -67,8 +69,10 @@ test("minimal manifest schema emits deterministic TypeScript output", async () =
         properties: {
           type: { const: "pong" },
           in_reply_to: { type: "string" },
+          session_id: { type: "string" },
         },
         additionalProperties: false,
+        "x-outpost-pi": { profileRequired: { "canonical-session": ["session_id"] } },
       },
       error: {
         type: "object",
@@ -95,6 +99,7 @@ test("minimal manifest schema emits deterministic TypeScript output", async () =
 
   const generated = await importGeneratedProtocol(first);
   assert.deepEqual(generated.CLIENT_MESSAGE_TYPES, ["pong", "error"]);
+  assert.deepEqual(generated.SESSION_SCOPED_CLIENT_MESSAGE_TYPES, ["pong"]);
   assert.equal(generated.isClientMessage?.({ type: "pong", in_reply_to: "reply-1" }), true);
   assert.equal(generated.isClientMessage?.({ type: "error", message: "bad", code: "invalid_message" }), true);
   assert.equal(generated.isClientMessage?.({ in_reply_to: "reply-1" }), false);
@@ -133,6 +138,8 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
   assert.match(output, /export type ClientMessage =\n  \| PairRequest\n  \| UserMessage\n  \| QueuedMessageSet\n  \| QueuedMessageClear\n  \| ApproveTool\n  \| Cancel\n  \| Ping\n  \| SessionSync\n  \| SessionNew\n  \| SessionCompact\n  \| ModelSet\n  \| ThinkingSet\n  \| ListModels;/);
   assert.match(output, /export type ServerMessage =\n  \| PairOk\n  \| PairError\n  \| UserInput\n  \| UserMessage\n  \| QueuedMessageState\n  \| AgentChunk\n  \| AgentDone\n  \| AgentMessage\n  \| Compaction\n  \| ToolRequest\n  \| ToolResult\n  \| ErrorMessage\n  \| Cancelled\n  \| Pong\n  \| Bye\n  \| SessionHistory\n  \| ActionOk\n  \| ActionError\n  \| ModelsList;/);
   assert.match(output, /export const SERVER_MESSAGE_TYPES = \[/);
+  assert.match(output, /export const SESSION_SCOPED_CLIENT_MESSAGE_TYPES = \[/);
+  assert.match(output, /export const SESSION_SCOPED_SERVER_MESSAGE_TYPES = \[/);
   assert.match(output, /"user_message",\n  "queued_message_state",/);
   assert.match(output, /"compaction",\n  "tool_request",/);
   assert.match(output, /"action_ok",\n  "action_error",\n  "models_list",/);
@@ -164,6 +171,36 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     "cancelled",
     "pong",
     "bye",
+    "session_history",
+    "action_ok",
+    "action_error",
+    "models_list",
+  ]);
+  assert.deepEqual(generated.SESSION_SCOPED_CLIENT_MESSAGE_TYPES, [
+    "user_message",
+    "queued_message_set",
+    "queued_message_clear",
+    "approve_tool",
+    "cancel",
+    "session_sync",
+    "session_new",
+    "session_compact",
+    "model_set",
+    "thinking_set",
+    "list_models",
+  ]);
+  assert.deepEqual(generated.SESSION_SCOPED_SERVER_MESSAGE_TYPES, [
+    "user_input",
+    "user_message",
+    "queued_message_state",
+    "agent_chunk",
+    "agent_done",
+    "agent_message",
+    "compaction",
+    "tool_request",
+    "tool_result",
+    "error",
+    "cancelled",
     "session_history",
     "action_ok",
     "action_error",
