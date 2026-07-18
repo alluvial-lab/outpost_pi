@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-tui-parity-chat-resilience
-stage: drafting
 id: idea-mobile-chat-blank-on-tab-return
-created: 2026-07-02
-updated: 2026-07-02
+kind: story
+stage: drafting
 tags: [app, bug, lifecycle]
+parent: feature-mobile-tui-parity-chat-resilience
+depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
+release_binding: null
+gate_origin: null
+created: 2026-07-02
+updated: 2026-07-18
 ---
 
 # Mobile chat renders blank when tabbing back in; needs back-out + re-enter to rehydrate
@@ -76,3 +78,15 @@ message list.
   convergence rules.
 - `.agents/skills/flutter-mobile/SKILL.md` — mobile lifecycle, provider/VM,
   async safety.
+
+## Design
+
+**Disposition: distinct bug / implementation Unit 4.** Reproduce pause→resume
+while the same route and ViewModel remain mounted. The just-shipped
+initialization/generation guards may already prevent the blank; if so, close on
+the regression. If not, let the route own a lifecycle listener and call an
+idempotent ViewModel resume refresh that reloads the active local projection and
+requests authoritative sync without clearing visible rows. Reuse the existing
+generation and serialized-binding guards. Repeated resumes must not duplicate
+subscriptions, and a dispose/session switch during refresh must suppress stale
+completion; no app-global async `BuildContext` callback is allowed.

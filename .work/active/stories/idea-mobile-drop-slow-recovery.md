@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-tui-parity-chat-resilience
-stage: drafting
 id: idea-mobile-drop-slow-recovery
-created: 2026-07-02
-updated: 2026-07-02
+kind: story
+stage: drafting
 tags: [app, pi-extension, relay, bug, lifecycle]
+parent: feature-mobile-tui-parity-chat-resilience
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-07-02
+updated: 2026-07-18
 ---
 
 # Mobile network drop: slow end-to-end recovery (~5 min)
@@ -60,3 +62,18 @@ detect dead paths faster, or both.
 - `idea-mobile-drop-half-open-tcp` — no clean disconnect on network switch,
   which likely contributes to slow detection.
 - `idea-extension-pumps-into-dead-app-peer` — compounds during the dead window.
+
+## Design
+
+**Disposition: parked live-repro.** No implementation unit is created from the
+unattributed five-minute observation.
+
+## Parked
+
+Live-repro-only; leave at `stage: drafting`. Route to
+`feature-reconnect-reproduction` on the next physical wifi↔cellular/WireGuard
+drop test, using app `conn-status`/`conn-channel-lost` timestamps and relay
+auth/supersession logs to split app backoff, half-open detection, and external
+network bring-up. Whichever feature records the attributed trace owns the
+resulting fix; this copy then closes as provenance. Do not tune backoff from the
+current anecdote.

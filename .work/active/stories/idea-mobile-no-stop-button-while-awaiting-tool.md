@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-tui-parity-chat-resilience
-stage: drafting
 id: idea-mobile-no-stop-button-while-awaiting-tool
-created: 2026-07-02
-updated: 2026-07-02
+kind: story
+stage: drafting
 tags: [app, pi-extension, ux, bug]
+parent: feature-mobile-tui-parity-chat-resilience
+depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
+release_binding: null
+gate_origin: null
+created: 2026-07-02
+updated: 2026-07-18
 ---
 
 # Mobile: agent doesn't show "working" (and no Stop button) while waiting on a tool result
@@ -92,3 +94,14 @@ interruptible.
 Distinct from `idea-mobile-no-steering-indicator-when-queued` (that's the
 queued-message indicator gap; this is the Stop-button + working-indicator gap
 during tool execution).
+
+## Design
+
+**Disposition: structurally subsumed / provenance.** Current source already
+passes broad whole-turn `vm.isWorking` to `InputBar.streaming`, so the original
+narrow Stop gate has been corrected since capture. The remaining missing
+`waiting` phase display and regression proof belong to
+`feature-mobile-tui-parity-chat-resilience-status-projection`. Close this item
+when that unit proves `working`, `awaitingTool`, and `streaming` all retain a
+valid cancel target and Stop affordance while transport is projected
+independently.
