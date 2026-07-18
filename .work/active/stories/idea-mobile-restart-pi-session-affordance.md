@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-native-session-process-control
-stage: drafting
 id: idea-mobile-restart-pi-session-affordance
-created: 2026-07-03
-updated: 2026-07-03
+kind: story
+stage: drafting
 tags: [app, pi-extension, daemon, workflow]
+parent: feature-mobile-native-session-process-control
+depends_on: [idea-mobile-session-control]
+release_binding: null
+gate_origin: null
+created: 2026-07-03
+updated: 2026-07-18
 ---
 
 # Mobile: no way to fully restart the Pi process (fresh session + relay) from the phone
@@ -87,6 +89,34 @@ not available in interactive mode" message.
 - **Naming:** `session_restart`? `pi_restart`? Distinguish clearly from
   `session_new` (which is in-process conversation-clear, not
   process-restart).
+
+## Design
+
+This story is the implementation unit **Full-process restart affordance** and
+follows `idea-mobile-session-control` because both controls share the existing
+Quick Actions sheet and action repository. Add a danger-styled `Restart Pi
+process` row beside `New session`, with a standalone confirmation explaining
+that the current conversation is cleared and the phone will briefly reconnect.
+Cancel sends nothing; confirmation delegates to the existing
+`IActionsRepository.newSession()` method, so the wire remains the canonical
+`session_new` action rather than gaining a `session_restart` discriminator.
+
+On the existing daemon path, the extension must continue to send `action_ok`
+before resetting its session projection and scheduling `process.exit(42)`;
+the supervisor then respawns the fresh process. The app clears its local
+transcript only after that ACK and lets the normal reconnect/session-sync
+hydration establish the successor state. A non-daemon interactive Pi can only
+do the existing in-process new-session behavior, so copy must qualify the
+process promise as applying to a supervised Pi rather than silently claiming
+universal process restart. `/reload` is intentionally not added because it
+does not re-import `dist/index.js`.
+
+Implementation does not add process-management code, a new wire type, or a
+second relay path. Focused extension tests should guard the existing daemon
+ordering and room/identity continuity; app widget/repository tests should
+cover confirmation, no-reset-before-ACK, expected reconnect feedback, and
+failure preservation. Cross-surface reconnect assertions are tracked in
+`feature-mobile-native-session-process-control-reconnect-verification`.
 
 ## Relationship to other work
 
