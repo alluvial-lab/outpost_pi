@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-tui-parity-chat-resilience
-stage: drafting
 id: idea-mobile-chat-reorder-on-return
-created: 2026-07-03
-updated: 2026-07-03
+kind: story
+stage: drafting
 tags: [app, bug, lifecycle]
+parent: feature-mobile-tui-parity-chat-resilience
+depends_on: [idea-mobile-queued-message-does-not-reorder]
+release_binding: null
+gate_origin: null
+created: 2026-07-03
+updated: 2026-07-18
 ---
 
 # Returning to a chat sometimes reorders the latest user message below the assistant response
@@ -86,3 +88,15 @@ ordering that live view masked or that drifted during the original session.
 - `.agents/skills/flutter-mobile/SKILL.md` — async UI safety, rehydrate.
 - Sibling: `.work/backlog/idea-mobile-queued-message-does-not-reorder.md`.
 - Parent structural finding: `.work/backlog/idea-mobile-conflates-transport-and-agent-state.md`.
+
+## Design
+
+**Disposition: distinct bug / implementation Unit 3.** First reproduce with a
+controlled event order covering optimistic submit, early echo, assistant
+commit, canonical user confirmation, cold read, and repeated history replay.
+If current deterministic identities already preserve order, close with that
+regression evidence and no production edit. Otherwise derive UI order in the
+pure transcript projection from stable message identity and `replyTo`/pickup
+relationships. Keep append `seq` as event-log replay order; reject a global
+wall-clock sort, stored-seq mutation, or a second widget-layer sorter. Live,
+cold-read, and replay projections must return identical IDs and order.

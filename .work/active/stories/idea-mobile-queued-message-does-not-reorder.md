@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-tui-parity-chat-resilience
-stage: drafting
 id: idea-mobile-queued-message-does-not-reorder
-created: 2026-07-02
-updated: 2026-07-02
+kind: story
+stage: drafting
 tags: [app, pi-extension, ux, bug]
+parent: feature-mobile-tui-parity-chat-resilience
+depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
+release_binding: null
+gate_origin: null
+created: 2026-07-02
+updated: 2026-07-18
 ---
 
 # Mobile: steered message threads into output in place; doesn't reorder to bottom when picked up
@@ -85,3 +87,15 @@ So this is an **ordering-semantics** gap, not just a missing indicator.
   `queued_message_clear` → delivers the queued message as `user_message`
   (the pickup event that should trigger reorder).
 - Screenshot `img_650f990d` — user bubble above assistant's continued output.
+
+## Design
+
+**Disposition: distinct bug / implementation Unit 2.** The status split enables
+a visible pending→picked-up transition but does not itself change transcript
+placement. Record early steer acceptance as delivery/pending metadata on the
+existing user transcript event; do not anchor a chat row until the canonical
+timestamped user-input pickup arrives. Pickup clears the steering indicator and
+materializes exactly one prompt after the prior response. Repeated early echoes,
+pickup events, and replay must collapse by stable identity. Metadata is additive
+with backward-compatible defaults; do not rewrite Hive `seq` or infer pickup
+from elapsed time.
