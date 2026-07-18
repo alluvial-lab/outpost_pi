@@ -4,6 +4,9 @@ import { ed25519Sign } from "../pairing/crypto.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import {
   RELAY_AUTH_DOMAIN_PREFIX,
+  type RelayControlFrameAuth,
+  type RelayControlFrameChallenge,
+  type RelayControlFrameHello,
 } from "../protocol/generated/protocol.generated.js";
 import {
   REACHABILITY_RELAY_LIVENESS_CHECK_MS,
@@ -13,6 +16,10 @@ import {
 const RELAY_AUTH_DOMAIN_PREFIX_BYTES = Buffer.from(RELAY_AUTH_DOMAIN_PREFIX, "utf8");
 
 const AUTH_TIMEOUT_MS = 5_000;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 /** Build the exact bytes covered by a relay-auth signature. */
 export function relayAuthSigningBytes(nonce: Uint8Array): Buffer {
@@ -30,17 +37,6 @@ export function relayAuthSigningBytes(nonce: Uint8Array): Buffer {
  */
 const LIVENESS_TIMEOUT_MS = REACHABILITY_RELAY_LIVENESS_TIMEOUT_MS;  // ~2.8 missed relay pings → confidently dead
 const LIVENESS_CHECK_MS = REACHABILITY_RELAY_LIVENESS_CHECK_MS;
-
-/** Relay control messages (sent/received during auth). */
-interface HelloMsg {
-  type: "hello";
-  pubkey: string;
-  device_id: string;
-  room_id?: string;
-  room_meta?: RoomMeta;
-}
-interface ChallengeMsg { type: "challenge"; nonce: string }
-interface AuthMsg { type: "auth"; sig: string }
 
 export interface RoomMeta {
   name: string;
@@ -224,30 +220,39 @@ export class RelayClient extends EventEmitter {
 
   private async _authenticate(ws: WebSocket, opts: ConnectOptions): Promise<void> {
     const pubkeyB64 = Buffer.from(this.keypair.publicKey).toString("base64");
-    const hello: HelloMsg = { type: "hello", pubkey: pubkeyB64, device_id: this.deviceId };
-    if (opts.roomId) hello.room_id = opts.roomId;
-    if (opts.roomMeta) hello.room_meta = opts.roomMeta;
+    const hello = {
+      type: "hello",
+      pubkey: pubkeyB64,
+      device_id: this.deviceId,
+      ...(opts.roomId ? { room_id: opts.roomId } : {}),
+      ...(opts.roomMeta ? { room_meta: opts.roomMeta } : {}),
+    } satisfies RelayControlFrameHello;
     this._rawSend(ws, JSON.stringify(hello));
 
     const challengeRaw = await this._nextMsg(ws);
-    let challenge: ChallengeMsg | { type: "error"; code?: string; message?: string };
+    let parsedChallenge: unknown;
     try {
-      challenge = JSON.parse(challengeRaw) as typeof challenge;
+      parsedChallenge = JSON.parse(challengeRaw) as unknown;
     } catch {
       throw new Error(`relay auth_failed: not JSON: ${challengeRaw}`);
     }
-    if (challenge.type === "error") {
-      const code = (challenge as { code?: string }).code ?? "";
+    if (isRecord(parsedChallenge) && parsedChallenge.type === "error") {
+      const code = typeof parsedChallenge.code === "string" ? parsedChallenge.code : "";
       if (code === "room_already_open") {
         throw new RoomAlreadyOpenError(opts.roomId);
       }
-      throw new Error(`relay rejected hello: ${code || (challenge as { message?: string }).message || "unknown"}`);
+      const message = typeof parsedChallenge.message === "string" ? parsedChallenge.message : "";
+      throw new Error(`relay rejected hello: ${code || message || "unknown"}`);
     }
-    if (challenge.type !== "challenge" || !(challenge as ChallengeMsg).nonce) {
+    if (!isRecord(parsedChallenge) || parsedChallenge.type !== "challenge" || typeof parsedChallenge.nonce !== "string" || !parsedChallenge.nonce) {
       throw new Error(`relay auth_failed: expected challenge, got ${challengeRaw}`);
     }
+    const challenge: RelayControlFrameChallenge = {
+      type: "challenge",
+      nonce: parsedChallenge.nonce,
+    };
 
-    const nonce = Buffer.from((challenge as ChallengeMsg).nonce, "base64");
+    const nonce = Buffer.from(challenge.nonce, "base64");
     // Domain-separated auth signature: must match the relay's
     // `RELAY_AUTH_DOMAIN_PREFIX` (relay/src/auth/challenge.rs). The relay
     // verifies the signature over `prefix ++ nonce`, NOT the bare nonce —
@@ -255,10 +260,10 @@ export class RelayClient extends EventEmitter {
     // arbitrary Ed25519 messages under the long-term identity key and is
     // rejected by relay-0.2.0 as `invalid signature`.
     const sig = ed25519Sign(this.keypair.secretKey, relayAuthSigningBytes(nonce));
-    const auth: AuthMsg = {
+    const auth = {
       type: "auth",
       sig: Buffer.from(sig).toString("base64"),
-    };
+    } satisfies RelayControlFrameAuth;
     this._rawSend(ws, JSON.stringify(auth));
 
     // Relay does not send an explicit "ok" — it simply starts routing.
