@@ -1,14 +1,14 @@
 ---
 id: epic-remote-session-resilience-refactor
 kind: epic
-stage: drafting
+stage: implementing
 tags: [pi-extension, app, relay, workflow]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-06-27
-updated: 2026-06-29
+updated: 2026-07-18
 ---
 
 # Remote session resilience refactor
@@ -43,36 +43,91 @@ Sequence the arc as **reference → review → design → refactor**, with only 
 - `feature-adversarial-codebase-review` — multi-model adversarial review of app, pi-extension, relay, cockpit/site where relevant.
 - `story-mobile-working-status-stuck` — reproduce and fix stale `Working` status.
 
-## Reframing (2026-06-29 bold-refactor scan)
+## Decomposition (2026-07-18 epic-design pass)
 
-The bold-refactor scan superseded this epic's refactor framing. Arc steps 1-3
-(reference → review → prep) shipped; step 4 ("design the state-machine refactor")
-was the bold scan itself, which produced 8 `epic-bold-*` refactor epics that
-collectively realize the resilience arc's intent.
+The 2026-06-29 reframing was superseded by the 2026-07 `scope` pass, which
+promoted the residual targeted patches + the mobile-UX cluster into 6 child
+features. Two of those shipped this session (the app + piext-delivery
+lifecycle-ownership features); four remain at `stage: drafting`. This epic
+closes when those four ship.
 
-This epic now tracks only the **residual targeted patches** that ship before the
-bold refactor lands — work that doesn't need to wait for the architectural
-reconception:
+The bold-refactor epics (`epic-bold-*`) remain the architectural reconception
+track and are NOT children of this epic. This epic holds only the targeted,
+shippable-before-reconception resilience work.
 
-- `story-stale-command-ui-notify-guard` — safe command-notification helper
-  (shippable slice; broader concern folds into `epic-bold-split-pi-extension-index`).
-- `story-stale-action-boundary-regression-tests` — boundary regression tests
-  that survive the refactor and inform it.
-- `story-add-transport-frame-observability` — privacy-safe diagnostics for
-  dropped frames (independent of the refactor).
-- `feature-remote-pi-fork-vendor-and-mobile-surface` — fork setup / mobile
-  build smoke (operational, not architectural).
+### Child features
 
-Superseded children retired to `.work/archive/` with `status: superseded` and
-folded into the bold epics that absorb them:
+- `feature-app-async-lifecycle-ownership` — app-side async ownership +
+  convergence (generation guards, per-peer persistence, transcript
+  degradation, mesh publication). **DONE 2026-07-18.**
+- `feature-piext-lifecycle-delivery-promise-policy` — pi-extension failure
+  policy for discarded delivery/lifecycle promises. **DONE 2026-07-18.**
+- `feature-outbound-buffer-on-peer-offline` — buffer Pi→app frames while the
+  app peer is known offline; flush on reconnect. Builds on the shipped
+  `story-extension-suspend-fanout-on-peer-offline` (v0.1.0), which added the
+  suspend; this adds the buffer. depends on: `[]`
+- `feature-mobile-native-session-process-control` — expose `session_new` +
+  `EXIT_DAEMON_FRESH_SESSION` (exit 42 → supervisor respawn) as a mobile
+  control surface. depends on: `[feature-remote-pi-fork-vendor-and-mobile-surface]`
+  (shares the mobile-surface scope)
+- `feature-mobile-tui-parity-chat-resilience` — resolve the transport-vs-agent
+  state conflation (the structural parent finding) + the mobile chat
+  ordering/blank/recovery symptoms. depends on: `[]`
+- `feature-remote-pi-fork-vendor-and-mobile-surface` — fork setup + mobile
+  build smoke. **~90% done** (4 of 5 child stories shipped extension-0.5.4 /
+  app-v1.1.1); only `story-remote-pi-mobile-mode-client-slice` remains
+  (conditional). depends on: `[]`
 
-- `story-mobile-working-status-stuck` → `epic-bold-turn-state-machine-projection-consumers`
-- `story-fix-cross-pc-bridge-late-attach-after-shutdown` → `epic-bold-split-pi-extension-index-sdk-session-projection-module` + `epic-bold-turn-state-machine-late-attach`
-- `story-investigate-model-thinking-actions-after-session-replacement` → `epic-bold-split-pi-extension-index-sdk-session-projection-module`
-- `feature-session-isolation-wire-discriminator` → `epic-bold-canonical-session-wire-discriminator`
+### Standalone stories (also children)
 
-Do not add new refactor-scale work here — route it through the bold epics. This
-epic closes when its 4 residual survivors ship.
+- `story-stale-command-ui-notify-guard` — safe command-notification helper.
+  depends on: `story-stale-session-bound-surface-deep-audit` (shipped
+  extension-0.5.4, in `.work/releases/`). Dependency is met; this story is
+  ready to implement.
+- `story-stale-action-boundary-regression-tests` — replacement-boundary
+  regression tests for app action surfaces. Same met dependency.
+
+### Cross-epic dependencies (resolved)
+
+- `feature-outbound-buffer-on-peer-offline` ↔ `feature-reconnect-reproduction`
+  (sibling epic `epic-targeting-and-session-lifecycle-contracts`): the
+  reconnect-repro feature's `idea-extension-pumps-into-dead-app-peer` was the
+  same gap, already addressed by the shipped `story-extension-suspend-fanout-on-peer-offline`
+  (v0.1.0). The outbound-buffer feature is the next step beyond suspend
+  (buffer instead of drop). No active dependency edge; the reconnect-repro
+  feature's live-repro items (`idea-mobile-drop-slow-recovery`,
+  `idea-mobile-outgoing-message-swallowed`) overlap with
+  `feature-mobile-tui-parity-chat-resilience`'s symptom list — those route to
+  whichever feature designs first; the other closes its copy as a provenance
+  checkpoint.
+- `idea-mobile-conflates-transport-and-agent-state` (F3's parent structural
+  finding) was misfiled under the old reconnect contract; it's a UI-projection
+  / turn-phase question and routes under `feature-mobile-tui-parity-chat-resilience`,
+  not the sibling epic.
+
+### Simplification arcs
+
+- `feature-outbound-buffer-on-peer-offline` — replaces the silent drop with a
+  bounded buffer; the shipped suspend logic stays.
+- `feature-mobile-tui-parity-chat-resilience` — the transport-vs-agent-state
+  conflation fix subsumes several status/steering symptoms; distinct
+  reproducible bugs reduce to one-line fixes once the structural split lands.
+- `feature-remote-pi-fork-vendor-and-mobile-surface` — close as ~done after
+  reconciling the one conditional child story.
+
+### Decomposition risks
+
+- `feature-mobile-tui-parity-chat-resilience` is the largest and most
+  open-ended (10 backlog items, several requiring live phone repro). Its
+  design pass must decide which symptoms are structurally subsumed by the
+  conflation fix vs. which are distinct bugs needing individual repro — and
+  which live-repro-only items park until the next drop test.
+- `feature-outbound-buffer-on-peer-offline` has real semantics decisions
+  (buffer location, bound/overflow policy, flush ordering vs. `session_sync`,
+  teardown interaction) that are design-bearing, not mechanical.
+- `feature-mobile-native-session-process-control` depends on the
+  mobile-surface feature's scope; if the fork-vendor feature closes as
+  ~done, the dependency is met by the shipped build path.
 
 ## Draft acceptance
 
