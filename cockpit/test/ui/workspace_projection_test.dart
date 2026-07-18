@@ -301,6 +301,49 @@ void main() {
   });
 
   test(
+    'disposeTab invalidates agent boot blocked on session history',
+    () async {
+      final historyGate = Completer<List<SessionInfo>>();
+      final history = _History(const <SessionInfo>[], historyGate);
+      final rpcFactory = _RpcFactory();
+      final asyncErrors = <Object>[];
+
+      await runZonedGuarded(() async {
+        final projection = _projection(
+          rpcFactory: rpcFactory,
+          history: history,
+        );
+        final agent = projection.createAgent(
+          id: 'a1',
+          project: _project(),
+          workingDirectory: '/workspace',
+        );
+        var notifications = 0;
+        agent.addListener(() => notifications++);
+        var completed = false;
+
+        final closing = projection.disposeTab('a1')
+          ..then((_) => completed = true);
+
+        expect(history.calls, 1);
+        expect(projection.item('a1'), isNull);
+        await closing;
+        expect(completed, isTrue);
+        final notificationsAtClose = notifications;
+
+        historyGate.complete(const <SessionInfo>[]);
+        await pumpEventQueue();
+
+        expect(notifications, notificationsAtClose);
+        expect(rpcFactory.lastGateway, isNull);
+        await projection.dispose();
+      }, (error, _) => asyncErrors.add(error));
+
+      expect(asyncErrors, isEmpty);
+    },
+  );
+
+  test(
     'project and projection disposal await every terminal in order',
     () async {
       final terminalFactory = _TerminalFactory();
@@ -466,15 +509,20 @@ final class _Notifier implements Notifier {
 }
 
 final class _History implements SessionHistory {
-  _History([this.sessions = const <SessionInfo>[]]);
+  _History([this.sessions = const <SessionInfo>[], this.gate]);
 
   final List<SessionInfo> sessions;
+  final Completer<List<SessionInfo>>? gate;
+  var calls = 0;
 
   @override
   Future<List<SessionInfo>> sessionsFor(
     String cwd, {
     bool withTitle = false,
-  }) async => sessions;
+  }) async {
+    calls++;
+    return gate == null ? sessions : await gate!.future;
+  }
 }
 
 final class _TerminalFactory implements TerminalGatewayFactory {
