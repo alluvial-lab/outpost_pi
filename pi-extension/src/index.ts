@@ -1059,7 +1059,9 @@ export async function _handleControl(cmd: string): Promise<void> {
 }
 
 function _dispatchControlFrame(frame: ParsedControlFrame): void {
-  void _handleControl(frame.command);
+  void _handleControl(frame.command).catch((error: unknown) => {
+    console.error(`[outpost-pi] control command failed: ${String(error)}`);
+  });
 }
 
 /**
