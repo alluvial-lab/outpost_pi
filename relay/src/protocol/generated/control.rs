@@ -90,6 +90,20 @@ pub enum RelayControlFrame {
     RoomMetaUpdate(RoomMetaUpdateFrame),
 }
 
+impl RelayControlFrame {
+    pub const fn wire_type(&self) -> &'static str {
+        match self {
+            Self::SubscribePresence { .. } => "subscribe_presence",
+            Self::UnsubscribePresence { .. } => "unsubscribe_presence",
+            Self::PresenceCheck { .. } => "presence_check",
+            Self::SubscribeRooms { .. } => "subscribe_rooms",
+            Self::UnsubscribeRooms { .. } => "unsubscribe_rooms",
+            Self::RoomsCheck { .. } => "rooms_check",
+            Self::RoomMetaUpdate(..) => "room_meta_update",
+        }
+    }
+}
+
 pub const RELAY_CONTROL_FRAME_TYPES: &[&str] = &[
     "subscribe_presence",
     "unsubscribe_presence",
