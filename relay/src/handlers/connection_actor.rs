@@ -15,6 +15,7 @@ use crate::peers::registry_event_publisher::RegistryEventPublisher;
 use crate::peers::rooms::RoomStateStore;
 use crate::presence::{PeerPresence, PresenceManager};
 use crate::protocol::frame::{DecodedRelayFrame, PiEnvelopeFrame};
+use crate::protocol::generated::control::RelayServerControlFrame;
 use crate::protocol::outer::OuterEnvelope;
 use crate::rooms::RoomManager;
 
@@ -215,11 +216,8 @@ impl ConnectionActor {
     }
 
     pub(crate) fn emit_deduped_presence(&mut self, states: Vec<PeerPresence>) -> ActorDispatch {
-        let resp = serde_json::json!({
-            "type": "presence",
-            "states": states,
-        })
-        .to_string();
+        let resp = serde_json::to_string(&RelayServerControlFrame::Presence { states })
+            .expect("generated presence serialization is infallible");
 
         if self.last_presence_resp.as_deref() == Some(resp.as_str()) {
             self.metrics.inc_presence_suppressed(1);
@@ -235,12 +233,11 @@ impl ConnectionActor {
         let mut messages = Vec::new();
         for target_peer in peers {
             let active_rooms = self.room_state.rooms_of(&target_peer);
-            let resp = serde_json::json!({
-                "type": "rooms",
-                "peer": target_peer,
-                "rooms": active_rooms,
+            let resp = serde_json::to_string(&RelayServerControlFrame::Rooms {
+                peer: target_peer.clone(),
+                rooms: active_rooms,
             })
-            .to_string();
+            .expect("generated rooms serialization is infallible");
 
             if self.last_rooms_resp.get(&target_peer) == Some(&resp) {
                 self.metrics.inc_rooms_suppressed(1);
@@ -371,6 +368,84 @@ mod tests {
         assert!(actor.last_presence_resp.is_none());
         assert!(actor.last_rooms_resp.is_empty());
         assert_eq!(actor.control_check_limiter.peer_cost_used, 0);
+    }
+
+    #[test]
+    fn generated_presence_snapshot_preserves_wire_value() {
+        let mut actor = ConnectionActor::new(
+            "app".to_string(),
+            "app".to_string(),
+            "main".to_string(),
+            42,
+            actor_services().1,
+        );
+
+        let ActorDispatch::Send(text) = actor.emit_deduped_presence(vec![PeerPresence {
+            peer: "pi".to_string(),
+            online: false,
+            since_ts: Some(123),
+        }]) else {
+            panic!("first presence snapshot must be emitted");
+        };
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&text).unwrap(),
+            serde_json::json!({
+                "type": "presence",
+                "states": [{"peer": "pi", "online": false, "since_ts": 123}],
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn generated_rooms_snapshot_preserves_wire_value() {
+        let (registry, services) = actor_services();
+        let (tx, _rx) = mpsc::unbounded_channel::<Message>();
+        registry
+            .register(
+                "pi".to_string(),
+                RoomMeta {
+                    room_id: "main".to_string(),
+                    name: Some("Main".to_string()),
+                    cwd: None,
+                    session_id: None,
+                    model: Some("model-1".to_string()),
+                    thinking: None,
+                    working: true,
+                    started_at: 123,
+                },
+                "dev-a".to_string(),
+                tx,
+            )
+            .await;
+        let mut actor = ConnectionActor::new(
+            "app".to_string(),
+            "app".to_string(),
+            "main".to_string(),
+            42,
+            services,
+        );
+
+        let ActorDispatch::SendMany(messages) =
+            actor.emit_deduped_room_snapshots(vec!["pi".to_string()])
+        else {
+            panic!("first rooms snapshot must be emitted");
+        };
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&messages[0]).unwrap(),
+            serde_json::json!({
+                "type": "rooms",
+                "peer": "pi",
+                "rooms": [{
+                    "room_id": "main",
+                    "name": "Main",
+                    "model": "model-1",
+                    "working": true,
+                    "started_at": 123,
+                }],
+            })
+        );
     }
 
     #[test]

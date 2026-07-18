@@ -7,6 +7,7 @@ use super::presence_state::PresenceTransition;
 use super::rooms::RoomEnded;
 use crate::metrics::FirehoseMetrics;
 use crate::presence::PresenceManager;
+use crate::protocol::generated::control::RelayServerControlFrame;
 use crate::rooms::{RoomManager, RoomMeta};
 
 /// Serializes and delivers registry lifecycle events to subscribed peers.
@@ -44,11 +45,12 @@ impl RegistryEventPublisher {
             return;
         }
 
-        let mut announced =
-            serde_json::to_value(room).expect("RoomMeta serialization is infallible");
-        announced["type"] = "room_announced".into();
-        announced["peer"] = peer_id.into();
-        self.publish_to_subscribers(&room_subs, announced.to_string());
+        let msg = serde_json::to_string(&RelayServerControlFrame::RoomAnnounced {
+            peer: peer_id.to_string(),
+            room: room.clone(),
+        })
+        .expect("generated room_announced serialization is infallible");
+        self.publish_to_subscribers(&room_subs, msg);
     }
 
     pub(crate) async fn publish_room_ended(&self, peer_id: &str, ended: RoomEnded) {
@@ -57,13 +59,12 @@ impl RegistryEventPublisher {
             return;
         }
 
-        let msg = serde_json::json!({
-            "type": "room_ended",
-            "peer": peer_id,
-            "room_id": ended.room_id,
-            "since_ts": ended.since_ts,
+        let msg = serde_json::to_string(&RelayServerControlFrame::RoomEnded {
+            peer: peer_id.to_string(),
+            room_id: ended.room_id,
+            since_ts: ended.since_ts,
         })
-        .to_string();
+        .expect("generated room_ended serialization is infallible");
         self.publish_to_subscribers(&room_subs, msg);
     }
 
@@ -76,7 +77,9 @@ impl RegistryEventPublisher {
                     return;
                 }
 
-                let msg = serde_json::json!({"type": "peer_online", "peer": peer_id}).to_string();
+                let msg =
+                    serde_json::to_string(&RelayServerControlFrame::PeerOnline { peer: peer_id })
+                        .expect("generated peer_online serialization is infallible");
                 self.publish_to_subscribers(&pres_subs, msg);
                 self.metrics.inc_peer_online_emitted(sub_count);
             }
@@ -89,12 +92,11 @@ impl RegistryEventPublisher {
             PresenceTransition::BecameOffline { peer_id, since_ts } => {
                 let pres_subs = self.presence.subscribers_of(&peer_id).await;
                 if !pres_subs.is_empty() {
-                    let msg = serde_json::json!({
-                        "type": "peer_offline",
-                        "peer": peer_id.as_str(),
-                        "since_ts": since_ts,
+                    let msg = serde_json::to_string(&RelayServerControlFrame::PeerOffline {
+                        peer: peer_id.clone(),
+                        since_ts,
                     })
-                    .to_string();
+                    .expect("generated peer_offline serialization is infallible");
                     self.publish_to_subscribers(&pres_subs, msg);
                 }
                 self.presence.record_offline(&peer_id, since_ts).await;
@@ -115,6 +117,8 @@ impl RegistryEventPublisher {
             return;
         }
 
+        // Schema gap: `room_meta_updated` has no generated outbound variant yet,
+        // so this compatibility frame remains handwritten until the schema defines it.
         let mut meta_obj = serde_json::Map::new();
         if let Some(model) = &snapshot.model {
             meta_obj.insert(
@@ -151,7 +155,10 @@ impl RegistryEventPublisher {
     }
 
     pub(crate) fn publish_peer_online_backfill(&self, subscriber: &str, peer_id: &str) {
-        let msg = serde_json::json!({"type": "peer_online", "peer": peer_id}).to_string();
+        let msg = serde_json::to_string(&RelayServerControlFrame::PeerOnline {
+            peer: peer_id.to_string(),
+        })
+        .expect("generated peer_online serialization is infallible");
         self.send_to_all_rooms_of(subscriber, Message::Text(msg));
     }
 

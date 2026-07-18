@@ -779,15 +779,8 @@ function rustVariantName(type) {
   return name.length > 0 ? name : 'Unknown';
 }
 
-const RELAY_CLIENT_CONTROL_TYPES = [
-  'subscribe_presence',
-  'unsubscribe_presence',
-  'presence_check',
-  'subscribe_rooms',
-  'unsubscribe_rooms',
-  'rooms_check',
-  'room_meta_update',
-];
+const RELAY_DIRECTION_CLIENT_TO_RELAY = 'client-to-relay';
+const RELAY_DIRECTION_RELAY_TO_CLIENT = 'relay-to-client';
 
 function schemaForCatalogEntry(entry, schemaPath) {
   if (typeof entry.schemaRef !== 'string') {
@@ -798,6 +791,22 @@ function schemaForCatalogEntry(entry, schemaPath) {
 
 function schemaHasProperty(schema, propertyName) {
   return Object.hasOwn(requireObject(schema.properties, `${schema.title ?? 'schema'}.properties`), propertyName);
+}
+
+function relayControlDirection(schema, type) {
+  const metadata = requireObject(schema['x-outpost-pi'] ?? {}, `${type}.x-outpost-pi`);
+  const direction = metadata.direction;
+  if (direction !== RELAY_DIRECTION_CLIENT_TO_RELAY && direction !== RELAY_DIRECTION_RELAY_TO_CLIENT) {
+    throw new Error(`Relay control frame ${type} must declare a valid x-outpost-pi.direction`);
+  }
+  return direction;
+}
+
+function relayControlTypesByDirection(entries, schemasByType, direction) {
+  return entries
+    .filter((entry) => entry.discriminator === 'type')
+    .filter((entry) => relayControlDirection(schemasByType.get(entry.type), entry.type) === direction)
+    .map((entry) => entry.type);
 }
 
 function emitRustControlPeerVariant(lines, type, schema) {
@@ -834,11 +843,27 @@ function emitRustControl(entries, schemaPath) {
   const byType = new Map(entries.map((entry) => [entry.type, entry]));
   const schemasByType = new Map(entries.map((entry) => [entry.type, schemaForCatalogEntry(entry, schemaPath)]));
   const hasType = (type) => byType.has(type);
-  const clientControlTypes = RELAY_CLIENT_CONTROL_TYPES.filter(hasType);
+  const clientControlTypes = relayControlTypesByDirection(
+    entries,
+    schemasByType,
+    RELAY_DIRECTION_CLIENT_TO_RELAY,
+  ).filter((type) => type !== 'hello' && type !== 'auth');
+  const serverControlTypes = relayControlTypesByDirection(
+    entries,
+    schemasByType,
+    RELAY_DIRECTION_RELAY_TO_CLIENT,
+  ).filter((type) => type !== 'challenge');
 
   lines.push('use serde::{Deserialize, Serialize};');
-  if (hasType('room_meta_update')) {
-    lines.push('use super::room::RoomMetaPatch;');
+  const roomImports = [];
+  if (hasType('room_meta_update')) roomImports.push('RoomMetaPatch');
+  if (serverControlTypes.includes('rooms') || serverControlTypes.includes('room_announced')) {
+    roomImports.push('RoomMeta');
+  }
+  if (roomImports.length === 1) {
+    lines.push(`use super::room::${roomImports[0]};`);
+  } else if (roomImports.length > 1) {
+    lines.push(`use super::room::{${roomImports.join(', ')}};`);
   }
   lines.push('');
   lines.push(`pub const RELAY_AUTH_DOMAIN_PREFIX: &[u8] = ${rustByteStringLiteral(authDomainPrefix)};`);
@@ -898,6 +923,75 @@ function emitRustControl(entries, schemaPath) {
     lines.push('pub enum ServerAuthMsg {');
     lines.push('    Challenge { nonce: String },');
     lines.push('}');
+    lines.push('');
+  }
+
+  if (serverControlTypes.includes('presence')) {
+    const presenceSchema = schemasByType.get('presence');
+    if (!schemaHasProperty(presenceSchema, 'states')) throw new Error('presence schema must declare states');
+    lines.push('#[derive(Debug, Clone, Serialize, Deserialize)]');
+    lines.push('pub struct RelayPresenceState {');
+    lines.push('    pub peer: String,');
+    lines.push('    pub online: bool,');
+    lines.push('    pub since_ts: Option<i64>,');
+    lines.push('}');
+    lines.push('');
+  }
+
+  if (serverControlTypes.length > 0) {
+    lines.push('#[derive(Debug, Clone, Serialize, Deserialize)]');
+    lines.push('#[serde(tag = "type", rename_all = "snake_case")]');
+    lines.push('pub enum RelayServerControlFrame {');
+    for (const type of serverControlTypes) {
+      const schema = schemasByType.get(type);
+      const variant = rustVariantName(type);
+      switch (type) {
+        case 'presence':
+          lines.push(`    #[serde(rename = "${type}")]`);
+          lines.push(`    ${variant} { states: Vec<RelayPresenceState> },`);
+          break;
+        case 'peer_online':
+          if (!schemaHasProperty(schema, 'peer')) throw new Error('peer_online schema must declare peer');
+          lines.push(`    #[serde(rename = "${type}")]`);
+          lines.push(`    ${variant} { peer: String },`);
+          break;
+        case 'peer_offline':
+          if (!schemaHasProperty(schema, 'peer') || !schemaHasProperty(schema, 'since_ts')) {
+            throw new Error('peer_offline schema must declare peer and since_ts');
+          }
+          lines.push(`    #[serde(rename = "${type}")]`);
+          lines.push(`    ${variant} { peer: String, since_ts: i64 },`);
+          break;
+        case 'rooms':
+          if (!schemaHasProperty(schema, 'peer') || !schemaHasProperty(schema, 'rooms')) {
+            throw new Error('rooms schema must declare peer and rooms');
+          }
+          lines.push(`    #[serde(rename = "${type}")]`);
+          lines.push(`    ${variant} { peer: String, rooms: Vec<RoomMeta> },`);
+          break;
+        case 'room_announced':
+          if (!schemaHasProperty(schema, 'peer') || !schemaHasProperty(schema, 'room_id')) {
+            throw new Error('room_announced schema must declare peer and room metadata');
+          }
+          lines.push(`    #[serde(rename = "${type}")]`);
+          lines.push(`    ${variant} { peer: String, #[serde(flatten)] room: RoomMeta },`);
+          break;
+        case 'room_ended':
+          if (!schemaHasProperty(schema, 'peer') || !schemaHasProperty(schema, 'room_id') || !schemaHasProperty(schema, 'since_ts')) {
+            throw new Error('room_ended schema must declare peer, room_id, and since_ts');
+          }
+          lines.push(`    #[serde(rename = "${type}")]`);
+          lines.push(`    ${variant} { peer: String, room_id: String, since_ts: i64 },`);
+          break;
+        default:
+          throw new Error(`Unsupported relay-to-client control frame ${type}`);
+      }
+    }
+    lines.push('}');
+    lines.push('');
+    lines.push('pub const RELAY_SERVER_CONTROL_FRAME_TYPES: &[&str] = &[');
+    for (const type of serverControlTypes) lines.push(`    "${type}",`);
+    lines.push('];');
     lines.push('');
   }
 
@@ -1333,10 +1427,16 @@ function emitRustMesh() {
   return `${lines.join('\n')}\n`;
 }
 
-function emitRustFrame(controlEntries, crossPcEntries) {
-  const controlTypes = controlEntries
-    .map((entry) => entry.type)
-    .filter((type) => RELAY_CLIENT_CONTROL_TYPES.includes(type))
+function emitRustFrame(controlEntries, crossPcEntries, schemaPath) {
+  const controlSchemasByType = new Map(
+    controlEntries.map((entry) => [entry.type, schemaForCatalogEntry(entry, schemaPath)]),
+  );
+  const controlTypes = relayControlTypesByDirection(
+    controlEntries,
+    controlSchemasByType,
+    RELAY_DIRECTION_CLIENT_TO_RELAY,
+  )
+    .filter((type) => type !== 'hello' && type !== 'auth')
     .sort((a, b) => a.localeCompare(b));
   const hasPiEnvelope = crossPcEntries.some((entry) => entry.type === 'pi_envelope');
   if (!hasPiEnvelope) throw new Error('Relay inbound frame generation requires crossPc pi_envelope');
@@ -1427,7 +1527,7 @@ function emitRust(schema, schemaPath) {
     ['room.rs', emitRustRoom(entries, schemaPath)],
     ['control.rs', emitRustControl(controlEntries, schemaPath)],
     ['cross_pc.rs', emitRustCrossPc(crossPcEntries, schemaPath)],
-    ['frame.rs', emitRustFrame(controlEntries, crossPcEntries)],
+    ['frame.rs', emitRustFrame(controlEntries, crossPcEntries, schemaPath)],
     ['mesh.rs', emitRustMesh()],
   ]);
 }

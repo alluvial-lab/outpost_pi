@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
+use crate::protocol::generated::control::RelayPresenceState;
 use crate::subscriptions::SubscriptionIndex;
 
 #[derive(Debug, Default)]
@@ -19,12 +20,7 @@ pub struct PresenceManager {
 }
 
 /// Represents one peer's current reachability in a presence snapshot.
-#[derive(serde::Serialize)]
-pub struct PeerPresence {
-    pub peer: String,
-    pub online: bool,
-    pub since_ts: Option<i64>,
-}
+pub type PeerPresence = RelayPresenceState;
 
 impl PresenceManager {
     /// Create an empty presence subscription and offline-state manager.
