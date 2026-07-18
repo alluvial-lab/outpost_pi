@@ -292,19 +292,18 @@ final class WorkspaceProjection {
     if (item != null && item.unseenFinish) item.clearUnseen();
   }
 
-  /// Dispose a tab and all watcher, debounce, and live process resources it owns.
-  void disposeTab(String id) {
-    _fileWatchers.remove(id)?.cancel();
+  /// Remove a tab immediately, then await its watcher and live resources.
+  Future<void> disposeTab(String id) async {
+    final watcher = _fileWatchers.remove(id);
     _fileWatchDebounce.remove(id)?.cancel();
     final item = _items.remove(id);
-    item?.dispose();
+    await watcher?.cancel();
+    await item?.close();
   }
 
   /// Dispose every live tab described by a project's workspace document.
-  void disposeProject(WorkspaceDocument document) {
-    for (final tabId in document.tabs.keys) {
-      disposeTab(tabId);
-    }
+  Future<void> disposeProject(WorkspaceDocument document) {
+    return Future.wait(document.tabs.keys.map(disposeTab));
   }
 
   /// Snapshot a live tab as a persistable workspace descriptor.
@@ -389,19 +388,9 @@ final class WorkspaceProjection {
   }
 
   /// Dispose all projected tabs, file watchers, and debounce timers.
-  void dispose() {
-    for (final watcher in _fileWatchers.values) {
-      watcher.cancel();
-    }
-    _fileWatchers.clear();
-    for (final timer in _fileWatchDebounce.values) {
-      timer.cancel();
-    }
-    _fileWatchDebounce.clear();
-    for (final item in _items.values) {
-      item.dispose();
-    }
-    _items.clear();
+  Future<void> dispose() {
+    final ids = _items.keys.toList(growable: false);
+    return Future.wait(ids.map(disposeTab));
   }
 
   void _wireAgent(AgentSession session, String projectId) {
