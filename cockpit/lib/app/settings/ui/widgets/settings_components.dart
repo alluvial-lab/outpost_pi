@@ -1,3 +1,4 @@
+import 'package:cockpit/app/core/ui/async_action.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
@@ -158,7 +159,11 @@ class SettingsDropdownChip extends StatelessWidget {
 }
 
 class SettingsReloadButton extends StatelessWidget {
-  const SettingsReloadButton({required this.busy, required this.onTap, super.key});
+  const SettingsReloadButton({
+    required this.busy,
+    required this.onTap,
+    super.key,
+  });
 
   final bool busy;
   final Future<void> Function() onTap;
@@ -170,7 +175,7 @@ class SettingsReloadButton extends StatelessWidget {
       tooltip: (context) => const TooltipContainer(child: Text('Reload')),
       child: HoverTap(
         borderRadius: BorderRadius.circular(6),
-        onTap: busy ? null : () => onTap(),
+        onTap: busy ? null : ownedAsyncAction(onTap),
         child: SizedBox(
           width: 26,
           height: 22,
