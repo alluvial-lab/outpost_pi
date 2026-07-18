@@ -78,7 +78,8 @@ describe("composition root runtime", () => {
     expect(pi.on).toHaveBeenCalledWith("session_shutdown", expect.any(Function));
     expect(p.commands.register).toHaveBeenCalledWith(pi, runtime);
 
-    handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
+    const result = handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
+    expect(result).toBeUndefined();
     expect(p.session.bindApi).toHaveBeenCalledWith(pi);
     expect(p.session.bindSessionContext).toHaveBeenCalledOnce();
   });

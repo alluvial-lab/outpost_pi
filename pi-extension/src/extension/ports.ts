@@ -143,7 +143,8 @@ export interface OutpostPiRuntime {
 /** Register command adapters and coordinate their session-start and shutdown hooks. */
 export interface CommandSurfacePort {
   register(pi: ExtensionAPI, runtime: OutpostPiRuntime): void;
-  ensureStarted?(ctx: ExtensionContext): void | Promise<void>;
+  /** Synchronously trigger startup; implementations own and observe background failures. */
+  ensureStarted?(ctx: ExtensionContext): void;
   prepareSessionShutdown?(): void;
   closeMesh?(): Promise<void>;
 }
