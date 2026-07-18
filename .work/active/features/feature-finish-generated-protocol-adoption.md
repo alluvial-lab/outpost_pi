@@ -9,7 +9,7 @@ release_binding: null
 gate_origin: refactor
 created: 2026-07-15
 updated: 2026-07-18
-reviewed: 2026-07-18 (standard, gpt-5.6-sol fresh-context → ready, no findings; room_meta_updated correctly left handwritten + documented as the one schema gap)
+reviewed: "2026-07-18 (standard, gpt-5.6-sol fresh-context → ready, no findings; room_meta_updated correctly left handwritten + documented as the one schema gap)"
 ---
 
 # Finish generated-protocol adoption and remove handwritten islands
