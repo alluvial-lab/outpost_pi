@@ -4,7 +4,7 @@
 
 #![allow(dead_code)]
 
-use super::room::RoomMetaPatch;
+use super::room::{RoomMeta, RoomMetaPatch};
 use serde::{Deserialize, Serialize};
 
 pub const RELAY_AUTH_DOMAIN_PREFIX: &[u8] = b"outpost-pi-relay-auth-v1\n";
@@ -46,6 +46,47 @@ pub enum ServerAuthMsg {
     Challenge { nonce: String },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelayPresenceState {
+    pub peer: String,
+    pub online: bool,
+    pub since_ts: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RelayServerControlFrame {
+    #[serde(rename = "peer_offline")]
+    PeerOffline { peer: String, since_ts: i64 },
+    #[serde(rename = "peer_online")]
+    PeerOnline { peer: String },
+    #[serde(rename = "presence")]
+    Presence { states: Vec<RelayPresenceState> },
+    #[serde(rename = "room_announced")]
+    RoomAnnounced {
+        peer: String,
+        #[serde(flatten)]
+        room: RoomMeta,
+    },
+    #[serde(rename = "room_ended")]
+    RoomEnded {
+        peer: String,
+        room_id: String,
+        since_ts: i64,
+    },
+    #[serde(rename = "rooms")]
+    Rooms { peer: String, rooms: Vec<RoomMeta> },
+}
+
+pub const RELAY_SERVER_CONTROL_FRAME_TYPES: &[&str] = &[
+    "peer_offline",
+    "peer_online",
+    "presence",
+    "room_announced",
+    "room_ended",
+    "rooms",
+];
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RoomMetaUpdateFrame {
     #[serde(default)]
@@ -56,18 +97,20 @@ pub struct RoomMetaUpdateFrame {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RelayControlFrame {
-    #[serde(rename = "subscribe_presence")]
-    SubscribePresence {
-        #[serde(default)]
-        peers: Vec<String>,
-    },
-    #[serde(rename = "unsubscribe_presence")]
-    UnsubscribePresence {
-        #[serde(default)]
-        peers: Vec<String>,
-    },
     #[serde(rename = "presence_check")]
     PresenceCheck {
+        #[serde(default)]
+        peers: Vec<String>,
+    },
+    #[serde(rename = "room_meta_update")]
+    RoomMetaUpdate(RoomMetaUpdateFrame),
+    #[serde(rename = "rooms_check")]
+    RoomsCheck {
+        #[serde(default)]
+        peers: Vec<String>,
+    },
+    #[serde(rename = "subscribe_presence")]
+    SubscribePresence {
         #[serde(default)]
         peers: Vec<String>,
     },
@@ -76,42 +119,40 @@ pub enum RelayControlFrame {
         #[serde(default)]
         peers: Vec<String>,
     },
+    #[serde(rename = "unsubscribe_presence")]
+    UnsubscribePresence {
+        #[serde(default)]
+        peers: Vec<String>,
+    },
     #[serde(rename = "unsubscribe_rooms")]
     UnsubscribeRooms {
         #[serde(default)]
         peers: Vec<String>,
     },
-    #[serde(rename = "rooms_check")]
-    RoomsCheck {
-        #[serde(default)]
-        peers: Vec<String>,
-    },
-    #[serde(rename = "room_meta_update")]
-    RoomMetaUpdate(RoomMetaUpdateFrame),
 }
 
 impl RelayControlFrame {
     pub const fn wire_type(&self) -> &'static str {
         match self {
-            Self::SubscribePresence { .. } => "subscribe_presence",
-            Self::UnsubscribePresence { .. } => "unsubscribe_presence",
             Self::PresenceCheck { .. } => "presence_check",
-            Self::SubscribeRooms { .. } => "subscribe_rooms",
-            Self::UnsubscribeRooms { .. } => "unsubscribe_rooms",
-            Self::RoomsCheck { .. } => "rooms_check",
             Self::RoomMetaUpdate(..) => "room_meta_update",
+            Self::RoomsCheck { .. } => "rooms_check",
+            Self::SubscribePresence { .. } => "subscribe_presence",
+            Self::SubscribeRooms { .. } => "subscribe_rooms",
+            Self::UnsubscribePresence { .. } => "unsubscribe_presence",
+            Self::UnsubscribeRooms { .. } => "unsubscribe_rooms",
         }
     }
 }
 
 pub const RELAY_CONTROL_FRAME_TYPES: &[&str] = &[
-    "subscribe_presence",
-    "unsubscribe_presence",
     "presence_check",
-    "subscribe_rooms",
-    "unsubscribe_rooms",
-    "rooms_check",
     "room_meta_update",
+    "rooms_check",
+    "subscribe_presence",
+    "subscribe_rooms",
+    "unsubscribe_presence",
+    "unsubscribe_rooms",
 ];
 
 pub fn is_relay_control_frame_type(frame_type: &str) -> bool {

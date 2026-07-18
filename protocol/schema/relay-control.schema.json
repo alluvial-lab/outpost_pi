@@ -95,7 +95,8 @@
         "room_id": { "$ref": "#/$defs/roomId" },
         "room_meta": { "$ref": "#/$defs/helloRoomMeta" }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "client-to-relay" }
     },
     "auth": {
       "type": "object",
@@ -104,7 +105,8 @@
         "type": { "const": "auth" },
         "sig": { "type": "string", "minLength": 1, "contentEncoding": "base64" }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "client-to-relay" }
     },
     "challenge": {
       "type": "object",
@@ -113,25 +115,29 @@
         "type": { "const": "challenge" },
         "nonce": { "type": "string", "minLength": 1, "contentEncoding": "base64" }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "relay-to-client" }
     },
     "subscribePresence": {
       "type": "object",
       "required": ["type"],
       "properties": { "type": { "const": "subscribe_presence" }, "peers": { "$ref": "#/$defs/peerList" } },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "client-to-relay" }
     },
     "unsubscribePresence": {
       "type": "object",
       "required": ["type"],
       "properties": { "type": { "const": "unsubscribe_presence" }, "peers": { "$ref": "#/$defs/peerList" } },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "client-to-relay" }
     },
     "presenceCheck": {
       "type": "object",
       "required": ["type"],
       "properties": { "type": { "const": "presence_check" }, "peers": { "$ref": "#/$defs/peerList" } },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "client-to-relay" }
     },
     "presenceState": {
       "type": "object",
@@ -150,13 +156,15 @@
         "type": { "const": "presence" },
         "states": { "type": "array", "items": { "$ref": "#/$defs/presenceState" } }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "relay-to-client" }
     },
     "peerOnline": {
       "type": "object",
       "required": ["type", "peer"],
       "properties": { "type": { "const": "peer_online" }, "peer": { "$ref": "#/$defs/peerId" } },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "relay-to-client" }
     },
     "peerOffline": {
       "type": "object",
@@ -166,25 +174,29 @@
         "peer": { "$ref": "#/$defs/peerId" },
         "since_ts": { "$ref": "#/$defs/epochMillis" }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "relay-to-client" }
     },
     "subscribeRooms": {
       "type": "object",
       "required": ["type"],
       "properties": { "type": { "const": "subscribe_rooms" }, "peers": { "$ref": "#/$defs/peerList" } },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "client-to-relay" }
     },
     "unsubscribeRooms": {
       "type": "object",
       "required": ["type"],
       "properties": { "type": { "const": "unsubscribe_rooms" }, "peers": { "$ref": "#/$defs/peerList" } },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "client-to-relay" }
     },
     "roomsCheck": {
       "type": "object",
       "required": ["type"],
       "properties": { "type": { "const": "rooms_check" }, "peers": { "$ref": "#/$defs/peerList" } },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "client-to-relay" }
     },
     "rooms": {
       "type": "object",
@@ -194,7 +206,8 @@
         "peer": { "$ref": "#/$defs/peerId" },
         "rooms": { "type": "array", "items": { "$ref": "#/$defs/roomMeta" } }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "relay-to-client" }
     },
     "roomAnnounced": {
       "type": "object",
@@ -213,6 +226,7 @@
       },
       "additionalProperties": false,
       "x-outpost-pi": {
+        "direction": "relay-to-client",
         "sessionIdCarriedOnly": true,
         "relayDoesNotRouteBy": ["session_id"]
       }
@@ -226,7 +240,8 @@
         "room_id": { "$ref": "#/$defs/roomId" },
         "since_ts": { "$ref": "#/$defs/epochMillis" }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "relay-to-client" }
     },
     "roomMetaUpdate": {
       "type": "object",
@@ -236,7 +251,8 @@
         "room_id": { "$ref": "#/$defs/roomId" },
         "meta": { "$ref": "#/$defs/roomMetaPatch" }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "client-to-relay" }
     }
   },
   "x-outpost-pi": {
