@@ -9,7 +9,7 @@ release_binding: null
 gate_origin: refactor
 created: 2026-07-15
 updated: 2026-07-17
-reviewed: 2026-07-17 (standard, gpt-5.6-sol fresh-context → ready; 1 nit parked: rpc_smoke.dart prints `Instance of 'RpcJsonObject'` — non-blocking, cosmetic smoke-tool diagnostic)
+reviewed: "2026-07-17 (standard, gpt-5.6-sol fresh-context → ready; 1 nit parked: rpc_smoke.dart prints `Instance of 'RpcJsonObject'` — non-blocking, cosmetic smoke-tool diagnostic)"
 ---
 
 # Cockpit: typed value objects at RPC domain boundaries

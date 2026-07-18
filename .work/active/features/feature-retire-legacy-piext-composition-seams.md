@@ -9,7 +9,7 @@ release_binding: null
 gate_origin: refactor
 created: 2026-07-15
 updated: 2026-07-17
-reviewed: 2026-07-17 (standard, gpt-5.6-sol fresh-context → ready, no findings)
+reviewed: "2026-07-17 (standard, gpt-5.6-sol fresh-context → ready, no findings)"
 ---
 
 # Retire transitional Pi-extension composition/test seams after module extraction
