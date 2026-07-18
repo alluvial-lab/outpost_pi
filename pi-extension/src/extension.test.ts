@@ -162,6 +162,7 @@ const {
   _getTranscriptEventsForTest,
   _setCurrentModelForTest,
   _setPiForTest,
+  _startRelayForTest,
   _getCurrentTurnIdForTest,
   _getTurnProjectionForTest,
   _hasActivePeerForTest,
@@ -4602,6 +4603,26 @@ describe("relay control channel + relay-state event", () => {
     expect(result).toEqual({ action: "handled" });
     await vi.waitFor(() => expect(lastRelayState(sendMessage)).toBeDefined());
     expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "disconnected", connected: false });
+  });
+
+  test("control dispatch observes unexpected async command rejection without rethrowing", async () => {
+    await _startRelayForTest(makeMockCtx());
+    const controlError = new Error("control teardown failed");
+    relayRef.current!.close.mockImplementationOnce(() => { throw controlError; });
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const input = captureEventHandler("input");
+      const result = input({ type: "input", text: `${CTRL_PREFIX}relay:off`, source: "rpc" });
+
+      expect(result).toEqual({ action: "handled" });
+      await vi.waitFor(() => expect(errorLog).toHaveBeenCalledWith(
+        `[outpost-pi] control command failed: ${String(controlError)}`,
+      ));
+      expect(errorLog).toHaveBeenCalledTimes(1);
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 
   test("structured outpost_pi_control input is swallowed and dispatches relay status", async () => {
