@@ -1,14 +1,14 @@
 ---
 id: feature-cockpit-async-action-ownership
 kind: feature
-stage: implementing
+stage: review
 tags: [cockpit, refactor, lifecycle]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: refactor
 created: 2026-07-15
-updated: 2026-07-17
+updated: 2026-07-18
 ---
 
 # Cockpit: shared async UI-action and teardown ownership
@@ -216,3 +216,18 @@ At sync-required callers: `ownAsync(_workspace.disposeTab(id))`. At already-asyn
 4. **Step 4** — explicit pane `close()` contract + awaited workspace teardown.
 5. Verify from `cockpit/`: `flutter analyze`, `flutter test`, `flutter build macos` (when toolchain available).
 6. Retag + detach `gate-cruft-empty-catch-formatter-reload` (behavior-changing); do NOT implement its error-reporting recommendation in this `[refactor]` feature.
+
+## Implementation
+
+Established `ownAsync` / `ownedAsyncAction` in `core/ui` as the single sync-to-async UI boundary. Failed detached futures are forwarded exactly once to the caller's originating zone, successful futures are inert, and synchronous action exceptions remain synchronous. Settings lifecycle launches/actions and Agent Composer callbacks now use that boundary without adding error UI, logging, retries, or fallback behavior.
+
+Separated Flutter's synchronous notifier disposal from asynchronous pane-resource shutdown with `PaneItem.close()`. Agent and terminal sessions await their process/subscription teardown before disposing notifier state. Workspace tab removal and debounce cancellation remain synchronous and immediate, while watcher cancellation and pane closure are awaited; project and full-projection teardown fan in across every selected tab. Already-async Cockpit boundaries await shutdown, and synchronous notifier/widget boundaries use `ownAsync`.
+
+`gate-cruft-empty-catch-formatter-reload` was already detached and retagged `[cockpit, bug]` by the design commit; its behavior-changing error-reporting recommendation was not implemented.
+
+## Verification
+
+- `flutter analyze` — passed with zero issues.
+- `flutter test` — passed, 249 tests.
+- Targeted async-action, settings, agent-session, workspace-projection, and Cockpit workspace command/document suites — passed.
+- `flutter build macos` — unavailable on this Linux host (`flutter build` has no `macos` subcommand); no macOS toolchain smoke was possible.
