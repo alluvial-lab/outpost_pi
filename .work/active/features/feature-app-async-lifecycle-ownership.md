@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: refactor
 created: 2026-07-15
-updated: 2026-07-17
+updated: 2026-07-18
 ---
 
 # App: explicit ownership and observability for discarded async work
@@ -902,3 +902,44 @@ polling.
 - Test-integrity: MIXED — good hardening overall (Completer gates, _waitUntil
   polling, convergence preserved), but finding 6 materially weakened two
   timer-policy proofs.
+
+## Corrective follow-up
+
+All six fresh-context review findings were corrected without changing the
+feature stage.
+
+1. `sendMessage` now captures lifecycle generation, session ref, and channel
+   identity before persistence; it revalidates after the append and reacquires
+   and checks channel/room liveness immediately before send. Completer-gated
+   channel-replacement and disposal tests prove stale completion cannot arm a
+   timer, publish working state, or send.
+2. Turn projections now carry a monotonic epoch. Every asynchronous projection
+   publisher checks the captured epoch, while terminal transitions advance it,
+   so a pre-terminal chunk cannot reopen working/streaming after terminal idle.
+   The regression blocks the chunk append, delivers `AgentDone`, releases the
+   chunk, fails the terminal append, and still observes idle.
+3. Mesh pulls capture mutation revision and Owner identity and revalidate them
+   after fetch, verification, and every storage await. Conflict handling
+   protects the local peer snapshot, applies the verified relay version,
+   restores the protected mutation, and only then retries. Gated-fetch and
+   last-peer conflict tests prove a new peer and an empty deletion cannot be
+   overwritten/resurrected.
+4. Pending-send failure convergence captures generation and revalidates after
+   transcript persistence. Queued session-index/runtime writes capture the same
+   lifecycle and check it immediately before each `put`; disposed/replaced work
+   cannot begin a final persistence mutation.
+5. `AppRouterOwner` now explicitly disposes the router boot state before DI
+   teardown. Owner reset captures an invalidation token and checks it after
+   `disconnect`; watcher installation is marked complete only after
+   `startWatching` succeeds. Tests cover synchronous install retry and disposal
+   during blocked disconnect.
+6. Timeout tests (b) and (c) again use the original 60 ms send deadline and
+   deterministic deadline polling. They respectively prove a cancelled timer
+   stays inert after its deadline and `delivery_pending` replaces it with the
+   extended timer.
+
+Verification from `app/`:
+
+- `flutter analyze lib test` — passed with no issues.
+- `flutter test --no-pub --concurrency=1 test/data/sync/sync_service_test.dart test/data/mesh/mesh_sync_service_test.dart test/routing/app_router_test.dart` — 119 tests passed.
+- `flutter test --concurrency=1` — 739 tests passed.
