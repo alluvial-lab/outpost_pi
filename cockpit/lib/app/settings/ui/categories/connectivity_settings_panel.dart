@@ -1,3 +1,4 @@
+import 'package:cockpit/app/core/ui/async_action.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:cockpit/app/settings/domain/entities/paired_device.dart';
@@ -23,7 +24,7 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
     // Load relay and devices lazily when this tab opens, avoiding an `outpost-pi`
     // shell-out when the user only visits Appearance.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<ConnectivityViewModel>().load();
+      if (mounted) ownAsync(context.read<ConnectivityViewModel>().load());
     });
   }
 
@@ -35,7 +36,8 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
     final vm = context.read<ConnectivityViewModel>();
     // The controller owns the ephemeral `pi --mode rpc` process, so create it
     // here and dispose it when the dialog closes.
-    final controller = vm.newPairingController()..start();
+    final controller = vm.newPairingController();
+    ownAsync(controller.start());
     final paired = await showDialog<bool>(
       context: context,
       builder: (_) => PairingDialog(controller: controller),
@@ -94,7 +96,8 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
 
     // Run revocation and show its result in a non-dismissible progress dialog.
     // The controller owns the ephemeral `pi --mode rpc` process until close.
-    final controller = vm.newRevokeController()..run(device);
+    final controller = vm.newRevokeController();
+    ownAsync(controller.run(device));
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -132,7 +135,7 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
                   children: [
                     _devicesCard(context, vm),
                     const SizedBox(height: 12),
-                    _PairButton(onTap: _openPairing),
+                    _PairButton(onTap: ownedAsyncAction(_openPairing)),
                   ],
                 ),
               ),
@@ -197,7 +200,10 @@ class _ConnectivitySettingsPanelState extends State<ConnectivitySettingsPanel> {
     return SettingsCard(
       children: [
         for (final device in vm.devices)
-          _DeviceTile(device: device, onRevoke: () => _confirmRevoke(device)),
+          _DeviceTile(
+            device: device,
+            onRevoke: ownedAsyncAction(() => _confirmRevoke(device)),
+          ),
       ],
     );
   }
@@ -286,7 +292,7 @@ class _RelayEditorState extends State<_RelayEditor> {
                     _vm.clearHealth(); // The previous check no longer applies.
                   },
                   onSubmitted: (_) {
-                    if (canSave) _save();
+                    if (canSave) ownAsync(_save());
                   },
                   style: context.typo.mono.copyWith(
                     fontSize: 12.5,
@@ -298,7 +304,7 @@ class _RelayEditorState extends State<_RelayEditor> {
               ),
               const SizedBox(width: 8),
               PrimaryButton(
-                onPressed: canSave ? () => _save() : null,
+                onPressed: canSave ? ownedAsyncAction(_save) : null,
                 child: Text(vm.savingRelay ? 'Saving…' : 'Save'),
               ),
             ],
@@ -316,7 +322,7 @@ class _RelayEditorState extends State<_RelayEditor> {
               OutlineButton(
                 onPressed: vm.healthState == HealthState.checking
                     ? null
-                    : () => vm.checkRelay(_ctrl.text),
+                    : ownedAsyncAction(() => vm.checkRelay(_ctrl.text)),
                 leading: const Icon(Icons.wifi_tethering, size: 15),
                 child: const Text('Check'),
               ),
