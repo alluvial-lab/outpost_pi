@@ -1,5 +1,8 @@
 import type { ByeReason, ThinkingLevel } from "../protocol/types.js";
-import type { RelayControlFrame } from "../protocol/generated/protocol.generated.js";
+import type {
+  RelayControlFrame,
+  RelayControlFrameRoomMetaUpdate,
+} from "../protocol/generated/protocol.generated.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import {
   REACHABILITY_RELAY_LIVENESS_CHECK_MS,
@@ -334,7 +337,12 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   ): void {
     if (!roomId) return;
     if (roomMeta) roomMeta = { ...roomMeta, ...patch };
-    relay?.sendControl({ type: "room_meta_update", room_id: roomId, meta: patch });
+    const frame = {
+      type: "room_meta_update",
+      room_id: roomId,
+      meta: patch,
+    } satisfies RelayControlFrameRoomMetaUpdate;
+    relay?.sendControl(frame);
   }
 
   function onOuterMessage(

@@ -50,13 +50,6 @@ export interface RoomMeta {
   working?: boolean;
 }
 
-/** Control frame sent to relay (not routed to app peer). */
-export interface RoomMetaUpdateFrame {
-  type: "room_meta_update";
-  room_id: string;
-  meta: { model?: string; thinking?: string; working?: boolean; session_id?: string };
-}
-
 export interface ConnectOptions {
   roomId?: string;
   roomMeta?: RoomMeta;
