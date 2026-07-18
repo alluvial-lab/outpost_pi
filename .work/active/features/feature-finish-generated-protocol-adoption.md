@@ -1,14 +1,14 @@
 ---
 id: feature-finish-generated-protocol-adoption
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, relay, cockpit, refactor, protocol]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: refactor
 created: 2026-07-15
-updated: 2026-07-17
+updated: 2026-07-18
 ---
 
 # Finish generated-protocol adoption and remove handwritten islands
@@ -236,3 +236,23 @@ impl RelayControlFrame {
 4. **Step 4** — generated Rust wire labels (small, independently verifiable Rust generator enhancement).
 5. **Step 5** — schema-covered outbound Rust frames (largest/highest-risk; land after Rust generator's discriminator API stable).
 6. **Feature-design follow-up (NOT this refactor):** define/generate `room_meta_updated` + decide compatibility-preserving cockpit/Dart adoption. Do not mark "generated-protocol adoption finished" until these explicitly non-equivalent gaps are resolved or durably declared out of scope.
+
+## Implementation summary
+
+- Execution capability: delegated cross-stack feature implementer; one owner carried all five ordered checkpoints to preserve wire-equivalence context across TypeScript codegen, relay client adapters, Rust codegen, and relay serialization.
+- Review weight: standard (project default); implementation stops at `review` for the orchestrator's independent feature-level pass.
+- Generated canonical-session registries now derive from schema profile metadata; the pi-extension facade contains no discriminator literals.
+- Relay auth and room metadata frames consume generated TypeScript contracts without widening the narrower adapter APIs.
+- Relay inbound labels and the six schema-covered outbound frame families now derive from generated Rust contracts and schema direction metadata.
+- Simplification: removed three auth DTO mirrors, the unused room metadata DTO, four session-scope registries, the Rust generator's handwritten inbound-type list, handler label repeats, and schema-covered outbound JSON maps.
+- Discrepancies from design: none. All replacements remained JSON-value wire-equivalent.
+
+## Integrated verification
+
+- `pi-extension`: typecheck, 23 targeted tests across relay client/transport/session scope, and build passed.
+- `protocol`: deterministic Rust generation check, 5 TypeScript codegen tests, and fresh TypeScript generation check passed.
+- `relay`: fmt, strict clippy, 183 tests across unit/integration suites, and build passed. `cargo test` still reports two pre-existing `unused_mut` warnings in test-only code; strict production clippy is green.
+
+## Explicit out-of-scope disposition
+
+This feature completes only the five wire-equivalent refactor islands. It does **not** declare global generated-protocol adoption finished. The behavior-changing `room_meta_updated` schema/codegen addition, broader nullable/optional room-meta contracts, and cockpit control discriminator/validator adoption remain separate feature-design work. `room_meta_updated` stays handwritten with a local schema-gap comment so its current wire shape is unchanged.
