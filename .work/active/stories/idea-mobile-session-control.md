@@ -1,12 +1,14 @@
 ---
-kind: story
-release_binding: null
-parent: feature-mobile-native-session-process-control
-stage: drafting
 id: idea-mobile-session-control
-created: 2026-06-29
-updated: 2026-07-08
+kind: story
+stage: drafting
 tags: [app, pi-extension]
+parent: feature-mobile-native-session-process-control
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-06-29
+updated: 2026-07-18
 ---
 
 # Mobile app: session control and command surface gaps
@@ -49,6 +51,23 @@ Random thoughts from operator use of the mobile app.
   reachable and earlier messages are missing/unreachable in the scrollable
   transcript. Could be a render windowing issue, history not being retained in
   the widget, or the scroll view clipping/limiting the loaded messages.
+
+## Design
+
+This story is the implementation unit **Quick Actions session-control
+ergonomics**. Keep its scope to the already typed mobile actions: `New
+session` (with its post-ACK local transcript reset), `Compact context`, and the
+existing model/thinking selectors. Clarify the New session confirmation and
+keep all controls room-scoped through `IActionsRepository`; do not create a
+free-form slash-command input.
+
+The following observations are explicitly deferred from this feature: `/reload`
+(the mobile surface must not imply it reloads `dist/index.js`), spawning new Pi
+processes or choosing a cwd, auto-scroll/history depth, hidden-tool status
+telemetry, and general slash-command parity. Those need their own design or
+belong to the chat-resilience work. The separate process-restart affordance is
+implemented by `idea-mobile-restart-pi-session-affordance`, which depends on
+this story's shared Quick Actions contract.
 
 ## UX/UI polish
 
