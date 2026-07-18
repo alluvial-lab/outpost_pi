@@ -767,13 +767,25 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
 
   maybeDrainQueuedMessage(
     deliver: (message: Extract<ClientMessage, { type: "user_message" }>) => void | Promise<void>,
+    onRejected: (
+      message: Extract<ClientMessage, { type: "user_message" }>,
+      error: unknown,
+    ) => void,
   ): void {
     const projection = this.turnProjection();
     const queued = projection.queuedMessage;
     if (!queued || !projection.canDrainQueuedMessage) return;
     this.applyTurn({ type: "queued_message_clear" });
     this.broadcastQueuedMessageState();
-    void deliver(this.currentSessionMessage({ type: "user_message", id: queued.id, text: queued.text }));
+    const message: Extract<ClientMessage, { type: "user_message" }> = this.currentSessionMessage({
+      type: "user_message",
+      id: queued.id,
+      text: queued.text,
+    });
+    const delivery = deliver(message);
+    if (isPromiseLike(delivery)) {
+      delivery.catch((error: unknown) => onRejected(message, error));
+    }
   }
 
   maybeSendLateAttachSessionSync(
