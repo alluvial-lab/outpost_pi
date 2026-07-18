@@ -1,5 +1,6 @@
 import 'package:cockpit/app/core/data/lsp/lsp_command.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_launchers.dart';
+import 'package:cockpit/app/core/ui/async_action.dart';
 import 'package:cockpit/app/core/ui/settings_controller.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
@@ -110,7 +111,7 @@ class _LanguageRowState extends State<_LanguageRow> {
       ..addListener(_onTextChanged);
     _formatterCtrl = TextEditingController(text: _savedFormatter)
       ..addListener(_onTextChanged);
-    _detect();
+    ownAsync(_detect());
   }
 
   @override
@@ -152,7 +153,7 @@ class _LanguageRowState extends State<_LanguageRow> {
     final formatter = _formatterCtrl.text.trim();
     widget.onChangedFormatter(formatter.isEmpty ? null : formatter);
     setState(() => _dirty = false);
-    _detect();
+    ownAsync(_detect());
   }
 
   /// Restore the default server and clear both command overrides.
@@ -162,7 +163,7 @@ class _LanguageRowState extends State<_LanguageRow> {
     widget.onChangedCommand(null);
     widget.onChangedFormatter(null);
     setState(() => _dirty = false);
-    _detect();
+    ownAsync(_detect());
   }
 
   @override
