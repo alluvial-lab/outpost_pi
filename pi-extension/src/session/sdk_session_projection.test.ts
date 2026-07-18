@@ -86,6 +86,36 @@ describe("SdkSessionProjection messageApi binding across session_start", () => {
   });
 });
 
+describe("SdkSessionProjection queued-message delivery rejection policy", () => {
+  test("observes an asynchronous rejection after clearing the queue", async () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
+    const rejection = new Error("queued delivery failed");
+    const deliver = vi.fn(() => Promise.reject(rejection));
+    const onRejected = vi.fn();
+
+    projection.applyTurn({ type: "queued_message_set", id: "queued-1", text: "deferred" });
+    projection.maybeDrainQueuedMessage(deliver, onRejected);
+
+    expect(projection.turnProjection()).toMatchObject({ phase: "idle", queuedMessage: null });
+    expect(outputs.broadcast).toHaveBeenCalledTimes(1);
+    const delivered = deliver.mock.calls[0]![0];
+    await vi.waitFor(() => expect(onRejected).toHaveBeenCalledOnce());
+    expect(onRejected).toHaveBeenCalledWith(delivered, rejection);
+  });
+
+  test("preserves synchronous delivery throws for the owning event handler", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    const rejection = new Error("synchronous queued delivery failure");
+    const onRejected = vi.fn();
+
+    projection.applyTurn({ type: "queued_message_set", id: "queued-2", text: "deferred" });
+    expect(() => projection.maybeDrainQueuedMessage(() => { throw rejection; }, onRejected)).toThrow(rejection);
+    expect(projection.turnProjection()).toMatchObject({ phase: "idle", queuedMessage: null });
+    expect(onRejected).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * Regression: a stale-ctx failure in `wakeAgent` (and the null-`messageApi`
  * window after a replacement) must be RECOVERABLE, not a permanent
