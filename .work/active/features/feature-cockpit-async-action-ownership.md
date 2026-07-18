@@ -9,7 +9,7 @@ release_binding: null
 gate_origin: refactor
 created: 2026-07-15
 updated: 2026-07-18
-reviewed: 2026-07-18 (standard, gpt-5.6-sol fresh-context → needs fixes; 1 blocker fixed + verified → done; no second pass per standard weight)
+reviewed: "2026-07-18 (standard, gpt-5.6-sol fresh-context → needs fixes; 1 blocker fixed + verified → done; no second pass per standard weight)"
 ---
 
 # Cockpit: shared async UI-action and teardown ownership
