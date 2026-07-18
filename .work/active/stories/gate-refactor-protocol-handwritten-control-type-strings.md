@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-finish-generated-protocol-adoption
-stage: drafting
+stage: done
 id: gate-refactor-protocol-handwritten-control-type-strings
 tags: []
 depends_on: []
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-18
 ---
 
 # Control handler repeats generated frame type strings
@@ -30,3 +30,11 @@ The generated RelayControlFrame match already identifies the control variant, bu
 
 ## Fix
 needs analysis: derive the label from the generated enum/registry or centralize a single generated-backed variant-to-wire-type helper.
+
+## Implementation
+- Execution capability: delegated feature implementer; the Rust generator and handler adoption were one bounded discriminator projection.
+- Generated `RelayControlFrame::wire_type()` from the same variant sequence as `RELAY_CONTROL_FRAME_TYPES`.
+- Routed peer-bound and rate-limit labels through the generated method instead of repeating six discriminator strings in production handlers.
+- Extended dispatch coverage to assert every generated inbound variant's label belongs to the generated registry.
+- Verification: generator syntax + deterministic Rust check, relay fmt, strict clippy, and all relay tests (180 total across unit/integration suites) passed.
+- Discrepancies from design: none.
