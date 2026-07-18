@@ -72,7 +72,9 @@ void main() {
       expect((viewer.view as FileViewText).text, 'two');
       expect(changes, greaterThan(0));
 
-      projection.disposeTab('v1');
+      final closing = projection.disposeTab('v1');
+      expect(projection.item('v1'), isNull);
+      await closing;
       reader.views['/workspace/lib/main.dart'] = const FileViewText(
         'three',
         language: 'dart',
@@ -82,7 +84,7 @@ void main() {
 
       expect(projection.item('v1'), isNull);
       expect((viewer.view as FileViewText).text, 'two');
-      projection.dispose();
+      await projection.dispose();
     },
   );
 
@@ -125,7 +127,7 @@ void main() {
           .having((tab) => tab.filePath, 'filePath', '/workspace/README.md'),
     );
 
-    projection.dispose();
+    await projection.dispose();
   });
 
   test('realizes agent descriptors and projects them back unchanged', () async {
@@ -178,7 +180,7 @@ void main() {
       projection.descriptorForAgent(session, project).preferredThinking,
       ThinkingLevel.high,
     );
-    projection.dispose();
+    await projection.dispose();
   });
 
   test('keeps placeholders distinct from unbooted agent descriptors', () async {
@@ -206,7 +208,7 @@ void main() {
       projection.descriptorFor(agent, project).preferredModelId,
       'gpt-test',
     );
-    projection.dispose();
+    await projection.dispose();
   });
 
   test('captures session path through descriptor-change callback', () async {
@@ -238,7 +240,8 @@ void main() {
       projection.descriptorForAgent(agent, project).sessionPath,
       '/sessions/new.jsonl',
     );
-    projection.dispose();
+    await agent.close();
+    await projection.dispose();
   });
 
   test(
@@ -264,13 +267,143 @@ void main() {
 
       expect(document.tabs['v1']!.filePath, '/workspace/stale.md');
       expect(refreshed.tabs['v1']!.filePath, '/workspace/current.md');
-      projection.dispose();
+      await projection.dispose();
+    },
+  );
+
+  test('disposeTab removes immediately and awaits agent teardown', () async {
+    final rpcFactory = _RpcFactory();
+    final projection = _projection(rpcFactory: rpcFactory);
+    final project = _project();
+    await projection.realizeAgent(
+      const WorkspaceTab.agent(id: 'a1', relativeSubpath: '', title: 'Agent'),
+      project,
+    );
+    final gateway = rpcFactory.lastGateway!;
+    final releaseKill = Completer<void>();
+    gateway.killGate = releaseKill;
+    var completed = false;
+
+    final closing = projection.disposeTab('a1')..then((_) => completed = true);
+
+    expect(projection.item('a1'), isNull);
+    await pumpEventQueue();
+    expect(gateway.killCalls, 1);
+    expect(gateway.disposeCalls, 0);
+    expect(completed, isFalse);
+
+    releaseKill.complete();
+    await closing;
+
+    expect(gateway.disposeCalls, 1);
+    expect(completed, isTrue);
+    await projection.dispose();
+  });
+
+  test(
+    'project and projection disposal await every terminal in order',
+    () async {
+      final terminalFactory = _TerminalFactory();
+      final projection = _projection(terminalFactory: terminalFactory);
+      final project = _project();
+      projection
+        ..createTerminal(
+          id: 't1',
+          projectId: project.id,
+          workingDirectory: project.path,
+        )
+        ..createTerminal(
+          id: 't2',
+          projectId: project.id,
+          workingDirectory: project.path,
+        );
+      final projectGates = <Completer<void>>[
+        Completer<void>(),
+        Completer<void>(),
+      ];
+      for (var i = 0; i < projectGates.length; i++) {
+        terminalFactory.gateways[i].killGate = projectGates[i];
+      }
+      final document = WorkspaceDocument(
+        projectId: project.id,
+        focusedPaneId: 'main',
+        root: const LeafPane(
+          id: 'main',
+          tabs: <String>['t1', 't2'],
+          active: 't1',
+        ),
+        tabs: const <String, WorkspaceTab>{
+          't1': WorkspaceTab.terminal(
+            id: 't1',
+            relativeSubpath: '',
+            title: 'Terminal 1',
+          ),
+          't2': WorkspaceTab.terminal(
+            id: 't2',
+            relativeSubpath: '',
+            title: 'Terminal 2',
+          ),
+        },
+      );
+      var projectDisposed = false;
+
+      final projectClosing = projection.disposeProject(document)
+        ..then((_) => projectDisposed = true);
+
+      expect(projection.item('t1'), isNull);
+      expect(projection.item('t2'), isNull);
+      await pumpEventQueue();
+      for (final gateway in terminalFactory.gateways) {
+        expect(gateway.lifecycle, <String>['cancel-output', 'kill']);
+      }
+      expect(projectDisposed, isFalse);
+      projectGates.first.complete();
+      await pumpEventQueue();
+      expect(projectDisposed, isFalse);
+      projectGates.last.complete();
+      await projectClosing;
+      expect(projectDisposed, isTrue);
+
+      projection
+        ..createTerminal(
+          id: 't3',
+          projectId: project.id,
+          workingDirectory: project.path,
+        )
+        ..createTerminal(
+          id: 't4',
+          projectId: project.id,
+          workingDirectory: project.path,
+        );
+      final projectionGates = <Completer<void>>[
+        Completer<void>(),
+        Completer<void>(),
+      ];
+      for (var i = 0; i < projectionGates.length; i++) {
+        terminalFactory.gateways[i + 2].killGate = projectionGates[i];
+      }
+      var projectionDisposed = false;
+
+      final allClosing = projection.dispose()
+        ..then((_) => projectionDisposed = true);
+
+      expect(projection.item('t3'), isNull);
+      expect(projection.item('t4'), isNull);
+      await pumpEventQueue();
+      expect(projectionDisposed, isFalse);
+      projectionGates.first.complete();
+      await pumpEventQueue();
+      expect(projectionDisposed, isFalse);
+      projectionGates.last.complete();
+      await allClosing;
+      expect(projectionDisposed, isTrue);
     },
   );
 }
 
 WorkspaceProjection _projection({
   _RpcFactory? rpcFactory,
+  _TerminalFactory? terminalFactory,
   _FileReader? reader,
   _History? history,
   void Function()? onChanged,
@@ -278,7 +411,7 @@ WorkspaceProjection _projection({
 }) {
   return WorkspaceProjection(
     rpcFactory: rpcFactory ?? _RpcFactory(),
-    terminalFactory: _TerminalFactory(),
+    terminalFactory: terminalFactory ?? _TerminalFactory(),
     fileReader: reader ?? _FileReader(),
     history: history ?? _History(),
     notifier: _Notifier(),
@@ -345,18 +478,36 @@ final class _History implements SessionHistory {
 }
 
 final class _TerminalFactory implements TerminalGatewayFactory {
+  final gateways = <_TerminalGateway>[];
+
   @override
-  TerminalGateway create() => _TerminalGateway();
+  TerminalGateway create() {
+    final gateway = _TerminalGateway();
+    gateways.add(gateway);
+    return gateway;
+  }
 }
 
 final class _TerminalGateway implements TerminalGateway {
-  final _output = StreamController<List<int>>.broadcast();
+  _TerminalGateway() {
+    _output = StreamController<List<int>>.broadcast(
+      onCancel: () => lifecycle.add('cancel-output'),
+    );
+  }
+
+  late final StreamController<List<int>> _output;
+  final lifecycle = <String>[];
+  Completer<void>? killGate;
 
   @override
   Stream<List<int>> get output => _output.stream;
 
   @override
-  Future<void> kill() async => _output.close();
+  Future<void> kill() async {
+    lifecycle.add('kill');
+    await killGate?.future;
+    await _output.close();
+  }
 
   @override
   void resize(int rows, int columns) {}
@@ -384,6 +535,9 @@ final class _RpcGateway implements RpcProcessGateway {
   String? spawnWorkingDirectory;
   Map<String, String>? spawnEnvironment;
   String? spawnSessionId;
+  Completer<void>? killGate;
+  var killCalls = 0;
+  var disposeCalls = 0;
 
   @override
   Stream<RpcEvent> get events => _events.stream;
@@ -409,7 +563,10 @@ final class _RpcGateway implements RpcProcessGateway {
       const Success([]);
 
   @override
-  void dispose() => unawaited(_events.close());
+  void dispose() {
+    disposeCalls++;
+    unawaited(_events.close());
+  }
 
   @override
   Future<Result<List<CockpitTranscriptEvent>, RpcError>> getMessages({
@@ -430,7 +587,10 @@ final class _RpcGateway implements RpcProcessGateway {
   );
 
   @override
-  Future<void> kill() async {}
+  Future<void> kill() async {
+    killCalls++;
+    await killGate?.future;
+  }
 
   @override
   Future<Result<void, RpcError>> newSession() async => const Success(null);

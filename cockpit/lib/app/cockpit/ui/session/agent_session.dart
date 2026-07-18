@@ -478,11 +478,11 @@ class AgentSession extends PaneItem {
 
   /// Kill the process and release all session resources when its tab closes.
   @override
-  Future<void> dispose() async {
+  Future<void> close() async {
     await _process.dispose();
     await _signalSub?.cancel();
     _signalSub = null;
-    super.dispose();
+    await super.close();
   }
 
   // ---- Controls (request/response) ------------------------------------------
