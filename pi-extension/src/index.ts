@@ -2464,7 +2464,12 @@ async function _deliverUserMessage(
 }
 
 function _maybeDrainQueuedMessage(): void {
-  _sdkSessionProjection.maybeDrainQueuedMessage((queued) => _deliverUserMessage(queued, null, "normal"));
+  _sdkSessionProjection.maybeDrainQueuedMessage(
+    (queued) => _deliverUserMessage(queued, null, "normal"),
+    (queued, error) => {
+      console.error(`[outpost-pi] queued delivery id=${queued.id} rejected: ${String(error)}`);
+    },
+  );
 }
 
 function _maybeSendLateAttachSessionSync(): void {
