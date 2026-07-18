@@ -116,6 +116,19 @@ export const CLIENT_MESSAGE_TYPES = [
   "list_models",
 ] as const;
 export type ClientMessageType = (typeof CLIENT_MESSAGE_TYPES)[number];
+export const SESSION_SCOPED_CLIENT_MESSAGE_TYPES = [
+  "user_message",
+  "queued_message_set",
+  "queued_message_clear",
+  "approve_tool",
+  "cancel",
+  "session_sync",
+  "session_new",
+  "session_compact",
+  "model_set",
+  "thinking_set",
+  "list_models",
+] as const;
 export const appPiClientTypes = CLIENT_MESSAGE_TYPES;
 export type AppPiClientType = ClientMessageType;
 
@@ -246,6 +259,23 @@ export const SERVER_MESSAGE_TYPES = [
   "models_list",
 ] as const;
 export type ServerMessageType = (typeof SERVER_MESSAGE_TYPES)[number];
+export const SESSION_SCOPED_SERVER_MESSAGE_TYPES = [
+  "user_input",
+  "user_message",
+  "queued_message_state",
+  "agent_chunk",
+  "agent_done",
+  "agent_message",
+  "compaction",
+  "tool_request",
+  "tool_result",
+  "error",
+  "cancelled",
+  "session_history",
+  "action_ok",
+  "action_error",
+  "models_list",
+] as const;
 export const appPiServerTypes = SERVER_MESSAGE_TYPES;
 export type AppPiServerType = ServerMessageType;
 
