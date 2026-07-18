@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cockpit/app/core/ui/async_action.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:cockpit/app/settings/domain/entities/cron_job.dart';
@@ -25,12 +26,12 @@ class _ScheduleSettingsPanelState extends State<ScheduleSettingsPanel> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<CronViewModel>().reload();
+      if (mounted) ownAsync(context.read<CronViewModel>().reload());
     });
     // No supervisor push channel: poll so runs, next_run, and last_status made
     // outside this UI are reflected while the schedule panel is mounted.
     _poll = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted) context.read<CronViewModel>().refreshQuiet();
+      if (mounted) ownAsync(context.read<CronViewModel>().refreshQuiet());
     });
   }
 
@@ -134,7 +135,7 @@ class _ScheduleSettingsPanelState extends State<ScheduleSettingsPanel> {
     return Row(
       children: [
         PrimaryButton(
-          onPressed: vm.hasDaemons ? () => _openEditor() : null,
+          onPressed: vm.hasDaemons ? ownedAsyncAction(_openEditor) : null,
           leading: const Icon(Icons.add, size: 16),
           child: const Text('Create schedule'),
         ),
@@ -217,7 +218,7 @@ class _ScheduleSettingsPanelState extends State<ScheduleSettingsPanel> {
             job: job,
             daemonName: vm.daemonName(job.daemonId),
             busy: vm.isBusy(job.id),
-            onToggle: (v) => vm.setEnabled(job, v),
+            onToggle: (v) => ownAsync(vm.setEnabled(job, v)),
             onRun: () => vm.run(job),
             onLog: () => _openLog(job),
             onRemove: () => _confirmRemove(job),
@@ -327,7 +328,7 @@ class _CronTile extends StatelessWidget {
       tooltip: (context) => TooltipContainer(child: Text(tip)),
       child: HoverTap(
         borderRadius: BorderRadius.circular(6),
-        onTap: () => onTap(),
+        onTap: ownedAsyncAction(onTap),
         child: SizedBox(
           width: 30,
           height: 30,
