@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cockpit/app/core/ui/async_action.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:cockpit/app/settings/domain/entities/daemon_info.dart';
@@ -23,11 +24,13 @@ class _DaemonSettingsPanelState extends State<DaemonSettingsPanel> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<DaemonsViewModel>().reload();
+      if (mounted) ownAsync(context.read<DaemonsViewModel>().reload());
     });
     // Reflect state changes made outside this UI (crash/restart/uptime).
     _poll = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted) context.read<DaemonsViewModel>().refreshQuiet();
+      if (mounted) {
+        ownAsync(context.read<DaemonsViewModel>().refreshQuiet());
+      }
     });
   }
 
@@ -156,7 +159,7 @@ class _DaemonSettingsPanelState extends State<DaemonSettingsPanel> {
               if (vm.online) ...[
                 _DaemonActionsBar(
                   vm: vm,
-                  onCreate: () => _openEditor(),
+                  onCreate: _openEditor,
                   onRestartSupervisor: _confirmRestartSupervisor,
                 ),
                 const SizedBox(height: 16),
@@ -296,7 +299,7 @@ class _DaemonActionsBar extends StatelessWidget {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         PrimaryButton(
-          onPressed: () => onCreate(),
+          onPressed: ownedAsyncAction(onCreate),
           leading: const Icon(Icons.add, size: 16),
           child: const Text('Create daemon'),
         ),
@@ -351,7 +354,7 @@ class _FleetButton extends StatelessWidget {
     final enabled = onTap != null;
     final fg = enabled ? (tint ?? colors.text2) : colors.text4;
     return OutlineButton(
-      onPressed: onTap == null ? null : () => onTap!(),
+      onPressed: onTap == null ? null : ownedAsyncAction(onTap!),
       leading: Icon(icon, size: 14, color: fg),
       child: Text(label, style: TextStyle(fontSize: 12.5, color: fg)),
     );
@@ -483,7 +486,7 @@ class _DaemonTile extends StatelessWidget {
       tooltip: (context) => TooltipContainer(child: Text(tip)),
       child: HoverTap(
         borderRadius: BorderRadius.circular(6),
-        onTap: () => onTap(),
+        onTap: ownedAsyncAction(onTap),
         child: SizedBox(
           width: 30,
           height: 30,
