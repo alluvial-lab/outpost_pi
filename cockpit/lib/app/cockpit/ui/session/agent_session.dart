@@ -695,8 +695,16 @@ class AgentSession extends PaneItem {
         :final message,
       ):
         _addInfo('retrying ($attempt/$maxAttempts in ${delayMs}ms) — $message');
-      case RpcDiagnostic(:final text):
-        _addInfo('stderr: $text');
+      case RpcDiagnostic(:final kind):
+        switch (kind) {
+          case RpcDiagnosticKind.childStderr:
+            _addInfo(
+              'agent emitted diagnostic output (content hidden)',
+              dedup: true,
+            );
+          case RpcDiagnosticKind.streamReadFailure:
+            _addInfo('agent diagnostic stream failed', isError: true);
+        }
       case RpcProcessExit(:final code):
         _addInfo('process exited (code=$code)', isError: code != 0);
       case RpcNotice(:final message, :final level):

@@ -454,11 +454,11 @@ class PiRpcProcess implements RpcProcessGateway {
 
   void _onStderrLine(String line) {
     if (line.trim().isEmpty) return;
-    _emit(RpcDiagnostic(line));
+    _emit(const RpcDiagnostic(RpcDiagnosticKind.childStderr));
   }
 
-  void _onStreamError(Object error, StackTrace stackTrace) {
-    _emit(RpcDiagnostic('stream error: $error'));
+  void _onStreamError(Object _, StackTrace __) {
+    _emit(const RpcDiagnostic(RpcDiagnosticKind.streamReadFailure));
   }
 
   void _onExit(int code) {
