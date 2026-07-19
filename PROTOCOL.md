@@ -1,7 +1,7 @@
 # Outpost-Pi — Protocol & Security
 
 Canonical documentation for the Outpost-Pi protocol and protection model.
-Updated 2026-06-09.
+Updated 2026-07-19.
 
 ---
 
@@ -61,6 +61,41 @@ Updated 2026-06-09.
 │                    coexist.                                         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Relay ingress validation and bounds
+
+`protocol/schema/` is the relay wire source of truth. Protocol codegen projects
+its types, directional registries, ingress limits, and runtime validators into
+the extension; Dart and Rust consume their generated typed projections. The
+extension checks the raw UTF-8 frame limit before `JSON.parse`, validates the
+parsed outer/control/cross-PC object with generated predicates, and only then
+base64-decodes an accepted outer `ct`. The resulting typed ingress object is
+decoded once and fanned out to owner, peer-channel, and cross-PC consumers.
+
+The canonical outer sender shape is strict: `{peer, room, ct}`, all three
+strings non-empty, with `additionalProperties: false`. Codegen also emits an
+endpoint `compat` projection for the pre-rewrite receive shape: it may omit
+`room`, but a present room must still be non-empty and unknown properties stay
+rejected. This compatibility projection does not weaken the canonical
+room-required type used for extension→relay sends or the relay's strict Serde
+boundary. Generated cross-PC predicates likewise enforce non-empty recipient
+arrays, non-empty string reply ids (`re`), and closed object shapes.
+
+The schema-owned endpoint defaults are:
+
+- 4 MiB maximum decoded outer `ct`;
+- 64 KiB frame overhead, producing a 5,657,944-byte raw-message ceiling;
+- 16 KiB for pre-auth challenge/auth frames;
+- bounded device, room, cwd, session, model, and thinking metadata.
+
+Rust applies WebSocket frame/message caps before typed Serde dispatch. The Node
+extension also configures `ws.maxPayload`. Flutter checks raw UTF-8 length
+before `jsonDecode` and routes generated relay DTOs before base64 decoding, but
+its WebSocket API cannot prevent the platform from first allocating the
+received message. Raising a relay deployment override does not raise the
+endpoints' generated 4 MiB default.
 
 ---
 
