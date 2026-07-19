@@ -20,6 +20,18 @@ class SessionReadRepository extends Repository {
 
   final LocalBoxes _boxes;
 
+  /// Read the current ordered message projection for a canonical session.
+  Future<List<MessageRecord>> readMessages(RemoteSessionRef ref) async {
+    final box = await _boxes.msgsBox(ref);
+    final byKey = <int, MessageRecord>{};
+    for (final key in box.keys) {
+      byKey[(key as num).toInt()] = MessageRecord.fromJson(
+        _coerce(box.get(key)),
+      );
+    }
+    return _sorted(byKey);
+  }
+
   /// Reactive ordered message list for a canonical remote session. Emits the
   /// current snapshot on listen, then an updated list per row change.
   ///

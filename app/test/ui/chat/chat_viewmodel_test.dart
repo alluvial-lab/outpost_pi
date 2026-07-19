@@ -171,6 +171,29 @@ class _FailingWatchReadRepository extends SessionReadRepository {
   }
 }
 
+class _ResumeReadRepository extends SessionReadRepository {
+  _ResumeReadRepository(super.boxes);
+
+  final messagesController = StreamController<List<MessageRecord>>.broadcast();
+  List<MessageRecord> snapshot = const [];
+  Completer<List<MessageRecord>>? deferredRead;
+  int watchCount = 0;
+
+  @override
+  Stream<List<MessageRecord>> watchMessages(RemoteSessionRef ref) {
+    watchCount += 1;
+    return messagesController.stream;
+  }
+
+  @override
+  Future<List<MessageRecord>> readMessages(RemoteSessionRef ref) async =>
+      deferredRead?.future ?? snapshot;
+
+  void emit(List<MessageRecord> rows) => messagesController.add(rows);
+
+  Future<void> close() => messagesController.close();
+}
+
 class _EventSyncService extends SyncService {
   _EventSyncService(super.connectionManager, super.boxes);
 
@@ -305,6 +328,67 @@ void main() {
     sync.dispose();
     conn.dispose();
   });
+
+  test(
+    'resume refresh repopulates retained route without duplicate subscriptions',
+    () async {
+      final ch = _FakeChannel();
+      final storage = _FakeStorage();
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+      );
+      final boxes = LocalBoxes();
+      final sync = SyncService(conn, boxes);
+      final read = _ResumeReadRepository(boxes);
+      final prefs = Preferences(_FakeSecureStorage());
+      await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+      await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+      await _adoptWithSession(conn, ch);
+      final vm = ChatViewModel(read, sync, conn, prefs, storage);
+      await vm.initialize();
+
+      final row = MessageRecord(
+        id: 'resume-user',
+        seq: 0,
+        role: MsgRole.user,
+        text: 'still here',
+        ts: DateTime.utc(2026, 1, 1),
+      );
+      read.snapshot = [row];
+      read.emit([row]);
+      await Future<void>.delayed(Duration.zero);
+      expect((vm.state as ChatReady).messages, hasLength(1));
+
+      read.emit(const []);
+      await Future<void>.delayed(Duration.zero);
+      expect((vm.state as ChatReady).messages, isEmpty);
+
+      await vm.refreshOnResume();
+      await vm.refreshOnResume();
+      expect((vm.state as ChatReady).messages.map((message) => message.id), [
+        'resume-user',
+      ]);
+      expect(
+        read.watchCount,
+        1,
+        reason: 'resume reuses the retained subscription',
+      );
+
+      read.emit(const []);
+      await Future<void>.delayed(Duration.zero);
+      read.deferredRead = Completer<List<MessageRecord>>();
+      final staleRefresh = vm.refreshOnResume();
+      vm.dispose();
+      read.deferredRead!.complete([row]);
+      await staleRefresh;
+      expect((vm.state as ChatReady).messages, isEmpty);
+
+      await read.close();
+      sync.dispose();
+      conn.dispose();
+    },
+  );
 
   test('activation failure becomes ChatInitializationFailed', () async {
     final ch = _FakeChannel();
