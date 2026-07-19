@@ -129,6 +129,7 @@ TranscriptProjection deriveTranscriptProjection({
   final failedUsers = <String, UserMessageFailed>{};
   final authoritativeMessages = <ChatMessage>[];
   final authoritativeIds = <String>{};
+  final assistantReplyTo = <String, String>{};
   final toolIndexes = <String, int>{};
   StreamingMessage? streaming;
   var turn = TranscriptTurnView.idle;
@@ -232,6 +233,7 @@ TranscriptProjection deriveTranscriptProjection({
           replyTo: event.replyTo,
         );
       case AssistantMessageCommitted():
+        assistantReplyTo[event.messageId] = event.replyTo;
         appendAuthoritative(
           AssistantMsg(id: event.messageId, text: event.text),
         );
@@ -309,8 +311,24 @@ TranscriptProjection deriveTranscriptProjection({
     );
   }
 
+  final messages = [...authoritativeMessages, ...localTail];
+  // Append order remains the event-log replay contract. The materialized chat
+  // adds only the stable reply relationship: a prompt must precede assistant
+  // rows that name it, even when confirmation arrived after the response.
+  for (final user in messages.whereType<UserMsg>().toList(growable: false)) {
+    final userIndex = messages.indexWhere((message) => message.id == user.id);
+    final responseIndex = messages.indexWhere(
+      (message) =>
+          message is AssistantMsg && assistantReplyTo[message.id] == user.id,
+    );
+    if (responseIndex >= 0 && userIndex > responseIndex) {
+      messages.removeAt(userIndex);
+      messages.insert(responseIndex, user);
+    }
+  }
+
   return TranscriptProjection(
-    messages: List.unmodifiable([...authoritativeMessages, ...localTail]),
+    messages: List.unmodifiable(messages),
     streaming: streaming,
     turn: turn,
     steering: steering,
