@@ -439,7 +439,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     // No "loading"/connecting screen — once a peer is selected we always
     // render ChatReady (empty until the DB/stream delivers rows) and just
     // replace it as updates arrive. The connecting/offline status is shown
-    // inline (banner + presence dot via isOffline/peerPresence), never as a
+    // inline through the composed transport projection, never as a
     // full-screen spinner, so entering the chat doesn't flicker.
     if (_activePeer == null) {
       return _bootstrapping
