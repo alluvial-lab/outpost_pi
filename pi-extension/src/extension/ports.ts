@@ -9,6 +9,7 @@ import type {
   ServerMessage,
   ThinkingLevel,
 } from "../protocol/types.js";
+import type { DecodedRelayIngress } from "../protocol/relay_ingress.js";
 import type { RelayClient, RoomMeta } from "../transport/relay_client.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
@@ -78,7 +79,12 @@ export interface RelayTransportPort {
   start(input: RelayStartInput): Promise<RelayStartResult>;
   stop(reason?: ByeReason): void;
   sendRoomMeta(patch: Partial<RoomMeta> & { working?: boolean; thinking?: ThinkingLevel }): void;
-  onOuterMessage(handler: (line: string, isCurrent: () => boolean) => void | Promise<void>): () => void;
+  onOuterMessage(
+    handler: (
+      ingress: Extract<DecodedRelayIngress, { kind: "outer" }>,
+      isCurrent: () => boolean,
+    ) => void | Promise<void>,
+  ): () => void;
   createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel;
   subscribePresence(peers: readonly string[]): void;
   attachCrossPcBridge(input: CrossPcBridgeInput): Promise<void>;
