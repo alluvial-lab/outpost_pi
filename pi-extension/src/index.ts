@@ -1175,7 +1175,7 @@ const _sdkSessionProjection: SdkSessionProjection = new SdkSessionProjection({
     sendTo: (sender, message) => sender.send(message),
     publishRoomMeta: (patch) => _publishRoomMetaPatch(patch),
     activeOwnerIds: () => _owners.peerIds(),
-    lateAttachTargets: () => _owners.entries(),
+    lateAttachTargets: () => _owners.lateAttachEntries(),
     handleClientMessage: (sender, message) => _routeClientMessageFrom(sender as PlainPeerChannel, message, _lastEventCtx ?? _lastCtx ?? _noopCtx),
     onStaleMessageApi: (api) => _forgetStaleMessageApi(api),
     deliveryDebugLog: _deliveryDebugLog,
