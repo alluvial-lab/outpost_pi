@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-no-steering-indicator-when-queued
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, ux, bug]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
@@ -85,3 +85,11 @@ be hidden by the AppBar priority chain. Close this finding when one accepted
 steer produces one visible pending indicator without replacing the active turn.
 The separate pickup/reorder semantics remain in
 `idea-mobile-queued-message-does-not-reorder`.
+
+## Implementation
+
+Closed as provenance for
+`feature-mobile-tui-parity-chat-resilience-status-projection`. Steering is now
+a typed overlay beside transport and turn, rendered independently as
+`steering…` rather than competing in the old priority chain. Semantic pickup
+and row placement remain owned by the dependent ordering story.
