@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 // Plan/28 Wave C — Quick Actions bottom sheet widget tests.
 //
@@ -8,12 +9,18 @@ import 'dart:async';
 // `IActionsRepository` so we don't spin up the DI graph or a live channel.
 
 import 'package:app/data/actions/actions_repository.dart';
+import 'package:app/data/local/boxes.dart';
+import 'package:app/data/sync/sync_service.dart';
+import 'package:app/data/transport/channel.dart';
+import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/chat/quick_actions/states/quick_actions_state.dart';
 import 'package:app/ui/chat/quick_actions/viewmodels/quick_actions_viewmodel.dart';
 import 'package:app/ui/chat/quick_actions/widgets/quick_actions_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 
 class _FakeRepo implements IActionsRepository {
@@ -74,6 +81,65 @@ class _FakeRepo implements IActionsRepository {
   void dispose() {}
 }
 
+class _LifecycleChannel implements IChannel, IControlLink {
+  final _messages = StreamController<ServerMessage>.broadcast();
+  final _controls = StreamController<ControlInbound>.broadcast();
+  final _sentEvents = StreamController<ClientMessage>.broadcast();
+  final List<ClientMessage> sent = [];
+  final List<Map<String, dynamic>> sentControl = [];
+
+  @override
+  Stream<ServerMessage> get serverMessages => _messages.stream;
+
+  @override
+  Stream<ControlInbound> get controlFrames => _controls.stream;
+
+  @override
+  Future<void> send(ClientMessage msg) async {
+    sent.add(msg);
+    _sentEvents.add(msg);
+  }
+
+  Future<T> waitForSend<T extends ClientMessage>({
+    bool Function(T message)? where,
+  }) async {
+    bool matches(T message) => where?.call(message) ?? true;
+    for (final message in sent.whereType<T>()) {
+      if (matches(message)) return message;
+    }
+    return _sentEvents.stream
+        .where((message) => message is T && matches(message))
+        .cast<T>()
+        .first
+        .timeout(const Duration(seconds: 1));
+  }
+
+  @override
+  void sendControl(Map<String, dynamic> json) => sentControl.add(json);
+
+  void push(ServerMessage message) => _messages.add(message);
+
+  void pushControl(ControlInbound control) => _controls.add(control);
+
+  @override
+  Future<void> close() async {
+    if (!_messages.isClosed) await _messages.close();
+    if (!_controls.isClosed) await _controls.close();
+    if (!_sentEvents.isClosed) await _sentEvents.close();
+  }
+}
+
+class _LifecycleStorage extends PairingStorage {
+  _LifecycleStorage(this.peer);
+
+  final PeerRecord peer;
+
+  @override
+  Future<List<PeerRecord>> listPeers() async => [peer];
+}
+
+late Directory _hiveDirectory;
+
 /// Opens the real sheet body over a host Scaffold. Returns the fake repo and
 /// a list appended to by the `onSessionReset` callback.
 Future<({_FakeRepo repo, List<int> resetCalls})> _openSheet(
@@ -121,6 +187,24 @@ Future<({_FakeRepo repo, List<int> resetCalls})> _openSheet(
 }
 
 void main() {
+  setUpAll(() async {
+    _hiveDirectory = Directory(
+      '${Directory.current.path}/.dart_tool/quick_actions_reconnect_hive',
+    );
+    if (_hiveDirectory.existsSync()) {
+      _hiveDirectory.deleteSync(recursive: true);
+    }
+    _hiveDirectory.createSync(recursive: true);
+    await LocalBoxes.initForTest(_hiveDirectory.path);
+  });
+
+  tearDownAll(() async {
+    await Hive.close();
+    if (_hiveDirectory.existsSync()) {
+      _hiveDirectory.deleteSync(recursive: true);
+    }
+  });
+
   testWidgets('Compact: tap sends and closes the sheet — no success toast', (
     tester,
   ) async {
@@ -321,6 +405,160 @@ void main() {
         ),
         findsOneWidget,
       );
+    },
+  );
+
+  test(
+    'Restart Pi: ACK then channel loss rehydrates successor and rejects stale frames',
+    () async {
+      const oldSession = 'session-before-exit-42';
+      const successorSession = 'session-after-exit-42';
+      const peer = PeerRecord(
+        remoteEpk: 'epk_restart',
+        sessionName: 'Pi',
+        relayUrl: 'ws://localhost',
+        pairedAt: '2026-01-01T00:00:00Z',
+        roomId: 'main',
+      );
+      final oldChannel = _LifecycleChannel();
+      final connection = ConnectionManager(
+        factory: (_, _) async => oldChannel,
+        storage: _LifecycleStorage(peer),
+        emitDebounce: Duration.zero,
+      );
+      final sync = SyncService(connection, LocalBoxes());
+      final actions = ActionsRepository(connection);
+      addTearDown(() async {
+        actions.dispose();
+        sync.dispose();
+        await connection.disconnect();
+        connection.dispose();
+      });
+
+      final repositoryOnline = actions.activeRoomMetaStream.firstWhere(
+        (meta) => meta.peerEpk == peer.remoteEpk,
+      );
+      connection.adopt(oldChannel, peer);
+      await repositoryOnline.timeout(const Duration(seconds: 1));
+
+      final oldSessionReady = connection.roomsStream.firstWhere(
+        (_) => connection.activeSessionId == oldSession,
+      );
+      oldChannel.push(
+        const PairOk(
+          inReplyTo: 'initial-pair',
+          sessionName: 'Pi',
+          sessionStartedAt: 1000,
+          roomId: 'main',
+          sessionId: oldSession,
+        ),
+      );
+      await oldSessionReady.timeout(const Duration(seconds: 1));
+      await sync.activate(peer.remoteEpk, 'main');
+      sync.requestSync();
+      await oldChannel.waitForSend<SessionSync>(
+        where: (message) => message.sessionId == oldSession,
+      );
+      expect(sync.activeSessionRef?.sessionId, oldSession);
+
+      final working = sync.turnViewStream.firstWhere((turn) => turn.working);
+      oldChannel.push(
+        const AgentChunk(
+          sessionId: oldSession,
+          inReplyTo: 'turn-before-restart',
+          delta: 'partial',
+        ),
+      );
+      await working.timeout(const Duration(seconds: 1));
+      expect(sync.turnProjection.working, isTrue);
+
+      final action = actions.newSession();
+      final request = await oldChannel.waitForSend<SessionNew>();
+      expect(request.sessionId, oldSession);
+      expect(
+        sync.turnProjection.working,
+        isTrue,
+        reason: 'local reset must remain ACK-gated',
+      );
+      oldChannel.push(
+        ActionOk(
+          sessionId: oldSession,
+          inReplyTo: request.id,
+          action: ActionName.sessionNew,
+          rawAction: 'session_new',
+        ),
+      );
+      await action;
+      await sync.clearActiveSession();
+      expect(sync.turnProjection.working, isFalse);
+      expect(sync.turnProjection.cancelTargetId, isNull);
+
+      final retrying = connection.statusStream.firstWhere(
+        (status) => status is StatusRetrying,
+      );
+      await oldChannel.close();
+      expect(
+        await retrying.timeout(const Duration(seconds: 1)),
+        isA<StatusRetrying>(),
+      );
+      expect(sync.turnProjection.working, isFalse);
+
+      final successor = _LifecycleChannel();
+      connection.adopt(successor, peer);
+      final successorSync = successor.waitForSend<SessionSync>(
+        where: (message) => message.sessionId == successorSession,
+      );
+      successor.pushControl(
+        const RoomsSnapshot(
+          peer: 'epk_restart',
+          rooms: [
+            RoomInfo(
+              roomId: 'main',
+              sessionId: successorSession,
+              startedAt: 2000,
+              working: false,
+            ),
+          ],
+        ),
+      );
+      final syncRequest = await successorSync;
+      expect(connection.activeSessionId, successorSession);
+      expect(sync.activeSessionRef?.sessionId, successorSession);
+      expect(syncRequest.sessionId, successorSession);
+
+      successor.push(
+        SessionHistory(
+          sessionId: successorSession,
+          inReplyTo: syncRequest.id,
+          sessionStartedAt: 2000,
+          events: const [],
+          eos: true,
+        ),
+      );
+      final staleFrameBarrier = sync.queuedStream.firstWhere(
+        (text) => text == 'successor-ready',
+      );
+      successor.push(
+        const AgentChunk(
+          sessionId: oldSession,
+          inReplyTo: 'late-old-turn',
+          delta: 'must be rejected',
+        ),
+      );
+      successor.push(
+        const QueuedMessageState(
+          sessionId: successorSession,
+          id: 'barrier',
+          text: 'successor-ready',
+        ),
+      );
+      await staleFrameBarrier.timeout(const Duration(seconds: 1));
+      expect(
+        sync.turnProjection.working,
+        isFalse,
+        reason: 'a late old-session frame must not revive working state',
+      );
+      expect(sync.streaming, isNull);
     },
   );
 
