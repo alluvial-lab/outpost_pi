@@ -244,7 +244,7 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
       return;
     }
     await widget.onSessionReset?.call();
-    _showInfo('Restarting Pi — reconnecting…');
+    _showInfo('Session reset accepted; a supervised Pi may reconnect briefly.');
   }
 
   /// Close the sheet before showing a destructive confirmation dialog.

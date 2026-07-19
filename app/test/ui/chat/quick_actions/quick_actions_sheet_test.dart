@@ -301,13 +301,23 @@ void main() {
 
       expect(s.repo.newSessionCalls, 1);
       expect(s.resetCalls, isEmpty);
-      expect(find.text('Restarting Pi — reconnecting…'), findsNothing);
+      expect(
+        find.text(
+          'Session reset accepted; a supervised Pi may reconnect briefly.',
+        ),
+        findsNothing,
+      );
 
       completion.complete();
       await tester.pumpAndSettle();
 
       expect(s.resetCalls, [1]);
-      expect(find.text('Restarting Pi — reconnecting…'), findsOneWidget);
+      expect(
+        find.text(
+          'Session reset accepted; a supervised Pi may reconnect briefly.',
+        ),
+        findsOneWidget,
+      );
     },
   );
 
@@ -323,7 +333,12 @@ void main() {
     expect(s.repo.newSessionCalls, 1);
     expect(s.resetCalls, isEmpty);
     expect(find.text('new boom'), findsOneWidget);
-    expect(find.text('Restarting Pi — reconnecting…'), findsNothing);
+    expect(
+      find.text(
+        'Session reset accepted; a supervised Pi may reconnect briefly.',
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('thinking segment forwards level to repo', (tester) async {
