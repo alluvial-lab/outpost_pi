@@ -1,4 +1,7 @@
-import { decodeClient } from "../protocol/codec.js";
+import {
+  decodeRelayClientPayload,
+  decodeRelayIngress,
+} from "../protocol/relay_ingress.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
 import type { RelayClient } from "./relay_client.js";
 
@@ -102,31 +105,16 @@ export class PlainPeerChannel implements PeerChannel {
 
   private _onLine(line: string): void {
     if (this.detached) return;
-    let outer: OuterEnvelope;
+    let decoded;
     try {
-      outer = JSON.parse(line) as OuterEnvelope;
-    } catch {
-      return; // malformed line
-    }
-
-    if (outer.peer !== this.remotePeerId) return;
-    if (!outer.ct) return;
-
-    let plaintext: string;
-    try {
-      plaintext = Buffer.from(outer.ct, "base64").toString("utf8");
+      decoded = decodeRelayIngress(line);
     } catch {
       return;
     }
+    if (decoded.kind !== "outer" || decoded.frame.peer !== this.remotePeerId) return;
 
-    let msg: ClientMessage;
-    try {
-      msg = decodeClient(plaintext);
-    } catch {
-      return;
-    }
-
-    if (this.detached) return;
+    const msg = decodeRelayClientPayload(decoded.payloadUtf8);
+    if (!msg || this.detached) return;
     this.onMessage(msg);
   }
 }
