@@ -115,6 +115,59 @@ fn hello_missing_device_id_is_rejected() {
     assert!(matches!(err, AuthError::Json(_)), "got {err:?}");
 }
 
+#[test]
+fn oversized_invalid_hello_rejects_before_json_parse() {
+    let line = "x".repeat(crate::protocol::outer::MAX_PRE_AUTH_FRAME_BYTES + 1);
+    let err = parse_hello_bootstrap(&line, 0).unwrap_err();
+    assert!(matches!(err, AuthError::FrameTooLarge { .. }));
+}
+
+#[test]
+fn oversized_hello_metadata_is_rejected() {
+    let sk = SigningKey::generate(&mut rand::thread_rng());
+    let pubkey = B64.encode(sk.verifying_key().to_bytes());
+    let line = serde_json::json!({
+        "type": "hello",
+        "pubkey": pubkey,
+        "device_id": "d".repeat(129),
+        "room_id": "main",
+    })
+    .to_string();
+
+    let err = parse_hello_bootstrap(&line, 0).unwrap_err();
+    assert!(matches!(
+        err,
+        AuthError::FieldTooLarge {
+            field: "device_id",
+            actual: 129,
+            max: 128,
+        }
+    ));
+}
+
+#[test]
+fn metadata_limits_count_utf8_bytes() {
+    let sk = SigningKey::generate(&mut rand::thread_rng());
+    let pubkey = B64.encode(sk.verifying_key().to_bytes());
+    let line = serde_json::json!({
+        "type": "hello",
+        "pubkey": pubkey,
+        "device_id": "device",
+        "room_id": "é".repeat(129),
+    })
+    .to_string();
+
+    let err = parse_hello_bootstrap(&line, 0).unwrap_err();
+    assert!(matches!(
+        err,
+        AuthError::FieldTooLarge {
+            field: "room_id",
+            actual: 258,
+            max: 256,
+        }
+    ));
+}
+
 /// Valid key pair but signature covers wrong bytes → InvalidSig.
 #[test]
 fn sig_invalida() {

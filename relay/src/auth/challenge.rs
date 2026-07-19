@@ -5,8 +5,15 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::{Signature, VerifyingKey};
 use rand::RngCore as _;
 
-/// Max milliseconds to wait for a "hello" before closing the connection.
-pub const HELLO_TIMEOUT_MS: u64 = 5_000;
+use crate::protocol::outer::MAX_PRE_AUTH_FRAME_BYTES;
+
+const MAX_DEVICE_ID_BYTES: usize = 128;
+const MAX_ROOM_ID_BYTES: usize = 256;
+const MAX_ROOM_NAME_BYTES: usize = 256;
+const MAX_CWD_BYTES: usize = 4096;
+const MAX_SESSION_ID_BYTES: usize = 512;
+const MAX_MODEL_BYTES: usize = 256;
+const MAX_THINKING_BYTES: usize = 32;
 
 /// Authentication identity and initial room metadata accepted during the handshake.
 #[derive(Debug)]
@@ -20,6 +27,14 @@ pub struct AuthenticatedPeer {
 /// Describes a malformed or invalid relay authentication handshake.
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
+    #[error("pre-auth frame too large: {actual} bytes (max {max})")]
+    FrameTooLarge { actual: usize, max: usize },
+    #[error("pre-auth field {field} too large: {actual} bytes (max {max})")]
+    FieldTooLarge {
+        field: &'static str,
+        actual: usize,
+        max: usize,
+    },
     #[error("expected hello, got other message")]
     NoHello,
     #[error("invalid pubkey: {0}")]
@@ -66,6 +81,7 @@ pub fn parse_hello(line: &str) -> Result<VerifyingKey, AuthError> {
 /// id, and the relevant key or base64 error when the advertised public key is
 /// invalid.
 pub fn parse_hello_bootstrap(line: &str, now_ms: i64) -> Result<AuthenticatedPeer, AuthError> {
+    ensure_frame_size(line)?;
     let msg: ClientAuthMsg = serde_json::from_str(line)?;
     match msg {
         ClientAuthMsg::Hello {
@@ -76,6 +92,23 @@ pub fn parse_hello_bootstrap(line: &str, now_ms: i64) -> Result<AuthenticatedPee
         } => {
             if device_id.is_empty() {
                 return Err(AuthError::InvalidDeviceId);
+            }
+            ensure_field_size("device_id", &device_id, MAX_DEVICE_ID_BYTES)?;
+            ensure_field_size("room_id", &room_id, MAX_ROOM_ID_BYTES)?;
+            if let Some(meta) = &room_meta {
+                ensure_optional_field_size("room_meta.name", &meta.name, MAX_ROOM_NAME_BYTES)?;
+                ensure_optional_field_size("room_meta.cwd", &meta.cwd, MAX_CWD_BYTES)?;
+                ensure_optional_field_size(
+                    "room_meta.session_id",
+                    &meta.session_id,
+                    MAX_SESSION_ID_BYTES,
+                )?;
+                ensure_optional_field_size("room_meta.model", &meta.model, MAX_MODEL_BYTES)?;
+                ensure_optional_field_size(
+                    "room_meta.thinking",
+                    &meta.thinking,
+                    MAX_THINKING_BYTES,
+                )?;
             }
             let bytes = B64.decode(&pubkey)?;
             let arr: [u8; 32] = bytes
@@ -133,6 +166,7 @@ pub(crate) fn relay_auth_signing_bytes(nonce: &[u8]) -> Vec<u8> {
 /// invalid signature encoding, and [`AuthError::InvalidSig`] when verification
 /// fails.
 pub fn verify_auth(nonce: &[u8; 32], vk: &VerifyingKey, line: &str) -> Result<(), AuthError> {
+    ensure_frame_size(line)?;
     let msg: ClientAuthMsg = serde_json::from_str(line)?;
     let sig_b64 = match msg {
         ClientAuthMsg::Auth { sig } => sig,
@@ -144,4 +178,36 @@ pub fn verify_auth(nonce: &[u8; 32], vk: &VerifyingKey, line: &str) -> Result<()
     use ed25519_dalek::Verifier as _;
     vk.verify(&relay_auth_signing_bytes(nonce), &sig)
         .map_err(|_| AuthError::InvalidSig)
+}
+
+fn ensure_frame_size(line: &str) -> Result<(), AuthError> {
+    if line.len() > MAX_PRE_AUTH_FRAME_BYTES {
+        return Err(AuthError::FrameTooLarge {
+            actual: line.len(),
+            max: MAX_PRE_AUTH_FRAME_BYTES,
+        });
+    }
+    Ok(())
+}
+
+fn ensure_field_size(field: &'static str, value: &str, max: usize) -> Result<(), AuthError> {
+    if value.len() > max {
+        return Err(AuthError::FieldTooLarge {
+            field,
+            actual: value.len(),
+            max,
+        });
+    }
+    Ok(())
+}
+
+fn ensure_optional_field_size(
+    field: &'static str,
+    value: &Option<String>,
+    max: usize,
+) -> Result<(), AuthError> {
+    if let Some(value) = value {
+        ensure_field_size(field, value, max)?;
+    }
+    Ok(())
 }
