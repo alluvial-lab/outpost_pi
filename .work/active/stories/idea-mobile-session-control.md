@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-session-control
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension]
 parent: feature-mobile-native-session-process-control
 depends_on: []
@@ -68,6 +68,18 @@ telemetry, and general slash-command parity. Those need their own design or
 belong to the chat-resilience work. The separate process-restart affordance is
 implemented by `idea-mobile-restart-pi-session-affordance`, which depends on
 this story's shared Quick Actions contract.
+
+## Implementation
+
+- Kept Compact context, New session, Model, and Thinking in the existing
+  room-scoped Quick Actions sheet; no generic slash-command entry or `/reload`
+  control was added.
+- Preserved the existing New session confirmation and post-ACK transcript reset,
+  while extracting the shared destructive-confirmation dialog seam used by the
+  process control.
+- Added deterministic widget coverage for the existing confirmation, cancel,
+  success, and rejection behavior alongside the session action correlation
+  assertions.
 
 ## UX/UI polish
 

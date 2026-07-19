@@ -153,6 +153,15 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
               busy: busyAction == ActionName.sessionNew,
               onTap: () => _onNewSession(vm),
             ),
+            _ActionTile(
+              key: const Key('qa-restart-pi'),
+              icon: Icons.restart_alt,
+              label: 'Restart Pi process',
+              subtitle: 'On a supervised Pi, restarts and reconnects.',
+              busy: busyAction == ActionName.sessionNew,
+              danger: true,
+              onTap: () => _onRestartPi(vm),
+            ),
             const _Divider(),
             _ModelRow(
               currentLabel: vm.currentModel?.name ?? vm.currentModelName,
@@ -187,16 +196,72 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
   }
 
   Future<void> _onNewSession(QuickActionsViewModel vm) async {
-    // Close the sheet up front — the confirm dialog stands on its own. We
-    // capture the root navigator BEFORE popping (our own context dies with
-    // the sheet) so the dialog is shown on the root, same as before. Toasts
-    // use `widget.messenger`, which outlives the sheet.
+    final confirmed = await _confirmDestructiveAction(
+      title: 'Start a new session?',
+      content:
+          'This clears the Pi-side conversation history. The current '
+          'thread cannot be resumed.',
+      confirmLabel: 'Start new',
+    );
+    if (!confirmed) return;
+    try {
+      await vm.newSession();
+    } on ActionFailure catch (e) {
+      // The sheet is already closed, so its `vm.errors` listener is gone —
+      // surface the failure toast directly through the captured messenger.
+      _showError(e.message);
+      return;
+    } catch (_) {
+      return;
+    }
+    // action_ok — wipe the local chat mirror so the UI reflects the fresh
+    // session. The sheet is already closed; no success toast (quiet action,
+    // the cleared chat is feedback enough).
+    await widget.onSessionReset?.call();
+  }
+
+  Future<void> _onRestartPi(QuickActionsViewModel vm) async {
+    final confirmed = await _confirmDestructiveAction(
+      title: 'Restart Pi process?',
+      content:
+          'This clears the current conversation. On a supervised Pi, '
+          'the process will restart and this phone may disconnect briefly '
+          'before it reconnects.',
+      confirmLabel: 'Restart Pi',
+      danger: true,
+    );
+    if (!confirmed) return;
+    try {
+      // Restart intentionally reuses `session_new`: the daemon ACKs this
+      // request before exiting with 42, which makes the supervisor respawn a
+      // fresh process. Interactive Pis perform only their normal new-session
+      // behavior; the confirmation copy avoids promising a respawn there.
+      await vm.newSession();
+    } on ActionFailure catch (e) {
+      _showError(e.message);
+      return;
+    } catch (_) {
+      return;
+    }
+    await widget.onSessionReset?.call();
+    _showInfo('Restarting Pi — reconnecting…');
+  }
+
+  /// Close the sheet before showing a destructive confirmation dialog.
+  ///
+  /// The root navigator is captured first because the sheet's context is
+  /// disposed by the pop. Dialog buttons use their own context so this also
+  /// works when the sheet is hosted by a nested detail-pane navigator.
+  Future<bool> _confirmDestructiveAction({
+    required String title,
+    required String content,
+    required String confirmLabel,
+    bool danger = false,
+  }) async {
     final rootNavigator = Navigator.of(context, rootNavigator: true);
     Navigator.of(context).pop();
-    final confirm = await showDialog<bool>(
+    final result = await showDialog<bool>(
       context: rootNavigator.context,
-      // Pop via the dialog's OWN context (dCtx) — Cancel/Start close the
-      // dialog regardless of which navigator it sits on.
       builder: (dCtx) {
         final colors = dCtx.colors;
         return AlertDialog(
@@ -206,7 +271,7 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
             side: BorderSide(color: colors.border),
           ),
           title: Text(
-            'Start a new session?',
+            title,
             style: TextStyle(
               fontFamily: kMonoFamily,
               fontSize: 14,
@@ -214,8 +279,7 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
             ),
           ),
           content: Text(
-            'This clears the Pi-side conversation history. The current '
-            'thread cannot be resumed.',
+            content,
             style: TextStyle(
               fontFamily: kMonoFamily,
               fontSize: 12,
@@ -232,35 +296,24 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
             ),
             FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: colors.accent,
+                backgroundColor: danger ? colors.error : colors.accent,
                 foregroundColor: colors.onAccent,
               ),
               onPressed: () => Navigator.of(dCtx).pop(true),
-              child: const Text(
-                'Start new',
-                style: TextStyle(fontFamily: kMonoFamily),
+              child: Text(
+                confirmLabel,
+                style: const TextStyle(fontFamily: kMonoFamily),
               ),
             ),
           ],
         );
       },
     );
-    if (confirm != true) return;
-    try {
-      await vm.newSession();
-    } on ActionFailure catch (e) {
-      // The sheet is already closed, so its `vm.errors` listener is gone —
-      // surface the failure toast directly through the captured messenger.
-      _showError(e.message);
-      return;
-    } catch (_) {
-      return;
-    }
-    // action_ok — wipe the local chat mirror so the UI reflects the fresh
-    // session. The sheet is already closed; no success toast (quiet action,
-    // the cleared chat is feedback enough).
-    await widget.onSessionReset?.call();
+    return result == true;
   }
+
+  void _showInfo(String message) =>
+      _toast(message, widget.messenger.context.colors.warning);
 
   Future<void> _onThinking(
     QuickActionsViewModel vm,
@@ -332,6 +385,7 @@ class _ActionTile extends StatelessWidget {
   final String label;
   final String subtitle;
   final bool busy;
+  final bool danger;
   final VoidCallback onTap;
   const _ActionTile({
     super.key,
@@ -340,18 +394,20 @@ class _ActionTile extends StatelessWidget {
     required this.subtitle,
     required this.busy,
     required this.onTap,
+    this.danger = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final actionColor = danger ? colors.error : colors.accent;
     return InkWell(
       onTap: busy ? null : onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         child: Row(
           children: [
-            Icon(icon, color: colors.accent, size: 18),
+            Icon(icon, color: actionColor, size: 18),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -362,7 +418,7 @@ class _ActionTile extends StatelessWidget {
                     style: TextStyle(
                       fontFamily: kMonoFamily,
                       fontSize: 13,
-                      color: colors.text,
+                      color: danger ? colors.error : colors.text,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -383,7 +439,7 @@ class _ActionTile extends StatelessWidget {
                 height: 14,
                 child: CircularProgressIndicator(
                   strokeWidth: 1.6,
-                  color: colors.accent,
+                  color: actionColor,
                 ),
               ),
           ],
