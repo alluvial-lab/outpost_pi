@@ -3,45 +3,6 @@ import 'dart:typed_data';
 
 import 'package:app/protocol/protocol.dart';
 
-/// Endpoint-owned decoded payload ceiling; relay deployment overrides do not raise it.
-const int relayDefaultMaxDecodedBytes = 4 * 1024 * 1024;
-
-/// JSON and routing overhead permitted beyond the encoded payload.
-const int relayMaxFrameOverheadBytes = 64 * 1024;
-
-/// Complete authenticated relay-message ceiling derived from the payload limit.
-const int relayMaxRawMessageBytes =
-    4 * ((relayDefaultMaxDecodedBytes + 2) ~/ 3) + relayMaxFrameOverheadBytes;
-
-/// Smaller ceiling for unauthenticated challenge traffic.
-const int relayMaxPreAuthFrameBytes = 16 * 1024;
-
-/// Typed relay frame exposed to the WebSocket transport after boundary parsing.
-sealed class RelayInboundFrameDto {
-  const RelayInboundFrameDto();
-}
-
-/// Relay outer envelope carrying one base64 app↔Pi payload.
-final class RelayOuterEnvelopeDto extends RelayInboundFrameDto {
-  final String peer;
-  final String? room;
-  final String ct;
-
-  const RelayOuterEnvelopeDto({
-    required this.peer,
-    required this.room,
-    required this.ct,
-  });
-}
-
-/// Relay control frame adapted into the app's existing control-domain contract.
-final class RelayControlFrameDto extends RelayInboundFrameDto {
-  final String type;
-  final ControlInbound control;
-
-  const RelayControlFrameDto({required this.type, required this.control});
-}
-
 /// Stable rejection categories for payload-free transport diagnostics.
 enum RelayFrameDecodeFailure { tooLarge, malformed, unsupportedType }
 
@@ -54,8 +15,13 @@ sealed class RelayFrameDecodeResult {
 final class DecodedRelayFrame extends RelayFrameDecodeResult {
   final RelayInboundFrameDto frame;
   final Uint8List? decodedPayload;
+  final ControlInbound? control;
 
-  const DecodedRelayFrame({required this.frame, this.decodedPayload});
+  const DecodedRelayFrame({
+    required this.frame,
+    this.decodedPayload,
+    this.control,
+  });
 }
 
 /// Content-free boundary rejection.
@@ -130,42 +96,25 @@ RelayFrameDecodeResult decodeRelayInboundFrame(
       );
     }
 
-    final peer = decoded['peer'];
-    final ct = decoded['ct'];
-    if (peer is String && peer.isNotEmpty && ct is String && ct.isNotEmpty) {
-      final room = decoded['room'];
-      if (room != null && room is! String) {
-        return RejectedRelayFrame(
-          reason: RelayFrameDecodeFailure.malformed,
-          observedSize: rawBytes,
-        );
-      }
-      final payload = decodeRelayBase64(
-        ct,
-        maxDecodedBytes: maxDecodedPayloadBytes,
-      );
-      return DecodedRelayFrame(
-        frame: RelayOuterEnvelopeDto(peer: peer, room: room as String?, ct: ct),
-        decodedPayload: payload,
-      );
-    }
-
-    final type = decoded['type'];
-    if (type is! String) {
-      return RejectedRelayFrame(
-        reason: RelayFrameDecodeFailure.malformed,
-        observedSize: rawBytes,
-      );
-    }
-    final control = ControlInbound.tryFromJson(decoded);
-    return control == null
-        ? RejectedRelayFrame(
-            reason: RelayFrameDecodeFailure.unsupportedType,
-            observedSize: rawBytes,
-          )
-        : DecodedRelayFrame(
-            frame: RelayControlFrameDto(type: type, control: control),
-          );
+    final frame = RelayInboundFrameDto.fromJson(decoded);
+    return switch (frame) {
+      RelayOuterEnvelopeDto(:final ct) => DecodedRelayFrame(
+        frame: frame,
+        decodedPayload: decodeRelayBase64(
+          ct,
+          maxDecodedBytes: maxDecodedPayloadBytes,
+        ),
+      ),
+      RelayServerControlFrameDto() => () {
+        final control = ControlInbound.fromWire(frame);
+        return control == null
+            ? RejectedRelayFrame(
+                reason: RelayFrameDecodeFailure.unsupportedType,
+                observedSize: rawBytes,
+              )
+            : DecodedRelayFrame(frame: frame, control: control);
+      }(),
+    };
   } on RelayFrameDecodeException catch (error) {
     return RejectedRelayFrame(
       reason: error.reason,
@@ -190,19 +139,21 @@ Uint8List decodeRelayChallenge(String raw) {
   }
 
   try {
-    final frame = jsonDecode(raw);
-    if (frame is! Map<String, dynamic> ||
-        frame['type'] != 'challenge' ||
-        frame['nonce'] is! String) {
+    final json = jsonDecode(raw);
+    if (json is! Map<String, dynamic>) {
       throw RelayFrameDecodeException(
         RelayFrameDecodeFailure.malformed,
         rawBytes,
       );
     }
-    final nonce = decodeRelayBase64(
-      frame['nonce'] as String,
-      maxDecodedBytes: 32,
-    );
+    final frame = RelayServerControlFrameDto.fromJson(json);
+    if (frame is! RelayChallengeFrameDto) {
+      throw RelayFrameDecodeException(
+        RelayFrameDecodeFailure.malformed,
+        rawBytes,
+      );
+    }
+    final nonce = decodeRelayBase64(frame.nonce, maxDecodedBytes: 32);
     if (nonce.length != 32) {
       throw RelayFrameDecodeException(
         RelayFrameDecodeFailure.malformed,

@@ -1,39 +1,25 @@
 import { decodeClient } from "./codec.js";
 import type { ClientMessage } from "./types.js";
-import type {
-  CrossPcFramePiEnvelopeIn,
-  RelayControlFrame,
-  RelayControlFrameChallenge,
+import {
+  RELAY_DEFAULT_MAX_DECODED_BYTES,
+  RELAY_MAX_PRE_AUTH_FRAME_BYTES,
+  RELAY_MAX_RAW_MESSAGE_BYTES,
+  isRelayPostAuthControlFrame,
+  type CrossPcFramePiEnvelopeIn,
+  type RelayControlFrameChallenge,
+  type RelayOuterEnvelope,
+  type RelayPostAuthControlFrame,
 } from "./generated/protocol.generated.js";
 
-/** Endpoint-owned decoded payload ceiling; relay deployment overrides do not raise this value. */
-export const RELAY_DEFAULT_MAX_DECODED_BYTES = 4 * 1024 * 1024;
-/** JSON and routing overhead permitted beyond the encoded payload. */
-export const RELAY_MAX_FRAME_OVERHEAD_BYTES = 64 * 1024;
-/** Complete WebSocket message ceiling derived from the endpoint payload limit. */
-export const RELAY_MAX_RAW_MESSAGE_BYTES =
-  4 * Math.ceil(RELAY_DEFAULT_MAX_DECODED_BYTES / 3) + RELAY_MAX_FRAME_OVERHEAD_BYTES;
-/** Smaller ceiling for unauthenticated challenge traffic. */
-export const RELAY_MAX_PRE_AUTH_FRAME_BYTES = 16 * 1024;
-
-/** Relay outer envelope validated before its payload enters app-message decoding. */
-export interface RelayOuterEnvelope {
-  readonly peer: string;
-  readonly room?: string;
-  readonly ct: string;
-}
+export {
+  RELAY_DEFAULT_MAX_DECODED_BYTES,
+  RELAY_MAX_FRAME_OVERHEAD_BYTES,
+  RELAY_MAX_PRE_AUTH_FRAME_BYTES,
+  RELAY_MAX_RAW_MESSAGE_BYTES,
+} from "./generated/protocol.generated.js";
 
 /** Relay-to-endpoint control variants consumed after authentication. */
-export type RelayServerControlFrame = Extract<
-  RelayControlFrame,
-  { readonly type:
-    | "presence"
-    | "peer_online"
-    | "peer_offline"
-    | "rooms"
-    | "room_announced"
-    | "room_ended" }
->;
+export type RelayServerControlFrame = RelayPostAuthControlFrame;
 
 /** Limits applied before JSON and base64 allocation at relay ingress. */
 export interface RelayIngressLimits {
@@ -73,56 +59,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
-}
-
-function hasOptionalString(record: Record<string, unknown>, key: string): boolean {
-  return record[key] === undefined || typeof record[key] === "string";
-}
-
-function isRoom(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  return isNonEmptyString(value.room_id) &&
-    Number.isInteger(value.started_at) &&
-    typeof value.working === "boolean" &&
-    ["name", "cwd", "session_id", "model", "thinking"].every((key) =>
-      hasOptionalString(value, key),
-    );
-}
-
-function parseServerControl(value: Record<string, unknown>): RelayServerControlFrame | null {
-  switch (value.type) {
-    case "peer_online":
-      return isNonEmptyString(value.peer)
-        ? value as unknown as Extract<RelayServerControlFrame, { type: "peer_online" }>
-        : null;
-    case "peer_offline":
-      return isNonEmptyString(value.peer) && Number.isFinite(value.since_ts)
-        ? value as unknown as Extract<RelayServerControlFrame, { type: "peer_offline" }>
-        : null;
-    case "presence":
-      if (!Array.isArray(value.states) || !value.states.every((state) =>
-        isRecord(state) &&
-        isNonEmptyString(state.peer) &&
-        typeof state.online === "boolean" &&
-        (state.since_ts === undefined || state.since_ts === null || Number.isFinite(state.since_ts)))) {
-        return null;
-      }
-      return value as unknown as Extract<RelayServerControlFrame, { type: "presence" }>;
-    case "rooms":
-      return isNonEmptyString(value.peer) && Array.isArray(value.rooms) && value.rooms.every(isRoom)
-        ? value as unknown as Extract<RelayServerControlFrame, { type: "rooms" }>
-        : null;
-    case "room_announced":
-      return isNonEmptyString(value.peer) && isRoom(value)
-        ? value as unknown as Extract<RelayServerControlFrame, { type: "room_announced" }>
-        : null;
-    case "room_ended":
-      return isNonEmptyString(value.peer) && isNonEmptyString(value.room_id) && Number.isFinite(value.since_ts)
-        ? value as unknown as Extract<RelayServerControlFrame, { type: "room_ended" }>
-        : null;
-    default:
-      return null;
-  }
 }
 
 function isEnvelope(value: unknown): boolean {
@@ -196,8 +132,9 @@ export function decodeRelayIngress(
   if (typeof parsed.type === "string") {
     const crossPc = parseCrossPc(parsed);
     if (crossPc) return { kind: "cross_pc", frame: crossPc };
-    const control = parseServerControl(parsed);
-    if (control) return { kind: "control", frame: control };
+    if (isRelayPostAuthControlFrame(parsed)) {
+      return { kind: "control", frame: parsed };
+    }
     throw new RelayIngressDecodeError("unsupported_type", rawBytes);
   }
 

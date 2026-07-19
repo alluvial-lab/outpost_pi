@@ -5,15 +5,11 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::{Signature, VerifyingKey};
 use rand::RngCore as _;
 
-use crate::protocol::outer::MAX_PRE_AUTH_FRAME_BYTES;
-
-const MAX_DEVICE_ID_BYTES: usize = 128;
-const MAX_ROOM_ID_BYTES: usize = 256;
-const MAX_ROOM_NAME_BYTES: usize = 256;
-const MAX_CWD_BYTES: usize = 4096;
-const MAX_SESSION_ID_BYTES: usize = 512;
-const MAX_MODEL_BYTES: usize = 256;
-const MAX_THINKING_BYTES: usize = 32;
+use crate::protocol::generated::limits::{
+    RELAY_MAX_CWD_BYTES, RELAY_MAX_DEVICE_ID_BYTES, RELAY_MAX_MODEL_BYTES,
+    RELAY_MAX_PRE_AUTH_FRAME_BYTES, RELAY_MAX_ROOM_ID_BYTES, RELAY_MAX_ROOM_NAME_BYTES,
+    RELAY_MAX_SESSION_ID_BYTES, RELAY_MAX_THINKING_BYTES,
+};
 
 /// Authentication identity and initial room metadata accepted during the handshake.
 #[derive(Debug)]
@@ -93,21 +89,25 @@ pub fn parse_hello_bootstrap(line: &str, now_ms: i64) -> Result<AuthenticatedPee
             if device_id.is_empty() {
                 return Err(AuthError::InvalidDeviceId);
             }
-            ensure_field_size("device_id", &device_id, MAX_DEVICE_ID_BYTES)?;
-            ensure_field_size("room_id", &room_id, MAX_ROOM_ID_BYTES)?;
+            ensure_field_size("device_id", &device_id, RELAY_MAX_DEVICE_ID_BYTES)?;
+            ensure_field_size("room_id", &room_id, RELAY_MAX_ROOM_ID_BYTES)?;
             if let Some(meta) = &room_meta {
-                ensure_optional_field_size("room_meta.name", &meta.name, MAX_ROOM_NAME_BYTES)?;
-                ensure_optional_field_size("room_meta.cwd", &meta.cwd, MAX_CWD_BYTES)?;
+                ensure_optional_field_size(
+                    "room_meta.name",
+                    &meta.name,
+                    RELAY_MAX_ROOM_NAME_BYTES,
+                )?;
+                ensure_optional_field_size("room_meta.cwd", &meta.cwd, RELAY_MAX_CWD_BYTES)?;
                 ensure_optional_field_size(
                     "room_meta.session_id",
                     &meta.session_id,
-                    MAX_SESSION_ID_BYTES,
+                    RELAY_MAX_SESSION_ID_BYTES,
                 )?;
-                ensure_optional_field_size("room_meta.model", &meta.model, MAX_MODEL_BYTES)?;
+                ensure_optional_field_size("room_meta.model", &meta.model, RELAY_MAX_MODEL_BYTES)?;
                 ensure_optional_field_size(
                     "room_meta.thinking",
                     &meta.thinking,
-                    MAX_THINKING_BYTES,
+                    RELAY_MAX_THINKING_BYTES,
                 )?;
             }
             let bytes = B64.decode(&pubkey)?;
@@ -181,10 +181,10 @@ pub fn verify_auth(nonce: &[u8; 32], vk: &VerifyingKey, line: &str) -> Result<()
 }
 
 fn ensure_frame_size(line: &str) -> Result<(), AuthError> {
-    if line.len() > MAX_PRE_AUTH_FRAME_BYTES {
+    if line.len() > RELAY_MAX_PRE_AUTH_FRAME_BYTES {
         return Err(AuthError::FrameTooLarge {
             actual: line.len(),
-            max: MAX_PRE_AUTH_FRAME_BYTES,
+            max: RELAY_MAX_PRE_AUTH_FRAME_BYTES,
         });
     }
     Ok(())

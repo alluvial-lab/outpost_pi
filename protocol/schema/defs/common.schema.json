@@ -10,6 +10,7 @@
     "sessionId": {
       "type": "string",
       "minLength": 1,
+      "maxLength": 512,
       "x-outpost-pi": {
         "opaque": true,
         "profileRequired": ["canonical-session"]
