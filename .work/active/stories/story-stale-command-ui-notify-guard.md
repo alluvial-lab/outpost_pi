@@ -1,14 +1,14 @@
 ---
 id: story-stale-command-ui-notify-guard
 kind: story
-stage: drafting
+stage: review
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: [story-stale-session-bound-surface-deep-audit]
 release_binding: null
 gate_origin: null
 created: 2026-06-28
-updated: 2026-06-29
+updated: 2026-07-18
 ---
 
 # Guard command UI notifications against stale contexts after awaits
@@ -50,3 +50,15 @@ machine depending on session-bound context — folds into
 `epic-bold-split-pi-extension-index` (the SDK-session-projection module names
 that boundary). This story's safe-helper becomes a transition aid: code that
 adopts it now is easier to migrate when the bold split lands.
+
+## Implementation
+
+Added `_safeCommandContext` in `pi-extension/src/index.ts`. It routes command-surface notifications through the existing stale-aware `_notify` helper, which catches stale UI access and clears captured session slots. The command registration boundary and direct command adapters now use the safe context, covering pairing, revoke, setup/root, mesh, relay, daemon, cron, and service command awaits without changing their command modules.
+
+Added a deterministic delayed-await regression: `/outpost-pi revoke` pauses `listPeers`, fires `session_shutdown`, then resumes and verifies the stale UI notification cannot escape as a rejection. Daemon/supervisor commands use the same centralized `runWithCtx` adapter and therefore share this guard; they do not have a separate session-context path requiring a duplicate production fix.
+
+## Verification
+
+- `./node_modules/.bin/tsc --noEmit` passed.
+- Targeted stale-context tests passed.
+- Combined extension/action-handler tests passed except the documented pre-existing same-name cwd-lock flake.
