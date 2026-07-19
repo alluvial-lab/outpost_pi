@@ -3,7 +3,7 @@ id: idea-mobile-drop-slow-recovery
 kind: story
 stage: drafting
 tags: [app, pi-extension, relay, bug, lifecycle]
-parent: feature-mobile-tui-parity-chat-resilience
+parent: feature-reconnect-reproduction
 depends_on: []
 release_binding: null
 gate_origin: null
