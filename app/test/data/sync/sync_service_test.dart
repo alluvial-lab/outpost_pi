@@ -22,6 +22,7 @@ import 'package:app/domain/transcript/transcript_event.dart';
 import 'package:app/domain/transcript/transcript_projection.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 
@@ -714,6 +715,62 @@ void main() {
     s.conn.dispose();
     s.sync.dispose();
   });
+
+  test(
+    'send diagnostics omit prompt and image content while wire and transcript retain it',
+    () async {
+      const promptCanary = 'prompt-secret-7F3A';
+      const imageCanary = 'image-base64-secret-9D5E';
+      const image = MessageImage(data: imageCanary, mime: 'image/png');
+      final store = _MemoryTranscriptStore();
+      final debugLog = _RecordingDebugLog();
+      final console = <String>[];
+      final originalDebugPrint = debugPrint;
+      final s = await setup(transcriptEventStore: store, debugLog: debugLog);
+
+      debugPrint = (message, {wrapWidth}) {
+        if (message != null) console.add(message);
+      };
+      try {
+        await s.sync.sendMessage(promptCanary, image: image);
+        await s.sync.sendMessage('', image: image);
+      } finally {
+        debugPrint = originalDebugPrint;
+      }
+
+      final sent = s.ch.sent.whereType<UserMessage>().toList(growable: false);
+      expect(sent, hasLength(2));
+      expect(sent.first.text, promptCanary);
+      expect(sent.first.images?.single.data, imageCanary);
+      final submitted = store
+          .eventsFor(transcriptKeyFor(s.epk))
+          .whereType<UserMessageSubmitted>()
+          .toList(growable: false);
+      expect(submitted.map((event) => event.text), contains(promptCanary));
+      expect(submitted.first.image?.data, imageCanary);
+
+      final diagnostics = debugLog.events.whereType<MsgSendEvent>().toList(
+        growable: false,
+      );
+      expect(diagnostics, hasLength(2));
+      for (final event in diagnostics) {
+        expect(
+          event.toJson().keys,
+          unorderedEquals(<String>['tag', 'ts', 'id', 'blocked']),
+        );
+      }
+      final diagnosticText = <String>[
+        ...console,
+        ...diagnostics.map((event) => event.toJson().toString()),
+      ].join('\n');
+      expect(diagnosticText, isNot(contains(promptCanary)));
+      expect(diagnosticText, isNot(contains(imageCanary)));
+      expect(diagnosticText, isNot(contains('📷 Image')));
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
 
   test(
     'steer send keeps active working target and sets streaming behavior on wire',
