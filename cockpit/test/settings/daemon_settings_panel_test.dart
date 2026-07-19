@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cockpit/app/core/domain/result.dart';
 import 'package:cockpit/app/core/ui/themes/app_theme.dart';
@@ -7,6 +8,7 @@ import 'package:cockpit/app/settings/domain/entities/daemon_info.dart';
 import 'package:cockpit/app/settings/domain/exceptions/daemon_error.dart';
 import 'package:cockpit/app/settings/ui/categories/daemon_settings_panel.dart';
 import 'package:cockpit/app/settings/ui/daemons_viewmodel.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/widgets.dart' show Brightness, SizedBox;
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -154,6 +156,33 @@ void main() {
         await _disposePanel(tester);
       },
     );
+
+    testWidgets('create dialog passes the chosen folder and trimmed name', (
+      tester,
+    ) async {
+      _registerDefaultFilePicker();
+      final originalPicker = FilePicker.platform;
+      FilePicker.platform = _DirectoryFilePicker('/work/new-agent');
+      addTearDown(() => FilePicker.platform = originalPicker);
+
+      final vm = _PanelDaemonsViewModel()
+        ..online = true
+        ..load = DaemonsLoad.ready;
+      await _pumpPanel(tester, vm);
+
+      await tester.tap(find.text('Create daemon'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(shadcn.TextField), '  Build agent  ');
+      await tester.tap(find.text('Choose'));
+      await tester.pumpAndSettle();
+      expect(find.text('/work/new-agent'), findsOneWidget);
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+
+      expect(vm.createCalls, [('/work/new-agent', 'Build agent')]);
+
+      await _disposePanel(tester);
+    });
   });
 }
 
@@ -303,6 +332,29 @@ final class _FakeDaemonSupervisor implements DaemonSupervisor {
     restartSupervisorCalls++;
     return const Success(null);
   }
+}
+
+void _registerDefaultFilePicker() {
+  if (Platform.isLinux) {
+    FilePickerLinux.registerWith();
+  } else if (Platform.isMacOS) {
+    FilePickerMacOS.registerWith();
+  } else {
+    FilePickerIO.registerWith();
+  }
+}
+
+final class _DirectoryFilePicker extends FilePicker {
+  _DirectoryFilePicker(this.path);
+
+  final String path;
+
+  @override
+  Future<String?> getDirectoryPath({
+    String? dialogTitle,
+    bool lockParentWindow = false,
+    String? initialDirectory,
+  }) async => path;
 }
 
 final class _PanelDaemonsViewModel extends DaemonsViewModel {
