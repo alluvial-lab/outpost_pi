@@ -10,7 +10,10 @@ sealed class AgentEntry {
   AgentEntry();
 }
 
-/// Record a lifecycle message such as an error ACK, stderr, or process exit.
+/// Record a lifecycle message such as an error ACK or process exit.
+///
+/// Process diagnostics reaching this side-channel are fixed content-free
+/// summaries; raw stderr and stream errors must not be stored in [text].
 final class InfoEntry extends AgentEntry {
   InfoEntry(this.text, {this.isError = false});
   final String text;
