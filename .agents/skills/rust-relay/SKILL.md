@@ -74,11 +74,11 @@ Axum 0.7's `WebSocketUpgrade` establishes a WebSocket and `on_upgrade` transfers
 
 Connection flow:
 
-1. Wait up to `HELLO_TIMEOUT_MS` for `hello`.
+1. Wait up to five seconds for `hello`.
 2. Send a random nonce challenge.
-3. Verify `auth` signature.
+3. Wait up to five seconds for `auth` and verify its signature.
 4. Register `(peer_id, room_id, sender)` in `PeerRegistry`.
-5. Run a `tokio::select!` loop over inbound frames, outbound registry messages, and heartbeat pings.
+5. Run a `tokio::select!` loop over inbound frames, outbound registry messages, mailbox-loss disconnect signals, and heartbeat pings.
 6. On exit, unregister and clean room subscriptions. [remote-pi-relay-router-handler]{1}
 
 Tokio `select!` cancels non-winning branches, so only use cancellation-safe operations in long-lived loops. Tokio documents `mpsc::Receiver::recv` and `UnboundedReceiver::recv` as cancellation-safe. [tokio-1-52-select-mpsc]{1}
@@ -87,9 +87,9 @@ Axum auto-responds to incoming WebSocket pings, but the relay still sends explic
 
 ## Channels and backpressure
 
-`PeerRegistry` stores `tokio::sync::mpsc::UnboundedSender<Message>` values for live connections. [remote-pi-relay-registry-presence-rooms]{1} Tokio documents unbounded channels as memory-bounded only by process memory; a slow receiver can cause arbitrary buffering and eventual process abort. [tokio-1-52-select-mpsc]{1}
+`PeerRegistry` gives every live connection a 16-frame `tokio::sync::mpsc` mailbox. Delivery is non-blocking and drop-newest: a full mailbox retains its queued frames, increments the aggregate saturation metric, drops the new frame, and signals that socket owner to disconnect. Reconnect hydration is the recovery path for authoritative state such as `working:false` or `room_ended`; the relay does not retain or replay payloads. [remote-pi-relay-registry-presence-rooms]{1} [tokio-1-52-select-mpsc]{1}
 
-Review implication {inferred: current registry senders are unbounded and Tokio documents unbounded memory growth}: any new high-volume broadcast path must either remain bounded by existing dedup/state-change rules or introduce explicit backpressure/drop semantics. Do not add a firehose producer that can enqueue unbounded messages per peer without a suppression rule.
+Review implication: preserve the bounded mailbox and loss-recovery contract on every delivery path. Do not add unbounded channels, await mailbox capacity while holding registry state, emit per-frame saturation logs, or ignore saturation without forcing a hydration path.
 
 ## Presence, rooms, and `working` state
 
@@ -113,7 +113,7 @@ Mesh storage is intentionally narrow:
 - `verify_envelope()` verifies the exact received blob bytes; clients are responsible for canonical JSON before signing. [remote-pi-relay-mesh-auth]{1}
 - `ed25519-dalek` 2.2 exposes `VerifyingKey::verify_strict`, which performs stricter signature verification including weak-key protections. [ed25519-dalek-2-2-verifying-key]{1}
 
-Cross-PC forwarding (`pi_envelope`) uses the authenticated sender peer id as ground truth. Positive mesh sibling lookups are cached for 60 seconds; negative lookups are not cached so newly published membership can take effect on the next attempt. [remote-pi-relay-mesh-auth]{1}
+Cross-PC forwarding (`pi_envelope`) uses the authenticated sender peer id as ground truth. Positive and negative mesh sibling lookups share a 1,024-entry cache with a 60-second TTL. Cold scans are process-wide single-flight per Pi key, and successful mesh publishes invalidate only cache entries affected by that Owner while generation checks prevent racing scans from restoring stale results. [remote-pi-relay-mesh-auth]{1}
 
 Do not move broker-side anti-spoof rules into the relay by reading human-readable `envelope.from`; `PROTOCOL.md` assigns prefix/label anti-spoof validation to the receiving broker after the relay delivers `from_pc`. [remote-pi-relay-protocol]{1}
 

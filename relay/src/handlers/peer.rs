@@ -138,6 +138,11 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
 
     'routing: loop {
         tokio::select! {
+            _ = registration.disconnect.cancelled() => {
+                // A bounded mailbox dropped an update. Disconnect so this
+                // recipient rehydrates authoritative state on reconnect.
+                break;
+            }
             item = stream.next() => {
                 match item {
                     None | Some(Err(_)) => break,
