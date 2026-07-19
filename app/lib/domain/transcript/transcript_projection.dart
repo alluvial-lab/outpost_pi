@@ -132,6 +132,7 @@ TranscriptProjection deriveTranscriptProjection({
   final assistantReplyTo = <String, String>{};
   final toolIndexes = <String, int>{};
   StreamingMessage? streaming;
+  String? activeReplyAnchor;
   var turn = TranscriptTurnView.idle;
   SteeringProjection steering = const NoSteering();
 
@@ -171,6 +172,7 @@ TranscriptProjection deriveTranscriptProjection({
             text: event.text,
           );
         } else {
+          activeReplyAnchor = event.clientMessageId;
           turn = TranscriptTurnView(
             status: AppTurnStatus.working,
             turnId: event.turnId ?? event.clientMessageId,
@@ -200,6 +202,7 @@ TranscriptProjection deriveTranscriptProjection({
           steering = const NoSteering();
         }
         if (event.streamingBehavior != UserMessageStreamingBehavior.steer) {
+          activeReplyAnchor = event.clientMessageId;
           turn = TranscriptTurnView(
             status: AppTurnStatus.working,
             turnId: event.turnId ?? event.clientMessageId,
@@ -222,6 +225,7 @@ TranscriptProjection deriveTranscriptProjection({
           );
         }
       case AssistantDeltaReceived():
+        activeReplyAnchor = event.replyTo;
         streaming =
             (streaming?.inReplyTo == event.replyTo
                     ? streaming
@@ -233,6 +237,7 @@ TranscriptProjection deriveTranscriptProjection({
           replyTo: event.replyTo,
         );
       case AssistantMessageCommitted():
+        activeReplyAnchor = event.replyTo;
         assistantReplyTo[event.messageId] = event.replyTo;
         appendAuthoritative(
           AssistantMsg(id: event.messageId, text: event.text),
@@ -240,6 +245,7 @@ TranscriptProjection deriveTranscriptProjection({
         streaming = null;
         turn = TranscriptTurnView.idle;
       case AssistantDoneReceived():
+        activeReplyAnchor = null;
         streaming = null;
         turn = TranscriptTurnView.idle;
       case ToolRequested():
@@ -251,11 +257,14 @@ TranscriptProjection deriveTranscriptProjection({
             args: event.args,
           ),
         );
-        if (streaming != null || turn.working) {
+        final replyAnchor =
+            turn.replyTo ?? streaming?.inReplyTo ?? activeReplyAnchor;
+        if (replyAnchor != null) {
+          activeReplyAnchor = replyAnchor;
           turn = TranscriptTurnView(
             status: AppTurnStatus.awaitingTool,
-            turnId: turn.turnId ?? event.turnId ?? streaming?.inReplyTo,
-            replyTo: turn.replyTo ?? streaming?.inReplyTo,
+            turnId: turn.turnId ?? event.turnId ?? replyAnchor,
+            replyTo: replyAnchor,
           );
         }
       case ToolFinished():
@@ -280,6 +289,7 @@ TranscriptProjection deriveTranscriptProjection({
           );
         }
       case CompactionRecorded():
+        activeReplyAnchor = null;
         appendAuthoritative(
           CompactionMsg(
             id: event.eventId,

@@ -284,6 +284,44 @@ void main() {
     ]);
   });
 
+  test(
+    'production user → agent message → tool request order stays cancellable',
+    () {
+      final projection = deriveTranscriptProjection(
+        sessionId: session,
+        events: [
+          confirmed('primary', 'inspect the repo'),
+          AssistantMessageCommitted(
+            eventId: 'server:assistant:before-tool',
+            sessionId: session,
+            ts: base.add(const Duration(milliseconds: 1)),
+            messageId: 'assistant-before-tool',
+            replyTo: 'primary',
+            text: 'I will inspect it.',
+          ),
+          ToolRequested(
+            eventId: 'server:tool:req:t1',
+            sessionId: session,
+            ts: base.add(const Duration(milliseconds: 2)),
+            toolCallId: 't1',
+            tool: 'Bash',
+            args: const {'command': 'pwd'},
+          ),
+        ],
+      );
+      final status = ChatStatusProjection(
+        transport: const ChatTransportOnline(roomId: 'main'),
+        turn: projection.turn.toAppProjection(),
+        steering: projection.steering,
+      );
+
+      expect(projection.streaming, isNull);
+      expect(projection.turn.status, TranscriptTurnStatus.awaitingTool);
+      expect(status.canCancel, isTrue);
+      expect(status.turn.cancelTargetId, 'primary');
+    },
+  );
+
   test('tool request and result collapse into one projected tool row', () {
     final projection = deriveTranscriptProjection(
       sessionId: session,
