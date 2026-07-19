@@ -1,7 +1,7 @@
 ---
 id: feature-redact-secrets-from-diagnostic-surfaces
 kind: feature
-stage: implementing
+stage: review
 tags: [app, pi-extension, cockpit, security]
 parent: null
 depends_on: []
@@ -246,3 +246,20 @@ checkpoint.
 - **Invoked because**: the feature is security-sensitive and spans app, Cockpit, and the pi-extension diagnostic contract.
 - **Effective review weight**: `standard` (caller default); completed-feature review remains one balanced fresh-context pass followed by receiver adjudication and fixes for material blockers, without a second pass.
 - **Skipped/degraded**: this delegated design worker exposes no subagent or peer-review adapter, so design-time advisory review could not be dispatched. Design review is non-blocking; the final standard feature/final-completion review remains required by the caller.
+
+## Implementation (2026-07-19)
+
+All three child stories implemented and verified green; feature advanced to `review`.
+
+- `gate-security-outbound-message-previews-logged` (done, `d87cf6c`): app `sync_service.dart`/`debug_log.dart` — `MsgSendEvent.preview` removed from the diagnostic path while user-visible previews preserved; the implementation separated the UI-state `_preview` from the debug call site per the risk note. Test added at `app/test/data/sync_service_test.dart`. This also resolved the 3 pre-existing `sync_service_test.dart` failures (cursor chunk / session-replacement partition / session-switch bleed) that were flagged as baseline — they were downstream of the preview-logging issue.
+- `gate-security-raw-rpc-traffic-logged` (done, `846e149`): cockpit `pi_rpc_process.dart`/`rpc_event.dart` — raw RPC stdout/stdin logging replaced with structural summaries; only Cockpit-generated `req-<digits>` ids admitted, wire `type` never forwarded. Test added at `cockpit/test/data/pi_rpc_process_control_test.dart`.
+- `gate-security-raw-stderr-in-transcript` (done, `e257ed2`): cockpit `agent_session.dart` — raw child stderr converted to opaque diagnostic categories instead of verbatim side-channel. Test added at `cockpit/test/ui/agent_session_turn_projection_test.dart`.
+- pi-extension: no-op per design (existing metadata-only delivery log retained) — verified, no change.
+
+### Integrated verification
+
+- `app`: `PUB_CACHE=<repo>/.pub-cache flutter test --no-pub test/data/sync/sync_service_test.dart test/domain/contracts/debug_log_test.dart` → 101 passed, 0 failed (the 3 previously-failing baseline tests now pass).
+- `cockpit`: `flutter test --no-pub test/data/pi_rpc_process_control_test.dart test/ui/agent_session_turn_projection_test.dart` → 23 passed, 0 failed.
+- The `PUB_CACHE` workaround (pointing at the repo's resolved local pub-cache, since `/home/agent/.pub-cache` is read-only) is required for all Flutter verification in this env.
+
+No production-code change beyond the scoped redaction boundary; no test weakened or gamed.
