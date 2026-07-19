@@ -19,11 +19,12 @@
     { "$ref": "#/$defs/rooms" },
     { "$ref": "#/$defs/roomAnnounced" },
     { "$ref": "#/$defs/roomEnded" },
-    { "$ref": "#/$defs/roomMetaUpdate" }
+    { "$ref": "#/$defs/roomMetaUpdate" },
+    { "$ref": "#/$defs/roomMetaUpdated" }
   ],
   "$defs": {
     "peerId": { "type": "string", "minLength": 1 },
-    "roomId": { "type": "string", "minLength": 1 },
+    "roomId": { "type": "string", "minLength": 1, "maxLength": 256 },
     "epochMillis": { "type": "integer", "minimum": 0 },
     "peerList": {
       "type": "array",
@@ -36,11 +37,11 @@
       "required": ["room_id", "working", "started_at"],
       "properties": {
         "room_id": { "$ref": "#/$defs/roomId" },
-        "name": { "type": "string" },
-        "cwd": { "type": "string" },
+        "name": { "type": "string", "maxLength": 256 },
+        "cwd": { "type": "string", "maxLength": 4096 },
         "session_id": { "$ref": "./defs/common.schema.json#/$defs/sessionId" },
-        "model": { "type": "string" },
-        "thinking": { "type": "string" },
+        "model": { "type": "string", "maxLength": 256 },
+        "thinking": { "type": "string", "maxLength": 32 },
         "working": { "type": "boolean" },
         "started_at": { "$ref": "#/$defs/epochMillis" }
       },
@@ -53,8 +54,8 @@
     "roomMetaPatch": {
       "type": "object",
       "properties": {
-        "model": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
-        "thinking": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "model": { "oneOf": [{ "type": "string", "maxLength": 256 }, { "type": "null" }] },
+        "thinking": { "oneOf": [{ "type": "string", "maxLength": 32 }, { "type": "null" }] },
         "session_id": {
           "oneOf": [
             { "$ref": "./defs/common.schema.json#/$defs/sessionId" },
@@ -75,10 +76,10 @@
     "helloRoomMeta": {
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
-        "cwd": { "type": "string" },
-        "model": { "type": "string" },
-        "thinking": { "type": "string" },
+        "name": { "type": "string", "maxLength": 256 },
+        "cwd": { "type": "string", "maxLength": 4096 },
+        "model": { "type": "string", "maxLength": 256 },
+        "thinking": { "type": "string", "maxLength": 32 },
         "session_id": { "$ref": "./defs/common.schema.json#/$defs/sessionId" },
         "working": { "type": "boolean" }
       },
@@ -91,7 +92,7 @@
       "properties": {
         "type": { "const": "hello" },
         "pubkey": { "$ref": "#/$defs/peerId" },
-        "device_id": { "type": "string", "minLength": 1 },
+        "device_id": { "type": "string", "minLength": 1, "maxLength": 128 },
         "room_id": { "$ref": "#/$defs/roomId" },
         "room_meta": { "$ref": "#/$defs/helloRoomMeta" }
       },
@@ -216,11 +217,11 @@
         "type": { "const": "room_announced" },
         "peer": { "$ref": "#/$defs/peerId" },
         "room_id": { "$ref": "#/$defs/roomId" },
-        "name": { "type": "string" },
-        "cwd": { "type": "string" },
+        "name": { "type": "string", "maxLength": 256 },
+        "cwd": { "type": "string", "maxLength": 4096 },
         "session_id": { "$ref": "./defs/common.schema.json#/$defs/sessionId" },
-        "model": { "type": "string" },
-        "thinking": { "type": "string" },
+        "model": { "type": "string", "maxLength": 256 },
+        "thinking": { "type": "string", "maxLength": 32 },
         "working": { "type": "boolean" },
         "started_at": { "$ref": "#/$defs/epochMillis" }
       },
@@ -253,6 +254,18 @@
       },
       "additionalProperties": false,
       "x-outpost-pi": { "direction": "client-to-relay" }
+    },
+    "roomMetaUpdated": {
+      "type": "object",
+      "required": ["type", "peer", "room_id", "meta"],
+      "properties": {
+        "type": { "const": "room_meta_updated" },
+        "peer": { "$ref": "#/$defs/peerId" },
+        "room_id": { "$ref": "#/$defs/roomId" },
+        "meta": { "$ref": "#/$defs/roomMetaPatch" }
+      },
+      "additionalProperties": false,
+      "x-outpost-pi": { "direction": "relay-to-client" }
     }
   },
   "x-outpost-pi": {
