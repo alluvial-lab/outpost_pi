@@ -1,14 +1,14 @@
 ---
 id: story-release-uat-gate
 kind: story
-stage: drafting
+stage: done
 tags: [workflow, release]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-18
 ---
 
 # Add a release UAT / smoke gate before tags ship
@@ -89,9 +89,54 @@ item / a recorded `--accept` ack) before the tag is created.
   signal across all three bugs — the runbook should call out "trust relay logs
   over the footer/UI for connection truth" as the verification posture.
 
-## Next
+## Implementation (inline, 2026-07-19)
 
-This story is small and process/docs-shaped. It can implement inline (per the
-`implement` skill's no-coordination path) once confirmed, advancing
-`drafting → implementing → review`. It touches `CONVENTIONS.md` + a durable
-runbook doc; no subproject code.
+Implemented inline via the `implement` skill's no-coordination path (process +
+docs, no subproject code).
+
+**Design deviation from the brief (logged per autopilot caller-note judgment):**
+the brief's "Scope" proposed adding a `uat` slot to `gates_for_release`. That is
+not safely implementable as written: `release-deploy` invokes each
+`gates_for_release` entry via `Skill(skill="agile-workflow:gate-<name>")`, and
+the agile-workflow plugin ships only `gate-{cruft,docs,patterns,refactor,
+security,tests}` — there is no `gate-uat` skill. A `uat` slot would fail to
+resolve at Phase 4 of `release-deploy` and halt the release.
+
+The story's *intent* (operator must acknowledge a live e2e smoke before a tag
+is cut) is preserved by the alternative the brief itself anticipated ("if ...
+needs a real design pass ... promote to a feature — but lean story-first"):
+
+- `docs/release-uat.md` — the durable smoke runbook (app↔Pi pairing arc +
+  other-component variants + the ack requirement + the "trust relay logs over
+  the footer/UI" verification posture that was decisive in the v0.6.0 incident).
+- `.work/CONVENTIONS.md` — `release_uat: manual-checkpoint` convention, with
+  the rationale that it rides `release-deploy`'s built-in user-action pause
+  (not a `gates_for_release` slot) and points at the runbook. The e2e
+  automation feature is cross-referenced as the durable follow-up.
+
+No subproject code changed.
+
+## Verification
+
+- `release-deploy <version>` pauses for operator action after the automated
+  gates pass and before tag creation; the operator runs the smoke runbook and
+  records the ack. (The pause is `release-deploy`'s existing "mapping requires
+  user action → pause and prompt" path; no `gate-uat` skill is invoked.)
+- The runbook is durable (`docs/release-uat.md`, referenced from
+  `CONVENTIONS.md`) and current-state (no progress-log prose).
+- `CONVENTIONS.md` carries `release_uat: manual-checkpoint` with the
+  not-a-gates-slot rationale, so a future agent does not re-attempt the
+  breaking `gates_for_release: [..., uat]` form.
+
+## Review (bounded inline, standalone story)
+
+Standalone story (`parent: null`) → bounded inline review, no fresh-context
+reviewer spawn (per `review` skill routing). Checked:
+
+- The deviation from the brief is the only safe implementation given the
+  plugin's gate registry; the intent is preserved and the rationale is durable.
+- The runbook matches the documented deploy shape (container name
+  `outpost-pi-relay`, debug-log env vars, `/remote-pi` footer) in `AGENTS.md`.
+- The convention note defends itself inline against the rejected alternative.
+
+No material blockers. Advanced to `done`.
