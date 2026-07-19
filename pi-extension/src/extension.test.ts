@@ -2815,6 +2815,65 @@ describe("user_input mirroring", () => {
     expect(_getTurnProjectionForTest().lateAttachSyncTargets).toEqual([]);
   });
 
+  test("late attach that flaps offline uses buffered FIFO without turn-end history replay", async () => {
+    const peer = "owner-late-offline-buffer";
+    _knownPeers.push({
+      name: "Late Offline Phone",
+      remote_epk: peer,
+      paired_at: new Date().toISOString(),
+    });
+    captureHandler("outpost-pi");
+    await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-late-offline-buffer"));
+    _setMessageBufferForTest([]);
+    _setTranscriptEventsForTest([]);
+
+    const onTurnStart = captureEventHandler("turn_start");
+    const onInput = captureEventHandler("input");
+    const onMsgUpdate = captureEventHandler("message_update");
+    const onMsgEnd = captureEventHandler("message_end");
+    const onAgentEnd = captureEventHandler("agent_end");
+    const onTurnEnd = captureEventHandler("turn_end");
+
+    onTurnStart({ type: "turn_start", turnIndex: 0, timestamp: 0 });
+    onInput({ type: "input", text: "attach then flap", source: "interactive" });
+    relayRef.current!.emit("message", JSON.stringify({
+      peer,
+      ct: Buffer.from(JSON.stringify({ type: "ping", id: "late-offline-ping" })).toString("base64"),
+    }));
+    await vi.waitFor(() => expect(_hasActivePeerForTest(peer)).toBe(true), { timeout: 2000 });
+
+    relayRef.current!.emit("message", JSON.stringify({ type: "peer_offline", peer, since_ts: 1 }));
+    const sendsBeforeBufferedTurn = relayRef.current!.send.mock.calls.length;
+    onMsgUpdate({
+      type: "message_update",
+      message: {},
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "buffered partial", partial: {} },
+    });
+    onMsgEnd({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "buffered final" }],
+        timestamp: 1700000002000,
+      },
+    });
+    onAgentEnd({ type: "agent_end" });
+
+    expect(sentToPeerSince(sendsBeforeBufferedTurn, peer)).toEqual([]);
+    relayRef.current!.emit("message", JSON.stringify({ type: "peer_online", peer }));
+    onTurnEnd({ type: "turn_end", turnIndex: 0 });
+
+    const delivered = sentToPeerSince(sendsBeforeBufferedTurn, peer);
+    expect(delivered.map((frame) => frame.inner.type)).toEqual([
+      "agent_chunk",
+      "agent_message",
+      "agent_done",
+    ]);
+    expect(delivered[0]!.inner).toMatchObject({ delta: "buffered partial" });
+    expect(delivered[1]!.inner).toMatchObject({ text: "buffered final" });
+    expect(delivered.some((frame) => frame.inner.type === "session_history")).toBe(false);
+  });
+
   test("session_shutdown before late attach flush sends no history and clears targets", async () => {
     await _pairForTest("owner-primary-shutdown");
     const onTurnStart = captureEventHandler("turn_start");
