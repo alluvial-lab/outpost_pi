@@ -1,7 +1,7 @@
 ---
 id: feature-relay-resource-bounds
 kind: feature
-stage: implementing
+stage: review
 tags: [relay, security]
 parent: null
 depends_on: []
@@ -472,6 +472,19 @@ design authority.
   limiter and cache capacity, but shorten negative TTL; do not revert to
   unbounded scans. A normalized index is a separate architecture feature, not
   an in-cycle escape hatch.
+
+## Implementation
+
+- Execution capability: `openai-codex/gpt-5.6-sol` (caller-selected for the security-critical relay bundle).
+- Review weight: `standard` (caller-selected); advanced to review-ready for one independent feature pass.
+- Completed checkpoints: handshake step deadlines, subscription reverse-key cleanup, bounded outbound mailboxes, and bounded mesh-authorization work are all `stage: done`.
+- Resource policy: `FixedWindowBudget` now serves control checks and the per-connection 256/minute `pi_envelope` admission path; the previously dead scaffolding is fully wired and clippy-clean.
+- Authorization: positive and negative membership results share a 1,024-entry, 60-second cache; successful mesh publishes invalidate it, and generation checks prevent racing scans from restoring stale results.
+- Delivery: each live socket owns a 16-frame bounded mailbox. Registry fanout uses `try_send`, drops newest only at saturated recipients, reports aggregate drops, and preserves healthy multi-device delivery and existing `offline` behavior when no mailbox accepts.
+- Simplification: no global/IP retained-state governor, cleanup task, persistence change, retry queue, or new wire variant was introduced.
+- Discrepancies from design: the durable Rust reference update is outside this worker's allowed write scope; source comments now state the bounded contract. Test-only mailbox fixtures use a centralized bounded compatibility helper while production contains no unbounded sender/channel.
+- Verification: from `relay/`, `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` passed; 141 unit tests and every integration target passed. Two pre-existing test-only `unused_mut` warnings remain outside authoritative clippy scope.
+- Adjacent issues parked: none.
 
 ## Other agent review
 
