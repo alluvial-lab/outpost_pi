@@ -2,7 +2,7 @@
 kind: story
 release_binding: null
 parent: feature-redact-secrets-from-diagnostic-surfaces
-stage: implementing
+stage: done
 id: gate-security-raw-rpc-traffic-logged
 tags: []
 depends_on: []
@@ -35,3 +35,13 @@ Acceptance evidence:
 - RPC decoding, correlation, control serialization, and process writes receive
   their original payload unchanged.
 - Malformed/non-object stdout remains safely ignored without retaining raw text.
+
+## Implementation notes
+- Execution capability: `openai-codex/gpt-5.6-sol` (caller-selected high reasoning for the security-sensitive cross-stack feature).
+- Review weight: `standard` (caller default); child story review is not applicable.
+- Files changed: `cockpit/lib/app/cockpit/data/rpc/pi_rpc_process.dart`, `cockpit/lib/app/cockpit/domain/entities/rpc_event.dart`, `cockpit/test/data/pi_rpc_process_control_test.dart`.
+- Tests added: metadata-only formatter regressions for prompt/tool/image/token canaries, malicious type/id fields, malformed JSON, non-object frames, fixed categories, and generated request ids.
+- Simplification: removed `RpcUnknown.raw`; the adapter no longer retains untrusted malformed/non-object lines.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
+- Verification: `flutter test --no-pub test/data/pi_rpc_process_control_test.dart test/data/rpc_event_mapper_test.dart` passed (10 tests).
