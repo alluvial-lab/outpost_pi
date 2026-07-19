@@ -266,7 +266,8 @@ mod tests {
 
     use axum::extract::ws::Message;
     use serde_json::json;
-    use tokio::sync::mpsc;
+
+    use crate::test_support::bounded_mpsc as mpsc;
 
     use super::{ControlFrameError, bounded_peer_list};
     use crate::handlers::connection_actor::{
@@ -635,7 +636,7 @@ mod tests {
         let second = actor.dispatch_control(frame()).await;
         assert!(matches!(second, ActorDispatch::Continue));
 
-        let [_, _, presence_emitted, presence_suppressed, _, _] = fixture.metrics.snapshot();
+        let [_, _, presence_emitted, presence_suppressed, _, _, _] = fixture.metrics.snapshot();
         assert_eq!(presence_emitted, 1);
         assert_eq!(presence_suppressed, 1);
     }
@@ -658,7 +659,7 @@ mod tests {
         let second = actor.dispatch_control(frame()).await;
         assert!(matches!(second, ActorDispatch::Continue));
 
-        let [_, _, _, _, rooms_emitted, rooms_suppressed] = fixture.metrics.snapshot();
+        let [_, _, _, _, rooms_emitted, rooms_suppressed, _] = fixture.metrics.snapshot();
         assert_eq!(rooms_emitted, 1);
         assert_eq!(rooms_suppressed, 1);
     }

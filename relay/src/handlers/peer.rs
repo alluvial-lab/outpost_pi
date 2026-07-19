@@ -15,7 +15,7 @@ use crate::handlers::connection_actor::{ActorDispatch, ConnectionActor, Connecti
 use crate::protocol::frame::{FrameDecodeError, decode_relay_frame};
 use crate::protocol::outer::max_ws_message_bytes;
 use crate::reachability::RELAY_WS_PING_INTERVAL;
-use crate::resource_limits::HANDSHAKE_STEP_TIMEOUT;
+use crate::resource_limits::{HANDSHAKE_STEP_TIMEOUT, OUTBOUND_QUEUE_CAPACITY};
 
 pub use crate::resource_limits::{MAX_CONTROL_CHECK_PEER_COST_PER_WINDOW, MAX_CONTROL_FRAME_PEERS};
 /// Axum route handler: validates the WebSocket upgrade and hands the upgraded
@@ -93,7 +93,7 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     let registry = state.registry.clone();
     let rooms = state.rooms.clone();
 
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let (tx, mut rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
     let registration = registry
         .register(peer_id.clone(), room_meta, device_id.clone(), tx)
         .await;
