@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-05
+updated: 2026-07-18
 ---
 
 # Reconnect reproduction & attribution (observation workstream)
@@ -34,6 +34,11 @@ correlation key), attribute the failure to a specific surface, then decide
 whether it's app backoff / relay duplicate-connection cleanup / extension
 peer-offline consumption / send queue / UI projection — or a genuine
 contract gap.
+
+Parent normalization (2026-07-18): `idea-mobile-drop-slow-recovery` and
+`idea-mobile-outgoing-message-swallowed` moved here from the terminal
+`feature-mobile-tui-parity-chat-resilience` because this feature already owns
+their live-drop reproduction workstream; their parked scope is unchanged.
 
 ### Code-actionable items (scoped as stories, no live repro needed)
 
