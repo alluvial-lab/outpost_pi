@@ -112,7 +112,7 @@ class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
       activeRoom: activeRoom,
     );
 
-    final challengeCompleter = Completer<Map<String, dynamic>>();
+    final challengeCompleter = Completer<String>();
     bool authDone = false;
 
     final sub = ws.stream.listen(
@@ -124,22 +124,29 @@ class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
         // even when the relay is chatty.
         final rawStr = raw is String ? raw : raw.toString();
         if (!authDone) {
-          debugPrint('[ws-in] bytes=${rawStr.length} stage=preauth');
+          final rawBytes = relayUtf8ByteLength(
+            rawStr,
+            maxBytes: relayMaxPreAuthFrameBytes,
+          );
+          debugPrint('[ws-in] bytes=$rawBytes stage=preauth');
           transport._logWsIn(
             WsInEvent(
               ts: DateTime.now(),
-              bytes: rawStr.length,
+              bytes: rawBytes,
               kind: 'preauth',
               stage: 'preauth',
             ),
           );
-          try {
-            challengeCompleter.complete(
-              jsonDecode(raw as String) as Map<String, dynamic>,
-            );
-          } catch (e) {
-            if (!challengeCompleter.isCompleted) {
-              challengeCompleter.completeError(e);
+          if (!challengeCompleter.isCompleted) {
+            if (rawBytes > relayMaxPreAuthFrameBytes) {
+              challengeCompleter.completeError(
+                RelayFrameDecodeException(
+                  RelayFrameDecodeFailure.tooLarge,
+                  rawBytes,
+                ),
+              );
+            } else {
+              challengeCompleter.complete(rawStr);
             }
           }
           return;
@@ -278,11 +285,8 @@ class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
       );
 
       // 2. Challenge
-      final ch = await challengeCompleter.future;
-      if (ch['type'] != 'challenge') {
-        throw WsTransportError('Expected challenge, got ${ch['type']}');
-      }
-      final nonce = decodeRelayBase64(ch['nonce'] as String);
+      final challengeRaw = await challengeCompleter.future;
+      final nonce = decodeRelayChallenge(challengeRaw);
 
       // 3. Auth — domain-separated signature over the relay nonce.
       // Signing the bare nonce with the long-term owner key would create a
@@ -406,8 +410,14 @@ final class WsInboundFrameDecision {
 WsInboundFrameDecision demuxPostAuthInboundFrame({
   required String raw,
   required String activeRoom,
+  int maxRawBytes = relayMaxRawMessageBytes,
+  int maxDecodedPayloadBytes = relayDefaultMaxDecodedBytes,
 }) {
-  final decoded = decodeRelayInboundFrame(raw);
+  final decoded = decodeRelayInboundFrame(
+    raw,
+    maxRawBytes: maxRawBytes,
+    maxDecodedPayloadBytes: maxDecodedPayloadBytes,
+  );
   if (decoded case RejectedRelayFrame(:final reason)) {
     return WsInboundFrameDecision(
       kind: WsInboundFrameKind.dropMalformed,
