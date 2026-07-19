@@ -1,7 +1,7 @@
 ---
 id: epic-remote-session-resilience-refactor
 kind: epic
-stage: review
+stage: done
 tags: [pi-extension, app, relay, workflow]
 parent: null
 depends_on: []
