@@ -4359,6 +4359,32 @@ describe("session_shutdown teardown", () => {
     expect(outpostPiTestHarness.state()).toBe("idle");         // never transitioned to "started"
   });
 
+  test("revoke completing after session_shutdown does not throw from stale UI notify", async () => {
+    captureHandler("outpost-pi");
+    await outpostPiTestHarness.connect(makeMockCtx());
+    const storage = await import("./pairing/storage.js");
+    const peer = { name: "stale-ui-owner", remote_epk: "stale-ui-owner-key", paired_at: new Date().toISOString() };
+    _knownPeers.push(peer);
+
+    let releaseList!: () => void;
+    vi.mocked(storage.listPeers).mockImplementationOnce(() =>
+      new Promise<StoredPeer[]>((resolve) => { releaseList = () => resolve([peer]); }),
+    );
+    let stale = false;
+    const ctx = makeMockCtx();
+    ctx.ui.notify.mockImplementation(() => {
+      if (stale) throw new Error("This extension ctx is stale after session replacement or reload.");
+    });
+    const revoke = captureHandler("outpost-pi revoke");
+    const pending = revoke("stale-ui", ctx);
+    await vi.waitFor(() => expect(storage.listPeers).toHaveBeenCalled());
+
+    stale = true;
+    await captureEventHandler("session_shutdown")({ type: "session_shutdown", reason: "resume" });
+    releaseList();
+    await expect(pending).resolves.toBeUndefined();
+  });
+
   test("app user_message after session_shutdown does not call stale pi API", async () => {
     const staleMessage = "This extension ctx is stale after session replacement or reload.";
     const staleSendUserMessage = vi.fn(() => { throw new Error(staleMessage); });
