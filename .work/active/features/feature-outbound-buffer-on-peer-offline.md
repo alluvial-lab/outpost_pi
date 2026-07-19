@@ -1,7 +1,7 @@
 ---
 id: feature-outbound-buffer-on-peer-offline
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, bug, lifecycle]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
@@ -175,12 +175,12 @@ safe overflow path rather than escaping the existing best-effort send
 boundary.
 
 **Acceptance criteria:**
-- [ ] Online fan-out is byte-for-byte and timing-equivalent to the current path.
-- [ ] Each offline peer has an independent FIFO and independent cap accounting.
-- [ ] A buffer never exceeds either hard cap.
-- [ ] Overflow flushes no partial current interval; the next boundary permits a
+- [x] Online fan-out is byte-for-byte and timing-equivalent to the current path.
+- [x] Each offline peer has an independent FIFO and independent cap accounting.
+- [x] A buffer never exceeds either hard cap.
+- [x] Overflow flushes no partial current interval; the next boundary permits a
       fresh interval while any still-retained completed interval remains valid.
-- [ ] Serialized-size accounting cannot throw out of `broadcast()`.
+- [x] Serialized-size accounting cannot throw out of `broadcast()`.
 
 #### Unit 2 — Reconnect arbitration and channel-lifetime cleanup
 
@@ -197,11 +197,11 @@ and aggregate teardown to delete buffer state; same-peer `attach()` must not
 inherit or flush the prior channel's buffer.
 
 **Acceptance criteria:**
-- [ ] Buffered frames precede every live frame sent after `markPeerOnline()`.
-- [ ] A sync-first reconnect sends no stale buffered frame after history.
-- [ ] Per-frame send failures remain isolated to that owner channel and do not
+- [x] Buffered frames precede every live frame sent after `markPeerOnline()`.
+- [x] A sync-first reconnect sends no stale buffered frame after history.
+- [x] Per-frame send failures remain isolated to that owner channel and do not
       prevent state convergence to online.
-- [ ] Detach, relay drop, and reattach free the old buffer.
+- [x] Detach, relay drop, and reattach free the old buffer.
 
 #### Unit 3 — Canonical turn-boundary wiring
 
@@ -217,11 +217,11 @@ interval from the canonical turn-state event. Do not infer boundaries by
 re-enumerating `ServerMessage.type` variants inside the multiplexer.
 
 **Acceptance criteria:**
-- [ ] Normal SDK `turn_end` and manual compaction `turn_end` each seal once
+- [x] Normal SDK `turn_end` and manual compaction `turn_end` each seal once
       without creating a second turn-state source of truth.
-- [ ] Provider-error, cancel, and shutdown convergence retain their existing
+- [x] Provider-error, cancel, and shutdown convergence retain their existing
       behavior; teardown remains the terminal buffer cleanup.
-- [ ] No protocol type, relay control frame, or app behavior changes.
+- [x] No protocol type, relay control frame, or app behavior changes.
 
 #### Unit 4 — Focused ordering and lifecycle regressions
 
@@ -236,15 +236,15 @@ sync-first arbitration, teardown cleanup, canonical turn-boundary rollover,
 and separation from online and late-attach paths.
 
 **Acceptance criteria:**
-- [ ] The existing test near `owner_multiplexer.test.ts:108` now expects the
+- [x] The existing test near `owner_multiplexer.test.ts:108` now expects the
       formerly dropped frame to arrive on resume before the next live frame.
-- [ ] One test crosses each cap and proves that no suffix from the overflowed
+- [x] One test crosses each cap and proves that no suffix from the overflowed
       interval is flushed, then proves a post-boundary interval can flush.
-- [ ] One test proves `detach`/same-peer reattach does not deliver old frames.
-- [ ] One integration ordering test covers both reconnect races: `peer_online`
+- [x] One test proves `detach`/same-peer reattach does not deliver old frames.
+- [x] One integration ordering test covers both reconnect races: `peer_online`
       first (FIFO then later idempotent history) and `session_sync` first
       (buffer discarded, history only, later `peer_online` a no-op).
-- [ ] Existing online multi-owner and active-turn late-attach tests remain
+- [x] Existing online multi-owner and active-turn late-attach tests remain
       unchanged in meaning and green.
 
 ### Implementation order
@@ -301,24 +301,55 @@ introduced, so rollback has no compatibility step.
 
 ## Acceptance Criteria
 
-- [ ] While a peer is `markPeerOffline`-offline, `broadcast()` frames are
+- [x] While a peer is `markPeerOffline`-offline, `broadcast()` frames are
   buffered per-peer instead of dropped.
-- [ ] On `markPeerOnline`, buffered frames flush in original order before
+- [x] On `markPeerOnline`, buffered frames flush in original order before
   live fan-out resumes.
-- [ ] The buffer is bounded; overflow policy is explicit and tested (per
+- [x] The buffer is bounded; overflow policy is explicit and tested (per
   design decision #2).
-- [ ] Buffer is freed on channel `detach`/teardown — no leak across
+- [x] Buffer is freed on channel `detach`/teardown — no leak across
   re-attach.
-- [ ] No regression to the online-peer fan-out path (frames still reach
+- [x] No regression to the online-peer fan-out path (frames still reach
   online peers immediately, unchanged).
-- [ ] No regression to `lateAttach` / `session_sync` catch-up (distinct path,
+- [x] No regression to `lateAttach` / `session_sync` catch-up (distinct path,
   no double-delivery).
-- [ ] The existing `peer_offline suspends … peer_online resumes fan-out` test
+- [x] The existing `peer_offline suspends … peer_online resumes fan-out` test
   (`owner_multiplexer.test.ts:108`) is updated to assert buffered-then-flushed
   semantics (the `droppedForA` frame must now arrive after `markPeerOnline`).
-- [ ] New tests: buffer bound + overflow invariant; flush ordering; teardown
+- [x] New tests: buffer bound + overflow invariant; flush ordering; teardown
   frees buffer.
-- [ ] No wire change (`PROTOCOL.md` untouched), no relay change, no app change.
+- [x] No wire change (`PROTOCOL.md` untouched), no relay change, no app change.
+
+## Implementation
+
+Implemented a multiplexer-owned offline buffer per attached app peer. Each
+buffer keeps the newest completed turn interval plus the active suffix under
+hard 2,048-frame and 8-MiB serialized UTF-8 caps. Admission evicts completed
+data first; an active interval that still cannot fit is discarded atomically
+and suppressed until the next canonical turn boundary.
+
+Presence resume drains synchronously while fan-out remains suspended, including
+synchronous re-entrant broadcasts, and then converges online despite isolated
+send failures. A `session_sync` that arrives first discards stale buffered data
+before the authoritative replay. Detach, relay drop, and same-peer reattach
+clear the old channel's buffer. Normal and synthetic compaction turns seal
+through the existing `_applyTurnAndPublish({ type: "turn_end" })` source of
+truth.
+
+### Verification
+
+Run from `pi-extension/` with the direct local binaries required by the
+read-only Corepack environment:
+
+- `./node_modules/.bin/tsc --noEmit` — passed.
+- `./node_modules/.bin/vitest run src/extension/owner_multiplexer.test.ts src/extension.test.ts`
+  — 207 passed; only the documented `extension.test.ts` same-name cwd-lock
+  ordering flake failed (`first.ok` false).
+- `./node_modules/.bin/vitest run` — 852 passed, 3 skipped; only the 8 documented
+  environment failures remained: the same `extension.test.ts` cwd-lock flake
+  plus all 7 `cwd_lock.test.ts` cases (`EROFS` creating `/tmp/rp-cwdlock-*`).
+- `./node_modules/.bin/tsc` — passed; generated `dist/` remained ignored and
+  uncommitted.
 
 ## Out of scope (tracked separately)
 
