@@ -268,3 +268,32 @@ that before inspecting or replying to the request.
 - Test-integrity: no assertions weakened; but Provider.value lifetime mismatch
   masks the production disposal failure (material 2), and delay-based sync
   reduces determinism (material 4).
+
+## Corrective follow-up
+
+All four review findings were corrected without changing the feature stage:
+
+1. Restart success feedback is now mode-neutral: it confirms the session reset
+   and says only that a supervised Pi may reconnect briefly. It no longer
+   claims an interactive Pi process restarted.
+2. Destructive-action handlers capture a repository-owned `session_new`
+   command before the sheet/provider is dismissed, so confirmation never calls
+   the disposed sheet ViewModel. Messenger access is mounted-guarded, delayed
+   ViewModel error publication is disposal-guarded, and the rejection test now
+   uses production-equivalent `ChangeNotifierProvider(create:)` ownership.
+3. A deterministic composed app test now proves the real `session_new` ACK
+   boundary, channel loss to `StatusRetrying`, working-to-idle convergence,
+   authoritative successor `session_id` hydration, successor `session_sync`,
+   and rejection of a late old-session frame. Extension production code was
+   unchanged, so the optional extension ordering test was not added in this
+   app-only corrective pass.
+4. `ActionsRepository` tests now await fake-channel send events and room/meta
+   stream signals instead of fixed millisecond delays, including the
+   `session_new` success and rejection paths.
+
+Verification from `app/`:
+
+- `flutter analyze lib test` — passed with no issues.
+- Targeted Quick Actions tests — passed (12 tests).
+- Targeted ActionsRepository tests — passed (17 tests).
+- `flutter test --concurrency=1` — passed (756 tests).
