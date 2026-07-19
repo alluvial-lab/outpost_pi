@@ -15,6 +15,9 @@
       "additionalProperties": false,
       "x-outpost-pi": {
         "relayOpaque": ["ct"],
+        "profileOptional": {
+          "compat": ["room"]
+        },
         "maxDecodedBytesDefault": 4194304,
         "maxFrameOverheadBytes": 65536,
         "maxPreAuthFrameBytes": 16384,
