@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::time::{self, Duration};
 use tracing::warn;
 
 use crate::handlers::pi_forward::{
@@ -19,9 +18,10 @@ use crate::protocol::generated::control::RelayServerControlFrame;
 use crate::protocol::outer::OuterEnvelope;
 use crate::rooms::RoomManager;
 
-use crate::handlers::peer::{MAX_CONTROL_CHECK_PEER_COST_PER_WINDOW, MAX_CONTROL_FRAME_PEERS};
-
-const CONTROL_CHECK_PEER_COST_WINDOW: Duration = Duration::from_secs(60);
+use crate::resource_limits::{
+    CONTROL_CHECK_PEER_COST_WINDOW, FixedWindowBudget, MAX_CONTROL_CHECK_PEER_COST_PER_WINDOW,
+    MAX_CONTROL_FRAME_PEERS, MAX_PI_FORWARDS_PER_WINDOW, PI_FORWARD_WINDOW,
+};
 
 #[derive(Debug)]
 pub(crate) enum ActorDispatch {
@@ -34,33 +34,21 @@ pub(crate) enum ActorDispatch {
 
 #[derive(Debug)]
 pub(crate) struct ControlCheckLimiter {
-    window_started: time::Instant,
-    peer_cost_used: usize,
+    budget: FixedWindowBudget,
 }
 
 impl ControlCheckLimiter {
     fn new() -> Self {
         Self {
-            window_started: time::Instant::now(),
-            peer_cost_used: 0,
+            budget: FixedWindowBudget::new(
+                CONTROL_CHECK_PEER_COST_WINDOW,
+                MAX_CONTROL_CHECK_PEER_COST_PER_WINDOW,
+            ),
         }
     }
 
     fn allow(&mut self, peer_cost: usize) -> bool {
-        let now = time::Instant::now();
-        if now.duration_since(self.window_started) >= CONTROL_CHECK_PEER_COST_WINDOW {
-            self.window_started = now;
-            self.peer_cost_used = 0;
-        }
-
-        let Some(next_cost) = self.peer_cost_used.checked_add(peer_cost) else {
-            return false;
-        };
-        if next_cost > MAX_CONTROL_CHECK_PEER_COST_PER_WINDOW {
-            return false;
-        }
-        self.peer_cost_used = next_cost;
-        true
+        self.budget.allow(peer_cost)
     }
 }
 
@@ -94,6 +82,7 @@ pub(crate) struct ConnectionActor {
     last_presence_resp: Option<String>,
     last_rooms_resp: HashMap<String, String>,
     control_check_limiter: ControlCheckLimiter,
+    pi_forward_limiter: FixedWindowBudget,
 }
 
 impl ConnectionActor {
@@ -120,6 +109,10 @@ impl ConnectionActor {
             last_presence_resp: None,
             last_rooms_resp: HashMap::new(),
             control_check_limiter: ControlCheckLimiter::new(),
+            pi_forward_limiter: FixedWindowBudget::new(
+                PI_FORWARD_WINDOW,
+                MAX_PI_FORWARDS_PER_WINDOW,
+            ),
         }
     }
 
@@ -169,6 +162,9 @@ impl ConnectionActor {
     }
 
     async fn dispatch_pi_envelope(&mut self, frame: PiEnvelopeFrame) -> ActorDispatch {
+        if !self.allow_pi_forward() {
+            return ActorDispatch::Close;
+        }
         self.pi_forward_result_to_dispatch(
             handle_pi_envelope(
                 &self.peer_id,
@@ -195,6 +191,20 @@ impl ConnectionActor {
                 _ => ActorDispatch::Continue,
             },
         }
+    }
+
+    fn allow_pi_forward(&mut self) -> bool {
+        if self.pi_forward_limiter.allow(1) {
+            return true;
+        }
+
+        warn!(
+            peer = %self.peer_short,
+            limit = MAX_PI_FORWARDS_PER_WINDOW,
+            window_secs = PI_FORWARD_WINDOW.as_secs(),
+            "pi_envelope rate limit exceeded, closing connection"
+        );
+        false
     }
 
     pub(crate) fn allow_control_check(&mut self, frame_type: &str, peers: &[String]) -> bool {
@@ -367,7 +377,8 @@ mod tests {
         assert_eq!(actor.conn_id, 42);
         assert!(actor.last_presence_resp.is_none());
         assert!(actor.last_rooms_resp.is_empty());
-        assert_eq!(actor.control_check_limiter.peer_cost_used, 0);
+        assert_eq!(actor.control_check_limiter.budget.used(), 0);
+        assert_eq!(actor.pi_forward_limiter.used(), 0);
     }
 
     #[test]
@@ -459,6 +470,22 @@ mod tests {
     #[test]
     fn control_check_cost_charges_empty_checks() {
         assert_eq!(control_check_cost(&[]), 1);
+    }
+
+    #[test]
+    fn pi_forward_limiter_accepts_exact_budget_then_closes_connection() {
+        let mut actor = ConnectionActor::new(
+            "peer-12345678".to_string(),
+            "12345678".to_string(),
+            "main".to_string(),
+            42,
+            actor_services().1,
+        );
+
+        for _ in 0..MAX_PI_FORWARDS_PER_WINDOW {
+            assert!(actor.allow_pi_forward());
+        }
+        assert!(!actor.allow_pi_forward());
     }
 
     #[test]

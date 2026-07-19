@@ -61,7 +61,7 @@ impl IntoResponse for MeshHttpError {
 /// the cap, the wire envelope or signature is invalid, the URL owner hash does
 /// not match, the version is stale, or storage fails.
 pub async fn post_mesh(
-    State(store): State<Arc<MeshStore>>,
+    State(state): State<crate::AppState>,
     Path(url_hash): Path<String>,
     body: axum::body::Bytes,
 ) -> Result<(StatusCode, Json<MeshPostResponse>), MeshHttpError> {
@@ -95,7 +95,7 @@ pub async fn post_mesh(
         .unwrap_or_default()
         .as_millis() as i64;
 
-    match store.upsert(
+    match state.mesh.upsert(
         &computed_hash,
         &owner_pk_bytes,
         header.version,
@@ -103,13 +103,16 @@ pub async fn post_mesh(
         &env.sig,
         now_ms,
     ) {
-        Ok(()) => Ok((
-            StatusCode::OK,
-            Json(MeshPostResponse {
-                version: header.version,
-                updated_at: now_ms,
-            }),
-        )),
+        Ok(()) => {
+            state.mesh_auth.invalidate_all();
+            Ok((
+                StatusCode::OK,
+                Json(MeshPostResponse {
+                    version: header.version,
+                    updated_at: now_ms,
+                }),
+            ))
+        }
         Err(StoreError::StaleVersion { current, .. }) => Err(MeshHttpError::Conflict {
             current_version: current,
         }),
