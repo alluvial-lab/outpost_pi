@@ -1,7 +1,7 @@
 ---
 id: feature-cross-component-e2e-pairing-suite-infra
 kind: story
-stage: implementing
+stage: done
 tags: [e2e-test, testing]
 parent: feature-cross-component-e2e-pairing-suite
 depends_on: []
@@ -43,3 +43,14 @@ honest failing test as a linked skip with a one-line reason; do not weaken the
 invariant. Fix stale fixtures, drifted assertions, and harness defects
 in-session. Never game an assertion, assert mock calls as product evidence, or
 replace real sockets with in-process mocks merely to obtain green.
+
+## Implementation notes
+
+- Execution capability: `openai-codex/gpt-5.6-sol` (caller-selected for the cross-component architecture).
+- Review weight: `standard` (caller).
+- Files changed: `e2e/docker-compose.test.yml`, `e2e/services/pi-host.Dockerfile`, `e2e/run-pairing.sh`, `e2e/README.md`, `e2e/tsconfig.pi-host.json`, `pi-extension/test/support/e2e_pi_host_{runtime,server}.ts`, and `app/test/e2e/support/` endpoint/readiness/storage/proxy clients.
+- Tests added: infrastructure smoke through the same runner; installed-SDK host typecheck and Flutter support analysis.
+- Simplification: one HTTP command/status/event boundary and one bounded polling helper; process restart remains the only extension reset.
+- Discrepancies from design: `.github/workflows/e2e-pairing.yml` is not written because the caller's allowed write scope excludes `.github/`; the local/CI-compatible entrypoint is complete for a later workflow-only follow-up.
+- Adjacent issues parked: none.
+- Verification: `node_modules/.bin/tsc -p ../e2e/tsconfig.pi-host.json`; Flutter analyze of `test/e2e/support`; `E2E_INFRA_ONLY=1 e2e/run-pairing.sh` (relay, Pi host, and Toxiproxy healthy; cleanup passed).
