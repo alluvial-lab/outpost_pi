@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-restart-pi-session-affordance
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, daemon, workflow]
 parent: feature-mobile-native-session-process-control
 depends_on: [idea-mobile-session-control]
@@ -117,6 +117,21 @@ ordering and room/identity continuity; app widget/repository tests should
 cover confirmation, no-reset-before-ACK, expected reconnect feedback, and
 failure preservation. Cross-surface reconnect assertions are tracked in
 `feature-mobile-native-session-process-control-reconnect-verification`.
+
+## Implementation
+
+- Added a danger-styled `Restart Pi process` tile to Quick Actions with its own
+  confirmation and `Cancel` / `Restart Pi` controls.
+- Restart delegates to the existing `QuickActionsViewModel.newSession()` /
+  `IActionsRepository.newSession()` path, so it sends only canonical
+  `session_new`; no `session_restart` wire action or `/reload` affordance was
+  introduced.
+- The confirmation qualifies process respawn as supervised-Pi behavior and
+  explains transcript loss plus the expected brief disconnect. After the ACK,
+  the app clears the local mirror and shows `Restarting Pi — reconnecting…`;
+  failures leave the transcript intact.
+- Danger styling, cancel, rejection, and controlled ACK/reconnect-feedback
+  widget paths are covered by Quick Actions tests.
 
 ## Relationship to other work
 
