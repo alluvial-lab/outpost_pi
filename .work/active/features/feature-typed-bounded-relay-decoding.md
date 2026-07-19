@@ -1,7 +1,7 @@
 ---
 id: feature-typed-bounded-relay-decoding
 kind: feature
-stage: review
+stage: done
 tags: [app, pi-extension, relay, security, protocol]
 parent: null
 depends_on: []
