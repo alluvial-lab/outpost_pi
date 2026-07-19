@@ -1,7 +1,7 @@
 ---
 name: flutter-mobile
 description: Remote Pi Flutter mobile app reference. Read before editing or reviewing app/ code, mobile lifecycle, provider/ViewModels, routing, relay WebSocket reconnect, room/session state, secure storage, Hive cache, or UI async safety.
-updated: 2026-06-28
+updated: 2026-07-19
 ---
 
 # Flutter Mobile App Reference
@@ -176,6 +176,14 @@ Remote Pi app transport rules:
 - Presence and room streams emit full snapshots; consumers should treat each emission as canonical, not as a partial patch. [remote-pi-app-transport-state]{1}
 - On reconnect, `ConnectionManager` replays presence + room subscriptions and sends check frames; new state must hydrate from relay snapshots, not from sticky UI booleans. [remote-pi-app-transport-state]{1}
 - `isRoomLive` and `isRoomWorking` intentionally return false while the app is not `StatusOnline`; stale cached truth must not render as live/working. [remote-pi-app-transport-state]{1}
+
+### Generated, bounded relay decode boundary
+
+- `data/transport/relay_frame_decoder.dart` counts raw UTF-8 bytes before `jsonDecode`, then parses through generated `RelayInboundFrameDto` outer/control DTOs before any transport routing or base64 decode.
+- The 4 MiB decoded payload default, 64 KiB overhead, 5,657,944-byte raw ceiling, and 16 KiB pre-auth ceiling come from `relay-outer.schema.json` through `protocol/generated/relay_frames.g.dart`; do not copy numeric limits into transport code.
+- Encoded length is checked before base64 allocation and decoded length is checked again. Rejections carry only a reason and observed size; never include raw frames, nonces, metadata, or payload text.
+- The generated endpoint DTO permits a missing outer `room` for the compatibility receive shape. `WsTransport` still fails closed on missing/empty or non-active rooms before inner-message routing.
+- `dart:io` / `IOWebSocketChannel` exposes no client `maxPayload`, so this boundary caps JSON/base64 work after the platform has materialized the String; do not claim it prevents the initial WebSocket message allocation.
 
 Flutter lifecycle notifications are useful but not complete: apps should not rely on receiving every state notification, and states can be skipped during abrupt termination. [flutter-app-lifecycle]{1} `AppLifecycleListener` is the current listener API for lifecycle transitions. [flutter-app-lifecycle-listener]{1}
 

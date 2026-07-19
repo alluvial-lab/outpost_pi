@@ -1,7 +1,7 @@
 ---
 name: pi-extension-typescript
 description: Remote Pi pi-extension TypeScript/Pi SDK reference. Read before editing or reviewing pi-extension/ code, session lifecycle hooks, relay/room metadata, mesh tools, pairing, or Pi SDK integration.
-updated: 2026-06-27
+updated: 2026-07-19
 ---
 
 # Pi Extension TypeScript Reference
@@ -125,8 +125,8 @@ Session replacement order from Pi docs:
 Important files:
 
 - `src/index.ts` — extension factory, `/remote-pi` commands, relay + room metadata, session lifecycle hooks.
-- `src/protocol/types.ts` — app/extension message-shape unions. [remote-pi-protocol-types]{1}
-- `src/protocol/codec.ts` — helper codec with a server-type allowlist, but currently not the authoritative runtime validation boundary; runtime inbound dispatch still uses source-local parsing/dispatch logic. Do not describe the wire path as fully codec-validated unless the code is changed to make that true. [remote-pi-protocol-codec]{1}
+- `src/protocol/types.ts` — narrow re-export of schema-generated app/extension message unions. [remote-pi-protocol-types]{1}
+- `src/protocol/codec.ts` — app↔Pi inner-message JSON decoder backed by generated type registries and runtime predicates. `src/protocol/relay_ingress.ts` is the live relay boundary: it caps raw/base64 work, then consumes generated outer/control/cross-PC predicates before decode-once typed fanout. The generated outer contract exposes a strict room-required predicate plus a `compat` predicate that relaxes only room presence; both reject empty declared strings and unknown properties. [remote-pi-protocol-codec]{1}
 - `src/actions/handlers.ts` — typed mobile/app actions (`session_new`, `session_compact`, `model_set`, `thinking_set`, `list_models`).
 - `src/transport/relay_client.ts`, `src/transport/peer_channel.ts`, `src/transport/pi_forward_client.ts` — relay WebSocket, per-peer channels, and cross-PC Pi envelope forwarding.
 - `src/session/*` — local UDS broker, mesh node, peer inventory, tools, cwd lock, leader election, broker remote bridge.
@@ -215,7 +215,7 @@ Protocol families to recognize:
 - Regenerating identity just because macOS/Windows keyring is temporarily locked or unavailable.
 - Logging payload contents or secrets while debugging relay/peer traffic.
 - Composing peer addresses by hand; use broker-issued addresses verbatim.
-- Assuming `src/protocol/codec.ts` protects all runtime wire paths; it is a helper/tested codec, not currently the live validation boundary. [remote-pi-protocol-codec]{1}
+- Adding source-local relay frame guards or DTO mirrors; `relay_ingress.ts` must consume the schema-generated outer/control/cross-PC predicates, and outbound adapters must use generated wire types. [remote-pi-protocol-codec]{1}
 - Mutating `_activePeers` or mesh/broker internals outside the helper paths that refresh footer/log/state.
 - Adding broad dependencies without checking ESM compatibility and test impact.
 
