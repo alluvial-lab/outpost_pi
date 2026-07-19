@@ -32,10 +32,22 @@ pub enum FrameDecodeError {
     RawTooLarge { actual: usize, max: usize },
     #[error("invalid json: {0}")]
     InvalidJson(#[from] serde_json::Error),
-    #[error("unknown relay frame type: {0}")]
-    UnknownType(String),
+    #[error("unknown relay frame type ({type_bytes} bytes)")]
+    UnknownType { type_bytes: usize },
     #[error("outer envelope too large: {estimated} bytes (max {max})")]
     OuterTooLarge { estimated: usize, max: usize },
+}
+
+impl FrameDecodeError {
+    /// Return a content-free diagnostic category safe for relay logs.
+    pub fn category(&self) -> &'static str {
+        match self {
+            Self::RawTooLarge { .. } => "raw_too_large",
+            Self::InvalidJson(_) => "invalid_json",
+            Self::UnknownType { .. } => "unknown_type",
+            Self::OuterTooLarge { .. } => "outer_too_large",
+        }
+    }
 }
 
 /// Decode and classify an authenticated inbound text frame before dispatch.
@@ -80,7 +92,9 @@ pub fn decode_relay_frame_with_limits(
     };
 
     if !RELAY_INBOUND_FRAME_TYPES.contains(&frame_type.as_str()) {
-        return Err(FrameDecodeError::UnknownType(frame_type));
+        return Err(FrameDecodeError::UnknownType {
+            type_bytes: frame_type.len(),
+        });
     }
 
     if frame_type == "pi_envelope" {
@@ -150,13 +164,15 @@ mod tests {
     }
 
     #[test]
-    fn unknown_typed_frame_rejects_before_dispatch() {
+    fn unknown_typed_frame_records_only_its_byte_count() {
         let err = decode_relay_frame(r#"{"type":"mystery_frame","peers":[]}"#)
             .expect_err("unknown typed frame must fail at decode boundary");
         assert!(matches!(
-            err,
-            FrameDecodeError::UnknownType(t) if t == "mystery_frame"
+            &err,
+            FrameDecodeError::UnknownType { type_bytes: 13 }
         ));
+        assert_eq!(err.to_string(), "unknown relay frame type (13 bytes)");
+        assert_eq!(err.category(), "unknown_type");
     }
 
     #[test]

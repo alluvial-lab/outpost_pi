@@ -12,7 +12,7 @@ use tracing::{info, warn};
 use crate::AppState;
 use crate::auth::challenge::{challenge_line, gen_nonce, parse_hello_bootstrap, verify_auth};
 use crate::handlers::connection_actor::{ActorDispatch, ConnectionActor, ConnectionActorServices};
-use crate::protocol::frame::{FrameDecodeError, decode_relay_frame};
+use crate::protocol::frame::decode_relay_frame;
 use crate::protocol::outer::max_ws_message_bytes;
 use crate::reachability::RELAY_WS_PING_INTERVAL;
 use crate::resource_limits::{HANDSHAKE_STEP_TIMEOUT, OUTBOUND_QUEUE_CAPACITY};
@@ -135,6 +135,10 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
         time::Instant::now() + RELAY_WS_PING_INTERVAL,
         RELAY_WS_PING_INTERVAL,
     );
+    // Bound attacker-triggerable diagnostics per authenticated connection.
+    // Rejected frame content is never logged; the byte count and category are
+    // sufficient to diagnose a bad client without creating a log amplifier.
+    let mut invalid_frame_logs_remaining = 4usize;
 
     'routing: loop {
         tokio::select! {
@@ -158,16 +162,16 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
 
                         let frame = match decode_relay_frame(&text) {
                             Ok(frame) => frame,
-                            Err(FrameDecodeError::UnknownType(frame_type)) => {
-                                warn!(
-                                    peer = %peer_short,
-                                    frame_type = %frame_type,
-                                    "unknown relay frame type, dropping"
-                                );
-                                continue;
-                            }
                             Err(err) => {
-                                warn!(peer = %peer_short, err = %err, "invalid relay frame, dropping");
+                                if invalid_frame_logs_remaining > 0 {
+                                    invalid_frame_logs_remaining -= 1;
+                                    warn!(
+                                        peer = %peer_short,
+                                        category = err.category(),
+                                        frame_bytes = text.len(),
+                                        "invalid relay frame, dropping"
+                                    );
+                                }
                                 continue;
                             }
                         };
