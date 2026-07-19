@@ -4,10 +4,13 @@ import {
   RELAY_DEFAULT_MAX_DECODED_BYTES,
   RELAY_MAX_PRE_AUTH_FRAME_BYTES,
   RELAY_MAX_RAW_MESSAGE_BYTES,
+  isCrossPcFrame,
+  isRelayOuterEnvelopeCompat,
   isRelayPostAuthControlFrame,
+  isRelayServerControlFrame,
   type CrossPcFramePiEnvelopeIn,
   type RelayControlFrameChallenge,
-  type RelayOuterEnvelope,
+  type RelayOuterEnvelopeCompat,
   type RelayPostAuthControlFrame,
 } from "./generated/protocol.generated.js";
 
@@ -31,7 +34,7 @@ export interface RelayIngressLimits {
 export type DecodedRelayIngress =
   | {
       readonly kind: "outer";
-      readonly frame: RelayOuterEnvelope;
+      readonly frame: RelayOuterEnvelopeCompat;
       readonly payloadUtf8: string;
     }
   | { readonly kind: "control"; readonly frame: RelayServerControlFrame }
@@ -55,39 +58,6 @@ const DEFAULT_LIMITS: RelayIngressLimits = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
-}
-
-function isEnvelope(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  const to = value.to;
-  return isNonEmptyString(value.from) &&
-    (isNonEmptyString(to) || (Array.isArray(to) && to.every(isNonEmptyString))) &&
-    isNonEmptyString(value.id) &&
-    (value.re === null || typeof value.re === "string") &&
-    Object.hasOwn(value, "body");
-}
-
-function parseCrossPc(value: Record<string, unknown>): CrossPcFramePiEnvelopeIn | null {
-  return value.type === "pi_envelope_in" &&
-    isNonEmptyString(value.from_pc) &&
-    isNonEmptyString(value.to_room) &&
-    isEnvelope(value.envelope)
-    ? value as unknown as CrossPcFramePiEnvelopeIn
-    : null;
-}
-
-function parseOuter(value: Record<string, unknown>): RelayOuterEnvelope | null {
-  if (!isNonEmptyString(value.peer) || !isNonEmptyString(value.ct)) return null;
-  if (value.room !== undefined && typeof value.room !== "string") return null;
-  return {
-    peer: value.peer,
-    ct: value.ct,
-    ...(typeof value.room === "string" ? { room: value.room } : {}),
-  };
 }
 
 function decodeBase64Bounded(value: string, maxDecodedBytes: number): Buffer {
@@ -130,16 +100,19 @@ export function decodeRelayIngress(
   }
 
   if (typeof parsed.type === "string") {
-    const crossPc = parseCrossPc(parsed);
-    if (crossPc) return { kind: "cross_pc", frame: crossPc };
+    if (isCrossPcFrame(parsed) && parsed.type === "pi_envelope_in") {
+      return { kind: "cross_pc", frame: parsed };
+    }
     if (isRelayPostAuthControlFrame(parsed)) {
       return { kind: "control", frame: parsed };
     }
     throw new RelayIngressDecodeError("unsupported_type", rawBytes);
   }
 
-  const outer = parseOuter(parsed);
-  if (!outer) throw new RelayIngressDecodeError("invalid_message", rawBytes);
+  if (!isRelayOuterEnvelopeCompat(parsed)) {
+    throw new RelayIngressDecodeError("invalid_message", rawBytes);
+  }
+  const outer = parsed;
   const payload = decodeBase64Bounded(outer.ct, effective.maxDecodedPayloadBytes);
   return { kind: "outer", frame: outer, payloadUtf8: payload.toString("utf8") };
 }
@@ -157,7 +130,7 @@ export function decodeRelayChallenge(line: string): RelayControlFrameChallenge {
   } catch {
     throw new RelayIngressDecodeError("invalid_message", rawBytes);
   }
-  if (!isRecord(parsed) || parsed.type !== "challenge" || !isNonEmptyString(parsed.nonce)) {
+  if (!isRelayServerControlFrame(parsed) || parsed.type !== "challenge") {
     throw new RelayIngressDecodeError("invalid_message", rawBytes);
   }
   const nonce = decodeBase64Bounded(parsed.nonce, 32);
