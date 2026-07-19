@@ -430,3 +430,37 @@ change, reopen the scope boundary explicitly.
 - Late-attach mutual exclusion: FAIL (blocker 1)
 - Online-peer fan-out unchanged: PASS
 - Test-integrity: suspend/resume test flipped (not weakened); new cap/overflow/ordering/teardown tests added; missing regressions correspond to the 2 blockers.
+
+## Corrective follow-up
+
+Both verified review blockers were corrected without changing the app, relay, or
+wire contract:
+
+1. Production late-attach delivery now consumes
+   `OwnerMultiplexer.lateAttachEntries()` rather than enumerating every active
+   owner. `markPeerOffline()` therefore removes the peer from the actual
+   provider consulted at turn end. The integration regression covers
+   attach-during-turn → offline → buffered chunk/message/done FIFO → online →
+   turn-end and proves no `session_history` is also sent.
+2. A successful online-first buffered compaction flush records its peer/session
+   replay key for the managed channel lifetime. Sender-scoped `session_sync`
+   arbitration removes that already-delivered compaction from every later
+   history reply; user/assistant/tool replay classes retain their existing
+   deterministic identity or projection-key convergence. The multiplexer unit
+   regression proves repeated replay suppression, and the cross-boundary
+   extension regression applies the app's live/replay ID formulas and proves
+   exactly one compaction row.
+
+Verification from `pi-extension/`:
+
+- `./node_modules/.bin/tsc --noEmit` — passed after each fix and after integration.
+- Focused blocker regressions — passed (late-attach exclusion; multiplexer and
+  cross-boundary online-first compaction arbitration).
+- `./node_modules/.bin/vitest run src/extension/owner_multiplexer.test.ts src/extension.test.ts`
+  — 210 passed; only the documented same-name cwd-lock environment flake failed
+  (`first.ok` false).
+- `./node_modules/.bin/vitest run` — 855 passed, 3 skipped; only the 8 documented
+  environment failures remained: the same extension cwd-lock flake plus all 7
+  `cwd_lock.test.ts` cases (`EROFS` creating `/tmp/rp-cwdlock-*`).
+
+Feature stage intentionally remains `review` for reviewer/orchestrator closure.
