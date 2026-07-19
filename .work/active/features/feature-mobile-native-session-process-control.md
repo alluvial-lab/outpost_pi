@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-native-session-process-control
 kind: feature
-stage: review
+stage: done
 tags: [app, pi-extension, daemon, workflow]
 parent: epic-remote-session-resilience-refactor
 depends_on: [feature-remote-pi-fork-vendor-and-mobile-surface]
@@ -9,6 +9,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-15
 updated: 2026-07-18
+reviewed: 2026-07-19 (standard, gpt-5.6-sol fresh-context → needs fixes; 1 blocker + 3 material fixed + verified → done; no second pass per standard weight)
 ---
 
 # Mobile: native Pi session and process control
