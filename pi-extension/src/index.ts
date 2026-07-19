@@ -563,6 +563,21 @@ function _notify(msg: string, type: "info" | "warning" | "error" = "info", ctx?:
   }
 }
 
+/**
+ * Adapt command contexts so post-await notifications are best-effort when the
+ * captured Pi UI belongs to a replaced session.
+ */
+function _safeCommandContext<T extends { ui: OutpostPiUi }>(ctx: T): T {
+  const ui = _safeUi(ctx);
+  return {
+    ...ctx,
+    ui: {
+      ...ui,
+      notify: (msg, type = "info") => _notify(msg, type, ctx),
+    },
+  } as T;
+}
+
 function _forgetStaleMessageApi(api: AgentMessageApi): void {
   if (api === _messageApi) _messageApi = null;
   if (api === _pi) _pi = null;
@@ -1685,7 +1700,7 @@ function _registerOutpostPiCommands(pi: ExtensionAPI): void {
     run: (args: string, ctx: ExtensionCommandContext) => void | Promise<void>,
   ) => async (args: string, ctx: ExtensionCommandContext) => {
     _rememberCommandCtx(ctx);
-    return run(args, ctx);
+    return run(args, _safeCommandContext(ctx));
   };
 
   const specs: OutpostPiCommandSpec[] = [
@@ -1715,16 +1730,17 @@ function _registerOutpostPiCommands(pi: ExtensionAPI): void {
     specs,
     async (sub, ctx) => {
       _rememberCommandCtx(ctx);
+      const safeCtx = _safeCommandContext(ctx);
       const spec = specs
         .slice()
         .sort((a, b) => b.suffix.length - a.suffix.length)
         .find((candidate) => sub === candidate.suffix || sub.startsWith(`${candidate.suffix} `));
       if (!spec) {
-        await _cmdRoot(ctx);
+        await _cmdRoot(safeCtx);
         return;
       }
       const args = sub === spec.suffix ? "" : sub.slice(spec.suffix.length).trim();
-      await spec.run(args, ctx);
+      await spec.run(args, safeCtx);
     },
   );
 }
@@ -1798,11 +1814,11 @@ function _cmdStatus(ctx: Pick<ExtensionContext, "ui">): void {
       : `🟡 Relay: on, waiting for first pairing (${relayUrl})`;
   }
 
-  ctx.ui.notify(`[outpost-pi]\n  ${meshLine}\n  ${relayLine}`, "info");
+  _notify(`[outpost-pi]\n  ${meshLine}\n  ${relayLine}`, "info", ctx);
 }
 
 async function _cmdPeers(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
-  await _localMeshCommands.peers(ctx);
+  await _localMeshCommands.peers(_safeCommandContext(ctx));
 }
 
 /** Start the local mesh root in the background and consume its failure at this boundary. */
@@ -1816,14 +1832,15 @@ function _startRootInBackground(
 }
 
 async function _cmdRoot(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
-  await _localMeshCommands.root(ctx);
+  await _localMeshCommands.root(_safeCommandContext(ctx));
 }
 
 async function _cmdSetup(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
-  await _localMeshCommands.setup(ctx);
+  await _localMeshCommands.setup(_safeCommandContext(ctx));
 }
 
 async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
+  ctx = _safeCommandContext(ctx);
   if (_state !== "idle") {
     ctx.ui.notify("[outpost-pi] Already started.", "warning");
     return;
@@ -1943,19 +1960,19 @@ async function _cmdStart(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<voi
  * through owner/session ports instead of mutating index state directly.
  */
 async function _cmdPair(ctx: Pick<ExtensionContext, "ui" | "cwd">, args = ""): Promise<void> {
-  await _pairingCommands.pair(ctx, args);
+  await _pairingCommands.pair(_safeCommandContext(ctx), args);
 }
 
 async function _cmdStop(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
-  await _localMeshCommands.stop(ctx);
+  await _localMeshCommands.stop(_safeCommandContext(ctx));
 }
 
 async function _cmdList(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
-  await _pairingCommands.devices(ctx);
+  await _pairingCommands.devices(_safeCommandContext(ctx));
 }
 
 async function _cmdRevoke(arg: string, ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
-  await _pairingCommands.revoke(arg, ctx);
+  await _pairingCommands.revoke(arg, _safeCommandContext(ctx));
 }
 
 async function _shortidCompletions(
