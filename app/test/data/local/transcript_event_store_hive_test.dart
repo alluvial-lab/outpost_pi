@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/local/records/transcript_event_record.dart';
 import 'package:app/data/local/transcript_event_store_hive.dart';
+import 'package:app/data/local/transcript_storage_key.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
+import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/domain/transcript/transcript_event.dart';
 import 'package:app/domain/transcript/transcript_projection.dart';
@@ -118,6 +121,81 @@ void main() {
       expect((await store.readSession(second)).map((e) => e.eventId), <String>[
         'event-2',
       ]);
+    });
+
+    test(
+      'encrypts transcript bytes and reopens them with the same key',
+      () async {
+        const sentinel = 'unique-plaintext-transcript-sentinel-9f2d';
+        const key = TranscriptSessionKey(
+          peerId: 'encrypted-peer',
+          roomId: 'main',
+          sessionId: 'encrypted-session',
+        );
+        final encryptionKey = List<int>.generate(32, (index) => index);
+
+        await Hive.close();
+        await LocalBoxes.initForTest(dir.path, encryptionKey: encryptionKey);
+        boxes = LocalBoxes();
+        store = HiveTranscriptEventStore(boxes);
+        await store.appendAll(key, <TranscriptEvent>[
+          _submitted('encrypted-event', key.sessionId, 'client-id', sentinel),
+        ]);
+        await boxes.sessionsIndexBox().put('sentinel-index', <String, Object?>{
+          'preview': sentinel,
+        });
+        final projection = await boxes.msgsBox(
+          const RemoteSessionRef(
+            peerEpk: 'encrypted-peer',
+            roomId: 'main',
+            sessionId: 'encrypted-session',
+          ),
+        );
+        await projection.put(0, <String, Object?>{'text': sentinel});
+        await Hive.close();
+
+        final needle = utf8.encode(sentinel);
+        final files = dir
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.hive'));
+        expect(files, isNotEmpty);
+        for (final file in files) {
+          final bytes = await file.readAsBytes();
+          expect(
+            _containsBytes(bytes, needle),
+            isFalse,
+            reason: '${file.path} exposed the transcript sentinel',
+          );
+        }
+
+        await LocalBoxes.initForTest(dir.path, encryptionKey: encryptionKey);
+        boxes = LocalBoxes();
+        store = HiveTranscriptEventStore(boxes);
+        final reopened = await store.readSession(key);
+        expect((reopened.single as UserMessageSubmitted).text, sentinel);
+      },
+    );
+
+    test('rejects a wrong key before transcript access', () async {
+      await boxes.sessionsIndexBox().put('cipher-check', <String, Object?>{
+        'value': 'encrypted',
+      });
+      await Hive.close();
+
+      await expectLater(
+        LocalBoxes.initForTest(
+          dir.path,
+          encryptionKey: List<int>.filled(32, 99),
+        ),
+        throwsA(
+          isA<TranscriptStorageKeyException>().having(
+            (error) => error.code,
+            'code',
+            'key_mismatch',
+          ),
+        ),
+      );
     });
 
     test('guards against appending an event for a different session', () async {
@@ -274,6 +352,20 @@ void main() {
       );
     });
   });
+}
+
+bool _containsBytes(List<int> haystack, List<int> needle) {
+  for (var start = 0; start <= haystack.length - needle.length; start += 1) {
+    var matches = true;
+    for (var offset = 0; offset < needle.length; offset += 1) {
+      if (haystack[start + offset] != needle[offset]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
 }
 
 UserMessageSubmitted _submitted(
