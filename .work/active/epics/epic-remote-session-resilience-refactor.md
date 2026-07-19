@@ -198,6 +198,16 @@ records exit 42 + omits `--continue` exactly once; (3) `Supervisor` immediately
 respawns without crash backoff; (4) successor preserves daemon room/config
 identity while publishing fresh session identity.
 
+### Corrective follow-up
+
+Added deterministic extension and daemon seam coverage in
+`pi-extension/src/extension.test.ts`, `pi-extension/src/daemon/rpc_child.test.ts`,
+and `pi-extension/src/daemon/supervisor.test.ts`. The tests cover ACK/reset
+ordering before the scheduled exit, exit-42 observation with one fresh-session
+spawn, immediate respawn without crash backoff, and successor room/config
+continuity with a fresh `session_id` room-meta publication. The epic remains at
+`stage: review` pending the separate Material 1 correction.
+
 ### Epic-goal check
 - Reconnect robustness: FAIL (stale room liveness resend race — material 1)
 - `/new` handling: FAIL on verification (material 2)

@@ -57,6 +57,11 @@ unit tests or made green by broad mocks.
 - Reconnect remains owned by the existing ConnectionManager/SyncService state
   machine and authoritative room/session hydration; the UI feedback is only a
   transient snackbar, not a sticky restart state.
+- Corrective follow-up: `pi-extension/src/extension.test.ts` now exercises the
+  daemon `session_new` ACK/reset/exit ordering and successor room/session
+  publication; `src/daemon/rpc_child.test.ts` and `src/daemon/supervisor.test.ts`
+  exercise exit-42 observation, one-shot `--continue` omission, config identity,
+  and immediate respawn without crash backoff.
 
 ## Acceptance criteria
 

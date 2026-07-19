@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createConnection } from "node:net";
 import { join } from "node:path";
@@ -71,7 +71,63 @@ afterEach(async () => {
     supervisor = null;
   }
   delete process.env["OUTPOST_PI_HOME"];
+  delete process.env["CAPTURE"];
   try { rmSync(testHome, { recursive: true, force: true }); } catch { /* best-effort */ }
+});
+
+describe("Supervisor — exit-42 fresh-session recycle", () => {
+  test.skipIf(process.platform === "win32")("respawns immediately without crash backoff and preserves the daemon config", async () => {
+    // Replace the control-surface fixture's already-running supervisor with a
+    // real Supervisor whose child is a deterministic RPC-shaped executable.
+    await supervisor!.stop();
+    const capture = join(testHome, "fresh-spawns.json");
+    const bin = join(testHome, "fresh-child.mjs");
+    writeFileSync(
+      bin,
+      "#!/usr/bin/env node\n" +
+      "import { existsSync, readFileSync, writeFileSync } from 'node:fs';\n" +
+      "const path = process.env.CAPTURE;\n" +
+      "const prior = path && existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : [];\n" +
+      "prior.push({ args: process.argv.slice(2), config: process.env.OUTPOST_PI_DIRECT_CONFIG, code: prior.length === 0 ? 42 : 0 });\n" +
+      "writeFileSync(path, JSON.stringify(prior));\n" +
+      "if (prior.length === 1) process.exitCode = 42; else setInterval(() => {}, 1e9);\n",
+    );
+    chmodSync(bin, 0o755);
+    supervisor = new Supervisor({ extensionPath: "/extension/dist/index.js", piBin: bin });
+    await supervisor.start();
+
+    const cwd = mkdtempSync(join(testHome, "daemon-cwd-"));
+    const registered = await ask({ op: "register", cwd }) as ControlReply<{ id: string }>;
+    expect(registered.ok).toBe(true);
+    const id = registered.ok ? registered.data!.id : "";
+    // The Supervisor's production composition builds the daemon config inline;
+    // CAPTURE is only for this deterministic executable's spawn observations.
+    process.env["CAPTURE"] = capture;
+    const started = await ask({ op: "start", id }) as ControlReply<{ started: boolean }>;
+    expect(started).toMatchObject({ ok: true, data: { started: true } });
+
+    await vi.waitFor(() => {
+      const spawns = JSON.parse(readFileSync(capture, "utf8")) as unknown[];
+      expect(spawns).toHaveLength(2);
+    }, { timeout: 1000 });
+
+    const slot = (supervisor as unknown as {
+      children: Map<string, { restartAttempt: number; restartTimer: ReturnType<typeof setTimeout> | null; child: { restartCount: number; state: string } }>;
+    }).children.get(id);
+    expect(slot).toBeDefined();
+    expect(slot?.restartAttempt).toBe(0);
+    expect(slot?.restartTimer).toBeNull();
+    expect(slot?.child.restartCount).toBe(1);
+    expect(slot?.child.state).toBe("running");
+
+    const spawns = JSON.parse(readFileSync(capture, "utf8")) as Array<{ args: string[]; config?: string; code?: number }>;
+    expect(spawns.map(({ code }) => code)).toEqual([42, 0]);
+    expect(spawns.map(({ args }) => args.includes("--continue"))).toEqual([true, false]);
+    expect(spawns[0]?.config).toBe(spawns[1]?.config);
+    expect(spawns[0]?.config).toContain('"agent_name"');
+
+    delete process.env["CAPTURE"];
+  });
 });
 
 describe("Supervisor — control UDS surface", () => {
