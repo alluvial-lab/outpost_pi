@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import { createRelayTransportPort, decodeRelayControlFrame } from "./relay_transport.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import type { RelayClient } from "../transport/relay_client.js";
+import { PiForwardClient } from "../transport/pi_forward_client.js";
 
 class FakeRelay extends EventEmitter {
   closed = false;
@@ -16,6 +17,7 @@ class FakeRelay extends EventEmitter {
     this.emit("close");
   }
 
+  send = vi.fn();
   sendControl = vi.fn();
 }
 
@@ -118,8 +120,8 @@ describe("relay transport control frames", () => {
 
   test("dispatchRelayMessage routes each typed frame to only its owning handlers", async () => {
     const { transport, relays } = makeTransport();
-    const outerLines: string[] = [];
-    transport.onOuterMessage((line) => outerLines.push(line));
+    const outerFrames: unknown[] = [];
+    transport.onOuterMessage((ingress) => outerFrames.push(ingress));
 
     await transport.start({ relayUrl: "ws://relay.test", keypair });
     const relay = relays[0]!;
@@ -127,8 +129,66 @@ describe("relay transport control frames", () => {
     relay.emit("message", JSON.stringify({ type: "peer_offline", peer: "owner-a", since_ts: 1 }));
     relay.emit("message", JSON.stringify({ peer: "owner-a", ct: "ZW52ZWxvcGU=" }));
 
-    expect(outerLines).toHaveLength(1);
-    expect(outerLines[0]).toContain("ZW52ZWxvcGU=");
+    expect(outerFrames).toEqual([{
+      kind: "outer",
+      frame: { peer: "owner-a", ct: "ZW52ZWxvcGU=" },
+      payloadUtf8: "envelope",
+    }]);
+  });
+
+  test("decodes once before typed fanout to owner, peer, and cross-PC listeners", async () => {
+    const { transport, relays } = makeTransport();
+    const ownerIngress: unknown[] = [];
+    const ownerMessages: unknown[] = [];
+    transport.onOuterMessage((ingress) => ownerIngress.push(ingress));
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    const relay = relays[0]!;
+    const channelA = transport.createPeerChannel({
+      peerId: "owner-a",
+      onMessage: (message) => ownerMessages.push(message),
+      onDisconnect: vi.fn(),
+    });
+    const channelB = transport.createPeerChannel({
+      peerId: "owner-b",
+      onMessage: (message) => ownerMessages.push(message),
+      onDisconnect: vi.fn(),
+    });
+    const piForward = new PiForwardClient(relay as unknown as RelayClient);
+    const crossPcEnvelopes: unknown[] = [];
+    piForward.on("envelope", (envelope) => crossPcEnvelopes.push(envelope));
+
+    // The transport owns the sole raw listener regardless of typed listener count.
+    expect(relay.listenerCount("message")).toBe(1);
+
+    const clientMessage = { type: "ping", id: "ping-1" } as const;
+    relay.emit("message", JSON.stringify({
+      peer: "owner-a",
+      ct: Buffer.from(JSON.stringify(clientMessage)).toString("base64"),
+    }));
+    const crossPcEnvelope = {
+      from: "remote:agent",
+      to: "local:agent",
+      id: "01976000-0000-7000-8000-000000000000",
+      re: null,
+      body: { hello: "world" },
+    };
+    relay.emit("message", JSON.stringify({
+      type: "pi_envelope_in",
+      from_pc: "remote-pc",
+      to_room: "room-1",
+      envelope: crossPcEnvelope,
+    }));
+
+    expect(ownerIngress).toHaveLength(1);
+    expect(ownerMessages).toEqual([clientMessage]);
+    expect(crossPcEnvelopes).toEqual([crossPcEnvelope]);
+    expect(relay.listenerCount("message")).toBe(1);
+
+    channelA.detach();
+    channelB.detach();
+    piForward.detach();
+    transport.stop();
   });
 
   test("outer-message freshness expires on relay replacement and close", async () => {

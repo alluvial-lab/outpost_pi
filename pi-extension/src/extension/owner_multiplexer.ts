@@ -1,6 +1,5 @@
 import {
   decodeRelayClientPayload,
-  decodeRelayIngress,
   type DecodedRelayIngress,
 } from "../protocol/relay_ingress.js";
 import type { ByeReason, ClientMessage, PairErrorCode, ServerMessage } from "../protocol/types.js";
@@ -141,27 +140,15 @@ export interface OwnerMultiplexerDeps {
   onFanoutPresenceChanged?(event: OwnerFanoutPresenceEvent): void;
 }
 
-/** Carry relay ingress dependencies for decoding and routing one owner envelope. */
-export interface OwnerOuterLineInput {
-  line: string;
+/** Carry one transport-decoded owner envelope and its routing dependencies. */
+export interface OwnerOuterFrameInput {
+  ingress: Extract<DecodedRelayIngress, { kind: "outer" }>;
   roomId?: string;
   turnActive(): boolean;
   isCurrent(): boolean;
   onMessage(message: ClientMessage, sender: PeerChannel): void | Promise<void>;
   onDisconnect(peerId: string): void;
   sendToPeer(peerId: string, message: ServerMessage): void;
-}
-
-/** Validate and decode the relay outer-envelope boundary before pairing or owner routing. */
-export function decodeOuterEnvelope(
-  line: string,
-): Extract<DecodedRelayIngress, { kind: "outer" }> | null {
-  try {
-    const decoded = decodeRelayIngress(line);
-    return decoded.kind === "outer" ? decoded : null;
-  } catch {
-    return null;
-  }
 }
 
 function isPairRequestMessage(message: ClientMessage): message is Extract<ClientMessage, { type: "pair_request" }> {
@@ -273,9 +260,8 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     });
   }
 
-  async handleOuterLine(input: OwnerOuterLineInput): Promise<void> {
-    const decoded = decodeOuterEnvelope(input.line);
-    if (!decoded) return;
+  async handleOuterFrame(input: OwnerOuterFrameInput): Promise<void> {
+    const decoded = input.ingress;
     const outer = decoded.frame;
     if (!input.isCurrent()) return;
     // NOTE: do NOT re-check `outer.room` against `input.roomId` here. The
@@ -322,7 +308,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   }
 
   async handlePairRequest(
-    input: OwnerOuterLineInput,
+    input: OwnerOuterFrameInput,
     peerId: string,
     inner: Extract<ClientMessage, { type: "pair_request" }>,
   ): Promise<void> {
