@@ -3,6 +3,10 @@ import type {
   RelayControlFrame,
   RelayControlFrameRoomMetaUpdate,
 } from "../protocol/generated/protocol.generated.js";
+import {
+  decodeRelayIngress,
+  type RelayServerControlFrame,
+} from "../protocol/relay_ingress.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import {
   REACHABILITY_RELAY_LIVENESS_CHECK_MS,
@@ -70,60 +74,14 @@ export const RELAY_TRANSPORT_REACHABILITY = {
   livenessCheckMs: REACHABILITY_RELAY_LIVENESS_CHECK_MS,
 } as const;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-/** Decode one relay control frame at the transport boundary, rejecting malformed payloads. */
-export function decodeRelayControlFrame(line: string): RelayControlFrame | null {
-  let parsed: unknown;
+/** Decode one generated relay control DTO at the transport boundary. */
+export function decodeRelayControlFrame(line: string): RelayServerControlFrame | null {
   try {
-    parsed = JSON.parse(line) as unknown;
+    const decoded = decodeRelayIngress(line);
+    return decoded.kind === "control" ? decoded.frame : null;
   } catch {
     return null;
   }
-  if (!isRecord(parsed) || typeof parsed.type !== "string") return null;
-
-  if (parsed.type === "peer_online") {
-    return typeof parsed.peer === "string" && parsed.peer.length > 0
-      ? { type: "peer_online", peer: parsed.peer }
-      : null;
-  }
-
-  if (parsed.type === "peer_offline") {
-    return typeof parsed.peer === "string" && parsed.peer.length > 0 && typeof parsed.since_ts === "number"
-      ? { type: "peer_offline", peer: parsed.peer, since_ts: parsed.since_ts }
-      : null;
-  }
-
-  if (parsed.type === "presence") {
-    // Fail fast at the boundary: if any state entry is malformed (missing
-    // non-empty `peer`, non-boolean `online`, or a non-number `since_ts`
-    // that isn't null/absent), reject the WHOLE frame rather than silently
-    // dropping the bad entry. Silently dropping could mask a relay bug or a
-    // missed offline/online transition. (Adversarial review I1.)
-    if (!Array.isArray(parsed.states)) return null;
-    const states: Array<{ peer: string; online: boolean; since_ts?: number | null }> = [];
-    for (const state of parsed.states) {
-      if (
-        !isRecord(state) ||
-        typeof state.peer !== "string" ||
-        state.peer.length === 0 ||
-        typeof state.online !== "boolean" ||
-        (state.since_ts !== undefined && state.since_ts !== null && typeof state.since_ts !== "number")
-      ) {
-        return null;
-      }
-      states.push({
-        peer: state.peer,
-        online: state.online,
-        ...(state.since_ts === undefined ? {} : { since_ts: state.since_ts as number | null }),
-      });
-    }
-    return { type: "presence", states };
-  }
-
-  return null;
 }
 
 /** Create the lifecycle-owned relay adapter with reconnect and cross-PC bridge teardown. */
@@ -362,14 +320,22 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   }
 
   function dispatchRelayMessage(line: string, isCurrent: () => boolean): void {
-    const frame = decodeRelayControlFrame(line);
-    if (frame) {
-      for (const handler of controlFrameHandlers) {
-        void handler(frame);
-      }
+    let decoded;
+    try {
+      decoded = decodeRelayIngress(line);
+    } catch {
+      return;
     }
-    for (const handler of outerMessageHandlers) {
-      void handler(line, isCurrent);
+    if (decoded.kind === "control") {
+      for (const handler of controlFrameHandlers) {
+        void handler(decoded.frame);
+      }
+      return;
+    }
+    if (decoded.kind === "outer") {
+      for (const handler of outerMessageHandlers) {
+        void handler(line, isCurrent);
+      }
     }
   }
 

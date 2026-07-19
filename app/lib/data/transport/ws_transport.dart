@@ -17,6 +17,7 @@ import 'dart:convert';
 
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/relay_config.dart';
+import 'package:app/data/transport/relay_frame_decoder.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:cryptography/cryptography.dart';
@@ -281,7 +282,7 @@ class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
       if (ch['type'] != 'challenge') {
         throw WsTransportError('Expected challenge, got ${ch['type']}');
       }
-      final nonce = _b64Decode(ch['nonce'] as String);
+      final nonce = decodeRelayBase64(ch['nonce'] as String);
 
       // 3. Auth — domain-separated signature over the relay nonce.
       // Signing the bare nonce with the long-term owner key would create a
@@ -406,46 +407,38 @@ WsInboundFrameDecision demuxPostAuthInboundFrame({
   required String raw,
   required String activeRoom,
 }) {
-  try {
-    final frame = jsonDecode(raw) as Map<String, dynamic>;
+  final decoded = decodeRelayInboundFrame(raw);
+  if (decoded case RejectedRelayFrame(:final reason)) {
+    return WsInboundFrameDecision(
+      kind: WsInboundFrameKind.dropMalformed,
+      error: reason.name,
+    );
+  }
+  final accepted = decoded as DecodedRelayFrame;
 
-    // Envelope: {peer, ct} with room-aware routing.
-    if (frame.containsKey('peer') && frame.containsKey('ct')) {
-      final bytes = _b64Decode(frame['ct'] as String);
-      final senderRoom = frame['room'] as String?;
-
-      if (senderRoom == null || senderRoom.isEmpty) {
+  switch (accepted.frame) {
+    case RelayOuterEnvelopeDto(:final room):
+      if (room == null || room.isEmpty) {
         return const WsInboundFrameDecision(
           kind: WsInboundFrameKind.dropMissingRoom,
         );
       }
-      if (senderRoom != activeRoom) {
+      if (room != activeRoom) {
         return WsInboundFrameDecision(
           kind: WsInboundFrameKind.dropRoomMismatch,
-          senderRoom: senderRoom,
+          senderRoom: room,
         );
       }
       return WsInboundFrameDecision(
         kind: WsInboundFrameKind.enqueue,
-        envelopeBytes: bytes,
+        envelopeBytes: accepted.decodedPayload,
       );
-    }
-
-    final ctrl = ControlInbound.tryFromJson(frame);
-    if (ctrl != null) {
+    case RelayControlFrameDto(:final type, :final control):
       return WsInboundFrameDecision(
         kind: WsInboundFrameKind.control,
-        control: ctrl,
-        controlType: frame['type'] as String?,
+        control: control,
+        controlType: type,
       );
-    }
-
-    return const WsInboundFrameDecision(kind: WsInboundFrameKind.dropMalformed);
-  } on Object catch (e) {
-    return WsInboundFrameDecision(
-      kind: WsInboundFrameKind.dropMalformed,
-      error: e.toString(),
-    );
   }
 }
 
@@ -488,17 +481,6 @@ class _MsgQueue {
     final c = Completer<Uint8List>();
     _waiters.add(c);
     return c.future;
-  }
-}
-
-// Decodes standard or url-safe base64 (pads defensively).
-Uint8List _b64Decode(String s) {
-  final pad = (4 - s.length % 4) % 4;
-  final padded = s + '=' * pad;
-  try {
-    return base64.decode(padded);
-  } on FormatException {
-    return base64Url.decode(padded);
   }
 }
 

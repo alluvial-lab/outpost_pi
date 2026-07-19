@@ -116,11 +116,7 @@ describe("relay transport control frames", () => {
     }))).toBeNull();
   });
 
-  test("dispatchRelayMessage still forwards raw control-frame lines to outerMessageHandlers", async () => {
-    // The raw relay-message path (outerMessageHandlers) must still receive every
-    // line — including control frames — so the owner-envelope path is
-    // preserved. A control frame lacks `ct`, so decodeOuterEnvelope returns
-    // null and it's ignored; the point is the line is still forwarded.
+  test("dispatchRelayMessage routes each typed frame to only its owning handlers", async () => {
     const { transport, relays } = makeTransport();
     const outerLines: string[] = [];
     transport.onOuterMessage((line) => outerLines.push(line));
@@ -129,11 +125,10 @@ describe("relay transport control frames", () => {
     const relay = relays[0]!;
 
     relay.emit("message", JSON.stringify({ type: "peer_offline", peer: "owner-a", since_ts: 1 }));
-    relay.emit("message", JSON.stringify({ peer: "owner-a", ct: "envelope" }));
+    relay.emit("message", JSON.stringify({ peer: "owner-a", ct: "ZW52ZWxvcGU=" }));
 
-    expect(outerLines).toHaveLength(2);
-    expect(outerLines[0]).toContain("peer_offline");
-    expect(outerLines[1]).toContain("envelope");
+    expect(outerLines).toHaveLength(1);
+    expect(outerLines[0]).toContain("ZW52ZWxvcGU=");
   });
 
   test("outer-message freshness expires on relay replacement and close", async () => {
@@ -143,14 +138,14 @@ describe("relay transport control frames", () => {
 
     await transport.start({ relayUrl: "ws://relay.test", keypair });
     expect(relays[0]!.listenerCount("message")).toBe(1);
-    relays[0]!.emit("message", JSON.stringify({ peer: "owner-a", ct: "first" }));
+    relays[0]!.emit("message", JSON.stringify({ peer: "owner-a", ct: "Zmlyc3Q=" }));
     expect(freshness[0]?.()).toBe(true);
 
     await transport.start({ relayUrl: "ws://relay.test", keypair });
     expect(freshness[0]?.()).toBe(false);
     expect(relays[0]!.listenerCount("message")).toBe(0);
     expect(relays[1]!.listenerCount("message")).toBe(1);
-    relays[1]!.emit("message", JSON.stringify({ peer: "owner-a", ct: "second" }));
+    relays[1]!.emit("message", JSON.stringify({ peer: "owner-a", ct: "c2Vjb25k" }));
     expect(freshness[1]?.()).toBe(true);
 
     relays[1]!.emit("close");
