@@ -455,6 +455,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     this.messageRouters.delete(channel);
     this.lateAttachPeerIds.delete(peerId);
     this.offlinePeerIds.delete(peerId);
+    this.offlineBuffers.delete(peerId);
 
     if (this.peerShort === peerId.slice(0, 8)) {
       const next = this.channels.keys().next().value as string | undefined;
@@ -469,6 +470,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     }
     this.lateAttachPeerIds.clear();
     this.offlinePeerIds.clear();
+    this.offlineBuffers.clear();
     this.peerShort = "";
     this.deps.refreshFooter();
   }
@@ -480,14 +482,33 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   markPeerOffline(peerId: string, sinceTs?: number): boolean {
     if (!this.channels.has(peerId) || this.offlinePeerIds.has(peerId)) return false;
     this.offlinePeerIds.add(peerId);
+    this.lateAttachPeerIds.delete(peerId);
     this.emitFanoutPresenceChanged(peerId, "suspended", sinceTs);
     return true;
   }
 
   markPeerOnline(peerId: string): boolean {
-    const wasOffline = this.offlinePeerIds.delete(peerId);
-    if (!wasOffline) return false;
-    this.emitFanoutPresenceChanged(peerId, "resumed");
+    if (!this.offlinePeerIds.has(peerId)) return false;
+
+    const channel = this.channels.get(peerId);
+    const buffer = this.offlineBuffers.get(peerId);
+    if (channel && buffer) {
+      let next = this.takeNextBufferedMessage(buffer);
+      while (
+        next &&
+        this.channels.get(peerId) === channel &&
+        this.offlinePeerIds.has(peerId) &&
+        this.offlineBuffers.get(peerId) === buffer
+      ) {
+        try { channel.send(next); } catch { /* best-effort per owner channel */ }
+        next = this.takeNextBufferedMessage(buffer);
+      }
+    }
+
+    this.offlineBuffers.delete(peerId);
+    if (this.offlinePeerIds.delete(peerId)) {
+      this.emitFanoutPresenceChanged(peerId, "resumed");
+    }
     return true;
   }
 
@@ -516,6 +537,20 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       buffer.currentBytes = 0;
       buffer.currentOverflowed = false;
     }
+  }
+
+  private takeNextBufferedMessage(buffer: OfflinePeerBuffer): ServerMessage | null {
+    const completed = buffer.completed.shift();
+    if (completed) {
+      buffer.completedBytes -= completed.bytes;
+      return completed.message;
+    }
+    const current = buffer.current.shift();
+    if (current) {
+      buffer.currentBytes -= current.bytes;
+      return current.message;
+    }
+    return null;
   }
 
   private bufferOfflineMessage(peerId: string, message: ServerMessage): void {
@@ -554,6 +589,10 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     const channel = sender as PeerChannelHandle;
     const peerId = this.peerIdsByChannel.get(channel);
     if (!peerId || this.channels.get(peerId) !== channel) return;
+    if (message.type === "session_sync" && this.offlinePeerIds.has(peerId)) {
+      this.offlineBuffers.delete(peerId);
+      this.markPeerOnline(peerId);
+    }
     const route = this.messageRouters.get(channel);
     return route?.(message, sender);
   }
