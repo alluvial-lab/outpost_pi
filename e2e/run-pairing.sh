@@ -19,20 +19,25 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-mapped_port() {
-  local service=$1 container_port=$2 mapping
-  mapping=$("${COMPOSE[@]}" port "$service" "$container_port")
-  printf '%s\n' "${mapping##*:}"
+free_port() {
+  node -e 'const n=require("node:net");const s=n.createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})'
 }
+
+# Docker re-allocates an unspecified host port when a restart-policy container
+# restarts. Reserve explicit free ports so Pi-host process restart keeps the
+# Flutter driver's endpoint stable for the whole run.
+export E2E_PI_HOST_HOST_PORT="${E2E_PI_HOST_HOST_PORT:-$(free_port)}"
+export E2E_TOXIPROXY_ADMIN_PORT="${E2E_TOXIPROXY_ADMIN_PORT:-$(free_port)}"
+export E2E_TOXIPROXY_RELAY_PORT="${E2E_TOXIPROXY_RELAY_PORT:-$(free_port)}"
 
 cd "$ROOT/pi-extension"
 node_modules/.bin/tsc -p ../e2e/tsconfig.pi-host.json
 
 "${COMPOSE[@]}" up -d --build --wait
 
-TOXI_ADMIN_PORT=$(mapped_port toxiproxy 8474)
-TOXI_RELAY_PORT=$(mapped_port toxiproxy 8666)
-PI_HOST_PORT=$(mapped_port pi-host 4317)
+TOXI_ADMIN_PORT=$E2E_TOXIPROXY_ADMIN_PORT
+TOXI_RELAY_PORT=$E2E_TOXIPROXY_RELAY_PORT
+PI_HOST_PORT=$E2E_PI_HOST_HOST_PORT
 
 curl --fail --silent --show-error \
   -H 'content-type: application/json' \
