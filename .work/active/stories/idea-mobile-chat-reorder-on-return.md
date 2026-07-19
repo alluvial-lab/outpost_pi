@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-chat-reorder-on-return
 kind: story
-stage: drafting
+stage: done
 tags: [app, bug, lifecycle]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [idea-mobile-queued-message-does-not-reorder]
@@ -100,3 +100,15 @@ pure transcript projection from stable message identity and `replyTo`/pickup
 relationships. Keep append `seq` as event-log replay order; reject a global
 wall-clock sort, stored-seq mutation, or a second widget-layer sorter. Live,
 cold-read, and replay projections must return identical IDs and order.
+
+## Implementation
+
+Pinned the adverse append order directly: optimistic prompt, assistant commit,
+then late canonical prompt confirmation. The pure transcript projection now
+applies one narrow semantic constraint—move a prompt before assistant rows whose
+stable `replyTo` names it—while preserving event-log `seq` and every unrelated
+row's relative order. Duplicate/replayed events produce the same IDs and order;
+no wall-clock sort, stored-seq rewrite, or widget-layer sorter was added.
+
+Scoped analysis and transcript, history-replay, and full SyncService targeted
+tests pass serially.
