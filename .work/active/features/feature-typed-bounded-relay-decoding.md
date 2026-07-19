@@ -1,7 +1,7 @@
 ---
 id: feature-typed-bounded-relay-decoding
 kind: feature
-stage: implementing
+stage: review
 tags: [app, pi-extension, relay, security, protocol]
 parent: null
 depends_on: []
@@ -529,3 +529,22 @@ verification commands from each subproject root.
 - **Compatibility**: stricter metadata bounds or strict base64 can reject
   previously tolerated malformed/non-canonical senders. Preserve valid current
   clients and lock the deliberate fail-fast behavior with compatibility tests.
+
+## Implementation verification (2026-07-19)
+
+All 5 child stories done + integrated verification green across all three stacks:
+
+- `gate-security-frame-decoder-pre-size-check`, `gate-security-preauth-websocket-size-limits` (relay-side size checks before JSON parse + pre-auth WS/metadata limits)
+- `gate-refactor-boundaries-demux-adhoc-map` (typed demux through generated frame DTOs replacing ad-hoc map navigation)
+- `gate-security-app-inbound-relay-frame-size-caps` (app-side: size check before JSON parse + base64 decode)
+- `gate-security-extension-inbound-relay-frame-size-caps` (pi-extension-side: bounded ingress decode)
+
+### Verification
+
+- `relay`: `cargo fmt --check` + `cargo clippy -- -D warnings` + `cargo test` — clean, 141+ unit + integration tests pass.
+- `pi-extension`: `tsc --noEmit` — clean (generated `protocol.generated.ts` + the new `relay_ingress.ts` size-limit module typecheck).
+- `app`: `PUB_CACHE=<repo>/.pub-cache flutter test --no-pub test/data/transport/ test/protocol_codegen/` — 32+ pass (generated `relay_frames.g.dart` codegen + transport decode paths).
+
+The canonical schema-owned frame/payload/pre-auth/metadata limits are generated into Dart/TypeScript/Rust DTOs + constants from `protocol/schema/relay-outer.schema.json` via `tools/protocol-codegen`. Raw-size checks run before full JSON parse; encoded-size checks run before base64 decode. Oversize/malformed frames are rejected at the boundary (fail-fast) instead of parsed. The post-auth demux is typed through generated frame DTOs.
+
+Advanced `implementing → review`.
