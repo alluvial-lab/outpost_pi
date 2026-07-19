@@ -673,6 +673,70 @@ void main() {
     },
   );
 
+  test(
+    'send confirmation survives route disposal and re-entry without duplication',
+    () async {
+      final ch = _FakeChannel();
+      final storage = _FakeStorage();
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+      );
+      final boxes = LocalBoxes();
+      final sync = SyncService(
+        conn,
+        boxes,
+        pendingSendTimeout: const Duration(milliseconds: 300),
+      );
+      final read = SessionReadRepository(boxes);
+      final prefs = Preferences(_FakeSecureStorage());
+      await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+      await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+      await _adoptWithSession(conn, ch);
+
+      final first = ChatViewModel(read, sync, conn, prefs, storage);
+      await first.initialize();
+      await first.sendMessage('survive navigation');
+      final sent = ch.sent.whereType<UserMessage>().last;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect((first.state as ChatReady).messages.map((message) => message.id), [
+        sent.id,
+      ]);
+      first.dispose();
+
+      final second = ChatViewModel(read, sync, conn, prefs, storage);
+      await second.initialize();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(
+        (second.state as ChatReady).messages.map((message) => message.id),
+        [sent.id],
+      );
+
+      ch.push(UserInput(id: sent.id, text: sent.text));
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(sync.debugPendingSendTimerCount, 0);
+      expect((second.state as ChatReady).messages, hasLength(1));
+      expect(
+        (second.state as ChatReady).messages.single,
+        isA<UserMsg>().having(
+          (message) => message.status,
+          'status',
+          UserMsgStatus.confirmed,
+        ),
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 320));
+      final rows = (second.state as ChatReady).messages.whereType<UserMsg>();
+      expect(rows, hasLength(1));
+      expect(rows.single.id, sent.id);
+      expect(rows.single.status, UserMsgStatus.confirmed);
+
+      second.dispose();
+      sync.dispose();
+      conn.dispose();
+    },
+  );
+
   test('session-id rotation reloads an empty canonical message box', () async {
     final ch = _FakeChannel();
     final storage = _FakeStorage();
