@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-native-session-process-control-reconnect-verification
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension]
 parent: feature-mobile-native-session-process-control
 depends_on: [idea-mobile-session-control, idea-mobile-restart-pi-session-affordance]
@@ -44,7 +44,21 @@ Use deterministic fake channels/timers where available. A live supervisor/phone
 smoke may be documented separately, but must not be substituted for boundary
 unit tests or made green by broad mocks.
 
-### Acceptance criteria
+### Implementation
+
+- Added explicit `session_new` session-id binding and matching rejection
+  coverage to the app action repository tests.
+- Added Quick Actions tests for both destructive confirmations, cancellation,
+  ACK-gated local reset, rejection preservation, and reconnect feedback using a
+  controlled completer rather than a timing delay.
+- Verified the existing extension daemon path remains the canonical
+  `action_ok` → session reset → scheduled exit 42 flow; no extension production
+  or wire changes were needed for this app-only affordance.
+- Reconnect remains owned by the existing ConnectionManager/SyncService state
+  machine and authoritative room/session hydration; the UI feedback is only a
+  transient snackbar, not a sticky restart state.
+
+## Acceptance criteria
 
 - The app proves both destructive controls dispatch the canonical `session_new`
   action only after confirmation.
