@@ -1,0 +1,13 @@
+{
+  "extends": "../pi-extension/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "typeRoots": ["../pi-extension/node_modules/@types"]
+  },
+  "include": [
+    "../pi-extension/src/vendor.d.ts",
+    "../pi-extension/test/support/e2e_pi_host_runtime.ts",
+    "../pi-extension/test/support/e2e_pi_host_server.ts"
+  ]
+}
