@@ -239,6 +239,42 @@ describe("OwnerMultiplexer", () => {
     expect(channels[0]!.sent).toEqual([]);
   });
 
+  test("online-first compaction flush suppresses the same event from every later history replay", () => {
+    const { mux, channels } = makeMultiplexer();
+    const channel = mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
+    mux.markPeerOffline("owner-a");
+    const compaction: ServerMessage = {
+      type: "compaction",
+      session_id: "session-1",
+      summary: "offline compact",
+      tokens_before: 123,
+      ts: 1700,
+    };
+    mux.broadcast(compaction);
+    mux.markPeerOnline("owner-a");
+
+    const history: Extract<ServerMessage, { type: "session_history" }> = {
+      type: "session_history",
+      session_id: "session-1",
+      in_reply_to: "sync-1",
+      session_started_at: 1,
+      events: [
+        { type: "compaction", ts: 1600, summary: "earlier compact", tokens_before: 100 },
+        { type: "compaction", ts: 1700, summary: "offline compact", tokens_before: 123 },
+      ],
+      eos: true,
+      truncated: false,
+    };
+
+    expect(channels[0]!.sent).toEqual([compaction]);
+    expect(mux.arbitrateSessionHistory(channel, history).events).toEqual([
+      { type: "compaction", ts: 1600, summary: "earlier compact", tokens_before: 100 },
+    ]);
+    expect(mux.arbitrateSessionHistory(channel, history).events).toEqual([
+      { type: "compaction", ts: 1600, summary: "earlier compact", tokens_before: 100 },
+    ]);
+  });
+
   test("a failed buffered send still converges the peer online", () => {
     const { mux, channels } = makeMultiplexer();
     mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
