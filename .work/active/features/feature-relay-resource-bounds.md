@@ -1,7 +1,7 @@
 ---
 id: feature-relay-resource-bounds
 kind: feature
-stage: review
+stage: done
 tags: [relay, security]
 parent: null
 depends_on: []
@@ -504,3 +504,41 @@ design authority.
   implementation/final review weight remains `standard` (caller default): one
   independent feature pass after verification, then receiver adjudication and
   fixes for material current-cycle blockers without re-review.
+
+## Review fixes (standard, 2026-07-19)
+
+The single standard-weight cross-model feature pass returned four material
+findings. All were receiver-confirmed, fixed, and verified without a second
+review pass, per the standard closure policy.
+
+- **Cross-connection mesh-auth scans:** `MeshAuthCache` now admits one cold scan
+  per Pi key process-wide and makes same-key waiters reuse the published result.
+  Successful mesh publishes invalidate only newly affected member keys and
+  cached membership owned by the publishing Owner; generation checks still
+  force racing scans to retry. Scan counters cover same-key concurrency,
+  capacity-eviction churn, publish races, and unrelated-owner cache retention.
+- **Saturation classification and logs:** `DeliveryReport::accepted()` now
+  distinguishes an existing-but-saturated destination from absence. Outer
+  dispatch therefore emits the `dest not found` warning only for a true
+  zero-delivered/zero-saturated miss; saturation remains observable through the
+  aggregate outbound-drop metric without per-frame warning amplification.
+- **Loss-aware bounded delivery:** drop-newest remains the bounded mailbox
+  policy, but any saturated recipient now receives an idempotent disconnect
+  signal. The socket owner unregisters normally, and reconnect hydration
+  restores authoritative state instead of allowing a dropped `working:false`,
+  `room_ended`, or newer transcript frame to leave a live client divergent. A
+  regression test fills a subscriber mailbox, drops `working:false`, and proves
+  disconnect recovery is requested while the older queued frame is retained.
+- **Current-state relay reference:** `.agents/skills/rust-relay/SKILL.md` now
+  records five-second deadlines for both handshake receives, 16-frame bounded
+  drop-newest mailboxes with aggregate saturation metrics and disconnect
+  recovery, and the bounded positive/negative single-flight mesh-auth cache.
+- **Warning cleanup:** removed the review-noted test-only `unused_mut` in
+  `handlers/control.rs` and the remaining integration-test `unused_mut`, leaving
+  `cargo test` warning-clean.
+
+Verification from `relay/`: `cargo fmt --check`,
+`cargo clippy -- -D warnings`, and `cargo test` all passed. The suite reports
+147 unit tests and 59 integration tests passing (206 total), with no failures,
+ignored tests, or warnings. The feature advances `review → done`; no additional
+review pass ran because the effective weight is `standard`.
