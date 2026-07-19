@@ -3,10 +3,9 @@ import 'package:app/domain/contracts/service.dart';
 /// Per-variant tag for a [DebugEvent]. The enum IS the capture surface — a
 /// new capture site adds a variant + a tag, not a free-form string.
 ///
-/// Privacy invariant: no variant carries full message body, image data, or
-/// tool args/results. A truncated preview ([MsgSendEvent.preview]) is allowed
-/// (operator debug dump, destinations operator-chosen). Enforced by the
-/// registry test (see `story-app-debug-log-adapter` acceptance).
+/// Privacy invariant: no variant carries message bodies, previews, image data,
+/// or tool args/results. Enforced by the registry test (see
+/// `story-app-debug-log-adapter` acceptance).
 enum DebugTag {
   wsIn,
   peerFrame,
@@ -43,8 +42,8 @@ enum LifecycleOperation {
 /// Typed diagnostic event. Each variant owns its allowed fields and its scrub.
 ///
 /// Every variant serializes through [toJson]; the registry test asserts no
-/// forbidden keys (`body`, `image`, `data`, `args`, `result`, `prompt`,
-/// `message`, `ct`) and that all string values are capped
+/// forbidden keys (`body`, `preview`, `image`, `data`, `args`, `result`,
+/// `prompt`, `message`, `ct`) and that all string values are capped
 /// ([kMaxFieldValueChars]). Field values are primitives only
 /// (String/int/bool/null) — never nested objects or untrusted blobs.
 sealed class DebugEvent {
@@ -112,19 +111,13 @@ final class PeerFrameEvent extends DebugEvent {
   };
 }
 
-/// Outbound user message. `preview` is the truncated `_preview`, never the
-/// full message text.
+/// Record outbound user-message correlation metadata without its content.
 final class MsgSendEvent extends DebugEvent {
   final String id;
   final bool? blocked;
-  final String? preview; // truncated preview only
 
-  const MsgSendEvent({
-    required super.ts,
-    required this.id,
-    this.blocked,
-    this.preview,
-  }) : super(tag: DebugTag.msgSend);
+  const MsgSendEvent({required super.ts, required this.id, this.blocked})
+    : super(tag: DebugTag.msgSend);
 
   @override
   Map<String, Object?> toJson() => {
@@ -132,7 +125,6 @@ final class MsgSendEvent extends DebugEvent {
     'ts': ts.toUtc().toIso8601String(),
     'id': _cap(id),
     if (blocked != null) 'blocked': blocked,
-    if (preview != null) 'preview': _cap(preview!),
   };
 }
 
