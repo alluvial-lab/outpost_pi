@@ -947,10 +947,10 @@ class ConnectionManager extends Service {
   /// Plan-18 follow-up: gated by `_status is StatusOnline`. When the
   /// WS to the relay drops (retrying / offline), we have no fresh
   /// signal that any room is reachable, so EVERY room is reported
-  /// offline regardless of the cached `_liveRoomIds`. Home tiles +
-  /// chat AppBar flip to grey immediately. On reconnect, the relay
-  /// re-pushes the rooms snapshot which repopulates the live set
-  /// and tiles go green again.
+  /// offline. The live set is invalidated at that transport boundary,
+  /// keeping cached rooms stale after reconnect until a fresh relay
+  /// snapshot confirms them. Home tiles + chat AppBar stay grey until
+  /// that confirmation arrives.
   bool isRoomLive(String epk, String roomId) {
     if (_status is! StatusOnline) return false;
     final live = _liveRoomIds[toStandardB64(epk)];
@@ -1519,7 +1519,14 @@ class ConnectionManager extends Service {
     final wasOnline = _status is StatusOnline;
     final nowOnline = s is StatusOnline;
     _status = s;
-    if (wasOnline && !nowOnline) _clearActiveRoomWorking();
+    if (wasOnline && !nowOnline) {
+      // Room reachability belongs to the transport generation that observed
+      // it. Retaining this set across reconnect would make the new relay
+      // channel look like proof that the Pi room is online before its first
+      // authoritative rooms snapshot arrives.
+      _liveRoomIds.clear();
+      _clearActiveRoomWorking();
+    }
     if (!_statusController.isClosed) _statusController.add(s);
     if (wasOnline != nowOnline && !_roomsController.isClosed) {
       _roomsController.add(_roomsSnapshot());

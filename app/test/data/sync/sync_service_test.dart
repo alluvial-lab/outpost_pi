@@ -31,6 +31,7 @@ class _FakeChannel implements IChannel, IControlLink {
   final List<ClientMessage> sent = [];
   final List<Map<String, dynamic>> sentControl = [];
   Object? sendFailure;
+  Completer<ClientMessage>? nextSendStarted;
   String defaultSessionId = '';
 
   @override
@@ -39,6 +40,9 @@ class _FakeChannel implements IChannel, IControlLink {
   Future<void> send(ClientMessage msg) async {
     final failure = sendFailure;
     if (failure != null) throw failure;
+    final started = nextSendStarted;
+    nextSendStarted = null;
+    if (started != null && !started.isCompleted) started.complete(msg);
     sent.add(msg);
   }
 
@@ -63,6 +67,10 @@ class _FakeChannel implements IChannel, IControlLink {
   void push(ServerMessage m) => _ctrl.add(_withDefaultSession(m));
 
   void pushRaw(ServerMessage m) => _ctrl.add(m);
+
+  Future<void> loseConnection() async {
+    if (!_ctrl.isClosed) await _ctrl.close();
+  }
 
   ServerMessage _withDefaultSession(ServerMessage m) {
     final sid = defaultSessionId;
@@ -3698,7 +3706,99 @@ void main() {
       s.sync.dispose();
     });
 
-    test('(ii) held-pending message is re-sent on reconnect after timing out '
+    test(
+      '(ii) relay-only reconnect keeps a held message until RoomsSnapshot confirmation',
+      () async {
+        final store = _MemoryTranscriptStore();
+        final s = await setup(transcriptEventStore: store);
+        expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
+
+        final disconnected = s.conn.statusStream.firstWhere(
+          (status) => status is StatusRetrying,
+        );
+        await s.ch.loseConnection();
+        await disconnected.timeout(const Duration(seconds: 1));
+
+        await s.sync.sendMessage('held across relay reconnect');
+        final held = store
+            .eventsFor(transcriptKeyFor(s.epk))
+            .whereType<UserMessageSubmitted>()
+            .single;
+        expect(held.held, isTrue);
+        expect(s.ch.sent.whereType<UserMessage>(), isEmpty);
+
+        final readStarted = Completer<void>();
+        final readGate = Completer<void>();
+        store
+          ..readStarted = readStarted
+          ..readGate = readGate;
+        final reconnect = _FakeChannel()..defaultSessionId = s.sessionId;
+        final staleReconnect = s.conn.roomsStream.firstWhere(
+          (_) =>
+              s.conn.status is StatusOnline &&
+              !s.conn.isRoomLive(s.epk, 'main'),
+        );
+        s.conn.adopt(
+          reconnect,
+          PeerRecord(
+            remoteEpk: s.epk,
+            sessionName: 'Pi',
+            relayUrl: 'ws://localhost',
+            pairedAt: '2026-01-01T00:00:00Z',
+            roomId: 'main',
+          ),
+        );
+        await staleReconnect.timeout(const Duration(seconds: 1));
+
+        expect(
+          s.conn.isRoomLive(s.epk, 'main'),
+          isFalse,
+          reason: 'a relay channel is not fresh Pi-room confirmation',
+        );
+        expect(
+          readStarted.isCompleted,
+          isFalse,
+          reason: 'held-message recovery must stay gated while room is stale',
+        );
+        expect(reconnect.sent.whereType<UserMessage>(), isEmpty);
+
+        final resendStarted = Completer<ClientMessage>();
+        reconnect.nextSendStarted = resendStarted;
+        reconnect.pushControl(
+          RoomsSnapshot(
+            peer: s.epk,
+            rooms: [
+              RoomInfo(roomId: 'main', sessionId: s.sessionId, startedAt: 2),
+            ],
+          ),
+        );
+        await readStarted.future.timeout(const Duration(seconds: 1));
+        expect(
+          reconnect.sent.whereType<UserMessage>(),
+          isEmpty,
+          reason: 'the controlled transcript read has not released the resend',
+        );
+
+        readGate.complete();
+        final resent = await resendStarted.future.timeout(
+          const Duration(seconds: 1),
+        );
+        expect(s.conn.isRoomLive(s.epk, 'main'), isTrue);
+        expect(resent, isA<UserMessage>());
+        expect((resent as UserMessage).id, held.clientMessageId);
+        expect(resent.text, 'held across relay reconnect');
+        expect(
+          reconnect.sent.whereType<UserMessage>(),
+          hasLength(1),
+          reason: 'fresh room confirmation releases the held message once',
+        );
+
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
+
+    test('(iii) held-pending message is re-sent on reconnect after timing out '
         '(option 4)', () async {
       // Reproduces story-app-reattempt-held-pending-on-reconnect:
       // option 1's held-pending guard says it 're-attempts on the next
@@ -3789,7 +3889,7 @@ void main() {
     });
 
     test(
-      '(iii) a failed held-pending re-send is retryable on a later reconnect',
+      '(iv) a failed held-pending re-send is retryable on a later reconnect',
       () async {
         // Review blocker: the in-flight guard must NOT permanently suppress
         // a message whose re-send failed (stale-liveness, send throw). A

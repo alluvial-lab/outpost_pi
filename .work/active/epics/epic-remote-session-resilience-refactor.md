@@ -183,6 +183,21 @@ confirmation. Add a deterministic regression: live room → disconnect →
 reconnect-to-relay-only → room stays stale, held message NOT resent → fresh
 RoomsSnapshot confirms → message resends exactly once.
 
+## Corrective follow-up
+
+Material 1 is fixed by clearing `ConnectionManager`'s live-room confirmation set
+when the transport leaves `StatusOnline`. Cached room metadata remains available,
+but reconnecting to the relay alone now projects the room stale; only a fresh
+room control snapshot can mark it live again. `SyncService` gates held-message
+recovery on that current confirmation and revalidates both lifecycle identity and
+room liveness after the transcript-store async read and before each send.
+
+Deterministic controlled-completer/fake-channel coverage proves live room →
+transport loss → held send → relay-only reconnect remains stale with no resend →
+fresh `RoomsSnapshot` → original message id resends exactly once. Verification:
+`flutter analyze lib test`, the focused connection/sync tests, and
+`flutter test --concurrency=1` (758 tests) all pass.
+
 ### Material 2 — exit-42 `/new` contract unproved at the real daemon seam
 `pi-extension/src/index.ts:2610-2612` (ACK → reset → scheduled exit),
 `pi-extension/src/daemon/rpc_child.ts:265-266,413` (exit 42 omits `--continue`),
@@ -206,7 +221,7 @@ and `pi-extension/src/daemon/supervisor.test.ts`. The tests cover ACK/reset
 ordering before the scheduled exit, exit-42 observation with one fresh-session
 spawn, immediate respawn without crash backoff, and successor room/config
 continuity with a fresh `session_id` room-meta publication. The epic remains at
-`stage: review` pending the separate Material 1 correction.
+`stage: review` pending aggregate-review closure.
 
 ### Epic-goal check
 - Reconnect robustness: FAIL (stale room liveness resend race — material 1)
