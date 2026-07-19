@@ -1,8 +1,9 @@
-name: outpost-pi-pairing-e2e
-
 services:
   relay:
     image: ${OUTPOST_PI_E2E_RELAY_IMAGE:-outpost-pi-relay:0.1.0}
+    build:
+      context: ../relay
+      dockerfile: Dockerfile
     environment:
       OUTPOSTPI_RELAY_PORT: "3000"
       OUTPOSTPI_MESH_DB_PATH: /data/mesh.db
@@ -22,8 +23,9 @@ services:
       relay:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${E2E_TOXIPROXY_ADMIN_PORT}:8474"
-      - "127.0.0.1:${E2E_TOXIPROXY_RELAY_PORT}:8666"
+      - "127.0.0.1::8474"
+      - "127.0.0.1::8666"
+      - "127.0.0.1::8667"
     healthcheck:
       test: ["CMD", "/toxiproxy-cli", "list"]
       interval: 1s
@@ -48,8 +50,6 @@ services:
       E2E_SEEDED_TRANSCRIPT: e2e persisted transcript
     volumes:
       - ../:/workspace:ro
-    ports:
-      - "127.0.0.1:${E2E_PI_HOST_HOST_PORT}:4317"
     healthcheck:
       test:
         - CMD

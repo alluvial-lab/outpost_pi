@@ -16,9 +16,14 @@ import 'harness_endpoints.dart';
 import 'pi_host_client.dart';
 
 final class PairCodeObservation {
-  const PairCodeObservation({required this.qr, required this.expiresAt});
+  const PairCodeObservation({
+    required this.qr,
+    required this.uri,
+    required this.expiresAt,
+  });
 
   final QrPairPayload qr;
+  final String uri;
   final DateTime expiresAt;
 }
 
@@ -47,6 +52,7 @@ Future<PairCodeObservation> waitForPairCode(
         if (qr == null) continue;
         return PairCodeObservation(
           qr: qr,
+          uri: uri,
           expiresAt: DateTime.fromMillisecondsSinceEpoch(expiresAt.toInt()),
         );
       }
@@ -103,7 +109,9 @@ final class PairingStack {
   ).timeout(const Duration(seconds: 10));
 
   Future<HydratedSession> adoptAndHydrate(PairingResult result) async {
-    if (_transferred) throw StateError('transport ownership already transferred');
+    if (_transferred) {
+      throw StateError('transport ownership already transferred');
+    }
     _transferred = true;
     final channel = PlainPeerChannel(transport: transport);
     final connection = ConnectionManager(
