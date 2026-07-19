@@ -2,46 +2,67 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-# Docker buildx writes an activity timestamp even for this tiny adapter image;
-# the dev sandbox mounts ~/.docker and /tmp read-only, so use runner-owned
-# transient state and remove it in the exit trap.
-export BUILDX_CONFIG="${BUILDX_CONFIG:-$ROOT/e2e/.buildx-state}"
+COMPOSE_PROJECT="${E2E_COMPOSE_PROJECT_NAME:-outpost-pi-pairing-e2e-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-$$}-${RANDOM}}"
+RUN_STATE="$ROOT/e2e/.run-state/$COMPOSE_PROJECT"
+COMPOSE_FILE="$ROOT/e2e/docker-compose.test.yml"
+COMPOSE=(docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE")
+
+# Docker buildx writes activity state even for the tiny host adapter image.
+# Keep every run's state private so concurrent local/CI runs cannot collide.
+export BUILDX_CONFIG="${BUILDX_CONFIG:-$RUN_STATE/buildx}"
 mkdir -p "$BUILDX_CONFIG"
-COMPOSE=(docker compose -f "$ROOT/e2e/docker-compose.test.yml")
+chmod 700 "$RUN_STATE"
 
 cleanup() {
   status=$?
   if [[ "${E2E_KEEP_STACK:-0}" != "1" ]]; then
     "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
+  else
+    printf '%s\n' "pairing e2e stack retained: project=$COMPOSE_PROJECT"
   fi
-  rm -rf "$BUILDX_CONFIG"
+  rm -rf "$RUN_STATE"
   exit "$status"
 }
 trap cleanup EXIT INT TERM
 
-free_port() {
-  node -e 'const n=require("node:net");const s=n.createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})'
+published_port() {
+  local address
+  address=$("${COMPOSE[@]}" port "$1" "$2")
+  printf '%s\n' "${address##*:}"
 }
-
-# Docker re-allocates an unspecified host port when a restart-policy container
-# restarts. Reserve explicit free ports so Pi-host process restart keeps the
-# Flutter driver's endpoint stable for the whole run.
-export E2E_PI_HOST_HOST_PORT="${E2E_PI_HOST_HOST_PORT:-$(free_port)}"
-export E2E_TOXIPROXY_ADMIN_PORT="${E2E_TOXIPROXY_ADMIN_PORT:-$(free_port)}"
-export E2E_TOXIPROXY_RELAY_PORT="${E2E_TOXIPROXY_RELAY_PORT:-$(free_port)}"
 
 cd "$ROOT/pi-extension"
 node_modules/.bin/tsc -p ../e2e/tsconfig.pi-host.json
 
-"${COMPOSE[@]}" up -d --build --wait
+if [[ -n "${OUTPOST_PI_E2E_RELAY_IMAGE:-}" ]]; then
+  # An explicit image opts out of rebuilding relay source, while the host
+  # adapter still rebuilds from this checkout.
+  "${COMPOSE[@]}" build pi-host
+  "${COMPOSE[@]}" up -d --no-build --wait
+else
+  # The regression gate defaults to the repository's current relay source.
+  "${COMPOSE[@]}" up -d --build --wait
+fi
 
-TOXI_ADMIN_PORT=$E2E_TOXIPROXY_ADMIN_PORT
-TOXI_RELAY_PORT=$E2E_TOXIPROXY_RELAY_PORT
-PI_HOST_PORT=$E2E_PI_HOST_HOST_PORT
+TOXI_ADMIN_PORT=$(published_port toxiproxy 8474)
+TOXI_RELAY_PORT=$(published_port toxiproxy 8666)
+PI_HOST_PORT=$(published_port toxiproxy 8667)
 
+# Delete-then-create makes rerunning initialization safe when an operator keeps
+# a stack or retries the runner against an existing project. Pi-host also uses
+# the stable Toxiproxy container as its host-port front door because Docker may
+# reassign a dynamically published port when the host process restarts.
+for proxy in app-relay pi-host; do
+  curl --silent --show-error -X DELETE \
+    "http://127.0.0.1:${TOXI_ADMIN_PORT}/proxies/$proxy" >/dev/null || true
+done
 curl --fail --silent --show-error \
   -H 'content-type: application/json' \
   -d '{"name":"app-relay","listen":"0.0.0.0:8666","upstream":"relay:3000","enabled":true}' \
+  "http://127.0.0.1:${TOXI_ADMIN_PORT}/proxies" >/dev/null
+curl --fail --silent --show-error \
+  -H 'content-type: application/json' \
+  -d '{"name":"pi-host","listen":"0.0.0.0:8667","upstream":"pi-host:4317","enabled":true}' \
   "http://127.0.0.1:${TOXI_ADMIN_PORT}/proxies" >/dev/null
 
 if [[ "${E2E_INFRA_ONLY:-0}" == "1" ]]; then
@@ -50,10 +71,41 @@ if [[ "${E2E_INFRA_ONLY:-0}" == "1" ]]; then
   exit 0
 fi
 
+CANARY_FILE="$RUN_STATE/redaction-canaries.jsonl"
+FLUTTER_LOG="$RUN_STATE/flutter-test.log"
+PI_HOST_LOG="$RUN_STATE/pi-host.log"
+RELAY_LOG="$RUN_STATE/relay.log"
+: > "$CANARY_FILE"
+chmod 600 "$CANARY_FILE"
+
 cd "$ROOT/app"
 export PUB_CACHE="${PUB_CACHE:-$ROOT/.pub-cache}"
 FLUTTER="${FLUTTER:-$ROOT/.tools/flutter/bin/flutter}"
+set +e
 "$FLUTTER" test --no-pub --concurrency=1 test/e2e/ \
   --dart-define="E2E_PI_HOST_URL=http://127.0.0.1:${PI_HOST_PORT}" \
   --dart-define="E2E_RELAY_URL=http://127.0.0.1:${TOXI_RELAY_PORT}" \
-  --dart-define="E2E_TOXIPROXY_URL=http://127.0.0.1:${TOXI_ADMIN_PORT}"
+  --dart-define="E2E_TOXIPROXY_URL=http://127.0.0.1:${TOXI_ADMIN_PORT}" \
+  --dart-define="E2E_COMPOSE_PROJECT=$COMPOSE_PROJECT" \
+  --dart-define="E2E_COMPOSE_FILE=$COMPOSE_FILE" \
+  --dart-define="E2E_REDACTION_CANARY_FILE=$CANARY_FILE" \
+  2>&1 | tee "$FLUTTER_LOG"
+FLUTTER_STATUS=${PIPESTATUS[0]}
+set -e
+
+# Capture service diagnostics without echoing them. The checker reports only a
+# canary label plus a one-way fingerprint if a sensitive value leaked.
+"${COMPOSE[@]}" logs --no-color pi-host > "$PI_HOST_LOG" 2>&1
+"${COMPOSE[@]}" logs --no-color relay > "$RELAY_LOG" 2>&1
+set +e
+node "$ROOT/e2e/check-redaction.mjs" \
+  "$CANARY_FILE" "$FLUTTER_LOG" "$PI_HOST_LOG" "$RELAY_LOG"
+REDACTION_STATUS=$?
+set -e
+
+if [[ "$FLUTTER_STATUS" -ne 0 ]]; then
+  exit "$FLUTTER_STATUS"
+fi
+if [[ "$REDACTION_STATUS" -ne 0 ]]; then
+  exit "$REDACTION_STATUS"
+fi
