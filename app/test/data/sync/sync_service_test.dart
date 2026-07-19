@@ -798,13 +798,20 @@ void main() {
     () async {
       final s = await setup();
       s.ch.push(UserInput(id: 'u1', text: 'primary'));
-      await _settle();
+      await _waitUntil(
+        () => s.sync.workingReplyTo == 'u1',
+        reason: 'primary turn activation before steering rejection',
+      );
+      s.ch.push(AgentChunk(inReplyTo: 'u1', delta: 'primary partial'));
+      await _waitUntil(
+        () => s.sync.streaming?.buffer == 'primary partial',
+        reason: 'primary streaming buffer before steering rejection',
+      );
 
       await s.sync.sendMessage(
         'bad steer',
         streamingBehavior: UserMessageStreamingBehavior.steer,
       );
-      await _settle();
       final sent = s.ch.sent.whereType<UserMessage>().last;
       expect(s.sync.steeringProjection, isA<SteeringPending>());
 
@@ -816,14 +823,71 @@ void main() {
           message: 'steer rejected',
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () =>
+            s.sync.steeringProjection is NoSteering &&
+            messages(s.epk).any(
+              (row) => row.id == sent.id && row.status == UserMsgStatus.failed,
+            ),
+        reason: 'correlated steering rejection convergence',
+      );
 
-      expect(s.sync.steeringProjection, isA<NoSteering>());
+      expect(s.sync.workingReplyTo, 'u1');
+      expect(s.sync.streaming?.inReplyTo, 'u1');
+      expect(s.sync.streaming?.buffer, 'primary partial');
+      expect(s.sync.isWorking, isTrue);
       final failed = messages(
         s.epk,
       ).where((row) => row.id == sent.id).toList(growable: false);
       expect(failed, hasLength(1));
       expect(failed.single.status, UserMsgStatus.failed);
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
+    'failed steering rejection persistence still clears only the overlay',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      s.ch.push(UserInput(id: 'u1', text: 'primary'));
+      await _waitUntil(
+        () => s.sync.workingReplyTo == 'u1',
+        reason: 'primary turn activation before failed rejection append',
+      );
+      s.ch.push(AgentChunk(inReplyTo: 'u1', delta: 'primary partial'));
+      await _waitUntil(
+        () => s.sync.streaming?.buffer == 'primary partial',
+        reason: 'primary stream before failed rejection append',
+      );
+
+      await s.sync.sendMessage(
+        'bad steer',
+        streamingBehavior: UserMessageStreamingBehavior.steer,
+      );
+      final sent = s.ch.sent.whereType<UserMessage>().last;
+      expect(s.sync.steeringProjection, isA<SteeringPending>());
+
+      store.failNextAppend = true;
+      s.ch.push(
+        ErrorMessage(
+          sessionId: s.sessionId,
+          inReplyTo: sent.id,
+          code: 'internal_error',
+          message: 'steer rejected',
+        ),
+      );
+      await _waitUntil(
+        () => s.sync.steeringProjection is NoSteering,
+        reason: 'persistence-independent steering rejection convergence',
+      );
+
+      expect(s.sync.workingReplyTo, 'u1');
+      expect(s.sync.streaming?.inReplyTo, 'u1');
+      expect(s.sync.streaming?.buffer, 'primary partial');
+      expect(s.sync.isWorking, isTrue);
 
       s.conn.dispose();
       s.sync.dispose();
@@ -897,6 +961,76 @@ void main() {
       s.sync.dispose();
     },
   );
+
+  test('cancelled terminalizes a separately pending steering prompt', () async {
+    final store = _MemoryTranscriptStore();
+    final s = await setup(transcriptEventStore: store);
+    s.ch.push(UserInput(id: 'u1', text: 'primary'));
+    await _waitUntil(
+      () => s.sync.workingReplyTo == 'u1',
+      reason: 'primary turn activation before cancel',
+    );
+
+    await s.sync.sendMessage(
+      'queued refinement',
+      streamingBehavior: UserMessageStreamingBehavior.steer,
+    );
+    final steerId = s.ch.sent.whereType<UserMessage>().last.id;
+    s.ch.push(
+      UserInput(
+        id: steerId,
+        text: 'queued refinement',
+        streamingBehavior: UserMessageStreamingBehavior.steer,
+      ),
+    );
+    await _waitUntil(
+      () =>
+          s.sync.steeringProjection ==
+          SteeringPending(clientMessageId: steerId, text: 'queued refinement'),
+      reason: 'accepted steering overlay before cancel',
+    );
+    expect(
+      s.sync.steeringProjection,
+      SteeringPending(clientMessageId: steerId, text: 'queued refinement'),
+    );
+
+    s.ch.push(Cancelled(inReplyTo: 'cancel-1', targetId: 'u1'));
+    await _waitUntil(
+      () =>
+          s.sync.steeringProjection is NoSteering &&
+          store
+              .eventsFor(transcriptKeyFor(s.epk))
+              .whereType<UserMessageFailed>()
+              .any((event) => event.clientMessageId == steerId) &&
+          messages(s.epk).any(
+            (row) => row.id == steerId && row.status == UserMsgStatus.failed,
+          ),
+      reason: 'cancelled steering durable terminal convergence',
+    );
+
+    expect(s.sync.steeringProjection, isA<NoSteering>());
+    expect(s.sync.isWorking, isFalse);
+    final failures = store
+        .eventsFor(transcriptKeyFor(s.epk))
+        .whereType<UserMessageFailed>()
+        .where((event) => event.clientMessageId == steerId);
+    expect(failures, hasLength(1));
+    expect(failures.single.code, 'cancelled');
+    expect(
+      deriveTranscriptProjection(
+        sessionId: s.sessionId,
+        events: store.eventsFor(transcriptKeyFor(s.epk)),
+      ).steering,
+      isA<NoSteering>(),
+    );
+    expect(
+      messages(s.epk).singleWhere((row) => row.id == steerId).status,
+      UserMsgStatus.failed,
+    );
+
+    s.conn.dispose();
+    s.sync.dispose();
+  });
 
   test('cancelled marks a still-pending optimistic user row failed', () async {
     final s = await setup();
