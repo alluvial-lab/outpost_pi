@@ -17,7 +17,7 @@ const Map<DebugTag, Set<String>> kAllowedKeys = {
     'error',
   },
   DebugTag.peerFrame: {'kind', 'bytes', 'error'},
-  DebugTag.msgSend: {'id', 'blocked', 'preview'},
+  DebugTag.msgSend: {'id', 'blocked'},
   DebugTag.msgEcho: {'id'},
   DebugTag.msgFailed: {'id', 'code', 'detail'},
   DebugTag.sessionGate: {'messageType', 'reason', 'sessionIdTail'},
@@ -46,7 +46,7 @@ const Set<String> kUniversalKeys = {'tag', 'ts'};
 const Set<String> kForbiddenKeys = {
   'body', 'image', 'data', 'args', 'result', 'prompt', 'message', 'ct',
   // payload-like aliases the allow-list must also reject:
-  'content', 'payload', 'summary', 'fullText', 'bodyText', 'raw',
+  'content', 'payload', 'preview', 'summary', 'fullText', 'bodyText', 'raw',
   'toolOutput', 'imageBytes',
 };
 
@@ -105,7 +105,7 @@ void main() {
         error: huge,
       ),
       PeerFrameEvent(ts: now, kind: huge, bytes: 1234, error: huge),
-      MsgSendEvent(ts: now, id: huge, blocked: true, preview: huge),
+      MsgSendEvent(ts: now, id: huge, blocked: true),
       MsgEchoEvent(ts: now, id: huge),
       MsgFailedEvent(ts: now, id: huge, code: huge, detail: huge),
       SessionGateEvent(
@@ -281,14 +281,10 @@ void main() {
     expect(staleFalse.toJson()['stale'], isFalse);
   });
 
-  test('MsgSendEvent.preview is the (capped) preview, not full text', () {
-    final huge = 'a' * 1000;
-    final ev = MsgSendEvent(ts: now, id: 'msg-1', preview: huge);
-    final json = ev.toJson();
-    expect(json['preview'], isA<String>());
-    expect(
-      (json['preview'] as String).length,
-      lessThanOrEqualTo(kMaxFieldValueChars),
-    );
+  test('MsgSendEvent serializes correlation metadata only', () {
+    final json = MsgSendEvent(ts: now, id: 'msg-1', blocked: false).toJson();
+
+    expect(json.keys, unorderedEquals(<String>['tag', 'ts', 'id', 'blocked']));
+    expect(json, isNot(contains('preview')));
   });
 }

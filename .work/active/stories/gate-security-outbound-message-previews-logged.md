@@ -2,7 +2,7 @@
 kind: story
 release_binding: null
 parent: feature-redact-secrets-from-diagnostic-surfaces
-stage: implementing
+stage: done
 id: gate-security-outbound-message-previews-logged
 tags: [security]
 depends_on: []
@@ -37,3 +37,13 @@ Acceptance evidence:
   absent from both `debugPrint` capture and the structured debug event.
 - The debug-event allow-list/forbidden-key test prevents `preview` from being
   reintroduced.
+
+## Implementation notes
+- Execution capability: `openai-codex/gpt-5.6-sol` (caller-selected high reasoning for the security-sensitive cross-stack feature).
+- Review weight: `standard` (caller default); child story review is not applicable.
+- Files changed: `app/lib/data/sync/sync_service.dart`, `app/lib/domain/contracts/debug_log.dart`, `app/test/data/sync/sync_service_test.dart`, `app/test/domain/contracts/debug_log_test.dart`.
+- Tests added: canary prompt/image regression proving the original wire and transcript event retain content while console/typed diagnostics do not; registry regression forbidding `preview` and restricting `MsgSendEvent` to correlation metadata.
+- Simplification: deleted the `MsgSendEvent.preview` field and its successful-send preview local while retaining `_preview(...)` for user-visible turn state.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
+- Verification: the authoritative specific-file rerun `flutter test --no-pub test/data/sync/sync_service_test.dart` passed all 91 tests (zero failures versus the caller's noted three-failure baseline); `flutter test --no-pub test/domain/contracts/debug_log_test.dart` passed all 10 tests. An earlier combined two-file run exposed one pre-existing timing-sensitive `delivery_pending` assertion, which passed on the required isolated-file rerun.

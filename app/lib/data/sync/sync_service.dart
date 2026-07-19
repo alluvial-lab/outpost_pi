@@ -420,16 +420,8 @@ class SyncService extends Service {
     if (!isSteer) {
       _emitStreaming(StreamingMessage(inReplyTo: id));
     }
-    final preview = _preview(text, image);
-    debugPrint('[msg-send] id=$id text=$preview');
-    _logDebug(
-      MsgSendEvent(
-        ts: DateTime.now(),
-        id: id,
-        blocked: false,
-        preview: preview,
-      ),
-    );
+    debugPrint('[msg-send] id=$id');
+    _logDebug(MsgSendEvent(ts: DateTime.now(), id: id, blocked: false));
     try {
       await sendChannel.send(
         UserMessage(
