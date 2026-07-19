@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { generateEd25519Keypair } from "../pairing/crypto.js";
 import { RELAY_AUTH_DOMAIN_PREFIX } from "../protocol/generated/protocol.generated.js";
+import { RELAY_MAX_RAW_MESSAGE_BYTES } from "../protocol/relay_ingress.js";
 
 // ── WS mock (class-based, vitest-hoisted) ─────────────────────────────────────
 // Must use a proper class so `new WebSocket(...)` works inside RelayClient.
@@ -25,7 +26,10 @@ class MockWS extends EventEmitter {
   readyState = MockWS.OPEN;
   readonly sent: string[] = [];
 
-  constructor(_url: string) {
+  constructor(
+    _url: string,
+    readonly options?: { maxPayload?: number },
+  ) {
     super();
     wsRef.current = this;
     // Defer 'open' so RelayClient has time to attach its handlers first.
@@ -81,6 +85,14 @@ describe("RelayClient", () => {
     expect(relayAuthSigningBytes(nonce).toString("base64")).toBe(
       relayAuthDomainVector.signingBytesBase64,
     );
+  });
+
+  test("connect: configures the generated relay raw-message ceiling", async () => {
+    const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
+    await connectWithAuth(client);
+
+    expect(currentWs().options?.maxPayload).toBe(RELAY_MAX_RAW_MESSAGE_BYTES);
+    client.close();
   });
 
   test("connect: sends hello with correct Ed25519 pubkey", async () => {
@@ -150,6 +162,16 @@ describe("RelayClient", () => {
     // hello + auth = 2 sends during auth phase only
     expect(currentWs().sent).toHaveLength(2);
     client.close();
+  });
+
+  test("connect: malformed challenge errors never echo attacker-controlled content", async () => {
+    const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
+    const connecting = client.connect();
+    await vi.waitFor(() => expect(currentWs().sent.length).toBeGreaterThan(0));
+    currentWs().emit("message", Buffer.from("secret-attacker-frame"));
+
+    await expect(connecting).rejects.toThrow("malformed challenge");
+    await expect(connecting).rejects.not.toThrow("secret-attacker-frame");
   });
 
   test("connect: challenge message NOT forwarded as public 'message' event", async () => {

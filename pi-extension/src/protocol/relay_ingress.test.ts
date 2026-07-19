@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  decodeRelayChallenge,
   decodeRelayIngress,
   RelayIngressDecodeError,
 } from "./relay_ingress.js";
@@ -48,6 +49,20 @@ describe("relay ingress boundary", () => {
       maxRawBytes: 1024,
       maxDecodedPayloadBytes: 3,
     })).toThrowError(expect.objectContaining<Partial<RelayIngressDecodeError>>({ code: "too_large" }));
+  });
+
+  test("accepts only a canonical 32-byte bounded auth challenge", () => {
+    const nonce = Buffer.alloc(32, 7).toString("base64");
+    expect(decodeRelayChallenge(JSON.stringify({ type: "challenge", nonce }))).toEqual({
+      type: "challenge",
+      nonce,
+    });
+    expect(() => decodeRelayChallenge(JSON.stringify({
+      type: "challenge",
+      nonce: Buffer.alloc(31).toString("base64"),
+    }))).toThrowError(expect.objectContaining<Partial<RelayIngressDecodeError>>({
+      code: "invalid_message",
+    }));
   });
 
   test("rejects malformed generated control and cross-PC shapes", () => {
