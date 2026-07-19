@@ -2060,6 +2060,92 @@ describe("multi-channel broadcast (W2D)", () => {
     });
   });
 
+  test("daemon session_new ACKs and resets before exit 42; successor keeps room identity and publishes a fresh session", async () => {
+    await _pairForTest("owner-daemon-session-new");
+    const relay = relayRef.current!;
+    const initialConnect = relay.connect.mock.calls[0]![0] as {
+      roomId: string;
+      roomMeta: { name: string; cwd: string; session_id: string };
+    };
+    const oldSessionId = currentSessionIdFromSends();
+    const status = captureHandler("outpost-pi status");
+    await status("", makeMockCtx(initialConnect.roomMeta.cwd));
+
+    _setMessageBufferForTest([
+      { role: "user", content: "old daemon history", timestamp: 1_700_001_000_100 },
+    ]);
+    expect(_getTranscriptEventsForTest()).not.toHaveLength(0);
+
+    const previousDaemonMode = process.env["OUTPOST_PI_DAEMON"];
+    const exitCodes: number[] = [];
+    const exit = vi.spyOn(process, "exit").mockImplementation((code?: number) => {
+      exitCodes.push(code ?? 0);
+      return undefined as never;
+    });
+    vi.useFakeTimers();
+    try {
+      process.env["OUTPOST_PI_DAEMON"] = "1";
+      const order: string[] = [];
+      relay.send.mockImplementation((raw: string) => {
+        const type = decodeSentCt(raw).inner.type;
+        if (type === "action_ok" || type === "session_history") order.push(type);
+      });
+
+      emitClientMessage("owner-daemon-session-new", {
+        type: "session_new",
+        id: "daemon-new-1",
+        session_id: oldSessionId,
+      });
+
+      const actionOkAt = order.indexOf("action_ok");
+      const resetHistoryAt = order.indexOf("session_history");
+      expect(actionOkAt).toBeGreaterThanOrEqual(0);
+      expect(resetHistoryAt).toBeGreaterThan(actionOkAt);
+      expect(_getTranscriptEventsForTest()).toEqual([]);
+      expect(_getTurnProjectionForTest()).toMatchObject({ working: false, activeTurnId: null });
+      expect(exitCodes).toEqual([]);
+
+      vi.advanceTimersByTime(99);
+      expect(exitCodes).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(exitCodes).toEqual([42]);
+
+      // The successor is a fresh Pi session in the same daemon room. The
+      // room id/config are held by the relay transport; session_start only
+      // rotates the session identity through a room_meta_update.
+      const onSessionStart = captureEventHandler("session_start");
+      const controlsBefore = relay.sendControl.mock.calls.length;
+      onSessionStart(
+        { type: "session_start", reason: "startup" },
+        {
+          ...makeMockCtx(initialConnect.roomMeta.cwd),
+          sessionManager: { getSessionId: () => "successor-session-id" },
+        },
+      );
+      const roomUpdates = relay.sendControl.mock.calls
+        .slice(controlsBefore)
+        .map((call) => call[0] as { type?: string; room_id?: string; meta?: { session_id?: string } })
+        .filter((frame) => frame.type === "room_meta_update");
+      expect(roomUpdates).toContainEqual({
+        type: "room_meta_update",
+        room_id: initialConnect.roomId,
+        meta: { session_id: "successor-session-id" },
+      });
+      expect(initialConnect.roomMeta).toMatchObject({
+        name: expect.any(String),
+        cwd: initialConnect.roomMeta.cwd,
+        session_id: oldSessionId,
+      });
+      expect(_getRemoteSessionIdForTest()).toBe("successor-session-id");
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      exit.mockRestore();
+      if (previousDaemonMode === undefined) delete process.env["OUTPOST_PI_DAEMON"];
+      else process.env["OUTPOST_PI_DAEMON"] = previousDaemonMode;
+    }
+  });
+
   test("app prompt waits for async fresh message API rejection before echoing", async () => {
     await _pairForTest("ownerA__1234567890");
     const sessionId = currentSessionIdFromSends();
