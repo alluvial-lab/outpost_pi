@@ -259,3 +259,106 @@ final class RoomTurnProjection {
   bool get isFresh => status != AppTurnStatus.stale;
   bool get working => status == AppTurnStatus.working;
 }
+
+/// Describe transport reachability independently from the current agent turn.
+sealed class ChatTransportProjection {
+  const ChatTransportProjection();
+}
+
+/// Confirm that the selected Pi room is reachable through the relay.
+final class ChatTransportOnline extends ChatTransportProjection {
+  const ChatTransportOnline({required this.roomId});
+
+  final String roomId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChatTransportOnline && other.roomId == roomId;
+
+  @override
+  int get hashCode => roomId.hashCode;
+}
+
+/// Describe a connection attempt or retry backoff in progress.
+final class ChatTransportRetrying extends ChatTransportProjection {
+  const ChatTransportRetrying({required this.attempt, required this.nextRetry});
+
+  final int attempt;
+  final Duration nextRetry;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChatTransportRetrying &&
+      other.attempt == attempt &&
+      other.nextRetry == nextRetry;
+
+  @override
+  int get hashCode => Object.hash(attempt, nextRetry);
+}
+
+/// Describe an unavailable selected room with a user-facing reason.
+final class ChatTransportOffline extends ChatTransportProjection {
+  const ChatTransportOffline({required this.reason});
+
+  final String reason;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChatTransportOffline && other.reason == reason;
+
+  @override
+  int get hashCode => reason.hashCode;
+}
+
+/// Describe a steering prompt independently from transport and agent phase.
+sealed class SteeringProjection {
+  const SteeringProjection();
+}
+
+/// Confirm that no steering prompt is awaiting semantic pickup.
+final class NoSteering extends SteeringProjection {
+  const NoSteering();
+}
+
+/// Describe one accepted prompt waiting for the agent to pick it up.
+final class SteeringPending extends SteeringProjection {
+  const SteeringPending({required this.clientMessageId, required this.text});
+
+  final String clientMessageId;
+  final String text;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SteeringPending &&
+      other.clientMessageId == clientMessageId &&
+      other.text == text;
+
+  @override
+  int get hashCode => Object.hash(clientMessageId, text);
+}
+
+/// Compose the independent transport, turn, and steering presentation axes.
+final class ChatStatusProjection {
+  const ChatStatusProjection({
+    required this.transport,
+    required this.turn,
+    required this.steering,
+  });
+
+  final ChatTransportProjection transport;
+  final AppTurnProjection turn;
+  final SteeringProjection steering;
+
+  bool get isOnline => transport is ChatTransportOnline;
+  bool get canCancel => isOnline && turn.cancelTargetId != null;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChatStatusProjection &&
+      other.transport == transport &&
+      other.turn == turn &&
+      other.steering == steering;
+
+  @override
+  int get hashCode => Object.hash(transport, turn, steering);
+}
