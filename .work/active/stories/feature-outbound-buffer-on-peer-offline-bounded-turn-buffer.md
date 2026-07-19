@@ -1,7 +1,7 @@
 ---
 id: feature-outbound-buffer-on-peer-offline-bounded-turn-buffer
 kind: story
-stage: drafting
+stage: done
 tags: [pi-extension, lifecycle]
 parent: feature-outbound-buffer-on-peer-offline
 depends_on: []
@@ -26,14 +26,25 @@ worker boundary.
 
 ## Acceptance criteria
 
-- [ ] Offline peers buffer an independent FIFO while online peers retain the
+- [x] Offline peers buffer an independent FIFO while online peers retain the
       current immediate fan-out behavior.
-- [ ] Each peer retains at most one completed interval plus its current
+- [x] Each peer retains at most one completed interval plus its current
       interval under shared caps of 2,048 frames and 8 MiB serialized UTF-8.
-- [ ] On cap pressure, the older completed interval is evicted atomically before
+- [x] On cap pressure, the older completed interval is evicted atomically before
       the current interval is sacrificed.
-- [ ] If the current interval alone crosses either cap, it is discarded in full
+- [x] If the current interval alone crosses either cap, it is discarded in full
       and its remainder is suppressed until `completeOfflineTurn()`; no partial
       suffix flushes.
-- [ ] Serialized-size accounting is non-throwing, and the next boundary permits
+- [x] Serialized-size accounting is non-throwing, and the next boundary permits
       a fresh interval.
+
+## Implementation
+
+Added the multiplexer-owned per-peer interval state and exported 2,048-frame /
+8-MiB limits. Offline admission now accounts for serialized UTF-8 size without
+throwing, evicts the completed interval before retrying, atomically suppresses
+an oversized current interval through the next canonical boundary, and leaves
+online fan-out on its existing immediate path.
+
+Verification: `./node_modules/.bin/tsc --noEmit`; focused online fan-out Vitest
+(`owner_multiplexer.test.ts -t "broadcast fans out"`).
