@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-19
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Scaffold the cross-component pairing e2e stack
@@ -30,11 +30,11 @@ worker assignment.
 
 ## Acceptance evidence
 
-- [ ] `e2e/run-pairing.sh` starts relay, Pi host, and pinned Toxiproxy with healthchecks and dynamic host ports, then tears down containers and volumes on every exit.
-- [ ] Pi host uses a fresh HOME/cwd, the installed SDK runner, production extension factory, realistic `session_start` context without message actions, and process restart for isolation.
-- [ ] Flutter support uses real `PairingStorage`, app transport/channel/connection/sync adapters, real temp Hive, and only a scoped secure-storage platform fixture.
-- [ ] Readiness and event waits are bounded predicates with privacy-safe phase diagnostics; no arbitrary startup sleeps.
-- [ ] `.github/workflows/e2e-pairing.yml` runs the same local entrypoint without an APK, emulator, model provider, or secrets.
+- [x] `e2e/run-pairing.sh` starts relay, Pi host, and pinned Toxiproxy with healthchecks and dynamic host ports, then tears down containers and volumes on every exit.
+- [x] Pi host uses a fresh HOME/cwd, the installed SDK runner, production extension factory, realistic `session_start` context without message actions, and process restart for isolation.
+- [x] Flutter support uses real `PairingStorage`, app transport/channel/connection/sync adapters, real temp Hive, and only a scoped secure-storage platform fixture.
+- [x] Readiness and event waits are bounded predicates with privacy-safe phase diagnostics; no arbitrary startup sleeps.
+- [x] `.github/workflows/e2e-pairing.yml` runs the same local entrypoint without an APK, emulator, model provider, or secrets.
 
 ## Test integrity
 
