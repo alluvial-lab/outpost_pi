@@ -529,7 +529,7 @@ mod tests {
             .registry
             .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_main)
             .await;
-        let (tx_other, mut rx_other) = mpsc::unbounded_channel::<Message>();
+        let (tx_other, rx_other) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
             .register(
