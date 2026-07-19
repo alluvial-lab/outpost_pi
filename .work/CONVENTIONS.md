@@ -119,6 +119,17 @@ not whichever component release is running.
   `findings-route: none` — findings route through story/feature design, not
   refactor-design, because the fixes are not black-box-preserving). The libraries are
   grounded in `.agents/rules/code-design.md` and were cross-model-reviewed before commit.
+- `release_uat: manual-checkpoint` — after the automated `gates_for_release` pass and
+  before tag creation, `release-deploy` pauses for operator action; the operator runs
+  the smoke runbook in [`docs/release-uat.md`](../docs/release-uat.md) and records an
+  ack before the tag is cut. This is **not** a `gates_for_release` slot: `release-deploy`
+  invokes each of those as `Skill(skill="agile-workflow:gate-<name>")`, and there is no
+  `gate-uat` skill, so a `uat` entry there would fail to resolve and halt the release.
+  The manual-checkpoint path uses `release-deploy`'s built-in "mapping requires user
+  action → pause and prompt" pause instead. The durable automation that catches
+  integration regressions going forward is `feature-cross-component-e2e-pairing-suite`;
+  this runbook is the independent, sooner backstop (motivating incident: `v0.6.0`
+  non-functional ship).
 - `gate_finding_routing: { critical: implementing, high: implementing, medium: backlog, low: backlog }`
   — gate findings are routed by severity into blocking vs trackable work. **critical/high
   are release-blocking**: they bind to the release and ship blocks on them reaching `done`.
