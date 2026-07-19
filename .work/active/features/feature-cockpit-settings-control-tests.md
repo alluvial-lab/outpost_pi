@@ -1,7 +1,7 @@
 ---
 id: feature-cockpit-settings-control-tests
 kind: feature
-stage: review
+stage: done
 tags: [cockpit, testing]
 parent: null
 depends_on: []
@@ -339,3 +339,29 @@ their design.
 - Additional analysis: `flutter analyze --no-pub` found no issue in the changed tests; it remains non-zero for two unrelated pre-existing/concurrent info diagnostics in `pi_rpc_process.dart` and `file_viewer.dart`.
 - Review weight: `standard` (caller override); ready for one independent feature-level pass.
 - Adjacent production bugs parked: none.
+
+## Review (standard, cross-model, 2026-07-19) — adjudicated
+
+One balanced fresh-context cross-model pass (`openai-codex/gpt-5.6-sol` vs host `umans/umans-glm-5.2`). Verdict **APPROVED — ready for done**. No blocker or material current-cycle findings.
+
+### Lower-risk — parked unbound in backlog
+
+- `gate-docs-control-transport-nul-prefix-contradiction` — foundation docs (`docs/SPEC.md`, `docs/ARCHITECTURE.md`) simultaneously say the NUL-prefix protocol was retired and describe it as Cockpit's active transport. Cockpit now emits structured `outpost_pi_control` JSON; the prefix is extension-side compatibility only. Predates this feature; doesn't invalidate its tests. Routed to the `gate-docs` drift surface.
+
+### Nits — noted, no work created
+
+- `app_preferences_settings_panel_test.dart:39-44` selects controls via `.first`/widget type rather than visible labels (brittle but not false-green — final controller/store behavior is asserted).
+- Child stories use `gate_origin: testing` while the feature and configured gate name use `tests`. Normalize when next touched; current stage/dependency state is coherent.
+
+### Acceptance + integrity (reviewer-confirmed)
+
+- Preferences: real Appearance/Notification panels drive `SettingsController` + recording `SettingsStore`; assertions cover trimmed persistence + controller state (not importability/trivia).
+- Control matrix: all four relay actions have literal independent wire expectations + enum-completeness enforcement (wrong mapping or uncovered new action fails).
+- Daemon creation: drives the real dialog + validation through `FilePicker.platform`, verifies the exact trimmed ViewModel call once; ViewModel mocked only at the intended panel boundary.
+- Scope: commits e33e521, ae9703a, 7d71ad5 changed only test + `.work` files — no `cockpit/lib/` production changes.
+- No test weakening, tautological assertions, stale fixtures, or hidden production fixes.
+- Count progression coherent: 253 → 255 (preferences +2) → 256 (serialization +1) → 257 (daemon +1). 256 was the baseline before the daemon story, not before the whole feature (matches the implementation record).
+
+Verification: `flutter test --no-pub` 257 pass.
+
+Advanced `review → done`.
