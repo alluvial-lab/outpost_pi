@@ -101,6 +101,12 @@ export const RELAY_MAX_THINKING_BYTES = 32;
 
 export interface RelayOuterEnvelope {
   readonly peer: string;
+  readonly room: string;
+  readonly ct: string;
+}
+
+export interface RelayOuterEnvelopeCompat {
+  readonly peer: string;
   readonly room?: string;
   readonly ct: string;
 }
@@ -824,6 +830,14 @@ function isFiniteNumberAtLeast(value: unknown, minimum: number): value is number
   return isFiniteNumber(value) && value >= minimum;
 }
 
+export function isRelayOuterEnvelope(value: unknown): value is RelayOuterEnvelope {
+  return isObjectLike(value, ["peer", "room", "ct"], (record) => ((Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (Object.hasOwn(record, "room") && (typeof record["room"] === "string" && record["room"].length >= 1)) && (Object.hasOwn(record, "ct") && (typeof record["ct"] === "string" && record["ct"].length >= 1))));
+}
+
+export function isRelayOuterEnvelopeCompat(value: unknown): value is RelayOuterEnvelopeCompat {
+  return isObjectLike(value, ["peer", "room", "ct"], (record) => ((Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (record["room"] === undefined || (typeof record["room"] === "string" && record["room"].length >= 1)) && (Object.hasOwn(record, "ct") && (typeof record["ct"] === "string" && record["ct"].length >= 1))));
+}
+
 function isHistoryUserInput(value: unknown): value is HistoryUserInput {
   return isObjectLike(value, ["ts", "type", "id", "text", "images"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "user_input") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["images"] === undefined || (Array.isArray(record["images"]) && record["images"].every((item) => isObjectLike(item, ["data", "mime"], (record) => ((Object.hasOwn(record, "data") && (typeof record["data"] === "string" && record["data"].length >= 1)) && (Object.hasOwn(record, "mime") && (typeof record["mime"] === "string" && record["mime"].length >= 1)))))))));
 }
@@ -1000,6 +1014,14 @@ function isRelayControlFrameRoomMetaUpdated(value: unknown): value is RelayContr
   return isObjectLike(value, ["type", "peer", "room_id", "meta"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "room_meta_updated") && (Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (Object.hasOwn(record, "room_id") && (typeof record["room_id"] === "string" && record["room_id"].length >= 1 && record["room_id"].length <= 256)) && (Object.hasOwn(record, "meta") && isObjectLike(record["meta"], ["model", "thinking", "session_id", "working"], (record) => ((record["model"] === undefined || ((typeof record["model"] === "string" && record["model"].length <= 256) || record["model"] === null)) && (record["thinking"] === undefined || ((typeof record["thinking"] === "string" && record["thinking"].length <= 32) || record["thinking"] === null)) && (record["session_id"] === undefined || ((typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512) || record["session_id"] === null)) && (record["working"] === undefined || typeof record["working"] === "boolean"))))));
 }
 
+function isCrossPcFramePiEnvelope(value: unknown): value is CrossPcFramePiEnvelope {
+  return isObjectLike(value, ["type", "to_pc", "to_room", "envelope"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pi_envelope") && (Object.hasOwn(record, "to_pc") && (typeof record["to_pc"] === "string" && record["to_pc"].length >= 1)) && (Object.hasOwn(record, "to_room") && (typeof record["to_room"] === "string" && record["to_room"].length >= 1)) && (Object.hasOwn(record, "envelope") && isObjectLike(record["envelope"], ["from", "to", "id", "re", "body"], (record) => ((Object.hasOwn(record, "from") && (typeof record["from"] === "string" && record["from"].length >= 1)) && (Object.hasOwn(record, "to") && ((typeof record["to"] === "string" && record["to"].length >= 1) || (Array.isArray(record["to"]) && record["to"].length >= 1 && record["to"].every((item) => (typeof item === "string" && item.length >= 1))))) && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "re") && ((typeof record["re"] === "string" && record["re"].length >= 1) || record["re"] === null)) && (Object.hasOwn(record, "body") && true))))));
+}
+
+function isCrossPcFramePiEnvelopeIn(value: unknown): value is CrossPcFramePiEnvelopeIn {
+  return isObjectLike(value, ["type", "from_pc", "to_room", "envelope"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pi_envelope_in") && (Object.hasOwn(record, "from_pc") && (typeof record["from_pc"] === "string" && record["from_pc"].length >= 1)) && (Object.hasOwn(record, "to_room") && (typeof record["to_room"] === "string" && record["to_room"].length >= 1)) && (Object.hasOwn(record, "envelope") && (isObjectLike(record["envelope"], ["from", "to", "id", "re", "body"], (record) => ((Object.hasOwn(record, "from") && record["from"] === "_relay") && (Object.hasOwn(record, "to") && (typeof record["to"] === "string" && record["to"].length >= 1)) && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "re") && ((typeof record["re"] === "string" && record["re"].length >= 1) || record["re"] === null)) && (Object.hasOwn(record, "body") && isObjectLike(record["body"], ["type", "reason"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "transport_error") && (Object.hasOwn(record, "reason") && (record["reason"] === "offline" || record["reason"] === "not_authorized" || record["reason"] === "bad_envelope"))))))) || isObjectLike(record["envelope"], ["from", "to", "id", "re", "body"], (record) => ((Object.hasOwn(record, "from") && (typeof record["from"] === "string" && record["from"].length >= 1)) && (Object.hasOwn(record, "to") && ((typeof record["to"] === "string" && record["to"].length >= 1) || (Array.isArray(record["to"]) && record["to"].length >= 1 && record["to"].every((item) => (typeof item === "string" && item.length >= 1))))) && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "re") && ((typeof record["re"] === "string" && record["re"].length >= 1) || record["re"] === null)) && (Object.hasOwn(record, "body") && true)))))));
+}
+
 const SESSION_HISTORY_EVENT_VALIDATORS: { readonly [K in SessionHistoryEventType]: ProtocolValidator<Extract<SessionHistoryEvent, { readonly type: K }>> } = {
   "user_input": isHistoryUserInput,
   "tool_request": isHistoryToolRequest,
@@ -1064,6 +1086,18 @@ export function isServerMessage(value: unknown): value is ServerMessage {
   const record = asRecord(value);
   if (!record || typeof record["type"] !== "string") return false;
   const validate = SERVER_MESSAGE_VALIDATORS[record["type"] as ServerMessageType];
+  return validate?.(record) ?? false;
+}
+
+const CROSS_PC_FRAME_VALIDATORS: { readonly [K in CrossPcType]: ProtocolValidator<Extract<CrossPcFrame, { readonly type: K }>> } = {
+  "pi_envelope": isCrossPcFramePiEnvelope,
+  "pi_envelope_in": isCrossPcFramePiEnvelopeIn,
+};
+
+export function isCrossPcFrame(value: unknown): value is CrossPcFrame {
+  const record = asRecord(value);
+  if (!record || typeof record["type"] !== "string") return false;
+  const validate = CROSS_PC_FRAME_VALIDATORS[record["type"] as CrossPcType];
   return validate?.(record) ?? false;
 }
 
