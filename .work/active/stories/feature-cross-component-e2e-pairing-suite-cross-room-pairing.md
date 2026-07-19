@@ -1,7 +1,7 @@
 ---
 id: feature-cross-component-e2e-pairing-suite-cross-room-pairing
 kind: story
-stage: implementing
+stage: done
 tags: [e2e-test, testing]
 parent: feature-cross-component-e2e-pairing-suite
 depends_on: [feature-cross-component-e2e-pairing-suite-infra, feature-cross-component-e2e-pairing-suite-qr-lifecycle]
@@ -37,3 +37,14 @@ If the case exposes a production defect, park it and retain the failing test as
 a linked skip with a one-line reason. Repair drifted fixtures/assertions in the
 same stride. Never hand-construct an outer envelope, assert a mocked send, or
 broaden room checks to make the test pass.
+
+## Implementation notes
+
+- Execution capability: `openai-codex/gpt-5.6-sol` (caller-selected).
+- Review weight: `standard` (caller).
+- Files changed: `app/test/e2e/support/pairing_stack.dart` and `app/test/e2e/cross_room_pairing_e2e_test.dart`.
+- Tests added: production `WsTransport` auth in app room `main`, production QR targeting the non-main Pi room, `performPairing`, generated `PairOk` decode, and `PairingStorage` round-trip through the scoped secure-storage adapter.
+- Simplification: `PairingStack` owns the one live transport and transfers it directly to the later hydration slice; tests define no outer envelope or pair response mirrors.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
+- Verification: Flutter analyze of `test/e2e/`; `e2e/run-pairing.sh` passed cross-room pairing plus the prior QR case.
