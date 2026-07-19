@@ -23,6 +23,12 @@ pub const MAX_CT_ENV: &str = "RELAY_MAX_CT_MIB";
 /// headroom over the app compression cap (roughly 1.5 MB, 2 MB estimated).
 pub const DEFAULT_MAX_CT_MIB: usize = 4;
 
+/// Bounded JSON/routing overhead allowed beyond an encoded `ct` payload.
+pub const MAX_FRAME_OVERHEAD_BYTES: usize = 64 * 1024;
+
+/// Maximum UTF-8 bytes accepted for one unauthenticated hello/auth message.
+pub const MAX_PRE_AUTH_FRAME_BYTES: usize = 16 * 1024;
+
 /// Effective outer-envelope limit in bytes. Read **once** from [`MAX_CT_ENV`]
 /// (in MiB) on the first call and memoized. An absent or invalid value
 /// (non-integer, zero, or empty) falls back to 4 MiB and never panics on a
@@ -35,8 +41,19 @@ pub fn max_ct_bytes() -> usize {
             .and_then(|s| s.trim().parse::<usize>().ok())
             .filter(|&n| n > 0)
             .unwrap_or(DEFAULT_MAX_CT_MIB);
-        mib * 1024 * 1024
+        mib.saturating_mul(1024 * 1024)
     })
+}
+
+/// Maximum complete WebSocket message size for the configured decoded payload
+/// ceiling plus bounded JSON/routing overhead.
+pub fn max_ws_message_bytes() -> usize {
+    let encoded = max_ct_bytes()
+        .saturating_add(2)
+        .checked_div(3)
+        .unwrap_or(usize::MAX)
+        .saturating_mul(4);
+    encoded.saturating_add(MAX_FRAME_OVERHEAD_BYTES)
 }
 
 /// Reports malformed outer envelopes and ciphertexts above the configured limit.
@@ -64,9 +81,12 @@ pub fn parse_line(line: &str) -> Result<OuterEnvelope, ParseError> {
 /// Testable [`parse_line`] core with an injected limit, so tests exercise the
 /// boundary without mutating the global environment variable or racing the
 /// memoized [`OnceLock`].
-fn parse_line_with_max(line: &str, max_ct_bytes: usize) -> Result<OuterEnvelope, ParseError> {
+pub(crate) fn parse_line_with_max(
+    line: &str,
+    max_ct_bytes: usize,
+) -> Result<OuterEnvelope, ParseError> {
     let env: OuterEnvelope = serde_json::from_str(line)?;
-    let estimated = env.ct.len() * 3 / 4;
+    let estimated = env.ct.len().saturating_mul(3) / 4;
     if estimated > max_ct_bytes {
         return Err(ParseError::TooLarge(estimated, max_ct_bytes));
     }
@@ -129,6 +149,7 @@ mod tests {
         // Without RELAY_MAX_CT_MIB in the test environment, the effective limit is 4 MiB.
         assert_eq!(max_ct_bytes(), DEFAULT_MAX_CT_MIB * 1024 * 1024);
         assert_eq!(max_ct_bytes(), 4 * 1024 * 1024);
+        assert_eq!(max_ws_message_bytes(), 5_657_944);
     }
 
     #[test]
