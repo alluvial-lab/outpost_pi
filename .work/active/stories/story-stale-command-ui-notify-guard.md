@@ -1,7 +1,7 @@
 ---
 id: story-stale-command-ui-notify-guard
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: [story-stale-session-bound-surface-deep-audit]
