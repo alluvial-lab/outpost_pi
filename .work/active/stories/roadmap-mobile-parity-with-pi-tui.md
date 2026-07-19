@@ -1,7 +1,7 @@
 ---
 id: roadmap-mobile-parity-with-pi-tui
 kind: story
-stage: drafting
+stage: done
 tags: [app, ux, roadmap, parity]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [idea-mobile-message-duplication-send-timeout]
@@ -117,3 +117,13 @@ are represented by the parent feature's five units. Close it as provenance when
 DAG leaf that follows both the ordering and hydration branches). Any future TUI
 parity observation must be scoped as a concrete new item rather than extending
 this umbrella indefinitely.
+
+## Implementation
+
+Closed as the provenance umbrella for the five completed feature units. Mobile
+chat now separates transport from turn state, exposes waiting/steering controls,
+anchors steered prompts at pickup, preserves prompt/response order across
+rehydration, refreshes retained chat routes on resume, and keeps send
+confirmation process-owned across navigation. The two physical-network-drop
+observations remain explicitly parked under their live-repro notes; broader
+future parity work must start from a new concrete observation.
