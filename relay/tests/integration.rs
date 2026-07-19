@@ -109,3 +109,25 @@ async fn invalid_sig_closes_ws() {
         Some(Ok(other)) => panic!("unexpected message after bad auth: {other:?}"),
     }
 }
+
+/// Oversized unauthenticated text is rejected before JSON parsing or registration.
+#[tokio::test]
+async fn oversized_hello_closes_ws() {
+    let port = start_relay().await;
+    let url = format!("ws://127.0.0.1:{port}");
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+
+    ws.send(Message::text(
+        "x".repeat(relay::protocol::outer::MAX_PRE_AUTH_FRAME_BYTES + 1),
+    ))
+    .await
+    .unwrap();
+
+    let close_result =
+        tokio::time::timeout(tokio::time::Duration::from_millis(100), ws.next()).await;
+    assert!(close_result.is_ok(), "relay did not reject oversized hello");
+    match close_result.unwrap() {
+        None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {}
+        Some(Ok(other)) => panic!("unexpected message after oversized hello: {other:?}"),
+    }
+}
