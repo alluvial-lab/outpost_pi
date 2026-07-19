@@ -8,7 +8,7 @@ depends_on: [feature-cross-component-e2e-pairing-suite-cross-room-pairing]
 release_binding: null
 gate_origin: null
 created: 2026-07-19
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Prove post-pair session transcript hydration
@@ -27,11 +27,11 @@ active canonical session.
 
 ## Acceptance evidence
 
-- [ ] Session identity comes through production room metadata and is non-empty before `SessionSync` is sent.
-- [ ] The extension builds `session_history` from SDK/session projection state; the harness never injects a server frame.
-- [ ] The final assertion reads a non-pending `MessageRecord` with the seeded role/text from the active Hive session.
-- [ ] The case fails if extension `PlainPeerChannel` omits destination `room`, if relay rejects it, or if app room/session gates drop it.
-- [ ] `SyncService`, `ConnectionManager`, channel, socket, timers, Hive boxes, secure-storage fixture, and temp directories all tear down in owner order.
+- [x] Session identity comes through production room metadata and is non-empty before `SessionSync` is sent.
+- [x] The extension builds `session_history` from SDK/session projection state; the harness never injects a server frame.
+- [x] The final assertion reads a non-pending `MessageRecord` with the seeded role/text from the active Hive session.
+- [x] The case fails if extension `PlainPeerChannel` omits destination `room`, if relay rejects it, or if app room/session gates drop it.
+- [x] `SyncService`, `ConnectionManager`, channel, socket, timers, Hive boxes, secure-storage fixture, and temp directories all tear down in owner order.
 
 ## Test integrity
 

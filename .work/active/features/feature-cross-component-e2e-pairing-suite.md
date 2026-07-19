@@ -1,14 +1,14 @@
 ---
 id: feature-cross-component-e2e-pairing-suite
 kind: feature
-stage: review
+stage: done
 tags: [testing, e2e-test]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Cross-component e2e suite for the pairing → session-hydrate lifecycle
@@ -562,3 +562,43 @@ runs **7/7 green** against real components.
 - Broader cross-component program (reconnect, session-replacement `/new`/`/fork`, cross-PC mesh, mobile background/resume) remains explicitly out of scope per the design — promote into separate features once this harness is proven.
 
 Two implementation workers were interrupted by a session crash and a turn limit respectively; their committed work was recovered and verified green on the host (the harness re-run confirms 7/7).
+
+## Review fixes (standard, 2026-07-19)
+
+**Verdict**: Approve after fixes. The single standard-weight cross-model pass
+reported three receiver-confirmed material blockers; all were fixed and verified
+without a second review pass, per the standard closure policy.
+
+- **Source-built relay**: `e2e/docker-compose.test.yml` now declares the relay
+  build context at `relay/`, and the default runner path uses Compose `--build`.
+  `OUTPOST_PI_E2E_RELAY_IMAGE` remains an explicit opt-out for a pinned prebuilt
+  image.
+- **Failure-log redaction**: failure cases register the real nonce, signature,
+  QR token/URI, public/private key encodings, and seeded transcript as canaries.
+  The suite captures Flutter diagnostics plus `docker compose logs` from Pi-host
+  and relay, fails on literal leakage, and reports only a label plus SHA-256
+  fingerprint. The runner also scans the complete Flutter output and service
+  logs after the suite.
+- **CI execution**: `.github/workflows/e2e-pairing.yml` runs the shared
+  `e2e/run-pairing.sh` entrypoint on push and pull requests using Node 24,
+  Flutter 3.41.7, and serial headless Flutter execution.
+- **Isolation hardening**: each run gets a unique Compose project, Docker-assigned
+  ports, a stable Toxiproxy front door for the process-restarted Pi-host, and
+  delete-then-create proxy initialization.
+- **Acceptance evidence**: all five done child stories now have their implemented
+  acceptance boxes checked.
+
+### Verification
+
+- `bash e2e/run-pairing.sh` rebuilt the current relay source from
+  `relay/Dockerfile` and passed **7/7** cases.
+- The runner's embedded `flutter test --no-pub --concurrency=1 test/e2e/` passed
+  all golden and failure cases; the final diagnostics scan reported
+  `redaction canaries passed (20 values)`.
+- `flutter analyze --no-pub test/e2e/` passed with no issues.
+- A negative self-check injected a canary into captured diagnostics and proved
+  `e2e/check-redaction.mjs` exits non-zero while printing only a hashed
+  fingerprint.
+
+**Blockers**: none remaining. No further review was run because the effective
+weight was `standard`.
