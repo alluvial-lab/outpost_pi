@@ -89,15 +89,25 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
     });
   }
 
-  void _showError(String message) =>
-      _toast(message, widget.messenger.context.colors.error);
+  void _showError(String message) => _showErrorOn(widget.messenger, message);
+
+  void _showErrorOn(ScaffoldMessengerState messenger, String message) {
+    if (!messenger.mounted) return;
+    _toastOn(messenger, message, messenger.context.colors.error);
+  }
+
+  void _showInfoOn(ScaffoldMessengerState messenger, String message) {
+    if (!messenger.mounted) return;
+    _toastOn(messenger, message, messenger.context.colors.warning);
+  }
 
   /// Toasts go through the chat scaffold's messenger (captured before the
   /// sheet opened) so success/failure feedback survives the sheet being
   /// popped on success.
-  void _toast(String message, Color color) {
-    final colors = widget.messenger.context.colors;
-    widget.messenger.showSnackBar(
+  void _toastOn(ScaffoldMessengerState messenger, String message, Color color) {
+    if (!messenger.mounted) return;
+    final colors = messenger.context.colors;
+    messenger.showSnackBar(
       SnackBar(
         backgroundColor: colors.surface,
         behavior: SnackBarBehavior.floating,
@@ -196,6 +206,11 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
   }
 
   Future<void> _onNewSession(QuickActionsViewModel vm) async {
+    // Capture only longer-lived owners before confirmation pops and disposes
+    // the sheet/provider. The repository command deliberately outlives `vm`.
+    final runNewSession = vm.detachedNewSessionCommand;
+    final messenger = widget.messenger;
+    final onSessionReset = widget.onSessionReset;
     final confirmed = await _confirmDestructiveAction(
       title: 'Start a new session?',
       content:
@@ -205,11 +220,11 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
     );
     if (!confirmed) return;
     try {
-      await vm.newSession();
+      await runNewSession();
     } on ActionFailure catch (e) {
       // The sheet is already closed, so its `vm.errors` listener is gone —
       // surface the failure toast directly through the captured messenger.
-      _showError(e.message);
+      _showErrorOn(messenger, e.message);
       return;
     } catch (_) {
       return;
@@ -217,10 +232,15 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
     // action_ok — wipe the local chat mirror so the UI reflects the fresh
     // session. The sheet is already closed; no success toast (quiet action,
     // the cleared chat is feedback enough).
-    await widget.onSessionReset?.call();
+    await onSessionReset?.call();
   }
 
   Future<void> _onRestartPi(QuickActionsViewModel vm) async {
+    // Capture only longer-lived owners before confirmation pops and disposes
+    // the sheet/provider. The repository command deliberately outlives `vm`.
+    final runNewSession = vm.detachedNewSessionCommand;
+    final messenger = widget.messenger;
+    final onSessionReset = widget.onSessionReset;
     final confirmed = await _confirmDestructiveAction(
       title: 'Restart Pi process?',
       content:
@@ -236,15 +256,18 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
       // request before exiting with 42, which makes the supervisor respawn a
       // fresh process. Interactive Pis perform only their normal new-session
       // behavior; the confirmation copy avoids promising a respawn there.
-      await vm.newSession();
+      await runNewSession();
     } on ActionFailure catch (e) {
-      _showError(e.message);
+      _showErrorOn(messenger, e.message);
       return;
     } catch (_) {
       return;
     }
-    await widget.onSessionReset?.call();
-    _showInfo('Session reset accepted; a supervised Pi may reconnect briefly.');
+    await onSessionReset?.call();
+    _showInfoOn(
+      messenger,
+      'Session reset accepted; a supervised Pi may reconnect briefly.',
+    );
   }
 
   /// Close the sheet before showing a destructive confirmation dialog.
@@ -311,9 +334,6 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
     );
     return result == true;
   }
-
-  void _showInfo(String message) =>
-      _toast(message, widget.messenger.context.colors.warning);
 
   Future<void> _onThinking(
     QuickActionsViewModel vm,

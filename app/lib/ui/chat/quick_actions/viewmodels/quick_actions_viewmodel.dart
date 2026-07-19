@@ -43,6 +43,14 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
   WireModel? get currentModel => state.currentModel;
   String? get currentModelName => state.currentModelName;
 
+  /// Return a repository-owned session-reset command that can outlive the sheet.
+  ///
+  /// Destructive confirmations dismiss the sheet before the dialog resolves,
+  /// which disposes this ViewModel. Capturing this tear-off while the sheet is
+  /// alive lets the dialog delegate to the longer-lived repository without
+  /// calling back into a disposed [ChangeNotifier].
+  Future<void> Function() get detachedNewSessionCommand => _repo.newSession;
+
   // ---------------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------------
@@ -60,53 +68,65 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
     // picker row reflects the tap before the round-trip resolves.
     final previous = state.currentModel;
     final previousName = state.currentModelName;
-    _emitIfAlive(QuickActionsBusy(
-      action: ActionName.modelSet,
-      currentModel: model,
-      currentModelName: model.name,
-      currentThinking: state.currentThinking,
-    ));
-    try {
-      await _repo.setModel(model.provider, model.id);
-      _emitIfAlive(QuickActionsIdle(
+    _emitIfAlive(
+      QuickActionsBusy(
+        action: ActionName.modelSet,
         currentModel: model,
         currentModelName: model.name,
         currentThinking: state.currentThinking,
-      ));
+      ),
+    );
+    try {
+      await _repo.setModel(model.provider, model.id);
+      _emitIfAlive(
+        QuickActionsIdle(
+          currentModel: model,
+          currentModelName: model.name,
+          currentThinking: state.currentThinking,
+        ),
+      );
     } on ActionFailure catch (e) {
       // Revert optimistic highlight on failure.
-      _emitIfAlive(QuickActionsIdle(
-        currentModel: previous,
-        currentModelName: previousName,
-        currentThinking: state.currentThinking,
-      ));
-      _errorController.add(e.message);
+      _emitIfAlive(
+        QuickActionsIdle(
+          currentModel: previous,
+          currentModelName: previousName,
+          currentThinking: state.currentThinking,
+        ),
+      );
+      _reportErrorIfAlive(e.message);
       rethrow;
     }
   }
 
   Future<void> setThinking(ThinkingLevel level) async {
     final previous = state.currentThinking;
-    _emitIfAlive(QuickActionsBusy(
-      action: ActionName.thinkingSet,
-      currentThinking: level,
-      currentModel: state.currentModel,
-      currentModelName: state.currentModelName,
-    ));
-    try {
-      await _repo.setThinking(level);
-      _emitIfAlive(QuickActionsIdle(
+    _emitIfAlive(
+      QuickActionsBusy(
+        action: ActionName.thinkingSet,
         currentThinking: level,
         currentModel: state.currentModel,
         currentModelName: state.currentModelName,
-      ));
+      ),
+    );
+    try {
+      await _repo.setThinking(level);
+      _emitIfAlive(
+        QuickActionsIdle(
+          currentThinking: level,
+          currentModel: state.currentModel,
+          currentModelName: state.currentModelName,
+        ),
+      );
     } on ActionFailure catch (e) {
-      _emitIfAlive(QuickActionsIdle(
-        currentThinking: previous,
-        currentModel: state.currentModel,
-        currentModelName: state.currentModelName,
-      ));
-      _errorController.add(e.message);
+      _emitIfAlive(
+        QuickActionsIdle(
+          currentThinking: previous,
+          currentModel: state.currentModel,
+          currentModelName: state.currentModelName,
+        ),
+      );
+      _reportErrorIfAlive(e.message);
       rethrow;
     }
   }
@@ -121,15 +141,17 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
       // a stale cache entry (current=null) doesn't clobber a value we
       // already learned via setModel.
       if (catalogue.current != null) {
-        _emitIfAlive(QuickActionsIdle(
-          currentModel: catalogue.current,
-          currentModelName: catalogue.current?.name ?? state.currentModelName,
-          currentThinking: state.currentThinking,
-        ));
+        _emitIfAlive(
+          QuickActionsIdle(
+            currentModel: catalogue.current,
+            currentModelName: catalogue.current?.name ?? state.currentModelName,
+            currentThinking: state.currentThinking,
+          ),
+        );
       }
       return catalogue;
     } on ActionFailure catch (e) {
-      _errorController.add(e.message);
+      _reportErrorIfAlive(e.message);
       rethrow;
     }
   }
@@ -178,32 +200,40 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
     emit(next);
   }
 
-  Future<void> _runVoid(
-    ActionName action,
-    Future<void> Function() body,
-  ) async {
-    _emitIfAlive(QuickActionsBusy(
-      action: action,
-      currentThinking: state.currentThinking,
-      currentModel: state.currentModel,
-      currentModelName: state.currentModelName,
-    ));
+  Future<void> _runVoid(ActionName action, Future<void> Function() body) async {
+    _emitIfAlive(
+      QuickActionsBusy(
+        action: action,
+        currentThinking: state.currentThinking,
+        currentModel: state.currentModel,
+        currentModelName: state.currentModelName,
+      ),
+    );
     try {
       await body();
-      _emitIfAlive(QuickActionsIdle(
-        currentThinking: state.currentThinking,
-        currentModel: state.currentModel,
-        currentModelName: state.currentModelName,
-      ));
+      _emitIfAlive(
+        QuickActionsIdle(
+          currentThinking: state.currentThinking,
+          currentModel: state.currentModel,
+          currentModelName: state.currentModelName,
+        ),
+      );
     } on ActionFailure catch (e) {
-      _emitIfAlive(QuickActionsIdle(
-        currentThinking: state.currentThinking,
-        currentModel: state.currentModel,
-        currentModelName: state.currentModelName,
-      ));
-      _errorController.add(e.message);
+      _emitIfAlive(
+        QuickActionsIdle(
+          currentThinking: state.currentThinking,
+          currentModel: state.currentModel,
+          currentModelName: state.currentModelName,
+        ),
+      );
+      _reportErrorIfAlive(e.message);
       rethrow;
     }
+  }
+
+  void _reportErrorIfAlive(String message) {
+    if (_disposed || _errorController.isClosed) return;
+    _errorController.add(message);
   }
 
   void _emitIfAlive(QuickActionsState next) {
