@@ -171,6 +171,42 @@ void main() {
     },
   );
 
+  test('late prompt confirmation is re-anchored before its response', () {
+    final events = <TranscriptEvent>[
+      submitted('late-user', 'fast prompt'),
+      AssistantMessageCommitted(
+        eventId: 'server:assistant:fast',
+        sessionId: session,
+        ts: base.add(const Duration(milliseconds: 1)),
+        messageId: 'fast-response',
+        replyTo: 'late-user',
+        text: 'fast response',
+      ),
+      UserMessageConfirmed(
+        eventId: 'server:user:late',
+        sessionId: session,
+        ts: base.add(const Duration(milliseconds: 2)),
+        clientMessageId: 'late-user',
+        text: 'fast prompt',
+      ),
+    ];
+
+    final live = deriveTranscriptProjection(sessionId: session, events: events);
+    final replayed = deriveTranscriptProjection(
+      sessionId: session,
+      events: [...events, ...events],
+    );
+
+    expect(live.messages.map((message) => message.id), [
+      'late-user',
+      'fast-response',
+    ]);
+    expect(
+      replayed.messages.map((message) => message.id),
+      live.messages.map((message) => message.id),
+    );
+  });
+
   test('failed steering clears pending and materializes one failed row', () {
     final projection = deriveTranscriptProjection(
       sessionId: session,
