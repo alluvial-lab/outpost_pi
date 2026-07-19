@@ -2684,7 +2684,8 @@ function _handleSessionSync(
 ): void {
   sender.send(_currentQueueStateMessage());
 
-  sender.send(_buildSessionHistoryMessage(msg.id, msg.limit));
+  const history = _buildSessionHistoryMessage(msg.id, msg.limit);
+  sender.send(_owners.arbitrateSessionHistory(sender, history));
 }
 
 function _buildSessionHistoryMessage(
