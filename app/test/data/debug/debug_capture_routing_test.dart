@@ -272,7 +272,7 @@ Future<({HttpServer server, Uri uri})> _startRelayProbeServer({
         socket.add(
           jsonEncode({
             'type': 'challenge',
-            'nonce': base64.encode([1, 2, 3]),
+            'nonce': base64.encode(List<int>.generate(32, (index) => index)),
           }),
         );
         return;
