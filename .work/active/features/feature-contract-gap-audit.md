@@ -1,19 +1,18 @@
 ---
 id: feature-contract-gap-audit
 kind: feature
-stage: drafting
+stage: implementing
 tags: [pi-extension, app, relay, docs]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on:
   - feature-cross-side-observability
-  - feature-reconnect-reproduction
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-19
 ---
 
-# Contract gap audit (evidence-sourced, downstream of reproduction)
+# Contract gap audit (evidence-sourced, static tracks unblocked)
 
 ## Brief
 
@@ -115,4 +114,18 @@ section current-state (rolling-foundation) as part of this audit.
 `.work/drafts/draft-protocol-targeting.md` — retained as background for the
 targeting audit. The "collision conditions" section is INVALIDATED per
 operator Q2 (no cross-room collision occurred; the stale error was in `#2`'s
-own session) and is to be deleted once the real shape is confirmed via repro.
+own session) and is not evidence for a durable contract claim.
+
+## Split decision (2026-07-19)
+
+The physical-phone dependency applied only to reconnect-derived attribution,
+not to Tracks A–E. The feature-level dependency on
+`feature-reconnect-reproduction` was removed so the static code/release audit
+can proceed. The residual live-evidence pass is isolated as
+`story-reconnect-derived-contract-claims-audit`, dependent on
+`idea-mobile-drop-slow-recovery` and
+`idea-mobile-outgoing-message-swallowed`.
+
+Track B is the only implementation-sized static checkpoint and is tracked as
+`story-contract-gap-session-error-feasibility`. It is a feasibility result plus
+existing regression evidence; no wire change is presumed.
