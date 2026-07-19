@@ -3,12 +3,12 @@ id: epic-targeting-and-session-lifecycle-contracts
 kind: epic
 stage: implementing
 tags: [pi-extension, app, relay, bug, docs, observability]
-parent: epic-remote-session-resilience-refactor
+parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-18
+updated: 2026-07-19
 reframed: 2026-07-04
 ---
 
