@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-tui-parity-chat-resilience-status-projection
 kind: story
-stage: drafting
+stage: done
 tags: [app, lifecycle]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: []
@@ -45,6 +45,20 @@ redesign rather than infer pickup from time.
 - Existing terminal/reconnect/session-replacement convergence tests remain green.
 - Extension contract tests prove the required existing signals without a new
   required field.
+
+## Implementation
+
+Implemented the composed `ChatStatusProjection` with independent typed
+transport, existing `AppTurnProjection`, and steering axes. `ChatReady`, the
+AppBar, and Stop eligibility now consume that projection; the flattened
+working/reconnecting/online/offline priority chain is gone. The transcript
+reducer also preserves a normal confirmed prompt as the active turn so a
+subsequent tool request projects `awaitingTool` instead of falling idle.
+
+Verification: scoped analysis passed; transcript, ChatViewModel, AppBar, and
+InputBar targeted tests passed serially. Existing extension tests already pin
+`tool_request`/`tool_result`, early steer echo, and deterministic `message_end`
+user pickup contracts; no production extension or wire change was needed.
 
 ## Provenance closures
 

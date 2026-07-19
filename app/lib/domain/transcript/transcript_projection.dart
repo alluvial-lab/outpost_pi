@@ -1,5 +1,6 @@
 import 'package:app/domain/session_state.dart';
 import 'package:app/domain/transcript/transcript_event.dart';
+import 'package:app/protocol/protocol.dart' show UserMessageStreamingBehavior;
 
 /// Backward-compatible aliases for the transcript seam. The canonical variant
 /// set is [AppTurnStatus]; keep this wrapper so older tests/callers do not
@@ -173,6 +174,13 @@ TranscriptProjection deriveTranscriptProjection({
             image: event.image,
           ),
         );
+        if (event.streamingBehavior != UserMessageStreamingBehavior.steer) {
+          turn = TranscriptTurnView(
+            status: AppTurnStatus.working,
+            turnId: event.turnId ?? event.clientMessageId,
+            replyTo: event.clientMessageId,
+          );
+        }
       case UserMessageFailed():
         failedUsers[event.clientMessageId] = event;
         if (!confirmedUsers.containsKey(event.clientMessageId)) {

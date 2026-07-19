@@ -453,6 +453,51 @@ void main() {
     conn.dispose();
   });
 
+  test('awaiting tool remains independently online and cancellable', () async {
+    final ch = _FakeChannel();
+    final storage = _FakeStorage();
+    final conn = ConnectionManager(
+      factory: (_, _) async => ch,
+      storage: storage,
+    );
+    final boxes = LocalBoxes();
+    final sync = SyncService(conn, boxes);
+    final prefs = Preferences(_FakeSecureStorage());
+    await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+    await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+    await _adoptWithSession(conn, ch);
+
+    final vm = ChatViewModel(
+      SessionReadRepository(boxes),
+      sync,
+      conn,
+      prefs,
+      storage,
+    );
+    await vm.initialize();
+    ch.push(UserInput(id: 'tool-u1', text: 'run it'));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    ch.pushRaw(
+      ToolRequest(
+        sessionId: ch.defaultSessionId,
+        toolCallId: 'tool-1',
+        tool: 'bash',
+        args: const {'command': 'pwd'},
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    final status = (vm.state as ChatReady).status;
+    expect(status.transport, isA<ChatTransportOnline>());
+    expect(status.turn.status, AppTurnStatus.awaitingTool);
+    expect(status.canCancel, isTrue);
+    expect(vm.cancelTargetId, 'tool-u1');
+
+    vm.dispose();
+    sync.dispose();
+    conn.dispose();
+  });
+
   test(
     'cancelled clears the stop state without deleting the user row',
     () async {

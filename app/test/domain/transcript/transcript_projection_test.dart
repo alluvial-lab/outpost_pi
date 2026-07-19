@@ -44,6 +44,54 @@ void main() {
         message: message,
       );
 
+  test('transport and turn axes compose without flattening', () {
+    const transports = <ChatTransportProjection>[
+      ChatTransportOnline(roomId: 'main'),
+      ChatTransportRetrying(attempt: 2, nextRetry: Duration(seconds: 5)),
+      ChatTransportOffline(reason: 'relay unavailable'),
+    ];
+    const turns = <AppTurnProjection>[
+      AppTurnProjection(status: AppTurnStatus.idle),
+      AppTurnProjection(
+        status: AppTurnStatus.working,
+        turnId: 'turn-1',
+        replyTo: 'user-1',
+      ),
+      AppTurnProjection(
+        status: AppTurnStatus.awaitingTool,
+        turnId: 'turn-1',
+        replyTo: 'user-1',
+      ),
+      AppTurnProjection(
+        status: AppTurnStatus.streaming,
+        turnId: 'turn-1',
+        replyTo: 'user-1',
+      ),
+      AppTurnProjection(status: AppTurnStatus.error, error: 'provider failed'),
+      AppTurnProjection.stale,
+    ];
+
+    for (final transport in transports) {
+      for (final turn in turns) {
+        final status = ChatStatusProjection(
+          transport: transport,
+          turn: turn,
+          steering: const SteeringPending(
+            clientMessageId: 'steer-1',
+            text: 'refine this',
+          ),
+        );
+        expect(status.transport, same(transport));
+        expect(status.turn, same(turn));
+        expect(status.steering, isA<SteeringPending>());
+        expect(
+          status.canCancel,
+          transport is ChatTransportOnline && turn.working,
+        );
+      }
+    }
+  });
+
   test('local pending remains visible after authoritative replay prefix', () {
     final projection = deriveTranscriptProjection(
       sessionId: session,
