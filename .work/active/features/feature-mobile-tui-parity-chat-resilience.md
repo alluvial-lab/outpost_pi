@@ -483,3 +483,56 @@ live-repro `## Parked` notes, as designed.
 Promoted from backlog by `scope` (2026-07-15) as a child of
 `epic-remote-session-resilience-refactor`. 10 `roadmap-mobile-*` / `idea-mobile-*`
 items captured during the 2026-07 mobile testing window.
+
+## Review findings (fresh-context review, gpt-5.6-sol, standard weight)
+
+Review verdict: `needs fixes`. Three material findings (all verified by the
+orchestrator against current code). These must be fixed before this feature
+closes.
+
+### Material 1 — Awaiting-tool state is lost in the real SDK event order
+`app/lib/domain/transcript/transcript_projection.dart:235-259`.
+`AssistantMessageCommitted` sets the turn idle before `ToolRequested`. The
+extension emits `agent_message(ts)` before `tool_execution_start`, so the common
+sequence `UserInput → AgentMessage → ToolRequest` leaves `streaming == null`
+and `turn.working == false`; the tool request cannot transition to `awaitingTool`.
+The UI then lacks the `waiting…` state and cancel target.
+**Fix:** preserve/recover the active reply anchor through assistant commits until
+`AgentDone`, or let `ToolRequested` derive it from the preceding assistant reply.
+Add the exact production-order regression and assert `awaitingTool`, `canCancel`,
+and the original cancel target.
+
+### Material 2 — A rejected steer incorrectly terminates the primary turn
+`app/lib/data/sync/sync_service.dart:1230-1245`.
+A correlated steering rejection correctly schedules `_failPendingSend`, but then
+unconditionally calls `_discardStreamingState()` and `_setTurnIdle()`. The
+extension rolls back only the steer and preserves the prior active turn, so the
+app incorrectly drops its primary streaming state and Stop target. The new test
+at `app/test/data/sync/sync_service_test.dart:797` does not assert preservation
+of that turn.
+**Fix:** distinguish a pending-steer rejection from a primary-turn error. Clear/fail
+only the steering overlay while retaining the previous turn, streaming buffer,
+and cancel target; add corresponding assertions.
+
+### Material 3 — Pending steering does not converge on cancel or failed persistence
+`app/lib/data/sync/sync_service.dart:1161-1187`, `app/lib/data/sync/sync_service.dart:535-549`.
+`Cancelled` records failure only for the active turn's `targetId`; any separate
+`SteeringPending.clientMessageId` remains pending in the event log and is
+re-projected indefinitely. Additionally, `_failPendingSend` clears steering only
+indirectly through successful persistence; its persistence-independent `finally`
+convergence does not clear the matching steering overlay.
+**Fix:** terminalize the pending steering ID when cancellation clears the Pi
+steering queue, and clear matching in-memory steering under the existing lifecycle
+check even if failure persistence throws. Add accepted→cancel and failed-append
+regressions.
+
+### Review invariant summary
+- Transport/turn independence: PASS structurally
+- Three subsumed symptoms closed: FAIL (awaiting-tool lost in real order — material 1)
+- Four distinct bugs fixed: FAIL overall (Unit 2's cancel/failure convergence incomplete — materials 2+3)
+- Async-gap-before-mutation guards: PASS
+- Terminal turn convergence independent of persistence: PASS for turn state (steering convergence is the separate finding)
+- No BuildContext-after-await-without-mounted: PASS
+- Parked items left drafting: PASS
+- Extension change is test-only: PASS
+- Test-integrity: no tests weakened/gamed; the awaiting-tool test omits the known production order, the steering-rejection test omits primary-turn preservation, no accepted-steer→cancel convergence test exists — these gaps allowed the material findings.
