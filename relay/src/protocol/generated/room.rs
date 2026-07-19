@@ -25,11 +25,15 @@ pub struct RoomMeta {
     pub started_at: i64,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct RoomMetaPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub working: Option<bool>,
 }
 
