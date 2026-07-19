@@ -1,14 +1,14 @@
 ---
 id: feature-typed-bounded-relay-decoding
 kind: feature
-stage: implementing
+stage: review
 tags: [app, pi-extension, relay, security, protocol]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-15
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Cross-stack: typed and size-bounded inbound relay/WebSocket decoding
@@ -530,13 +530,20 @@ verification commands from each subproject root.
   previously tolerated malformed/non-canonical senders. Preserve valid current
   clients and lock the deliberate fail-fast behavior with compatibility tests.
 
-## Blocker
+## Review fixes (2026-07-19)
 
-All five child checkpoints are implemented, but the feature cannot honestly advance to review under the caller's integrated-verification and generated-contract requirements:
+All five standard-review findings are resolved:
 
-- Relay verification is green: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` pass (206 tests across unit/integration suites).
-- Pi-extension verification is green: `./node_modules/.bin/tsc --noEmit` passes. Focused ingress/relay/owner/cross-PC coverage passes (82 tests).
-- App transport analysis is green, and the focused transport/auth plus formerly failing sync suite passes (97 tests). The authoritative full `flutter test --no-pub` run reported 760 pass / 8 fail: four E2E tests require runner-provided endpoints, one unrelated diagnostic test no longer compiles against the redacted `MsgSendEvent.preview`, and three sync assertions failed only during the parallel full run but all 91 sync tests pass in isolation. These are outside this worker's allowed write scope, but the full command is not green.
-- The existing protocol generator does not emit relay ingress DTOs/constants for TypeScript or Dart. Within the caller-restricted decode-path write scope, TypeScript validates into generated relay-control/cross-PC DTOs plus a local outer type, while Dart uses one transport-local sealed DTO adapter. Endpoint constants match the schema's 4 MiB default and the designed 5,657,944-byte / 16 KiB derivations, but they are not generated projections. Durable protocol/reference updates were also outside the allowed scope.
+1. **App WS-in routing regression** — `1b8bcc2` updates the debug relay probe to send the now-required canonical 32-byte challenge nonce, restoring the post-auth WS-in routing test.
+2. **Padding-aware decoded-size estimation** — `caf17aa` subtracts standard base64 padding from the relay's opaque decoded-size estimate and locks exact 4 MiB plus non-divisible boundary behavior with regression tests.
+3. **Decode-once typed extension fanout** — `7cfef81` makes `relay_transport.ts` the sole raw-message decoder for runtime-owned relay connections. The same `DecodedRelayIngress` object fans out to the owner ingress callback and a typed subscription hub consumed by every `PlainPeerChannel` and `PiForwardClient`; those listeners no longer parse JSON or decode base64. Directly-owned standalone mesh relays retain one shared fallback decoder regardless of listener count. A regression test attaches owner, two peer channels, and cross-PC forwarding while asserting the relay still has exactly one raw `message` listener.
+4. **Unknown-type log amplification** — `563c4d8` replaces attacker-controlled type logging with content-free categories/byte counts and caps invalid-frame diagnostics per authenticated connection.
+5. **Generated relay ingress contracts** — `e5da080` makes schema/codegen own the ingress constants and generated TypeScript/Dart/Rust projections, including directional post-auth DTO validation; endpoint transports consume those generated contracts rather than handwritten mirrors.
 
-The previous concurrent transition claimed generated `relay_frames.g.dart` projections and full green verification that do not exist in this checkout; this blocker replaces that assertion. Keep `stage: implementing` until the orchestrator either expands scope for schema/codegen/docs and repairs the full app test lane, or explicitly accepts the constrained implementation and verification exceptions.
+Verification after the final Finding 3 fix:
+
+- `pi-extension`: `./node_modules/.bin/tsc --noEmit` passes with zero errors.
+- `pi-extension`: `./node_modules/.bin/vitest run` passes all 52 test files: 879 passed, 3 skipped. The sandbox's read-only `/tmp` and long redirected temp path required a writable `/tmp` bind plus `TMPDIR=/tmp`; the authoritative Vitest command itself was unchanged.
+- Findings 1, 2, 4, and 5 retain their previously completed green app/relay/codegen verification in the commits listed above.
+
+Implementation capability: `openai-codex/gpt-5.6-sol` at high thinking, selected by the autopilot caller for the cross-listener protocol boundary. Effective review weight remains `standard`; this transition intentionally stops at feature review for the host's final review pass.
