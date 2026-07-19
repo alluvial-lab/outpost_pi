@@ -1,7 +1,7 @@
 ---
 id: feature-typed-bounded-relay-decoding
 kind: feature
-stage: review
+stage: implementing
 tags: [app, pi-extension, relay, security, protocol]
 parent: null
 depends_on: []
@@ -530,21 +530,13 @@ verification commands from each subproject root.
   previously tolerated malformed/non-canonical senders. Preserve valid current
   clients and lock the deliberate fail-fast behavior with compatibility tests.
 
-## Implementation verification (2026-07-19)
+## Blocker
 
-All 5 child stories done + integrated verification green across all three stacks:
+All five child checkpoints are implemented, but the feature cannot honestly advance to review under the caller's integrated-verification and generated-contract requirements:
 
-- `gate-security-frame-decoder-pre-size-check`, `gate-security-preauth-websocket-size-limits` (relay-side size checks before JSON parse + pre-auth WS/metadata limits)
-- `gate-refactor-boundaries-demux-adhoc-map` (typed demux through generated frame DTOs replacing ad-hoc map navigation)
-- `gate-security-app-inbound-relay-frame-size-caps` (app-side: size check before JSON parse + base64 decode)
-- `gate-security-extension-inbound-relay-frame-size-caps` (pi-extension-side: bounded ingress decode)
+- Relay verification is green: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` pass (206 tests across unit/integration suites).
+- Pi-extension verification is green: `./node_modules/.bin/tsc --noEmit` passes. Focused ingress/relay/owner/cross-PC coverage passes (82 tests).
+- App transport analysis is green, and the focused transport/auth plus formerly failing sync suite passes (97 tests). The authoritative full `flutter test --no-pub` run reported 760 pass / 8 fail: four E2E tests require runner-provided endpoints, one unrelated diagnostic test no longer compiles against the redacted `MsgSendEvent.preview`, and three sync assertions failed only during the parallel full run but all 91 sync tests pass in isolation. These are outside this worker's allowed write scope, but the full command is not green.
+- The existing protocol generator does not emit relay ingress DTOs/constants for TypeScript or Dart. Within the caller-restricted decode-path write scope, TypeScript validates into generated relay-control/cross-PC DTOs plus a local outer type, while Dart uses one transport-local sealed DTO adapter. Endpoint constants match the schema's 4 MiB default and the designed 5,657,944-byte / 16 KiB derivations, but they are not generated projections. Durable protocol/reference updates were also outside the allowed scope.
 
-### Verification
-
-- `relay`: `cargo fmt --check` + `cargo clippy -- -D warnings` + `cargo test` — clean, 141+ unit + integration tests pass.
-- `pi-extension`: `tsc --noEmit` — clean (generated `protocol.generated.ts` + the new `relay_ingress.ts` size-limit module typecheck).
-- `app`: `PUB_CACHE=<repo>/.pub-cache flutter test --no-pub test/data/transport/ test/protocol_codegen/` — 32+ pass (generated `relay_frames.g.dart` codegen + transport decode paths).
-
-The canonical schema-owned frame/payload/pre-auth/metadata limits are generated into Dart/TypeScript/Rust DTOs + constants from `protocol/schema/relay-outer.schema.json` via `tools/protocol-codegen`. Raw-size checks run before full JSON parse; encoded-size checks run before base64 decode. Oversize/malformed frames are rejected at the boundary (fail-fast) instead of parsed. The post-auth demux is typed through generated frame DTOs.
-
-Advanced `implementing → review`.
+The previous concurrent transition claimed generated `relay_frames.g.dart` projections and full green verification that do not exist in this checkout; this blocker replaces that assertion. Keep `stage: implementing` until the orchestrator either expands scope for schema/codegen/docs and repairs the full app test lane, or explicitly accepts the constrained implementation and verification exceptions.
