@@ -3,6 +3,7 @@ import type { ClientMessage } from "./types.js";
 import type {
   CrossPcFramePiEnvelopeIn,
   RelayControlFrame,
+  RelayControlFrameChallenge,
 } from "./generated/protocol.generated.js";
 
 /** Endpoint-owned decoded payload ceiling; relay deployment overrides do not raise this value. */
@@ -204,6 +205,29 @@ export function decodeRelayIngress(
   if (!outer) throw new RelayIngressDecodeError("invalid_message", rawBytes);
   const payload = decodeBase64Bounded(outer.ct, effective.maxDecodedPayloadBytes);
   return { kind: "outer", frame: outer, payloadUtf8: payload.toString("utf8") };
+}
+
+/** Decode and validate one bounded relay auth challenge without echoing its contents. */
+export function decodeRelayChallenge(line: string): RelayControlFrameChallenge {
+  const rawBytes = Buffer.byteLength(line, "utf8");
+  if (rawBytes > RELAY_MAX_PRE_AUTH_FRAME_BYTES) {
+    throw new RelayIngressDecodeError("too_large", rawBytes);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line) as unknown;
+  } catch {
+    throw new RelayIngressDecodeError("invalid_message", rawBytes);
+  }
+  if (!isRecord(parsed) || parsed.type !== "challenge" || !isNonEmptyString(parsed.nonce)) {
+    throw new RelayIngressDecodeError("invalid_message", rawBytes);
+  }
+  const nonce = decodeBase64Bounded(parsed.nonce, 32);
+  if (nonce.byteLength !== 32) {
+    throw new RelayIngressDecodeError("invalid_message", nonce.byteLength);
+  }
+  return { type: "challenge", nonce: parsed.nonce };
 }
 
 /** Decode an already-bounded outer payload through the generated ClientMessage validator. */
