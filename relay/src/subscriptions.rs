@@ -31,9 +31,7 @@ impl SubscriptionIndex {
     /// Removes a subset of watched targets for `subscriber`.
     pub fn remove(&mut self, subscriber: &str, targets: Vec<String>) {
         for target in &targets {
-            if let Some(set) = self.subscribers_of.get_mut(target) {
-                set.remove(subscriber);
-            }
+            self.remove_reverse_edge(target, subscriber);
             if let Some(subscriptions) = self.subscriptions_by.get_mut(subscriber) {
                 subscriptions.remove(target);
             }
@@ -51,11 +49,27 @@ impl SubscriptionIndex {
     pub fn remove_all(&mut self, subscriber: &str) {
         if let Some(targets) = self.subscriptions_by.remove(subscriber) {
             for target in &targets {
-                if let Some(set) = self.subscribers_of.get_mut(target) {
-                    set.remove(subscriber);
-                }
+                self.remove_reverse_edge(target, subscriber);
             }
         }
+    }
+
+    fn remove_reverse_edge(&mut self, target: &str, subscriber: &str) {
+        let should_remove = self
+            .subscribers_of
+            .get_mut(target)
+            .is_some_and(|subscribers| {
+                subscribers.remove(subscriber);
+                subscribers.is_empty()
+            });
+        if should_remove {
+            self.subscribers_of.remove(target);
+        }
+    }
+
+    #[cfg(test)]
+    fn retained_target_count(&self) -> usize {
+        self.subscribers_of.len()
     }
 
     /// Returns all subscribers watching `target`.
@@ -99,8 +113,27 @@ mod tests {
         index.remove("B", vec!["A".into()]);
         assert!(index.subscribers_of("A").is_empty());
         assert!(index.subscribers_of("C").contains(&"B".to_string()));
+        assert_eq!(index.retained_target_count(), 1);
 
         index.remove_all("B");
         assert!(index.subscribers_of("C").is_empty());
+        assert_eq!(index.retained_target_count(), 0);
+    }
+
+    #[test]
+    fn repeated_replacement_does_not_retain_empty_target_keys() {
+        let mut index = SubscriptionIndex::default();
+        for batch in 0..1_000 {
+            index.replace(
+                "subscriber".into(),
+                (0..64)
+                    .map(|target| format!("target-{batch}-{target}"))
+                    .collect(),
+            );
+            assert_eq!(index.retained_target_count(), 64);
+        }
+
+        index.remove_all("subscriber");
+        assert_eq!(index.retained_target_count(), 0);
     }
 }
