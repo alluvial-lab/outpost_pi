@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RpcChild, busyTransition, resolvePiBin, resolvePiSpawn, _npmShimTarget, rpcSpawnArgs, type RpcChildExitEvent } from "./rpc_child.js";
+import { EXIT_DAEMON_FRESH_SESSION, RpcChild, busyTransition, resolvePiBin, resolvePiSpawn, _npmShimTarget, rpcSpawnArgs, type RpcChildExitEvent } from "./rpc_child.js";
 
 /**
  * Regression for the orphaned-daemon bug: a deliberate `stop()` kills the
@@ -35,6 +35,63 @@ describe("rpcSpawnArgs", () => {
   test("always passes --approve (pi >=0.79 project trust; RPC is non-interactive)", () => {
     expect(rpcSpawnArgs("/path/to/dist/index.js")).toContain("--approve");
     expect(rpcSpawnArgs("/path/to/dist/index.js", "PC", false)).toContain("--approve");
+  });
+});
+
+describe("RpcChild — daemon fresh-session recycle", () => {
+  test.skipIf(process.platform === "win32")("records exit 42 and omits --continue exactly once while preserving daemon config identity", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-rpcchild-fresh-"));
+    try {
+      const capture = join(dir, "spawns.json");
+      const bin = join(dir, "stub.mjs");
+      writeFileSync(
+        bin,
+        "#!/usr/bin/env node\n" +
+        "import { existsSync, readFileSync, writeFileSync } from 'node:fs';\n" +
+        "const path = process.env.CAPTURE;\n" +
+        "const prior = path && existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : [];\n" +
+        "prior.push({ args: process.argv.slice(2), config: process.env.OUTPOST_PI_DIRECT_CONFIG });\n" +
+        "writeFileSync(path, JSON.stringify(prior));\n" +
+        "process.exitCode = prior.length === 1 ? 42 : 0;\n",
+      );
+      chmodSync(bin, 0o755);
+
+      const config = { agent_name: "stable-daemon", auto_start_relay: true } as const;
+      const child = new RpcChild({
+        piBin: bin,
+        extensionPath: "/extension/dist/index.js",
+        cwd: dir,
+        config,
+        env: { CAPTURE: capture },
+      });
+      const waitForExit = (): Promise<RpcChildExitEvent> =>
+        new Promise((resolve) => child.once("exit", resolve));
+
+      child.spawn();
+      const first = await waitForExit();
+      child.spawn();
+      const second = await waitForExit();
+      child.spawn();
+      await waitForExit();
+
+      expect(first).toMatchObject({ code: EXIT_DAEMON_FRESH_SESSION, isCrash: true });
+      expect(second.code).toBe(0);
+
+      const spawns = JSON.parse(readFileSync(capture, "utf8")) as Array<{
+        args: string[];
+        config?: string;
+      }>;
+      expect(spawns).toHaveLength(3);
+      expect(spawns.map(({ args }) => args.includes("--continue"))).toEqual([true, false, true]);
+      expect(spawns.filter(({ args }) => !args.includes("--continue"))).toHaveLength(1);
+      expect(spawns.map(({ config: raw }) => raw)).toEqual([
+        JSON.stringify(config),
+        JSON.stringify(config),
+        JSON.stringify(config),
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
