@@ -762,11 +762,13 @@ void main() {
       final msgSend = _assertEvent<MsgSendEvent>(
         s.log.events,
         DebugTag.msgSend,
-        where: (event) => event.id == sent.id && event.preview != null,
+        where: (event) => event.id == sent.id,
       );
       expect(msgSend.blocked, isFalse);
-      expect(msgSend.preview, '${'x' * 80}…');
-      expect(msgSend.preview, isNot(contains('trailing body')));
+      // The diagnostic MsgSendEvent carries no user-text preview (redaction
+      // contract): the event records only id + blocked, never the message body.
+      expect(msgSend.toJson(), isNot(contains('preview')));
+      expect(msgSend.toJson().values, isNot(contains(longText)));
       final echo = _assertEvent<MsgEchoEvent>(
         s.log.events,
         DebugTag.msgEcho,
@@ -1024,9 +1026,11 @@ void main() {
       final blocked = _assertEvent<MsgSendEvent>(
         s.log.events,
         DebugTag.msgSend,
-        where: (event) => event.blocked == true && event.preview == null,
+        where: (event) => event.blocked == true,
       );
       expect(blocked.id, startsWith('cli_'));
+      // No preview field on the diagnostic event (redaction contract).
+      expect(blocked.toJson(), isNot(contains('preview')));
 
       s.conn.dispose();
       s.sync.dispose();
@@ -1052,7 +1056,8 @@ void main() {
         DebugTag.msgSend,
         where: (event) => event.blocked == true,
       );
-      expect(blocked.preview, isNull);
+      // No preview field on the diagnostic event (redaction contract).
+      expect(blocked.toJson(), isNot(contains('preview')));
 
       conn.dispose();
       sync.dispose();
@@ -1261,17 +1266,17 @@ void main() {
       (
         DebugTag.msgSend,
         'send-with-preview',
-        (e) => e is MsgSendEvent && e.blocked == false && e.preview != null,
+        (e) => e is MsgSendEvent && e.blocked == false,
       ),
       (
         DebugTag.msgSend,
         'blocked-offline',
-        (e) => e is MsgSendEvent && e.blocked == true && e.preview == null,
+        (e) => e is MsgSendEvent && e.blocked == true,
       ),
       (
         DebugTag.msgSend,
         'blocked-no-session',
-        (e) => e is MsgSendEvent && e.blocked == true && e.preview == null,
+        (e) => e is MsgSendEvent && e.blocked == true,
       ),
       (DebugTag.msgEcho, 'echo', (e) => e is MsgEchoEvent && e.id.isNotEmpty),
       (
