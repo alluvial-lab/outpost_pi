@@ -388,3 +388,45 @@ row then — not now.
   `WARN relay::handlers::connection_actor: dest (peer, room) not found, dropping
   from=l2X/dUc= dest=dpOPIdc= room=main bytes=225460` (×18, app reconnected 8s later).
 - Skill: `.agents/skills/pi-extension-typescript/SKILL.md` (session/owner lifecycle).
+
+## Review findings (fresh-context review, gpt-5.6-sol, standard weight)
+
+Review verdict: `needs fixes`. Two blockers (both verified by the orchestrator
+against current code). These must be fixed before this feature closes.
+
+### Blocker 1 — Offline buffering and late-attach replay are not mutually exclusive
+`pi-extension/src/index.ts:1178`, `pi-extension/src/extension/owner_multiplexer.ts:485`.
+`markPeerOffline()` removes the peer from `lateAttachPeerIds`, but production
+late-attach delivery obtains targets from `_owners.entries()`, not that filtered
+set. The projection also retains its independent `lateAttachSyncTargets`. A peer
+attached during a turn can go offline, come online and flush its buffer, then
+receive `session_history` again at `turn_end` — double-delivery.
+**Fix:** make the production late-attach provider honor the multiplexer's filtered
+late-attach registry, and add an integration regression for attach-during-turn
+→ offline → online → turn-end proving buffered FIFO only, with no late-attach
+history.
+
+### Blocker 2 — Online-first `session_sync` is not idempotent for compaction
+`pi-extension/src/extension.test.ts:1192`, `app/lib/data/sync/sync_service.dart:1271`,
+`app/lib/data/sync/session_history_replay.dart:118`.
+The ordering test proves only `agent_chunk → session_history` wire order, not
+app-level idempotency. A buffered compaction flushed on `peer_online` receives
+live ID `server:compaction:<ts>`, while the subsequent replay derives
+`server:<sessionId>:compaction:compaction:<ts>`. `transcript_projection.dart:282-288`
+uses that ID for the rendered row, so both survive as duplicate compaction entries.
+**Fix:** redesign or extend arbitration so online-first replay cannot duplicate any
+buffered message class, while preserving the no-app/no-wire boundary, and add a
+cross-boundary compaction regression. If that cannot be achieved without an app
+change, reopen the scope boundary explicitly.
+
+### Review invariant summary
+- No wire/relay/app change: PASS (for the 5 feature commits)
+- Both caps enforced (2048-frame / 8-MiB): PASS
+- Overflow atomic/no partial turn: PASS
+- Flush before live fan-out: PASS
+- `peer_online` before `session_sync`: FAIL (compaction duplication — blocker 2)
+- `session_sync` before `peer_online`: PASS
+- Teardown/no reattach leak: PASS
+- Late-attach mutual exclusion: FAIL (blocker 1)
+- Online-peer fan-out unchanged: PASS
+- Test-integrity: suspend/resume test flipped (not weakened); new cap/overflow/ordering/teardown tests added; missing regressions correspond to the 2 blockers.
