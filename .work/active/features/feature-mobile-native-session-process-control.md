@@ -210,3 +210,61 @@ Remove the restart tile and its ViewModel/widget wiring, reverting to the
 existing Quick Actions surface. Because the feature reuses `session_new` and
 adds no wire or persistence format, app rollback needs no relay/extension
 migration; any extension test-only guards can be reverted independently.
+
+## Review findings (fresh-context review, gpt-5.6-sol, standard weight)
+
+Review verdict: `needs fixes`. One blocker + 3 material (all verified by the
+orchestrator against current code). These must be fixed before this feature
+closes.
+
+### Blocker 1 — interactive Pi receives misleading restart feedback
+`app/lib/ui/chat/quick_actions/widgets/quick_actions_sheet.dart:247`.
+After every successful `session_new`, the app unconditionally says `Restarting
+Pi — reconnecting…`. An unsupervised interactive Pi only creates a new
+in-process session, so this claims a process restart that did not occur.
+**Fix:** use mode-neutral feedback without a capability bit (e.g. "Session reset
+accepted; a supervised Pi may reconnect briefly"), or add reliable capability
+detection before making the stronger claim.
+
+### Material 2 — production rejection feedback runs through a disposed ViewModel
+`quick_actions_sheet.dart:239`, `quick_actions_viewmodel.dart:204`,
+`quick_actions_sheet_test.dart:105`.
+The sheet pops before confirmation, disposing the production
+`QuickActionsViewModel` created by `ChangeNotifierProvider(create:)`. On
+rejection, `_runVoid` adds to the already-closed error controller, producing a
+`StateError`; the sheet's generic catch then silently swallows it. Tests miss
+this because they use `ChangeNotifierProvider.value`, which does not dispose.
+**Fix:** run the confirmed action from a longer-lived owner or otherwise avoid
+invoking the disposed sheet ViewModel. Guard delayed messenger/UI use, and test
+with production-equivalent provider disposal.
+
+### Material 3 — exit-42 reconnect verification promised by the feature is absent
+`quick_actions_sheet_test.dart:293`, feature body `:140`.
+The "reconnect" test only completes a fake action future + checks a snackbar.
+It never closes the channel, observes `StatusRetrying`, hydrates successor
+session metadata, requests `session_sync`, or injects a late old-session frame.
+No extension test for `action_ok → reset → scheduled exit 42` ordering or
+successor room/identity continuity.
+**Fix:** add deterministic app coverage composing ACK, channel loss, idle
+convergence, successor session hydration, and stale-frame rejection; add focused
+extension coverage for ACK/reset/exit-42 ordering and supervisor fresh-session
+respawn continuity.
+
+### Material 4 — action repository tests use timing delays instead of controlled sync
+`actions_repository_test.dart:74,136,154`.
+The new `session_new` success/rejection tests use bare millisecond delays to
+wait for sends, contrary to the requested deterministic-completer discipline.
+**Fix:** expose a controlled send/event signal from the fake channel and await
+that before inspecting or replying to the request.
+
+### Review invariant summary
+- Correct wire actions invoked: PASS
+- `/reload` absent: PASS
+- Destructive ops confirmed: PASS
+- Reconnect handled gracefully / convergence preserved: PASS by code inspection
+- Supervised-Pi caveat honest: FAIL (blocker 1)
+- No extension production change: PASS
+- Tests use controlled completers: FAIL (material 4)
+- Test-integrity: no assertions weakened; but Provider.value lifetime mismatch
+  masks the production disposal failure (material 2), and delay-based sync
+  reduces determinism (material 4).
