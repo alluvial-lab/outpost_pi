@@ -80,12 +80,20 @@ export interface OutpostPiIngressLimits {
   };
 }
 
+export interface OutpostPiIrRelayOuter {
+  strictFields: OutpostPiIrField[];
+  compatFields: OutpostPiIrField[];
+  strictValidationFunctionBody: string;
+  compatValidationFunctionBody: string;
+}
+
 export interface OutpostPiIr {
   schemaVersion: number;
   source: string;
   profile: string;
   relayAuthDomainPrefix?: string;
   relayIngressLimits?: OutpostPiIngressLimits;
+  relayOuter?: OutpostPiIrRelayOuter;
   sharedTypes: OutpostPiIrSharedType[];
   families: OutpostPiIrFamily[];
   nestedRegistries: OutpostPiIrNestedRegistry[];
@@ -324,12 +332,17 @@ function constOrEnumValues(schema: JsonObject): unknown[] | undefined {
 
 function requiredNamesForSchema(schema: JsonObject, profile: string): Set<string> {
   const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
-  if (profile === "compat") {
-    // Canonical session identifiers are compatibility-profile metadata in this
-    // migration arc. Keep them available on the generated types, but do not
-    // force app/Pi compatibility payloads to carry them until the stricter
-    // canonical-session profile is enabled.
-    required.delete("session_id");
+  if (profile === "compat") required.delete("session_id");
+  const metadata = optionalObject(schema["x-outpost-pi"]);
+  const profileOptional = optionalObject(metadata?.profileOptional);
+  const optionalFields = profileOptional?.[profile];
+  if (Array.isArray(optionalFields)) {
+    for (const field of optionalFields) required.delete(String(field));
+  }
+  const profileRequired = optionalObject(metadata?.profileRequired);
+  const requiredFields = profileRequired?.[profile];
+  if (Array.isArray(requiredFields)) {
+    for (const field of requiredFields) required.add(String(field));
   }
   return required;
 }
@@ -408,7 +421,11 @@ async function validatorExpressionForSchema(
       return `${valueExpression} === null`;
     case "array": {
       const itemExpression = await validatorExpressionForSchema(object.items ?? true, "item", path, protocolRoot, cache, profile);
-      return `(Array.isArray(${valueExpression}) && ${valueExpression}.every((item) => ${itemExpression}))`;
+      const checks = [`Array.isArray(${valueExpression})`];
+      if (typeof object.minItems === "number") checks.push(`${valueExpression}.length >= ${object.minItems}`);
+      if (typeof object.maxItems === "number") checks.push(`${valueExpression}.length <= ${object.maxItems}`);
+      checks.push(`${valueExpression}.every((item) => ${itemExpression})`);
+      return combineExpressions(checks, "&&", "true");
     }
     case "object":
     case undefined: {
@@ -743,6 +760,42 @@ async function relayIngressLimitsForProtocol(
   };
 }
 
+async function relayOuterForProtocol(
+  protocolRoot: string,
+  cache: DocumentCache,
+  profile: string,
+): Promise<OutpostPiIrRelayOuter | undefined> {
+  const outerPath = join(protocolRoot, "schema", "relay-outer.schema.json");
+  let root: JsonObject;
+  try {
+    root = await readDocument(outerPath, cache);
+  } catch {
+    return undefined;
+  }
+  const schemaInput = typeof root.$ref === "string"
+    ? fragmentLookup(root, root.$ref)
+    : root;
+  const { schema, path } = await dereferenceSchema(schemaInput, outerPath, protocolRoot, cache);
+  return {
+    strictFields: await fieldsForVariant(schema, path, protocolRoot, cache, "$schema"),
+    compatFields: await fieldsForVariant(schema, path, protocolRoot, cache, profile),
+    strictValidationFunctionBody: await validatorFunctionBodyForSchema(
+      schema,
+      path,
+      protocolRoot,
+      cache,
+      "$schema",
+    ),
+    compatValidationFunctionBody: await validatorFunctionBodyForSchema(
+      schema,
+      path,
+      protocolRoot,
+      cache,
+      profile,
+    ),
+  };
+}
+
 async function relayAuthDomainPrefixForProtocol(
   families: OutpostPiIrFamily[],
   cache: DocumentCache,
@@ -801,6 +854,7 @@ export async function buildOutpostPiIr(manifest: OutpostPiManifest, options: Bui
     profile,
     relayAuthDomainPrefix: await relayAuthDomainPrefixForProtocol(families, cache),
     relayIngressLimits: await relayIngressLimitsForProtocol(protocolRoot, cache),
+    relayOuter: await relayOuterForProtocol(protocolRoot, cache, profile),
     sharedTypes: shared.sharedTypes,
     families,
     nestedRegistries: shared.nestedRegistries,
@@ -897,6 +951,14 @@ function emitValidatorFunction(variant: OutpostPiIrVariant): string {
   return `function ${variant.validationFunctionName}(value: unknown): value is ${variant.interfaceName} {\n${variant.validationFunctionBody}\n}`;
 }
 
+function emitPublicValidatorFunction(
+  functionName: string,
+  typeName: string,
+  functionBody: string,
+): string {
+  return `export function ${functionName}(value: unknown): value is ${typeName} {\n${functionBody}\n}`;
+}
+
 function emitValidatorRegistry(
   registry: { constName: string; typeName: string; unionName: string; predicateName: string; validatorsName: string; variants: OutpostPiIrVariant[] },
   discriminator: string,
@@ -946,11 +1008,11 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     sections.push(`export const RELAY_MAX_MODEL_BYTES = ${limits.metadataByteLimits.model};`);
     sections.push(`export const RELAY_MAX_THINKING_BYTES = ${limits.metadataByteLimits.thinking};`);
     sections.push("");
-    sections.push("export interface RelayOuterEnvelope {");
-    sections.push("  readonly peer: string;");
-    sections.push("  readonly room?: string;");
-    sections.push("  readonly ct: string;");
-    sections.push("}");
+  }
+  if (ir.relayOuter !== undefined) {
+    sections.push(emitInterfaceDeclaration("RelayOuterEnvelope", ir.relayOuter.strictFields));
+    sections.push("");
+    sections.push(emitInterfaceDeclaration("RelayOuterEnvelopeCompat", ir.relayOuter.compatFields));
     sections.push("");
   }
   sections.push("export const protocolManifest = {");
@@ -1010,6 +1072,8 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     (variant) => variant.direction === "relay-to-client",
   ) ?? [];
   const relayPostAuthVariants = relayServerVariants.filter((variant) => variant.type !== "challenge");
+  const crossPcFamily = ir.families.find((family) => family.id === "crossPc");
+  const crossPcVariants = crossPcFamily?.variants ?? [];
   if (relayServerVariants.length > 0) {
     sections.push(...emitRegistryConst("RELAY_SERVER_CONTROL_FRAME_TYPES", relayServerVariants));
     sections.push("export type RelayServerControlFrameType = (typeof RELAY_SERVER_CONTROL_FRAME_TYPES)[number];");
@@ -1028,6 +1092,21 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
 
   sections.push(emitValidatorHelpers());
   sections.push("");
+
+  if (ir.relayOuter !== undefined) {
+    sections.push(emitPublicValidatorFunction(
+      "isRelayOuterEnvelope",
+      "RelayOuterEnvelope",
+      ir.relayOuter.strictValidationFunctionBody,
+    ));
+    sections.push("");
+    sections.push(emitPublicValidatorFunction(
+      "isRelayOuterEnvelopeCompat",
+      "RelayOuterEnvelopeCompat",
+      ir.relayOuter.compatValidationFunctionBody,
+    ));
+    sections.push("");
+  }
 
   const emittedValidators = new Map<string, string>();
   for (const registry of ir.nestedRegistries) {
@@ -1060,12 +1139,15 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     }
   }
 
-  for (const variant of relayServerVariants) {
+  for (const variant of [...relayServerVariants, ...crossPcVariants]) {
     const declaration = emitValidatorFunction(variant);
-    if (!emittedValidators.has(variant.validationFunctionName)) {
+    const previous = emittedValidators.get(variant.validationFunctionName);
+    if (previous === undefined) {
       emittedValidators.set(variant.validationFunctionName, declaration);
       sections.push(declaration);
       sections.push("");
+    } else if (previous !== declaration) {
+      throw new ProtocolCodegenError(`Generated TypeScript validator name collision for ${variant.validationFunctionName}`);
     }
   }
 
@@ -1078,6 +1160,17 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     const publicRegistry = publicRegistryForFamily(family);
     if (!publicRegistry) continue;
     sections.push(...emitValidatorRegistry({ ...publicRegistry, unionName: family.unionName, variants: family.variants }, "type"));
+    sections.push("");
+  }
+  if (crossPcFamily && crossPcVariants.length > 0) {
+    sections.push(...emitValidatorRegistry({
+      constName: familyConstName(crossPcFamily.id),
+      typeName: familyTypeName(crossPcFamily.id),
+      unionName: crossPcFamily.unionName,
+      predicateName: "isCrossPcFrame",
+      validatorsName: "CROSS_PC_FRAME_VALIDATORS",
+      variants: crossPcVariants,
+    }, "type"));
     sections.push("");
   }
   if (relayServerVariants.length > 0) {
