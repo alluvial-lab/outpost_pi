@@ -4418,6 +4418,34 @@ describe("session_shutdown teardown", () => {
     expect(JSON.stringify(sent)).not.toContain(staleMessage);
   });
 
+  test("model_set and thinking_set after session_shutdown return internal_error without stale Pi calls", async () => {
+    const staleSetModel = vi.fn(() => { throw new Error("stale _pi setModel must not run"); });
+    const staleSetThinkingLevel = vi.fn(() => { throw new Error("stale _pi setThinkingLevel must not run"); });
+    _setPiForTest({ setModel: staleSetModel, setThinkingLevel: staleSetThinkingLevel });
+    const sessionId = "019f17a6-9143-7be1-825b-183b42c3e684";
+    _setRemoteSessionIdForTest(sessionId);
+    const shutdown = captureEventHandler("session_shutdown");
+    await shutdown({ type: "session_shutdown", reason: "resume" });
+
+    const sent: unknown[] = [];
+    const sender = { send: (msg: unknown) => { sent.push(msg); } } as Parameters<typeof _routeClientMessageFrom>[0];
+    _routeClientMessageFrom(sender, {
+      type: "model_set", id: "model-after-shutdown", session_id: sessionId,
+      provider: "openai-codex", model_id: "gpt-5.3-codex-spark",
+    }, { abort: vi.fn() });
+    _routeClientMessageFrom(sender, {
+      type: "thinking_set", id: "thinking-after-shutdown", session_id: sessionId,
+      level: "high",
+    }, { abort: vi.fn() });
+
+    expect(staleSetModel).not.toHaveBeenCalled();
+    expect(staleSetThinkingLevel).not.toHaveBeenCalled();
+    expect(sent).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "error", code: "internal_error", in_reply_to: "model-after-shutdown" }),
+      expect.objectContaining({ type: "error", code: "internal_error", in_reply_to: "thinking-after-shutdown" }),
+    ]));
+  });
+
   test("stale wakeAgent on a non-disposed session queues and signals delivery_pending", async () => {
     // Regression for the null-window/stale-ctx tolerance fix: when the session
     // gate PASSES (same session_id) but the bound messageApi is stale, the
