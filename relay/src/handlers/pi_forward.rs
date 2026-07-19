@@ -26,7 +26,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use axum::extract::ws::Message;
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
@@ -38,23 +38,34 @@ use crate::peers::connections::ConnectionRegistry;
 use crate::protocol::generated::cross_pc::{
     AgentEnvelope, CrossPcFrame, PiEnvelopeFrame, PiEnvelopeInFrame,
 };
+use crate::resource_limits::{MESH_AUTH_CACHE_CAPACITY, MESH_AUTH_CACHE_TTL};
 
-/// Time-to-live for a positive membership lookup. The plan calls for 60 s.
-/// Negative lookups are NOT cached (so adding a Pi to a mesh blob takes
-/// effect immediately for subsequent forwards).
-const CACHE_TTL: Duration = Duration::from_secs(60);
-
-/// In-memory cache that maps `Pi-pubkey → set of mesh siblings`. Built lazily
-/// by scanning the SQLite `mesh_versions` blobs.
+/// In-memory cache that maps Pi pubkeys to verified membership or absence.
+///
+/// Positive and negative results share one bounded table. Successful mesh
+/// publishes invalidate the table; a generation check prevents a scan racing
+/// that invalidation from restoring stale membership.
 #[derive(Debug, Default)]
 pub struct MeshAuthCache {
-    inner: Mutex<HashMap<String, CachedMembers>>,
+    inner: Mutex<MeshAuthCacheInner>,
+}
+
+#[derive(Debug, Default)]
+struct MeshAuthCacheInner {
+    generation: u64,
+    entries: HashMap<String, CacheEntry>,
 }
 
 #[derive(Debug)]
-struct CachedMembers {
-    members: HashSet<String>,
+struct CacheEntry {
+    membership: CachedMembership,
     cached_at: Instant,
+}
+
+#[derive(Debug)]
+enum CachedMembership {
+    Found(HashSet<String>),
+    Absent,
 }
 
 impl MeshAuthCache {
@@ -63,19 +74,55 @@ impl MeshAuthCache {
         Self::default()
     }
 
-    /// Returns the set of mesh siblings of `pi_pk` (including `pi_pk` itself),
-    /// or `None` if no Owner blob lists this Pi. Refreshes on cache miss /
-    /// TTL expiry by scanning all `mesh_versions` blobs.
+    /// Return verified siblings for `pi_pk`, caching both found and absent results.
     fn members_of(&self, pi_pk: &str, store: &MeshStore) -> Option<HashSet<String>> {
-        {
-            let g = self.inner.lock().unwrap();
-            if let Some(c) = g.get(pi_pk)
-                && c.cached_at.elapsed() < CACHE_TTL
-            {
-                return Some(c.members.clone());
-            }
-        }
+        loop {
+            let generation = {
+                let inner = self.inner.lock().unwrap();
+                if let Some(entry) = inner.entries.get(pi_pk)
+                    && entry.cached_at.elapsed() < MESH_AUTH_CACHE_TTL
+                {
+                    return match &entry.membership {
+                        CachedMembership::Found(members) => Some(members.clone()),
+                        CachedMembership::Absent => None,
+                    };
+                }
+                inner.generation
+            };
 
+            let membership = self.scan_membership(pi_pk, store);
+            let mut inner = self.inner.lock().unwrap();
+            if inner.generation != generation {
+                continue;
+            }
+
+            inner
+                .entries
+                .retain(|_, entry| entry.cached_at.elapsed() < MESH_AUTH_CACHE_TTL);
+            if inner.entries.len() >= MESH_AUTH_CACHE_CAPACITY
+                && !inner.entries.contains_key(pi_pk)
+                && let Some(oldest) = inner
+                    .entries
+                    .iter()
+                    .min_by_key(|(_, entry)| entry.cached_at)
+                    .map(|(key, _)| key.clone())
+            {
+                inner.entries.remove(&oldest);
+            }
+            inner.entries.insert(
+                pi_pk.to_string(),
+                CacheEntry {
+                    membership: membership
+                        .clone()
+                        .map_or(CachedMembership::Absent, CachedMembership::Found),
+                    cached_at: Instant::now(),
+                },
+            );
+            return membership;
+        }
+    }
+
+    fn scan_membership(&self, pi_pk: &str, store: &MeshStore) -> Option<HashSet<String>> {
         let envelopes = match store.all_envelopes() {
             Ok(records) => records,
             Err(e) => {
@@ -105,36 +152,36 @@ impl MeshAuthCache {
             }
 
             let parsed: serde_json::Value = match serde_json::from_slice(&envelope.blob) {
-                Ok(v) => v,
+                Ok(value) => value,
                 Err(err) => {
                     warn!(%err, "verified mesh blob failed member parse during auth");
                     continue;
                 }
             };
-            let Some(members_arr) = parsed.get("members").and_then(|v| v.as_array()) else {
+            let Some(members) = parsed.get("members").and_then(serde_json::Value::as_array) else {
                 continue;
             };
-            let set: HashSet<String> = members_arr
+            let members: HashSet<String> = members
                 .iter()
-                .filter_map(|m| {
-                    m.get("remote_epk")
-                        .and_then(|v| v.as_str())
+                .filter_map(|member| {
+                    member
+                        .get("remote_epk")
+                        .and_then(serde_json::Value::as_str)
                         .map(String::from)
                 })
                 .collect();
-            if set.contains(pi_pk) {
-                let mut g = self.inner.lock().unwrap();
-                g.insert(
-                    pi_pk.to_string(),
-                    CachedMembers {
-                        members: set.clone(),
-                        cached_at: Instant::now(),
-                    },
-                );
-                return Some(set);
+            if members.contains(pi_pk) {
+                return Some(members);
             }
         }
         None
+    }
+
+    /// Invalidate all positive and negative results after a successful publish.
+    pub fn invalidate_all(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.generation = inner.generation.wrapping_add(1);
+        inner.entries.clear();
     }
 
     /// `true` iff both Pis belong to the same Owner's mesh.
@@ -502,8 +549,11 @@ mod tests {
         // the actual cache short-circuit can be observed via tracing or fault
         // injection if needed)
         assert!(cache.is_authorized("pi_x", "pi_y", &store));
-        let g = cache.inner.lock().unwrap();
-        assert!(g.contains_key("pi_x"), "first lookup must populate cache");
+        let inner = cache.inner.lock().unwrap();
+        assert!(
+            inner.entries.contains_key("pi_x"),
+            "first lookup must populate cache"
+        );
     }
 
     #[tokio::test]
@@ -513,11 +563,37 @@ mod tests {
         write_invalid_owner_blob(&store, &owner, &["pi_a", "pi_b"], 1);
 
         assert!(!cache.is_authorized("pi_a", "pi_b", &store));
-        let g = cache.inner.lock().unwrap();
+        let inner = cache.inner.lock().unwrap();
+        assert!(matches!(
+            inner.entries.get("pi_a").map(|entry| &entry.membership),
+            Some(CachedMembership::Absent)
+        ));
+    }
+
+    #[tokio::test]
+    async fn negative_cache_is_invalidated_after_membership_publish() {
+        let (cache, store) = fresh_cache_and_store();
+        assert!(!cache.is_authorized("pi_a", "pi_b", &store));
+
+        let owner = make_owner_key();
+        write_owner_blob(&store, &owner, &["pi_a", "pi_b"], 1);
         assert!(
-            !g.contains_key("pi_a"),
-            "invalid mesh blobs must not populate the positive auth cache"
+            !cache.is_authorized("pi_a", "pi_b", &store),
+            "negative result remains authoritative until publish invalidation"
         );
+
+        cache.invalidate_all();
+        assert!(cache.is_authorized("pi_a", "pi_b", &store));
+    }
+
+    #[test]
+    fn cache_capacity_bounds_positive_and_negative_entries_together() {
+        let cache = MeshAuthCache::new();
+        let store = MeshStore::open_in_memory().unwrap();
+        for index in 0..=MESH_AUTH_CACHE_CAPACITY {
+            assert!(!cache.is_authorized(&format!("absent-{index}"), "dest", &store));
+        }
+        assert!(cache.inner.lock().unwrap().entries.len() <= MESH_AUTH_CACHE_CAPACITY);
     }
 
     #[tokio::test]
