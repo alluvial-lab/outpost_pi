@@ -1,0 +1,53 @@
+name: pairing-e2e
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pairing-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.41.7"
+  PUB_CACHE: ${{ github.workspace }}/.pub-cache
+
+jobs:
+  pairing:
+    name: Pairing lifecycle (7 cases)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pi-extension/pnpm-lock.yaml
+
+      - name: Install Pi-extension dependencies
+        working-directory: pi-extension
+        run: pnpm install --frozen-lockfile
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Run source-built relay pairing suite
+        env:
+          FLUTTER: flutter
+        run: bash e2e/run-pairing.sh
