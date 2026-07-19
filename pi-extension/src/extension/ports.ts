@@ -99,6 +99,7 @@ export interface OwnerMultiplexerPort {
   attach(input: AttachOwnerInput): PeerChannel;
   detach(peerId: string, reason?: ByeReason): void;
   broadcast(message: ServerMessage): void;
+  completeOfflineTurn(): void;
   routeFrom(sender: PeerChannel, message: ClientMessage): void | Promise<void>;
   lateAttachTargets(): readonly PeerChannel[];
 }
