@@ -793,6 +793,43 @@ void main() {
     s.sync.dispose();
   });
 
+  test(
+    'correlated steering rejection clears pending and shows one failed row',
+    () async {
+      final s = await setup();
+      s.ch.push(UserInput(id: 'u1', text: 'primary'));
+      await _settle();
+
+      await s.sync.sendMessage(
+        'bad steer',
+        streamingBehavior: UserMessageStreamingBehavior.steer,
+      );
+      await _settle();
+      final sent = s.ch.sent.whereType<UserMessage>().last;
+      expect(s.sync.steeringProjection, isA<SteeringPending>());
+
+      s.ch.push(
+        ErrorMessage(
+          sessionId: s.sessionId,
+          inReplyTo: sent.id,
+          code: 'internal_error',
+          message: 'steer rejected',
+        ),
+      );
+      await _settle();
+
+      expect(s.sync.steeringProjection, isA<NoSteering>());
+      final failed = messages(
+        s.epk,
+      ).where((row) => row.id == sent.id).toList(growable: false);
+      expect(failed, hasLength(1));
+      expect(failed.single.status, UserMsgStatus.failed);
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
   test('streaming delta does NOT write to the DB (#7)', () async {
     final s = await setup();
     final before = messages(s.epk).length;
