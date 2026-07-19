@@ -1,5 +1,4 @@
 import 'package:app/domain/session_state.dart';
-import 'package:app/protocol/protocol.dart';
 
 // Sealed state for ChatViewModel.
 // Switch exhaustively in ChatPage.build().
@@ -22,7 +21,10 @@ class ChatConnecting extends ChatState {
 class ChatReady extends ChatState {
   final List<ChatMessage> messages;
   final StreamingMessage? streaming;
-  final bool isOffline; // true → input disabled, banner visible
+
+  /// Present transport, turn, and steering without flattening their states.
+  final ChatStatusProjection status;
+
   // True once the Mac signalled this device is no longer in peers.json
   // (relay returned an `unknown_peer` error). Stays true until the user
   // re-pairs or revokes; suppresses input and surfaces a re-pair banner.
@@ -32,18 +34,8 @@ class ChatReady extends ChatState {
   // raw wire reason (peer_stop / session_replaced / shutdown / …).
   final String? peerOfflineReason;
 
-  /// Live relay-reported presence of the active peer. When the peer is
-  /// [PresenceOffline] the chat enters read-only mode (history visible,
-  /// input disabled). Defaults to [PresenceUnknown] until the relay
-  /// reports.
-  final PresenceState peerPresence;
-
-  /// Plan/32 — whether the room this chat is viewing has an in-flight
-  /// agent turn (drives the working pill + input-lock + stop button).
-  /// Part of the state identity so a relay `meta.working` flip (which is
-  /// per-room, like Home) actually triggers a rebuild even when nothing
-  /// else changed. See [ChatViewModel.isWorking].
-  final bool isWorking;
+  /// Composer-managed queued text; status presentation derives a steering
+  /// overlay from it rather than treating it as an agent phase.
   final String? queuedText;
 
   /// Local transcript persistence warning; null while writes are healthy.
@@ -52,23 +44,26 @@ class ChatReady extends ChatState {
   const ChatReady({
     required this.messages,
     this.streaming,
-    this.isOffline = false,
+    this.status = const ChatStatusProjection(
+      transport: ChatTransportOffline(reason: 'Session not connected'),
+      turn: AppTurnProjection.stale,
+      steering: NoSteering(),
+    ),
     this.pairingRevoked = false,
     this.peerOfflineReason,
-    this.peerPresence = const PresenceUnknown(),
-    this.isWorking = false,
     this.queuedText,
     this.persistenceWarning,
   });
 
+  bool get isOffline => status.transport is! ChatTransportOnline;
+  bool get isWorking => status.turn.working;
+
   ChatReady copyWith({
     List<ChatMessage>? messages,
     StreamingMessage? streaming,
-    bool? isOffline,
+    ChatStatusProjection? status,
     bool? pairingRevoked,
     String? peerOfflineReason,
-    PresenceState? peerPresence,
-    bool? isWorking,
     String? queuedText,
     String? persistenceWarning,
     bool clearStreaming = false,
@@ -78,13 +73,11 @@ class ChatReady extends ChatState {
   }) => ChatReady(
     messages: messages ?? this.messages,
     streaming: clearStreaming ? null : (streaming ?? this.streaming),
-    isOffline: isOffline ?? this.isOffline,
+    status: status ?? this.status,
     pairingRevoked: pairingRevoked ?? this.pairingRevoked,
     peerOfflineReason: clearPeerOffline
         ? null
         : (peerOfflineReason ?? this.peerOfflineReason),
-    peerPresence: peerPresence ?? this.peerPresence,
-    isWorking: isWorking ?? this.isWorking,
     queuedText: clearQueuedText ? null : (queuedText ?? this.queuedText),
     persistenceWarning: clearPersistenceWarning
         ? null
@@ -96,11 +89,9 @@ class ChatReady extends ChatState {
       other is ChatReady &&
       other.messages == messages &&
       other.streaming == streaming &&
-      other.isOffline == isOffline &&
+      other.status == status &&
       other.pairingRevoked == pairingRevoked &&
       other.peerOfflineReason == peerOfflineReason &&
-      other.peerPresence.runtimeType == peerPresence.runtimeType &&
-      other.isWorking == isWorking &&
       other.queuedText == queuedText &&
       other.persistenceWarning == persistenceWarning;
 
@@ -108,11 +99,9 @@ class ChatReady extends ChatState {
   int get hashCode => Object.hash(
     messages,
     streaming,
-    isOffline,
+    status,
     pairingRevoked,
     peerOfflineReason,
-    peerPresence.runtimeType,
-    isWorking,
     queuedText,
     persistenceWarning,
   );

@@ -98,19 +98,18 @@ class ChatPage extends StatelessWidget {
     final vm = context.watch<ChatViewModel>();
     final peer = vm.activePeer;
     final room = vm.activeRoom;
-    // Plan/32g — until the VM has read a real runtime, trust the `initialOnline`
-    // hint Home passed (the tile's live dot) so the status dot doesn't flash
-    // "reconnecting" on the default runtime. The live signal takes over once
-    // resolved.
-    final resolved = vm.connectionResolved;
-    final isOnline = resolved ? vm.isRoomLive : initialOnline;
-    // Plan-18 follow-up — when the chat is "offline" (WS to relay
-    // down or retrying), prefer a "reconectando" amber pill so the
-    // user knows it's the relay, not the Pi cwd, that's gone.
-    final isReconnecting = resolved && state is ChatReady && (state).isOffline;
-    // Plan-18 follow-up — when the agent is currently producing a
-    // response, show "working…" instead of online/offline.
-    final isWorking = vm.isWorking;
+    // The navigation hint is used only until the first runtime snapshot. Once
+    // resolved, every label/control consumes the ViewModel's composed status.
+    final projectedStatus = state is ChatReady
+        ? state.status
+        : vm.statusProjection;
+    final status = !vm.connectionResolved && initialOnline
+        ? ChatStatusProjection(
+            transport: const ChatTransportOnline(roomId: 'main'),
+            turn: projectedStatus.turn,
+            steering: projectedStatus.steering,
+          )
+        : projectedStatus;
 
     // Plan/24-fix-title: pass the navigation hint into the helpers so
     // either line of the AppBar (room or peer) shows it instead of
@@ -171,49 +170,7 @@ class ChatPage extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Builder(
-                      builder: (_) {
-                        // Plan-18 follow-up — 4-state pill:
-                        // working / reconnecting / online / offline.
-                        // Priority: working > reconnecting > online > offline.
-                        final color = isWorking
-                            ? colors.working
-                            : isReconnecting
-                            ? colors.warning
-                            : isOnline
-                            ? colors.success
-                            : colors.muted;
-                        final label = isWorking
-                            ? 'working…'
-                            : isReconnecting
-                            ? 'reconnecting…'
-                            : isOnline
-                            ? 'online'
-                            : 'offline';
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 7,
-                              height: 7,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: color,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              label,
-                              style: TextStyle(
-                                fontFamily: kMonoFamily,
-                                fontSize: 10,
-                                color: color,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
+                    _ChatStatusIndicator(status: status),
                   ],
                 ),
               ],
@@ -399,32 +356,21 @@ class ChatPage extends StatelessWidget {
     final isOffline = isReady && state.isOffline;
     final isRevoked = isReady && state.pairingRevoked;
     final isPeerOffline = isReady && state.peerOfflineReason != null;
-    // Live relay-reported offline (no `bye`): Pi is just not reachable.
-    final isPresenceOffline = isReady && state.peerPresence is PresenceOffline;
-    // Plan/31 — the composer is locked + the send button becomes "stop" for
-    // the WHOLE working turn (send/echo → agent_done), not just the narrow
-    // token-streaming window. Driven by the broad working signal so it matches
-    // the AppBar/Home "working" indicator.
-    final isWorking = isReady && vm.isWorking;
-    final cancelId = vm.cancelTargetId;
+    // Stop follows the whole active turn, while transport independently gates
+    // whether the cancel command can be sent.
+    final isWorking = isReady && state.status.turn.working;
+    final cancelId = isReady && state.status.canCancel
+        ? state.status.turn.cancelTargetId
+        : null;
     // Quick actions need an open channel to dispatch — only offer the
     // entry point when the chat input itself is enabled. Hiding the
     // ⚙ button on offline avoids a tap that would just throw inside
     // the sheet.
     final actionsEnabled =
-        isReady &&
-        !isOffline &&
-        !isRevoked &&
-        !isPeerOffline &&
-        !isPresenceOffline;
+        isReady && !isOffline && !isRevoked && !isPeerOffline;
 
     return InputBar(
-      disabled:
-          !isReady ||
-          isOffline ||
-          isRevoked ||
-          isPeerOffline ||
-          isPresenceOffline,
+      disabled: !isReady || isOffline || isRevoked || isPeerOffline,
       streaming: isWorking,
       onCancel: cancelId != null ? () => vm.cancel(cancelId) : null,
       onOpenQuickActions: actionsEnabled
@@ -548,6 +494,64 @@ class ChatPage extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+
+/// Render transport health, agent phase, and steering as independent labels.
+class _ChatStatusIndicator extends StatelessWidget {
+  const _ChatStatusIndicator({required this.status});
+
+  final ChatStatusProjection status;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final (transportLabel, transportColor) = switch (status.transport) {
+      ChatTransportOnline() => ('online', colors.success),
+      ChatTransportRetrying() => ('reconnecting…', colors.warning),
+      ChatTransportOffline() => ('offline', colors.muted),
+    };
+    final (agentLabel, agentColor) = switch (status.turn.status) {
+      AppTurnStatus.idle => (null, colors.muted),
+      AppTurnStatus.working => ('working…', colors.working),
+      AppTurnStatus.awaitingTool => ('waiting…', colors.warning),
+      AppTurnStatus.streaming => ('streaming…', colors.working),
+      AppTurnStatus.done => ('done', colors.success),
+      AppTurnStatus.error => ('error', colors.error),
+      AppTurnStatus.stale => ('stale', colors.muted),
+    };
+    final steeringLabel = status.steering is SteeringPending
+        ? 'steering…'
+        : null;
+
+    Text label(String text, Color color) => Text(
+      text,
+      style: TextStyle(fontFamily: kMonoFamily, fontSize: 10, color: color),
+    );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: transportColor,
+          ),
+        ),
+        const SizedBox(width: 4),
+        label(transportLabel, transportColor),
+        if (agentLabel != null) ...[
+          const SizedBox(width: 6),
+          label(agentLabel, agentColor),
+        ],
+        if (steeringLabel != null) ...[
+          const SizedBox(width: 6),
+          label(steeringLabel, colors.muted2),
+        ],
+      ],
+    );
+  }
+}
 
 class _MessageList extends StatelessWidget {
   final List<ChatMessage> messages;

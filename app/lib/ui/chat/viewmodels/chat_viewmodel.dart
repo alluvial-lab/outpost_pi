@@ -55,7 +55,6 @@ class ChatViewModel extends ViewModel<ChatState> {
   TranscriptTurnView _transcriptTurn = TranscriptTurnView.idle;
   AppTurnProjection _turnProjection = AppTurnProjection.stale;
   String? _queuedText;
-  RuntimeRecord _runtime = const RuntimeRecord();
   bool _pairingRevoked = false;
   String? _peerOfflineReason;
   String? _persistenceWarning;
@@ -106,10 +105,23 @@ class ChatViewModel extends ViewModel<ChatState> {
   /// A single [AppTurnProjection] composes the fresh room projection with the
   /// active-room transcript/streaming projection. No sticky OR of unrelated
   /// booleans lives in the ViewModel.
-  bool get isWorking => _turnProjection.working;
+  bool get isWorking => statusProjection.turn.working;
+
+  /// Compose transport, turn, and steering without flattening their axes.
+  ChatStatusProjection get statusProjection => ChatStatusProjection(
+    transport: _transportProjection(),
+    turn: _turnProjection,
+    steering: _queuedText == null
+        ? const NoSteering()
+        : SteeringPending(
+            clientMessageId: 'queued-message',
+            text: _queuedText!,
+          ),
+  );
 
   /// The id to `cancel` to stop the in-flight reply. Null when idle/stale.
-  String? get cancelTargetId => _turnProjection.cancelTargetId;
+  String? get cancelTargetId =>
+      statusProjection.canCancel ? statusProjection.turn.cancelTargetId : null;
 
   String? get queuedText => _queuedText;
 
@@ -163,7 +175,6 @@ class ChatViewModel extends ViewModel<ChatState> {
     _activePeer = null;
     _activeSessionRef = null;
     _messages = const [];
-    _runtime = const RuntimeRecord();
     _connectionResolved = false;
 
     final epk = _prefs.selectedPeerEpk;
@@ -334,6 +345,30 @@ class ChatViewModel extends ViewModel<ChatState> {
     );
   }
 
+  ChatTransportProjection _transportProjection() {
+    final status = _lastStatus ?? _conn.status;
+    return switch (status) {
+      StatusOnline() when isRoomLive => ChatTransportOnline(
+        roomId: _activeRoomId,
+      ),
+      StatusOnline() => const ChatTransportOffline(
+        reason: 'Selected Pi room is unavailable',
+      ),
+      StatusConnecting() => const ChatTransportRetrying(
+        attempt: 0,
+        nextRetry: Duration.zero,
+      ),
+      StatusRetrying(:final attempt, :final nextRetry) => ChatTransportRetrying(
+        attempt: attempt,
+        nextRetry: nextRetry,
+      ),
+      StatusOffline(:final reason) => ChatTransportOffline(reason: reason),
+      StatusNoPeer() => const ChatTransportOffline(
+        reason: 'No paired Pi selected',
+      ),
+    };
+  }
+
   void _onQueued(String? text) {
     _queuedText = text;
     _recompute();
@@ -346,8 +381,7 @@ class ChatViewModel extends ViewModel<ChatState> {
   bool get connectionResolved => _connectionResolved;
   bool _connectionResolved = false;
 
-  void _onRuntime(RuntimeRecord r) {
-    _runtime = r;
+  void _onRuntime(RuntimeRecord _) {
     _connectionResolved = true;
     _recompute();
   }
@@ -395,20 +429,12 @@ class ChatViewModel extends ViewModel<ChatState> {
           ? const ChatReady(messages: [])
           : const ChatNoPeer();
     }
-    final isOnline = _runtime.connection == RuntimeConnection.online;
-    final isOffline = !isOnline;
-    final peerPresence = _runtime.presence == RuntimePresence.alive
-        ? const PresenceOnline() as PresenceState
-        : const PresenceOffline(sinceTs: 0);
-
     return ChatReady(
       messages: _messages,
       streaming: _streaming,
-      isOffline: isOffline,
+      status: statusProjection,
       pairingRevoked: _pairingRevoked,
       peerOfflineReason: _peerOfflineReason,
-      peerPresence: peerPresence,
-      isWorking: isWorking,
       queuedText: _queuedText,
       persistenceWarning: _persistenceWarning,
     );
