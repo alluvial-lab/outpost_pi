@@ -56,6 +56,7 @@ use crate::rooms::{RoomManager, RoomMeta, RoomMetaPatch};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeerRegistration {
     pub conn_id: u64,
+    pub(crate) disconnect: super::connections::DisconnectSignal,
     pub superseded_existing: bool,
     /// `conn_id`s of prior same-device conns closed by this register (see
     /// [`PeerRegistry::register`]). Empty unless this was a same-device
@@ -150,7 +151,7 @@ impl PeerRegistry {
         tx: mpsc::Sender<Message>,
     ) -> PeerRegistration {
         let room_id = room_meta.room_id.clone();
-        let insert = self.connections.insert(&peer_id, &room_id, &device_id, tx);
+        let (insert, disconnect) = self.connections.insert(&peer_id, &room_id, &device_id, tx);
         let announced_meta = self
             .rooms
             .on_connection_inserted(&peer_id, room_meta, &insert);
@@ -173,6 +174,7 @@ impl PeerRegistry {
 
         PeerRegistration {
             conn_id: insert.conn_id,
+            disconnect,
             superseded_existing: insert.superseded_existing,
             superseded_same_device_conn_ids: insert.superseded_same_device_conn_ids,
         }
@@ -1055,6 +1057,65 @@ mod tests {
 
         let v = recv_meta(&mut rx_app);
         assert_eq!(v["meta"]["working"], false);
+    }
+
+    /// Dropping an authoritative convergence update must disconnect the
+    /// saturated subscriber so reconnect hydration replaces stale state.
+    #[tokio::test]
+    async fn dropped_working_false_requests_subscriber_disconnect() {
+        let presence = Arc::new(PresenceManager::new());
+        let rooms = Arc::new(RoomManager::new());
+        let metrics = Arc::new(FirehoseMetrics::new());
+        let reg = PeerRegistry::new(presence, rooms.clone(), metrics);
+
+        let pi = "pi".to_string();
+        let app = "app".to_string();
+        let (tx_pi, _rx_pi) = tokio::sync::mpsc::channel::<Message>(1);
+        let mut meta = make_meta("main");
+        meta.working = true;
+        reg.register(pi.clone(), meta, "pi-dev".to_string(), tx_pi)
+            .await;
+
+        let (tx_app, mut rx_app) = tokio::sync::mpsc::channel::<Message>(1);
+        let app_registration = reg
+            .register(
+                app.clone(),
+                make_meta("main"),
+                "app-dev".to_string(),
+                tx_app,
+            )
+            .await;
+        rooms.subscribe(app.clone(), vec![pi.clone()]).await;
+
+        let report = reg.connections().send_to_room(
+            &app,
+            "main",
+            Message::Text("queued-before-terminal-state".into()),
+            u64::MAX,
+        );
+        assert_eq!(report.delivered, 1);
+
+        assert!(
+            reg.update_room_meta(
+                &pi,
+                "main",
+                RoomMetaPatch {
+                    working: Some(false),
+                    ..Default::default()
+                },
+            )
+            .await
+        );
+
+        assert!(
+            app_registration.disconnect.is_requested(),
+            "dropping working:false must trigger reconnect hydration"
+        );
+        assert_eq!(
+            rx_app.try_recv().unwrap().to_text().unwrap(),
+            "queued-before-terminal-state",
+            "drop-newest must retain the already queued frame"
+        );
     }
 
     /// A patch that omits `working` (e.g. a model-only update) must NOT zero a

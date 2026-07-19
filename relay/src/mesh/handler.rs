@@ -104,7 +104,9 @@ pub async fn post_mesh(
         now_ms,
     ) {
         Ok(()) => {
-            state.mesh_auth.invalidate_all();
+            state
+                .mesh_auth
+                .invalidate_owner_publish(&computed_hash, &env.blob);
             Ok((
                 StatusCode::OK,
                 Json(MeshPostResponse {
