@@ -211,12 +211,15 @@ TranscriptProjection deriveTranscriptProjection({
         }
       case UserMessageFailed():
         failedUsers[event.clientMessageId] = event;
+        final failedSubmission = submittedUsers[event.clientMessageId];
         if (steering case SteeringPending(
           :final clientMessageId,
         ) when clientMessageId == event.clientMessageId) {
           steering = const NoSteering();
         }
-        if (!pickedUpUsers.containsKey(event.clientMessageId)) {
+        if (!pickedUpUsers.containsKey(event.clientMessageId) &&
+            failedSubmission?.awaitingPickup != true) {
+          activeReplyAnchor = null;
           turn = TranscriptTurnView(
             status: AppTurnStatus.error,
             turnId: event.turnId ?? event.clientMessageId,
