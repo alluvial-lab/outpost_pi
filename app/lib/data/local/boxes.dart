@@ -8,6 +8,7 @@
 
 import 'package:app/data/local/transcript_box_identity.dart';
 import 'package:app/data/local/transcript_storage_key.dart';
+import 'package:app/data/local/transcript_storage_migration.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:crypto/crypto.dart';
@@ -16,7 +17,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 const String _kNamespace = 'rp_v2';
 const String _kSessionsIndex = 'sessions_index_v3';
 const String _kRuntime = 'runtime';
-const String _kSecurityMeta = 'transcript_security_meta';
+const String _kSecurityMeta = TranscriptStorageMigrator.metadataBoxName;
 const String _kKeyProvisioned = 'key_provisioned_v3';
 const String _kKeyVerifier = 'key_verifier_v3';
 
@@ -49,6 +50,7 @@ class LocalBoxes {
     await _validateKey(meta, key);
     _cipher = HiveAesCipher(key);
     await _openCommon();
+    await _migrateLegacy(meta);
     await meta.put(_kKeyProvisioned, true);
     _initialized = true;
   }
@@ -67,6 +69,7 @@ class LocalBoxes {
     await _validateKey(meta, key);
     _cipher = HiveAesCipher(key);
     await _openCommon();
+    await _migrateLegacy(meta);
     _initialized = true;
   }
 
@@ -83,6 +86,39 @@ class LocalBoxes {
     await _openEncrypted(_kSessionsIndex);
     final runtime = await Hive.openBox<dynamic>(_kRuntime);
     await runtime.clear();
+  }
+
+  static Future<void> _migrateLegacy(Box<dynamic> metadata) async {
+    if (TranscriptStorageMigrator.isComplete(metadata)) return;
+    if (!await Hive.boxExists(TranscriptStorageMigrator.legacyIndexBoxName)) {
+      await metadata.delete(TranscriptStorageMigrator.copyVerifiedKey);
+      await metadata.put(
+        TranscriptStorageMigrator.migrationVersionKey,
+        TranscriptStorageMigrator.migrationVersion,
+      );
+      return;
+    }
+    final cipher = _cipher;
+    if (cipher == null) {
+      throw const TranscriptStorageKeyException('key_not_initialized');
+    }
+    late final Box<dynamic> legacyIndex;
+    try {
+      legacyIndex = await Hive.openBox<dynamic>(
+        TranscriptStorageMigrator.legacyIndexBoxName,
+        crashRecovery: false,
+      );
+    } on Object {
+      throw const TranscriptMigrationException(
+        code: 'legacy_source_unreadable',
+        sourceBox: TranscriptStorageMigrator.legacyIndexBoxName,
+      );
+    }
+    await TranscriptStorageMigrator(cipher: cipher).migrate(
+      legacyIndex: legacyIndex,
+      secureIndex: Hive.box<dynamic>(_kSessionsIndex),
+      metadata: metadata,
+    );
   }
 
   static Future<Box<dynamic>> _openEncrypted(String name) async {
