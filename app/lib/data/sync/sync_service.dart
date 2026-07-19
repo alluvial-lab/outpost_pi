@@ -114,6 +114,10 @@ class SyncService extends Service {
   final StreamController<String?> _queuedController =
       StreamController<String?>.broadcast();
 
+  SteeringProjection _transcriptSteering = const NoSteering();
+  final StreamController<SteeringProjection> _steeringController =
+      StreamController<SteeringProjection>.broadcast();
+
   bool _pendingSyncRequest = false;
   Timer? _syncDebounce;
 
@@ -188,6 +192,13 @@ class SyncService extends Service {
 
   /// Emit queued-composer state from local commands and Pi updates.
   Stream<String?> get queuedStream => _queuedController.stream;
+
+  /// Return transcript-derived steering acceptance/pickup state.
+  SteeringProjection get steeringProjection => _transcriptSteering;
+
+  /// Emit steering state as transcript acceptance and pickup events converge.
+  Stream<SteeringProjection> get steeringProjectionStream =>
+      _steeringController.stream;
 
   /// Return the canonical in-memory turn state for the active session.
   TranscriptTurnView get turnView => _turnView;
@@ -293,6 +304,7 @@ class SyncService extends Service {
     _chunkBuffer.clear();
     _agentMessageCommittedThisTurn = false;
     _setQueuedText(null);
+    _setTranscriptSteering(const NoSteering());
     if (clearPendingSendTimers) {
       // Session switch: the previous chat's in-flight sends are no longer ours
       // to confirm — drop their backstops so a stale timer can't fire later.
@@ -347,6 +359,7 @@ class SyncService extends Service {
           text: text,
           image: image,
           held: held,
+          awaitingPickup: isSteer,
         ),
         preserveTurnState: isSteer,
       );
@@ -663,6 +676,7 @@ class SyncService extends Service {
         const TranscriptProjection(
           messages: <ChatMessage>[],
           turn: TranscriptTurnView.idle,
+          steering: NoSteering(),
         ),
         const <TranscriptEvent>[],
         generation,
@@ -1041,6 +1055,9 @@ class SyncService extends Service {
                   ? null
                   : MessageImage(data: image.data, mime: image.mime),
               streamingBehavior: streamingBehavior,
+              semanticPickup:
+                  ts != null ||
+                  streamingBehavior != UserMessageStreamingBehavior.steer,
             ),
             preserveTurnState: true,
           ),
@@ -1408,6 +1425,7 @@ class SyncService extends Service {
         sessionId: key.sessionId,
         events: log,
       );
+      _setTranscriptSteering(projection.steering);
       if (!preserveTurnState &&
           _canPublishTurnProjection(generation, ref, projectionEpoch)) {
         _emitStreaming(projection.streaming);
@@ -1439,6 +1457,7 @@ class SyncService extends Service {
         sessionId: key.sessionId,
         events: log,
       );
+      _setTranscriptSteering(projection.steering);
       if (_canPublishTurnProjection(generation, ref, projectionEpoch)) {
         _emitStreaming(projection.streaming);
         _setTurnView(projection.turn);
@@ -1686,6 +1705,7 @@ class SyncService extends Service {
           sessionId: key.sessionId,
           events: log,
         );
+        _setTranscriptSteering(projection.steering);
         if (_canPublishTurnProjection(generation, ref, projectionEpoch)) {
           _emitStreaming(projection.streaming);
           _setTurnView(projection.turn);
@@ -1802,6 +1822,12 @@ class SyncService extends Service {
     if (_queuedText == text) return;
     _queuedText = text;
     if (!_queuedController.isClosed) _queuedController.add(text);
+  }
+
+  void _setTranscriptSteering(SteeringProjection next) {
+    if (_transcriptSteering == next) return;
+    _transcriptSteering = next;
+    if (!_steeringController.isClosed) _steeringController.add(next);
   }
 
   void _setTurnViewLocalOnly(TranscriptTurnView next) {
@@ -2094,5 +2120,6 @@ class SyncService extends Service {
     _eventController.close();
     _turnViewController.close();
     _queuedController.close();
+    _steeringController.close();
   }
 }

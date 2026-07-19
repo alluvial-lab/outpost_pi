@@ -1820,6 +1820,26 @@ describe("multi-channel broadcast (W2D)", () => {
         text: "refine this",
         streaming_behavior: "steer",
       });
+
+      // Delivery acceptance above is intentionally early and has no SDK
+      // timestamp. The later message_end broadcast is the stable semantic
+      // pickup anchor consumed by the app transcript projection.
+      const pickupBefore = relayRef.current!.send.mock.calls.length;
+      const onMessageEnd = captureEventHandler("message_end");
+      onMessageEnd({
+        type: "message_end",
+        message: { role: "user", content: "refine this", timestamp: 1_700_000_005_000 },
+      });
+      await new Promise<void>((r) => setImmediate(r));
+      const pickup = relayRef.current!.send.mock.calls.slice(pickupBefore)
+        .map((c) => c[0] as string).map(decodeSentCt)
+        .find((d) => d.inner.type === "user_input");
+      expect(pickup?.inner).toMatchObject({
+        type: "user_input",
+        id: "msg-steer",
+        text: "refine this",
+        ts: 1_700_000_005_000,
+      });
     },
   );
 
