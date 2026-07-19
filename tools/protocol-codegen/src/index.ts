@@ -38,6 +38,7 @@ export interface OutpostPiIrVariant {
   schemaRef: string;
   fields: OutpostPiIrField[];
   sessionScoped: boolean;
+  direction?: "client-to-relay" | "relay-to-client";
   validationFunctionName: string;
   validationFunctionBody: string;
 }
@@ -64,11 +65,27 @@ export interface OutpostPiIrNestedRegistry {
   variants: OutpostPiIrVariant[];
 }
 
+export interface OutpostPiIngressLimits {
+  maxDecodedBytesDefault: number;
+  maxFrameOverheadBytes: number;
+  maxPreAuthFrameBytes: number;
+  metadataByteLimits: {
+    deviceId: number;
+    roomId: number;
+    roomName: number;
+    cwd: number;
+    sessionId: number;
+    model: number;
+    thinking: number;
+  };
+}
+
 export interface OutpostPiIr {
   schemaVersion: number;
   source: string;
   profile: string;
   relayAuthDomainPrefix?: string;
+  relayIngressLimits?: OutpostPiIngressLimits;
   sharedTypes: OutpostPiIrSharedType[];
   families: OutpostPiIrFamily[];
   nestedRegistries: OutpostPiIrNestedRegistry[];
@@ -375,8 +392,12 @@ async function validatorExpressionForSchema(
   }
 
   switch (object.type) {
-    case "string":
-      return typeof object.minLength === "number" ? `isStringWithMinLength(${valueExpression}, ${object.minLength})` : `typeof ${valueExpression} === "string"`;
+    case "string": {
+      const checks = [`typeof ${valueExpression} === "string"`];
+      if (typeof object.minLength === "number") checks.push(`${valueExpression}.length >= ${object.minLength}`);
+      if (typeof object.maxLength === "number") checks.push(`${valueExpression}.length <= ${object.maxLength}`);
+      return combineExpressions(checks, "&&", "true");
+    }
     case "integer":
       return typeof object.minimum === "number" ? `isIntegerAtLeast(${valueExpression}, ${object.minimum})` : `isInteger(${valueExpression})`;
     case "number":
@@ -573,6 +594,10 @@ async function variantsForFamily(family: OutpostPiManifestFamily, familySchemaPa
         schemaRef: `${family.schema}#oneOf/${index}`,
         fields: await fieldsForVariant(schema, path, protocolRoot, cache, profile),
         sessionScoped: isCanonicalSessionScoped(schema),
+        ...(optionalObject(schema["x-outpost-pi"])?.direction === "client-to-relay" ||
+        optionalObject(schema["x-outpost-pi"])?.direction === "relay-to-client"
+          ? { direction: optionalObject(schema["x-outpost-pi"])?.direction as "client-to-relay" | "relay-to-client" }
+          : {}),
         validationFunctionName: validatorFunctionNameForInterface(interfaceName),
         validationFunctionBody: await validatorFunctionBodyForSchema(schema, path, protocolRoot, cache, profile),
       });
@@ -679,6 +704,45 @@ async function appPiServerSharedTypes(
   return { sharedTypes: shared, nestedRegistries };
 }
 
+function positiveInteger(value: unknown, label: string): number {
+  if (!Number.isInteger(value) || (value as number) <= 0) {
+    throw new ProtocolCodegenError(`${label} must be a positive integer`);
+  }
+  return value as number;
+}
+
+async function relayIngressLimitsForProtocol(
+  protocolRoot: string,
+  cache: DocumentCache,
+): Promise<OutpostPiIngressLimits | undefined> {
+  const outerPath = join(protocolRoot, "schema", "relay-outer.schema.json");
+  let root: JsonObject;
+  try {
+    root = await readDocument(outerPath, cache);
+  } catch {
+    return undefined;
+  }
+  const outer = typeof root.$ref === "string"
+    ? asObject(fragmentLookup(root, root.$ref), "relay outer envelope")
+    : root;
+  const metadata = asObject(outer["x-outpost-pi"], "relay outer x-outpost-pi");
+  const fieldLimits = asObject(metadata.metadataByteLimits, "relay outer metadataByteLimits");
+  return {
+    maxDecodedBytesDefault: positiveInteger(metadata.maxDecodedBytesDefault, "maxDecodedBytesDefault"),
+    maxFrameOverheadBytes: positiveInteger(metadata.maxFrameOverheadBytes, "maxFrameOverheadBytes"),
+    maxPreAuthFrameBytes: positiveInteger(metadata.maxPreAuthFrameBytes, "maxPreAuthFrameBytes"),
+    metadataByteLimits: {
+      deviceId: positiveInteger(fieldLimits.deviceId, "metadataByteLimits.deviceId"),
+      roomId: positiveInteger(fieldLimits.roomId, "metadataByteLimits.roomId"),
+      roomName: positiveInteger(fieldLimits.roomName, "metadataByteLimits.roomName"),
+      cwd: positiveInteger(fieldLimits.cwd, "metadataByteLimits.cwd"),
+      sessionId: positiveInteger(fieldLimits.sessionId, "metadataByteLimits.sessionId"),
+      model: positiveInteger(fieldLimits.model, "metadataByteLimits.model"),
+      thinking: positiveInteger(fieldLimits.thinking, "metadataByteLimits.thinking"),
+    },
+  };
+}
+
 async function relayAuthDomainPrefixForProtocol(
   families: OutpostPiIrFamily[],
   cache: DocumentCache,
@@ -736,6 +800,7 @@ export async function buildOutpostPiIr(manifest: OutpostPiManifest, options: Bui
     source: manifest.source ?? "json-schema-2020-12",
     profile,
     relayAuthDomainPrefix: await relayAuthDomainPrefixForProtocol(families, cache),
+    relayIngressLimits: await relayIngressLimitsForProtocol(protocolRoot, cache),
     sharedTypes: shared.sharedTypes,
     families,
     nestedRegistries: shared.nestedRegistries,
@@ -866,6 +931,28 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     sections.push(`export const RELAY_AUTH_DOMAIN_PREFIX = ${literal(ir.relayAuthDomainPrefix)};`);
     sections.push("");
   }
+  if (ir.relayIngressLimits !== undefined) {
+    const limits = ir.relayIngressLimits;
+    sections.push(`export const RELAY_DEFAULT_MAX_DECODED_BYTES = ${limits.maxDecodedBytesDefault};`);
+    sections.push(`export const RELAY_MAX_FRAME_OVERHEAD_BYTES = ${limits.maxFrameOverheadBytes};`);
+    sections.push(`export const RELAY_MAX_PRE_AUTH_FRAME_BYTES = ${limits.maxPreAuthFrameBytes};`);
+    sections.push("export const RELAY_MAX_RAW_MESSAGE_BYTES =");
+    sections.push("  4 * Math.ceil(RELAY_DEFAULT_MAX_DECODED_BYTES / 3) + RELAY_MAX_FRAME_OVERHEAD_BYTES;");
+    sections.push(`export const RELAY_MAX_DEVICE_ID_BYTES = ${limits.metadataByteLimits.deviceId};`);
+    sections.push(`export const RELAY_MAX_ROOM_ID_BYTES = ${limits.metadataByteLimits.roomId};`);
+    sections.push(`export const RELAY_MAX_ROOM_NAME_BYTES = ${limits.metadataByteLimits.roomName};`);
+    sections.push(`export const RELAY_MAX_CWD_BYTES = ${limits.metadataByteLimits.cwd};`);
+    sections.push(`export const RELAY_MAX_SESSION_ID_BYTES = ${limits.metadataByteLimits.sessionId};`);
+    sections.push(`export const RELAY_MAX_MODEL_BYTES = ${limits.metadataByteLimits.model};`);
+    sections.push(`export const RELAY_MAX_THINKING_BYTES = ${limits.metadataByteLimits.thinking};`);
+    sections.push("");
+    sections.push("export interface RelayOuterEnvelope {");
+    sections.push("  readonly peer: string;");
+    sections.push("  readonly room?: string;");
+    sections.push("  readonly ct: string;");
+    sections.push("}");
+    sections.push("");
+  }
   sections.push("export const protocolManifest = {");
   sections.push(`  schemaVersion: ${ir.schemaVersion},`);
   sections.push(`  source: ${literal(ir.source)},`);
@@ -918,6 +1005,21 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     sections.push("");
   }
 
+  const relayServerFamily = ir.families.find((family) => family.id === "relayControl");
+  const relayServerVariants = relayServerFamily?.variants.filter(
+    (variant) => variant.direction === "relay-to-client",
+  ) ?? [];
+  const relayPostAuthVariants = relayServerVariants.filter((variant) => variant.type !== "challenge");
+  if (relayServerVariants.length > 0) {
+    sections.push(...emitRegistryConst("RELAY_SERVER_CONTROL_FRAME_TYPES", relayServerVariants));
+    sections.push("export type RelayServerControlFrameType = (typeof RELAY_SERVER_CONTROL_FRAME_TYPES)[number];");
+    sections.push("export type RelayServerControlFrame = Extract<RelayControlFrame, { readonly type: RelayServerControlFrameType }>;");
+    sections.push(...emitRegistryConst("RELAY_POST_AUTH_CONTROL_FRAME_TYPES", relayPostAuthVariants));
+    sections.push("export type RelayPostAuthControlFrameType = (typeof RELAY_POST_AUTH_CONTROL_FRAME_TYPES)[number];");
+    sections.push("export type RelayPostAuthControlFrame = Extract<RelayControlFrame, { readonly type: RelayPostAuthControlFrameType }>;");
+    sections.push("");
+  }
+
   for (const registry of ir.nestedRegistries) {
     sections.push(...emitRegistryConst(registry.constName, registry.variants));
     sections.push(`export type ${registry.typeName} = (typeof ${registry.constName})[number];`);
@@ -958,6 +1060,15 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     }
   }
 
+  for (const variant of relayServerVariants) {
+    const declaration = emitValidatorFunction(variant);
+    if (!emittedValidators.has(variant.validationFunctionName)) {
+      emittedValidators.set(variant.validationFunctionName, declaration);
+      sections.push(declaration);
+      sections.push("");
+    }
+  }
+
   for (const registry of ir.nestedRegistries) {
     sections.push(...emitValidatorRegistry(registry, "type"));
     sections.push("");
@@ -967,6 +1078,26 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     const publicRegistry = publicRegistryForFamily(family);
     if (!publicRegistry) continue;
     sections.push(...emitValidatorRegistry({ ...publicRegistry, unionName: family.unionName, variants: family.variants }, "type"));
+    sections.push("");
+  }
+  if (relayServerVariants.length > 0) {
+    sections.push(...emitValidatorRegistry({
+      constName: "RELAY_SERVER_CONTROL_FRAME_TYPES",
+      typeName: "RelayServerControlFrameType",
+      unionName: "RelayServerControlFrame",
+      predicateName: "isRelayServerControlFrame",
+      validatorsName: "RELAY_SERVER_CONTROL_FRAME_VALIDATORS",
+      variants: relayServerVariants,
+    }, "type"));
+    sections.push("");
+    sections.push(...emitValidatorRegistry({
+      constName: "RELAY_POST_AUTH_CONTROL_FRAME_TYPES",
+      typeName: "RelayPostAuthControlFrameType",
+      unionName: "RelayPostAuthControlFrame",
+      predicateName: "isRelayPostAuthControlFrame",
+      validatorsName: "RELAY_POST_AUTH_CONTROL_FRAME_VALIDATORS",
+      variants: relayPostAuthVariants,
+    }, "type"));
     sections.push("");
   }
 

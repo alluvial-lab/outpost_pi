@@ -18,6 +18,11 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 
 interface GeneratedProtocolModule {
   readonly RELAY_AUTH_DOMAIN_PREFIX?: string;
+  readonly RELAY_DEFAULT_MAX_DECODED_BYTES?: number;
+  readonly RELAY_MAX_FRAME_OVERHEAD_BYTES?: number;
+  readonly RELAY_MAX_PRE_AUTH_FRAME_BYTES?: number;
+  readonly RELAY_MAX_RAW_MESSAGE_BYTES?: number;
+  readonly RELAY_SERVER_CONTROL_FRAME_TYPES?: readonly string[];
   readonly CLIENT_MESSAGE_TYPES?: readonly string[];
   readonly SERVER_MESSAGE_TYPES?: readonly string[];
   readonly SESSION_SCOPED_CLIENT_MESSAGE_TYPES?: readonly string[];
@@ -26,6 +31,7 @@ interface GeneratedProtocolModule {
   isClientMessage?(value: unknown): boolean;
   isServerMessage?(value: unknown): boolean;
   isSessionHistoryEvent?(value: unknown): boolean;
+  isRelayServerControlFrame?(value: unknown): boolean;
 }
 
 async function importGeneratedProtocol(output: string): Promise<GeneratedProtocolModule> {
@@ -114,6 +120,12 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
   const output = renderTypeScriptProtocol(ir);
 
   assert.match(output, /export const RELAY_AUTH_DOMAIN_PREFIX = "outpost-pi-relay-auth-v1\\n";/);
+  assert.match(output, /export const RELAY_DEFAULT_MAX_DECODED_BYTES = 4194304;/);
+  assert.match(output, /export const RELAY_MAX_FRAME_OVERHEAD_BYTES = 65536;/);
+  assert.match(output, /export const RELAY_MAX_PRE_AUTH_FRAME_BYTES = 16384;/);
+  assert.match(output, /export interface RelayOuterEnvelope/);
+  assert.match(output, /export type RelayServerControlFrame = Extract<RelayControlFrame/);
+  assert.match(output, /export function isRelayServerControlFrame/);
   assert.match(output, /export interface WireImage \{\n  readonly data: string;\n  readonly mime: string;\n\}/);
   assert.match(output, /export interface Usage \{\n  readonly input_tokens: number;\n  readonly output_tokens: number;\n\}/);
   assert.match(output, /export interface WireModel \{[\s\S]*readonly vision\?: boolean;[\s\S]*\}/);
@@ -155,6 +167,22 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
   const generated = await importGeneratedProtocol(renderTypeScriptProtocol(ir));
 
   assert.equal(generated.RELAY_AUTH_DOMAIN_PREFIX, "outpost-pi-relay-auth-v1\n");
+  assert.equal(generated.RELAY_DEFAULT_MAX_DECODED_BYTES, 4 * 1024 * 1024);
+  assert.equal(generated.RELAY_MAX_FRAME_OVERHEAD_BYTES, 64 * 1024);
+  assert.equal(generated.RELAY_MAX_PRE_AUTH_FRAME_BYTES, 16 * 1024);
+  assert.equal(generated.RELAY_MAX_RAW_MESSAGE_BYTES, 5_657_944);
+  assert.deepEqual(generated.RELAY_SERVER_CONTROL_FRAME_TYPES, [
+    "challenge",
+    "presence",
+    "peer_online",
+    "peer_offline",
+    "rooms",
+    "room_announced",
+    "room_ended",
+    "room_meta_updated",
+  ]);
+  assert.equal(generated.isRelayServerControlFrame?.({ type: "peer_online", peer: "pi-a" }), true);
+  assert.equal(generated.isRelayServerControlFrame?.({ type: "subscribe_presence", peers: [] }), false);
   assert.deepEqual(generated.SERVER_MESSAGE_TYPES, [
     "pair_ok",
     "pair_error",

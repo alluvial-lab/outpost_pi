@@ -1,5 +1,8 @@
 use std::sync::OnceLock;
 
+pub use crate::protocol::generated::limits::{
+    RELAY_DEFAULT_MAX_DECODED_BYTES, RELAY_MAX_FRAME_OVERHEAD_BYTES, RELAY_MAX_PRE_AUTH_FRAME_BYTES,
+};
 pub use crate::protocol::generated::outer::OuterEnvelope;
 
 impl OuterEnvelope {
@@ -21,13 +24,13 @@ pub const MAX_CT_ENV: &str = "RELAY_MAX_CT_MIB";
 /// `ct` ≈ 1.333× the raw JPEG), so 1 MiB silently dropped any image above
 /// roughly 768 KB and left the app stuck at "sending…". Four MiB provides
 /// headroom over the app compression cap (roughly 1.5 MB, 2 MB estimated).
-pub const DEFAULT_MAX_CT_MIB: usize = 4;
+pub const DEFAULT_MAX_CT_MIB: usize = RELAY_DEFAULT_MAX_DECODED_BYTES / (1024 * 1024);
 
 /// Bounded JSON/routing overhead allowed beyond an encoded `ct` payload.
-pub const MAX_FRAME_OVERHEAD_BYTES: usize = 64 * 1024;
+pub const MAX_FRAME_OVERHEAD_BYTES: usize = RELAY_MAX_FRAME_OVERHEAD_BYTES;
 
 /// Maximum UTF-8 bytes accepted for one unauthenticated hello/auth message.
-pub const MAX_PRE_AUTH_FRAME_BYTES: usize = 16 * 1024;
+pub const MAX_PRE_AUTH_FRAME_BYTES: usize = RELAY_MAX_PRE_AUTH_FRAME_BYTES;
 
 /// Effective outer-envelope limit in bytes. Read **once** from [`MAX_CT_ENV`]
 /// (in MiB) on the first call and memoized. An absent or invalid value

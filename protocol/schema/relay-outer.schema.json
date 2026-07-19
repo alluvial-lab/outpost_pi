@@ -15,7 +15,18 @@
       "additionalProperties": false,
       "x-outpost-pi": {
         "relayOpaque": ["ct"],
-        "maxDecodedBytesDefault": 4194304
+        "maxDecodedBytesDefault": 4194304,
+        "maxFrameOverheadBytes": 65536,
+        "maxPreAuthFrameBytes": 16384,
+        "metadataByteLimits": {
+          "deviceId": 128,
+          "roomId": 256,
+          "roomName": 256,
+          "cwd": 4096,
+          "sessionId": 512,
+          "model": 256,
+          "thinking": 32
+        }
       }
     }
   },
