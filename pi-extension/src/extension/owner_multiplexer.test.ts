@@ -1,15 +1,29 @@
 import { describe, expect, test, vi } from "vitest";
-import { OwnerMultiplexer, type CreateOwnerChannelInput, type OwnerMultiplexerDeps, type PeerChannelHandle } from "./owner_multiplexer.js";
+import {
+  OFFLINE_BUFFER_MAX_BYTES,
+  OFFLINE_BUFFER_MAX_FRAMES,
+  OwnerMultiplexer,
+  type CreateOwnerChannelInput,
+  type OwnerMultiplexerDeps,
+  type PeerChannelHandle,
+} from "./owner_multiplexer.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
 
 class FakeOwnerChannel implements PeerChannelHandle {
   readonly sent: ServerMessage[] = [];
   detached = false;
+  onSend?: (message: ServerMessage) => void;
+  failNextSend = false;
 
   constructor(readonly input: CreateOwnerChannelInput) {}
 
   send(message: ServerMessage): void {
+    if (this.failNextSend) {
+      this.failNextSend = false;
+      throw new Error("injected send failure");
+    }
     this.sent.push(message);
+    this.onSend?.(message);
   }
 
   detach(): void {
@@ -23,6 +37,10 @@ class FakeOwnerChannel implements PeerChannelHandle {
 
 function encodeClientMessage(message: ClientMessage): string {
   return Buffer.from(JSON.stringify(message)).toString("base64");
+}
+
+function agentChunk(delta: string): ServerMessage {
+  return { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta };
 }
 
 function makeMultiplexer() {
@@ -119,8 +137,124 @@ describe("OwnerMultiplexer", () => {
     const resumed: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "after reconnect" };
     mux.broadcast(resumed);
 
-    expect(channels[0]!.sent).toEqual([resumed]);
+    expect(channels[0]!.sent).toEqual([droppedForA, resumed]);
     expect(channels[1]!.sent).toEqual([droppedForA, resumed]);
+  });
+
+  test("resume drains buffered and synchronously re-entrant frames before live fan-out", () => {
+    const { mux, channels } = makeMultiplexer();
+    mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
+    mux.markPeerOffline("owner-a");
+    mux.broadcast(agentChunk("first"));
+    mux.broadcast(agentChunk("second"));
+
+    channels[0]!.onSend = (message) => {
+      if (message.type === "agent_chunk" && message.delta === "first") {
+        mux.broadcast(agentChunk("re-entrant"));
+      }
+    };
+
+    mux.markPeerOnline("owner-a");
+    channels[0]!.onSend = undefined;
+    mux.broadcast(agentChunk("live"));
+
+    expect(channels[0]!.sent.map((message) => message.type === "agent_chunk" ? message.delta : message.type))
+      .toEqual(["first", "second", "re-entrant", "live"]);
+  });
+
+  test("a newly completed interval replaces the older completed interval", () => {
+    const { mux, channels } = makeMultiplexer();
+    mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
+    mux.markPeerOffline("owner-a");
+
+    mux.broadcast(agentChunk("older turn"));
+    mux.completeOfflineTurn();
+    const newest = agentChunk("newest completed turn");
+    mux.broadcast(newest);
+    mux.completeOfflineTurn();
+    mux.markPeerOnline("owner-a");
+
+    expect(channels[0]!.sent).toEqual([newest]);
+  });
+
+  test("frame-cap overflow drops the whole active interval and recovers after a boundary", () => {
+    const { mux, channels } = makeMultiplexer();
+    mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
+    mux.markPeerOffline("owner-a");
+
+    mux.broadcast(agentChunk("older completed"));
+    mux.completeOfflineTurn();
+    for (let index = 0; index <= OFFLINE_BUFFER_MAX_FRAMES; index += 1) {
+      mux.broadcast(agentChunk(`current-${index}`));
+    }
+    mux.broadcast(agentChunk("suppressed suffix"));
+    mux.completeOfflineTurn();
+    const recovered = agentChunk("recovered after frame overflow");
+    mux.broadcast(recovered);
+    mux.markPeerOnline("owner-a");
+
+    expect(channels[0]!.sent).toEqual([recovered]);
+  });
+
+  test("byte-cap and serialization failures suppress partial intervals without escaping broadcast", () => {
+    const { mux, channels } = makeMultiplexer();
+    mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
+    mux.markPeerOffline("owner-a");
+
+    expect(() => mux.broadcast(agentChunk("x".repeat(OFFLINE_BUFFER_MAX_BYTES)))).not.toThrow();
+    mux.broadcast(agentChunk("suppressed byte suffix"));
+    mux.completeOfflineTurn();
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic["self"] = cyclic;
+    expect(() => mux.broadcast(cyclic as unknown as ServerMessage)).not.toThrow();
+    mux.broadcast(agentChunk("suppressed serialization suffix"));
+    mux.completeOfflineTurn();
+
+    const recovered = agentChunk("recovered after byte and serialization overflow");
+    mux.broadcast(recovered);
+    mux.markPeerOnline("owner-a");
+
+    expect(channels[0]!.sent).toEqual([recovered]);
+  });
+
+  test("sync-first reconnect discards buffered frames before routing authoritative history", () => {
+    const { mux, channels } = makeMultiplexer();
+    const onMessage = vi.fn();
+    mux.attach({ peerId: "owner-a", onMessage });
+    mux.markPeerOffline("owner-a");
+    mux.broadcast(agentChunk("stale"));
+
+    const sync: ClientMessage = {
+      type: "session_sync",
+      id: "sync-1",
+      session_id: "session-1",
+    };
+    channels[0]!.receive(sync);
+    expect(mux.isPeerOffline("owner-a")).toBe(false);
+    expect(onMessage).toHaveBeenCalledWith(sync, channels[0]);
+    expect(channels[0]!.sent).toEqual([]);
+
+    mux.markPeerOnline("owner-a");
+    expect(channels[0]!.sent).toEqual([]);
+  });
+
+  test("a failed buffered send still converges the peer online", () => {
+    const { mux, channels } = makeMultiplexer();
+    mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
+    mux.markPeerOffline("owner-a");
+    mux.broadcast(agentChunk("fails"));
+    mux.broadcast(agentChunk("continues"));
+    channels[0]!.failNextSend = true;
+
+    expect(mux.markPeerOnline("owner-a")).toBe(true);
+    expect(mux.isPeerOffline("owner-a")).toBe(false);
+    mux.broadcast(agentChunk("live"));
+
+    expect(channels[0]!.sent).toEqual([
+      agentChunk("continues"),
+      agentChunk("live"),
+    ]);
   });
 
   test("suspend/resume diagnostic is one-shot and not emitted per dropped frame", () => {
@@ -157,6 +291,7 @@ describe("OwnerMultiplexer", () => {
     const onMessage = vi.fn();
     mux.attach({ peerId: "owner-a", onMessage, turnActive: true });
     mux.markPeerOffline("owner-a", 123);
+    mux.broadcast(agentChunk("must not cross channel lifetime"));
 
     const reattached = mux.attach({ peerId: "owner-a", onMessage, turnActive: true });
     const message: ServerMessage = { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta: "resumed" };
@@ -170,6 +305,27 @@ describe("OwnerMultiplexer", () => {
       peerId: "owner-a",
       state: "resumed",
     }));
+  });
+
+  test("detach and relay-drop teardown free buffered frames", () => {
+    const { mux, channels } = makeMultiplexer();
+    const onMessage = vi.fn();
+    mux.attach({ peerId: "owner-a", onMessage });
+    mux.markPeerOffline("owner-a");
+    mux.broadcast(agentChunk("detached stale"));
+    mux.detach("owner-a");
+
+    mux.attach({ peerId: "owner-a", onMessage });
+    mux.broadcast(agentChunk("after detach"));
+    expect(channels[1]!.sent).toEqual([agentChunk("after detach")]);
+
+    mux.markPeerOffline("owner-a");
+    mux.broadcast(agentChunk("relay-drop stale"));
+    mux.detachAllForRelayDrop();
+    mux.attach({ peerId: "owner-a", onMessage });
+    mux.broadcast(agentChunk("after relay drop"));
+
+    expect(channels[2]!.sent).toEqual([agentChunk("after relay drop")]);
   });
 
   test("detaching one owner preserves the other owner channel", () => {
