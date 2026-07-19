@@ -8,7 +8,7 @@ depends_on: [feature-cross-component-e2e-pairing-suite-infra, feature-cross-comp
 release_binding: null
 gate_origin: null
 created: 2026-07-19
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Prove cross-room pair_request delivery through pair_ok
@@ -25,11 +25,11 @@ and persist the Pi-confirmed room without timing out.
 
 ## Acceptance evidence
 
-- [ ] Production `WsTransport`, real Ed25519 auth, generated decoder, `performPairing`, and `PairingStorage` all run; no test-local outer envelope or `pair_ok` map exists.
-- [ ] The app auth room is `main`, QR target room is different, and the persisted `PeerRecord.roomId` equals the Pi-confirmed room.
-- [ ] Pi-host reaches paired state and the first app record remains readable through production storage serialization.
-- [ ] The case fails if extension ingress again rejects the relay-rewritten sender room for not matching the Pi destination room.
-- [ ] Successful transport stays open and transfers lifecycle ownership to the hydration checkpoint.
+- [x] Production `WsTransport`, real Ed25519 auth, generated decoder, `performPairing`, and `PairingStorage` all run; no test-local outer envelope or `pair_ok` map exists.
+- [x] The app auth room is `main`, QR target room is different, and the persisted `PeerRecord.roomId` equals the Pi-confirmed room.
+- [x] Pi-host reaches paired state and the first app record remains readable through production storage serialization.
+- [x] The case fails if extension ingress again rejects the relay-rewritten sender room for not matching the Pi destination room.
+- [x] Successful transport stays open and transfers lifecycle ownership to the hydration checkpoint.
 
 ## Test integrity
 

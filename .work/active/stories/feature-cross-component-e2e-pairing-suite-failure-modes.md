@@ -8,7 +8,7 @@ depends_on: [feature-cross-component-e2e-pairing-suite-infra, feature-cross-comp
 release_binding: null
 gate_origin: null
 created: 2026-07-19
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Add pairing failure-mode contracts
@@ -26,11 +26,11 @@ Run serially against fresh Pi-host generations and restore Toxiproxy in teardown
 
 ## Acceptance evidence
 
-- [ ] Invalid-auth probe speaks only hello/challenge/auth; a subsequent valid production pair with the same QR proves no token consumption.
-- [ ] A second real owner using a consumed QR receives `PairingError.code == token_consumed` and does not replace the first record.
-- [ ] Production `pair --ttl 10` expires without a clock hook and yields `token_expired` with no saved peer.
-- [ ] Pinned Toxiproxy disables only the app path after QR; pairing fails boundedly, storage stays empty, and teardown restores connectivity.
-- [ ] Failure logs omit nonce, signature, token, keys, URI, and transcript content.
+- [x] Invalid-auth probe speaks only hello/challenge/auth; a subsequent valid production pair with the same QR proves no token consumption.
+- [x] A second real owner using a consumed QR receives `PairingError.code == token_consumed` and does not replace the first record.
+- [x] Production `pair --ttl 10` expires without a clock hook and yields `token_expired` with no saved peer.
+- [x] Pinned Toxiproxy disables only the app path after QR; pairing fails boundedly, storage stays empty, and teardown restores connectivity.
+- [x] Failure logs omit nonce, signature, token, keys, URI, and transcript content.
 
 ## Test integrity
 
