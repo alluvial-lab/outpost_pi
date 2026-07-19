@@ -38,12 +38,10 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     let (mut sink, mut stream) = socket.split();
 
     // ── 1. Wait for hello (with timeout) ──────────────────────────────────
-    let hello_result = tokio::time::timeout(HANDSHAKE_STEP_TIMEOUT, stream.next()).await;
-
-    let hello_text = match hello_result {
-        Ok(Some(Ok(Message::Text(t)))) => t,
-        _ => {
-            warn!(addr = %peer_addr, "no hello received, closing");
+    let hello_text = match next_handshake_text(&mut stream).await {
+        Some(text) => text,
+        None => {
+            warn!(addr = %peer_addr, phase = "hello", "handshake step failed, closing");
             return;
         }
     };
@@ -72,9 +70,12 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     }
 
     // ── 3. Receive and verify auth ────────────────────────────────────────
-    let auth_text = match stream.next().await {
-        Some(Ok(Message::Text(t))) => t,
-        _ => return,
+    let auth_text = match next_handshake_text(&mut stream).await {
+        Some(text) => text,
+        None => {
+            warn!(addr = %peer_addr, phase = "auth", "handshake step failed, closing");
+            return;
+        }
     };
 
     if let Err(e) = verify_auth(&nonce, &vk, &auth_text) {
@@ -216,4 +217,34 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
         rooms.unsubscribe_all(&peer_id).await;
     }
     info!(peer = %peer_short, room = %room_id, addr = %peer_addr, "disconnected");
+}
+
+async fn next_handshake_text<S, E>(stream: &mut S) -> Option<String>
+where
+    S: futures_util::Stream<Item = Result<Message, E>> + Unpin,
+{
+    match tokio::time::timeout(HANDSHAKE_STEP_TIMEOUT, stream.next()).await {
+        Ok(Some(Ok(Message::Text(text)))) => Some(text),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::stream;
+
+    #[tokio::test(start_paused = true)]
+    async fn handshake_text_times_out_for_stalled_step() {
+        let mut stalled = stream::pending::<Result<Message, ()>>();
+        let task = tokio::spawn(async move { next_handshake_text(&mut stalled).await });
+        tokio::time::advance(HANDSHAKE_STEP_TIMEOUT).await;
+        assert!(task.await.expect("handshake task must finish").is_none());
+    }
+
+    #[tokio::test]
+    async fn handshake_text_rejects_non_text_frames() {
+        let mut binary = stream::iter([Ok::<_, ()>(Message::Binary(vec![1, 2, 3]))]);
+        assert!(next_handshake_text(&mut binary).await.is_none());
+    }
 }
