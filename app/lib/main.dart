@@ -41,8 +41,8 @@ Future<void> reconcileOnAppResume({
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Plan 31 — open the v2 SSOT boxes + WIPE the volatile runtime box BEFORE
-  // anything subscribes (#3 / Risk 2).
+  // Provision the transcript-storage key, open encrypted v3 boxes, and wipe
+  // volatile runtime state before any service can read or write local data.
   await LocalBoxes.init();
   await setupDependencies();
   // Eagerly construct the SSOT writer so it's consuming the channel from boot
