@@ -175,7 +175,7 @@ schema as this union.
 Local UDS peers and cross-PC relay forwards use the same envelope shape.
 Cross-PC wraps it in `pi_envelope` / `pi_envelope_in` frames carrying the
 `to_pc` / `from_pc` Pi-pubkeys. The extension's live relay demux accepts these
-frames only through schema-generated parsers, including non-empty recipient
+frames only through schema-generated predicates, including non-empty recipient
 arrays and reply ids plus `additionalProperties: false` at every defined
 object boundary.
 
@@ -183,13 +183,20 @@ object boundary.
 
 `relay-outer.schema.json` owns the 4 MiB decoded `ct` default, 64 KiB frame
 overhead, 5,657,944-byte derived raw ceiling, 16 KiB pre-auth ceiling, and
-metadata limits. Rust applies WebSocket frame/message caps and typed Serde
-parsing; the extension configures `ws.maxPayload`, checks raw size before
-`JSON.parse`, then uses generated outer/control/cross-PC validators before
-base64 decoding. Flutter checks raw UTF-8 length before `jsonDecode` and routes
-generated relay DTOs before base64 decoding, but its WebSocket API cannot cap
-the platform's initial message allocation. Relay deployment overrides do not
-raise the endpoints' generated 4 MiB safety default.
+metadata limits. Its canonical outer type requires non-empty `peer`, `room`,
+and `ct`; a generated endpoint `compat` predicate permits only `room` to be
+absent for the pre-rewrite receive shape. Both predicates retain
+`additionalProperties: false` and reject empty declared strings.
+
+Rust applies WebSocket frame/message caps and typed Serde parsing. The extension
+configures `ws.maxPayload`, checks raw size before `JSON.parse`, then uses the
+generated outer/control/cross-PC predicates before base64 decoding. The relay
+transport owns that decode once and publishes the same typed ingress object to
+owner, peer-channel, and cross-PC subscribers. Flutter checks raw UTF-8 length
+before `jsonDecode` and routes generated relay DTOs before base64 decoding, but
+its WebSocket API cannot cap the platform's initial message allocation. Relay
+deployment overrides do not raise the endpoints' generated 4 MiB safety
+default.
 
 ### Cockpit↔pi control RPC
 
