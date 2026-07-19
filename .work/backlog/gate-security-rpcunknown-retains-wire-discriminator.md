@@ -1,0 +1,37 @@
+---
+id: gate-security-rpcunknown-retains-wire-discriminator
+created: 2026-07-19
+updated: 2026-07-19
+tags: [cockpit, security]
+---
+
+# RpcUnknown retains arbitrary wire discriminator text
+
+## Source
+
+Parked from the `standard`-weight cross-model review of
+`feature-redact-secrets-from-diagnostic-surfaces` (2026-07-19). Lower-risk
+finding — not a present diagnostic exposure.
+
+## Finding
+
+`cockpit/lib/app/cockpit/data/adapters/rpc_event_mapper.dart` (lines ~79, 162,
+234, 276) retains arbitrary `type`/`customType`/`method`/nested event types in
+`RpcUnknown.type`, despite the redaction feature's documentation saying raw wire
+content is not retained. `AgentSession` currently ignores these events, so this
+is NOT a present diagnostic exposure — no log/transcript surface consumes
+`RpcUnknown.type` today.
+
+## Risk rationale (why parked, not fixed this cycle)
+
+No present consumer logs or displays `RpcUnknown.type`; the redaction feature's
+scope was the three named diagnostic surfaces (outbound previews, raw RPC logs,
+raw stderr). Replacing arbitrary values with fixed unknown categories is a
+defensive hardening of a non-exposed surface. A future consumer that logs or
+displays the supposedly safe category would create the exposure.
+
+## Recommended direction
+
+When adopting: replace arbitrary `RpcUnknown.type`/`customType`/`method` with
+fixed unknown categories (e.g. `unknown_event`, `unknown_method`) at the mapper
+boundary, preserving the routing fact without the raw discriminator string.

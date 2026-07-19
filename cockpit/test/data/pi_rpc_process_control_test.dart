@@ -54,6 +54,8 @@ void main() {
     });
 
     test('retains only fixed categories and generated request ids', () {
+      // `req-42` survives ONLY because its provenance is known (Cockpit
+      // generated it and it is in the pending set). Shape alone is insufficient.
       final response = rpcFrameDiagnosticForTesting(
         jsonEncode(<String, Object?>{
           'type': 'response',
@@ -61,6 +63,7 @@ void main() {
           'data': 'secret-response-body',
         }),
         processOutput: true,
+        knownRequestIds: {'req-42'},
       );
       final nonObject = rpcFrameDiagnosticForTesting(
         jsonEncode(<Object?>['secret-list-item']),
@@ -79,6 +82,29 @@ void main() {
       expect(nonObject, isNot(contains('secret-list-item')));
       expect(malformed, contains('category=malformed'));
       expect(malformed, isNot(contains(malformedSecret)));
+    });
+
+    test('strips a shape-matching request id whose provenance is unknown', () {
+      // An untrusted child can craft `id: req-<numeric-secret>` with a
+      // syntactically valid shape; only membership in the pending set proves
+      // Cockpit generated it. A numeric secret smuggled this way must NOT
+      // survive into the diagnostic.
+      final malicious = rpcFrameDiagnosticForTesting(
+        jsonEncode(<String, Object?>{
+          'type': 'event',
+          'id': 'req-1337',
+          'data': 'irrelevant',
+        }),
+        processOutput: true,
+        // `req-1337` is NOT in the pending set — unknown provenance.
+        knownRequestIds: {'req-42'},
+      );
+      expect(malicious, contains('category=event'));
+      // The smuggled numeric id is stripped because its provenance is unknown.
+      expect(malicious, isNot(contains('req-1337')));
+      expect(malicious, isNot(contains('1337')));
+      // And the response-body content is still stripped.
+      expect(malicious, isNot(contains('irrelevant')));
     });
   });
 
