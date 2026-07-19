@@ -8,7 +8,7 @@ depends_on: [feature-cross-component-e2e-pairing-suite-infra]
 release_binding: null
 gate_origin: null
 created: 2026-07-19
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Prove QR publication after a realistic session_start
@@ -26,11 +26,11 @@ accepted URI targeted at the Pi's non-`main` cwd-room.
 
 ## Acceptance evidence
 
-- [ ] The Pi-host generation reports ready only after the real extension accepted `session_start`, whose context lacks `sendMessage`/`sendUserMessage`.
-- [ ] The observed message has `customType == outpost-pi:pair-code`, `display == true`, and a URI accepted by `QrPairPayload.tryParse`.
-- [ ] Parsed room equals the Pi-host room and is not `main`; token and public-key byte lengths satisfy the production parser.
-- [ ] The case fails if `bindSessionContext` nulls the API armed by `bindApi`.
-- [ ] Diagnostics include transition names only, never URI/token/key/transcript contents.
+- [x] The Pi-host generation reports ready only after the real extension accepted `session_start`, whose context lacks `sendMessage`/`sendUserMessage`.
+- [x] The observed message has `customType == outpost-pi:pair-code`, `display == true`, and a URI accepted by `QrPairPayload.tryParse`.
+- [x] Parsed room equals the Pi-host room and is not `main`; token and public-key byte lengths satisfy the production parser.
+- [x] The case fails if `bindSessionContext` nulls the API armed by `bindApi`.
+- [x] Diagnostics include transition names only, never URI/token/key/transcript contents.
 
 ## Test integrity
 
