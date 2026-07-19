@@ -478,6 +478,28 @@ class ChatViewModel extends ViewModel<ChatState> {
   /// Request authoritative replay after a local persistence warning.
   void retryPersistenceSync() => _sync.requestSync();
 
+  /// Rehydrate the retained route from local storage, then request replay.
+  ///
+  /// Visible history is never cleared while the read or network sync is in
+  /// flight. A newer generation, session switch, or disposal suppresses the
+  /// completion before it can mutate state.
+  Future<void> refreshOnResume() async {
+    final generation = _generation;
+    final ref = _activeSessionRef;
+    if (ref == null || !_isCurrentRun(generation)) return;
+
+    try {
+      final rows = await _read.readMessages(ref);
+      if (!_isCurrentRun(generation) || _activeSessionRef != ref) return;
+      _onMessages(rows);
+    } on Object {
+      // Keep the last visible projection. Authoritative replay remains the
+      // recovery path for a transient local-read failure.
+    }
+    if (!_isCurrentRun(generation) || _activeSessionRef != ref) return;
+    _sync.requestSync();
+  }
+
   Future<void> reconnect() async {
     final peer = _activePeer;
     if (peer == null) return;

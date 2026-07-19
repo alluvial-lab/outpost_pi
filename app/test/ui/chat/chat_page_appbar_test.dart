@@ -48,6 +48,23 @@ class _FakeStorage extends PairingStorage {
   Future<PeerRecord?> loadPeer(String epk) async => null;
 }
 
+class _CountingChatViewModel extends ChatViewModel {
+  _CountingChatViewModel(
+    super.read,
+    super.sync,
+    super.conn,
+    super.prefs,
+    super.storage,
+  );
+
+  int resumeRefreshes = 0;
+
+  @override
+  Future<void> refreshOnResume() async {
+    resumeRefreshes += 1;
+  }
+}
+
 class _FakeSecureStorage implements FlutterSecureStorage {
   @override
   Future<String?> read({
@@ -97,7 +114,13 @@ void main() {
       final read = SessionReadRepository(boxes);
       final prefs = Preferences(_FakeSecureStorage()); // no selected peer
       final actions = ActionsRepository(conn);
-      final vm = ChatViewModel(read, sync, conn, prefs, _FakeStorage());
+      final vm = _CountingChatViewModel(
+        read,
+        sync,
+        conn,
+        prefs,
+        _FakeStorage(),
+      );
       final voice = VoiceInputViewModel(_FakeSpeech());
       final attach = AttachmentViewModel(_FakePicker(), actions);
       final sel = SessionSelection();
@@ -135,6 +158,19 @@ void main() {
       // Status dot uses initialOnline before the runtime resolves → shows
       // "online" immediately instead of flashing offline/reconnecting.
       expect(find.text('online'), findsOneWidget);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(
+        vm.resumeRefreshes,
+        1,
+        reason: 'the mounted route owns resume hydration',
+      );
 
       // Unmount + dispose in-body (the framework's pending-timer check runs
       // before addTearDown; conn's watchdog must be cancelled here).
