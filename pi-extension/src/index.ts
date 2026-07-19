@@ -54,6 +54,7 @@ import type {
   ThinkingLevel,
 } from "./protocol/types.js";
 import type { RelayControlFrame } from "./protocol/generated/protocol.generated.js";
+import type { DecodedRelayIngress } from "./protocol/relay_ingress.js";
 import type { TranscriptEvent } from "./session/transcript_event.js";
 import {
   deterministicTranscriptEventId,
@@ -314,8 +315,8 @@ let _stopOwnerControl: (() => void) | null = null;
 
 function _ensureOwnerIngressListener(): void {
   if (!_stopOwnerIngress) {
-    _stopOwnerIngress = _relayTransport.onOuterMessage((line, isCurrent) => {
-      void _handleOwnerOuterLine(line, isCurrent);
+    _stopOwnerIngress = _relayTransport.onOuterMessage((ingress, isCurrent) => {
+      void _handleOwnerOuterFrame(ingress, isCurrent);
     });
   }
   if (!_stopOwnerControl) {
@@ -349,12 +350,12 @@ function _handleRelayControlFrame(frame: RelayControlFrame): void {
   }
 }
 
-async function _handleOwnerOuterLine(
-  line: string,
+async function _handleOwnerOuterFrame(
+  ingress: Extract<DecodedRelayIngress, { kind: "outer" }>,
   connectionIsCurrent: () => boolean,
 ): Promise<void> {
-  await _owners.handleOuterLine({
-    line,
+  await _owners.handleOuterFrame({
+    ingress,
     roomId: _myRoomId ?? undefined,
     turnActive: () => _turnProjection().working,
     isCurrent: () => !_disposed && _state === "started" && connectionIsCurrent(),

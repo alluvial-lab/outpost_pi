@@ -5,6 +5,7 @@ import type {
 } from "../protocol/generated/protocol.generated.js";
 import {
   decodeRelayIngress,
+  type DecodedRelayIngress,
   type RelayServerControlFrame,
 } from "../protocol/relay_ingress.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
@@ -14,6 +15,10 @@ import {
   reachabilityBackoffMs,
 } from "../reachability/reachability_contract.js";
 import type { RelayClient, RoomMeta } from "../transport/relay_client.js";
+import {
+  claimRelayIngressFanout,
+  publishRelayIngress,
+} from "../transport/relay_ingress_fanout.js";
 import { PlainPeerChannel } from "../transport/peer_channel.js";
 import type {
   CrossPcBridgeInput,
@@ -102,8 +107,9 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   let isDisposed: (() => boolean) | null = null;
   let onUnexpectedClose: (() => void) | null = null;
   let onConnected: ((relay: RelayClient) => void | Promise<void>) | null = null;
+  type DecodedOuterIngress = Extract<DecodedRelayIngress, { kind: "outer" }>;
   const outerMessageHandlers = new Set<(
-    line: string,
+    ingress: DecodedOuterIngress,
     isCurrent: () => boolean,
   ) => void | Promise<void>>();
   const controlFrameHandlers = new Set<(frame: RelayControlFrame) => void | Promise<void>>();
@@ -112,6 +118,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     generation: number;
     onMessage(line: string): void;
     onClose(): void;
+    releaseIngressFanout(): void;
   };
   let relayBinding: RelayBinding | null = null;
   let nextRelayGeneration = 1;
@@ -166,8 +173,13 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     const binding = {
       relay: next,
       generation: nextRelayGeneration++,
-      onMessage: (line: string) => dispatchRelayMessage(line, () => connectionIsCurrent(binding)),
+      onMessage: (line: string) => dispatchRelayMessage(
+        next,
+        line,
+        () => connectionIsCurrent(binding),
+      ),
       onClose: () => onRelayClose(binding),
+      releaseIngressFanout: claimRelayIngressFanout(next),
     } satisfies RelayBinding;
     relayBinding = binding;
     next.on("message", binding.onMessage);
@@ -180,6 +192,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     relayBinding = null;
     current.off("close", binding.onClose);
     current.off("message", binding.onMessage);
+    binding.releaseIngressFanout();
   }
 
   function clearReconnectTimer(): void {
@@ -304,7 +317,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   }
 
   function onOuterMessage(
-    handler: (line: string, isCurrent: () => boolean) => void | Promise<void>,
+    handler: (ingress: DecodedOuterIngress, isCurrent: () => boolean) => void | Promise<void>,
   ): () => void {
     outerMessageHandlers.add(handler);
     return () => {
@@ -319,8 +332,12 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     };
   }
 
-  function dispatchRelayMessage(line: string, isCurrent: () => boolean): void {
-    let decoded;
+  function dispatchRelayMessage(
+    source: RelayClient,
+    line: string,
+    isCurrent: () => boolean,
+  ): void {
+    let decoded: DecodedRelayIngress;
     try {
       decoded = decodeRelayIngress(line);
     } catch {
@@ -330,13 +347,12 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
       for (const handler of controlFrameHandlers) {
         void handler(decoded.frame);
       }
-      return;
-    }
-    if (decoded.kind === "outer") {
+    } else if (decoded.kind === "outer") {
       for (const handler of outerMessageHandlers) {
-        void handler(line, isCurrent);
+        void handler(decoded, isCurrent);
       }
     }
+    publishRelayIngress(source, decoded);
   }
 
   function createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel {

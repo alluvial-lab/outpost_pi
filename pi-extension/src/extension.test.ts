@@ -717,7 +717,7 @@ describe("state machine + pair_request flow", () => {
       .map(decodeSentCt)
       .filter((d) => d.peer === APP_PEER_ID && d.inner.type === "pong" && d.inner["in_reply_to"] === "ping-reconnect");
     expect(pongs).toHaveLength(1);
-    expect(relayRef.current!.listenerCount("message")).toBe(2);
+    expect(relayRef.current!.listenerCount("message")).toBe(1);
   });
 
   test("unknown peer non-pair message → state stays started, no peer added", async () => {
@@ -5376,7 +5376,7 @@ describe("relay reconnect", () => {
       }));
       await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
       expect(_hasActivePeerForTest(APP_PEER_ID)).toBe(true);
-      expect(relayInstances[0]!.listenerCount("message")).toBe(2);
+      expect(relayInstances[0]!.listenerCount("message")).toBe(1);
 
       relayInstances[0]!.emit("close");
       expect(outpostPiTestHarness.state()).toBe("started");
@@ -5397,7 +5397,7 @@ describe("relay reconnect", () => {
         .map(decodeSentCt)
         .filter((d) => d.peer === APP_PEER_ID && d.inner.type === "pong" && d.inner["in_reply_to"] === "after-reconnect");
       expect(pongs).toHaveLength(1);
-      expect(relayInstances[1]!.listenerCount("message")).toBe(2);
+      expect(relayInstances[1]!.listenerCount("message")).toBe(1);
     } finally {
       vi.useRealTimers();
     }
