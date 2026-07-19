@@ -2318,12 +2318,23 @@ async function _attemptUserDeliveryOnce(prepared: PreparedUserDelivery, attemptS
     prepared.label,
     prepared.shouldSteer ? "steer" : undefined,
   );
+  // Project the wake failure to a fixed category for the debug log only. The
+  // raw `wake.detail` (err.message) can carry prompt/token text from a
+  // provider error; persisting it to delivery.log would violate the
+  // metadata-only diagnostic contract. The app-facing delivery error
+  // (_sendDeliveryError below) keeps its message — this projection is
+  // diagnostic-surface-only.
+  const wakeDetailCategory = wake.ok
+    ? "ok"
+    : wake.recoverable
+      ? "recoverable_not_bound_or_stale"
+      : "send_failed";
   _deliveryDebugLog.log({
     tag: "wake_outcome",
     id: prepared.msg.id,
     ok: wake.ok,
     recoverable: wake.recoverable ?? false,
-    detail: wake.detail ?? "",
+    detail: wakeDetailCategory,
     messageApiArmed: _sdkSessionProjection.messageApiBinding() !== null,
     roomId: _myRoomId ?? undefined,
   });

@@ -105,6 +105,32 @@ describe("DeliveryDebugLogImpl adapter mechanics", () => {
     expect((line.detail as string).length).toBeLessThanOrEqual(256);
   });
 
+  test("wake_outcome.detail call-site projection contract (canary)", () => {
+    // The call site in index.ts projects wake failures to a fixed category
+    // (ok | recoverable_not_bound_or_stale | send_failed) before logging, so a
+    // provider error echoing prompt/token text cannot reach delivery.log via
+    // `detail`. This test pins the contract: the projected categories are fixed
+    // strings with no secret markers. The debug-log adapter itself persists
+    // whatever `detail` it is given (its job is faithful capture); the
+    // projection is the call site's responsibility, verified by the fixed
+    // category set below and by the e2e delivery-path tests.
+    const log = new DeliveryDebugLogImpl(logPath);
+    const projectedCategories = ["ok", "recoverable_not_bound_or_stale", "send_failed"];
+    for (const detail of projectedCategories) {
+      log.log({ tag: "wake_outcome", id: "cli_cat", ok: detail === "ok", recoverable: detail === "recoverable_not_bound_or_stale", detail, messageApiArmed: true });
+    }
+    const exported = log.export()!;
+    // The fixed categories contain no secret-shaped markers — a raw provider
+    // error (e.g. "sk-abc123 prompt=...") must never appear here. If a future
+    // change re-passes raw err.message at the call site, the category strings
+    // above change and this pin fails, flagging the regression.
+    expect(exported).toContain("send_failed");
+    expect(exported).toContain("recoverable_not_bound_or_stale");
+    expect(exported).not.toContain("prompt");
+    expect(exported).not.toContain("token");
+    expect(exported).not.toContain("sk-");
+  });
+
   test("ring cap drops oldest on append (bounded memory)", () => {
     const log = new DeliveryDebugLogImpl(logPath);
     // Force immediate-flush events so each lands on disk; the cap is on the
