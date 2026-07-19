@@ -830,7 +830,9 @@ function _turnProjection(): TurnProjection {
 }
 
 function _applyTurnAndPublish(event: TurnEvent): TurnProjection {
-  return _sdkSessionProjection.applyTurn(event);
+  const projection = _sdkSessionProjection.applyTurn(event);
+  if (event.type === "turn_end") _owners.completeOfflineTurn();
+  return projection;
 }
 
 function _resetTurnSnapshot(): void {
@@ -1576,6 +1578,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
         _syncOwnerPresenceSubscription();
       },
       broadcast: (message) => _owners.broadcast(message),
+      completeOfflineTurn: () => _owners.completeOfflineTurn(),
       routeFrom: (sender, message) => _owners.routeFrom(sender, message),
       lateAttachTargets: () => _owners.lateAttachTargets(),
     },

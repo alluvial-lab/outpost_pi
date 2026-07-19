@@ -1,7 +1,7 @@
 ---
 id: feature-outbound-buffer-on-peer-offline-turn-boundary-wiring
 kind: story
-stage: drafting
+stage: done
 tags: [pi-extension, lifecycle]
 parent: feature-outbound-buffer-on-peer-offline
 depends_on: [feature-outbound-buffer-on-peer-offline-bounded-turn-buffer]
@@ -27,10 +27,21 @@ turns from duplicated `ServerMessage.type` lists.
 
 ## Acceptance criteria
 
-- [ ] `OwnerMultiplexerPort` and the composition adapter expose
+- [x] `OwnerMultiplexerPort` and the composition adapter expose
       `completeOfflineTurn()`.
-- [ ] Normal SDK turns and synthetic compaction turns seal the buffer through
+- [x] Normal SDK turns and synthetic compaction turns seal the buffer through
       the existing `_applyTurnAndPublish({ type: "turn_end" })` path.
-- [ ] The multiplexer does not introduce a second turn-state machine or a
+- [x] The multiplexer does not introduce a second turn-state machine or a
       handwritten registry of terminal server-message variants.
-- [ ] No protocol, relay, app, or persistence contract changes.
+- [x] No protocol, relay, app, or persistence contract changes.
+
+## Implementation
+
+Added `completeOfflineTurn()` to the owner port and composition adapter. The
+existing `_applyTurnAndPublish` helper now seals offline intervals only for its
+canonical `TurnEvent.type === "turn_end"` branch, so both SDK turn completion
+and synthetic compaction completion share the reducer-owned boundary without
+re-enumerating server-message variants.
+
+Verification: `./node_modules/.bin/tsc --noEmit`; focused SDK `turn_end`
+working-convergence Vitest.
