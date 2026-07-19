@@ -136,6 +136,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 1));
       final sent = s.ch.sent.single as SessionNew;
       expect(sent.toJson()['type'], 'session_new');
+      expect(sent.sessionId, 'session-actions');
       s.ch.push(
         ActionOk(
           inReplyTo: sent.id,
@@ -144,6 +145,32 @@ void main() {
         ),
       );
       await future;
+      s.cm.dispose();
+    });
+
+    test('newSession() rejects on a matching action_error', () async {
+      final s = await _setup();
+      final future = s.repo.newSession();
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+      final sent = s.ch.sent.single as SessionNew;
+      s.ch.push(
+        ActionError(
+          inReplyTo: sent.id,
+          action: ActionName.sessionNew,
+          rawAction: 'session_new',
+          error: 'new session unavailable',
+        ),
+      );
+      expect(
+        () => future,
+        throwsA(
+          isA<ActionFailure>().having(
+            (e) => e.message,
+            'message',
+            'new session unavailable',
+          ),
+        ),
+      );
       s.cm.dispose();
     });
 
