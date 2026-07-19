@@ -64,41 +64,6 @@ Updated 2026-06-09.
 
 ---
 
-## Relay ingress limits and generated decoding
-
-`protocol/schema/relay-outer.schema.json` is the authority for relay envelope
-shape and ingress limits. Protocol codegen projects the same contract into the
-extension, app, and relay rather than letting each transport maintain a local
-DTO or numeric mirror:
-
-- decoded `ct` payload default: **4 MiB** (4,194,304 bytes);
-- raw relay message ceiling: **5,657,944 bytes**, derived as
-  `4 * ceil(4 MiB / 3) + 64 KiB`;
-- each pre-auth `hello` or `auth` message: **16 KiB**;
-- UTF-8 metadata ceilings: `device_id` 128 bytes, `room_id` 256, room name
-  256, cwd 4,096, session id 512, model 256, and thinking 32.
-
-The rejection order is part of the boundary contract. The relay checks raw
-message size before Serde and estimates opaque `ct` size without decoding it.
-The extension configures `ws.maxPayload`, checks raw UTF-8 size before
-`JSON.parse`, validates relay outer/control/cross-PC objects with
-schema-generated parsers (including required/non-empty fields and
-`additionalProperties: false`), then checks encoded size before base64 and the
-decoded size afterward. The app performs the same raw-before-JSON and
-encoded-before-base64 ordering through generated relay DTOs. Flutter's client
-WebSocket API cannot set an underlying message-allocation cap, so the app bound
-starts after the platform has materialized the inbound String; it still bounds
-JSON/base64 work.
-
-A WebSocket implementation-level oversize closes the connection (1009 where
-the stack exposes the close code). A malformed or oversized authenticated
-payload is dropped with a content-free category/byte-count diagnostic rather
-than logging the frame. Raising the relay's `RELAY_MAX_CT_MIB` routing allowance
-does not raise the extension or app's generated 4 MiB endpoint default; a
-larger endpoint contract requires future capability negotiation.
-
----
-
 ## Envelope
 
 A single format for the entire system. It works locally (UDS) and cross-PC (relay forwarding).
