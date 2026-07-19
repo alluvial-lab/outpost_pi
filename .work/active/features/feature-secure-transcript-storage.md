@@ -1,7 +1,7 @@
 ---
 id: feature-secure-transcript-storage
 kind: feature
-stage: implementing
+stage: review
 tags: [app, security]
 parent: null
 depends_on: []
@@ -287,6 +287,15 @@ final class TranscriptStorageMigrator {
 - **Store integration test**: write/read through `HiveTranscriptEventStore` after a restart with the same key and assert the on-disk bytes do not contain a known plaintext sentinel.
 - **Sync regression**: protect activation-time rebuilding of encrypted `msgs` from the migrated event log.
 - Keep existing event-store ordering/dedupe tests; update their bootstrap helper to inject a fixed test key. No test is removed merely to accommodate encryption.
+
+## Implementation
+- Landed collision-resistant SHA-256 v3 box identities, one platform-secured AES key for every transcript-bearing box, and a blocking legacy migration before dependency setup and `runApp`.
+- The migration treats the canonical plaintext index as its manifest, partitions collided event logs only by an unambiguous embedded `session_id`, converts unique projection-only history into deterministic canonical events, and rejects malformed, ambiguous, or conflicting data without deleting sources.
+- Copy/verify/delete/mark is restart-safe across both partial destination writes and partial multi-box deletion. A temporary content-free copy-verified phase marker is removed before the final `migration_version = 3` completion write; normal services never open or write legacy names.
+- Existing SyncService activation already rebuilds disposable encrypted `msgs` projections from migrated event logs, so no compatibility reader, double-write path, or concurrent `sync_service.dart` edit was required.
+- Integrated verification: the focused migration/storage command passed 32 tests, the migration file-backed Hive suite passed all 8 idempotency/collision/projection/fail-closed/crash-resume tests, and analyzer coverage over every touched Dart file reported no issues.
+- Authoritative `flutter test --no-pub` completed with 762 passing tests and 3 unrelated failures: the pre-existing SyncService compaction-convergence baseline plus concurrent uncommitted debug-capture and QR-e2e work outside this feature. No storage/migration test failed. Full-repo analyze was likewise obstructed by unrelated package-example/debug-capture errors; touched-file analysis is green.
+- Device smoke was not run. The data-loss-sensitive paths use real temporary file-backed Hive databases with AES, close/reopen restarts, exact destination re-read, injected copy/deletion crashes, and source-file deletion; the platform-specific secure-key lifecycle was verified by the preceding checkpoint, leaving no device-only migration blocker.
 
 ## Risks
 
