@@ -3,7 +3,6 @@ import type { RelayClient } from "./relay_client.js";
 import type { Envelope } from "../session/envelope.js";
 import type {
   CrossPcFramePiEnvelope,
-  CrossPcFramePiEnvelopeIn,
   RelayControlFrameRoomAnnounced,
   RelayControlFrameRoomEnded,
   RelayControlFrameRooms,
@@ -11,6 +10,7 @@ import type {
   RelayControlFrameSubscribeRooms,
 } from "../protocol/generated/protocol.generated.js";
 import { crossPcTypes } from "../protocol/generated/protocol.generated.js";
+import { decodeRelayIngress } from "../protocol/relay_ingress.js";
 
 /** Discriminator values derived from the generated `crossPcTypes` registry —
  *  the single source of truth for cross-PC frame type strings. */
@@ -106,103 +106,34 @@ export class PiForwardClient extends EventEmitter<PiForwardClientEvents> {
 
   private _handleLine(line: string): void {
     if (this.detached) return;
-    let parsed: unknown;
+    let decoded;
     try {
-      parsed = JSON.parse(line);
+      decoded = decodeRelayIngress(line);
     } catch {
       return;
     }
-    if (!isRecord(parsed) || typeof parsed.type !== "string") return;
 
-    if (parsed.type === PI_ENVELOPE_IN_TYPE) {
-      const o = parsed as Partial<CrossPcFramePiEnvelopeIn>;
-      if (
-        typeof o.from_pc !== "string" ||
-        typeof o.to_room !== "string" ||
-        o.to_room.length === 0 ||
-        !o.envelope ||
-        typeof o.envelope !== "object"
-      ) return;
-
-      // Cheap shape check — full envelope parse happens downstream in broker_remote.
-      const env = o.envelope as Envelope;
-      if (typeof env.from !== "string" || typeof env.id !== "string") return;
+    if (decoded.kind === "cross_pc" && decoded.frame.type === PI_ENVELOPE_IN_TYPE) {
       if (this.detached) return;
-      this.emit("envelope", env, o.from_pc, o.to_room);
+      this.emit(
+        "envelope",
+        decoded.frame.envelope as Envelope,
+        decoded.frame.from_pc,
+        decoded.frame.to_room,
+      );
       return;
     }
+    if (decoded.kind !== "control" || this.detached) return;
 
-    if (parsed.type === "rooms") {
-      const frame = parseRoomsFrame(parsed);
-      if (frame && !this.detached) this.emit("rooms", frame);
-      return;
-    }
-
-    if (parsed.type === "room_announced") {
-      const frame = parseRoomAnnouncedFrame(parsed);
-      if (frame && !this.detached) this.emit("room_announced", frame);
-      return;
-    }
-
-    if (parsed.type === "room_ended") {
-      const frame = parseRoomEndedFrame(parsed);
-      if (frame && !this.detached) this.emit("room_ended", frame);
+    switch (decoded.frame.type) {
+      case "rooms":
+        this.emit("rooms", decoded.frame);
+        return;
+      case "room_announced":
+        this.emit("room_announced", decoded.frame);
+        return;
+      case "room_ended":
+        this.emit("room_ended", decoded.frame);
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function hasRoomIdentity(value: unknown): value is Record<string, unknown> & {
-  room_id: string;
-  started_at: number;
-} {
-  return isRecord(value) &&
-    typeof value.room_id === "string" &&
-    value.room_id.length > 0 &&
-    Number.isInteger(value.started_at) &&
-    (value.started_at as number) >= 0;
-}
-
-function hasOptionalString(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || typeof value[key] === "string";
-}
-
-function isLiveRoom(value: unknown): boolean {
-  if (!hasRoomIdentity(value) || typeof value.working !== "boolean") return false;
-  return ["name", "cwd", "session_id", "model", "thinking"]
-    .every((key) => hasOptionalString(value, key));
-}
-
-function parseRoomsFrame(value: Record<string, unknown>): RelayControlFrameRooms | null {
-  if (typeof value.peer !== "string" || value.peer.length === 0 || !Array.isArray(value.rooms)) {
-    return null;
-  }
-  if (!value.rooms.every(isLiveRoom)) return null;
-  return value as unknown as RelayControlFrameRooms;
-}
-
-function parseRoomAnnouncedFrame(
-  value: Record<string, unknown>,
-): RelayControlFrameRoomAnnounced | null {
-  if (
-    typeof value.peer !== "string" ||
-    value.peer.length === 0 ||
-    !isLiveRoom(value)
-  ) return null;
-  return value as unknown as RelayControlFrameRoomAnnounced;
-}
-
-function parseRoomEndedFrame(value: Record<string, unknown>): RelayControlFrameRoomEnded | null {
-  if (
-    typeof value.peer !== "string" ||
-    value.peer.length === 0 ||
-    typeof value.room_id !== "string" ||
-    value.room_id.length === 0 ||
-    !Number.isInteger(value.since_ts) ||
-    (value.since_ts as number) < 0
-  ) return null;
-  return value as unknown as RelayControlFrameRoomEnded;
 }
