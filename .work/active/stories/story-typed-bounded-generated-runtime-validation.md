@@ -1,7 +1,7 @@
 ---
 id: story-typed-bounded-generated-runtime-validation
 kind: story
-stage: drafting
+stage: done
 tags: [pi-extension, app, relay, protocol, refactor]
 parent: feature-typed-bounded-relay-decoding
 depends_on: []
@@ -55,19 +55,19 @@ pre-auth) is the likely approach — design it explicitly rather than ad-hoc.
 
 ## Acceptance criteria
 
-- [ ] Generated runtime validation predicates for outer + cross-PC frames exist
+- [x] Generated runtime validation predicates for outer + cross-PC frames exist
       (emitted by `tools/protocol-codegen`), enforcing `additionalProperties: false`
       + nonempty constraints, with a compat profile for the room-optional pre-auth
       shape.
-- [ ] `relay_ingress.ts` consumes the generated predicates; the hand-written
+- [x] `relay_ingress.ts` consumes the generated predicates; the hand-written
       `isEnvelope`/`parseCrossPc`/`parseOuter` are removed.
-- [ ] `peer_channel.ts` `OuterEnvelope` mirror removed in favor of the generated
+- [x] `peer_channel.ts` `OuterEnvelope` mirror removed in favor of the generated
       type.
-- [ ] `.agents/skills/pi-extension-typescript/SKILL.md` updated to current-state.
-- [ ] `PROTOCOL.md` + `docs/ARCHITECTURE.md` + `.agents/skills/flutter-mobile/SKILL.md`
+- [x] `.agents/skills/pi-extension-typescript/SKILL.md` updated to current-state.
+- [x] `PROTOCOL.md` + `docs/ARCHITECTURE.md` + `.agents/skills/flutter-mobile/SKILL.md`
       decode-path descriptions updated.
-- [ ] Codegen test pins the generated predicates.
-- [ ] All three stacks green: relay `cargo clippy -D warnings` + `cargo test`;
+- [x] Codegen test pins the generated predicates.
+- [x] All three stacks green: relay `cargo clippy -D warnings` + `cargo test`;
       pi-ext `tsc --noEmit` + `vitest run`; app `PUB_CACHE=<repo>/.pub-cache flutter test --no-pub test/data/transport/ test/protocol_codegen/ test/data/debug/debug_capture_routing_test.dart`.
 
 ## Verification
@@ -84,3 +84,57 @@ cd ../app && PUB_CACHE=/home/agent/projects/outpost_pi/.pub-cache flutter test -
 The feature's correctness is verified green; this is SSOT-completion hardening
 (scan-protocol-contract single-source-of-truth). Tracking it as an active story
 keeps the debt visible and pickable rather than burying it in a "blocked" feature.
+
+## Implementation
+
+Implemented as one direct-read worker pass with no nested delegation, per the
+caller boundary. The story advanced `drafting → implementing → done`; as a child
+story it skips an independent review after green verification.
+
+### Generated-validation and compatibility design
+
+The canonical JSON Schema remains strict: `relay-outer.schema.json` still
+requires non-empty `peer`, `room`, and `ct` and declares
+`additionalProperties: false`. Its `x-outpost-pi.profileOptional.compat`
+metadata names `room` as the sole compatibility relaxation. Protocol codegen
+now derives two TypeScript projections from that one schema:
+
+- `RelayOuterEnvelope` / `isRelayOuterEnvelope` preserve the strict,
+  room-required canonical sender shape.
+- `RelayOuterEnvelopeCompat` / `isRelayOuterEnvelopeCompat` accept the
+  room-optional pre-rewrite receive shape, while still rejecting an empty
+  present room, empty peer/ct, and unknown properties.
+
+This keeps compatibility explicit rather than weakening the schema or the
+strict outbound path. `PlainPeerChannel` now constructs its outbound frame as
+the generated strict `RelayOuterEnvelope`; the live relay ingress uses the
+generated compatibility predicate at its endpoint boundary.
+
+The same generator now emits `isCrossPcFrame` from `cross-pc.schema.json` and
+its referenced generic-envelope schema. Array generation honors `minItems` and
+`maxItems`, so recipient arrays cannot be empty; `re` inherits its schema
+`minLength: 1`; and `additionalProperties: false` applies at top-level and
+nested object boundaries. `relay_ingress.ts` removed `isEnvelope`,
+`parseCrossPc`, and `parseOuter`, uses generated predicates for outer,
+cross-PC, post-auth control, and challenge frames, and retains the existing
+single-decode typed fanout. The local `OuterEnvelope` mirror in
+`peer_channel.ts` is gone.
+
+Commits:
+
+- `040746e` — generated strict/compat outer predicates, cross-PC predicate,
+  array cardinality validation, regenerated TypeScript, and codegen tests.
+- `7075b07` — live extension consumption, handwritten guard/mirror removal,
+  and ingress regressions.
+- `677369f` — current-state protocol, architecture, and stack references.
+
+### Verification
+
+- `tools/protocol-codegen`: authoritative Vitest command passed 1 file / 5
+  tests; the existing protocol-package Node test entry also passed all 5, and
+  the generated TypeScript stale check passed.
+- `pi-extension`: `tsc --noEmit` passed with zero errors; full Vitest passed 52
+  files, 880 tests passed, 3 skipped.
+- `relay`: `cargo clippy -- -D warnings` passed; `cargo test` passed 208 tests
+  across unit/integration suites, with zero failures.
+- `app`: focused authoritative Flutter command passed all 64 tests.
