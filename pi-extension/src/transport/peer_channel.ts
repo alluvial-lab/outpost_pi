@@ -2,6 +2,7 @@ import {
   decodeRelayClientPayload,
   type DecodedRelayIngress,
 } from "../protocol/relay_ingress.js";
+import type { RelayOuterEnvelope } from "../protocol/generated/protocol.generated.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
 import type { RelayClient } from "./relay_client.js";
 import { subscribeRelayIngress } from "./relay_ingress_fanout.js";
@@ -23,27 +24,6 @@ export interface PeerChannel {
  * that (its `activeRoom` is set to the Pi's room after pairing).
  */
 const APP_DESTINATION_ROOM = "main";
-
-/**
- * Outer envelope shape forwarded by the relay.
- * { "peer": "<dest peer_id>", "room": "<dest room_id>", "ct": "<base64 JSON inner>" }
- *
- * Post rollback (plan 06): `ct` is base64(JSON.stringify(inner)) — no cipher,
- * no MAC. Relay continues opaque (never JSON.parses ct).
- *
- * `room` (relay-0.2.0 paired wire change): REQUIRED on every outbound frame —
- * `relay/src/protocol/generated/outer.rs` derives `pub room: String` (non-optional,
- * `deny_unknown_fields`), so a frame missing `room` is rejected with
- * `invalid json: missing field room` and dropped. It is the DESTINATION room
- * (where the app registered) used for `(peer, room)` routing, NOT the sender's
- * room (the relay overwrites the delivered frame's `room` with the sender's auth
- * room for anti-spoof).
- */
-interface OuterEnvelope {
-  peer: string;
-  room: string;
-  ct: string;
-}
 
 /**
  * Plaintext PeerChannel backed by a RelayClient WebSocket.
@@ -77,7 +57,11 @@ export class PlainPeerChannel implements PeerChannel {
     // `room` is the DESTINATION room (the app's auth room, "main") so the
     // relay routes to the app's `(peer, "main")` connection. relay-0.2.0
     // requires this field (rejects `{peer, ct}` with `missing field room`).
-    const outer: OuterEnvelope = { peer: this.remotePeerId, room: APP_DESTINATION_ROOM, ct };
+    const outer: RelayOuterEnvelope = {
+      peer: this.remotePeerId,
+      room: APP_DESTINATION_ROOM,
+      ct,
+    };
     // Best-effort delivery. The relay WS can be mid-reconnect (idle/NAT drop, or
     // a session_new/session-replacement teardown) when we push a server→app frame
     // — notably the action_ok/action_error ack a handler emits right after
