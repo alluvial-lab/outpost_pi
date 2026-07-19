@@ -9,7 +9,7 @@ depends_on:
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Reconnect reproduction & attribution (observation workstream)
@@ -200,7 +200,7 @@ pub(crate) fn insert(
     peer_id: &str,
     room_id: &str,
     device_id: &str,
-    tx: mpsc::UnboundedSender<Message>,
+    tx: mpsc::Sender<Message>,
 ) -> ConnectionInsert;
 ```
 
@@ -235,7 +235,6 @@ const MsgSendEvent({
   required super.ts,
   required this.id,
   this.blocked,
-  this.preview,
 }) : super(tag: DebugTag.msgSend);
 ```
 
