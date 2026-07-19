@@ -86,7 +86,6 @@ Future<({_FakeRepo repo, List<int> resetCalls})> _openSheet(
     ..failCompact = failCompact
     ..failNewSession = failNewSession
     ..newSessionCompletion = newSessionCompletion;
-  final vm = QuickActionsViewModel(repo);
   final resetCalls = <int>[];
 
   await tester.pumpWidget(
@@ -101,14 +100,13 @@ Future<({_FakeRepo repo, List<int> resetCalls})> _openSheet(
                 // Mirror the production entry point so the full body has room
                 // (otherwise the Column overflows the half-height default).
                 isScrollControlled: true,
-                builder: (_) =>
-                    ChangeNotifierProvider<QuickActionsViewModel>.value(
-                      value: vm,
-                      child: QuickActionsSheetBody(
-                        messenger: messenger,
-                        onSessionReset: () async => resetCalls.add(1),
-                      ),
-                    ),
+                builder: (_) => ChangeNotifierProvider<QuickActionsViewModel>(
+                  create: (_) => QuickActionsViewModel(repo),
+                  child: QuickActionsSheetBody(
+                    messenger: messenger,
+                    onSessionReset: () async => resetCalls.add(1),
+                  ),
+                ),
               );
             },
             child: const Text('open'),
@@ -253,7 +251,7 @@ void main() {
     },
   );
 
-  testWidgets('New session: failure toasts the error and does not reset chat', (
+  testWidgets('New session: rejection survives production provider disposal', (
     tester,
   ) async {
     final s = await _openSheet(tester, failNewSession: true);
@@ -269,6 +267,11 @@ void main() {
     // surfaced as a toast (the user re-opens Quick Actions to retry).
     expect(find.byKey(const Key('qa-new-session')), findsNothing);
     expect(find.text('new boom'), findsOneWidget);
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'repository rejection must not add to a disposed VM controller',
+    );
   });
 
   testWidgets(
