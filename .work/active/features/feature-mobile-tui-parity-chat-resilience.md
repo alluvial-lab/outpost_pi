@@ -536,3 +536,30 @@ regressions.
 - Parked items left drafting: PASS
 - Extension change is test-only: PASS
 - Test-integrity: no tests weakened/gamed; the awaiting-tool test omits the known production order, the steering-rejection test omits primary-turn preservation, no accepted-steer→cancel convergence test exists — these gaps allowed the material findings.
+
+## Corrective follow-up
+
+All three material review findings were corrected without changing the wire or
+advancing the feature from `stage: review`.
+
+1. The transcript reducer now retains an active reply anchor across a committed
+   assistant message until a terminal event. The exact production order
+   `UserInput → AgentMessage → ToolRequest` now projects `awaitingTool`, remains
+   cancellable, and keeps the original user-message cancel target.
+2. A correlated pending-steer rejection now fails and clears only that steering
+   overlay. The primary turn, streaming buffer, and Stop target remain active;
+   steering failures also preserve that turn when the event log is rebuilt.
+3. Cancellation now writes a terminal failure for a separate pending steering
+   ID, and both cancellation and `_failPendingSend` clear the matching in-memory
+   overlay under lifecycle guards even when transcript persistence fails.
+
+Corrective commits:
+
+- `a125609` — material 1 reply-anchor recovery.
+- `b81eaf3` — materials 2–3 steering rejection/cancellation convergence.
+
+Verification from `app/`:
+
+- `flutter test test/domain/transcript/transcript_projection_test.dart test/data/sync/sync_service_test.dart --concurrency=1` — passed, 108 tests.
+- `flutter analyze lib test` — passed with zero issues.
+- `flutter test --concurrency=1` — passed, 751 tests.
