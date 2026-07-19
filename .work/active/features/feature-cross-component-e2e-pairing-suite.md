@@ -1,7 +1,7 @@
 ---
 id: feature-cross-component-e2e-pairing-suite
 kind: feature
-stage: implementing
+stage: review
 tags: [testing, e2e-test]
 parent: null
 depends_on: []
@@ -523,3 +523,42 @@ Every child story follows `.agents/rules/testing-integrity.md`:
   driver, not in-process socket mocks.
 - **Scope pressure**: Reconnect and replacement remain separately promoted
   features after this first harness proves itself.
+
+## Implementation (2026-07-19)
+
+All 5 child stories done; feature advanced to `review`. The harness builds and
+runs **7/7 green** against real components.
+
+### Architecture as built (Option A — service-composed product)
+
+- **Real relay image** under Docker Compose (built from `relay/Dockerfile`, ephemeral SQLite volume).
+- **Real pi-extension factory** loaded through the installed Pi SDK runner inside an HTTP-controlled, process-restarted Pi-host container (`pi-extension/test/support/e2e_pi_host_server.ts` + `e2e_pi_host_runtime.ts`).
+- **Real app transport path**: Flutter `WsTransport → performPairing → PlainPeerChannel → ConnectionManager → SyncService → Hive` driven headlessly (`flutter test --concurrency=1`, no APK/emulator — suitable for the 11G shared VM).
+- **Toxiproxy** for app-path network interruption (invalid-auth / consumed-token / expired-token / mid-pair relay-down cases).
+- **Single entrypoint**: `e2e/run-pairing.sh` (local + CI).
+
+### Regression coverage (the three v0.6.0 bugs each fail a case here)
+
+1. **QR renders** — `session_start` then `pair` displays a usable QR message (`qr_lifecycle_e2e_test.dart`).
+2. **Cross-room `pair_request` not dropped** — main-room app pairs with a non-main cwd room (`cross_room_pairing_e2e_test.dart`).
+3. **Post-pair frames not rejected for missing `room`** — `pair_ok` followed by canonical transcript hydration (`session_hydration_e2e_test.dart`).
+
+### Failure-mode coverage (`pairing_failures_e2e_test.dart`)
+
+- Invalid relay auth (wrong signature closes before pairing; token stays usable).
+- Consumed token (typed `pair_error` `token_consumed`; no record replacement).
+- Expired token (`pair --ttl 10` yields `token_expired`; no saved peer).
+- Toxiproxy app-path interruption after QR (fails boundedly; storage empty; connectivity restored in teardown).
+- Failure logs omit nonce, signature, token, keys, URI, and transcript content.
+
+### Verification
+
+- `e2e/run-pairing.sh` → 7/7 passed (QR rendering, cross-room pair_request/pair_ok, transcript hydration, invalid auth, consumed token, expired token, mid-pair relay interruption).
+- No APK build required (headless `flutter test` driver). Disk-safe on the VM.
+
+### Deferred
+
+- `.github/` CI workflow was deferred (`.github/` was outside the worker's allowed write scope). The `e2e/run-pairing.sh` entrypoint is CI-ready; wiring it into a workflow is a small follow-up.
+- Broader cross-component program (reconnect, session-replacement `/new`/`/fork`, cross-PC mesh, mobile background/resume) remains explicitly out of scope per the design — promote into separate features once this harness is proven.
+
+Two implementation workers were interrupted by a session crash and a turn limit respectively; their committed work was recovered and verified green on the host (the harness re-run confirms 7/7).
