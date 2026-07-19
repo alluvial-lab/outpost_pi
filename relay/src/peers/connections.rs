@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::{
-    Mutex,
-    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use axum::extract::ws::Message;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 use crate::metrics::FirehoseMetrics;
 
@@ -18,16 +18,63 @@ pub(crate) struct DeliveryReport {
 }
 
 impl DeliveryReport {
+    /// Whether the destination existed, even if every matching mailbox was full.
     pub(crate) fn accepted(self) -> bool {
-        self.delivered > 0
+        self.delivered > 0 || self.saturated > 0
     }
 }
+
+/// Idempotent request for the socket owner to disconnect and hydrate on reconnect.
+#[derive(Debug, Clone)]
+pub(crate) struct DisconnectSignal(Arc<DisconnectSignalInner>);
+
+#[derive(Debug, Default)]
+struct DisconnectSignalInner {
+    requested: AtomicBool,
+    notify: Notify,
+}
+
+impl DisconnectSignal {
+    fn new() -> Self {
+        Self(Arc::new(DisconnectSignalInner::default()))
+    }
+
+    fn request(&self) {
+        if !self.0.requested.swap(true, Ordering::Release) {
+            self.0.notify.notify_waiters();
+        }
+    }
+
+    pub(crate) fn is_requested(&self) -> bool {
+        self.0.requested.load(Ordering::Acquire)
+    }
+
+    pub(crate) async fn cancelled(&self) {
+        if self.is_requested() {
+            return;
+        }
+        let notified = self.0.notify.notified();
+        if self.is_requested() {
+            return;
+        }
+        notified.await;
+    }
+}
+
+impl PartialEq for DisconnectSignal {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for DisconnectSignal {}
 
 #[derive(Debug)]
 pub(crate) struct ConnectionEntry {
     pub conn_id: u64,
     pub device_id: String,
     pub tx: mpsc::Sender<Message>,
+    disconnect: DisconnectSignal,
 }
 
 #[derive(Debug)]
@@ -82,7 +129,7 @@ impl ConnectionRegistry {
         room_id: &str,
         device_id: &str,
         tx: mpsc::Sender<Message>,
-    ) -> ConnectionInsert {
+    ) -> (ConnectionInsert, DisconnectSignal) {
         let key = (peer_id.to_string(), room_id.to_string());
         let conn_id = self.next_conn.fetch_add(1, Ordering::Relaxed);
 
@@ -116,20 +163,25 @@ impl ConnectionRegistry {
             );
         }
 
+        let disconnect = DisconnectSignal::new();
         lock.entry(key).or_default().push(ConnectionEntry {
             conn_id,
             device_id: device_id.to_string(),
             tx,
+            disconnect: disconnect.clone(),
         });
 
-        ConnectionInsert {
-            peer_id: peer_id.to_string(),
-            conn_id,
-            was_offline_before,
-            is_first_in_room,
-            superseded_existing: existing_count > 0,
-            superseded_same_device_conn_ids,
-        }
+        (
+            ConnectionInsert {
+                peer_id: peer_id.to_string(),
+                conn_id,
+                was_offline_before,
+                is_first_in_room,
+                superseded_existing: existing_count > 0,
+                superseded_same_device_conn_ids,
+            },
+            disconnect,
+        )
     }
 
     pub(crate) fn remove(&self, peer_id: &str, room_id: &str, conn_id: u64) -> ConnectionRemove {
@@ -169,9 +221,9 @@ impl ConnectionRegistry {
         msg: Message,
         skip_conn_id: u64,
     ) -> DeliveryReport {
-        let lock = self.senders.lock().unwrap();
+        let mut lock = self.senders.lock().unwrap();
         let key = (dest_peer.to_string(), dest_room.to_string());
-        let Some(entries) = lock.get(&key) else {
+        let Some(entries) = lock.get_mut(&key) else {
             return DeliveryReport::default();
         };
 
@@ -182,9 +234,9 @@ impl ConnectionRegistry {
     }
 
     pub(crate) fn send_to_peer(&self, peer_id: &str, msg: Message) -> DeliveryReport {
-        let lock = self.senders.lock().unwrap();
+        let mut lock = self.senders.lock().unwrap();
         let mut report = DeliveryReport::default();
-        for ((candidate, _), entries) in lock.iter() {
+        for ((candidate, _), entries) in lock.iter_mut() {
             if candidate == peer_id {
                 report += deliver(entries, msg.clone(), None);
             }
@@ -206,7 +258,11 @@ impl std::ops::AddAssign for DeliveryReport {
     }
 }
 
-fn deliver(entries: &[ConnectionEntry], msg: Message, skip_conn_id: Option<u64>) -> DeliveryReport {
+fn deliver(
+    entries: &mut [ConnectionEntry],
+    msg: Message,
+    skip_conn_id: Option<u64>,
+) -> DeliveryReport {
     let mut report = DeliveryReport::default();
     for entry in entries {
         if skip_conn_id == Some(entry.conn_id) {
@@ -214,7 +270,13 @@ fn deliver(entries: &[ConnectionEntry], msg: Message, skip_conn_id: Option<u64>)
         }
         match entry.tx.try_send(msg.clone()) {
             Ok(()) => report.delivered += 1,
-            Err(mpsc::error::TrySendError::Full(_)) => report.saturated += 1,
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                report.saturated += 1;
+                // A dropped frame may be authoritative state (for example
+                // `working:false` or `room_ended`). Closing the live recipient
+                // forces reconnect hydration instead of silently diverging.
+                entry.disconnect.request();
+            }
             Err(mpsc::error::TrySendError::Closed(_)) => {}
         }
     }
@@ -230,6 +292,18 @@ mod tests {
     fn registry() -> (ConnectionRegistry, Arc<FirehoseMetrics>) {
         let metrics = Arc::new(FirehoseMetrics::new());
         (ConnectionRegistry::new(metrics.clone()), metrics)
+    }
+
+    #[test]
+    fn saturation_counts_as_an_existing_destination() {
+        assert!(
+            DeliveryReport {
+                delivered: 0,
+                saturated: 1,
+            }
+            .accepted()
+        );
+        assert!(!DeliveryReport::default().accepted());
     }
 
     #[test]
@@ -254,6 +328,17 @@ mod tests {
         );
         assert_eq!(rx.try_recv().unwrap().to_text().unwrap(), "first");
         assert_eq!(metrics.snapshot()[6], 1);
+        assert!(
+            registry
+                .senders
+                .lock()
+                .unwrap()
+                .get(&("peer".to_string(), "main".to_string()))
+                .unwrap()[0]
+                .disconnect
+                .is_requested(),
+            "a dropped frame must request reconnect hydration"
+        );
     }
 
     #[test]

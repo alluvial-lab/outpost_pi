@@ -25,8 +25,16 @@
 //! correlated to the sender's original envelope via `re: <original_id>`.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+#[cfg(test)]
+use std::sync::{
+    Arc, Barrier,
+    atomic::{AtomicUsize, Ordering},
+};
+#[cfg(test)]
+use std::time::Duration;
 
 use axum::extract::ws::Message;
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
@@ -42,18 +50,27 @@ use crate::resource_limits::{MESH_AUTH_CACHE_CAPACITY, MESH_AUTH_CACHE_TTL};
 
 /// In-memory cache that maps Pi pubkeys to verified membership or absence.
 ///
-/// Positive and negative results share one bounded table. Successful mesh
-/// publishes invalidate the table; a generation check prevents a scan racing
-/// that invalidation from restoring stale membership.
+/// Positive and negative results share one bounded table. Cold scans are
+/// single-flight per Pi key, and successful publishes invalidate only entries
+/// affected by that Owner. A generation check prevents a scan racing a publish
+/// from restoring stale membership.
 #[derive(Debug, Default)]
 pub struct MeshAuthCache {
     inner: Mutex<MeshAuthCacheInner>,
+    scan_completed: Condvar,
+    #[cfg(test)]
+    scan_count: AtomicUsize,
+    #[cfg(test)]
+    scan_delay: Mutex<Option<Duration>>,
+    #[cfg(test)]
+    publish_gate: Mutex<Option<Arc<TestScanGate>>>,
 }
 
 #[derive(Debug, Default)]
 struct MeshAuthCacheInner {
     generation: u64,
     entries: HashMap<String, CacheEntry>,
+    in_flight: HashSet<String>,
 }
 
 #[derive(Debug)]
@@ -64,8 +81,24 @@ struct CacheEntry {
 
 #[derive(Debug)]
 enum CachedMembership {
-    Found(HashSet<String>),
+    Found {
+        owner_hash: String,
+        members: HashSet<String>,
+    },
     Absent,
+}
+
+#[derive(Debug, Clone)]
+struct ScannedMembership {
+    owner_hash: String,
+    members: HashSet<String>,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+struct TestScanGate {
+    entered: Barrier,
+    release: Barrier,
 }
 
 impl MeshAuthCache {
@@ -78,21 +111,33 @@ impl MeshAuthCache {
     fn members_of(&self, pi_pk: &str, store: &MeshStore) -> Option<HashSet<String>> {
         loop {
             let generation = {
-                let inner = self.inner.lock().unwrap();
+                let mut inner = self.inner.lock().unwrap();
                 if let Some(entry) = inner.entries.get(pi_pk)
                     && entry.cached_at.elapsed() < MESH_AUTH_CACHE_TTL
                 {
                     return match &entry.membership {
-                        CachedMembership::Found(members) => Some(members.clone()),
+                        CachedMembership::Found { members, .. } => Some(members.clone()),
                         CachedMembership::Absent => None,
                     };
                 }
+                inner.entries.remove(pi_pk);
+
+                if inner.in_flight.contains(pi_pk) {
+                    drop(self.scan_completed.wait(inner).unwrap());
+                    continue;
+                }
+                inner.in_flight.insert(pi_pk.to_string());
                 inner.generation
             };
 
             let membership = self.scan_membership(pi_pk, store);
+            #[cfg(test)]
+            self.pause_before_publish();
+
             let mut inner = self.inner.lock().unwrap();
+            inner.in_flight.remove(pi_pk);
             if inner.generation != generation {
+                self.scan_completed.notify_all();
                 continue;
             }
 
@@ -114,15 +159,27 @@ impl MeshAuthCache {
                 CacheEntry {
                     membership: membership
                         .clone()
-                        .map_or(CachedMembership::Absent, CachedMembership::Found),
+                        .map_or(CachedMembership::Absent, |found| CachedMembership::Found {
+                            owner_hash: found.owner_hash,
+                            members: found.members,
+                        }),
                     cached_at: Instant::now(),
                 },
             );
-            return membership;
+            self.scan_completed.notify_all();
+            return membership.map(|found| found.members);
         }
     }
 
-    fn scan_membership(&self, pi_pk: &str, store: &MeshStore) -> Option<HashSet<String>> {
+    fn scan_membership(&self, pi_pk: &str, store: &MeshStore) -> Option<ScannedMembership> {
+        #[cfg(test)]
+        {
+            self.scan_count.fetch_add(1, Ordering::Relaxed);
+            if let Some(delay) = *self.scan_delay.lock().unwrap() {
+                std::thread::sleep(delay);
+            }
+        }
+
         let envelopes = match store.all_envelopes() {
             Ok(records) => records,
             Err(e) => {
@@ -151,37 +208,37 @@ impl MeshAuthCache {
                 continue;
             }
 
-            let parsed: serde_json::Value = match serde_json::from_slice(&envelope.blob) {
-                Ok(value) => value,
-                Err(err) => {
-                    warn!(%err, "verified mesh blob failed member parse during auth");
-                    continue;
-                }
+            let members = match member_keys(&envelope.blob) {
+                Some(members) => members,
+                None => continue,
             };
-            let Some(members) = parsed.get("members").and_then(serde_json::Value::as_array) else {
-                continue;
-            };
-            let members: HashSet<String> = members
-                .iter()
-                .filter_map(|member| {
-                    member
-                        .get("remote_epk")
-                        .and_then(serde_json::Value::as_str)
-                        .map(String::from)
-                })
-                .collect();
             if members.contains(pi_pk) {
-                return Some(members);
+                return Some(ScannedMembership {
+                    owner_hash: stored_owner_hash,
+                    members,
+                });
             }
         }
         None
     }
 
-    /// Invalidate all positive and negative results after a successful publish.
-    pub fn invalidate_all(&self) {
+    /// Invalidate membership affected by one successful Owner publish.
+    pub fn invalidate_owner_publish(&self, owner_hash: &str, blob: &[u8]) {
+        let current_members = member_keys(blob).unwrap_or_default();
         let mut inner = self.inner.lock().unwrap();
         inner.generation = inner.generation.wrapping_add(1);
-        inner.entries.clear();
+        inner.entries.retain(|pi_pk, entry| {
+            if current_members.contains(pi_pk) {
+                return false;
+            }
+            !matches!(
+                &entry.membership,
+                CachedMembership::Found {
+                    owner_hash: cached_owner,
+                    ..
+                } if cached_owner == owner_hash
+            )
+        });
     }
 
     /// `true` iff both Pis belong to the same Owner's mesh.
@@ -191,6 +248,38 @@ impl MeshAuthCache {
             None => false,
         }
     }
+
+    #[cfg(test)]
+    fn pause_before_publish(&self) {
+        if let Some(gate) = self.publish_gate.lock().unwrap().take() {
+            gate.entered.wait();
+            gate.release.wait();
+        }
+    }
+}
+
+fn member_keys(blob: &[u8]) -> Option<HashSet<String>> {
+    let parsed: serde_json::Value = match serde_json::from_slice(blob) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(%err, "verified mesh blob failed member parse during auth");
+            return None;
+        }
+    };
+    let members = parsed
+        .get("members")
+        .and_then(serde_json::Value::as_array)?;
+    Some(
+        members
+            .iter()
+            .filter_map(|member| {
+                member
+                    .get("remote_epk")
+                    .and_then(serde_json::Value::as_str)
+                    .map(String::from)
+            })
+            .collect(),
+    )
 }
 
 /// What the routing loop should do after calling `handle_pi_envelope`.
@@ -546,17 +635,73 @@ mod tests {
         let (cache, store) = fresh_cache_and_store();
         let owner = make_owner_key();
         write_owner_blob(&store, &owner, &["pi_x", "pi_y"], 1);
-        // First lookup: cold (scans store)
         assert!(cache.is_authorized("pi_x", "pi_y", &store));
-        // Subsequent lookups: cache HIT (the test merely ensures correctness;
-        // the actual cache short-circuit can be observed via tracing or fault
-        // injection if needed)
         assert!(cache.is_authorized("pi_x", "pi_y", &store));
-        let inner = cache.inner.lock().unwrap();
-        assert!(
-            inner.entries.contains_key("pi_x"),
-            "first lookup must populate cache"
-        );
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 1);
+        assert!(cache.inner.lock().unwrap().entries.contains_key("pi_x"));
+    }
+
+    #[test]
+    fn concurrent_cold_misses_for_same_key_scan_once() {
+        let cache = Arc::new(MeshAuthCache::new());
+        let store = Arc::new(MeshStore::open_in_memory().unwrap());
+        *cache.scan_delay.lock().unwrap() = Some(Duration::from_millis(25));
+        let start = Arc::new(Barrier::new(17));
+
+        std::thread::scope(|scope| {
+            for _ in 0..16 {
+                let cache = cache.clone();
+                let store = store.clone();
+                let start = start.clone();
+                scope.spawn(move || {
+                    start.wait();
+                    assert!(!cache.is_authorized("same-absent", "dest", &store));
+                });
+            }
+            start.wait();
+        });
+
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn capacity_eviction_churn_still_scans_once_per_cold_key() {
+        let cache = Arc::new(MeshAuthCache::new());
+        let store = Arc::new(MeshStore::open_in_memory().unwrap());
+        *cache.scan_delay.lock().unwrap() = Some(Duration::from_millis(10));
+        {
+            let mut inner = cache.inner.lock().unwrap();
+            for index in 0..MESH_AUTH_CACHE_CAPACITY {
+                inner.entries.insert(
+                    format!("seed-{index}"),
+                    CacheEntry {
+                        membership: CachedMembership::Absent,
+                        cached_at: Instant::now(),
+                    },
+                );
+            }
+        }
+
+        for round in 0..3 {
+            let key = format!("churn-{round}");
+            let start = Arc::new(Barrier::new(9));
+            std::thread::scope(|scope| {
+                for _ in 0..8 {
+                    let cache = cache.clone();
+                    let store = store.clone();
+                    let start = start.clone();
+                    let key = key.clone();
+                    scope.spawn(move || {
+                        start.wait();
+                        assert!(!cache.is_authorized(&key, "dest", &store));
+                    });
+                }
+                start.wait();
+            });
+        }
+
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 3);
+        assert!(cache.inner.lock().unwrap().entries.len() <= MESH_AUTH_CACHE_CAPACITY);
     }
 
     #[tokio::test]
@@ -585,8 +730,68 @@ mod tests {
             "negative result remains authoritative until publish invalidation"
         );
 
-        cache.invalidate_all();
+        let owner_hash = owner_pk_hash(&owner.verifying_key().to_bytes());
+        let record = store.get(&owner_hash).unwrap().unwrap();
+        cache.invalidate_owner_publish(&owner_hash, &record.blob);
         assert!(cache.is_authorized("pi_a", "pi_b", &store));
+    }
+
+    #[test]
+    fn publish_racing_a_scan_cannot_restore_stale_membership() {
+        let cache = Arc::new(MeshAuthCache::new());
+        let store = Arc::new(MeshStore::open_in_memory().unwrap());
+        let gate = Arc::new(TestScanGate {
+            entered: Barrier::new(2),
+            release: Barrier::new(2),
+        });
+        *cache.publish_gate.lock().unwrap() = Some(gate.clone());
+
+        let cache_for_lookup = cache.clone();
+        let store_for_lookup = store.clone();
+        let lookup = std::thread::spawn(move || {
+            cache_for_lookup.is_authorized("pi_a", "pi_b", &store_for_lookup)
+        });
+        gate.entered.wait();
+
+        let owner = make_owner_key();
+        write_owner_blob(&store, &owner, &["pi_a", "pi_b"], 1);
+        let owner_hash = owner_pk_hash(&owner.verifying_key().to_bytes());
+        let record = store.get(&owner_hash).unwrap().unwrap();
+        cache.invalidate_owner_publish(&owner_hash, &record.blob);
+        gate.release.wait();
+
+        assert!(lookup.join().unwrap());
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 2);
+        assert!(cache.is_authorized("pi_a", "pi_b", &store));
+        assert_eq!(
+            cache.scan_count.load(Ordering::Relaxed),
+            2,
+            "the racing retry must publish a reusable cache entry"
+        );
+    }
+
+    #[test]
+    fn publish_invalidation_preserves_unrelated_owner_cache_entries() {
+        let (cache, store) = fresh_cache_and_store();
+        let owner_a = make_owner_key();
+        let owner_b = make_owner_key();
+        write_owner_blob(&store, &owner_a, &["pi_a", "pi_a2"], 1);
+        write_owner_blob(&store, &owner_b, &["pi_b", "pi_b2"], 1);
+        assert!(cache.is_authorized("pi_a", "pi_a2", &store));
+        assert!(cache.is_authorized("pi_b", "pi_b2", &store));
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 2);
+
+        write_owner_blob(&store, &owner_a, &["pi_a", "pi_a3"], 2);
+        let owner_hash = owner_pk_hash(&owner_a.verifying_key().to_bytes());
+        let record = store.get(&owner_hash).unwrap().unwrap();
+        cache.invalidate_owner_publish(&owner_hash, &record.blob);
+
+        assert!(cache.is_authorized("pi_b", "pi_b2", &store));
+        assert_eq!(
+            cache.scan_count.load(Ordering::Relaxed),
+            2,
+            "publishing owner A must not evict owner B"
+        );
     }
 
     #[test]
