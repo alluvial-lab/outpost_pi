@@ -7,6 +7,7 @@ import {
   type OwnerMultiplexerDeps,
   type PeerChannelHandle,
 } from "./owner_multiplexer.js";
+import { decodeRelayIngress } from "../protocol/relay_ingress.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
 
 class FakeOwnerChannel implements PeerChannelHandle {
@@ -37,6 +38,12 @@ class FakeOwnerChannel implements PeerChannelHandle {
 
 function encodeClientMessage(message: ClientMessage): string {
   return Buffer.from(JSON.stringify(message)).toString("base64");
+}
+
+function ownerIngress(peer: string, ct: string) {
+  const ingress = decodeRelayIngress(JSON.stringify({ peer, room: "room-1", ct }));
+  if (ingress.kind !== "outer") throw new Error("expected outer relay ingress");
+  return ingress;
 }
 
 function agentChunk(delta: string): ServerMessage {
@@ -385,8 +392,8 @@ describe("OwnerMultiplexer", () => {
     const routed: { message: ClientMessage; sender: FakeOwnerChannel }[] = [];
     const message: ClientMessage = { type: "ping", id: "ping-1" };
 
-    await mux.handleOuterLine({
-      line: JSON.stringify({ peer: "known-owner", room: "room-1", ct: encodeClientMessage(message) }),
+    await mux.handleOuterFrame({
+      ingress: ownerIngress("known-owner", encodeClientMessage(message)),
       roomId: "room-1",
       turnActive: () => false,
       isCurrent: () => true,
@@ -403,7 +410,7 @@ describe("OwnerMultiplexer", () => {
     expect(routed).toEqual([{ message, sender: channels[0] }]);
   });
 
-  test("malformed ingress is ignored and unknown-owner ingress gets a sender-only error", async () => {
+  test("invalid typed payload is ignored and unknown-owner ingress gets a sender-only error", async () => {
     const { mux } = makeMultiplexer();
     const sendToPeer = vi.fn();
     const onMessage = vi.fn();
@@ -416,15 +423,17 @@ describe("OwnerMultiplexer", () => {
       sendToPeer,
     };
 
-    await mux.handleOuterLine({ ...inputBase, line: "not-json" });
-    await mux.handleOuterLine({ ...inputBase, line: JSON.stringify({ peer: "stranger", room: "room-1", ct: "not-json-base64" }) });
+    await mux.handleOuterFrame({
+      ...inputBase,
+      ingress: ownerIngress("stranger", "not-json-base64"),
+    });
     expect(sendToPeer).not.toHaveBeenCalled();
     expect(onMessage).not.toHaveBeenCalled();
     expect(mux.activeCount()).toBe(0);
 
-    await mux.handleOuterLine({
+    await mux.handleOuterFrame({
       ...inputBase,
-      line: JSON.stringify({ peer: "stranger", room: "room-1", ct: encodeClientMessage({ type: "ping", id: "ping-2" }) }),
+      ingress: ownerIngress("stranger", encodeClientMessage({ type: "ping", id: "ping-2" })),
     });
 
     expect(sendToPeer).toHaveBeenCalledTimes(1);

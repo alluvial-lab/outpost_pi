@@ -1,9 +1,10 @@
 import {
   decodeRelayClientPayload,
-  decodeRelayIngress,
+  type DecodedRelayIngress,
 } from "../protocol/relay_ingress.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
 import type { RelayClient } from "./relay_client.js";
+import { subscribeRelayIngress } from "./relay_ingress_fanout.js";
 
 /** Sink for ServerMessage outbound to the remote app. */
 export interface PeerChannel {
@@ -64,9 +65,7 @@ export class PlainPeerChannel implements PeerChannel {
     /** Called when this specific peer connection is considered lost. */
     _onDisconnect?: () => void,
   ) {
-    const listener = (line: string) => this._onLine(line);
-    relay.on("message", listener);
-    this._unsubscribe = () => relay.off("message", listener);
+    this._unsubscribe = subscribeRelayIngress(relay, (ingress) => this._onIngress(ingress));
     void _onDisconnect;
   }
 
@@ -101,16 +100,10 @@ export class PlainPeerChannel implements PeerChannel {
     this._unsubscribe();
   }
 
-  // ── Incoming line from relay ────────────────────────────────────────────────
+  // ── Typed ingress from the relay transport ─────────────────────────────────
 
-  private _onLine(line: string): void {
+  private _onIngress(decoded: DecodedRelayIngress): void {
     if (this.detached) return;
-    let decoded;
-    try {
-      decoded = decodeRelayIngress(line);
-    } catch {
-      return;
-    }
     if (decoded.kind !== "outer" || decoded.frame.peer !== this.remotePeerId) return;
 
     const msg = decodeRelayClientPayload(decoded.payloadUtf8);

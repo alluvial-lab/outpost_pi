@@ -10,7 +10,8 @@ import type {
   RelayControlFrameSubscribeRooms,
 } from "../protocol/generated/protocol.generated.js";
 import { crossPcTypes } from "../protocol/generated/protocol.generated.js";
-import { decodeRelayIngress } from "../protocol/relay_ingress.js";
+import type { DecodedRelayIngress } from "../protocol/relay_ingress.js";
+import { subscribeRelayIngress } from "./relay_ingress_fanout.js";
 
 /** Discriminator values derived from the generated `crossPcTypes` registry —
  *  the single source of truth for cross-PC frame type strings. */
@@ -57,13 +58,12 @@ export interface PiForwardClientEvents {
 
 /** Multiplex opaque cross-PC envelopes over a caller-owned relay and detach its listener during bridge shutdown. */
 export class PiForwardClient extends EventEmitter<PiForwardClientEvents> {
-  private readonly onRelayMessage: (line: string) => void;
+  private readonly unsubscribeIngress: () => void;
   private detached = false;
 
   constructor(private readonly relay: RelayClient) {
     super();
-    this.onRelayMessage = (line) => this._handleLine(line);
-    this.relay.on("message", this.onRelayMessage);
+    this.unsubscribeIngress = subscribeRelayIngress(relay, (ingress) => this._handleIngress(ingress));
   }
 
   /**
@@ -101,17 +101,11 @@ export class PiForwardClient extends EventEmitter<PiForwardClientEvents> {
   detach(): void {
     if (this.detached) return;
     this.detached = true;
-    this.relay.off("message", this.onRelayMessage);
+    this.unsubscribeIngress();
   }
 
-  private _handleLine(line: string): void {
+  private _handleIngress(decoded: DecodedRelayIngress): void {
     if (this.detached) return;
-    let decoded;
-    try {
-      decoded = decodeRelayIngress(line);
-    } catch {
-      return;
-    }
 
     if (decoded.kind === "cross_pc" && decoded.frame.type === PI_ENVELOPE_IN_TYPE) {
       if (this.detached) return;
