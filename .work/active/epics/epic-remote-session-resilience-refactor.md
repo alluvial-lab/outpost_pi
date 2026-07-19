@@ -157,3 +157,53 @@ The 2 live-repro items (`idea-mobile-drop-slow-recovery`,
 `idea-mobile-outgoing-message-swallowed`) remain parked at `drafting` under
 `feature-mobile-tui-parity-chat-resilience` (now done) — they route to
 `feature-reconnect-reproduction` (sibling epic) on the next live drop test.
+
+## Epic aggregate review findings (fresh-context, gpt-5.6-sol, standard weight)
+
+Review verdict: `needs fixes`. Two material cross-feature findings (both
+verified by the orchestrator). These must be fixed before the epic closes.
+
+### Material 1 — reconnect trusts stale room liveness; can resend into unconfirmed room
+`app/lib/data/transport/connection_manager.dart:1512-1525` (transport loss
+clears `working` but retains `_liveRoomIds`), `:954-958` (`isRoomLive()` trusts
+retained set on reconnect), `:601-605,1523-1525` (online transition emits
+cached snapshot before fresh replies), `app/lib/data/sync/sync_service.dart:747-767`
+(SyncService resends held messages), `:807-815` (ID enters
+`_resentHeldPendingIds`), `app/lib/ui/chat/viewmodels/chat_viewmodel.dart:361-365`
+(UI projects cached as online).
+During relay reconnect, before a fresh `rooms` snapshot confirms the Pi room
+exists, the app can render the room online, resend a held message to a
+still-offline Pi room (relay drops it, app-side send succeeds), then suppress
+retry when the room later becomes genuinely live. Cross-feature conflict between
+reconnect hydration, held-message recovery, and transport projection.
+**Fix:** invalidate live-room confirmation when transport leaves `StatusOnline`,
+or track a connection-generation/snapshot epoch so cached rooms remain stale
+until a fresh snapshot confirms them. Resend held messages only after
+confirmation. Add a deterministic regression: live room → disconnect →
+reconnect-to-relay-only → room stays stale, held message NOT resent → fresh
+RoomsSnapshot confirms → message resends exactly once.
+
+### Material 2 — exit-42 `/new` contract unproved at the real daemon seam
+`pi-extension/src/index.ts:2610-2612` (ACK → reset → scheduled exit),
+`pi-extension/src/daemon/rpc_child.ts:265-266,413` (exit 42 omits `--continue`),
+`pi-extension/src/daemon/supervisor.ts:604-609` (immediate respawn). Code is
+coherent by inspection, but the child story
+`feature-mobile-native-session-process-control-reconnect-verification:39-41,67-68`
+explicitly required extension-side ACK-before-exit + successor identity/room
+tests; its implementation only records code inspection (`:54-56`). The app test
+uses a fabricated channel.
+**Fix:** add deterministic TypeScript coverage proving: (1) daemon `session_new`
+emits `action_ok` + resets state before scheduling exit 42; (2) `RpcChild`
+records exit 42 + omits `--continue` exactly once; (3) `Supervisor` immediately
+respawns without crash backoff; (4) successor preserves daemon room/config
+identity while publishing fresh session identity.
+
+### Epic-goal check
+- Reconnect robustness: FAIL (stale room liveness resend race — material 1)
+- `/new` handling: FAIL on verification (material 2)
+- Dropped events: FAIL (app→Pi held-message reconnect race — material 1)
+- Working/idle convergence: PASS
+- Cross-feature coherence: FAIL (stale-liveness seam — material 1)
+- Scope-boundary honesty: PASS
+- Parked live-repro items: legitimate (need physical phone); but the
+  stale-liveness race is statically demonstrable, not deferrable.
