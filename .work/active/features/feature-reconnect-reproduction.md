@@ -361,3 +361,31 @@ correlation field is `id`.
   relay and extension diagnostics; preserve the existing typed scrubbers.
 - **Downstream audit contamination:** `feature-contract-gap-audit` must not
   convert an inconclusive trace into a durable contract claim.
+
+## Implementation status (autopilot, 2026-07-19)
+
+The code-actionable scope of this feature is **done in v0.1.0** (see "Code-actionable
+items" above): the peer-offline fan-out suspension, the resumed-session echo-gate
+fix, and the same-device duplicate-auth supersession are all shipped. The two
+app-side stories (`story-mobile-double-messages-on-session-history-replay`,
+`story-mobile-send-timeout-relay-room-main-mismatch`) have their source fixes
+landed; their sole remaining acceptance criterion is `[ ] DEPLOY + VERIFY` —
+rebuild extension `dist/`, restart pi, sideload an app APK to a physical phone,
+and confirm via a fresh ring log.
+
+The live-repro-only items (`idea-mobile-drop-slow-recovery`,
+`idea-mobile-outgoing-message-swallowed`) require a physical phone plus real
+wifi↔cellular/WireGuard transitions the dev VM cannot produce.
+
+**This is an environment gate, not a design or implementation gap.** No work is
+spawned against it in the current autopilot run; fabricating a reproduction or
+tuning reconnect behavior from the 2026-07-02 anecdote would violate the
+discipline this feature's own body prescribes. The feature remains at
+`implementing` pending operator live-drop deploy+verify. When a phone is
+available: rebuild + sideload, run the three-log capture, attribute the
+remaining items, and advance per the acceptance criteria.
+
+Downstream `feature-contract-gap-audit` (depends_on this feature) remains
+blocked until this reaches `review`/`done`. That is the correct state — the
+audit must consume reproduction evidence, not pre-write contracts from
+unverified assumptions.
