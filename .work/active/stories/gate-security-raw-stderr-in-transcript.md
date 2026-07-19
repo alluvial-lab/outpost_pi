@@ -2,7 +2,7 @@
 kind: story
 release_binding: null
 parent: feature-redact-secrets-from-diagnostic-surfaces
-stage: implementing
+stage: done
 id: gate-security-raw-stderr-in-transcript
 tags: []
 depends_on: []
@@ -36,3 +36,13 @@ Acceptance evidence:
   error object.
 - Blank stderr, process exit, and turn/lifecycle convergence retain current
   behavior.
+
+## Implementation notes
+- Execution capability: `openai-codex/gpt-5.6-sol` (caller-selected high reasoning for the security-sensitive cross-stack feature).
+- Review weight: `standard` (caller default); child story review is not applicable.
+- Files changed: `cockpit/lib/app/cockpit/data/rpc/pi_rpc_process.dart`, `cockpit/lib/app/cockpit/domain/entities/rpc_event.dart`, `cockpit/lib/app/cockpit/ui/session/agent_session.dart`, `cockpit/lib/app/cockpit/ui/session/agent_entry.dart`, `cockpit/tool/rpc_smoke.dart`, `cockpit/test/ui/agent_session_turn_projection_test.dart`.
+- Tests added: opaque diagnostic projection, fixed text, severity distinction, and consecutive child-stderr deduplication.
+- Simplification: replaced arbitrary `RpcDiagnostic.text` with the two-value `RpcDiagnosticKind` enum; no raw stderr/error buffer survives the process boundary.
+- Discrepancies from design: updated the RPC smoke consumer to display the typed category because the domain contract intentionally removed diagnostic text.
+- Adjacent issues parked: none.
+- Verification: `flutter test --no-pub test/ui/agent_session_turn_projection_test.dart test/data/pi_rpc_process_control_test.dart` passed (22 tests).
