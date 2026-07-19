@@ -29,6 +29,8 @@ pub struct FirehoseMetrics {
     /// `rooms` snapshot frames suppressed because identical to the
     /// previous reply on the same (WS conn, target_peer) pair.
     rooms_suppressed: AtomicU64,
+    /// Newest outbound frames dropped because a connection mailbox was full.
+    outbound_queue_dropped: AtomicU64,
 }
 
 impl FirehoseMetrics {
@@ -67,6 +69,11 @@ impl FirehoseMetrics {
         self.rooms_suppressed.fetch_add(n, Ordering::Relaxed);
     }
 
+    /// Add newest frames dropped at saturated bounded connection mailboxes.
+    pub fn inc_outbound_queue_dropped(&self, n: u64) {
+        self.outbound_queue_dropped.fetch_add(n, Ordering::Relaxed);
+    }
+
     /// Atomically drains every counter and, if anything happened in the
     /// window, emits a single structured `info!` line with the totals.
     /// Quiet windows are silent (no log spam when nothing's going on).
@@ -77,12 +84,14 @@ impl FirehoseMetrics {
         let presence_supp = self.presence_suppressed.swap(0, Ordering::Relaxed);
         let rooms_emit = self.rooms_emitted.swap(0, Ordering::Relaxed);
         let rooms_supp = self.rooms_suppressed.swap(0, Ordering::Relaxed);
+        let outbound_queue_dropped = self.outbound_queue_dropped.swap(0, Ordering::Relaxed);
         let total = peer_online_emit
             + peer_online_supp
             + presence_emit
             + presence_supp
             + rooms_emit
-            + rooms_supp;
+            + rooms_supp
+            + outbound_queue_dropped;
         if total == 0 {
             return;
         }
@@ -94,12 +103,13 @@ impl FirehoseMetrics {
             presence_suppressed = presence_supp,
             rooms_emitted = rooms_emit,
             rooms_suppressed = rooms_supp,
+            outbound_queue_dropped,
             "firehose 10s window"
         );
     }
 
     #[cfg(test)]
-    pub fn snapshot(&self) -> [u64; 6] {
+    pub fn snapshot(&self) -> [u64; 7] {
         [
             self.peer_online_emitted.load(Ordering::Relaxed),
             self.peer_online_suppressed.load(Ordering::Relaxed),
@@ -107,6 +117,7 @@ impl FirehoseMetrics {
             self.presence_suppressed.load(Ordering::Relaxed),
             self.rooms_emitted.load(Ordering::Relaxed),
             self.rooms_suppressed.load(Ordering::Relaxed),
+            self.outbound_queue_dropped.load(Ordering::Relaxed),
         ]
     }
 }
