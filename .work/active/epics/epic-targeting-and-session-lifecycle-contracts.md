@@ -1,14 +1,14 @@
 ---
 id: epic-targeting-and-session-lifecycle-contracts
 kind: epic
-stage: drafting
+stage: implementing
 tags: [pi-extension, app, relay, bug, docs, observability]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-18
 reframed: 2026-07-04
 ---
 
@@ -214,22 +214,67 @@ audit (rolling-foundation: rewrite current-state in place).
   cover it?), NOT by inference. The ring log (feature #1) is what makes this
   reproducible instead of anecdotal.
 
-## Dependencies
+## Epic-design run note (2026-07-18)
 
-- Feature #1 (observability) — `depends_on: []`. First-class critical path.
-- Feature #2 (reconnect reproduction) — depends on feature #1's ring log +
-  relay logging for attribution.
-- Feature #3 (contract gap audit) — soft depends on #1 (harness answers the
-  SDK-seam question) and #2 (reproduction attributes the reconnect cluster).
-  Noncontroversial verified-doc cleanup can proceed in parallel.
+Delegated by an active agile-workflow autopilot goal for `--all` (all active work). Resolve ambiguities with judgment, log rationale in the item body, and do not ask strategic questions unless a hard halt condition applies. Worker capability for this run: `openai-codex/gpt-5.6-sol` (thinking high) — selected because the ready work is security-critical, cross-stack, and contract-bearing; use it for any sub-dispatch and do not re-ask. Review weight for this run: `standard` (source: default); pass it unchanged to feature review and final completion review. Apply the risk-driven advisory policy from `principles/SKILL.md` Part IV. Treat reviewer findings as proposals: independently adjudicate them against repository context, fix or activate only material current-cycle blockers, and park valid lower-risk work in the unbound backlog.
+
+This pass used direct repository reads plus `work-view` graph checks. Design-time
+advisory review was skipped because the operator had already fixed the exact
+three-feature shape and this pass only normalized ownership, dependency status,
+and stage metadata; no product or external-contract choice remained open.
+
+## Decomposition (confirmed 2026-07-18)
+
+Decomposition pre-existed — 3 child features, listed below. The operator's
+observability-first reframe already established a coherent capability chain,
+so this epic-design pass normalized the existing graph rather than creating or
+redesigning children. The chain deliberately makes evidence capture precede
+reproduction, and reproduction precede contract claims.
+
+### Child features
+
+- `feature-cross-side-observability` — phone, relay, and extension diagnostics
+  plus session-replacement reproduction — depends on: `[]` — **DONE and
+  shipped in `.work/releases/v0.1.0/`.**
+- `feature-reconnect-reproduction` — reproduce and attribute the remaining
+  live reconnect/drop observations — depends on:
+  `[feature-cross-side-observability]` — **READY** because its dependency is
+  terminal.
+- `feature-contract-gap-audit` — harvest only verified targeting, lifecycle,
+  and transcript invariants — depends on:
+  `[feature-cross-side-observability, feature-reconnect-reproduction]` —
+  **BLOCKED on `feature-reconnect-reproduction`**; the observability dependency
+  is already terminal.
+
+The two live-repro checkpoints left under the now-terminal
+`feature-mobile-tui-parity-chat-resilience` are re-parented to
+`feature-reconnect-reproduction`: `idea-mobile-drop-slow-recovery` and
+`idea-mobile-outgoing-message-swallowed`. This follows the epic's existing
+scope and gives the unresolved observations an active owner without changing
+their parked, evidence-first disposition.
+
+### Simplification arcs
+
+- `feature-reconnect-reproduction` separates attributed code defects from real
+  contract gaps instead of expanding a speculative reconnect contract.
+- `feature-contract-gap-audit` amends released canonical contracts from
+  evidence rather than creating a parallel specification surface.
+
+### Decomposition risks
+
+- The two remaining live-repro stories require a physical phone and real
+  wifi↔cellular/WireGuard transitions; keep them parked until evidence exists
+  rather than tuning reconnect behavior from anecdotes.
+- The downstream audit must remain evidence-sourced. Treating target states as
+  current behavior would recreate the aggregation failure that caused the
+  observability-first reframe.
 
 ## Next
 
-`/agile-workflow:feature-design` on feature #1 (observability) first — it
-unblocks the rest. Feature #2 follows once the ring log lands. Feature #3
-runs as an audit once reproduction evidence is in. The draft at
-`.work/drafts/draft-protocol-targeting.md` is retained as background for #3's
-targeting audit (collision section invalidated and to be deleted per operator Q2).
+Run `/agile-workflow:feature-design` on `feature-reconnect-reproduction`.
+`feature-contract-gap-audit` becomes ready only after that feature completes.
+The draft at `.work/drafts/draft-protocol-targeting.md` remains background for
+the later audit; its collision section is invalidated per operator Q2.
 
 ## Review provenance
 
