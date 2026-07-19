@@ -33,9 +33,10 @@ detail see `PROTOCOL.md`; for locked decisions see `docs/DECISIONS.md`.
 The Pi extension plus a standalone daemon. It is the only component that
 touches the Pi SDK.
 
-- `index.ts` — extension entry; Pi SDK lifecycle hooks, session-bound context
-  capture, control-RPC handling, relay client wiring. (The largest file; the
-  `epic-bold-split-pi-extension-index` refactor decomposes it into modules.)
+- `index.ts` — composition entrypoint that wires the module-owned command,
+  relay, owner, and SDK-session adapters. Lifecycle ownership is registered in
+  `extension/composition_root.ts`; session projection and runtime ownership
+  live under `session/` and `extension/` rather than in one monolithic entry.
 - `session/` — the local agent mesh surface: `broker` (UDS), `broker_remote`,
   `mesh_node` (cross-PC peer), `bridge` (Pi SDK ↔ wire), `cwd_lock`,
   `leader_election`, `peer` / `peer_inventory`, `envelope`, `local_config` /
@@ -50,11 +51,12 @@ touches the Pi SDK.
 - `daemon/` — `supervisor`, `supervisord` CLI, `cron_registry` / `cron_log`,
   `rpc_child`, `install`, `registry`, `id`, `client`. First-class
   long-running mode (see Open questions §3 in SPEC).
-- `protocol/` — `types` (now a narrow re-export of the generated protocol
-  from `./generated/protocol.generated.ts`), `codec` (`encodeClient` /
-  `decodeServer` over generated helpers + `DecodeError` variants), `session_scope`
-  (the `SESSION_SCOPED_*` registries), `generated/` (the canonical schema-derived
-  TS unions, validators, and type sets).
+- `protocol/` — `types` (a narrow re-export of the generated protocol from
+  `./generated/protocol.generated.ts`), `codec` (app↔Pi inner-message helpers),
+  `relay_ingress` (bounded raw/base64 decode plus schema-generated outer,
+  control, and cross-PC validation), `session_scope` (the `SESSION_SCOPED_*`
+  registries), and `generated/` (canonical schema-derived TS unions,
+  validators, parsers, limits, and type sets).
 - `actions/` — `registry`, `handlers` (typed app actions → Pi SDK calls).
 - `rooms.ts`, `config.ts`, `ui/footer.ts`, `mcp/mesh_server.ts`.
 
@@ -65,17 +67,15 @@ objects, use-cases) has no UI or infra imports; `data/` holds adapters
 (transport, sync, mesh, local Hive, repositories); `ui/` is feature pages
 with ViewModels + states.
 
-- `protocol/` — `protocol.dart` (imports/exports the generated protocol from
-  `generated/protocol.g.dart`; a documented temporary hand-maintained island
-  `control_frames.dart` covers control frames not yet in the schema IR),
-  `codec.dart`, `uuid7.dart`.
-- `data/transport/` — `ws_transport`, `connection_manager` (the cleanest
-  reachability state machine — lifted to a shared contract by
-  `epic-bold-reachability-contract`), `peer_channel`, `relay_config`,
+- `protocol/` — `protocol.dart` (exports generated app↔Pi and relay-frame
+  DTOs), `control_frames.dart` (adapts generated relay DTOs into app-domain
+  control events), `codec.dart`, `uuid7.dart`.
+- `data/transport/` — `ws_transport`, `connection_manager` (the app adapter
+  over the shared reachability contract), `peer_channel`, `relay_config`,
   `epk_encoding`, `channel`.
-- `data/sync/` — `sync_service` (applies `ServerMessage`s to session state;
-  `_applyHistory` replaces the active message box — the contamination vector),
-  `sync_events`.
+- `data/sync/` — `sync_service` gates server messages by canonical session,
+  converts `session_history` snapshots into transcript events, and replays them
+  idempotently into the append-only store; `sync_events` carries sync deltas.
 - `data/mesh/` — `mesh_client`, `mesh_sync_service`, `mesh_blob`,
   `mesh_envelope` (cross-PC app-side state).
 - `data/local/` — Hive boxes + records (`message_record`, `runtime_record`,
@@ -141,12 +141,13 @@ publication flow depends on it.
 
 ## Wire protocol shape
 
-The wire is the single source of truth, defined once in a canonical JSON
-Schema and projected into TS, Dart, and Rust by the generated-protocol
-codegen (`pi-extension/src/protocol/generated/`, `app/lib/protocol/generated/`,
-`relay/src/protocol/generated/`). Handwritten mirrors have been retired in
-favor of generated types, validators, and registries; a small documented
-hand-maintained island remains for control frames not yet in the schema IR.
+The wire is the single source of truth, defined once in canonical JSON Schema
+and projected into TS, Dart, and Rust by protocol codegen
+(`pi-extension/src/protocol/generated/`, `app/lib/protocol/generated/`,
+`relay/src/protocol/generated/`). Generated types, validators/parsers,
+directional DTOs, registries, and ingress limits replace handwritten wire
+mirrors. App-domain control events remain handwritten adapters over generated
+relay DTOs; they are not a second wire contract.
 
 ### The app↔pi chat wire
 
@@ -161,9 +162,8 @@ typed actions `session_new` / `session_compact` / `model_set` /
 `agent_message`, `tool_request` / `tool_result`, `error`, `cancelled`,
 `pong`, `bye`, `session_history` (replay of `SessionHistoryEvent`), plus
 `action_ok` / `action_error` / `models_list` / `model_select` /
-`compaction` (these latter types exist in `types.ts` but are missing from
-`codec.ts`'s `SERVER_TYPES` registry — the drift the generated protocol
-eliminates).
+`compaction`. The generated type registries and decoders derive from the same
+schema as this union.
 
 ### The generic envelope (mesh + cross-PC)
 
@@ -174,14 +174,29 @@ eliminates).
 
 Local UDS peers and cross-PC relay forwards use the same envelope shape.
 Cross-PC wraps it in `pi_envelope` / `pi_envelope_in` frames carrying the
-`to_pc` / `from_pc` Pi-pubkeys.
+`to_pc` / `from_pc` Pi-pubkeys. The extension's live relay demux accepts these
+frames only through schema-generated parsers, including non-empty recipient
+arrays and reply ids plus `additionalProperties: false` at every defined
+object boundary.
+
+### Bounded relay ingress
+
+`relay-outer.schema.json` owns the 4 MiB decoded `ct` default, 64 KiB frame
+overhead, 5,657,944-byte derived raw ceiling, 16 KiB pre-auth ceiling, and
+metadata limits. Rust applies WebSocket frame/message caps and typed Serde
+parsing; the extension configures `ws.maxPayload`, checks raw size before
+`JSON.parse`, then uses generated outer/control/cross-PC validators before
+base64 decoding. Flutter checks raw UTF-8 length before `jsonDecode` and routes
+generated relay DTOs before base64 decoding, but its WebSocket API cannot cap
+the platform's initial message allocation. Relay deployment overrides do not
+raise the endpoints' generated 4 MiB safety default.
 
 ### Cockpit↔pi control RPC
 
 A separate transport: Pi custom events carrying a NUL-prefixed string
-(`\x00outpost-pi-ctrl:<method>:<args...>`). Folded into the generated schema
-by `epic-bold-generated-protocol-cockpit-control-rpc` to retire the magic
-prefix.
+(`\x00outpost-pi-ctrl:<method>:<args...>`). The control methods and structured
+frames are part of the generated protocol contract; the NUL prefix remains the
+transport discriminator.
 
 ## Session and room model
 
@@ -200,29 +215,19 @@ Cross-PC delivery is now room-targeted: `pi_envelope` carries a required
 `to_room` and the relay routes via `send_to_room(to_pc, to_room)` (not the
 former peer-wide fanout). Empty/missing `to_room` → `bad_envelope`.
 
-Historical context (pre-bold-refactor): the wire *designed* `session_id` on
-every push message, but it was dropped during
-MVP scoping (`app/lib/protocol/protocol.dart:750` comments it: "1 pairing =
-1 session: no session_id on any message"). The 1:1 assumption broke down once
-multi-session/multi-peer arrived. See `docs/DECISIONS.md` → "Session and
-reachability model."
-
-**Locked direction (in-flight via `epic-bold-canonical-session`).** Canonical
-`session_id` carried on every chat-bearing message, required and fail-closed,
-opaque to the relay (the relay carries it, endpoints validate it). This
-restores the designed-then-dropped discriminator and absorbs the
-contamination bug and the cross-PC targeting concern.
+`session_id` is the identity discriminator; `session_started_at` is only
+same-session ordering/high-water metadata. Room metadata is the app's authority
+for adopting a new canonical session. A `session_mismatch` reply is a
+non-transcript convergence signal and never selects app state by itself. See
+`docs/DECISIONS.md` → "Session and reachability model."
 
 ## Reachability
 
-The same backoff schedule `[1, 2, 5, 10, 30]` and ping cadences are
-reimplemented independently in the extension (`index.ts`, `MeshNode`),
-the app (`ConnectionManager`), and the relay heartbeat path. Each surface
-keeps its own booleans encoding the same unnamed states. The
-`epic-bold-reachability-contract` refactor lifts the app's `ConnectionStatus`
-sealed class to a shared `Reachability` contract
-(`Connecting / Online / Degraded / Offline / Retrying` + one backoff policy)
-adopted by all three.
+Reachability is one generated contract in
+`protocol/schema/reachability.json`: `Connecting / Online / Degraded / Offline /
+Retrying` plus the shared `[1, 2, 5, 10, 30]` backoff policy. The app,
+extension, and relay project those values into stack-native state while keeping
+transport-resource ownership local to each adapter.
 
 ## Lifecycle and convergence
 
@@ -242,12 +247,11 @@ Invariants every surface must hold:
 - **WebSockets, timers, spawned processes, and stream subscriptions** have an
   explicit owner and a teardown path.
 
-The `epic-bold-turn-state-machine` refactor makes the turn lifecycle algebraic
-(`Idle / Working / AwaitingTool / Streaming / Done / Error` + explicit
-transitions) so convergence is provable rather than heuristic. The
-`epic-bold-transcript-event-log` refactor replaces in-place message-box
-mutation with an append-only event log + derived projection, eliminating the
-replace-on-`session_history` failure mode.
+The turn lifecycle is algebraic (`Idle / Working / AwaitingTool / Streaming /
+Done / Error` with explicit transitions), and every UI projects from those
+transitions. Transcript history is an append-only event log with derived
+projections: snapshot hydration maps to deterministic events and replays them,
+rather than replacing the active message box.
 
 ## Data flow (send a prompt, end to end)
 
@@ -268,35 +272,22 @@ Cross-PC: the same envelope flows as `pi_envelope` (Pi-A → relay) /
 and anti-spoof-checked at the receiving broker (`envelope.from` prefix must
 match the `from_pc` pubkey's `pc_label`).
 
-## Bold refactor DAG (the in-flight reconception)
+## Canonical architecture boundaries
 
-Eight epics, two roots. The foundation is `epic-bold-generated-protocol`
-(unify the wire); the small independent root is
-`epic-bold-reachability-contract`. Every epic's riskiest child is a
-design-first root within its epic, so all eight can begin their feasibility-
-proving design pass in parallel.
+The system now follows these stable boundaries:
 
-```
-generated-protocol (root)        reachability-contract (root, small)
-  ├── schema-source                 ├── state-machine
-  ├── dart-codegen (riskiest)        ├── app-adapter
-  ├── ts-codegen                     └── pi-adapter
-  ├── rust-codegen
-  └── cockpit-control-rpc
-
-canonical-session ← generated-protocol
-  ├── identity-model (riskiest)
-  ├── wire-discriminator (absorbs contamination bug)
-  ├── relay-opaque-targeting
-  └── app-attribution-hydration
-
-turn-state-machine ← generated-protocol
-relay-typed-actor ← generated-protocol
-cockpit-workspace-projection ← generated-protocol
-transcript-event-log ← canonical-session
-split-pi-extension-index ← generated-protocol + canonical-session + turn-state-machine
-```
-
-Tracked in `.work/active/epics/epic-bold-*.md` + 29 child features. The DAG is
-cycle-free; 9 children are ready to design now (the `depends_on: []` roots
-across all eight epics).
+- The JSON Schema is the wire source of truth; generated TS, Dart, and Rust
+  types, validators, and registries consume it.
+- `RemoteSession` identity is endpoint-owned, required on session-scoped
+  traffic, and opaque to the relay; cross-PC routing targets a room.
+- Reachability and turn lifecycle are named state contracts with stack-native
+  projections rather than duplicated boolean conventions.
+- Transcript state is an append-only event log. Live and replay paths use one
+  deterministic event identity, and snapshot hydration is replay, not replace.
+- Relay connection delivery, room state, presence transitions, and event
+  publication have separate typed owners behind the `PeerRegistry` facade.
+- The pi-extension entrypoint composes command, relay, owner, and SDK-session
+  modules; runtime coordination prevents child session factories from taking
+  ownership of the phone-facing SDK binding.
+- Cockpit projects agent sessions and workspace documents through domain
+  adapters instead of binding its UI directly to RPC/process payloads.
