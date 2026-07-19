@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-chat-blank-on-tab-return
 kind: story
-stage: drafting
+stage: done
 tags: [app, bug, lifecycle]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
@@ -90,3 +90,17 @@ requests authoritative sync without clearing visible rows. Reuse the existing
 generation and serialized-binding guards. Repeated resumes must not duplicate
 subscriptions, and a dispose/session switch during refresh must suppress stale
 completion; no app-global async `BuildContext` callback is allowed.
+
+## Implementation
+
+`ChatPage` now owns its lifecycle observer and invokes an idempotent
+`ChatViewModel.refreshOnResume` on the real resumed edge. The refresh reads the
+current canonical session projection directly from the local read repository,
+keeps existing rows visible while awaiting it, then requests authoritative
+sync. It reuses the retained subscription and revalidates disposal, generation,
+and `RemoteSessionRef` after the async read.
+
+A fake lifecycle edge proves the mounted route triggers refresh; a controlled
+repository test proves blank recovery, repeated-resume subscription stability,
+and stale completion suppression after dispose. Scoped analysis and focused
+ViewModel/page tests pass.
