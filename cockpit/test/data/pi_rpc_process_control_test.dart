@@ -3,7 +3,19 @@ import 'dart:convert';
 import 'package:cockpit/app/cockpit/data/rpc/pi_rpc_process.dart';
 import 'package:cockpit/app/cockpit/domain/entities/pi_command.dart';
 import 'package:cockpit/app/cockpit/domain/entities/rpc_ui_response.dart';
+import 'package:cockpit/app/cockpit/domain/exceptions/rpc_error.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+const expectedRelayCommands = <PiRelayControlAction, String>{
+  PiRelayControlAction.on: 'relay_on',
+  PiRelayControlAction.off: 'relay_off',
+  PiRelayControlAction.toggle: 'relay_toggle',
+  PiRelayControlAction.status: 'relay_status',
+};
+
+Map<String, Object?> decodeControl(PiControlCommand command) =>
+    jsonDecode(schemaControlPromptForTesting(command)['message']! as String)
+        as Map<String, Object?>;
 
 void main() {
   group('PiRpcProcess metadata-only diagnostics', () {
@@ -71,24 +83,27 @@ void main() {
   });
 
   group('PiRpcProcess cockpit control serialization', () {
-    test(
-      'emits relay controls as schema envelopes on the prompt transport',
-      () {
+    test('emits every relay control as its exact schema prompt envelope', () {
+      expect(
+        expectedRelayCommands.keys.toSet(),
+        PiRelayControlAction.values.toSet(),
+        reason: 'every relay action must have an independent wire oracle',
+      );
+
+      for (final entry in expectedRelayCommands.entries) {
         final prompt = schemaControlPromptForTesting(
-          PiControlCommand.relay(PiRelayControlAction.status),
+          PiControlCommand.relay(entry.key),
         );
 
-        expect(prompt['type'], 'prompt');
+        expect(prompt, containsPair('type', 'prompt'));
         expect(prompt['message'], isA<String>());
         expect(prompt['message'], isNot(contains('\u0000outpost-pi-ctrl:')));
-
-        final envelope = jsonDecode(prompt['message'] as String);
-        expect(envelope, <String, Object>{
+        expect(decodeControl(PiControlCommand.relay(entry.key)), {
           'type': 'outpost_pi_control',
-          'command': 'relay_status',
+          'command': entry.value,
         });
-      },
-    );
+      }
+    });
 
     test('serializes every UI response variant at the process boundary', () {
       expect(
@@ -131,17 +146,25 @@ void main() {
       );
     });
 
-    test('emits rename controls with the schema name argument', () {
-      final prompt = schemaControlPromptForTesting(
-        PiControlCommand.rename('  desk-agent  '),
-      );
-
-      final envelope = jsonDecode(prompt['message'] as String);
-      expect(envelope, <String, Object>{
+    test('emits rename controls with a trimmed schema name argument', () {
+      expect(decodeControl(PiControlCommand.rename('  desk-agent  ')), {
         'type': 'outpost_pi_control',
         'command': 'rename',
         'name': 'desk-agent',
       });
+    });
+
+    test('rejects an empty rename before serializing a prompt frame', () {
+      expect(
+        () => schemaControlPromptForTesting(PiControlCommand.rename('   ')),
+        throwsA(
+          isA<RpcError>().having(
+            (error) => error.message,
+            'message',
+            'Control rename requires a non-empty name.',
+          ),
+        ),
+      );
     });
   });
 }
