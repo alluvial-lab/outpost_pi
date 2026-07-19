@@ -51,6 +51,44 @@ type PairOkMessage = Extract<ServerMessage, { type: "pair_ok" }>;
 
 type UnknownPeerErrorMessage = Extract<ServerMessage, { type: "error" }>;
 
+type BufferedServerMessage = {
+  message: ServerMessage;
+  bytes: number;
+};
+
+interface OfflinePeerBuffer {
+  completed: BufferedServerMessage[];
+  completedBytes: number;
+  current: BufferedServerMessage[];
+  currentBytes: number;
+  currentOverflowed: boolean;
+}
+
+/** Cap each offline owner's buffered frame count across completed and active intervals. */
+export const OFFLINE_BUFFER_MAX_FRAMES = 2_048;
+
+/** Cap each offline owner's serialized UTF-8 payload across completed and active intervals. */
+export const OFFLINE_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
+
+function createOfflinePeerBuffer(): OfflinePeerBuffer {
+  return {
+    completed: [],
+    completedBytes: 0,
+    current: [],
+    currentBytes: 0,
+    currentOverflowed: false,
+  };
+}
+
+function serializedMessageBytes(message: ServerMessage): number | null {
+  try {
+    const serialized = JSON.stringify(message);
+    return typeof serialized === "string" ? Buffer.byteLength(serialized, "utf8") : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Supply the authoritative session identity included in a successful pairing reply. */
 export interface PairingSessionSnapshot {
   sessionName: PairOkMessage["session_name"];
@@ -184,6 +222,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   private readonly peerIdsByChannel = new Map<PeerChannelHandle, string>();
   private readonly messageRouters = new Map<PeerChannelHandle, OwnerAttachInput["onMessage"]>();
   private readonly offlinePeerIds = new Set<string>();
+  private readonly offlineBuffers = new Map<string, OfflinePeerBuffer>();
   private peerShort = "";
   private lateAttachPeerIds = new Set<string>();
   private hasGlobalPairings = false;
@@ -458,9 +497,57 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
 
   broadcast(message: ServerMessage): void {
     for (const [peerId, channel] of this.channels) {
-      if (this.offlinePeerIds.has(peerId)) continue;
+      if (this.offlinePeerIds.has(peerId)) {
+        this.bufferOfflineMessage(peerId, message);
+        continue;
+      }
       try { channel.send(message); } catch { /* best-effort per owner channel */ }
     }
+  }
+
+  /** Seal each offline peer's active interval at the canonical turn boundary. */
+  completeOfflineTurn(): void {
+    for (const buffer of this.offlineBuffers.values()) {
+      if (!buffer.currentOverflowed && buffer.current.length > 0) {
+        buffer.completed = buffer.current;
+        buffer.completedBytes = buffer.currentBytes;
+      }
+      buffer.current = [];
+      buffer.currentBytes = 0;
+      buffer.currentOverflowed = false;
+    }
+  }
+
+  private bufferOfflineMessage(peerId: string, message: ServerMessage): void {
+    let buffer = this.offlineBuffers.get(peerId);
+    if (!buffer) {
+      buffer = createOfflinePeerBuffer();
+      this.offlineBuffers.set(peerId, buffer);
+    }
+    if (buffer.currentOverflowed) return;
+
+    const bytes = serializedMessageBytes(message);
+    const wouldExceedCombinedCap = bytes === null ||
+      buffer.completed.length + buffer.current.length + 1 > OFFLINE_BUFFER_MAX_FRAMES ||
+      buffer.completedBytes + buffer.currentBytes + bytes > OFFLINE_BUFFER_MAX_BYTES;
+
+    if (wouldExceedCombinedCap) {
+      buffer.completed = [];
+      buffer.completedBytes = 0;
+    }
+
+    const currentCannotFit = bytes === null ||
+      buffer.current.length + 1 > OFFLINE_BUFFER_MAX_FRAMES ||
+      buffer.currentBytes + bytes > OFFLINE_BUFFER_MAX_BYTES;
+    if (currentCannotFit) {
+      buffer.current = [];
+      buffer.currentBytes = 0;
+      buffer.currentOverflowed = true;
+      return;
+    }
+
+    buffer.current.push({ message, bytes });
+    buffer.currentBytes += bytes;
   }
 
   routeFrom(sender: PeerChannel, message: ClientMessage): void | Promise<void> {
