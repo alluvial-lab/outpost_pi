@@ -1,7 +1,7 @@
 ---
 id: feature-contract-gap-audit
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, app, relay, docs]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on:
@@ -236,3 +236,29 @@ joined live trace proves a genuine invariant gap.
 `idea-session-started-at-sdk-header` captures the separate design question of
 whether SDK header time should replace relay-start/reset time as
 `session_started_at`. It is not required to close this evidence audit.
+
+## Verification
+
+- `cd pi-extension && ./node_modules/.bin/tsc --noEmit` — passed.
+- `cd pi-extension && ./node_modules/.bin/vitest run
+  src/session/session_gate.test.ts` — 3/3 passed.
+- `cd app && PUB_CACHE=../.pub-cache ../.tools/flutter/bin/flutter test
+  test/data/sync/sync_service_test.dart --name 'session_mismatch tolerance'` —
+  3/3 passed, covering foreign duplicate suppression, accepted mismatch
+  suppression, and metadata-driven resync.
+- Full `pi-extension` Vitest was attempted. It did not complete within 180s:
+  the known sandbox cwd-lock cluster failed, and relay-transport/ping tests
+  exercised concurrent unrelated protocol working-tree edits. The focused
+  Track B boundary is green; this audit changed no production code.
+- `docs/ARCHITECTURE.md` contains no remaining `in-flight` / `ready to design`
+  bold-DAG claims.
+
+## Review closure
+
+The independent Phase-8 final completion review identified the feature-level
+reproduction dependency as a material blocker; the host adjudicated and
+accepted that finding. This implementation removes the over-blocking, completes
+the static tracks, and isolates the live residue. Under the caller's effective
+`standard` review weight, that successful pass is followed by blocker fix and
+verification without a second independent pass. No new code or wire surface was
+introduced.
