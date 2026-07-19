@@ -83,6 +83,7 @@ Map<String, Object?> _payloadOf(TranscriptEvent event) {
         'text': event.text,
         if (event.image != null) 'image': _imageToJson(event.image!),
         if (event.held) 'held': true,
+        if (event.awaitingPickup) 'awaiting_pickup': true,
       },
     UserMessageConfirmed() => {
         ...base,
@@ -90,6 +91,7 @@ Map<String, Object?> _payloadOf(TranscriptEvent event) {
         'text': event.text,
         if (event.image != null) 'image': _imageToJson(event.image!),
         if (event.streamingBehavior != null) 'streaming_behavior': event.streamingBehavior!.name,
+        if (!event.semanticPickup) 'semantic_pickup': false,
       },
     UserMessageFailed() => {
         ...base,
@@ -153,6 +155,7 @@ TranscriptEvent _eventFromParts(
         text: _requireString(payload, 'text'),
         image: _optionalImage(payload['image']),
         held: payload['held'] == true,
+        awaitingPickup: payload['awaiting_pickup'] == true,
       ),
     'user_confirmed' => UserMessageConfirmed(
         eventId: eventId,
@@ -163,6 +166,7 @@ TranscriptEvent _eventFromParts(
         text: _requireString(payload, 'text'),
         image: _optionalImage(payload['image']),
         streamingBehavior: _optionalStreamingBehavior(payload['streaming_behavior']),
+        semanticPickup: payload['semantic_pickup'] != false,
       ),
     'user_failed' => UserMessageFailed(
         eventId: eventId,

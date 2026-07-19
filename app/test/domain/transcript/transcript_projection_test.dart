@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:app/domain/session_state.dart';
 import 'package:app/domain/transcript/transcript_event.dart';
 import 'package:app/domain/transcript/transcript_projection.dart';
+import 'package:app/protocol/protocol.dart' show UserMessageStreamingBehavior;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -103,6 +104,97 @@ void main() {
       const UserMsg(id: 'cli_1', text: 'hello', status: UserMsgStatus.pending),
     ]);
     expect(projection.turn.status, TranscriptTurnStatus.working);
+  });
+
+  test(
+    'steering acceptance stays pending until timestamped pickup anchors it',
+    () {
+      final early = <TranscriptEvent>[
+        confirmed('primary', 'first prompt'),
+        UserMessageSubmitted(
+          eventId: 'local:steer-1',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 1)),
+          clientMessageId: 'steer-1',
+          text: 'refine this',
+          awaitingPickup: true,
+        ),
+        UserMessageConfirmed(
+          eventId: 'server:early:steer-1',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 2)),
+          clientMessageId: 'steer-1',
+          text: 'refine this',
+          streamingBehavior: UserMessageStreamingBehavior.steer,
+          semanticPickup: false,
+        ),
+        AssistantMessageCommitted(
+          eventId: 'server:assistant:primary',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 3)),
+          messageId: 'assistant-primary',
+          replyTo: 'primary',
+          text: 'first response',
+        ),
+      ];
+
+      final accepted = deriveTranscriptProjection(
+        sessionId: session,
+        events: [...early, early[2]],
+      );
+      expect(accepted.messages.map((message) => message.id), [
+        'primary',
+        'assistant-primary',
+      ]);
+      expect(
+        accepted.steering,
+        const SteeringPending(clientMessageId: 'steer-1', text: 'refine this'),
+      );
+
+      final pickup = UserMessageConfirmed(
+        eventId: 'server:pickup:steer-1',
+        sessionId: session,
+        ts: base.add(const Duration(milliseconds: 4)),
+        clientMessageId: 'steer-1',
+        text: 'refine this',
+      );
+      final pickedUp = deriveTranscriptProjection(
+        sessionId: session,
+        events: [...early, pickup, pickup],
+      );
+      expect(pickedUp.messages.map((message) => message.id), [
+        'primary',
+        'assistant-primary',
+        'steer-1',
+      ]);
+      expect(pickedUp.steering, isA<NoSteering>());
+    },
+  );
+
+  test('failed steering clears pending and materializes one failed row', () {
+    final projection = deriveTranscriptProjection(
+      sessionId: session,
+      events: [
+        UserMessageSubmitted(
+          eventId: 'local:steer-fail',
+          sessionId: session,
+          ts: base,
+          clientMessageId: 'steer-fail',
+          text: 'will fail',
+          awaitingPickup: true,
+        ),
+        failed('steer-fail', 'not accepted'),
+      ],
+    );
+
+    expect(projection.steering, isA<NoSteering>());
+    expect(projection.messages, [
+      const UserMsg(
+        id: 'steer-fail',
+        text: 'will fail',
+        status: UserMsgStatus.failed,
+      ),
+    ]);
   });
 
   test('authoritative same id confirms an optimistic send in place', () {
