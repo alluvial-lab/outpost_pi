@@ -94,12 +94,14 @@ final class TranscriptProjection {
   const TranscriptProjection({
     required this.messages,
     required this.turn,
+    required this.steering,
     this.streaming,
   });
 
   final List<ChatMessage> messages;
   final StreamingMessage? streaming;
   final TranscriptTurnView turn;
+  final SteeringProjection steering;
 }
 
 /// Pure transcript projection and optimistic/authoritative reconcile reducer.
@@ -121,7 +123,8 @@ TranscriptProjection deriveTranscriptProjection({
     if (seenEventIds.add(event.eventId)) ordered.add(event);
   }
 
-  final confirmedUsers = <String, UserMessageConfirmed>{};
+  final acceptedUsers = <String, UserMessageConfirmed>{};
+  final pickedUpUsers = <String, UserMessageConfirmed>{};
   final submittedUsers = <String, UserMessageSubmitted>{};
   final failedUsers = <String, UserMessageFailed>{};
   final authoritativeMessages = <ChatMessage>[];
@@ -129,6 +132,7 @@ TranscriptProjection deriveTranscriptProjection({
   final toolIndexes = <String, int>{};
   StreamingMessage? streaming;
   var turn = TranscriptTurnView.idle;
+  SteeringProjection steering = const NoSteering();
 
   void appendAuthoritative(ChatMessage message) {
     if (authoritativeIds.add(message.id)) authoritativeMessages.add(message);
@@ -160,13 +164,28 @@ TranscriptProjection deriveTranscriptProjection({
     switch (event) {
       case UserMessageSubmitted():
         submittedUsers[event.clientMessageId] = event;
-        turn = TranscriptTurnView(
-          status: AppTurnStatus.working,
-          turnId: event.turnId ?? event.clientMessageId,
-          replyTo: event.clientMessageId,
-        );
+        if (event.awaitingPickup) {
+          steering = SteeringPending(
+            clientMessageId: event.clientMessageId,
+            text: event.text,
+          );
+        } else {
+          turn = TranscriptTurnView(
+            status: AppTurnStatus.working,
+            turnId: event.turnId ?? event.clientMessageId,
+            replyTo: event.clientMessageId,
+          );
+        }
       case UserMessageConfirmed():
-        confirmedUsers[event.clientMessageId] = event;
+        acceptedUsers[event.clientMessageId] = event;
+        if (!event.semanticPickup) {
+          steering = SteeringPending(
+            clientMessageId: event.clientMessageId,
+            text: event.text,
+          );
+          break;
+        }
+        pickedUpUsers[event.clientMessageId] = event;
         appendAuthoritative(
           UserMsg(
             id: event.clientMessageId,
@@ -174,6 +193,11 @@ TranscriptProjection deriveTranscriptProjection({
             image: event.image,
           ),
         );
+        if (steering case SteeringPending(
+          :final clientMessageId,
+        ) when clientMessageId == event.clientMessageId) {
+          steering = const NoSteering();
+        }
         if (event.streamingBehavior != UserMessageStreamingBehavior.steer) {
           turn = TranscriptTurnView(
             status: AppTurnStatus.working,
@@ -183,7 +207,12 @@ TranscriptProjection deriveTranscriptProjection({
         }
       case UserMessageFailed():
         failedUsers[event.clientMessageId] = event;
-        if (!confirmedUsers.containsKey(event.clientMessageId)) {
+        if (steering case SteeringPending(
+          :final clientMessageId,
+        ) when clientMessageId == event.clientMessageId) {
+          steering = const NoSteering();
+        }
+        if (!pickedUpUsers.containsKey(event.clientMessageId)) {
           turn = TranscriptTurnView(
             status: AppTurnStatus.error,
             turnId: event.turnId ?? event.clientMessageId,
@@ -263,8 +292,13 @@ TranscriptProjection deriveTranscriptProjection({
 
   final localTail = <ChatMessage>[];
   for (final submitted in submittedUsers.values) {
-    if (confirmedUsers.containsKey(submitted.clientMessageId)) continue;
+    if (pickedUpUsers.containsKey(submitted.clientMessageId)) continue;
     final failed = failedUsers[submitted.clientMessageId];
+    if (submitted.awaitingPickup && failed == null) continue;
+    if (acceptedUsers.containsKey(submitted.clientMessageId) &&
+        failed == null) {
+      continue;
+    }
     localTail.add(
       UserMsg(
         id: submitted.clientMessageId,
@@ -279,5 +313,6 @@ TranscriptProjection deriveTranscriptProjection({
     messages: List.unmodifiable([...authoritativeMessages, ...localTail]),
     streaming: streaming,
     turn: turn,
+    steering: steering,
   );
 }

@@ -33,6 +33,7 @@ class ChatViewModel extends ViewModel<ChatState> {
   StreamSubscription<RuntimeRecord>? _runtimeSub;
   StreamSubscription<StreamingMessage?>? _streamingSub;
   StreamSubscription<TranscriptTurnView>? _turnViewSub;
+  StreamSubscription<SteeringProjection>? _steeringSub;
   StreamSubscription<String?>? _queuedSub;
   StreamSubscription<SessionEvent>? _eventSub;
   StreamSubscription<Map<String, List<RoomInfo>>>? _roomsSub;
@@ -54,6 +55,7 @@ class ChatViewModel extends ViewModel<ChatState> {
   StreamingMessage? _streaming;
   TranscriptTurnView _transcriptTurn = TranscriptTurnView.idle;
   AppTurnProjection _turnProjection = AppTurnProjection.stale;
+  SteeringProjection _transcriptSteering = const NoSteering();
   String? _queuedText;
   bool _pairingRevoked = false;
   String? _peerOfflineReason;
@@ -69,6 +71,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     // seed AFTER activate() in _bootstrap, when the sync owns THIS session.
     _streamingSub = _sync.streamingStream.listen(_onStreaming);
     _turnViewSub = _sync.turnViewStream.listen(_onTurnView);
+    _steeringSub = _sync.steeringProjectionStream.listen(_onSteering);
     _queuedSub = _sync.queuedStream.listen(_onQueued);
     _eventSub = _sync.events.listen(_onEvent);
     _roomsSub = _conn.roomsStream.listen((_) {
@@ -108,16 +111,24 @@ class ChatViewModel extends ViewModel<ChatState> {
   bool get isWorking => statusProjection.turn.working;
 
   /// Compose transport, turn, and steering without flattening their axes.
-  ChatStatusProjection get statusProjection => ChatStatusProjection(
-    transport: _transportProjection(),
-    turn: _turnProjection,
-    steering: _queuedText == null
+  ChatStatusProjection get statusProjection {
+    final transport = _transportProjection();
+    final steering = _transcriptSteering is SteeringPending
+        ? _transcriptSteering
+        : _queuedText == null
         ? const NoSteering()
         : SteeringPending(
             clientMessageId: 'queued-message',
             text: _queuedText!,
-          ),
-  );
+          );
+    return ChatStatusProjection(
+      transport: transport,
+      turn: _turnProjection,
+      steering: transport is ChatTransportOnline
+          ? steering
+          : const NoSteering(),
+    );
+  }
 
   /// The id to `cancel` to stop the in-flight reply. Null when idle/stale.
   String? get cancelTargetId =>
@@ -253,6 +264,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     // streaming/working state inherited from the previously selected chat.
     _streaming = _sync.streaming;
     _transcriptTurn = _sync.turnView;
+    _transcriptSteering = _sync.steeringProjection;
     _queuedText = _sync.queuedText;
     _updateTurnProjection();
 
@@ -369,6 +381,11 @@ class ChatViewModel extends ViewModel<ChatState> {
     };
   }
 
+  void _onSteering(SteeringProjection steering) {
+    _transcriptSteering = steering;
+    _recompute();
+  }
+
   void _onQueued(String? text) {
     _queuedText = text;
     _recompute();
@@ -480,6 +497,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     _runtimeSub?.cancel();
     _streamingSub?.cancel();
     _turnViewSub?.cancel();
+    _steeringSub?.cancel();
     _queuedSub?.cancel();
     _eventSub?.cancel();
     _roomsSub?.cancel();
