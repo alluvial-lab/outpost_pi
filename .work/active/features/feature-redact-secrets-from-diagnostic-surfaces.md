@@ -1,7 +1,7 @@
 ---
 id: feature-redact-secrets-from-diagnostic-surfaces
 kind: feature
-stage: review
+stage: done
 tags: [app, pi-extension, cockpit, security]
 parent: null
 depends_on: []
@@ -263,3 +263,32 @@ All three child stories implemented and verified green; feature advanced to `rev
 - The `PUB_CACHE` workaround (pointing at the repo's resolved local pub-cache, since `/home/agent/.pub-cache` is read-only) is required for all Flutter verification in this env.
 
 No production-code change beyond the scoped redaction boundary; no test weakened or gamed.
+
+## Review (standard, cross-model, 2026-07-19) — adjudicated
+
+One balanced fresh-context cross-model pass (`openai-codex/gpt-5.6-sol` vs host `umans/umans-glm-5.2`). Verdict NEEDS FIXES with 2 proposed material blockers + 2 lower-risk + 1 nit. Adjudication:
+
+### Material — fixed + verified this cycle
+
+1. **Pi-extension `wake_outcome.detail` persists arbitrary error text** — ACCEPTED material, fixed. The call site at `index.ts:2326` passed `wake.detail` (raw `err.message`) into `delivery.log`, which can carry prompt/token text from a provider error, violating the metadata-only diagnostic contract. **Fix:** project `detail` to a fixed category (`ok` | `recoverable_not_bound_or_stale` | `send_failed`) at the debug-log call site only; the app-facing `_sendDeliveryError` keeps its message (separate surface). **Exposure class noted:** `delivery.log` is opt-in (`OUTPOST_PI_DEBUG_LOG=1`, default off/no-op) — not a default surface — but the feature's contract applies to diagnostic surfaces even when opt-in, so the fix is correct and in-scope. Canary test added at `delivery_debug_log.test.ts` pinning the category contract.
+2. **Cockpit `_safeGeneratedRequestId` verifies shape not provenance** — ACCEPTED material, fixed. `_safeGeneratedRequestId` accepted any `req-<digits>` string from any frame's `id` by regex shape alone, so an untrusted child could smuggle a numeric secret in an event/response id and Cockpit would log it. **Fix:** thread `knownRequestIds` (the `_pending` keys — Cockpit's own outstanding request ids) into `_rpcFrameDiagnostic`; an id survives only if its provenance is known (Cockpit generated it). The design's "only Cockpit-generated `req-<digits>` ids" contract is now enforced by membership, not shape. Canary test added (`strips a shape-matching request id whose provenance is unknown`).
+
+Both fixes verified: pi-extension `tsc --noEmit` clean + delivery_debug_log 13 pass (was 12, +1 canary); cockpit pi_rpc_process_control 8 pass (was 7, +1 canary).
+
+### Lower-risk — parked unbound in backlog
+
+- `gate-security-rpcunknown-retains-wire-discriminator` — `RpcUnknown.type` retains arbitrary wire discriminator; no present consumer logs/displays it, so not a current exposure. Defensive hardening for a future consumer.
+- `gate-security-combined-app-verification-flaky` — the exact two-file app verification command failed once under concurrent uncommitted app-storage work; isolated rerun passed. Test-isolation/stability, not a product bug.
+
+### Nit — accepted (correction applied)
+
+The reviewer correctly noted the implementation summary's claim that removing preview logging "resolved" the 3 pre-existing `sync_service_test.dart` baseline failures is unsupported by commit `d87cf6c` (the production diff only removes diagnostic preview construction/logging, not those state paths). **Correction:** the 3 tests pass on rerun after this feature, but the causal link to the preview-logging removal is not established — they should be recorded as passing-on-rerun, not causally fixed. (The implementation summary above has been read with this correction; the tests are green regardless.)
+
+### Verification (post-fix)
+
+- app: `sync_service_test.dart` 91 pass + `debug_log_test.dart` pass (isolated).
+- cockpit: `pi_rpc_process_control_test.dart` 8 pass (incl. new provenance canary) + `agent_session_turn_projection_test.dart` pass.
+- pi-extension: `tsc --noEmit` clean; `delivery_debug_log.test.ts` 13 pass (incl. new category canary).
+- relay: `cargo clippy -- -D warnings` clean (unrelated, confirms no cross-contamination).
+
+Advanced `review → done`.
