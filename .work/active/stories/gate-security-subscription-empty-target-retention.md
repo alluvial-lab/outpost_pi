@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-relay-resource-bounds
-stage: drafting
+stage: done
 id: gate-security-subscription-empty-target-retention
 tags: [security]
 depends_on: []
 gate_origin: security
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-18
 ---
 
 # Subscription target map retains empty target entries
@@ -24,3 +24,13 @@ remove_all removes the subscriber from each target set but never deletes now-emp
 
 ## Recommendation
 Remove subscribers_of entries when their set becomes empty and consider bounding peer-id length / total subscription churn per connection.
+
+## Implementation notes
+- Execution capability: `openai-codex/gpt-5.6-sol` (caller-selected for security-critical relay work).
+- Review weight: `standard` (caller default; feature-level review only).
+- Files changed: `relay/src/subscriptions.rs`.
+- Tests added: thousand-cycle replacement churn at the existing 64-target boundary plus partial/disconnect cleanup retained-key assertions.
+- Simplification: `remove`, `remove_all`, and replacement now share one reverse-edge deletion rule.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
+- Verification: focused subscription tests passed.
