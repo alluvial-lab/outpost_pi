@@ -1227,6 +1227,20 @@ class SyncService extends Service {
         if (code == 'session_mismatch') {
           break;
         }
+        final pendingId = inReplyTo;
+        if (pendingId != null && _pendingSendTimers.containsKey(pendingId)) {
+          _runDetachedWrite(
+            operation: LifecycleOperation.transcriptWrite,
+            write: () => _failPendingSend(
+              pendingId,
+              code: code,
+              message: message,
+              expectedRef: expectedRef,
+            ),
+            expectedRef: expectedRef,
+            requestReplayOnFailure: true,
+          );
+        }
         _discardStreamingState();
         _setTurnIdle();
         _runDetachedTranscriptWrite(

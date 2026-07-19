@@ -123,8 +123,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     // Plan-17 follow-up — two-line AppBar:
     //   Line 1: ROOM name (cwd basename / room.name / fallback).
     //   Line 2: peer (Mac nickname or sessionName) + presence dot.
-    // The dot reads from the ChatReady.peerPresence flag (which the
-    // ViewModel sources from `isRoomLive`).
+    // Transport, turn, and steering labels come from ChatReady.status.
     final colors = context.colors;
     final vm = context.watch<ChatViewModel>();
     final peer = vm.activePeer;

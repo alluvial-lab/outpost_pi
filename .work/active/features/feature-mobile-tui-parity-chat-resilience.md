@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-tui-parity-chat-resilience
 kind: feature
-stage: implementing
+stage: review
 tags: [app, pi-extension, workflow, lifecycle]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
@@ -438,6 +438,45 @@ bug, but not lose data). Distinct bug units can be reverted independently in
 reverse dependency order. Any unexpected required wire change is a separate
 paired app/extension rollback boundary and must update `PROTOCOL.md`; none is
 planned here.
+
+## Implementation
+
+Completed all five implementation units and closed the three structural symptom
+items plus the roadmap umbrella as provenance. The app now carries one composed
+chat status with typed transport, the existing turn algebra, and steering;
+transport loss cannot masquerade as an agent phase, awaiting-tool remains
+cancellable, and steering is a separate overlay.
+
+Steered sends now distinguish early delivery acceptance from deterministic
+semantic pickup using backward-compatible transcript metadata. Pending steering
+does not split the previous response; timestamped pickup anchors one prompt row
+and replay remains idempotent. The pure transcript projection additionally
+enforces the stable `replyTo` prompt-before-response relationship without
+rewriting append sequence. Retained chat routes refresh their local canonical
+projection on resume under generation/session guards, and regression evidence
+confirms process-owned send confirmation survives route disposal/re-entry. A
+correlated steer rejection now immediately clears pending steering and marks the
+existing submission failed.
+
+### Verification
+
+- `flutter analyze lib test` — passed with zero issues.
+- `flutter test --concurrency=1` — passed, 748 tests.
+- Targeted transcript/store/history/SyncService/ChatViewModel/AppBar/InputBar
+  suites — passed serially throughout implementation.
+- `corepack pnpm typecheck` in `pi-extension/` — passed.
+- Targeted `src/extension.test.ts` active-steering contract — passed and proves
+  early steer echo followed by timestamped same-ID pickup.
+- Full `src/extension.test.ts` ran 192/193 green; the sole unrelated existing
+  cwd-lock test failed acquiring its first lock in the shared environment.
+- `flutter build apk --debug` was attempted twice. Dependency/Gradle setup
+  progressed after redirecting `GRADLE_USER_HOME`, but Android asset compression
+  failed because the documented `/home/agent/.gradle-tmp` is read-only in this
+  sandbox. No build artifact is committed.
+
+`idea-mobile-drop-slow-recovery` and
+`idea-mobile-outgoing-message-swallowed` remain at `stage: drafting` with their
+live-repro `## Parked` notes, as designed.
 
 ## Source
 
