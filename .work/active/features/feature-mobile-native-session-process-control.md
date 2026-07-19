@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-native-session-process-control
 kind: feature
-stage: implementing
+stage: review
 tags: [app, pi-extension, daemon, workflow]
 parent: epic-remote-session-resilience-refactor
 depends_on: [feature-remote-pi-fork-vendor-and-mobile-surface]
@@ -154,7 +154,34 @@ The two controls share the existing request correlation and ACK contract:
   daemon-backed phone smoke is recorded separately when a live supervisor is
   available.
 
-### Testing strategy
+### Implementation summary
+
+Implemented the three planned units in the existing mobile Quick Actions
+surface. Compact, New session, Model, and Thinking remain the only session
+controls alongside the new danger-styled `Restart Pi process` affordance. Both
+New session and Restart use separate confirmations; Restart explicitly limits
+process-respawn language to supervised Pis and explains transcript loss plus the
+expected brief reconnect. Confirmation cancellation sends nothing, failures
+preserve the local transcript, and local reset plus restart feedback happen only
+after the matching `action_ok` resolves the canonical `session_new` request.
+No `/reload`, `session_restart`, arbitrary slash-command, spawn API, wire type,
+or pi-extension production change was introduced.
+
+Reconnect remains owned by the existing ConnectionManager/SyncService state
+machine and authoritative room/session hydration. The restart snackbar is
+transient feedback only; it is not a second source of session truth.
+
+## Verification
+
+- `flutter analyze lib test` — passed with no issues.
+- `flutter test --concurrency=1` — passed (755 tests).
+- Targeted action-repository and Quick Actions tests — passed, including
+  matching ACK/rejection, session-id binding, both destructive confirmation
+  paths, controlled ACK-gated reset, and reconnect feedback.
+- `flutter build apk --debug` — attempted; blocked before compilation because
+  the Gradle wrapper lock under `/home/agent/.gradle` is read-only.
+
+## Testing strategy
 
 The minimum evidence is at the boundaries, not a screenshot-only test: preserve
 (or add) the repository test that proves `newSession()` emits the generated
