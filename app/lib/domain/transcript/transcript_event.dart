@@ -28,11 +28,15 @@ final class UserMessageSubmitted extends TranscriptEvent {
     required this.text,
     this.image,
     this.held = false,
+    this.awaitingPickup = false,
   });
 
   final String clientMessageId;
   final String text;
   final MessageImage? image;
+
+  /// Keep a steered submission out of transcript order until canonical pickup.
+  final bool awaitingPickup;
 
   /// `true` when this message was held pending (never written to the
   /// channel) because the room was offline at send time (option-1 guard or
@@ -56,12 +60,18 @@ final class UserMessageConfirmed extends TranscriptEvent {
     required this.text,
     this.image,
     this.streamingBehavior,
+    this.semanticPickup = true,
   });
 
   final String clientMessageId;
   final String text;
   final MessageImage? image;
   final UserMessageStreamingBehavior? streamingBehavior;
+
+  /// Distinguish delivery acceptance from the timestamped agent pickup event.
+  ///
+  /// Old persisted records default to `true`, preserving their prior order.
+  final bool semanticPickup;
 }
 
 /// Record a terminal local failure while a submission lacks confirmation.
