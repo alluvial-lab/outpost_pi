@@ -17,7 +17,7 @@
 //                                                           → SessionIndexRecord
 //   VOLATILE runtime  (wiped@boot)  key = <epk>:<roomId>   → RuntimeRecord
 
-import 'package:app/data/transport/epk_encoding.dart';
+import 'package:app/data/local/transcript_box_identity.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -87,22 +87,17 @@ class LocalBoxes {
   bool isTranscriptEventsBoxOpen(TranscriptSessionKey key) =>
       Hive.isBoxOpen(transcriptEventsBoxName(key));
 
-  /// `:` and the epk's `/`+`=` would break the on-disk filename — sanitise to
-  /// the url-safe, unpadded epk form plus safe room/session segments.
+  /// Derive the collision-resistant v3 projection box name.
   static String msgsBoxName(RemoteSessionRef ref) =>
-      'msgs_${_safe(toAppEpk(ref.peerEpk))}__${_safe(ref.roomId)}__${_safe(ref.sessionId)}';
+      TranscriptBoxIdentity.messagesName(ref);
 
-  /// Derive the deterministic Hive box name for one canonical event stream.
+  /// Derive the collision-resistant v3 canonical event-log box name.
   static String transcriptEventsBoxName(TranscriptSessionKey key) =>
-      'transcript_events_${_safe(toAppEpk(key.peerId))}__${_safe(key.roomId)}__${_safe(key.sessionId)}';
+      TranscriptBoxIdentity.eventsName(key);
 
   /// Derive the shared index key for a canonical remote session.
   static String sessionKey(RemoteSessionRef ref) => ref.storageKey;
 
   /// Runtime reachability is room-scoped, not transcript-scoped.
   static String runtimeKey(String epk, String roomId) => '$epk:$roomId';
-
-  static String _safe(String value) => value
-      .replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_')
-      .replaceAll(RegExp(r'_+'), '_');
 }
