@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-message-duplication-send-timeout
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, bug]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [idea-mobile-chat-reorder-on-return, idea-mobile-chat-blank-on-tab-return]
@@ -115,3 +115,16 @@ without reinsertion. Current deterministic identity and lifecycle work may
 already satisfy the regression, in which case close with evidence and no
 production change. Touch extension ACK/echo behavior only if the test proves an
 ID-correlation defect.
+
+## Implementation
+
+Closed on regression evidence: the process-owned `SyncService` already retains
+the stable optimistic event, confirmation timer, and echo correlation across
+route lifetimes. The new send→dispose first ViewModel→create second ViewModel→
+echo regression shows one stable-ID bubble before and after re-entry, confirms
+it centrally, disarms the timer, and remains one confirmed row after the old
+timeout deadline. Existing timeout/late-confirmation tests prove failure updates
+the same row and later replay wins.
+
+No production or extension change was required for this unit. Scoped analysis
+and the focused ChatViewModel, SyncService, and transcript tests pass serially.
