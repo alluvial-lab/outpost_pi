@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-queued-message-does-not-reorder
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, ux, bug]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
@@ -99,3 +99,16 @@ materializes exactly one prompt after the prior response. Repeated early echoes,
 pickup events, and replay must collapse by stable identity. Metadata is additive
 with backward-compatible defaults; do not rewrite Hive `seq` or infer pickup
 from elapsed time.
+
+## Implementation
+
+Added optional `awaitingPickup`/`semanticPickup` transcript metadata. A steered
+submission and its early no-timestamp acceptance now project one typed pending
+steering overlay without a chat row; the later deterministic timestamped
+`user_input` materializes the row at pickup and clears the overlay. Duplicate
+echoes/replay collapse by stable identity, failures surface one failed row, and
+old records default to canonical placement. Hive append `seq` remains untouched.
+
+The extension contract test now proves the early steer echo is followed by a
+`message_end`-owned timestamped `user_input` carrying the same client ID.
+Scoped analysis and the transcript/store/SyncService/ChatViewModel test set pass.

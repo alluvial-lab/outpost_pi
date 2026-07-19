@@ -228,6 +228,38 @@ void main() {
       },
     );
 
+    test('old user records default to canonical pickup placement', () {
+      final submitted =
+          TranscriptEventRecord.fromJson(<String, Object?>{
+                'event_id': 'old-submitted',
+                'seq': 0,
+                'session_id': 'sess-1',
+                'kind': 'user_submitted',
+                'ts': 1700000000000,
+                'payload': <String, Object?>{
+                  'client_message_id': 'old-user',
+                  'text': 'legacy',
+                },
+              }).toEvent()
+              as UserMessageSubmitted;
+      final confirmed =
+          TranscriptEventRecord.fromJson(<String, Object?>{
+                'event_id': 'old-confirmed',
+                'seq': 1,
+                'session_id': 'sess-1',
+                'kind': 'user_confirmed',
+                'ts': 1700000000001,
+                'payload': <String, Object?>{
+                  'client_message_id': 'old-user',
+                  'text': 'legacy',
+                },
+              }).toEvent()
+              as UserMessageConfirmed;
+
+      expect(submitted.awaitingPickup, isFalse);
+      expect(confirmed.semanticPickup, isTrue);
+    });
+
     test('fails fast on unknown record kind', () {
       expect(
         () => TranscriptEventRecord.fromJson(<String, Object?>{
