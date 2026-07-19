@@ -3,7 +3,7 @@ id: idea-mobile-outgoing-message-swallowed
 kind: story
 stage: drafting
 tags: [app, pi-extension, relay, bug]
-parent: feature-mobile-tui-parity-chat-resilience
+parent: feature-reconnect-reproduction
 depends_on: []
 release_binding: null
 gate_origin: null
