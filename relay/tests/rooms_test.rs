@@ -112,8 +112,7 @@ async fn same_device_reconnect_preserves_room_subscriptions() {
     let peer_pi = B64.encode(sk_pi.verifying_key().to_bytes());
 
     // Pi connects (device "dev-a") and the app subscribes to Pi's room events.
-    let (mut ws_pi_1, _) =
-        connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
+    let (ws_pi_1, _) = connect_and_auth_with_room_and_device(port, &sk_pi, "work", "dev-a").await;
     let (mut ws_app, _) = connect_and_auth(port).await;
     ws_app
         .send(Message::text(
@@ -157,7 +156,7 @@ async fn same_device_reconnect_preserves_room_subscriptions() {
 }
 
 /// Oversized `subscribe_rooms` frames are dropped instead of installing a
-/// subscription that could fan out through the relay's unbounded channels.
+/// subscription that could amplify fanout across bounded relay mailboxes.
 #[tokio::test]
 async fn oversized_subscribe_rooms_is_dropped() {
     let port = start_relay().await;
