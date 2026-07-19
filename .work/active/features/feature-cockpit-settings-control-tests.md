@@ -1,7 +1,7 @@
 ---
 id: feature-cockpit-settings-control-tests
 kind: feature
-stage: implementing
+stage: review
 tags: [cockpit, testing]
 parent: null
 depends_on: []
@@ -329,3 +329,13 @@ their design.
   `standard` (caller default): one fresh-context feature review after
   verification, receiver adjudication, and fixes for material current-cycle
   blockers without re-review.
+
+## Implementation
+
+- Execution capability: `openai-codex/gpt-5.6-sol` (autopilot caller selection).
+- Completed all three child checkpoints: app-preference interactions now prove persistence through `SettingsController`; relay control serialization covers the full action matrix and rename validation; daemon creation drives the real editor dialog through the public `FilePicker.platform` seam.
+- Production code and public APIs were unchanged. Test-local fakes reuse existing recording boundaries, and native/global picker state plus the daemon panel timer are restored or disposed.
+- Integrated verification: `PUB_CACHE=/home/agent/projects/outpost_pi/.pub-cache flutter test --no-pub` passed all 257 tests after the final child, compared with a green 256-test baseline before daemon-create coverage.
+- Additional analysis: `flutter analyze --no-pub` found no issue in the changed tests; it remains non-zero for two unrelated pre-existing/concurrent info diagnostics in `pi_rpc_process.dart` and `file_viewer.dart`.
+- Review weight: `standard` (caller override); ready for one independent feature-level pass.
+- Adjacent production bugs parked: none.
