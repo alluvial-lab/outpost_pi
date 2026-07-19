@@ -65,11 +65,39 @@ describe("relay ingress boundary", () => {
     }));
   });
 
+  test("accepts only the generated room-optional compat outer shape", () => {
+    expect(decodeRelayIngress(outer(Buffer.from("compat"), { room: undefined }))).toMatchObject({
+      kind: "outer",
+      frame: { peer: "owner-a" },
+      payloadUtf8: "compat",
+    });
+
+    for (const overrides of [
+      { peer: "" },
+      { room: "" },
+      { ct: "" },
+      { future: true },
+    ]) {
+      expect(() => decodeRelayIngress(outer(Buffer.from("bad"), overrides))).toThrowError(
+        expect.objectContaining<Partial<RelayIngressDecodeError>>({ code: "invalid_message" }),
+      );
+    }
+  });
+
   test("rejects malformed generated control and cross-PC shapes", () => {
+    const crossPcBase = {
+      type: "pi_envelope_in",
+      from_pc: "pi-a",
+      to_room: "main",
+      envelope: { from: "a:sess", to: "b:agent", id: "id-1", re: null, body: {} },
+    };
     for (const frame of [
       { type: "presence", states: [{ peer: "pi-a", online: "yes" }] },
       { type: "rooms", peer: "pi-a", rooms: [{ room_id: "main" }] },
-      { type: "pi_envelope_in", from_pc: "pi-a", to_room: "", envelope: {} },
+      { ...crossPcBase, to_room: "" },
+      { ...crossPcBase, envelope: { ...crossPcBase.envelope, to: [] } },
+      { ...crossPcBase, envelope: { ...crossPcBase.envelope, re: "" } },
+      { ...crossPcBase, envelope: { ...crossPcBase.envelope, future: true } },
     ]) {
       expect(() => decodeRelayIngress(JSON.stringify(frame))).toThrowError(
         expect.objectContaining<Partial<RelayIngressDecodeError>>({ code: "unsupported_type" }),
