@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-tui-parity-chat-resilience
 kind: feature
-stage: review
+stage: done
 tags: [app, pi-extension, workflow, lifecycle]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
@@ -9,6 +9,7 @@ release_binding: null
 gate_origin: null
 created: 2026-07-15
 updated: 2026-07-18
+reviewed: 2026-07-19 (standard, gpt-5.6-sol fresh-context → needs fixes; 3 materials fixed + verified → done; no second pass per standard weight)
 ---
 
 # Mobile/TUI parity and lifecycle-resilient chat behavior
