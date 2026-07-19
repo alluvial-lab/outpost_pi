@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
@@ -20,7 +22,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
-class ChatPage extends StatelessWidget {
+class ChatPage extends StatefulWidget {
   /// Plan/24-fix-title: optional title hint passed via `go_router`
   /// `extra` from the Home tile. Used as the peer-label fallback in
   /// the AppBar so the user sees the right name *immediately* on
@@ -54,6 +56,35 @@ class ChatPage extends StatelessWidget {
     this.initialOnline = false,
     this.showBack = true,
   });
+
+  @override
+  State<ChatPage> createState() => _ChatPageState();
+}
+
+class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
+  String? get initialTitle => widget.initialTitle;
+  String? get initialDevice => widget.initialDevice;
+  bool get initialOnline => widget.initialOnline;
+  bool get showBack => widget.showBack;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      unawaited(context.read<ChatViewModel>().refreshOnResume());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
