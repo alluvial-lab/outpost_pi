@@ -276,6 +276,51 @@ void main() {
       expect(s.conn.isRoomWorking('epk_projection', 'main'), isFalse);
       s.conn.dispose();
     });
+
+    test('reconnect keeps cached room stale until a fresh snapshot', () async {
+      final s = await _connected();
+      final initiallyLive = s.conn.roomsStream.firstWhere(
+        (_) => s.conn.isRoomLive('epk_projection', 'main'),
+      );
+      s.channel.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_projection',
+          roomId: 'main',
+          startedAt: 1,
+        ),
+      );
+      await initiallyLive.timeout(const Duration(seconds: 1));
+
+      await s.conn.disconnect();
+      final reconnect = _FakeChannel();
+      final staleReconnect = s.conn.roomsStream.firstWhere(
+        (_) =>
+            s.conn.status is StatusOnline &&
+            !s.conn.isRoomLive('epk_projection', 'main'),
+      );
+      s.conn.adopt(reconnect, _peer);
+      await staleReconnect.timeout(const Duration(seconds: 1));
+
+      expect(s.conn.isRoomLive('epk_projection', 'main'), isFalse);
+      expect(
+        s.conn.roomTurnProjection('epk_projection', 'main').status,
+        AppTurnStatus.stale,
+      );
+
+      final freshlyConfirmed = s.conn.roomsStream.firstWhere(
+        (_) => s.conn.isRoomLive('epk_projection', 'main'),
+      );
+      reconnect.pushControl(
+        const RoomsSnapshot(
+          peer: 'epk_projection',
+          rooms: [RoomInfo(roomId: 'main', startedAt: 2)],
+        ),
+      );
+      await freshlyConfirmed.timeout(const Duration(seconds: 1));
+
+      expect(s.conn.isRoomLive('epk_projection', 'main'), isTrue);
+      s.conn.dispose();
+    });
   });
 
   group('ConnectionManager room persistence ownership', () {

@@ -772,8 +772,10 @@ class SyncService extends Service {
   /// Re-send messages whose `UserMessageSubmitted` event has `held: true`
   /// (never written to the channel because the room was offline at send
   /// time) and that are still pending or failed (not confirmed). Reuses the
-  /// ORIGINAL `clientMessageId` so the echo/replay dedupes by id. Each id
-  /// is re-sent at most once per session (`_resentHeldPendingIds`) to
+  /// ORIGINAL `clientMessageId` so the echo/replay dedupes by id. A relay
+  /// channel alone is not sufficient: room liveness must have been confirmed
+  /// in the current transport generation, and is revalidated after async reads.
+  /// Each id is re-sent at most once per session (`_resentHeldPendingIds`) to
   /// prevent the self-retrigger loop (the re-send's own `working:true`
   /// room_meta update re-fires `_onRoomsChanged`).
   Future<void> _resendHeldPendingMessages(
@@ -782,10 +784,8 @@ class SyncService extends Service {
   ) async {
     if (!_isCurrentLifecycle(generation, ref)) return;
     final ch = _conn.channel;
-    if (ch == null) return; // still offline — nothing to do
-    final activeEpk = _activeEpk;
-    if (activeEpk != null && !_conn.isRoomLive(activeEpk, _activeRoomId)) {
-      return; // room still not live — don't re-send into a dead socket
+    if (ch == null || !_conn.isRoomLive(ref.peerEpk, ref.roomId)) {
+      return; // relay-only reconnect: wait for fresh room confirmation
     }
     final key = TranscriptSessionKey(
       peerId: ref.peerEpk,
@@ -793,7 +793,10 @@ class SyncService extends Service {
       sessionId: ref.sessionId,
     );
     final events = await _eventStore.readSession(key);
-    if (!_isCurrentLifecycle(generation, ref)) return;
+    if (!_isCurrentLifecycle(generation, ref) ||
+        !_conn.isRoomLive(ref.peerEpk, ref.roomId)) {
+      return;
+    }
     final confirmedIds = <String>{};
     final heldPending = <UserMessageSubmitted>[];
     for (final e in events) {
@@ -811,7 +814,9 @@ class SyncService extends Service {
       // during the loop). Reuses the ORIGINAL id so the echo/replay dedupes.
       if (!_isCurrentLifecycle(generation, ref)) return;
       final currentCh = _conn.channel;
-      if (currentCh == null) break;
+      if (currentCh == null || !_conn.isRoomLive(ref.peerEpk, ref.roomId)) {
+        return;
+      }
       _resentHeldPendingIds.add(id); // in-flight guard for this sweep
       try {
         if (!_isCurrentLifecycle(generation, ref)) return;
