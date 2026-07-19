@@ -5,9 +5,13 @@ import type { Ed25519Keypair } from "../pairing/crypto.js";
 import {
   RELAY_AUTH_DOMAIN_PREFIX,
   type RelayControlFrameAuth,
-  type RelayControlFrameChallenge,
   type RelayControlFrameHello,
 } from "../protocol/generated/protocol.generated.js";
+import {
+  decodeRelayChallenge,
+  RELAY_MAX_PRE_AUTH_FRAME_BYTES,
+  RELAY_MAX_RAW_MESSAGE_BYTES,
+} from "../protocol/relay_ingress.js";
 import {
   REACHABILITY_RELAY_LIVENESS_CHECK_MS,
   REACHABILITY_RELAY_LIVENESS_TIMEOUT_MS,
@@ -120,7 +124,7 @@ export class RelayClient extends EventEmitter {
    */
   async connect(options: ConnectOptions = {}): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(this.url);
+      const ws = new WebSocket(this.url, { maxPayload: RELAY_MAX_RAW_MESSAGE_BYTES });
       this.ws = ws;
 
       ws.on("error", (err) => reject(err));
@@ -223,28 +227,29 @@ export class RelayClient extends EventEmitter {
     this._rawSend(ws, JSON.stringify(hello));
 
     const challengeRaw = await this._nextMsg(ws);
+    if (Buffer.byteLength(challengeRaw, "utf8") > RELAY_MAX_PRE_AUTH_FRAME_BYTES) {
+      throw new Error("relay auth_failed: challenge too large");
+    }
     let parsedChallenge: unknown;
     try {
       parsedChallenge = JSON.parse(challengeRaw) as unknown;
     } catch {
-      throw new Error(`relay auth_failed: not JSON: ${challengeRaw}`);
+      throw new Error("relay auth_failed: malformed challenge");
     }
     if (isRecord(parsedChallenge) && parsedChallenge.type === "error") {
       const code = typeof parsedChallenge.code === "string" ? parsedChallenge.code : "";
       if (code === "room_already_open") {
         throw new RoomAlreadyOpenError(opts.roomId);
       }
-      const message = typeof parsedChallenge.message === "string" ? parsedChallenge.message : "";
-      throw new Error(`relay rejected hello: ${code || message || "unknown"}`);
+      throw new Error("relay rejected hello");
     }
-    if (!isRecord(parsedChallenge) || parsedChallenge.type !== "challenge" || typeof parsedChallenge.nonce !== "string" || !parsedChallenge.nonce) {
-      throw new Error(`relay auth_failed: expected challenge, got ${challengeRaw}`);
-    }
-    const challenge: RelayControlFrameChallenge = {
-      type: "challenge",
-      nonce: parsedChallenge.nonce,
-    };
 
+    let challenge;
+    try {
+      challenge = decodeRelayChallenge(challengeRaw);
+    } catch {
+      throw new Error("relay auth_failed: invalid challenge");
+    }
     const nonce = Buffer.from(challenge.nonce, "base64");
     // Domain-separated auth signature: must match the relay's
     // `RELAY_AUTH_DOMAIN_PREFIX` (relay/src/auth/challenge.rs). The relay
