@@ -282,12 +282,13 @@ final class RpcMeshRevoked extends RpcEvent {
   final RpcJsonObject? details;
 }
 
-/// Preserve any event not yet mapped, including compaction, retry, queue updates,
-/// tool-call deltas, message boundaries, and status or title changes.
+/// Preserve the category of any event not yet mapped, including compaction,
+/// retry, queue updates, tool-call deltas, message boundaries, and status or
+/// title changes.
 ///
-/// The UI safely ignores these events rather than crashing.
+/// The UI safely ignores these events rather than crashing. Raw wire content is
+/// deliberately not retained because diagnostics must remain content-free.
 final class RpcUnknown extends RpcEvent {
-  const RpcUnknown(this.type, [this.raw = '']);
+  const RpcUnknown(this.type);
   final String type;
-  final String raw;
 }
