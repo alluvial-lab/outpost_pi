@@ -1,4 +1,8 @@
-import { decodeClient } from "../protocol/codec.js";
+import {
+  decodeRelayClientPayload,
+  decodeRelayIngress,
+  type DecodedRelayIngress,
+} from "../protocol/relay_ingress.js";
 import type { ByeReason, ClientMessage, PairErrorCode, ServerMessage } from "../protocol/types.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
 import type { AttachOwnerInput, OwnerMultiplexerPort } from "./ports.js";
@@ -137,12 +141,6 @@ export interface OwnerMultiplexerDeps {
   onFanoutPresenceChanged?(event: OwnerFanoutPresenceEvent): void;
 }
 
-interface OwnerOuterEnvelope {
-  peer: string;
-  room?: string;
-  ct: string;
-}
-
 /** Carry relay ingress dependencies for decoding and routing one owner envelope. */
 export interface OwnerOuterLineInput {
   line: string;
@@ -154,33 +152,13 @@ export interface OwnerOuterLineInput {
   sendToPeer(peerId: string, message: ServerMessage): void;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-/** Validate the relay outer-envelope boundary before pairing or owner routing. */
-export function decodeOuterEnvelope(line: string): OwnerOuterEnvelope | null {
-  let parsed: unknown;
+/** Validate and decode the relay outer-envelope boundary before pairing or owner routing. */
+export function decodeOuterEnvelope(
+  line: string,
+): Extract<DecodedRelayIngress, { kind: "outer" }> | null {
   try {
-    parsed = JSON.parse(line) as unknown;
-  } catch {
-    return null;
-  }
-  if (!isRecord(parsed)) return null;
-  if (typeof parsed.peer !== "string" || parsed.peer.length === 0) return null;
-  if (typeof parsed.ct !== "string" || parsed.ct.length === 0) return null;
-  if (parsed.room !== undefined && typeof parsed.room !== "string") return null;
-  return {
-    peer: parsed.peer,
-    ct: parsed.ct,
-    ...(typeof parsed.room === "string" ? { room: parsed.room } : {}),
-  };
-}
-
-/** Decode a base64 relay payload through the canonical client-message boundary validator. */
-export function decodeClientMessage(ct: string): ClientMessage | null {
-  try {
-    return decodeClient(Buffer.from(ct, "base64").toString("utf8"));
+    const decoded = decodeRelayIngress(line);
+    return decoded.kind === "outer" ? decoded : null;
   } catch {
     return null;
   }
@@ -296,8 +274,9 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   }
 
   async handleOuterLine(input: OwnerOuterLineInput): Promise<void> {
-    const outer = decodeOuterEnvelope(input.line);
-    if (!outer) return;
+    const decoded = decodeOuterEnvelope(input.line);
+    if (!decoded) return;
+    const outer = decoded.frame;
     if (!input.isCurrent()) return;
     // NOTE: do NOT re-check `outer.room` against `input.roomId` here. The
     // relay's `dispatch_outer` rewrites the DELIVERED envelope's `room` to the
@@ -314,7 +293,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     // this rewritten field, so there is no spoofing surface to re-defend.
     if (this.channels.has(outer.peer)) return;
 
-    const inner = decodeClientMessage(outer.ct);
+    const inner = decodeRelayClientPayload(decoded.payloadUtf8);
     if (!inner) return;
 
     if (inner.type === "pair_request") {
