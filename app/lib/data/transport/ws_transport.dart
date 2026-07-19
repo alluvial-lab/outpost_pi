@@ -443,10 +443,10 @@ WsInboundFrameDecision demuxPostAuthInboundFrame({
         kind: WsInboundFrameKind.enqueue,
         envelopeBytes: accepted.decodedPayload,
       );
-    case RelayControlFrameDto(:final type, :final control):
+    case RelayServerControlFrameDto(:final type):
       return WsInboundFrameDecision(
         kind: WsInboundFrameKind.control,
-        control: control,
+        control: accepted.control,
         controlType: type,
       );
   }
