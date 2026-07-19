@@ -1,7 +1,7 @@
 ---
 id: feature-outbound-buffer-on-peer-offline-ordering-regressions
 kind: story
-stage: drafting
+stage: done
 tags: [pi-extension, lifecycle]
 parent: feature-outbound-buffer-on-peer-offline
 depends_on: [feature-outbound-buffer-on-peer-offline-presence-lifecycle, feature-outbound-buffer-on-peer-offline-turn-boundary-wiring]
@@ -27,14 +27,28 @@ online and late-attach paths.
 
 ## Acceptance criteria
 
-- [ ] The existing suspend/resume test expects the formerly dropped frame to
+- [x] The existing suspend/resume test expects the formerly dropped frame to
       flush before the next live frame.
-- [ ] Frame-count and byte-cap tests prove whole-interval discard and recovery
+- [x] Frame-count and byte-cap tests prove whole-interval discard and recovery
       after the next turn boundary.
-- [ ] Detach and same-peer reattach tests prove old frames cannot leak into the
+- [x] Detach and same-peer reattach tests prove old frames cannot leak into the
       replacement channel.
-- [ ] Integration coverage exercises both races: `peer_online` first yields an
+- [x] Integration coverage exercises both races: `peer_online` first yields an
       atomic FIFO before later idempotent history; `session_sync` first yields
       history with no later stale FIFO flush.
-- [ ] Existing online multi-owner and active-turn late-attach semantics remain
+- [x] Existing online multi-owner and active-turn late-attach semantics remain
       green and do not double-deliver through the offline buffer.
+
+## Implementation
+
+Updated suspend/resume to require FIFO flush before live delivery and added
+deterministic coverage for re-entrant flush ordering, both hard caps, cyclic
+serialization failure, completed-turn replacement, send-failure convergence,
+sync-first arbitration, detach/relay-drop/reattach cleanup, and late-attach
+separation. Integration coverage drives real relay control and owner ingress
+for both reconnect orderings and proves normal plus synthetic compaction
+`turn_end` boundaries retain exactly the newest completed interval and active
+suffix.
+
+Verification: `./node_modules/.bin/tsc --noEmit`; targeted owner multiplexer and
+reconnect/boundary integration Vitest (17 passed).

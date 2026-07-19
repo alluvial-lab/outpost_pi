@@ -1189,6 +1189,85 @@ describe("multi-channel broadcast (W2D)", () => {
     expect(recipients).toEqual(new Set(["ownerA__1234567890", "ownerB__abcdefghij"]));
   });
 
+  test("offline reconnect ordering is safe for peer_online-first and session_sync-first", async () => {
+    const peer = "owner-buffer-ordering";
+    await _pairForTest(peer);
+    const sessionId = currentSessionIdFromSends();
+    const onInput = captureEventHandler("input");
+    const onUpdate = captureEventHandler("message_update");
+    onInput({ source: "terminal", text: "seed buffered turn" } as unknown as Parameters<typeof onInput>[0]);
+
+    relayRef.current!.emit("message", JSON.stringify({
+      type: "peer_offline", peer, since_ts: 1,
+    }));
+    const onlineFirstStart = relayRef.current!.send.mock.calls.length;
+    onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "online-first buffered" } } as unknown as Parameters<typeof onUpdate>[0]);
+    expect(sentToPeerSince(onlineFirstStart, peer).some((frame) => frame.inner.type === "agent_chunk")).toBe(false);
+
+    relayRef.current!.emit("message", JSON.stringify({ type: "peer_online", peer }));
+    emitClientMessage(peer, {
+      type: "session_sync", id: "sync-after-online", session_id: sessionId, limit: 50,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    const onlineFirst = sentToPeerSince(onlineFirstStart, peer)
+      .filter((frame) => frame.inner.type === "agent_chunk" || frame.inner.type === "session_history");
+    expect(onlineFirst.map((frame) => frame.inner.type)).toEqual(["agent_chunk", "session_history"]);
+    expect(onlineFirst[0]!.inner).toMatchObject({ delta: "online-first buffered" });
+
+    relayRef.current!.emit("message", JSON.stringify({
+      type: "peer_offline", peer, since_ts: 2,
+    }));
+    const syncFirstStart = relayRef.current!.send.mock.calls.length;
+    onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "sync-first stale" } } as unknown as Parameters<typeof onUpdate>[0]);
+    emitClientMessage(peer, {
+      type: "session_sync", id: "sync-before-online", session_id: sessionId, limit: 50,
+    });
+    relayRef.current!.emit("message", JSON.stringify({ type: "peer_online", peer }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    const syncFirst = sentToPeerSince(syncFirstStart, peer)
+      .filter((frame) => frame.inner.type === "agent_chunk" || frame.inner.type === "session_history");
+    expect(syncFirst.map((frame) => frame.inner.type)).toEqual(["session_history"]);
+    expect(syncFirst[0]!.inner).toMatchObject({ in_reply_to: "sync-before-online" });
+  });
+
+  test("canonical compaction and SDK turn_end boundaries retain one completed turn plus active suffix", async () => {
+    const peer = "owner-buffer-boundary";
+    await _pairForTest(peer);
+    const onCompact = captureEventHandler("session_compact");
+    const onInput = captureEventHandler("input");
+    const onUpdate = captureEventHandler("message_update");
+    const onTurnEnd = captureEventHandler("turn_end");
+
+    relayRef.current!.emit("message", JSON.stringify({
+      type: "peer_offline", peer, since_ts: 1,
+    }));
+    const sendsBefore = relayRef.current!.send.mock.calls.length;
+    onCompact({
+      type: "session_compact",
+      compactionEntry: {
+        type: "compaction", summary: "older compacted interval", tokensBefore: 100,
+        firstKeptEntryId: "entry-1", timestamp: "2026-07-18T00:00:00Z",
+      },
+      fromExtension: false,
+    });
+
+    onInput({ source: "terminal", text: "completed normal turn" } as unknown as Parameters<typeof onInput>[0]);
+    onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "completed normal frame" } } as unknown as Parameters<typeof onUpdate>[0]);
+    onTurnEnd({ type: "turn_end", turnIndex: 0 });
+
+    onInput({ source: "terminal", text: "active suffix turn" } as unknown as Parameters<typeof onInput>[0]);
+    onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "active suffix frame" } } as unknown as Parameters<typeof onUpdate>[0]);
+    relayRef.current!.emit("message", JSON.stringify({ type: "peer_online", peer }));
+
+    const flushed = sentToPeerSince(sendsBefore, peer)
+      .filter((frame) => frame.inner.type === "compaction" || frame.inner.type === "agent_chunk");
+    expect(flushed.map((frame) => frame.inner.type)).toEqual(["agent_chunk", "agent_chunk"]);
+    expect(flushed.map((frame) => frame.inner["delta"]))
+      .toEqual(["completed normal frame", "active suffix frame"]);
+  });
+
   // Regression: subagent-origin assistant messages must NOT leak to the phone.
   // The `subagent` tool (`@gotgenes/pi-subagents`) runs in-process and creates
   // a child AgentSession that re-binds our extension, so the child's
