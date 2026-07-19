@@ -7,13 +7,27 @@ use std::sync::{
 use axum::extract::ws::Message;
 use tokio::sync::mpsc;
 
+use crate::metrics::FirehoseMetrics;
+
 pub(crate) type RoomKey = (String, String); // (peer_id, room_id)
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DeliveryReport {
+    pub delivered: usize,
+    pub saturated: usize,
+}
+
+impl DeliveryReport {
+    pub(crate) fn accepted(self) -> bool {
+        self.delivered > 0
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct ConnectionEntry {
     pub conn_id: u64,
     pub device_id: String,
-    pub tx: mpsc::UnboundedSender<Message>,
+    pub tx: mpsc::Sender<Message>,
 }
 
 #[derive(Debug)]
@@ -50,13 +64,15 @@ pub struct ConnectionRemove {
 pub(crate) struct ConnectionRegistry {
     next_conn: AtomicU64,
     senders: Mutex<HashMap<RoomKey, Vec<ConnectionEntry>>>,
+    metrics: std::sync::Arc<FirehoseMetrics>,
 }
 
 impl ConnectionRegistry {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(metrics: std::sync::Arc<FirehoseMetrics>) -> Self {
         Self {
             next_conn: AtomicU64::new(0),
             senders: Mutex::new(HashMap::new()),
+            metrics,
         }
     }
 
@@ -65,7 +81,7 @@ impl ConnectionRegistry {
         peer_id: &str,
         room_id: &str,
         device_id: &str,
-        tx: mpsc::UnboundedSender<Message>,
+        tx: mpsc::Sender<Message>,
     ) -> ConnectionInsert {
         let key = (peer_id.to_string(), room_id.to_string());
         let conn_id = self.next_conn.fetch_add(1, Ordering::Relaxed);
@@ -152,46 +168,116 @@ impl ConnectionRegistry {
         dest_room: &str,
         msg: Message,
         skip_conn_id: u64,
-    ) -> bool {
+    ) -> DeliveryReport {
         let lock = self.senders.lock().unwrap();
         let key = (dest_peer.to_string(), dest_room.to_string());
         let Some(entries) = lock.get(&key) else {
-            return false;
+            return DeliveryReport::default();
         };
 
-        let mut delivered = false;
-        for entry in entries {
-            if entry.conn_id == skip_conn_id {
-                continue;
-            }
-            if entry.tx.send(msg.clone()).is_ok() {
-                delivered = true;
-            }
-        }
-        delivered
+        let report = deliver(entries, msg, Some(skip_conn_id));
+        self.metrics
+            .inc_outbound_queue_dropped(report.saturated as u64);
+        report
     }
 
-    pub(crate) fn send_to_peer(&self, peer_id: &str, msg: Message) -> bool {
-        let mut sent = false;
+    pub(crate) fn send_to_peer(&self, peer_id: &str, msg: Message) -> DeliveryReport {
         let lock = self.senders.lock().unwrap();
-        for ((p, _), entries) in lock.iter() {
-            if p == peer_id {
-                for entry in entries {
-                    let _ = entry.tx.send(msg.clone());
-                    sent = true;
-                }
+        let mut report = DeliveryReport::default();
+        for ((candidate, _), entries) in lock.iter() {
+            if candidate == peer_id {
+                report += deliver(entries, msg.clone(), None);
             }
         }
-        sent
+        self.metrics
+            .inc_outbound_queue_dropped(report.saturated as u64);
+        report
     }
 
-    pub(crate) fn send_to_all_rooms_of(&self, peer_id: &str, msg: Message) -> bool {
+    pub(crate) fn send_to_all_rooms_of(&self, peer_id: &str, msg: Message) -> DeliveryReport {
         self.send_to_peer(peer_id, msg)
     }
 }
 
-impl Default for ConnectionRegistry {
-    fn default() -> Self {
-        Self::new()
+impl std::ops::AddAssign for DeliveryReport {
+    fn add_assign(&mut self, rhs: Self) {
+        self.delivered += rhs.delivered;
+        self.saturated += rhs.saturated;
+    }
+}
+
+fn deliver(entries: &[ConnectionEntry], msg: Message, skip_conn_id: Option<u64>) -> DeliveryReport {
+    let mut report = DeliveryReport::default();
+    for entry in entries {
+        if skip_conn_id == Some(entry.conn_id) {
+            continue;
+        }
+        match entry.tx.try_send(msg.clone()) {
+            Ok(()) => report.delivered += 1,
+            Err(mpsc::error::TrySendError::Full(_)) => report.saturated += 1,
+            Err(mpsc::error::TrySendError::Closed(_)) => {}
+        }
+    }
+    report
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+
+    fn registry() -> (ConnectionRegistry, Arc<FirehoseMetrics>) {
+        let metrics = Arc::new(FirehoseMetrics::new());
+        (ConnectionRegistry::new(metrics.clone()), metrics)
+    }
+
+    #[test]
+    fn full_mailbox_drops_newest_and_reports_saturation() {
+        let (registry, metrics) = registry();
+        let (tx, mut rx) = mpsc::channel(1);
+        registry.insert("peer", "main", "device", tx);
+
+        assert_eq!(
+            registry.send_to_room("peer", "main", Message::Text("first".into()), u64::MAX),
+            DeliveryReport {
+                delivered: 1,
+                saturated: 0,
+            }
+        );
+        assert_eq!(
+            registry.send_to_room("peer", "main", Message::Text("newest".into()), u64::MAX),
+            DeliveryReport {
+                delivered: 0,
+                saturated: 1,
+            }
+        );
+        assert_eq!(rx.try_recv().unwrap().to_text().unwrap(), "first");
+        assert_eq!(metrics.snapshot()[6], 1);
+    }
+
+    #[test]
+    fn healthy_device_accepts_while_sibling_mailbox_is_saturated() {
+        let (registry, _) = registry();
+        let (full_tx, mut full_rx) = mpsc::channel(1);
+        let (healthy_tx, mut healthy_rx) = mpsc::channel(1);
+        registry.insert("peer", "main", "full-device", full_tx);
+        registry.insert("peer", "main", "healthy-device", healthy_tx);
+
+        let first = registry.send_to_room("peer", "main", Message::Text("first".into()), u64::MAX);
+        assert_eq!(first.delivered, 2);
+        assert_eq!(healthy_rx.try_recv().unwrap().to_text().unwrap(), "first");
+
+        let second =
+            registry.send_to_room("peer", "main", Message::Text("second".into()), u64::MAX);
+        assert_eq!(
+            second,
+            DeliveryReport {
+                delivered: 1,
+                saturated: 1,
+            }
+        );
+        assert_eq!(full_rx.try_recv().unwrap().to_text().unwrap(), "first");
+        assert_eq!(healthy_rx.try_recv().unwrap().to_text().unwrap(), "second");
     }
 }

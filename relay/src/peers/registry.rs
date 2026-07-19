@@ -101,7 +101,7 @@ impl PeerRegistry {
         rooms: Arc<RoomManager>,
         metrics: Arc<FirehoseMetrics>,
     ) -> Self {
-        let connections = Arc::new(ConnectionRegistry::new());
+        let connections = Arc::new(ConnectionRegistry::new(metrics.clone()));
         let rooms_state = Arc::new(RoomStateStore::new());
         let presence_state = Arc::new(PresenceState);
         let events = Arc::new(RegistryEventPublisher::new(
@@ -147,7 +147,7 @@ impl PeerRegistry {
         peer_id: String,
         room_meta: RoomMeta,
         device_id: String,
-        tx: mpsc::UnboundedSender<Message>,
+        tx: mpsc::Sender<Message>,
     ) -> PeerRegistration {
         let room_id = room_meta.room_id.clone();
         let insert = self.connections.insert(&peer_id, &room_id, &device_id, tx);
@@ -265,6 +265,7 @@ mod tests {
     use super::*;
     use crate::presence::PresenceManager;
     use crate::rooms::{RoomManager, RoomMeta};
+    use crate::test_support::bounded_mpsc as mpsc;
 
     fn make_meta(room_id: &str) -> RoomMeta {
         RoomMeta {
@@ -299,6 +300,7 @@ mod tests {
     ) -> bool {
         reg.connections()
             .send_to_room(dest_peer, dest_room, msg, from_conn_id)
+            .accepted()
     }
 
     #[tokio::test]

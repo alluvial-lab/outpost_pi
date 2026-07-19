@@ -251,15 +251,18 @@ pub(crate) async fn handle_pi_envelope(
     // Room-targeted delivery: only the addressed room of the destination peer
     // receives the frame, and the sender's own connection is skipped so
     // multi-device Owners don't echo their own outbound messages.
-    if delivery.send_to_room(
-        frame.to_pc.as_str(),
-        frame.to_room.as_str(),
-        Message::Text(
-            serde_json::to_string(&CrossPcFrame::PiEnvelopeIn(outbound.clone()))
-                .expect("generated pi_envelope_in must serialize"),
-        ),
-        sender_conn_id,
-    ) {
+    if delivery
+        .send_to_room(
+            frame.to_pc.as_str(),
+            frame.to_room.as_str(),
+            Message::Text(
+                serde_json::to_string(&CrossPcFrame::PiEnvelopeIn(outbound.clone()))
+                    .expect("generated pi_envelope_in must serialize"),
+            ),
+            sender_conn_id,
+        )
+        .accepted()
+    {
         debug!(
             from_tail = %peer_tail(sender_peer_id),
             to_pc_tail = %peer_tail(&frame.to_pc),
@@ -787,8 +790,8 @@ mod tests {
     #[tokio::test]
     async fn authorized_forward_targets_only_addressed_room() {
         let registry = make_registry();
-        let (tx_main, mut rx_main) = tokio::sync::mpsc::unbounded_channel::<Message>();
-        let (tx_work, mut rx_work) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (tx_main, mut rx_main) = tokio::sync::mpsc::channel::<Message>(16);
+        let (tx_work, mut rx_work) = tokio::sync::mpsc::channel::<Message>(16);
         let _ = registry
             .register(
                 "pi_b".to_string(),
@@ -841,7 +844,7 @@ mod tests {
     #[tokio::test]
     async fn authorization_uses_authenticated_sender_peer_id_not_envelope_from() {
         let registry = make_registry();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Message>(16);
         let _ = registry
             .register(
                 "pi_b".to_string(),

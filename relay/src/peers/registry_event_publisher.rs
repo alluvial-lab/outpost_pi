@@ -14,8 +14,8 @@ use crate::rooms::{RoomManager, RoomMeta};
 ///
 /// State modules return transition records; this adapter owns subscriber lookup,
 /// relay-event JSON construction, firehose metrics, and delivery over the live
-/// connection table. It intentionally preserves the existing unbounded-channel
-/// send semantics and does not inspect message contents.
+/// connection table. Delivery uses bounded drop-newest mailboxes and never
+/// inspects message contents.
 #[derive(Debug)]
 pub(crate) struct RegistryEventPublisher {
     delivery: Arc<ConnectionRegistry>,
