@@ -1,7 +1,7 @@
 ---
 id: feature-cross-component-e2e-pairing-suite-qr-lifecycle
 kind: story
-stage: implementing
+stage: done
 tags: [e2e-test, testing]
 parent: feature-cross-component-e2e-pairing-suite
 depends_on: [feature-cross-component-e2e-pairing-suite-infra]
@@ -39,3 +39,14 @@ a linked skip with a one-line reason; do not weaken the invariant. Fix fixture
 or harness drift in-session. Never replace the TUI boundary assertion with
 `buildQRUri`, a mock invocation count, a snapshot-only assertion, or a
 placeholder truth.
+
+## Implementation notes
+
+- Execution capability: `openai-codex/gpt-5.6-sol` (caller-selected).
+- Review weight: `standard` (caller).
+- Files changed: `app/test/e2e/qr_lifecycle_e2e_test.dart`; corrected Compose/runner port reservation after the first restart probe proved Docker reallocates unspecified host ports on container restart.
+- Tests added: real SDK `session_start` → registered command → SDK-accepted `sendMessage` → production Dart QR parser regression.
+- Simplification: the assertion consumes only the Pi host's command/event boundary; no QR builder or extension internals are called by the test.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
+- Verification: `e2e/run-pairing.sh` passed the QR lifecycle case against the real relay and extension factory.
