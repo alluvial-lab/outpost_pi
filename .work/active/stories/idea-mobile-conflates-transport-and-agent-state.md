@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-conflates-transport-and-agent-state
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, ux, design, architecture]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
@@ -137,3 +137,11 @@ flattened booleans and priority label with a composed transport + existing
 `AppTurnProjection` + steering model. This finding closes when that unit's
 independent-axis, awaiting-tool Stop, and steering-indicator evidence is green;
 it does not receive a second implementation patch.
+
+## Implementation
+
+Closed as structurally subsumed by
+`feature-mobile-tui-parity-chat-resilience-status-projection`. Commit
+`27f8558` replaced the flattened priority status with independent typed
+transport, existing turn, and steering projections; the transport × turn table
+and awaiting-tool cancellation regression are green.
