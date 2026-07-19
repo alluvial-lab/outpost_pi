@@ -762,9 +762,30 @@ void main() {
     expect(s.sync.streaming, isNotNull);
     expect(s.sync.streaming!.inReplyTo, 'u1');
     expect(s.sync.isWorking, isTrue);
-    final rows = messages(s.epk);
-    expect(rows, hasLength(2));
+    var rows = messages(s.epk);
+    expect(
+      rows.map((row) => row.id),
+      ['u1'],
+      reason: 'delivery acceptance must not anchor the steering bubble',
+    );
+    expect(
+      s.sync.steeringProjection,
+      SteeringPending(clientMessageId: sent.id, text: 'refine this'),
+    );
+
+    s.ch.push(
+      UserInput(
+        id: sent.id,
+        text: 'refine this',
+        ts: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await _settle();
+
+    rows = messages(s.epk);
+    expect(rows.map((row) => row.id), ['u1', sent.id]);
     expect(rows.where((r) => r.id == sent.id).single.pending, isFalse);
+    expect(s.sync.steeringProjection, isA<NoSteering>());
     expect(index(s.epk)?.status, SessionActivity.working);
     expect(index(s.epk)?.lastMessagePreview, 'refine this');
 
