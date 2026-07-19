@@ -123,13 +123,16 @@ final class RpcAutoRetry extends RpcEvent {
   final String message;
 }
 
-/// Raw child-process stderr, such as a Pi "model not found" warning.
+/// Classify content-free child-process diagnostics.
+enum RpcDiagnosticKind { childStderr, streamReadFailure }
+
+/// Report the fact of a child-process diagnostic without retaining its text.
 ///
-/// This is diagnostic output, **not** protocol data, and remains separate from
-/// JSONL stdout.
+/// Stderr and stream errors are untrusted diagnostic surfaces, not protocol
+/// data. Only the fixed [kind] crosses the process boundary into the UI.
 final class RpcDiagnostic extends RpcEvent {
-  const RpcDiagnostic(this.text);
-  final String text;
+  const RpcDiagnostic(this.kind);
+  final RpcDiagnosticKind kind;
 }
 
 /// The child process exited cleanly or crashed.

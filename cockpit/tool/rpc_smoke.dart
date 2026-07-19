@@ -44,8 +44,8 @@ Future<void> main(List<String> args) async {
         stdout.writeln('[stream-error] $message');
       case RpcAutoRetry(:final attempt, :final maxAttempts, :final message):
         stdout.writeln('[auto-retry] $attempt/$maxAttempts — $message');
-      case RpcDiagnostic(:final text):
-        stdout.writeln('[stderr] $text');
+      case RpcDiagnostic(:final kind):
+        stdout.writeln('[diagnostic] ${kind.name} (content hidden)');
       case RpcAgentEnd():
         stdout.writeln('\n[agent_end]');
         if (!ended.isCompleted) ended.complete();
