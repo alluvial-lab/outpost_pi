@@ -2,13 +2,13 @@
 kind: story
 release_binding: null
 parent: feature-relay-resource-bounds
-stage: drafting
+stage: done
 id: gate-security-pi-envelope-auth-scan-rate-limit
 tags: [security]
 depends_on: []
 gate_origin: security
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-18
 ---
 
 # Pi-envelope authorization scans mesh storage without a negative cache or per-frame limiter
@@ -36,3 +36,13 @@ Every `pi_envelope` authorization miss can fall through to `store.all_envelopes(
 
 ## Remediation direction
 Bound the work per connection for `pi_envelope` authorization: add a small negative cache/TTL for absent source memberships and/or a per-window cost limiter for forwarding attempts, and invalidate/refresh cache entries on mesh publish events so authorization remains timely without allowing unbounded scan amplification.
+
+## Implementation notes
+- Execution capability: `openai-codex/gpt-5.6-sol` (caller-selected for security-critical relay work).
+- Review weight: `standard` (caller-selected; feature-level review only).
+- Files changed: `relay/src/handlers/connection_actor.rs`, `relay/src/handlers/pi_forward.rs`, `relay/src/mesh/handler.rs`.
+- Tests added: exact per-connection forwarding budget, bounded positive/negative cache capacity, and negative-cache invalidation after a successful membership publish.
+- Simplification: the existing `FixedWindowBudget` now owns both control and cross-PC accounting; no second limiter arithmetic or cleanup task was introduced.
+- Discrepancies from design: the generation-safe cache invalidation and compile-time limits follow the feature design; no discrepancy.
+- Adjacent issues parked: none.
+- Verification: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` passed (139 unit tests plus all integration targets).
