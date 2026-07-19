@@ -67,7 +67,7 @@ pub enum ParseError {
 
 /// Parses one JSONL line as an outer envelope and validates its `ct` size
 /// against [`max_ct_bytes`]. The relay never decodes `ct`; it estimates the
-/// payload size from the base64 string length (three quarters of that length).
+/// payload size from the base64 string length and trailing standard padding.
 ///
 /// # Errors
 ///
@@ -86,7 +86,16 @@ pub(crate) fn parse_line_with_max(
     max_ct_bytes: usize,
 ) -> Result<OuterEnvelope, ParseError> {
     let env: OuterEnvelope = serde_json::from_str(line)?;
+    let padding = env
+        .ct
+        .as_bytes()
+        .iter()
+        .rev()
+        .take(2)
+        .take_while(|&&byte| byte == b'=')
+        .count();
     let estimated = env.ct.len().saturating_mul(3) / 4;
+    let estimated = estimated.saturating_sub(padding);
     if estimated > max_ct_bytes {
         return Err(ParseError::TooLarge(estimated, max_ct_bytes));
     }
@@ -131,6 +140,37 @@ mod tests {
         let big = "A".repeat(12 * 1024 * 1024);
         let line = format!(r#"{{"peer":"abc","room":"main","ct":"{}"}}"#, big);
         assert!(matches!(parse_line(&line), Err(ParseError::TooLarge(..))));
+    }
+
+    #[test]
+    fn accepts_padded_payloads_at_non_divisible_boundaries() {
+        let four_bytes = r#"{"peer":"abc","room":"main","ct":"AQIDBA=="}"#;
+        assert!(parse_line_with_max(four_bytes, 4).is_ok());
+
+        let five_bytes = r#"{"peer":"abc","room":"main","ct":"AQIDBAU="}"#;
+        assert!(parse_line_with_max(five_bytes, 5).is_ok());
+        assert!(matches!(
+            parse_line_with_max(five_bytes, 4),
+            Err(ParseError::TooLarge(5, 4))
+        ));
+    }
+
+    #[test]
+    fn accepts_exact_four_mib_decoded_boundary_and_rejects_next_byte() {
+        let max = DEFAULT_MAX_CT_MIB * 1024 * 1024;
+        let encoded_len = max.div_ceil(3) * 4;
+
+        let exact_ct = format!("{}==", "A".repeat(encoded_len - 2));
+        let exact = format!(r#"{{"peer":"abc","room":"main","ct":"{exact_ct}"}}"#);
+        assert!(parse_line_with_max(&exact, max).is_ok());
+
+        let over_ct = format!("{}=", "A".repeat(encoded_len - 1));
+        let over = format!(r#"{{"peer":"abc","room":"main","ct":"{over_ct}"}}"#);
+        assert!(matches!(
+            parse_line_with_max(&over, max),
+            Err(ParseError::TooLarge(estimated, limit))
+                if estimated == max + 1 && limit == max
+        ));
     }
 
     #[test]
