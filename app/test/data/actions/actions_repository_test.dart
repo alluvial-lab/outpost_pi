@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 class _FakeChannel implements IChannel, IControlLink {
   final _ctrl = StreamController<ServerMessage>.broadcast();
   final _controlCtrl = StreamController<ControlInbound>.broadcast();
+  final _sentCtrl = StreamController<ClientMessage>.broadcast();
   final List<ClientMessage> sent = [];
 
   @override
@@ -27,6 +28,17 @@ class _FakeChannel implements IChannel, IControlLink {
   @override
   Future<void> send(ClientMessage msg) async {
     sent.add(msg);
+    _sentCtrl.add(msg);
+  }
+
+  Future<T> waitForSend<T extends ClientMessage>({int occurrence = 1}) async {
+    final existing = sent.whereType<T>().toList(growable: false);
+    if (existing.length >= occurrence) return existing[occurrence - 1];
+    await _sentCtrl.stream
+        .where((message) => message is T)
+        .firstWhere((_) => sent.whereType<T>().length >= occurrence)
+        .timeout(const Duration(seconds: 1));
+    return sent.whereType<T>().elementAt(occurrence - 1);
   }
 
   @override
@@ -36,6 +48,7 @@ class _FakeChannel implements IChannel, IControlLink {
   Future<void> close() async {
     await _ctrl.close();
     await _controlCtrl.close();
+    await _sentCtrl.close();
   }
 
   void push(ServerMessage m) => _ctrl.add(m);
@@ -60,6 +73,9 @@ _setup({Duration timeout = const Duration(seconds: 5)}) async {
     emitDebounce: Duration.zero,
   );
   final repo = ActionsRepository(cm, timeout: timeout);
+  final repositoryOnline = repo.activeRoomMetaStream.firstWhere(
+    (meta) => meta.peerEpk == 'epk_actions',
+  );
   cm.adopt(
     ch,
     const PeerRecord(
@@ -69,9 +85,12 @@ _setup({Duration timeout = const Duration(seconds: 5)}) async {
       pairedAt: '2026-01-01T00:00:00Z',
     ),
   );
-  // Let the StatusOnline emit propagate into the repo, then seed the canonical
-  // session id now required on every app action frame.
-  await Future<void>.delayed(const Duration(milliseconds: 5));
+  await repositoryOnline.timeout(const Duration(seconds: 1));
+  // Seed the canonical session id now required on every app action frame, and
+  // wait on the resulting room snapshot rather than guessing at stream timing.
+  final sessionReady = cm.roomsStream.firstWhere(
+    (_) => cm.activeSessionId == 'session-actions',
+  );
   ch.push(
     PairOk(
       inReplyTo: 'pair-actions',
@@ -81,7 +100,7 @@ _setup({Duration timeout = const Duration(seconds: 5)}) async {
       sessionId: 'session-actions',
     ),
   );
-  await Future<void>.delayed(const Duration(milliseconds: 5));
+  await sessionReady.timeout(const Duration(seconds: 1));
   return (repo: repo, cm: cm, ch: ch);
 }
 
@@ -90,9 +109,7 @@ void main() {
     test('compact() resolves on action_ok with matching id', () async {
       final s = await _setup();
       final future = s.repo.compact();
-      // Let the send complete so we can fish the id out.
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final sent = s.ch.sent.single as SessionCompact;
+      final sent = await s.ch.waitForSend<SessionCompact>();
       s.ch.push(
         ActionOk(
           inReplyTo: sent.id,
@@ -107,8 +124,7 @@ void main() {
     test('compact() throws ActionFailure on action_error', () async {
       final s = await _setup();
       final future = s.repo.compact();
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final sent = s.ch.sent.single as SessionCompact;
+      final sent = await s.ch.waitForSend<SessionCompact>();
       s.ch.push(
         ActionError(
           inReplyTo: sent.id,
@@ -133,8 +149,7 @@ void main() {
     test('newSession() sends session_new', () async {
       final s = await _setup();
       final future = s.repo.newSession();
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final sent = s.ch.sent.single as SessionNew;
+      final sent = await s.ch.waitForSend<SessionNew>();
       expect(sent.toJson()['type'], 'session_new');
       expect(sent.sessionId, 'session-actions');
       s.ch.push(
@@ -151,8 +166,7 @@ void main() {
     test('newSession() rejects on a matching action_error', () async {
       final s = await _setup();
       final future = s.repo.newSession();
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final sent = s.ch.sent.single as SessionNew;
+      final sent = await s.ch.waitForSend<SessionNew>();
       s.ch.push(
         ActionError(
           inReplyTo: sent.id,
@@ -177,8 +191,7 @@ void main() {
     test('setModel(provider, modelId) sends model_set', () async {
       final s = await _setup();
       final future = s.repo.setModel('anthropic', 'claude-opus-4-7');
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final sent = s.ch.sent.single as ModelSet;
+      final sent = await s.ch.waitForSend<ModelSet>();
       expect(sent.provider, 'anthropic');
       expect(sent.modelId, 'claude-opus-4-7');
       s.ch.push(
@@ -195,8 +208,7 @@ void main() {
     test('setThinking(level) sends thinking_set with wire string', () async {
       final s = await _setup();
       final future = s.repo.setThinking(ThinkingLevel.high);
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final sent = s.ch.sent.single as ThinkingSet;
+      final sent = await s.ch.waitForSend<ThinkingSet>();
       expect(sent.level, ThinkingLevel.high);
       expect(sent.toJson()['level'], 'high');
       s.ch.push(
@@ -215,8 +227,7 @@ void main() {
     test('listModels() returns parsed wire models + current', () async {
       final s = await _setup();
       final future = s.repo.listModels();
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final sent = s.ch.sent.single as ListModels;
+      final sent = await s.ch.waitForSend<ListModels>();
       const opus = WireModel(
         id: 'claude-opus-4-7',
         name: 'Claude Opus 4.7',
@@ -249,8 +260,7 @@ void main() {
       () async {
         final s = await _setup();
         final firstFuture = s.repo.listModels();
-        await Future<void>.delayed(const Duration(milliseconds: 1));
-        final sent = s.ch.sent.single as ListModels;
+        final sent = await s.ch.waitForSend<ListModels>();
         const m = WireModel(
           id: 'gpt-4o',
           name: 'GPT-4o',
@@ -273,14 +283,12 @@ void main() {
     test('listModels(forceRefresh: true) bypasses cache', () async {
       final s = await _setup();
       final firstFuture = s.repo.listModels();
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final firstSent = s.ch.sent.single as ListModels;
+      final firstSent = await s.ch.waitForSend<ListModels>();
       s.ch.push(ModelsList(inReplyTo: firstSent.id, models: const []));
       await firstFuture;
 
       final secondFuture = s.repo.listModels(forceRefresh: true);
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final secondSent = s.ch.sent.whereType<ListModels>().last;
+      final secondSent = await s.ch.waitForSend<ListModels>(occurrence: 2);
       expect(secondSent.id, isNot(firstSent.id));
       s.ch.push(ModelsList(inReplyTo: secondSent.id, models: const []));
       await secondFuture;
@@ -291,15 +299,13 @@ void main() {
       final s = await _setup();
       // Prime the cache.
       final firstList = s.repo.listModels();
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final firstSent = s.ch.sent.single as ListModels;
+      final firstSent = await s.ch.waitForSend<ListModels>();
       s.ch.push(ModelsList(inReplyTo: firstSent.id, models: const []));
       await firstList;
 
       // Switch model — should drop the cache entry.
       final setModelFuture = s.repo.setModel('openai', 'gpt-4o');
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final modelSet = s.ch.sent.whereType<ModelSet>().single;
+      final modelSet = await s.ch.waitForSend<ModelSet>();
       s.ch.push(
         ActionOk(
           inReplyTo: modelSet.id,
@@ -311,9 +317,8 @@ void main() {
 
       // Next listModels triggers a fresh round-trip.
       final secondList = s.repo.listModels();
-      await Future<void>.delayed(const Duration(milliseconds: 1));
+      final secondSent = await s.ch.waitForSend<ListModels>(occurrence: 2);
       expect(s.ch.sent.whereType<ListModels>().length, 2);
-      final secondSent = s.ch.sent.whereType<ListModels>().last;
       s.ch.push(ModelsList(inReplyTo: secondSent.id, models: const []));
       await secondList;
       s.cm.dispose();
@@ -342,7 +347,7 @@ void main() {
     test('pending action fails with "disconnected" on channel drop', () async {
       final s = await _setup();
       final future = s.repo.compact();
-      await Future<void>.delayed(const Duration(milliseconds: 1));
+      await s.ch.waitForSend<SessionCompact>();
       await s.cm.disconnect();
       expect(
         () => future,
@@ -375,8 +380,7 @@ void main() {
         final s = await _setup();
         // Prime the cache.
         final firstFuture = s.repo.listModels();
-        await Future<void>.delayed(const Duration(milliseconds: 1));
-        final firstSent = s.ch.sent.whereType<ListModels>().single;
+        final firstSent = await s.ch.waitForSend<ListModels>();
         const opus = WireModel(
           id: 'claude-opus-4-7',
           name: 'Claude Opus 4.7',
@@ -400,6 +404,9 @@ void main() {
         // Seed a RoomAnnounced + RoomMetaUpdated to simulate external
         // model switch. The ConnectionManager broadcasts roomsStream
         // and the ActionsRepository should drop the cache.
+        final announced = s.repo.activeRoomMetaStream.firstWhere(
+          (meta) => meta.model == 'claude-opus-4-7',
+        );
         s.ch.pushControl(
           const RoomAnnounced(
             peer: 'epk_actions',
@@ -409,7 +416,10 @@ void main() {
             model: 'claude-opus-4-7',
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await announced.timeout(const Duration(seconds: 1));
+        final changed = s.repo.activeRoomMetaStream.firstWhere(
+          (meta) => meta.model == 'gpt-4o',
+        );
         s.ch.pushControl(
           const RoomMetaUpdated(
             peer: 'epk_actions',
@@ -420,12 +430,12 @@ void main() {
             hasSessionId: false,
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await changed.timeout(const Duration(seconds: 1));
 
         // Cache should be busted: third listModels triggers a fresh
         // network call.
         final third = s.repo.listModels();
-        await Future<void>.delayed(const Duration(milliseconds: 5));
+        await s.ch.waitForSend<ListModels>(occurrence: 2);
         final newSends = s.ch.sent.whereType<ListModels>().toList();
         expect(
           newSends.length,
@@ -444,6 +454,9 @@ void main() {
       final received = <ActiveRoomMeta>[];
       final sub = s.repo.activeRoomMetaStream.listen(received.add);
 
+      final metaReady = s.repo.activeRoomMetaStream.firstWhere(
+        (meta) => meta.thinking == ThinkingLevel.high,
+      );
       s.ch.pushControl(
         const RoomAnnounced(
           peer: 'epk_actions',
@@ -453,7 +466,7 @@ void main() {
           thinking: ThinkingLevel.high,
         ),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await metaReady.timeout(const Duration(seconds: 1));
 
       expect(received, isNotEmpty);
       final last = received.last;
@@ -472,6 +485,9 @@ void main() {
       () async {
         final s = await _setup();
         // Two cwd-rooms on the same Mac, different models.
+        final roomsReady = s.cm.roomsStream.firstWhere(
+          (_) => s.cm.roomsFor('epk_actions').length == 2,
+        );
         s.ch.pushControl(
           const RoomAnnounced(
             peer: 'epk_actions',
@@ -488,13 +504,16 @@ void main() {
             model: 'model-B',
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 30));
+        await roomsReady.timeout(const Duration(seconds: 1));
         // Active room is 'main' (the bound default) → model-A.
         expect(s.repo.activeRoomMeta.model, 'model-A');
 
         // User opens the 'work' cwd chat → ChatViewModel calls switchRoom.
+        final switched = s.repo.activeRoomMetaStream.firstWhere(
+          (meta) => meta.roomId == 'work' && meta.model == 'model-B',
+        );
         s.cm.switchRoom('work');
-        await Future<void>.delayed(const Duration(milliseconds: 30));
+        await switched.timeout(const Duration(seconds: 1));
 
         expect(
           s.repo.activeRoomMeta.model,
@@ -517,8 +536,7 @@ void main() {
       );
       // Real compact still works afterwards.
       final future = s.repo.compact();
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-      final sent = s.ch.sent.whereType<SessionCompact>().single;
+      final sent = await s.ch.waitForSend<SessionCompact>();
       s.ch.push(
         ActionOk(
           inReplyTo: sent.id,
