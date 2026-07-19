@@ -1,7 +1,7 @@
 ---
 id: feature-secure-transcript-storage
 kind: feature
-stage: review
+stage: done
 tags: [app, security]
 parent: null
 depends_on: []
@@ -304,3 +304,10 @@ final class TranscriptStorageMigrator {
 - **Key loss/backup restore**: Hive data may outlive the platform secure-storage entry. The metadata marker prevents silent key rotation; recovery UX is outside this no-UI feature, so startup fails with a stable error while ciphertext remains untouched.
 - **Non-transactional multi-box migration**: Copy/compare/delete phases and deterministic imported IDs make every operation repeatable. The completion marker is never written early.
 - **Hive cipher limits**: This is local at-rest protection through Hive's supported `HiveAesCipher`, not protocol E2E encryption and not protection from a compromised, unlocked process. Product trust claims remain unchanged.
+
+## Review fixes (standard, 2026-07-19)
+
+- **Persisted destination verification**: Every encrypted event-log destination is now flushed, closed, reopened with the migration cipher, and compared exactly with the expected decoded records. `sessions_index_v3` receives the same flush/close/reopen round trip and validates every migrated index row before the persisted copy-verification marker can be written or any plaintext source can be deleted. The marker key was strengthened so an interrupted pre-fix migration cannot treat an older in-memory-only verification marker as proof of persistence.
+- **Strict migration-boundary validation**: Legacy index and projection JSON is validated before the compatibility readers can normalize it. Migration now rejects missing canonical identities/display names, unknown activity/message/tool statuses and roles, fractional timestamps and counters, malformed image/tool fields, and missing text for non-tool rows with the existing stable `malformed_legacy_index` or `malformed_legacy_projection` failures. These failures leave the plaintext manifest and source boxes untouched and create no normalized encrypted copy.
+- **Regression evidence**: Added persisted-index invalidation, unknown index status, fractional projection timestamp, and missing non-tool text tests. The invalidation test removes the flushed `sessions_index_v3` file immediately before verification reopen and proves that both the plaintext event box and legacy index remain. `flutter test --no-pub test/data/local/` passed all 36 tests (32 existing + 4 regressions); the migration suite passed all 12 tests, and focused analyzer coverage for the two touched Dart files reported no issues.
+- **Closure**: Effective review weight `standard`; one cross-model pass produced two receiver-confirmed material blockers. Both were fixed and verified, so the feature closes without a second review pass. The secure-key-loss recovery concern remains consistent with the accepted fail-closed design and was not changed here.

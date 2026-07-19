@@ -332,6 +332,130 @@ void main() {
       );
     });
 
+    test('unknown index status aborts without normalized copy', () async {
+      final session = _session('peer-status', 'main', 'session-status');
+      final index = await Hive.openBox<dynamic>(
+        TranscriptStorageMigrator.legacyIndexBoxName,
+      );
+      await index.put(session.key, <String, Object?>{
+        ...session.toJson(),
+        'status': 'paused',
+      });
+      await Hive.close();
+
+      await expectLater(
+        LocalBoxes.initForTest(directory.path, encryptionKey: encryptionKey),
+        throwsA(
+          isA<TranscriptMigrationException>().having(
+            (error) => error.code,
+            'code',
+            'malformed_legacy_index',
+          ),
+        ),
+      );
+
+      expect(
+        await Hive.boxExists(TranscriptStorageMigrator.legacyIndexBoxName),
+        isTrue,
+      );
+      expect(LocalBoxes().sessionsIndexBox().isEmpty, isTrue);
+      expect(
+        Hive.box<dynamic>(
+          TranscriptStorageMigrator.metadataBoxName,
+        ).get(TranscriptStorageMigrator.copyVerifiedKey),
+        isNull,
+      );
+    });
+
+    test(
+      'fractional projection timestamp retains every plaintext source',
+      () async {
+        final session = _session('peer-ts', 'main', 'session-ts');
+        await _seedIndex([session]);
+        final sourceName = TranscriptStorageMigrator.legacyMessagesBoxName(
+          session.ref,
+        );
+        final projection = await Hive.openBox<dynamic>(sourceName);
+        await projection.put(0, <String, Object?>{
+          ...MessageRecord(
+            id: 'fractional-ts',
+            seq: 0,
+            role: MsgRole.assistant,
+            text: 'must remain plaintext',
+            ts: DateTime.fromMillisecondsSinceEpoch(1000),
+          ).toJson(),
+          'ts': 1000.5,
+        });
+        await Hive.close();
+
+        await expectLater(
+          LocalBoxes.initForTest(directory.path, encryptionKey: encryptionKey),
+          throwsA(
+            isA<TranscriptMigrationException>().having(
+              (error) => error.code,
+              'code',
+              'malformed_legacy_projection',
+            ),
+          ),
+        );
+
+        expect(await Hive.boxExists(sourceName), isTrue);
+        expect(
+          await Hive.boxExists(TranscriptStorageMigrator.legacyIndexBoxName),
+          isTrue,
+        );
+        expect(LocalBoxes().sessionsIndexBox().isEmpty, isTrue);
+        expect(
+          await Hive.boxExists(
+            LocalBoxes.transcriptEventsBoxName(_transcriptKey(session)),
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    test('missing non-tool text retains every plaintext source', () async {
+      final session = _session('peer-text', 'main', 'session-text');
+      await _seedIndex([session]);
+      final sourceName = TranscriptStorageMigrator.legacyMessagesBoxName(
+        session.ref,
+      );
+      final projection = await Hive.openBox<dynamic>(sourceName);
+      final malformed = MessageRecord(
+        id: 'missing-text',
+        seq: 0,
+        role: MsgRole.user,
+        text: 'must not become empty',
+        ts: DateTime.fromMillisecondsSinceEpoch(1000),
+      ).toJson()..remove('text');
+      await projection.put(0, malformed);
+      await Hive.close();
+
+      await expectLater(
+        LocalBoxes.initForTest(directory.path, encryptionKey: encryptionKey),
+        throwsA(
+          isA<TranscriptMigrationException>().having(
+            (error) => error.code,
+            'code',
+            'malformed_legacy_projection',
+          ),
+        ),
+      );
+
+      expect(await Hive.boxExists(sourceName), isTrue);
+      expect(
+        await Hive.boxExists(TranscriptStorageMigrator.legacyIndexBoxName),
+        isTrue,
+      );
+      expect(LocalBoxes().sessionsIndexBox().isEmpty, isTrue);
+      expect(
+        await Hive.boxExists(
+          LocalBoxes.transcriptEventsBoxName(_transcriptKey(session)),
+        ),
+        isFalse,
+      );
+    });
+
     test(
       'resumes after a crash following a partial destination write',
       () async {
@@ -516,6 +640,77 @@ void main() {
       );
       expect(destination.keys, ['event-delete']);
     });
+
+    test(
+      'failed persisted index reopen retains every plaintext source',
+      () async {
+        final session = _session('peer-reopen', 'main', 'session-reopen');
+        await _seedIndex([session]);
+        final sourceName = TranscriptStorageMigrator.legacyEventsBoxName(
+          session.ref,
+        );
+        final source = await Hive.openBox<dynamic>(sourceName);
+        final event = _confirmed(
+          'event-reopen',
+          session.sessionId,
+          'message-reopen',
+          'must survive failed persisted verification',
+        );
+        await source.put(
+          event.eventId,
+          TranscriptEventRecord.fromEvent(event, 0).toJson(),
+        );
+        final metadata = await Hive.openBox<dynamic>(
+          TranscriptStorageMigrator.metadataBoxName,
+        );
+        final secureIndex = await Hive.openBox<dynamic>(
+          'sessions_index_v3',
+          encryptionCipher: HiveAesCipher(encryptionKey),
+          crashRecovery: false,
+        );
+        final legacyIndex = Hive.box<dynamic>(
+          TranscriptStorageMigrator.legacyIndexBoxName,
+        );
+        final indexFile = File('${directory.path}/sessions_index_v3.hive');
+        var destinationReopens = 0;
+
+        await expectLater(
+          TranscriptStorageMigrator(
+            cipher: HiveAesCipher(encryptionKey),
+            beforeDestinationReopen: () async {
+              destinationReopens += 1;
+              if (destinationReopens != 2) return;
+              expect(indexFile.existsSync(), isTrue);
+              await indexFile.delete();
+            },
+          ).migrate(
+            legacyIndex: legacyIndex,
+            secureIndex: secureIndex,
+            metadata: metadata,
+          ),
+          throwsA(
+            isA<TranscriptMigrationException>().having(
+              (error) => error.code,
+              'code',
+              'destination_verification_failed',
+            ),
+          ),
+        );
+
+        expect(destinationReopens, 2);
+        expect(await Hive.boxExists(sourceName), isTrue);
+        expect(
+          await Hive.boxExists(TranscriptStorageMigrator.legacyIndexBoxName),
+          isTrue,
+        );
+        expect(metadata.get(TranscriptStorageMigrator.copyVerifiedKey), isNull);
+        expect(
+          metadata.get(TranscriptStorageMigrator.migrationVersionKey),
+          isNull,
+        );
+        expect(Hive.box<dynamic>('sessions_index_v3').isEmpty, isTrue);
+      },
+    );
 
     test(
       'destination conflict is fail-closed before source deletion',
