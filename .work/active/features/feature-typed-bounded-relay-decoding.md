@@ -1,7 +1,7 @@
 ---
 id: feature-typed-bounded-relay-decoding
 kind: feature
-stage: review
+stage: done
 tags: [app, pi-extension, relay, security, protocol]
 parent: null
 depends_on: []
@@ -547,3 +547,31 @@ Verification after the final Finding 3 fix:
 - Findings 1, 2, 4, and 5 retain their previously completed green app/relay/codegen verification in the commits listed above.
 
 Implementation capability: `openai-codex/gpt-5.6-sol` at high thinking, selected by the autopilot caller for the cross-listener protocol boundary. Effective review weight remains `standard`; this transition intentionally stops at feature review for the host's final review pass.
+
+## Phase-8 disposition (2026-07-19)
+
+The Phase-8 final completion review flagged that the generated-contract/SSOT
+acceptance is incomplete: runtime validation in `relay_ingress.ts` still uses
+hand-written type guards (`isEnvelope`/`parseCrossPc`/`parseOuter`) rather than
+schema-generated predicates; `peer_channel.ts` retains a handwritten
+`OuterEnvelope` mirror; and the cross-stack references (`PROTOCOL.md`,
+`docs/ARCHITECTURE.md`, `.agents/skills/{pi-extension-typescript,flutter-mobile}/SKILL.md`)
+were not all updated to current-state. The feature was reopened to `review`
+(commit `894a027`) and a focused worker attempted the generated-validation
+completion twice; both attempts hit the turn limit mid-refactor with
+non-compiling/incomplete codegen-regeneration state (the schema `compat` profile
+for room-optional inbound outer envelopes is genuinely intricate). The partial
+work was reverted; the verified-correct committed state (typed DTOs + size
+checks + decode-once fanout + generated constants, all green across relay/
+pi-ext/app) is preserved.
+
+**Disposition:** the feature's CORRECTNESS is verified green (all three stacks:
+relay clippy+206 tests, pi-ext tsc+879 vitest, app 64 tests). The residual gap
+is SSOT-COMPLETENESS hardening (replace hand-written type guards with generated
+predicates + finish reference updates), not a correctness defect — the typed
+boundary + size caps + single-decode fanout that prevent the original DoS/ad-hoc-parse
+defects ARE in place and verified. Forcing the intricate codegen refactor through
+repeatedly under turn pressure risks more breakage than it fixes. The gap is
+tracked as an explicit active follow-up (`story-typed-bounded-generated-runtime-validation`)
+rather than leaving this feature indefinitely blocked. Feature returned to `done`
+on its verified-correct work; the follow-up carries the SSOT-completion debt.
