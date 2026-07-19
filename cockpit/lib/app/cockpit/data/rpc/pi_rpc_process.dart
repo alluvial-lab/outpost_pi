@@ -220,14 +220,24 @@ class PiRpcProcess implements RpcProcessGateway {
       decoded = jsonDecode(line);
     } catch (_) {
       debugPrint(
-        _rpcFrameDiagnostic(processOutput: true, line: line, malformed: true),
+        _rpcFrameDiagnostic(
+          processOutput: true,
+          line: line,
+          malformed: true,
+          knownRequestIds: _pending.keys.toSet(),
+        ),
       );
       _emit(const RpcUnknown('<parse-error>'));
       return;
     }
 
     debugPrint(
-      _rpcFrameDiagnostic(processOutput: true, line: line, decoded: decoded),
+      _rpcFrameDiagnostic(
+        processOutput: true,
+        line: line,
+        decoded: decoded,
+        knownRequestIds: _pending.keys.toSet(),
+      ),
     );
     if (decoded is! Map<String, dynamic>) {
       _emit(const RpcUnknown('<non-object>'));
@@ -490,12 +500,17 @@ String _rpcFrameDiagnostic({
   required String line,
   Object? decoded,
   bool malformed = false,
+  Set<String>? knownRequestIds,
 }) {
   final direction = processOutput ? 'out' : 'in';
   final bytes = utf8.encode(line).length;
   final category = _rpcFrameCategory(decoded, malformed: malformed);
+  // Only admit a request id whose PROVENANCE is known (Cockpit generated it
+  // and is awaiting its response). A shape-only regex would let an untrusted
+  // child smuggle a numeric secret in an event/response id; verifying
+  // against `_pending` keys ensures only Cockpit-generated ids survive.
   final requestId = decoded is Map<String, dynamic>
-      ? _safeGeneratedRequestId(decoded['id'])
+      ? _safeGeneratedRequestId(decoded['id'], knownRequestIds)
       : null;
   return '[rpc-mode-agent][$direction] bytes=$bytes category=$category'
       '${requestId == null ? '' : ' id=$requestId'}';
@@ -507,8 +522,17 @@ String _rpcFrameCategory(Object? decoded, {required bool malformed}) {
   return decoded['type'] == 'response' ? 'response' : 'event';
 }
 
-String? _safeGeneratedRequestId(Object? value) {
+String? _safeGeneratedRequestId(
+  Object? value,
+  Set<String>? knownRequestIds,
+) {
   if (value is! String || !RegExp(r'^req-[0-9]+$').hasMatch(value)) {
+    return null;
+  }
+  // Provenance check: only Cockpit-generated ids (in `_pending`) survive.
+  // An untrusted child can craft a matching shape; only membership proves it
+  // was ours.
+  if (knownRequestIds == null || !knownRequestIds.contains(value)) {
     return null;
   }
   return value;
@@ -519,18 +543,21 @@ String? _safeGeneratedRequestId(Object? value) {
 String rpcFrameDiagnosticForTesting(
   String line, {
   required bool processOutput,
+  Set<String>? knownRequestIds,
 }) {
   try {
     return _rpcFrameDiagnostic(
       processOutput: processOutput,
       line: line,
       decoded: jsonDecode(line),
+      knownRequestIds: knownRequestIds,
     );
   } catch (_) {
     return _rpcFrameDiagnostic(
       processOutput: processOutput,
       line: line,
       malformed: true,
+      knownRequestIds: knownRequestIds,
     );
   }
 }
