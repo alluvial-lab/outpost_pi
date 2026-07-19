@@ -16,6 +16,7 @@ import 'package:cockpit/app/cockpit/domain/entities/thinking_level.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_event.dart';
 import 'package:cockpit/app/cockpit/domain/entities/transcript_message.dart';
 import 'package:cockpit/app/cockpit/domain/exceptions/rpc_error.dart';
+import 'package:cockpit/app/cockpit/ui/session/agent_entry.dart';
 import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,6 +63,37 @@ void main() {
 
     await session.close();
   });
+
+  test(
+    'projects opaque diagnostics and deduplicates consecutive stderr facts',
+    () async {
+      final (session, gateway) = await _bootSession();
+
+      gateway
+        ..emit(const RpcDiagnostic(RpcDiagnosticKind.childStderr))
+        ..emit(const RpcDiagnostic(RpcDiagnosticKind.childStderr))
+        ..emit(const RpcDiagnostic(RpcDiagnosticKind.streamReadFailure));
+
+      final diagnostics = session.entries
+          .whereType<InfoEntry>()
+          .where(
+            (entry) =>
+                entry.text.startsWith('agent emitted diagnostic') ||
+                entry.text.startsWith('agent diagnostic stream'),
+          )
+          .toList(growable: false);
+      expect(diagnostics, hasLength(2));
+      expect(
+        diagnostics[0].text,
+        'agent emitted diagnostic output (content hidden)',
+      );
+      expect(diagnostics[0].isError, isFalse);
+      expect(diagnostics[1].text, 'agent diagnostic stream failed');
+      expect(diagnostics[1].isError, isTrue);
+
+      await session.close();
+    },
+  );
 
   test('stop abort acknowledgement converges to idle', () async {
     final (session, gateway) = await _bootSession();
