@@ -215,13 +215,25 @@ class PiRpcProcess implements RpcProcessGateway {
   }
 
   void _onStdoutLine(String line) {
-    debugPrint('[rpc-mode-agent][out] $line');
+    final Object? decoded;
     try {
-      final decoded = jsonDecode(line);
-      if (decoded is! Map<String, dynamic>) {
-        _emit(RpcUnknown('<non-object>', line));
-        return;
-      }
+      decoded = jsonDecode(line);
+    } catch (_) {
+      debugPrint(
+        _rpcFrameDiagnostic(processOutput: true, line: line, malformed: true),
+      );
+      _emit(const RpcUnknown('<parse-error>'));
+      return;
+    }
+
+    debugPrint(
+      _rpcFrameDiagnostic(processOutput: true, line: line, decoded: decoded),
+    );
+    if (decoded is! Map<String, dynamic>) {
+      _emit(const RpcUnknown('<non-object>'));
+      return;
+    }
+    try {
       // Complete responses correlated by request id without emitting them as
       // events.
       if (decoded['type'] == 'response') {
@@ -236,7 +248,7 @@ class PiRpcProcess implements RpcProcessGateway {
       }
       _emit(_mapper.fromJson(decoded));
     } catch (_) {
-      _emit(RpcUnknown('<parse-error>', line));
+      _emit(const RpcUnknown('<parse-error>'));
     }
   }
 
@@ -250,7 +262,7 @@ class PiRpcProcess implements RpcProcessGateway {
       if (process == null) {
         throw const RpcError('No agent running.');
       }
-      debugPrint('[rpc-mode-agent][in] $line');
+      debugPrint(rpcFrameDiagnosticForTesting(line, processOutput: false));
       process.stdin.write(line);
       await process.stdin.flush();
     });
@@ -470,6 +482,56 @@ class PiRpcProcess implements RpcProcessGateway {
 
   void _emit(RpcEvent event) {
     if (!_events.isClosed) _events.add(event);
+  }
+}
+
+String _rpcFrameDiagnostic({
+  required bool processOutput,
+  required String line,
+  Object? decoded,
+  bool malformed = false,
+}) {
+  final direction = processOutput ? 'out' : 'in';
+  final bytes = utf8.encode(line).length;
+  final category = _rpcFrameCategory(decoded, malformed: malformed);
+  final requestId = decoded is Map<String, dynamic>
+      ? _safeGeneratedRequestId(decoded['id'])
+      : null;
+  return '[rpc-mode-agent][$direction] bytes=$bytes category=$category'
+      '${requestId == null ? '' : ' id=$requestId'}';
+}
+
+String _rpcFrameCategory(Object? decoded, {required bool malformed}) {
+  if (malformed) return 'malformed';
+  if (decoded is! Map<String, dynamic>) return 'non_object';
+  return decoded['type'] == 'response' ? 'response' : 'event';
+}
+
+String? _safeGeneratedRequestId(Object? value) {
+  if (value is! String || !RegExp(r'^req-[0-9]+$').hasMatch(value)) {
+    return null;
+  }
+  return value;
+}
+
+/// Format an RPC frame diagnostic without retaining or returning its payload.
+@visibleForTesting
+String rpcFrameDiagnosticForTesting(
+  String line, {
+  required bool processOutput,
+}) {
+  try {
+    return _rpcFrameDiagnostic(
+      processOutput: processOutput,
+      line: line,
+      decoded: jsonDecode(line),
+    );
+  } catch (_) {
+    return _rpcFrameDiagnostic(
+      processOutput: processOutput,
+      line: line,
+      malformed: true,
+    );
   }
 }
 
