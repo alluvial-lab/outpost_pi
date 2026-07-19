@@ -10,7 +10,7 @@ pub use crate::protocol::generated::control::RelayControlFrame;
 pub use crate::protocol::generated::cross_pc::PiEnvelopeFrame;
 use crate::protocol::generated::frame::{RELAY_INBOUND_FRAME_TYPES, RelayInboundFrame};
 pub use crate::protocol::generated::outer::OuterEnvelope;
-use crate::protocol::outer::{self, parse_line};
+use crate::protocol::outer::{self, parse_line_with_max};
 
 /// Classifies one validated inbound relay frame for typed dispatch.
 #[derive(Debug)]
@@ -28,6 +28,8 @@ pub enum DecodedRelayFrame {
 /// Describes a frame rejected at the relay's inbound decoding boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum FrameDecodeError {
+    #[error("raw frame too large: {actual} bytes (max {max})")]
+    RawTooLarge { actual: usize, max: usize },
     #[error("invalid json: {0}")]
     InvalidJson(#[from] serde_json::Error),
     #[error("unknown relay frame type: {0}")]
@@ -45,13 +47,36 @@ pub enum FrameDecodeError {
 /// [`FrameDecodeError::OuterTooLarge`] when an outer envelope exceeds its
 /// configured ciphertext limit.
 pub fn decode_relay_frame(text: &str) -> Result<DecodedRelayFrame, FrameDecodeError> {
+    decode_relay_frame_with_limits(text, outer::max_ws_message_bytes(), outer::max_ct_bytes())
+}
+
+/// Decode with injected raw and decoded-payload limits.
+///
+/// This testable boundary checks the UTF-8 text size before any JSON
+/// allocation. Outer payloads remain opaque and are size-estimated from their
+/// base64 representation rather than decoded by the relay.
+pub fn decode_relay_frame_with_limits(
+    text: &str,
+    max_raw_bytes: usize,
+    max_decoded_ct_bytes: usize,
+) -> Result<DecodedRelayFrame, FrameDecodeError> {
+    if text.len() > max_raw_bytes {
+        return Err(FrameDecodeError::RawTooLarge {
+            actual: text.len(),
+            max: max_raw_bytes,
+        });
+    }
+
     let value: serde_json::Value = serde_json::from_str(text)?;
     let Some(frame_type) = value
         .get("type")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
     else {
-        return Ok(DecodedRelayFrame::Outer(parse_line(text)?));
+        return Ok(DecodedRelayFrame::Outer(parse_line_with_max(
+            text,
+            max_decoded_ct_bytes,
+        )?));
     };
 
     if !RELAY_INBOUND_FRAME_TYPES.contains(&frame_type.as_str()) {
@@ -100,6 +125,31 @@ mod tests {
     }
 
     #[test]
+    fn raw_limit_runs_before_json_parse() {
+        let err = decode_relay_frame_with_limits("not json", 3, 1024)
+            .expect_err("over-limit malformed input must fail on size first");
+        assert!(matches!(
+            err,
+            FrameDecodeError::RawTooLarge { actual: 8, max: 3 }
+        ));
+    }
+
+    #[test]
+    fn injected_decoded_limit_accepts_boundary_and_rejects_next_quantum() {
+        let accepted = r#"{"peer":"dest","room":"main","ct":"AAAA"}"#;
+        assert!(decode_relay_frame_with_limits(accepted, 1024, 3).is_ok());
+
+        let rejected = r#"{"peer":"dest","room":"main","ct":"AAAAAAAA"}"#;
+        assert!(matches!(
+            decode_relay_frame_with_limits(rejected, 1024, 3),
+            Err(FrameDecodeError::OuterTooLarge {
+                estimated: 6,
+                max: 3
+            })
+        ));
+    }
+
+    #[test]
     fn unknown_typed_frame_rejects_before_dispatch() {
         let err = decode_relay_frame(r#"{"type":"mystery_frame","peers":[]}"#)
             .expect_err("unknown typed frame must fail at decode boundary");
@@ -124,7 +174,12 @@ mod tests {
     fn ct_too_large_rejects_at_boundary() {
         let big = "A".repeat(12 * 1024 * 1024);
         let line = format!(r#"{{"peer":"dest","room":"main","ct":"{}"}}"#, big);
-        let err = decode_relay_frame(&line).expect_err("oversized ct must fail");
+        let err = decode_relay_frame_with_limits(
+            &line,
+            line.len() + 1,
+            outer::DEFAULT_MAX_CT_MIB * 1024 * 1024,
+        )
+        .expect_err("oversized ct must fail");
         assert!(matches!(
             err,
             FrameDecodeError::OuterTooLarge { estimated, max }
