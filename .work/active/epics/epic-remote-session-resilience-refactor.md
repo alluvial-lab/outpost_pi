@@ -1,7 +1,7 @@
 ---
 id: epic-remote-session-resilience-refactor
 kind: epic
-stage: implementing
+stage: review
 tags: [pi-extension, app, relay, workflow]
 parent: null
 depends_on: []
@@ -134,3 +134,26 @@ shippable-before-reconception resilience work.
 - Clear architecture notes for authoritative session state, working/idle state, reconnect hydration, and multi-client behavior.
 - Review findings are deduplicated and converted into scoped work items.
 - Refactor is split into app and pi-extension implementation stories with verification plans.
+
+## Epic completion (2026-07-19)
+
+All 8 children reached `stage: done` through the implement-orchestrator +
+review cycle (standard weight). This epic's residual targeted patches +
+mobile-UX cluster are complete; the bold-refactor epics (`epic-bold-*`)
+remain the separate architectural reconception track.
+
+| Child | Outcome |
+|---|---|
+| `feature-app-async-lifecycle-ownership` | done (6 review findings fixed) |
+| `feature-piext-lifecycle-delivery-promise-policy` | done (ready, no findings) |
+| `feature-remote-pi-fork-vendor-and-mobile-surface` | done (reconciled ~complete) |
+| `feature-outbound-buffer-on-peer-offline` | done (2 blockers fixed) |
+| `feature-mobile-tui-parity-chat-resilience` | done (3 materials fixed) |
+| `feature-mobile-native-session-process-control` | done (1 blocker + 3 material fixed) |
+| `story-stale-command-ui-notify-guard` | done (bounded inline review) |
+| `story-stale-action-boundary-regression-tests` | done (bounded inline review) |
+
+The 2 live-repro items (`idea-mobile-drop-slow-recovery`,
+`idea-mobile-outgoing-message-swallowed`) remain parked at `drafting` under
+`feature-mobile-tui-parity-chat-resilience` (now done) — they route to
+`feature-reconnect-reproduction` (sibling epic) on the next live drop test.
