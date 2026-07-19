@@ -9,6 +9,7 @@ function usage() {
   return [
     'Usage:',
     '  node tools/protocol-codegen/bin/protocol-codegen.mjs --target dart --schema <ir.json> --out <file.dart>',
+    '  node tools/protocol-codegen/bin/protocol-codegen.mjs --target dart-relay --schema <manifest.json> --out <relay_frames.g.dart>',
     '  node tools/protocol-codegen/bin/protocol-codegen.mjs --target rust --schema <list-types.json|-> --out-dir <dir> [--check true]',
     '  node tools/protocol-codegen/bin/protocol-codegen.mjs --target rust --schema <relay-outer.schema.json> --out <file.rs>',
     '  node tools/protocol-codegen/bin/protocol-codegen.mjs --target ts --schema <list-types.json|manifest.json|-> --out-dir <dir> [--check true]',
@@ -747,6 +748,312 @@ function emitDart(schema) {
 }
 
 
+function relaySchemaFromManifest(schemaPath, familyId) {
+  const manifest = requireObject(readSchemaInput(schemaPath), 'protocol manifest');
+  const family = requireArray(manifest.families, 'manifest.families').find(
+    (candidate) => candidate && candidate.id === familyId,
+  );
+  if (!family || typeof family.schema !== 'string') {
+    throw new Error(`Manifest is missing ${familyId}`);
+  }
+  const familyPath = isAbsolute(family.schema)
+    ? family.schema
+    : join(dirname(dirname(schemaPath)), family.schema);
+  return requireObject(
+    JSON.parse(readFileSync(familyPath, 'utf8')),
+    `${familyId} schema`,
+  );
+}
+
+function emitDartRelayFrames(schemaPath) {
+  const relay = relaySchemaFromManifest(schemaPath, 'relayControl');
+  const outerRoot = relaySchemaFromManifest(schemaPath, 'relayControl');
+  const outerRef = requireArray(outerRoot.oneOf, 'relayControl.oneOf').find(
+    (option) => option && typeof option.$ref === 'string' && option.$ref.includes('relay-outer.schema.json'),
+  );
+  if (!outerRef) throw new Error('relayControl must include relay-outer.schema.json');
+  const outer = resolveOuterEnvelopeSchema(
+    readJsonSchemaRef(outerRef.$ref, join(dirname(schemaPath), 'relay-control.schema.json')),
+    join(dirname(schemaPath), 'relay-outer.schema.json'),
+  );
+  const metadata = requireObject(outer['x-outpost-pi'], 'relay outer x-outpost-pi');
+  const fieldLimits = requireObject(metadata.metadataByteLimits, 'relay outer metadataByteLimits');
+  const defs = requireObject(relay.$defs, 'relayControl.$defs');
+  const serverTypes = Object.values(defs)
+    .filter((definition) => definition && typeof definition === 'object')
+    .filter((definition) => definition['x-outpost-pi']?.direction === RELAY_DIRECTION_RELAY_TO_CLIENT)
+    .map((definition) => definition.properties?.type?.const)
+    .filter((type) => typeof type === 'string');
+  const supported = [
+    'challenge',
+    'presence',
+    'peer_online',
+    'peer_offline',
+    'rooms',
+    'room_announced',
+    'room_ended',
+    'room_meta_updated',
+  ];
+  if (serverTypes.length !== supported.length || supported.some((type) => !serverTypes.includes(type))) {
+    throw new Error(`Dart relay ingress emitter must cover schema server types: ${serverTypes.join(', ')}`);
+  }
+  for (const [defName, properties] of Object.entries({
+    challenge: ['nonce'], presence: ['states'], peerOnline: ['peer'], peerOffline: ['peer', 'since_ts'],
+    rooms: ['peer', 'rooms'], roomAnnounced: ['peer', 'room_id', 'working', 'started_at'],
+    roomEnded: ['peer', 'room_id', 'since_ts'], roomMetaUpdated: ['peer', 'room_id', 'meta'],
+  })) {
+    const schema = requireObject(defs[defName], `relayControl.$defs.${defName}`);
+    for (const property of properties) {
+      if (!schemaHasProperty(schema, property)) throw new Error(`${defName} must declare ${property}`);
+    }
+  }
+  const maxDecoded = positiveInteger(metadata.maxDecodedBytesDefault, 'maxDecodedBytesDefault');
+  const overhead = positiveInteger(metadata.maxFrameOverheadBytes, 'maxFrameOverheadBytes');
+  const preAuth = positiveInteger(metadata.maxPreAuthFrameBytes, 'maxPreAuthFrameBytes');
+  const raw = 4 * Math.ceil(maxDecoded / 3) + overhead;
+  const constants = {
+    maxDecoded, overhead, preAuth, raw,
+    deviceId: positiveInteger(fieldLimits.deviceId, 'metadataByteLimits.deviceId'),
+    roomId: positiveInteger(fieldLimits.roomId, 'metadataByteLimits.roomId'),
+    roomName: positiveInteger(fieldLimits.roomName, 'metadataByteLimits.roomName'),
+    cwd: positiveInteger(fieldLimits.cwd, 'metadataByteLimits.cwd'),
+    sessionId: positiveInteger(fieldLimits.sessionId, 'metadataByteLimits.sessionId'),
+    model: positiveInteger(fieldLimits.model, 'metadataByteLimits.model'),
+    thinking: positiveInteger(fieldLimits.thinking, 'metadataByteLimits.thinking'),
+  };
+  return `// GENERATED CODE - DO NOT MODIFY BY HAND.
+// Generated from protocol/schema/relay-{outer,control}.schema.json.
+
+const int relayDefaultMaxDecodedBytes = ${constants.maxDecoded};
+const int relayMaxFrameOverheadBytes = ${constants.overhead};
+const int relayMaxPreAuthFrameBytes = ${constants.preAuth};
+const int relayMaxRawMessageBytes = ${constants.raw};
+const int relayMaxDeviceIdBytes = ${constants.deviceId};
+const int relayMaxRoomIdBytes = ${constants.roomId};
+const int relayMaxRoomNameBytes = ${constants.roomName};
+const int relayMaxCwdBytes = ${constants.cwd};
+const int relayMaxSessionIdBytes = ${constants.sessionId};
+const int relayMaxModelBytes = ${constants.model};
+const int relayMaxThinkingBytes = ${constants.thinking};
+
+sealed class RelayInboundFrameDto {
+  const RelayInboundFrameDto();
+
+  factory RelayInboundFrameDto.fromJson(Map<String, dynamic> json) {
+    if (json['peer'] is String && json['ct'] is String && json['type'] == null) {
+      return RelayOuterEnvelopeDto.fromJson(json);
+    }
+    return RelayServerControlFrameDto.fromJson(json);
+  }
+}
+
+final class RelayOuterEnvelopeDto extends RelayInboundFrameDto {
+  const RelayOuterEnvelopeDto({required this.peer, required this.room, required this.ct});
+  final String peer;
+  final String? room;
+  final String ct;
+
+  factory RelayOuterEnvelopeDto.fromJson(Map<String, dynamic> json) => RelayOuterEnvelopeDto(
+        peer: json['peer'] as String,
+        room: json['room'] as String?,
+        ct: json['ct'] as String,
+      );
+}
+
+sealed class RelayServerControlFrameDto extends RelayInboundFrameDto {
+  const RelayServerControlFrameDto();
+  String get type;
+
+  factory RelayServerControlFrameDto.fromJson(Map<String, dynamic> json) => switch (json['type']) {
+        'challenge' => RelayChallengeFrameDto.fromJson(json),
+        'presence' => RelayPresenceFrameDto.fromJson(json),
+        'peer_online' => RelayPeerOnlineFrameDto.fromJson(json),
+        'peer_offline' => RelayPeerOfflineFrameDto.fromJson(json),
+        'rooms' => RelayRoomsFrameDto.fromJson(json),
+        'room_announced' => RelayRoomAnnouncedFrameDto.fromJson(json),
+        'room_ended' => RelayRoomEndedFrameDto.fromJson(json),
+        'room_meta_updated' => RelayRoomMetaUpdatedFrameDto.fromJson(json),
+        final unknown => throw FormatException('unsupported relay server frame type: $unknown'),
+      };
+}
+
+final class RelayChallengeFrameDto extends RelayServerControlFrameDto {
+  const RelayChallengeFrameDto({required this.nonce});
+  final String nonce;
+  @override
+  String get type => 'challenge';
+  factory RelayChallengeFrameDto.fromJson(Map<String, dynamic> json) =>
+      RelayChallengeFrameDto(nonce: json['nonce'] as String);
+}
+
+final class RelayPresenceStateDto {
+  const RelayPresenceStateDto({required this.peer, required this.online, this.sinceTs});
+  final String peer;
+  final bool online;
+  final int? sinceTs;
+  factory RelayPresenceStateDto.fromJson(Map<String, dynamic> json) => RelayPresenceStateDto(
+        peer: json['peer'] as String,
+        online: json['online'] as bool,
+        sinceTs: (json['since_ts'] as num?)?.toInt(),
+      );
+}
+
+final class RelayPresenceFrameDto extends RelayServerControlFrameDto {
+  const RelayPresenceFrameDto({required this.states});
+  final List<RelayPresenceStateDto> states;
+  @override
+  String get type => 'presence';
+  factory RelayPresenceFrameDto.fromJson(Map<String, dynamic> json) => RelayPresenceFrameDto(
+        states: (json['states'] as List<dynamic>)
+            .map((item) => RelayPresenceStateDto.fromJson((item as Map).cast<String, dynamic>()))
+            .toList(),
+      );
+}
+
+final class RelayPeerOnlineFrameDto extends RelayServerControlFrameDto {
+  const RelayPeerOnlineFrameDto({required this.peer});
+  final String peer;
+  @override
+  String get type => 'peer_online';
+  factory RelayPeerOnlineFrameDto.fromJson(Map<String, dynamic> json) =>
+      RelayPeerOnlineFrameDto(peer: json['peer'] as String);
+}
+
+final class RelayPeerOfflineFrameDto extends RelayServerControlFrameDto {
+  const RelayPeerOfflineFrameDto({required this.peer, required this.sinceTs});
+  final String peer;
+  final int sinceTs;
+  @override
+  String get type => 'peer_offline';
+  factory RelayPeerOfflineFrameDto.fromJson(Map<String, dynamic> json) => RelayPeerOfflineFrameDto(
+        peer: json['peer'] as String,
+        sinceTs: (json['since_ts'] as num).toInt(),
+      );
+}
+
+final class RelayRoomMetaDto {
+  const RelayRoomMetaDto({
+    required this.roomId,
+    required this.working,
+    required this.startedAt,
+    this.name,
+    this.cwd,
+    this.sessionId,
+    this.model,
+    this.thinking,
+  });
+  final String roomId;
+  final String? name;
+  final String? cwd;
+  final String? sessionId;
+  final String? model;
+  final String? thinking;
+  final bool? working;
+  final int startedAt;
+  factory RelayRoomMetaDto.fromJson(Map<String, dynamic> json) {
+    final legacyMeta = json['meta'] is Map
+        ? (json['meta'] as Map).cast<String, dynamic>()
+        : const <String, dynamic>{};
+    return RelayRoomMetaDto(
+      roomId: json['room_id'] as String,
+      name: json['name'] as String?,
+      cwd: json['cwd'] as String?,
+      sessionId: (json['session_id'] as String?) ?? (legacyMeta['session_id'] as String?),
+      model: json['model'] as String?,
+      thinking: (json['thinking'] as String?) ?? (legacyMeta['thinking'] as String?),
+      working: (json['working'] as bool?) ?? (legacyMeta['working'] as bool?),
+      startedAt: (json['started_at'] as num).toInt(),
+    );
+  }
+}
+
+final class RelayRoomsFrameDto extends RelayServerControlFrameDto {
+  const RelayRoomsFrameDto({required this.peer, required this.rooms});
+  final String peer;
+  final List<RelayRoomMetaDto> rooms;
+  @override
+  String get type => 'rooms';
+  factory RelayRoomsFrameDto.fromJson(Map<String, dynamic> json) => RelayRoomsFrameDto(
+        peer: json['peer'] as String,
+        rooms: (json['rooms'] as List<dynamic>)
+            .map((item) => RelayRoomMetaDto.fromJson((item as Map).cast<String, dynamic>()))
+            .toList(),
+      );
+}
+
+final class RelayRoomAnnouncedFrameDto extends RelayServerControlFrameDto {
+  const RelayRoomAnnouncedFrameDto({required this.peer, required this.room});
+  final String peer;
+  final RelayRoomMetaDto room;
+  @override
+  String get type => 'room_announced';
+  factory RelayRoomAnnouncedFrameDto.fromJson(Map<String, dynamic> json) =>
+      RelayRoomAnnouncedFrameDto(peer: json['peer'] as String, room: RelayRoomMetaDto.fromJson(json));
+}
+
+final class RelayRoomEndedFrameDto extends RelayServerControlFrameDto {
+  const RelayRoomEndedFrameDto({required this.peer, required this.roomId, required this.sinceTs});
+  final String peer;
+  final String roomId;
+  final int sinceTs;
+  @override
+  String get type => 'room_ended';
+  factory RelayRoomEndedFrameDto.fromJson(Map<String, dynamic> json) => RelayRoomEndedFrameDto(
+        peer: json['peer'] as String,
+        roomId: json['room_id'] as String,
+        sinceTs: (json['since_ts'] as num).toInt(),
+      );
+}
+
+final class RelayRoomMetaPatchDto {
+  const RelayRoomMetaPatchDto({
+    this.model,
+    this.thinking,
+    this.sessionId,
+    this.working,
+    required this.hasModel,
+    required this.hasThinking,
+    required this.hasSessionId,
+  });
+  final String? model;
+  final String? thinking;
+  final String? sessionId;
+  final bool? working;
+  final bool hasModel;
+  final bool hasThinking;
+  final bool hasSessionId;
+  factory RelayRoomMetaPatchDto.fromJson(Map<String, dynamic> json) => RelayRoomMetaPatchDto(
+        model: json['model'] as String?,
+        thinking: json['thinking'] as String?,
+        sessionId: json['session_id'] as String?,
+        working: json['working'] as bool?,
+        hasModel: json.containsKey('model'),
+        hasThinking: json.containsKey('thinking'),
+        hasSessionId: json.containsKey('session_id'),
+      );
+}
+
+final class RelayRoomMetaUpdatedFrameDto extends RelayServerControlFrameDto {
+  const RelayRoomMetaUpdatedFrameDto({required this.peer, required this.roomId, required this.meta});
+  final String peer;
+  final String roomId;
+  final RelayRoomMetaPatchDto meta;
+  @override
+  String get type => 'room_meta_updated';
+  factory RelayRoomMetaUpdatedFrameDto.fromJson(Map<String, dynamic> json) =>
+      RelayRoomMetaUpdatedFrameDto(
+        peer: json['peer'] as String,
+        roomId: json['room_id'] as String,
+        meta: RelayRoomMetaPatchDto.fromJson(
+          json['meta'] is Map
+              ? (json['meta'] as Map).cast<String, dynamic>()
+              : const <String, dynamic>{},
+        ),
+      );
+}
+`;
+}
+
 function rustModuleForFamily(family) {
   switch (family) {
     case 'relayControl':
@@ -852,11 +1159,13 @@ function emitRustControl(entries, schemaPath) {
     entries,
     schemasByType,
     RELAY_DIRECTION_RELAY_TO_CLIENT,
-  ).filter((type) => type !== 'challenge');
+  ).filter((type) => type !== 'challenge' && type !== 'room_meta_updated');
 
   lines.push('use serde::{Deserialize, Serialize};');
   const roomImports = [];
-  if (hasType('room_meta_update')) roomImports.push('RoomMetaPatch');
+  if (hasType('room_meta_update') || serverControlTypes.includes('room_meta_updated')) {
+    roomImports.push('RoomMetaPatch');
+  }
   if (serverControlTypes.includes('rooms') || serverControlTypes.includes('room_announced')) {
     roomImports.push('RoomMeta');
   }
@@ -982,6 +1291,13 @@ function emitRustControl(entries, schemaPath) {
           }
           lines.push(`    #[serde(rename = "${type}")]`);
           lines.push(`    ${variant} { peer: String, room_id: String, since_ts: i64 },`);
+          break;
+        case 'room_meta_updated':
+          if (!schemaHasProperty(schema, 'peer') || !schemaHasProperty(schema, 'room_id') || !schemaHasProperty(schema, 'meta')) {
+            throw new Error('room_meta_updated schema must declare peer, room_id, and meta');
+          }
+          lines.push(`    #[serde(rename = "${type}")]`);
+          lines.push(`    ${variant} { peer: String, room_id: String, meta: RoomMetaPatch },`);
           break;
         default:
           throw new Error(`Unsupported relay-to-client control frame ${type}`);
@@ -1321,11 +1637,12 @@ function emitRustRoom(entries, schemaPath) {
   lines.push('}');
   lines.push('');
   const patchFieldNames = Object.keys(patchProperties);
-  lines.push('#[derive(Debug, Default, Clone)]');
+  lines.push('#[derive(Debug, Default, Clone, Serialize)]');
   lines.push('pub struct RoomMetaPatch {');
   for (const [fieldName, fieldSchema] of Object.entries(patchProperties)) {
     assertRustFieldIdentifier(fieldName, `RoomMetaPatch field ${fieldName}`);
     if (nullableStrings.has(fieldName)) {
+      lines.push('    #[serde(skip_serializing_if = "Option::is_none")]');
       lines.push(`    pub ${fieldName}: Option<Option<String>>,`);
       continue;
     }
@@ -1334,6 +1651,7 @@ function emitRustRoom(entries, schemaPath) {
       if (field.type !== 'boolean') {
         throw new Error(`RoomMetaPatch.${fieldName} must be a boolean schema for non-nullable bool patches`);
       }
+      lines.push('    #[serde(skip_serializing_if = "Option::is_none")]');
       lines.push(`    pub ${fieldName}: Option<bool>,`);
       continue;
     }
@@ -1391,6 +1709,48 @@ function emitRustRoom(entries, schemaPath) {
   lines.push('        Ok(patch)');
   lines.push('    }');
   lines.push('}');
+  lines.push('');
+  return `${lines.join('\n')}\n`;
+}
+
+function positiveInteger(value, label) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+  return value;
+}
+
+function relayIngressLimits(schema, schemaPath) {
+  const outer = resolveOuterEnvelopeSchema(schema, schemaPath);
+  const metadata = requireObject(outer['x-outpost-pi'], 'relay outer x-outpost-pi');
+  const fields = requireObject(metadata.metadataByteLimits, 'relay outer metadataByteLimits');
+  return {
+    maxDecodedBytesDefault: positiveInteger(metadata.maxDecodedBytesDefault, 'maxDecodedBytesDefault'),
+    maxFrameOverheadBytes: positiveInteger(metadata.maxFrameOverheadBytes, 'maxFrameOverheadBytes'),
+    maxPreAuthFrameBytes: positiveInteger(metadata.maxPreAuthFrameBytes, 'maxPreAuthFrameBytes'),
+    deviceId: positiveInteger(fields.deviceId, 'metadataByteLimits.deviceId'),
+    roomId: positiveInteger(fields.roomId, 'metadataByteLimits.roomId'),
+    roomName: positiveInteger(fields.roomName, 'metadataByteLimits.roomName'),
+    cwd: positiveInteger(fields.cwd, 'metadataByteLimits.cwd'),
+    sessionId: positiveInteger(fields.sessionId, 'metadataByteLimits.sessionId'),
+    model: positiveInteger(fields.model, 'metadataByteLimits.model'),
+    thinking: positiveInteger(fields.thinking, 'metadataByteLimits.thinking'),
+  };
+}
+
+function emitRustLimits(schema, schemaPath) {
+  const limits = relayIngressLimits(schema, schemaPath);
+  const lines = rustHeader('limits');
+  lines.push(`pub const RELAY_DEFAULT_MAX_DECODED_BYTES: usize = ${limits.maxDecodedBytesDefault};`);
+  lines.push(`pub const RELAY_MAX_FRAME_OVERHEAD_BYTES: usize = ${limits.maxFrameOverheadBytes};`);
+  lines.push(`pub const RELAY_MAX_PRE_AUTH_FRAME_BYTES: usize = ${limits.maxPreAuthFrameBytes};`);
+  lines.push(`pub const RELAY_MAX_DEVICE_ID_BYTES: usize = ${limits.deviceId};`);
+  lines.push(`pub const RELAY_MAX_ROOM_ID_BYTES: usize = ${limits.roomId};`);
+  lines.push(`pub const RELAY_MAX_ROOM_NAME_BYTES: usize = ${limits.roomName};`);
+  lines.push(`pub const RELAY_MAX_CWD_BYTES: usize = ${limits.cwd};`);
+  lines.push(`pub const RELAY_MAX_SESSION_ID_BYTES: usize = ${limits.sessionId};`);
+  lines.push(`pub const RELAY_MAX_MODEL_BYTES: usize = ${limits.model};`);
+  lines.push(`pub const RELAY_MAX_THINKING_BYTES: usize = ${limits.thinking};`);
   lines.push('');
   return `${lines.join('\n')}\n`;
 }
@@ -1502,6 +1862,7 @@ function emitRustMod() {
     'pub mod control;',
     'pub mod cross_pc;',
     'pub mod frame;',
+    'pub mod limits;',
     'pub mod mesh;',
     'pub mod outer;',
     'pub mod room;',
@@ -1528,6 +1889,7 @@ function emitRust(schema, schemaPath) {
     ['control.rs', emitRustControl(controlEntries, schemaPath)],
     ['cross_pc.rs', emitRustCrossPc(crossPcEntries, schemaPath)],
     ['frame.rs', emitRustFrame(controlEntries, crossPcEntries, schemaPath)],
+    ['limits.rs', emitRustLimits(schema, schemaPath)],
     ['mesh.rs', emitRustMesh()],
   ]);
 }
@@ -1586,6 +1948,19 @@ async function main() {
     const output = emitDart(schema);
     mkdirSync(dirname(outPath), { recursive: true });
     writeFileSync(outPath, output, 'utf8');
+    return;
+  }
+
+  if (target === 'dart-relay') {
+    if (!schemaPath || !outPath) throw new Error(usage());
+    const output = emitDartRelayFrames(schemaPath);
+    mkdirSync(dirname(outPath), { recursive: true });
+    if (check) {
+      const current = readFileSync(outPath, 'utf8');
+      if (current !== output) throw new Error(`Generated Dart relay protocol is stale: ${outPath}`);
+    } else {
+      writeFileSync(outPath, output, 'utf8');
+    }
     return;
   }
 

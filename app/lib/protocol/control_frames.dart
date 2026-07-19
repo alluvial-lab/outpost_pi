@@ -1,6 +1,7 @@
 // ignore_for_file: lines_longer_than_80_chars
 
 import 'generated/protocol.g.dart' show ThinkingLevel;
+import 'generated/relay_frames.g.dart';
 
 // ---------------------------------------------------------------------------
 // Control frames (plan 12 — presence)
@@ -13,85 +14,87 @@ import 'generated/protocol.g.dart' show ThinkingLevel;
 sealed class ControlInbound {
   const ControlInbound();
 
-  /// Parses a top-level JSON map into a control inbound. Returns null when
-  /// the `type` is unknown (forward-compat).
-  static ControlInbound? tryFromJson(Map<String, dynamic> j) {
-    return switch (j['type']) {
-      'peer_online' => PeerOnline(peer: j['peer'] as String),
-      'peer_offline' => PeerOffline(
-        peer: j['peer'] as String,
-        sinceTs: (j['since_ts'] as num).toInt(),
-      ),
-      'presence' => PresenceSnapshot(
-        states: (j['states'] as List<dynamic>)
-            .map((e) => PeerPresence.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      ),
-      'room_announced' => () {
-        // Plan/28 Wave D — thinking arrives either as a top-level
-        // field (post-relay-flatten) or nested under `meta.thinking`
-        // (pre-flatten relay forwarding the Pi's room_meta verbatim).
-        // Read both so the app stays forward-compat with either side.
-        final metaJson = j['meta'] as Map<String, dynamic>?;
-        final rawThinking =
-            (j['thinking'] as String?) ?? (metaJson?['thinking'] as String?);
-        // Plan/32 — `working` arrives top-level (RoomMeta serializes flat)
-        // or nested under `meta.working`; read both for forward-compat.
-        final rawWorking =
-            (j['working'] as bool?) ?? (metaJson?['working'] as bool?);
-        return RoomAnnounced(
-          peer: j['peer'] as String,
-          roomId: j['room_id'] as String,
-          sessionId:
-              (j['session_id'] as String?) ??
-              (metaJson?['session_id'] as String?),
-          name: j['name'] as String?,
-          cwd: j['cwd'] as String?,
-          startedAt: (j['started_at'] as num).toInt(),
-          model: j['model'] as String?,
-          thinking: rawThinking != null
-              ? ThinkingLevel.fromWire(rawThinking)
-              : null,
-          working: rawWorking,
-        );
-      }(),
-      'room_ended' => RoomEnded(
-        peer: j['peer'] as String,
-        roomId: j['room_id'] as String,
-        sinceTs: (j['since_ts'] as num).toInt(),
-      ),
-      'rooms' => RoomsSnapshot(
-        peer: j['peer'] as String,
-        rooms: (j['rooms'] as List<dynamic>)
-            .map((e) => RoomInfo.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      ),
-      'room_meta_updated' => () {
-        final meta = j['meta'] as Map<String, dynamic>?;
-        final hasModel = meta?.containsKey('model') ?? false;
-        final hasThinking = meta?.containsKey('thinking') ?? false;
-        final hasSessionId = meta?.containsKey('session_id') ?? false;
-        final rawThinking = meta?['thinking'] as String?;
-        return RoomMetaUpdated(
-          peer: j['peer'] as String,
-          roomId: j['room_id'] as String,
-          sessionId: meta?['session_id'] as String?,
-          model: meta?['model'] as String?,
-          thinking: rawThinking != null
-              ? ThinkingLevel.fromWire(rawThinking)
-              : null,
-          // Plan/32 — `working` has no "clear to null" state (false IS the
-          // cleared state), so a plain nullable bool models the patch:
-          // null = absent (preserve current), true/false = set.
-          working: meta?['working'] as bool?,
-          hasModel: hasModel,
-          hasThinking: hasThinking,
-          hasSessionId: hasSessionId,
-        );
-      }(),
-      _ => null,
-    };
+  /// Parses a top-level relay map through the generated directional DTO union.
+  ///
+  /// Returns null for unknown or pre-auth frame types; malformed known frames
+  /// retain their typed cast failure so boundary callers can reject them.
+  static ControlInbound? tryFromJson(Map<String, dynamic> json) {
+    try {
+      return fromWire(RelayServerControlFrameDto.fromJson(json));
+    } on FormatException {
+      return null;
+    }
   }
+
+  /// Adapt a generated relay-server DTO into the app's control-domain model.
+  static ControlInbound? fromWire(RelayServerControlFrameDto frame) =>
+      switch (frame) {
+        RelayChallengeFrameDto() => null,
+        RelayPeerOnlineFrameDto(:final peer) => PeerOnline(peer: peer),
+        RelayPeerOfflineFrameDto(:final peer, :final sinceTs) => PeerOffline(
+          peer: peer,
+          sinceTs: sinceTs,
+        ),
+        RelayPresenceFrameDto(:final states) => PresenceSnapshot(
+          states: states
+              .map(
+                (state) => PeerPresence(
+                  peer: state.peer,
+                  online: state.online,
+                  sinceTs: state.sinceTs,
+                ),
+              )
+              .toList(),
+        ),
+        RelayRoomAnnouncedFrameDto(:final peer, :final room) => RoomAnnounced(
+          peer: peer,
+          roomId: room.roomId,
+          sessionId: room.sessionId,
+          name: room.name,
+          cwd: room.cwd,
+          startedAt: room.startedAt,
+          model: room.model,
+          thinking: room.thinking == null
+              ? null
+              : ThinkingLevel.fromWire(room.thinking!),
+          working: room.working,
+        ),
+        RelayRoomEndedFrameDto(:final peer, :final roomId, :final sinceTs) =>
+          RoomEnded(peer: peer, roomId: roomId, sinceTs: sinceTs),
+        RelayRoomsFrameDto(:final peer, :final rooms) => RoomsSnapshot(
+          peer: peer,
+          rooms: rooms
+              .map(
+                (room) => RoomInfo(
+                  roomId: room.roomId,
+                  sessionId: room.sessionId,
+                  name: room.name,
+                  cwd: room.cwd,
+                  startedAt: room.startedAt,
+                  model: room.model,
+                  thinking: room.thinking == null
+                      ? null
+                      : ThinkingLevel.fromWire(room.thinking!),
+                  working: room.working ?? false,
+                ),
+              )
+              .toList(),
+        ),
+        RelayRoomMetaUpdatedFrameDto(:final peer, :final roomId, :final meta) =>
+          RoomMetaUpdated(
+            peer: peer,
+            roomId: roomId,
+            sessionId: meta.sessionId,
+            model: meta.model,
+            thinking: meta.thinking == null
+                ? null
+                : ThinkingLevel.fromWire(meta.thinking!),
+            working: meta.working,
+            hasModel: meta.hasModel,
+            hasThinking: meta.hasThinking,
+            hasSessionId: meta.hasSessionId,
+          ),
+      };
 }
 
 class PeerOnline extends ControlInbound {
