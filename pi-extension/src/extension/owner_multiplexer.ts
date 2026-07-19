@@ -223,6 +223,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   private readonly messageRouters = new Map<PeerChannelHandle, OwnerAttachInput["onMessage"]>();
   private readonly offlinePeerIds = new Set<string>();
   private readonly offlineBuffers = new Map<string, OfflinePeerBuffer>();
+  private readonly flushedCompactionKeysByPeer = new Map<string, Set<string>>();
   private peerShort = "";
   private lateAttachPeerIds = new Set<string>();
   private hasGlobalPairings = false;
@@ -456,6 +457,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     this.lateAttachPeerIds.delete(peerId);
     this.offlinePeerIds.delete(peerId);
     this.offlineBuffers.delete(peerId);
+    this.flushedCompactionKeysByPeer.delete(peerId);
 
     if (this.peerShort === peerId.slice(0, 8)) {
       const next = this.channels.keys().next().value as string | undefined;
@@ -471,6 +473,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     this.lateAttachPeerIds.clear();
     this.offlinePeerIds.clear();
     this.offlineBuffers.clear();
+    this.flushedCompactionKeysByPeer.clear();
     this.peerShort = "";
     this.deps.refreshFooter();
   }
@@ -500,7 +503,10 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
         this.offlinePeerIds.has(peerId) &&
         this.offlineBuffers.get(peerId) === buffer
       ) {
-        try { channel.send(next); } catch { /* best-effort per owner channel */ }
+        try {
+          channel.send(next);
+          this.rememberFlushedCompaction(peerId, next);
+        } catch { /* best-effort per owner channel */ }
         next = this.takeNextBufferedMessage(buffer);
       }
     }
@@ -583,6 +589,41 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
 
     buffer.current.push({ message, bytes });
     buffer.currentBytes += bytes;
+  }
+
+  private rememberFlushedCompaction(peerId: string, message: ServerMessage): void {
+    if (message.type !== "compaction" || message.ts === undefined) return;
+    let keys = this.flushedCompactionKeysByPeer.get(peerId);
+    if (!keys) {
+      keys = new Set<string>();
+      this.flushedCompactionKeysByPeer.set(peerId, keys);
+    }
+    keys.add(`${message.session_id ?? ""}:${message.ts}`);
+  }
+
+  /**
+   * Suppress compactions already delivered by an online-first buffer flush.
+   *
+   * User, assistant, and tool replay paths already converge through stable
+   * identities or projection keys. Compaction is the exception: the app's
+   * live and history paths derive different row ids, so replaying a flushed
+   * compaction would retain both rows. Keep this peer-scoped arbitration for
+   * the managed channel lifetime so every later sync remains idempotent.
+   */
+  arbitrateSessionHistory(
+    sender: PeerChannel,
+    history: Extract<ServerMessage, { type: "session_history" }>,
+  ): Extract<ServerMessage, { type: "session_history" }> {
+    const channel = sender as PeerChannelHandle;
+    const peerId = this.peerIdsByChannel.get(channel);
+    if (!peerId || this.channels.get(peerId) !== channel) return history;
+    const flushedKeys = this.flushedCompactionKeysByPeer.get(peerId);
+    if (!flushedKeys || flushedKeys.size === 0) return history;
+
+    const events = history.events.filter((event) =>
+      event.type !== "compaction" || !flushedKeys.has(`${history.session_id ?? ""}:${event.ts}`)
+    );
+    return events.length === history.events.length ? history : { ...history, events };
   }
 
   routeFrom(sender: PeerChannel, message: ClientMessage): void | Promise<void> {

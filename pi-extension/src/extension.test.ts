@@ -1232,6 +1232,63 @@ describe("multi-channel broadcast (W2D)", () => {
     expect(syncFirst[0]!.inner).toMatchObject({ in_reply_to: "sync-before-online" });
   });
 
+  test("online-first buffered compaction plus session_sync projects one app compaction row", async () => {
+    const peer = "owner-buffered-compaction";
+    await _pairForTest(peer);
+    const sessionId = currentSessionIdFromSends();
+    const onCompact = captureEventHandler("session_compact");
+    const compactionTs = 1_700_000_003_000;
+
+    relayRef.current!.emit("message", JSON.stringify({ type: "peer_offline", peer, since_ts: 1 }));
+    const sendsBeforeCompaction = relayRef.current!.send.mock.calls.length;
+    const now = vi.spyOn(Date, "now").mockReturnValue(compactionTs);
+    try {
+      onCompact({
+        type: "session_compact",
+        compactionEntry: {
+          type: "compaction",
+          summary: "buffered compact",
+          tokensBefore: 321,
+          firstKeptEntryId: "entry-buffered",
+          timestamp: "2026-07-18T00:00:00Z",
+        },
+        fromExtension: false,
+      });
+    } finally {
+      now.mockRestore();
+    }
+    expect(sentToPeerSince(sendsBeforeCompaction, peer)).toEqual([]);
+
+    relayRef.current!.emit("message", JSON.stringify({ type: "peer_online", peer }));
+    emitClientMessage(peer, {
+      type: "session_sync",
+      id: "sync-after-buffered-compaction",
+      session_id: sessionId,
+      limit: 50,
+    });
+    await vi.waitFor(() => {
+      expect(sentToPeerSince(sendsBeforeCompaction, peer).some(
+        (frame) => frame.inner.type === "session_history",
+      )).toBe(true);
+    });
+
+    const delivered = sentToPeerSince(sendsBeforeCompaction, peer);
+    const liveCompactions = delivered.filter((frame) => frame.inner.type === "compaction");
+    const history = delivered.find((frame) => frame.inner.type === "session_history");
+    const replayCompactions = (history?.inner["events"] as Array<{ type: string; ts?: number }> | undefined)
+      ?.filter((event) => event.type === "compaction") ?? [];
+    const appCompactionRowIds = [
+      ...liveCompactions.map((frame) => `server:compaction:${String(frame.inner["ts"])}`),
+      ...replayCompactions.map((event) =>
+        `server:${sessionId}:compaction:compaction:${String(event.ts)}`
+      ),
+    ];
+
+    expect(liveCompactions).toHaveLength(1);
+    expect(replayCompactions).toEqual([]);
+    expect(appCompactionRowIds).toEqual([`server:compaction:${compactionTs}`]);
+  });
+
   test("canonical compaction and SDK turn_end boundaries retain one completed turn plus active suffix", async () => {
     const peer = "owner-buffer-boundary";
     await _pairForTest(peer);
