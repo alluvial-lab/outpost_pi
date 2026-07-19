@@ -50,19 +50,22 @@ final class TranscriptStorageMigrator {
   TranscriptStorageMigrator({
     required HiveCipher cipher,
     TranscriptMigrationCheckpointHook? afterDestinationWrite,
+    TranscriptMigrationCheckpointHook? beforeDestinationReopen,
     TranscriptMigrationCheckpointHook? afterSourceDelete,
   }) : _cipher = cipher,
        _afterDestinationWrite = afterDestinationWrite,
+       _beforeDestinationReopen = beforeDestinationReopen,
        _afterSourceDelete = afterSourceDelete;
 
   static const String metadataBoxName = 'transcript_security_meta';
   static const String migrationVersionKey = 'migration_version';
-  static const String copyVerifiedKey = 'migration_copy_verified_v3';
+  static const String copyVerifiedKey = 'migration_copy_persisted_verified_v3';
   static const int migrationVersion = 3;
   static const String legacyIndexBoxName = 'sessions_index';
 
   final HiveCipher _cipher;
   final TranscriptMigrationCheckpointHook? _afterDestinationWrite;
+  final TranscriptMigrationCheckpointHook? _beforeDestinationReopen;
   final TranscriptMigrationCheckpointHook? _afterSourceDelete;
 
   /// Whether the plaintext-to-v3 migration has completed.
@@ -208,7 +211,6 @@ final class TranscriptStorageMigrator {
       importedProjectionRows += rows.length;
     }
 
-    final destinationBoxes = <String, Box<dynamic>>{};
     for (final candidate in candidates) {
       final expected = eventsBySession[candidate.key]!;
       final destinationName = TranscriptBoxIdentity.eventsName(
@@ -216,14 +218,15 @@ final class TranscriptStorageMigrator {
       );
       if (expected.isEmpty && !await Hive.boxExists(destinationName)) continue;
       final destination = await _openEncrypted(destinationName);
-      destinationBoxes[candidate.key] = destination;
       await _copyExpected(destination, expected, destinationName);
-      _verifyExact(destination, expected, destinationName);
+      await _reopenAndVerifyExact(destination, expected, destinationName);
     }
 
+    final expectedIndex = <String, Map<String, Object?>>{};
     for (final candidate in candidates) {
       final expected = candidate.record.toJson();
       final key = candidate.record.key;
+      expectedIndex[key] = expected;
       if (secureIndex.containsKey(key)) {
         if (!_deepEquals(secureIndex.get(key), expected)) {
           throw const TranscriptMigrationException(
@@ -236,24 +239,11 @@ final class TranscriptStorageMigrator {
         await _afterDestinationWrite?.call();
       }
     }
-
-    for (final candidate in candidates) {
-      final destination = destinationBoxes[candidate.key];
-      if (destination != null) {
-        _verifyExact(
-          destination,
-          eventsBySession[candidate.key]!,
-          destination.name,
-        );
-      }
-      final expectedIndex = candidate.record.toJson();
-      if (!_deepEquals(secureIndex.get(candidate.record.key), expectedIndex)) {
-        throw const TranscriptMigrationException(
-          code: 'destination_verification_failed',
-          sourceBox: 'sessions_index_v3',
-        );
-      }
-    }
+    await _reopenAndVerifyExpected(
+      secureIndex,
+      expectedIndex,
+      secureIndex.name,
+    );
 
     await metadata.put(copyVerifiedKey, true);
     final deleted = await _deleteVerifiedSources(
@@ -285,6 +275,7 @@ final class TranscriptStorageMigrator {
     for (final value in legacyIndex.values) {
       try {
         final json = _stringMap(value);
+        _validateIndexJson(json);
         final record = SessionIndexRecord.fromJson(json);
         if (record.epk.isEmpty ||
             record.roomId.isEmpty ||
@@ -392,6 +383,27 @@ final class TranscriptStorageMigrator {
     }
   }
 
+  void _validateIndexJson(Map<String, dynamic> json) {
+    _requireNonEmptyString(json, 'epk');
+    _requireNonEmptyString(json, 'room_id');
+    _requireNonEmptyString(json, 'session_id');
+    final displayName = json['display_name'];
+    if (displayName is! String) {
+      throw const FormatException('Malformed legacy index display name');
+    }
+    final status = json['status'];
+    if (status is! String ||
+        !SessionActivity.values.any((item) => item.name == status)) {
+      throw const FormatException('Malformed legacy index status');
+    }
+    _validateNullableIntegralNumber(json, 'last_message_at');
+    _validateNullableIntegralNumber(json, 'session_started_at');
+    final preview = json['last_message_preview'];
+    if (preview != null && preview is! String) {
+      throw const FormatException('Malformed legacy index preview');
+    }
+  }
+
   void _validateProjectionJson(Map<String, dynamic> json, int key) {
     final id = json['id'];
     final sequence = json['seq'];
@@ -399,13 +411,11 @@ final class TranscriptStorageMigrator {
     final timestamp = json['ts'];
     if (id is! String ||
         id.isEmpty ||
-        sequence is! num ||
-        sequence.toInt() != sequence ||
-        sequence.toInt() != key ||
+        !_isIntegralNumber(sequence) ||
+        sequence != key ||
         role is! String ||
         !MsgRole.values.any((item) => item.name == role) ||
-        timestamp is! num ||
-        timestamp.toInt() != timestamp) {
+        !_isIntegralNumber(timestamp)) {
       throw const FormatException('Malformed legacy projection row');
     }
     final pending = json['pending'];
@@ -418,15 +428,34 @@ final class TranscriptStorageMigrator {
             !UserMsgStatus.values.any((item) => item.name == status))) {
       throw const FormatException('Malformed legacy user status');
     }
+    final image = json['image'];
+    if (image != null) {
+      final imageJson = _stringMap(image);
+      _requireNonEmptyString(imageJson, 'data');
+      _requireNonEmptyString(imageJson, 'mime');
+    }
+    final tokensBefore = json['tokens_before'];
+    if (tokensBefore != null && !_isIntegralNumber(tokensBefore)) {
+      throw const FormatException('Malformed legacy token count');
+    }
+
     if (role == MsgRole.tool.name) {
       final tool = json['tool'];
       if (tool is! Map) throw const FormatException('Legacy tool data missing');
       final toolJson = _stringMap(tool);
+      _requireNonEmptyString(toolJson, 'tool_call_id');
+      _requireNonEmptyString(toolJson, 'tool');
       final toolStatus = toolJson['status'];
       if (toolStatus is! String ||
           !ToolEventStatus.values.any((item) => item.name == toolStatus)) {
         throw const FormatException('Malformed legacy tool status');
       }
+      final error = toolJson['error'];
+      if (error != null && error is! String) {
+        throw const FormatException('Malformed legacy tool error');
+      }
+    } else if (json['text'] is! String) {
+      throw const FormatException('Legacy message text is missing');
     }
   }
 
@@ -478,17 +507,41 @@ final class TranscriptStorageMigrator {
     }
   }
 
-  void _verifyExact(
+  Future<void> _reopenAndVerifyExact(
     Box<dynamic> destination,
     Map<String, Map<String, Object?>> expected,
     String destinationName,
-  ) {
-    if (destination.length != expected.length) {
+  ) async {
+    await destination.flush();
+    await destination.close();
+    await _beforeDestinationReopen?.call();
+    final reopened = await _openEncrypted(destinationName);
+    if (reopened.length != expected.length) {
       throw TranscriptMigrationException(
         code: 'destination_conflict',
         sourceBox: destinationName,
       );
     }
+    _verifyExpected(reopened, expected, destinationName);
+  }
+
+  Future<void> _reopenAndVerifyExpected(
+    Box<dynamic> destination,
+    Map<String, Map<String, Object?>> expected,
+    String destinationName,
+  ) async {
+    await destination.flush();
+    await destination.close();
+    await _beforeDestinationReopen?.call();
+    final reopened = await _openEncrypted(destinationName);
+    _verifyExpected(reopened, expected, destinationName);
+  }
+
+  void _verifyExpected(
+    Box<dynamic> destination,
+    Map<String, Map<String, Object?>> expected,
+    String destinationName,
+  ) {
     for (final entry in expected.entries) {
       if (!_deepEquals(destination.get(entry.key), entry.value)) {
         throw TranscriptMigrationException(
@@ -548,6 +601,22 @@ final class _MigrationCandidate {
     sessionId: record.sessionId,
   );
 }
+
+String _requireNonEmptyString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is String && value.isNotEmpty) return value;
+  throw FormatException('Legacy field "$key" must be a non-empty string');
+}
+
+void _validateNullableIntegralNumber(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value != null && !_isIntegralNumber(value)) {
+    throw FormatException('Legacy field "$key" must be an integral number');
+  }
+}
+
+bool _isIntegralNumber(Object? value) =>
+    value is num && value.isFinite && value == value.truncate();
 
 Map<String, dynamic> _stringMap(Object? value) {
   if (value is Map<String, dynamic>) return value;
