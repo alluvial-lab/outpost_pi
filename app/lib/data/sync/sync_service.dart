@@ -529,6 +529,7 @@ class SyncService extends Service {
   }) async {
     final generation = expectedGeneration ?? _lifecycleGeneration;
     if (!_isCurrentLifecycle(generation, expectedRef)) return;
+    final preservesActiveTurn = _pendingSteeringId == id;
     _pendingSendTimers.remove(id)?.cancel();
     if (!_isCurrentLifecycle(generation, expectedRef)) return;
     try {
@@ -541,10 +542,14 @@ class SyncService extends Service {
           code: code,
           message: message,
         ),
+        preserveTurnState: preservesActiveTurn,
       );
     } finally {
       if (_isCurrentLifecycle(generation, expectedRef)) {
         // Terminal in-memory convergence is independent of durable storage.
+        if (_pendingSteeringId == id) {
+          _setTranscriptSteering(const NoSteering());
+        }
         if (_streaming?.inReplyTo == id) _emitStreaming(null);
         if (turnProjection.cancelTargetId == id) _setTurnIdle();
         debugPrint(
@@ -1159,30 +1164,57 @@ class SyncService extends Service {
         );
 
       case Cancelled(:final targetId):
+        final pendingSteeringId = _pendingSteeringId;
         _pendingSendTimers.remove(targetId)?.cancel();
+        if (pendingSteeringId != null && pendingSteeringId != targetId) {
+          _pendingSendTimers.remove(pendingSteeringId)?.cancel();
+        }
         _discardStreamingState();
-        // Cancel is stop-generation, not delete-history. If the target was
-        // still only a local optimistic send, materialize it as failed through
-        // the event log; confirmed history stays visible and the terminal done
-        // event converges the turn idle through the projection.
-        _runDetachedTranscriptWrite(
-          () => _appendTranscriptEvents(<TranscriptEvent>[
+        // A Pi cancellation clears its steering queue as well as the active
+        // turn. Converge the overlay immediately, then persist a terminal event
+        // for the separate steering id so cold replay cannot resurrect it.
+        _setTranscriptSteering(const NoSteering());
+        final cancelledAt = DateTime.now();
+        final terminalEvents = <TranscriptEvent>[
+          UserMessageFailed(
+            eventId: 'server:user_cancelled:$targetId',
+            sessionId: _activeTranscriptSessionId(),
+            ts: cancelledAt,
+            clientMessageId: targetId,
+            code: 'cancelled',
+            message: 'Message was cancelled before delivery was confirmed.',
+          ),
+          if (pendingSteeringId != null && pendingSteeringId != targetId)
             UserMessageFailed(
-              eventId: 'server:user_cancelled:$targetId',
+              eventId: 'server:steering_cancelled:$pendingSteeringId',
               sessionId: _activeTranscriptSessionId(),
-              ts: DateTime.now(),
-              clientMessageId: targetId,
+              ts: cancelledAt,
+              clientMessageId: pendingSteeringId,
               code: 'cancelled',
-              message: 'Message was cancelled before delivery was confirmed.',
+              message: 'Steering was cancelled before the agent picked it up.',
             ),
-            AssistantDoneReceived(
-              eventId: 'server:assistant_cancelled:$targetId:${uuid7()}',
-              sessionId: _activeTranscriptSessionId(),
-              ts: DateTime.now(),
-              replyTo: targetId,
-            ),
-          ]),
+          AssistantDoneReceived(
+            eventId: 'server:assistant_cancelled:$targetId:${uuid7()}',
+            sessionId: _activeTranscriptSessionId(),
+            ts: cancelledAt,
+            replyTo: targetId,
+          ),
+        ];
+        final cancellationGeneration = _lifecycleGeneration;
+        _runDetachedWrite(
+          operation: LifecycleOperation.transcriptWrite,
+          write: () async {
+            try {
+              await _appendTranscriptEvents(terminalEvents);
+            } finally {
+              if (_isCurrentLifecycle(cancellationGeneration, expectedRef) &&
+                  _pendingSteeringId == pendingSteeringId) {
+                _setTranscriptSteering(const NoSteering());
+              }
+            }
+          },
           expectedRef: expectedRef,
+          requestReplayOnFailure: true,
         );
         _setTurnIdle();
 
@@ -1228,7 +1260,11 @@ class SyncService extends Service {
           break;
         }
         final pendingId = inReplyTo;
-        if (pendingId != null && _pendingSendTimers.containsKey(pendingId)) {
+        final rejectsPendingSteering =
+            pendingId != null && _pendingSteeringId == pendingId;
+        if (pendingId != null &&
+            (_pendingSendTimers.containsKey(pendingId) ||
+                rejectsPendingSteering)) {
           _runDetachedWrite(
             operation: LifecycleOperation.transcriptWrite,
             write: () => _failPendingSend(
@@ -1241,6 +1277,7 @@ class SyncService extends Service {
             requestReplayOnFailure: true,
           );
         }
+        if (rejectsPendingSteering) break;
         _discardStreamingState();
         _setTurnIdle();
         _runDetachedTranscriptWrite(
@@ -1837,6 +1874,11 @@ class SyncService extends Service {
     _queuedText = text;
     if (!_queuedController.isClosed) _queuedController.add(text);
   }
+
+  String? get _pendingSteeringId => switch (_transcriptSteering) {
+    SteeringPending(:final clientMessageId) => clientMessageId,
+    NoSteering() => null,
+  };
 
   void _setTranscriptSteering(SteeringProjection next) {
     if (_transcriptSteering == next) return;
