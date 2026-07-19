@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-no-stop-button-while-awaiting-tool
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, ux, bug]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
@@ -105,3 +105,11 @@ narrow Stop gate has been corrected since capture. The remaining missing
 when that unit proves `working`, `awaitingTool`, and `streaming` all retain a
 valid cancel target and Stop affordance while transport is projected
 independently.
+
+## Implementation
+
+Closed as provenance for
+`feature-mobile-tui-parity-chat-resilience-status-projection`. The composed
+status keeps `awaitingTool` active and displays `waiting…`; Stop derives from
+the broad turn projection and remains available when the room is online. The
+focused ChatViewModel regression proves the cancellation target is retained.
