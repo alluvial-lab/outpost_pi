@@ -143,12 +143,16 @@ impl ConnectionActor {
 
         // Skip-sender: pass this connection's conn_id so multi-device Owners
         // don't echo their own outbound messages.
-        if !self.delivery.send_to_room(
-            &dest_peer,
-            &dest_room,
-            axum::extract::ws::Message::Text(fwd_line),
-            self.conn_id,
-        ) {
+        if !self
+            .delivery
+            .send_to_room(
+                &dest_peer,
+                &dest_room,
+                axum::extract::ws::Message::Text(fwd_line),
+                self.conn_id,
+            )
+            .accepted()
+        {
             warn!(
                 from = %self.peer_short,
                 dest = %dest_tail,
@@ -271,7 +275,6 @@ impl ConnectionActor {
 mod tests {
     use super::*;
     use axum::extract::ws::Message;
-    use tokio::sync::mpsc;
 
     use crate::metrics::FirehoseMetrics;
     use crate::peers::registry::PeerRegistry;
@@ -279,6 +282,7 @@ mod tests {
     use crate::protocol::frame::{FrameDecodeError, RelayControlFrame, decode_relay_frame};
     use crate::protocol::generated::control::{RELAY_CONTROL_FRAME_TYPES, RoomMetaUpdateFrame};
     use crate::rooms::{RoomManager, RoomMeta, RoomMetaPatch};
+    use crate::test_support::bounded_mpsc as mpsc;
 
     fn actor_services() -> (Arc<PeerRegistry>, ConnectionActorServices) {
         let presence = Arc::new(PresenceManager::new());
