@@ -5,10 +5,10 @@ stage: done
 tags: [app, lifecycle]
 parent: feature-app-async-lifecycle-ownership
 depends_on: [feature-app-async-lifecycle-ownership-connection-persistence]
-release_binding: null
+release_binding: app-v0.2.0
 gate_origin: null
 created: 2026-07-17
-updated: 2026-07-17
+updated: 2026-07-20
 ---
 
 # Own and retry mesh publication after peer mutation
