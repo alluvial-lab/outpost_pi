@@ -1,7 +1,7 @@
 ---
 id: gate-tests-wake-outcome-call-site-canary
 kind: story
-stage: implementing
+stage: review
 tags: [testing, refactor]
 parent: null
 depends_on: []
@@ -50,3 +50,12 @@ Replace or delete the literal-only `delivery_debug_log.test.ts:108-131` case aft
 ## Gate run context
 
 The operator required the test scanner to run inline with no nested sub-agent. This finding therefore has reduced fresh-context isolation. It was verified directly against the release-bound feature contract, production call site, and current test body.
+
+## Implementation notes
+
+- **Execution capability:** inline focused test replacement; the existing extension integration harness already exposed the real app-message delivery seam and debug-log capture port.
+- **Files changed:** `pi-extension/src/extension.test.ts`, `pi-extension/src/session/delivery_debug_log.test.ts`.
+- **Coverage added:** a real paired app message drives a throwing `sendUserMessage` provider path containing a unique secret canary, then asserts the production `wake_outcome` event persists `detail: "send_failed"` and excludes the raw canary. The literal-only adapter canary was removed; faithful adapter-persistence tests remain.
+- **Confirmation:** targeted extension tests passed (211 tests); `corepack pnpm typecheck`, the full `corepack pnpm test` suite (879 passed, 3 skipped), and `corepack pnpm build` passed.
+- **Bounded inline review:** pass — reverting the `index.ts` projection to raw `wake.detail` now fails the integration assertion, while the test does not duplicate the category projection logic.
+- **Adjacent issues parked:** none.
