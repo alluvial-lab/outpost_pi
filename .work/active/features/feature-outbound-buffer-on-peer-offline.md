@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension, bug, lifecycle]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
-release_binding: null
+release_binding: extension-0.2.0
 gate_origin: null
 created: 2026-07-09
-updated: 2026-07-18
+updated: 2026-07-20
 reviewed: 2026-07-19 (standard, gpt-5.6-sol fresh-context → needs fixes; 2 blockers fixed + verified → done; no second pass per standard weight)
 ---
 

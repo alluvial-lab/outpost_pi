@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension, bug]
 parent: epic-remote-session-resilience-refactor
 depends_on: [story-stale-session-bound-surface-deep-audit]
-release_binding: null
+release_binding: extension-0.2.0
 gate_origin: null
 created: 2026-06-28
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Add replacement-boundary regression tests for app action surfaces

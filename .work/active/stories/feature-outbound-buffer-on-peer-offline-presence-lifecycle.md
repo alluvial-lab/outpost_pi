@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension, lifecycle]
 parent: feature-outbound-buffer-on-peer-offline
 depends_on: [feature-outbound-buffer-on-peer-offline-bounded-turn-buffer]
-release_binding: null
+release_binding: extension-0.2.0
 gate_origin: null
 created: 2026-07-18
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Reconnect arbitration and channel-lifetime cleanup
