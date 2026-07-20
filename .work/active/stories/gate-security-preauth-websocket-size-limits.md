@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: relay-0.2.0
 parent: feature-typed-bounded-relay-decoding
 stage: done
 id: gate-security-preauth-websocket-size-limits
@@ -8,7 +8,7 @@ tags: [security, relay]
 depends_on: []
 gate_origin: security
 created: 2026-07-12
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Pre-auth WebSocket frames and hello metadata lack explicit size limits
