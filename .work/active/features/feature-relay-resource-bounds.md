@@ -5,10 +5,10 @@ stage: done
 tags: [relay, security]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: relay-0.2.0
 gate_origin: security
 created: 2026-07-15
-updated: 2026-07-18
+updated: 2026-07-19
 ---
 
 # Relay: bound unauthenticated/authenticated resource consumption and retained state
