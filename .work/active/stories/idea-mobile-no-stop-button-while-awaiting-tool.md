@@ -5,10 +5,10 @@ stage: done
 tags: [app, pi-extension, ux, bug]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Mobile: agent doesn't show "working" (and no Stop button) while waiting on a tool result

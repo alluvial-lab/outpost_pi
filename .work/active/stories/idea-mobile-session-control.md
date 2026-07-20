@@ -5,10 +5,10 @@ stage: done
 tags: [app, pi-extension]
 parent: feature-mobile-native-session-process-control
 depends_on: []
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-06-29
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Mobile app: session control and command surface gaps

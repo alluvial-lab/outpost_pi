@@ -5,10 +5,10 @@ stage: done
 tags: [app, pi-extension, daemon, workflow]
 parent: feature-mobile-native-session-process-control
 depends_on: [idea-mobile-session-control]
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Mobile: no way to fully restart the Pi process (fresh session + relay) from the phone

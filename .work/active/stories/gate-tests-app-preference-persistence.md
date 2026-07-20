@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: v0.2.0
 parent: feature-cockpit-settings-control-tests
 stage: done
 id: gate-tests-app-preference-persistence
@@ -8,7 +8,7 @@ tags: [testing]
 depends_on: []
 gate_origin: testing
 created: 2026-07-01
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # App-preference panels only have importability coverage, not persistence/controller behavior

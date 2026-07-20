@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: v0.2.0
 parent: feature-relay-resource-bounds
 stage: done
 id: gate-security-pi-envelope-auth-scan-rate-limit
@@ -8,7 +8,7 @@ tags: [security]
 depends_on: []
 gate_origin: security
 created: 2026-07-01
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Pi-envelope authorization scans mesh storage without a negative cache or per-frame limiter
