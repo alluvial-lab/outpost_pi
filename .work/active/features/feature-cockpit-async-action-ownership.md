@@ -5,10 +5,10 @@ stage: done
 tags: [cockpit, refactor, lifecycle]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: cockpit-v0.2.0
 gate_origin: refactor
 created: 2026-07-15
-updated: 2026-07-18
+updated: 2026-07-20
 reviewed: "2026-07-18 (standard, gpt-5.6-sol fresh-context → needs fixes; 1 blocker fixed + verified → done; no second pass per standard weight)"
 ---
 
