@@ -39,10 +39,14 @@ Ed25519 in the app; Hive for local cache in Flutter; `flutter_modular` +
   in product copy and in `PROTOCOL.md`. Re-enabling E2E (Noise XX /
   Curve25519 + ChaCha20-Poly1305) is roadmap-additive and must not change the
   envelope shape.
-- **No message-queue offline delivery.** If a peer is offline, the sender gets
-  `transport_error: offline` immediately. Queued-message state is a short
-  in-memory Pi-side buffer for prompts held during an active turn, lost on
-  restart.
+- **Bounded offline replay for known app peers.** When the relay marks an
+  attached app peer offline, the extension keeps a per-peer, in-memory outbound
+  buffer for the active turn and most recently completed turn, subject to frame
+  and payload caps, then flushes it best-effort when that peer returns online.
+  The buffer is lost on extension restart and is neither a protocol guarantee
+  nor a durable message queue. Unobserved app disconnects and cross-PC relay
+  targets have no such queue and report offline normally (`transport_error:
+  offline` for cross-PC relay forwarding).
 - **Cross-PC is relay-mediated.** Direct PC-to-PC (WebRTC/QUIC) is long-term
   roadmap; the relay becomes the fallback then.
 
