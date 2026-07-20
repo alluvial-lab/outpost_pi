@@ -1,6 +1,10 @@
 mod common;
-use common::{connect_and_auth, start_relay};
+use common::{connect_and_auth, start_relay, start_relay_with_registry};
 
+use std::time::Duration;
+
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+use ed25519_dalek::SigningKey;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
@@ -142,6 +146,86 @@ async fn invalid_sig_closes_ws() {
         None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {} // all acceptable
         Some(Ok(other)) => panic!("unexpected message after bad auth: {other:?}"),
     }
+}
+
+/// A socket that never sends hello is closed at the public WebSocket boundary
+/// without creating the prospective peer's room in the live registry.
+#[tokio::test(start_paused = true)]
+async fn pre_hello_stall_closes_without_registry_admission() {
+    let (port, registry) = start_relay_with_registry().await;
+    let url = format!("ws://127.0.0.1:{port}");
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let peer_id = B64.encode(
+        SigningKey::generate(&mut rand::thread_rng())
+            .verifying_key()
+            .to_bytes(),
+    );
+
+    tokio::time::advance(relay::resource_limits::HANDSHAKE_STEP_TIMEOUT).await;
+    tokio::time::resume();
+    tokio::task::yield_now().await;
+
+    let close_result = tokio::time::timeout(Duration::from_secs(1), ws.next())
+        .await
+        .expect("pre-hello socket remained open after the handshake deadline");
+    match close_result {
+        None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {}
+        Some(Ok(other)) => panic!("unexpected message after pre-hello timeout: {other:?}"),
+    }
+    assert!(
+        registry.rooms_of(&peer_id).is_empty(),
+        "pre-hello socket must not create a registry room"
+    );
+}
+
+/// A valid hello receives a challenge, then gets a fresh auth deadline; sending
+/// no auth closes the socket without admitting its peer/room to the registry.
+#[tokio::test(start_paused = true)]
+async fn post_challenge_stall_closes_without_registry_admission() {
+    let (port, registry) = start_relay_with_registry().await;
+    let url = format!("ws://127.0.0.1:{port}");
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let peer_id = B64.encode(
+        SigningKey::generate(&mut rand::thread_rng())
+            .verifying_key()
+            .to_bytes(),
+    );
+    let room_id = "stalled-auth-room";
+
+    ws.send(Message::text(
+        json!({
+            "type": "hello",
+            "pubkey": peer_id,
+            "device_id": "stalled-auth-device",
+            "room_id": room_id
+        })
+        .to_string(),
+    ))
+    .await
+    .unwrap();
+
+    let challenge = ws.next().await.unwrap().unwrap();
+    let challenge: serde_json::Value = serde_json::from_str(challenge.to_text().unwrap()).unwrap();
+    assert_eq!(challenge["type"], "challenge");
+    assert!(
+        registry.rooms_of(&peer_id).is_empty(),
+        "hello alone must not register the peer"
+    );
+
+    tokio::time::advance(relay::resource_limits::HANDSHAKE_STEP_TIMEOUT).await;
+    tokio::time::resume();
+    tokio::task::yield_now().await;
+    let close_result = tokio::time::timeout(Duration::from_secs(1), ws.next())
+        .await
+        .expect("post-challenge socket remained open after the auth deadline");
+    match close_result {
+        None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {}
+        Some(Ok(other)) => panic!("unexpected message after auth timeout: {other:?}"),
+    }
+    assert!(
+        registry.rooms_of(&peer_id).is_empty(),
+        "timed-out auth socket must not create its requested registry room"
+    );
 }
 
 /// Fragmented unauthenticated input is rejected as soon as its declared payload
