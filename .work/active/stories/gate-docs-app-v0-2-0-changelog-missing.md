@@ -1,7 +1,7 @@
 ---
 id: gate-docs-app-v0-2-0-changelog-missing
 kind: story
-stage: implementing
+stage: done
 tags: [app, documentation]
 parent: null
 depends_on: []
