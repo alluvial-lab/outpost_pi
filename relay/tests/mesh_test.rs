@@ -12,6 +12,7 @@ use relay::{
     AppState, FirehoseMetrics, MeshAuthCache, MeshStore, PeerRegistry, PresenceManager,
     RoomManager, build_router,
     protocol::generated::mesh::{MeshEnvelopeWire, MeshGetResponse, MeshPostResponse},
+    resource_limits::MAX_NEW_MESH_OWNERS_PER_WINDOW,
 };
 use reqwest::StatusCode;
 use serde_json::json;
@@ -320,6 +321,36 @@ async fn post_with_bad_json_returns_400() {
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn post_rate_limits_new_owner_creation_process_wide() {
+    let (base, _dir) = spawn_relay().await;
+    let client = reqwest::Client::new();
+
+    for _ in 0..MAX_NEW_MESH_OWNERS_PER_WINDOW {
+        let sk = SigningKey::generate(&mut rand::thread_rng());
+        let (env, hash) = make_envelope(&sk, 1);
+        let response = client
+            .post(format!("{base}/mesh/{hash}"))
+            .json(&env)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let sk = SigningKey::generate(&mut rand::thread_rng());
+    let (env, hash) = make_envelope(&sk, 1);
+    let response = client
+        .post(format!("{base}/mesh/{hash}"))
+        .json(&env)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.text().await.unwrap(), "new_owner_rate_limited");
 }
 
 #[tokio::test]
