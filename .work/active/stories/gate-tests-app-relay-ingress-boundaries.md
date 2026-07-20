@@ -1,7 +1,7 @@
 ---
 id: gate-tests-app-relay-ingress-boundaries
 kind: story
-stage: implementing
+stage: review
 tags: [testing]
 parent: null
 depends_on: []
@@ -59,3 +59,12 @@ Keep the fixtures small through injected limits; do not allocate multi-megabyte 
 ## Gate run context
 
 The operator required the test scanner to run inline with no nested sub-agent. This finding therefore has reduced fresh-context isolation. It was verified directly against the release-bound acceptance contract, decoder implementation, and current app transport tests.
+
+## Implementation notes
+
+- **Execution capability:** inline focused test addition; the decoder already exposed deterministic injected-limit seams, so no production refactor or coordination was needed.
+- **Files changed:** `app/test/data/transport/relay_frame_decoder_test.dart` (new).
+- **Coverage added:** UTF-8 multibyte raw-byte rejection before JSON parsing; exact decoded acceptance; encoded pre-decode rejection; decoded post-decode rejection; pre-auth raw ceiling; wrong challenge type; 31/32/33-byte nonce behavior.
+- **Confirmation:** the new test file passed (6 tests), `flutter analyze` passed, and the complete non-e2e Flutter suite passed (792 tests). The repository-wide `flutter test` command additionally discovered four integration tests that require pairing harness endpoints; those failed only because the runner environment variables were absent.
+- **Bounded inline review:** pass — fixtures use injected one-to-three-byte limits except the canonical 16 KiB pre-auth ceiling check, assert deterministic categories/sizes, and exercise production decoders rather than mirrored logic.
+- **Adjacent issues parked:** none.
