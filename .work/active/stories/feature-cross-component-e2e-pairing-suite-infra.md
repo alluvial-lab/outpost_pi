@@ -5,10 +5,10 @@ stage: done
 tags: [e2e-test, testing]
 parent: feature-cross-component-e2e-pairing-suite
 depends_on: []
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-07-19
-updated: 2026-07-19
+updated: 2026-07-20
 ---
 
 # Scaffold the cross-component pairing e2e stack

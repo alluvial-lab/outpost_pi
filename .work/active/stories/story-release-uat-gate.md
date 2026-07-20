@@ -5,10 +5,10 @@ stage: done
 tags: [workflow, release]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Add a release UAT / smoke gate before tags ship

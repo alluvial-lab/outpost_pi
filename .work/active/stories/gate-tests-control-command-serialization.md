@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: v0.2.0
 parent: feature-cockpit-settings-control-tests
 stage: done
 id: gate-tests-control-command-serialization
@@ -8,7 +8,7 @@ tags: [testing]
 depends_on: []
 gate_origin: testing
 created: 2026-07-01
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Control-command serialization test only samples one relay action

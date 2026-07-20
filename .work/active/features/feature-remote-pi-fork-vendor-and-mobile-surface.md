@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension, app, workflow]
 parent: epic-remote-session-resilience-refactor
 depends_on: []
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-06-27
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Remote-pi fork, local vendor switch, and mobile-surface development

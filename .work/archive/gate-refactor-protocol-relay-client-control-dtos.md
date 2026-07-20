@@ -8,10 +8,10 @@ stage: implementing
 tags: []
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.2.0
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-20
 ---
 
 # Relay client redeclares generated relay control frame DTOs

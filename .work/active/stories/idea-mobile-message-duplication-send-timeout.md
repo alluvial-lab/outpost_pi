@@ -5,10 +5,10 @@ stage: done
 tags: [app, pi-extension, bug]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [idea-mobile-chat-reorder-on-return, idea-mobile-chat-blank-on-tab-return]
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-06-29
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Mobile: message duplication + send_timeout confirmation bug
