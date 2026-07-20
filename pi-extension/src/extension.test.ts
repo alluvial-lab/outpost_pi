@@ -4605,6 +4605,45 @@ describe("session_shutdown teardown", () => {
     }
   });
 
+  test("wake failure details are categorized before delivery-log persistence", async () => {
+    const peer = "owner-wake-redaction";
+    await _pairForTest(peer);
+    const sessionId = currentSessionIdFromSends();
+    const secretCanary = "sk-secret-canary token=abc prompt=private";
+    _setPiForTest({
+      sendUserMessage: vi.fn(() => { throw new Error(secretCanary); }),
+      sendMessage: vi.fn(async () => undefined),
+    });
+
+    const debugLog = new FakeDeliveryDebugLog();
+    const prevLog = _setDeliveryDebugLogForTest(debugLog);
+    try {
+      emitClientMessage(peer, {
+        type: "user_message",
+        id: "msg-wake-redaction",
+        session_id: sessionId,
+        text: "trigger the failing provider path",
+      });
+
+      await vi.waitFor(() => {
+        expect(debugLog.byTag("wake_outcome")).toContainEqual(expect.objectContaining({
+          tag: "wake_outcome",
+          id: "msg-wake-redaction",
+          ok: false,
+          recoverable: false,
+          detail: "send_failed",
+          messageApiArmed: true,
+        }));
+      });
+      const wakeOutcome = debugLog.byTag("wake_outcome").find(
+        (event) => event.id === "msg-wake-redaction",
+      );
+      expect(JSON.stringify(wakeOutcome)).not.toContain(secretCanary);
+    } finally {
+      _setDeliveryDebugLogForTest(prevLog);
+    }
+  });
+
   test("null messageApi window queues user_message and bindApi replay delivers it", async () => {
     const peer = "owner-null-window-replay";
     await _pairForTest(peer);

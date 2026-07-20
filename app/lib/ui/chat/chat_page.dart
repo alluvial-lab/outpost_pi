@@ -429,14 +429,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  /// Open the Camera/Gallery sheet and drive the picker. Captures the
-  /// messenger up front so a permission-denied hint can deep-link to Settings
-  /// after the async pick.
+  /// Open the Camera/Gallery sheet and drive the picker.
+  ///
+  /// Resolves the messenger only after the async picker completes and the
+  /// originating context is still mounted.
   static Future<void> _openAttach(
     BuildContext context,
     AttachmentViewModel vm,
   ) async {
-    final messenger = ScaffoldMessenger.of(context);
     final source = await showAttachSheet(context);
     if (source == null) return;
     AttachHint? hint;
@@ -449,7 +449,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
     await Future<void>.delayed(Duration.zero); // flush the hint microtask
     await sub.cancel();
-    if (hint != null) _handleAttachHint(messenger, hint!);
+    if (!context.mounted || hint == null) return;
+    _handleAttachHint(ScaffoldMessenger.of(context), hint!);
   }
 
   static void _handleAttachHint(
