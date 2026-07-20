@@ -1,7 +1,7 @@
 ---
 id: gate-docs-changelog-extension-020
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, documentation]
 parent: null
 depends_on: []
