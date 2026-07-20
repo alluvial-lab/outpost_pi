@@ -1,8 +1,9 @@
-# Changelog — Remote Pi Cockpit
+# Changelog — Outpost-Pi Cockpit
 
 Format based on [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
-Versions follow `version:` in `pubspec.yaml` (SSOT). The `notes` field in
-`latest.json` (VPS) derives from this file.
+Versions follow `version:` in `pubspec.yaml` (SSOT). The `cockpit-v*` GitHub
+Release workflow derives its release notes from the first version section in
+this file.
 
 ## [Unreleased]
 
