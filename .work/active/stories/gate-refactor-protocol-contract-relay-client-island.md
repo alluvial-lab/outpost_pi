@@ -1,11 +1,11 @@
 ---
 kind: story
-release_binding: null
+release_binding: extension-0.2.0
 parent: feature-finish-generated-protocol-adoption
 stage: done
 id: gate-refactor-protocol-contract-relay-client-island
 created: 2026-07-12
-updated: 2026-07-18
+updated: 2026-07-20
 tags: [pi-extension, protocol]
 depends_on: []
 gate_origin: refactor

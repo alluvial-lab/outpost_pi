@@ -1,11 +1,11 @@
 ---
 kind: story
-release_binding: null
+release_binding: extension-0.2.0
 parent: feature-piext-lifecycle-delivery-promise-policy
 stage: done
 id: gate-refactor-lifecycle-queued-delivery-promise
 created: 2026-07-12
-updated: 2026-07-18
+updated: 2026-07-20
 tags: [pi-extension]
 depends_on: []
 gate_origin: refactor
