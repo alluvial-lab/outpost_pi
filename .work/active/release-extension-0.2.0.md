@@ -62,7 +62,48 @@ All findings are legitimate cross-component phased delivery, not true drift:
   (`[cleanup]` or untagged `gate-refactor-*`). They bind to repo `v0.2.0`.
   No pi-extension-attributed child is left behind.
 
-(pending — gates run next)
+### gate-security (2026-07-20) — 1 Low
+
+No release blockers. Unbound backlog:
+`gate-security-compaction-replay-keys-unbounded`.
+
+### gate-tests (2026-07-20) — 1 High, 1 Medium
+
+Release-blocking:
+- `gate-tests-offline-buffer-completed-eviction` (High)
+
+Non-blocking (unbound backlog):
+- `gate-tests-offline-buffer-per-peer-isolation` (Medium)
+
+### gate-cruft (2026-07-20) — 1 High
+
+Release-blocking:
+- `gate-cruft-index-orphaned-composition-remnants` (High — unused `index.ts`
+  imports + orphaned pairing snapshot helper)
+
+### gate-docs (2026-07-20) — 2 High
+
+Release-blocking:
+- `gate-docs-changelog-extension-020` (High — changelog gap; satisfied by
+  drafting the extension-0.2.0 CHANGELOG entry in Phase 5.5)
+- `gate-docs-spec-offline-delivery-contract` (High — spec drift on the
+  offline delivery contract)
+
+### gate-patterns (2026-07-20) — 1 pattern draft
+
+No findings. Emitted pattern draft `stale-capability-eviction` as
+`gate-patterns-extension-0.2.0` at `stage: done`; updated pattern index.
+
+### gate-refactor (2026-07-20) — 1 Medium
+
+No release blockers. Unbound backlog:
+`gate-refactor-lifecycle-owner-ingress-floating`.
+(2 already-tracked findings skipped as duplicates.)
+
+### Totals
+
+**4 release-blocking findings** (1 cruft High + 2 docs High + 1 tests High)
+must reach `done` before ship; **4 non-blocking** findings are unbound backlog.
 
 ## UAT checkpoint
 
