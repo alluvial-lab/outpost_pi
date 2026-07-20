@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: v0.2.0
 parent: feature-cockpit-async-action-ownership
 stage: done
 id: gate-refactor-lifecycle-unguarded-async-cron-log
@@ -8,7 +8,7 @@ tags: []
 depends_on: []
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Cron log initial load future is discarded

@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: v0.2.0
 parent: feature-app-async-lifecycle-ownership
 stage: done
 id: gate-cruft-room-adoption-persist-dropped
@@ -8,7 +8,7 @@ tags: [cleanup]
 depends_on: []
 gate_origin: cruft
 created: 2026-07-01
-updated: 2026-07-17
+updated: 2026-07-20
 ---
 
 # Legacy room-adoption persistence failures are dropped

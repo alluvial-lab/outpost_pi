@@ -5,10 +5,10 @@ stage: done
 tags: [app, pi-extension, relay, security, protocol]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.2.0
 gate_origin: security
 created: 2026-07-15
-updated: 2026-07-19
+updated: 2026-07-20
 ---
 
 # Cross-stack: typed and size-bounded inbound relay/WebSocket decoding

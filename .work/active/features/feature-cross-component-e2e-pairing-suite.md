@@ -5,10 +5,10 @@ stage: done
 tags: [testing, e2e-test]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-19
+updated: 2026-07-20
 ---
 
 # Cross-component e2e suite for the pairing → session-hydrate lifecycle

@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: v0.2.0
 parent: feature-cockpit-typed-rpc-boundaries
 stage: done
 id: gate-refactor-boundaries-ambiguous-map-rpc-gateway-respondui
@@ -8,7 +8,7 @@ tags: []
 depends_on: []
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-17
+updated: 2026-07-20
 ---
 
 # RPC UI responses are exposed as raw maps in a domain port

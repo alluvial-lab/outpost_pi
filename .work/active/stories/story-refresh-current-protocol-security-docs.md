@@ -5,10 +5,10 @@ stage: done
 tags: [docs, protocol, security, app, pi-extension]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-07-15
-updated: 2026-07-16
+updated: 2026-07-20
 ---
 
 # Refresh current protocol and pairing-security documentation
