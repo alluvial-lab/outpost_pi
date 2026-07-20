@@ -7,7 +7,7 @@ parent: null
 depends_on: []
 release_binding: extension-0.2.0
 gate_origin: docs
-created: 2026-07-21
+created: 2026-07-20
 updated: 2026-07-20
 ---
 
