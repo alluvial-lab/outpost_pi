@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-remote-session-unused-context-type
 kind: story
-stage: implementing
+stage: review
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -37,3 +37,11 @@ type SessionIdContext = Pick<ExtensionContext, "sessionManager">;
 
 ## Removal
 Delete `SessionIdContext` and the now-unneeded `ExtensionContext` type import. Keep the runtime `safeSessionManager` narrowing, which does not depend on this alias.
+
+## Implementation notes
+
+- Execution capability: inline minimal cleanup; this is an isolated unused TypeScript alias and import.
+- Removed `SessionIdContext` and the now-unused `ExtensionContext` type import from `pi-extension/src/session/remote_session.ts`; `safeSessionManager` remains unchanged.
+- No test was added: the removed alias has no runtime representation or consumer; compile and the full extension suite are the appropriate regression evidence.
+- Confirmation: `corepack pnpm typecheck`, `corepack pnpm test` (52 files, 881 passed, 3 skipped), and `corepack pnpm build` passed in `pi-extension/`.
+- Bounded inline review: the runtime stale-context narrowing and UUID fallback code were not modified.

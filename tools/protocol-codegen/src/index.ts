@@ -926,9 +926,6 @@ function isObjectLike(value: unknown, allowedKeys: readonly string[] | undefined
   return record !== undefined && (allowedKeys === undefined || hasOnlyKeys(record, allowedKeys)) && validate(record);
 }
 
-function isStringWithMinLength(value: unknown, minLength: number): value is string {
-  return typeof value === "string" && value.length >= minLength;
-}
 
 function isInteger(value: unknown): value is number {
   return Number.isInteger(value);
@@ -941,10 +938,7 @@ function isIntegerAtLeast(value: unknown, minimum: number): value is number {
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
-
-function isFiniteNumberAtLeast(value: unknown, minimum: number): value is number {
-  return isFiniteNumber(value) && value >= minimum;
-}`;
+`;
 }
 
 function emitValidatorFunction(variant: OutpostPiIrVariant): string {
