@@ -1,7 +1,7 @@
 ---
 id: gate-docs-vision-session-contamination-current-state
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
