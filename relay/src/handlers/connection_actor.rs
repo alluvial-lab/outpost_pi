@@ -21,7 +21,87 @@ use crate::rooms::RoomManager;
 use crate::resource_limits::{
     CONTROL_CHECK_PEER_COST_WINDOW, FixedWindowBudget, MAX_CONTROL_CHECK_PEER_COST_PER_WINDOW,
     MAX_CONTROL_FRAME_PEERS, MAX_PI_FORWARDS_PER_WINDOW, PI_FORWARD_WINDOW,
+    ROOMS_DEDUP_CACHE_MAX_BYTES, ROOMS_DEDUP_CACHE_MAX_ENTRIES,
 };
+
+#[derive(Debug)]
+struct CachedRoomsResponse {
+    response: String,
+    last_used: u64,
+}
+
+#[derive(Debug, Default)]
+struct RoomsDedupCache {
+    entries: HashMap<String, CachedRoomsResponse>,
+    retained_bytes: usize,
+    clock: u64,
+}
+
+impl RoomsDedupCache {
+    fn is_unchanged(&mut self, peer_id: &str, response: &str) -> bool {
+        let Some(entry) = self.entries.get_mut(peer_id) else {
+            return false;
+        };
+        if entry.response != response {
+            return false;
+        }
+
+        self.clock = self.clock.saturating_add(1);
+        entry.last_used = self.clock;
+        true
+    }
+
+    fn remember(&mut self, peer_id: String, response: String) {
+        if let Some(previous) = self.entries.remove(&peer_id) {
+            self.retained_bytes = self
+                .retained_bytes
+                .saturating_sub(peer_id.len() + previous.response.len());
+        }
+
+        let entry_bytes = peer_id.len().saturating_add(response.len());
+        if entry_bytes > ROOMS_DEDUP_CACHE_MAX_BYTES {
+            return;
+        }
+
+        while self.entries.len() >= ROOMS_DEDUP_CACHE_MAX_ENTRIES
+            || self.retained_bytes.saturating_add(entry_bytes) > ROOMS_DEDUP_CACHE_MAX_BYTES
+        {
+            let Some(oldest_peer) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(peer, _)| peer.clone())
+            else {
+                break;
+            };
+            if let Some(evicted) = self.entries.remove(&oldest_peer) {
+                self.retained_bytes = self
+                    .retained_bytes
+                    .saturating_sub(oldest_peer.len() + evicted.response.len());
+            }
+        }
+
+        self.clock = self.clock.saturating_add(1);
+        self.retained_bytes = self.retained_bytes.saturating_add(entry_bytes);
+        self.entries.insert(
+            peer_id,
+            CachedRoomsResponse {
+                response,
+                last_used: self.clock,
+            },
+        );
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
 
 #[derive(Debug)]
 pub(crate) enum ActorDispatch {
@@ -80,7 +160,7 @@ pub(crate) struct ConnectionActor {
     mesh_auth: Arc<MeshAuthCache>,
     metrics: Arc<FirehoseMetrics>,
     last_presence_resp: Option<String>,
-    last_rooms_resp: HashMap<String, String>,
+    last_rooms_resp: RoomsDedupCache,
     control_check_limiter: ControlCheckLimiter,
     pi_forward_limiter: FixedWindowBudget,
 }
@@ -107,7 +187,7 @@ impl ConnectionActor {
             mesh_auth: services.mesh_auth,
             metrics: services.metrics,
             last_presence_resp: None,
-            last_rooms_resp: HashMap::new(),
+            last_rooms_resp: RoomsDedupCache::default(),
             control_check_limiter: ControlCheckLimiter::new(),
             pi_forward_limiter: FixedWindowBudget::new(
                 PI_FORWARD_WINDOW,
@@ -253,12 +333,12 @@ impl ConnectionActor {
             })
             .expect("generated rooms serialization is infallible");
 
-            if self.last_rooms_resp.get(&target_peer) == Some(&resp) {
+            if self.last_rooms_resp.is_unchanged(&target_peer, &resp) {
                 self.metrics.inc_rooms_suppressed(1);
                 continue;
             }
 
-            self.last_rooms_resp.insert(target_peer, resp.clone());
+            self.last_rooms_resp.remember(target_peer, resp.clone());
             self.metrics.inc_rooms_emitted(1);
             messages.push(resp);
         }
@@ -275,6 +355,8 @@ impl ConnectionActor {
 mod tests {
     use super::*;
     use axum::extract::ws::Message;
+    use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+    use ed25519_dalek::SigningKey;
 
     use crate::metrics::FirehoseMetrics;
     use crate::peers::registry::PeerRegistry;
@@ -323,6 +405,46 @@ mod tests {
             .to_text()
             .expect("forwarded envelope must be text")
             .to_string()
+    }
+
+    fn canonical_peer_id(seed: u8) -> String {
+        let signing_key = SigningKey::from_bytes(&[seed; 32]);
+        B64.encode(signing_key.verifying_key().to_bytes())
+    }
+
+    #[test]
+    fn rooms_dedup_cache_does_not_retain_unbounded_unique_peers() {
+        let mut actor = ConnectionActor::new(
+            canonical_peer_id(255),
+            "sender".to_string(),
+            "main".to_string(),
+            42,
+            actor_services().1,
+        );
+
+        for seed in 0..=MAX_CONTROL_FRAME_PEERS as u8 {
+            let _ = actor.emit_deduped_room_snapshots(vec![canonical_peer_id(seed)]);
+        }
+
+        assert!(
+            actor.last_rooms_resp.len() <= ROOMS_DEDUP_CACHE_MAX_ENTRIES,
+            "rooms dedup retained {} attacker-selected peers",
+            actor.last_rooms_resp.len()
+        );
+    }
+
+    #[test]
+    fn rooms_dedup_cache_bounds_key_and_response_bytes() {
+        let mut cache = RoomsDedupCache::default();
+        for seed in 0..3 {
+            cache.remember(
+                canonical_peer_id(seed),
+                "x".repeat(ROOMS_DEDUP_CACHE_MAX_BYTES / 2),
+            );
+        }
+
+        assert!(cache.retained_bytes <= ROOMS_DEDUP_CACHE_MAX_BYTES);
+        assert!(cache.len() < 3, "response bytes must force eviction");
     }
 
     #[tokio::test]
@@ -547,7 +669,7 @@ mod tests {
         let dispatch = actor
             .dispatch(DecodedRelayFrame::Control(
                 RelayControlFrame::PresenceCheck {
-                    peers: vec!["pi".to_string()],
+                    peers: vec![canonical_peer_id(1)],
                 },
             ))
             .await;

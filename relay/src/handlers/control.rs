@@ -3,9 +3,10 @@ use tracing::{info, warn};
 
 use crate::handlers::connection_actor::{ActorDispatch, ConnectionActor};
 use crate::handlers::peer::MAX_CONTROL_FRAME_PEERS;
+use crate::peers::identity::is_canonical_peer_id;
 use crate::protocol::generated::control::{RelayControlFrame, RoomMetaUpdateFrame};
 
-/// Describes a control frame whose peer list exceeds the relay's accepted bound.
+/// Describes an invalid presence/rooms control-frame peer list.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ControlFrameError {
     #[error("control frame {frame_type} requested {requested} peers, limit is {limit}")]
@@ -14,6 +15,8 @@ pub enum ControlFrameError {
         requested: usize,
         limit: usize,
     },
+    #[error("control frame {frame_type} contains an invalid peer id at index {index}")]
+    InvalidPeerId { frame_type: String, index: usize },
 }
 
 /// Validates the peer-list shape shared by presence/rooms control frames.
@@ -25,7 +28,8 @@ pub enum ControlFrameError {
 /// # Errors
 ///
 /// Returns [`ControlFrameError::TooManyPeers`] when `peers` exceeds
-/// `MAX_CONTROL_FRAME_PEERS`.
+/// `MAX_CONTROL_FRAME_PEERS`, or [`ControlFrameError::InvalidPeerId`] when an
+/// entry is not the canonical base64 encoding of an Ed25519 public key.
 pub fn bounded_peer_list(
     frame_type: &str,
     peers: Vec<String>,
@@ -35,6 +39,12 @@ pub fn bounded_peer_list(
             frame_type: frame_type.to_owned(),
             requested: peers.len(),
             limit: MAX_CONTROL_FRAME_PEERS,
+        });
+    }
+    if let Some(index) = peers.iter().position(|peer| !is_canonical_peer_id(peer)) {
+        return Err(ControlFrameError::InvalidPeerId {
+            frame_type: frame_type.to_owned(),
+            index,
         });
     }
 
@@ -256,6 +266,15 @@ impl<'actor> ControlHandlers<'actor> {
                 );
                 None
             }
+            Err(ControlFrameError::InvalidPeerId { index, .. }) => {
+                warn!(
+                    peer = %self.actor.peer_short,
+                    frame_type = %frame_type,
+                    peer_index = index,
+                    "control frame contains invalid peer id, dropping"
+                );
+                None
+            }
         }
     }
 }
@@ -265,6 +284,8 @@ mod tests {
     use std::sync::Arc;
 
     use axum::extract::ws::Message;
+    use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+    use ed25519_dalek::SigningKey;
     use serde_json::json;
 
     use crate::test_support::bounded_mpsc as mpsc;
@@ -279,6 +300,11 @@ mod tests {
     use crate::presence::PresenceManager;
     use crate::protocol::generated::control::{RelayControlFrame, RoomMetaUpdateFrame};
     use crate::rooms::{RoomManager, RoomMeta, RoomMetaPatch};
+
+    fn canonical_peer_id(seed: u8) -> String {
+        let signing_key = SigningKey::from_bytes(&[seed; 32]);
+        B64.encode(signing_key.verifying_key().to_bytes())
+    }
 
     fn make_meta(room_id: &str) -> RoomMeta {
         RoomMeta {
@@ -421,6 +447,30 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn rejects_noncanonical_peer_identity() {
+        assert!(matches!(
+            bounded_peer_list("rooms_check", vec!["attacker-selected".to_string()]),
+            Err(ControlFrameError::InvalidPeerId { index: 0, .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn invalid_rooms_check_is_dropped_before_snapshot_retention() {
+        let fixture = Fixture::new();
+        let mut actor = fixture.actor("app");
+
+        let dispatch = actor
+            .dispatch_control(RelayControlFrame::RoomsCheck {
+                peers: vec!["attacker-selected".to_string()],
+            })
+            .await;
+
+        assert!(matches!(dispatch, ActorDispatch::Continue));
+        let [_, _, _, _, rooms_emitted, rooms_suppressed, _] = fixture.metrics.snapshot();
+        assert_eq!((rooms_emitted, rooms_suppressed), (0, 0));
+    }
+
     #[tokio::test]
     async fn oversized_subscribe_presence_does_not_mutate_subscriptions() {
         let fixture = Fixture::new();
@@ -445,16 +495,22 @@ mod tests {
             .registry
             .register("app".into(), make_meta("main"), "dev-a".to_string(), tx_app)
             .await;
+        let target_peer = canonical_peer_id(1);
         let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_pi)
+            .register(
+                target_peer.clone(),
+                make_meta("main"),
+                "dev-a".to_string(),
+                tx_pi,
+            )
             .await;
         let mut actor = fixture.actor("app");
 
         let dispatch = actor
             .dispatch_control(RelayControlFrame::SubscribePresence {
-                peers: vec!["pi".to_string()],
+                peers: vec![target_peer.clone()],
             })
             .await;
 
@@ -462,13 +518,13 @@ mod tests {
         assert!(
             fixture
                 .presence
-                .subscribers_of("pi")
+                .subscribers_of(&target_peer)
                 .await
                 .contains(&"app".to_string())
         );
         let msg = rx_app.try_recv().expect("backfill peer_online");
         let v: serde_json::Value = serde_json::from_str(msg.to_text().unwrap()).unwrap();
-        assert_eq!(v, json!({"type": "peer_online", "peer": "pi"}));
+        assert_eq!(v, json!({"type": "peer_online", "peer": target_peer}));
     }
 
     #[tokio::test]
@@ -627,8 +683,9 @@ mod tests {
     async fn presence_check_dedup_and_metrics_live_in_actor() {
         let fixture = Fixture::new();
         let mut actor = fixture.actor("app");
+        let target_peer = canonical_peer_id(1);
         let frame = || RelayControlFrame::PresenceCheck {
-            peers: vec!["pi".to_string()],
+            peers: vec![target_peer.clone()],
         };
 
         let first = actor.dispatch_control(frame()).await;
@@ -644,14 +701,20 @@ mod tests {
     #[tokio::test]
     async fn rooms_check_dedup_and_metrics_live_in_actor() {
         let fixture = Fixture::new();
+        let target_peer = canonical_peer_id(1);
         let (tx_pi, _rx_pi) = mpsc::unbounded_channel::<Message>();
         fixture
             .registry
-            .register("pi".into(), make_meta("main"), "dev-a".to_string(), tx_pi)
+            .register(
+                target_peer.clone(),
+                make_meta("main"),
+                "dev-a".to_string(),
+                tx_pi,
+            )
             .await;
         let mut actor = fixture.actor("app");
         let frame = || RelayControlFrame::RoomsCheck {
-            peers: vec!["pi".to_string()],
+            peers: vec![target_peer.clone()],
         };
 
         let first = actor.dispatch_control(frame()).await;
