@@ -1,7 +1,7 @@
 ---
 id: gate-docs-relay-claudemd-plaintext-persistence
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -31,3 +31,9 @@ Rewrite the relay overview and security policy for opaque forwarding of plaintex
 
 ## Audit
 Documentation drift audit ran inline because nested scanner dispatch was prohibited; isolation was reduced.
+
+## Implementation notes
+- **Execution:** Bounded inline agent-guidance repair; relay startup and trust decisions establish the current boundary.
+- **Change:** Rewrote `relay/CLAUDE.md` from ciphertext-only/stateless claims to TLS plaintext visibility, opaque/no-payload-log routing, no durable message queue, SQLite mesh membership, and ephemeral runtime state.
+- **Verification:** Checked the guidance against `relay/src/main.rs` and `docs/DECISIONS.md`; stale ciphertext/decryption/stateless assertions are absent. No automated test applies to this prose-only correction.
+- **Bounded inline review:** Pass — persistence and confidentiality claims are narrow and do not authorize payload storage.

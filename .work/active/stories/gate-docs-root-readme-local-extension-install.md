@@ -1,7 +1,7 @@
 ---
 id: gate-docs-root-readme-local-extension-install
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -31,3 +31,9 @@ Replace the npm install quick-start with the supported local-path registration a
 
 ## Audit
 Documentation drift audit ran inline because nested scanner dispatch was prohibited; isolation was reduced.
+
+## Implementation notes
+- **Execution:** Bounded inline operator-documentation repair; local Pi settings and the package entrypoint provide the supported install contract.
+- **Change:** Replaced the nonexistent npm install with checkout build, local `extensions` registration, and full-restart steps; replaced the retired `plan/` roadmap pointer with durable foundation docs.
+- **Verification:** Confirmed `pi-extension/package.json` loads `dist/index.js`, Pi settings accept local extension directories, and the stale npm/plan guidance is absent. No automated test applies to this prose-only correction.
+- **Bounded inline review:** Pass — the quick start is operator-focused and preserves existing settings explicitly.

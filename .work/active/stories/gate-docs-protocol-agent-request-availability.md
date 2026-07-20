@@ -1,7 +1,7 @@
 ---
 id: gate-docs-protocol-agent-request-availability
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -31,3 +31,9 @@ State that `agent_request` remains supported but deprecated, and that `agent_sen
 
 ## Audit
 Documentation drift audit ran inline because nested scanner dispatch was prohibited; isolation was reduced.
+
+## Implementation notes
+- **Execution:** Bounded inline documentation repair; the registered tool definition is the direct availability source.
+- **Change:** Corrected `PROTOCOL.md` to say `agent_request` remains supported but deprecated and blocking, with `agent_send` plus inbox observation preferred; only `agent_wait` is absent.
+- **Verification:** Matched the wording to `pi-extension/src/session/tools.ts` and confirmed the denial of `agent_request` is gone. No automated test applies to this prose-only correction.
+- **Bounded inline review:** Pass — availability and migration guidance now agree with the public tool surface.

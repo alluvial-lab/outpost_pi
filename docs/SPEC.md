@@ -139,16 +139,7 @@ Genuine ambiguities surfaced while authoring. None blocks the docs; each has a
 recommended resolution and is flagged for operator confirmation so the
 foundation stays clean rather than baking in a guess.
 
-1. **Session identity model — current truth vs. locked direction.** The wire
-   carries no `session_id` on chat-bearing messages today (the contamination
-   bug). The operator has locked the target: canonical `session_id`, required,
-   fail-closed, absorbed by `epic-bold-canonical-session`. The foundation docs
-   describe **current truth** (no discriminator; relay-room demux) and treat
-   the canonical-session direction as in-flight via the bold refactor. Confirm
-   this is the right framing for a rolling-foundation doc, or whether VISION
-   should describe the target state instead.
-
-2. **Relay "stateless" framing has drifted.** The absorbed project's
+1. **Relay "stateless" framing has drifted.** The absorbed project's
    `plan/00-decisions.md` recorded "Relay stateless / No persistence." The
    relay now has a SQLite-backed `MeshStore` (the signed `mesh_versions`
    cartulary) plus in-memory `PeerRegistry`, `PresenceManager`, `RoomManager`,
@@ -158,14 +149,14 @@ foundation stays clean rather than baking in a guess.
    Resolved — `docs/DECISIONS.md` records the current truth; the MVP-era
    "stateless" line is superseded.
 
-3. **Daemon as first-class component.** The absorbed project's
+2. **Daemon as first-class component.** The absorbed project's
    `plan/00-decisions.md` recorded "No daemon in the MVP." A substantial
    `pi-extension/src/daemon/` module has shipped (supervisord, cron registry,
    RPC child, install, registry). The daemon is GA, first-class — the
    MVP-scoping decision was explicitly revisited and shipped. Resolved —
    `docs/DECISIONS.md` records current truth.
 
-4. **Fork product direction.** Resolved — fully private-carry; no upstream
+3. **Fork product direction.** Resolved — fully private-carry; no upstream
    PRs. The bold refactor is fork-local with no upstream-compat constraints.
    Patchbay is the long-term successor direction. `docs/DECISIONS.md` →
    "Fork posture" records this.

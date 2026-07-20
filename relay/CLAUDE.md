@@ -1,7 +1,11 @@
 # Outpost-Pi — Relay (Rust)
 
-**Stateless** WebSocket server that pairs connections by `peer_id` and routes
-ciphertext between the app and pi-extension. **It never decrypts payloads.**
+WebSocket server that pairs connections by `peer_id` and forwards app↔Pi and
+cross-PC traffic. TLS terminates at the relay, so the relay can see plaintext
+payload contents; routing handlers treat payloads as opaque and never log them.
+Message routing has no durable queue. The relay persists only signed mesh
+membership in SQLite and keeps room, presence, registry, and metrics state in
+memory.
 
 Before editing or reviewing relay code, read the agent-neutral Rust relay reference at `../.agents/skills/rust-relay/SKILL.md`.
 
@@ -33,9 +37,11 @@ Before editing or reviewing relay code, read the agent-neutral Rust relay refere
 
 ## Security policy
 
-- Relay **NEVER** decrypts payloads — all content is opaque ciphertext
-- Only metadata is visible: `peer_id`, size, timestamp
-- Logs **MUST NOT** contain payloads, even encrypted ones
+- TLS protects traffic in transit, but there is no app-layer E2E encryption;
+  the relay host can observe plaintext payload contents
+- Routing code treats payload contents as opaque and does not inspect them for
+  application behavior
+- Logs **MUST NOT** contain payload contents
 - Rate limit by `peer_id` and source IP
 
 ## Must not do
@@ -43,7 +49,8 @@ Before editing or reviewing relay code, read the agent-neutral Rust relay refere
 - Do not use `println!` (use `tracing`)
 - Do not use `.unwrap()` or `.expect()` on production paths
 - Do not log message contents
-- Do not add payload persistence — the relay is stateless
+- Do not add payload/message persistence or an offline queue; durable storage
+  is limited to signed mesh-membership records
 - Do not commit `target/` (already in the root `.gitignore`)
 
 ## Orchestrated mode

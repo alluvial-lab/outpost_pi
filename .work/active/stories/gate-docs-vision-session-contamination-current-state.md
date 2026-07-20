@@ -1,7 +1,7 @@
 ---
 id: gate-docs-vision-session-contamination-current-state
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -31,3 +31,9 @@ Rewrite the anti-vision entry to state the current session-isolation failure mod
 
 ## Audit
 Documentation drift audit ran inline because nested scanner dispatch was prohibited; isolation was reduced.
+
+## Implementation notes
+- **Execution:** Bounded inline documentation repair; current generated protocol and app boundary code directly establish the invariant.
+- **Change:** Replaced the claim that chat has no session discriminator with the current failure mode: bypassing required `session_id` stamping or the app's fail-closed gate would violate isolation.
+- **Verification:** Confirmed the obsolete assertion is absent and the replacement matches `docs/DECISIONS.md` and `app/lib/data/sync/session_gate.dart`. No automated test applies to this prose-only correction.
+- **Bounded inline review:** Pass — the anti-vision remains a failure-mode statement while describing current safeguards.
