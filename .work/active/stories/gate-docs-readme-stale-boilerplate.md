@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: v0.2.0
 parent: feature-repair-current-state-docs
 stage: done
 id: gate-docs-readme-stale-boilerplate
@@ -8,7 +8,7 @@ tags: [documentation]
 depends_on: []
 gate_origin: docs
 created: 2026-07-01
-updated: 2026-07-16
+updated: 2026-07-20
 ---
 
 # Cockpit README is stale/boilerplate and not project-specific

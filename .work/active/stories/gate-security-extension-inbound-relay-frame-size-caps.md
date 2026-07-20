@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: v0.2.0
 parent: feature-typed-bounded-relay-decoding
 stage: done
 id: gate-security-extension-inbound-relay-frame-size-caps
@@ -8,7 +8,7 @@ tags: [security]
 depends_on: []
 gate_origin: security
 created: 2026-07-01
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Pi extension decodes inbound relay frames before size caps

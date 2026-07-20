@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension, relay, cockpit, refactor, protocol]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.2.0
 gate_origin: refactor
 created: 2026-07-15
-updated: 2026-07-18
+updated: 2026-07-20
 reviewed: "2026-07-18 (standard, gpt-5.6-sol fresh-context → ready, no findings; room_meta_updated correctly left handwritten + documented as the one schema gap)"
 ---
 
