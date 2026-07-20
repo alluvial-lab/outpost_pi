@@ -5,10 +5,10 @@ stage: done
 tags: [app, bug, lifecycle]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [idea-mobile-queued-message-does-not-reorder]
-release_binding: null
+release_binding: app-v0.2.0
 gate_origin: null
 created: 2026-07-03
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Returning to a chat sometimes reorders the latest user message below the assistant response
