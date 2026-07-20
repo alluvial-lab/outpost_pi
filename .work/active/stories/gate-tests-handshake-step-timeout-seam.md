@@ -1,7 +1,7 @@
 ---
 id: gate-tests-handshake-step-timeout-seam
 kind: story
-stage: review
+stage: done
 tags: [testing, relay]
 parent: null
 depends_on: [gate-security-preauth-large-message-allocation]
