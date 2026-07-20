@@ -1,7 +1,7 @@
 ---
 id: gate-docs-spec-offline-delivery-contract
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, documentation]
 parent: null
 depends_on: []

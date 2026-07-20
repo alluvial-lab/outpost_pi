@@ -1,7 +1,7 @@
 ---
 id: gate-tests-offline-buffer-completed-eviction
 kind: story
-stage: review
+stage: done
 tags: [testing, pi-extension]
 parent: null
 depends_on: []
