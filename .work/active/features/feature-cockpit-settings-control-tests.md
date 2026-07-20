@@ -5,10 +5,10 @@ stage: done
 tags: [cockpit, testing]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: cockpit-v0.2.0
 gate_origin: tests
 created: 2026-07-15
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Cockpit: behavior coverage for the settings/control split
