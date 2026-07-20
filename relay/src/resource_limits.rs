@@ -12,6 +12,8 @@ pub const OUTBOUND_QUEUE_CAPACITY: usize = 16;
 pub const MESH_AUTH_CACHE_CAPACITY: usize = 1_024;
 /// Freshness window for positive and negative mesh-membership entries.
 pub const MESH_AUTH_CACHE_TTL: Duration = Duration::from_secs(60);
+/// Maximum cold mesh-membership scans admitted across the relay process at once.
+pub const MAX_CONCURRENT_MESH_AUTH_SCANS: usize = 4;
 /// Admission window for authenticated cross-PC forwarding attempts.
 pub const PI_FORWARD_WINDOW: Duration = Duration::from_secs(60);
 /// Maximum cross-PC forwarding attempts accepted per connection and window.
