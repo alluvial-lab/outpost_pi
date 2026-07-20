@@ -1,7 +1,7 @@
 ---
 id: gate-security-mesh-owner-storage-unbounded
 kind: story
-stage: review
+stage: done
 tags: [security, relay]
 parent: null
 depends_on: []
