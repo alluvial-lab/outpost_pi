@@ -115,14 +115,12 @@ import { ensureModelRegistry } from "./actions/registry.js";
 import {
   ensureGlobalDirs,
   LOCAL_SESSION_NAME,
-  sessionAuditPath,
   sessionSockPath,
   skillsDir,
 } from "./session/global_config.js";
 import { EXIT_DAEMON_FRESH_SESSION } from "./daemon/rpc_child.js";
 import {
   defaultAgentName,
-  effectiveAutoStartRelay,
   loadLocalConfig,
 } from "./session/local_config.js";
 import { updateFooter, type FooterState } from "./ui/footer.js";
@@ -1140,19 +1138,6 @@ const _HARNESS = {
   version: _readExtensionVersion(),
 } as const;
 const _HOSTNAME = hostname();
-
-function _currentPairingSessionSnapshot() {
-  const cwd = _currentCwd();
-  const sessionName = _displayName(cwd);
-  return {
-    sessionName,
-    sessionStartedAt: _sdkSessionProjection.sessionStartedAtOrNow(),
-    sessionId: _currentRemoteSessionId(_lastEventCtx ?? _lastCtx),
-    roomId: _myRoomId ?? roomIdFor(cwd, sessionName),
-    harness: _HARNESS,
-    hostname: _HOSTNAME,
-  };
-}
 
 // ── Extension factory (default export) ───────────────────────────────────────
 
