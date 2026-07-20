@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-index-orphaned-composition-remnants
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, cleanup]
 parent: null
 depends_on: []
@@ -39,3 +39,9 @@ Remove the two unused `index.ts` imports and `_currentPairingSessionSnapshot`; r
 
 ## Gate note
 The cruft scan was run inline because the requested gate path disallowed a nested scanner agent; isolation is reduced.
+
+## Implementation notes
+- Execution capability: direct local cleanup; this was a three-symbol removal confined to the composition entrypoint, with TypeScript's unused-symbol checks as the regression guard.
+- Removed `sessionAuditPath`, `effectiveAutoStartRelay`, and the uncalled `_currentPairingSessionSnapshot` from `pi-extension/src/index.ts`. The command-surface imports remain live.
+- Verification: `corepack pnpm typecheck`, `corepack pnpm test` (52 files, 880 passed, 3 skipped), and `corepack pnpm build` passed from `pi-extension/` with writable Corepack/pnpm caches.
+- Bounded inline review: confirmed the diff only removes the three story-identified remnants; no adjacent cleanup or behavior change was included.
