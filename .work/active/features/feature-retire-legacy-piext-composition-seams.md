@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension, refactor, cleanup]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: extension-0.2.0
 gate_origin: refactor
 created: 2026-07-15
-updated: 2026-07-17
+updated: 2026-07-20
 reviewed: "2026-07-17 (standard, gpt-5.6-sol fresh-context → ready, no findings)"
 ---
 
