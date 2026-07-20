@@ -27,8 +27,11 @@ findings — was reattributed to this release. 73 items moved from
 `.work/active/` into this directory with `release_binding: v0.1.0`. The
 pre-rebrand component tags (`app-v1.x`, `cockpit-v1.x`, `extension-0.5.x`,
 `relay-0.1.0`, `v0.4.0`/`v0.5.0`/`v0.6.0`) were deleted at the same time;
-their retained item bodies under `.work/releases/` remain as historical
-record. Only `v0.1.0` is a live git tag.
+their retained item bodies were relocated to
+`.work/releases-pre-rebrand/` as historical record (kept out of work-view's
+scanned tiers to avoid binding-value collisions as the post-rebrand series
+re-climbs through the old version numbers — see `.work/CONVENTIONS.md`).
+Only `v0.1.0` is a live git tag.
 
 ## Bound items
 
