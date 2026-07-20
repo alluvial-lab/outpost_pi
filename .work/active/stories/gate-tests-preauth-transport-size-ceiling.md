@@ -1,14 +1,14 @@
 ---
 id: gate-tests-preauth-transport-size-ceiling
 kind: story
-stage: implementing
+stage: review
 tags: [testing, relay]
 parent: null
 depends_on: [gate-security-preauth-large-message-allocation]
 release_binding: relay-0.2.0
 gate_origin: tests
 created: 2026-07-20
-updated: 2026-07-19
+updated: 2026-07-20
 ---
 
 # Prove the pre-auth size ceiling at the WebSocket transport boundary
@@ -38,3 +38,9 @@ async fn preauth_transport_never_reassembles_beyond_pre_auth_limit() {
 
 ## Test location (suggested)
 `relay/tests/integration.rs`
+
+## Implementation notes
+
+- The dependency fix's existing `fragmented_oversized_hello_is_rejected_from_header_before_final_payload` regression already proves the allocation-boundary half: it sends the final continuation-frame header while withholding its payload, so Tungstenite cannot produce complete text for the auth parser before the transport rejects the cumulative declared size.
+- That test did not prove the second required half. Added `authenticated_connection_routes_message_above_pre_auth_ceiling`, which fully authenticates two peers, sends and routes a valid outer envelope larger than `PRE_AUTH_MESSAGE_MAX_BYTES`, and verifies the ciphertext reaches the recipient unchanged.
+- Verification passed from `relay/`: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` (220 tests, 0 failed).
