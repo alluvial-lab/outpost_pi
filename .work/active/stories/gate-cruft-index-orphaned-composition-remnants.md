@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-index-orphaned-composition-remnants
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, cleanup]
 parent: null
 depends_on: []
