@@ -46,20 +46,26 @@ use crate::peers::connections::ConnectionRegistry;
 use crate::protocol::generated::cross_pc::{
     AgentEnvelope, CrossPcFrame, PiEnvelopeFrame, PiEnvelopeInFrame,
 };
-use crate::resource_limits::{MESH_AUTH_CACHE_CAPACITY, MESH_AUTH_CACHE_TTL};
+use crate::resource_limits::{
+    MAX_CONCURRENT_MESH_AUTH_SCANS, MESH_AUTH_CACHE_CAPACITY, MESH_AUTH_CACHE_TTL,
+};
 
 /// In-memory cache that maps Pi pubkeys to verified membership or absence.
 ///
 /// Positive and negative results share one bounded table. Cold scans are
-/// single-flight per Pi key, and successful publishes invalidate only entries
-/// affected by that Owner. A generation check prevents a scan racing a publish
-/// from restoring stale membership.
+/// single-flight per Pi key and globally admission-bounded; successful publishes
+/// invalidate only entries affected by that Owner. A generation check prevents a
+/// scan racing a publish from restoring stale membership.
 #[derive(Debug, Default)]
 pub struct MeshAuthCache {
     inner: Mutex<MeshAuthCacheInner>,
     scan_completed: Condvar,
     #[cfg(test)]
     scan_count: AtomicUsize,
+    #[cfg(test)]
+    active_scan_count: AtomicUsize,
+    #[cfg(test)]
+    max_concurrent_scan_count: AtomicUsize,
     #[cfg(test)]
     scan_delay: Mutex<Option<Duration>>,
     #[cfg(test)]
@@ -101,6 +107,16 @@ struct TestScanGate {
     release: Barrier,
 }
 
+#[cfg(test)]
+struct TestActiveScanGuard<'a>(&'a AtomicUsize);
+
+#[cfg(test)]
+impl Drop for TestActiveScanGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 impl MeshAuthCache {
     /// Create an empty cache; membership is populated lazily from verified mesh blobs.
     pub fn new() -> Self {
@@ -125,6 +141,9 @@ impl MeshAuthCache {
                 if inner.in_flight.contains(pi_pk) {
                     drop(self.scan_completed.wait(inner).unwrap());
                     continue;
+                }
+                if inner.in_flight.len() >= MAX_CONCURRENT_MESH_AUTH_SCANS {
+                    return None;
                 }
                 inner.in_flight.insert(pi_pk.to_string());
                 inner.generation
@@ -173,12 +192,16 @@ impl MeshAuthCache {
 
     fn scan_membership(&self, pi_pk: &str, store: &MeshStore) -> Option<ScannedMembership> {
         #[cfg(test)]
-        {
+        let _active_scan = {
             self.scan_count.fetch_add(1, Ordering::Relaxed);
+            let active = self.active_scan_count.fetch_add(1, Ordering::Relaxed) + 1;
+            self.max_concurrent_scan_count
+                .fetch_max(active, Ordering::Relaxed);
             if let Some(delay) = *self.scan_delay.lock().unwrap() {
                 std::thread::sleep(delay);
             }
-        }
+            TestActiveScanGuard(&self.active_scan_count)
+        };
 
         let envelopes = match store.all_envelopes() {
             Ok(records) => records,
@@ -662,6 +685,34 @@ mod tests {
         });
 
         assert_eq!(cache.scan_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn distinct_cold_keys_cannot_exceed_global_scan_limit() {
+        let cache = Arc::new(MeshAuthCache::new());
+        let store = Arc::new(MeshStore::open_in_memory().unwrap());
+        *cache.scan_delay.lock().unwrap() = Some(Duration::from_millis(100));
+        let thread_count = MAX_CONCURRENT_MESH_AUTH_SCANS * 4;
+        let start = Arc::new(Barrier::new(thread_count + 1));
+
+        std::thread::scope(|scope| {
+            for index in 0..thread_count {
+                let cache = cache.clone();
+                let store = store.clone();
+                let start = start.clone();
+                scope.spawn(move || {
+                    start.wait();
+                    assert!(!cache.is_authorized(&format!("absent-{index}"), "dest", &store));
+                });
+            }
+            start.wait();
+        });
+
+        assert!(
+            cache.max_concurrent_scan_count.load(Ordering::Relaxed)
+                <= MAX_CONCURRENT_MESH_AUTH_SCANS,
+            "distinct cold identities must share one process-wide scan ceiling"
+        );
     }
 
     #[test]
