@@ -83,10 +83,10 @@ migration.
 - The operator-controlled local relay can read message contents and metadata.
   Outpost-Pi is local-relay-only; users who need confidentiality from the relay
   must wait for E2E, and no product copy claims E2E.
-- A contamination bug where session B's chat appears in session A's view — the
-  system has no session discriminator on chat-bearing messages and relies on
-  relay-room demux that fails open. This is the class of defect the bold
-  refactor exists to eliminate.
+- A regression that lets session B's chat appear in session A's view.
+  Session-scoped pushes carry a canonical, required `session_id`, and the app
+  rejects missing or foreign IDs before mutating state; any path that bypasses
+  either boundary violates session isolation.
 - "Annoying to bugfix": a protocol change requiring coordinated hand-edits
   across TS/Dart/Rust with no compile-time signal. The generated-protocol
   epic exists to make this impossible by construction.

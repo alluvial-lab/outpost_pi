@@ -1,7 +1,7 @@
 ---
 id: gate-docs-piext-skill-outpost-command
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -31,3 +31,9 @@ Replace command references with `/outpost-pi` and update the important-files des
 
 ## Audit
 Documentation drift audit ran inline because nested scanner dispatch was prohibited; isolation was reduced.
+
+## Implementation notes
+- **Execution:** Bounded inline reference repair; the command-surface adapter is the direct ownership source.
+- **Change:** Renamed slash-command references to `/outpost-pi` and split the important-files guidance between the `src/index.ts` composition entrypoint and `src/extension/command_surface/commands.ts` registration owner.
+- **Verification:** Confirmed the descriptions match `registerOutpostPiCommands` and no retired slash-command reference remains. No automated test applies to this prose-only correction.
+- **Bounded inline review:** Pass — lifecycle scope is preserved while command ownership is current.

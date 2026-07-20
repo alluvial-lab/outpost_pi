@@ -1,7 +1,7 @@
 ---
 id: gate-docs-cockpit-changelog-distribution
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -31,3 +31,9 @@ Rename the current changelog surface to Outpost-Pi Cockpit and replace the retir
 
 ## Audit
 Documentation drift audit ran inline because nested scanner dispatch was prohibited; isolation was reduced.
+
+## Implementation notes
+- **Execution:** Bounded inline changelog repair; the active Cockpit release workflow and distribution decision define the release-notes path.
+- **Change:** Renamed the current changelog to Outpost-Pi Cockpit and replaced the VPS `latest.json` instruction with the `cockpit-v*` GitHub Release notes derivation.
+- **Verification:** Matched the wording to `.github/workflows/cockpit-release.yml` and `docs/DECISIONS.md`; historical release entries remain unchanged as history. No automated test applies to this prose-only correction.
+- **Bounded inline review:** Pass — current operating guidance is fixed without rewriting historical entries.
