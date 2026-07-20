@@ -184,6 +184,23 @@ describe("OwnerMultiplexer", () => {
     expect(channels[0]!.sent).toEqual([newest]);
   });
 
+  test("cap pressure evicts the completed interval before preserving a fitting current interval", () => {
+    const { mux, channels } = makeMultiplexer();
+    mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
+    mux.markPeerOffline("owner-a");
+
+    mux.broadcast(agentChunk("older completed"));
+    mux.completeOfflineTurn();
+    const current = Array.from(
+      { length: OFFLINE_BUFFER_MAX_FRAMES },
+      (_, index) => agentChunk(`current-${index}`),
+    );
+    for (const message of current) mux.broadcast(message);
+    mux.markPeerOnline("owner-a");
+
+    expect(channels[0]!.sent).toEqual(current);
+  });
+
   test("frame-cap overflow drops the whole active interval and recovers after a boundary", () => {
     const { mux, channels } = makeMultiplexer();
     mux.attach({ peerId: "owner-a", onMessage: vi.fn() });

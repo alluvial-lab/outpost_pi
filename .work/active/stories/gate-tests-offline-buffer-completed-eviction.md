@@ -1,7 +1,7 @@
 ---
 id: gate-tests-offline-buffer-completed-eviction
 kind: story
-stage: implementing
+stage: review
 tags: [testing, pi-extension]
 parent: null
 depends_on: []
@@ -37,3 +37,22 @@ test("cap pressure evicts the completed interval before preserving a fitting cur
 
 ## Test location (suggested)
 `pi-extension/src/extension/owner_multiplexer.test.ts`
+
+## Implementation notes
+
+- **Execution capability:** inline, focused test-only implementation because the
+  gap is a deterministic complex-unit boundary case with one owning test file.
+- **Files changed:** `pi-extension/src/extension/owner_multiplexer.test.ts`.
+- **Test added:** buffers one completed frame, then admits exactly 2,048 current
+  frames. The final current admission crosses the combined frame cap while the
+  current interval alone still fits; reconnect must flush exactly those current
+  frames in FIFO order, proving completed-first eviction without partial-current
+  loss.
+- **Confirmation:** focused test file passed (17 tests); `corepack pnpm
+  typecheck` passed; full `corepack pnpm test` passed (52 files, 881 passed, 3
+  skipped). The reported behavior was already correct, so the finding required
+  regression coverage rather than a production-code repair.
+- **Bounded inline review:** pass. The setup necessarily enters the
+  completed-plus-current cap-pressure branch, and exact-array equality rejects
+  both stale completed output and any missing/reordered current frame.
+- **Adjacent issues parked:** none.
