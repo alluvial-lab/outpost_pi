@@ -818,6 +818,8 @@ dependencies = [
  "base64",
  "ed25519-dalek",
  "futures-util",
+ "hyper",
+ "hyper-util",
  "rand 0.8.6",
  "reqwest",
  "rusqlite",
