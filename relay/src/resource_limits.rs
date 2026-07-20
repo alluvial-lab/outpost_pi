@@ -4,6 +4,10 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
+use crate::protocol::generated::limits::RELAY_MAX_PRE_AUTH_FRAME_BYTES;
+
+/// Maximum WebSocket message bytes admitted before peer authentication.
+pub const PRE_AUTH_MESSAGE_MAX_BYTES: usize = RELAY_MAX_PRE_AUTH_FRAME_BYTES;
 /// Deadline applied independently to the hello and auth handshake steps.
 pub const HANDSHAKE_STEP_TIMEOUT: Duration = Duration::from_secs(5);
 /// Number of frames retained for one authenticated connection's outbound mailbox.
@@ -14,6 +18,14 @@ pub const MESH_AUTH_CACHE_CAPACITY: usize = 1_024;
 pub const MESH_AUTH_CACHE_TTL: Duration = Duration::from_secs(60);
 /// Maximum cold mesh-membership scans admitted across the relay process at once.
 pub const MAX_CONCURRENT_MESH_AUTH_SCANS: usize = 4;
+/// Maximum Owner records retained in the mesh-membership database.
+pub const MAX_MESH_OWNER_ROWS: usize = 1_024;
+/// Maximum variable-field bytes retained across all mesh Owner records.
+pub const MAX_MESH_RETAINED_BYTES: usize = 64 * 1024 * 1024;
+/// Admission window for creating previously unseen mesh Owners.
+pub const NEW_MESH_OWNER_WINDOW: Duration = Duration::from_secs(60);
+/// Maximum previously unseen mesh Owners admitted per process and window.
+pub const MAX_NEW_MESH_OWNERS_PER_WINDOW: usize = 32;
 /// Admission window for authenticated cross-PC forwarding attempts.
 pub const PI_FORWARD_WINDOW: Duration = Duration::from_secs(60);
 /// Maximum cross-PC forwarding attempts accepted per connection and window.
@@ -22,6 +34,10 @@ pub const MAX_PI_FORWARDS_PER_WINDOW: usize = 256;
 pub const MAX_CONTROL_FRAME_PEERS: usize = 64;
 /// Maximum presence/rooms peer-cost accepted per connection and window.
 pub const MAX_CONTROL_CHECK_PEER_COST_PER_WINDOW: usize = MAX_CONTROL_FRAME_PEERS * 4;
+/// Maximum target peers retained in one connection's rooms-response dedup cache.
+pub const ROOMS_DEDUP_CACHE_MAX_ENTRIES: usize = MAX_CONTROL_FRAME_PEERS;
+/// Maximum peer-key and response bytes retained in one rooms-response dedup cache.
+pub const ROOMS_DEDUP_CACHE_MAX_BYTES: usize = 256 * 1024;
 /// Admission window for presence/rooms peer-cost checks.
 pub const CONTROL_CHECK_PEER_COST_WINDOW: Duration = Duration::from_secs(60);
 

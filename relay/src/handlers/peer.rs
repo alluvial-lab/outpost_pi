@@ -1,12 +1,26 @@
+use std::io;
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll, ready};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{ConnectInfo, State};
-use axum::response::Response;
+use axum::body::Body;
+use axum::extract::ws::{CloseFrame as AxumCloseFrame, Message as RegistryMessage};
+use axum::extract::{ConnectInfo, Request, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use futures_util::{SinkExt, StreamExt};
+use hyper_util::rt::TokioIo;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc;
 use tokio::time;
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::handshake::server::create_response_with_body;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Role, WebSocketConfig};
 use tracing::{info, warn};
 
 use crate::AppState;
@@ -15,25 +29,59 @@ use crate::handlers::connection_actor::{ActorDispatch, ConnectionActor, Connecti
 use crate::protocol::frame::decode_relay_frame;
 use crate::protocol::outer::max_ws_message_bytes;
 use crate::reachability::RELAY_WS_PING_INTERVAL;
-use crate::resource_limits::{HANDSHAKE_STEP_TIMEOUT, OUTBOUND_QUEUE_CAPACITY};
+use crate::resource_limits::{
+    HANDSHAKE_STEP_TIMEOUT, OUTBOUND_QUEUE_CAPACITY, PRE_AUTH_MESSAGE_MAX_BYTES,
+};
 
 pub use crate::resource_limits::{MAX_CONTROL_CHECK_PEER_COST_PER_WINDOW, MAX_CONTROL_FRAME_PEERS};
-/// Axum route handler: validates the WebSocket upgrade and hands the upgraded
-/// socket to `handle_peer`, which owns the connection for its lifetime.
+type PeerWebSocket = WebSocketStream<PreAuthGuard<TokioIo<hyper::upgrade::Upgraded>>>;
+
+/// Validate and upgrade a peer WebSocket with pre-authentication admission.
+///
+/// The raw transport guard rejects a fragmented message from its frame header
+/// as soon as its cumulative payload crosses the pre-authentication ceiling.
+/// After successful signature verification, the same socket retains the larger
+/// authenticated data-plane frame and message limits.
 pub async fn ws_handler(
-    ws: WebSocketUpgrade,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
+    mut request: Request,
 ) -> Response {
-    ws.max_frame_size(max_ws_message_bytes())
-        .max_message_size(max_ws_message_bytes())
-        .on_upgrade(move |socket| handle_peer(socket, addr, state))
+    let response = match create_response_with_body(&request, Body::empty) {
+        Ok(response) => response,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let on_upgrade = hyper::upgrade::on(&mut request);
+
+    tokio::spawn(async move {
+        let upgraded = match on_upgrade.await {
+            Ok(upgraded) => upgraded,
+            Err(err) => {
+                warn!(addr = %addr, err = %err, "WebSocket upgrade failed");
+                return;
+            }
+        };
+        let authenticated = Arc::new(AtomicBool::new(false));
+        let guarded = PreAuthGuard::new(TokioIo::new(upgraded), authenticated.clone());
+        let mut config = WebSocketConfig::default();
+        config.max_frame_size = Some(max_ws_message_bytes());
+        config.max_message_size = Some(max_ws_message_bytes());
+        let socket = WebSocketStream::from_raw_socket(guarded, Role::Server, Some(config)).await;
+        handle_peer(socket, authenticated, addr, state).await;
+    });
+
+    response
 }
 
 /// Owns one peer's WebSocket connection: hello/challenge/auth → register →
 /// routing loop (forwarding outer envelopes + handling presence/rooms control
 /// frames + sending 25 s keepalive pings) → unregister on disconnect.
-async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) {
+async fn handle_peer(
+    socket: PeerWebSocket,
+    authenticated_transport: Arc<AtomicBool>,
+    peer_addr: SocketAddr,
+    state: AppState,
+) {
     let peer_addr = peer_addr.to_string();
     let (mut sink, mut stream) = socket.split();
 
@@ -62,7 +110,7 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     // ── 2. Send challenge ─────────────────────────────────────────────────
     let (nonce, nonce_b64) = gen_nonce();
     if sink
-        .send(Message::Text(challenge_line(&nonce_b64)))
+        .send(Message::text(challenge_line(&nonce_b64)))
         .await
         .is_err()
     {
@@ -83,6 +131,7 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
         let _ = sink.send(Message::Close(None)).await;
         return;
     }
+    authenticated_transport.store(true, Ordering::Release);
 
     let peer_id = authenticated.peer_id;
     let device_id = authenticated.device_id;
@@ -93,7 +142,7 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     let registry = state.registry.clone();
     let rooms = state.rooms.clone();
 
-    let (tx, mut rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+    let (tx, mut rx) = mpsc::channel::<RegistryMessage>(OUTBOUND_QUEUE_CAPACITY);
     let registration = registry
         .register(peer_id.clone(), room_meta, device_id.clone(), tx)
         .await;
@@ -158,6 +207,7 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
                             // answered automatically by axum's WS. Drop both.
                             Message::Ping(_) | Message::Pong(_) => continue,
                             Message::Binary(_) => continue, // ignore binary
+                            Message::Frame(_) => continue, // raw frame; not handled at this layer
                         };
 
                         let frame = match decode_relay_frame(&text) {
@@ -180,13 +230,13 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
                             ActorDispatch::Continue => {}
                             ActorDispatch::Close => break,
                             ActorDispatch::Send(text) => {
-                                if sink.send(Message::Text(text)).await.is_err() {
+                                if sink.send(Message::text(text)).await.is_err() {
                                     break;
                                 }
                             }
                             ActorDispatch::SendMany(messages) => {
                                 for text in messages {
-                                    if sink.send(Message::Text(text)).await.is_err() {
+                                    if sink.send(Message::text(text)).await.is_err() {
                                         break 'routing;
                                     }
                                 }
@@ -198,7 +248,7 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
             result = rx.recv() => {
                 match result {
                     Some(msg) => {
-                        if sink.send(msg).await.is_err() {
+                        if sink.send(registry_message_to_transport(msg)).await.is_err() {
                             break;
                         }
                     }
@@ -206,7 +256,7 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
                 }
             }
             _ = heartbeat.tick() => {
-                if sink.send(Message::Ping(Vec::new())).await.is_err() {
+                if sink.send(Message::Ping(Vec::new().into())).await.is_err() {
                     break;
                 }
             }
@@ -228,12 +278,180 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     info!(peer = %peer_short, room = %room_id, addr = %peer_addr, "disconnected");
 }
 
+fn registry_message_to_transport(message: RegistryMessage) -> Message {
+    match message {
+        RegistryMessage::Text(text) => Message::Text(text.into()),
+        RegistryMessage::Binary(data) => Message::Binary(data.into()),
+        RegistryMessage::Ping(data) => Message::Ping(data.into()),
+        RegistryMessage::Pong(data) => Message::Pong(data.into()),
+        RegistryMessage::Close(frame) => {
+            Message::Close(frame.map(|AxumCloseFrame { code, reason }| CloseFrame {
+                code: CloseCode::from(code),
+                reason: reason.into_owned().into(),
+            }))
+        }
+    }
+}
+
+struct PreAuthGuard<S> {
+    inner: S,
+    authenticated: Arc<AtomicBool>,
+    admission: PreAuthFrameAdmission,
+}
+
+impl<S> PreAuthGuard<S> {
+    fn new(inner: S, authenticated: Arc<AtomicBool>) -> Self {
+        Self {
+            inner,
+            authenticated,
+            admission: PreAuthFrameAdmission::default(),
+        }
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for PreAuthGuard<S> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let filled_before = buffer.filled().len();
+        ready!(Pin::new(&mut this.inner).poll_read(cx, buffer))?;
+        if !this.authenticated.load(Ordering::Acquire) {
+            this.admission.inspect(&buffer.filled()[filled_before..])?;
+        }
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for PreAuthGuard<S> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buffer: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().inner).poll_write(cx, buffer)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+    }
+}
+
+#[derive(Default)]
+struct PreAuthFrameAdmission {
+    header: [u8; 14],
+    header_len: usize,
+    payload_remaining: u64,
+    message_bytes: u64,
+    message_in_progress: bool,
+    reset_message_after_payload: bool,
+}
+
+impl PreAuthFrameAdmission {
+    fn inspect(&mut self, mut bytes: &[u8]) -> io::Result<()> {
+        while !bytes.is_empty() {
+            if self.payload_remaining > 0 {
+                let consumed = bytes.len().min(self.payload_remaining as usize);
+                self.payload_remaining -= consumed as u64;
+                bytes = &bytes[consumed..];
+                if self.payload_remaining == 0 {
+                    self.finish_frame();
+                }
+                continue;
+            }
+
+            let target = self.header_target_len();
+            let copied = bytes.len().min(target - self.header_len);
+            self.header[self.header_len..self.header_len + copied]
+                .copy_from_slice(&bytes[..copied]);
+            self.header_len += copied;
+            bytes = &bytes[copied..];
+
+            if self.header_len < self.header_target_len() {
+                continue;
+            }
+
+            self.begin_frame()?;
+            self.header_len = 0;
+            if self.payload_remaining == 0 {
+                self.finish_frame();
+            }
+        }
+        Ok(())
+    }
+
+    fn header_target_len(&self) -> usize {
+        if self.header_len < 2 {
+            return 2;
+        }
+        let extended_len = match self.header[1] & 0x7f {
+            126 => 2,
+            127 => 8,
+            _ => 0,
+        };
+        let mask_len = if self.header[1] & 0x80 == 0 { 0 } else { 4 };
+        2 + extended_len + mask_len
+    }
+
+    fn begin_frame(&mut self) -> io::Result<()> {
+        let fin = self.header[0] & 0x80 != 0;
+        let opcode = self.header[0] & 0x0f;
+        let payload_len = match self.header[1] & 0x7f {
+            len @ 0..=125 => u64::from(len),
+            126 => u64::from(u16::from_be_bytes([self.header[2], self.header[3]])),
+            127 => {
+                let mut encoded = [0u8; 8];
+                encoded.copy_from_slice(&self.header[2..10]);
+                u64::from_be_bytes(encoded)
+            }
+            _ => unreachable!("7-bit payload marker"),
+        };
+
+        self.reset_message_after_payload = false;
+        if matches!(opcode, 0x0..=0x2) {
+            if opcode != 0x0 && !self.message_in_progress {
+                self.message_bytes = 0;
+            }
+            self.message_bytes = self.message_bytes.checked_add(payload_len).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "pre-auth WebSocket message too large",
+                )
+            })?;
+            if self.message_bytes > PRE_AUTH_MESSAGE_MAX_BYTES as u64 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "pre-auth WebSocket message too large",
+                ));
+            }
+            self.message_in_progress = !fin;
+            self.reset_message_after_payload = fin;
+        }
+        self.payload_remaining = payload_len;
+        Ok(())
+    }
+
+    fn finish_frame(&mut self) {
+        if self.reset_message_after_payload {
+            self.message_bytes = 0;
+            self.message_in_progress = false;
+            self.reset_message_after_payload = false;
+        }
+    }
+}
+
 async fn next_handshake_text<S, E>(stream: &mut S) -> Option<String>
 where
     S: futures_util::Stream<Item = Result<Message, E>> + Unpin,
 {
     match tokio::time::timeout(HANDSHAKE_STEP_TIMEOUT, stream.next()).await {
-        Ok(Some(Ok(Message::Text(text)))) => Some(text),
+        Ok(Some(Ok(Message::Text(text)))) => Some(text.to_string()),
         _ => None,
     }
 }
@@ -253,7 +471,7 @@ mod tests {
 
     #[tokio::test]
     async fn handshake_text_rejects_non_text_frames() {
-        let mut binary = stream::iter([Ok::<_, ()>(Message::Binary(vec![1, 2, 3]))]);
+        let mut binary = stream::iter([Ok::<_, ()>(Message::Binary(vec![1, 2, 3].into()))]);
         assert!(next_handshake_text(&mut binary).await.is_none());
     }
 }

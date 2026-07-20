@@ -3,7 +3,41 @@ use common::{connect_and_auth, start_relay};
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
+use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::Message;
+
+fn masked_frame(fin: bool, opcode: u8, payload: &[u8]) -> Vec<u8> {
+    assert!(payload.len() <= u16::MAX as usize);
+    let mask = [0x12, 0x34, 0x56, 0x78];
+    let mut frame = vec![(u8::from(fin) << 7) | opcode];
+    match payload.len() {
+        len @ 0..=125 => frame.push(0x80 | len as u8),
+        len => {
+            frame.push(0x80 | 126);
+            frame.extend_from_slice(&(len as u16).to_be_bytes());
+        }
+    }
+    frame.extend_from_slice(&mask);
+    frame.extend(
+        payload
+            .iter()
+            .enumerate()
+            .map(|(index, byte)| byte ^ mask[index % mask.len()]),
+    );
+    frame
+}
+
+fn masked_frame_header(fin: bool, opcode: u8, payload_len: usize) -> Vec<u8> {
+    assert!(payload_len <= 125);
+    vec![
+        (u8::from(fin) << 7) | opcode,
+        0x80 | payload_len as u8,
+        0x12,
+        0x34,
+        0x56,
+        0x78,
+    ]
+}
 
 /// Peer A sends an OuterEnvelope addressed to peer B.
 /// B receives a rewritten envelope where outer.peer = A (the sender),
@@ -107,6 +141,45 @@ async fn invalid_sig_closes_ws() {
     match close_result.unwrap() {
         None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {} // all acceptable
         Some(Ok(other)) => panic!("unexpected message after bad auth: {other:?}"),
+    }
+}
+
+/// Fragmented unauthenticated input is rejected as soon as its declared payload
+/// crosses the transport ceiling, before the final fragment payload is sent.
+#[tokio::test]
+async fn fragmented_oversized_hello_is_rejected_from_header_before_final_payload() {
+    let port = start_relay().await;
+    let url = format!("ws://127.0.0.1:{port}");
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let ceiling = relay::resource_limits::PRE_AUTH_MESSAGE_MAX_BYTES;
+    assert_eq!(ceiling % 2, 0, "test requires an even transport ceiling");
+
+    let half = vec![b'x'; ceiling / 2];
+    let stream = ws.get_mut();
+    stream
+        .write_all(&masked_frame(false, 0x1, &half))
+        .await
+        .unwrap();
+    stream
+        .write_all(&masked_frame(false, 0x0, &half))
+        .await
+        .unwrap();
+    // Declare one byte beyond the ceiling, but deliberately withhold that byte.
+    // A parser-level check cannot run because Tungstenite has no complete message.
+    stream
+        .write_all(&masked_frame_header(true, 0x0, 1))
+        .await
+        .unwrap();
+
+    let close_result =
+        tokio::time::timeout(tokio::time::Duration::from_millis(250), ws.next()).await;
+    assert!(
+        close_result.is_ok(),
+        "relay waited for the oversized fragment payload instead of rejecting its header"
+    );
+    match close_result.unwrap() {
+        None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {}
+        Some(Ok(other)) => panic!("unexpected message after oversized fragmented hello: {other:?}"),
     }
 }
 
