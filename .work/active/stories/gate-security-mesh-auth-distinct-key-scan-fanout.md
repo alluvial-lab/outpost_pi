@@ -1,7 +1,7 @@
 ---
 id: gate-security-mesh-auth-distinct-key-scan-fanout
 kind: story
-stage: review
+stage: done
 tags: [security, relay]
 parent: null
 depends_on: []
@@ -88,3 +88,21 @@ per-connection forward budget still permits at least one full
   adding a normalized membership index is broader architecture work; the
   required global admission bound resolves this verified vulnerability without
   bundling that redesign.
+
+## Review (2026-07-20)
+
+**Verdict**: Approve
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+**Rejected**: none
+
+**Notes**: Bounded inline standalone-story review; no independent, fresh-context,
+or cross-model reviewer ran. Correctness/security review confirmed the shared
+`in_flight` set now admits no more than the centralized four-scan ceiling while
+same-key waiters, cache capacity/TTL, generation invalidation, and fail-closed
+authorization remain intact. The regression failed before enforcement and passed
+afterward; formatting, strict clippy, the full unit suite, and every integration
+target passed on the clean fix snapshot. No wire/API contract or existing
+foundation assertion changed.
