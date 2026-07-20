@@ -9,6 +9,54 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ---
 
+## [v0.2.0] — 2026-07-20
+
+First post-rebrand repo-level release. The cross-cutting companion to the
+four component releases (relay-0.2.0, app-v0.2.0, extension-0.2.0,
+cockpit-v0.2.0). Binds 88 items: cross-component features, docs/research,
+and unattributed gate-finding work since the `v0.1.0` rebrand reset.
+
+### Features
+- **Typed bounded relay decoding** — relay wire decoding is now typed and
+  bounded (generated validators, runtime validation). Cross-component:
+  app + extension + relay. (`feature-typed-bounded-relay-decoding`)
+- **Finish generated protocol adoption** — completed the generated-protocol
+  adoption across extension + relay + cockpit. (`feature-finish-generated-protocol-adoption`)
+- **Mobile native session process control** — mobile session control with
+  reconnect verification. Cross-component: app + extension.
+  (`feature-mobile-native-session-process-control`)
+- **Contract gap audit** — audited and closed protocol contract gaps across
+  extension + app + relay. (`feature-contract-gap-audit`)
+- **Redact secrets from diagnostic surfaces** — secret redaction across
+  app + extension + cockpit. (`feature-redact-secrets-from-diagnostic-surfaces`)
+- **Repair current state docs** — corrected doc drift across multiple
+  components. (`feature-repair-current-state-docs`)
+- **Cross-component e2e pairing suite** — service-level-mocked e2e coverage
+  for the pairing lifecycle. (`feature-cross-component-e2e-pairing-suite` + children)
+
+### Security
+- Multiple gate-security hardening findings (auth challenge timeout, frame
+  decoder size checks, inbound relay frame size caps, unbounded outbound
+  queues, subscription retention, transcript box collisions, raw RPC/stderr
+  redaction, outbound message preview redaction, pi-envelope auth scan
+  rate limit).
+
+### Documentation
+- 9 doc-drift corrections: SPEC session identity, Vision session
+  contamination, protocol agent_request availability, root README local
+  extension install, relay plaintext persistence, release UAT command
+  names, pi-extension skill command names, cockpit RPC guide path,
+  cockpit changelog distribution.
+
+### Internal
+- 3 cruft removals (unused codegen validators, local mesh context cache,
+  remote-session context type alias).
+- 1 lifecycle guard (attachment messenger after await).
+- 2 test regressions (app relay-ingress decoder, wake-outcome call-site canary).
+- New patterns: `fresh-operation-gateway-factories`.
+
+---
+
 ## [cockpit-v0.2.0] — 2026-07-20
 
 First post-rebrand cockpit release. Adds async action ownership, typed
