@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-codegen-unused-validator-helpers
 kind: story
-stage: implementing
+stage: review
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -37,3 +37,11 @@ function isFiniteNumberAtLeast(value: unknown, minimum: number): value is number
 
 ## Removal
 Remove the unused helper templates from `emitValidatorHelpers` (or emit helpers only when generated expressions reference them), regenerate `protocol.generated.ts`, and preserve the existing integer and string validation behavior.
+
+## Implementation notes
+
+- Execution capability: inline minimal cleanup; the codegen template and its tracked output are the sole affected boundary.
+- Removed the unconditional `isStringWithMinLength` and `isFiniteNumberAtLeast` templates from `tools/protocol-codegen/src/index.ts`, then regenerated `pi-extension/src/protocol/generated/protocol.generated.ts`.
+- Added a codegen regression assertion that the generated TypeScript contains neither unused helper; existing validator fixtures retain string and integer validation coverage.
+- Confirmation: `npm run check` in `protocol/` passed; `corepack pnpm check:protocol` in `pi-extension/` confirmed the regenerated output is current.
+- Bounded inline review: diff is limited to the two dead helper templates, their generated copies, and the focused generation assertion; no validation expressions changed.
