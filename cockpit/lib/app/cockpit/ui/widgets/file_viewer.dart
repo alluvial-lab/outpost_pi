@@ -16,7 +16,6 @@ import 'package:cockpit/app/core/ui/widgets/code_editing_controller.dart';
 import 'package:cockpit/app/core/ui/widgets/code_highlight.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/media_view.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 // Material's SelectionArea wraps Markdown scrolling for selection auto-scroll.
