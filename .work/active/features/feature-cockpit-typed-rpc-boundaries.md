@@ -5,10 +5,10 @@ stage: done
 tags: [cockpit, refactor, protocol]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: cockpit-v0.2.0
 gate_origin: refactor
 created: 2026-07-15
-updated: 2026-07-17
+updated: 2026-07-20
 reviewed: "2026-07-17 (standard, gpt-5.6-sol fresh-context → ready; 1 nit parked: rpc_smoke.dart prints `Instance of 'RpcJsonObject'` — non-blocking, cosmetic smoke-tool diagnostic)"
 ---
 
