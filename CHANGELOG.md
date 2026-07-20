@@ -9,6 +9,34 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ---
 
+## [app-v0.2.0] — 2026-07-20
+
+First post-rebrand app release. Hardens mobile session lifecycle
+ownership, adds encrypted transcript storage, and fixes chat-resilience
+regressions observed on app resume.
+
+### Features
+- **Secure transcript storage** — transcripts are now encrypted at rest;
+  legacy plaintext transcripts are migrated on first load.
+  (`feature-secure-transcript-storage`, `feature-secure-transcript-storage-migrate-legacy-transcripts`)
+- **Async lifecycle ownership** — connection persistence, mesh publication,
+  startup ownership, and sync failure semantics are now explicitly owned
+  by their lifecycle boundaries rather than left to fire-and-forget.
+  (`feature-app-async-lifecycle-ownership` + 4 child stories)
+- **Chat resilience status projection** — chat status converges correctly
+  across resume/reconnect. (`feature-mobile-tui-parity-chat-resilience-status-projection`)
+
+### Fixes
+- Chat no longer goes blank on tab return. (`idea-mobile-chat-blank-on-tab-return`)
+- Chat no longer reorders messages on return. (`idea-mobile-chat-reorder-on-return`)
+
+### Tests
+- Resume/offline recovery branches in `main.dart` are now covered
+  (retrying and offline active peers reconnect; no active peer restarts
+  boot discovery). (`gate-tests-resume-offline-recovery-branches`)
+
+---
+
 ## [relay-0.2.0] — 2026-07-20
 
 First post-rebrand relay release. Hardens the relay's unauthenticated and
