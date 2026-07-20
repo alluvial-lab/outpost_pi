@@ -68,6 +68,52 @@ Release-blocking findings:
 - `gate-security-mesh-owner-storage-unbounded`
 - `gate-security-mesh-auth-distinct-key-scan-fanout`
 
+### gate-tests (2026-07-19) — 2 High, 1 Medium
+
+Inline scan, reduced isolation. The relay code surface has real test
+coverage gaps around the new pre-auth/transport bounds.
+
+Release-blocking findings:
+
+- `gate-tests-handshake-step-timeout-seam`
+- `gate-tests-preauth-transport-size-ceiling`
+
+Non-blocking (backlog): `gate-tests-mesh-auth-cache-ttl` (Medium).
+
+### gate-cruft (2026-07-19) — 1 Medium, 3 Low
+
+No release blockers. All four routed unbound to `.work/backlog/`:
+`gate-cruft-misnamed-bounded-test-mailbox-shim`,
+`gate-cruft-unused-parse-hello-wrapper`,
+`gate-cruft-relay-test-bool-assertions`,
+`gate-cruft-relay-plan-era-comments`.
+
+### gate-docs (2026-07-19) — 1 Medium
+
+No release blockers. One repo-skill staleness finding unbound to backlog:
+`gate-docs-formal-rigor-relay-backpressure` (`.agents/skills/formal-rigor-stack/SKILL.md`
+still claims relay mailboxes are unbounded — now stale after
+`feature-relay-resource-bounds`).
+
+### gate-patterns (2026-07-19) — 1 pattern draft
+
+No findings (not a pass/fail gate). Emitted one pattern draft
+(`centralized-resource-policy`) as `gate-patterns-relay-0.2.0` at `stage: done`;
+updated the pattern index + generated rules digest.
+
+### gate-refactor (2026-07-19) — 0 new findings
+
+Scanned against the three Remote-Pi scan-rule libraries (boundaries,
+lifecycle, protocol-contract). 1 already-tracked Medium
+(`gate-refactor-boundaries-ad-hoc-wire-parse-pi-forward`,
+`relay/src/handlers/pi_forward.rs:262`) skipped as a duplicate. No new items.
+
+### Totals
+
+**6 release-blocking findings** (4 security High + 2 tests High) must reach
+`done` before ship; **8 non-blocking** findings are unbound backlog and do not
+block.
+
 ## UAT checkpoint
 
 Per `release_uat: manual-checkpoint` in `.work/CONVENTIONS.md`, the tag is
