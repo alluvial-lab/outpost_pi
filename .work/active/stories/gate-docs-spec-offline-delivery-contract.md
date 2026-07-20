@@ -1,7 +1,7 @@
 ---
 id: gate-docs-spec-offline-delivery-contract
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, documentation]
 parent: null
 depends_on: []
@@ -44,3 +44,22 @@ protocol or durable message-queue guarantee.
 Documentation drift audit ran inline at the operator's instruction; scanner
 isolation was reduced. The finding was verified against the cited current
 implementation.
+
+## Implementation notes
+
+- Execution capability: inline documentation repair; this is a two-file,
+  evidence-backed correction with no runtime or wire change.
+- `docs/SPEC.md` previously claimed universal immediate offline failure and
+  described a prompt buffer. It now documents the actual bounded, per-peer
+  in-memory replay of outbound server messages for relay-confirmed offline app
+  peers, including active/latest-completed turn scope, best-effort flush, and
+  restart loss.
+- The replacement keeps the exclusion explicit: it is neither durable nor a
+  protocol delivery guarantee; unobserved app disconnects and cross-PC relay
+  targets retain normal offline behavior (`transport_error: offline` for
+  cross-PC forwarding).
+- Verification: inspected `OwnerMultiplexer` buffer, cap, turn-boundary, and
+  flush paths; `corepack pnpm exec vitest run
+  src/extension/owner_multiplexer.test.ts` passed (17 tests). No test was added
+  because this is a documentation-only correction with existing implementation
+  coverage.
