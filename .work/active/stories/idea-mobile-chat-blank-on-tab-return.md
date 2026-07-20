@@ -5,10 +5,10 @@ stage: done
 tags: [app, bug, lifecycle]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [feature-mobile-tui-parity-chat-resilience-status-projection]
-release_binding: null
+release_binding: app-v0.2.0
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Mobile chat renders blank when tabbing back in; needs back-out + re-enter to rehydrate

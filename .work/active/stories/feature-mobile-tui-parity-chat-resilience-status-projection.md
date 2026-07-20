@@ -5,10 +5,10 @@ stage: done
 tags: [app, lifecycle]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: []
-release_binding: null
+release_binding: app-v0.2.0
 gate_origin: null
 created: 2026-07-18
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Compose transport, agent-turn, and steering status projections

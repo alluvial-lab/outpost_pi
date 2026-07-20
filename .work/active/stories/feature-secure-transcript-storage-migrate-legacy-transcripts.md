@@ -5,10 +5,10 @@ stage: done
 tags: [app, security]
 parent: feature-secure-transcript-storage
 depends_on: [gate-security-transcript-box-name-collision, gate-security-transcript-boxes-unencrypted]
-release_binding: null
+release_binding: app-v0.2.0
 gate_origin: security
 created: 2026-07-18
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Migrate legacy plaintext transcripts without loss or double writes
