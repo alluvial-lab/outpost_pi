@@ -1,7 +1,7 @@
 ---
 id: gate-docs-relay-claudemd-plaintext-persistence
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []

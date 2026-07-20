@@ -1,7 +1,7 @@
 ---
 id: gate-tests-app-relay-ingress-boundaries
 kind: story
-stage: review
+stage: done
 tags: [testing]
 parent: null
 depends_on: []

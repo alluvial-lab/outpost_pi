@@ -1,7 +1,7 @@
 ---
 id: gate-docs-spec-session-identity-current-truth
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
