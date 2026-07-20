@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { RemoteSessionId } from "../protocol/session_scope.js";
 import type { ThinkingLevel } from "../protocol/types.js";
 
@@ -18,7 +17,6 @@ export interface RemoteSession {
   working: boolean;
 }
 
-type SessionIdContext = Pick<ExtensionContext, "sessionManager">;
 
 /**
  * Whether `value` exposes a usable `sessionManager.getSessionId()`. Reading the
