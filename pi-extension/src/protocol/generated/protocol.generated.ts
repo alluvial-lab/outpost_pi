@@ -810,9 +810,6 @@ function isObjectLike(value: unknown, allowedKeys: readonly string[] | undefined
   return record !== undefined && (allowedKeys === undefined || hasOnlyKeys(record, allowedKeys)) && validate(record);
 }
 
-function isStringWithMinLength(value: unknown, minLength: number): value is string {
-  return typeof value === "string" && value.length >= minLength;
-}
 
 function isInteger(value: unknown): value is number {
   return Number.isInteger(value);
@@ -826,9 +823,6 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function isFiniteNumberAtLeast(value: unknown, minimum: number): value is number {
-  return isFiniteNumber(value) && value >= minimum;
-}
 
 export function isRelayOuterEnvelope(value: unknown): value is RelayOuterEnvelope {
   return isObjectLike(value, ["peer", "room", "ct"], (record) => ((Object.hasOwn(record, "peer") && (typeof record["peer"] === "string" && record["peer"].length >= 1)) && (Object.hasOwn(record, "room") && (typeof record["room"] === "string" && record["room"].length >= 1)) && (Object.hasOwn(record, "ct") && (typeof record["ct"] === "string" && record["ct"].length >= 1))));
