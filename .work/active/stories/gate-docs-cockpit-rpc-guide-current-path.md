@@ -1,7 +1,7 @@
 ---
 id: gate-docs-cockpit-rpc-guide-current-path
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -31,3 +31,9 @@ Rewrite the opening as a current-state Cockpit RPC reference, point to the live 
 
 ## Audit
 Documentation drift audit ran inline because nested scanner dispatch was prohibited; isolation was reduced.
+
+## Implementation notes
+- **Execution:** Bounded inline reference repair; the live Cockpit vertical-slice path provides an exact navigation target.
+- **Change:** Recast `cockpit/docs/rpc-protocol.md` as a current-state reference, removed the retired spike/plan framing, and updated the process and shared JSONL splitter references to their live vertical-slice paths.
+- **Verification:** Confirmed `pi_rpc_process.dart` under `lib/app/cockpit/data/rpc/` and `jsonl_line_splitter.dart` under `lib/app/core/data/rpc/` exist, with no retired path/spike reference remaining. No automated test applies to this prose-only correction.
+- **Bounded inline review:** Pass — only ownership/navigation prose changed; the protocol contract is untouched.

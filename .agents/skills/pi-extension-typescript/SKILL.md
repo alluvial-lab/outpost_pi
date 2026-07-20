@@ -1,7 +1,7 @@
 ---
 name: pi-extension-typescript
 description: Remote Pi pi-extension TypeScript/Pi SDK reference. Read before editing or reviewing pi-extension/ code, session lifecycle hooks, relay/room metadata, mesh tools, pairing, or Pi SDK integration.
-updated: 2026-07-19
+updated: 2026-07-20
 ---
 
 # Pi Extension TypeScript Reference
@@ -14,7 +14,7 @@ updated: 2026-07-19
 ## When to load
 
 - Any edit or review under `pi-extension/`.
-- Any change involving `/remote-pi`, session replacement (`/new`, `/resume`, `/fork`, `/reload`), mobile/client state, `room_meta`, mesh tools, pairing, relay connection, or broker/UDS behavior.
+- Any change involving `/outpost-pi`, session replacement (`/new`, `/resume`, `/fork`, `/reload`), mobile/client state, `room_meta`, mesh tools, pairing, relay connection, or broker/UDS behavior.
 - Any investigation of stale context, stuck `Working`, dropped/replayed events, or multi-client state.
 
 ## Package commands
@@ -124,7 +124,8 @@ Session replacement order from Pi docs:
 
 Important files:
 
-- `src/index.ts` — extension factory, `/remote-pi` commands, relay + room metadata, session lifecycle hooks.
+- `src/index.ts` — extension factory and composition entrypoint; wires runtime ports, relay/room metadata, lifecycle hooks, and command adapters.
+- `src/extension/command_surface/commands.ts` — registers the `/outpost-pi` root command and injected subcommands with the Pi SDK.
 - `src/protocol/types.ts` — narrow re-export of schema-generated app/extension message unions. [remote-pi-protocol-types]{1}
 - `src/protocol/codec.ts` — app↔Pi inner-message JSON decoder backed by generated type registries and runtime predicates. `src/protocol/relay_ingress.ts` is the live relay boundary: it caps raw/base64 work, then consumes generated outer/control/cross-PC predicates before decode-once typed fanout. The generated outer contract exposes a strict room-required predicate plus a `compat` predicate that relaxes only room presence; both reject empty declared strings and unknown properties. [remote-pi-protocol-codec]{1}
 - `src/actions/handlers.ts` — typed mobile/app actions (`session_new`, `session_compact`, `model_set`, `thinking_set`, `list_models`).

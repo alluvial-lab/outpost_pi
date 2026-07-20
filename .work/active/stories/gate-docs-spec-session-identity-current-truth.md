@@ -1,7 +1,7 @@
 ---
 id: gate-docs-spec-session-identity-current-truth
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -31,3 +31,9 @@ Replace the obsolete open-question entry with the current canonical-session inva
 
 ## Audit
 Documentation drift audit ran inline because nested scanner dispatch was prohibited; isolation was reduced.
+
+## Implementation notes
+- **Execution:** Bounded inline documentation repair; the source-of-truth transport contract and app session gate made the correction deterministic.
+- **Change:** Removed the obsolete open question claiming chat traffic lacks `session_id`; `docs/SPEC.md` now relies on its current canonical, required, fail-closed session invariant.
+- **Verification:** Confirmed the stale assertion is absent and the existing transport section matches `docs/DECISIONS.md` plus `app/lib/data/sync/session_gate.dart`. No automated test applies to this prose-only correction.
+- **Bounded inline review:** Pass — the edit removes historical drift without changing adjacent specification content.
