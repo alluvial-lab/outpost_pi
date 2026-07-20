@@ -9,6 +9,38 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ---
 
+## [extension-0.2.0] — 2026-07-20
+
+First post-rebrand pi-extension release. Adds a bounded outbound turn
+buffer for messages queued while a peer is offline, formalizes the
+lifecycle delivery-promise policy, retires legacy composition seams,
+and fixes stale-action/command UI guards.
+
+### Features
+- **Outbound buffer on peer offline** — messages destined for an offline
+  peer are now buffered in a bounded per-turn buffer with presence-lifecycle
+  awareness and turn-boundary wiring, so messages aren't silently dropped
+  when the peer briefly disconnects. Ordering regressions are covered.
+  (`feature-outbound-buffer-on-peer-offline` + 4 child stories)
+- **Lifecycle delivery-promise policy** — delivery promises are now
+  explicitly lifecycle-owned rather than fire-and-forget.
+  (`feature-piext-lifecycle-delivery-promise-policy`)
+
+### Refactor
+- **Retire legacy composition seams** — removed legacy pi-extension
+  composition seams in favor of the current port/adapter structure.
+  (`feature-retire-legacy-piext-composition-seams`)
+
+### Fixes
+- Stale action boundary now has regression tests. (`story-stale-action-boundary-regression-tests`)
+- Stale command UI notify guard added. (`story-stale-command-ui-notify-guard`)
+
+### Tests
+- Completed-buffer eviction now proven to preserve a current interval that
+  still fits. (`gate-tests-offline-buffer-completed-eviction`)
+
+---
+
 ## [app-v0.2.0] — 2026-07-20
 
 First post-rebrand app release. Hardens mobile session lifecycle
