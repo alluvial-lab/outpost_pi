@@ -1,7 +1,7 @@
 ---
 id: release-cockpit-v0.2.0
 kind: release
-stage: quality-gate
+stage: released
 tags: []
 parent: null
 depends_on: []
