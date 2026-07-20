@@ -1,7 +1,7 @@
 ---
 id: gate-docs-cockpit-changelog-distribution
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
