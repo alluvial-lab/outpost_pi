@@ -183,6 +183,30 @@ async fn fragmented_oversized_hello_is_rejected_from_header_before_final_payload
     }
 }
 
+#[tokio::test]
+async fn authenticated_connection_routes_message_above_pre_auth_ceiling() {
+    let port = start_relay().await;
+    let (mut ws_a, _) = connect_and_auth(port).await;
+    let (mut ws_b, peer_b) = connect_and_auth(port).await;
+    let ct = "A".repeat(relay::resource_limits::PRE_AUTH_MESSAGE_MAX_BYTES + 4);
+    let envelope = json!({"peer": peer_b, "room": "main", "ct": ct}).to_string();
+    assert!(
+        envelope.len() > relay::resource_limits::PRE_AUTH_MESSAGE_MAX_BYTES,
+        "test frame must cross the pre-auth transport ceiling"
+    );
+
+    ws_a.send(Message::text(envelope)).await.unwrap();
+
+    let received = tokio::time::timeout(tokio::time::Duration::from_secs(1), ws_b.next())
+        .await
+        .expect("authenticated data-plane message timed out")
+        .unwrap()
+        .unwrap();
+    let received_json: serde_json::Value =
+        serde_json::from_str(received.to_text().unwrap()).unwrap();
+    assert_eq!(received_json["ct"], ct);
+}
+
 /// Oversized unauthenticated text is rejected before JSON parsing or registration.
 #[tokio::test]
 async fn oversized_hello_closes_ws() {
