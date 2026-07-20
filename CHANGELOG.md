@@ -9,6 +9,27 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ---
 
+## [cockpit-v0.2.0] — 2026-07-20
+
+First post-rebrand cockpit release. Adds async action ownership, typed
+RPC boundaries, and settings control test coverage.
+
+### Features
+- **Async action ownership** — cockpit async actions are now explicitly
+  lifecycle-owned rather than fire-and-forget.
+  (`feature-cockpit-async-action-ownership`)
+- **Typed RPC boundaries** — control-RPC boundaries now use typed decoders
+  instead of ad-hoc map parsing. (`feature-cockpit-typed-rpc-boundaries`)
+- **Settings control tests** — added test coverage for the settings control
+  surface. (`feature-cockpit-settings-control-tests`)
+
+### Fixes
+- Empty catch in formatter reload fixed. (`gate-cruft-empty-catch-formatter-reload`)
+- Unnecessary `foundation` import removed from `file_viewer.dart`.
+  (`gate-cruft-file-viewer-unnecessary-foundation-import`)
+
+---
+
 ## [extension-0.2.0] — 2026-07-20
 
 First post-rebrand pi-extension release. Adds a bounded outbound turn
