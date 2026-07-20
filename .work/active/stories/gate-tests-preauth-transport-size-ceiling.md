@@ -1,7 +1,7 @@
 ---
 id: gate-tests-preauth-transport-size-ceiling
 kind: story
-stage: review
+stage: done
 tags: [testing, relay]
 parent: null
 depends_on: [gate-security-preauth-large-message-allocation]
