@@ -1,14 +1,14 @@
 ---
 id: release-relay-0.2.0
 kind: release
-stage: quality-gate
+stage: released
 tags: []
 parent: null
 depends_on: []
 release_binding: relay-0.2.0
 gate_origin: null
 created: 2026-07-19
-updated: 2026-07-19
+updated: 2026-07-20
 ---
 
 # Release relay-0.2.0
