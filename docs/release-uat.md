@@ -3,7 +3,7 @@
 A release tag is not cut until an operator has run and acknowledged a live
 end-to-end smoke against the deployed release candidate. This is the human
 backstop that would have caught the `v0.6.0` non-functional ship (the
-`/remote-pi pair` flow was broken by three integration bugs that all passed
+`/outpost-pi pair` flow was broken by three integration bugs that all passed
 the automated gate suite).
 
 This is a **manual checkpoint**, not an entry in `gates_for_release`. The
@@ -33,8 +33,8 @@ session-hydrate lifecycle end to end on a real deploy:
 
 1. **Relay up** — container `outpost-pi-relay` running; `docker logs
    outpost-pi-relay` shows `authenticated` for a real peer, not just `Up`.
-2. **Pi extension up** — `/remote-pi` footer shows 🟢 connected.
-3. **`/remote-pi pair` renders the QR** in the TUI (the actual QR glyph, not
+2. **Pi extension up** — `/outpost-pi` footer shows 🟢 connected.
+3. **`/outpost-pi pair` renders the QR** in the TUI (the actual QR glyph, not
    just the "QR ready" notify).
 4. **App scans → `pair_ok` returns** (no 30s timeout).
 5. **Session transcript hydrates** in the app — messages stream both

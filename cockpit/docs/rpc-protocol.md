@@ -1,9 +1,8 @@
 # `pi --mode rpc` protocol — schema used by Cockpit
 
-Document for **Step 0 (spike)** of [plan 37](../../plan/37-desktop-cockpit.md).
-Describes the RPC protocol spoken by `PiRpcProcess` (`lib/data/rpc/`) and
-`pi --mode rpc`. **Empirically validated** (pi `0.78.1`, `/opt/homebrew/bin/pi`)
-and checked against the official SDK documentation at
+Current-state reference for the RPC protocol spoken by `PiRpcProcess`
+(`lib/app/cockpit/data/rpc/pi_rpc_process.dart`) and `pi --mode rpc`.
+The contract is checked against the official SDK documentation at
 `@earendil-works/pi-coding-agent/docs/rpc.md`.
 
 > Cockpit spawns `pi --mode rpc` **with extensions loaded** (revised decision B):
@@ -26,7 +25,7 @@ and checked against the official SDK documentation at
 LF (`\n`) is the **only** record delimiter. A final `\r` is removed
 (`\r\n` accepted). **Do not** use a generic line reader that splits on
 `U+2028`/`U+2029` — they are valid *inside* JSON strings and could occur in the
-middle of an event. Therefore `lib/data/rpc/jsonl_line_splitter.dart` splits only
+middle of an event. Therefore `lib/app/core/data/rpc/jsonl_line_splitter.dart` splits only
 on `\n` (rather than Dart's `LineSplitter`).
 
 ## Commands the Cockpit sends (stdin)

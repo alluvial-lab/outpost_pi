@@ -81,26 +81,42 @@ Full security trade-offs and the self-hosting guide live in
 
 ## Getting started
 
-Install the Pi extension in any project where Pi runs:
+Build the extension from this checkout:
 
 ```bash
-pi install npm:outpost-pi
+cd pi-extension
+corepack pnpm install
+corepack pnpm build
 ```
 
-Then in the Pi chat, run:
+Register the checkout as a local extension in `~/.pi/agent/settings.json`
+(preserve any existing settings and extension entries):
 
-```
-/outpost-pi
+```json
+{
+  "extensions": ["/absolute/path/to/outpost_pi/pi-extension"]
+}
 ```
 
-The setup wizard walks you through agent name and relay choice, then prints a
-QR code. (You also need to configure a relay URL once with
-`/outpost-pi set-relay <url>` — there is no default relay.) Scan it with the
-Outpost-Pi mobile app and you're paired.
+Quit and relaunch Pi so it loads `pi-extension/dist/index.js`; `/reload` does
+not reliably re-import a rebuilt local module. After any extension source
+change, rebuild and fully restart Pi again.
+
+Then configure the self-hosted relay and pair the mobile app:
+
+```text
+/outpost-pi set-relay <url>
+/outpost-pi pair
+```
+
+The pair command renders a QR code for the Outpost-Pi mobile app to scan.
 
 ## Status
 
-The MVP is functional. Planning notes and roadmap live in [`plan/`](./plan).
+The current product scope, architecture, and settled direction live in
+[`docs/VISION.md`](./docs/VISION.md), [`docs/SPEC.md`](./docs/SPEC.md),
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md), and
+[`docs/DECISIONS.md`](./docs/DECISIONS.md).
 
 ## Acknowledgements
 
