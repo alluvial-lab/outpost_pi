@@ -1,7 +1,7 @@
 ---
 id: gate-docs-cockpit-v020-changelog-gap
 kind: story
-stage: implementing
+stage: done
 tags: [cockpit, documentation]
 parent: null
 depends_on: []
