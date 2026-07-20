@@ -9,6 +9,51 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ---
 
+## [relay-0.2.0] — 2026-07-20
+
+First post-rebrand relay release. Hardens the relay's unauthenticated and
+authenticated resource boundaries: pre-auth WebSocket allocation, mesh
+storage, scan fanout, and rooms-check dedup retention are all now bounded.
+
+### Security
+- **Pre-auth WebSocket message ceiling** — unauthenticated sockets can no
+  longer allocate the full authenticated data-plane ceiling (~5.6 MiB). A
+  `PreAuthGuard` transport wrapper rejects cumulative pre-auth message bytes
+  beyond 16 KiB before Tungstenite reassembles; authenticated sockets retain
+  the larger ceiling. (`gate-security-preauth-large-message-allocation`)
+- **Mesh Owner storage quota** — `MeshStore::upsert` now enforces max Owner
+  rows, max retained bytes, and a per-window rate limit on creating
+  previously-unseen Owners. Over-quota publishes are rejected. (`gate-security-mesh-owner-storage-unbounded`)
+- **Mesh-auth scan fanout bound** — a process-wide concurrent-scan ceiling
+  prevents distinct self-generated Pi keys from each triggering an unbounded
+  `all_envelopes()` scan. Per-key single-flight and cache retained.
+  (`gate-security-mesh-auth-distinct-key-scan-fanout`)
+- **Rooms-check dedup cache bounded** — the per-connection `last_rooms_resp`
+  map is now bounded by entry count and retained bytes, and control-frame
+  peer IDs are validated to the canonical fixed-size identity shape before
+  retention. (`gate-security-rooms-dedup-cache-unbounded`)
+
+### Features
+- **Relay resource bounds** — centralized resource policy
+  (`relay/src/resource_limits.rs`) for handshake timeouts, outbound mailbox
+  capacity, mesh-auth cache, cross-PC forward budgets, and control-frame peer
+  costs. (`feature-relay-resource-bounds`)
+
+### Tests
+- Live-socket coverage for both handshake timeout phases (pre-hello and
+  post-challenge stalls) through the public WebSocket boundary.
+  (`gate-tests-handshake-step-timeout-seam`)
+- Proves authenticated connections still route messages above the pre-auth
+  ceiling. (`gate-tests-preauth-transport-size-ceiling`)
+
+### Internal
+- Relay moved from axum's `WebSocketUpgrade` to a raw `tokio-tungstenite`
+  handshake to compose `WebSocketConfig` with the custom transport guard;
+  `tokio-tungstenite` promoted from dev-dependency to dependency.
+- New pattern: `centralized-resource-policy`.
+
+---
+
 ## [v0.1.0] — 2026-07-12
 
 **Outpost-Pi** — the rebrand release. Outpost-Pi is derived from Jacob
