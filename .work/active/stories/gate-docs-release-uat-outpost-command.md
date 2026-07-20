@@ -1,7 +1,7 @@
 ---
 id: gate-docs-release-uat-outpost-command
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []

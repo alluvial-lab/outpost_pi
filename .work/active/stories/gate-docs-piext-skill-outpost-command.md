@@ -1,7 +1,7 @@
 ---
 id: gate-docs-piext-skill-outpost-command
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
