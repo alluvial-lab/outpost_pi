@@ -87,8 +87,21 @@ This fork ships per-component semver. Components and their tag prefixes:
 The fork reset all components to `0.1.0` at the Outpost-Pi rebrand
 (`release-v0.1.0`, 2026-07-12). Earlier pre-rebrand component tags
 (`app-v1.x`, `cockpit-v1.x`, `extension-0.5.x`, `relay-0.1.0`, `v0.4.0`/`v0.5.0`/`v0.6.0`)
-were deleted; the retained item bodies under `.work/releases/` for those
-old generations remain as historical record.
+were deleted; the retained item bodies for those old generations were
+relocated to `.work/releases-pre-rebrand/` as historical record.
+
+**Why the relocation.** work-view resolves `--release <version>` by scanning
+`.work/`, `.work/active/`, `.work/archive/`, and `.work/releases/`
+(recursively) for matching `release_binding:` frontmatter values. Pre-rebrand
+versions share exact version numbers with the post-rebrand series (e.g. relay
+climbs back to `relay-0.2.0`; extension will re-hit `extension-0.5.4`/
+`extension-0.6.0`; app re-hits `app-v1.1.1`/`app-v1.2.0`; etc.), so any retained
+item still carrying a pre-rebrand binding value would be silently swept into a
+future release's gate scope + readiness check at the version collision — a
+landmine far from cause. Moving them out of the scanned tiers
+(`.work/releases-pre-rebrand/` is a top-level sibling, invisible to
+work-view) removes the whole collision class. Do not move pre-rebrand
+release artifacts back into `.work/releases/` or `.work/archive/`.
 
 ### Attribution rule
 
