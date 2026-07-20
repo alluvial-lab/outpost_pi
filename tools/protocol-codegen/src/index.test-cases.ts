@@ -169,6 +169,7 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
   assert.match(output, /"action_ok",\n  "action_error",\n  "models_list",/);
   assert.match(output, /export const SESSION_HISTORY_EVENT_TYPES = \[/);
   assert.match(output, /export function isServerMessage\(value: unknown\): value is ServerMessage/);
+  assert.doesNotMatch(output, /isStringWithMinLength|isFiniteNumberAtLeast/);
   assert.doesNotMatch(output, /ServerMessagePairOk|ClientMessageUserMessage/);
 });
 
