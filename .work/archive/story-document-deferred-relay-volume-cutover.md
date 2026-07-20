@@ -7,7 +7,7 @@ stage: implementing
 tags: [rebrand, relay, docs, workflow]
 parent: epic-rebrand-to-outpost-pi
 depends_on: []
-release_binding: v0.2.0
+release_binding: null
 gate_origin: null
 created: 2026-07-15
 updated: 2026-07-20

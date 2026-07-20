@@ -53,7 +53,62 @@ informational under `phased` — all are cross-component children that
 belong to one of the four component releases, not here. No repo-attributed
 child is left behind.
 
-(pending — gates run next)
+### gate-security (2026-07-20) — 2 Medium, 3 Low
+
+No release blockers. All unbound backlog:
+`gate-security-local-ipc-permissions`, `gate-security-broker-audit-log-unbounded`,
+`gate-security-cockpit-temp-workspace-trace`, `gate-security-lsp-stderr-logged`,
+`gate-security-mobile-failure-detail-logged`.
+(12 existing security findings + 2 umbrella features skipped.)
+
+### gate-tests (2026-07-20) — 1 Critical, 1 High
+
+Release-blocking:
+- `gate-tests-wake-outcome-call-site-canary` (Critical)
+- `gate-tests-app-relay-ingress-boundaries` (High)
+
+### gate-cruft (2026-07-20) — 3 High
+
+Release-blocking:
+- `gate-cruft-local-mesh-unused-context-cache`
+- `gate-cruft-remote-session-unused-context-type`
+- `gate-cruft-codegen-unused-validator-helpers`
+
+### gate-docs (2026-07-20) — 9 High
+
+Release-blocking (all 9 bound to v0.2.0):
+`gate-docs-spec-session-identity-current-truth`,
+`gate-docs-vision-session-contamination-current-state`,
+`gate-docs-protocol-agent-request-availability`,
+`gate-docs-root-readme-local-extension-install`,
+`gate-docs-relay-claudemd-plaintext-persistence`,
+`gate-docs-release-uat-outpost-command`,
+`gate-docs-piext-skill-outpost-command`,
+`gate-docs-cockpit-rpc-guide-current-path`,
+`gate-docs-cockpit-changelog-distribution`.
+
+### gate-patterns (2026-07-20) — 1 pattern draft
+
+No findings. Emitted pattern draft `fresh-operation-gateway-factories` as
+`gate-patterns-v0.2.0` at `stage: done`; updated pattern index.
+
+### gate-refactor (2026-07-20) — 1 High, 1 Medium
+
+Release-blocking:
+- `gate-refactor-lifecycle-attachment-messenger-after-await` (High)
+
+Non-blocking (unbound backlog):
+- `gate-refactor-boundaries-lsp-diagnostic-wire-map` (Medium)
+(27 already-tracked gate-refactor artifacts skipped.)
+
+### Totals
+
+**15 release-blocking findings** (3 cruft + 9 docs + 1 refactor + 2 tests)
+must reach `done` before ship; **9 non-blocking** findings are unbound backlog.
+
+Note: 6 pre-existing incomplete archived stubs (from 2026-07-01/15, never
+finished) were unbound from v0.2.0 — they are stale gate findings from prior
+release cycles, not part of this release's intent.
 
 ## UAT checkpoint
 
