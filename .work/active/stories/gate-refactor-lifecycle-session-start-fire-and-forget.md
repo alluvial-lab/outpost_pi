@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: v0.2.0
 parent: feature-piext-lifecycle-delivery-promise-policy
 stage: done
 id: gate-refactor-lifecycle-session-start-fire-and-forget
@@ -8,7 +8,7 @@ tags: []
 depends_on: []
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Session start auto-start future is discarded without error handling

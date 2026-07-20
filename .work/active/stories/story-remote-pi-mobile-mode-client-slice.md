@@ -5,10 +5,10 @@ stage: done
 tags: [app, pi-extension, workflow]
 parent: feature-remote-pi-fork-vendor-and-mobile-surface
 depends_on: [story-remote-pi-android-build-smoke]
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-06-27
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Add one remote-pi client-side mobile-mode control slice
