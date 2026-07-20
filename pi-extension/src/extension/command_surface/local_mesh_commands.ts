@@ -66,7 +66,6 @@ export interface LocalMeshCommandsDeps {
 export class LocalMeshCommands {
   private cwdLock: AcquiredLock | null = null;
   private lockedName: string | null = null;
-  private lastCtx: Pick<ExtensionContext, "ui" | "abort" | "cwd"> | null = null;
   private readonly controlCommands: ControlCommands;
 
   constructor(private readonly deps: LocalMeshCommandsDeps) {
@@ -92,7 +91,6 @@ export class LocalMeshCommands {
    * idempotent connect + status display.
    */
   async root(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
-    this.rememberCtx(ctx);
     // This instance was torn down (session replacement) before its deferred
     // auto-init ran — don't connect, or we'd resurrect a ghost the broker can't
     // reach. The replacement instance (fresh module) drives the live connect.
@@ -175,7 +173,6 @@ export class LocalMeshCommands {
    * existing config so it doubles as an "edit" flow.
    */
   async setup(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
-    this.rememberCtx(ctx);
     const cwd = "cwd" in ctx ? (ctx as ExtensionCommandContext).cwd : process.cwd();
     const ui = ctx.ui as unknown as WizardUI;
     if (typeof ui.select !== "function") {
@@ -263,7 +260,6 @@ export class LocalMeshCommands {
    * broker.
    */
   async join(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
-    this.rememberCtx(ctx);
     const cwd = "cwd" in ctx ? (ctx as ExtensionCommandContext).cwd : process.cwd();
     const local = loadLocalConfig(cwd);
     const sessionName = LOCAL_SESSION_NAME;
@@ -417,15 +413,5 @@ export class LocalMeshCommands {
     try { this.cwdLock?.release(); } catch { /* ignored */ }
     this.cwdLock = null;
     this.lockedName = null;
-    this.lastCtx = null;
-  }
-
-  private rememberCtx(ctx: Pick<ExtensionContext, "ui" | "cwd">): void {
-    const maybe = ctx as Partial<Pick<ExtensionContext, "ui" | "abort" | "cwd">>;
-    this.lastCtx = {
-      ui: maybe.ui as ExtensionContext["ui"],
-      abort: typeof maybe.abort === "function" ? maybe.abort.bind(ctx) : (() => undefined),
-      cwd: typeof maybe.cwd === "string" ? maybe.cwd : process.cwd(),
-    };
   }
 }
