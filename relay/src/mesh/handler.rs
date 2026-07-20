@@ -28,6 +28,8 @@ pub enum MeshHttpError {
     NotFound,
     Conflict { current_version: u64 },
     PayloadTooLarge,
+    QuotaExceeded,
+    RateLimited,
     Internal(String),
 }
 
@@ -44,6 +46,14 @@ impl IntoResponse for MeshHttpError {
             MeshHttpError::PayloadTooLarge => {
                 (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large".into())
             }
+            MeshHttpError::QuotaExceeded => (
+                StatusCode::INSUFFICIENT_STORAGE,
+                "mesh_storage_quota_exceeded".into(),
+            ),
+            MeshHttpError::RateLimited => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "new_owner_rate_limited".into(),
+            ),
             MeshHttpError::Internal(m) => {
                 warn!("mesh internal error: {m}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal".into())
@@ -59,7 +69,8 @@ impl IntoResponse for MeshHttpError {
 ///
 /// Returns [`MeshHttpError`] mapped to a client response when the body exceeds
 /// the cap, the wire envelope or signature is invalid, the URL owner hash does
-/// not match, the version is stale, or storage fails.
+/// not match, the version is stale, retained storage or new-Owner admission is
+/// exhausted, or storage fails.
 pub async fn post_mesh(
     State(state): State<crate::AppState>,
     Path(url_hash): Path<String>,
@@ -118,6 +129,8 @@ pub async fn post_mesh(
         Err(StoreError::StaleVersion { current, .. }) => Err(MeshHttpError::Conflict {
             current_version: current,
         }),
+        Err(StoreError::QuotaExceeded { .. }) => Err(MeshHttpError::QuotaExceeded),
+        Err(StoreError::NewOwnerRateLimited) => Err(MeshHttpError::RateLimited),
         Err(e) => Err(MeshHttpError::Internal(e.to_string())),
     }
 }
