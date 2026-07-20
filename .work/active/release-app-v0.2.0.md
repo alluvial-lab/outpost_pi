@@ -59,6 +59,54 @@ All findings are legitimate cross-component phased delivery, not true drift:
   `gate-refactor-*`, or `[security]`-only). They bind to repo `v0.2.0`.
   No app-attributed child is left behind.
 
+### gate-security (2026-07-20) — 2 Medium
+
+Inline scan, reduced isolation. No release blockers. Both unbound to backlog:
+`gate-security-owner-reset-retains-transcripts`,
+`gate-security-unindexed-plaintext-transcripts-retained`.
+
+### gate-tests (2026-07-20) — 1 Critical, 1 High, 2 Medium
+
+Release-blocking:
+- `gate-tests-resume-offline-recovery-branches` (High)
+
+Non-blocking (unbound backlog):
+- `gate-tests-remove-placeholder-widget-test` (Critical, testing-only → repo)
+- `gate-tests-production-transcript-key-bootstrap` (Medium)
+- `gate-tests-chat-status-indicator-widget-contract` (Medium)
+
+### gate-cruft (2026-07-20) — 1 Low
+
+No release blockers. Unbound backlog:
+`gate-cruft-unused-settings-relay-url-compatibility`.
+
+### gate-docs (2026-07-20) — 1 High
+
+Release-blocking:
+- `gate-docs-app-v0-2-0-changelog-missing` (High — the changelog gap; the
+  release's own CHANGELOG entry satisfies this once drafted in Phase 5.5).
+
+### gate-patterns (2026-07-20) — 1 pattern draft
+
+No findings. Emitted pattern draft `generation-fenced-async-ownership` as
+`gate-patterns-app-v0.2.0` at `stage: done`; updated pattern index + digest.
+
+### gate-refactor (2026-07-20) — 2 High, 4 Medium
+
+No release blockers. Scan-rule libraries require `tags: []`, making all
+findings repo-attributed → unbound backlog:
+`gate-refactor-lifecycle-legacy-migration-source-boxes`,
+`gate-refactor-protocol-contract-sync-agent-message-literal`,
+`gate-refactor-lifecycle-mesh-poll-floating`,
+`gate-refactor-lifecycle-resume-mesh-pull-floating`,
+`gate-refactor-lifecycle-resume-reconcile-floating`,
+`gate-refactor-lifecycle-settings-fallback-boot-floating`.
+
+### Totals
+
+**2 release-blocking findings** (1 docs High + 1 tests High) must reach `done`
+before ship; **12 non-blocking** findings are unbound backlog.
+
 (pending — gates run next)
 
 ## UAT checkpoint
