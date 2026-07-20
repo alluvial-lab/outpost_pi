@@ -215,6 +215,8 @@ The relay stores the entire blob in SQLite, indexed by `owner_pk_hash = SHA256(o
 
 - **POST /mesh/<hash>**: the client publishes a new version (the relay verifies the signature + monotonic version)
 - **GET /mesh/<hash>**: the client reads the latest version and validates the signature locally
+- Retained state is capped at 1,024 Owner rows and 64 MiB across the rows' variable fields. A write that would grow beyond either ceiling is rejected with HTTP 507 `mesh_storage_quota_exceeded`; the relay does not evict an Owner implicitly because eviction would revoke live mesh authorization.
+- Creation of previously unseen Owner hashes is capped process-wide at 32 per 60 seconds. Excess creation is rejected with HTTP 429 `new_owner_rate_limited`; updates to an existing Owner do not consume that budget.
 
 LWW (last-write-wins) resolves concurrent conflicts. Monotonic versioning prevents rollback.
 
