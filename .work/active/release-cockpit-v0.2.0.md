@@ -45,7 +45,50 @@ children of bound cockpit features. All are non-cockpit-tagged →
 repo-attributed (untagged `gate-refactor-*` or `[testing]`-only). They
 bind to repo `v0.2.0`. No cockpit-attributed child is left behind.
 
-(pending — gates run next)
+### gate-security (2026-07-20) — 1 Low
+
+No release blockers. Unbound backlog:
+`gate-security-formatter-reload-diagnostics-path-disclosure`.
+
+### gate-tests (2026-07-20) — 0 findings
+
+No findings. 258 tests pass; flutter analyze clean (2 pre-existing info
+diagnostics, one in the bundle's `file_viewer.dart` — the cruft gate
+caught the actionable one).
+
+### gate-cruft (2026-07-20) — 1 High, 1 Medium
+
+Release-blocking:
+- `gate-cruft-file-viewer-unnecessary-foundation-import` (High — unnecessary
+  import in `file_viewer.dart`)
+
+Non-blocking (unbound backlog):
+- `gate-cruft-file-watcher-errors-swallowed` (Medium)
+
+### gate-docs (2026-07-20) — 1 High, 1 Medium
+
+Release-blocking:
+- `gate-docs-cockpit-v020-changelog-gap` (High — satisfied by drafting the
+  cockpit-v0.2.0 CHANGELOG entry in Phase 5.5)
+
+Non-blocking (unbound backlog):
+- `gate-docs-cockpit-guidance-local-only-contradiction` (Medium)
+
+### gate-patterns (2026-07-20) — 1 pattern draft
+
+No findings. Emitted pattern draft `awaited-pane-teardown-contract` as
+`gate-patterns-cockpit-v0.2.0` at `stage: done`; updated pattern index.
+
+### gate-refactor (2026-07-20) — 2 Medium
+
+No release blockers. Both unbound backlog (untagged → repo):
+`gate-refactor-lifecycle-file-viewer-lsp-debounce-floating`,
+`gate-refactor-lifecycle-workspace-file-watch-debounce-floating`.
+
+### Totals
+
+**2 release-blocking findings** (1 cruft High + 1 docs High) must reach
+`done` before ship; **5 non-blocking** findings are unbound backlog.
 
 ## UAT checkpoint
 
