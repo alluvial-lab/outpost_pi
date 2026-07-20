@@ -20,6 +20,11 @@ pub type WsStream = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 /// port and returns that port. Mesh storage is `:memory:` for these tests —
 /// use the helper in `tests/mesh_test.rs` when you need a persistent DB.
 pub async fn start_relay() -> u16 {
+    start_relay_with_registry().await.0
+}
+
+/// Starts the relay while retaining its registry for live-boundary assertions.
+pub async fn start_relay_with_registry() -> (u16, Arc<PeerRegistry>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let mesh = Arc::new(MeshStore::open_in_memory().unwrap());
@@ -33,7 +38,7 @@ pub async fn start_relay() -> u16 {
     ));
     let mesh_auth = Arc::new(MeshAuthCache::new());
     let state = AppState {
-        registry,
+        registry: registry.clone(),
         presence,
         rooms,
         mesh,
@@ -50,7 +55,7 @@ pub async fn start_relay() -> u16 {
     });
     // Give axum a moment to start accepting.
     tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-    port
+    (port, registry)
 }
 
 /// Connects using a caller-supplied key and room_id, completes the full auth handshake.
