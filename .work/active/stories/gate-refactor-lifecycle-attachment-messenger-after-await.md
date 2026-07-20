@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-attachment-messenger-after-await
 kind: story
-stage: review
+stage: done
 tags: []
 parent: null
 depends_on: []

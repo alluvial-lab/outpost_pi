@@ -1,7 +1,7 @@
 ---
 id: gate-tests-wake-outcome-call-site-canary
 kind: story
-stage: review
+stage: done
 tags: [testing, refactor]
 parent: null
 depends_on: []
