@@ -1,0 +1,43 @@
+---
+id: gate-security-lsp-stderr-logged
+kind: story
+stage: drafting
+tags: [cockpit, security]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: security
+created: 2026-07-20
+updated: 2026-07-20
+---
+
+# Language-server stderr is logged verbatim
+
+## Severity
+Low
+
+## Domain
+Error Handling & Logging / Data Protection
+
+## Relevance
+Release-relevant
+
+## Location
+`cockpit/lib/app/core/data/lsp/lsp_client_impl.dart:332`
+
+## Evidence
+```dart
+void _onStderrLine(String line) {
+  if (line.trim().isEmpty) return;
+  debugPrint('[lsp:${spec.languageId}][err] $line');
+}
+```
+
+## Issue
+Cockpit forwards every non-empty language-server stderr line to process diagnostics verbatim and similarly interpolates raw stream errors at line 336. Language servers commonly include absolute workspace paths, source excerpts, compiler arguments, environment-derived failures, or tool output in stderr. Those values therefore reach console/collected diagnostics outside the content-free RPC diagnostic boundary introduced by this release. The server is a local child and this does not create a remote read primitive by itself, so this is a Low-severity diagnostic disclosure.
+
+## Remediation direction
+Project LSP diagnostics to fixed categories and bounded structural metadata (language, exit code, failure phase) without retaining raw stderr or error strings. If raw server output remains necessary, make it an explicit local debug opt-in with private bounded storage and clear disclosure rather than unconditional `debugPrint` output.
+
+## Audit execution
+The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.
