@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-file-viewer-unnecessary-foundation-import
 kind: story
-stage: implementing
+stage: done
 tags: [cockpit, cleanup]
 parent: null
 depends_on: []
