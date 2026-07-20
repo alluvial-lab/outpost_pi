@@ -1,14 +1,14 @@
 ---
 id: gate-tests-handshake-step-timeout-seam
 kind: story
-stage: implementing
+stage: review
 tags: [testing, relay]
 parent: null
 depends_on: [gate-security-preauth-large-message-allocation]
 release_binding: relay-0.2.0
 gate_origin: tests
 created: 2026-07-20
-updated: 2026-07-19
+updated: 2026-07-20
 ---
 
 # Cover both handshake timeout phases through the live WebSocket seam
@@ -39,3 +39,16 @@ async fn each_stalled_handshake_phase_closes_without_registration() {
 
 ## Test location (suggested)
 `relay/tests/integration.rs`
+
+## Implementation notes
+- Execution capability: inline; the live WebSocket seam and registry assertion helper form one bounded test-only change.
+- Review weight: standard (project default); stopped at `stage: review` per the caller's workflow.
+- Files changed: `relay/tests/integration.rs`, `relay/tests/common/mod.rs`.
+- Tests added: `pre_hello_stall_closes_without_registry_admission` and `post_challenge_stall_closes_without_registry_admission` in `relay/tests/integration.rs`.
+- What the tests prove: each public WebSocket handshake wait uses `HANDSHAKE_STEP_TIMEOUT`, closes its stalled socket, and does not create a live registry room; the post-challenge case first proves that a valid hello reaches the challenge before advancing the auth wait's separate deadline.
+- Test timing: Tokio time is paused while advancing the five-second deadline, then resumed only to let the real localhost socket propagate the server-side close reliably under parallel test execution.
+- Harness support: `start_relay_with_registry` retains the relay's real `PeerRegistry` while serving the same public router used by existing integration tests.
+- Verification: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` (222 passed), and `cargo build` all pass from `relay/`.
+- Simplification: none; existing `start_relay` delegates to the new registry-returning helper so server setup remains single-source.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
