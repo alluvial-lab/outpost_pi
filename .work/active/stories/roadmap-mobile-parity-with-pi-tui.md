@@ -5,10 +5,10 @@ stage: done
 tags: [app, ux, roadmap, parity]
 parent: feature-mobile-tui-parity-chat-resilience
 depends_on: [idea-mobile-message-duplication-send-timeout]
-release_binding: null
+release_binding: app-v0.2.0
 gate_origin: null
 created: 2026-07-02
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Roadmap: bring the mobile experience up to parity with the pi TUI

@@ -5,10 +5,10 @@ stage: done
 tags: [app, security]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: app-v0.2.0
 gate_origin: security
 created: 2026-07-15
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # App: secure and collision-safe durable transcript storage
