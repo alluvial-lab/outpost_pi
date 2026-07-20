@@ -4,7 +4,7 @@ kind: story
 stage: implementing
 tags: [testing, relay]
 parent: null
-depends_on: []
+depends_on: [gate-security-preauth-large-message-allocation]
 release_binding: relay-0.2.0
 gate_origin: tests
 created: 2026-07-20
