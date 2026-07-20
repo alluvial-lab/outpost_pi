@@ -71,18 +71,43 @@ class _FakeSyncService {
   }
 }
 
+class _BootTrackingConnectionManager extends ConnectionManager {
+  _BootTrackingConnectionManager({required this.bootGate})
+    : super(
+        factory: (_, _) async => throw StateError('not expected'),
+        storage: _FakeStorage([]),
+        emitDebounce: Duration.zero,
+      );
+
+  final Completer<void> bootGate;
+  int bootCalls = 0;
+
+  @override
+  ConnectionStatus get status =>
+      const StatusOffline(reason: 'network unavailable');
+
+  @override
+  PeerRecord? get activePeer => null;
+
+  @override
+  Future<void> boot({String? preferredEpk}) async {
+    bootCalls += 1;
+    await bootGate.future;
+  }
+}
+
+const _peer = PeerRecord(
+  remoteEpk: 'peer_A',
+  sessionName: 'pi',
+  relayUrl: 'ws://localhost',
+  pairedAt: '2026-01-01T00:00:00Z',
+);
+
 void main() {
   test(
     'resume on online cached state replays subscriptions and requests sync',
     () async {
-      final peers = <PeerRecord>[
-        const PeerRecord(
-          remoteEpk: 'peer_A',
-          sessionName: 'pi',
-          relayUrl: 'ws://localhost',
-          pairedAt: '2026-01-01T00:00:00Z',
-        ),
-      ];
+      final peers = <PeerRecord>[_peer];
       final channel = _TrackingChannel();
       final storage = _FakeStorage(peers);
       final connectionManager = ConnectionManager(
@@ -107,6 +132,73 @@ void main() {
       expect(sync.sessionSyncCalls, equals(1));
 
       connectionManager.dispose();
+    },
+  );
+
+  test(
+    'resume while retrying reconnects the active peer without sync',
+    () async {
+      final lostChannel = _TrackingChannel();
+      final reconnectedChannel = _TrackingChannel();
+      final factoryPeers = <PeerRecord>[];
+      final connectionManager = ConnectionManager(
+        factory: (peer, _) async {
+          factoryPeers.add(peer);
+          return reconnectedChannel;
+        },
+        storage: _FakeStorage([_peer]),
+        emitDebounce: Duration.zero,
+      );
+      final sync = _FakeSyncService();
+      addTearDown(() async {
+        connectionManager.dispose();
+        await lostChannel.close();
+        await reconnectedChannel.close();
+      });
+
+      connectionManager.adopt(lostChannel, _peer);
+      connectionManager.debugSimulateChannelLost(lostChannel);
+      expect(connectionManager.status, isA<StatusRetrying>());
+      expect(connectionManager.activePeer, same(_peer));
+
+      await reconcileOnAppResume(
+        connectionManager: connectionManager,
+        requestSessionSync: sync.requestSync,
+      );
+
+      expect(factoryPeers, [_peer]);
+      expect(connectionManager.status, isA<StatusOnline>());
+      expect(sync.sessionSyncCalls, isZero);
+    },
+  );
+
+  test(
+    'resume while offline without an active peer awaits boot discovery',
+    () async {
+      final bootGate = Completer<void>();
+      final connectionManager = _BootTrackingConnectionManager(
+        bootGate: bootGate,
+      );
+      final sync = _FakeSyncService();
+      addTearDown(connectionManager.dispose);
+      var reconciliationCompleted = false;
+
+      final reconciliation = reconcileOnAppResume(
+        connectionManager: connectionManager,
+        requestSessionSync: sync.requestSync,
+      ).whenComplete(() => reconciliationCompleted = true);
+
+      await Future<void>.delayed(Duration.zero);
+      expect(connectionManager.bootCalls, equals(1));
+      expect(reconciliationCompleted, isFalse);
+      expect(sync.sessionSyncCalls, isZero);
+
+      bootGate.complete();
+      await reconciliation;
+
+      expect(reconciliationCompleted, isTrue);
+      expect(connectionManager.bootCalls, equals(1));
+      expect(sync.sessionSyncCalls, isZero);
     },
   );
 }

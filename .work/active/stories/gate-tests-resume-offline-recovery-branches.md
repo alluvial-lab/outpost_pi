@@ -1,7 +1,7 @@
 ---
 id: gate-tests-resume-offline-recovery-branches
 kind: story
-stage: implementing
+stage: review
 tags: [app, testing]
 parent: null
 depends_on: []
@@ -39,3 +39,12 @@ test('resume without an active peer restarts boot discovery', () async {
 
 ## Test location (suggested)
 `app/test/main_lifecycle_test.dart`
+
+## Implementation notes
+
+- **Execution capability:** inline test-only implementation; the two bounded lifecycle branches shared one existing test seam and required no production API change.
+- **Files changed:** `app/test/main_lifecycle_test.dart`.
+- **Retrying with active peer:** adopts a real channel, uses `debugSimulateChannelLost` to enter `StatusRetrying` while retaining the peer, then proves resume reconnects that exact peer through the connection factory, returns online, and does not request stale session sync.
+- **Offline without active peer:** uses a tracking `ConnectionManager` test double with a gated `boot()` to prove resume calls boot discovery, awaits its completion, and never requests session sync.
+- **Verification:** targeted lifecycle suite passed (3 tests); `flutter analyze` passed with no issues; the full non-e2e Flutter suite passed (786 tests); the service-backed pairing e2e runner passed (7 tests and redaction canaries). Plain unconfigured `flutter test` was also probed and, as designed for this repository's service-backed e2e files, requires endpoint defines from `e2e/run-pairing.sh`.
+- **Adjacent issues:** none parked.
