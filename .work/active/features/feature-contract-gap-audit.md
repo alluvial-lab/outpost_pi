@@ -6,10 +6,10 @@ tags: [pi-extension, app, relay, docs]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on:
   - feature-cross-side-observability
-release_binding: null
+release_binding: v0.2.0
 gate_origin: null
 created: 2026-07-04
-updated: 2026-07-19
+updated: 2026-07-20
 ---
 
 # Contract gap audit (evidence-sourced, static tracks unblocked)

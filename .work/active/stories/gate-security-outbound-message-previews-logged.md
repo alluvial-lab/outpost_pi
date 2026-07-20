@@ -1,6 +1,6 @@
 ---
 kind: story
-release_binding: null
+release_binding: v0.2.0
 parent: feature-redact-secrets-from-diagnostic-surfaces
 stage: done
 id: gate-security-outbound-message-previews-logged
@@ -8,7 +8,7 @@ tags: [security]
 depends_on: []
 gate_origin: security
 created: 2026-07-01
-updated: 2026-07-18
+updated: 2026-07-20
 ---
 
 # Outbound message previews are written to logs
