@@ -53,7 +53,20 @@ All findings are legitimate cross-component phased delivery, not true drift:
 
 ## Gate runs
 
-(pending — gates run next)
+### gate-security (2026-07-20) — 4 High findings
+
+The current delegated harness exposed no nested generic-subagent/scanner
+adapter, so this gate used the skill's inline fallback with reduced isolation.
+The bounded audit covered the two release items and their relay auth,
+WebSocket, mesh-storage, routing, retained-state, logging, dependency, and
+container controls; it did not implement fixes.
+
+Release-blocking findings:
+
+- `gate-security-preauth-large-message-allocation`
+- `gate-security-rooms-dedup-cache-unbounded`
+- `gate-security-mesh-owner-storage-unbounded`
+- `gate-security-mesh-auth-distinct-key-scan-fanout`
 
 ## UAT checkpoint
 
