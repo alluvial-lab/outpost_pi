@@ -1230,7 +1230,7 @@ mod tests {
 
         let rooms_snapshot = reg.rooms_of(&pi);
         assert_eq!(rooms_snapshot.len(), 1);
-        assert_eq!(rooms_snapshot[0].working, false);
+        assert!(!rooms_snapshot[0].working);
 
         assert!(
             reg.update_room_meta(
@@ -1245,7 +1245,7 @@ mod tests {
         );
         let rooms_snapshot = reg.rooms_of(&pi);
         assert_eq!(rooms_snapshot.len(), 1);
-        assert_eq!(rooms_snapshot[0].working, true);
+        assert!(rooms_snapshot[0].working);
 
         assert!(
             reg.update_room_meta(
@@ -1260,7 +1260,7 @@ mod tests {
         );
         let rooms_snapshot = reg.rooms_of(&pi);
         assert_eq!(rooms_snapshot.len(), 1);
-        assert_eq!(rooms_snapshot[0].working, false);
+        assert!(!rooms_snapshot[0].working);
     }
 
     /// Disconnecting the last live conn ends the room: subscribers get one
@@ -1291,7 +1291,7 @@ mod tests {
             .await;
         let rooms_snapshot = reg.rooms_of(&pi);
         assert_eq!(rooms_snapshot.len(), 1);
-        assert_eq!(rooms_snapshot[0].working, true);
+        assert!(rooms_snapshot[0].working);
 
         let announced = rx_app
             .try_recv()
