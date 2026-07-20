@@ -1,7 +1,7 @@
 ---
 id: gate-tests-resume-offline-recovery-branches
 kind: story
-stage: review
+stage: done
 tags: [app, testing]
 parent: null
 depends_on: []
