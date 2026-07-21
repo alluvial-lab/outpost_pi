@@ -68,61 +68,69 @@ Session: `67a5468b` (new session after `/new`), room `SF_DCbXsmreE`
 No `outbound_queue_dropped`, no `bad_envelope`, no errors. The relay forwarded
 cleanly — the failure is on the app↔extension delivery path, not the relay.
 
-## Root cause analysis
+## Root cause: UNDETERMINED — do not commit to a theory
 
-### The 2-hour gap is operator idle time, not a wake hang
+The cross-side evidence does not yet support a root cause. Below are the
+raw facts and the specific gaps. A reproduction with both captures running
+through the wake is needed before attributing.
 
-The mobile ring log ends at 21:59:53 (the `msgFailed` event). The extension
-delivery log shows **nothing** for room `SF_DCbXsmreE` between 21:59:53 and
-23:54:16 — no session lifecycle, no message_api changes, no events. The
-operator set the session aside for ~2 hours and picked it back up with a
-`/new` from the phone at ~23:54, which re-armed the session and flushed the
-queued message through (`wake_outcome` + `msg_delivered` at 23:54:16).
+### Raw facts (no interpretation)
 
-So the 2-hour gap is NOT a wake-path hang. The real defect is entirely
-mobile-side.
+**Extension delivery log:**
+- `21:59:31.832` — `msg_received` for `cli_019f818a...` in room `SF_DCbXsmreE`
+- *(nothing logged for ~2 hours)*
+- `23:54:16.097` — `wake_outcome` ok=true for the same `cli_019f818a...`
+- `23:54:16.098` — `msg_delivered` to session `67a5468b`
 
-### The defect: echo misattribution → false `send_timeout` (app side)
+**Mobile ring log:**
+- Ends at `21:59:53.674` (the `msgFailed` / send_timeout event)
+- No events after 21:59:53 — the capture ended there
 
-The mobile app sent `cli_019f818a...` at 21:59:33.542. 190ms later it
-received a `msgEcho` — but with id `sync_1784584771833`, NOT the `cli_...`
-id it was waiting for. The `replayDedup` event at 21:59:33.762 dropped
-something (`dropped:true`), suggesting the echo was misattributed to a
-replay/session-sync frame rather than the live send. Because the app never
-saw an echo for `cli_019f818a...`, the 20s send-timeout fired at 21:59:53
-and declared the message **failed** — even though the extension had already
-received it (21:59:31, 2s BEFORE the send) and the message was in-flight.
+### What does NOT add up (open questions)
 
-The message then sat queued on the extension side until the operator's
-later `/new` flushed it ~2h later. The mobile showed the message as
-failed/stuck the entire time.
+1. **What woke the message at 23:54?** The extension delivery log shows no
+   `session_lifecycle`, no `message_api_armed`, no `command_ctx` at 23:54 —
+   just the bare `wake_outcome` + `msg_delivered`. So whatever triggered the
+   wake is not visible in the extension delivery log. The mobile capture had
+   already ended, so it offers no 23:54 evidence either.
 
-This matches the existing `story-mobile-send-timeout-relay-room-main-mismatch`
-symptom class: the app declares `send_timeout` when the real issue is an
-echo/replay attribution problem, not a relay delivery failure.
+2. **Was the message genuinely "queued" on the extension side for 2 hours?**
+   The operator reports they did NOT have a message queued — they set the
+   session aside. If the app declared the message failed at 21:59:53, there
+   should be no pending send. Yet the extension held `cli_019f818a...` as a
+   pending wake from 21:59:31 until 23:54:16. The relationship between the
+   app's send-timeout (21:59:53) and the extension's pending wake
+   (21:59:31 → 23:54:16) is unclear.
 
-## Attribution
+3. **The earlier "operator idle + /new flushed it" theory is NOT supported
+   by the logs.** There is no `/new` event at 23:54 on either side. That
+   theory was speculative and should be disregarded.
 
-- **App side:** the echo misattribution + false `send_timeout` is the app's
-  send-ack path conflating a replay/session-sync echo (`sync_` id) with the
-  live send echo (`cli_` id). The app declares the message failed while the
-  extension has already received it.
-- **Extension side:** no defect — the message was received and queued
-  correctly; the ~2h delay before delivery was operator idle time followed
-  by a `/new` that flushed it.
-- **Relay side:** no defect — forwarded cleanly, no drops.
+### What IS confirmed
+
+- The relay was clean throughout (no drops, no bad_envelope, no errors).
+- The extension received the message at 21:59:31 (2s before the app even
+  sent it per the mobile timestamp — a clock-skew or ordering note worth
+  checking, but not a defect).
+- The app declared the message failed at 21:59:53 (send_timeout, "no echo
+  in 20s") despite the extension having received it.
+- The mobile `msgEcho` at 21:59:33.733 carried id `sync_1784584771833`, not
+  the `cli_...` id the app was waiting for, and `replayDedup` dropped it.
+  This is a real app-side echo-misattribution symptom, but it is NOT yet
+  confirmed as the root cause of the 2-hour wake gap.
 
 ## Disposition
 
-Reproduced against post-0.2.0 code. The 0.2.0 lifecycle/buffer work did NOT
-fix the echo-misattribution defect. It is the same symptom class as
-`story-mobile-send-timeout-relay-room-main-mismatch` and
-`story-mobile-double-messages-on-session-history-replay`.
+Reproduced against post-0.2.0 code. Root cause UNDETERMINED. Do not commit
+to a fix theory until a reproduction captures both traces through the wake.
 
-The fix is app-side: the send-timeout path must not fire when the extension
-has confirmed receipt (`msg_received`), and the echo attribution must not
-satisfy a `cli_` send-ack wait with a `sync_` id from a replay/session-sync
-frame.
+The confirmed app-side symptom (echo misattribution → false send_timeout)
+belongs to the `story-mobile-send-timeout-relay-room-main-mismatch` /
+`story-mobile-double-messages-on-session-history-replay` symptom class.
+
+The unexplained 2-hour wake gap needs a capture that includes the 23:54
+trigger event (the mobile capture ended at 21:59:53, so whatever the
+operator did at 23:54 was not captured on the mobile side).
 
 Unbound from any release (not blocking 0.2.0, which has shipped). Route
 through `feature-reconnect-reproduction`.
