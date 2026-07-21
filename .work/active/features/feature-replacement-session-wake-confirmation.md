@@ -1,7 +1,7 @@
 ---
 id: feature-replacement-session-wake-confirmation
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, app, bug, session, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -455,3 +455,14 @@ acceptance or ownership.
   the event order, retain the reservation unit tests and add a narrow test-only
   seam to the existing extension harness; do not weaken the assertion or use a
   sleep-based timing test.
+
+## Implementation notes
+
+- Execution capability: inline host implementation; the four-file extension change was cohesive and its integration points were explicit in the completed design, so implementation fan-out would have added handoff cost without independent ownership value.
+- Review weight: standard (caller override); stop at `stage: review` for the orchestrator's fresh-context pass.
+- Files changed: `pi-extension/src/session/sdk_session_projection.ts`, `pi-extension/src/index.ts`, `pi-extension/src/session/sdk_session_projection.test.ts`, and `pi-extension/src/extension.test.ts`.
+- Tests added/removed: added one deferred replacement-session integration regression covering `session_new → user_message → message_end` before turn settlement, plus four focused reservation tests covering identity-specific cancellation, cancel-after-consume, equal-content FIFO, and session-reset cleanup; removed none.
+- Simplification: derived the deterministic delivery event id once before wake, passed it into confirmation, and removed the duplicate post-settlement derivation/mapping write; shared failed-attempt turn rollback inside the touched delivery function.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
+- Verification: the new integration regression failed before the production fix with `user_input.id === sync_1700001500000`, then passed after Units 1–2; `corepack pnpm typecheck` passed with zero errors, `corepack pnpm test` passed 884 tests with 3 skipped across 52 files, and `corepack pnpm build` completed successfully.
