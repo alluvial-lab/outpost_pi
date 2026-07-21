@@ -438,16 +438,31 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.lastTranscriptUserId = input.clientMessageId;
   }
 
+  /**
+   * Reserve app identity for the next matching SDK user message.
+   *
+   * The returned rollback removes only this still-pending reservation and is
+   * a no-op after consumption or session reset.
+   */
   rememberDeliveredUserEvent(
     text: string,
     images: readonly { data: string; mime: string }[] | undefined,
     clientMessageId: string,
     eventId: string,
-  ): void {
+  ): () => void {
     const key = userContentSignature(text, images);
+    const entry = { clientMessageId, eventId };
     const existing = this.deliveredUserEventIds.get(key) ?? [];
-    existing.push({ clientMessageId, eventId });
+    existing.push(entry);
     this.deliveredUserEventIds.set(key, existing);
+    return () => {
+      const pending = this.deliveredUserEventIds.get(key);
+      if (!pending) return;
+      const index = pending.indexOf(entry);
+      if (index < 0) return;
+      pending.splice(index, 1);
+      if (pending.length === 0) this.deliveredUserEventIds.delete(key);
+    };
   }
 
   /** Ingress idempotency guard (story-extension-user-message-ingress-
