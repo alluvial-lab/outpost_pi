@@ -469,6 +469,107 @@ describe("SdkSessionProjection user_message ingress idempotency guard", () => {
   });
 });
 
+describe("SdkSessionProjection delivered-user reservations", () => {
+  function liveUserInputs(outputs: ReturnType<typeof makeOutputs>) {
+    return (outputs.broadcast as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => call[0])
+      .filter((message) => message?.type === "user_input");
+  }
+
+  test("cancelling one equal-content reservation removes only that entry", () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
+    const cancelFirst = projection.rememberDeliveredUserEvent(
+      "same prompt",
+      undefined,
+      "cli_first",
+      "event-first",
+    );
+    projection.rememberDeliveredUserEvent("same prompt", undefined, "cli_second", "event-second");
+
+    cancelFirst();
+    projection.appendLegacySdkMessageToTranscript({
+      role: "user",
+      content: "same prompt",
+      timestamp: 6_000,
+    });
+
+    expect(liveUserInputs(outputs)).toEqual([
+      expect.objectContaining({ id: "cli_second", ts: 6_000 }),
+    ]);
+    expect(projection.getTranscriptEventsForTest()).toContainEqual(
+      expect.objectContaining({ eventId: "event-second", clientMessageId: "cli_second" }),
+    );
+  });
+
+  test("cancelling after consumption is a no-op for a later equal-content reservation", () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
+    const cancelConsumed = projection.rememberDeliveredUserEvent(
+      "repeated prompt",
+      undefined,
+      "cli_consumed",
+      "event-consumed",
+    );
+    projection.appendLegacySdkMessageToTranscript({
+      role: "user",
+      content: "repeated prompt",
+      timestamp: 7_000,
+    });
+    projection.rememberDeliveredUserEvent(
+      "repeated prompt",
+      undefined,
+      "cli_later",
+      "event-later",
+    );
+
+    cancelConsumed();
+    projection.appendLegacySdkMessageToTranscript({
+      role: "user",
+      content: "repeated prompt",
+      timestamp: 7_001,
+    });
+
+    expect(liveUserInputs(outputs).map((message) => message.id)).toEqual([
+      "cli_consumed",
+      "cli_later",
+    ]);
+  });
+
+  test("equal-content sibling reservations retain FIFO order", () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
+    projection.rememberDeliveredUserEvent("fifo prompt", undefined, "cli_fifo_1", "event-fifo-1");
+    projection.rememberDeliveredUserEvent("fifo prompt", undefined, "cli_fifo_2", "event-fifo-2");
+
+    projection.appendLegacySdkMessageToTranscript({ role: "user", content: "fifo prompt", timestamp: 8_000 });
+    projection.appendLegacySdkMessageToTranscript({ role: "user", content: "fifo prompt", timestamp: 8_001 });
+
+    expect(liveUserInputs(outputs).map((message) => message.id)).toEqual(["cli_fifo_1", "cli_fifo_2"]);
+    expect(projection.getTranscriptEventsForTest().map((event) => event.eventId)).toEqual([
+      "event-fifo-1",
+      "event-fifo-2",
+    ]);
+  });
+
+  test("session reset clears every unconsumed reservation", () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
+    projection.rememberDeliveredUserEvent("old prompt", undefined, "cli_old", "event-old");
+
+    projection.resetSessionForNew("new-session-request");
+    projection.appendLegacySdkMessageToTranscript({
+      role: "user",
+      content: "old prompt",
+      timestamp: 9_000,
+    });
+
+    expect(liveUserInputs(outputs)).toEqual([
+      expect.objectContaining({ id: "sync_9000", ts: 9_000 }),
+    ]);
+  });
+});
+
 // Regression for `story-mobile-assistant-message-duplicated-live-replay`
 // decision 1 (identity source (a)). The extension's `message_end`-driven
 // `appendLegacySdkMessageToTranscript` must broadcast a live `agent_message`
