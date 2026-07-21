@@ -1,7 +1,7 @@
 ---
 id: feature-replacement-session-wake-confirmation
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, app, bug, session, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -466,3 +466,13 @@ acceptance or ownership.
 - Discrepancies from design: none.
 - Adjacent issues parked: none.
 - Verification: the new integration regression failed before the production fix with `user_input.id === sync_1700001500000`, then passed after Units 1–2; `corepack pnpm typecheck` passed with zero errors, `corepack pnpm test` passed 884 tests with 3 skipped across 52 files, and `corepack pnpm build` completed successfully.
+
+## Review (2026-07-21)
+
+**Verdict**: Approve (standard weight, fresh-context independent pass)
+
+**Blockers**: none
+**Important**: none
+**Nits**: none
+
+**Notes**: Fresh-context reviewer independently confirmed the reservation lifecycle (identity-specific cancellation, cancel-after-consume no-op, session-reset tolerance, both failure paths cancel, success does not), confirmed `_confirmUserDelivery` no longer double-records, confirmed B1 preserved (`wake_outcome`/`msg_delivered` remain post-settlement), and independently re-ran the fail-before/pass-after test-integrity check by reverting the production files. Build/test green: 884 passed, 3 skipped. Scope confirmed extension-only (no app/relay/wire changes). The only unverified item is the live phone `/new` smoke test — that requires rebuilding `dist/` + a full Pi restart + a physical phone repro, which is the deploy/verify step, not the code-review step.
