@@ -2060,6 +2060,105 @@ describe("multi-channel broadcast (W2D)", () => {
     });
   });
 
+  test("post-session_new message_end preserves the cli id before the replacement turn settles", async () => {
+    const peer = "owner-replacement-turn-order";
+    await _pairForTest(peer);
+    const sessionId = currentSessionIdFromSends();
+    const onMessageEnd = captureEventHandler("message_end");
+
+    let resolveReplacementTurn!: () => void;
+    const replacementTurn = new Promise<void>((resolve) => {
+      resolveReplacementTurn = resolve;
+    });
+    const freshSendUserMessage = vi.fn(() => replacementTurn);
+    const ctx = {
+      ...makeMockCtx("/tmp/outpost-pi-session-new-turn-order"),
+      newSession: vi.fn(async (opts?: { withSession?: (freshCtx: unknown) => Promise<void> }) => {
+        await opts?.withSession?.({
+          ...makeMockCtx("/tmp/outpost-pi-session-new-turn-order"),
+          newSession: vi.fn(),
+          sessionManager: { getSessionId: () => "fresh-sdk-session-turn-order" },
+          sendUserMessage: freshSendUserMessage,
+          sendMessage: vi.fn(async () => undefined),
+        });
+        return { cancelled: false };
+      }),
+    };
+    const status = captureHandler("outpost-pi status");
+    await status("", ctx);
+
+    emitClientMessage(peer, {
+      type: "session_new",
+      id: "new-turn-order",
+      session_id: sessionId,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    const freshSessionId = _getRemoteSessionIdForTest()!;
+    expect(freshSessionId).toBe("fresh-sdk-session-turn-order");
+    const debugLog = new FakeDeliveryDebugLog();
+    const previousDebugLog = _setDeliveryDebugLogForTest(debugLog);
+    const sendsBefore = relayRef.current!.send.mock.calls.length;
+    try {
+      emitClientMessage(peer, {
+        type: "user_message",
+        id: "cli_replacement_turn_order",
+        session_id: freshSessionId,
+        text: "hello before replacement turn settlement",
+      });
+      await vi.waitFor(() => expect(freshSendUserMessage).toHaveBeenCalledOnce());
+
+      await Promise.resolve(onMessageEnd({
+        type: "message_end",
+        message: {
+          role: "user",
+          content: "hello before replacement turn settlement",
+          timestamp: 1_700_001_500_000,
+        },
+      }));
+
+      const beforeSettlement = sentToPeerSince(sendsBefore, peer).map((sent) => sent.inner);
+      expect(beforeSettlement).toContainEqual(expect.objectContaining({
+        type: "user_input",
+        id: "cli_replacement_turn_order",
+        text: "hello before replacement turn settlement",
+        ts: 1_700_001_500_000,
+      }));
+      expect(beforeSettlement.some((message) =>
+        message.type === "user_input" && String(message["id"]).startsWith("sync_")
+      )).toBe(false);
+      expect(beforeSettlement.some((message) => message.type === "user_message")).toBe(false);
+      expect(debugLog.byTag("wake_outcome")).toHaveLength(0);
+      expect(debugLog.byTag("msg_delivered")).toHaveLength(0);
+
+      resolveReplacementTurn();
+      await vi.waitFor(() => expect(debugLog.byTag("msg_delivered")).toHaveLength(1));
+
+      const afterSettlement = sentToPeerSince(sendsBefore, peer).map((sent) => sent.inner);
+      expect(afterSettlement).toContainEqual(expect.objectContaining({
+        type: "user_message",
+        id: "cli_replacement_turn_order",
+        text: "hello before replacement turn settlement",
+      }));
+      expect(debugLog.byTag("wake_outcome")).toContainEqual(expect.objectContaining({
+        tag: "wake_outcome",
+        id: "cli_replacement_turn_order",
+        ok: true,
+      }));
+      expect(debugLog.byTag("msg_delivered")).toContainEqual(expect.objectContaining({
+        tag: "msg_delivered",
+        id: "cli_replacement_turn_order",
+      }));
+      expect(afterSettlement.some((message) =>
+        message.type === "user_input" && String(message["id"]).startsWith("sync_")
+      )).toBe(false);
+    } finally {
+      resolveReplacementTurn();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      _setDeliveryDebugLogForTest(previousDebugLog);
+    }
+  });
+
   test("daemon session_new ACKs and resets before exit 42; successor keeps room identity and publishes a fresh session", async () => {
     await _pairForTest("owner-daemon-session-new");
     const relay = relayRef.current!;
