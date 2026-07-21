@@ -68,9 +68,21 @@ Session: `67a5468b` (new session after `/new`), room `SF_DCbXsmreE`
 No `outbound_queue_dropped`, no `bad_envelope`, no errors. The relay forwarded
 cleanly — the failure is on the app↔extension delivery path, not the relay.
 
-## Root cause analysis (two defects)
+## Root cause analysis
 
-### Defect 1: Echo misattribution → false `send_timeout` (app side)
+### The 2-hour gap is operator idle time, not a wake hang
+
+The mobile ring log ends at 21:59:53 (the `msgFailed` event). The extension
+delivery log shows **nothing** for room `SF_DCbXsmreE` between 21:59:53 and
+23:54:16 — no session lifecycle, no message_api changes, no events. The
+operator set the session aside for ~2 hours and picked it back up with a
+`/new` from the phone at ~23:54, which re-armed the session and flushed the
+queued message through (`wake_outcome` + `msg_delivered` at 23:54:16).
+
+So the 2-hour gap is NOT a wake-path hang. The real defect is entirely
+mobile-side.
+
+### The defect: echo misattribution → false `send_timeout` (app side)
 
 The mobile app sent `cli_019f818a...` at 21:59:33.542. 190ms later it
 received a `msgEcho` — but with id `sync_1784584771833`, NOT the `cli_...`
@@ -78,62 +90,39 @@ id it was waiting for. The `replayDedup` event at 21:59:33.762 dropped
 something (`dropped:true`), suggesting the echo was misattributed to a
 replay/session-sync frame rather than the live send. Because the app never
 saw an echo for `cli_019f818a...`, the 20s send-timeout fired at 21:59:53
-and declared the message failed — even though the extension had already
+and declared the message **failed** — even though the extension had already
 received it (21:59:31, 2s BEFORE the send) and the message was in-flight.
+
+The message then sat queued on the extension side until the operator's
+later `/new` flushed it ~2h later. The mobile showed the message as
+failed/stuck the entire time.
 
 This matches the existing `story-mobile-send-timeout-relay-room-main-mismatch`
 symptom class: the app declares `send_timeout` when the real issue is an
 echo/replay attribution problem, not a relay delivery failure.
 
-### Defect 2: ~2h wake delay after session replacement (extension side)
-
-The extension received the message (`msg_received` at 21:59:31) but the
-`wake_outcome`/`msg_delivered` did not fire until 23:54:16 — ~1h55m later.
-The `messageApiArmed:true` at wake time confirms the API was armed when the
-wake finally fired, so this is NOT an unarmed-API problem. The wake itself
-was delayed/blocked. The message sat in the delivery path without waking
-the agent session.
-
-The `/new` session replacement at 21:59:02-03 armed the new session's
-messageApi (via `factory` then `withSession`), but the wake for the
-in-flight message did not complete until ~2h later. This suggests the
-session-replacement window has a wake-path gap: a message received during
-or just after the `/new` transition can be accepted by the message-receive
-path but not routed to the new session's wake until something else
-unblocks it (the 23:54 wake may have been triggered by a later interaction).
-
 ## Attribution
 
-- **App side (Defect 1):** the echo misattribution + false `send_timeout`
-  is the app's send-ack path conflating a replay echo with the live send
-  echo. Belongs to `story-mobile-send-timeout-relay-room-main-mismatch` /
-  `story-mobile-double-messages-on-session-history-replay` symptom class.
-- **Extension side (Defect 2):** the ~2h wake delay is a delivery-path
-  gap in the session-replacement window — a `wakeAgent` that doesn't
-  complete promptly after `/new`. This is the more severe defect (the
-  "stuck" symptom).
+- **App side:** the echo misattribution + false `send_timeout` is the app's
+  send-ack path conflating a replay/session-sync echo (`sync_` id) with the
+  live send echo (`cli_` id). The app declares the message failed while the
+  extension has already received it.
+- **Extension side:** no defect — the message was received and queued
+  correctly; the ~2h delay before delivery was operator idle time followed
+  by a `/new` that flushed it.
+- **Relay side:** no defect — forwarded cleanly, no drops.
 
 ## Disposition
 
 Reproduced against post-0.2.0 code. The 0.2.0 lifecycle/buffer work did NOT
-fix this — the session-replacement wake gap and the echo misattribution
-persist. Both defects need separate fixes:
+fix the echo-misattribution defect. It is the same symptom class as
+`story-mobile-send-timeout-relay-room-main-mismatch` and
+`story-mobile-double-messages-on-session-history-replay`.
 
-1. App: the send-timeout path must not fire when the extension has confirmed
-   receipt (`msg_received`); the echo misattribution to a `sync_` id must
-   not satisfy the `cli_` send-ack wait.
-2. Extension: the `wakeAgent` path must complete promptly for messages
-   received during/right after a `/new` session replacement, not block
-   for hours.
+The fix is app-side: the send-timeout path must not fire when the extension
+has confirmed receipt (`msg_received`), and the echo attribution must not
+satisfy a `cli_` send-ack wait with a `sync_` id from a replay/session-sync
+frame.
 
-## Next steps
-
-- Attribute Defect 1 to the existing
-  `story-mobile-send-timeout-relay-room-main-mismatch` (update with this
-  evidence) and/or
-  `story-mobile-double-messages-on-session-history-replay`.
-- Defect 2 is new — the ~2h wake delay is a distinct extension-side
-  delivery-path defect. Either fix it under this story or split a focused
-  extension-side story for the wake gap.
-- Both are unbound from any release (not blocking 0.2.0, which has shipped).
-  Route through `feature-reconnect-reproduction`.
+Unbound from any release (not blocking 0.2.0, which has shipped). Route
+through `feature-reconnect-reproduction`.
