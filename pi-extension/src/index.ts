@@ -735,8 +735,8 @@ function _rememberDeliveredUserEvent(
   images: readonly { data: string; mime: string }[] | undefined,
   clientMessageId: string,
   eventId: string,
-): void {
-  _sdkSessionProjection.rememberDeliveredUserEvent(text, images, clientMessageId, eventId);
+): () => void {
+  return _sdkSessionProjection.rememberDeliveredUserEvent(text, images, clientMessageId, eventId);
 }
 
 function _appendUserConfirmedTranscriptEvent(input: {
@@ -2299,11 +2299,31 @@ async function _attemptUserDeliveryOnce(prepared: PreparedUserDelivery, attemptS
     source: prepared.source,
     shouldSteer: prepared.shouldSteer,
   });
-  const wake = await _wakeAgent(
-    prepared.content,
-    prepared.label,
-    prepared.shouldSteer ? "steer" : undefined,
+  const eventId = deterministicTranscriptEventId(attemptSessionId, "user_confirmed", prepared.msg.id);
+  const cancelUserEventReservation = _rememberDeliveredUserEvent(
+    prepared.msg.text,
+    prepared.msg.images,
+    prepared.msg.id,
+    eventId,
   );
+  const rollbackAttempt = () => {
+    turnSeed.rollback();
+    if (turnSeed.seeded) {
+      _applyTurnAndPublish({ type: "delivery_error", turnId: prepared.msg.id });
+    }
+  };
+  let wake: WakeAgentResult;
+  try {
+    wake = await _wakeAgent(
+      prepared.content,
+      prepared.label,
+      prepared.shouldSteer ? "steer" : undefined,
+    );
+  } catch (error) {
+    cancelUserEventReservation();
+    rollbackAttempt();
+    throw error;
+  }
   // Project the wake failure to a fixed category for the debug log only. The
   // raw `wake.detail` (err.message) can carry prompt/token text from a
   // provider error; persisting it to delivery.log would violate the
@@ -2325,13 +2345,11 @@ async function _attemptUserDeliveryOnce(prepared: PreparedUserDelivery, attemptS
     roomId: _myRoomId ?? undefined,
   });
   if (!wake.ok) {
-    turnSeed.rollback();
-    if (turnSeed.seeded) {
-      _applyTurnAndPublish({ type: "delivery_error", turnId: prepared.msg.id });
-    }
+    cancelUserEventReservation();
+    rollbackAttempt();
     return wake;
   }
-  _confirmUserDelivery(prepared.msg, prepared.shouldSteer, attemptSessionId);
+  _confirmUserDelivery(prepared.msg, prepared.shouldSteer, attemptSessionId, eventId);
   _deliveryDebugLog.log({
     tag: "msg_delivered",
     id: prepared.msg.id,
@@ -2341,9 +2359,13 @@ async function _attemptUserDeliveryOnce(prepared: PreparedUserDelivery, attemptS
   return wake;
 }
 
-function _confirmUserDelivery(msg: UserClientMessage, shouldSteer: boolean, attemptSessionId: string): void {
+function _confirmUserDelivery(
+  msg: UserClientMessage,
+  shouldSteer: boolean,
+  attemptSessionId: string,
+  eventId: string,
+): void {
   const sessionId = attemptSessionId;
-  const eventId = deterministicTranscriptEventId(sessionId, "user_confirmed", msg.id);
   _appendUserConfirmedTranscriptEvent({
     sessionId,
     ts: Date.now(),
@@ -2353,7 +2375,6 @@ function _confirmUserDelivery(msg: UserClientMessage, shouldSteer: boolean, atte
     ...(shouldSteer ? { streamingBehavior: "steer" as const } : {}),
     eventId,
   });
-  _rememberDeliveredUserEvent(msg.text, msg.images, msg.id, eventId);
   // Record the clientMessageId for the ingress idempotency guard
   // (story-extension-user-message-ingress-idempotency) so a later duplicate
   // frame is suppressed before _wakeAgent.
