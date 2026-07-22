@@ -476,3 +476,30 @@ acceptance or ownership.
 **Nits**: none
 
 **Notes**: Fresh-context reviewer independently confirmed the reservation lifecycle (identity-specific cancellation, cancel-after-consume no-op, session-reset tolerance, both failure paths cancel, success does not), confirmed `_confirmUserDelivery` no longer double-records, confirmed B1 preserved (`wake_outcome`/`msg_delivered` remain post-settlement), and independently re-ran the fail-before/pass-after test-integrity check by reverting the production files. Build/test green: 884 passed, 3 skipped. Scope confirmed extension-only (no app/relay/wire changes). The only unverified item is the live phone `/new` smoke test — that requires rebuilding `dist/` + a full Pi restart + a physical phone repro, which is the deploy/verify step, not the code-review step.
+
+## Live verification (2026-07-22)
+
+**Verified live on the operator's phone** after `dist/` rebuild + full Pi process restart.
+
+Capture: `debug/591-11f1-9656-5799420aa9fe.bin`. Post-`/new` message
+`cli_019f8864-1410-7435-bd02-4bb1106ebf5e` (room `DnDBxuh7KVyt`, new session
+`e71cf5af`):
+
+- First echo carried the **correct `cli_` id** at **+71ms** (vs. the pre-fix
+  `sync_<ts>` wrong-id echo at +0.3s). **Zero `sync_` echoes** in the capture.
+- **No `msgFailed send_timeout`** (pre-fix: false timeout at 20s).
+- **No stuck message, no duplicate after the agent turn.**
+- `wake_outcome`/`msg_delivered` landed at +10s (turn settlement) — B1 as
+  designed; not user-visible-harmful.
+
+Root-cause mechanism confirmed working in production: the `cli_`→message
+mapping is now reserved before the awaited wake, so `message_end` finds it and
+broadcasts the real `cli_` id immediately instead of the `sync_<ts>` fallback.
+
+**Remaining (separate symptom, not this fix):** the operator still observes a
+brief red "timeout" on pressing "New session" itself. This is NOT the
+post-`/new` message bug fixed here — no `msgFailed` is logged for the `/new`
+command, and the replacement converges in ~1s. It is an app-side UI affordance
+on the `/new` command frame, a different symptom class. Parked story
+`story-mobile-send-timeout-relay-room-main-mismatch.md` may be related; handle
+separately.
