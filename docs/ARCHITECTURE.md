@@ -21,7 +21,7 @@ detail see `PROTOCOL.md`; for locked decisions see `docs/DECISIONS.md`.
    │  relay_client · mesh_node     │  pair +  │  ConnectionManager · sync     │
    │  UDS broker · pairing · rooms │  WS chat │  Hive cache · mesh_client     │
    └──┬──────────────────────┬─────┘         └────────────────────────────────┘
-      │ UDS envelope          │ Pi custom-event RPC (NUL-prefix control)
+      │ UDS envelope          │ Pi custom-event RPC (structured control)
       │ {from,to,id,re,body}  │
       ▼                       ▼
    other Pi peers        cockpit (Flutter desktop)
@@ -114,7 +114,7 @@ Flutter desktop. `flutter_modular` modules/routes/binds, `shadcn_flutter`
 UI, Hive persistence.
 
 - `app/cockpit/data/` — `rpc/` (`pi_rpc_process` + factory + registry — the
-  NUL-prefix control RPC client), `filesystem/` (file reader/searcher/mutator,
+  structured-control RPC client), `filesystem/` (file reader/searcher/mutator,
   folder lister, git status, worktree manager, session history, app launcher),
   `terminal/` (PTY gateway), `adapters/` (RPC data/event mappers),
   `repositories/` (Hive project/layout/dismissed-update stores), `update/`,
@@ -200,10 +200,14 @@ default.
 
 ### Cockpit↔pi control RPC
 
-A separate transport: Pi custom events carrying a NUL-prefixed string
-(`\x00outpost-pi-ctrl:<method>:<args...>`). The control methods and structured
-frames are part of the generated protocol contract; the NUL prefix remains the
-transport discriminator.
+A separate transport: Pi custom events carrying structured
+`outpost_pi_control` JSON envelopes — the canonical control path emitted by
+Cockpit. The control methods and structured frames are part of the generated
+protocol contract. The NUL-prefixed string form
+(`\x00outpost-pi-ctrl:<method>:<args...>`) remains only as an extension-side
+compatibility decoder (`CTRL_PREFIX`, `pi-extension/src/index.ts`); both forms
+map to one dispatch path and are swallowed before reaching the LLM or
+transcript.
 
 ## Session and room model
 
