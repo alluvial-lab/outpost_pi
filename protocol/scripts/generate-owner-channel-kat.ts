@@ -1,4 +1,4 @@
-import { hkdfSync } from "node:crypto";
+import { createHash, createHmac, hkdfSync } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -79,6 +79,15 @@ const piDhSig = ed25519.sign(piTranscript, piEdSk);
 if (!ed25519.verify(appDhSig, appTranscript, ownerEdPk)) throw new Error("app signature verification failed");
 if (!ed25519.verify(piDhSig, piTranscript, piEdPk)) throw new Error("Pi signature verification failed");
 
+// Pair-token confidentiality: the raw token never crosses the wire. The app
+// sends a public locator (token_id) plus an HMAC keyed by the raw token that
+// binds the relay-visible attacker-choosable fields (Owner pk, app DH share,
+// Pi pk) — a relay that observes the exchange cannot sign a pairing under its
+// own Owner key without the token.
+const tokenIdBytes = createHash("sha256").update(tokenBytes).digest().subarray(0, 16);
+const pairMacMsg = concat(utf8(`${SUITE}\npair\n`), tokenIdBytes, ownerEdPk, appDhPk, piEdPk);
+const pairMac = createHmac("sha256", tokenBytes).update(pairMacMsg).digest();
+
 const frames = [
   {
     dir: "app->pi",
@@ -121,6 +130,9 @@ const kat = {
   app_dh_sig: base64(appDhSig),
   pi_transcript_hex: hex(piTranscript),
   pi_dh_sig: base64(piDhSig),
+  token_id: base64(tokenIdBytes),
+  pair_mac_msg_hex: hex(pairMacMsg),
+  pair_mac: base64(pairMac),
   frames: frames.map(({ dir, seq, nonce, plaintextJson, key }) => ({
     dir,
     seq,

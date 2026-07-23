@@ -280,7 +280,7 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
   const usage = { input_tokens: 1, output_tokens: 2 };
   const model = { id: "model-1", name: "Model One", provider: "provider", reasoning: true, context_window: 200000, vision: true };
   const clientFixtures: unknown[] = [
-    { type: "pair_request", id: "c1", token: "token", device_name: "phone" },
+    { type: "pair_request", id: "c1", token_id: "dG9rZW4taWQtMTY", pair_mac: "cGFpci1tYWMtMzItYnl0ZXM", device_name: "phone" },
     { type: "user_message", id: "c2", text: "hello", images: [image], streaming_behavior: "steer" },
     { type: "queued_message_set", id: "c3", text: "next" },
     { type: "queued_message_clear", id: "c4" },

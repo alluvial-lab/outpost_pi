@@ -1,4 +1,4 @@
-{"type":"pair_request","id":"pair-1","token":"token-abc","device_name":"Pixel","dh_pk":"6Gdfrw1rULZLhnfN+P1ZBEnLPEz6R66JJzHIPLF7Oj0=","dh_sig":"0BIbDEwSDEk+lfF3X8sr5GnySBUCA3eQNvBX9DeUb0oQvum+XY+mpbVq7nP7WAm/FFUGLFpvdK8WmTdgXf97AA=="}
+{"type":"pair_request","id":"pair-1","token_id":"wQy/h21PcMN+v8oOuyDRaQ==","pair_mac":"6zotxY6ADhklWWrsoOWFqngCDhAn9rnHectkpGxVyJs=","device_name":"Pixel","dh_pk":"6Gdfrw1rULZLhnfN+P1ZBEnLPEz6R66JJzHIPLF7Oj0=","dh_sig":"0BIbDEwSDEk+lfF3X8sr5GnySBUCA3eQNvBX9DeUb0oQvum+XY+mpbVq7nP7WAm/FFUGLFpvdK8WmTdgXf97AA=="}
 {"type":"user_message","id":"msg-1","text":"hello"}
 {"type":"user_message","id":"msg-2","text":"look","images":[{"data":"QUJD","mime":"image/jpeg"}],"streaming_behavior":"steer"}
 {"type":"queued_message_set","id":"queued-1","text":"next"}
