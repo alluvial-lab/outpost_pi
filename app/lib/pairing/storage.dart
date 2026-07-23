@@ -293,8 +293,8 @@ typedef PeerMutationHook = void Function(PeerMutationKind kind);
 
 /// Pairing storage with change notification.
 ///
-/// Mutations to the peer set (`savePeer`, `deletePeer`) and to the
-/// per-peer rooms cache (`saveRooms`, `deleteRooms`) call
+/// Mutations to the peer set (`savePairedPeer`, `savePeer`, `deletePeer`) and
+/// to the per-peer rooms cache (`saveRooms`, `deleteRooms`) call
 /// `notifyListeners()` so any UI watching the storage (HomeViewModel,
 /// SettingsViewModel) can refresh without manual plumbing between
 /// screens. Read methods do not notify.
@@ -330,19 +330,50 @@ class PairingStorage extends ChangeNotifier {
   String _peerKey(String remoteEpk) => '$_kPeersService:$remoteEpk';
   String _channelKey(String remoteEpk) => '$_kChannelsService:$remoteEpk';
 
-  /// Persist a paired peer, notify listeners, then trigger mesh publication.
+  /// Replace a peer through the authenticated pairing flow.
+  ///
+  /// This is the only normal write allowed to create a peer or replace its
+  /// owner-channel keys. Metadata and mesh writers must use the narrower APIs
+  /// below so delayed full-record writes cannot undo a completed re-pair.
+  Future<void> savePairedPeer(PeerRecord record) =>
+      _serializePeerMutation(() async {
+        await _writePeer(record, allowCreate: true, replaceChannelKeys: true);
+        _onPeersMutated?.call(PeerMutationKind.upsert);
+      });
+
+  /// Merge peer metadata without creating a peer or replacing channel keys.
+  ///
+  /// Same-key channel state is max-merged so reconnect persistence remains
+  /// monotonic. A delayed write for an absent peer is ignored rather than
+  /// recreating a pairing after revoke or identity reset.
   Future<void> savePeer(PeerRecord record) => _serializePeerMutation(() async {
-    await _writePeer(record);
-    _onPeersMutated?.call(PeerMutationKind.upsert);
+    final written = await _writePeer(record);
+    if (written) _onPeersMutated?.call(PeerMutationKind.upsert);
   });
 
-  /// Same as [savePeer] but skips the mutation hook. Used by the
-  /// MeshSyncService when applying a verified mesh blob to the local
-  /// cache — without this we'd round-trip back to the relay
-  /// (pull→apply→savePeer→hook→publish) and a race could publish an
-  /// empty members list (see plan/24-fix-app-publish-race).
+  /// Same as [savePeer] but skips the mutation hook.
   Future<void> savePeerSilent(PeerRecord record) =>
       _serializePeerMutation(() => _writePeer(record));
+
+  /// Apply Owner-signed mesh metadata without importing channel secrets.
+  ///
+  /// Mesh membership may hydrate a metadata-only peer on another device, but
+  /// channel keys remain device-local and can only be established by pairing.
+  Future<void> saveMeshPeerMetadata(PeerRecord record) =>
+      _serializePeerMutation(
+        () => _writePeer(record, allowCreate: true, metadataOnly: true),
+      );
+
+  /// Restore a locally captured pre-rebase snapshot during mesh conflict repair.
+  ///
+  /// The mesh service mutation-revision fence proves this snapshot still owns
+  /// the local mutation. It may restore an absent pairing deleted temporarily by
+  /// the rebase, but it never replaces keys already present in storage.
+  Future<void> restorePeerSnapshotSilent(PeerRecord record) =>
+      _serializePeerMutation(
+        () =>
+            _writePeer(record, allowCreate: true, restoreChannelIfAbsent: true),
+      );
 
   /// Load one peer record by its durable remote EPK, if it is still stored.
   Future<PeerRecord?> loadPeer(String remoteEpk) async {
@@ -363,33 +394,64 @@ class PairingStorage extends ChangeNotifier {
   Future<void> deletePeerSilent(String remoteEpk) =>
       _serializePeerMutation(() => _erasePeer(remoteEpk));
 
-  Future<void> _writePeer(PeerRecord record) async {
+  Future<bool> _writePeer(
+    PeerRecord record, {
+    bool allowCreate = false,
+    bool replaceChannelKeys = false,
+    bool metadataOnly = false,
+    bool restoreChannelIfAbsent = false,
+  }) async {
     final peerKey = _peerKey(record.remoteEpk);
     final channelKey = _channelKey(record.remoteEpk);
+    final peerExists = await _store.read(key: peerKey) != null;
+    if (!peerExists && !allowCreate) {
+      debugPrint(
+        'PairingStorage: ignored metadata write for absent peer '
+        '${_peerTail(record.remoteEpk)}',
+      );
+      return false;
+    }
+
     try {
-      final channel = record.channel;
-      if (channel != null) {
-        final currentRaw = await _store.read(key: channelKey);
-        final current = currentRaw == null
-            ? null
-            : OwnerChannelState.fromJson(
-                jsonDecode(currentRaw) as Map<String, dynamic>,
-              );
-        final safe =
-            current != null &&
-                current.sendKey == channel.sendKey &&
-                current.receiveKey == channel.receiveKey
-            ? channel.copyWith(
-                sendSequence: current.sendSequence > channel.sendSequence
-                    ? current.sendSequence
-                    : channel.sendSequence,
-                receiveSequence:
-                    current.receiveSequence > channel.receiveSequence
-                    ? current.receiveSequence
-                    : channel.receiveSequence,
-              )
-            : channel;
-        await _store.write(key: channelKey, value: jsonEncode(safe.toJson()));
+      final currentRaw = await _store.read(key: channelKey);
+      final current = currentRaw == null
+          ? null
+          : OwnerChannelState.fromJson(
+              jsonDecode(currentRaw) as Map<String, dynamic>,
+            );
+      final supplied = record.channel;
+      OwnerChannelState? channelToWrite;
+
+      if (replaceChannelKeys) {
+        channelToWrite = supplied;
+      } else if (!metadataOnly &&
+          current != null &&
+          supplied != null &&
+          current.sendKey == supplied.sendKey &&
+          current.receiveKey == supplied.receiveKey) {
+        channelToWrite = supplied.copyWith(
+          sendSequence: current.sendSequence > supplied.sendSequence
+              ? current.sendSequence
+              : supplied.sendSequence,
+          receiveSequence: current.receiveSequence > supplied.receiveSequence
+              ? current.receiveSequence
+              : supplied.receiveSequence,
+        );
+      } else if (!peerExists && restoreChannelIfAbsent) {
+        channelToWrite = supplied;
+      }
+
+      if ((!peerExists && metadataOnly) ||
+          (replaceChannelKeys && channelToWrite == null)) {
+        // A crash may leave an orphan channel entry. Owner-signed mesh metadata
+        // is not authority to attach it to a newly hydrated peer. A privileged
+        // channel-less pairing write likewise clears superseded material.
+        await _store.delete(key: channelKey);
+      } else if (channelToWrite != null) {
+        await _store.write(
+          key: channelKey,
+          value: jsonEncode(channelToWrite.toJson()),
+        );
       }
       await _store.write(key: peerKey, value: jsonEncode(record.toJson()));
     } on Object {
@@ -399,7 +461,12 @@ class PairingStorage extends ChangeNotifier {
       rethrow;
     }
     notifyListeners();
+    return true;
   }
+
+  String _peerTail(String remoteEpk) => remoteEpk.length <= 8
+      ? remoteEpk
+      : remoteEpk.substring(remoteEpk.length - 8);
 
   /// Persist channel counters without publishing a mesh mutation or UI churn.
   Future<void> saveChannelState(
