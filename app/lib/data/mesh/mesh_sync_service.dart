@@ -214,6 +214,10 @@ class MeshSyncService extends ChangeNotifier {
         pairedAt: m.pairedAt,
         nickname: m.nickname,
         roomId: prev?.roomId,
+        harness: prev?.harness,
+        // Owner-channel keys are device-local secret state. Mesh membership
+        // updates may change labels/relay metadata but must never erase them.
+        channel: prev?.channel,
       );
       if (prev == null || !_peerEqualsForMesh(prev, next)) {
         await _storage.savePeerSilent(next);
