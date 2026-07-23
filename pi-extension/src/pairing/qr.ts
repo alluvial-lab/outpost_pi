@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import qrTerminal from "qrcode-terminal";
+import { pairTokenId } from "../transport/secure_channel.js";
 
 /** Default ephemeral-token lifetime (also the QR rotation period). */
 export const TOKEN_TTL_MS = 60_000;
@@ -37,6 +38,13 @@ export class QRSession {
     const expiresAt = Date.now() + ttlMs;
     this.active = { token, expiresAt, consumed: false };
     return { token, expiresAt };
+  }
+
+  /** Resolve a live, unconsumed token from its public SHA-256 locator. */
+  findTokenById(tokenId: string): string | null {
+    if (!this.active || this.active.consumed || Date.now() > this.active.expiresAt) return null;
+    const activeId = Buffer.from(pairTokenId(this.active.token)).toString("base64");
+    return activeId === tokenId ? this.active.token : null;
   }
 
   /** Validates and atomically consumes a token. */

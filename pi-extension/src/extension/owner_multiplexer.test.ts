@@ -13,8 +13,10 @@ import { decodePeerChannelKeys } from "../pairing/storage.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
 import {
   appTranscript,
+  computePairMac,
   deriveDirectionalKeys,
   generateX25519Keypair,
+  pairTokenId,
   piTranscript,
   x25519Shared,
 } from "../transport/secure_channel.js";
@@ -62,15 +64,18 @@ function agentChunk(delta: string): ServerMessage {
 function signedPairRequest(identityPk: Uint8Array, token = "pair-token") {
   const owner = generateEd25519Keypair();
   const appDh = generateX25519Keypair();
+  const tokenId = pairTokenId(token);
   const signature = ed25519Sign(owner.secretKey, appTranscript(token, appDh.pk, identityPk));
   return {
     owner,
     appDh,
+    token,
     peerId: Buffer.from(owner.publicKey).toString("base64"),
     message: {
       type: "pair_request",
       id: "pair-1",
-      token,
+      token_id: Buffer.from(tokenId).toString("base64"),
+      pair_mac: Buffer.from(computePairMac(token, tokenId, owner.publicKey, appDh.pk, identityPk)).toString("base64"),
       device_name: "Phone",
       dh_pk: Buffer.from(appDh.pk).toString("base64"),
       dh_sig: Buffer.from(signature).toString("base64"),
@@ -89,6 +94,9 @@ function makeMultiplexer() {
     recv_seq?: string;
   }>();
   const identity = generateEd25519Keypair();
+  const findPairTokenById = vi.fn<OwnerMultiplexerDeps["findPairTokenById"]>((tokenId) =>
+    tokenId === Buffer.from(pairTokenId("pair-token")).toString("base64") ? "pair-token" : null,
+  );
   const consumePairToken = vi.fn<OwnerMultiplexerDeps["consumePairToken"]>(() => "unknown");
   const auditDrop = vi.fn<OwnerMultiplexerDeps["auditDrop"]>();
   const refreshFooter = vi.fn();
@@ -105,6 +113,7 @@ function makeMultiplexer() {
     refreshFooter,
     listPeers: async () => [...knownPeers.values()],
     findKnownPeer: async (peerId) => knownPeers.get(peerId) ?? null,
+    findPairTokenById,
     consumePairToken,
     addPeer: async (record) => { knownPeers.set(record.remote_epk, record); },
     currentIdentity: () => identity,
@@ -136,6 +145,7 @@ function makeMultiplexer() {
     ownerPaired,
     fanoutPresenceChanged,
     identity,
+    findPairTokenById,
     consumePairToken,
     auditDrop,
     deps,
@@ -480,13 +490,138 @@ describe("OwnerMultiplexer", () => {
     expect(routed).toEqual([{ message, sender: channels[0] }]);
   });
 
-  test("missing or bad DH signatures fail before consuming the pair token or persisting", async () => {
-    for (const mutation of ["missing", "bad"] as const) {
+  test("missing token locator or proof fails closed without consuming or persisting", async () => {
+    for (const field of ["token_id", "pair_mac"] as const) {
       const { mux, identity, consumePairToken, knownPeers } = makeMultiplexer();
       const pair = signedPairRequest(identity.publicKey);
-      const message = mutation === "missing"
+      const sendToPeer = vi.fn();
+      const message = { ...pair.message, [field]: undefined };
+
+      await mux.handleOuterFrame({
+        ingress: ownerIngress(pair.peerId, encodeClientMessage(message as ClientMessage)),
+        roomId: "room-1",
+        turnActive: () => false,
+        isCurrent: () => true,
+        onMessage: vi.fn(),
+        onDisconnect: vi.fn(),
+        sendToPeer,
+      });
+
+      expect(sendToPeer).toHaveBeenCalledWith(pair.peerId, expect.objectContaining({
+        type: "pair_error",
+        code: "token_unknown",
+      }));
+      expect(consumePairToken).not.toHaveBeenCalled();
+      expect(knownPeers.size).toBe(0);
+    }
+  });
+
+  test("unknown token ids and bad pair MACs are indistinguishable and do not burn the token", async () => {
+    for (const mutation of ["unknown_id", "bad_mac"] as const) {
+      const { mux, identity, consumePairToken, knownPeers } = makeMultiplexer();
+      const pair = signedPairRequest(identity.publicKey);
+      const sendToPeer = vi.fn();
+      const message = mutation === "unknown_id"
+        ? { ...pair.message, token_id: Buffer.alloc(16, 17).toString("base64") }
+        : { ...pair.message, pair_mac: Buffer.alloc(32, 23).toString("base64") };
+
+      await mux.handleOuterFrame({
+        ingress: ownerIngress(pair.peerId, encodeClientMessage(message)),
+        roomId: "room-1",
+        turnActive: () => false,
+        isCurrent: () => true,
+        onMessage: vi.fn(),
+        onDisconnect: vi.fn(),
+        sendToPeer,
+      });
+
+      expect(sendToPeer).toHaveBeenCalledWith(pair.peerId, expect.objectContaining({
+        type: "pair_error",
+        code: "token_unknown",
+      }));
+      expect(consumePairToken).not.toHaveBeenCalled();
+      expect(knownPeers.size).toBe(0);
+    }
+  });
+
+  test("pair MAC is checked before the DH signature and token consumption", async () => {
+    const { mux, identity, consumePairToken } = makeMultiplexer();
+    const pair = signedPairRequest(identity.publicKey);
+    const sendToPeer = vi.fn();
+    const message = {
+      ...pair.message,
+      pair_mac: Buffer.alloc(32, 41).toString("base64"),
+      dh_sig: Buffer.alloc(64, 42).toString("base64"),
+    };
+
+    await mux.handleOuterFrame({
+      ingress: ownerIngress(pair.peerId, encodeClientMessage(message)),
+      roomId: "room-1",
+      turnActive: () => false,
+      isCurrent: () => true,
+      onMessage: vi.fn(),
+      onDisconnect: vi.fn(),
+      sendToPeer,
+    });
+
+    expect(sendToPeer).toHaveBeenCalledWith(pair.peerId, expect.objectContaining({ code: "token_unknown" }));
+    expect(consumePairToken).not.toHaveBeenCalled();
+  });
+
+  test("a relay-observed pairing proof cannot be replayed under a different Owner key", async () => {
+    const { mux, identity, consumePairToken, knownPeers } = makeMultiplexer();
+    consumePairToken.mockReturnValue("ok");
+    const honest = signedPairRequest(identity.publicKey);
+    const attacker = generateEd25519Keypair();
+    const attackerPeerId = Buffer.from(attacker.publicKey).toString("base64");
+    const replay = {
+      ...honest.message,
+      dh_sig: Buffer.from(ed25519Sign(
+        attacker.secretKey,
+        appTranscript(honest.token, honest.appDh.pk, identity.publicKey),
+      )).toString("base64"),
+    };
+    const attackerReplies: ServerMessage[] = [];
+
+    await mux.handleOuterFrame({
+      ingress: ownerIngress(attackerPeerId, encodeClientMessage(replay)),
+      roomId: "room-1",
+      turnActive: () => false,
+      isCurrent: () => true,
+      onMessage: vi.fn(),
+      onDisconnect: vi.fn(),
+      sendToPeer: (_peerId, message) => attackerReplies.push(message),
+    });
+
+    expect(attackerReplies[0]).toMatchObject({ type: "pair_error", code: "token_unknown" });
+    expect(consumePairToken).not.toHaveBeenCalled();
+    expect(knownPeers.size).toBe(0);
+
+    await mux.handleOuterFrame({
+      ingress: ownerIngress(honest.peerId, encodeClientMessage(honest.message)),
+      roomId: "room-1",
+      turnActive: () => false,
+      isCurrent: () => true,
+      onMessage: vi.fn(),
+      onDisconnect: vi.fn(),
+      sendToPeer: vi.fn(),
+    });
+
+    expect(consumePairToken).toHaveBeenCalledTimes(1);
+    expect(knownPeers.has(honest.peerId)).toBe(true);
+  });
+
+  test("missing or bad DH material fails before consuming the pair token or persisting", async () => {
+    for (const mutation of ["missing_sig", "bad_sig", "missing_pk", "bad_pk"] as const) {
+      const { mux, identity, consumePairToken, knownPeers } = makeMultiplexer();
+      const pair = signedPairRequest(identity.publicKey);
+      const message = mutation === "missing_sig"
         ? { ...pair.message, dh_sig: undefined }
-        : { ...pair.message, dh_sig: Buffer.alloc(64, 99).toString("base64") };
+        : mutation === "bad_sig"
+          ? { ...pair.message, dh_sig: Buffer.alloc(64, 99).toString("base64") }
+          : mutation === "missing_pk"
+            ? { ...pair.message, dh_pk: undefined }
+            : { ...pair.message, dh_pk: Buffer.alloc(31, 99).toString("base64") };
       const sendToPeer = vi.fn();
 
       await mux.handleOuterFrame({
@@ -547,11 +682,11 @@ describe("OwnerMultiplexer", () => {
     const piDhPk = Uint8Array.from(Buffer.from(pairOk.dh_pk, "base64"));
     expect(ed25519Verify(
       identity.publicKey,
-      piTranscript(pair.message.token, pair.appDh.pk, piDhPk, pair.owner.publicKey),
+      piTranscript(pair.token, pair.appDh.pk, piDhPk, pair.owner.publicKey),
       Buffer.from(pairOk.dh_sig, "base64"),
     )).toBe(true);
 
-    const appKeys = deriveDirectionalKeys(x25519Shared(pair.appDh.sk, piDhPk), pair.message.token, "app");
+    const appKeys = deriveDirectionalKeys(x25519Shared(pair.appDh.sk, piDhPk), pair.token, "app");
     expect(storedKeys).toEqual({ send: appKeys.recv, recv: appKeys.send });
     expect(mux.has(pair.peerId)).toBe(true);
   });

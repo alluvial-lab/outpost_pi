@@ -186,12 +186,14 @@ export class PairingCoordinator {
     }
 
     const peer = matches[0]!;
+    if (this.deps.ownerHas(peer.remote_epk)) {
+      // Persist and send the final protected bye while its channel record still
+      // exists; removing the record first would fence the mandatory send
+      // high-water write and expose no frame.
+      await this.deps.owners.detach(peer.remote_epk, "session_replaced");
+    }
     await removePeer(peer.remote_epk);
     this.deps.refreshPairingsCache();
-
-    if (this.deps.ownerHas(peer.remote_epk)) {
-      this.deps.owners.detach(peer.remote_epk, "session_replaced");
-    }
 
     ctx.ui.notify(
       `[outpost-pi] Revoked: ${peer.name} (${peer.remote_epk.slice(0, 8)}…)`,

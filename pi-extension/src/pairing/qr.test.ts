@@ -6,6 +6,9 @@ import {
   PAIR_TTL_MIN_MS,
   PAIR_TTL_MAX_MS,
 } from "./qr.js";
+import { pairTokenId } from "../transport/secure_channel.js";
+
+const tokenId = (token: string): string => Buffer.from(pairTokenId(token)).toString("base64");
 
 describe("clampPairTtlMs", () => {
   test("passes a value inside the range unchanged", () => {
@@ -44,14 +47,18 @@ describe("QRSession.issueToken — ttl", () => {
     const s = new QRSession();
     const { token } = s.issueToken(10_000);
     vi.setSystemTime(new Date(10_001));
+    expect(s.findTokenById(tokenId(token))).toBeNull();
     expect(s.consumeToken(token)).toBe("expired");
   });
 
-  test("token is single-use within its ttl", () => {
+  test("token-id lookup exposes only the matching live, unconsumed token", () => {
     vi.setSystemTime(new Date(0));
     const s = new QRSession();
     const { token } = s.issueToken(60_000);
+    expect(s.findTokenById(tokenId(token))).toBe(token);
+    expect(s.findTokenById(Buffer.alloc(16, 7).toString("base64"))).toBeNull();
     expect(s.consumeToken(token)).toBe("ok");
+    expect(s.findTokenById(tokenId(token))).toBeNull();
     expect(s.consumeToken(token)).toBe("consumed");
   });
 

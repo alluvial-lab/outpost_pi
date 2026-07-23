@@ -11,6 +11,7 @@ import {
   deriveDirectionalKeys,
   generateX25519Keypair,
   piTranscript,
+  verifyPairMac,
   x25519Shared,
 } from "../transport/secure_channel.js";
 import type { AttachOwnerInput, OwnerMultiplexerPort } from "./ports.js";
@@ -18,6 +19,7 @@ import type { AttachOwnerInput, OwnerMultiplexerPort } from "./ports.js";
 /** Extend a relay peer channel with explicit listener teardown owned by the multiplexer. */
 export interface PeerChannelHandle extends PeerChannel {
   detach(): void;
+  whenIdle?(): Promise<void>;
 }
 
 /** Carry owner attachment context so reconnects preserve routing and late-attach semantics. */
@@ -145,6 +147,7 @@ export interface OwnerMultiplexerDeps {
   refreshFooter(): void;
   listPeers(): Promise<OwnerPeerRecord[]>;
   findKnownPeer(peerId: string): Promise<OwnerPeerRecord | null>;
+  findPairTokenById(tokenId: string): string | null;
   consumePairToken(token: string): PairTokenStatus;
   addPeer(record: OwnerPeerRecord): Promise<void>;
   currentIdentity(): Ed25519Keypair | null;
@@ -171,11 +174,7 @@ export interface OwnerOuterFrameInput {
 function isPairRequestMessage(message: ClientMessage): message is Extract<ClientMessage, { type: "pair_request" }> {
   if (message.type !== "pair_request") return false;
   const record = message as unknown as Record<string, unknown>;
-  return (
-    typeof record.id === "string" &&
-    typeof record.token === "string" &&
-    typeof record.device_name === "string"
-  );
+  return typeof record.id === "string" && typeof record.device_name === "string";
 }
 
 function decodeCanonicalBase64(value: unknown, bytes: number): Uint8Array | null {
@@ -347,29 +346,47 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       input.sendToPeer(peerId, { type: "pair_error", in_reply_to: inner.id, code, message });
     };
 
-    // Verify the signed app DH share before touching the single-use token.
+    const tokenId = decodeCanonicalBase64(inner.token_id, 16);
+    const pairMac = decodeCanonicalBase64(inner.pair_mac, 32);
+    if (!tokenId || !pairMac) {
+      sendError("token_unknown", "Pairing token proof is missing or invalid.");
+      return;
+    }
+
     const identity = this.deps.currentIdentity();
     const ownerEdPk = decodeCanonicalBase64(peerId, 32);
     const appDhPk = decodeCanonicalBase64(inner.dh_pk, 32);
     const appDhSig = decodeCanonicalBase64(inner.dh_sig, 64);
+    if (!identity || !ownerEdPk || !appDhPk || !appDhSig) {
+      sendError("bad_dh_sig", "Invalid or missing owner channel key signature.");
+      return;
+    }
+
+    const token = this.deps.findPairTokenById(inner.token_id!);
+    if (!token || !verifyPairMac(token, tokenId, ownerEdPk, appDhPk, identity.publicKey, pairMac)) {
+      // Keep locator and proof failures indistinguishable to the relay.
+      sendError("token_unknown", "Pairing token proof is missing or invalid.");
+      return;
+    }
+
     let validDhSignature = false;
-    if (identity && ownerEdPk && appDhPk && appDhSig) {
-      try {
-        validDhSignature = ed25519Verify(
-          ownerEdPk,
-          appTranscript(inner.token, appDhPk, identity.publicKey),
-          appDhSig,
-        );
-      } catch {
-        validDhSignature = false;
-      }
+    try {
+      validDhSignature = ed25519Verify(
+        ownerEdPk,
+        appTranscript(token, appDhPk, identity.publicKey),
+        appDhSig,
+      );
+    } catch {
+      validDhSignature = false;
     }
     if (!validDhSignature) {
       sendError("bad_dh_sig", "Invalid or missing owner channel key signature.");
       return;
     }
 
-    const status = this.deps.consumePairToken(inner.token);
+    // The single-use capability is consumed only after both cryptographic
+    // proofs pass, so forged requests cannot burn a legitimate QR token.
+    const status = this.deps.consumePairToken(token);
     if (status !== "ok") {
       const error = pairErrorForStatus(status);
       sendError(error.code, error.message);
@@ -383,11 +400,11 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     try {
       const piDh = generateX25519Keypair();
       piDhPk = piDh.pk;
-      const shared = x25519Shared(piDh.sk, appDhPk!);
-      const keys = deriveDirectionalKeys(shared, inner.token, "pi");
+      const shared = x25519Shared(piDh.sk, appDhPk);
+      const keys = deriveDirectionalKeys(shared, token, "pi");
       piDhSig = ed25519Sign(
-        identity!.secretKey,
-        piTranscript(inner.token, appDhPk!, piDhPk, ownerEdPk!),
+        identity.secretKey,
+        piTranscript(token, appDhPk, piDhPk, ownerEdPk),
       );
       record = {
         name: inner.device_name,
@@ -478,13 +495,14 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     this.detach(peerId, "session_replaced");
   }
 
-  detach(peerId: string, reason?: ByeReason): void {
+  detach(peerId: string, reason?: ByeReason): Promise<void> {
     const channel = this.channels.get(peerId);
-    if (!channel) return;
+    if (!channel) return Promise.resolve();
 
     if (reason) {
       try { channel.send({ type: "bye", reason }); } catch { /* best-effort per owner channel */ }
     }
+    const outboundSettled = channel.whenIdle?.() ?? Promise.resolve();
 
     try { channel.detach(); } catch { /* best-effort per owner channel */ }
 
@@ -501,6 +519,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       this.peerShort = next ? next.slice(0, 8) : "";
     }
     this.deps.refreshFooter();
+    return outboundSettled;
   }
 
   detachAll(reason?: ByeReason): void {

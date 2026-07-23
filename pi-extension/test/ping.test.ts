@@ -10,8 +10,10 @@ import { EventEmitter } from "node:events";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import {
   appTranscript,
+  computePairMac,
   generateX25519Keypair,
   open,
+  pairTokenId,
   seal,
 } from "../src/transport/secure_channel.js";
 
@@ -101,6 +103,9 @@ vi.mock("../src/pairing/qr.js", async (importOriginal) => {
     displayQR: vi.fn(),
     qrSession: {
       issueToken: vi.fn().mockReturnValue({ token: "test-token", expiresAt: Date.now() + 60_000 }),
+      findTokenById: vi.fn().mockImplementation((tokenId: string) =>
+        tokenId === Buffer.from(pairTokenId("test-token")).toString("base64") ? "test-token" : null,
+      ),
       consumeToken: vi.fn().mockReturnValue("ok"),
       clear: vi.fn(),
       generateToken: vi.fn().mockReturnValue("test-token"),
@@ -134,7 +139,11 @@ function makeInnerLine(peer: string, inner: object): string {
   const wirePeer = peer === "app-peer-001" ? APP_PEER_ID : peer;
   if (record.type === "pair_request") {
     const dh = generateX25519Keypair();
-    const token = String(record.token ?? "");
+    const token = String(record.token ?? "test-token");
+    const tokenId = pairTokenId(token);
+    delete record.token;
+    record.token_id = Buffer.from(tokenId).toString("base64");
+    record.pair_mac = Buffer.from(computePairMac(token, tokenId, OWNER_PK, dh.pk, PI_PK)).toString("base64");
     record.dh_pk = Buffer.from(dh.pk).toString("base64");
     record.dh_sig = Buffer.from(ed25519.sign(appTranscript(token, dh.pk, PI_PK), OWNER_SK)).toString("base64");
   }
