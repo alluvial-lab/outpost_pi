@@ -37,8 +37,10 @@ Before editing or reviewing relay code, read the agent-neutral Rust relay refere
 
 ## Security policy
 
-- TLS protects traffic in transit, but there is no app-layer E2E encryption;
-  the relay host can observe plaintext payload contents
+- TLS protects traffic in transit. The app↔Pi owner channel carries app-layer
+  E2E-encrypted payloads (`outpost-pi-owner-channel-v1` sealed frames — the
+  relay sees ciphertext); cross-PC Pi↔Pi payloads are NOT E2E and remain
+  relay-readable
 - Routing code treats payload contents as opaque and does not inspect them for
   application behavior
 - Logs **MUST NOT** contain payload contents
