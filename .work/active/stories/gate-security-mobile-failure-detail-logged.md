@@ -1,14 +1,14 @@
 ---
 id: gate-security-mobile-failure-detail-logged
 kind: story
-stage: drafting
+stage: implementing
 tags: [app, security]
-parent: null
+parent: feature-diagnostic-privacy-hardening
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-23
 ---
 
 # Mobile failure diagnostics retain raw server error details

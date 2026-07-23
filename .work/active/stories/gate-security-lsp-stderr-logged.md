@@ -1,14 +1,14 @@
 ---
 id: gate-security-lsp-stderr-logged
 kind: story
-stage: drafting
+stage: implementing
 tags: [cockpit, security]
-parent: null
+parent: feature-diagnostic-privacy-hardening
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-23
 ---
 
 # Language-server stderr is logged verbatim
