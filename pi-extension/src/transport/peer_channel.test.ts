@@ -1,11 +1,15 @@
 import { EventEmitter } from "node:events";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ClientMessage } from "../protocol/types.js";
 import type { RelayClient } from "./relay_client.js";
-import { SecurePeerChannel } from "./peer_channel.js";
+import {
+  MAX_PENDING_OWNER_FRAMES,
+  OWNER_CHANNEL_AUDIT_MAX_BYTES,
+  SecurePeerChannel,
+} from "./peer_channel.js";
 import { open, seal } from "./secure_channel.js";
 
 class FakeRelay extends EventEmitter {
@@ -105,17 +109,75 @@ describe("SecurePeerChannel", () => {
     channel.detach();
   });
 
-  test("five consecutive bad protected frames detach exactly once", async () => {
+  test("hostile plaintext ingress coalesces accurately with bounded work and file size", async () => {
+    const auditPath = makeAuditPath();
+    const { channel, relay } = makeChannel({ auditPath });
+
+    for (let index = 0; index < 2_000; index += 1) {
+      emitOuter(relay, "owner-a", Buffer.from("plaintext"));
+    }
+
+    const auditState = (channel as unknown as {
+      auditor: { stats(): { bucketCount: number; activeWrites: number; pendingEvents: number } };
+    }).auditor.stats();
+    expect(auditState.bucketCount).toBe(1);
+    expect(auditState.activeWrites).toBeLessThanOrEqual(1);
+    expect(auditState.pendingEvents).toBeLessThanOrEqual(2_000);
+
+    await channel.whenIdle();
+    const lines = readFileSync(auditPath, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      reason: string;
+      count: number;
+    });
+    const plaintextLines = lines.filter((line) => line.reason === "plaintext_post_key");
+    expect(plaintextLines.reduce((total, line) => total + line.count, 0)).toBe(2_000);
+    expect(plaintextLines.length).toBeLessThan(25);
+    expect(statSync(auditPath).size).toBeLessThanOrEqual(OWNER_CHANNEL_AUDIT_MAX_BYTES);
+    channel.detach();
+  });
+
+  test("audit rotation bounds a pre-existing full file and one predecessor", async () => {
+    const auditPath = makeAuditPath();
+    writeFileSync(auditPath, "x".repeat(OWNER_CHANNEL_AUDIT_MAX_BYTES));
+    const { channel, relay } = makeChannel({ auditPath });
+
+    emitOuter(relay, "owner-a", Buffer.from("plaintext"));
+    await channel.whenIdle();
+
+    expect(statSync(auditPath).size).toBeLessThanOrEqual(OWNER_CHANNEL_AUDIT_MAX_BYTES);
+    expect(existsSync(`${auditPath}.1`)).toBe(true);
+    expect(statSync(`${auditPath}.1`).size).toBeLessThanOrEqual(OWNER_CHANNEL_AUDIT_MAX_BYTES);
+    channel.detach();
+  });
+
+  test("sustained bad protected ingress stays queued-bounded and detaches after five failures", async () => {
+    const auditPath = makeAuditPath();
     const onDisconnect = vi.fn();
-    const { channel, relay, recvKey } = makeChannel({ onDisconnect });
+    const { channel, relay, recvKey } = makeChannel({ auditPath, onDisconnect });
     const bad = seal(recvKey, 1n, JSON.stringify({ type: "ping", id: "bad" }));
     bad[bad.length - 1] ^= 1;
 
-    for (let index = 0; index < 5; index += 1) emitOuter(relay, "owner-a", bad);
+    for (let index = 0; index < 1_000; index += 1) emitOuter(relay, "owner-a", bad);
+    const ingressState = channel as unknown as {
+      inboundQueue: Uint8Array[];
+      inboundDrain: Promise<void> | null;
+    };
+    expect(ingressState.inboundQueue.length).toBeLessThanOrEqual(MAX_PENDING_OWNER_FRAMES);
+    expect(ingressState.inboundDrain).not.toBeNull();
+
     await channel.whenIdle();
 
     expect(onDisconnect).toHaveBeenCalledTimes(1);
     expect(relay.listenerCount("message")).toBe(0);
+    expect(ingressState.inboundQueue).toHaveLength(0);
+    const lines = readFileSync(auditPath, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      reason: string;
+      count: number;
+      consecutive_failures?: number;
+    });
+    expect(lines.reduce((total, line) => total + line.count, 0)).toBe(1_000);
+    expect(Math.max(...lines.map((line) => line.consecutive_failures ?? 0))).toBe(5);
+    expect(statSync(auditPath).size).toBeLessThanOrEqual(OWNER_CHANNEL_AUDIT_MAX_BYTES);
   });
 
   test("persists the send high-water before exposing its frame to the relay", async () => {
