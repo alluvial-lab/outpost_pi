@@ -131,10 +131,17 @@ Future<PairingResult> performPairing({
       piEdPublicKey: piEdPublicKey,
     );
     final appSignature = await Ed25519().sign(appTranscript, keyPair: ownerKey);
+    final pairProof = await buildOwnerChannelPairProof(
+      token: qr.token,
+      ownerEdPublicKey: ownerPublicKey.bytes,
+      appDhPublicKey: dh.publicKey,
+      piEdPublicKey: piEdPublicKey,
+    );
     final id = uuid7();
     final request = PairRequest(
       id: id,
-      token: qr.token,
+      tokenId: base64.encode(pairProof.tokenId),
+      pairMac: base64.encode(pairProof.mac),
       deviceName: deviceName,
       dhPk: base64.encode(dh.publicKey),
       dhSig: base64.encode(appSignature.bytes),

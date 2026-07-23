@@ -49,6 +49,21 @@ final class OwnerChannelKeyPair {
   final Uint8List secretKey;
 }
 
+/// Hold the public token locator and token-keyed pairing proof.
+final class OwnerChannelPairProof {
+  OwnerChannelPairProof({
+    required List<int> tokenId,
+    required List<int> macMessage,
+    required List<int> mac,
+  }) : tokenId = Uint8List.fromList(tokenId),
+       macMessage = Uint8List.fromList(macMessage),
+       mac = Uint8List.fromList(mac);
+
+  final Uint8List tokenId;
+  final Uint8List macMessage;
+  final Uint8List mac;
+}
+
 /// Return a successfully opened frame and its authenticated sequence number.
 final class OpenedOwnerFrame {
   const OpenedOwnerFrame({required this.sequence, required this.json});
@@ -92,10 +107,46 @@ Future<Uint8List> deriveOwnerChannelSharedSecret(
         type: KeyPairType.x25519,
       ),
     );
-    return Uint8List.fromList(await shared.extractBytes());
+    final bytes = Uint8List.fromList(await shared.extractBytes());
+    if (bytes.every((byte) => byte == 0)) {
+      bytes.fillRange(0, bytes.length, 0);
+      throw ArgumentError('X25519 public key has low order');
+    }
+    return bytes;
   } finally {
     keyPair.destroy();
   }
+}
+
+/// Build the token locator and HMAC that authenticate a pairing request.
+Future<OwnerChannelPairProof> buildOwnerChannelPairProof({
+  required String token,
+  required List<int> ownerEdPublicKey,
+  required List<int> appDhPublicKey,
+  required List<int> piEdPublicKey,
+}) async {
+  _requireLength(ownerEdPublicKey, _keyLength, 'Owner Ed25519 public key');
+  _requireLength(appDhPublicKey, _keyLength, 'app DH public key');
+  _requireLength(piEdPublicKey, _keyLength, 'Pi Ed25519 public key');
+  final tokenBytes = utf8.encode(token);
+  final digest = await Sha256().hash(tokenBytes);
+  final tokenId = Uint8List.fromList(digest.bytes.sublist(0, 16));
+  final macMessage = _concat([
+    utf8.encode('$ownerChannelSuite\npair\n'),
+    tokenId,
+    ownerEdPublicKey,
+    appDhPublicKey,
+    piEdPublicKey,
+  ]);
+  final mac = await Hmac.sha256().calculateMac(
+    macMessage,
+    secretKey: SecretKey(tokenBytes),
+  );
+  return OwnerChannelPairProof(
+    tokenId: tokenId,
+    macMessage: macMessage,
+    mac: mac.bytes,
+  );
 }
 
 /// Derive domain-separated directional keys using RFC 5869 HKDF-SHA256.

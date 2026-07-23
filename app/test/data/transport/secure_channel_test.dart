@@ -8,6 +8,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 Uint8List _b64(String value) => Uint8List.fromList(base64.decode(value));
 
+Uint8List _hexBytes(String value) => Uint8List.fromList([
+  for (var offset = 0; offset < value.length; offset += 2)
+    int.parse(value.substring(offset, offset + 2), radix: 16),
+]);
+
 String _hex(List<int> bytes) =>
     bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 
@@ -93,6 +98,16 @@ void main() {
         isTrue,
       );
 
+      final pairProof = await buildOwnerChannelPairProof(
+        token: token,
+        ownerEdPublicKey: ownerPublic,
+        appDhPublicKey: appPublic,
+        piEdPublicKey: piEdPublic,
+      );
+      expect(base64.encode(pairProof.tokenId), kat['token_id']);
+      expect(_hex(pairProof.macMessage), kat['pair_mac_msg_hex']);
+      expect(base64.encode(pairProof.mac), kat['pair_mac']);
+
       final frames = (kat['frames'] as List<dynamic>)
           .cast<Map<String, dynamic>>();
       for (final vector in frames) {
@@ -116,6 +131,42 @@ void main() {
       }
     },
   );
+
+  test('rejects low-order X25519 public keys', () async {
+    final secret = _b64(kat['app_dh_sk'] as String);
+    final lowOrderPublicKeys = <Uint8List>[
+      Uint8List(32),
+      Uint8List.fromList(<int>[1, ...List<int>.filled(31, 0)]),
+      _hexBytes(
+        'e0eb7a7c3b41b8ae1656e3faf19fc46a'
+        'da098deb9c32b1fd866205165f49b800',
+      ),
+      _hexBytes(
+        '5f9c95bca3508c24b1d0b1559c83ef5b'
+        '04445cc4581c8e86d8224eddd09f1157',
+      ),
+      _hexBytes(
+        'ecffffffffffffffffffffffffffffff'
+        'ffffffffffffffffffffffffffffff7f',
+      ),
+      _hexBytes(
+        'edffffffffffffffffffffffffffffff'
+        'ffffffffffffffffffffffffffffff7f',
+      ),
+      _hexBytes(
+        'eeffffffffffffffffffffffffffffff'
+        'ffffffffffffffffffffffffffffff7f',
+      ),
+    ];
+
+    for (final publicKey in lowOrderPublicKeys) {
+      await expectLater(
+        deriveOwnerChannelSharedSecret(secret, publicKey),
+        throwsA(anything),
+        reason: 'low-order public key ${_hex(publicKey)} must be rejected',
+      );
+    }
+  });
 
   test('returns null for tamper, replay, and wrong frame version', () async {
     final key = _b64(kat['k_app_to_pi'] as String);

@@ -69,12 +69,13 @@ class _FakeStorage extends PairingStorage {
   Future<void> savePeer(PeerRecord record) async => saved.add(record);
 }
 
+const _token = 'AAAAAAAAAAAAAAAAAAAAAA';
 late SimpleKeyPair _ownerKey;
 late SimpleKeyPair _piKey;
 late String _piEpk;
 
 QrPairPayload _qr({String? relayUrl, String? roomId}) => QrPairPayload(
-  token: 'AAAAAAAAAAAAAAAAAAAAAA',
+  token: _token,
   epk: _piEpk,
   sessionName: 'Pi',
   relayUrl: relayUrl,
@@ -86,20 +87,31 @@ Future<void> _replyPairOk(
   Map<String, dynamic> fields = const <String, dynamic>{},
   bool forgedSignature = false,
   bool omitDh = false,
+  List<int>? piDhPublicKey,
   void Function(PairRequest request)? observeRequest,
+  void Function(Map<String, dynamic> request)? observeRequestJson,
 }) async {
   final raw = await pi.receive();
-  final request = PairRequest.fromJson(
-    jsonDecode(utf8.decode(raw)) as Map<String, dynamic>,
-  );
+  final requestJson = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
+  final request = PairRequest.fromJson(requestJson);
   observeRequest?.call(request);
+  observeRequestJson?.call(requestJson);
   final appDhPublic = Uint8List.fromList(base64.decode(request.dhPk!));
   final appSignature = Uint8List.fromList(base64.decode(request.dhSig!));
   final ownerPublic = await _ownerKey.extractPublicKey();
-  final appTranscript = buildAppOwnerChannelTranscript(
-    token: request.token,
+  final piPublic = await _piKey.extractPublicKey();
+  final proof = await buildOwnerChannelPairProof(
+    token: _token,
+    ownerEdPublicKey: ownerPublic.bytes,
     appDhPublicKey: appDhPublic,
-    piEdPublicKey: (await _piKey.extractPublicKey()).bytes,
+    piEdPublicKey: piPublic.bytes,
+  );
+  expect(request.tokenId, base64.encode(proof.tokenId));
+  expect(request.pairMac, base64.encode(proof.mac));
+  final appTranscript = buildAppOwnerChannelTranscript(
+    token: _token,
+    appDhPublicKey: appDhPublic,
+    piEdPublicKey: piPublic.bytes,
   );
   expect(
     await Ed25519().verify(
@@ -116,16 +128,17 @@ Future<void> _replyPairOk(
     ...fields,
   };
   if (!omitDh) {
-    final piDh = await generateOwnerChannelKeyPair();
+    final piDh =
+        piDhPublicKey ?? (await generateOwnerChannelKeyPair()).publicKey;
     final transcript = buildPiOwnerChannelTranscript(
-      token: request.token,
+      token: _token,
       appDhPublicKey: appDhPublic,
-      piDhPublicKey: piDh.publicKey,
+      piDhPublicKey: piDh,
       ownerEdPublicKey: ownerPublic.bytes,
     );
     final signer = forgedSignature ? await Ed25519().newKeyPair() : _piKey;
     final signature = await Ed25519().sign(transcript, keyPair: signer);
-    response['dh_pk'] = base64.encode(piDh.publicKey);
+    response['dh_pk'] = base64.encode(piDh);
     response['dh_sig'] = base64.encode(signature.bytes);
   }
   await pi.send(Uint8List.fromList(utf8.encode(jsonEncode(response))));
@@ -183,6 +196,7 @@ void main() {
       final app = _MemTransport(send: appToPi, receive: piToApp);
       final storage = _FakeStorage();
       PairRequest? observed;
+      Map<String, dynamic>? observedJson;
       unawaited(
         _replyPairOk(
           pi,
@@ -191,6 +205,7 @@ void main() {
             'room_id': 'room-from-pi',
           },
           observeRequest: (request) => observed = request,
+          observeRequestJson: (request) => observedJson = request,
         ),
       );
 
@@ -201,8 +216,12 @@ void main() {
       );
 
       expect(observed, isNotNull);
+      expect(observed!.tokenId, isNotNull);
+      expect(observed!.pairMac, isNotNull);
       expect(observed!.dhPk, isNotNull);
       expect(observed!.dhSig, isNotNull);
+      expect(observedJson, isNot(contains('token')));
+      expect(jsonEncode(observedJson), isNot(contains(_token)));
       expect(result.peer.roomId, 'room-from-pi');
       expect(result.peer.channel, isNotNull);
       expect(result.peer.channel!.sendSequence, 0);
@@ -242,6 +261,21 @@ void main() {
       throwsA(
         isA<PairingError>().having((error) => error.code, 'code', 'bad_dh_sig'),
       ),
+    );
+    expect(storage.saved, isEmpty);
+  });
+
+  test('low-order Pi DH share aborts and persists nothing', () async {
+    final appToPi = _Q();
+    final piToApp = _Q();
+    final pi = _MemTransport(send: piToApp, receive: appToPi);
+    final app = _MemTransport(send: appToPi, receive: piToApp);
+    final storage = _FakeStorage();
+    unawaited(_replyPairOk(pi, piDhPublicKey: Uint8List(32)));
+
+    await expectLater(
+      _perform(qr: _qr(), transport: app, storage: storage),
+      throwsA(anything),
     );
     expect(storage.saved, isEmpty);
   });
