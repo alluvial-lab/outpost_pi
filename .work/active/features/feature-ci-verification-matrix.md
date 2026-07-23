@@ -218,3 +218,34 @@ CI configuration is verified by execution, not unit tests:
 - **pub Dependabot support is newer** than npm/cargo: if the pub entries
   error, drop them and rely on `dart pub outdated` in the weekly audit —
   recorded as the fallback, not a blocker.
+
+## Implementation notes
+
+- Execution capability: inline host session — two YAML files plus one config,
+  cohesive single-owner delivery; no delegation value.
+- Review weight: standard (default; no caller override, no project convention).
+- Files changed: `.github/workflows/ci.yml` (new), `.github/workflows/deps-audit.yml`
+  (new), `.github/dependabot.yml` (new).
+- Tests added: none — CI configuration is verified by execution (see design);
+  YAML parsed + paths-filter block validated programmatically, referenced
+  package scripts confirmed to exist, `protocol` lane command (`check`)
+  dry-run green locally (fixtures + 5 codegen tests pass).
+- Simplification: deps-audit as its own workflow also keeps `ci.yml`'s
+  path-gated lanes free of schedule/workflow_dispatch event semantics.
+- Discrepancies from design:
+  - `deps-audit` moved from a job inside `ci.yml` to its own workflow file —
+    `dorny/paths-filter` change detection has no well-defined base on
+    schedule/workflow_dispatch events; a separate file avoids event-semantics
+    hacks. It triggers on weekly cron, manual dispatch, and pushes touching
+    any lockfile.
+  - No npm Dependabot entries for `/e2e` or `/tools/protocol-codegen` —
+    neither has a `package.json` (e2e typecheck rides on pi-extension deps;
+    codegen is exercised via protocol's `check:tests`).
+  - Pub audit step dropped — `dart pub outdated` is informational only;
+    pub update automation is covered by the three pub Dependabot entries
+    (fallback note retained if the pub ecosystem errors).
+- Live verification pending: lane greenness and path-filter behavior verify
+  on first pushes to GitHub (cannot execute Actions locally); landing this
+  commit touches `.github/workflows/ci.yml`, which every filter watches, so
+  the push itself runs all six lanes as the first live check.
+- Adjacent issues parked: none.
