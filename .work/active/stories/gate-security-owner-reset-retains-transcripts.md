@@ -1,14 +1,14 @@
 ---
 id: gate-security-owner-reset-retains-transcripts
 kind: story
-stage: drafting
+stage: implementing
 tags: [app, security]
-parent: null
+parent: feature-owner-identity-transition
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-23
 ---
 
 # Owner-key replacement leaves the previous owner's transcripts readable
