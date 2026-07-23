@@ -8,10 +8,13 @@
     "check": "node --import tsx scripts/check-fixtures.ts && npm run check:tests",
     "check:tests": "node --import tsx --test ../tools/protocol-codegen/src/index.test.ts",
     "list-types": "node --import tsx scripts/list-types.ts",
+    "generate:kat": "node --import tsx scripts/generate-owner-channel-kat.ts",
     "generate:rust": "node --import tsx scripts/list-types.ts | node ../tools/protocol-codegen/bin/protocol-codegen.mjs --target rust --schema - --out-dir ../relay/src/protocol/generated",
     "generate:rust:check": "node --import tsx scripts/list-types.ts | node ../tools/protocol-codegen/bin/protocol-codegen.mjs --target rust --schema - --out-dir ../relay/src/protocol/generated --check"
   },
   "devDependencies": {
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "^2.2.0",
     "ajv": "^8.17.0",
     "ajv-formats": "^3.0.0",
     "tsx": "^4.22.0",
