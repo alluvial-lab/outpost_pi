@@ -156,10 +156,11 @@ renames that are **version-paired** — mixed versions break:
   + new relay (or vice versa) fails the WS handshake.
 - **`to_room` required** (`relay-0.1.0` ↔ `extension-0.1.0` sender): the
   relay rejects `pi_envelope` frames with empty/missing `to_room` as
-  `bad_envelope`. The sender-side room-targeting (targeting the sibling's
-  actual room, not the temporary `"main"` default) is deferred to design —
-  see `story-to-room-sender-side-room-targeting`. It only affects **cross-PC
-  agent mesh** (Pi↔Pi `agent_send`); the app↔pi path is unaffected.
+  `bad_envelope`. Sender-side room-targeting has since shipped
+  (`story-to-room-sender-side-room-targeting`): the extension threads the
+  destination sibling's actual room through every `sendEnvelopeToPi` call
+  site (`broker_remote.ts`). This only affects **cross-PC agent mesh**
+  (Pi↔Pi `agent_send`); the app↔pi path is unaffected.
 - **Cockpit control-RPC discriminator** (`extension-0.1.0` ↔ `cockpit-0.1.0`):
   the NUL-prefixed control string is now `\x00outpost-pi-ctrl:` and the
   structured type is `outpost_pi_control`. Hard cutover — old cockpit + new
