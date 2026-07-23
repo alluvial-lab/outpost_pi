@@ -166,15 +166,22 @@ renames that are **version-paired** — mixed versions break:
   structured type is `outpost_pi_control`. Hard cutover — old cockpit + new
   extension (or vice versa) break the control channel.
 - **Owner-channel E2E** (target v0.3.0; app ↔ extension): `pair_request` and
-  `pair_ok` carry signed ephemeral-DH fields, and post-pairing `outer.ct`
+  `pair_ok` carry signed ephemeral-DH fields (`pair_request` additionally
+  carries `token_id` + `pair_mac`, an HMAC proof of QR-token knowledge — the
+  raw pair token never crosses the wire), and post-pairing `outer.ct`
   payloads are sealed frames rather than base64 plaintext. The extension
-  rejects unsigned `pair_request`s with `pair_error bad_dh_sig`; it also
-  rejects plaintext post-key frames and AEAD/replay failures, detaching after
-  five consecutive failures. Recovery is re-pairing. Existing pairings have
-  no channel key, so their frames are dropped and operators must re-pair. The
-  relay remains untouched because `ct` stays opaque base64; no relay version
-  pairing is required. Safe deploy order: rebuild the extension `dist/`, then
-  fully restart Pi (not `/reload`), then sideload the app.
+  rejects unauthenticated `pair_request`s (`pair_error token_unknown` /
+  `bad_dh_sig`); it also rejects plaintext post-key frames and AEAD/replay
+  failures, detaching the channel subscription after five consecutive
+  failures — the NEXT frame from the keyed owner simply reattaches with the
+  same persisted channel keys (AEAD remains the security boundary; forged
+  frames never dispatch). Re-pairing is the recovery path for key loss or a
+  half-established pairing, not for transient frame failures. Existing
+  pairings have no channel key, so their frames are dropped and operators
+  must re-pair once at cutover. The relay remains untouched because `ct`
+  stays opaque base64; no relay version pairing is required. Safe deploy
+  order: rebuild the extension `dist/`, then fully restart Pi (not
+  `/reload`), then sideload the app.
 - **Storage/keyring/launchd identifiers** (hard cutover, destructive): Hive
   box names (`dev.outpostpi.*`), keyring service (`dev.outpostpi.pi`), owner
   identity (`dev.outpostpi.owner.identity`), launchd label
