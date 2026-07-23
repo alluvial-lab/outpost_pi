@@ -1,0 +1,42 @@
+{
+  "suite": "outpost-pi-owner-channel-v1",
+  "token": "kat-owner-pairing-token-v1",
+  "app_dh_sk": "ABEiM0RVZneImaq7zN3u/xAhMkNUZXaHmKm6y9zt/g8=",
+  "app_dh_pk": "6Gdfrw1rULZLhnfN+P1ZBEnLPEz6R66JJzHIPLF7Oj0=",
+  "pi_dh_sk": "8ODQwLCgkIBwYFBAMCAQABEiM0RVZneImaq7zN3u/wA=",
+  "pi_dh_pk": "pr9ORRLK1+8149PWCTwOOb2Iwn9jI1UdhCA48hu2iQs=",
+  "owner_ed_sk": "TzwrGgkYJzZFVGNygZCvvs3c6/oQKThHVmV0g5KhsM8=",
+  "owner_ed_pk": "v1nhFJ53/JSjBQIllm+LS10pyRlN74it+UthdQ/FwbU=",
+  "pi_ed_sk": "wLGik4R1ZldIOSob/O3ezb6vkIFyY1RFNicYCRorPE0=",
+  "pi_ed_pk": "SG3JE70hBTj4H924lWhYH+R5bEiXQf+NY/wajPQB30Y=",
+  "shared_secret": "Dknu8yCP+QdsmDiQx/qvjZJvc2szpRCS7a4iKyqQpk4=",
+  "k_app_to_pi": "wfbyiFemc9X6JZeV5rIycLYarj5aS9YD58qTnrLrd7c=",
+  "k_pi_to_app": "MJh1VovLyWBzBczgtTteUp9pL1JhOcQm2bLZl6H5KwA=",
+  "app_transcript_hex": "6f7574706f73742d70692d6f776e65722d6368616e6e656c2d76310a6170700a6b61742d6f776e65722d70616972696e672d746f6b656e2d7631e8675faf0d6b50b64b8677cdf8fd590449cb3c4cfa47ae892731c83cb17b3a3d486dc913bd210538f81fddb89568581fe4796c489741ff8d63fc1a8cf401df46",
+  "app_dh_sig": "0BIbDEwSDEk+lfF3X8sr5GnySBUCA3eQNvBX9DeUb0oQvum+XY+mpbVq7nP7WAm/FFUGLFpvdK8WmTdgXf97AA==",
+  "pi_transcript_hex": "6f7574706f73742d70692d6f776e65722d6368616e6e656c2d76310a70690a6b61742d6f776e65722d70616972696e672d746f6b656e2d7631e8675faf0d6b50b64b8677cdf8fd590449cb3c4cfa47ae892731c83cb17b3a3da6bf4e4512cad7ef35e3d3d6093c0e39bd88c27f6323551d842038f21bb6890bbf59e1149e77fc94a3050225966f8b4b5d29c9194def88adf94b61750fc5c1b5",
+  "pi_dh_sig": "plhkF7jkHlbUpjnTznVUSCqtJkctJZTgdJ5MkfLRZuH/DXlq/ByVURaQIMuWm7Hzxw5uFAH+MAQT485Akzn/AA==",
+  "frames": [
+    {
+      "dir": "app->pi",
+      "seq": 1,
+      "nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX",
+      "plaintext_json": "{\"type\":\"ping\",\"id\":\"kat-ping-1\"}",
+      "sealed_b64": "AQABAgMEBQYHCAkKCwwNDg8QERITFBUWFxtT76u1vXtjWslbzBEHDtCwSz2X2/N798oEOFJ0+n1LN3zVrvCGGZ+epJg8nkXhaE4="
+    },
+    {
+      "dir": "pi->app",
+      "seq": 1,
+      "nonce": "GBkaGxwdHh8gISIjJCUmJygpKissLS4v",
+      "plaintext_json": "{\"type\":\"pong\",\"in_reply_to\":\"kat-ping-1\"}",
+      "sealed_b64": "ARgZGhscHR4fICEiIyQlJicoKSorLC0uL4v/2S1Q/QBUExpsDTWxGH0M8BEmdiOX3iOODGWC5tIRAT9ssLyQr6KH/rXauRDia9M1R1NnQSN3TiA="
+    },
+    {
+      "dir": "app->pi",
+      "seq": 2,
+      "nonce": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZH",
+      "plaintext_json": "{\"type\":\"ping\",\"id\":\"kat-ping-2\"}",
+      "sealed_b64": "ATAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR8DLoLq1lDTLx/uBrY5rm7lQX2q8GQAckouHLBiGSOIiMeQIOea4T5E8EPkzg7sqAE8="
+    }
+  ]
+}

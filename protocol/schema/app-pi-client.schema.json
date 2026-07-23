@@ -25,7 +25,9 @@
         "type": { "const": "pair_request" },
         "id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
         "token": { "type": "string", "minLength": 1 },
-        "device_name": { "type": "string", "minLength": 1 }
+        "device_name": { "type": "string", "minLength": 1 },
+        "dh_pk": { "type": "string", "minLength": 1, "description": "Standard base64 encoding of the 32-byte ephemeral X25519 public key." },
+        "dh_sig": { "type": "string", "minLength": 1, "description": "Standard base64 encoding of the 64-byte Ed25519 signature over the app ephemeral-DH transcript." }
       },
       "additionalProperties": false
     },

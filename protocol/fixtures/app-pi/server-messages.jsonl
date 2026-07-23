@@ -1,4 +1,4 @@
-{"type":"pair_ok","in_reply_to":"pair-1","session_name":"outpost_pi · repo","session_started_at":1716234500000,"session_id":"sdk-session-1","room_id":"room-main","harness":{"name":"Pi coding agent","version":"0.5.3"},"hostname":"dev-vm"}
+{"type":"pair_ok","in_reply_to":"pair-1","session_name":"outpost_pi · repo","session_started_at":1716234500000,"session_id":"sdk-session-1","room_id":"room-main","harness":{"name":"Pi coding agent","version":"0.5.3"},"hostname":"dev-vm","dh_pk":"pr9ORRLK1+8149PWCTwOOb2Iwn9jI1UdhCA48hu2iQs=","dh_sig":"plhkF7jkHlbUpjnTznVUSCqtJkctJZTgdJ5MkfLRZuH/DXlq/ByVURaQIMuWm7Hzxw5uFAH+MAQT485Akzn/AA=="}
 {"type":"pair_error","in_reply_to":"pair-2","code":"token_expired","message":"pairing token expired"}
 {"type":"user_input","id":"local-1","text":"local input"}
 {"type":"user_message","id":"msg-1","text":"hello","images":[{"data":"QUJD","mime":"image/jpeg"}],"streaming_behavior":"steer"}
