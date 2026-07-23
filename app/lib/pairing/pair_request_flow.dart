@@ -208,7 +208,7 @@ Future<PairingResult> performPairing({
           receiveKey: base64.encode(keys.receive),
         ),
       );
-      await storage.savePeer(peer);
+      await storage.savePairedPeer(peer);
       return PairingResult(peer: peer, hostnameHint: pairOk.hostname);
     }
 

@@ -66,7 +66,7 @@ class _FakeStorage extends PairingStorage {
   Future<List<PeerRecord>> listPeers() async => saved;
 
   @override
-  Future<void> savePeer(PeerRecord record) async => saved.add(record);
+  Future<void> savePairedPeer(PeerRecord record) async => saved.add(record);
 }
 
 const _token = 'AAAAAAAAAAAAAAAAAAAAAA';
