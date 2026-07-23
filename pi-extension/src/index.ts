@@ -62,7 +62,7 @@ import {
   type LegacyAgentMessage,
 } from "./session/transcript_projection.js";
 import { RelayClient, RoomAlreadyOpenError } from "./transport/relay_client.js";
-import type { PeerChannel, PlainPeerChannel } from "./transport/peer_channel.js";
+import { appendOwnerChannelAudit, type PeerChannel, type PlainPeerChannel } from "./transport/peer_channel.js";
 import { OwnerMultiplexer } from "./extension/owner_multiplexer.js";
 import {
   createOutpostPiTestHarness,
@@ -231,6 +231,7 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
   createChannel: (input) => _relayTransport.createPeerChannel({
     peerId: input.peerId,
     roomId: input.roomId ?? _myRoomId ?? undefined,
+    peerRecord: input.peerRecord,
     onMessage: input.onMessage,
     onDisconnect: input.onDisconnect,
   }),
@@ -242,6 +243,8 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
   },
   consumePairToken: (token) => qrSession.consumeToken(token),
   addPeer: (record) => addPeer(record),
+  currentIdentity: () => _pairingCoordinator.currentKeypair(),
+  auditDrop: (peerId, reason) => { void appendOwnerChannelAudit(peerId, reason); },
   onPeerPersisted: () => { void _owners.refreshPairingsCache(); },
   currentPairingSession: () => {
     const cwd = _currentCwd();
@@ -313,9 +316,9 @@ let _stopOwnerControl: (() => void) | null = null;
 
 function _ensureOwnerIngressListener(): void {
   if (!_stopOwnerIngress) {
-    _stopOwnerIngress = _relayTransport.onOuterMessage((ingress, isCurrent) => {
-      void _handleOwnerOuterFrame(ingress, isCurrent);
-    });
+    _stopOwnerIngress = _relayTransport.onOuterMessage((ingress, isCurrent) =>
+      _handleOwnerOuterFrame(ingress, isCurrent)
+    );
   }
   if (!_stopOwnerControl) {
     _stopOwnerControl = _relayTransport.onControlFrame((frame) => {
@@ -372,12 +375,8 @@ function _syncOwnerPresenceSubscription(): void {
 }
 
 function _sendOwnerMessageToPeer(peerId: string, message: ServerMessage): void {
-  const existing = _owners.get(peerId);
-  if (existing) {
-    existing.send(message);
-    return;
-  }
-
+  // Handshake and unknown-peer responses always use a transient plaintext
+  // channel, including re-pair while an older secure channel is attached.
   let transient: (PeerChannel & { detach(): void }) | null = null;
   try {
     transient = _relayTransport.createPeerChannel({

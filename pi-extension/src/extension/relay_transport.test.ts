@@ -40,6 +40,7 @@ function makeTransport() {
 }
 
 const keypair = { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) } as Ed25519Keypair;
+const flushDispatch = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 describe("relay transport control frames", () => {
   test("decodes peer presence control frames and rejects outer envelopes", () => {
@@ -67,6 +68,7 @@ describe("relay transport control frames", () => {
     relay.emit("message", JSON.stringify({ peer: "owner-a", ct: "not-control" }));
     relay.emit("message", JSON.stringify({ type: "peer_offline", peer: "owner-a", since_ts: 111 }));
     relay.emit("message", JSON.stringify({ type: "peer_online", peer: "owner-a" }));
+    await flushDispatch();
 
     expect(frames).toEqual([
       { type: "peer_offline", peer: "owner-a", since_ts: 111 },
@@ -121,13 +123,14 @@ describe("relay transport control frames", () => {
   test("dispatchRelayMessage routes each typed frame to only its owning handlers", async () => {
     const { transport, relays } = makeTransport();
     const outerFrames: unknown[] = [];
-    transport.onOuterMessage((ingress) => outerFrames.push(ingress));
+    transport.onOuterMessage((ingress) => { outerFrames.push(ingress); });
 
     await transport.start({ relayUrl: "ws://relay.test", keypair });
     const relay = relays[0]!;
 
     relay.emit("message", JSON.stringify({ type: "peer_offline", peer: "owner-a", since_ts: 1 }));
     relay.emit("message", JSON.stringify({ peer: "owner-a", ct: "ZW52ZWxvcGU=" }));
+    await flushDispatch();
 
     expect(outerFrames).toEqual([{
       kind: "outer",
@@ -140,7 +143,7 @@ describe("relay transport control frames", () => {
     const { transport, relays } = makeTransport();
     const ownerIngress: unknown[] = [];
     const ownerMessages: unknown[] = [];
-    transport.onOuterMessage((ingress) => ownerIngress.push(ingress));
+    transport.onOuterMessage((ingress) => { ownerIngress.push(ingress); });
 
     await transport.start({ relayUrl: "ws://relay.test", keypair });
     const relay = relays[0]!;
@@ -179,6 +182,7 @@ describe("relay transport control frames", () => {
       to_room: "room-1",
       envelope: crossPcEnvelope,
     }));
+    await flushDispatch();
 
     expect(ownerIngress).toHaveLength(1);
     expect(ownerMessages).toEqual([clientMessage]);
@@ -199,6 +203,7 @@ describe("relay transport control frames", () => {
     await transport.start({ relayUrl: "ws://relay.test", keypair });
     expect(relays[0]!.listenerCount("message")).toBe(1);
     relays[0]!.emit("message", JSON.stringify({ peer: "owner-a", ct: "Zmlyc3Q=" }));
+    await flushDispatch();
     expect(freshness[0]?.()).toBe(true);
 
     await transport.start({ relayUrl: "ws://relay.test", keypair });
@@ -206,6 +211,7 @@ describe("relay transport control frames", () => {
     expect(relays[0]!.listenerCount("message")).toBe(0);
     expect(relays[1]!.listenerCount("message")).toBe(1);
     relays[1]!.emit("message", JSON.stringify({ peer: "owner-a", ct: "c2Vjb25k" }));
+    await flushDispatch();
     expect(freshness[1]?.()).toBe(true);
 
     relays[1]!.emit("close");

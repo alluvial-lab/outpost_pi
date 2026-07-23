@@ -1,0 +1,168 @@
+import { EventEmitter } from "node:events";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import type { ClientMessage } from "../protocol/types.js";
+import type { RelayClient } from "./relay_client.js";
+import { SecurePeerChannel } from "./peer_channel.js";
+import { open, seal } from "./secure_channel.js";
+
+class FakeRelay extends EventEmitter {
+  send = vi.fn();
+}
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+function makeAuditPath(): string {
+  const dir = mkdtempSync(join(tmpdir(), "owner-channel-audit-"));
+  tempDirs.push(dir);
+  return join(dir, "audit.jsonl");
+}
+
+function emitOuter(relay: FakeRelay, peer: string, frame: Uint8Array): void {
+  relay.emit("message", JSON.stringify({
+    peer,
+    room: "main",
+    ct: Buffer.from(frame).toString("base64"),
+  }));
+}
+
+function makeChannel(options: {
+  relay?: FakeRelay;
+  peer?: string;
+  sendSeq?: bigint;
+  recvSeq?: bigint;
+  onMessage?: (message: ClientMessage) => void;
+  onDisconnect?: () => void;
+  auditPath?: string;
+  persisted?: { send: bigint; recv: bigint };
+}) {
+  const relay = options.relay ?? new FakeRelay();
+  const persisted = options.persisted ?? { send: options.sendSeq ?? 0n, recv: options.recvSeq ?? 0n };
+  const sendKey = new Uint8Array(32).fill(31);
+  const recvKey = new Uint8Array(32).fill(32);
+  const channel = new SecurePeerChannel(
+    relay as unknown as RelayClient,
+    options.peer ?? "owner-a",
+    options.onMessage ?? vi.fn(),
+    {
+      keys: { send: sendKey, recv: recvKey },
+      sendSeq: options.sendSeq ?? persisted.send,
+      recvSeq: options.recvSeq ?? persisted.recv,
+      persistSequences: async (patch) => {
+        if (patch.sendSeq !== undefined) persisted.send = patch.sendSeq;
+        if (patch.recvSeq !== undefined) persisted.recv = patch.recvSeq;
+        return true;
+      },
+      onDisconnect: options.onDisconnect ?? vi.fn(),
+      auditPath: options.auditPath ?? makeAuditPath(),
+    },
+  );
+  return { channel, relay, persisted, sendKey, recvKey };
+}
+
+describe("SecurePeerChannel", () => {
+  test("seals outbound and opens inbound frames through the relay adapter", async () => {
+    const received = vi.fn();
+    const { channel, relay, persisted, sendKey, recvKey } = makeChannel({ onMessage: received });
+
+    channel.send({ type: "pong", in_reply_to: "ping-out" });
+    await channel.whenIdle();
+    expect(relay.send).toHaveBeenCalledTimes(1);
+    const outer = JSON.parse(relay.send.mock.calls[0]![0] as string) as { peer: string; room: string; ct: string };
+    expect(outer).toMatchObject({ peer: "owner-a", room: "main" });
+    expect(open(sendKey, Buffer.from(outer.ct, "base64"), 0n)).toEqual({
+      seq: 1n,
+      json: JSON.stringify({ type: "pong", in_reply_to: "ping-out" }),
+    });
+    expect(persisted.send).toBe(1n);
+
+    emitOuter(relay, "owner-a", seal(recvKey, 3n, JSON.stringify({ type: "ping", id: "ping-in" })));
+    await channel.whenIdle();
+    expect(received).toHaveBeenCalledWith({ type: "ping", id: "ping-in" });
+    expect(persisted.recv).toBe(3n);
+    channel.detach();
+  });
+
+  test("drops plaintext after key establishment and writes a content-free audit line", async () => {
+    const auditPath = makeAuditPath();
+    const received = vi.fn();
+    const { channel, relay } = makeChannel({ auditPath, onMessage: received });
+    const plaintext = Buffer.from(JSON.stringify({ type: "ping", id: "secret-id" }));
+
+    emitOuter(relay, "owner-a", plaintext);
+    await channel.whenIdle();
+
+    expect(received).not.toHaveBeenCalled();
+    const audit = readFileSync(auditPath, "utf8");
+    expect(audit).toContain('"reason":"plaintext_post_key"');
+    expect(audit).not.toContain("secret-id");
+    channel.detach();
+  });
+
+  test("five consecutive bad protected frames detach exactly once", async () => {
+    const onDisconnect = vi.fn();
+    const { channel, relay, recvKey } = makeChannel({ onDisconnect });
+    const bad = seal(recvKey, 1n, JSON.stringify({ type: "ping", id: "bad" }));
+    bad[bad.length - 1] ^= 1;
+
+    for (let index = 0; index < 5; index += 1) emitOuter(relay, "owner-a", bad);
+    await channel.whenIdle();
+
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+    expect(relay.listenerCount("message")).toBe(0);
+  });
+
+  test("a detached stale channel cannot disconnect its replacement when fenced persistence settles", async () => {
+    const relay = new FakeRelay();
+    const onDisconnect = vi.fn();
+    let resolvePersistence!: (value: boolean) => void;
+    const persistence = new Promise<boolean>((resolve) => { resolvePersistence = resolve; });
+    const channel = new SecurePeerChannel(
+      relay as unknown as RelayClient,
+      "owner-stale",
+      vi.fn(),
+      {
+        keys: { send: new Uint8Array(32).fill(1), recv: new Uint8Array(32).fill(2) },
+        sendSeq: 0n,
+        recvSeq: 0n,
+        persistSequences: () => persistence,
+        onDisconnect,
+        auditPath: makeAuditPath(),
+      },
+    );
+
+    channel.send({ type: "pong", in_reply_to: "old-channel" });
+    channel.detach();
+    resolvePersistence(false); // expected-channel-key fence after a re-pair
+    await channel.whenIdle();
+
+    expect(onDisconnect).not.toHaveBeenCalled();
+  });
+
+  test("persisted send sequence resumes across channel re-attach", async () => {
+    const relay = new FakeRelay();
+    const persisted = { send: 0n, recv: 0n };
+    const first = makeChannel({ relay, persisted });
+    first.channel.send({ type: "pong", in_reply_to: "one" });
+    await first.channel.whenIdle();
+    first.channel.detach();
+
+    const second = makeChannel({ relay, persisted, sendSeq: persisted.send });
+    second.channel.send({ type: "pong", in_reply_to: "two" });
+    await second.channel.whenIdle();
+
+    const firstOuter = JSON.parse(relay.send.mock.calls[0]![0] as string) as { ct: string };
+    const secondOuter = JSON.parse(relay.send.mock.calls[1]![0] as string) as { ct: string };
+    const firstFrame = Buffer.from(firstOuter.ct, "base64");
+    expect(new DataView(firstFrame.buffer, firstFrame.byteOffset + 1, 8).getBigUint64(0, true)).toBe(1n);
+    const secondFrame = Buffer.from(secondOuter.ct, "base64");
+    expect(new DataView(secondFrame.buffer, secondFrame.byteOffset + 1, 8).getBigUint64(0, true)).toBe(2n);
+    expect(persisted.send).toBe(2n);
+    second.channel.detach();
+  });
+});

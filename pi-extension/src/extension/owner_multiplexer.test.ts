@@ -8,7 +8,16 @@ import {
   type PeerChannelHandle,
 } from "./owner_multiplexer.js";
 import { decodeRelayIngress } from "../protocol/relay_ingress.js";
+import { ed25519Sign, ed25519Verify, generateEd25519Keypair } from "../pairing/crypto.js";
+import { decodePeerChannelKeys } from "../pairing/storage.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
+import {
+  appTranscript,
+  deriveDirectionalKeys,
+  generateX25519Keypair,
+  piTranscript,
+  x25519Shared,
+} from "../transport/secure_channel.js";
 
 class FakeOwnerChannel implements PeerChannelHandle {
   readonly sent: ServerMessage[] = [];
@@ -50,9 +59,38 @@ function agentChunk(delta: string): ServerMessage {
   return { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta };
 }
 
+function signedPairRequest(identityPk: Uint8Array, token = "pair-token") {
+  const owner = generateEd25519Keypair();
+  const appDh = generateX25519Keypair();
+  const signature = ed25519Sign(owner.secretKey, appTranscript(token, appDh.pk, identityPk));
+  return {
+    owner,
+    appDh,
+    peerId: Buffer.from(owner.publicKey).toString("base64"),
+    message: {
+      type: "pair_request",
+      id: "pair-1",
+      token,
+      device_name: "Phone",
+      dh_pk: Buffer.from(appDh.pk).toString("base64"),
+      dh_sig: Buffer.from(signature).toString("base64"),
+    } satisfies Extract<ClientMessage, { type: "pair_request" }>,
+  };
+}
+
 function makeMultiplexer() {
   const channels: FakeOwnerChannel[] = [];
-  const knownPeers = new Map<string, { name: string; remote_epk: string; paired_at: string }>();
+  const knownPeers = new Map<string, {
+    name: string;
+    remote_epk: string;
+    paired_at: string;
+    channel_key?: string;
+    send_seq?: string;
+    recv_seq?: string;
+  }>();
+  const identity = generateEd25519Keypair();
+  const consumePairToken = vi.fn<OwnerMultiplexerDeps["consumePairToken"]>(() => "unknown");
+  const auditDrop = vi.fn<OwnerMultiplexerDeps["auditDrop"]>();
   const refreshFooter = vi.fn();
   const persisted = vi.fn();
   const ownerAttached = vi.fn();
@@ -67,8 +105,10 @@ function makeMultiplexer() {
     refreshFooter,
     listPeers: async () => [...knownPeers.values()],
     findKnownPeer: async (peerId) => knownPeers.get(peerId) ?? null,
-    consumePairToken: () => "unknown",
+    consumePairToken,
     addPeer: async (record) => { knownPeers.set(record.remote_epk, record); },
+    currentIdentity: () => identity,
+    auditDrop,
     onPeerPersisted: persisted,
     currentPairingSession: () => ({
       sessionName: "test-session",
@@ -95,6 +135,10 @@ function makeMultiplexer() {
     ownerAttached,
     ownerPaired,
     fanoutPresenceChanged,
+    identity,
+    consumePairToken,
+    auditDrop,
+    deps,
   };
 }
 
@@ -403,9 +447,16 @@ describe("OwnerMultiplexer", () => {
     expect(mux.has("owner-b")).toBe(true);
   });
 
-  test("known-owner reconnect ingress attaches a channel and routes the triggering message", async () => {
+  test("known-owner reconnect attaches before the triggering frame is routed by secure fanout", async () => {
     const { mux, knownPeers, channels, ownerAttached } = makeMultiplexer();
-    knownPeers.set("known-owner", { name: "Phone", remote_epk: "known-owner", paired_at: "now" });
+    knownPeers.set("known-owner", {
+      name: "Phone",
+      remote_epk: "known-owner",
+      paired_at: "now",
+      channel_key: Buffer.alloc(64, 7).toString("base64"),
+      send_seq: "0",
+      recv_seq: "0",
+    });
     const routed: { message: ClientMessage; sender: FakeOwnerChannel }[] = [];
     const message: ClientMessage = { type: "ping", id: "ping-1" };
 
@@ -424,7 +475,104 @@ describe("OwnerMultiplexer", () => {
     expect(mux.activeCount()).toBe(1);
     expect(mux.has("known-owner")).toBe(true);
     expect(ownerAttached).toHaveBeenCalledWith({ peerId: "known-owner", peerName: "Phone", activeCount: 1 });
+    expect(routed).toEqual([]);
+    await channels[0]!.receive(message);
     expect(routed).toEqual([{ message, sender: channels[0] }]);
+  });
+
+  test("missing or bad DH signatures fail before consuming the pair token or persisting", async () => {
+    for (const mutation of ["missing", "bad"] as const) {
+      const { mux, identity, consumePairToken, knownPeers } = makeMultiplexer();
+      const pair = signedPairRequest(identity.publicKey);
+      const message = mutation === "missing"
+        ? { ...pair.message, dh_sig: undefined }
+        : { ...pair.message, dh_sig: Buffer.alloc(64, 99).toString("base64") };
+      const sendToPeer = vi.fn();
+
+      await mux.handleOuterFrame({
+        ingress: ownerIngress(pair.peerId, encodeClientMessage(message as ClientMessage)),
+        roomId: "room-1",
+        turnActive: () => false,
+        isCurrent: () => true,
+        onMessage: vi.fn(),
+        onDisconnect: vi.fn(),
+        sendToPeer,
+      });
+
+      expect(sendToPeer).toHaveBeenCalledWith(pair.peerId, expect.objectContaining({
+        type: "pair_error",
+        code: "bad_dh_sig",
+      }));
+      expect(consumePairToken).not.toHaveBeenCalled();
+      expect(knownPeers.size).toBe(0);
+      expect(mux.activeCount()).toBe(0);
+    }
+  });
+
+  test("successful signed handshake persists keys before plaintext pair_ok and emits a verifiable Pi share", async () => {
+    const { mux, identity, consumePairToken, knownPeers, deps } = makeMultiplexer();
+    const pair = signedPairRequest(identity.publicKey);
+    consumePairToken.mockReturnValue("ok");
+    const order: string[] = [];
+    deps.addPeer = async (record) => {
+      order.push("persist");
+      knownPeers.set(record.remote_epk, record);
+    };
+    const replies: ServerMessage[] = [];
+
+    await mux.handleOuterFrame({
+      ingress: ownerIngress(pair.peerId, encodeClientMessage(pair.message)),
+      roomId: "room-1",
+      turnActive: () => false,
+      isCurrent: () => true,
+      onMessage: vi.fn(),
+      onDisconnect: vi.fn(),
+      sendToPeer: (_peerId, message) => {
+        order.push("send");
+        replies.push(message);
+      },
+    });
+
+    expect(order.slice(0, 2)).toEqual(["persist", "send"]);
+    const stored = knownPeers.get(pair.peerId)!;
+    expect(stored).toMatchObject({ send_seq: "0", recv_seq: "0" });
+    const storedKeys = decodePeerChannelKeys(stored.channel_key);
+    expect(storedKeys).not.toBeNull();
+
+    const pairOk = replies[0];
+    expect(pairOk?.type).toBe("pair_ok");
+    if (!pairOk || pairOk.type !== "pair_ok" || !pairOk.dh_pk || !pairOk.dh_sig) {
+      throw new Error("expected extended pair_ok");
+    }
+    const piDhPk = Uint8Array.from(Buffer.from(pairOk.dh_pk, "base64"));
+    expect(ed25519Verify(
+      identity.publicKey,
+      piTranscript(pair.message.token, pair.appDh.pk, piDhPk, pair.owner.publicKey),
+      Buffer.from(pairOk.dh_sig, "base64"),
+    )).toBe(true);
+
+    const appKeys = deriveDirectionalKeys(x25519Shared(pair.appDh.sk, piDhPk), pair.message.token, "app");
+    expect(storedKeys).toEqual({ send: appKeys.recv, recv: appKeys.send });
+    expect(mux.has(pair.peerId)).toBe(true);
+  });
+
+  test("known pre-E2E owners are dropped and audited instead of attaching plaintext", async () => {
+    const { mux, knownPeers, auditDrop, ownerAttached } = makeMultiplexer();
+    knownPeers.set("legacy-owner", { name: "Old phone", remote_epk: "legacy-owner", paired_at: "now" });
+
+    await mux.handleOuterFrame({
+      ingress: ownerIngress("legacy-owner", encodeClientMessage({ type: "ping", id: "ping-legacy" })),
+      roomId: "room-1",
+      turnActive: () => false,
+      isCurrent: () => true,
+      onMessage: vi.fn(),
+      onDisconnect: vi.fn(),
+      sendToPeer: vi.fn(),
+    });
+
+    expect(auditDrop).toHaveBeenCalledWith("legacy-owner", "missing_channel_key");
+    expect(ownerAttached).not.toHaveBeenCalled();
+    expect(mux.activeCount()).toBe(0);
   });
 
   test("invalid typed payload is ignored and unknown-owner ingress gets a sender-only error", async () => {
