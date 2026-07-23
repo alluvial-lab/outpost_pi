@@ -1,7 +1,7 @@
 # Outpost-Pi — Protocol & Security
 
 Canonical documentation for the Outpost-Pi protocol and protection model.
-Updated 2026-07-19.
+Updated 2026-07-23.
 
 ---
 
@@ -11,7 +11,7 @@ Updated 2026-07-19.
 - **Each PC** runs `pi-extension` (Node.js daemon) with **one Pi-key** Ed25519 key in the system Keychain (macOS/Linux/Windows)
 - **The mobile app** is the **initial authenticator** (WhatsApp Web QR style) — after pairing, PCs operate autonomously with one another
 - **Owner-key** Ed25519 lives in the mobile Keychain (iOS Keychain / Android Block Store), synced across devices under the same Apple ID / Google Account
-- **Relay** WebSocket routes JSON envelopes over TLS + stores Owner-signed `mesh_versions` — it can see the current envelope contents, but it never decides membership and always verifies signatures
+- **Relay** WebSocket routes opaque owner-channel envelopes over TLS + stores Owner-signed `mesh_versions` — it never decides membership and always verifies signatures
 - **Cross-PC routing** uses the `<pc>:<peer>` prefix in the envelope; a local UDS broker runs on each PC, and the relay forwards Pi-to-Pi traffic over WS
 
 ---
@@ -22,7 +22,7 @@ Updated 2026-07-19.
 |---|---|---|---|---|
 | **Owner-key** | Ed25519 | iOS Keychain (iCloud sync) / Android Block Store (Google sync) | Mobile app on first boot | Signs `mesh_versions`; proves authority to pair/revoke PCs |
 | **Pi-key** | Ed25519 | `@napi-rs/keyring` on the PC (macOS Keychain / Linux libsecret / Windows Credential Manager). Fallback: `~/.pi/remote/identity.json` (`0600`) with a warning on headless systems | pi-extension on first boot | Authenticates WS to the relay; signs cross-PC envelopes |
-| **App-key** | Ephemeral Ed25519 | Mobile app RAM | App for each pairing session | In-memory channel key; the pairing flow no longer signs the inner `pair_request` (authority is the authenticated relay transport) |
+| **App-key** | Ephemeral X25519; Owner-key Ed25519 signatures | Mobile app RAM during pairing; derived directional keys in FlutterSecureStorage | App for each pairing | Establishes the owner channel: signed ephemeral X25519 shares in `pair_request`/`pair_ok` bind the suite `outpost-pi-owner-channel-v1`, pair token, and Pi/Owner identities. HKDF-SHA256, salted by the pair token, derives directional keys; the extension persists them in `peers.json` (`0600`) and the app persists them in FlutterSecureStorage. Post-pairing frames use random 24B-nonce XChaCha20-Poly1305 with persisted `seqLE64` replay high-waters. |
 
 **Fixed constraint**: "1 Pi-key per PC; hardware replacement = re-pairing." Pi-keys do not migrate between machines. The Owner-key compensates (the Owner syncs cross-device through the system Keychain).
 
@@ -336,8 +336,10 @@ Pi constructs the SDK multimodal content in **image(s) → text** order:
 has `vision:false`.
 
 ### Transport
-The image travels **inline** in `user_message` (base64), inside the existing envelope —
-**the relay is unchanged** (it forwards without interpreting the payload, but it is not E2E).
+The image travels **inline** in `user_message` (base64), inside the existing
+owner-channel plaintext. The protected owner-channel adapter seals that payload
+before it becomes `outer.ct`; the relay is unchanged and forwards the opaque
+base64 frame without interpreting its contents.
 Cost: double-base64 (~+77%), accepted in this slice because it uses a compressed image
 (~150–400 KB). History/`session_sync` carries the bytes (decision #8). A binary channel
 is deferred to Track 2.
@@ -407,16 +409,23 @@ the canonical session boundary.
 
 1. The app scans the QR code and opens a WebSocket to the relay, authenticating
    with the persisted **Owner-sk** via the relay's Ed25519 challenge-response
-   (`outpost-pi-relay-auth-v1\n` ++ nonce). The WebSocket is the authenticated
-   transport; no inner message signature is needed.
-2. Over that authenticated channel, the app sends a `pair_request` carrying only
-   `{ type, id, token, device_name }` — the single-use token from the QR code,
-   not a signature. The token proves the app saw the same QR the Pi displayed.
-3. The pi-extension validates the token against the one it minted and records
-   the pairing in its local `peers.json`.
-4. The app adds the Pi-pubkey to its local `mesh_versions` and publishes a new
-   version to the relay.
-5. The pi-extension begins accepting messages from that Owner.
+   (`outpost-pi-relay-auth-v1\n` ++ nonce).
+2. The app generates an ephemeral X25519 keypair and sends `pair_request` with
+   `dh_pk` and `dh_sig`. `dh_sig` is an Owner-key signature over
+   `outpost-pi-owner-channel-v1 ++ "\napp\n" ++ tokenBytes ++ appDhPk ++ piEdPk`.
+   The QR Pi public key binds the request to the scanned Pi.
+3. The pi-extension verifies that signature against the relay-authenticated
+   Owner public key, rejects a failure with `pair_error bad_dh_sig`, generates
+   its ephemeral X25519 keypair, derives and persists the directional channel
+   keys, then returns `pair_ok` with its DH public key and Pi-key signature.
+   That signature covers the suite, token, app and Pi DH public keys, and Owner
+   public key.
+4. The app verifies the Pi signature against the QR Pi public key, derives the
+   same keys, and persists them in FlutterSecureStorage. Both sides retain
+   per-direction `seqLE64` high-water marks for replay protection.
+5. The app adds the Pi-pubkey to its local `mesh_versions` and publishes a new
+   version to the relay. The pi-extension then accepts only protected
+   post-pairing frames from that Owner.
 
 Multiple Owners can pair with the same PC (concurrency — `peers.json` accepts
 N entries).
@@ -429,12 +438,19 @@ Details in `plan/04-pairing.md`.
 
 ### What is protected
 
-- **Authenticated pairing transport**: the app reaches the relay only through
-  the Owner-key challenge-response (`outpost-pi-relay-auth-v1`); a spoofed
-  pairing requires the Owner-sk. The inner `pair_request` carries a single-use
-  QR token (not a signature) — authority comes from the authenticated transport,
-  not from signing the inner message.
-- **WS to the relay over TLS**: no one on the route (ISP, NAT, classic MITM) sees plaintext traffic.
+- **Authenticated pairing and owner channel**: the app reaches the relay through
+  Owner-key challenge-response (`outpost-pi-relay-auth-v1`), and the signed
+  ephemeral X25519 `pair_request`/`pair_ok` transcript establishes directional
+  owner-channel keys. The pair token salts HKDF-SHA256 derivation; signed
+  transcripts bind both identities and the QR Pi key.
+- **App ↔ Pi owner-channel E2E**: post-pairing `outer.ct` is
+  `base64(0x01 || seqLE64(8B) || nonce(24B random) ||
+  XChaCha20-Poly1305(key, nonce, aad=seqLE64, plaintext=jsonUtf8))`. The
+  random 24-byte nonce and authenticated sequence protect confidentiality,
+  integrity, and replay; sequence high-waters and derived keys persist across
+  reconnects (`peers.json` mode `0600` on the extension, FlutterSecureStorage
+  on the app).
+- **WS to the relay over TLS**: no one on the route (ISP, NAT, classic MITM) sees transport plaintext.
 - **Cross-PC cryptographic authorization**: the relay forwards only between sibling Pis of the same Owner (verified through the Owner-sig in `mesh_versions`).
 - **Anti-spoofing between Pis**: the broker rejects envelopes whose `envelope.from` prefix does not match authenticated `from_pc`.
 - **Membership anti-rollback**: monotonic versioning + signature prevents a relay/attacker from rolling back the mesh.
@@ -443,8 +459,13 @@ Details in `plan/04-pairing.md`.
 
 ### What is NOT protected (stated honestly)
 
-- **The relay sees plaintext envelope contents**. TLS protects traffic in transit; the relay stores/forwards it in plaintext. The relay operator sees who sends to whom + the contents. Mitigation: **self-host** the relay (open source).
-- There is **no E2E** between the app and pi-extension or between cross-PC Pis. **We make no E2E claim in any product copy.**
+- **Cross-PC Pi↔Pi traffic is not E2E-protected**. The relay can read its generic
+  envelope bodies as well as routing metadata. The app↔Pi owner channel is
+  E2E-encrypted and authenticated; its `outer.ct` payload is opaque to the
+  relay.
+- **Relay routing metadata remains visible** for owner-channel traffic,
+  including who communicates, room names, cwd, model, and timing. Mitigation:
+  **self-host** the relay (open source).
 - **Headless Linux** (Docker, a VPS without a D-Bus session): the Pi-key falls back to a `0600` file on disk with a loud warning. An attacker with user access can read it. GNOME Keyring / KWallet is recommended for real hardening.
 - A **full encrypted backup** (Time Machine, encrypted iCloud Drive, etc.) can carry the Keychain. An attacker needs the backup user passphrase.
 - **Clone detection is not implemented yet**: two PCs with the same Pi-key (through a copied headless file or compromise) can coexist on the relay without an alert. On the roadmap (plan/27 Wave E3).
@@ -455,11 +476,11 @@ Details in `plan/04-pairing.md`.
 |---|---|---|
 | Network passive | Sniff TLS | ✅ Yes (TLS cipher) |
 | Network active (MITM) | Sniff + inject | ✅ Yes (TLS + Ed25519 pairing) |
-| Public relay operator | Reads everything that passes through; persists it | ⚠️ Partial (mitigation: self-host) |
+| Public relay operator | Sees routing metadata (who talks to whom, room names, cwd, model, timing); can read unprotected cross-PC envelopes | ⚠️ Partial — owner-channel payload contents are E2E-protected; mitigation: self-host |
 | Other user on the target PC | Reads target filesystem | ✅ Yes (user-bound Keychain) |
 | Attacker with root on target PC | Memory dump, process injection | ❌ No (acceptable threat model: root = game over) |
 | Attacker with a disk backup | Restores disk to another Mac | ✅ Yes on macOS with FileVault enabled (recommended) |
-| Attacker who steals only `peers.json` | Sees public metadata (Owner pubkeys + nicknames) | Privacy issue, not impersonation |
+| Attacker who steals only `peers.json` | Obtains Owner metadata and persisted directional channel keys | ❌ No for the affected owner channel; re-pair to replace the keys |
 
 ---
 
@@ -479,12 +500,11 @@ Details in `plan/04-pairing.md`.
 ## Public architectural roadmap
 
 Short term:
-- Wave E2: `chmod 0o600` on `peers.json` + atomic write
 - Wave E3: server-side clone detection (alert when two WS connections for the same Pi-pubkey come from different IPs)
 
 Medium term:
 - **Harness wrappers** (`outpost-pi claude`, `outpost-pi opencode`): other coding agents connect to the local UDS broker through a wrapper, gaining mesh capability without reimplementing the protocol
-- E2E payload encryption (Curve25519 + ChaCha20-Poly1305 between App ↔ Pi; optional cross-PC)
+- E2E protection for cross-PC Pi↔Pi payloads
 
 Long term:
 - Direct PC-to-PC communication through WebRTC/QUIC (the relay becomes a fallback)

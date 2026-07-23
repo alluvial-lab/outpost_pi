@@ -28,17 +28,18 @@ Ed25519 in the app; Hive for local cache in Flutter; `flutter_modular` +
 - **One Pi-key per PC.** Hardware change = re-pairing. There is no Pi-key
   migration between machines; the Owner-key (mobile, synced via system
   Keychain) compensates.
-- **Ed25519 everywhere for identity.** Owner-key signs `mesh_versions`;
-  Pi-key authenticates to the relay and signs cross-PC envelopes; App-key is
-  ephemeral per pairing session.
+- **Ed25519 identities.** Owner-key signs `mesh_versions`; Pi-key
+  authenticates to the relay and signs cross-PC envelopes. Each pairing also
+  uses an ephemeral X25519 App-key for the owner-channel handshake.
 - **Relay never decides membership.** It forwards between Pi-siblings of the
   same Owner (verified via Owner signature on `mesh_versions`) and verifies
   signatures, but it never adjudicates who is in the mesh — the Owner does.
-- **No E2E today.** TLS on transport is the only protection against an external
-  MITM. The relay sees plaintext envelope contents. This is declared honestly
-  in product copy and in `PROTOCOL.md`. Re-enabling E2E (Noise XX /
-  Curve25519 + ChaCha20-Poly1305) is roadmap-additive and must not change the
-  envelope shape.
+- **App ↔ Pi owner-channel E2E.** Pairing uses signed ephemeral X25519 ECDH
+  under `outpost-pi-owner-channel-v1`; HKDF-SHA256 derives directional keys
+  salted by the pair token. Post-pairing `outer.ct` is a sealed
+  XChaCha20-Poly1305 frame with a random 24-byte nonce and persisted `seqLE64`
+  replay protection, so the relay cannot read or alter owner-channel payloads.
+  Cross-PC Pi↔Pi traffic remains relay-mediated and is not E2E-protected.
 - **Bounded offline replay for known app peers.** When the relay marks an
   attached app peer offline, the extension keeps a per-peer, in-memory outbound
   buffer for the active turn and most recently completed turn, subject to frame
@@ -80,15 +81,17 @@ island remains for control frames not yet migrated to the schema IR.
 ### Transports
 
 1. **App ↔ pi-extension** — WebSocket over TLS (relay-mediated) carrying
-   newline-delimited JSON `ClientMessage` / `ServerMessage`. Chat-bearing
+   newline-delimited JSON `ClientMessage` / `ServerMessage`. After signed-DH
+   pairing, `outer.ct` is an E2E-encrypted and authenticated sealed frame;
+   only the pre-key pairing exchange remains plaintext inside TLS. Chat-bearing
    `ServerMessage`s (`user_message`, `agent_chunk`, `agent_done`,
    `session_history`, tool surfaces) carry a canonical `session_id`
    (endpoint-owned, opaque to the relay); the app's `session_gate.dart`
    rejects missing/foreign session IDs before mutation.
 2. **Cross-PC pi-to-pi** — relay `pi_envelope` / `pi_envelope_in` frames
    wrapping the generic agent envelope `{from, to, id, re, body}`. The relay
-   forwards opaquely; it does not parse envelope bodies (though the body is
-   plaintext base64, not ciphertext).
+   forwards them without parsing their bodies, but this traffic is not
+   E2E-protected.
 3. **Cockpit ↔ pi-extension** — Pi custom events carrying structured
    `outpost_pi_control` JSON envelopes (the active transport; separate from
    the relay). The NUL-prefix string form (`\x00outpost-pi-ctrl:`) survives
@@ -103,12 +106,13 @@ island remains for control frames not yet migrated to the schema IR.
 |---|---|---|---|---|
 | Owner-key | Ed25519 | Mobile Keychain (iOS Keychain / Android Block Store), synced via iCloud / Google account | App on first boot | Signs `mesh_versions`; proves authority to pair/revoke PCs |
 | Pi-key | Ed25519 | PC keyring via `@napi-rs/keyring` (macOS Keychain / libsecret / Credential Manager). Fallback `~/.pi/remote/identity.json` (`0600`) with a warning on headless Linux | pi-extension on first boot | Authenticates WS to the relay; signs cross-PC envelopes |
-| App-key | Ed25519, ephemeral | App RAM | App per pairing session | Authenticated channel establishment during pairing |
+| App-key | X25519, ephemeral; Owner-key signs the transcript | App RAM during pairing; derived channel keys in FlutterSecureStorage | App per pairing | Establishes directional E2E owner-channel keys through signed ephemeral-DH pairing |
 
 Detailed trust model, threat table, and "what is NOT protected" live in
-`PROTOCOL.md` → "Protection model (Trust Model)." Summary of what is not
-protected: relay sees plaintext contents; no E2E; headless Linux falls back to
-a `0600` file on disk; full encrypted backups can carry the Keychain; clone
+`PROTOCOL.md` → "Protection model (Trust Model)." Owner-channel payloads are
+E2E-encrypted and authenticated, but the relay still sees routing metadata and
+cross-PC Pi↔Pi traffic is not E2E-protected. Headless Linux falls back to a
+`0600` file on disk; full encrypted backups can carry the Keychain; clone
 detection (two PCs with the same Pi-key) is not yet implemented.
 
 ## Verification commands
