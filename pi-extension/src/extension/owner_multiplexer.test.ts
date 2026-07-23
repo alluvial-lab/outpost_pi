@@ -544,6 +544,37 @@ describe("OwnerMultiplexer", () => {
     }
   });
 
+  test("valid proof-holders receive actionable consumed and expired token errors", async () => {
+    for (const [status, code, message] of [
+      ["consumed", "token_consumed", "already consumed"],
+      ["expired", "token_expired", "expired"],
+    ] as const) {
+      const { mux, identity, consumePairToken, knownPeers } = makeMultiplexer();
+      consumePairToken.mockReturnValue(status);
+      const pair = signedPairRequest(identity.publicKey);
+      const sendToPeer = vi.fn();
+
+      await mux.handleOuterFrame({
+        ingress: ownerIngress(pair.peerId, encodeClientMessage(pair.message)),
+        roomId: "room-1",
+        turnActive: () => false,
+        isCurrent: () => true,
+        onMessage: vi.fn(),
+        onDisconnect: vi.fn(),
+        sendToPeer,
+      });
+
+      expect(consumePairToken).toHaveBeenCalledTimes(1);
+      expect(consumePairToken).toHaveBeenCalledWith(pair.token);
+      expect(sendToPeer).toHaveBeenCalledWith(pair.peerId, expect.objectContaining({
+        type: "pair_error",
+        code,
+        message: expect.stringContaining(message),
+      }));
+      expect(knownPeers.size).toBe(0);
+    }
+  });
+
   test("pair MAC is checked before the DH signature and token consumption", async () => {
     const { mux, identity, consumePairToken } = makeMultiplexer();
     const pair = signedPairRequest(identity.publicKey);
@@ -636,7 +667,9 @@ describe("OwnerMultiplexer", () => {
 
       expect(sendToPeer).toHaveBeenCalledWith(pair.peerId, expect.objectContaining({
         type: "pair_error",
-        code: "bad_dh_sig",
+        // dh_pk is pair-MAC input, so malformed key material cannot prove
+        // token knowledge; only a MAC-proven malformed signature reveals stage.
+        code: mutation.endsWith("sig") ? "bad_dh_sig" : "token_unknown",
       }));
       expect(consumePairToken).not.toHaveBeenCalled();
       expect(knownPeers.size).toBe(0);

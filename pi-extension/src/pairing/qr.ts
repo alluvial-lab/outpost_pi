@@ -40,9 +40,16 @@ export class QRSession {
     return { token, expiresAt };
   }
 
-  /** Resolve a live, unconsumed token from its public SHA-256 locator. */
+  /**
+   * Resolve the retained token record from its public SHA-256 locator.
+   *
+   * Expiry and consumption are intentionally checked only by consumeToken,
+   * after the caller proves token knowledge. The record remains retained until
+   * normal QR rotation, replacement, or clear so proof-holders receive an
+   * actionable status without exposing token stage to unknown locators.
+   */
   findTokenById(tokenId: string): string | null {
-    if (!this.active || this.active.consumed || Date.now() > this.active.expiresAt) return null;
+    if (!this.active) return null;
     const activeId = Buffer.from(pairTokenId(this.active.token)).toString("base64");
     return activeId === tokenId ? this.active.token : null;
   }
