@@ -294,7 +294,7 @@ sealed class ClientMessage {
 }
 
 final class PairRequest extends ClientMessage {
-  const PairRequest({required this.id, required this.token, required this.deviceName});
+  const PairRequest({required this.id, required this.token, required this.deviceName, this.dhPk, this.dhSig});
 
   @override
   String get type => 'pair_request';
@@ -302,11 +302,15 @@ final class PairRequest extends ClientMessage {
   final String id;
   final String token;
   final String deviceName;
+  final String? dhPk;
+  final String? dhSig;
 
   factory PairRequest.fromJson(Map<String, dynamic> json) => PairRequest(
         id: json['id'] as String,
         token: json['token'] as String,
         deviceName: json['device_name'] as String,
+        dhPk: json['dh_pk'] as String?,
+        dhSig: json['dh_sig'] as String?,
       );
 
   @override
@@ -315,6 +319,10 @@ final class PairRequest extends ClientMessage {
         'id': id,
         'token': token,
         'device_name': deviceName,
+        if (dhPk case final dhPk?)
+          'dh_pk': dhPk,
+        if (dhSig case final dhSig?)
+          'dh_sig': dhSig,
       };
 }
 
@@ -696,7 +704,7 @@ sealed class ServerMessage {
 }
 
 final class PairOk extends ServerMessage {
-  const PairOk({required this.inReplyTo, required this.sessionName, required this.sessionStartedAt, required this.roomId, this.sessionId = '', this.harness, this.hostname});
+  const PairOk({required this.inReplyTo, required this.sessionName, required this.sessionStartedAt, required this.roomId, this.sessionId = '', this.harness, this.hostname, this.dhPk, this.dhSig});
 
   @override
   String get type => 'pair_ok';
@@ -708,6 +716,8 @@ final class PairOk extends ServerMessage {
   final String sessionId;
   final PiHarness? harness;
   final String? hostname;
+  final String? dhPk;
+  final String? dhSig;
 
   factory PairOk.fromJson(Map<String, dynamic> json) => PairOk(
         inReplyTo: json['in_reply_to'] as String,
@@ -717,6 +727,8 @@ final class PairOk extends ServerMessage {
         sessionId: _optionalSessionIdFromJson(json),
         harness: json['harness'] is Map ? PiHarness.fromJson(json['harness'].cast<String, dynamic>()) : null,
         hostname: json['hostname'] is String && json['hostname'].isNotEmpty ? json['hostname'] : null,
+        dhPk: json['dh_pk'] as String?,
+        dhSig: json['dh_sig'] as String?,
       );
 
   @override
@@ -731,6 +743,10 @@ final class PairOk extends ServerMessage {
           'harness': harness.toJson(),
         if (hostname case final hostname?)
           'hostname': hostname,
+        if (dhPk case final dhPk?)
+          'dh_pk': dhPk,
+        if (dhSig case final dhSig?)
+          'dh_sig': dhSig,
       };
 }
 
