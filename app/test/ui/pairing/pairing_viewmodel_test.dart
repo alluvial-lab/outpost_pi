@@ -127,6 +127,9 @@ class _FakeStorage extends PairingStorage {
   Future<List<PeerRecord>> listPeers() async => _saved;
 
   @override
+  Future<void> savePairedPeer(PeerRecord r) async => _saved.add(r);
+
+  @override
   Future<void> savePeer(PeerRecord r) async => _saved.add(r);
 }
 
