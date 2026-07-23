@@ -10,6 +10,11 @@ import {
 } from "../protocol/relay_ingress.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import {
+  decodePeerChannelKeys,
+  parsePeerChannelSequence,
+  updatePeerChannelSequences,
+} from "../pairing/storage.js";
+import {
   REACHABILITY_RELAY_LIVENESS_CHECK_MS,
   REACHABILITY_RELAY_LIVENESS_TIMEOUT_MS,
   reachabilityBackoffMs,
@@ -19,7 +24,7 @@ import {
   claimRelayIngressFanout,
   publishRelayIngress,
 } from "../transport/relay_ingress_fanout.js";
-import { PlainPeerChannel } from "../transport/peer_channel.js";
+import { PlainPeerChannel, SecurePeerChannel } from "../transport/peer_channel.js";
 import type {
   CrossPcBridgeInput,
   RelayPeerChannel,
@@ -111,7 +116,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   const outerMessageHandlers = new Set<(
     ingress: DecodedOuterIngress,
     isCurrent: () => boolean,
-  ) => void | Promise<void>>();
+  ) => boolean | void | Promise<boolean | void>>();
   const controlFrameHandlers = new Set<(frame: RelayControlFrame) => void | Promise<void>>();
   type RelayBinding = {
     relay: RelayClient;
@@ -170,14 +175,16 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   }
 
   function bindRelay(next: RelayClient): void {
+    let dispatchTail: Promise<void> = Promise.resolve();
     const binding = {
       relay: next,
       generation: nextRelayGeneration++,
-      onMessage: (line: string) => dispatchRelayMessage(
-        next,
-        line,
-        () => connectionIsCurrent(binding),
-      ),
+      onMessage: (line: string) => {
+        // Preserve WebSocket FIFO while async owner lookup/persistence runs.
+        dispatchTail = dispatchTail
+          .then(() => dispatchRelayMessage(next, line, () => connectionIsCurrent(binding)))
+          .catch(() => undefined);
+      },
       onClose: () => onRelayClose(binding),
       releaseIngressFanout: claimRelayIngressFanout(next),
     } satisfies RelayBinding;
@@ -317,7 +324,10 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   }
 
   function onOuterMessage(
-    handler: (ingress: DecodedOuterIngress, isCurrent: () => boolean) => void | Promise<void>,
+    handler: (
+      ingress: DecodedOuterIngress,
+      isCurrent: () => boolean,
+    ) => boolean | void | Promise<boolean | void>,
   ): () => void {
     outerMessageHandlers.add(handler);
     return () => {
@@ -332,37 +342,65 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     };
   }
 
-  function dispatchRelayMessage(
+  async function dispatchRelayMessage(
     source: RelayClient,
     line: string,
     isCurrent: () => boolean,
-  ): void {
+  ): Promise<void> {
     let decoded: DecodedRelayIngress;
     try {
       decoded = decodeRelayIngress(line);
     } catch {
       return;
     }
+    let consumed = false;
     if (decoded.kind === "control") {
       for (const handler of controlFrameHandlers) {
-        void handler(decoded.frame);
+        await handler(decoded.frame);
       }
     } else if (decoded.kind === "outer") {
+      // Owner attachment may require an async peers.json lookup. Complete it
+      // before typed fanout so a newly created SecurePeerChannel receives the
+      // triggering protected frame; no plaintext shortcut is permitted.
       for (const handler of outerMessageHandlers) {
-        void handler(decoded, isCurrent);
+        if (await handler(decoded, isCurrent) === true) consumed = true;
       }
     }
-    publishRelayIngress(source, decoded);
+    // A consumed pair_request stays on the plaintext handshake path and must
+    // not be re-published into the newly established SecurePeerChannel.
+    if (!consumed) publishRelayIngress(source, decoded);
   }
 
   function createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel {
     const current = relay;
     if (!current) throw new Error("relay transport is not connected");
-    return new PlainPeerChannel(
+    if (!input.peerRecord) {
+      return new PlainPeerChannel(
+        current,
+        input.peerId,
+        (message) => { void input.onMessage(message); },
+        () => input.onDisconnect(input.peerId),
+      );
+    }
+
+    const keys = decodePeerChannelKeys(input.peerRecord.channel_key);
+    const sendSeq = parsePeerChannelSequence(input.peerRecord.send_seq);
+    const recvSeq = parsePeerChannelSequence(input.peerRecord.recv_seq);
+    if (!keys || sendSeq === null || recvSeq === null || !input.peerRecord.channel_key) {
+      throw new Error("established owner has invalid protected-channel state");
+    }
+    const channelKey = input.peerRecord.channel_key;
+    return new SecurePeerChannel(
       current,
       input.peerId,
       (message) => { void input.onMessage(message); },
-      () => input.onDisconnect(input.peerId),
+      {
+        keys,
+        sendSeq,
+        recvSeq,
+        persistSequences: (patch) => updatePeerChannelSequences(input.peerId, channelKey, patch),
+        onDisconnect: () => input.onDisconnect(input.peerId),
+      },
     );
   }
 

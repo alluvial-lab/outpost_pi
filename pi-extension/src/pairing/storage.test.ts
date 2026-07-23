@@ -35,6 +35,10 @@ const {
   _IDENTITY_FILE_FOR_TEST,
   addPeer,
   listPeers,
+  encodePeerChannelKeys,
+  decodePeerChannelKeys,
+  parsePeerChannelSequence,
+  updatePeerChannelSequences,
 } = storage;
 import type { KeyStoreBackend } from "./storage.js";
 
@@ -275,6 +279,44 @@ describe("peers.json storage permissions", () => {
 
     expect(peers).toEqual([PHONE_PEER]);
     expectPrivateFileMode(PEERS_FILE_FOR_TEST);
+  });
+
+  test("channel key and decimal uint64 high-waters survive a storage restart", async () => {
+    const send = new Uint8Array(32).fill(21);
+    const recv = new Uint8Array(32).fill(22);
+    const channelKey = encodePeerChannelKeys({ send, recv });
+    await addPeer({
+      ...PHONE_PEER,
+      channel_key: channelKey,
+      send_seq: "0",
+      recv_seq: "0",
+    });
+
+    expect(await updatePeerChannelSequences(PHONE_PEER.remote_epk, channelKey, {
+      sendSeq: 9_007_199_254_740_993n,
+      recvSeq: 42n,
+    })).toBe(true);
+
+    // Re-read from disk rather than retaining the object passed to addPeer.
+    const [reloaded] = await listPeers();
+    expect(reloaded).toMatchObject({
+      channel_key: channelKey,
+      send_seq: "9007199254740993",
+      recv_seq: "42",
+    });
+    expect(decodePeerChannelKeys(reloaded!.channel_key)).toEqual({ send, recv });
+    expect(parsePeerChannelSequence(reloaded!.send_seq)).toBe(9_007_199_254_740_993n);
+    expectPrivateFileMode(PEERS_FILE_FOR_TEST);
+  });
+
+  test("stale channel updates cannot overwrite freshly re-paired key material", async () => {
+    const oldKey = encodePeerChannelKeys({ send: new Uint8Array(32).fill(1), recv: new Uint8Array(32).fill(2) });
+    const freshKey = encodePeerChannelKeys({ send: new Uint8Array(32).fill(3), recv: new Uint8Array(32).fill(4) });
+    await addPeer({ ...PHONE_PEER, channel_key: oldKey, send_seq: "0", recv_seq: "0" });
+    await addPeer({ ...PHONE_PEER, channel_key: freshKey, send_seq: "0", recv_seq: "0" });
+
+    expect(await updatePeerChannelSequences(PHONE_PEER.remote_epk, oldKey, { sendSeq: 99n })).toBe(false);
+    expect((await listPeers())[0]).toMatchObject({ channel_key: freshKey, send_seq: "0" });
   });
 
   test("addPeer migrates an existing permissive peers.json on update", async () => {

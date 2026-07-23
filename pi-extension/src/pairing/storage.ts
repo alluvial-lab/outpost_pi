@@ -263,10 +263,52 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
 
 // ── peers.json ────────────────────────────────────────────────────────────────
 
+/** Persist one Owner pairing and its Pi-relative protected-channel high-water state. */
 export interface PeerRecord {
   name: string;
   remote_epk: string; // base64 standard, 32B Ed25519
   paired_at: string;  // ISO-8601
+  /** Base64 of 64 bytes: Pi send key followed by Pi receive key. */
+  channel_key?: string;
+  /** Unsigned decimal uint64 high-water, encoded as a string to avoid JSON precision loss. */
+  send_seq?: string;
+  /** Unsigned decimal uint64 high-water, encoded as a string to avoid JSON precision loss. */
+  recv_seq?: string;
+}
+
+/** Hold validated Pi-relative channel keys decoded from a peer record. */
+export interface PeerChannelKeys {
+  send: Uint8Array;
+  recv: Uint8Array;
+}
+
+const MAX_UINT64 = (1n << 64n) - 1n;
+
+/** Encode Pi-relative send and receive keys as one stable peers.json field. */
+export function encodePeerChannelKeys(keys: PeerChannelKeys): string {
+  if (keys.send.length !== 32 || keys.recv.length !== 32) {
+    throw new Error("owner channel directional keys must each be 32 bytes");
+  }
+  return Buffer.concat([Buffer.from(keys.send), Buffer.from(keys.recv)]).toString("base64");
+}
+
+/** Decode and validate the persisted Pi-relative directional key material. */
+export function decodePeerChannelKeys(channelKey: string | undefined): PeerChannelKeys | null {
+  if (!channelKey) return null;
+  const decoded = Buffer.from(channelKey, "base64");
+  if (decoded.length !== 64 || decoded.toString("base64") !== channelKey) return null;
+  return {
+    send: Uint8Array.from(decoded.subarray(0, 32)),
+    recv: Uint8Array.from(decoded.subarray(32, 64)),
+  };
+}
+
+/** Parse a persisted decimal uint64 high-water, defaulting absent legacy fields to zero. */
+export function parsePeerChannelSequence(value: string | undefined): bigint | null {
+  if (value === undefined) return 0n;
+  if (!/^(?:0|[1-9][0-9]*)$/.test(value)) return null;
+  const parsed = BigInt(value);
+  return parsed <= MAX_UINT64 ? parsed : null;
 }
 
 async function _hardenPeersFilePermissions(): Promise<void> {
@@ -303,20 +345,58 @@ export async function listPeers(): Promise<PeerRecord[]> {
   }
 }
 
+let _peerMutationTail: Promise<void> = Promise.resolve();
+
+function _mutatePeers<T>(mutate: (peers: PeerRecord[]) => Promise<T> | T): Promise<T> {
+  const operation = _peerMutationTail.then(async () => {
+    const peers = await listPeers();
+    return mutate(peers);
+  });
+  _peerMutationTail = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
 /**
  * Persist a pairing record, replacing an existing entry for the same remote key atomically.
  *
  * @throws when the roster cannot be written.
  */
-export async function addPeer(record: PeerRecord): Promise<void> {
-  const peers = await listPeers();
-  const idx = peers.findIndex((p) => p.remote_epk === record.remote_epk);
-  if (idx >= 0) {
-    peers[idx] = record; // idempotent re-pair
-  } else {
-    peers.push(record);
-  }
-  await _writePeersFile(peers);
+export function addPeer(record: PeerRecord): Promise<void> {
+  return _mutatePeers(async (peers) => {
+    const idx = peers.findIndex((p) => p.remote_epk === record.remote_epk);
+    if (idx >= 0) {
+      peers[idx] = record; // idempotent re-pair refreshes the channel key and counters
+    } else {
+      peers.push(record);
+    }
+    await _writePeersFile(peers);
+  });
+}
+
+/**
+ * Persist one or both sequence high-waters without overwriting a newer re-pair.
+ *
+ * The expected channel key fences queued writes from a detached channel after
+ * the same Owner has established fresh key material.
+ */
+export function updatePeerChannelSequences(
+  remoteEpk: string,
+  expectedChannelKey: string,
+  patch: { sendSeq?: bigint; recvSeq?: bigint },
+): Promise<boolean> {
+  return _mutatePeers(async (peers) => {
+    const peer = peers.find((candidate) => candidate.remote_epk === remoteEpk);
+    if (!peer || peer.channel_key !== expectedChannelKey) return false;
+    for (const seq of [patch.sendSeq, patch.recvSeq]) {
+      if (seq !== undefined && (seq < 0n || seq > MAX_UINT64)) {
+        throw new RangeError("owner channel sequence must fit uint64");
+      }
+    }
+    if (patch.sendSeq !== undefined) peer.send_seq = patch.sendSeq.toString(10);
+    if (patch.recvSeq !== undefined) peer.recv_seq = patch.recvSeq.toString(10);
+    await _writePeersFile(peers);
+    return true;
+  });
 }
 
 /**
@@ -339,12 +419,13 @@ export async function listOwnerPubkeys(): Promise<string[]> {
  *
  * @throws when the updated roster cannot be written.
  */
-export async function removePeer(remoteEpk: string): Promise<boolean> {
-  const peers = await listPeers();
-  const filtered = peers.filter((p) => p.remote_epk !== remoteEpk);
-  if (filtered.length === peers.length) return false;
-  await _writePeersFile(filtered);
-  return true;
+export function removePeer(remoteEpk: string): Promise<boolean> {
+  return _mutatePeers(async (peers) => {
+    const filtered = peers.filter((p) => p.remote_epk !== remoteEpk);
+    if (filtered.length === peers.length) return false;
+    await _writePeersFile(filtered);
+    return true;
+  });
 }
 
 // ── Test-only helpers ────────────────────────────────────────────────────────
