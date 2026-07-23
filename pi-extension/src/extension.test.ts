@@ -306,7 +306,7 @@ vi.mock("./pairing/qr.js", async (importOriginal) => {
         expiresAt: Date.now() + 60_000,
       }),
       findTokenById: vi.fn().mockImplementation((tokenId: string) =>
-        _tokenStatus === "ok" && tokenId === Buffer.from(pairTokenId("test-token")).toString("base64")
+        _tokenStatus !== "unknown" && tokenId === Buffer.from(pairTokenId("test-token")).toString("base64")
           ? "test-token"
           : null,
       ),
@@ -794,7 +794,7 @@ describe("state machine + pair_request flow", () => {
     expect(_getRemoteSessionIdForTest()).toBe("sdk-session-captured");
   });
 
-  test("expired token locator → pair_error{token_unknown} + state stays started", async () => {
+  test("expired token proof-holder → pair_error{token_expired} + state stays started", async () => {
     _tokenStatus = "expired";
     const APP_PEER_ID = "stale-token-peer";
 
@@ -819,11 +819,11 @@ describe("state machine + pair_request flow", () => {
     expect(errs[0]!.inner).toMatchObject({
       type: "pair_error",
       in_reply_to: "req-x",
-      code: "token_unknown",
+      code: "token_expired",
     });
   });
 
-  test("consumed token locator → pair_error{token_unknown} on a later pair_request", async () => {
+  test("consumed token proof-holder → pair_error{token_consumed} on a later pair_request", async () => {
     _tokenStatus = "ok";
 
     const APP_PEER_A = "peer-a";
@@ -842,7 +842,7 @@ describe("state machine + pair_request flow", () => {
     _onPeerDisconnect();
     expect(outpostPiTestHarness.state()).toBe("started");
 
-    // A consumed token is no longer a live candidate and cannot be resolved.
+    // The retained record resolves so a valid proof-holder gets its stage.
     _tokenStatus = "consumed";
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_B, {
       type: "pair_request", id: "req-b", token: "test-token", device_name: "Phone B",
@@ -855,7 +855,7 @@ describe("state machine + pair_request flow", () => {
       d.inner.type === "pair_error" && d.inner["in_reply_to"] === "req-b",
     );
     expect(errs).toHaveLength(1);
-    expect(errs[0]!.inner).toMatchObject({ code: "token_unknown" });
+    expect(errs[0]!.inner).toMatchObject({ code: "token_consumed" });
   });
 
   test("paired peer may re-pair to refresh its protected channel", async () => {
