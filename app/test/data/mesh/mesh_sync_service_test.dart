@@ -35,6 +35,25 @@ class _FakeSecureStorage implements FlutterSecureStorage {
   noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
+class _RestoreSchedulingStorage extends PairingStorage {
+  _RestoreSchedulingStorage(super.store);
+
+  final restoreScheduled = Completer<void>();
+  void Function(PeerRecord peer)? onRestoreScheduled;
+  int restoreCalls = 0;
+
+  @override
+  Future<bool> restorePeerSnapshotSilent(
+    PeerRecord record, {
+    required bool Function() stillCurrent,
+  }) {
+    restoreCalls += 1;
+    if (!restoreScheduled.isCompleted) restoreScheduled.complete();
+    onRestoreScheduled?.call(record);
+    return super.restorePeerSnapshotSilent(record, stillCurrent: stillCurrent);
+  }
+}
+
 class _StubAdapter implements HttpClientAdapter {
   final Map<String, _Reply> replies = {};
   RequestOptions? lastOptions;
@@ -896,6 +915,140 @@ void main() {
       expect(failure.reason, isNot(contains('owner-key')));
       svc.dispose();
     });
+
+    test(
+      'conflict snapshot restore keeps protected channel when still current',
+      () async {
+        final owner = await _newOwner();
+        final storage = _RestoreSchedulingStorage(_FakeSecureStorage());
+        final protectedPeer = _testPeer.copyWith(
+          channel: OwnerChannelState(
+            sendKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+            receiveKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+            sendSequence: 7,
+            receiveSequence: 9,
+          ),
+        );
+        await storage.savePairedPeer(protectedPeer);
+        final bridge = await _bootedBridge(
+          storage,
+          owner.keyPair,
+          owner.ownerPk,
+        );
+        final relayBlob = MeshBlob(
+          version: 2,
+          issuedAt: 2,
+          ownerPk: owner.ownerPk,
+          members: const [
+            MeshMember(
+              remoteEpk: 'ZXBrLW1lc2g=',
+              relayUrl: 'https://relay.changed',
+              pairedAt: '2026-07-17T00:00:00Z',
+              nickname: 'relay metadata',
+            ),
+          ],
+        );
+        final relayEnvelope = await relayBlob.signWith(owner.keyPair);
+        final client = _ScriptedMeshClient(
+          publishScripts: [
+            () async => const MeshPublishConflict(),
+            () async => const MeshPublishOk(version: 3, updatedAt: 3),
+          ],
+          fetchScripts: [
+            () async => MeshFetchOk(
+              envelope: relayEnvelope,
+              version: 2,
+              updatedAt: 2,
+            ),
+          ],
+        );
+        final svc = MeshSyncService(client, bridge, storage);
+
+        final result = await svc.publish();
+
+        expect(result, isA<MeshPublishOk>());
+        expect(storage.restoreCalls, 1);
+        expect(await storage.loadPeer(protectedPeer.remoteEpk), protectedPeer);
+        final retry = MeshBlob.fromCanonicalBytes(
+          client.publishedEnvelopes[1].blob,
+        );
+        expect(retry.members.single.relayUrl, protectedPeer.relayUrl);
+        expect(retry.members.single.nickname, protectedPeer.nickname);
+        svc.dispose();
+      },
+    );
+
+    test(
+      'queued revoke aborts conflict snapshot restore without resurrecting keys',
+      () async {
+        final owner = await _newOwner();
+        final backingStore = _FakeSecureStorage();
+        final storage = _RestoreSchedulingStorage(backingStore);
+        final protectedPeer = _testPeer.copyWith(
+          channel: OwnerChannelState(
+            sendKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+            receiveKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+            sendSequence: 7,
+            receiveSequence: 9,
+          ),
+        );
+        await storage.savePairedPeer(protectedPeer);
+        final bridge = await _bootedBridge(
+          storage,
+          owner.keyPair,
+          owner.ownerPk,
+        );
+        final relayBlob = MeshBlob(
+          version: 2,
+          issuedAt: 2,
+          ownerPk: owner.ownerPk,
+          members: const [
+            MeshMember(
+              remoteEpk: 'ZXBrLW1lc2g=',
+              relayUrl: 'https://relay.changed',
+              pairedAt: '2026-07-17T00:00:00Z',
+              nickname: 'relay metadata',
+            ),
+          ],
+        );
+        final relayEnvelope = await relayBlob.signWith(owner.keyPair);
+        final client = _ScriptedMeshClient(
+          publishScripts: [
+            () async => const MeshPublishConflict(),
+            () async => const MeshPublishOk(version: 3, updatedAt: 3),
+          ],
+          fetchScripts: [
+            () async => MeshFetchOk(
+              envelope: relayEnvelope,
+              version: 2,
+              updatedAt: 2,
+            ),
+          ],
+        );
+        final svc = MeshSyncService(client, bridge, storage);
+        storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
+        Future<void>? revoke;
+        storage.onRestoreScheduled = (peer) {
+          revoke = storage.deletePeer(peer.remoteEpk);
+        };
+
+        final result = await svc.publish();
+        await storage.restoreScheduled.future;
+        await revoke;
+
+        expect(result, isA<MeshPublishConflict>());
+        expect(storage.restoreCalls, 1);
+        expect(await storage.loadPeer(protectedPeer.remoteEpk), isNull);
+        expect(
+          backingStore._store.keys,
+          isNot(
+            contains('dev.outpostpi.owner-channels:${protectedPeer.remoteEpk}'),
+          ),
+          reason: 'the stale snapshot must not restore revoked channel keys',
+        );
+        svc.dispose();
+      },
+    );
 
     test(
       'normal pull aborts when a local mutation becomes pending during fetch',
