@@ -1,7 +1,7 @@
 ---
 id: feature-owner-message-e2e-authentication
 kind: feature
-stage: drafting
+stage: implementing
 tags: [security, app, pi-extension, relay, protocol]
 parent: null
 depends_on: []
@@ -74,3 +74,269 @@ forward in place if encryption lands.
 
 Promoted from `.work/backlog/gate-security-relay-owner-messages-unsigned.md`
 per advisor review 2026-07-23, recommendation #3.
+
+## Design decisions
+
+- **Protection scope**: full E2E (XChaCha20-Poly1305 encryption + integrity),
+  single cutover — operator-confirmed 2026-07-23. Integrity-only signatures
+  rejected: leaves relay readability as a second wire change later.
+- **Key establishment**: signed ephemeral X25519 ECDH inside the existing
+  `pair_request`/`pair_ok` handshake — operator-confirmed 2026-07-23. QR-carried
+  channel key rejected: QR capture would yield the long-term key, no PFS.
+- **Cutover policy**: hard cutover, app + extension paired only; relay
+  untouched (`ct` stays opaque base64). Consistent with the 0.1.0 paired-wire
+  precedent. Pre-E2E pairings must re-pair.
+- **Cross-PC Pi↔Pi E2E**: out of scope — the owner channel is the High finding;
+  Pi↔Pi is a separate future item.
+- **Key resumption**: derived channel key persisted per-pairing on both sides;
+  no re-handshake on reconnect; re-pair is the recovery path. Defensive
+  posture because the upstream E2E rollback rationale is unknown.
+- **Prior art risk**: upstream `remote_pi` had a libsodium E2E channel that
+  was rolled back (evidence: `qr.ts` comment "only peer ID after E2E
+  rollback"); rationale unknown. Mitigation: no session renegotiation
+  complexity, fail-closed everywhere, known-answer cross-language vectors.
+
+## Architectural choice
+
+**Protected adapters behind the existing `PeerChannel` port on both sides.**
+`PlainPeerChannel` (extension: `pi-extension/src/transport/peer_channel.ts`;
+app: `app/lib/data/transport/peer_channel.dart`) is the plaintext adapter
+used only for the pre-key `pair_request`/`pair_ok` exchange. A new
+`SecurePeerChannel` adapter seals/opens the inner payload; dispatch,
+session routing, sync, and transcript logic are untouched. Key material
+comes from a per-pairing `ChannelKeyStore`.
+
+Rejected:
+- **Encrypt at the WS transport layer** (`WsTransport`/`RelayClient`): wrong
+  seam — that layer also carries pre-key pair frames and relay control;
+  blurs relay-frame vs payload concerns and forces the relay path to know
+  about key state.
+- **Integrity-only signatures inside existing frames**: rejected by decision
+  above (no confidentiality, second cutover later).
+
+## Cryptographic design
+
+Suite id (domain separator, matches project `outpost-pi-*-v1` convention):
+
+```
+SUITE = "outpost-pi-owner-channel-v1"
+```
+
+**Handshake** (rides the existing plaintext pair exchange; QR unchanged):
+
+1. App generates an ephemeral X25519 keypair per pairing attempt. Extends
+   `pair_request` with `dh_pk` (base64, 32B) and `dh_sig` (base64 Ed25519
+   signature by Owner-sk over:
+   `SUITE ++ "\napp\n" ++ tokenBytes ++ appDhPk ++ piEdPk`).
+   `piEdPk` is the QR-carried Pi pubkey — out-of-band authentic; binding it
+   prevents a malicious relay from redirecting the pairing.
+2. Extension receives `pair_request`; relay-authenticated `outer.peer` is
+   the Owner pubkey (relay cannot substitute without the Owner-sk). Verifies
+   `dh_sig` against it. On failure: `pair_error` (`bad_dh_sig`), no state.
+3. Extension generates its ephemeral X25519 keypair, derives keys (below),
+   persists the channel record, then extends `pair_ok` with `dh_pk` and
+   `dh_sig` (Pi-sk over:
+   `SUITE ++ "\npi\n" ++ tokenBytes ++ appDhPk ++ piDhPk ++ ownerEdPk`).
+4. App verifies `dh_sig` against the QR `epk`. On failure: abort pairing,
+   persist nothing. On success: derives keys and persists.
+
+**Key derivation** (RFC 5869 HKDF-SHA256):
+
+```
+shared      = X25519(appDhSk, piDhPk) = X25519(piDhSk, appDhPk)
+k_app_to_pi = HKDF(shared, salt=tokenBytes, info=SUITE ++ "\napp->pi")
+k_pi_to_app = HKDF(shared, salt=tokenBytes, info=SUITE ++ "\npi->app")
+```
+
+Two directional keys prevent reflection. Token as salt binds the channel to
+this pairing session.
+
+**Protected frame** (replaces base64(JSON) inside `outer.ct`):
+
+```
+outer.ct = base64( 0x01 || nonce(24B random) || XChaCha20-Poly1305(key, nonce, seqLE64 || jsonUtf8) )
+```
+
+- Random 192-bit nonces — collision-safe, no counter state needed for nonce
+  uniqueness across restarts.
+- `seq` is a per-direction uint64 little-endian counter, persisted on both
+  sides as a high-water mark; receiver rejects `seq <= lastSeen` (replay)
+  and AEAD failures. WS ordering per connection is FIFO; the persisted
+  high-water survives reconnect.
+
+**Enforcement (fail closed)**:
+- Plaintext `ct` is accepted only when the inner message is `pair_request`
+  AND the peer record has no channel key. All other plaintext → drop +
+  audit log (`audit.jsonl`).
+- Decrypt/replay failure → drop + audit; N consecutive failures (5) →
+  detach the channel; recovery is re-pair. No plaintext fallback, ever.
+- Post-cutover, pre-E2E pairings have no channel key → their frames are
+  dropped + audited; operator instruction is re-pair (documented in
+  AGENTS.md paired-wire notes + release UAT).
+
+## Implementation Units
+
+### Unit 1: Handshake schema + codegen
+**File**: `protocol/schema/app-pi-client.schema.json` (`pair_request` +
+`dh_pk`, `dh_sig`), `protocol/schema/app-pi-server.schema.json` (`pair_ok`
++ `dh_pk`, `dh_sig`); regenerate TS + Dart; extend fixtures.
+**Story**: `feature-owner-message-e2e-authentication-schema-handshake-frames`
+
+**Acceptance Criteria**:
+- [ ] Generated `PairRequest`/`PairOk` DTOs carry `dhPk`/`dhSig` in TS + Dart
+- [ ] Fixture round-trips pass in `protocol/` checks
+
+### Unit 2: Extension channel crypto
+**File**: `pi-extension/src/transport/secure_channel.ts` (new)
+**Story**: `feature-owner-message-e2e-authentication-extension-secure-channel`
+
+```ts
+export const OWNER_CHANNEL_SUITE = "outpost-pi-owner-channel-v1";
+export interface DirectionalKeys { send: Uint8Array; recv: Uint8Array } // 32B
+export function generateX25519Keypair(): { pk: Uint8Array; sk: Uint8Array };
+export function x25519Shared(sk: Uint8Array, pk: Uint8Array): Uint8Array;
+export function deriveDirectionalKeys(shared: Uint8Array, token: string, side: "app" | "pi"): DirectionalKeys;
+export function appTranscript(token: string, appDhPk: Uint8Array, piEdPk: Uint8Array): Uint8Array;
+export function piTranscript(token: string, appDhPk: Uint8Array, piDhPk: Uint8Array, ownerEdPk: Uint8Array): Uint8Array;
+export function seal(key: Uint8Array, seq: bigint, json: string): Uint8Array; // 0x01||nonce24||ct
+export function open(key: Uint8Array, frame: Uint8Array, lastSeq: bigint): { seq: bigint; json: string } | null;
+```
+
+Deps: add `@noble/curves` (x25519) + `@noble/ciphers` (xchacha20-poly1305);
+HKDF via Node `crypto.hkdfSync`; Ed25519 via existing `pairing/crypto.ts`.
+
+**Implementation Notes**:
+- Independent X25519 keypairs — NO Ed25519→X25519 birational conversion
+  (avoids the conversion pitfall class entirely).
+- `open` enforces replay (`seq > lastSeq`) before returning.
+
+**Acceptance Criteria**:
+- [ ] Known-answer vector from `protocol/fixtures/` seals/opens identically
+- [ ] Tampered frame → `null`; replayed seq → `null`
+- [ ] Transcript verification rejects wrong signer / wrong binding fields
+
+### Unit 3: App channel crypto
+**File**: `app/lib/data/transport/secure_channel.dart` (new)
+**Story**: `feature-owner-message-e2e-authentication-app-secure-channel`
+
+Mirror of Unit 2 with the installed `cryptography` 2.9.0 package (`X25519()`,
+`Ed25519().sign`, `Hkdf`/`Hmac.sha256()`, XChaCha20-Poly1305 AEAD). No new
+pub dependency.
+
+**Acceptance Criteria**:
+- [ ] Same known-answer vector passes (interop proof, not just round-trip)
+- [ ] Tamper/replay rejection mirrors extension behavior
+
+### Unit 4: Key persistence
+**Files**: `pi-extension/src/pairing/storage.ts` (`PeerRecord` +
+`channel_key`, `send_seq`, `recv_seq`; enforce `peers.json` `0600`),
+`app/lib/pairing/storage.dart` (`PeerRecord` + channel key in
+FlutterSecureStorage, seq counters).
+**Stories**: folded into Units 2/3 stories (same write ownership).
+
+**Acceptance Criteria**:
+- [ ] Channel key + seq survive process/app restart
+- [ ] `peers.json` is written `0600` (verified, not assumed)
+
+### Unit 5: Handshake wiring (extension)
+**File**: `pi-extension/src/extension/owner_multiplexer.ts`
+(`handlePairRequest`: verify `dh_sig` vs `outer.peer`, generate Pi DH,
+derive + persist, emit extended `pair_ok`; known-owner reattachment
+requires an established channel key)
+**Story**: `feature-owner-message-e2e-authentication-extension-secure-channel`
+
+**Acceptance Criteria**:
+- [ ] Bad `dh_sig` → `pair_error bad_dh_sig`, no peer record written
+- [ ] Successful pairing stores channel key before `pair_ok` is sent
+
+### Unit 6: Handshake wiring (app)
+**File**: `app/lib/pairing/pair_request_flow.dart` (generate ephemeral DH,
+sign with Owner key, send via generated `PairRequest` DTO — replaces the
+handwritten map; verify `pair_ok.dh_sig` against QR `epk`, derive + persist)
+**Story**: `feature-owner-message-e2e-authentication-app-secure-channel`
+
+**Acceptance Criteria**:
+- [ ] Forged `pair_ok` (bad Pi sig) aborts pairing, nothing persisted
+- [ ] Generated `PairRequest` DTO replaces the handwritten map
+
+### Unit 7: SecurePeerChannel adapters
+**Files**: `pi-extension/src/transport/peer_channel.ts` (`SecurePeerChannel`
+implements `PeerChannel`; `PlainPeerChannel` retained for pair exchange
+only), `app/lib/data/transport/peer_channel.dart` (same), wiring in
+`pi-extension/src/extension/owner_multiplexer.ts` attach path and
+`app/lib/ui/pairing/viewmodels/pairing_viewmodel.dart` adopt path.
+**Stories**: folded into Units 2/3 stories.
+
+**Acceptance Criteria**:
+- [ ] Post-pairing frames are sealed end-to-end; sync/hydration unaffected
+- [ ] Plaintext post-key frame → dropped + audit-logged
+- [ ] 5 consecutive decrypt failures → channel detached
+
+### Unit 8: Docs + deploy roll-forward
+**Files**: `PROTOCOL.md` (App-key row → real design; "no E2E" statements;
+relay-operator threat row), `AGENTS.md` (paired-wire entry + re-pair
+cutover note), `docs/SPEC.md` (data-plane description), `qr.ts` stale
+"E2E rollback" comment.
+**Story**: `feature-owner-message-e2e-authentication-docs-deploy-rollforward`
+
+**Acceptance Criteria**:
+- [ ] PROTOCOL.md no longer claims "no E2E" for the owner channel
+- [ ] AGENTS.md documents the hard cutover + deploy order (extension
+  restart → app sideload) per the paired-wire section pattern
+
+## Implementation Order
+
+1. `…-schema-handshake-frames` (Unit 1)
+2. `…-extension-secure-channel` (Units 2, 4-ext, 5, 7-ext) — depends_on 1
+3. `…-app-secure-channel` (Units 3, 4-app, 6, 7-app) — depends_on 1
+4. `…-e2e-protected-channel` — depends_on 2, 3
+5. `…-docs-deploy-rollforward` — depends_on 2, 3
+
+Stories 2 and 3 are independent given 1 and can proceed in either order
+(one feature worker baseline; the dependency is declared for correctness,
+not parallelism).
+
+## Simplification
+
+- App `pair_request_flow.dart` handwritten `pair_request` map → generated
+  `PairRequest` DTO (kills a hand-mirrored island the explorer flagged).
+- PROTOCOL.md's aspirational "App-key" row replaced with the real design
+  (removes a false doc claim).
+- `qr.ts` "after E2E rollback" comment replaced with current-state text.
+- Extension gains app-side inbound sender-pubkey authenticity for free:
+  AEAD key possession proves the peer; the app's room-only demux check
+  (`ws_transport.dart:430-444`) becomes defense-in-depth, not the boundary.
+
+## Testing
+
+- **Known-answer vector** in `protocol/fixtures/` (fixed DH keys, token,
+  seq, plaintext → exact sealed frame bytes): the #1 risk is cross-language
+  AEAD/HKDF interop; both sides must reproduce the vector byte-for-byte.
+- **Interface tests**: handshake accept/reject at
+  `owner_multiplexer.handlePairRequest` and `pair_request_flow` (bad sig,
+  swapped share, wrong binding).
+- **Regression**: existing e2e pairing cases exercise the new handshake
+  automatically (they pair through the real flow).
+- **New e2e cases** (story 4): pairing establishes a channel; forged `ct`
+  injected via the relay is dropped; tampered `dh_sig` rejected; plaintext
+  post-key rejected; sealed round-trip survives relay reconnect.
+- **No per-branch unit nets** beyond the crypto module — the e2e layer is
+  the contract.
+
+## Risks
+
+- **Half-established pairing** (one side persisted, other didn't; e.g.
+  `pair_ok` lost after token consumed): token is single-use → re-pair via
+  new QR. Accepted: QR rotation exists; fail-closed beats desync recovery
+  logic (this class of complexity is the suspected upstream rollback cause).
+- **Cross-language AEAD/HKDF interop bug**: mitigated by the known-answer
+  vector tested on both sides before e2e runs.
+- **Seq desync across restores**: persisted high-water both sides;
+  strictly increasing sender seq; worst case is dropped frames → app
+  re-syncs via `session_sync` (existing recovery path).
+- **Multi-device owner**: each device pairs separately → per-pairing
+  channel keys and seq counters; no shared state. Verified as compatible
+  with `peers.json` N-owner posture.
+- **Relay metadata still visible**: room names, cwd, model, timing remain
+  relay-visible (routing needs them). Out of scope; PROTOCOL.md keeps that
+  statement.
