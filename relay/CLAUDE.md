@@ -1,11 +1,12 @@
 # Outpost-Pi — Relay (Rust)
 
 WebSocket server that pairs connections by `peer_id` and forwards app↔Pi and
-cross-PC traffic. TLS terminates at the relay, so the relay can see plaintext
-payload contents; routing handlers treat payloads as opaque and never log them.
-Message routing has no durable queue. The relay persists only signed mesh
-membership in SQLite and keeps room, presence, registry, and metrics state in
-memory.
+cross-PC traffic. TLS terminates at the relay: app↔Pi owner-channel payloads
+are app-layer E2E ciphertext (opaque to the relay), while cross-PC Pi↔Pi
+payloads remain relay-readable plaintext; routing handlers treat all payloads
+as opaque and never log them. Message routing has no durable queue. The relay
+persists only signed mesh membership in SQLite and keeps room, presence,
+registry, and metrics state in memory.
 
 Before editing or reviewing relay code, read the agent-neutral Rust relay reference at `../.agents/skills/rust-relay/SKILL.md`.
 
