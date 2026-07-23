@@ -1,7 +1,7 @@
 ---
 id: feature-ci-verification-matrix-dependabot-audit
 kind: story
-stage: implementing
+stage: done
 tags: [workflow, security]
 parent: feature-ci-verification-matrix
 depends_on: []
