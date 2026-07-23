@@ -2,13 +2,42 @@
 // PeerRecord (de)serialization, nickname/roomId edges, and the new
 // `wipeAll()` helper that the OwnerIdentityBridge calls on sync-reset.
 
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:app/data/transport/peer_channel.dart';
+import 'package:app/pairing/pair_request_flow.dart' show PeerTransport;
 import 'package:app/pairing/storage.dart';
-import 'package:app/protocol/protocol.dart' show PiHarness;
+import 'package:app/protocol/protocol.dart' show PiHarness, Ping;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeSecureStorage implements FlutterSecureStorage {
   final Map<String, String> _store = {};
+  Completer<void>? _deferredWriteStarted;
+  Completer<void>? _deferredWriteRelease;
+  String? _deferredSendKey;
+  int? _deferredSendSequence;
+
+  void deferChannelWrite({required String sendKey, required int sendSequence}) {
+    _deferredWriteStarted = Completer<void>();
+    _deferredWriteRelease = Completer<void>();
+    _deferredSendKey = sendKey;
+    _deferredSendSequence = sendSequence;
+  }
+
+  Future<void> get deferredWriteStarted {
+    final started = _deferredWriteStarted;
+    if (started == null) throw StateError('no channel write is deferred');
+    return started.future;
+  }
+
+  void releaseDeferredWrite() {
+    final release = _deferredWriteRelease;
+    if (release == null) throw StateError('no channel write is deferred');
+    release.complete();
+  }
 
   @override
   Future<String?> read({
@@ -32,6 +61,18 @@ class _FakeSecureStorage implements FlutterSecureStorage {
     MacOsOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    if (value != null &&
+        key.startsWith('dev.outpostpi.owner-channels:') &&
+        _deferredSendKey != null) {
+      final channel = jsonDecode(value) as Map<String, dynamic>;
+      if (channel['send_key'] == _deferredSendKey &&
+          channel['send_seq'] == _deferredSendSequence) {
+        _deferredSendKey = null;
+        _deferredSendSequence = null;
+        _deferredWriteStarted!.complete();
+        await _deferredWriteRelease!.future;
+      }
+    }
     if (value == null) {
       _store.remove(key);
     } else {
@@ -83,6 +124,20 @@ class _FakeSecureStorage implements FlutterSecureStorage {
 
   @override
   dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
+}
+
+class _RecordingTransport implements PeerTransport {
+  final List<Uint8List> sent = <Uint8List>[];
+
+  @override
+  Future<void> send(Uint8List data) async => sent.add(data);
+
+  @override
+  Future<Uint8List> receive() =>
+      Future<Uint8List>.error(StateError('receive is unused'));
+
+  @override
+  Future<void> close() async {}
 }
 
 void main() {
@@ -224,6 +279,64 @@ void main() {
         await reopened.saveChannelState('secure-peer', advanced);
         final reopenedAgain = PairingStorage(backingStore);
         expect((await reopenedAgain.listPeers()).single.channel, advanced);
+      },
+    );
+
+    test(
+      'pending old-channel save cannot overwrite concurrently re-paired keys',
+      () async {
+        const oldSendKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+        const oldReceiveKey = 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=';
+        const newSendKey = 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=';
+        const newReceiveKey = 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=';
+        final oldState = OwnerChannelState(
+          sendKey: oldSendKey,
+          receiveKey: oldReceiveKey,
+        );
+        final newState = OwnerChannelState(
+          sendKey: newSendKey,
+          receiveKey: newReceiveKey,
+        );
+        final oldPeer = PeerRecord(
+          remoteEpk: 're-paired-peer',
+          sessionName: 'Old Pi',
+          relayUrl: 'wss://relay',
+          pairedAt: '2026-07-23T00:00:00Z',
+          channel: oldState,
+        );
+        final newPeer = PeerRecord(
+          remoteEpk: oldPeer.remoteEpk,
+          sessionName: 'New Pi',
+          relayUrl: oldPeer.relayUrl,
+          pairedAt: '2026-07-23T00:01:00Z',
+          channel: newState,
+        );
+        final backingStore = _FakeSecureStorage();
+        final storage = PairingStorage(backingStore);
+        await storage.savePeer(oldPeer);
+
+        backingStore.deferChannelWrite(sendKey: oldSendKey, sendSequence: 1);
+        final transport = _RecordingTransport();
+        final oldChannel = SecurePeerChannel(
+          transport: transport,
+          storage: storage,
+          peer: oldPeer,
+        );
+        final staleSave = oldChannel.send(const Ping(id: 'old-channel-send'));
+        await backingStore.deferredWriteStarted;
+
+        final rePair = storage.savePeer(newPeer);
+        backingStore.releaseDeferredWrite();
+        await Future.wait<void>(<Future<void>>[staleSave, rePair]);
+
+        await expectLater(
+          oldChannel.send(const Ping(id: 'late-old-channel-send')),
+          throwsA(isA<StateError>()),
+        );
+        await oldChannel.close();
+
+        expect(transport.sent, hasLength(1));
+        expect((await storage.loadPeer(oldPeer.remoteEpk))?.channel, newState);
       },
     );
 

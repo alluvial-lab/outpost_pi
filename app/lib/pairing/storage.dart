@@ -298,8 +298,13 @@ typedef PeerMutationHook = void Function(PeerMutationKind kind);
 /// `notifyListeners()` so any UI watching the storage (HomeViewModel,
 /// SettingsViewModel) can refresh without manual plumbing between
 /// screens. Read methods do not notify.
+///
+/// Peer and owner-channel mutations share one queue. This makes channel-key
+/// validation and its following write atomic relative to re-pair, deletion,
+/// and identity reset, so a stale channel cannot overwrite replacement keys.
 class PairingStorage extends ChangeNotifier {
   final FlutterSecureStorage _store;
+  Future<void> _peerMutationTail = Future<void>.value();
 
   /// Plan 24 — optional synchronous hook that runs after every local peer
   /// mutation. The hook receives enough intent for its owner to distinguish a
@@ -326,17 +331,18 @@ class PairingStorage extends ChangeNotifier {
   String _channelKey(String remoteEpk) => '$_kChannelsService:$remoteEpk';
 
   /// Persist a paired peer, notify listeners, then trigger mesh publication.
-  Future<void> savePeer(PeerRecord record) async {
+  Future<void> savePeer(PeerRecord record) => _serializePeerMutation(() async {
     await _writePeer(record);
     _onPeersMutated?.call(PeerMutationKind.upsert);
-  }
+  });
 
   /// Same as [savePeer] but skips the mutation hook. Used by the
   /// MeshSyncService when applying a verified mesh blob to the local
   /// cache — without this we'd round-trip back to the relay
   /// (pull→apply→savePeer→hook→publish) and a race could publish an
   /// empty members list (see plan/24-fix-app-publish-race).
-  Future<void> savePeerSilent(PeerRecord record) => _writePeer(record);
+  Future<void> savePeerSilent(PeerRecord record) =>
+      _serializePeerMutation(() => _writePeer(record));
 
   /// Load one peer record by its durable remote EPK, if it is still stored.
   Future<PeerRecord?> loadPeer(String remoteEpk) async {
@@ -347,14 +353,15 @@ class PairingStorage extends ChangeNotifier {
   }
 
   /// Delete one peer, notify listeners, then trigger mesh publication.
-  Future<void> deletePeer(String remoteEpk) async {
+  Future<void> deletePeer(String remoteEpk) => _serializePeerMutation(() async {
     await _erasePeer(remoteEpk);
     _onPeersMutated?.call(PeerMutationKind.delete);
-  }
+  });
 
   /// Same as [deletePeer] but skips the mutation hook — see
   /// [savePeerSilent] for the rationale.
-  Future<void> deletePeerSilent(String remoteEpk) => _erasePeer(remoteEpk);
+  Future<void> deletePeerSilent(String remoteEpk) =>
+      _serializePeerMutation(() => _erasePeer(remoteEpk));
 
   Future<void> _writePeer(PeerRecord record) async {
     final peerKey = _peerKey(record.remoteEpk);
@@ -398,7 +405,7 @@ class PairingStorage extends ChangeNotifier {
   Future<void> saveChannelState(
     String remoteEpk,
     OwnerChannelState channel,
-  ) async {
+  ) => _serializePeerMutation(() async {
     if (await _store.read(key: _peerKey(remoteEpk)) == null) {
       throw StateError('cannot persist channel state for an unknown peer');
     }
@@ -423,6 +430,12 @@ class PairingStorage extends ChangeNotifier {
           : channel.receiveSequence,
     );
     await _store.write(key: channelKey, value: jsonEncode(monotonic.toJson()));
+  });
+
+  Future<T> _serializePeerMutation<T>(Future<T> Function() mutation) {
+    final operation = _peerMutationTail.then((_) => mutation());
+    _peerMutationTail = operation.then<void>((_) {}).catchError((Object _) {});
+    return operation;
   }
 
   Future<void> _erasePeer(String remoteEpk) async {
@@ -458,7 +471,7 @@ class PairingStorage extends ChangeNotifier {
   /// Owner-pk — the previous device's peer list is meaningless for
   /// the newly-synced identity, so we start clean rather than risk
   /// connecting against stale `remote_epk`s.
-  Future<void> wipeAll() async {
+  Future<void> wipeAll() => _serializePeerMutation(() async {
     final all = await _store.readAll();
     final prefixes = [
       '$_kPeersService:',
@@ -471,7 +484,7 @@ class PairingStorage extends ChangeNotifier {
       }
     }
     notifyListeners();
-  }
+  });
 
   // ---- Rooms (plan 17 follow-up) -----------------------------------------
 
