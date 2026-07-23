@@ -63,7 +63,7 @@ export const qrSession = new QRSession();
 /** Build the room-targeted, opaque pairing URI consumed by the mobile app. */
 export function buildQRUri(
   token: string,
-  longtermEdPk: Uint8Array, // Ed25519 — only peer ID after E2E rollback
+  longtermEdPk: Uint8Array, // Ed25519 key that authenticates the signed-DH handshake establishing the E2E owner channel
   sessionName: string,
   /**
    * Pi room id (12 chars, base64url) derived from cwd. App routes pair_request
