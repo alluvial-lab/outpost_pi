@@ -2,8 +2,17 @@ import {
   decodeRelayClientPayload,
   type DecodedRelayIngress,
 } from "../protocol/relay_ingress.js";
+import { ed25519Sign, ed25519Verify, type Ed25519Keypair } from "../pairing/crypto.js";
+import { encodePeerChannelKeys } from "../pairing/storage.js";
 import type { ByeReason, ClientMessage, PairErrorCode, ServerMessage } from "../protocol/types.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
+import {
+  appTranscript,
+  deriveDirectionalKeys,
+  generateX25519Keypair,
+  piTranscript,
+  x25519Shared,
+} from "../transport/secure_channel.js";
 import type { AttachOwnerInput, OwnerMultiplexerPort } from "./ports.js";
 
 /** Extend a relay peer channel with explicit listener teardown owned by the multiplexer. */
@@ -15,12 +24,15 @@ export interface PeerChannelHandle extends PeerChannel {
 export interface OwnerAttachInput extends AttachOwnerInput {
   /** Human/device name from peers.json or the pair_request. */
   peerName?: string;
+  /** Persisted channel material required by the production secure adapter. */
+  peerRecord?: OwnerPeerRecord;
   /** True when the owner attached while a turn/compaction is active. */
   turnActive?: boolean;
 }
 
 /** Define the callbacks required when the multiplexer creates one managed owner channel. */
 export type CreateOwnerChannelInput = Omit<OwnerAttachInput, "onMessage" | "onDisconnect" | "turnActive"> & {
+  peerRecord?: OwnerPeerRecord;
   onMessage(message: ClientMessage): void | Promise<void>;
   onDisconnect(peerId: string): void;
 };
@@ -30,6 +42,9 @@ export interface OwnerPeerRecord {
   name: string;
   remote_epk: string;
   paired_at: string;
+  channel_key?: string;
+  send_seq?: string;
+  recv_seq?: string;
 }
 
 /** Provide a read-only owner and mesh snapshot for status projection. */
@@ -132,6 +147,8 @@ export interface OwnerMultiplexerDeps {
   findKnownPeer(peerId: string): Promise<OwnerPeerRecord | null>;
   consumePairToken(token: string): PairTokenStatus;
   addPeer(record: OwnerPeerRecord): Promise<void>;
+  currentIdentity(): Ed25519Keypair | null;
+  auditDrop(peerId: string, reason: "missing_channel_key"): void;
   onPeerPersisted(): void;
   currentPairingSession(): PairingSessionSnapshot;
   makeUnknownPeerError(): UnknownPeerErrorMessage;
@@ -159,6 +176,13 @@ function isPairRequestMessage(message: ClientMessage): message is Extract<Client
     typeof record.token === "string" &&
     typeof record.device_name === "string"
   );
+}
+
+function decodeCanonicalBase64(value: unknown, bytes: number): Uint8Array | null {
+  if (typeof value !== "string") return null;
+  const decoded = Buffer.from(value, "base64");
+  if (decoded.length !== bytes || decoded.toString("base64") !== value) return null;
+  return Uint8Array.from(decoded);
 }
 
 function pairErrorForStatus(status: Exclude<PairTokenStatus, "ok">): { code: PairErrorCode; message: string } {
@@ -260,10 +284,10 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     });
   }
 
-  async handleOuterFrame(input: OwnerOuterFrameInput): Promise<void> {
+  async handleOuterFrame(input: OwnerOuterFrameInput): Promise<boolean> {
     const decoded = input.ingress;
     const outer = decoded.frame;
-    if (!input.isCurrent()) return;
+    if (!input.isCurrent()) return false;
     // NOTE: do NOT re-check `outer.room` against `input.roomId` here. The
     // relay's `dispatch_outer` rewrites the DELIVERED envelope's `room` to the
     // SENDER's authenticated room_id (anti-spoof: "recipient sees sender's
@@ -277,34 +301,41 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     // the sender's destination room matched this Pi's registered room. The
     // sender's identity is established by Ed25519 auth at the relay, not by
     // this rewritten field, so there is no spoofing surface to re-defend.
-    if (this.channels.has(outer.peer)) return;
-
     const inner = decodeRelayClientPayload(decoded.payloadUtf8);
-    if (!inner) return;
-
-    if (inner.type === "pair_request") {
-      if (!isPairRequestMessage(inner)) return;
+    if (inner?.type === "pair_request") {
+      if (!isPairRequestMessage(inner)) return false;
+      // A valid plaintext re-pair is allowed even while an older secure channel
+      // is attached; successful persistence replaces and detaches that channel.
       await this.handlePairRequest(input, outer.peer, inner);
-      return;
+      return true;
     }
+    if (this.channels.has(outer.peer)) return false;
 
     const known = await this.deps.findKnownPeer(outer.peer);
-    if (!input.isCurrent()) return;
+    if (!input.isCurrent()) return false;
     if (known) {
-      const channel = this.attach({
+      if (!known.channel_key) {
+        this.deps.auditDrop(outer.peer, "missing_channel_key");
+        return false;
+      }
+      this.attach({
         peerId: outer.peer,
         peerName: known.name,
+        peerRecord: known,
         roomId: input.roomId,
         turnActive: input.turnActive(),
         onMessage: input.onMessage,
         onDisconnect: input.onDisconnect,
       });
       this.deps.onOwnerAttached({ peerId: outer.peer, peerName: known.name, activeCount: this.activeCount() });
-      this.routeFrom(channel, inner);
-      return;
+      // RelayTransport publishes this same decoded ingress to the freshly
+      // attached channel after this async handler returns. Never route the
+      // plaintext decode here: established owners must pass SecurePeerChannel.
+      return false;
     }
 
-    input.sendToPeer(outer.peer, this.deps.makeUnknownPeerError());
+    if (inner) input.sendToPeer(outer.peer, this.deps.makeUnknownPeerError());
+    return false;
   }
 
   async handlePairRequest(
@@ -316,6 +347,28 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       input.sendToPeer(peerId, { type: "pair_error", in_reply_to: inner.id, code, message });
     };
 
+    // Verify the signed app DH share before touching the single-use token.
+    const identity = this.deps.currentIdentity();
+    const ownerEdPk = decodeCanonicalBase64(peerId, 32);
+    const appDhPk = decodeCanonicalBase64(inner.dh_pk, 32);
+    const appDhSig = decodeCanonicalBase64(inner.dh_sig, 64);
+    let validDhSignature = false;
+    if (identity && ownerEdPk && appDhPk && appDhSig) {
+      try {
+        validDhSignature = ed25519Verify(
+          ownerEdPk,
+          appTranscript(inner.token, appDhPk, identity.publicKey),
+          appDhSig,
+        );
+      } catch {
+        validDhSignature = false;
+      }
+    }
+    if (!validDhSignature) {
+      sendError("bad_dh_sig", "Invalid or missing owner channel key signature.");
+      return;
+    }
+
     const status = this.deps.consumePairToken(inner.token);
     if (status !== "ok") {
       const error = pairErrorForStatus(status);
@@ -324,30 +377,36 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     }
 
     const pairedAt = new Date().toISOString();
+    let record: OwnerPeerRecord;
+    let piDhPk: Uint8Array;
+    let piDhSig: Uint8Array;
     try {
-      await this.deps.addPeer({
+      const piDh = generateX25519Keypair();
+      piDhPk = piDh.pk;
+      const shared = x25519Shared(piDh.sk, appDhPk!);
+      const keys = deriveDirectionalKeys(shared, inner.token, "pi");
+      piDhSig = ed25519Sign(
+        identity!.secretKey,
+        piTranscript(inner.token, appDhPk!, piDhPk, ownerEdPk!),
+      );
+      record = {
         name: inner.device_name,
         remote_epk: peerId,
         paired_at: pairedAt,
-      });
+        channel_key: encodePeerChannelKeys(keys),
+        send_seq: "0",
+        recv_seq: "0",
+      };
+      // Persist key material before the plaintext pair_ok makes the app adopt it.
+      await this.deps.addPeer(record);
       this.deps.onPeerPersisted();
     } catch (err) {
       if (input.isCurrent()) {
-        sendError("internal_error", `Failed to persist peer: ${String(err)}`);
+        sendError("internal_error", `Failed to establish protected channel: ${String(err)}`);
       }
       return;
     }
     if (!input.isCurrent()) return;
-
-    this.attach({
-      peerId,
-      peerName: inner.device_name,
-      roomId: input.roomId,
-      turnActive: input.turnActive(),
-      onMessage: input.onMessage,
-      onDisconnect: input.onDisconnect,
-    });
-    this.deps.onOwnerAttached({ peerId, peerName: inner.device_name, activeCount: this.activeCount() });
 
     const session = this.deps.currentPairingSession();
     input.sendToPeer(peerId, {
@@ -359,8 +418,20 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       room_id: session.roomId,
       ...(session.harness ? { harness: session.harness } : {}),
       ...(session.hostname ? { hostname: session.hostname } : {}),
+      dh_pk: Buffer.from(piDhPk).toString("base64"),
+      dh_sig: Buffer.from(piDhSig).toString("base64"),
     });
 
+    this.attach({
+      peerId,
+      peerName: inner.device_name,
+      peerRecord: record,
+      roomId: input.roomId,
+      turnActive: input.turnActive(),
+      onMessage: input.onMessage,
+      onDisconnect: input.onDisconnect,
+    });
+    this.deps.onOwnerAttached({ peerId, peerName: inner.device_name, activeCount: this.activeCount() });
     this.deps.onOwnerPaired({ peerId, peerName: inner.device_name, pairedAt });
   }
 
@@ -376,6 +447,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     channel = this.deps.createChannel({
       peerId: input.peerId,
       roomId: input.roomId,
+      peerRecord: input.peerRecord,
       onMessage: (message) => this.routeFrom(channel as PeerChannelHandle, message),
       onDisconnect: (peerId) => {
         this.detach(peerId);
