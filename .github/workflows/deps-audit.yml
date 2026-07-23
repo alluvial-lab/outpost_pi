@@ -1,0 +1,58 @@
+name: deps-audit
+
+# Dependency vulnerability audit. Scheduled (CVEs don't respect push cadence)
+# plus any push that changes a lockfile. Not per-push blocking: a transitive
+# advisory should not hold unrelated work hostage.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+  push:
+    paths:
+      - "**/pnpm-lock.yaml"
+      - "**/Cargo.lock"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deps-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pnpm-audit:
+    name: pnpm audit (high+)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [pi-extension, site, protocol]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Audit ${{ matrix.dir }}
+        working-directory: ${{ matrix.dir }}
+        run: pnpm audit --audit-level=high
+
+  cargo-audit:
+    name: cargo audit (${{ matrix.crate }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [relay, rp-s3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit ${{ matrix.crate }}
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ matrix.crate }}
