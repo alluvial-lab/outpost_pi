@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/sync/sync_service.dart';
@@ -9,11 +11,14 @@ import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/pairing/pair_request_flow.dart';
 import 'package:app/pairing/qr_scanner.dart';
 import 'package:app/pairing/storage.dart';
+import 'package:app/protocol/protocol.dart';
+import 'package:app/protocol/uuid7.dart';
 import 'package:cryptography/cryptography.dart';
 
 import 'eventually.dart';
 import 'harness_endpoints.dart';
 import 'pi_host_client.dart';
+import 'raw_owner_relay_client.dart';
 
 final class PairCodeObservation {
   const PairCodeObservation({
@@ -69,8 +74,11 @@ final class PairingStack {
     required this.endpoints,
     required this.qr,
     required this.storage,
-    required this.transport,
-  });
+    required this.ownerKey,
+    required _RecordingPeerTransport transport,
+    required String deviceId,
+  }) : _transport = transport,
+       _deviceId = deviceId;
 
   static Future<PairingStack> connect({
     required HarnessEndpoints endpoints,
@@ -78,50 +86,106 @@ final class PairingStack {
     required PairingStorage storage,
   }) async {
     final ownerKey = await Ed25519().newKeyPair();
-    final transport = await WsTransport.connect(
+    final deviceId = 'pairing-e2e-${DateTime.now().microsecondsSinceEpoch}';
+    final ws = await WsTransport.connect(
       relayUrl: endpoints.relay.toString(),
       peerPubkey: qr.epk,
       ed25519Key: ownerKey,
-      deviceId: 'pairing-e2e-${DateTime.now().microsecondsSinceEpoch}',
+      deviceId: deviceId,
       activeRoom: qr.roomId ?? 'main',
     ).timeout(const Duration(seconds: 10));
     return PairingStack._(
       endpoints: endpoints,
       qr: qr,
       storage: storage,
-      transport: transport,
+      ownerKey: ownerKey,
+      transport: _RecordingPeerTransport(ws),
+      deviceId: deviceId,
     );
   }
 
   final HarnessEndpoints endpoints;
   final QrPairPayload qr;
   final PairingStorage storage;
-  final WsTransport transport;
+  final SimpleKeyPair ownerKey;
+  final _RecordingPeerTransport _transport;
+  final String _deviceId;
+  final List<Uint8List> _protectedOutboundFrames = <Uint8List>[];
   bool _transferred = false;
   bool _closed = false;
 
-  Future<PairingResult> pair({required String deviceName}) => performPairing(
-    qr: qr,
-    transport: transport,
-    storage: storage,
-    deviceName: deviceName,
-    currentRelayUrl: endpoints.relay.toString(),
-  ).timeout(const Duration(seconds: 10));
+  Future<PairingResult> pair({required String deviceName}) async {
+    final result = await performPairing(
+      qr: qr,
+      transport: _transport,
+      storage: storage,
+      ownerKey: ownerKey,
+      deviceName: deviceName,
+      currentRelayUrl: endpoints.relay.toString(),
+    ).timeout(const Duration(seconds: 10));
+    _transport.clearSentFrames();
+    return result;
+  }
+
+  /// Exchange one deliberately hand-built pre-key frame with the Pi.
+  Future<Map<String, dynamic>> exchangePairingJson(
+    Map<String, dynamic> message,
+  ) async {
+    await _transport.send(Uint8List.fromList(utf8.encode(jsonEncode(message))));
+    final response = await _transport.receive();
+    return jsonDecode(utf8.decode(response)) as Map<String, dynamic>;
+  }
+
+  Future<RawOwnerRelayClient> openRawOwnerRelayClient() =>
+      RawOwnerRelayClient.connect(
+        relay: endpoints.relay,
+        ownerKey: ownerKey,
+        deviceId: '$_deviceId-raw-${DateTime.now().microsecondsSinceEpoch}',
+      );
 
   Future<HydratedSession> adoptAndHydrate(PairingResult result) async {
     if (_transferred) {
       throw StateError('transport ownership already transferred');
     }
     _transferred = true;
-    final channel = PlainPeerChannel(transport: transport);
+    final channel = SecurePeerChannel(
+      transport: _transport,
+      storage: storage,
+      peer: result.peer,
+    );
     final connection = ConnectionManager(
-      factory: (_, _) => Future<IChannel>.error(
-        StateError('e2e adopted channel must not invoke reconnect factory'),
-      ),
+      factory: (peer, cancel) async {
+        final current = await storage.loadPeer(peer.remoteEpk);
+        if (current?.channel == null) {
+          throw StateError('e2e reconnect lost owner-channel state');
+        }
+        final ws = await WsTransport.connect(
+          relayUrl: endpoints.relay.toString(),
+          peerPubkey: current!.remoteEpk,
+          ed25519Key: ownerKey,
+          deviceId: _deviceId,
+          activeRoom: current.roomId ?? 'main',
+        ).timeout(const Duration(seconds: 10));
+        if (cancel.isCancelled) {
+          await ws.close();
+          throw StateError('e2e reconnect was cancelled');
+        }
+        final recording = _RecordingPeerTransport(
+          ws,
+          sink: _protectedOutboundFrames,
+        );
+        return SecurePeerChannel(
+          transport: recording,
+          storage: storage,
+          peer: current,
+        );
+      },
       storage: storage,
       emitDebounce: Duration.zero,
     );
     final sync = SyncService(connection, LocalBoxes());
+    _transport.copySentFramesTo(_protectedOutboundFrames);
+    _transport.setSink(_protectedOutboundFrames);
     connection.adopt(channel, result.peer);
     connection.subscribeToPeers(<String>[result.peer.remoteEpk]);
     final sessionId = await eventually<String>(
@@ -133,16 +197,18 @@ final class PairingStack {
     return HydratedSession(
       peer: result.peer,
       sessionId: sessionId,
-      channel: channel,
+      initialChannel: channel,
       connection: connection,
       sync: sync,
+      storage: storage,
+      protectedOutboundFrames: _protectedOutboundFrames,
     );
   }
 
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    if (!_transferred) await transport.close();
+    if (!_transferred) await _transport.close();
   }
 }
 
@@ -150,20 +216,86 @@ final class HydratedSession {
   const HydratedSession({
     required this.peer,
     required this.sessionId,
-    required this.channel,
+    required this.initialChannel,
     required this.connection,
     required this.sync,
+    required this.storage,
+    required this.protectedOutboundFrames,
   });
 
   final PeerRecord peer;
   final String sessionId;
-  final PlainPeerChannel channel;
+  final SecurePeerChannel initialChannel;
   final ConnectionManager connection;
   final SyncService sync;
+  final PairingStorage storage;
+  final List<Uint8List> protectedOutboundFrames;
+
+  IChannel get currentChannel {
+    final value = connection.channel;
+    if (value == null) throw StateError('owner channel is not online');
+    return value;
+  }
+
+  /// Send a protected protocol ping and wait for its protected pong.
+  Future<void> ping() async {
+    final id = uuid7();
+    final pong = currentChannel.serverMessages.firstWhere(
+      (message) => message is Pong && message.inReplyTo == id,
+    );
+    await currentChannel.send(Ping(id: id));
+    await pong.timeout(const Duration(seconds: 10));
+  }
+
+  Future<OwnerChannelState> persistedChannelState() async {
+    final current = await storage.loadPeer(peer.remoteEpk);
+    final channel = current?.channel;
+    if (channel == null) throw StateError('owner channel was not persisted');
+    return channel;
+  }
 
   Future<void> close() async {
     sync.dispose();
     await connection.disconnect();
     connection.dispose();
   }
+}
+
+final class _RecordingPeerTransport
+    implements PeerTransport, IControlLink, IActiveRoomTarget {
+  _RecordingPeerTransport(this._delegate, {List<Uint8List>? sink})
+    : _sink = sink;
+
+  final WsTransport _delegate;
+  final List<Uint8List> _frames = <Uint8List>[];
+  List<Uint8List>? _sink;
+
+  void clearSentFrames() => _frames.clear();
+
+  void setSink(List<Uint8List> sink) => _sink = sink;
+
+  void copySentFramesTo(List<Uint8List> sink) => sink.addAll(_frames);
+
+  @override
+  Future<void> send(Uint8List data) {
+    final copy = Uint8List.fromList(data);
+    _frames.add(copy);
+    _sink?.add(copy);
+    return _delegate.send(data);
+  }
+
+  @override
+  Future<Uint8List> receive() => _delegate.receive();
+
+  @override
+  Future<void> close() => _delegate.close();
+
+  @override
+  Stream<ControlInbound> get controlFrames => _delegate.controlFrames;
+
+  @override
+  void sendControl(Map<String, dynamic> json) => _delegate.sendControl(json);
+
+  @override
+  void setActiveRoom(String roomId) => _delegate.setActiveRoom(roomId);
 }
