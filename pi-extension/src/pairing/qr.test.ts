@@ -1,4 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const crypto = vi.hoisted(() => ({
+  timingSafeEqual: vi.fn((left: Uint8Array, right: Uint8Array) => Buffer.from(left).equals(Buffer.from(right))),
+}));
+
+vi.mock("node:crypto", async (importOriginal) => ({
+  ...await importOriginal<typeof import("node:crypto")>(),
+  timingSafeEqual: crypto.timingSafeEqual,
+}));
+
 import {
   QRSession,
   clampPairTtlMs,
@@ -8,7 +18,7 @@ import {
 } from "./qr.js";
 import { pairTokenId } from "../transport/secure_channel.js";
 
-const tokenId = (token: string): string => Buffer.from(pairTokenId(token)).toString("base64");
+const tokenId = (token: string): Uint8Array => pairTokenId(token);
 
 describe("clampPairTtlMs", () => {
   test("passes a value inside the range unchanged", () => {
@@ -56,10 +66,26 @@ describe("QRSession.issueToken — ttl", () => {
     const s = new QRSession();
     const { token } = s.issueToken(60_000);
     expect(s.findTokenById(tokenId(token))).toBe(token);
-    expect(s.findTokenById(Buffer.alloc(16, 7).toString("base64"))).toBeNull();
+    expect(s.findTokenById(Uint8Array.from(Buffer.alloc(16, 7)))).toBeNull();
     expect(s.consumeToken(token)).toBe("ok");
     expect(s.findTokenById(tokenId(token))).toBe(token);
     expect(s.consumeToken(token)).toBe("consumed");
+  });
+
+  test("compares fixed-width locator bytes even when no token record exists", () => {
+    const s = new QRSession();
+    const { token } = s.issueToken(60_000);
+    const issuedLocator = tokenId(token);
+    crypto.timingSafeEqual.mockClear();
+
+    expect(s.findTokenById(issuedLocator)).toBe(token);
+    expect(crypto.timingSafeEqual).toHaveBeenLastCalledWith(issuedLocator, issuedLocator);
+
+    s.clear();
+    const absentLocator = Uint8Array.from(Buffer.alloc(16, 7));
+    expect(s.findTokenById(absentLocator)).toBeNull();
+    expect(crypto.timingSafeEqual).toHaveBeenLastCalledWith(absentLocator, expect.any(Uint8Array));
+    expect(crypto.timingSafeEqual.mock.calls).toHaveLength(2);
   });
 
   test("issuing a new token invalidates the previous one", () => {

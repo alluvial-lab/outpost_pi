@@ -305,8 +305,8 @@ vi.mock("./pairing/qr.js", async (importOriginal) => {
         token: "test-token",
         expiresAt: Date.now() + 60_000,
       }),
-      findTokenById: vi.fn().mockImplementation((tokenId: string) =>
-        _tokenStatus !== "unknown" && tokenId === Buffer.from(pairTokenId("test-token")).toString("base64")
+      findTokenById: vi.fn().mockImplementation((tokenId: Uint8Array) =>
+        _tokenStatus !== "unknown" && Buffer.from(tokenId).equals(Buffer.from(pairTokenId("test-token")))
           ? "test-token"
           : null,
       ),
