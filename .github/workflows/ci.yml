@@ -1,0 +1,214 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read # dorny/paths-filter change detection on PRs
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.41.7"
+  PUB_CACHE: ${{ github.workspace }}/.pub-cache
+
+jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-24.04
+    outputs:
+      protocol: ${{ steps.filter.outputs.protocol }}
+      pi-extension: ${{ steps.filter.outputs.pi-extension }}
+      rust: ${{ steps.filter.outputs.rust }}
+      app: ${{ steps.filter.outputs.app }}
+      cockpit: ${{ steps.filter.outputs.cockpit }}
+      site: ${{ steps.filter.outputs.site }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # The workflow file itself triggers every lane: a pipeline change is
+          # verified by the pipeline.
+          filters: |
+            protocol:
+              - 'protocol/**'
+              - 'tools/protocol-codegen/**'
+              - '.github/workflows/ci.yml'
+            pi-extension:
+              - 'pi-extension/**'
+              - 'protocol/**'
+              - 'tools/protocol-codegen/**'
+              - '.github/workflows/ci.yml'
+            rust:
+              - 'relay/**'
+              - 'rp-s3/**'
+              - '.github/workflows/ci.yml'
+            app:
+              - 'app/**'
+              - 'protocol/**'
+              - '.github/workflows/ci.yml'
+            cockpit:
+              - 'cockpit/**'
+              - '.github/workflows/ci.yml'
+            site:
+              - 'site/**'
+              - '.github/workflows/ci.yml'
+
+  protocol:
+    name: protocol (fixtures + codegen checks)
+    needs: changes
+    if: needs.changes.outputs.protocol == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: protocol/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: protocol
+        run: pnpm install --frozen-lockfile
+      - name: Check fixtures + codegen
+        working-directory: protocol
+        run: pnpm check
+
+  pi-extension:
+    name: pi-extension (typecheck + test)
+    needs: changes
+    if: needs.changes.outputs.pi-extension == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pi-extension/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: pi-extension
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: pi-extension
+        run: pnpm typecheck
+      - name: Test
+        working-directory: pi-extension
+        run: pnpm test
+
+  rust:
+    name: ${{ matrix.crate }} (fmt + clippy + test)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [relay, rp-s3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.crate }}
+      - name: Format check
+        working-directory: ${{ matrix.crate }}
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: ${{ matrix.crate }}
+        run: cargo clippy -- -D warnings
+      - name: Test
+        working-directory: ${{ matrix.crate }}
+        run: cargo test
+
+  app:
+    name: app (analyze + test)
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+      - name: Analyze
+        working-directory: app
+        run: flutter analyze
+      - name: Test
+        working-directory: app
+        run: flutter test
+      - name: Identity package tests
+        working-directory: app/packages/outpost_pi_identity
+        run: |
+          flutter pub get
+          flutter test
+
+  cockpit:
+    name: cockpit (analyze + test)
+    needs: changes
+    if: needs.changes.outputs.cockpit == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: cockpit
+        run: flutter pub get
+      - name: Analyze
+        working-directory: cockpit
+        run: flutter analyze
+      - name: Test
+        working-directory: cockpit
+        run: flutter test
+
+  site:
+    name: site (lint + build)
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: site/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: site
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        working-directory: site
+        run: pnpm lint
+      - name: Build
+        working-directory: site
+        run: pnpm build
