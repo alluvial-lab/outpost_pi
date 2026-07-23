@@ -26,7 +26,7 @@
       "additionalProperties": false
     },
     "pairErrorCode": {
-      "enum": ["token_expired", "token_consumed", "token_unknown", "internal_error"]
+      "enum": ["token_expired", "token_consumed", "token_unknown", "bad_dh_sig", "internal_error"]
     },
     "knownErrorCode": {
       "enum": [

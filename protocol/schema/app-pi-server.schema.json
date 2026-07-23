@@ -44,7 +44,9 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
         "room_id": { "type": "string", "minLength": 1 },
         "harness": { "$ref": "#/$defs/harness" },
-        "hostname": { "type": "string", "minLength": 1 }
+        "hostname": { "type": "string", "minLength": 1 },
+        "dh_pk": { "type": "string", "minLength": 1, "description": "Standard base64 encoding of the 32-byte ephemeral X25519 public key." },
+        "dh_sig": { "type": "string", "minLength": 1, "description": "Standard base64 encoding of the 64-byte Ed25519 signature over the Pi ephemeral-DH transcript." }
       },
       "additionalProperties": false
     },
