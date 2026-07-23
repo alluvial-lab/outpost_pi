@@ -15,10 +15,10 @@ app/extension/relay, read `../.agents/skills/mobile-remote-coding/SKILL.md`.
 - DI: `auto_injector` (registry in `lib/config/`)
 - Routing: `go_router`
 - Typed result: `Result<T, E>` (explicit success/failure)
-- Crypto: bindings for libsodium (package to be confirmed — see `plan/00-decisions.md`)
+- Crypto: `package:cryptography` (X25519 / Ed25519 / HKDF-SHA256 / XChaCha20-Poly1305 — the owner-channel E2E stack in `lib/data/transport/secure_channel.dart`)
 - WebSocket: `web_socket_channel` or similar
 
-> Still-open decisions (final state management, libsodium package) live in
+> Still-open decisions (final state management) live in
 > `../plan/00-decisions.md`. The stack above is the current direction based on the
 > inherited architecture; structural changes require a new plan.
 
@@ -128,7 +128,7 @@ await viewModel.doSomething().onSuccess((_) {
 ## Do NOT
 
 - Edit files outside `app/`
-- Implement crypto manually — use libsodium bindings
+- Implement crypto manually — use `package:cryptography` (the canonical app crypto package)
 - Commit `build/`, `.dart_tool/`, `ios/Pods/` (already in the root `.gitignore`)
 - Add a dependency without recording it in the corresponding plan
 - Mix responsibilities between layers — when in doubt, read the target layer's
