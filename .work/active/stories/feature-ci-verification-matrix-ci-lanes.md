@@ -1,7 +1,7 @@
 ---
 id: feature-ci-verification-matrix-ci-lanes
 kind: story
-stage: implementing
+stage: done
 tags: [workflow]
 parent: feature-ci-verification-matrix
 depends_on: []
