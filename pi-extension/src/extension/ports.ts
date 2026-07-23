@@ -13,6 +13,7 @@ import type { DecodedRelayIngress } from "../protocol/relay_ingress.js";
 import type { RelayClient, RoomMeta } from "../transport/relay_client.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
+import type { PeerRecord } from "../pairing/storage.js";
 import type { RelayConnectivity } from "./types.js";
 
 /** Guard asynchronous runtime work so a disposed session epoch cannot publish or reconnect. */
@@ -69,6 +70,8 @@ export interface RelayPeerChannel extends PeerChannel {
 export interface RelayPeerChannelInput {
   peerId: string;
   roomId?: string;
+  /** Present only for established owners; absence selects the pre-key plaintext adapter. */
+  peerRecord?: PeerRecord;
   onMessage(message: ClientMessage): void | Promise<void>;
   onDisconnect(peerId: string): void;
 }
@@ -83,7 +86,7 @@ export interface RelayTransportPort {
     handler: (
       ingress: Extract<DecodedRelayIngress, { kind: "outer" }>,
       isCurrent: () => boolean,
-    ) => void | Promise<void>,
+    ) => boolean | void | Promise<boolean | void>,
   ): () => void;
   createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel;
   subscribePresence(peers: readonly string[]): void;
