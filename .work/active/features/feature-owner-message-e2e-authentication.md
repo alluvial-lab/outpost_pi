@@ -154,15 +154,18 @@ this pairing session.
 **Protected frame** (replaces base64(JSON) inside `outer.ct`):
 
 ```
-outer.ct = base64( 0x01 || nonce(24B random) || XChaCha20-Poly1305(key, nonce, seqLE64 || jsonUtf8) )
+outer.ct = base64( 0x01 || seqLE64(8B) || nonce(24B random) || XChaCha20-Poly1305(key, nonce, aad=seqLE64, plaintext=jsonUtf8) )
 ```
 
 - Random 192-bit nonces — collision-safe, no counter state needed for nonce
   uniqueness across restarts.
 - `seq` is a per-direction uint64 little-endian counter, persisted on both
   sides as a high-water mark; receiver rejects `seq <= lastSeen` (replay)
-  and AEAD failures. WS ordering per connection is FIFO; the persisted
-  high-water survives reconnect.
+  and AEAD failures. The seq is transmitted in the clear frame header AND
+  bound as AEAD associated data — an AAD-only seq is never received, so the
+  high-water check would be unimplementable across dropped frames (corrected
+  during implementation, wave 2 discovery). WS ordering per connection is
+  FIFO; the persisted high-water survives reconnect.
 
 **Enforcement (fail closed)**:
 - Plaintext `ct` is accepted only when the inner message is `pair_request`
@@ -198,7 +201,7 @@ export function x25519Shared(sk: Uint8Array, pk: Uint8Array): Uint8Array;
 export function deriveDirectionalKeys(shared: Uint8Array, token: string, side: "app" | "pi"): DirectionalKeys;
 export function appTranscript(token: string, appDhPk: Uint8Array, piEdPk: Uint8Array): Uint8Array;
 export function piTranscript(token: string, appDhPk: Uint8Array, piDhPk: Uint8Array, ownerEdPk: Uint8Array): Uint8Array;
-export function seal(key: Uint8Array, seq: bigint, json: string): Uint8Array; // 0x01||nonce24||ct
+export function seal(key: Uint8Array, seq: bigint, json: string): Uint8Array; // 0x01||seqLE64||nonce24||ct
 export function open(key: Uint8Array, frame: Uint8Array, lastSeq: bigint): { seq: bigint; json: string } | null;
 ```
 

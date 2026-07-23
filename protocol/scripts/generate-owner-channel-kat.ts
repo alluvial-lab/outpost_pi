@@ -48,8 +48,11 @@ function derive(shared: Uint8Array, tokenBytes: Uint8Array, direction: "app->pi"
 }
 
 function seal(key: Uint8Array, nonce: Uint8Array, seq: bigint, plaintextJson: string): Uint8Array {
-  const ciphertext = xchacha20poly1305(key, nonce, seqLe64(seq)).encrypt(utf8(plaintextJson));
-  return concat(Uint8Array.of(0x01), nonce, ciphertext);
+  const seqBytes = seqLe64(seq);
+  const ciphertext = xchacha20poly1305(key, nonce, seqBytes).encrypt(utf8(plaintextJson));
+  // seq is transmitted in the clear header AND bound as AEAD AAD: the receiver
+  // cannot enforce the replay high-water against a seq it never receives.
+  return concat(Uint8Array.of(0x01), seqBytes, nonce, ciphertext);
 }
 
 const token = "kat-owner-pairing-token-v1";
