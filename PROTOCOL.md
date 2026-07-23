@@ -411,13 +411,23 @@ the canonical session boundary.
    with the persisted **Owner-sk** via the relay's Ed25519 challenge-response
    (`outpost-pi-relay-auth-v1\n` ++ nonce).
 2. The app generates an ephemeral X25519 keypair and sends `pair_request` with
-   `dh_pk` and `dh_sig`. `dh_sig` is an Owner-key signature over
+   `token_id`, `pair_mac`, `dh_pk` and `dh_sig` — the raw pair token NEVER
+   crosses the wire (a relay observing the exchange learns nothing it can
+   reuse). `token_id` is `base64(SHA-256(token)[:16])`, a public locator.
+   `pair_mac` is `HMAC-SHA256(key=token, msg=
+   outpost-pi-owner-channel-v1 ++ "\npair\n" ++ tokenIdBytes ++ ownerEdPk ++
+   appDhPk ++ piEdPk)`, proving QR-token knowledge over exactly the fields a
+   malicious relay could otherwise substitute. `dh_sig` is an Owner-key
+   signature over
    `outpost-pi-owner-channel-v1 ++ "\napp\n" ++ tokenBytes ++ appDhPk ++ piEdPk`.
    The QR Pi public key binds the request to the scanned Pi.
-3. The pi-extension verifies that signature against the relay-authenticated
-   Owner public key, rejects a failure with `pair_error bad_dh_sig`, generates
-   its ephemeral X25519 keypair, derives and persists the directional channel
-   keys, then returns `pair_ok` with its DH public key and Pi-key signature.
+3. The pi-extension resolves the token by `token_id` and verifies `pair_mac`
+   (constant-time) BEFORE anything else — failure is `pair_error
+   token_unknown`, consumes nothing, and reveals no stage detail. It then
+   verifies `dh_sig` against the relay-authenticated Owner public key,
+   rejecting a failure with `pair_error bad_dh_sig`, generates its ephemeral
+   X25519 keypair, derives and persists the directional channel keys, then
+   returns `pair_ok` with its DH public key and Pi-key signature.
    That signature covers the suite, token, app and Pi DH public keys, and Owner
    public key.
 4. The app verifies the Pi signature against the QR Pi public key, derives the
@@ -441,8 +451,11 @@ Details in `plan/04-pairing.md`.
 - **Authenticated pairing and owner channel**: the app reaches the relay through
   Owner-key challenge-response (`outpost-pi-relay-auth-v1`), and the signed
   ephemeral X25519 `pair_request`/`pair_ok` transcript establishes directional
-  owner-channel keys. The pair token salts HKDF-SHA256 derivation; signed
-  transcripts bind both identities and the QR Pi key.
+  owner-channel keys. The raw pair token never crosses the wire: `pair_mac`
+  (HMAC keyed by the token) proves QR-token knowledge before token
+  consumption, so a relay that observes a pairing cannot race its own pairing
+  under an attacker Owner key. The pair token salts HKDF-SHA256 derivation;
+  signed transcripts bind both identities and the QR Pi key.
 - **App ↔ Pi owner-channel E2E**: post-pairing `outer.ct` is
   `base64(0x01 || seqLE64(8B) || nonce(24B random) ||
   XChaCha20-Poly1305(key, nonce, aad=seqLE64, plaintext=jsonUtf8))`. The
