@@ -454,8 +454,10 @@ Details in `plan/04-pairing.md`.
   owner-channel keys. The raw pair token never crosses the wire: `pair_mac`
   (HMAC keyed by the token) proves QR-token knowledge before token
   consumption, so a relay that observes a pairing cannot race its own pairing
-  under an attacker Owner key. The pair token salts HKDF-SHA256 derivation;
-  signed transcripts bind both identities and the QR Pi key.
+  under an attacker Owner key. Proof-holders still receive actionable
+  `token_expired`/`token_consumed` errors; unknown locators and bad proofs
+  are indistinguishable `token_unknown`. The pair token salts HKDF-SHA256
+  derivation; signed transcripts bind both identities and the QR Pi key.
 - **App ↔ Pi owner-channel E2E**: post-pairing `outer.ct` is
   `base64(0x01 || seqLE64(8B) || nonce(24B random) ||
   XChaCha20-Poly1305(key, nonce, aad=seqLE64, plaintext=jsonUtf8))`. The
