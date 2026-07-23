@@ -192,6 +192,41 @@ void main() {
       expect(preserved.harness!.version, '0.4.0');
     });
 
+    test(
+      'channel keys and sequence counters survive storage re-open',
+      () async {
+        final backingStore = _FakeSecureStorage();
+        final first = PairingStorage(backingStore);
+        final channel = OwnerChannelState(
+          sendKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+          receiveKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+          sendSequence: 42,
+          receiveSequence: 37,
+        );
+        await first.savePeer(
+          PeerRecord(
+            remoteEpk: 'secure-peer',
+            sessionName: 'Pi',
+            relayUrl: 'wss://relay',
+            pairedAt: '2026-07-23T00:00:00Z',
+            channel: channel,
+          ),
+        );
+
+        final reopened = PairingStorage(backingStore);
+        final restored = await reopened.loadPeer('secure-peer');
+        expect(restored?.channel, channel);
+
+        final advanced = channel.copyWith(
+          sendSequence: 43,
+          receiveSequence: 38,
+        );
+        await reopened.saveChannelState('secure-peer', advanced);
+        final reopenedAgain = PairingStorage(backingStore);
+        expect((await reopenedAgain.listPeers()).single.channel, advanced);
+      },
+    );
+
     test('list/save/load round-trips through fake storage', () async {
       final storage = PairingStorage(_FakeSecureStorage());
       const r = PeerRecord(

@@ -248,8 +248,8 @@ Future<void> setupDependencies() async {
 
 // ---------------------------------------------------------------------------
 // Production ConnectionFactory — used by ConnectionManager for reconnection.
-// Post-rollback: just open transport + wrap in PlainPeerChannel; Pi recognizes
-// the peer via peers.json (no per-reconnect handshake).
+// Established peers resume with persisted owner-channel keys; reconnect never
+// performs a plaintext fallback or a second handshake.
 // Plan 23: Owner-sk (synced via iCloud Keychain / Block Store) is the
 // challenge-response key. OwnerIdentityBridge.boot() is the router's
 // responsibility; by the time this factory runs, the identity is loaded.
@@ -264,6 +264,18 @@ Future<IChannel> _productionConnectionFactory(
     throw const RelayNotConfiguredException();
   }
   final relayUrl = resolution.url;
+  // ConnectionManager retries with the peer snapshot that originally opened
+  // the channel. Reload here so persisted sequence advances are never reset by
+  // a stale in-memory PeerRecord after a transient disconnect.
+  final channelPeer = await _injector.get<PairingStorage>().loadPeer(
+    peer.remoteEpk,
+  );
+  if (channelPeer?.channel == null) {
+    throw const PeerChannelError(
+      'paired peer predates owner-channel protection; re-pair required',
+    );
+  }
+  if (cancel.isCancelled) throw _CancelledError();
 
   final bridge = injector.get<OwnerIdentityBridge>();
   final ownerKey = await bridge.requireKeyPair();
@@ -286,10 +298,10 @@ Future<IChannel> _productionConnectionFactory(
   final transport =
       await WsTransport.connect(
         relayUrl: relayUrl,
-        peerPubkey: peer.remoteEpk,
+        peerPubkey: channelPeer!.remoteEpk,
         ed25519Key: ownerKey,
         deviceId: await _injector.get<DeviceId>().get(),
-        activeRoom: peer.roomId ?? 'main',
+        activeRoom: channelPeer.roomId ?? 'main',
         debugLog: _injector.get<DebugLog>(),
       ).timeout(
         wsConnectTimeout,
@@ -304,8 +316,10 @@ Future<IChannel> _productionConnectionFactory(
     throw _CancelledError();
   }
 
-  return PlainPeerChannel(
+  return SecurePeerChannel(
     transport: transport,
+    storage: _injector.get<PairingStorage>(),
+    peer: channelPeer,
     debugLog: _injector.get<DebugLog>(),
   );
 }

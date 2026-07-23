@@ -1,18 +1,17 @@
-// PlainPeerChannel — protocol message channel without E2E cipher.
+// Peer-channel adapters over the byte-level PeerTransport.
 //
-// Wraps a connected PeerTransport. After pairing, use this to exchange
-// ClientMessage / ServerMessage with the Pi extension.
-//
-//   send(ClientMessage)   → JSON          → transport.send()
-//   serverMessages stream ← transport.receive() → JSON → ServerMessage
+// PlainPeerChannel is restricted to the pre-key pairing exchange. Established
+// peers use SecurePeerChannel, which seals the same typed protocol messages.
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:app/data/transport/channel.dart';
+import 'package:app/data/transport/secure_channel.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/pairing/pair_request_flow.dart';
+import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/codec.dart';
 // ControlInbound + IControlLink come from these.
 import 'package:app/protocol/protocol.dart';
@@ -152,5 +151,222 @@ class PlainPeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
     return type.isEmpty
         ? 'unknown_error'
         : (type.length <= 120 ? type : '${type.substring(0, 120)}…');
+  }
+}
+
+/// Protect established owner traffic while preserving control/room capabilities.
+///
+/// Sequence high-water marks are written before outbound transport use and
+/// before inbound delivery. Invalid frames are dropped and audited; five
+/// consecutive failures close the transport so recovery cannot downgrade to
+/// plaintext.
+class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
+  SecurePeerChannel({
+    required PeerTransport transport,
+    required PairingStorage storage,
+    required PeerRecord peer,
+    DebugLog? debugLog,
+    int failureThreshold = 5,
+  }) : _transport = transport,
+       _storage = storage,
+       _remoteEpk = peer.remoteEpk,
+       _debugLog = debugLog,
+       _failureThreshold = failureThreshold,
+       _sendKey = _decodeKey(peer.channel?.sendKey),
+       _receiveKey = _decodeKey(peer.channel?.receiveKey),
+       _sendSequence = _requireChannel(peer).sendSequence,
+       _receiveSequence = _requireChannel(peer).receiveSequence;
+
+  final PeerTransport _transport;
+  final PairingStorage _storage;
+  final String _remoteEpk;
+  final DebugLog? _debugLog;
+  final int _failureThreshold;
+  final Uint8List _sendKey;
+  final Uint8List _receiveKey;
+  final _controller = StreamController<ServerMessage>.broadcast();
+
+  int _sendSequence;
+  int _receiveSequence;
+  int _consecutiveFailures = 0;
+  bool _started = false;
+  bool _closed = false;
+  Future<void> _sendTail = Future<void>.value();
+  Future<void> _stateTail = Future<void>.value();
+
+  @override
+  Stream<ControlInbound> get controlFrames {
+    final transport = _transport;
+    return transport is IControlLink
+        ? (transport as IControlLink).controlFrames
+        : const Stream.empty();
+  }
+
+  @override
+  void sendControl(Map<String, dynamic> json) {
+    final transport = _transport;
+    if (transport is IControlLink) {
+      (transport as IControlLink).sendControl(json);
+    }
+  }
+
+  @override
+  void setActiveRoom(String roomId) {
+    if (_transport case IActiveRoomTarget target) {
+      target.setActiveRoom(roomId);
+    }
+  }
+
+  @override
+  Stream<ServerMessage> get serverMessages {
+    if (!_started) {
+      _started = true;
+      _receiveLoop();
+    }
+    return _controller.stream;
+  }
+
+  @override
+  Future<void> send(ClientMessage msg) {
+    if (_closed) {
+      return Future<void>.error(const PeerChannelError('channel is closed'));
+    }
+    final operation = _sendTail.then((_) => _sendOne(msg));
+    _sendTail = operation.catchError((Object _) {});
+    return operation;
+  }
+
+  Future<void> _sendOne(ClientMessage msg) async {
+    if (_closed) throw const PeerChannelError('channel is closed');
+    if (_sendSequence == 0x7fffffffffffffff) {
+      await close();
+      throw const PeerChannelError('owner-channel sequence exhausted');
+    }
+    final next = _sendSequence + 1;
+    final frame = await sealOwnerChannelFrame(
+      key: _sendKey,
+      sequence: next,
+      json: encodeClient(msg).trimRight(),
+    );
+    _sendSequence = next;
+    // Reserve the sequence durably before the byte transport can expose it.
+    // A failed send leaves a harmless gap because the sequence is transmitted.
+    try {
+      await _persistState();
+    } on Object {
+      await close();
+      rethrow;
+    }
+    await _transport.send(frame);
+  }
+
+  Future<void> _receiveLoop() async {
+    try {
+      while (!_closed) {
+        final bytes = await _transport.receive();
+        await _handleSecureFrame(bytes);
+      }
+    } on Object {
+      if (!_closed) {
+        await close();
+      } else if (!_controller.isClosed) {
+        await _controller.close();
+      }
+    }
+  }
+
+  Future<void> _handleSecureFrame(Uint8List bytes) async {
+    if (bytes.isEmpty || bytes.first != 0x01) {
+      await _recordFailure('plaintext_post_key', bytes.length);
+      return;
+    }
+    final opened = await openOwnerChannelFrame(
+      key: _receiveKey,
+      frame: bytes,
+      lastSequence: _receiveSequence,
+    );
+    if (opened == null) {
+      await _recordFailure('authentication_failed', bytes.length);
+      return;
+    }
+    final ServerMessage message;
+    try {
+      message = decodeServer(opened.json);
+    } on UnsupportedTypeException {
+      await _recordFailure('unsupported_type', bytes.length);
+      return;
+    } on Object catch (error) {
+      await _recordFailure(
+        'malformed',
+        bytes.length,
+        error: PlainPeerChannel._shortReason(error),
+      );
+      return;
+    }
+    _receiveSequence = opened.sequence;
+    // Persistence failure is a local security-boundary failure, not an
+    // attacker frame. Let it escape to the receive loop, which detaches.
+    await _persistState();
+    _consecutiveFailures = 0;
+    if (!_controller.isClosed) _controller.add(message);
+  }
+
+  Future<void> _recordFailure(String kind, int bytes, {String? error}) async {
+    _debugLog?.log(
+      PeerFrameEvent(
+        ts: DateTime.now(),
+        kind: kind,
+        bytes: bytes,
+        error: error,
+      ),
+    );
+    _consecutiveFailures++;
+    if (_consecutiveFailures >= _failureThreshold) await close();
+  }
+
+  Future<void> _persistState() {
+    final snapshot = OwnerChannelState(
+      sendKey: base64.encode(_sendKey),
+      receiveKey: base64.encode(_receiveKey),
+      sendSequence: _sendSequence,
+      receiveSequence: _receiveSequence,
+    );
+    final operation = _stateTail.then(
+      (_) => _storage.saveChannelState(_remoteEpk, snapshot),
+    );
+    _stateTail = operation.catchError((Object _) {});
+    return operation;
+  }
+
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    try {
+      await _transport.close();
+    } finally {
+      if (!_controller.isClosed) await _controller.close();
+    }
+  }
+
+  static OwnerChannelState _requireChannel(PeerRecord peer) {
+    final channel = peer.channel;
+    if (channel == null) {
+      throw const PeerChannelError('paired peer has no owner-channel keys');
+    }
+    return channel;
+  }
+
+  static Uint8List _decodeKey(String? encoded) {
+    if (encoded == null) {
+      throw const PeerChannelError('paired peer has no owner-channel keys');
+    }
+    try {
+      final bytes = base64.decode(encoded);
+      if (bytes.length != 32) throw const FormatException();
+      return Uint8List.fromList(bytes);
+    } on FormatException {
+      throw const PeerChannelError('paired peer has invalid owner-channel key');
+    }
   }
 }
