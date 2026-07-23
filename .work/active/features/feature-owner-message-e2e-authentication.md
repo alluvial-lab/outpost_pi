@@ -1,7 +1,7 @@
 ---
 id: feature-owner-message-e2e-authentication
 kind: feature
-stage: implementing
+stage: review
 tags: [security, app, pi-extension, relay, protocol]
 parent: null
 depends_on: []
@@ -343,3 +343,52 @@ not parallelism).
 - **Relay metadata still visible**: room names, cwd, model, timing remain
   relay-visible (routing needs them). Out of scope; PROTOCOL.md keeps that
   statement.
+
+## Implementation record (implement-orchestrator run, 2026-07-23)
+
+**Scope resolution**: feature + all 5 child stories at `implementing`;
+graph validated acyclic with no external dependencies.
+
+**Topology** (justified split of a large cross-subproject feature into
+dependency-layered waves with disjoint write sets; per-worker briefs carried
+the full design context):
+
+- Wave 1: `…-schema-handshake-frames` — Terra/high. Schema dh fields landed
+  schema-optional/behavior-required (orchestrator decision: keeps every
+  consumer compiling at the wave boundary; handlers fail closed). KAT
+  generator + vector committed. Green: protocol checks, extension tsc+884
+  tests, app codegen tests + analyze. Commit `9a9a1e7`.
+- **Wave-2 design correction**: the extension worker caught a wire-contract
+  flaw before writing code — the original frame format made `seq` AEAD AAD
+  without transmitting it, leaving the replay high-water unimplementable
+  across dropped frames. Orchestrator corrected the design in place to
+  `0x01 || seqLE64(8B) || nonce24 || ct` (seq clear-header + AAD) and
+  regenerated the KAT (commit `d9b0d15`); both wave-2 workers implemented to
+  the corrected contract.
+- Wave 2 (parallel, disjoint write sets): `…-extension-secure-channel`
+  (Sol/high, commit `af502dc`) and `…-app-secure-channel` (Sol/high, commit
+  `08ff447`). Both reproduce the corrected KAT byte-for-byte. Green:
+  extension tsc + 897 tests + build; app analyze + 799 unit tests.
+- Wave 3 (parallel): `…-e2e-protected-channel` (Sol/high, commit `ab2fd46`)
+  — 5 new e2e cases, full docker stack 13/13 green with redaction canaries,
+  existing 8 cases untouched; and `…-docs-deploy-rollforward`
+  (Terra/medium, commits `58d32cd` + orchestrator drift follow-ups
+  `6f19f64`/`7cf17ce` for stale no-E2E assertions in `pi-extension/CLAUDE.md`
+  and `relay/CLAUDE.md`).
+
+**Effective review_weight**: `thorough` (explicit caller override) —
+iterative fresh-context cross-model review (openai-codex/gpt-5.6-sol)
+until no receiver-confirmed material current-cycle blockers.
+
+**Open question handed to review**: the e2e worker observed a baseline
+`plaintext_post_key` audit event on every successful pairing (tests assert
+post-injection deltas instead). Hypotheses: (a) an app-side frame sent
+plaintext in the pair→adopt window, or (b) an extension-side false positive
+from fanout subscription timing in `handlePairRequest`/`attach`. App adopt
+path inspected — `SecurePeerChannel` is adopted before any post-pair frame
+is sent, favoring (b). Review adjudicates materiality and the fix.
+
+**Integrated verification at feature roll-up**: pi-extension `tsc --noEmit`
++ 897 vitest + `tsc` build green; app `flutter analyze` + 799 unit tests
+green; protocol fixture + codegen checks green; e2e docker stack 13/13
+green (worker-run, `OUTPOST_PI_E2E_RELAY_IMAGE=outpost-pi-relay:0.1.0`).
