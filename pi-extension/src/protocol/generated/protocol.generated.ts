@@ -160,7 +160,8 @@ export type AppPiClientType = ClientMessageType;
 export interface PairRequest {
   readonly type: "pair_request";
   readonly id: string;
-  readonly token: string;
+  readonly token_id?: string;
+  readonly pair_mac?: string;
   readonly device_name: string;
   readonly dh_pk?: string;
   readonly dh_sig?: string;
@@ -857,7 +858,7 @@ function isHistoryCompaction(value: unknown): value is HistoryCompaction {
 }
 
 function isPairRequest(value: unknown): value is PairRequest {
-  return isObjectLike(value, ["type", "id", "token", "device_name", "dh_pk", "dh_sig"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pair_request") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "token") && (typeof record["token"] === "string" && record["token"].length >= 1)) && (Object.hasOwn(record, "device_name") && (typeof record["device_name"] === "string" && record["device_name"].length >= 1)) && (record["dh_pk"] === undefined || (typeof record["dh_pk"] === "string" && record["dh_pk"].length >= 1)) && (record["dh_sig"] === undefined || (typeof record["dh_sig"] === "string" && record["dh_sig"].length >= 1))));
+  return isObjectLike(value, ["type", "id", "token_id", "pair_mac", "device_name", "dh_pk", "dh_sig"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pair_request") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (record["token_id"] === undefined || (typeof record["token_id"] === "string" && record["token_id"].length >= 1)) && (record["pair_mac"] === undefined || (typeof record["pair_mac"] === "string" && record["pair_mac"].length >= 1)) && (Object.hasOwn(record, "device_name") && (typeof record["device_name"] === "string" && record["device_name"].length >= 1)) && (record["dh_pk"] === undefined || (typeof record["dh_pk"] === "string" && record["dh_pk"].length >= 1)) && (record["dh_sig"] === undefined || (typeof record["dh_sig"] === "string" && record["dh_sig"].length >= 1))));
 }
 
 function isUserMessage(value: unknown): value is UserMessage {
