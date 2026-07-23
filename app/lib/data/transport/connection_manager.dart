@@ -155,6 +155,7 @@ class ConnectionManager extends Service {
   final Map<String, int> _roomPersistenceRevision = <String, int>{};
   final Set<String> _roomPersistenceDraining = <String>{};
   Timer? _legacyRoomRetryTimer;
+  final Duration _legacyRoomRetryDelay;
   // List currently subscribed for presence (so reconnect can replay it).
   List<String> _subscribedEpks = const [];
   final ReachabilityAdapter _reachability = ReachabilityAdapter();
@@ -176,11 +177,13 @@ class ConnectionManager extends Service {
     required PairingStorage storage,
     DebugLog? debugLog,
     Duration emitDebounce = const Duration(milliseconds: 50),
+    Duration legacyRoomRetryDelay = const Duration(milliseconds: 250),
     this.pingInterval = const Duration(seconds: 25),
   }) : _factory = factory,
        _storage = storage,
        _debugLog = debugLog,
-       _emitDebounce = emitDebounce {
+       _emitDebounce = emitDebounce,
+       _legacyRoomRetryDelay = legacyRoomRetryDelay {
     _startWatchdog();
   }
 
@@ -1270,7 +1273,7 @@ class ConnectionManager extends Service {
         retryScheduled: true,
       );
       _legacyRoomRetryTimer?.cancel();
-      _legacyRoomRetryTimer = Timer(const Duration(milliseconds: 250), () {
+      _legacyRoomRetryTimer = Timer(_legacyRoomRetryDelay, () {
         _legacyRoomRetryTimer = null;
         if (_disposed || !_isCurrentLegacyRoom(updated)) return;
         unawaited(_retryLegacyRoomPersistence(updated));

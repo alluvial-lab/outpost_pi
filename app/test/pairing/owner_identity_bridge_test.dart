@@ -88,7 +88,7 @@ void main() {
       final id = await _freshIdentity();
       final store = InMemoryOwnerIdentityStore(initial: id);
       final storage = PairingStorage(_FakeSecureStorage());
-      await storage.savePeer(const PeerRecord(
+      await storage.savePairedPeer(const PeerRecord(
         remoteEpk: 'epk-precious',
         sessionName: 'pi',
         relayUrl: 'https://r',
@@ -123,7 +123,7 @@ void main() {
       final second = await _freshIdentity();
       final store = InMemoryOwnerIdentityStore(initial: first);
       final storage = PairingStorage(_FakeSecureStorage());
-      await storage.savePeer(const PeerRecord(
+      await storage.savePairedPeer(const PeerRecord(
         remoteEpk: 'epk-old',
         sessionName: 'pi',
         relayUrl: 'https://r',
@@ -154,7 +154,7 @@ void main() {
       final id = await _freshIdentity();
       final store = InMemoryOwnerIdentityStore(initial: id);
       final storage = PairingStorage(_FakeSecureStorage());
-      await storage.savePeer(const PeerRecord(
+      await storage.savePairedPeer(const PeerRecord(
         remoteEpk: 'epk-stable',
         sessionName: 'pi',
         relayUrl: 'https://r',
