@@ -1,4 +1,4 @@
-import { hkdfSync, randomBytes } from "node:crypto";
+import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from "node:crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { x25519 } from "@noble/curves/ed25519.js";
 
@@ -81,6 +81,58 @@ export function deriveDirectionalKeys(
   return side === "app"
     ? { send: appToPi, recv: piToApp }
     : { send: piToApp, recv: appToPi };
+}
+
+/** Derive the public 16-byte locator for one raw pairing token. */
+export function pairTokenId(token: string): Uint8Array {
+  return Uint8Array.from(createHash("sha256").update(utf8(token)).digest().subarray(0, 16));
+}
+
+/** Build the token-keyed pairing proof transcript from relay-visible fields. */
+export function pairMacMessage(
+  tokenId: Uint8Array,
+  ownerEdPk: Uint8Array,
+  appDhPk: Uint8Array,
+  piEdPk: Uint8Array,
+): Uint8Array {
+  if (tokenId.length !== 16) throw new Error("owner channel token id must be 16 bytes");
+  if (ownerEdPk.length !== 32 || appDhPk.length !== 32 || piEdPk.length !== 32) {
+    throw new Error("owner channel pairing public keys must be 32 bytes");
+  }
+  return concat(utf8(`${OWNER_CHANNEL_SUITE}\npair\n`), tokenId, ownerEdPk, appDhPk, piEdPk);
+}
+
+/** Compute the HMAC proving knowledge of the raw QR token without sending it. */
+export function computePairMac(
+  token: string,
+  tokenId: Uint8Array,
+  ownerEdPk: Uint8Array,
+  appDhPk: Uint8Array,
+  piEdPk: Uint8Array,
+): Uint8Array {
+  return Uint8Array.from(
+    createHmac("sha256", utf8(token))
+      .update(pairMacMessage(tokenId, ownerEdPk, appDhPk, piEdPk))
+      .digest(),
+  );
+}
+
+/** Verify a pairing proof in constant time after validating its fixed-width fields. */
+export function verifyPairMac(
+  token: string,
+  tokenId: Uint8Array,
+  ownerEdPk: Uint8Array,
+  appDhPk: Uint8Array,
+  piEdPk: Uint8Array,
+  candidate: Uint8Array,
+): boolean {
+  if (candidate.length !== 32) return false;
+  try {
+    const expected = computePairMac(token, tokenId, ownerEdPk, appDhPk, piEdPk);
+    return timingSafeEqual(expected, candidate);
+  } catch {
+    return false;
+  }
 }
 
 /** Build the Owner-signed transcript that binds the app DH share to this Pi identity and QR token. */
