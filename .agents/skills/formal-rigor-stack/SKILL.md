@@ -57,7 +57,7 @@ Do not rewrite code first. Rewrite the specification surface first:
    - Relay-side membership authorization and broker-side prefix anti-spoof.
 
 4. **Relay backpressure**
-   - Current relay uses unbounded Tokio mpsc senders; any high-volume producer needs bounded/dedup/drop semantics.
+   - Current relay creates each authenticated connection with a bounded 16-frame Tokio `mpsc` mailbox (`OUTBOUND_QUEUE_CAPACITY`, `relay/src/resource_limits.rs`). Delivery is non-blocking `try_send`; on saturation the frame is dropped and the recipient connection is closed so reconnect hydration restores authoritative state (`relay/src/peers/connections.rs` `deliver`). Retain the discipline: do not introduce unbounded producers.
 
 ## Schema source of truth
 

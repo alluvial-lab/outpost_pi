@@ -89,8 +89,10 @@ island remains for control frames not yet migrated to the schema IR.
    wrapping the generic agent envelope `{from, to, id, re, body}`. The relay
    forwards opaquely; it does not parse envelope bodies (though the body is
    plaintext base64, not ciphertext).
-3. **Cockpit ↔ pi-extension** — Pi custom events with the NUL-prefix control
-   RPC string protocol (separate transport, not relay).
+3. **Cockpit ↔ pi-extension** — Pi custom events carrying structured
+   `outpost_pi_control` JSON envelopes (the active transport; separate from
+   the relay). The NUL-prefix string form (`\x00outpost-pi-ctrl:`) survives
+   only as an extension-side compatibility decoder — Cockpit never emits it.
 4. **Local agent mesh** — Unix Domain Socket broker per PC; local peers
    exchange the same `{from, to, id, re, body}` envelope without crossing the
    relay.
