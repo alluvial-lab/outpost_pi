@@ -6,8 +6,11 @@ import {
   _setOwnerChannelNonceSourceForTest,
   OWNER_CHANNEL_SUITE,
   appTranscript,
+  computePairMac,
   deriveDirectionalKeys,
   open,
+  pairMacMessage,
+  pairTokenId,
   piTranscript,
   seal,
   x25519Shared,
@@ -39,6 +42,9 @@ interface OwnerChannelKat {
   app_dh_sig: string;
   pi_transcript_hex: string;
   pi_dh_sig: string;
+  token_id: string;
+  pair_mac_msg_hex: string;
+  pair_mac: string;
   frames: KatFrame[];
 }
 
@@ -75,6 +81,12 @@ describe("owner secure channel", () => {
     expect(hex(piTx)).toBe(kat.pi_transcript_hex);
     expect(Buffer.from(ed25519Sign(b64(kat.owner_ed_sk), appTx)).toString("base64")).toBe(kat.app_dh_sig);
     expect(Buffer.from(ed25519Sign(b64(kat.pi_ed_sk), piTx)).toString("base64")).toBe(kat.pi_dh_sig);
+
+    const tokenId = pairTokenId(kat.token);
+    expect(Buffer.from(tokenId).toString("base64")).toBe(kat.token_id);
+    expect(hex(pairMacMessage(tokenId, ownerEdPk, appDhPk, piEdPk))).toBe(kat.pair_mac_msg_hex);
+    expect(Buffer.from(computePairMac(kat.token, tokenId, ownerEdPk, appDhPk, piEdPk)).toString("base64"))
+      .toBe(kat.pair_mac);
 
     const highWater = new Map<KatFrame["dir"], bigint>([["app->pi", 0n], ["pi->app", 0n]]);
     for (const frame of kat.frames) {

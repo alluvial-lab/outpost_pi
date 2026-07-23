@@ -95,7 +95,13 @@ describe("fixtures", () => {
         .filter(Boolean);
 
       for (const line of lines) {
-        if (isClientFixture(file)) {
+        if (file === "pair_request.jsonl") {
+          // This historical orchestration fixture carries the removed raw
+          // token. The v0.3 hard cutover must reject it rather than silently
+          // treating it as a current pair_request.
+          const caught = captureDecodeError(() => decodeClient(line));
+          expect(caught.code).toBe("invalid_message");
+        } else if (isClientFixture(file)) {
           const msg = decodeClient(line);
           expect(CLIENT_TYPES.has(msg.type)).toBe(true);
         } else {
@@ -140,7 +146,15 @@ describe("decodeServer validator-backed compatibility", () => {
 describe("decodeClient validator-backed compatibility", () => {
   test("accepts current app-origin messages", () => {
     const messages = [
-      { type: "pair_request", id: "pair-1", token: "token", device_name: "phone" },
+      {
+        type: "pair_request",
+        id: "pair-1",
+        token_id: "dG9rZW4taWQ=",
+        pair_mac: "cGFpci1tYWM=",
+        device_name: "phone",
+        dh_pk: "ZGgta2V5",
+        dh_sig: "ZGgtc2ln",
+      },
       { type: "user_message", id: "msg-1", session_id: "session-1", text: "hello", streaming_behavior: "steer" },
       { type: "session_sync", id: "sync-1", session_id: "session-1", limit: 25 },
       { type: "model_set", id: "model-1", session_id: "session-1", provider: "openai", model_id: "gpt" },
