@@ -1,7 +1,7 @@
 ---
 id: feature-ci-verification-matrix
 kind: feature
-stage: review
+stage: done
 tags: [workflow, security]
 parent: null
 depends_on: []
@@ -249,3 +249,22 @@ CI configuration is verified by execution, not unit tests:
   commit touches `.github/workflows/ci.yml`, which every filter watches, so
   the push itself runs all six lanes as the first live check.
 - Adjacent issues parked: none.
+
+## Review record
+
+- Effective weight: standard (one independent cross-model pass,
+  openai-codex/gpt-5.6-sol, fresh context). Verdict: request changes.
+- **Blocker (confirmed, fixed)**: `rustsec/audit-check@v2` has no `path`
+  input — both cargo-audit matrix legs would have audited the repo root and
+  failed. Fixed by switching to `taiki-e/install-action@cargo-audit` +
+  `cargo audit` per crate directory.
+- **Important (confirmed, fixed by the same change)**: the action's
+  Checks/Issues API reporting requires write permissions the workflow
+  deliberately doesn't grant; the CLI form fails via exit code like the
+  pnpm audit lanes, no extra permissions. Note: plain `cargo audit` fails on
+  any vulnerability advisory (no severity threshold flag) — stricter than
+  pnpm's `--audit-level=high`; accepted, cargo advisories are curated.
+- Reviewer-verified (not re-verified in detail): all 9 dependabot manifest
+  directories exist; lane commands match AGENTS.md and package scripts;
+  path-filter routing selects the intended lanes; actionlint clean.
+- Closed per standard policy: blocker fixed + verified, no second pass.
