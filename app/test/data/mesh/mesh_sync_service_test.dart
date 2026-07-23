@@ -292,7 +292,7 @@ void main() {
       final owner = await _newOwner();
       final storage = PairingStorage(_FakeSecureStorage());
       // Pre-existing peer that the relay no longer knows about.
-      await storage.savePeer(const PeerRecord(
+      await storage.savePairedPeer(const PeerRecord(
         remoteEpk: 'epk-removed',
         sessionName: 'old',
         relayUrl: 'wss://r',
@@ -357,7 +357,7 @@ void main() {
       // the empty-on-existing safety net (which is exactly the bug
       // fix that landed alongside this test — see the "publish race
       // fix" group below).
-      await storage.savePeer(const PeerRecord(
+      await storage.savePairedPeer(const PeerRecord(
         remoteEpk: 'epk-local',
         sessionName: 'local',
         relayUrl: 'wss://r',
@@ -471,7 +471,7 @@ void main() {
       final storage = PairingStorage(_FakeSecureStorage());
       // Seed local cache with a peer the relay doesn't know about so
       // apply() has to mutate (delete + maybe save).
-      await storage.savePeer(const PeerRecord(
+      await storage.savePairedPeer(const PeerRecord(
         remoteEpk: 'epk-stale',
         sessionName: 'old',
         relayUrl: 'wss://r',
@@ -533,7 +533,7 @@ void main() {
         'updated_at': 1,
       })));
       // Bootstrap _lastVersion to 1 by seeding a peer + publishing once.
-      await storage.savePeer(const PeerRecord(
+      await storage.savePairedPeer(const PeerRecord(
         remoteEpk: 'epk-seed',
         sessionName: 'seed',
         relayUrl: 'wss://r',
@@ -575,7 +575,7 @@ void main() {
           '/mesh/$hash',
           _Reply(200, jsonEncode({'version': 1, 'updated_at': 1})),
         );
-        await storage.savePeer(const PeerRecord(
+        await storage.savePairedPeer(const PeerRecord(
           remoteEpk: 'epk-only',
           sessionName: 'only',
           relayUrl: 'wss://r',
@@ -635,7 +635,7 @@ void main() {
           'Bz02uLiwrmQZ0S8qiwtFJAt0KzUvrgepYO_oMQ6yyQE';
       const expectedStandard =
           'Bz02uLiwrmQZ0S8qiwtFJAt0KzUvrgepYO/oMQ6yyQE=';
-      await storage.savePeer(const PeerRecord(
+      await storage.savePairedPeer(const PeerRecord(
         remoteEpk: urlSafeEpk,
         sessionName: 'pi',
         relayUrl: 'https://r',
@@ -667,7 +667,7 @@ void main() {
 
       // Idempotence: a second publish (same peer, now stored
       // post-mesh) — re-emit with standard input, output is standard.
-      await storage.savePeerSilent(PeerRecord(
+      await storage.saveMeshPeerMetadata(PeerRecord(
         remoteEpk: expectedStandard,
         sessionName: 'pi',
         relayUrl: 'https://r',
@@ -710,7 +710,7 @@ void main() {
 
       // Simulate a real local mutation (e.g. PairingViewModel saving a
       // newly-paired peer). Non-silent variant → hook fires.
-      await storage.savePeer(const PeerRecord(
+      await storage.savePairedPeer(const PeerRecord(
         remoteEpk: 'epk-fresh',
         sessionName: 'fresh',
         relayUrl: 'wss://r',
@@ -740,7 +740,7 @@ void main() {
       final svc = MeshSyncService(client, bridge, storage);
       storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
-      await storage.savePeer(_testPeer);
+      await storage.savePairedPeer(_testPeer);
       await client.waitForPublishCount(1);
       await storage.savePeer(_testPeer.copyWith(sessionName: 'newer'));
       await storage.savePeer(
@@ -779,7 +779,7 @@ void main() {
       );
       storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
-      await storage.savePeer(_testPeer);
+      await storage.savePairedPeer(_testPeer);
       await client.waitForPublishCount(2);
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
@@ -819,7 +819,7 @@ void main() {
         );
         storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
-        await storage.savePeer(_testPeer);
+        await storage.savePairedPeer(_testPeer);
         await client.waitForPublishCount(1);
         await Future<void>.delayed(const Duration(milliseconds: 10));
 
@@ -852,7 +852,7 @@ void main() {
       );
       storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
-      await storage.savePeer(_testPeer);
+      await storage.savePairedPeer(_testPeer);
       await client.waitForPublishCount(2);
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
@@ -887,7 +887,7 @@ void main() {
       );
       storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
-      await storage.savePeer(_testPeer);
+      await storage.savePairedPeer(_testPeer);
       await client.waitForPublishCount(2);
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
@@ -924,7 +924,7 @@ void main() {
 
         final pulling = svc.pullOnDemand();
         await client.waitForFetchCount(1);
-        await storage.savePeer(_testPeer);
+        await storage.savePairedPeer(_testPeer);
         fetchResult.complete(
           MeshFetchOk(
             envelope: relayEnvelope,
@@ -987,7 +987,7 @@ void main() {
         final svc = MeshSyncService(client, bridge, storage);
         storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
-        await storage.savePeer(_testPeer);
+        await storage.savePairedPeer(_testPeer);
         await client.waitForPublishCount(1);
         await _waitUntil(
           () => svc.lastVersion == 1,
@@ -1032,7 +1032,7 @@ void main() {
       );
       storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
-      await storage.savePeer(_testPeer);
+      await storage.savePairedPeer(_testPeer);
       await client.waitForPublishCount(1);
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
@@ -1055,7 +1055,7 @@ void main() {
       final svc = MeshSyncService(client, bridge, storage);
       storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
-      await storage.savePeer(_testPeer);
+      await storage.savePairedPeer(_testPeer);
       await client.waitForPublishCount(1);
       await Future<void>.delayed(const Duration(milliseconds: 10));
       await storage.deletePeer(_testPeer.remoteEpk);
@@ -1083,7 +1083,7 @@ void main() {
       svc.addListener(() => notifications += 1);
       storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
-      await storage.savePeer(_testPeer);
+      await storage.savePairedPeer(_testPeer);
       await client.waitForPublishCount(1);
       await storage.savePeer(_testPeer.copyWith(sessionName: 'newer'));
       svc.dispose();
@@ -1112,7 +1112,7 @@ void main() {
       );
       storage.attachPeerMutationHook(svc.publishAfterPeerMutation);
 
-      await storage.savePeer(_testPeer);
+      await storage.savePairedPeer(_testPeer);
       await client.waitForPublishCount(1);
       svc.dispose();
       await Future<void>.delayed(const Duration(milliseconds: 20));

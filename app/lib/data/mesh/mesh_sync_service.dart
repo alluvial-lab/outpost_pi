@@ -216,11 +216,12 @@ class MeshSyncService extends ChangeNotifier {
         roomId: prev?.roomId,
         harness: prev?.harness,
         // Owner-channel keys are device-local secret state. Mesh membership
-        // updates may change labels/relay metadata but must never erase them.
+        // updates may change labels/relay metadata but must never carry them
+        // onto a newly hydrated peer or replace an existing channel.
         channel: prev?.channel,
       );
       if (prev == null || !_peerEqualsForMesh(prev, next)) {
-        await _storage.savePeerSilent(next);
+        await _storage.saveMeshPeerMetadata(next);
         if (!current()) return false;
       }
     }
@@ -253,7 +254,7 @@ class MeshSyncService extends ChangeNotifier {
       if (!current()) return false;
       final stored = existing[peer.remoteEpk];
       if (stored == null || stored != peer) {
-        await _storage.savePeerSilent(peer);
+        await _storage.restorePeerSnapshotSilent(peer);
         if (!current()) return false;
       }
     }
