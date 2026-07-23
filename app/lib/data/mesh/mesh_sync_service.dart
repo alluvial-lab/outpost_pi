@@ -254,8 +254,11 @@ class MeshSyncService extends ChangeNotifier {
       if (!current()) return false;
       final stored = existing[peer.remoteEpk];
       if (stored == null || stored != peer) {
-        await _storage.restorePeerSnapshotSilent(peer);
-        if (!current()) return false;
+        final restored = await _storage.restorePeerSnapshotSilent(
+          peer,
+          stillCurrent: current,
+        );
+        if (!restored || !current()) return false;
       }
     }
     for (final peer in currentPeers) {

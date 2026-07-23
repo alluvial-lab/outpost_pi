@@ -366,14 +366,17 @@ class PairingStorage extends ChangeNotifier {
 
   /// Restore a locally captured pre-rebase snapshot during mesh conflict repair.
   ///
-  /// The mesh service mutation-revision fence proves this snapshot still owns
-  /// the local mutation. It may restore an absent pairing deleted temporarily by
-  /// the rebase, but it never replaces keys already present in storage.
-  Future<void> restorePeerSnapshotSilent(PeerRecord record) =>
-      _serializePeerMutation(
-        () =>
-            _writePeer(record, allowCreate: true, restoreChannelIfAbsent: true),
-      );
+  /// Evaluates [stillCurrent] inside the peer-mutation queue immediately before
+  /// writing, so a revoke serialized ahead of this restore cannot be undone by
+  /// recreating the peer or its channel keys. Returns `false` when the restore is
+  /// stale or the write is otherwise skipped.
+  Future<bool> restorePeerSnapshotSilent(
+    PeerRecord record, {
+    required bool Function() stillCurrent,
+  }) => _serializePeerMutation(() async {
+    if (!stillCurrent()) return false;
+    return _writePeer(record, allowCreate: true, restoreChannelIfAbsent: true);
+  });
 
   /// Load one peer record by its durable remote EPK, if it is still stored.
   Future<PeerRecord?> loadPeer(String remoteEpk) async {
