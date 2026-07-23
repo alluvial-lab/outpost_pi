@@ -166,7 +166,7 @@ PairingTransportFactory _factoryReplyingWith(Map<String, dynamic> reply) {
         final ownerPublic = await deviceEd25519.extractPublicKey();
         final piDh = await generateOwnerChannelKeyPair();
         final transcript = buildPiOwnerChannelTranscript(
-          token: req.token,
+          token: qr.token,
           appDhPublicKey: appDhPublic,
           piDhPublicKey: piDh.publicKey,
           ownerEdPublicKey: ownerPublic.bytes,

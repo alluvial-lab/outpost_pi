@@ -63,12 +63,14 @@ void main() {
             (
               handMsg: hand.PairRequest(
                 id: 'pair-1',
-                token: 'token',
+                tokenId: 'token-id',
+                pairMac: 'pair-mac',
                 deviceName: 'phone',
               ),
               generatedMsg: const generated.PairRequest(
                 id: 'pair-1',
-                token: 'token',
+                tokenId: 'token-id',
+                pairMac: 'pair-mac',
                 deviceName: 'phone',
               ),
             ),

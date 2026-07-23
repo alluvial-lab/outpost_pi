@@ -369,16 +369,21 @@ void main() {
     );
 
     test('PairRequest encodes correctly', () {
+      const rawToken = 'qBcD3fG4h5J6k7L8m9N0pQ';
       final msg = PairRequest(
         id: '018f9c3a-0000-7000-9a3b-1c2d3e4f5a01',
-        token: 'qBcD3fG4h5J6k7L8m9N0pQ',
+        tokenId: 'public-token-id',
+        pairMac: 'token-keyed-proof',
         deviceName: 'iPhone do Jacob',
       );
-      final decoded =
-          jsonDecode(encodeClient(msg).trim()) as Map<String, dynamic>;
+      final encoded = encodeClient(msg).trim();
+      final decoded = jsonDecode(encoded) as Map<String, dynamic>;
       expect(decoded['type'], 'pair_request');
       expect(decoded['device_name'], 'iPhone do Jacob');
-      expect(decoded['token'], 'qBcD3fG4h5J6k7L8m9N0pQ');
+      expect(decoded['token_id'], 'public-token-id');
+      expect(decoded['pair_mac'], 'token-keyed-proof');
+      expect(decoded, isNot(contains('token')));
+      expect(encoded, isNot(contains(rawToken)));
     });
   });
 

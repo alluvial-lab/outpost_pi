@@ -9,7 +9,12 @@ import 'package:cryptography/cryptography.dart';
 
 /// Test-only authenticated relay client for injecting owner envelopes.
 final class RawOwnerRelayClient {
-  RawOwnerRelayClient._(this._socket, this._subscription, this._frames);
+  RawOwnerRelayClient._(
+    this._socket,
+    this._subscription,
+    this._frames,
+    this._envelopes,
+  );
 
   static Future<RawOwnerRelayClient> connect({
     required Uri relay,
@@ -18,6 +23,7 @@ final class RawOwnerRelayClient {
   }) async {
     final socket = await WebSocket.connect(toWsRelayUrl(relay.toString()));
     final frames = <Map<String, dynamic>>[];
+    final envelopes = StreamController<Map<String, dynamic>>.broadcast();
     final challenge = Completer<Map<String, dynamic>>();
     var authenticated = false;
     final subscription = socket.listen((Object? raw) {
@@ -27,6 +33,7 @@ final class RawOwnerRelayClient {
         return;
       }
       frames.add(decoded);
+      if (_isEnvelope(decoded)) envelopes.add(decoded);
     });
 
     final publicKey = await ownerKey.extractPublicKey();
@@ -53,12 +60,13 @@ final class RawOwnerRelayClient {
         'sig': base64.encode(signature.bytes),
       }),
     );
-    return RawOwnerRelayClient._(socket, subscription, frames);
+    return RawOwnerRelayClient._(socket, subscription, frames, envelopes);
   }
 
   final WebSocket _socket;
   final StreamSubscription<Object?> _subscription;
   final List<Map<String, dynamic>> _frames;
+  final StreamController<Map<String, dynamic>> _envelopes;
 
   int get deliveredEnvelopeCount => _frames.where(_isEnvelope).length;
 
@@ -77,9 +85,28 @@ final class RawOwnerRelayClient {
     );
   }
 
+  /// Send one plaintext pairing request and decode its plaintext response.
+  Future<Map<String, dynamic>> exchangePairingJson({
+    required String piPublicKey,
+    required String piRoomId,
+    required Map<String, dynamic> request,
+  }) async {
+    final response = _envelopes.stream.first.then((frame) {
+      final payload = base64.decode(frame['ct']! as String);
+      return jsonDecode(utf8.decode(payload)) as Map<String, dynamic>;
+    });
+    inject(
+      piPublicKey: piPublicKey,
+      piRoomId: piRoomId,
+      payload: utf8.encode(jsonEncode(request)),
+    );
+    return response.timeout(const Duration(seconds: 10));
+  }
+
   Future<void> close() async {
     await _subscription.cancel();
     await _socket.close();
+    await _envelopes.close();
   }
 
   static bool _isEnvelope(Map<String, dynamic> frame) =>
