@@ -6,14 +6,7 @@ import { ed25519Sign, ed25519Verify, type Ed25519Keypair } from "../pairing/cryp
 import { encodePeerChannelKeys } from "../pairing/storage.js";
 import type { ByeReason, ClientMessage, PairErrorCode, ServerMessage } from "../protocol/types.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
-import {
-  appTranscript,
-  deriveDirectionalKeys,
-  generateX25519Keypair,
-  piTranscript,
-  verifyPairMac,
-  x25519Shared,
-} from "../transport/secure_channel.js";
+import * as ownerChannelCrypto from "../transport/secure_channel.js";
 import type { AttachOwnerInput, OwnerMultiplexerPort } from "./ports.js";
 
 /** Extend a relay peer channel with explicit listener teardown owned by the multiplexer. */
@@ -147,7 +140,7 @@ export interface OwnerMultiplexerDeps {
   refreshFooter(): void;
   listPeers(): Promise<OwnerPeerRecord[]>;
   findKnownPeer(peerId: string): Promise<OwnerPeerRecord | null>;
-  findPairTokenById(tokenId: string): string | null;
+  findPairTokenById(tokenId: Uint8Array): string | null;
   consumePairToken(token: string): PairTokenStatus;
   addPeer(record: OwnerPeerRecord): Promise<void>;
   currentIdentity(): Ed25519Keypair | null;
@@ -364,8 +357,8 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
 
     const ownerEdPk = decodeCanonicalBase64(peerId, 32);
     const appDhPk = decodeCanonicalBase64(inner.dh_pk, 32);
-    const token = this.deps.findPairTokenById(inner.token_id!);
-    const proofValid = verifyPairMac(
+    const token = this.deps.findPairTokenById(tokenId);
+    const proofValid = ownerChannelCrypto.verifyPairMac(
       token ?? UNKNOWN_PAIR_TOKEN_DUMMY,
       tokenId,
       ownerEdPk ?? INVALID_PAIR_KEY_DUMMY,
@@ -390,7 +383,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     try {
       validDhSignature = ed25519Verify(
         ownerEdPk,
-        appTranscript(token, appDhPk, identity.publicKey),
+        ownerChannelCrypto.appTranscript(token, appDhPk, identity.publicKey),
         appDhSig,
       );
     } catch {
@@ -415,13 +408,13 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     let piDhPk: Uint8Array;
     let piDhSig: Uint8Array;
     try {
-      const piDh = generateX25519Keypair();
+      const piDh = ownerChannelCrypto.generateX25519Keypair();
       piDhPk = piDh.pk;
-      const shared = x25519Shared(piDh.sk, appDhPk);
-      const keys = deriveDirectionalKeys(shared, token, "pi");
+      const shared = ownerChannelCrypto.x25519Shared(piDh.sk, appDhPk);
+      const keys = ownerChannelCrypto.deriveDirectionalKeys(shared, token, "pi");
       piDhSig = ed25519Sign(
         identity.secretKey,
-        piTranscript(token, appDhPk, piDhPk, ownerEdPk),
+        ownerChannelCrypto.piTranscript(token, appDhPk, piDhPk, ownerEdPk),
       );
       record = {
         name: inner.device_name,

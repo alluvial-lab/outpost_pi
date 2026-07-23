@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import qrTerminal from "qrcode-terminal";
 import { pairTokenId } from "../transport/secure_channel.js";
 
@@ -14,8 +14,12 @@ export function clampPairTtlMs(ttlMs: number): number {
   return Math.min(PAIR_TTL_MAX_MS, Math.max(PAIR_TTL_MIN_MS, Math.floor(ttlMs)));
 }
 
+const PAIR_TOKEN_LOCATOR_BYTES = 16;
+const MISSING_PAIR_TOKEN_LOCATOR = new Uint8Array(PAIR_TOKEN_LOCATOR_BYTES);
+
 interface ActiveToken {
   token: string;
+  tokenId: Uint8Array;
   expiresAt: number;
   consumed: boolean;
 }
@@ -36,7 +40,7 @@ export class QRSession {
   issueToken(ttlMs: number = TOKEN_TTL_MS): { token: string; expiresAt: number } {
     const token = this.generateToken();
     const expiresAt = Date.now() + ttlMs;
-    this.active = { token, expiresAt, consumed: false };
+    this.active = { token, tokenId: pairTokenId(token), expiresAt, consumed: false };
     return { token, expiresAt };
   }
 
@@ -48,10 +52,14 @@ export class QRSession {
    * normal QR rotation, replacement, or clear so proof-holders receive an
    * actionable status without exposing token stage to unknown locators.
    */
-  findTokenById(tokenId: string): string | null {
-    if (!this.active) return null;
-    const activeId = Buffer.from(pairTokenId(this.active.token)).toString("base64");
-    return activeId === tokenId ? this.active.token : null;
+  findTokenById(tokenId: Uint8Array): string | null {
+    if (tokenId.length !== PAIR_TOKEN_LOCATOR_BYTES) return null;
+
+    // Keep the active and absent-record paths structurally equivalent: both
+    // compare exactly one fixed-width locator before the caller verifies a MAC.
+    const active = this.active;
+    const matches = timingSafeEqual(tokenId, active?.tokenId ?? MISSING_PAIR_TOKEN_LOCATOR);
+    return active && matches ? active.token : null;
   }
 
   /** Validates and atomically consumes a token. */

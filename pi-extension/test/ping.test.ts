@@ -103,8 +103,8 @@ vi.mock("../src/pairing/qr.js", async (importOriginal) => {
     displayQR: vi.fn(),
     qrSession: {
       issueToken: vi.fn().mockReturnValue({ token: "test-token", expiresAt: Date.now() + 60_000 }),
-      findTokenById: vi.fn().mockImplementation((tokenId: string) =>
-        tokenId === Buffer.from(pairTokenId("test-token")).toString("base64") ? "test-token" : null,
+      findTokenById: vi.fn().mockImplementation((tokenId: Uint8Array) =>
+        Buffer.from(tokenId).equals(Buffer.from(pairTokenId("test-token"))) ? "test-token" : null,
       ),
       consumeToken: vi.fn().mockReturnValue("ok"),
       clear: vi.fn(),
