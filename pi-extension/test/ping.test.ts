@@ -7,6 +7,31 @@
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { EventEmitter } from "node:events";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import {
+  appTranscript,
+  generateX25519Keypair,
+  open,
+  seal,
+} from "../src/transport/secure_channel.js";
+
+const PI_SK = Uint8Array.from(Buffer.from("wLGik4R1ZldIOSob/O3ezb6vkIFyY1RFNicYCRorPE0=", "base64"));
+const PI_PK = Uint8Array.from(Buffer.from("SG3JE70hBTj4H924lWhYH+R5bEiXQf+NY/wajPQB30Y=", "base64"));
+const OWNER_SK = Uint8Array.from(Buffer.from("TzwrGgkYJzZFVGNygZCvvs3c6/oQKThHVmV0g5KhsM8=", "base64"));
+const OWNER_PK = Uint8Array.from(Buffer.from("v1nhFJ53/JSjBQIllm+LS10pyRlN74it+UthdQ/FwbU=", "base64"));
+const APP_PEER_ID = Buffer.from(OWNER_PK).toString("base64");
+let storedPeer: {
+  name: string;
+  remote_epk: string;
+  paired_at: string;
+  channel_key?: string;
+  send_seq?: string;
+  recv_seq?: string;
+} | null = null;
+let appSendKey: Uint8Array | null = null;
+let appRecvKey: Uint8Array | null = null;
+let appSendSeq = 0n;
+let appRecvSeq = 0n;
 
 // ── Mock RelayClient ──────────────────────────────────────────────────────────
 
@@ -28,12 +53,26 @@ vi.mock("../src/pairing/storage.js", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../src/pairing/storage.js")>();
   return {
     ...orig,
-    getOrCreateEd25519Keypair: vi.fn().mockResolvedValue({
-      publicKey: new Uint8Array(32),
-      secretKey: new Uint8Array(32),
+    getOrCreateEd25519Keypair: vi.fn().mockResolvedValue({ publicKey: PI_PK, secretKey: PI_SK }),
+    listPeers: vi.fn().mockImplementation(async () => storedPeer ? [storedPeer] : []),
+    addPeer: vi.fn().mockImplementation(async (peer: NonNullable<typeof storedPeer>) => {
+      storedPeer = peer;
+      const material = Buffer.from(peer.channel_key!, "base64");
+      appRecvKey = Uint8Array.from(material.subarray(0, 32));
+      appSendKey = Uint8Array.from(material.subarray(32, 64));
+      appSendSeq = BigInt(peer.recv_seq ?? "0");
+      appRecvSeq = BigInt(peer.send_seq ?? "0");
     }),
-    listPeers: vi.fn().mockResolvedValue([]),
-    addPeer: vi.fn(),
+    updatePeerChannelSequences: vi.fn().mockImplementation(async (
+      _peer: string,
+      _key: string,
+      patch: { sendSeq?: bigint; recvSeq?: bigint },
+    ) => {
+      if (!storedPeer) return false;
+      if (patch.sendSeq !== undefined) storedPeer.send_seq = patch.sendSeq.toString();
+      if (patch.recvSeq !== undefined) storedPeer.recv_seq = patch.recvSeq.toString();
+      return true;
+    }),
     removePeer: vi.fn(),
   };
 });
@@ -91,14 +130,39 @@ function makeMockCtx() {
 }
 
 function makeInnerLine(peer: string, inner: object): string {
-  const ct = Buffer.from(JSON.stringify(inner)).toString("base64");
-  return JSON.stringify({ peer, ct });
+  const record = { ...(inner as Record<string, unknown>) };
+  const wirePeer = peer === "app-peer-001" ? APP_PEER_ID : peer;
+  if (record.type === "pair_request") {
+    const dh = generateX25519Keypair();
+    const token = String(record.token ?? "");
+    record.dh_pk = Buffer.from(dh.pk).toString("base64");
+    record.dh_sig = Buffer.from(ed25519.sign(appTranscript(token, dh.pk, PI_PK), OWNER_SK)).toString("base64");
+  }
+  let payload = Buffer.from(JSON.stringify(record));
+  if (record.type !== "pair_request" && wirePeer === APP_PEER_ID && appSendKey) {
+    appSendSeq += 1n;
+    payload = Buffer.from(seal(appSendKey, appSendSeq, JSON.stringify(record)));
+  }
+  return JSON.stringify({ peer: wirePeer, ct: payload.toString("base64") });
 }
 
 function decodeSentCt(raw: string): { peer: string; inner: Record<string, unknown> } {
   const outer = JSON.parse(raw) as { peer: string; ct: string };
-  const inner = JSON.parse(Buffer.from(outer.ct, "base64").toString("utf8"));
-  return { peer: outer.peer, inner };
+  const frame = Buffer.from(outer.ct, "base64");
+  let json: string;
+  if (frame[0] === 0x01) {
+    if (!appRecvKey) throw new Error("missing app receive key");
+    const opened = open(appRecvKey, frame, appRecvSeq);
+    if (!opened) throw new Error("failed to open secure pong");
+    appRecvSeq = opened.seq;
+    json = opened.json;
+  } else {
+    json = frame.toString("utf8");
+  }
+  return {
+    peer: outer.peer === APP_PEER_ID ? "app-peer-001" : outer.peer,
+    inner: JSON.parse(json) as Record<string, unknown>,
+  };
 }
 
 /**
@@ -143,6 +207,11 @@ describe("ping → pong roundtrip", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     relayRef.current = null;
+    storedPeer = null;
+    appSendKey = null;
+    appRecvKey = null;
+    appSendSeq = 0n;
+    appRecvSeq = 0n;
 
     // Stop any active session first (idempotent — safe when already idle).
     await outpostPiTestHarness.stop(makeMockCtx());

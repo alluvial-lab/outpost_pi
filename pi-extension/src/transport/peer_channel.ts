@@ -1,3 +1,6 @@
+import { appendFile, chmod, mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import {
   decodeRelayClientPayload,
   type DecodedRelayIngress,
@@ -6,6 +9,7 @@ import type { RelayOuterEnvelope } from "../protocol/generated/protocol.generate
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
 import type { RelayClient } from "./relay_client.js";
 import { subscribeRelayIngress } from "./relay_ingress_fanout.js";
+import { open, seal, type DirectionalKeys } from "./secure_channel.js";
 
 /** Sink for ServerMessage outbound to the remote app. */
 export interface PeerChannel {
@@ -28,11 +32,9 @@ const APP_DESTINATION_ROOM = "main";
 /**
  * Plaintext PeerChannel backed by a RelayClient WebSocket.
  *
- * Usage (after pair_request handshake completes):
- *   const channel = new PlainPeerChannel(relay, appPeerId, onMsg)
- *   channel.send(serverMessage)          // base64-encodes JSON, routes via relay
- *   // incoming relay messages destined for appPeerId are auto-decoded
- *   // and delivered via onMessage callback
+ * This adapter is restricted to the pre-key pair_request/pair_ok exchange.
+ * Established owners must use {@link SecurePeerChannel}; there is no
+ * post-pairing plaintext fallback.
  */
 export class PlainPeerChannel implements PeerChannel {
   private readonly _unsubscribe: () => void;
@@ -93,5 +95,231 @@ export class PlainPeerChannel implements PeerChannel {
     const msg = decodeRelayClientPayload(decoded.payloadUtf8);
     if (!msg || this.detached) return;
     this.onMessage(msg);
+  }
+}
+
+/** State and boundary effects required by one persisted secure owner channel. */
+export interface SecurePeerChannelOptions {
+  keys: DirectionalKeys;
+  sendSeq: bigint;
+  recvSeq: bigint;
+  persistSequences(patch: { sendSeq?: bigint; recvSeq?: bigint }): Promise<boolean>;
+  onDisconnect(): void;
+  auditPath?: string;
+}
+
+interface OwnerChannelAuditEvent {
+  reason: "plaintext_post_key" | "open_failed" | "sequence_persist_failed" | "sequence_exhausted";
+  seq?: bigint;
+  consecutiveFailures?: number;
+}
+
+const DEFAULT_OWNER_CHANNEL_AUDIT_PATH = join(homedir(), ".pi", "remote", "owner-channel-audit.jsonl");
+const MAX_OPEN_FAILURES = 5;
+
+/** Append one content-free owner-channel security decision to the private audit log. */
+export async function appendOwnerChannelAudit(
+  peerId: string,
+  reason: "missing_channel_key",
+  auditPath = DEFAULT_OWNER_CHANNEL_AUDIT_PATH,
+): Promise<void> {
+  const line = `${JSON.stringify({ ts: Date.now(), peer: peerId, reason })}\n`;
+  try {
+    await mkdir(dirname(auditPath), { recursive: true, mode: 0o700 });
+    await appendFile(auditPath, line, { encoding: "utf8", mode: 0o600 });
+    try { await chmod(auditPath, 0o600); } catch { /* unsupported permissions */ }
+  } catch {
+    // Best-effort audit cannot turn a fail-closed drop into an availability failure.
+  }
+}
+
+/**
+ * Relay-backed protected owner channel with persisted replay high-waters.
+ *
+ * Outbound high-water persistence starts in the same turn as synchronous relay
+ * delivery and any persistence failure detaches the channel. Inbound plaintext,
+ * AEAD failures, and replay are dropped without reaching the message router;
+ * five consecutive protected-frame failures detach the channel.
+ */
+export class SecurePeerChannel implements PeerChannel {
+  private readonly unsubscribe: () => void;
+  private readonly auditPath: string;
+  private detached = false;
+  private disconnectNotified = false;
+  private sendSeq: bigint;
+  private recvSeq: bigint;
+  private consecutiveOpenFailures = 0;
+  private outboundTail: Promise<void> = Promise.resolve();
+  private inboundTail: Promise<void> = Promise.resolve();
+  private auditTail: Promise<void> = Promise.resolve();
+
+  constructor(
+    private readonly relay: RelayClient,
+    private readonly remotePeerId: string,
+    private readonly onMessage: (msg: ClientMessage) => void,
+    private readonly options: SecurePeerChannelOptions,
+  ) {
+    this.sendSeq = options.sendSeq;
+    this.recvSeq = options.recvSeq;
+    this.auditPath = options.auditPath ?? DEFAULT_OWNER_CHANNEL_AUDIT_PATH;
+    this.unsubscribe = subscribeRelayIngress(relay, (ingress) => this.onIngress(ingress));
+  }
+
+  send(msg: ServerMessage): void {
+    if (this.detached) return;
+    let json: string;
+    try {
+      json = JSON.stringify(msg);
+    } catch {
+      return;
+    }
+
+    const nextSeq = this.sendSeq + 1n;
+    let frame: Uint8Array;
+    try {
+      frame = seal(this.options.keys.send, nextSeq, json);
+    } catch {
+      this.audit({ reason: "sequence_exhausted", seq: nextSeq });
+      this.disconnect();
+      return;
+    }
+    this.sendSeq = nextSeq;
+    // Preserve PeerChannel's synchronous best-effort delivery contract. The
+    // high-water write is started in the same turn and serialized by storage;
+    // failure detaches rather than allowing further frames on non-durable state.
+    let persistence: Promise<boolean>;
+    try {
+      persistence = this.options.persistSequences({ sendSeq: nextSeq });
+    } catch {
+      this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
+      this.disconnect();
+      return;
+    }
+    this.outboundTail = this.outboundTail.then(async () => {
+      try {
+        const persisted = await persistence;
+        if (this.detached) return;
+        if (!persisted) {
+          this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
+          this.disconnect();
+        }
+      } catch {
+        if (this.detached) return;
+        this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
+        this.disconnect();
+      }
+    });
+
+    const outer: RelayOuterEnvelope = {
+      peer: this.remotePeerId,
+      room: APP_DESTINATION_ROOM,
+      ct: Buffer.from(frame).toString("base64"),
+    };
+    try {
+      this.relay.send(JSON.stringify(outer));
+    } catch {
+      // The authenticated seq header permits a safe gap after reconnect;
+      // session_sync recovers the dropped application frame.
+    }
+  }
+
+  /** Detach the channel's relay subscription without closing the shared relay. */
+  detach(): void {
+    if (this.detached) return;
+    this.detached = true;
+    this.unsubscribe();
+  }
+
+  /** Test/teardown seam: wait until queued persistence, ingress, and audit work settles. */
+  async whenIdle(): Promise<void> {
+    await this.outboundTail;
+    await this.inboundTail;
+    await this.auditTail;
+  }
+
+  private onIngress(decoded: DecodedRelayIngress): void {
+    if (this.detached || decoded.kind !== "outer" || decoded.frame.peer !== this.remotePeerId) return;
+    const frame = Buffer.from(decoded.frame.ct, "base64");
+    if (frame[0] !== 0x01) {
+      this.audit({ reason: "plaintext_post_key" });
+      return;
+    }
+    this.inboundTail = this.inboundTail.then(() => this.openAndRoute(frame));
+  }
+
+  private async openAndRoute(frame: Uint8Array): Promise<void> {
+    if (this.detached) return;
+    const opened = open(this.options.keys.recv, frame, this.recvSeq);
+    if (!opened) {
+      this.consecutiveOpenFailures += 1;
+      this.audit({
+        reason: "open_failed",
+        seq: frame.length >= 9
+          ? new DataView(frame.buffer, frame.byteOffset + 1, 8).getBigUint64(0, true)
+          : undefined,
+        consecutiveFailures: this.consecutiveOpenFailures,
+      });
+      if (this.consecutiveOpenFailures >= MAX_OPEN_FAILURES) this.disconnect();
+      return;
+    }
+
+    let message: ClientMessage | null = null;
+    try {
+      message = decodeRelayClientPayload(opened.json);
+    } catch {
+      message = null;
+    }
+    if (!message) {
+      this.consecutiveOpenFailures += 1;
+      this.audit({ reason: "open_failed", seq: opened.seq, consecutiveFailures: this.consecutiveOpenFailures });
+      if (this.consecutiveOpenFailures >= MAX_OPEN_FAILURES) this.disconnect();
+      return;
+    }
+
+    try {
+      const persisted = await this.options.persistSequences({ recvSeq: opened.seq });
+      if (this.detached) return;
+      if (!persisted) {
+        this.audit({ reason: "sequence_persist_failed", seq: opened.seq });
+        this.disconnect();
+        return;
+      }
+    } catch {
+      if (this.detached) return;
+      this.audit({ reason: "sequence_persist_failed", seq: opened.seq });
+      this.disconnect();
+      return;
+    }
+
+    this.recvSeq = opened.seq;
+    this.consecutiveOpenFailures = 0;
+    this.onMessage(message);
+  }
+
+  private disconnect(): void {
+    if (this.disconnectNotified) return;
+    this.disconnectNotified = true;
+    this.detach();
+    this.options.onDisconnect();
+  }
+
+  private audit(event: OwnerChannelAuditEvent): void {
+    const line = `${JSON.stringify({
+      ts: Date.now(),
+      peer: this.remotePeerId,
+      reason: event.reason,
+      ...(event.seq === undefined ? {} : { seq: event.seq.toString(10) }),
+      ...(event.consecutiveFailures === undefined ? {} : { count: event.consecutiveFailures }),
+    })}\n`;
+    this.auditTail = this.auditTail.then(async () => {
+      try {
+        await mkdir(dirname(this.auditPath), { recursive: true, mode: 0o700 });
+        await appendFile(this.auditPath, line, { encoding: "utf8", mode: 0o600 });
+        try { await chmod(this.auditPath, 0o600); } catch { /* unsupported permissions */ }
+      } catch {
+        // Best-effort and privacy-safe: audit failure must not expose payloads
+        // or reopen a rejected channel.
+      }
+    });
   }
 }

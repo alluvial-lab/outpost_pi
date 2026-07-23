@@ -13,6 +13,122 @@ import { FakeDeliveryDebugLog } from "./session/delivery_debug_log.test.js";
 import { fileURLToPath } from "node:url";
 import { createEventBus, type ExtensionAPI, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { resetOutpostPiRuntimeCoordinatorForTest } from "./extension/runtime_coordinator.js";
+import { createHash } from "node:crypto";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import {
+  appTranscript,
+  generateX25519Keypair,
+  open as openSecureFrame,
+  seal as sealSecureFrame,
+} from "./transport/secure_channel.js";
+
+const TEST_PI_SECRET_KEY = Uint8Array.from(Buffer.from("wLGik4R1ZldIOSob/O3ezb6vkIFyY1RFNicYCRorPE0=", "base64"));
+const TEST_PI_PUBLIC_KEY = Uint8Array.from(Buffer.from("SG3JE70hBTj4H924lWhYH+R5bEiXQf+NY/wajPQB30Y=", "base64"));
+
+type TestChannelState = {
+  appSendKey: Uint8Array;
+  appRecvKey: Uint8Array;
+  sendSeq: bigint;
+  recvSeq: bigint;
+};
+
+const peerAliasToIdentity = new Map<string, { wire: string; sk: Uint8Array }>();
+const peerWireToAlias = new Map<string, string>();
+const testChannels = new Map<string, TestChannelState>();
+
+function testPeerIdentity(aliasOrWire: string): { wire: string; sk: Uint8Array } {
+  const knownAlias = peerAliasToIdentity.get(aliasOrWire);
+  if (knownAlias) return knownAlias;
+  const knownWireAlias = peerWireToAlias.get(aliasOrWire);
+  if (knownWireAlias) return peerAliasToIdentity.get(knownWireAlias)!;
+  const sk = Uint8Array.from(createHash("sha256").update(`outpost-pi-test-owner:${aliasOrWire}`).digest());
+  const wire = Buffer.from(ed25519.getPublicKey(sk)).toString("base64");
+  const identity = { wire, sk };
+  peerAliasToIdentity.set(aliasOrWire, identity);
+  peerWireToAlias.set(wire, aliasOrWire);
+  return identity;
+}
+
+function wirePeerId(aliasOrWire: string): string {
+  return testPeerIdentity(aliasOrWire).wire;
+}
+
+function displayPeerId(wireOrAlias: string): string {
+  return peerWireToAlias.get(wireOrAlias) ?? wireOrAlias;
+}
+
+function installTestChannel(wirePeer: string, channelKey: string, sendSeq = "0", recvSeq = "0"): void {
+  const material = Buffer.from(channelKey, "base64");
+  if (material.length !== 64) throw new Error("test channel key must contain two directional keys");
+  testChannels.set(wirePeer, {
+    // Persisted material is Pi-relative: app directions are reversed.
+    appRecvKey: Uint8Array.from(material.subarray(0, 32)),
+    appSendKey: Uint8Array.from(material.subarray(32, 64)),
+    sendSeq: BigInt(recvSeq),
+    recvSeq: BigInt(sendSeq),
+  });
+}
+
+function ensureLegacyTestChannel(alias: string): { wire: string; channelKey: string } {
+  const wire = wirePeerId(alias);
+  let state = testChannels.get(wire);
+  if (!state) {
+    const appSendKey = Uint8Array.from(createHash("sha256").update(`send:${alias}`).digest());
+    const appRecvKey = Uint8Array.from(createHash("sha256").update(`recv:${alias}`).digest());
+    state = { appSendKey, appRecvKey, sendSeq: 0n, recvSeq: 0n };
+    testChannels.set(wire, state);
+  }
+  const channelKey = Buffer.concat([Buffer.from(state.appRecvKey), Buffer.from(state.appSendKey)]).toString("base64");
+  return { wire, channelKey };
+}
+
+function transformRelayIngress(raw: string): string {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw) as unknown; } catch { return raw; }
+  if (!parsed || typeof parsed !== "object") return raw;
+  const record = parsed as Record<string, unknown>;
+  if (record.type === "peer_online" || record.type === "peer_offline") {
+    if (typeof record.peer === "string") record.peer = wirePeerId(record.peer);
+    return JSON.stringify(record);
+  }
+  if (record.type === "presence" && Array.isArray(record.states)) {
+    record.states = record.states.map((state) => {
+      if (!state || typeof state !== "object") return state;
+      const item = { ...(state as Record<string, unknown>) };
+      if (typeof item.peer === "string") item.peer = wirePeerId(item.peer);
+      return item;
+    });
+    return JSON.stringify(record);
+  }
+  if (typeof record.peer !== "string" || typeof record.ct !== "string") return raw;
+
+  const identity = testPeerIdentity(record.peer);
+  record.peer = identity.wire;
+  let inner: Record<string, unknown> | null = null;
+  try {
+    inner = JSON.parse(Buffer.from(record.ct, "base64").toString("utf8")) as Record<string, unknown>;
+  } catch {
+    return JSON.stringify(record);
+  }
+  if (inner?.type === "pair_request") {
+    const dh = generateX25519Keypair();
+    const token = String(inner.token ?? "");
+    inner.dh_pk = Buffer.from(dh.pk).toString("base64");
+    inner.dh_sig = Buffer.from(ed25519.sign(appTranscript(token, dh.pk, TEST_PI_PUBLIC_KEY), identity.sk)).toString("base64");
+    record.ct = Buffer.from(JSON.stringify(inner)).toString("base64");
+    return JSON.stringify(record);
+  }
+  let channel = testChannels.get(identity.wire);
+  if (!channel && _knownPeers.some((peer) => peer.remote_epk === displayPeerId(identity.wire))) {
+    ensureLegacyTestChannel(displayPeerId(identity.wire));
+    channel = testChannels.get(identity.wire);
+  }
+  if (channel) {
+    channel.sendSeq += 1n;
+    record.ct = Buffer.from(sealSecureFrame(channel.appSendKey, channel.sendSeq, JSON.stringify(inner))).toString("base64");
+  }
+  return JSON.stringify(record);
+}
 
 // ── Mock RelayClient ──────────────────────────────────────────────────────────
 
@@ -30,6 +146,12 @@ class MockRelay extends EventEmitter {
   sendControl = vi.fn();
   close       = vi.fn();
   constructor() { super(); relayRef.current = this; relayInstances.push(this); }
+  override emit(eventName: string | symbol, ...args: unknown[]): boolean {
+    if (eventName === "message" && typeof args[0] === "string") {
+      args[0] = transformRelayIngress(args[0]);
+    }
+    return super.emit(eventName, ...args);
+  }
 }
 
 class MockRoomAlreadyOpenError extends Error {
@@ -46,7 +168,14 @@ vi.mock("./transport/relay_client.js", () => ({
 
 // ── Mock storage ──────────────────────────────────────────────────────────────
 
-type StoredPeer = { name: string; remote_epk: string; paired_at: string };
+type StoredPeer = {
+  name: string;
+  remote_epk: string;
+  paired_at: string;
+  channel_key?: string;
+  send_seq?: string;
+  recv_seq?: string;
+};
 const _knownPeers: StoredPeer[] = [];
 const _addedPeers: StoredPeer[] = [];
 const _removedPeers: string[] = [];
@@ -56,10 +185,19 @@ vi.mock("./pairing/storage.js", async (importOriginal) => {
   return {
     ...orig,
     getOrCreateEd25519Keypair: vi.fn().mockResolvedValue({
-      publicKey: new Uint8Array(32),
-      secretKey: new Uint8Array(32),
+      publicKey: TEST_PI_PUBLIC_KEY,
+      secretKey: TEST_PI_SECRET_KEY,
     }),
-    listPeers: vi.fn().mockImplementation(async () => [..._knownPeers]),
+    listPeers: vi.fn().mockImplementation(async () => _knownPeers.map((peer) => {
+      const legacy = ensureLegacyTestChannel(peer.remote_epk);
+      return {
+        ...peer,
+        remote_epk: legacy.wire,
+        channel_key: peer.channel_key ?? legacy.channelKey,
+        send_seq: peer.send_seq ?? "0",
+        recv_seq: peer.recv_seq ?? "0",
+      };
+    })),
     // Hermetic: derive owners from the in-memory _knownPeers instead of the
     // real ~/.pi/remote/peers.json. The unmocked `listOwnerPubkeys` calls the
     // module-internal (real) `listPeers`, so it would read this dev machine's
@@ -68,19 +206,40 @@ vi.mock("./pairing/storage.js", async (importOriginal) => {
     // peers_request envelopes that break send-count / decode assertions. Empty
     // by default → SelfRevoke finds no owners → no network, no siblings.
     listOwnerPubkeys: vi.fn().mockImplementation(
-      async () => [...new Set(_knownPeers.map((p) => p.remote_epk))],
+      async () => [...new Set(_knownPeers.map((p) => wirePeerId(p.remote_epk)))],
     ),
     addPeer: vi.fn().mockImplementation(async (p: StoredPeer) => {
-      _addedPeers.push(p);
-      _knownPeers.push(p);
+      const alias = displayPeerId(p.remote_epk);
+      const displayed = { ...p, remote_epk: alias };
+      _addedPeers.push(displayed);
+      const existing = _knownPeers.findIndex((peer) => peer.remote_epk === alias);
+      if (existing >= 0) _knownPeers[existing] = displayed;
+      else _knownPeers.push(displayed);
+      if (p.channel_key) installTestChannel(p.remote_epk, p.channel_key, p.send_seq, p.recv_seq);
+    }),
+    updatePeerChannelSequences: vi.fn().mockImplementation(async (
+      epk: string,
+      expectedChannelKey: string,
+      patch: { sendSeq?: bigint; recvSeq?: bigint },
+    ) => {
+      const alias = displayPeerId(epk);
+      const peer = _knownPeers.find((candidate) => candidate.remote_epk === alias);
+      if (!peer) return false;
+      const currentChannelKey = peer.channel_key ?? ensureLegacyTestChannel(alias).channelKey;
+      if (currentChannelKey !== expectedChannelKey) return false;
+      peer.channel_key = currentChannelKey;
+      if (patch.sendSeq !== undefined) peer.send_seq = patch.sendSeq.toString();
+      if (patch.recvSeq !== undefined) peer.recv_seq = patch.recvSeq.toString();
+      return true;
     }),
     removePeer: vi.fn().mockImplementation(async (epk: string) => {
+      const alias = displayPeerId(epk);
       const before = _knownPeers.length;
-      const filtered = _knownPeers.filter((p) => p.remote_epk !== epk);
+      const filtered = _knownPeers.filter((p) => p.remote_epk !== alias);
       _knownPeers.length = 0;
       _knownPeers.push(...filtered);
       if (filtered.length !== before) {
-        _removedPeers.push(epk);
+        _removedPeers.push(alias);
         return true;
       }
       return false;
@@ -165,7 +324,7 @@ const {
   _startRelayForTest,
   _getCurrentTurnIdForTest,
   _getTurnProjectionForTest,
-  _hasActivePeerForTest,
+  _hasActivePeerForTest: _hasActiveWirePeerForTest,
   _getActivePeerCountForTest,
   _restartSupervisorCommand,
   _setDisposedForTest,
@@ -247,13 +406,30 @@ function makeRelayDeliveredLine(peer: string, senderRoom: string, inner: object)
   return JSON.stringify({ peer, room: senderRoom, ct });
 }
 
+const decodedSentCache = new Map<string, { peer: string; inner: { type: string; [k: string]: unknown } }>();
+
 function decodeSentCt(raw: string): { peer: string; inner: { type: string; [k: string]: unknown } } {
+  const cached = decodedSentCache.get(raw);
+  if (cached) return cached;
   const outer = JSON.parse(raw) as { peer: string; ct: string };
-  const inner = JSON.parse(Buffer.from(outer.ct, "base64").toString("utf8")) as {
-    type: string;
-    [k: string]: unknown;
+  const frame = Buffer.from(outer.ct, "base64");
+  let json: string;
+  if (frame[0] === 0x01) {
+    const channel = testChannels.get(outer.peer);
+    if (!channel) throw new Error(`missing test channel for ${outer.peer}`);
+    const opened = openSecureFrame(channel.appRecvKey, frame, channel.recvSeq);
+    if (!opened) throw new Error(`failed to open protected test frame for ${outer.peer}`);
+    channel.recvSeq = opened.seq;
+    json = opened.json;
+  } else {
+    json = frame.toString("utf8");
+  }
+  const decoded = {
+    peer: displayPeerId(outer.peer),
+    inner: JSON.parse(json) as { type: string; [k: string]: unknown },
   };
-  return { peer: outer.peer, inner };
+  decodedSentCache.set(raw, decoded);
+  return decoded;
 }
 
 function sentControlFramesSince(index: number): Array<{ type: string; meta?: { working?: boolean } }> {
@@ -287,6 +463,10 @@ function emitClientMessage(peer: string, inner: object): void {
   }));
 }
 
+function _hasActivePeerForTest(peer: string): boolean {
+  return _hasActiveWirePeerForTest(wirePeerId(peer));
+}
+
 function sentToPeerSince(index: number, peer: string): Array<{ peer: string; inner: { type: string; [k: string]: unknown } }> {
   return relayRef.current!.send.mock.calls
     .slice(index)
@@ -296,6 +476,11 @@ function sentToPeerSince(index: number, peer: string): Array<{ peer: string; inn
 }
 
 // ── Registration tests ────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  testChannels.clear();
+  decodedSentCache.clear();
+});
 
 describe("extension default export", () => {
   test("is an ExtensionFactory function", () => {
@@ -667,7 +852,7 @@ describe("state machine + pair_request flow", () => {
     expect(errs[0]!.inner).toMatchObject({ code: "token_consumed" });
   });
 
-  test("paired peer ignores subsequent pair_request (idempotent)", async () => {
+  test("paired peer may re-pair to refresh its protected channel", async () => {
     _tokenStatus = "ok";
     const APP_PEER_ID = "already-paired";
 
@@ -682,16 +867,16 @@ describe("state machine + pair_request flow", () => {
 
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
-    // Second pair_request from same peer while paired → routed through
-    // PlainPeerChannel.onMessage → routeClientMessage which ignores it.
+    // A fresh signed pair_request is intentionally handled on the plaintext
+    // handshake path even while the old secure channel remains attached.
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_ID, {
       type: "pair_request", id: "req-2", token: "test-token", device_name: "Phone",
     }));
-    await new Promise((r) => setTimeout(r, 50));
+    await vi.waitFor(() => expect(relayRef.current!.send.mock.calls.length).toBe(sendsBefore + 1));
 
     expect(outpostPiTestHarness.state()).toBe("paired");
-    // No additional outbound messages from this second pair_request
-    expect(relayRef.current!.send.mock.calls.length).toBe(sendsBefore);
+    const response = decodeSentCt(relayRef.current!.send.mock.calls.at(-1)![0] as string);
+    expect(response.inner).toMatchObject({ type: "pair_ok", in_reply_to: "req-2" });
   });
 
   test("known peer reconnect: first non-pair message attaches and routes exactly once", async () => {
@@ -712,11 +897,13 @@ describe("state machine + pair_request flow", () => {
     }));
 
     await vi.waitFor(() => expect(outpostPiTestHarness.state()).toBe("paired"), { timeout: 2000 });
-    const pongs = relayRef.current!.send.mock.calls
-      .map((c) => c[0] as string)
-      .map(decodeSentCt)
-      .filter((d) => d.peer === APP_PEER_ID && d.inner.type === "pong" && d.inner["in_reply_to"] === "ping-reconnect");
-    expect(pongs).toHaveLength(1);
+    await vi.waitFor(() => {
+      const pongs = relayRef.current!.send.mock.calls
+        .map((c) => c[0] as string)
+        .map(decodeSentCt)
+        .filter((d) => d.peer === APP_PEER_ID && d.inner.type === "pong" && d.inner["in_reply_to"] === "ping-reconnect");
+      expect(pongs).toHaveLength(1);
+    });
     expect(relayRef.current!.listenerCount("message")).toBe(1);
   });
 
@@ -920,7 +1107,7 @@ describe("/outpost-pi revoke", () => {
 
     const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
-    await revoke("aaaa1111", ctx);
+    await revoke(wirePeerId("aaaa1111zzzz").slice(0, 8), ctx);
 
     expect(_removedPeers).toEqual(["aaaa1111zzzz"]);
     expect(_knownPeers.map((p) => p.name)).toEqual(["Phone B"]);
@@ -955,9 +1142,18 @@ describe("/outpost-pi revoke", () => {
     captureHandler("outpost-pi");
     await outpostPiTestHarness.connect(makeMockCtx());
 
+    const wireA = Buffer.from(new Uint8Array(32).fill(17)).toString("base64");
+    const wireBBytes = new Uint8Array(32).fill(17);
+    wireBBytes[31] = 18;
+    const wireB = Buffer.from(wireBBytes).toString("base64");
+    peerAliasToIdentity.set("prefix01_AAAA", { wire: wireA, sk: new Uint8Array(32).fill(1) });
+    peerAliasToIdentity.set("prefix02_BBBB", { wire: wireB, sk: new Uint8Array(32).fill(2) });
+    peerWireToAlias.set(wireA, "prefix01_AAAA");
+    peerWireToAlias.set(wireB, "prefix02_BBBB");
+
     const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
-    await revoke("prefix", ctx);
+    await revoke(wireA.slice(0, 8), ctx);
 
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining("Ambiguous shortid"),
@@ -987,7 +1183,7 @@ describe("/outpost-pi revoke", () => {
 
     const revoke = captureHandler("outpost-pi revoke");
     const ctx = makeMockCtx();
-    await revoke("activepe", ctx);
+    await revoke(wirePeerId(ACTIVE_PEER).slice(0, 8), ctx);
 
     // Channel torn down, but relay still listening for new pairings.
     expect(_hasActivePeerForTest(ACTIVE_PEER)).toBe(false);
@@ -1021,8 +1217,8 @@ describe("/outpost-pi revoke", () => {
 
     const text = (ctx.ui.notify.mock.calls[0]![0]) as string;
     // The attached owner shows online; the un-attached one shows offline.
-    expect(text).toContain("iamthe_a — Active Phone 🟢 online");
-    expect(text).toContain("idle_idl — Idle Peer ⚪ offline");
+    expect(text).toContain(`${wirePeerId(ACTIVE_PEER).slice(0, 8)} — Active Phone 🟢 online`);
+    expect(text).toContain(`${wirePeerId("idle_idle").slice(0, 8)} — Idle Peer ⚪ offline`);
   });
 });
 
@@ -1200,6 +1396,7 @@ describe("multi-channel broadcast (W2D)", () => {
     relayRef.current!.emit("message", JSON.stringify({
       type: "peer_offline", peer, since_ts: 1,
     }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const onlineFirstStart = relayRef.current!.send.mock.calls.length;
     onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "online-first buffered" } } as unknown as Parameters<typeof onUpdate>[0]);
     expect(sentToPeerSince(onlineFirstStart, peer).some((frame) => frame.inner.type === "agent_chunk")).toBe(false);
@@ -1218,6 +1415,7 @@ describe("multi-channel broadcast (W2D)", () => {
     relayRef.current!.emit("message", JSON.stringify({
       type: "peer_offline", peer, since_ts: 2,
     }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const syncFirstStart = relayRef.current!.send.mock.calls.length;
     onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "sync-first stale" } } as unknown as Parameters<typeof onUpdate>[0]);
     emitClientMessage(peer, {
@@ -1240,6 +1438,7 @@ describe("multi-channel broadcast (W2D)", () => {
     const compactionTs = 1_700_000_003_000;
 
     relayRef.current!.emit("message", JSON.stringify({ type: "peer_offline", peer, since_ts: 1 }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const sendsBeforeCompaction = relayRef.current!.send.mock.calls.length;
     const now = vi.spyOn(Date, "now").mockReturnValue(compactionTs);
     try {
@@ -1300,6 +1499,7 @@ describe("multi-channel broadcast (W2D)", () => {
     relayRef.current!.emit("message", JSON.stringify({
       type: "peer_offline", peer, since_ts: 1,
     }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const sendsBefore = relayRef.current!.send.mock.calls.length;
     onCompact({
       type: "session_compact",
@@ -1317,6 +1517,7 @@ describe("multi-channel broadcast (W2D)", () => {
     onInput({ source: "terminal", text: "active suffix turn" } as unknown as Parameters<typeof onInput>[0]);
     onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "active suffix frame" } } as unknown as Parameters<typeof onUpdate>[0]);
     relayRef.current!.emit("message", JSON.stringify({ type: "peer_online", peer }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
 
     const flushed = sentToPeerSince(sendsBefore, peer)
       .filter((frame) => frame.inner.type === "compaction" || frame.inner.type === "agent_chunk");
@@ -1448,7 +1649,7 @@ describe("multi-channel broadcast (W2D)", () => {
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
     const revoke = captureHandler("outpost-pi revoke");
-    await revoke("ownerA__", makeMockCtx());
+    await revoke(wirePeerId("ownerA__1234567890").slice(0, 8), makeMockCtx());
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string).map(decodeSentCt);
@@ -1486,7 +1687,10 @@ describe("multi-channel broadcast (W2D)", () => {
       { timeout: 2000 },
     );
     await vi.waitFor(
-      () => expect(ctx.ui.setStatus).toHaveBeenCalledWith("outpost-pi:peer-active", "📱 footer-o"),
+      () => expect(ctx.ui.setStatus).toHaveBeenCalledWith(
+        "outpost-pi:peer-active",
+        `📱 ${wirePeerId("footer-owner-123456").slice(0, 8)}`,
+      ),
       { timeout: 2000 },
     );
     expect(ctx.ui.setStatus).toHaveBeenCalledWith("outpost-pi:relay", "🟢 relay");
@@ -2195,6 +2399,7 @@ describe("multi-channel broadcast (W2D)", () => {
         id: "daemon-new-1",
         session_id: oldSessionId,
       });
+      await vi.advanceTimersByTimeAsync(0);
 
       const actionOkAt = order.indexOf("action_ok");
       const resetHistoryAt = order.indexOf("session_history");
@@ -3085,6 +3290,7 @@ describe("user_input mirroring", () => {
     await vi.waitFor(() => expect(_hasActivePeerForTest(peer)).toBe(true), { timeout: 2000 });
 
     relayRef.current!.emit("message", JSON.stringify({ type: "peer_offline", peer, since_ts: 1 }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const sendsBeforeBufferedTurn = relayRef.current!.send.mock.calls.length;
     onMsgUpdate({
       type: "message_update",
@@ -3103,6 +3309,7 @@ describe("user_input mirroring", () => {
 
     expect(sentToPeerSince(sendsBeforeBufferedTurn, peer)).toEqual([]);
     relayRef.current!.emit("message", JSON.stringify({ type: "peer_online", peer }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
     onTurnEnd({ type: "turn_end", turnIndex: 0 });
 
     const delivered = sentToPeerSince(sendsBeforeBufferedTurn, peer);
@@ -3140,7 +3347,7 @@ describe("user_input mirroring", () => {
     expect(_getTurnProjectionForTest()).toMatchObject({
       working: false,
       cancelTargetId: null,
-      lateAttachSyncTargets: [{ kind: "owner", id: "owner-late-shutdown" }],
+      lateAttachSyncTargets: [{ kind: "owner", id: wirePeerId("owner-late-shutdown") }],
     });
 
     const sendsBeforeShutdown = relayRef.current!.send.mock.calls.length;
@@ -3978,7 +4185,7 @@ describe("rooms wiring", () => {
 
     const sent = relayRef.current!.send.mock.calls.map((c) => c[0] as string);
     const allFrames = sent.map((line) => JSON.parse(line) as { peer: string; room?: string; ct: string });
-    const channelFrames = allFrames.filter((o) => o.peer === "peer-room-test");
+    const channelFrames = allFrames.filter((o) => o.peer === wirePeerId("peer-room-test"));
     expect(channelFrames.length).toBeGreaterThan(0);
     // relay-0.2.0 requires `room` on every outer envelope (relay/src/protocol/
     // generated/outer.rs derives `pub room: String` with deny_unknown_fields); a
@@ -4392,7 +4599,7 @@ describe("bye on teardown", () => {
     const sendsBefore = relayRef.current!.send.mock.calls.length;
 
     const revoke = captureHandler("outpost-pi revoke");
-    await revoke(ACTIVE.slice(0, 8), makeMockCtx());
+    await revoke(wirePeerId(ACTIVE).slice(0, 8), makeMockCtx());
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const byes = sent.map(decodeSentCt).filter((d) => d.inner.type === "bye");
@@ -5569,6 +5776,7 @@ describe("relay reconnect", () => {
       relayInstances[0]!.emit("message", makeInnerLine(APP_PEER_ID, {
         type: "session_sync", id: "pre-reconnect", session_id: "sdk-session-preserve", limit: 50,
       }));
+      await vi.waitFor(() => expect(relayInstances[0]!.send.mock.calls.length).toBeGreaterThan(preReconnectSends));
       const preReconnectHistory = relayInstances[0]!.send.mock.calls.slice(preReconnectSends)
         .map((c) => c[0] as string)
         .map(decodeSentCt)
@@ -5589,6 +5797,7 @@ describe("relay reconnect", () => {
       relayInstances[1]!.emit("message", makeInnerLine(APP_PEER_ID, {
         type: "session_sync", id: "post-reconnect", session_id: "sdk-session-preserve", limit: 50,
       }));
+      await vi.waitFor(() => expect(relayInstances[1]!.send.mock.calls.length).toBeGreaterThan(sendsBefore));
 
       const sent = relayInstances[1]!.send.mock.calls.slice(sendsBefore)
         .map((c) => c[0] as string)
