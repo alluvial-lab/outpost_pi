@@ -51,8 +51,10 @@ jobs:
         crate: [relay, rp-s3]
     steps:
       - uses: actions/checkout@v4
+      # Prebuilt cargo-audit binary (avoids a ~3 min crate build). CLI form
+      # fails via exit code like the pnpm lanes — rustsec/audit-check would
+      # need Checks/Issues write permissions for its API reporting.
+      - uses: taiki-e/install-action@cargo-audit
       - name: Audit ${{ matrix.crate }}
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: ${{ matrix.crate }}
+        working-directory: ${{ matrix.crate }}
+        run: cargo audit
