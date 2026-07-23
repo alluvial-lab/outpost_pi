@@ -294,20 +294,22 @@ sealed class ClientMessage {
 }
 
 final class PairRequest extends ClientMessage {
-  const PairRequest({required this.id, required this.token, required this.deviceName, this.dhPk, this.dhSig});
+  const PairRequest({required this.id, this.tokenId, this.pairMac, required this.deviceName, this.dhPk, this.dhSig});
 
   @override
   String get type => 'pair_request';
 
   final String id;
-  final String token;
+  final String? tokenId;
+  final String? pairMac;
   final String deviceName;
   final String? dhPk;
   final String? dhSig;
 
   factory PairRequest.fromJson(Map<String, dynamic> json) => PairRequest(
         id: json['id'] as String,
-        token: json['token'] as String,
+        tokenId: json['token_id'] as String?,
+        pairMac: json['pair_mac'] as String?,
         deviceName: json['device_name'] as String,
         dhPk: json['dh_pk'] as String?,
         dhSig: json['dh_sig'] as String?,
@@ -317,7 +319,10 @@ final class PairRequest extends ClientMessage {
   Map<String, dynamic> toJson() => {
         'type': type,
         'id': id,
-        'token': token,
+        if (tokenId case final tokenId?)
+          'token_id': tokenId,
+        if (pairMac case final pairMac?)
+          'pair_mac': pairMac,
         'device_name': deviceName,
         if (dhPk case final dhPk?)
           'dh_pk': dhPk,
