@@ -49,7 +49,7 @@ void main() {
   );
 
   test(
-    'single-use token rejects a second owner without replacing the first',
+    'single-use token rejects a second owner with non-oracular token_unknown',
     () async {
       final redaction = FailureLogRedactionCanary.start();
       addTearDown(redaction.verify);
@@ -79,7 +79,7 @@ void main() {
           isA<PairingError>().having(
             (error) => error.code,
             'code',
-            'token_consumed',
+            'token_unknown',
           ),
         ),
       );
@@ -91,7 +91,7 @@ void main() {
   );
 
   test(
-    'minimum-TTL token expires without persisting a peer',
+    'expired token is reported as token_unknown without persisting a peer',
     () async {
       final redaction = FailureLogRedactionCanary.start();
       addTearDown(redaction.verify);
@@ -118,7 +118,7 @@ void main() {
           isA<PairingError>().having(
             (error) => error.code,
             'code',
-            'token_expired',
+            'token_unknown',
           ),
         ),
       );

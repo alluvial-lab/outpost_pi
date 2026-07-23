@@ -114,17 +114,29 @@ final class PairingStack {
   bool _transferred = false;
   bool _closed = false;
 
-  Future<PairingResult> pair({required String deviceName}) async {
-    final result = await performPairing(
-      qr: qr,
-      transport: _transport,
-      storage: storage,
-      ownerKey: ownerKey,
-      deviceName: deviceName,
-      currentRelayUrl: endpoints.relay.toString(),
-    ).timeout(const Duration(seconds: 10));
-    _transport.clearSentFrames();
-    return result;
+  Future<PairingResult> pair({
+    required String deviceName,
+    Future<void> Function(Map<String, dynamic> request)? beforeRequestSend,
+  }) async {
+    if (beforeRequestSend != null) {
+      _transport.beforeNextSend = (bytes) => beforeRequestSend(
+        jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>,
+      );
+    }
+    try {
+      final result = await performPairing(
+        qr: qr,
+        transport: _transport,
+        storage: storage,
+        ownerKey: ownerKey,
+        deviceName: deviceName,
+        currentRelayUrl: endpoints.relay.toString(),
+      ).timeout(const Duration(seconds: 10));
+      _transport.clearSentFrames();
+      return result;
+    } finally {
+      _transport.beforeNextSend = null;
+    }
   }
 
   /// Exchange one deliberately hand-built pre-key frame with the Pi.
@@ -269,6 +281,7 @@ final class _RecordingPeerTransport
   final WsTransport _delegate;
   final List<Uint8List> _frames = <Uint8List>[];
   List<Uint8List>? _sink;
+  Future<void> Function(Uint8List bytes)? beforeNextSend;
 
   void clearSentFrames() => _frames.clear();
 
@@ -277,11 +290,14 @@ final class _RecordingPeerTransport
   void copySentFramesTo(List<Uint8List> sink) => sink.addAll(_frames);
 
   @override
-  Future<void> send(Uint8List data) {
+  Future<void> send(Uint8List data) async {
     final copy = Uint8List.fromList(data);
+    final beforeSend = beforeNextSend;
+    beforeNextSend = null;
+    if (beforeSend != null) await beforeSend(copy);
     _frames.add(copy);
     _sink?.add(copy);
-    return _delegate.send(data);
+    await _delegate.send(data);
   }
 
   @override

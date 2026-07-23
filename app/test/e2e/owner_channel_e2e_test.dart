@@ -19,6 +19,7 @@ import 'support/harness_endpoints.dart';
 import 'support/pairing_stack.dart';
 import 'support/pi_host_client.dart';
 import 'support/pi_host_inspector.dart';
+import 'support/raw_owner_relay_client.dart';
 import 'support/secure_storage_fixture.dart';
 import 'support/toxiproxy_client.dart';
 
@@ -41,6 +42,12 @@ void main() {
         qr: pairCode.qr,
         storage: storage,
       );
+      final ownerPeer = await _ownerPublicKey(stack.ownerKey);
+      final plaintextAuditBefore = await _auditCount(
+        inspector,
+        peer: ownerPeer,
+        reason: 'plaintext_post_key',
+      );
       final paired = await stack.pair(deviceName: 'Protected Channel Phone');
       final session = await stack.adoptAndHydrate(paired);
       addTearDown(() => _closeSession(session, stack, hiveDirectory));
@@ -61,6 +68,15 @@ void main() {
       expect(persisted.receiveSequence, greaterThan(0));
       expect((await host.status()).state, 'paired');
       expect(status.roomId, paired.peer.roomId);
+      expect(
+        await _auditCount(
+          inspector,
+          peer: ownerPeer,
+          reason: 'plaintext_post_key',
+        ),
+        plaintextAuditBefore,
+        reason: 'a successful pairing must not produce a plaintext audit',
+      );
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );
@@ -108,11 +124,14 @@ void main() {
         payload: forged,
       );
 
-      await _waitForNewAudit(
-        inspector,
-        peer: ownerPeer,
-        reason: 'open_failed',
-        afterCount: auditBefore,
+      expect(
+        await _waitForNewAudit(
+          inspector,
+          peer: ownerPeer,
+          reason: 'open_failed',
+          afterCount: auditBefore,
+        ),
+        auditBefore + 1,
       );
       await Future<void>.delayed(const Duration(milliseconds: 500));
       expect(
@@ -149,9 +168,17 @@ void main() {
           keyPair: stack.ownerKey,
         );
         final tampered = Uint8List.fromList(signature.bytes)..[0] ^= 0x01;
+        final ownerPublic = await stack.ownerKey.extractPublicKey();
+        final proof = await buildOwnerChannelPairProof(
+          token: pairCode.qr.token,
+          ownerEdPublicKey: ownerPublic.bytes,
+          appDhPublicKey: dh.publicKey,
+          piEdPublicKey: pairCode.qr.epkBytes,
+        );
         final request = PairRequest(
           id: uuid7(),
-          token: pairCode.qr.token,
+          tokenId: base64.encode(proof.tokenId),
+          pairMac: base64.encode(proof.mac),
           deviceName: 'Tampered DH Phone',
           dhPk: base64.encode(dh.publicKey),
           dhSig: base64.encode(tampered),
@@ -171,6 +198,71 @@ void main() {
       expect(await storage.loadPeer(valid.peer.remoteEpk), isNotNull);
       expect(await inspector.peerCount(), 1);
       expect((await host.status()).state, 'paired');
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'pairing substitution is rejected without consuming the honest token',
+    () async {
+      await host.restartForIsolation();
+      final pairCode = await waitForPairCode(host);
+      final storage = PairingStorage(SecureStorageFixture());
+      final stack = await PairingStack.connect(
+        endpoints: endpoints,
+        qr: pairCode.qr,
+        storage: storage,
+      );
+      addTearDown(stack.close);
+      final attackerKey = await Ed25519().newKeyPair();
+      final attacker = await RawOwnerRelayClient.connect(
+        relay: endpoints.relay,
+        ownerKey: attackerKey,
+        deviceId:
+            'pairing-substitution-${DateTime.now().microsecondsSinceEpoch}',
+      );
+      addTearDown(attacker.close);
+
+      final attackerDh = await generateOwnerChannelKeyPair();
+      try {
+        final paired = await stack.pair(
+          deviceName: 'Honest After Substitution',
+          beforeRequestSend: (observed) async {
+            final attackerTranscript = buildAppOwnerChannelTranscript(
+              token: pairCode.qr.token,
+              appDhPublicKey: attackerDh.publicKey,
+              piEdPublicKey: pairCode.qr.epkBytes,
+            );
+            final attackerSignature = await Ed25519().sign(
+              attackerTranscript,
+              keyPair: attackerKey,
+            );
+            final forged = PairRequest(
+              id: uuid7(),
+              tokenId: observed['token_id']! as String,
+              pairMac: observed['pair_mac']! as String,
+              deviceName: 'Substitution Attacker',
+              dhPk: base64.encode(attackerDh.publicKey),
+              dhSig: base64.encode(attackerSignature.bytes),
+            );
+            final response = await attacker.exchangePairingJson(
+              piPublicKey: pairCode.qr.epk,
+              piRoomId: pairCode.qr.roomId!,
+              request: forged.toJson(),
+            );
+            expect(response['type'], 'pair_error');
+            expect(response['code'], 'token_unknown');
+            expect(await inspector.peerCount(), 0);
+            expect((await host.status()).state, 'started');
+          },
+        );
+
+        expect(await storage.loadPeer(paired.peer.remoteEpk), isNotNull);
+        expect(await inspector.peerCount(), 1);
+        expect((await host.status()).state, 'paired');
+      } finally {
+        attackerDh.secretKey.fillRange(0, attackerDh.secretKey.length, 0);
+      }
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );
@@ -207,11 +299,14 @@ void main() {
         payload: utf8.encode(jsonEncode(Ping(id: uuid7()).toJson())),
       );
 
-      await _waitForNewAudit(
-        inspector,
-        peer: ownerPeer,
-        reason: 'plaintext_post_key',
-        afterCount: auditBefore,
+      expect(
+        await _waitForNewAudit(
+          inspector,
+          peer: ownerPeer,
+          reason: 'plaintext_post_key',
+          afterCount: auditBefore,
+        ),
+        auditBefore + 1,
       );
       await Future<void>.delayed(const Duration(milliseconds: 500));
       expect(
