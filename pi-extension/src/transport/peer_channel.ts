@@ -1,4 +1,4 @@
-import { appendFile, chmod, mkdir } from "node:fs/promises";
+import { appendFile, chmod, mkdir, rename, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -108,29 +108,224 @@ export interface SecurePeerChannelOptions {
   auditPath?: string;
 }
 
+type OwnerChannelAuditReason =
+  | "missing_channel_key"
+  | "plaintext_post_key"
+  | "open_failed"
+  | "ingress_overflow"
+  | "sequence_persist_failed"
+  | "sequence_exhausted";
+
 interface OwnerChannelAuditEvent {
-  reason: "plaintext_post_key" | "open_failed" | "sequence_persist_failed" | "sequence_exhausted";
+  reason: OwnerChannelAuditReason;
   seq?: bigint;
   consecutiveFailures?: number;
+  occurrences?: number;
+}
+
+interface OwnerChannelAuditBucket {
+  peer: string;
+  reason: OwnerChannelAuditReason;
+  pendingCount: number;
+  lastSeq?: bigint;
+  maxConsecutiveFailures?: number;
+  emitted: boolean;
+  lastEmittedAt: number;
 }
 
 const DEFAULT_OWNER_CHANNEL_AUDIT_PATH = join(homedir(), ".pi", "remote", "owner-channel-audit.jsonl");
 const MAX_OPEN_FAILURES = 5;
+/** Maximum protected frames retained while sequence persistence is pending. */
+export const MAX_PENDING_OWNER_FRAMES = 64;
+/** Emit a counted repeat summary after this many suppressed identical decisions. */
+export const OWNER_CHANNEL_AUDIT_SUMMARY_EVENTS = 100;
+/** Hard cap for the active audit file; one equally bounded rotated predecessor is retained. */
+export const OWNER_CHANNEL_AUDIT_MAX_BYTES = 256 * 1024;
+const OWNER_CHANNEL_AUDIT_SUMMARY_MS = 5_000;
+const OWNER_CHANNEL_AUDIT_MAX_PEER_BUCKETS = 252;
+const OWNER_CHANNEL_AUDIT_MAX_PEER_LENGTH = 128;
 
-/** Append one content-free owner-channel security decision to the private audit log. */
-export async function appendOwnerChannelAudit(
+/**
+ * Coalesce owner-channel decisions behind one in-flight file operation.
+ *
+ * Each peer/reason occupies one fixed-size bucket. Repeated ingress increments
+ * counters rather than allocating promises or log lines; a first event flushes
+ * immediately and repeats flush at a fixed count/time cadence. The active file
+ * rotates before crossing its cap, retaining at most one capped predecessor.
+ */
+class OwnerChannelAuditor {
+  private readonly buckets = new Map<string, OwnerChannelAuditBucket>();
+  private writeInFlight: Promise<void> | null = null;
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(private readonly auditPath: string) {}
+
+  record(peerId: string, event: OwnerChannelAuditEvent): void {
+    const peer = peerId.slice(0, OWNER_CHANNEL_AUDIT_MAX_PEER_LENGTH);
+    let key = `${peer}\0${event.reason}`;
+    let bucket = this.buckets.get(key);
+    if (!bucket) {
+      const peerBucketCount = [...this.buckets.keys()].filter((candidate) => !candidate.startsWith("overflow\0")).length;
+      if (peerBucketCount >= OWNER_CHANNEL_AUDIT_MAX_PEER_BUCKETS) {
+        key = `overflow\0${event.reason}`;
+        bucket = this.buckets.get(key);
+      }
+      if (!bucket) {
+        bucket = {
+          peer: key.startsWith("overflow\0") ? "overflow" : peer,
+          reason: event.reason,
+          pendingCount: 0,
+          emitted: false,
+          lastEmittedAt: 0,
+        };
+        this.buckets.set(key, bucket);
+      }
+    }
+
+    bucket.pendingCount += Math.max(1, Math.floor(event.occurrences ?? 1));
+    if (event.seq !== undefined) bucket.lastSeq = event.seq;
+    if (event.consecutiveFailures !== undefined) {
+      bucket.maxConsecutiveFailures = Math.max(
+        bucket.maxConsecutiveFailures ?? 0,
+        event.consecutiveFailures,
+      );
+    }
+
+    if (!bucket.emitted || bucket.pendingCount >= OWNER_CHANNEL_AUDIT_SUMMARY_EVENTS) {
+      this.requestFlush(false);
+    } else {
+      this.scheduleFlush();
+    }
+  }
+
+  async whenIdle(): Promise<void> {
+    this.clearFlushTimer();
+    while (true) {
+      this.requestFlush(true);
+      const work = this.writeInFlight;
+      if (!work) return;
+      await work;
+    }
+  }
+
+  stats(): { bucketCount: number; activeWrites: number; pendingEvents: number } {
+    return {
+      bucketCount: this.buckets.size,
+      activeWrites: this.writeInFlight ? 1 : 0,
+      pendingEvents: [...this.buckets.values()].reduce((total, bucket) => total + bucket.pendingCount, 0),
+    };
+  }
+
+  private requestFlush(force: boolean): void {
+    if (this.writeInFlight) return;
+    const now = Date.now();
+    const due = [...this.buckets.values()].filter((bucket) =>
+      bucket.pendingCount > 0 && (
+        force ||
+        !bucket.emitted ||
+        bucket.pendingCount >= OWNER_CHANNEL_AUDIT_SUMMARY_EVENTS ||
+        now - bucket.lastEmittedAt >= OWNER_CHANNEL_AUDIT_SUMMARY_MS
+      )
+    );
+    if (due.length === 0) {
+      this.scheduleFlush();
+      return;
+    }
+
+    this.clearFlushTimer();
+    const lines = due.map((bucket) => {
+      const count = bucket.pendingCount;
+      bucket.pendingCount = 0;
+      bucket.emitted = true;
+      bucket.lastEmittedAt = now;
+      return `${JSON.stringify({
+        ts: now,
+        peer: bucket.peer,
+        reason: bucket.reason,
+        count,
+        ...(bucket.lastSeq === undefined ? {} : { seq: bucket.lastSeq.toString(10) }),
+        ...(bucket.maxConsecutiveFailures === undefined
+          ? {}
+          : { consecutive_failures: bucket.maxConsecutiveFailures }),
+      })}\n`;
+    });
+
+    this.writeInFlight = this.appendBounded(lines.join(""))
+      .catch(() => {
+        // Best-effort audit cannot turn a fail-closed drop into an availability failure.
+      })
+      .finally(() => {
+        this.writeInFlight = null;
+        this.requestFlush(false);
+      });
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushTimer || this.writeInFlight) return;
+    const pending = [...this.buckets.values()].filter((bucket) => bucket.pendingCount > 0);
+    if (pending.length === 0) return;
+    const delay = Math.max(
+      0,
+      Math.min(...pending.map((bucket) =>
+        Math.max(0, bucket.lastEmittedAt + OWNER_CHANNEL_AUDIT_SUMMARY_MS - Date.now())
+      )),
+    );
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      this.requestFlush(false);
+    }, delay);
+    this.flushTimer.unref?.();
+  }
+
+  private clearFlushTimer(): void {
+    if (!this.flushTimer) return;
+    clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+  }
+
+  private async appendBounded(batch: string): Promise<void> {
+    await mkdir(dirname(this.auditPath), { recursive: true, mode: 0o700 });
+    let size = 0;
+    try { size = (await stat(this.auditPath)).size; } catch { /* new file */ }
+    if (size + Buffer.byteLength(batch, "utf8") > OWNER_CHANNEL_AUDIT_MAX_BYTES) {
+      const rotatedPath = `${this.auditPath}.1`;
+      try { await unlink(rotatedPath); } catch { /* no predecessor */ }
+      if (size <= OWNER_CHANNEL_AUDIT_MAX_BYTES) {
+        try {
+          await rename(this.auditPath, rotatedPath);
+          try { await chmod(rotatedPath, 0o600); } catch { /* unsupported permissions */ }
+        } catch { /* no active file */ }
+      } else {
+        // A log inherited from the old unbounded implementation must not become
+        // an oversized predecessor on its first bounded append.
+        try { await unlink(this.auditPath); } catch { /* no active file */ }
+      }
+    }
+    await appendFile(this.auditPath, batch, { encoding: "utf8", mode: 0o600 });
+    try { await chmod(this.auditPath, 0o600); } catch { /* unsupported permissions */ }
+  }
+}
+
+const defaultOwnerChannelAuditor = new OwnerChannelAuditor(DEFAULT_OWNER_CHANNEL_AUDIT_PATH);
+const customOwnerChannelAuditors = new Map<string, OwnerChannelAuditor>();
+
+function ownerChannelAuditorFor(auditPath: string): OwnerChannelAuditor {
+  if (auditPath === DEFAULT_OWNER_CHANNEL_AUDIT_PATH) return defaultOwnerChannelAuditor;
+  let auditor = customOwnerChannelAuditors.get(auditPath);
+  if (!auditor) {
+    auditor = new OwnerChannelAuditor(auditPath);
+    customOwnerChannelAuditors.set(auditPath, auditor);
+  }
+  return auditor;
+}
+
+/** Enqueue a coalesced, content-free owner-channel security decision without allocating per-event work. */
+export function appendOwnerChannelAudit(
   peerId: string,
   reason: "missing_channel_key",
   auditPath = DEFAULT_OWNER_CHANNEL_AUDIT_PATH,
-): Promise<void> {
-  const line = `${JSON.stringify({ ts: Date.now(), peer: peerId, reason })}\n`;
-  try {
-    await mkdir(dirname(auditPath), { recursive: true, mode: 0o700 });
-    await appendFile(auditPath, line, { encoding: "utf8", mode: 0o600 });
-    try { await chmod(auditPath, 0o600); } catch { /* unsupported permissions */ }
-  } catch {
-    // Best-effort audit cannot turn a fail-closed drop into an availability failure.
-  }
+): void {
+  ownerChannelAuditorFor(auditPath).record(peerId, { reason });
 }
 
 /**
@@ -145,15 +340,15 @@ export async function appendOwnerChannelAudit(
  */
 export class SecurePeerChannel implements PeerChannel {
   private readonly unsubscribe: () => void;
-  private readonly auditPath: string;
+  private readonly auditor: OwnerChannelAuditor;
   private detached = false;
   private disconnectNotified = false;
   private sendSeq: bigint;
   private recvSeq: bigint;
   private consecutiveOpenFailures = 0;
   private outboundTail: Promise<void> = Promise.resolve();
-  private inboundTail: Promise<void> = Promise.resolve();
-  private auditTail: Promise<void> = Promise.resolve();
+  private readonly inboundQueue: Uint8Array[] = [];
+  private inboundDrain: Promise<void> | null = null;
 
   constructor(
     private readonly relay: RelayClient,
@@ -163,7 +358,7 @@ export class SecurePeerChannel implements PeerChannel {
   ) {
     this.sendSeq = options.sendSeq;
     this.recvSeq = options.recvSeq;
-    this.auditPath = options.auditPath ?? DEFAULT_OWNER_CHANNEL_AUDIT_PATH;
+    this.auditor = ownerChannelAuditorFor(options.auditPath ?? DEFAULT_OWNER_CHANNEL_AUDIT_PATH);
     this.unsubscribe = subscribeRelayIngress(relay, (ingress) => this.onIngress(ingress));
   }
 
@@ -223,23 +418,52 @@ export class SecurePeerChannel implements PeerChannel {
     if (this.detached) return;
     this.detached = true;
     this.unsubscribe();
+    if (this.inboundQueue.length > 0) {
+      this.audit({ reason: "ingress_overflow", occurrences: this.inboundQueue.length });
+      this.inboundQueue.length = 0;
+    }
   }
 
   /** Test/teardown seam: wait until queued persistence, ingress, and audit work settles. */
   async whenIdle(): Promise<void> {
     await this.outboundTail;
-    await this.inboundTail;
-    await this.auditTail;
+    while (this.inboundDrain) await this.inboundDrain;
+    await this.auditor.whenIdle();
   }
 
   private onIngress(decoded: DecodedRelayIngress): void {
     if (this.detached || decoded.kind !== "outer" || decoded.frame.peer !== this.remotePeerId) return;
     const frame = Buffer.from(decoded.frame.ct, "base64");
     if (frame[0] !== 0x01) {
+      // Plaintext is rejected before any expensive crypto and is not part of
+      // the five-protected-failure detach threshold. Detach stays transient,
+      // and the next protected frame still reattaches under the same key.
       this.audit({ reason: "plaintext_post_key" });
       return;
     }
-    this.inboundTail = this.inboundTail.then(() => this.openAndRoute(frame));
+    if (this.inboundQueue.length >= MAX_PENDING_OWNER_FRAMES) {
+      this.audit({ reason: "ingress_overflow" });
+      return;
+    }
+    this.inboundQueue.push(frame);
+    this.ensureInboundDrain();
+  }
+
+  private ensureInboundDrain(): void {
+    if (this.inboundDrain || this.detached) return;
+    this.inboundDrain = this.drainInbound()
+      .finally(() => {
+        this.inboundDrain = null;
+        if (this.inboundQueue.length > 0 && !this.detached) this.ensureInboundDrain();
+      });
+  }
+
+  private async drainInbound(): Promise<void> {
+    while (!this.detached) {
+      const frame = this.inboundQueue.shift();
+      if (!frame) return;
+      await this.openAndRoute(frame);
+    }
   }
 
   private async openAndRoute(frame: Uint8Array): Promise<void> {
@@ -299,22 +523,6 @@ export class SecurePeerChannel implements PeerChannel {
   }
 
   private audit(event: OwnerChannelAuditEvent): void {
-    const line = `${JSON.stringify({
-      ts: Date.now(),
-      peer: this.remotePeerId,
-      reason: event.reason,
-      ...(event.seq === undefined ? {} : { seq: event.seq.toString(10) }),
-      ...(event.consecutiveFailures === undefined ? {} : { count: event.consecutiveFailures }),
-    })}\n`;
-    this.auditTail = this.auditTail.then(async () => {
-      try {
-        await mkdir(dirname(this.auditPath), { recursive: true, mode: 0o700 });
-        await appendFile(this.auditPath, line, { encoding: "utf8", mode: 0o600 });
-        try { await chmod(this.auditPath, 0o600); } catch { /* unsupported permissions */ }
-      } catch {
-        // Best-effort and privacy-safe: audit failure must not expose payloads
-        // or reopen a rejected channel.
-      }
-    });
+    this.auditor.record(this.remotePeerId, event);
   }
 }
