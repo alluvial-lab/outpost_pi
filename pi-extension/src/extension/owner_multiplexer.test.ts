@@ -11,6 +11,7 @@ import { decodeRelayIngress } from "../protocol/relay_ingress.js";
 import { ed25519Sign, ed25519Verify, generateEd25519Keypair } from "../pairing/crypto.js";
 import { decodePeerChannelKeys } from "../pairing/storage.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
+import * as ownerChannelCrypto from "../transport/secure_channel.js";
 import {
   appTranscript,
   computePairMac,
@@ -94,8 +95,9 @@ function makeMultiplexer() {
     recv_seq?: string;
   }>();
   const identity = generateEd25519Keypair();
+  const issuedTokenId = pairTokenId("pair-token");
   const findPairTokenById = vi.fn<OwnerMultiplexerDeps["findPairTokenById"]>((tokenId) =>
-    tokenId === Buffer.from(pairTokenId("pair-token")).toString("base64") ? "pair-token" : null,
+    Buffer.from(tokenId).equals(Buffer.from(issuedTokenId)) ? "pair-token" : null,
   );
   const consumePairToken = vi.fn<OwnerMultiplexerDeps["consumePairToken"]>(() => "unknown");
   const auditDrop = vi.fn<OwnerMultiplexerDeps["auditDrop"]>();
@@ -516,8 +518,10 @@ describe("OwnerMultiplexer", () => {
     }
   });
 
-  test("unknown token ids and bad pair MACs are indistinguishable and do not burn the token", async () => {
+  test("unknown locators run dummy proof verification and bad MACs do not burn the token", async () => {
+    const pairMacVerifier = vi.spyOn(ownerChannelCrypto, "verifyPairMac");
     for (const mutation of ["unknown_id", "bad_mac"] as const) {
+      pairMacVerifier.mockClear();
       const { mux, identity, consumePairToken, knownPeers } = makeMultiplexer();
       const pair = signedPairRequest(identity.publicKey);
       const sendToPeer = vi.fn();
@@ -541,7 +545,15 @@ describe("OwnerMultiplexer", () => {
       }));
       expect(consumePairToken).not.toHaveBeenCalled();
       expect(knownPeers.size).toBe(0);
+      expect(pairMacVerifier).toHaveBeenCalledTimes(1);
+      if (mutation === "unknown_id") {
+        // A missing record still completes the dummy HMAC verification path.
+        expect(pairMacVerifier.mock.calls[0]![0]).not.toBe(pair.token);
+      } else {
+        expect(pairMacVerifier.mock.calls[0]![0]).toBe(pair.token);
+      }
     }
+    pairMacVerifier.mockRestore();
   });
 
   test("valid proof-holders receive actionable consumed and expired token errors", async () => {
