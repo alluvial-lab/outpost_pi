@@ -165,6 +165,16 @@ renames that are **version-paired** — mixed versions break:
   the NUL-prefixed control string is now `\x00outpost-pi-ctrl:` and the
   structured type is `outpost_pi_control`. Hard cutover — old cockpit + new
   extension (or vice versa) break the control channel.
+- **Owner-channel E2E** (target v0.3.0; app ↔ extension): `pair_request` and
+  `pair_ok` carry signed ephemeral-DH fields, and post-pairing `outer.ct`
+  payloads are sealed frames rather than base64 plaintext. The extension
+  rejects unsigned `pair_request`s with `pair_error bad_dh_sig`; it also
+  rejects plaintext post-key frames and AEAD/replay failures, detaching after
+  five consecutive failures. Recovery is re-pairing. Existing pairings have
+  no channel key, so their frames are dropped and operators must re-pair. The
+  relay remains untouched because `ct` stays opaque base64; no relay version
+  pairing is required. Safe deploy order: rebuild the extension `dist/`, then
+  fully restart Pi (not `/reload`), then sideload the app.
 - **Storage/keyring/launchd identifiers** (hard cutover, destructive): Hive
   box names (`dev.outpostpi.*`), keyring service (`dev.outpostpi.pi`), owner
   identity (`dev.outpostpi.owner.identity`), launchd label

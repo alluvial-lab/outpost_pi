@@ -1,7 +1,7 @@
 ---
 id: feature-owner-message-e2e-authentication-docs-deploy-rollforward
 kind: story
-stage: implementing
+stage: done
 tags: [security, app, pi-extension, protocol]
 parent: feature-owner-message-e2e-authentication
 depends_on: [feature-owner-message-e2e-authentication-extension-secure-channel, feature-owner-message-e2e-authentication-app-secure-channel]
@@ -22,3 +22,12 @@ Acceptance: docs pass the gate-docs drift standard (no false/stale assertions); 
 Design: see the parent feature body's Implementation Units and Cryptographic
 design sections — this story is a checkpoint of that design, not a
 standalone spec.
+
+## Implementation notes
+
+- Rolled `PROTOCOL.md` and `docs/SPEC.md` forward to the signed ephemeral
+  X25519 ECDH owner channel, HKDF-SHA256 directional keys, sealed-frame
+  protection, persisted replay high-waters, and residual cross-PC/metadata
+  exposure.
+- Added the app↔extension hard-cutover and re-pair deployment procedure to
+  `AGENTS.md`; updated the QR Pi-key comment to describe its signed-DH role.
