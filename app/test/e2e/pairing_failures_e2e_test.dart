@@ -49,7 +49,7 @@ void main() {
   );
 
   test(
-    'single-use token rejects a second owner with non-oracular token_unknown',
+    'single-use token reports token_consumed to a second valid proof-holder',
     () async {
       final redaction = FailureLogRedactionCanary.start();
       addTearDown(redaction.verify);
@@ -79,7 +79,7 @@ void main() {
           isA<PairingError>().having(
             (error) => error.code,
             'code',
-            'token_unknown',
+            'token_consumed',
           ),
         ),
       );
@@ -91,7 +91,7 @@ void main() {
   );
 
   test(
-    'expired token is reported as token_unknown without persisting a peer',
+    'expired token reports token_expired to its valid proof-holder',
     () async {
       final redaction = FailureLogRedactionCanary.start();
       addTearDown(redaction.verify);
@@ -118,7 +118,7 @@ void main() {
           isA<PairingError>().having(
             (error) => error.code,
             'code',
-            'token_unknown',
+            'token_expired',
           ),
         ),
       );
