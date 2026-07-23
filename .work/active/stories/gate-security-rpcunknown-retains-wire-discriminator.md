@@ -1,8 +1,14 @@
 ---
 id: gate-security-rpcunknown-retains-wire-discriminator
-created: 2026-07-19
-updated: 2026-07-19
+kind: story
+stage: implementing
 tags: [cockpit, security]
+parent: feature-diagnostic-privacy-hardening
+depends_on: []
+release_binding: null
+gate_origin: security
+created: 2026-07-19
+updated: 2026-07-23
 ---
 
 # RpcUnknown retains arbitrary wire discriminator text
