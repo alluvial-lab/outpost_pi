@@ -136,10 +136,12 @@ export async function appendOwnerChannelAudit(
 /**
  * Relay-backed protected owner channel with persisted replay high-waters.
  *
- * Outbound high-water persistence starts in the same turn as synchronous relay
- * delivery and any persistence failure detaches the channel. Inbound plaintext,
- * AEAD failures, and replay are dropped without reaching the message router;
- * five consecutive protected-frame failures detach the channel.
+ * Outbound work is serialized and persists each new send high-water before the
+ * corresponding frame is exposed to the relay. Inbound plaintext, AEAD failures,
+ * and replay are dropped without reaching the message router. Five consecutive
+ * protected-frame failures detach this adapter; the next protected frame can
+ * automatically reattach from the same persisted key, while AEAD remains the
+ * authorization boundary.
  */
 export class SecurePeerChannel implements PeerChannel {
   private readonly unsubscribe: () => void;
@@ -174,53 +176,46 @@ export class SecurePeerChannel implements PeerChannel {
       return;
     }
 
-    const nextSeq = this.sendSeq + 1n;
-    let frame: Uint8Array;
-    try {
-      frame = seal(this.options.keys.send, nextSeq, json);
-    } catch {
-      this.audit({ reason: "sequence_exhausted", seq: nextSeq });
-      this.disconnect();
-      return;
-    }
-    this.sendSeq = nextSeq;
-    // Preserve PeerChannel's synchronous best-effort delivery contract. The
-    // high-water write is started in the same turn and serialized by storage;
-    // failure detaches rather than allowing further frames on non-durable state.
-    let persistence: Promise<boolean>;
-    try {
-      persistence = this.options.persistSequences({ sendSeq: nextSeq });
-    } catch {
-      this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
-      this.disconnect();
-      return;
-    }
     this.outboundTail = this.outboundTail.then(async () => {
+      // Work accepted before detach remains eligible to finish (notably the
+      // best-effort bye queued immediately before listener teardown). Calls
+      // made after detach are rejected at the send() boundary above.
+      const nextSeq = this.sendSeq + 1n;
+      let frame: Uint8Array;
       try {
-        const persisted = await persistence;
-        if (this.detached) return;
+        frame = seal(this.options.keys.send, nextSeq, json);
+      } catch {
+        this.audit({ reason: "sequence_exhausted", seq: nextSeq });
+        this.disconnect();
+        return;
+      }
+      this.sendSeq = nextSeq;
+
+      try {
+        const persisted = await this.options.persistSequences({ sendSeq: nextSeq });
         if (!persisted) {
           this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
-          this.disconnect();
+          if (!this.detached) this.disconnect();
+          return;
         }
       } catch {
-        if (this.detached) return;
         this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
-        this.disconnect();
+        if (!this.detached) this.disconnect();
+        return;
+      }
+
+      const outer: RelayOuterEnvelope = {
+        peer: this.remotePeerId,
+        room: APP_DESTINATION_ROOM,
+        ct: Buffer.from(frame).toString("base64"),
+      };
+      try {
+        this.relay.send(JSON.stringify(outer));
+      } catch {
+        // The authenticated seq header permits a safe gap after reconnect;
+        // session_sync recovers the dropped application frame.
       }
     });
-
-    const outer: RelayOuterEnvelope = {
-      peer: this.remotePeerId,
-      room: APP_DESTINATION_ROOM,
-      ct: Buffer.from(frame).toString("base64"),
-    };
-    try {
-      this.relay.send(JSON.stringify(outer));
-    } catch {
-      // The authenticated seq header permits a safe gap after reconnect;
-      // session_sync recovers the dropped application frame.
-    }
   }
 
   /** Detach the channel's relay subscription without closing the shared relay. */

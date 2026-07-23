@@ -106,7 +106,7 @@ export interface AttachOwnerInput {
 export interface OwnerMultiplexerPort {
   activeCount(): number;
   attach(input: AttachOwnerInput): PeerChannel;
-  detach(peerId: string, reason?: ByeReason): void;
+  detach(peerId: string, reason?: ByeReason): Promise<void>;
   broadcast(message: ServerMessage): void;
   completeOfflineTurn(): void;
   routeFrom(sender: PeerChannel, message: ClientMessage): void | Promise<void>;

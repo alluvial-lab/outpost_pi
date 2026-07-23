@@ -10,16 +10,15 @@
  *   /outpost-pi pair    shows QR for new peers (started, async → paired via auto-listener)
  *   /outpost-pi stop    closes everything (any → idle)
  *
- * Pairing (after Plan 06 — without Noise XX):
- *   The app sends an inner `pair_request` (id, token, device_name) over an opaque channel.
- *   Pi validates the token with qrSession.consumeToken, saves the peer in peers.json
- *   as `{name, remote_epk, paired_at}`, and responds with `pair_ok` (or `pair_error`).
- *   `ct` is base64(JSON.stringify(inner)) — without encryption or a MAC.
+ * Pairing:
+ *   The app proves knowledge of the QR token without sending it, then exchanges
+ *   Owner/Pi-signed ephemeral X25519 shares over the plaintext pre-key channel.
+ *   The Pi persists directional owner-channel keys before returning `pair_ok`.
  *
  * Known-peer reconnection:
- *   When a message arrives in `started` state from an epk present in peers.json,
- *   the auto-listener promotes directly to `paired` without a new pair_request,
- *   creates the PlainPeerChannel, and routes the message.
+ *   When a protected frame arrives from an Owner present in peers.json, the
+ *   auto-listener attaches a SecurePeerChannel and routes only AEAD-authenticated
+ *   messages. PlainPeerChannel is restricted to pair_request/pair_ok exchange.
  *
  * Architecture note — why we don't use AgentBridge directly here:
  *   AgentBridge.beforeToolCallHook is designed to be passed to createAgentSession().
@@ -142,7 +141,7 @@ import {
 //
 // Now: `idle` → `started`. The `paired` state is a derived metric
 // (`OwnerMultiplexer.activeCount() > 0`) — N owners can be connected at once,
-// each with its own `PlainPeerChannel` owned by the multiplexer. Plan/24 W2D
+// each with its own `SecurePeerChannel` owned by the multiplexer. Plan/24 W2D
 // ("multi-channel broadcast"): pairing a second device no longer disconnects
 // the first, and every connected owner receives the same agent stream in parallel.
 
@@ -241,6 +240,7 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
     const peers = await listPeers();
     return peers.find((p) => p.remote_epk === peerId) ?? null;
   },
+  findPairTokenById: (tokenId) => qrSession.findTokenById(tokenId),
   consumePairToken: (token) => qrSession.consumeToken(token),
   addPeer: (record) => addPeer(record),
   currentIdentity: () => _pairingCoordinator.currentKeypair(),
@@ -354,8 +354,8 @@ function _handleRelayControlFrame(frame: RelayControlFrame): void {
 async function _handleOwnerOuterFrame(
   ingress: Extract<DecodedRelayIngress, { kind: "outer" }>,
   connectionIsCurrent: () => boolean,
-): Promise<void> {
-  await _owners.handleOuterFrame({
+): Promise<boolean> {
+  return _owners.handleOuterFrame({
     ingress,
     roomId: _myRoomId ?? undefined,
     turnActive: () => _turnProjection().working,
@@ -881,7 +881,7 @@ function getStateForTest(): "idle" | "started" | "paired" {
   return _owners.activeCount() > 0 ? "paired" : "started";
 }
 
-/** Test-only: number of owners currently attached via PlainPeerChannel. */
+/** Test-only: number of owners currently attached through managed owner channels. */
 export const _getActivePeerCountForTest = (): number => ownerHarness.activeOwnerCount();
 
 /** Test-only: true if a specific peer (base64 std) has an attached channel. */
@@ -1574,8 +1574,9 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
         return channel;
       },
       detach: (peerId, reason) => {
-        _owners.detach(peerId, reason);
+        const outboundSettled = _owners.detach(peerId, reason);
         _syncOwnerPresenceSubscription();
+        return outboundSettled;
       },
       broadcast: (message) => _owners.broadcast(message),
       completeOfflineTurn: () => _owners.completeOfflineTurn(),
@@ -2111,8 +2112,8 @@ async function _cmdJoin(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void
 
 /**
  * Per-channel router. Replaces the W2D-pre `routeClientMessage` which
- * implicitly used the `_peerChannel` singleton for replies. Each
- * PlainPeerChannel now carries its own `sender` and passes it here so
+ * implicitly used the `_peerChannel` singleton for replies. Each managed
+ * owner channel now carries its own `sender` and passes it here so
  * sender-specific responses (cancelled, pong, session_history) flow back
  * through the right wire instead of being broadcast.
  *

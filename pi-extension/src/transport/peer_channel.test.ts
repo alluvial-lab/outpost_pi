@@ -40,6 +40,7 @@ function makeChannel(options: {
   onDisconnect?: () => void;
   auditPath?: string;
   persisted?: { send: bigint; recv: bigint };
+  persistSequences?: (patch: { sendSeq?: bigint; recvSeq?: bigint }) => Promise<boolean>;
 }) {
   const relay = options.relay ?? new FakeRelay();
   const persisted = options.persisted ?? { send: options.sendSeq ?? 0n, recv: options.recvSeq ?? 0n };
@@ -53,11 +54,11 @@ function makeChannel(options: {
       keys: { send: sendKey, recv: recvKey },
       sendSeq: options.sendSeq ?? persisted.send,
       recvSeq: options.recvSeq ?? persisted.recv,
-      persistSequences: async (patch) => {
+      persistSequences: options.persistSequences ?? (async (patch) => {
         if (patch.sendSeq !== undefined) persisted.send = patch.sendSeq;
         if (patch.recvSeq !== undefined) persisted.recv = patch.recvSeq;
         return true;
-      },
+      }),
       onDisconnect: options.onDisconnect ?? vi.fn(),
       auditPath: options.auditPath ?? makeAuditPath(),
     },
@@ -115,6 +116,39 @@ describe("SecurePeerChannel", () => {
 
     expect(onDisconnect).toHaveBeenCalledTimes(1);
     expect(relay.listenerCount("message")).toBe(0);
+  });
+
+  test("persists the send high-water before exposing its frame to the relay", async () => {
+    let resolvePersistence!: (value: boolean) => void;
+    const persistence = new Promise<boolean>((resolve) => { resolvePersistence = resolve; });
+    const persistSequences = vi.fn(() => persistence);
+    const { channel, relay } = makeChannel({ persistSequences });
+
+    channel.send({ type: "pong", in_reply_to: "persist-first" });
+    await vi.waitFor(() => expect(persistSequences).toHaveBeenCalledWith({ sendSeq: 1n }));
+    expect(relay.send).not.toHaveBeenCalled();
+
+    resolvePersistence(true);
+    await channel.whenIdle();
+    expect(relay.send).toHaveBeenCalledTimes(1);
+    channel.detach();
+  });
+
+  test("does not expose a frame when send high-water persistence rejects", async () => {
+    const auditPath = makeAuditPath();
+    const onDisconnect = vi.fn();
+    const { channel, relay } = makeChannel({
+      auditPath,
+      onDisconnect,
+      persistSequences: async () => { throw new Error("disk unavailable"); },
+    });
+
+    channel.send({ type: "pong", in_reply_to: "persist-rejected" });
+    await channel.whenIdle();
+
+    expect(relay.send).not.toHaveBeenCalled();
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+    expect(readFileSync(auditPath, "utf8")).toContain('"reason":"sequence_persist_failed"');
   });
 
   test("a detached stale channel cannot disconnect its replacement when fenced persistence settles", async () => {

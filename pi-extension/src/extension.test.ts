@@ -17,8 +17,10 @@ import { createHash } from "node:crypto";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import {
   appTranscript,
+  computePairMac,
   generateX25519Keypair,
   open as openSecureFrame,
+  pairTokenId,
   seal as sealSecureFrame,
 } from "./transport/secure_channel.js";
 
@@ -112,7 +114,13 @@ function transformRelayIngress(raw: string): string {
   }
   if (inner?.type === "pair_request") {
     const dh = generateX25519Keypair();
-    const token = String(inner.token ?? "");
+    const token = String(inner.token ?? "test-token");
+    const tokenId = pairTokenId(token);
+    delete inner.token;
+    inner.token_id = Buffer.from(tokenId).toString("base64");
+    inner.pair_mac = Buffer.from(
+      computePairMac(token, tokenId, ed25519.getPublicKey(identity.sk), dh.pk, TEST_PI_PUBLIC_KEY),
+    ).toString("base64");
     inner.dh_pk = Buffer.from(dh.pk).toString("base64");
     inner.dh_sig = Buffer.from(ed25519.sign(appTranscript(token, dh.pk, TEST_PI_PUBLIC_KEY), identity.sk)).toString("base64");
     record.ct = Buffer.from(JSON.stringify(inner)).toString("base64");
@@ -297,6 +305,11 @@ vi.mock("./pairing/qr.js", async (importOriginal) => {
         token: "test-token",
         expiresAt: Date.now() + 60_000,
       }),
+      findTokenById: vi.fn().mockImplementation((tokenId: string) =>
+        _tokenStatus === "ok" && tokenId === Buffer.from(pairTokenId("test-token")).toString("base64")
+          ? "test-token"
+          : null,
+      ),
       consumeToken: vi.fn().mockImplementation((token: string) => {
         _consumeCalls.push(token);
         return _tokenStatus;
@@ -368,6 +381,8 @@ function makeMockCtx(cwd = "/home/user/projects/outpost_pi") {
 }
 
 type CmdHandler = (args: string, ctx: ReturnType<typeof makeMockCtx>) => Promise<void>;
+
+const flushSecureOutbound = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 function captureHandler(commandName: string): CmdHandler {
   resetOutpostPiRuntimeCoordinatorForTest();
@@ -779,7 +794,7 @@ describe("state machine + pair_request flow", () => {
     expect(_getRemoteSessionIdForTest()).toBe("sdk-session-captured");
   });
 
-  test("expired token → pair_error{token_expired} + state stays started", async () => {
+  test("expired token locator → pair_error{token_unknown} + state stays started", async () => {
     _tokenStatus = "expired";
     const APP_PEER_ID = "stale-token-peer";
 
@@ -804,22 +819,12 @@ describe("state machine + pair_request flow", () => {
     expect(errs[0]!.inner).toMatchObject({
       type: "pair_error",
       in_reply_to: "req-x",
-      code: "token_expired",
+      code: "token_unknown",
     });
   });
 
-  test("consumed token → pair_error{token_consumed} on second pair_request", async () => {
-    // First call returns ok (consumes); second returns consumed.
-    let calls = 0;
+  test("consumed token locator → pair_error{token_unknown} on a later pair_request", async () => {
     _tokenStatus = "ok";
-    // override consumeToken to return ok once, then consumed
-    const qr = await import("./pairing/qr.js");
-    (qr.qrSession.consumeToken as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => {
-        calls += 1;
-        return calls === 1 ? "ok" : "consumed";
-      },
-    );
 
     const APP_PEER_A = "peer-a";
     const APP_PEER_B = "peer-b";
@@ -837,7 +842,8 @@ describe("state machine + pair_request flow", () => {
     _onPeerDisconnect();
     expect(outpostPiTestHarness.state()).toBe("started");
 
-    // Second pair_request from peer B with same token → consumed
+    // A consumed token is no longer a live candidate and cannot be resolved.
+    _tokenStatus = "consumed";
     relayRef.current!.emit("message", makeInnerLine(APP_PEER_B, {
       type: "pair_request", id: "req-b", token: "test-token", device_name: "Phone B",
     }));
@@ -849,7 +855,7 @@ describe("state machine + pair_request flow", () => {
       d.inner.type === "pair_error" && d.inner["in_reply_to"] === "req-b",
     );
     expect(errs).toHaveLength(1);
-    expect(errs[0]!.inner).toMatchObject({ code: "token_consumed" });
+    expect(errs[0]!.inner).toMatchObject({ code: "token_unknown" });
   });
 
   test("paired peer may re-pair to refresh its protected channel", async () => {
@@ -1375,6 +1381,7 @@ describe("multi-channel broadcast (W2D)", () => {
     onInput({ source: "terminal", text: "hello" } as unknown as Parameters<typeof onInput>[0]);
     const sendsBefore = relayRef.current!.send.mock.calls.length;
     onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "hi" } } as unknown as Parameters<typeof onUpdate>[0]);
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string).map(decodeSentCt);
@@ -1612,6 +1619,7 @@ describe("multi-channel broadcast (W2D)", () => {
 
     const sendsBeforeAfter = relayRef.current!.send.mock.calls.length;
     onUpdate({ assistantMessageEvent: { type: "text_delta", delta: "main agent reply" } } as unknown as Parameters<typeof onUpdate>[0]);
+    await flushSecureOutbound();
     const sentAfter = relayRef.current!.send.mock.calls.slice(sendsBeforeAfter)
       .map((c) => c[0] as string)
       .filter((raw) => typeof raw === "string")
@@ -1650,6 +1658,7 @@ describe("multi-channel broadcast (W2D)", () => {
 
     const revoke = captureHandler("outpost-pi revoke");
     await revoke(wirePeerId("ownerA__1234567890").slice(0, 8), makeMockCtx());
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string).map(decodeSentCt);
@@ -1941,6 +1950,7 @@ describe("multi-channel broadcast (W2D)", () => {
 
     expectTurnProjectionConvergedIdle();
     expect(sentControlFramesSince(controlBefore).some((f) => f.meta?.working === false)).toBe(true);
+    await flushSecureOutbound();
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string).map(decodeSentCt);
     expect(sent.find((d) => d.inner.type === "error")?.inner).toMatchObject({
@@ -2320,6 +2330,7 @@ describe("multi-channel broadcast (W2D)", () => {
           timestamp: 1_700_001_500_000,
         },
       }));
+      await flushSecureOutbound();
 
       const beforeSettlement = sentToPeerSince(sendsBefore, peer).map((sent) => sent.inner);
       expect(beforeSettlement).toContainEqual(expect.objectContaining({
@@ -2903,6 +2914,7 @@ describe("multi-channel broadcast (W2D)", () => {
       },
       fromExtension: false,
     });
+    await flushSecureOutbound();
 
     // (1) compaction broadcast reaches the owner
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore)
@@ -2938,6 +2950,7 @@ describe("multi-channel broadcast (W2D)", () => {
         errorMessage: "Provider finish_reason: error", content: [],
       },
     });
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string).map(decodeSentCt);
@@ -3106,6 +3119,7 @@ describe("user_input mirroring", () => {
       message: {},
       assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hi", partial: {} },
     });
+    await flushSecureOutbound();
 
     const allSent = relayRef.current!.send.mock.calls.map((c) => c[0] as string);
     const chunks = allSent.map(decodeSentCt).filter((d) => d.inner.type === "agent_chunk");
@@ -3402,6 +3416,7 @@ describe("tool visibility", () => {
       toolName: "bash",
       args: { command: "ls" },
     });
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const requests = sent.map(decodeSentCt).filter((d) => d.inner.type === "tool_request");
@@ -3452,6 +3467,7 @@ describe("tool visibility", () => {
           ],
         },
       });
+      await flushSecureOutbound();
 
       const requests = relayRef.current!.send.mock.calls
         .slice(sendsBefore)
@@ -3506,6 +3522,7 @@ describe("tool visibility", () => {
           ],
         },
       });
+      await flushSecureOutbound();
 
       const requests = relayRef.current!.send.mock.calls
         .slice(sendsBefore)
@@ -3566,6 +3583,7 @@ describe("tool visibility", () => {
       result: { content: "hello" },
       isError: false,
     });
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.map((c) => c[0] as string).map(decodeSentCt);
     const requests = sent.filter((d) => d.inner.type === "tool_request");
@@ -3598,6 +3616,7 @@ describe("tool visibility", () => {
       type: "tool_execution_end", toolCallId: "tc_obj", toolName: "X",
       result: { code: 1, msg: "nope" }, isError: true,
     });
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string).map(decodeSentCt)
@@ -3633,6 +3652,7 @@ describe("tool visibility", () => {
       result: { content: [{ type: "text", text: "ping: cannot resolve host" }], details: {} },
       isError: true,
     });
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string).map(decodeSentCt)
@@ -4237,6 +4257,7 @@ describe("session sync", () => {
       { type: "session_sync", id: "req-1", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const histories = sent.map(decodeSentCt).filter((d) => d.inner.type === "session_history");
@@ -4270,6 +4291,7 @@ describe("session sync", () => {
       { type: "session_sync", id: "req-2", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const h = sent.map(decodeSentCt).find((d) => d.inner.type === "session_history")!;
@@ -4298,6 +4320,7 @@ describe("session sync", () => {
       { type: "session_sync", id: "req-3", session_id: currentSessionIdFromSends(), limit: 3 },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const h = sent.map(decodeSentCt).find((d) => d.inner.type === "session_history")!;
@@ -4328,6 +4351,7 @@ describe("session sync", () => {
       { type: "session_sync", id: "req-4", session_id: currentSessionIdFromSends(), limit: 100 },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const h = sent.map(decodeSentCt).find((d) => d.inner.type === "session_history")!;
@@ -4359,6 +4383,7 @@ describe("session sync", () => {
       { type: "session_sync", id: "req-5", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const h = (relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string))
       .map(decodeSentCt)
@@ -4386,6 +4411,7 @@ describe("session sync", () => {
       { type: "session_sync", id: "req-6", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const h = (relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string))
       .map(decodeSentCt)
@@ -4416,6 +4442,7 @@ describe("session sync", () => {
       { type: "session_sync", id: "req-7", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const h = (relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string))
       .map(decodeSentCt)
@@ -4600,6 +4627,7 @@ describe("bye on teardown", () => {
 
     const revoke = captureHandler("outpost-pi revoke");
     await revoke(wirePeerId(ACTIVE).slice(0, 8), makeMockCtx());
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const byes = sent.map(decodeSentCt).filter((d) => d.inner.type === "bye");
@@ -5908,6 +5936,7 @@ describe("cumulative transcript event log", () => {
       { type: "session_sync", id: "mt-1", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const histories = sent.map(decodeSentCt).filter((d) => d.inner.type === "session_history");
@@ -5963,6 +5992,7 @@ describe("cumulative transcript event log", () => {
       { type: "session_sync", id: "scope-1", session_id: sessionId },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const h = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string)
@@ -6003,6 +6033,7 @@ describe("cumulative transcript event log", () => {
       { type: "session_sync", id: "stable-req-a", session_id: sessionId, limit: 50 },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
     const first = relayRef.current!.send.mock.calls.slice(firstSends)
       .map((c) => c[0] as string)
       .map(decodeSentCt)
@@ -6013,6 +6044,7 @@ describe("cumulative transcript event log", () => {
       { type: "session_sync", id: "stable-req-b", session_id: sessionId, limit: 50 },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
     const second = relayRef.current!.send.mock.calls.slice(secondSends)
       .map((c) => c[0] as string)
       .map(decodeSentCt)
@@ -6082,6 +6114,7 @@ describe("cumulative transcript event log", () => {
       { type: "session_sync", id: "replay-contract-sync", session_id: sessionId, limit: 50 },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const history = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string)
@@ -6164,6 +6197,7 @@ describe("cumulative transcript event log", () => {
       { type: "session_sync", id: "fixture-sync", session_id: sessionId, limit: 50 },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const h = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string)
@@ -6212,6 +6246,7 @@ describe("cumulative transcript event log", () => {
       { type: "session_sync", id: "mix-1", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const histories = sent.map(decodeSentCt).filter((d) => d.inner.type === "session_history");
@@ -6265,6 +6300,7 @@ describe("cumulative transcript event log", () => {
       { type: "session_sync", id: "t-1", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
+    await flushSecureOutbound();
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
     const events = (

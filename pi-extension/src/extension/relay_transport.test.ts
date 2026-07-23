@@ -4,6 +4,7 @@ import { createRelayTransportPort, decodeRelayControlFrame } from "./relay_trans
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import type { RelayClient } from "../transport/relay_client.js";
 import { PiForwardClient } from "../transport/pi_forward_client.js";
+import { subscribeRelayIngress } from "../transport/relay_ingress_fanout.js";
 
 class FakeRelay extends EventEmitter {
   closed = false;
@@ -192,6 +193,40 @@ describe("relay transport control frames", () => {
     channelA.detach();
     channelB.detach();
     piForward.detach();
+    transport.stop();
+  });
+
+  test("consumed pairing ingress is not republished to post-key channel fanout", async () => {
+    const { transport, relays } = makeTransport();
+    transport.onOuterMessage(async () => true);
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    const relay = relays[0]!;
+    const republished: unknown[] = [];
+    const unsubscribe = subscribeRelayIngress(
+      relay as unknown as RelayClient,
+      (ingress) => republished.push(ingress),
+    );
+
+    relay.emit("message", JSON.stringify({
+      peer: Buffer.alloc(32, 1).toString("base64"),
+      room: "main",
+      ct: Buffer.from(JSON.stringify({
+        type: "pair_request",
+        id: "pair-1",
+        token_id: Buffer.alloc(16, 2).toString("base64"),
+        pair_mac: Buffer.alloc(32, 3).toString("base64"),
+        device_name: "Phone",
+        dh_pk: Buffer.alloc(32, 4).toString("base64"),
+        dh_sig: Buffer.alloc(64, 5).toString("base64"),
+      })).toString("base64"),
+    }));
+    await flushDispatch();
+
+    // No post-key subscriber sees the plaintext pair_request, so it cannot
+    // generate the prior false-positive plaintext_post_key audit event.
+    expect(republished).toEqual([]);
+    unsubscribe();
     transport.stop();
   });
 
