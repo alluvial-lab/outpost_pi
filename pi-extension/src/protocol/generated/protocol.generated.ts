@@ -16,7 +16,7 @@ export interface Usage {
   readonly output_tokens: number;
 }
 
-export type PairErrorCode = "token_expired" | "token_consumed" | "token_unknown" | "internal_error";
+export type PairErrorCode = "token_expired" | "token_consumed" | "token_unknown" | "bad_dh_sig" | "internal_error";
 
 export type KnownErrorCode = "tool_approval_required" | "invalid_message" | "unsupported_type" | "too_large" | "rate_limited" | "timeout" | "internal_error" | "session_mismatch" | "delivery_pending";
 
@@ -162,6 +162,8 @@ export interface PairRequest {
   readonly id: string;
   readonly token: string;
   readonly device_name: string;
+  readonly dh_pk?: string;
+  readonly dh_sig?: string;
 }
 
 export interface UserMessage {
@@ -316,6 +318,8 @@ export interface PairOk {
   readonly version: string;
 };
   readonly hostname?: string;
+  readonly dh_pk?: string;
+  readonly dh_sig?: string;
 }
 
 export interface PairError {
@@ -853,7 +857,7 @@ function isHistoryCompaction(value: unknown): value is HistoryCompaction {
 }
 
 function isPairRequest(value: unknown): value is PairRequest {
-  return isObjectLike(value, ["type", "id", "token", "device_name"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pair_request") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "token") && (typeof record["token"] === "string" && record["token"].length >= 1)) && (Object.hasOwn(record, "device_name") && (typeof record["device_name"] === "string" && record["device_name"].length >= 1))));
+  return isObjectLike(value, ["type", "id", "token", "device_name", "dh_pk", "dh_sig"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pair_request") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "token") && (typeof record["token"] === "string" && record["token"].length >= 1)) && (Object.hasOwn(record, "device_name") && (typeof record["device_name"] === "string" && record["device_name"].length >= 1)) && (record["dh_pk"] === undefined || (typeof record["dh_pk"] === "string" && record["dh_pk"].length >= 1)) && (record["dh_sig"] === undefined || (typeof record["dh_sig"] === "string" && record["dh_sig"].length >= 1))));
 }
 
 function isUserMessage(value: unknown): value is UserMessage {
@@ -905,11 +909,11 @@ function isListModels(value: unknown): value is ListModels {
 }
 
 function isPairOk(value: unknown): value is PairOk {
-  return isObjectLike(value, ["type", "in_reply_to", "session_name", "session_started_at", "session_id", "room_id", "harness", "hostname"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pair_ok") && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "session_name") && (typeof record["session_name"] === "string" && record["session_name"].length >= 1)) && (Object.hasOwn(record, "session_started_at") && isIntegerAtLeast(record["session_started_at"], 0)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "room_id") && (typeof record["room_id"] === "string" && record["room_id"].length >= 1)) && (record["harness"] === undefined || isObjectLike(record["harness"], ["name", "version"], (record) => ((Object.hasOwn(record, "name") && (typeof record["name"] === "string" && record["name"].length >= 1)) && (Object.hasOwn(record, "version") && (typeof record["version"] === "string" && record["version"].length >= 1))))) && (record["hostname"] === undefined || (typeof record["hostname"] === "string" && record["hostname"].length >= 1))));
+  return isObjectLike(value, ["type", "in_reply_to", "session_name", "session_started_at", "session_id", "room_id", "harness", "hostname", "dh_pk", "dh_sig"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pair_ok") && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "session_name") && (typeof record["session_name"] === "string" && record["session_name"].length >= 1)) && (Object.hasOwn(record, "session_started_at") && isIntegerAtLeast(record["session_started_at"], 0)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "room_id") && (typeof record["room_id"] === "string" && record["room_id"].length >= 1)) && (record["harness"] === undefined || isObjectLike(record["harness"], ["name", "version"], (record) => ((Object.hasOwn(record, "name") && (typeof record["name"] === "string" && record["name"].length >= 1)) && (Object.hasOwn(record, "version") && (typeof record["version"] === "string" && record["version"].length >= 1))))) && (record["hostname"] === undefined || (typeof record["hostname"] === "string" && record["hostname"].length >= 1)) && (record["dh_pk"] === undefined || (typeof record["dh_pk"] === "string" && record["dh_pk"].length >= 1)) && (record["dh_sig"] === undefined || (typeof record["dh_sig"] === "string" && record["dh_sig"].length >= 1))));
 }
 
 function isPairError(value: unknown): value is PairError {
-  return isObjectLike(value, ["type", "in_reply_to", "code", "message"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pair_error") && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "code") && (record["code"] === "token_expired" || record["code"] === "token_consumed" || record["code"] === "token_unknown" || record["code"] === "internal_error")) && (Object.hasOwn(record, "message") && typeof record["message"] === "string")));
+  return isObjectLike(value, ["type", "in_reply_to", "code", "message"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pair_error") && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "code") && (record["code"] === "token_expired" || record["code"] === "token_consumed" || record["code"] === "token_unknown" || record["code"] === "bad_dh_sig" || record["code"] === "internal_error")) && (Object.hasOwn(record, "message") && typeof record["message"] === "string")));
 }
 
 function isUserInput(value: unknown): value is UserInput {

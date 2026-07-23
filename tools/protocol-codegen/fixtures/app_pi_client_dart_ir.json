@@ -36,6 +36,18 @@
               "wireName": "device_name",
               "dartType": "String",
               "required": true
+            },
+            {
+              "name": "dhPk",
+              "wireName": "dh_pk",
+              "dartType": "String",
+              "required": false
+            },
+            {
+              "name": "dhSig",
+              "wireName": "dh_sig",
+              "dartType": "String",
+              "required": false
             }
           ]
         },
@@ -388,6 +400,18 @@
               "dartType": "String",
               "required": false,
               "read": "nonEmptyStringOptional"
+            },
+            {
+              "name": "dhPk",
+              "wireName": "dh_pk",
+              "dartType": "String",
+              "required": false
+            },
+            {
+              "name": "dhSig",
+              "wireName": "dh_sig",
+              "dartType": "String",
+              "required": false
             }
           ]
         },
