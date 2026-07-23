@@ -1,10 +1,16 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, test, vi } from "vitest";
-import { createRelayTransportPort, decodeRelayControlFrame } from "./relay_transport.js";
+import {
+  createRelayTransportPort,
+  decodeRelayControlFrame,
+  MAX_PENDING_RELAY_DISPATCH_BYTES,
+  MAX_PENDING_RELAY_DISPATCH_FRAMES,
+} from "./relay_transport.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import type { RelayClient } from "../transport/relay_client.js";
 import { PiForwardClient } from "../transport/pi_forward_client.js";
 import { subscribeRelayIngress } from "../transport/relay_ingress_fanout.js";
+import type { RelayDispatchOverflowAudit } from "../transport/relay_dispatch_audit.js";
 
 class FakeRelay extends EventEmitter {
   closed = false;
@@ -24,6 +30,7 @@ class FakeRelay extends EventEmitter {
 
 function makeTransport() {
   const relays: FakeRelay[] = [];
+  const auditDispatchOverflow = vi.fn<(event: RelayDispatchOverflowAudit) => void>();
   const transport = createRelayTransportPort({
     createRelay: () => {
       const relay = new FakeRelay();
@@ -36,12 +43,23 @@ function makeTransport() {
     setTimer: (cb) => setTimeout(cb, 1),
     clearTimer: (timer) => clearTimeout(timer),
     emitRelayState: vi.fn(),
+    auditDispatchOverflow,
   });
-  return { transport, relays };
+  return { transport, relays, auditDispatchOverflow };
 }
 
 const keypair = { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) } as Ed25519Keypair;
 const flushDispatch = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+function outerLine(id: string, payload = id): string {
+  return JSON.stringify({ peer: "owner-a", ct: Buffer.from(payload).toString("base64") });
+}
+
+function deferred(): { promise: Promise<void>; resolve(): void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 
 describe("relay transport control frames", () => {
   test("decodes peer presence control frames and rejects outer envelopes", () => {
@@ -252,6 +270,118 @@ describe("relay transport control frames", () => {
     relays[1]!.emit("close");
     expect(freshness[1]?.()).toBe(false);
     expect(relays[1]!.listenerCount("message")).toBe(0);
+    transport.stop();
+  });
+
+  test("bounds a blocked data-plane FIFO, coalesces drop audits, and exempts control", async () => {
+    const { transport, relays, auditDispatchOverflow } = makeTransport();
+    const blocker = deferred();
+    const dispatched: string[] = [];
+    const controls: unknown[] = [];
+    transport.onOuterMessage(async (ingress) => {
+      dispatched.push(ingress.payloadUtf8);
+      if (dispatched.length === 1) await blocker.promise;
+    });
+    transport.onControlFrame((frame) => { controls.push(frame); });
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    const relay = relays[0]!;
+    const droppedByFlood = 201;
+    const floodSize = MAX_PENDING_RELAY_DISPATCH_FRAMES + droppedByFlood;
+    const floodLines = Array.from({ length: floodSize }, (_, index) => outerLine(String(index)));
+    for (const line of floodLines) relay.emit("message", line);
+    relay.emit("message", JSON.stringify({ type: "peer_online", peer: "owner-a" }));
+    await flushDispatch();
+
+    expect(dispatched).toEqual(["0"]);
+    expect(controls).toEqual([]);
+    expect(auditDispatchOverflow).toHaveBeenCalled();
+    expect(auditDispatchOverflow.mock.calls.length).toBeLessThan(droppedByFlood);
+    expect(
+      auditDispatchOverflow.mock.calls.reduce(
+        (total, [event]) => total + event.droppedFrames,
+        0,
+      ),
+    ).toBe(droppedByFlood);
+    expect(
+      auditDispatchOverflow.mock.calls.reduce(
+        (total, [event]) => total + event.droppedBytes,
+        0,
+      ),
+    ).toBe(
+      floodLines.slice(MAX_PENDING_RELAY_DISPATCH_FRAMES).reduce(
+        (total, line) => total + Buffer.byteLength(line, "utf8"),
+        0,
+      ),
+    );
+
+    blocker.resolve();
+    await flushDispatch();
+    expect(dispatched).toEqual(
+      Array.from({ length: MAX_PENDING_RELAY_DISPATCH_FRAMES }, (_, index) => String(index)),
+    );
+    expect(controls).toEqual([{ type: "peer_online", peer: "owner-a" }]);
+    transport.stop();
+  });
+
+  test("bounds pending raw bytes before chaining another data-plane frame", async () => {
+    const { transport, relays, auditDispatchOverflow } = makeTransport();
+    const blocker = deferred();
+    const dispatched: string[] = [];
+    transport.onOuterMessage(async (ingress) => {
+      dispatched.push(ingress.payloadUtf8);
+      if (dispatched.length === 1) await blocker.promise;
+    });
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    const relay = relays[0]!;
+    const payload = "x".repeat(1024 * 1024);
+    const line = outerLine("large", payload);
+    const lineBytes = Buffer.byteLength(line, "utf8");
+    const acceptedByBytes = Math.floor(MAX_PENDING_RELAY_DISPATCH_BYTES / lineBytes);
+    expect(acceptedByBytes).toBeLessThan(MAX_PENDING_RELAY_DISPATCH_FRAMES);
+
+    for (let index = 0; index < acceptedByBytes + 3; index += 1) {
+      relay.emit("message", line);
+    }
+    await flushDispatch();
+    expect(dispatched).toHaveLength(1);
+    expect(
+      auditDispatchOverflow.mock.calls.reduce(
+        (total, [event]) => total + event.droppedFrames,
+        0,
+      ),
+    ).toBe(3);
+
+    blocker.resolve();
+    await flushDispatch();
+    expect(dispatched).toHaveLength(acceptedByBytes);
+    transport.stop();
+  });
+
+  test("dispatches a legitimate reconnect burst completely and in FIFO order", async () => {
+    const { transport, relays, auditDispatchOverflow } = makeTransport();
+    const dispatched: string[] = [];
+    transport.onOuterMessage((ingress) => {
+      const message = JSON.parse(ingress.payloadUtf8) as { id: string };
+      dispatched.push(message.id);
+    });
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    const relay = relays[0]!;
+    const expected = Array.from({ length: 50 }, (_, index) => `queued-${index}`);
+    for (const id of expected) {
+      relay.emit("message", outerLine(id, JSON.stringify({
+        type: "user_message",
+        id,
+        session_id: "session-current",
+        text: `message ${id}`,
+      })));
+    }
+    await flushDispatch();
+
+    expect(dispatched).toEqual(expected);
+    expect(auditDispatchOverflow).not.toHaveBeenCalled();
     transport.stop();
   });
 
