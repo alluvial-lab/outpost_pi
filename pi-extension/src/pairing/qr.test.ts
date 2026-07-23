@@ -42,23 +42,23 @@ describe("QRSession.issueToken — ttl", () => {
     expect(expiresAt).toBe(1_000_000 + 120_000);
   });
 
-  test("token expires after its ttl", () => {
+  test("expired token remains locator-resolvable until normal record replacement", () => {
     vi.setSystemTime(new Date(0));
     const s = new QRSession();
     const { token } = s.issueToken(10_000);
     vi.setSystemTime(new Date(10_001));
-    expect(s.findTokenById(tokenId(token))).toBeNull();
+    expect(s.findTokenById(tokenId(token))).toBe(token);
     expect(s.consumeToken(token)).toBe("expired");
   });
 
-  test("token-id lookup exposes only the matching live, unconsumed token", () => {
+  test("token-id lookup retains consumed status for a valid proof-holder", () => {
     vi.setSystemTime(new Date(0));
     const s = new QRSession();
     const { token } = s.issueToken(60_000);
     expect(s.findTokenById(tokenId(token))).toBe(token);
     expect(s.findTokenById(Buffer.alloc(16, 7).toString("base64"))).toBeNull();
     expect(s.consumeToken(token)).toBe("ok");
-    expect(s.findTokenById(tokenId(token))).toBeNull();
+    expect(s.findTokenById(tokenId(token))).toBe(token);
     expect(s.consumeToken(token)).toBe("consumed");
   });
 

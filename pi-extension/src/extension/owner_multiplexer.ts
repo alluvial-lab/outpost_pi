@@ -184,6 +184,9 @@ function decodeCanonicalBase64(value: unknown, bytes: number): Uint8Array | null
   return Uint8Array.from(decoded);
 }
 
+const UNKNOWN_PAIR_TOKEN_DUMMY = "AAAAAAAAAAAAAAAAAAAAAA";
+const INVALID_PAIR_KEY_DUMMY = new Uint8Array(32);
+
 function pairErrorForStatus(status: Exclude<PairTokenStatus, "ok">): { code: PairErrorCode; message: string } {
   const code: PairErrorCode =
     status === "expired" ? "token_expired"
@@ -354,18 +357,32 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     }
 
     const identity = this.deps.currentIdentity();
-    const ownerEdPk = decodeCanonicalBase64(peerId, 32);
-    const appDhPk = decodeCanonicalBase64(inner.dh_pk, 32);
-    const appDhSig = decodeCanonicalBase64(inner.dh_sig, 64);
-    if (!identity || !ownerEdPk || !appDhPk || !appDhSig) {
+    if (!identity) {
       sendError("bad_dh_sig", "Invalid or missing owner channel key signature.");
       return;
     }
 
+    const ownerEdPk = decodeCanonicalBase64(peerId, 32);
+    const appDhPk = decodeCanonicalBase64(inner.dh_pk, 32);
     const token = this.deps.findPairTokenById(inner.token_id!);
-    if (!token || !verifyPairMac(token, tokenId, ownerEdPk, appDhPk, identity.publicKey, pairMac)) {
-      // Keep locator and proof failures indistinguishable to the relay.
+    const proofValid = verifyPairMac(
+      token ?? UNKNOWN_PAIR_TOKEN_DUMMY,
+      tokenId,
+      ownerEdPk ?? INVALID_PAIR_KEY_DUMMY,
+      appDhPk ?? INVALID_PAIR_KEY_DUMMY,
+      identity.publicKey,
+      pairMac,
+    );
+    if (!token || !ownerEdPk || !appDhPk || !proofValid) {
+      // Unknown locators and invalid proofs do the same HMAC/constant-time
+      // comparison work and reveal no token lifecycle stage to the relay.
       sendError("token_unknown", "Pairing token proof is missing or invalid.");
+      return;
+    }
+
+    const appDhSig = decodeCanonicalBase64(inner.dh_sig, 64);
+    if (!appDhSig) {
+      sendError("bad_dh_sig", "Invalid or missing owner channel key signature.");
       return;
     }
 
