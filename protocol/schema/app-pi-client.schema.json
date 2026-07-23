@@ -20,11 +20,12 @@
   "$defs": {
     "pairRequest": {
       "type": "object",
-      "required": ["type", "id", "token", "device_name"],
+      "required": ["type", "id", "device_name"],
       "properties": {
         "type": { "const": "pair_request" },
         "id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
-        "token": { "type": "string", "minLength": 1 },
+        "token_id": { "type": "string", "minLength": 1, "description": "Standard base64 of the first 16 bytes of SHA-256(token). Public token locator — the raw pairing token is never sent on the wire (a malicious relay must not learn it)." },
+        "pair_mac": { "type": "string", "minLength": 1, "description": "Standard base64 of the 32-byte HMAC-SHA256 keyed by the raw token over SUITE ++ \"\\npair\\n\" ++ tokenIdBytes ++ ownerEdPk ++ appDhPk ++ piEdPk. Proves QR-token knowledge before token consumption." },
         "device_name": { "type": "string", "minLength": 1 },
         "dh_pk": { "type": "string", "minLength": 1, "description": "Standard base64 encoding of the 32-byte ephemeral X25519 public key." },
         "dh_sig": { "type": "string", "minLength": 1, "description": "Standard base64 encoding of the 64-byte Ed25519 signature over the app ephemeral-DH transcript." }

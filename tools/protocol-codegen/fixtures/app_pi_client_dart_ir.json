@@ -26,10 +26,16 @@
               "required": true
             },
             {
-              "name": "token",
-              "wireName": "token",
+              "name": "tokenId",
+              "wireName": "token_id",
               "dartType": "String",
-              "required": true
+              "required": false
+            },
+            {
+              "name": "pairMac",
+              "wireName": "pair_mac",
+              "dartType": "String",
+              "required": false
             },
             {
               "name": "deviceName",
