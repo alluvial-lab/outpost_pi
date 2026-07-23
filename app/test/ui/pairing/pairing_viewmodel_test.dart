@@ -8,16 +8,19 @@ import 'dart:typed_data';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/transport/secure_channel.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/pair_request_flow.dart' show PeerTransport;
 import 'package:app/pairing/storage.dart';
+import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/pairing/states/pairing_state.dart';
 import 'package:app/ui/pairing/viewmodels/pairing_viewmodel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:outpost_pi_identity/outpost_pi_identity.dart';
+import 'package:cryptography/cryptography.dart';
 
 // ---------------------------------------------------------------------------
 // Test infrastructure
@@ -138,10 +141,8 @@ Future<OwnerIdentityBridge> _bootedBridge(PairingStorage storage) async {
   return bridge;
 }
 
-const _qrUri =
-    'outpostpi://pair?t=AAAAAAAAAAAAAAAAAAAAAA&'
-    'epk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&'
-    'r=ws%3A%2F%2Flocalhost&n=test+session';
+late SimpleKeyPair _piSigningKey;
+late String _qrUri;
 
 /// A pairing transport factory that runs a fake "Pi" responder which replies
 /// with the given inner message to whatever `pair_request` it receives.
@@ -152,12 +153,31 @@ PairingTransportFactory _factoryReplyingWith(Map<String, dynamic> reply) {
     final iTrans = _MemTransport(send: q1, recv: q2);
     final rTrans = _MemTransport(send: q2, recv: q1);
 
-    // Responder runs in background — copies in_reply_to from the request.
+    // Responder runs in background and performs the real signed Pi half.
     unawaited(() async {
       final raw = await rTrans.receive();
-      final req = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
+      final req = PairRequest.fromJson(
+        jsonDecode(utf8.decode(raw)) as Map<String, dynamic>,
+      );
       final resp = Map<String, dynamic>.from(reply);
-      resp['in_reply_to'] = req['id'];
+      resp['in_reply_to'] = req.id;
+      if (resp['type'] == 'pair_ok') {
+        final appDhPublic = base64.decode(req.dhPk!);
+        final ownerPublic = await deviceEd25519.extractPublicKey();
+        final piDh = await generateOwnerChannelKeyPair();
+        final transcript = buildPiOwnerChannelTranscript(
+          token: req.token,
+          appDhPublicKey: appDhPublic,
+          piDhPublicKey: piDh.publicKey,
+          ownerEdPublicKey: ownerPublic.bytes,
+        );
+        final signature = await Ed25519().sign(
+          transcript,
+          keyPair: _piSigningKey,
+        );
+        resp['dh_pk'] = base64.encode(piDh.publicKey);
+        resp['dh_sig'] = base64.encode(signature.bytes);
+      }
       await rTrans.send(Uint8List.fromList(utf8.encode(jsonEncode(resp))));
     }());
 
@@ -197,6 +217,15 @@ class _SpyConn extends ConnectionManager {
 // ---------------------------------------------------------------------------
 
 void main() {
+  setUpAll(() async {
+    _piSigningKey = await Ed25519().newKeyPair();
+    final piPublic = await _piSigningKey.extractPublicKey();
+    final epk = base64Url.encode(piPublic.bytes).replaceAll('=', '');
+    _qrUri =
+        'outpostpi://pair?t=AAAAAAAAAAAAAAAAAAAAAA&epk=$epk&'
+        'r=ws%3A%2F%2Flocalhost&n=test+session';
+  });
+
   group('PairingViewModel', () {
     test('initial state is PairingScanning', () async {
       final storage = _FakeStorage();

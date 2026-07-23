@@ -26,8 +26,8 @@ typedef PairingTransportFactory =
 
 /// Drive QR pairing and expose scanning, connection, success, and error state.
 ///
-/// Owns each transient transport until it becomes a [PlainPeerChannel] adopted
-/// by [ConnectionManager], closing it after a failed pairing attempt.
+/// Owns each transient transport until it becomes a [SecurePeerChannel]
+/// adopted by [ConnectionManager], closing it after a failed pairing attempt.
 class PairingViewModel extends ViewModel<PairingState> {
   final PairingStorage _storage;
   final PairingTransportFactory _transportFactory;
@@ -38,7 +38,7 @@ class PairingViewModel extends ViewModel<PairingState> {
   final OwnerIdentityBridge _ownerBridge;
   final DebugLog? _debugLog;
   pair_flow.PeerTransport? _transport;
-  PlainPeerChannel? _liveChannel;
+  SecurePeerChannel? _liveChannel;
 
   PairingViewModel(
     this._storage,
@@ -94,6 +94,7 @@ class PairingViewModel extends ViewModel<PairingState> {
             qr: qr,
             transport: transport,
             storage: _storage,
+            ownerKey: ownerKey,
             deviceName: _deviceName(),
             currentRelayUrl: relayResolution.url,
           )
@@ -106,8 +107,10 @@ class PairingViewModel extends ViewModel<PairingState> {
             ),
           );
 
-      final channel = PlainPeerChannel(
+      final channel = SecurePeerChannel(
         transport: transport,
+        storage: _storage,
+        peer: result.peer,
         debugLog: _debugLog,
       );
       _liveChannel = channel;

@@ -1,20 +1,17 @@
-// PairRequest flow — replaces the Noise XX handshake removed by plan 06.
+// PairRequest flow — signed ephemeral X25519 handshake over the pre-key link.
 //
-// Sequence (over a connected PeerTransport):
-//   1. App sends inner JSON {type:"pair_request", id, token, device_name}
-//   2. Pi validates token, persists peer, replies pair_ok | pair_error
-//   3. App persists PeerRecord on success
-//
-// No cipher, no safety number — the outer envelope's `ct` is base64 of
-// the JSON in plaintext (transparent to PeerTransport implementations).
+// Pairing frames remain plaintext, but each DH share is bound to the QR token
+// and long-term Owner/Pi identities. Post-pair traffic uses the derived keys.
 
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/relay_config.dart';
-import 'package:app/protocol/protocol.dart' show PairOk;
+import 'package:app/data/transport/secure_channel.dart';
+import 'package:app/protocol/protocol.dart' show PairOk, PairRequest;
 import 'package:app/protocol/uuid7.dart';
+import 'package:cryptography/cryptography.dart';
 
 import 'qr_scanner.dart';
 import 'storage.dart';
@@ -72,15 +69,15 @@ class PairingResult {
 // performPairing
 // ---------------------------------------------------------------------------
 
-/// Perform the plaintext QR-token pairing exchange and persist its peer record.
+/// Perform the signed ephemeral-DH pairing exchange and persist its peer record.
 ///
-/// Rejects a legacy QR relay mismatch before sending, and throws [PairingError]
-/// for Pi rejection or an unexpected reply. The caller retains transport-close
-/// ownership so it can coordinate the surrounding pairing lifecycle.
+/// Rejects a relay mismatch or invalid Pi signature before persistence. The
+/// caller retains transport-close ownership to coordinate channel adoption.
 Future<PairingResult> performPairing({
   required QrPairPayload qr,
   required PeerTransport transport,
   required PairingStorage storage,
+  SimpleKeyPair? ownerKey,
   required String deviceName,
 
   /// Effective relay URL the app is currently connected to. Used to
@@ -117,61 +114,119 @@ Future<PairingResult> performPairing({
     target.setActiveRoom(pairingRoomId);
   }
 
-  final id = uuid7();
-  final req = {
-    'type': 'pair_request',
-    'id': id,
-    'token': qr.token,
-    'device_name': deviceName,
-  };
-  await transport.send(Uint8List.fromList(utf8.encode(jsonEncode(req))));
-
-  final raw = await transport.receive();
-  final inner = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
-  final type = inner['type'] as String?;
-
-  if (type == 'pair_ok' && inner['in_reply_to'] == id) {
-    // Parse via the canonical decoder so PairOk schema evolutions
-    // (plan/27 Wave A: `harness`, `hostname`) land in one place.
-    final pairOk = PairOk.fromJson(inner);
-    // Plan 17 fix — persist the Pi-confirmed room_id (or fall back to
-    // the one carried by the QR, then to 'main'). Stored on the
-    // PeerRecord so subsequent reconnects address (peer, room)
-    // correctly from the very first frame.
-    //
-    // `PairOk.roomId` defaults to 'main' when the Pi omits the field
-    // (plan-17 contract codified in tests). We peek at the raw map to
-    // tell "Pi explicitly said main" from "Pi didn't send a room" —
-    // only in the latter case do we want to fall back to qr.roomId.
-    final rawRoom = inner['room_id'];
-    final piEchoedRoom = rawRoom is String && rawRoom.isNotEmpty;
-    final piRoomId = piEchoedRoom ? pairOk.roomId : (qr.roomId ?? 'main');
-    final peer = PeerRecord(
-      remoteEpk: qr.epk,
-      sessionName: pairOk.sessionName,
-      // Persist whichever relay we just paired on. For legacy QRs
-      // this equals qr.relayUrl (we'd have thrown above otherwise);
-      // for new QRs (no `r`) it's the currently configured relay.
-      relayUrl: qr.relayUrl ?? currentRelayUrl,
-      pairedAt: DateTime.now().toUtc().toIso8601String(),
-      roomId: piRoomId,
-      // Plan/27 Wave A — null when pi-extension hasn't been upgraded
-      // yet to publish `harness` in pair_ok.
-      harness: pairOk.harness,
+  if (ownerKey == null) {
+    throw const PairingError(
+      code: 'owner_key_required',
+      message: 'Owner identity is required for secure pairing',
     );
-    await storage.savePeer(peer);
-    return PairingResult(peer: peer, hostnameHint: pairOk.hostname);
   }
 
-  if (type == 'pair_error') {
+  final dh = await generateOwnerChannelKeyPair();
+  try {
+    final piEdPublicKey = Uint8List.fromList(qr.epkBytes);
+    final ownerPublicKey = await ownerKey.extractPublicKey();
+    final appTranscript = buildAppOwnerChannelTranscript(
+      token: qr.token,
+      appDhPublicKey: dh.publicKey,
+      piEdPublicKey: piEdPublicKey,
+    );
+    final appSignature = await Ed25519().sign(appTranscript, keyPair: ownerKey);
+    final id = uuid7();
+    final request = PairRequest(
+      id: id,
+      token: qr.token,
+      deviceName: deviceName,
+      dhPk: base64.encode(dh.publicKey),
+      dhSig: base64.encode(appSignature.bytes),
+    );
+    await transport.send(
+      Uint8List.fromList(utf8.encode(jsonEncode(request.toJson()))),
+    );
+
+    final raw = await transport.receive();
+    final inner = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
+    final type = inner['type'] as String?;
+
+    if (type == 'pair_ok' && inner['in_reply_to'] == id) {
+      final pairOk = PairOk.fromJson(inner);
+      final piDhPublicKey = _decodeFixedBase64(pairOk.dhPk, 32);
+      final piDhSignature = _decodeFixedBase64(pairOk.dhSig, 64);
+      if (piDhPublicKey == null || piDhSignature == null) {
+        throw const PairingError(
+          code: 'bad_dh_sig',
+          message: 'Pi returned an invalid secure-channel handshake',
+        );
+      }
+      final piTranscript = buildPiOwnerChannelTranscript(
+        token: qr.token,
+        appDhPublicKey: dh.publicKey,
+        piDhPublicKey: piDhPublicKey,
+        ownerEdPublicKey: ownerPublicKey.bytes,
+      );
+      final verified = await Ed25519().verify(
+        piTranscript,
+        signature: Signature(
+          piDhSignature,
+          publicKey: SimplePublicKey(piEdPublicKey, type: KeyPairType.ed25519),
+        ),
+      );
+      if (!verified) {
+        throw const PairingError(
+          code: 'bad_dh_sig',
+          message: 'Pi secure-channel signature verification failed',
+        );
+      }
+
+      final shared = await deriveOwnerChannelSharedSecret(
+        dh.secretKey,
+        piDhPublicKey,
+      );
+      final keys = await deriveOwnerChannelKeys(
+        sharedSecret: shared,
+        token: qr.token,
+        side: OwnerChannelSide.app,
+      );
+      final rawRoom = inner['room_id'];
+      final piEchoedRoom = rawRoom is String && rawRoom.isNotEmpty;
+      final piRoomId = piEchoedRoom ? pairOk.roomId : (qr.roomId ?? 'main');
+      final peer = PeerRecord(
+        remoteEpk: qr.epk,
+        sessionName: pairOk.sessionName,
+        relayUrl: qr.relayUrl ?? currentRelayUrl,
+        pairedAt: DateTime.now().toUtc().toIso8601String(),
+        roomId: piRoomId,
+        harness: pairOk.harness,
+        channel: OwnerChannelState(
+          sendKey: base64.encode(keys.send),
+          receiveKey: base64.encode(keys.receive),
+        ),
+      );
+      await storage.savePeer(peer);
+      return PairingResult(peer: peer, hostnameHint: pairOk.hostname);
+    }
+
+    if (type == 'pair_error') {
+      throw PairingError(
+        code: inner['code'] as String,
+        message: inner['message'] as String? ?? '',
+      );
+    }
+
     throw PairingError(
-      code: inner['code'] as String,
-      message: inner['message'] as String? ?? '',
+      code: 'unexpected_response',
+      message: 'Unknown response type: $type',
     );
+  } finally {
+    dh.secretKey.fillRange(0, dh.secretKey.length, 0);
   }
+}
 
-  throw PairingError(
-    code: 'unexpected_response',
-    message: 'Unknown response type: $type',
-  );
+Uint8List? _decodeFixedBase64(String? encoded, int length) {
+  if (encoded == null) return null;
+  try {
+    final bytes = base64.decode(encoded);
+    return bytes.length == length ? Uint8List.fromList(bytes) : null;
+  } on FormatException {
+    return null;
+  }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 const _kPeersService = 'dev.outpostpi.peers';
+const _kChannelsService = 'dev.outpostpi.owner-channels';
 const _kRoomsService = 'dev.outpostpi.rooms';
 
 /// Plan-17 follow-up — persisted snapshot of every room we have ever
@@ -75,6 +76,88 @@ class PersistedRoom {
 // PeerRecord — persisted per pairing
 // ---------------------------------------------------------------------------
 
+/// Persist the two directional owner-channel keys and sequence high-water marks.
+///
+/// Keys are standard-base64 32-byte values. This object is stored under a
+/// dedicated [FlutterSecureStorage] entry rather than inside mesh-visible peer
+/// metadata. Sequence values are signed-positive Dart integers; exhaustion at
+/// `2^63 - 1` fails closed, far before practical nonce collision risk.
+final class OwnerChannelState {
+  OwnerChannelState({
+    required this.sendKey,
+    required this.receiveKey,
+    this.sendSequence = 0,
+    this.receiveSequence = 0,
+  }) {
+    _validateKey(sendKey, 'sendKey');
+    _validateKey(receiveKey, 'receiveKey');
+    if (sendSequence < 0 ||
+        sendSequence > 0x7fffffffffffffff ||
+        receiveSequence < 0 ||
+        receiveSequence > 0x7fffffffffffffff) {
+      throw ArgumentError(
+        'owner-channel sequences must fit the non-negative signed-64 range',
+      );
+    }
+  }
+
+  final String sendKey;
+  final String receiveKey;
+  final int sendSequence;
+  final int receiveSequence;
+
+  Map<String, dynamic> toJson() => {
+    'send_key': sendKey,
+    'receive_key': receiveKey,
+    'send_seq': sendSequence,
+    'receive_seq': receiveSequence,
+  };
+
+  factory OwnerChannelState.fromJson(Map<String, dynamic> json) {
+    final sendSequence = json['send_seq'];
+    final receiveSequence = json['receive_seq'];
+    if (sendSequence is! int || receiveSequence is! int) {
+      throw const FormatException('owner-channel sequences must be integers');
+    }
+    return OwnerChannelState(
+      sendKey: json['send_key'] as String,
+      receiveKey: json['receive_key'] as String,
+      sendSequence: sendSequence,
+      receiveSequence: receiveSequence,
+    );
+  }
+
+  OwnerChannelState copyWith({int? sendSequence, int? receiveSequence}) =>
+      OwnerChannelState(
+        sendKey: sendKey,
+        receiveKey: receiveKey,
+        sendSequence: sendSequence ?? this.sendSequence,
+        receiveSequence: receiveSequence ?? this.receiveSequence,
+      );
+
+  static void _validateKey(String encoded, String name) {
+    try {
+      if (base64.decode(encoded).length != 32) {
+        throw FormatException('$name must encode 32 bytes');
+      }
+    } on FormatException {
+      throw FormatException('$name must be standard base64 for 32 bytes');
+    }
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is OwnerChannelState &&
+      other.sendKey == sendKey &&
+      other.receiveKey == receiveKey &&
+      other.sendSequence == sendSequence &&
+      other.receiveSequence == receiveSequence;
+
+  @override
+  int get hashCode =>
+      Object.hash(sendKey, receiveKey, sendSequence, receiveSequence);
+}
+
 // Sentinel for nullable copyWith parameters that need to distinguish
 // "keep current" (omit) from "set to null" (pass `null` explicitly).
 const Object _unset = Object();
@@ -107,6 +190,9 @@ class PeerRecord {
   /// renders an empty subtitle.
   final PiHarness? harness;
 
+  /// E2E owner-channel material. Null only for pre-cutover legacy records.
+  final OwnerChannelState? channel;
+
   const PeerRecord({
     required this.remoteEpk,
     required this.sessionName,
@@ -115,6 +201,7 @@ class PeerRecord {
     this.nickname,
     this.roomId,
     this.harness,
+    this.channel,
   });
 
   Map<String, dynamic> toJson() => {
@@ -125,6 +212,7 @@ class PeerRecord {
     'nickname': nickname,
     'room_id': roomId,
     if (harness != null) 'harness': harness!.toJson(),
+    // Channel secrets intentionally live in a separate secure-storage entry.
   };
 
   factory PeerRecord.fromJson(Map<String, dynamic> j) {
@@ -154,6 +242,7 @@ class PeerRecord {
     Object? nickname = _unset,
     Object? roomId = _unset,
     Object? harness = _unset,
+    Object? channel = _unset,
   }) => PeerRecord(
     remoteEpk: remoteEpk,
     sessionName: sessionName ?? this.sessionName,
@@ -162,6 +251,9 @@ class PeerRecord {
     nickname: identical(nickname, _unset) ? this.nickname : nickname as String?,
     roomId: identical(roomId, _unset) ? this.roomId : roomId as String?,
     harness: identical(harness, _unset) ? this.harness : harness as PiHarness?,
+    channel: identical(channel, _unset)
+        ? this.channel
+        : channel as OwnerChannelState?,
   );
 
   @override
@@ -173,7 +265,8 @@ class PeerRecord {
       other.pairedAt == pairedAt &&
       other.nickname == nickname &&
       other.roomId == roomId &&
-      other.harness == harness;
+      other.harness == harness &&
+      other.channel == channel;
 
   @override
   int get hashCode => Object.hash(
@@ -184,6 +277,7 @@ class PeerRecord {
     nickname,
     roomId,
     harness,
+    channel,
   );
 }
 
@@ -229,6 +323,7 @@ class PairingStorage extends ChangeNotifier {
   // ---- Peer records --------------------------------------------------------
 
   String _peerKey(String remoteEpk) => '$_kPeersService:$remoteEpk';
+  String _channelKey(String remoteEpk) => '$_kChannelsService:$remoteEpk';
 
   /// Persist a paired peer, notify listeners, then trigger mesh publication.
   Future<void> savePeer(PeerRecord record) async {
@@ -247,7 +342,8 @@ class PairingStorage extends ChangeNotifier {
   Future<PeerRecord?> loadPeer(String remoteEpk) async {
     final raw = await _store.read(key: _peerKey(remoteEpk));
     if (raw == null) return null;
-    return PeerRecord.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    final channelRaw = await _store.read(key: _channelKey(remoteEpk));
+    return _decodePeer(raw, channelRaw);
   }
 
   /// Delete one peer, notify listeners, then trigger mesh publication.
@@ -261,15 +357,77 @@ class PairingStorage extends ChangeNotifier {
   Future<void> deletePeerSilent(String remoteEpk) => _erasePeer(remoteEpk);
 
   Future<void> _writePeer(PeerRecord record) async {
-    await _store.write(
-      key: _peerKey(record.remoteEpk),
-      value: jsonEncode(record.toJson()),
-    );
+    final peerKey = _peerKey(record.remoteEpk);
+    final channelKey = _channelKey(record.remoteEpk);
+    try {
+      final channel = record.channel;
+      if (channel != null) {
+        final currentRaw = await _store.read(key: channelKey);
+        final current = currentRaw == null
+            ? null
+            : OwnerChannelState.fromJson(
+                jsonDecode(currentRaw) as Map<String, dynamic>,
+              );
+        final safe =
+            current != null &&
+                current.sendKey == channel.sendKey &&
+                current.receiveKey == channel.receiveKey
+            ? channel.copyWith(
+                sendSequence: current.sendSequence > channel.sendSequence
+                    ? current.sendSequence
+                    : channel.sendSequence,
+                receiveSequence:
+                    current.receiveSequence > channel.receiveSequence
+                    ? current.receiveSequence
+                    : channel.receiveSequence,
+              )
+            : channel;
+        await _store.write(key: channelKey, value: jsonEncode(safe.toJson()));
+      }
+      await _store.write(key: peerKey, value: jsonEncode(record.toJson()));
+    } on Object {
+      // A peer without its matching channel state must never look paired.
+      await _store.delete(key: peerKey);
+      await _store.delete(key: channelKey);
+      rethrow;
+    }
     notifyListeners();
+  }
+
+  /// Persist channel counters without publishing a mesh mutation or UI churn.
+  Future<void> saveChannelState(
+    String remoteEpk,
+    OwnerChannelState channel,
+  ) async {
+    if (await _store.read(key: _peerKey(remoteEpk)) == null) {
+      throw StateError('cannot persist channel state for an unknown peer');
+    }
+    final channelKey = _channelKey(remoteEpk);
+    final currentRaw = await _store.read(key: channelKey);
+    if (currentRaw == null) {
+      throw StateError('cannot update missing owner-channel material');
+    }
+    final current = OwnerChannelState.fromJson(
+      jsonDecode(currentRaw) as Map<String, dynamic>,
+    );
+    if (current.sendKey != channel.sendKey ||
+        current.receiveKey != channel.receiveKey) {
+      throw StateError('owner-channel key changed during active connection');
+    }
+    final monotonic = channel.copyWith(
+      sendSequence: current.sendSequence > channel.sendSequence
+          ? current.sendSequence
+          : channel.sendSequence,
+      receiveSequence: current.receiveSequence > channel.receiveSequence
+          ? current.receiveSequence
+          : channel.receiveSequence,
+    );
+    await _store.write(key: channelKey, value: jsonEncode(monotonic.toJson()));
   }
 
   Future<void> _erasePeer(String remoteEpk) async {
     await _store.delete(key: _peerKey(remoteEpk));
+    await _store.delete(key: _channelKey(remoteEpk));
     notifyListeners();
   }
 
@@ -277,13 +435,22 @@ class PairingStorage extends ChangeNotifier {
   Future<List<PeerRecord>> listPeers() async {
     final all = await _store.readAll();
     final prefix = '$_kPeersService:';
-    return all.entries
-        .where((e) => e.key.startsWith(prefix))
-        .map(
-          (e) =>
-              PeerRecord.fromJson(jsonDecode(e.value) as Map<String, dynamic>),
-        )
-        .toList();
+    return all.entries.where((entry) => entry.key.startsWith(prefix)).map((
+      entry,
+    ) {
+      final remoteEpk = entry.key.substring(prefix.length);
+      return _decodePeer(entry.value, all[_channelKey(remoteEpk)]);
+    }).toList();
+  }
+
+  PeerRecord _decodePeer(String raw, String? channelRaw) {
+    final peer = PeerRecord.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    if (channelRaw == null) return peer;
+    return peer.copyWith(
+      channel: OwnerChannelState.fromJson(
+        jsonDecode(channelRaw) as Map<String, dynamic>,
+      ),
+    );
   }
 
   /// Wipe every peer + every persisted room map. Used by the
@@ -293,7 +460,11 @@ class PairingStorage extends ChangeNotifier {
   /// connecting against stale `remote_epk`s.
   Future<void> wipeAll() async {
     final all = await _store.readAll();
-    final prefixes = ['$_kPeersService:', '$_kRoomsService:'];
+    final prefixes = [
+      '$_kPeersService:',
+      '$_kChannelsService:',
+      '$_kRoomsService:',
+    ];
     for (final key in all.keys) {
       if (prefixes.any(key.startsWith)) {
         await _store.delete(key: key);
