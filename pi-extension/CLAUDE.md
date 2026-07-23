@@ -19,7 +19,7 @@ For protocol, identities, ACKs, cross-PC routing, and the trust model, see
 - Node 20+ / TypeScript 6
 - **Module system**: ESM only (NodeNext). Imports use the `.js` extension even in `.ts` files
 - Package manager: **pnpm** (do not use npm/yarn)
-- Crypto/auth: Ed25519 via `@noble/ed25519` for Pi/Owner identities, pairing signatures, and relay challenge-response. Transport confidentiality is WebSocket over TLS; there is **no app-layer E2E encryption** in the current implementation.
+- Crypto/auth: Ed25519 via `@noble/ed25519` for Pi/Owner identities, pairing signatures, and relay challenge-response. The app↔Pi owner channel has app-layer E2E encryption: signed ephemeral X25519 ECDH in the pair handshake (`@noble/curves`), HKDF-SHA256 directional keys, XChaCha20-Poly1305 frames (`@noble/ciphers`) — see `src/transport/secure_channel.ts` and `PROTOCOL.md`. Cross-PC Pi↔Pi traffic is NOT E2E (relay-visible).
 - Pi-secret storage: `@napi-rs/keyring` (macOS Keychain / desktop Linux libsecret / Windows Credential Manager). Headless Linux without D-Bus falls back to `~/.pi/remote/identity.json` (`chmod 0600`) with a warning — install GNOME Keyring/KWallet for real hardening.
 
 ## Commands
@@ -83,7 +83,7 @@ resolution (`env` or `config`).
 
 - Do not write CommonJS (`require`, `module.exports`)
 - Do not commit `dist/` (already in the root `.gitignore`)
-- Do not claim or implement ad hoc E2E; the current model is TLS + Ed25519 for authentication/pairing, and any future payload encryption must go through `PROTOCOL.md` and explicit dependencies
+- Do not implement ad hoc E2E outside the established owner channel (`src/transport/secure_channel.ts`, suite `outpost-pi-owner-channel-v1`); any new payload-encryption surface must go through `PROTOCOL.md` and explicit dependencies
 - Do not introduce a dependency that is not ESM-friendly
 
 ## Orchestrated mode
