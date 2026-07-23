@@ -258,7 +258,7 @@ void main() {
           sendSequence: 42,
           receiveSequence: 37,
         );
-        await first.savePeer(
+        await first.savePairedPeer(
           PeerRecord(
             remoteEpk: 'secure-peer',
             sessionName: 'Pi',
@@ -313,7 +313,7 @@ void main() {
         );
         final backingStore = _FakeSecureStorage();
         final storage = PairingStorage(backingStore);
-        await storage.savePeer(oldPeer);
+        await storage.savePairedPeer(oldPeer);
 
         backingStore.deferChannelWrite(sendKey: oldSendKey, sendSequence: 1);
         final transport = _RecordingTransport();
@@ -325,7 +325,7 @@ void main() {
         final staleSave = oldChannel.send(const Ping(id: 'old-channel-send'));
         await backingStore.deferredWriteStarted;
 
-        final rePair = storage.savePeer(newPeer);
+        final rePair = storage.savePairedPeer(newPeer);
         backingStore.releaseDeferredWrite();
         await Future.wait<void>(<Future<void>>[staleSave, rePair]);
 
@@ -348,7 +348,7 @@ void main() {
         relayUrl: 'ws://x',
         pairedAt: '2026-01-01T00:00:00Z',
       );
-      await storage.savePeer(r);
+      await storage.savePairedPeer(r);
 
       final loaded = await storage.loadPeer('epk1');
       expect(loaded?.sessionName, 'sess');
@@ -374,7 +374,7 @@ void main() {
       final mutations = <PeerMutationKind>[];
       storage.attachPeerMutationHook(mutations.add);
 
-      await storage.savePeer(peer);
+      await storage.savePairedPeer(peer);
       expect(await storage.loadPeer(peer.remoteEpk), peer);
       await storage.deletePeer(peer.remoteEpk);
       expect(await storage.loadPeer(peer.remoteEpk), isNull);
@@ -388,8 +388,8 @@ void main() {
       storage.attachPeerMutationHook(mutations.add);
 
       await storage.savePeerSilent(peer);
-      await storage.deletePeerSilent(peer.remoteEpk);
 
+      expect(await storage.loadPeer(peer.remoteEpk), isNull);
       expect(mutations, isEmpty);
     });
   });
@@ -410,8 +410,8 @@ void main() {
         relayUrl: 'ws://x',
         pairedAt: '2026-01-01T00:00:00Z',
       );
-      await storage.savePeer(a);
-      await storage.savePeer(b);
+      await storage.savePairedPeer(a);
+      await storage.savePairedPeer(b);
       await storage.saveRooms('epk-a', const [
         PersistedRoom(roomId: 'main', startedAt: 1700000000000),
       ]);

@@ -7,6 +7,7 @@ import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _peer = PeerRecord(
@@ -65,6 +66,88 @@ class _ControlledStorage extends PairingStorage {
       peerFailuresRemaining--;
       throw StateError('peer write failed');
     }
+  }
+}
+
+class _MemorySecureStorage implements FlutterSecureStorage {
+  final Map<String, String> values = <String, String>{};
+
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => values[key];
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (value == null) {
+      values.remove(key);
+    } else {
+      values[key] = value;
+    }
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    values.remove(key);
+  }
+
+  @override
+  Future<Map<String, String>> readAll({
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => Map<String, String>.from(values);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _RetryRaceStorage extends PairingStorage {
+  _RetryRaceStorage() : super(_MemorySecureStorage());
+
+  final Completer<void> retryStarted = Completer<void>();
+  final Completer<void> releaseRetry = Completer<void>();
+  final Completer<void> retryFinished = Completer<void>();
+  int metadataWriteAttempts = 0;
+
+  @override
+  Future<void> savePeer(PeerRecord peer) async {
+    metadataWriteAttempts += 1;
+    if (metadataWriteAttempts == 1) {
+      throw StateError('force legacy-room retry');
+    }
+    if (metadataWriteAttempts == 2) {
+      retryStarted.complete();
+      await releaseRetry.future;
+    }
+    await super.savePeer(peer);
+    if (metadataWriteAttempts == 2) retryFinished.complete();
   }
 }
 
@@ -511,6 +594,106 @@ void main() {
             .toList();
         expect(failures, hasLength(2));
         expect(failures.map((event) => event.retryScheduled), [true, false]);
+        conn.dispose();
+      },
+    );
+
+    test(
+      'delayed legacy-room retry after re-pair preserves replacement keys',
+      () async {
+        final oldChannel = OwnerChannelState(
+          sendKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+          receiveKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+          sendSequence: 8,
+          receiveSequence: 5,
+        );
+        final newChannel = OwnerChannelState(
+          sendKey: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+          receiveKey: 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=',
+        );
+        final oldPeer = PeerRecord(
+          remoteEpk: 'epk_projection',
+          sessionName: 'Old Pi',
+          relayUrl: 'ws://localhost',
+          pairedAt: '2026-01-01T00:00:00Z',
+          channel: oldChannel,
+        );
+        final repairedPeer = PeerRecord(
+          remoteEpk: 'epk_projection',
+          sessionName: 'Repaired Pi',
+          relayUrl: 'ws://localhost',
+          pairedAt: '2026-01-02T00:00:00Z',
+          roomId: 'discovered',
+          channel: newChannel,
+        );
+        final storage = _RetryRaceStorage();
+        await storage.savePairedPeer(oldPeer);
+        final channel = _FakeChannel();
+        final conn = ConnectionManager(
+          factory: (_, _) async => channel,
+          storage: storage,
+          emitDebounce: Duration.zero,
+          legacyRoomRetryDelay: Duration.zero,
+        );
+        conn.adopt(channel, oldPeer);
+        channel.pushControl(
+          const RoomAnnounced(
+            peer: 'epk_projection',
+            roomId: 'discovered',
+            startedAt: 1,
+          ),
+        );
+        await storage.retryStarted.future;
+
+        await storage.savePairedPeer(repairedPeer);
+        storage.releaseRetry.complete();
+        await storage.retryFinished.future;
+
+        expect(
+          (await storage.loadPeer(oldPeer.remoteEpk))?.channel,
+          newChannel,
+        );
+        conn.dispose();
+      },
+    );
+
+    test(
+      'delayed legacy-room retry after delete cannot recreate peer',
+      () async {
+        final oldPeer = PeerRecord(
+          remoteEpk: 'epk_projection',
+          sessionName: 'Old Pi',
+          relayUrl: 'ws://localhost',
+          pairedAt: '2026-01-01T00:00:00Z',
+          channel: OwnerChannelState(
+            sendKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+            receiveKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+          ),
+        );
+        final storage = _RetryRaceStorage();
+        await storage.savePairedPeer(oldPeer);
+        final channel = _FakeChannel();
+        final conn = ConnectionManager(
+          factory: (_, _) async => channel,
+          storage: storage,
+          emitDebounce: Duration.zero,
+          legacyRoomRetryDelay: Duration.zero,
+        );
+        conn.adopt(channel, oldPeer);
+        channel.pushControl(
+          const RoomAnnounced(
+            peer: 'epk_projection',
+            roomId: 'discovered',
+            startedAt: 1,
+          ),
+        );
+        await storage.retryStarted.future;
+
+        await storage.deletePeer(oldPeer.remoteEpk);
+        storage.releaseRetry.complete();
+        await storage.retryFinished.future;
+
+        expect(await storage.loadPeer(oldPeer.remoteEpk), isNull);
         conn.dispose();
       },
     );
