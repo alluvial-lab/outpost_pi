@@ -1,7 +1,9 @@
 import type { ByeReason, ThinkingLevel } from "../protocol/types.js";
-import type {
-  RelayControlFrame,
-  RelayControlFrameRoomMetaUpdate,
+import {
+  isRelayPostAuthControlFrame,
+  RELAY_MAX_RAW_MESSAGE_BYTES,
+  type RelayControlFrame,
+  type RelayControlFrameRoomMetaUpdate,
 } from "../protocol/generated/protocol.generated.js";
 import {
   decodeRelayIngress,
@@ -20,6 +22,10 @@ import {
   reachabilityBackoffMs,
 } from "../reachability/reachability_contract.js";
 import type { RelayClient, RoomMeta } from "../transport/relay_client.js";
+import {
+  appendRelayDispatchOverflowAudit,
+  type RelayDispatchOverflowAudit,
+} from "../transport/relay_dispatch_audit.js";
 import {
   claimRelayIngressFanout,
   publishRelayIngress,
@@ -67,6 +73,7 @@ export interface RelayTransportDeps {
   setTimer(cb: () => void, delayMs: number): ReturnType<typeof setTimeout>;
   clearTimer(timer: ReturnType<typeof setTimeout>): void;
   emitRelayState(snapshot: RelayStateSnapshot): void;
+  auditDispatchOverflow?(event: RelayDispatchOverflowAudit): void | Promise<void>;
 }
 
 /** Expose the concrete relay adapter's extended startup, control-frame, and diagnostics contract. */
@@ -84,11 +91,26 @@ export const RELAY_TRANSPORT_REACHABILITY = {
   livenessCheckMs: REACHABILITY_RELAY_LIVENESS_CHECK_MS,
 } as const;
 
+/**
+ * Maximum data-plane frames retained by one relay connection's dispatch FIFO.
+ * 256 leaves ample room for ordinary reconnect replay bursts (normally tens).
+ */
+export const MAX_PENDING_RELAY_DISPATCH_FRAMES = 256;
+/**
+ * Maximum raw UTF-8 data-plane bytes retained by one relay connection's dispatch FIFO.
+ * 8 MiB admits a schema-maximum owner frame plus normal text replay while bounding images.
+ */
+export const MAX_PENDING_RELAY_DISPATCH_BYTES = 8 * 1024 * 1024;
+/** Emit a counted overflow summary after this many suppressed drops. */
+export const RELAY_DISPATCH_AUDIT_SUMMARY_EVENTS = 100;
+const RELAY_DISPATCH_AUDIT_SUMMARY_MS = 5_000;
+
 /** Decode one generated relay control DTO at the transport boundary. */
 export function decodeRelayControlFrame(line: string): RelayServerControlFrame | null {
+  if (Buffer.byteLength(line, "utf8") > RELAY_MAX_RAW_MESSAGE_BYTES) return null;
   try {
-    const decoded = decodeRelayIngress(line);
-    return decoded.kind === "control" ? decoded.frame : null;
+    const parsed = JSON.parse(line) as unknown;
+    return isRelayPostAuthControlFrame(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -97,6 +119,7 @@ export function decodeRelayControlFrame(line: string): RelayServerControlFrame |
 /** Create the lifecycle-owned relay adapter with reconnect and cross-PC bridge teardown. */
 export function createRelayTransportPort(deps: RelayTransportDeps): RelayTransportAdapter {
   const backoffMs = deps.backoffMs ?? reachabilityBackoffMs;
+  const auditDispatchOverflow = deps.auditDispatchOverflow ?? appendRelayDispatchOverflowAudit;
   let relay: RelayClient | null = null;
   let relayUrl: string | null = null;
   let keypair: Ed25519Keypair | null = null;
@@ -123,6 +146,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     generation: number;
     onMessage(line: string): void;
     onClose(): void;
+    flushOverflowAudit(): void;
     releaseIngressFanout(): void;
   };
   let relayBinding: RelayBinding | null = null;
@@ -176,16 +200,91 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
 
   function bindRelay(next: RelayClient): void {
     let dispatchTail: Promise<void> = Promise.resolve();
+    let pendingFrames = 0;
+    let pendingBytes = 0;
+    let droppedFrames = 0;
+    let droppedBytes = 0;
+    let overflowAuditEmitted = false;
+    let overflowAuditTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushOverflowAudit = (): void => {
+      if (overflowAuditTimer) {
+        deps.clearTimer(overflowAuditTimer);
+        overflowAuditTimer = null;
+      }
+      if (droppedFrames === 0) return;
+      const event = {
+        droppedFrames,
+        droppedBytes,
+        maxPendingFrames: MAX_PENDING_RELAY_DISPATCH_FRAMES,
+        maxPendingBytes: MAX_PENDING_RELAY_DISPATCH_BYTES,
+      } satisfies RelayDispatchOverflowAudit;
+      droppedFrames = 0;
+      droppedBytes = 0;
+      overflowAuditEmitted = true;
+      try {
+        void Promise.resolve(auditDispatchOverflow(event)).catch(() => undefined);
+      } catch {
+        // Best-effort audit cannot turn ingress rejection into an availability failure.
+      }
+    };
+
+    const recordOverflow = (lineBytes: number): void => {
+      droppedFrames += 1;
+      droppedBytes += lineBytes;
+      if (!overflowAuditEmitted || droppedFrames >= RELAY_DISPATCH_AUDIT_SUMMARY_EVENTS) {
+        flushOverflowAudit();
+        return;
+      }
+      if (overflowAuditTimer) return;
+      overflowAuditTimer = deps.setTimer(flushOverflowAudit, RELAY_DISPATCH_AUDIT_SUMMARY_MS);
+      overflowAuditTimer.unref?.();
+    };
+
     const binding = {
       relay: next,
       generation: nextRelayGeneration++,
       onMessage: (line: string) => {
-        // Preserve WebSocket FIFO while async owner lookup/persistence runs.
+        // Relay-owned control is intentionally outside the data-plane budget:
+        // authenticated peers can flood outer/cross-PC traffic but cannot mint
+        // valid server control frames. It remains on the shared FIFO so control
+        // and accepted data retain their original WebSocket ordering.
+        // Outer envelopes cannot contain a top-level `type` key (closed
+        // generated shape), so ordinary data avoids even a speculative parse.
+        const controlFrame = line.includes('"type"') ? decodeRelayControlFrame(line) : null;
+        if (controlFrame) {
+          dispatchTail = dispatchTail
+            .then(() => dispatchRelayControlFrame(controlFrame))
+            .catch(() => undefined);
+          return;
+        }
+
+        const lineBytes = Buffer.byteLength(line, "utf8");
+        if (
+          pendingFrames >= MAX_PENDING_RELAY_DISPATCH_FRAMES ||
+          lineBytes > MAX_PENDING_RELAY_DISPATCH_BYTES - pendingBytes
+        ) {
+          // Known keyed owners recover through session_sync; pair_request is
+          // retried by the pairing UX after its timeout. Drop only the NEW raw
+          // frame so every accepted frame remains strict FIFO and recoverable.
+          recordOverflow(lineBytes);
+          return;
+        }
+
+        pendingFrames += 1;
+        pendingBytes += lineBytes;
+        // Bound raw lines before promise allocation while preserving WebSocket
+        // FIFO across async owner lookup and sequence persistence.
         dispatchTail = dispatchTail
           .then(() => dispatchRelayMessage(next, line, () => connectionIsCurrent(binding)))
-          .catch(() => undefined);
+          .catch(() => undefined)
+          .finally(() => {
+            pendingFrames -= 1;
+            pendingBytes -= lineBytes;
+          });
       },
       onClose: () => onRelayClose(binding),
+      flushOverflowAudit,
       releaseIngressFanout: claimRelayIngressFanout(next),
     } satisfies RelayBinding;
     relayBinding = binding;
@@ -199,6 +298,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     relayBinding = null;
     current.off("close", binding.onClose);
     current.off("message", binding.onMessage);
+    binding.flushOverflowAudit();
     binding.releaseIngressFanout();
   }
 
@@ -342,6 +442,12 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     };
   }
 
+  async function dispatchRelayControlFrame(frame: RelayControlFrame): Promise<void> {
+    for (const handler of controlFrameHandlers) {
+      await handler(frame);
+    }
+  }
+
   async function dispatchRelayMessage(
     source: RelayClient,
     line: string,
@@ -355,9 +461,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     }
     let consumed = false;
     if (decoded.kind === "control") {
-      for (const handler of controlFrameHandlers) {
-        await handler(decoded.frame);
-      }
+      await dispatchRelayControlFrame(decoded.frame);
     } else if (decoded.kind === "outer") {
       // Owner attachment may require an async peers.json lookup. Complete it
       // before typed fanout so a newly created SecurePeerChannel receives the
