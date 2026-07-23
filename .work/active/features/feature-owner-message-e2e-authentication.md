@@ -125,14 +125,22 @@ SUITE = "outpost-pi-owner-channel-v1"
 **Handshake** (rides the existing plaintext pair exchange; QR unchanged):
 
 1. App generates an ephemeral X25519 keypair per pairing attempt. Extends
-   `pair_request` with `dh_pk` (base64, 32B) and `dh_sig` (base64 Ed25519
-   signature by Owner-sk over:
-   `SUITE ++ "\napp\n" ++ tokenBytes ++ appDhPk ++ piEdPk`).
+   `pair_request` with `token_id` (base64 SHA-256(token)[:16] — public
+   locator), `pair_mac` (base64 HMAC-SHA256 keyed by the RAW token over
+   `SUITE ++ "\npair\n" ++ tokenIdBytes ++ ownerEdPk ++ appDhPk ++ piEdPk`),
+   `dh_pk` (base64, 32B) and `dh_sig` (base64 Ed25519 signature by Owner-sk
+   over: `SUITE ++ "\napp\n" ++ tokenBytes ++ appDhPk ++ piEdPk`). The raw
+   token NEVER crosses the wire: a relay observing the exchange cannot race
+   its own pairing under an attacker Owner key (review pass-1 correction —
+   the original raw-token design left the bearer token relay-visible).
    `piEdPk` is the QR-carried Pi pubkey — out-of-band authentic; binding it
    prevents a malicious relay from redirecting the pairing.
 2. Extension receives `pair_request`; relay-authenticated `outer.peer` is
-   the Owner pubkey (relay cannot substitute without the Owner-sk). Verifies
-   `dh_sig` against it. On failure: `pair_error` (`bad_dh_sig`), no state.
+   the Owner pubkey. Resolves the token by `token_id` and verifies
+   `pair_mac` (constant-time) FIRST — failure is `pair_error
+   `token_unknown`, consumes nothing, reveals no stage detail. Then verifies
+   `dh_sig` against the Owner pubkey. On failure: `pair_error`
+   (`bad_dh_sig`), no state.
 3. Extension generates its ephemeral X25519 keypair, derives keys (below),
    persists the channel record, then extends `pair_ok` with `dh_pk` and
    `dh_sig` (Pi-sk over:
@@ -172,7 +180,15 @@ outer.ct = base64( 0x01 || seqLE64(8B) || nonce(24B random) || XChaCha20-Poly130
   AND the peer record has no channel key. All other plaintext → drop +
   audit log (`audit.jsonl`).
 - Decrypt/replay failure → drop + audit; N consecutive failures (5) →
-  detach the channel; recovery is re-pair. No plaintext fallback, ever.
+  detach the channel subscription; the NEXT frame from the keyed owner
+  reattaches with the same persisted channel keys (automatic same-key
+  recovery). AEAD remains the security boundary — forged frames never
+  dispatch regardless. Strict quarantine-until-re-pair was REJECTED at
+  review pass 1: five garbage frames from a malicious relay would then
+  permanently kill a pairing (one-shot DoS), buying nothing the relay
+  cannot already achieve by dropping frames. Re-pair remains the recovery
+  path for key loss / half-established pairings, not transient failures.
+  No plaintext fallback, ever.
 - Post-cutover, pre-E2E pairings have no channel key → their frames are
   dropped + audited; operator instruction is re-pair (documented in
   AGENTS.md paired-wire notes + release UAT).
