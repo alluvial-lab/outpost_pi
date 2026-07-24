@@ -1,3 +1,7 @@
+import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import {
   OFFLINE_BUFFER_MAX_BYTES,
@@ -9,8 +13,13 @@ import {
 } from "./owner_multiplexer.js";
 import { decodeRelayIngress } from "../protocol/relay_ingress.js";
 import { ed25519Sign, ed25519Verify, generateEd25519Keypair } from "../pairing/crypto.js";
-import { decodePeerChannelKeys } from "../pairing/storage.js";
+import { decodePeerChannelKeys, parsePeerChannelSequence } from "../pairing/storage.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
+import type { RelayClient } from "../transport/relay_client.js";
+import {
+  MAX_PENDING_OWNER_OUTBOUND_FRAMES,
+  SecurePeerChannel,
+} from "../transport/peer_channel.js";
 import * as ownerChannelCrypto from "../transport/secure_channel.js";
 import {
   appTranscript,
@@ -21,6 +30,10 @@ import {
   piTranscript,
   x25519Shared,
 } from "../transport/secure_channel.js";
+
+class FakeRelay extends EventEmitter {
+  send = vi.fn();
+}
 
 class FakeOwnerChannel implements PeerChannelHandle {
   readonly sent: ServerMessage[] = [];
@@ -60,6 +73,23 @@ function ownerIngress(peer: string, ct: string) {
 
 function agentChunk(delta: string): ServerMessage {
   return { type: "agent_chunk", session_id: "session-1", in_reply_to: "turn-1", delta };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function protectedPingIngress(peerId: string, recvKey: Uint8Array, seq = 1n) {
+  const frame = ownerChannelCrypto.seal(
+    recvKey,
+    seq,
+    JSON.stringify({ type: "ping", id: `ping-${seq}` }),
+  );
+  return ownerIngress(peerId, Buffer.from(frame).toString("base64"));
 }
 
 function signedPairRequest(identityPk: Uint8Array, token = "pair-token") {
@@ -490,6 +520,209 @@ describe("OwnerMultiplexer", () => {
     expect(routed).toEqual([]);
     await channels[0]!.receive(message);
     expect(routed).toEqual([{ message, sender: channels[0] }]);
+  });
+
+  test("overflow detach gates same-key reattach until accepted persistence drains", async () => {
+    const auditDir = mkdtempSync(join(tmpdir(), "owner-mux-drain-gate-"));
+    try {
+      const { mux, deps } = makeMultiplexer();
+      const relay = new FakeRelay();
+      const peerId = "overflow-owner";
+      const sendKey = new Uint8Array(32).fill(51);
+      const recvKey = new Uint8Array(32).fill(52);
+      const channelKey = Buffer.concat([Buffer.from(sendKey), Buffer.from(recvKey)]).toString("base64");
+      const baseRecord = {
+        name: "Overflow phone",
+        remote_epk: peerId,
+        paired_at: "now",
+        channel_key: channelKey,
+        send_seq: "0",
+        recv_seq: "0",
+      };
+      const firstPersistence = deferred<boolean>();
+      const persistenceStarted = deferred<void>();
+      const durableSendHistory: bigint[] = [];
+      let durableSend = 0n;
+      let durableRecv = 0n;
+      let blockFirstSend = true;
+      const secureChannels: SecurePeerChannel[] = [];
+      const findKnownPeer = vi.fn<OwnerMultiplexerDeps["findKnownPeer"]>(async (candidate) =>
+        candidate === peerId
+          ? { ...baseRecord, send_seq: durableSend.toString(10), recv_seq: durableRecv.toString(10) }
+          : null
+      );
+      deps.findKnownPeer = findKnownPeer;
+      deps.createChannel = (input) => {
+        const keys = decodePeerChannelKeys(input.peerRecord?.channel_key);
+        const sendSeq = parsePeerChannelSequence(input.peerRecord?.send_seq);
+        const recvSeq = parsePeerChannelSequence(input.peerRecord?.recv_seq);
+        if (!keys || sendSeq === null || recvSeq === null) throw new Error("invalid secure test state");
+        const channel = new SecurePeerChannel(
+          relay as unknown as RelayClient,
+          input.peerId,
+          (message) => { void input.onMessage(message); },
+          {
+            keys,
+            sendSeq,
+            recvSeq,
+            persistSequences: async (patch) => {
+              if (patch.sendSeq !== undefined) {
+                if (blockFirstSend) {
+                  blockFirstSend = false;
+                  persistenceStarted.resolve();
+                  if (!await firstPersistence.promise) return false;
+                }
+                // Deliberately assign like the regressed store did: the test
+                // catches any fresh channel that starts below the drained high-water.
+                durableSend = patch.sendSeq;
+                durableSendHistory.push(durableSend);
+              }
+              if (patch.recvSeq !== undefined) durableRecv = patch.recvSeq;
+              return true;
+            },
+            onDisconnect: () => input.onDisconnect(input.peerId),
+            auditPath: join(auditDir, "audit.jsonl"),
+          },
+        );
+        secureChannels.push(channel);
+        return channel;
+      };
+
+      mux.attach({
+        peerId,
+        peerName: baseRecord.name,
+        peerRecord: baseRecord,
+        onMessage: vi.fn(),
+      });
+      for (let index = 0; index < MAX_PENDING_OWNER_OUTBOUND_FRAMES; index += 1) {
+        mux.broadcast({ type: "pong", in_reply_to: `accepted-${index}` });
+      }
+      await persistenceStarted.promise;
+      mux.broadcast({ type: "pong", in_reply_to: "overflow-suffix" });
+      expect(mux.has(peerId)).toBe(false);
+
+      const routed = vi.fn();
+      const trigger = protectedPingIngress(peerId, recvKey);
+      const reattach = mux.handleOuterFrame({
+        ingress: trigger,
+        roomId: "room-1",
+        turnActive: () => false,
+        isCurrent: () => true,
+        onMessage: routed,
+        onDisconnect: vi.fn(),
+        sendToPeer: vi.fn(),
+      });
+      await Promise.resolve();
+      expect(findKnownPeer).not.toHaveBeenCalled();
+      expect(secureChannels).toHaveLength(1);
+
+      firstPersistence.resolve(true);
+      await reattach;
+      expect(findKnownPeer).toHaveBeenCalledTimes(1);
+      expect(secureChannels).toHaveLength(2);
+      expect(durableSend).toBe(BigInt(MAX_PENDING_OWNER_OUTBOUND_FRAMES));
+
+      // RelayTransport publishes the triggering decoded frame only after the
+      // awaited owner handler returns, so reproduce that fanout ordering here.
+      relay.emit("message", JSON.stringify(trigger.frame));
+      await secureChannels[1]!.whenIdle();
+      expect(routed).toHaveBeenCalledWith({ type: "ping", id: "ping-1" }, secureChannels[1]);
+
+      mux.broadcast({ type: "pong", in_reply_to: "after-drain" });
+      await secureChannels[1]!.whenIdle();
+      const exposedSeqs = relay.send.mock.calls.map(([serialized]) => {
+        const outer = JSON.parse(serialized as string) as { ct: string };
+        const frame = Buffer.from(outer.ct, "base64");
+        return new DataView(frame.buffer, frame.byteOffset + 1, 8).getBigUint64(0, true);
+      });
+      expect(exposedSeqs).toEqual(
+        Array.from({ length: MAX_PENDING_OWNER_OUTBOUND_FRAMES + 1 }, (_, index) => BigInt(index + 1)),
+      );
+      expect(new Set(exposedSeqs).size).toBe(exposedSeqs.length);
+      expect(durableSendHistory).toEqual(exposedSeqs);
+
+      await mux.detach(peerId);
+    } finally {
+      rmSync(auditDir, { recursive: true, force: true });
+    }
+  });
+
+  test("terminal persistence failure releases the reattach drain gate", async () => {
+    const auditDir = mkdtempSync(join(tmpdir(), "owner-mux-failed-drain-"));
+    try {
+      const { mux, deps } = makeMultiplexer();
+      const relay = new FakeRelay();
+      const peerId = "failed-owner";
+      const sendKey = new Uint8Array(32).fill(61);
+      const recvKey = new Uint8Array(32).fill(62);
+      const channelKey = Buffer.concat([Buffer.from(sendKey), Buffer.from(recvKey)]).toString("base64");
+      const record = {
+        name: "Failing phone",
+        remote_epk: peerId,
+        paired_at: "now",
+        channel_key: channelKey,
+        send_seq: "0",
+        recv_seq: "0",
+      };
+      const persistence = deferred<boolean>();
+      const persistenceStarted = deferred<void>();
+      const secureChannels: SecurePeerChannel[] = [];
+      const findKnownPeer = vi.fn<OwnerMultiplexerDeps["findKnownPeer"]>(async () => ({ ...record }));
+      deps.findKnownPeer = findKnownPeer;
+      deps.createChannel = (input) => {
+        const keys = decodePeerChannelKeys(input.peerRecord?.channel_key);
+        const sendSeq = parsePeerChannelSequence(input.peerRecord?.send_seq);
+        const recvSeq = parsePeerChannelSequence(input.peerRecord?.recv_seq);
+        if (!keys || sendSeq === null || recvSeq === null) throw new Error("invalid secure test state");
+        const channel = new SecurePeerChannel(
+          relay as unknown as RelayClient,
+          input.peerId,
+          (message) => { void input.onMessage(message); },
+          {
+            keys,
+            sendSeq,
+            recvSeq,
+            persistSequences: async () => {
+              persistenceStarted.resolve();
+              await persistence.promise;
+              throw new Error("disk failed terminally");
+            },
+            onDisconnect: () => input.onDisconnect(input.peerId),
+            auditPath: join(auditDir, "audit.jsonl"),
+          },
+        );
+        secureChannels.push(channel);
+        return channel;
+      };
+
+      mux.attach({ peerId, peerName: record.name, peerRecord: record, onMessage: vi.fn() });
+      mux.broadcast({ type: "pong", in_reply_to: "will-fail" });
+      await persistenceStarted.promise;
+      void mux.detach(peerId);
+
+      const reattach = mux.handleOuterFrame({
+        ingress: protectedPingIngress(peerId, recvKey),
+        roomId: "room-1",
+        turnActive: () => false,
+        isCurrent: () => true,
+        onMessage: vi.fn(),
+        onDisconnect: vi.fn(),
+        sendToPeer: vi.fn(),
+      });
+      await Promise.resolve();
+      expect(findKnownPeer).not.toHaveBeenCalled();
+      expect(secureChannels).toHaveLength(1);
+
+      persistence.resolve(true);
+      await reattach;
+      expect(findKnownPeer).toHaveBeenCalledTimes(1);
+      expect(secureChannels).toHaveLength(2);
+      expect(mux.has(peerId)).toBe(true);
+
+      await mux.detach(peerId);
+    } finally {
+      rmSync(auditDir, { recursive: true, force: true });
+    }
   });
 
   test("missing token locator or proof fails closed without consuming or persisting", async () => {
