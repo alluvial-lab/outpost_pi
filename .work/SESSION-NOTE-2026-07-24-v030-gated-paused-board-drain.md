@@ -8,10 +8,19 @@ resumption point** — supersedes
 
 `release-deploy v0.3.0` ran bind → all 6 gates → readiness, then the
 operator **paused the release cycle to drain the board first**. Everything
-is committed; nothing is in flight. **Next action: drain the 27 bound
+is committed; nothing is in flight. **Next action: drain the 29 bound
 blocking items via `/agile-workflow:implement-orchestrator`, then re-run
 `/agile-workflow:release-deploy v0.3.0`** (idempotent — resumes at
 readiness → changelog → UAT checkpoint → local tag → collapse).
+
+**Update 2026-07-24 (pre-drain operator decisions, applied):** the OPEN
+OPERATOR DECISION below is resolved — both owner-transition security mediums
+promoted + bound (drain queue: 27 → 29). The pairing-viewmodel overlap is
+resolved — generation-fence item merged into the bound no-dispose item
+(combined acceptance). Drain scope = the 29 bound items ONLY; the
+reconnect/targeting epic arc (`feature-reconnect-reproduction` +
+`epic-targeting-and-session-lifecycle-contracts`) is live-phone-repro work
+and is explicitly NOT auto-drainable.
 
 ## Release state
 
@@ -44,7 +53,7 @@ readiness → changelog → UAT checkpoint → local tag → collapse).
   findings-route: refactor) — CONVENTIONS prose still says 3; fix on next
   conventions touch.
 
-## Drain queue (the 27 bound blocking items, all `stage: implementing`)
+## Drain queue (the 29 bound blocking items, all `stage: implementing`)
 
 - **14 gate-docs** — E2E trust-model roll-forwards (VISION/DECISIONS/AGENTS/
   READMEs×4/rust-relay skill/4 pattern-skill anchor fixes). Mechanical,
@@ -55,20 +64,24 @@ readiness → changelog → UAT checkpoint → local tag → collapse).
   (lost-pair_ok recovery, 5-failure detach/reattach, real session-rotation
   replacement), 1 unit test (orphan msgs_v3 wipe).
 - **5 gate-refactor** — pairing_viewmodel dispose/generation fence
-  (overlaps parked `gate-patterns-inconsistency-pairing-viewmodel-generation-fence`
-  — reconcile together), 2 protocol-contract discriminator-registry items,
-  2 secure-channel @throws dartdoc/JSDoc items.
-- **2 gate-security** — `pairing-token-in-model-context` (QR bearer token
+  (absorbed the parked `gate-patterns-inconsistency-pairing-viewmodel-generation-fence`
+  2026-07-24 — combined acceptance on the bound item), 2 protocol-contract
+  discriminator-registry items, 2 secure-channel @throws dartdoc/JSDoc items.
+- **4 gate-security** — `pairing-token-in-model-context` (QR bearer token
   reaches LLM context via pi.sendMessage → render TUI-only + regression),
   `high-severity-dependency-audit-failures` (next≥16.2.11, sharp≥0.35.0,
-  fast-uri≥3.1.4, brace-expansion≥5.0.7; deps-audit lane red).
+  fast-uri≥3.1.4, brace-expansion≥5.0.7; deps-audit lane red),
+  `owner-transition-committed-before-durable-cleanup` (durable pending-
+  transition record + boot-convergent cleanup; promoted 2026-07-24),
+  `identity-store-fatal-read-rotates-owner-key` (generate only on null load;
+  no silent rotation on fatal reads; promoted 2026-07-24).
 - **1 gate-cruft** — conditional `isFiniteNumber` emit in protocol codegen.
 
-**OPEN OPERATOR DECISION**: promote the 2 parked owner-transition MEDIUM
-security findings to release-blocking? (`gate-security-owner-transition-committed-before-durable-cleanup`,
-`gate-security-identity-store-fatal-read-rotates-owner-key` — both in
-`.work/backlog/`, both touch the v0.3 owner-transition boundary.) Never
-answered; decide at drain time.
+~~**OPEN OPERATOR DECISION**~~ **RESOLVED 2026-07-24**: both owner-transition
+MEDIUM security findings promoted to release-blocking and bound at
+implementing (`gate-security-owner-transition-committed-before-durable-cleanup`,
+`gate-security-identity-store-fatal-read-rotates-owner-key` — moved from
+`.work/backlog/` to `active/stories/`).
 
 **Unbound backlog rollups (genuine consolidated work, post-v0.3.0 drain
 candidates)**: `backlog-cruft-removal-batch` (8),
