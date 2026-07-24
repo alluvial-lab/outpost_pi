@@ -1,7 +1,7 @@
 ---
 id: gate-docs-site-readme-pre-e2e-trust-model
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ App↔Pi owner payloads are now E2E-encrypted and authenticated after pairing.
 
 ## Required edit
 Replace the statement with the owner-channel E2E/current limitation split.
+
+## Implementation notes
+
+Updated the site README to describe authenticated owner-channel E2E and the relay's metadata and cross-PC visibility limits.
