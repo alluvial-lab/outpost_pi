@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-typed-wire-decoders-anchors
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ Neither module contains the quoted decoder. Relay lines are decoded once through
 
 ## Required edit
 Replace the removed mirrored-decoder examples with the canonical decode-once ingress boundary and the current generated-validator-backed payload decoder.
+
+## Implementation notes
+
+Replaced the removed mirrored-decoder examples with `decodeRelayIngress` at `relay_ingress.ts:81-117` and the generated-validator-backed `decodeRelayClientPayload` at `relay_ingress.ts:143-149`.
