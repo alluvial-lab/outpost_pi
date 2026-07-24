@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app/config/dependencies.dart';
+import 'package:app/data/local/boxes.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/connection_manager.dart';
@@ -299,6 +300,8 @@ AppRouterOwner buildRouter(
         if (resetGeneration == null) return;
         try {
           await conn.disconnect();
+          if (!boot.isCurrentGeneration(resetGeneration)) return;
+          await LocalBoxes.wipeTranscriptsForOwnerTransition();
           if (!boot.isCurrentGeneration(resetGeneration)) return;
           meshSync.resetVersionWatermark();
           await boot.load(
