@@ -76,7 +76,7 @@ class RpcEventMapper {
         );
 
       default:
-        return RpcUnknown(type ?? '<none>');
+        return const RpcUnknown('<unknown-frame>');
     }
   }
 
@@ -159,7 +159,7 @@ class RpcEventMapper {
       case RpcControlOverlayEventType.meshRevoked:
         return RpcMeshRevoked(details: details);
       case null:
-        return RpcUnknown('message_start:custom:${customType ?? "?"}');
+        return const RpcUnknown('<unknown-custom-message>');
     }
   }
 
@@ -231,7 +231,7 @@ class RpcEventMapper {
               : const <String>[],
         );
       default:
-        return RpcUnknown('extension_ui_request:${method ?? "?"}');
+        return const RpcUnknown('<unknown-ui-request>');
     }
   }
 
@@ -273,7 +273,7 @@ class RpcEventMapper {
         return RpcTextEnd(assistantMessageEvent['content'] as String? ?? '');
       default:
         // text_start/thinking_start/toolcall_*/done/error remain ignored in the MVP.
-        return RpcUnknown('message_update:${eventType ?? "?"}');
+        return const RpcUnknown('<unknown-message-update>');
     }
   }
 

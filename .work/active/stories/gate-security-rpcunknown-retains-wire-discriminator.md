@@ -1,7 +1,7 @@
 ---
 id: gate-security-rpcunknown-retains-wire-discriminator
 kind: story
-stage: implementing
+stage: done
 tags: [cockpit, security]
 parent: feature-diagnostic-privacy-hardening
 depends_on: []
@@ -41,3 +41,15 @@ displays the supposedly safe category would create the exposure.
 When adopting: replace arbitrary `RpcUnknown.type`/`customType`/`method` with
 fixed unknown categories (e.g. `unknown_event`, `unknown_method`) at the mapper
 boundary, preserving the routing fact without the raw discriminator string.
+
+## Implementation notes
+
+- Replaced the four arbitrary wire discriminator projections with the fixed
+  `<unknown-frame>`, `<unknown-custom-message>`, `<unknown-ui-request>`, and
+  `<unknown-message-update>` categories.
+- Added a mapper canary covering secret-shaped top-level type, custom type, UI
+  method, and message-update type values.
+- Verification: `flutter test` passed (259 tests). `flutter analyze` reports
+  one pre-existing unrelated info in
+  `lib/app/cockpit/data/rpc/pi_rpc_process.dart:470`
+  (`unnecessary_underscores`); no analyzer findings touch this checkpoint.
