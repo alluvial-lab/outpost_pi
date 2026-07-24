@@ -435,7 +435,9 @@ void main() {
   test(
     'confirmed Owner reset disconnects before wiping transcripts and rebooting',
     () async {
-      final directory = Directory.systemTemp.createTempSync('router_owner_reset_');
+      final directory = Directory.systemTemp.createTempSync(
+        'router_owner_reset_',
+      );
       await LocalBoxes.initForTest(directory.path);
       const ref = RemoteSessionRef(
         peerEpk: 'same-peer',
@@ -461,6 +463,56 @@ void main() {
       expect((await LocalBoxes().msgsBox(ref)), isEmpty);
       expect(mesh.resetVersionCalls, 1);
 
+      owner.dispose();
+      connection.dispose();
+      identity.dispose();
+      mesh.dispose();
+      await Hive.close();
+      await directory.delete(recursive: true);
+    },
+  );
+
+  test(
+    'boot retry converges a latched transcript wipe after reset failure',
+    () async {
+      final directory = Directory.systemTemp.createTempSync(
+        'router_owner_reset_retry_',
+      );
+      await LocalBoxes.initForTest(directory.path);
+      const ref = RemoteSessionRef(
+        peerEpk: 'retry-peer',
+        roomId: 'retry-room',
+        sessionId: 'retry-session',
+      );
+      final boxName = LocalBoxes.msgsBoxName(ref);
+      await (await LocalBoxes().msgsBox(ref)).put(0, {'text': 'prior owner'});
+
+      final storage = _BootStorage();
+      final prefs = _BootPreferences();
+      final identity = _BootIdentityBridge(storage);
+      final mesh = _BootMeshSync(identity, storage);
+      final connection = _BootConnectionManager(storage);
+      final owner = buildRouter(storage, connection, prefs, identity, mesh);
+
+      await _waitUntil(
+        () => owner.bootState.ready && identity.resetCallback != null,
+        reason: 'the initial boot and watcher installation',
+      );
+      LocalBoxes.beforeOwnerTransitionCommonClearForTesting = () async {
+        throw StateError('injected reset wipe failure');
+      };
+      await identity.resetCallback!();
+      expect(owner.bootState.failure, isNotNull);
+
+      LocalBoxes.beforeOwnerTransitionCommonClearForTesting = null;
+      owner.retryBoot();
+      await _waitUntil(
+        () => owner.bootState.ready,
+        reason: 'the latched wipe and boot retry',
+      );
+
+      expect(await Hive.boxExists(boxName), isFalse);
+      expect(owner.bootState.failure, isNull);
       owner.dispose();
       connection.dispose();
       identity.dispose();
