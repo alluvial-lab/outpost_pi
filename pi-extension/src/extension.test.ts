@@ -225,10 +225,24 @@ vi.mock("./pairing/storage.js", async (importOriginal) => {
       else _knownPeers.push(displayed);
       if (p.channel_key) installTestChannel(p.remote_epk, p.channel_key, p.send_seq, p.recv_seq);
     }),
-    updatePeerChannelSequences: vi.fn().mockImplementation(async (
+    reserveSendSeq: vi.fn().mockImplementation(async (
       epk: string,
       expectedChannelKey: string,
-      patch: { sendSeq?: bigint; recvSeq?: bigint },
+    ) => {
+      const alias = displayPeerId(epk);
+      const peer = _knownPeers.find((candidate) => candidate.remote_epk === alias);
+      if (!peer) return null;
+      const currentChannelKey = peer.channel_key ?? ensureLegacyTestChannel(alias).channelKey;
+      if (currentChannelKey !== expectedChannelKey) return null;
+      peer.channel_key = currentChannelKey;
+      const reserved = BigInt(peer.send_seq ?? "0") + 1n;
+      peer.send_seq = reserved.toString();
+      return reserved;
+    }),
+    updateRecvSeq: vi.fn().mockImplementation(async (
+      epk: string,
+      expectedChannelKey: string,
+      recvSeq: bigint,
     ) => {
       const alias = displayPeerId(epk);
       const peer = _knownPeers.find((candidate) => candidate.remote_epk === alias);
@@ -236,8 +250,7 @@ vi.mock("./pairing/storage.js", async (importOriginal) => {
       const currentChannelKey = peer.channel_key ?? ensureLegacyTestChannel(alias).channelKey;
       if (currentChannelKey !== expectedChannelKey) return false;
       peer.channel_key = currentChannelKey;
-      if (patch.sendSeq !== undefined) peer.send_seq = patch.sendSeq.toString();
-      if (patch.recvSeq !== undefined) peer.recv_seq = patch.recvSeq.toString();
+      if (recvSeq > BigInt(peer.recv_seq ?? "0")) peer.recv_seq = recvSeq.toString();
       return true;
     }),
     removePeer: vi.fn().mockImplementation(async (epk: string) => {

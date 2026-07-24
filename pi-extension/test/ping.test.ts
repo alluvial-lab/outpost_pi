@@ -65,14 +65,19 @@ vi.mock("../src/pairing/storage.js", async (importOriginal) => {
       appSendSeq = BigInt(peer.recv_seq ?? "0");
       appRecvSeq = BigInt(peer.send_seq ?? "0");
     }),
-    updatePeerChannelSequences: vi.fn().mockImplementation(async (
+    reserveSendSeq: vi.fn().mockImplementation(async () => {
+      if (!storedPeer) return null;
+      const reserved = BigInt(storedPeer.send_seq ?? "0") + 1n;
+      storedPeer.send_seq = reserved.toString();
+      return reserved;
+    }),
+    updateRecvSeq: vi.fn().mockImplementation(async (
       _peer: string,
       _key: string,
-      patch: { sendSeq?: bigint; recvSeq?: bigint },
+      recvSeq: bigint,
     ) => {
       if (!storedPeer) return false;
-      if (patch.sendSeq !== undefined) storedPeer.send_seq = patch.sendSeq.toString();
-      if (patch.recvSeq !== undefined) storedPeer.recv_seq = patch.recvSeq.toString();
+      if (recvSeq > BigInt(storedPeer.recv_seq ?? "0")) storedPeer.recv_seq = recvSeq.toString();
       return true;
     }),
     removePeer: vi.fn(),
