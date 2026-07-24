@@ -1,7 +1,7 @@
 ---
 id: gate-docs-readme-owner-payload-plaintext
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,10 @@ Replace the blanket plaintext claim with the current owner-channel/cross-PC dist
 ## Implementation notes
 
 Updated the root README to describe sealed app↔Pi owner payloads, visible routing metadata, and relay-readable cross-PC envelopes.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against the
+item's Required edit and the cited contradicting sources — claims match the
+shipped owner-channel E2E contract (sealed ct, metadata/cross-PC caveats
+retained, rolling-foundation prose). Approved -> done.
