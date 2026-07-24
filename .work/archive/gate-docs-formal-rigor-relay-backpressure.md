@@ -1,9 +1,9 @@
 ---
 id: gate-docs-formal-rigor-relay-backpressure
 created: 2026-07-20
-updated: 2026-07-19
+updated: 2026-07-24
 tags: [documentation]
-release_binding: null
+release_binding: v0.3.0
 gate_origin: docs
 ---
 

@@ -5,10 +5,10 @@ stage: done
 tags: [app, pi-extension, e2e, session, lifecycle]
 parent: null
 depends_on: [feature-replacement-session-wake-confirmation]
-release_binding: null
+release_binding: v0.3.0
 gate_origin: null
 created: 2026-07-23
-updated: 2026-07-23
+updated: 2026-07-24
 ---
 
 # E2E case: session replacement (`/new`) message round-trip

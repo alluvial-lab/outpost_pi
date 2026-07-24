@@ -7,10 +7,10 @@ stage: drafting
 tags: [documentation]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.3.0
 gate_origin: docs
 created: 2026-07-01
-updated: 2026-07-20
+updated: 2026-07-24
 ---
 
 # Missing changelog entry for active release cockpit-v1.6.0
