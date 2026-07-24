@@ -20,17 +20,29 @@ class SyncRequiredPage extends StatefulWidget {
 
 class _SyncRequiredPageState extends State<SyncRequiredPage> {
   bool _checking = false;
+  String? _checkError;
 
   Future<void> _recheck() async {
     if (_checking) return;
-    setState(() => _checking = true);
-    final result = await injector.get<OwnerIdentityBridge>().boot();
-    if (!mounted) return;
-    setState(() => _checking = false);
-    if (result is! SyncUnavailableResult) {
-      // Bounce through /boot so the router's redirect logic re-evaluates
-      // (pairs-empty → /onboarding, pairs-non-empty → /home).
-      context.go('/boot');
+    setState(() {
+      _checking = true;
+      _checkError = null;
+    });
+    try {
+      final result = await injector.get<OwnerIdentityBridge>().boot();
+      if (!mounted) return;
+      setState(() => _checking = false);
+      if (result is! SyncUnavailableResult) {
+        // Bounce through /boot so the router's redirect logic re-evaluates
+        // (pairs-empty → /onboarding, pairs-non-empty → /home).
+        context.go('/boot');
+      }
+    } on Object {
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _checkError = 'Could not check your synced identity. Try again.';
+      });
     }
   }
 
@@ -104,6 +116,18 @@ class _SyncRequiredPageState extends State<SyncRequiredPage> {
                 ),
               ),
               const SizedBox(height: 12),
+              if (_checkError != null) ...[
+                Text(
+                  _checkError!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: kMonoFamily,
+                    fontSize: 11,
+                    color: colors.error,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               FilledButton(
                 onPressed: _checking ? null : _recheck,
                 style: FilledButton.styleFrom(
@@ -157,7 +181,8 @@ const _androidRequirements = <_Requirement>[
   ),
   _Requirement(
     title: 'Turn on Google Backup',
-    path: 'Settings › System › Backup\n'
+    path:
+        'Settings › System › Backup\n'
         '(Samsung: Settings › Accounts and backup › Backup data)',
   ),
   _Requirement(

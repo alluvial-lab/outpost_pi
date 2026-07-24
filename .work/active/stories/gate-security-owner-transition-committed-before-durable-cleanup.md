@@ -1,7 +1,7 @@
 ---
 id: gate-security-owner-transition-committed-before-durable-cleanup
 kind: story
-stage: drafting
+stage: review
 tags: [security]
 parent: null
 depends_on: []
@@ -38,3 +38,23 @@ Persist a pending Owner-transition record before changing the active identity. G
 
 ## Implementation discovery
 The transition coordinator is split across `app/lib/pairing/owner_identity_bridge.dart` and the out-of-scope `app/lib/routing/app_router.dart`. The router currently performs disconnect, transcript cleanup, and boot reload through the `onReset` callback only after the bridge assigns `_current`; moving that commit behind the complete cleanup requires changing the callback/boot coordination in `app/lib/routing/` as well as bridge tests. A bridge-only change would either retain the existing early commit or make the router reload against an uncommitted identity, so it cannot meet the atomicity and boot-convergence acceptance criteria within this worker's write scope.
+
+## Implementation notes
+
+- Added a durable `PairingStorage` pending-transition marker. The bridge writes
+  it before exposing a replacement key, hides identity/keypair access while it
+  exists, and returns `OwnerTransitionPending` at boot rather than loading the
+  incoming identity normally.
+- Router ownership now performs the shared cleanup sequence (pairing wipe,
+  disconnect, transcript wipe, mesh watermark reset). Only after that sequence
+  succeeds does the bridge clear the marker and commit `_current`; any failure
+  leaves the gate durable for the next boot retry.
+- Added bridge coverage for partial secure-storage deletion failure and boot
+  recovery, plus router coverage that verifies boot cleanup precedes identity
+  commit. Updated the mesh watch test for the explicit transition callback.
+- `SyncRequiredPage._recheck` now catches fatal identity-store reads and renders
+  an actionable retry error after its async mounted guard.
+- Verification: `flutter analyze` passed; focused pairing/router/mesh tests
+  passed. The broad non-e2e command was attempted but timed out after existing
+  `sync_service_test.dart` degradation/index failures and unrelated
+  secure-storage plugin failures in `pairing_viewmodel_test.dart`.

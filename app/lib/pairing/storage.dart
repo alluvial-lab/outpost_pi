@@ -10,6 +10,11 @@ const _kRoomsService = 'dev.outpostpi.rooms';
 // Separate from the Owner-reset prefixes: a returning Owner must retain its
 // rollback floor even after PairingStorage.wipeAll() clears its pairings.
 const _kMeshWatermarkService = 'dev.outpostpi.meshwatermark';
+// This marker is deliberately outside the prefixes cleared by [wipeAll]. It
+// makes an interrupted Owner transition retryable before any identity gains
+// access to the previous Owner's local state.
+const _kOwnerTransitionService = 'dev.outpostpi.owner-transition';
+const _kOwnerTransitionPending = 'pending';
 
 /// Plan-17 follow-up — persisted snapshot of every room we have ever
 /// learned about for a peer (relay-announced via `room_announced` /
@@ -334,6 +339,32 @@ class PairingStorage extends ChangeNotifier {
   String _channelKey(String remoteEpk) => '$_kChannelsService:$remoteEpk';
   String _meshWatermarkKey(String ownerPkHash) =>
       '$_kMeshWatermarkService:$ownerPkHash';
+
+  /// Persist the gate that prevents a replacement Owner from using old data.
+  ///
+  /// The marker is written before the bridge accepts a changed Owner key and
+  /// is removed only after pairing, connection, and transcript cleanup finish.
+  Future<void> beginOwnerTransition() => _serializePeerMutation(
+    () => _store.write(
+      key: '$_kOwnerTransitionService:$_kOwnerTransitionPending',
+      value: '1',
+    ),
+  );
+
+  /// Return whether boot must finish a prior Owner transition before loading
+  /// an identity into the active app session.
+  Future<bool> hasPendingOwnerTransition() async =>
+      await _store.read(
+        key: '$_kOwnerTransitionService:$_kOwnerTransitionPending',
+      ) !=
+      null;
+
+  /// Remove the Owner-transition gate after every cleanup boundary has passed.
+  Future<void> completeOwnerTransition() => _serializePeerMutation(
+    () => _store.delete(
+      key: '$_kOwnerTransitionService:$_kOwnerTransitionPending',
+    ),
+  );
 
   /// Replace a peer through the authenticated pairing flow.
   ///

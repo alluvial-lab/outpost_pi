@@ -79,6 +79,8 @@ class BootState extends ChangeNotifier {
     OwnerIdentityBridge ownerBridge,
     MeshSyncService meshSync, {
     void Function()? installWatcherAfterBoot,
+    Future<void> Function(bool Function() stillCurrent)?
+    cleanPendingOwnerTransition,
   }) async {
     if (_disposed) return;
     final generation = ++_generation;
@@ -114,6 +116,31 @@ class BootState extends ChangeNotifier {
       return;
     }
     if (!_isCurrent(generation)) return;
+    if (ownerResult is OwnerTransitionPending) {
+      final cleanup = cleanPendingOwnerTransition;
+      if (cleanup == null) {
+        _fail(
+          generation,
+          BootFailureStage.identity,
+          'Could not resume the Owner transition. Try again.',
+        );
+        return;
+      }
+      try {
+        await cleanup(() => _isCurrent(generation));
+        if (!_isCurrent(generation)) return;
+        await ownerBridge.completePendingTransition(ownerResult.identity);
+      } on Object {
+        _fail(
+          generation,
+          BootFailureStage.storage,
+          'Could not complete the Owner transition. Try again.',
+        );
+        return;
+      }
+      if (!_isCurrent(generation)) return;
+      ownerResult = IdentityReady(ownerResult.identity, generated: false);
+    }
     if (ownerResult is SyncUnavailableResult) {
       _syncAvailable = false;
       _loading = false;
@@ -287,47 +314,53 @@ AppRouterOwner buildRouter(
 ) {
   final boot = BootState();
 
-  // Plan 23 — watch for Owner-key drift on the sync surface. When the
-  // platform delivers a different keypair (restored on a new device,
-  // user wiped and re-installed elsewhere), the bridge wipes peers/rooms
-  // and we reset the boot state so the router redirects through /boot.
-  // Plan 24 — reset the mesh version watermark too, otherwise the
-  // first fetch against the new Owner-pk would use a stale `since`.
-  //
-  // Hook is captured here but only installed AFTER boot() succeeds —
-  // see BootState.load's `installWatcherAfterBoot` parameter. That
-  // ordering matters: the platform plugin emits an initial blob the
-  // moment we subscribe; we must have `_current` populated by boot()
-  // first, otherwise the bridge would see "different owner_pk" (vs
-  // null) and wipe the freshly-loaded peer set.
+  // The marker is written by OwnerIdentityBridge before this callback runs.
+  // Keep the cleanup and commit separate: currentOwnerPk stays inaccessible
+  // until pairing state, the live connection, and transcripts are all gone.
+  Future<void> cleanPendingOwnerTransition(bool Function() stillCurrent) async {
+    await storage.wipeAll();
+    if (!stillCurrent()) return;
+    await conn.disconnect();
+    if (!stillCurrent()) return;
+    await LocalBoxes.wipeTranscriptsForOwnerTransition();
+    if (!stillCurrent()) return;
+    meshSync.resetVersionWatermark();
+  }
+
   var watcherInstalled = false;
-  void installWatcher() {
+  late final void Function() installWatcher;
+  Future<void> loadBoot() => boot.load(
+    storage,
+    conn,
+    prefs,
+    ownerBridge,
+    meshSync,
+    installWatcherAfterBoot: installWatcher,
+    cleanPendingOwnerTransition: cleanPendingOwnerTransition,
+  );
+
+  installWatcher = () {
     if (watcherInstalled) return;
     ownerBridge.startWatching(
-      onReset: () async {
+      onTransition: (incoming) async {
         final resetGeneration = boot.invalidate();
         if (resetGeneration == null) return;
         try {
-          await conn.disconnect();
-          if (!boot.isCurrentGeneration(resetGeneration)) return;
-          await LocalBoxes.wipeTranscriptsForOwnerTransition();
-          if (!boot.isCurrentGeneration(resetGeneration)) return;
-          meshSync.resetVersionWatermark();
-          await boot.load(
-            storage,
-            conn,
-            prefs,
-            ownerBridge,
-            meshSync,
-            installWatcherAfterBoot: installWatcher,
+          await cleanPendingOwnerTransition(
+            () => boot.isCurrentGeneration(resetGeneration),
           );
+          if (!boot.isCurrentGeneration(resetGeneration)) return;
+          await ownerBridge.completePendingTransition(incoming);
+          if (!boot.isCurrentGeneration(resetGeneration)) return;
+          await loadBoot();
         } on Object {
           boot.failOwnerReset(resetGeneration);
+          rethrow;
         }
       },
     );
     watcherInstalled = true;
-  }
+  };
 
   void retryBoot() {
     final retryGeneration = boot.invalidate();
@@ -340,27 +373,11 @@ AppRouterOwner buildRouter(
         return;
       }
       if (!boot.isCurrentGeneration(retryGeneration)) return;
-      await boot.load(
-        storage,
-        conn,
-        prefs,
-        ownerBridge,
-        meshSync,
-        installWatcherAfterBoot: installWatcher,
-      );
+      await loadBoot();
     }());
   }
 
-  unawaited(
-    boot.load(
-      storage,
-      conn,
-      prefs,
-      ownerBridge,
-      meshSync,
-      installWatcherAfterBoot: installWatcher,
-    ),
-  );
+  unawaited(loadBoot());
 
   // Plan 24 — start foreground polling. The router doesn't have
   // direct access to AppLifecycleState; main.dart wires
