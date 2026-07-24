@@ -632,7 +632,7 @@ class SyncService extends Service {
       Object err,
       StackTrace _,
     ) {
-      debugPrint('[session-sync] request failed: $err');
+      debugPrint('[session-sync] request failed');
       _logDebug(SessionSyncEvent(ts: DateTime.now()));
     });
   }
