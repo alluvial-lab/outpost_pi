@@ -206,6 +206,15 @@ class BootState extends ChangeNotifier {
     );
   }
 
+  /// Project a latched transcript-wipe recovery failure during boot retry.
+  void failStorageRecovery(int generation) {
+    _fail(
+      generation,
+      BootFailureStage.storage,
+      'Could not restore local storage. Try again.',
+    );
+  }
+
   /// Return whether [generation] still owns boot continuation side effects.
   bool isCurrentGeneration(int generation) => _isCurrent(generation);
 
@@ -321,17 +330,25 @@ AppRouterOwner buildRouter(
   }
 
   void retryBoot() {
-    boot.invalidate();
-    unawaited(
-      boot.load(
+    final retryGeneration = boot.invalidate();
+    if (retryGeneration == null) return;
+    unawaited(() async {
+      try {
+        await LocalBoxes.convergePendingOwnerTransitionWipe();
+      } on Object {
+        boot.failStorageRecovery(retryGeneration);
+        return;
+      }
+      if (!boot.isCurrentGeneration(retryGeneration)) return;
+      await boot.load(
         storage,
         conn,
         prefs,
         ownerBridge,
         meshSync,
         installWatcherAfterBoot: installWatcher,
-      ),
-    );
+      );
+    }());
   }
 
   unawaited(

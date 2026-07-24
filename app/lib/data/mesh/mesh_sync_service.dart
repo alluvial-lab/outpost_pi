@@ -34,13 +34,11 @@ class MeshSyncService extends ChangeNotifier {
   /// to 304. Reset to 0 when the Owner key changes (sync drift).
   int _lastVersion = 0;
 
-  // Security invariant distinct from the conditional-fetch hint above: this
-  // is the greatest version ever verified for the current Owner and survives
-  // process restarts. It is loaded lazily because the Owner key may not exist
-  // during app bootstrap.
-  int _highWatermark = 0;
-  bool _watermarkLoaded = false;
-  String? _watermarkOwnerHash;
+  // Watermark state is owner-bound and only replaced through _watermarkTail.
+  // Network round-trips remain outside the queue so conflict rebase can pull
+  // without deadlocking the publication that initiated it.
+  _WatermarkContext? _watermarkContext;
+  Future<void> _watermarkTail = Future<void>.value();
 
   /// True while any direct or mutation-owned publication is in flight.
   bool _publishing = false;
@@ -69,28 +67,51 @@ class MeshSyncService extends ChangeNotifier {
   /// Return the verified relay version used as the next conditional-fetch watermark.
   int get lastVersion => _lastVersion;
 
-  /// Load the durable rollback floor for [ownerPk] once per Owner identity.
+  /// Load an immutable rollback-floor snapshot for one Owner operation.
   ///
-  /// Storage errors intentionally escape so the calling pull or publish path
-  /// can fail closed rather than accepting a blob against an unknown floor.
-  Future<void> _ensureWatermarkLoaded(Uint8List ownerPk) async {
+  /// The secure-storage read may overlap other reads, but committing its result
+  /// is serialized and revalidates Owner/lifecycle state. A late Owner-A read
+  /// therefore cannot replace Owner B's active context.
+  Future<_WatermarkContext?> _loadWatermarkContext(
+    Uint8List ownerPk, {
+    required bool Function() isCurrent,
+  }) async {
     final ownerPkHash = await MeshClient.ownerPkHash(ownerPk);
-    if (_watermarkLoaded && _watermarkOwnerHash == ownerPkHash) return;
-    final watermark = await _storage.loadMeshHighWatermark(ownerPkHash);
-    _highWatermark = watermark;
-    _watermarkOwnerHash = ownerPkHash;
-    _watermarkLoaded = true;
+    if (!isCurrent()) return null;
+    final loaded = await _storage.loadMeshHighWatermark(ownerPkHash);
+    if (!isCurrent()) return null;
+    final snapshot = _watermarkContext;
+    if (snapshot != null &&
+        snapshot.ownerPkHash == ownerPkHash &&
+        snapshot.highWatermark >= loaded) {
+      return snapshot;
+    }
+    return _serializeWatermark(() async {
+      if (!isCurrent()) return null;
+      final active = _watermarkContext;
+      final mark = active != null && active.ownerPkHash == ownerPkHash
+          ? (active.highWatermark > loaded ? active.highWatermark : loaded)
+          : loaded;
+      final context = _WatermarkContext(ownerPkHash, mark);
+      _watermarkContext = context;
+      return context;
+    });
   }
 
-  /// Persist a strictly higher verified relay version before exposing it.
-  Future<void> _advanceHighWatermark(int version) async {
-    if (version <= _highWatermark) return;
-    final ownerPkHash = _watermarkOwnerHash;
-    if (!_watermarkLoaded || ownerPkHash == null) {
-      throw StateError('mesh high-water mark was not loaded');
+  _WatermarkContext _latestContext(_WatermarkContext operationContext) {
+    final active = _watermarkContext;
+    if (active == null || active.ownerPkHash != operationContext.ownerPkHash) {
+      return operationContext;
     }
-    await _storage.saveMeshHighWatermark(ownerPkHash, version);
-    _highWatermark = version;
+    return active.highWatermark > operationContext.highWatermark
+        ? active
+        : operationContext;
+  }
+
+  Future<T> _serializeWatermark<T>(Future<T> Function() operation) {
+    final result = _watermarkTail.then((_) => operation());
+    _watermarkTail = result.then<void>((_) {}).catchError((Object _) {});
+    return result;
   }
 
   void _diagnoseRollbackRejection() {
@@ -130,20 +151,23 @@ class MeshSyncService extends ChangeNotifier {
         !_isPullCurrent(mutationRevision, allowPendingMutation, pk)) {
       return false;
     }
+    late final _WatermarkContext watermarkContext;
     try {
-      await _ensureWatermarkLoaded(pk);
+      final loaded = await _loadWatermarkContext(
+        pk,
+        isCurrent: () =>
+            _isPullCurrent(mutationRevision, allowPendingMutation, pk),
+      );
+      if (loaded == null) return false;
+      watermarkContext = loaded;
     } on Object {
       return false;
     }
     if (!_isPullCurrent(mutationRevision, allowPendingMutation, pk)) {
       return false;
     }
-    final hash = await MeshClient.ownerPkHash(pk);
-    if (!_isPullCurrent(mutationRevision, allowPendingMutation, pk)) {
-      return false;
-    }
     final result = await _client.fetch(
-      hash,
+      watermarkContext.ownerPkHash,
       since: _lastVersion > 0 ? _lastVersion : null,
     );
     if (!_isPullCurrent(mutationRevision, allowPendingMutation, pk)) {
@@ -158,6 +182,7 @@ class MeshSyncService extends ChangeNotifier {
         final applied = await _applyVerified(
           env,
           expectedOwnerPk: pk,
+          operationContext: watermarkContext,
           mutationRevision: mutationRevision,
           allowPendingMutation: allowPendingMutation,
         );
@@ -182,11 +207,14 @@ class MeshSyncService extends ChangeNotifier {
     int mutationRevision,
     bool allowPendingMutation,
     Uint8List expectedOwnerPk,
-  ) {
+  ) =>
+      mutationRevision == _mutationRevision &&
+      (allowPendingMutation || !_mutationPending) &&
+      _isOwnerCurrent(expectedOwnerPk);
+
+  bool _isOwnerCurrent(Uint8List expectedOwnerPk) {
     final currentOwnerPk = _ownerBridge.currentOwnerPk;
     return !_disposed &&
-        mutationRevision == _mutationRevision &&
-        (allowPendingMutation || !_mutationPending) &&
         currentOwnerPk != null &&
         _bytesEqual(currentOwnerPk, expectedOwnerPk);
   }
@@ -198,6 +226,7 @@ class MeshSyncService extends ChangeNotifier {
   Future<bool> _applyVerified(
     MeshEnvelope env, {
     required Uint8List expectedOwnerPk,
+    required _WatermarkContext operationContext,
     required int mutationRevision,
     required bool allowPendingMutation,
   }) async {
@@ -219,23 +248,40 @@ class MeshSyncService extends ChangeNotifier {
         )) {
       return false;
     }
-    if (blob.version < _highWatermark) {
-      _diagnoseRollbackRejection();
+    try {
+      return await _serializeWatermark(() async {
+        bool current() => _isPullCurrent(
+          mutationRevision,
+          allowPendingMutation,
+          expectedOwnerPk,
+        );
+        if (!current()) return false;
+        var context = _latestContext(operationContext);
+        if (blob.version < context.highWatermark) {
+          _diagnoseRollbackRejection();
+          return false;
+        }
+        if (blob.version > context.highWatermark) {
+          if (!current()) return false;
+          await _storage.saveMeshHighWatermark(
+            context.ownerPkHash,
+            blob.version,
+          );
+          if (!current()) return false;
+          context = _WatermarkContext(context.ownerPkHash, blob.version);
+          _watermarkContext = context;
+        }
+        if (!current()) return false;
+        return _replaceLocalCacheWith(
+          blob,
+          expectedOwnerPk: expectedOwnerPk,
+          mutationRevision: mutationRevision,
+          allowPendingMutation: allowPendingMutation,
+        );
+      });
+    } on Object {
       return false;
     }
-    if (blob.version > _highWatermark) {
-      try {
-        await _advanceHighWatermark(blob.version);
-      } on Object {
-        return false;
-      }
-    }
-    return _replaceLocalCacheWith(
-      blob,
-      expectedOwnerPk: expectedOwnerPk,
-      mutationRevision: mutationRevision,
-      allowPendingMutation: allowPendingMutation,
-    );
   }
 
   /// Overwrite local peers + nicknames with what the relay says.
@@ -384,12 +430,22 @@ class MeshSyncService extends ChangeNotifier {
     required bool refetchOnConflict,
     required bool allowEmpty,
   }) async {
+    late final _WatermarkContext watermarkContext;
     try {
-      await _ensureWatermarkLoaded(pk);
+      final loaded = await _loadWatermarkContext(
+        pk,
+        isCurrent: () => _isOwnerCurrent(pk),
+      );
+      if (loaded == null) {
+        return const MeshPublishFailure('owner changed');
+      }
+      watermarkContext = loaded;
     } on Object {
       return const MeshPublishFailure('watermark_unavailable');
     }
-    if (_disposed) return const MeshPublishFailure('disposed');
+    if (!_isOwnerCurrent(pk)) {
+      return const MeshPublishFailure('owner changed');
+    }
     final peers = await _storage.listPeers();
     if (_disposed) return const MeshPublishFailure('disposed');
     // Safety net (plan/24-fix-app-publish-race): never overwrite a
@@ -421,10 +477,20 @@ class MeshSyncService extends ChangeNotifier {
           ),
         )
         .toList(growable: false);
-    final nextVersion =
-        (_lastVersion > _highWatermark ? _lastVersion : _highWatermark) + 1;
+    final preparation = await _serializeWatermark(() async {
+      if (!_isOwnerCurrent(pk)) return null;
+      final context = _latestContext(watermarkContext);
+      _watermarkContext = context;
+      final floor = _lastVersion > context.highWatermark
+          ? _lastVersion
+          : context.highWatermark;
+      return _PublishPreparation(context, floor + 1);
+    });
+    if (preparation == null || !_isOwnerCurrent(pk)) {
+      return const MeshPublishFailure('owner changed');
+    }
     final blob = MeshBlob(
-      version: nextVersion,
+      version: preparation.nextVersion,
       issuedAt: DateTime.now().toUtc().millisecondsSinceEpoch,
       ownerPk: pk,
       members: members,
@@ -433,21 +499,38 @@ class MeshSyncService extends ChangeNotifier {
     if (_disposed) return const MeshPublishFailure('disposed');
     final envelope = await blob.signWith(keyPair);
     if (_disposed) return const MeshPublishFailure('disposed');
-    final hash = await MeshClient.ownerPkHash(pk);
-    if (_disposed) return const MeshPublishFailure('disposed');
-    final result = await _client.publish(hash, envelope);
-    if (_disposed) return const MeshPublishFailure('disposed');
+    if (!_isOwnerCurrent(pk)) {
+      return const MeshPublishFailure('owner changed');
+    }
+    final result = await _client.publish(
+      preparation.context.ownerPkHash,
+      envelope,
+    );
+    if (!_isOwnerCurrent(pk)) {
+      return const MeshPublishFailure('owner changed');
+    }
     switch (result) {
       case MeshPublishOk(version: final v, updatedAt: final u):
         try {
-          await _advanceHighWatermark(v);
+          final committed = await _serializeWatermark(() async {
+            if (!_isOwnerCurrent(pk)) return false;
+            var context = _latestContext(preparation.context);
+            if (v > context.highWatermark) {
+              await _storage.saveMeshHighWatermark(context.ownerPkHash, v);
+              if (!_isOwnerCurrent(pk)) return false;
+              context = _WatermarkContext(context.ownerPkHash, v);
+              _watermarkContext = context;
+            }
+            if (!_isOwnerCurrent(pk)) return false;
+            if (v > _lastVersion) _lastVersion = v;
+            lastUpdatedAt = u;
+            notifyListeners();
+            return true;
+          });
+          return committed ? result : const MeshPublishFailure('owner changed');
         } on Object {
           return const MeshPublishFailure('watermark_unavailable');
         }
-        _lastVersion = v;
-        lastUpdatedAt = u;
-        notifyListeners();
-        return result;
       case MeshPublishConflict():
         if (!refetchOnConflict) return result;
         final rebaseRevision = _mutationRevision;
@@ -654,6 +737,20 @@ class MeshSyncService extends ChangeNotifier {
     stopPolling();
     super.dispose();
   }
+}
+
+final class _WatermarkContext {
+  const _WatermarkContext(this.ownerPkHash, this.highWatermark);
+
+  final String ownerPkHash;
+  final int highWatermark;
+}
+
+final class _PublishPreparation {
+  const _PublishPreparation(this.context, this.nextVersion);
+
+  final _WatermarkContext context;
+  final int nextVersion;
 }
 
 bool _bytesEqual(Uint8List a, Uint8List b) {
