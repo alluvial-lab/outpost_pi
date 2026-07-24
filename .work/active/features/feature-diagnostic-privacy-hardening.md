@@ -1,7 +1,7 @@
 ---
 id: feature-diagnostic-privacy-hardening
 kind: feature
-stage: implementing
+stage: review
 tags: [security, cockpit, app]
 parent: null
 depends_on: []
@@ -318,3 +318,35 @@ the design maps onto them; only the mobile story's scope is widened
 - LSP server misconfiguration becomes less visible without stderr text —
   mitigated by exit code + line count; a local debug opt-in can be designed
   later if operators actually need it (not built speculatively).
+
+## Implementation (2026-07-23)
+
+All five child stories implemented by one feature worker (Terra/high), each
+verified and committed; feature advanced to `review`.
+
+- `gate-security-mobile-failure-detail-logged` (done, `1480ecc` + follow-up
+  `97d8b84`): `kAdmissibleFailureCodes`/`admitFailureCode` landed in
+  `debug_log.dart`; `MsgFailedEvent.detail`, `SessionSyncEvent.err`,
+  `_failPendingSend.debugDetail`, and `_shortReason` all deleted; registry
+  forbidden keys extended; wire→diagnostic canary proves user-visible
+  `UserMessageFailed.message` retained while console/ring stay content-free.
+  Orchestrator wave inspection caught the sibling `[session-sync] ... $err`
+  console leak in the same function — fixed content-free in the follow-up.
+- `gate-security-rpcunknown-retains-wire-discriminator` (done, `8798c41`):
+  4 arbitrary interpolations → fixed `'<unknown-*>'` categories; mapper canary.
+- `gate-security-lsp-stderr-logged` (done, `9e5302c`): counted content-free
+  stderr (first-occurrence line), stream-error category, exit code +
+  `stderrLines=N`; real-subprocess canary.
+- `gate-security-formatter-reload-diagnostics-path-disclosure` (done,
+  `46e2e1a`): `fileViewerReloadFailureDiagnostic` (class only, `@visibleForTesting`);
+  path-bearing-exception canary.
+- `gate-security-cockpit-temp-workspace-trace` (done, `e777716`): `_mark`,
+  call sites, and unused `dart:io` import deleted.
+
+### Integrated verification (orchestrator, post-wave)
+
+- `app`: `flutter analyze` clean; `flutter test` 816 passed, only the 6 known
+  pairing-endpoint e2e environment failures (unchanged baseline).
+- `cockpit`: `flutter analyze` clean (after `73a3fe8` fixed the pre-existing
+  `unnecessary_underscores` lint at `pi_rpc_process.dart:470` that had blocked
+  the worker's transition); `flutter test` 261/261 passed.
