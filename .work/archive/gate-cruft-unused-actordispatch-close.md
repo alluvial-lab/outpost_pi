@@ -5,10 +5,10 @@ stage: drafting
 tags: [cleanup]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.3.0
 gate_origin: cruft
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-24
 ---
 
 # Unused ActorDispatch::Close variant retained behind #[allow(dead_code)]
