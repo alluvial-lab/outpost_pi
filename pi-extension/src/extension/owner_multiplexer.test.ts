@@ -575,9 +575,10 @@ describe("OwnerMultiplexer", () => {
               durableSendHistory.push(durableSend);
               return reserved;
             },
-            persistRecvSeq: async (seq) => {
-              if (seq > durableRecv) durableRecv = seq;
-              return true;
+            compareAndAdvanceRecvSeq: async (seq) => {
+              if (seq <= durableRecv) return "replay";
+              durableRecv = seq;
+              return "accepted";
             },
             onDisconnect: () => input.onDisconnect(input.peerId),
             auditPath: join(auditDir, "audit.jsonl"),
@@ -685,7 +686,7 @@ describe("OwnerMultiplexer", () => {
               await persistence.promise;
               throw new Error("disk failed terminally");
             },
-            persistRecvSeq: async () => true,
+            compareAndAdvanceRecvSeq: async () => "accepted",
             onDisconnect: () => input.onDisconnect(input.peerId),
             auditPath: join(auditDir, "audit.jsonl"),
           },

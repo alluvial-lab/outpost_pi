@@ -71,14 +71,15 @@ vi.mock("../src/pairing/storage.js", async (importOriginal) => {
       storedPeer.send_seq = reserved.toString();
       return reserved;
     }),
-    updateRecvSeq: vi.fn().mockImplementation(async (
+    compareAndAdvanceRecvSeq: vi.fn().mockImplementation(async (
       _peer: string,
       _key: string,
       recvSeq: bigint,
     ) => {
-      if (!storedPeer) return false;
-      if (recvSeq > BigInt(storedPeer.recv_seq ?? "0")) storedPeer.recv_seq = recvSeq.toString();
-      return true;
+      if (!storedPeer) return "stale_generation";
+      if (recvSeq <= BigInt(storedPeer.recv_seq ?? "0")) return "replay";
+      storedPeer.recv_seq = recvSeq.toString();
+      return "accepted";
     }),
     removePeer: vi.fn(),
   };

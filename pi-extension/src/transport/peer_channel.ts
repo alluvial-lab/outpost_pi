@@ -7,6 +7,7 @@ import {
 } from "../protocol/relay_ingress.js";
 import type { RelayOuterEnvelope } from "../protocol/generated/protocol.generated.js";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
+import type { RecvSeqAdvanceResult } from "../pairing/storage.js";
 import type { RelayClient } from "./relay_client.js";
 import { subscribeRelayIngress } from "./relay_ingress_fanout.js";
 import { open, seal, type DirectionalKeys } from "./secure_channel.js";
@@ -103,7 +104,7 @@ export interface SecurePeerChannelOptions {
   keys: DirectionalKeys;
   recvSeq: bigint;
   reserveSendSeq(): Promise<bigint | null>;
-  persistRecvSeq(recvSeq: bigint): Promise<boolean>;
+  compareAndAdvanceRecvSeq(recvSeq: bigint): Promise<RecvSeqAdvanceResult>;
   onDisconnect(): void;
   auditPath?: string;
 }
@@ -115,6 +116,7 @@ type OwnerChannelAuditReason =
   | "ingress_overflow"
   | "outbound_overflow"
   | "sequence_persist_failed"
+  | "stale_generation"
   | "sequence_exhausted";
 
 interface OwnerChannelAuditEvent {
@@ -531,17 +533,32 @@ export class SecurePeerChannel implements PeerChannel {
       return;
     }
 
+    let advanceResult: RecvSeqAdvanceResult;
     try {
-      const persisted = await this.options.persistRecvSeq(opened.seq);
+      advanceResult = await this.options.compareAndAdvanceRecvSeq(opened.seq);
       if (this.detached) return;
-      if (!persisted) {
-        this.audit({ reason: "sequence_persist_failed", seq: opened.seq });
-        this.disconnect();
-        return;
-      }
     } catch {
       if (this.detached) return;
       this.audit({ reason: "sequence_persist_failed", seq: opened.seq });
+      this.disconnect();
+      return;
+    }
+
+    if (advanceResult === "replay") {
+      // The local high-water is only a fast path. Another room/process may
+      // already have advanced the durable value, so the locked comparison is
+      // authoritative and must reject without regressing this channel's state.
+      this.consecutiveOpenFailures += 1;
+      this.audit({
+        reason: "open_failed",
+        seq: opened.seq,
+        consecutiveFailures: this.consecutiveOpenFailures,
+      });
+      if (this.consecutiveOpenFailures >= MAX_OPEN_FAILURES) this.disconnect();
+      return;
+    }
+    if (advanceResult === "stale_generation") {
+      this.audit({ reason: "stale_generation", seq: opened.seq });
       this.disconnect();
       return;
     }
