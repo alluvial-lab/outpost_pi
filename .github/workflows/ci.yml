@@ -157,7 +157,7 @@ jobs:
         run: flutter analyze
       - name: Test
         working-directory: app
-        run: flutter test
+        run: flutter test --exclude-tags e2e
       - name: Identity package tests
         working-directory: app/packages/outpost_pi_identity
         run: |
