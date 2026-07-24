@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-typed-wire-decoders-anchors
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,10 @@ Replace the removed mirrored-decoder examples with the canonical decode-once ing
 ## Implementation notes
 
 Replaced the removed mirrored-decoder examples with `decodeRelayIngress` at `relay_ingress.ts:81-117` and the generated-validator-backed `decodeRelayClientPayload` at `relay_ingress.ts:143-149`.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): refreshed anchors and
+quoted snippets verified line-by-line against current sources
+(mesh_sync_service.dart:300, sdk_session_projection.ts:678/695/906,
+relay_transport.ts:567-577, relay_ingress.ts:81). Approved -> done.
