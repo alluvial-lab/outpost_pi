@@ -1,7 +1,7 @@
 ---
 id: gate-docs-rust-relay-skill-plaintext-model
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,10 @@ Roll the responsibility, anti-pattern, and review-checklist wording forward to d
 ## Implementation notes
 
 Updated relay agent guidance to distinguish opaque paired owner-channel `ct` from relay-readable cross-PC envelopes and visible metadata.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against the
+item's Required edit and the cited contradicting sources — claims match the
+shipped owner-channel E2E contract (sealed ct, metadata/cross-PC caveats
+retained, rolling-foundation prose). Approved -> done.
