@@ -63,7 +63,7 @@ dependencies:
 
   # Plan 29 — deep-link to the system app settings when the microphone /
   # speech permission was denied, so the user can re-enable it (#10).
-  app_settings: ^5.1.1
+  app_settings: ^8.0.3
 
   # Plan 30 — image attachments. image_picker uses the system camera +
   # PHPicker/Photo Picker (no gallery permission); flutter_image_compress
