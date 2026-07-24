@@ -62,13 +62,21 @@ export function generateX25519Keypair(): { pk: Uint8Array; sk: Uint8Array } {
   return { pk: publicKey, sk: secretKey };
 }
 
-/** Derive an X25519 shared secret, rejecting malformed or low-order public keys. */
+/**
+ * Derive an X25519 shared secret, rejecting malformed or low-order public keys.
+ *
+ * @throws Error when either key is not 32 bytes or the public key is low-order.
+ */
 export function x25519Shared(sk: Uint8Array, pk: Uint8Array): Uint8Array {
   if (sk.length !== 32 || pk.length !== 32) throw new Error("X25519 keys must be 32 bytes");
   return x25519.getSharedSecret(sk, pk);
 }
 
-/** Derive side-relative send and receive keys using the pairing token as HKDF salt. */
+/**
+ * Derive side-relative send and receive keys using the pairing token as HKDF salt.
+ *
+ * @throws Error when the X25519 shared secret is not 32 bytes.
+ */
 export function deriveDirectionalKeys(
   shared: Uint8Array,
   token: string,
@@ -88,7 +96,11 @@ export function pairTokenId(token: string): Uint8Array {
   return Uint8Array.from(createHash("sha256").update(utf8(token)).digest().subarray(0, 16));
 }
 
-/** Build the token-keyed pairing proof transcript from relay-visible fields. */
+/**
+ * Build the token-keyed pairing proof transcript from relay-visible fields.
+ *
+ * @throws Error when the token locator or any public key has an invalid fixed width.
+ */
 export function pairMacMessage(
   tokenId: Uint8Array,
   ownerEdPk: Uint8Array,
@@ -102,7 +114,11 @@ export function pairMacMessage(
   return concat(utf8(`${OWNER_CHANNEL_SUITE}\npair\n`), tokenId, ownerEdPk, appDhPk, piEdPk);
 }
 
-/** Compute the HMAC proving knowledge of the raw QR token without sending it. */
+/**
+ * Compute the HMAC proving knowledge of the raw QR token without sending it.
+ *
+ * @throws Error when the token locator or any public key has an invalid fixed width.
+ */
 export function computePairMac(
   token: string,
   tokenId: Uint8Array,
@@ -150,7 +166,12 @@ export function piTranscript(
   return concat(utf8(`${OWNER_CHANNEL_SUITE}\npi\n`), utf8(token), appDhPk, piDhPk, ownerEdPk);
 }
 
-/** Seal one JSON payload as `version || seqLE64 || nonce24 || ciphertext+tag`. */
+/**
+ * Seal one JSON payload as `version || seqLE64 || nonce24 || ciphertext+tag`.
+ *
+ * @throws Error when the key or nonce source does not produce the required width.
+ * @throws RangeError when the sequence does not fit in uint64.
+ */
 export function seal(key: Uint8Array, seq: bigint, json: string): Uint8Array {
   if (key.length !== 32) throw new Error("owner channel key must be 32 bytes");
   const seqBytes = seqLe64(seq);
