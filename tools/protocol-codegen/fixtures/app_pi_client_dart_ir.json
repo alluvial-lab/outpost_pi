@@ -595,6 +595,7 @@
         {
           "type": "agent_message",
           "className": "AgentMessage",
+          "discriminatorConstantName": "agentMessageWireType",
           "fields": [
             {
               "name": "sessionId",
