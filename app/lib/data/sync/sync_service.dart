@@ -978,7 +978,7 @@ class SyncService extends Service {
               AssistantMessageCommitted(
                 eventId: serverReplayEventId(
                   sessionId,
-                  'agent_message',
+                  agentMessageWireType,
                   stableKey,
                   ts,
                 ),
@@ -986,7 +986,7 @@ class SyncService extends Service {
                 ts: DateTime.fromMillisecondsSinceEpoch(ts),
                 messageId: serverReplayMessageId(
                   sessionId,
-                  'agent_message',
+                  agentMessageWireType,
                   stableKey,
                   ts,
                 ),

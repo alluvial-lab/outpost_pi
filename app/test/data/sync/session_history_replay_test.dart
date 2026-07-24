@@ -19,6 +19,13 @@ void main() {
     eos: true,
   );
 
+  test('agent message identity type mirrors generated protocol contract', () {
+    expect(
+      agentMessageWireType,
+      const AgentMessage(inReplyTo: '', text: '').type,
+    );
+  });
+
   group('sessionHistoryToTranscriptEvents', () {
     test('replays user input with image as authoritative confirmation', () {
       final events = sessionHistoryToTranscriptEvents(
