@@ -20,70 +20,61 @@ owned by trusted code paths.
 
 ## Examples
 
-### Example 1: outer envelope decode helper in owner multiplexer
+### Example 1: canonical relay ingress boundary decodes once
 
-**File:** `pi-extension/src/extension/owner_multiplexer.ts:105`
+**File:** `pi-extension/src/protocol/relay_ingress.ts:81-117`
 
 ```ts
-export function decodeOuterEnvelope(line: string): OwnerOuterEnvelope | null {
+export function decodeRelayIngress(
+  line: string,
+  limits: Partial<RelayIngressLimits> = {},
+): DecodedRelayIngress {
+  const effective = { ...DEFAULT_LIMITS, ...limits };
+  const rawBytes = Buffer.byteLength(line, "utf8");
+  if (rawBytes > effective.maxRawBytes) {
+    throw new RelayIngressDecodeError("too_large", rawBytes);
+  }
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(line) as unknown;
   } catch {
-    return null;
+    throw new RelayIngressDecodeError("invalid_message", rawBytes);
   }
-  if (!isRecord(parsed)) return null;
-  if (typeof parsed.peer !== "string" || parsed.peer.length === 0) return null;
-  if (typeof parsed.ct !== "string" || parsed.ct.length === 0) return null;
-  if (parsed.room !== undefined && typeof parsed.room !== "string") return null;
-  return {
-    peer: parsed.peer,
-    ct: parsed.ct,
-    ...(typeof parsed.room === "string" ? { room: parsed.room } : {}),
-  };
+  if (!isRecord(parsed)) {
+    throw new RelayIngressDecodeError("invalid_message", rawBytes);
+  }
+
+  if (typeof parsed.type === "string") {
+    if (isCrossPcFrame(parsed) && parsed.type === "pi_envelope_in") {
+      return { kind: "cross_pc", frame: parsed };
+    }
+    if (isRelayPostAuthControlFrame(parsed)) {
+      return { kind: "control", frame: parsed };
+    }
+    throw new RelayIngressDecodeError("unsupported_type", rawBytes);
+  }
+
+  if (!isRelayOuterEnvelopeCompat(parsed)) {
+    throw new RelayIngressDecodeError("invalid_message", rawBytes);
+  }
+  const outer = parsed;
+  const payload = decodeBase64Bounded(outer.ct, effective.maxDecodedPayloadBytes);
+  return { kind: "outer", frame: outer, payloadUtf8: payload.toString("utf8") };
 }
 ```
 
-### Example 2: mirrored decode helper in pairing coordinator
+### Example 2: generated-validator-backed client payload decoder
 
-**File:** `pi-extension/src/extension/command_surface/pairing_coordinator.ts:94`
+**File:** `pi-extension/src/protocol/relay_ingress.ts:143-149`
 
 ```ts
-function decodeOuterEnvelope(line: string): OuterEnvelope | null {
-  let parsed: unknown;
+export function decodeRelayClientPayload(payloadUtf8: string): ClientMessage | null {
   try {
-    parsed = JSON.parse(line) as unknown;
+    return decodeClient(payloadUtf8);
   } catch {
     return null;
   }
-  if (!parsed || typeof parsed !== "object") return null;
-  const record = parsed as Record<string, unknown>;
-  if (typeof record.peer !== "string" || record.peer.length === 0) return null;
-  if (typeof record.ct !== "string" || record.ct.length === 0) return null;
-  if (record.room !== undefined && typeof record.room !== "string") return null;
-  return {
-    peer: record.peer,
-    ct: record.ct,
-    ...(typeof record.room === "string" ? { room: record.room } : {}),
-  };
-}
-```
-
-### Example 3: centrally-typed protocol codec decoder for typed envelopes
-
-**File:** `pi-extension/src/protocol/codec.ts:23`
-
-```ts
-export function decodeServer(line: string): ServerMessage {
-  const obj = parseJsonLine(line);
-  const type = readType(obj);
-  if (!SERVER_MESSAGE_TYPES.includes(type as ServerMessage["type"])) {
-    throw new DecodeError("unsupported_type", `unknown type: ${type}`);
-  }
-  if (!isServerMessage(obj)) {
-    throw new DecodeError("invalid_message", `invalid server message: ${type}`);
-  }
-  return obj;
 }
 ```
 
