@@ -1,7 +1,7 @@
 ---
 id: feature-owner-message-e2e-authentication
 kind: feature
-stage: review
+stage: done
 tags: [security, app, pi-extension, relay, protocol]
 parent: null
 depends_on: []
@@ -403,6 +403,78 @@ plaintext in the pair→adopt window, or (b) an extension-side false positive
 from fanout subscription timing in `handlePairRequest`/`attach`. App adopt
 path inspected — `SecurePeerChannel` is adopted before any post-pair frame
 is sent, favoring (b). Review adjudicates materiality and the fix.
+
+## Review record (thorough, 9 passes, 2026-07-23)
+
+Effective `review_weight: thorough` (explicit caller override). Reviewer:
+fresh-context cross-model `openai-codex/gpt-5.6-sol` per pass (cross-class
+vs the umans orchestrator), each pass a fresh context. Receiver adjudication
+by the orchestrator against repository context.
+
+- **Pass 1** (3 blockers confirmed, 2 important accepted): (B1) raw bearer
+  token in `pair_request` let a malicious relay race a pairing under its own
+  Owner key → redesigned to `token_id` + `pair_mac` (HMAC keyed by the raw
+  token; raw token never crosses the wire; contract commit `9eab8f6`,
+  extension `7dd5834`, app+e2e `58f1459` incl. adversarial
+  relay-substitution e2e). (B2) extension exposed frames before send-seq was
+  durable → serialized persist-then-send. (B3) "5 failures → re-pair
+  required" unenforced → REDESIGNED to detach + automatic same-key
+  reattachment (strict quarantine rejected as one-shot relay DoS; docs
+  aligned `f59367f`). (I1) baseline `plaintext_post_key` false positive →
+  consumed-boolean propagated (hypothesis (b) confirmed). (I2) app accepted
+  low-order X25519 → all-zero shared-secret rejection + vectors.
+- **Pass 2** (2 blockers confirmed, 2 important): (B4) stale app channel
+  could overwrite re-paired keys → storage-owned mutation queue (`5306f2c`).
+  (B5) unbounded audit growth under hostile ingress → counted buckets,
+  capped queues, 256 KiB rotation (`bc236a1`). (I3) actionable
+  `token_expired`/`token_consumed` unreachable → restored for valid
+  proof-holders, `token_unknown` stays non-oracular. (I4) `relay/CLAUDE.md`
+  intro contradiction → fixed inline (`2e113a6`).
+- **Pass 3** (1 blocker confirmed, 1 parked, 1 important fixed): (B6) stale
+  FULL-RECORD `savePeer` writes could restore superseded keys / recreate
+  deleted peers → pairing-privileged key-replacement write, metadata writes
+  key-preserving (`c445313`). (I5) token-lookup timing distinction →
+  fixed-width constant-time locator + dummy verify (`7068183`). Parked:
+  relay dispatch FIFO backpressure (initially misjudged pre-existing).
+- **Pass 4** (2 blockers confirmed): (B7) the pass-3 FIFO park was WRONG —
+  blame showed `dispatchTail` was feature-introduced → unparked and fixed:
+  256-frame/8 MiB data cap, drop-new + coalesced audit (`377c55d`). (B8)
+  mesh conflict-restore could undo a concurrent revocation → revision
+  predicate moved inside the serialized storage op (`fc1750f`).
+- **Pass 5** (2 blockers confirmed, 1 important fixed): (B9) cap-exempt
+  control frames + stale reconnect generations re-opened unbounded
+  retention → per-class control caps + generation disposal. (B10)
+  SecurePeerChannel outbound persistence FIFO unbounded → 512-frame/16 MiB
+  cap, overflow → audit + detach (`32eac07`). (I6) stale libsodium guidance
+  in `app/CLAUDE.md` → `package:cryptography` canonical (`2331f2b`).
+- **Pass 6** (2 blockers confirmed, 1 parked): (B11) overflow-detach +
+  immediate reattach could duplicate/regress outbound seq → per-peer drain
+  gates + max-merged seq persistence (`c7bed0a`). (B12) app-side unbounded
+  `_sendTail`/`_MsgQueue` → symmetric caps + control bypass + close-signal
+  preemption (`c6f7619`). Parked: dead-generation single-frame retention
+  (`.work/backlog/backlog-relay-transport-stale-generation-active-dispatch.md`).
+- **Pass 7** (1 blocker confirmed): (B13) multi-process seq state incoherent
+  across room processes sharing `peers.json` (documented multi-room
+  topology; hot per-frame writes made a cold race hot; durable high-water
+  regression could reopen the replay window) → machine-wide lockfile +
+  reserve-before-seal + locked recv max-merge (`0cc2d2d`).
+- **Pass 8** (2 blockers confirmed): (B14) recv gated on LOCAL high-water →
+  relay replays dispatched in multi-room → authoritative locked
+  compare-and-advance (`accepted`/`replay`/`stale_generation`, key-generation
+  keyed). (B15) stale-lock reclaim ABA → owner-token release fencing +
+  exclusive reclaim marker + post-rename verification with restore
+  (`95603ad`).
+- **Pass 9** (verdict: ready): all pass-8 fixes confirmed with evidence; no
+  material current-cycle blockers. One compound hardening finding parked:
+  `.work/backlog/backlog-peers-lock-restore-collision-safety.md`.
+
+**Closure**: converged at pass 9 with zero receiver-confirmed material
+current-cycle blockers (thorough policy). Totals: 15 blockers fixed, 7
+important fixed, 3 important parked with rationale, across 6 implementation
+waves + 8 review-fix waves. Final integrated verification: extension
+tsc + 928 vitest + build green; app analyze + 814 unit tests green; protocol
+fixture/codegen checks green; docker e2e 14/14 + 20 redaction canaries green
+(orchestrator-run).
 
 **Integrated verification at feature roll-up**: pi-extension `tsc --noEmit`
 + 897 vitest + `tsc` build green; app `flutter analyze` + 799 unit tests
