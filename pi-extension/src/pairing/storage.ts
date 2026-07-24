@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile, chmod, unlink, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -314,12 +315,31 @@ const DEFAULT_PEER_LOCK_TIMEOUT_MS = 2_000;
 const DEFAULT_PEER_LOCK_RETRY_MS = 10;
 const DEFAULT_PEER_LOCK_STALE_MS = 30_000;
 
+/** Deterministic test seams around machine-lock ownership transitions. */
+export interface PeerStorageLockHooks {
+  afterReclaimClassified?(): Promise<void> | void;
+  afterReclaimMarkerCreated?(): Promise<void> | void;
+  afterReclaimRenamed?(): Promise<void> | void;
+  afterLockOwnerWritten?(): Promise<void> | void;
+  onReclaimCommitted?(): Promise<void> | void;
+}
+
 /** Tune one process-local peer store and its machine-wide mutation lock. */
 export interface PeerStorageOptions {
   directory?: string;
   lockTimeoutMs?: number;
   lockRetryMs?: number;
   lockStaleMs?: number;
+  /** Test-only hooks; production callers leave this absent. */
+  lockHooks?: PeerStorageLockHooks;
+}
+
+/** Authoritative result of one locked Owner-to-Pi replay comparison. */
+export type RecvSeqAdvanceResult = "accepted" | "replay" | "stale_generation";
+
+interface PeerLockOwner {
+  pid: number;
+  token: string;
 }
 
 /** Raised when another live process holds the peers.json mutation lock beyond the bounded wait. */
@@ -355,9 +375,11 @@ export class PeerStorage {
   private readonly peersPath: string;
   private readonly lockPath: string;
   private readonly lockOwnerPath: string;
+  private readonly lockReclaimPath: string;
   private readonly lockTimeoutMs: number;
   private readonly lockRetryMs: number;
   private readonly lockStaleMs: number;
+  private readonly lockHooks: PeerStorageLockHooks | undefined;
   private mutationTail: Promise<void> = Promise.resolve();
 
   constructor(options: PeerStorageOptions = {}) {
@@ -365,9 +387,11 @@ export class PeerStorage {
     this.peersPath = join(directory, "peers.json");
     this.lockPath = join(directory, "peers.lock");
     this.lockOwnerPath = join(this.lockPath, "owner.json");
+    this.lockReclaimPath = join(this.lockPath, "reclaim");
     this.lockTimeoutMs = options.lockTimeoutMs ?? DEFAULT_PEER_LOCK_TIMEOUT_MS;
     this.lockRetryMs = options.lockRetryMs ?? DEFAULT_PEER_LOCK_RETRY_MS;
     this.lockStaleMs = options.lockStaleMs ?? DEFAULT_PEER_LOCK_STALE_MS;
+    this.lockHooks = options.lockHooks;
   }
 
   /** Load a snapshot after every earlier operation accepted by this instance settles. */
@@ -407,27 +431,32 @@ export class PeerStorage {
   }
 
   /**
-   * Max-merge one accepted Owner-to-Pi sequence under the machine-wide lock.
+   * Compare and advance one Owner-to-Pi sequence under the machine-wide lock.
    *
-   * @returns false when the peer/key generation or persisted sequence is invalid
+   * The key-generation fence and replay comparison occur in the same critical
+   * section as the durable write, so this result is the dispatch authority.
+   *
+   * @returns `accepted` only when this call durably advanced the high-water
+   * @throws {RangeError} when the submitted sequence is outside uint64
    * @throws {PeerStorageLockTimeoutError} when a live holder outlasts the bounded lock wait
    */
-  updateRecvSeq(remoteEpk: string, expectedChannelKey: string, recvSeq: bigint): Promise<boolean> {
+  compareAndAdvanceRecvSeq(
+    remoteEpk: string,
+    expectedChannelKey: string,
+    recvSeq: bigint,
+  ): Promise<RecvSeqAdvanceResult> {
     return this.mutatePeers(async (peers) => {
       const peer = peers.find((candidate) => candidate.remote_epk === remoteEpk);
-      if (!peer || peer.channel_key !== expectedChannelKey) return false;
+      if (!peer || peer.channel_key !== expectedChannelKey) return "stale_generation";
       if (recvSeq < 0n || recvSeq > MAX_UINT64) {
         throw new RangeError("owner channel receive sequence must fit uint64");
       }
       const stored = parsePeerChannelSequence(peer.recv_seq);
-      if (stored === null) return false;
-      const next = recvSeq > stored ? recvSeq : stored;
-      const serialized = next.toString(10);
-      if (peer.recv_seq !== serialized) {
-        peer.recv_seq = serialized;
-        await this.writePeersFile(peers);
-      }
-      return true;
+      if (stored === null) throw new Error("persisted owner channel receive sequence is invalid");
+      if (recvSeq <= stored) return "replay";
+      peer.recv_seq = recvSeq.toString(10);
+      await this.writePeersFile(peers);
+      return "accepted";
     });
   }
 
@@ -454,13 +483,22 @@ export class PeerStorage {
   private async withFileLock<T>(operation: () => Promise<T>): Promise<T> {
     await _ensurePrivateStorageDir(dirname(this.peersPath));
     const deadline = Date.now() + this.lockTimeoutMs;
+    let ownerToken = "";
     while (true) {
       try {
         await mkdir(this.lockPath, { mode: 0o700 });
+        ownerToken = this.newLockToken();
         try {
-          await writeFile(this.lockOwnerPath, JSON.stringify({ pid: process.pid }), { mode: 0o600 });
+          await writeFile(
+            this.lockOwnerPath,
+            JSON.stringify({ pid: process.pid, token: ownerToken } satisfies PeerLockOwner),
+            { mode: 0o600 },
+          );
         } catch (error) {
-          await rm(this.lockPath, { recursive: true, force: true });
+          // A reclaimer may have moved this just-created directory before the
+          // owner write completed. Never path-remove a generation we cannot
+          // identify: a later stale pass can safely reclaim the orphan.
+          await this.removeLockIfOwned(ownerToken);
           throw error;
         }
         break;
@@ -474,12 +512,30 @@ export class PeerStorage {
     }
 
     try {
+      await this.lockHooks?.afterLockOwnerWritten?.();
       return await operation();
     } finally {
-      await rm(this.lockPath, { recursive: true, force: true });
+      // Release is generation-fenced. A delayed holder can never recursively
+      // remove a successor's directory after its own lock was moved/replaced.
+      await this.removeLockIfOwned(ownerToken);
     }
   }
 
+  /**
+   * Reclaim exactly the stale lock generation inspected by this contender.
+   *
+   * Two reclaimers cannot both advance: the fixed O_EXCL marker gives one the
+   * generation while the other backs off. A holder release before the owner
+   * re-read makes the inspected token disappear (or exposes a successor token),
+   * so this reclaimer removes only its marker and aborts. A new acquirer between
+   * that re-read and the path rename is the ABA case: moved owner+marker
+   * verification detects the successor and restores it immediately. The normal
+   * holder's release is independently token-fenced, so it cannot remove a
+   * successor after its directory was moved. Thus only the inspected dead
+   * generation is deleted. A process that dies between mkdir and writing
+   * `owner.json` has no token, so that one legacy/incomplete case is fenced by
+   * the directory's device+inode identity instead.
+   */
   private async reclaimStaleLock(): Promise<boolean> {
     let lockStat;
     try {
@@ -489,24 +545,97 @@ export class PeerStorage {
     }
     if (Date.now() - lockStat.mtimeMs < this.lockStaleMs) return false;
 
-    let holderPid = 0;
-    try {
-      const raw = await readFile(this.lockOwnerPath, "utf8");
-      const parsed = JSON.parse(raw) as { pid?: unknown };
-      if (typeof parsed.pid === "number") holderPid = parsed.pid;
-    } catch {
-      // An old lock whose owner record was never completed is reclaimable.
-    }
-    if (_pidIsAlive(holderPid)) return false;
+    const inspectedOwner = await this.readLockOwner(this.lockOwnerPath);
+    if (inspectedOwner && _pidIsAlive(inspectedOwner.pid)) return false;
+    await this.lockHooks?.afterReclaimClassified?.();
 
-    const quarantinePath = `${this.lockPath}.reclaim.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
+    const markerToken = this.newLockToken();
+    try {
+      await writeFile(this.lockReclaimPath, markerToken, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    } catch (error) {
+      if (_hasErrorCode(error, "ENOENT")) return true;
+      if (_hasErrorCode(error, "EEXIST")) return false;
+      throw error;
+    }
+    await this.lockHooks?.afterReclaimMarkerCreated?.();
+
+    const confirmedOwner = await this.readLockOwner(this.lockOwnerPath);
+    let confirmedStat;
+    try {
+      confirmedStat = await stat(this.lockPath);
+    } catch (error) {
+      await this.removeReclaimMarkerIfOwned(markerToken);
+      return _hasErrorCode(error, "ENOENT");
+    }
+    const sameInspectedGeneration = inspectedOwner
+      ? confirmedOwner?.token === inspectedOwner.token
+      : !confirmedOwner && confirmedStat.dev === lockStat.dev && confirmedStat.ino === lockStat.ino;
+    if (!sameInspectedGeneration || (confirmedOwner && _pidIsAlive(confirmedOwner.pid))) {
+      await this.removeReclaimMarkerIfOwned(markerToken);
+      return false;
+    }
+
+    const quarantinePath = `${this.lockPath}.quarantine.${markerToken.replaceAll(":", ".")}`;
     try {
       await rename(this.lockPath, quarantinePath);
     } catch (error) {
+      await this.removeReclaimMarkerIfOwned(markerToken);
       return _hasErrorCode(error, "ENOENT");
     }
+    await this.lockHooks?.afterReclaimRenamed?.();
+
+    const movedOwner = await this.readLockOwner(join(quarantinePath, "owner.json"));
+    const movedMarker = await this.readText(join(quarantinePath, "reclaim"));
+    const movedStat = await stat(quarantinePath);
+    const movedInspectedGeneration = inspectedOwner
+      ? movedOwner?.token === inspectedOwner.token
+      : !movedOwner && movedStat.dev === lockStat.dev && movedStat.ino === lockStat.ino;
+    if (!movedInspectedGeneration || movedMarker !== markerToken) {
+      // The path changed after our pre-rename owner check: this is a successor,
+      // not the dead generation we classified. Restore it; never delete it.
+      await rename(quarantinePath, this.lockPath);
+      return false;
+    }
+
     await rm(quarantinePath, { recursive: true, force: true });
+    await this.lockHooks?.onReclaimCommitted?.();
     return true;
+  }
+
+  private newLockToken(): string {
+    return `${process.pid}:${randomBytes(16).toString("hex")}`;
+  }
+
+  private async readLockOwner(path: string): Promise<PeerLockOwner | null> {
+    try {
+      const parsed = JSON.parse(await readFile(path, "utf8")) as { pid?: unknown; token?: unknown };
+      if (
+        typeof parsed.pid !== "number" ||
+        !Number.isSafeInteger(parsed.pid) ||
+        parsed.pid <= 0 ||
+        typeof parsed.token !== "string" ||
+        parsed.token.length === 0
+      ) return null;
+      return { pid: parsed.pid, token: parsed.token };
+    } catch {
+      return null;
+    }
+  }
+
+  private async readText(path: string): Promise<string | null> {
+    try { return await readFile(path, "utf8"); } catch { return null; }
+  }
+
+  private async removeLockIfOwned(ownerToken: string): Promise<void> {
+    if (!ownerToken) return;
+    const owner = await this.readLockOwner(this.lockOwnerPath);
+    if (owner?.token !== ownerToken) return;
+    await rm(this.lockPath, { recursive: true, force: true });
+  }
+
+  private async removeReclaimMarkerIfOwned(markerToken: string): Promise<void> {
+    if (await this.readText(this.lockReclaimPath) !== markerToken) return;
+    try { await unlink(this.lockReclaimPath); } catch { /* moved/released concurrently */ }
   }
 
   private async hardenPeersFilePermissions(): Promise<void> {
@@ -565,16 +694,17 @@ export function reserveSendSeq(remoteEpk: string, expectedChannelKey: string): P
 }
 
 /**
- * Max-merge one Owner-to-Pi receive high-water through the machine-wide roster lock.
+ * Atomically compare and advance one Owner-to-Pi replay high-water.
  *
+ * @returns the authoritative dispatch decision for the submitted frame
  * @throws when lock acquisition or durable persistence fails
  */
-export function updateRecvSeq(
+export function compareAndAdvanceRecvSeq(
   remoteEpk: string,
   expectedChannelKey: string,
   recvSeq: bigint,
-): Promise<boolean> {
-  return defaultPeerStorage.updateRecvSeq(remoteEpk, expectedChannelKey, recvSeq);
+): Promise<RecvSeqAdvanceResult> {
+  return defaultPeerStorage.compareAndAdvanceRecvSeq(remoteEpk, expectedChannelKey, recvSeq);
 }
 
 /**
