@@ -51,9 +51,10 @@ A developer who runs Pi as their coding agent and wants to:
 
 - **Not a multi-harness product.** Pi-only. No Claude Code, OpenCode, Goose,
   or Aider targets.
-- **Not E2E encrypted today.** Transport is TLS; the relay sees plaintext
-  envelope contents. Self-hosting is the mitigation; E2E is roadmap-additive.
-  No product copy claims E2E.
+- **Owner payloads are E2E-protected; relay-visible metadata is not.**
+  Post-pairing app↔Pi owner payloads use the protected owner channel. The relay
+  still sees routing metadata and cross-PC Pi↔Pi envelope contents; self-hosting
+  remains the mitigation for that visibility.
 - **Not a hosted/SaaS.** The relay is open source and self-hosted. There is no
   account server. Pairing is QR + Ed25519, peer-to-peer between an owner's
   devices.
@@ -80,9 +81,9 @@ migration.
 
 ## Anti-vision (failure modes)
 
-- The operator-controlled local relay can read message contents and metadata.
-  Outpost-Pi is local-relay-only; users who need confidentiality from the relay
-  must wait for E2E, and no product copy claims E2E.
+- The operator-controlled relay can read routing metadata and cross-PC Pi↔Pi
+  envelope contents, but not post-pairing app↔Pi owner payloads. Users who need
+  to limit relay exposure can self-host the relay.
 - A regression that lets session B's chat appear in session A's view.
   Session-scoped pushes carry a canonical, required `session_id`, and the app
   rejects missing or foreign IDs before mutating state; any path that bypasses
