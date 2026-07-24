@@ -126,8 +126,8 @@ and the pi-extension is registered as a **local-path** extension (not npm).
   enabled: `OUTPOSTPI_RELAY_LOG_DIR=/data/logs` (daily-rotated `relay.log`
   in the volume) + `RUST_LOG=info,relay=debug` (lifts the cross-PC
   `pi_envelope` forward-path `debug!` carrying `env_id_tail` — the
-  cross-side correlation key that joins the phone's `msg-send id` and the
-  extension's `app user_message id`).
+  correlation key for cross-PC relay envelopes only; app↔Pi owner-message IDs
+  are inside sealed `outer.ct` and cannot be joined by the relay).
 - **pi-extension** — registered in `~/.pi/agent/settings.json` as the local path
   `/home/agent/projects/outpost_pi/pi-extension`, loading `dist/index.js` (the
   `package.json` `main`). The local path is authoritative. `dist/` is gitignored
@@ -140,8 +140,8 @@ and the pi-extension is registered as a **local-path** extension (not npm).
   process's environment to enable a bounded ring + file at
   `~/.pi/remote/debug/delivery.log` capturing the `messageApi`/`commandCtx`
   lifecycle, `wakeAgent` outcomes, the replay queue, and `session_start`/
-  `session_shutdown` reasons — all keyed by the message `id` that joins the
-  phone's `msg-send` and the relay's `env_id_tail`. Default off (no-op). Needs
+  `session_shutdown` reasons — keyed by the local owner message `id` for app↔extension tracing; sealed
+  owner frames are not relay-correlated by `env_id_tail`. Default off (no-op). Needs
   a full pi restart to take effect (not `/reload`).
 - **app** — Flutter mobile; sideloaded via `adb install <apk>` to a phone on a
   workstation (the VM has no phone attached).
