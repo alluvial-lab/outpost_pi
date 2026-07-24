@@ -5,7 +5,6 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/secure_channel.dart';
@@ -15,6 +14,7 @@ import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/codec.dart';
 // ControlInbound + IControlLink come from these.
 import 'package:app/protocol/protocol.dart';
+import 'package:flutter/foundation.dart';
 
 /// Describe a peer-channel failure safe to show or log without raw frame data.
 class PeerChannelError implements Exception {
@@ -154,12 +154,20 @@ class PlainPeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
   }
 }
 
+/// Maximum protected outbound frames retained while persistence is pending.
+const int maxPendingOwnerOutboundFrames = 512;
+
+/// Maximum serialized outbound bytes retained while persistence is pending.
+const int maxPendingOwnerOutboundBytes = 16 * 1024 * 1024;
+
 /// Protect established owner traffic while preserving control/room capabilities.
 ///
 /// Sequence high-water marks are written before outbound transport use and
-/// before inbound delivery. Invalid frames are dropped and audited; five
-/// consecutive failures close the transport so recovery cannot downgrade to
-/// plaintext.
+/// before inbound delivery. Outbound persistence work is admitted against a
+/// bounded frame/byte budget; overflow closes the channel so reconnect and
+/// session sync recover instead of silently dropping a streaming suffix.
+/// Invalid inbound frames are dropped and audited; five consecutive failures
+/// close the transport so recovery cannot downgrade to plaintext.
 class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
   SecurePeerChannel({
     required PeerTransport transport,
@@ -167,21 +175,33 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
     required PeerRecord peer,
     DebugLog? debugLog,
     int failureThreshold = 5,
-  }) : _transport = transport,
+    int maxPendingOutboundFrames = maxPendingOwnerOutboundFrames,
+    int maxPendingOutboundBytes = maxPendingOwnerOutboundBytes,
+  }) : assert(maxPendingOutboundFrames > 0),
+       assert(maxPendingOutboundBytes > 0),
+       _transport = transport,
        _storage = storage,
        _remoteEpk = peer.remoteEpk,
        _debugLog = debugLog,
        _failureThreshold = failureThreshold,
+       _maxPendingOutboundFrames = maxPendingOutboundFrames,
+       _maxPendingOutboundBytes = maxPendingOutboundBytes,
        _sendKey = _decodeKey(peer.channel?.sendKey),
        _receiveKey = _decodeKey(peer.channel?.receiveKey),
        _sendSequence = _requireChannel(peer).sendSequence,
-       _receiveSequence = _requireChannel(peer).receiveSequence;
+       _receiveSequence = _requireChannel(peer).receiveSequence {
+    if (transport case PeerTransportCloseSignal signal) {
+      unawaited(signal.transportClosed.then((_) => _onTransportClosed()));
+    }
+  }
 
   final PeerTransport _transport;
   final PairingStorage _storage;
   final String _remoteEpk;
   final DebugLog? _debugLog;
   final int _failureThreshold;
+  final int _maxPendingOutboundFrames;
+  final int _maxPendingOutboundBytes;
   final Uint8List _sendKey;
   final Uint8List _receiveKey;
   final _controller = StreamController<ServerMessage>.broadcast();
@@ -189,10 +209,21 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
   int _sendSequence;
   int _receiveSequence;
   int _consecutiveFailures = 0;
+  int _pendingOutboundFrames = 0;
+  int _pendingOutboundBytes = 0;
   bool _started = false;
   bool _closed = false;
   Future<void> _sendTail = Future<void>.value();
   Future<void> _stateTail = Future<void>.value();
+
+  @visibleForTesting
+  int get debugPendingOutboundFrames => _pendingOutboundFrames;
+
+  @visibleForTesting
+  int get debugPendingOutboundBytes => _pendingOutboundBytes;
+
+  @visibleForTesting
+  Future<void> debugWhenOutboundIdle() => _sendTail;
 
   @override
   Stream<ControlInbound> get controlFrames {
@@ -231,12 +262,37 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
     if (_closed) {
       return Future<void>.error(const PeerChannelError('channel is closed'));
     }
-    final operation = _sendTail.then((_) => _sendOne(msg));
-    _sendTail = operation.catchError((Object _) {});
+    final json = encodeClient(msg).trimRight();
+    final jsonBytes = utf8.encode(json).length;
+    if (_pendingOutboundFrames >= _maxPendingOutboundFrames ||
+        jsonBytes > _maxPendingOutboundBytes - _pendingOutboundBytes) {
+      _debugLog?.log(
+        PeerFrameEvent(
+          ts: DateTime.now(),
+          kind: 'outbound_overflow',
+          bytes: jsonBytes,
+        ),
+      );
+      return _closeForOutboundOverflow();
+    }
+
+    // Account before allocating the continuation that retains [json].
+    _pendingOutboundFrames++;
+    _pendingOutboundBytes += jsonBytes;
+    final operation = _sendTail.then((_) => _sendOne(json));
+    _sendTail = operation.catchError((Object _) {}).whenComplete(() {
+      _pendingOutboundFrames--;
+      _pendingOutboundBytes -= jsonBytes;
+    });
     return operation;
   }
 
-  Future<void> _sendOne(ClientMessage msg) async {
+  Future<void> _closeForOutboundOverflow() async {
+    await close();
+    throw const PeerChannelError('owner-channel outbound queue overflow');
+  }
+
+  Future<void> _sendOne(String json) async {
     if (_closed) throw const PeerChannelError('channel is closed');
     if (_sendSequence == 0x7fffffffffffffff) {
       await close();
@@ -246,7 +302,7 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
     final frame = await sealOwnerChannelFrame(
       key: _sendKey,
       sequence: next,
-      json: encodeClient(msg).trimRight(),
+      json: json,
     );
     _sendSequence = next;
     // Reserve the sequence durably before the byte transport can expose it.
@@ -257,6 +313,7 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
       await close();
       rethrow;
     }
+    if (_closed) throw const PeerChannelError('channel is closed');
     await _transport.send(frame);
   }
 
@@ -307,6 +364,7 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
     // Persistence failure is a local security-boundary failure, not an
     // attacker frame. Let it escape to the receive loop, which detaches.
     await _persistState();
+    if (_closed) return;
     _consecutiveFailures = 0;
     if (!_controller.isClosed) _controller.add(message);
   }
@@ -336,6 +394,18 @@ class SecurePeerChannel implements IChannel, IControlLink, IActiveRoomTarget {
     );
     _stateTail = operation.catchError((Object _) {});
     return operation;
+  }
+
+  Future<void> _onTransportClosed() async {
+    if (_closed) return;
+    _closed = true;
+    if (!_controller.isClosed) await _controller.close();
+    try {
+      await _transport.close();
+    } on Object {
+      // The close signal already established transport loss. Cleanup is
+      // best-effort and must not hide the channel-facing close event.
+    }
   }
 
   @override
