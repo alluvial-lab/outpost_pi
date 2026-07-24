@@ -69,7 +69,7 @@ dependencies:
   # PHPicker/Photo Picker (no gallery permission); flutter_image_compress
   # shrinks to JPEG (≤1568px / q80) on-device before it goes inline.
   image_picker: ^1.1.0
-  flutter_image_compress: ^2.3.0
+  flutter_image_compress: ^2.5.0
 
   # Plan 32b — render the agent's Markdown replies (GFM + code blocks),
   # optimized for LLM output. `url_launcher` opens links tapped in the
