@@ -239,19 +239,20 @@ vi.mock("./pairing/storage.js", async (importOriginal) => {
       peer.send_seq = reserved.toString();
       return reserved;
     }),
-    updateRecvSeq: vi.fn().mockImplementation(async (
+    compareAndAdvanceRecvSeq: vi.fn().mockImplementation(async (
       epk: string,
       expectedChannelKey: string,
       recvSeq: bigint,
     ) => {
       const alias = displayPeerId(epk);
       const peer = _knownPeers.find((candidate) => candidate.remote_epk === alias);
-      if (!peer) return false;
+      if (!peer) return "stale_generation";
       const currentChannelKey = peer.channel_key ?? ensureLegacyTestChannel(alias).channelKey;
-      if (currentChannelKey !== expectedChannelKey) return false;
+      if (currentChannelKey !== expectedChannelKey) return "stale_generation";
       peer.channel_key = currentChannelKey;
-      if (recvSeq > BigInt(peer.recv_seq ?? "0")) peer.recv_seq = recvSeq.toString();
-      return true;
+      if (recvSeq <= BigInt(peer.recv_seq ?? "0")) return "replay";
+      peer.recv_seq = recvSeq.toString();
+      return "accepted";
     }),
     removePeer: vi.fn().mockImplementation(async (epk: string) => {
       const alias = displayPeerId(epk);
