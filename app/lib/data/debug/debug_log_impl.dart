@@ -134,8 +134,14 @@ class DebugLogImpl implements DebugLog {
       for (final line in lines) {
         if (line.isEmpty) continue;
         // Skip unparseable lines (corrupt tail from a crash) — never throw.
+        // Skip legacy lines carrying forbidden keys (written before a key
+        // became forbidden): drop at the egress boundary, never scrub.
         try {
-          jsonDecode(line);
+          final decoded = jsonDecode(line);
+          if (decoded is Map &&
+              decoded.keys.any(kForbiddenDiagnosticKeys.contains)) {
+            continue;
+          }
         } catch (_) {
           continue;
         }
@@ -184,7 +190,11 @@ class DebugLogImpl implements DebugLog {
       await for (final line in file.openRead().transform(utf8.decoder).transform(const LineSplitter())) {
         if (line.isEmpty) continue;
         try {
-          jsonDecode(line);
+          final decoded = jsonDecode(line);
+          if (decoded is Map &&
+              decoded.keys.any(kForbiddenDiagnosticKeys.contains)) {
+            continue;
+          }
         } catch (_) {
           continue;
         }

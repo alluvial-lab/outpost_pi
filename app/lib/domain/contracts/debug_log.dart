@@ -32,6 +32,19 @@ String admitFailureCode(String wireCode) =>
     ? wireCode
     : kUnrecognizedFailureCode;
 
+/// Payload-like keys that must never appear in a persisted or exported
+/// diagnostic line. The registry test deny-list and the file-backed log's
+/// load/export filters both consume this single set: legacy lines written
+/// before a key became forbidden are dropped at every egress boundary rather
+/// than scrubbed (content-free by construction).
+const Set<String> kForbiddenDiagnosticKeys = {
+  'body', 'image', 'data', 'args', 'result', 'prompt', 'message', 'ct',
+  'detail', 'err',
+  // payload-like aliases:
+  'content', 'payload', 'preview', 'summary', 'fullText', 'bodyText', 'raw',
+  'toolOutput', 'imageBytes',
+};
+
 /// Per-variant tag for a [DebugEvent]. The enum IS the capture surface — a
 /// new capture site adds a variant + a tag, not a free-form string.
 ///
@@ -180,13 +193,16 @@ final class MsgEchoEvent extends DebugEvent {
   };
 }
 
-/// Send-failure surfacing (20s no-echo timeout or cancel).
+/// Send-failure surfacing (20s no-echo timeout or cancel). [code] is
+/// normalized through [admitFailureCode] at construction so the capture
+/// surface is closed-code by construction, not by caller discipline.
 final class MsgFailedEvent extends DebugEvent {
   final String id;
   final String? code;
 
-  const MsgFailedEvent({required super.ts, required this.id, this.code})
-    : super(tag: DebugTag.msgFailed);
+  MsgFailedEvent({required super.ts, required this.id, String? code})
+    : code = code == null ? null : admitFailureCode(code),
+      super(tag: DebugTag.msgFailed);
 
   @override
   Map<String, Object?> toJson() => {

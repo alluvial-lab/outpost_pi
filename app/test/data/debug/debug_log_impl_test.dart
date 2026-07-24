@@ -120,6 +120,31 @@ void main() {
   });
 
   test(
+    'legacy lines carrying forbidden keys are dropped at load and export',
+    () async {
+      const secret = '/Users/operator/workspace token=secret-7F3A';
+      final path = '${tempDir.path}/outpost_pi_debug.jsonl';
+      // Pre-upgrade rows: MsgFailedEvent.detail and SessionSyncEvent.err once
+      // carried arbitrary capped text. They must never egress again.
+      await File(path).writeAsString(
+        '{"tag":"msgFailed","ts":"2026-07-20T00:00:00.000Z",'
+        '"id":"m-1","code":"internal_error","detail":"$secret"}\n'
+        '{"tag":"sessionSync","ts":"2026-07-20T00:00:01.000Z",'
+        '"err":"$secret"}\n'
+        '{"tag":"msgEcho","ts":"2026-07-20T00:00:02.000Z","id":"ok-1"}\n',
+      );
+      final log = newLog();
+      final exported = await log.export();
+      expect(exported, isNotNull);
+      expect(exported, contains('ok-1'));
+      expect(exported, isNot(contains(secret)));
+      expect(exported, isNot(contains('"detail"')));
+      expect(exported, isNot(contains('"err"')));
+      log.dispose();
+    },
+  );
+
+  test(
     'cap enforced on append — oldest lines dropped, no unbounded growth',
     () async {
       final log = DebugLogImpl.withMaxBytesForTest(
