@@ -387,7 +387,9 @@ void main() {
       final bridge = OwnerIdentityBridge(ownerStore, storage);
       await bridge.boot();
       final reset = Completer<void>();
-      bridge.startWatching(onReset: () async {
+      bridge.startWatching(onTransition: (incoming) async {
+        await storage.wipeAll();
+        await bridge.completePendingTransition(incoming);
         if (!reset.isCompleted) reset.complete();
       });
       final blobB = MeshBlob(
