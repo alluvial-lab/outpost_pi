@@ -83,5 +83,7 @@ BINDING CONSISTENCY — release v0.3.0 (epic_cohesion: phased) — 0 CONFLICTs; 
 ## Gate runs
 
 - **gate-cruft** (2026-07-24) — 3 findings (1 high, 2 medium, 0 low). High → `gate-cruft-generated-validator-unused-number-helper` (implementing, bound). Medium ×2 parked to backlog per gate_finding_routing (`gate-cruft-plain-peer-channel-unused-disconnect-callback`, `gate-cruft-qr-terminal-rotation-dead-path`).
+- **gate-docs** (2026-07-24) — 14 findings (all high-confidence, all release-relevant): 5 foundation-doc assertions (VISION/DECISIONS/AGENTS pre-E2E trust model + overstated same-Owner multi-device + env_id_tail correlation), 4 README staleness (root/relay/pi-extension/site), 1 repo-skill (rust-relay), 4 pattern-skill anchor drift (typed-wire-decoders, generation-fenced, subscription-contract, stale-capability). All 14 bound at stage: implementing — the E2E ship invalidated the pre-E2E trust-model prose repo-wide.
+- **gate-tests** (2026-07-24) — 6 findings (2 critical, 4 high). 5 release-relevant bound at implementing: `gate-tests-ci-lane-runs-env-dependent-e2e` (critical), `gate-tests-lost-pair-ok-repair-recovery-e2e`, `gate-tests-five-failure-detach-reattach-e2e`, `gate-tests-orphan-message-projection-wipe`, `gate-tests-session-replacement-real-rotation-e2e` (high). 1 ambient critical (pre-bundle tautological debug-log assertions) parked to backlog unbound: `gate-tests-debug-log-literal-success-assertions`.
 
 <pending>
