@@ -434,13 +434,12 @@ class SyncService extends Service {
               : [WireImage(data: image.data, mime: image.mime)],
         ),
       );
-    } catch (err) {
+    } catch (_) {
       await _failPendingSend(
         id,
         code: 'send_error',
         message:
             'Message could not be sent to the Pi. Check the connection and try again.',
-        debugDetail: err,
         expectedRef: ref,
         expectedGeneration: generation,
       );
@@ -473,7 +472,6 @@ class SyncService extends Service {
         code: 'send_timeout',
         message:
             'Message was not confirmed by the Pi. It may not have been delivered.',
-        debugDetail: 'no echo in ${pendingSendTimeout.inSeconds}s',
         expectedRef: expectedRef,
       ),
       expectedRef: expectedRef,
@@ -502,8 +500,6 @@ class SyncService extends Service {
         code: 'send_timeout',
         message:
             'Message was not confirmed by the Pi. It may not have been delivered.',
-        debugDetail:
-            'no echo after delivery_pending in ${deliveryPendingEchoTimeout.inSeconds}s',
         expectedRef: expectedRef,
       ),
       expectedRef: expectedRef,
@@ -515,7 +511,6 @@ class SyncService extends Service {
     String id, {
     required String code,
     required String message,
-    Object? debugDetail,
     RemoteSessionRef? expectedRef,
     int? expectedGeneration,
   }) async {
@@ -544,16 +539,10 @@ class SyncService extends Service {
         }
         if (_streaming?.inReplyTo == id) _emitStreaming(null);
         if (turnProjection.cancelTargetId == id) _setTurnIdle();
-        debugPrint(
-          '[msg-failed] id=$id code=$code detail=${debugDetail ?? message}',
-        );
+        final diagnosticCode = admitFailureCode(code);
+        debugPrint('[msg-failed] id=$id code=$diagnosticCode');
         _logDebug(
-          MsgFailedEvent(
-            ts: DateTime.now(),
-            id: id,
-            code: code,
-            detail: _shortReason(debugDetail ?? message),
-          ),
+          MsgFailedEvent(ts: DateTime.now(), id: id, code: diagnosticCode),
         );
       }
     }
@@ -644,7 +633,7 @@ class SyncService extends Service {
       StackTrace _,
     ) {
       debugPrint('[session-sync] request failed: $err');
-      _logDebug(SessionSyncEvent(ts: DateTime.now(), err: _shortReason(err)));
+      _logDebug(SessionSyncEvent(ts: DateTime.now()));
     });
   }
 
@@ -1357,11 +1346,6 @@ class SyncService extends Service {
 
   static String _eventIdTail(String eventId) =>
       eventId.length <= 12 ? eventId : eventId.substring(eventId.length - 12);
-
-  static String _shortReason(Object? raw) {
-    final text = raw == null ? '' : raw.toString();
-    return text.length <= 120 ? text : '${text.substring(0, 120)}…';
-  }
 
   void _logDebug(DebugEvent event) => _debugLog?.log(event);
 

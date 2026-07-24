@@ -1,7 +1,7 @@
 ---
 id: gate-security-mobile-failure-detail-logged
 kind: story
-stage: implementing
+stage: done
 tags: [app, security]
 parent: feature-diagnostic-privacy-hardening
 depends_on: []
@@ -51,3 +51,16 @@ criteria live in the parent feature body.
 
 ## Audit execution
 The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.
+
+## Implementation notes
+
+- Tightened `debug_log.dart`: closed-code admission projects unknown wire codes
+  to `unrecognized`; removed `MsgFailedEvent.detail` and `SessionSyncEvent.err`.
+- Removed `_failPendingSend`'s arbitrary `debugDetail` channel and
+  `_shortReason`; user-visible `UserMessageFailed.message` remains unchanged.
+- Updated the registry and capture-routing suites, and added a wire-to-
+  diagnostic canary proving secret-shaped server error text stays in the
+  transcript but not console/ring-log diagnostics.
+- Verification: `flutter analyze` passed. `flutter test` ran 816 passing tests;
+  the known six pairing-endpoint-dependent e2e tests failed because that
+  environment is unavailable (no regression attributed to this checkpoint).
