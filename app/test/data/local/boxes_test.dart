@@ -178,5 +178,24 @@ void main() {
         expect(await Hive.boxExists(orphanName), isFalse);
       },
     );
+
+    test(
+      'deletes an orphan message projection absent from the sessions index',
+      () async {
+        const orphan = RemoteSessionRef(
+          peerEpk: 'orphan-peer',
+          roomId: 'orphan-room',
+          sessionId: 'orphan-session',
+        );
+        final orphanName = LocalBoxes.msgsBoxName(orphan);
+        await (await boxes.msgsBox(orphan)).put(0, {'text': 'old owner'});
+        expect(boxes.sessionsIndexBox(), isEmpty);
+
+        await LocalBoxes.wipeTranscriptsForOwnerTransition();
+
+        expect(await Hive.boxExists(orphanName), isFalse);
+        expect(await boxes.msgsBox(orphan), isEmpty);
+      },
+    );
   });
 }
