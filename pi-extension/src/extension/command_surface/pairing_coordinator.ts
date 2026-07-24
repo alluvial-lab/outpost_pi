@@ -1,3 +1,4 @@
+import { chmod, writeFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Ed25519Keypair } from "../../pairing/crypto.js";
 import { buildQRUri, clampPairTtlMs, qrSession, renderQRAscii, TOKEN_TTL_MS } from "../../pairing/qr.js";
@@ -128,9 +129,10 @@ export class PairingCoordinator {
     await this.deps.startRelay(ctx);
   }
 
-  /** Show a QR pairing token in a TUI-only component without adding it to model context. */
+  /** Show a QR pairing token without adding it to model context. */
   async showPairQr(ctx: PairingUiContext, args = ""): Promise<void> {
-    if (ctx.mode !== "tui") {
+    const pairCodeFile = process.env["OUTPOST_PI_PAIR_CODE_FILE"];
+    if (ctx.mode !== "tui" && !pairCodeFile) {
       ctx.ui.notify("[outpost-pi] Pairing QR display requires an interactive TUI session.", "warning");
       return;
     }
@@ -170,6 +172,21 @@ export class PairingCoordinator {
     const { token, expiresAt } = qrSession.issueToken(ttlMs);
     const roomId = this.deps.roomId() ?? roomIdFor(cwd, sessionName);
     const qrUri = buildQRUri(token, edKp.publicKey, sessionName, roomId);
+
+    if (pairCodeFile) {
+      // E2E-only headless observation seam. The production-generated bearer
+      // token stays out of SDK messages/model context and is never logged.
+      await writeFile(pairCodeFile, JSON.stringify({
+        uri: qrUri,
+        token,
+        expiresAt,
+        roomId,
+        name: sessionName,
+      }), { encoding: "utf8", mode: 0o600 });
+      await chmod(pairCodeFile, 0o600);
+    }
+
+    if (ctx.mode !== "tui") return;
     const qrAscii = renderQRAscii(qrUri);
     await ctx.ui.custom<void>((_tui, theme, _keybindings, done) => new PairingCodeDialog(
       qrAscii,
