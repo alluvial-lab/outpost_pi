@@ -1,9 +1,11 @@
 ---
 id: gate-refactor-lifecycle-file-viewer-lsp-debounce-floating
+status: superseded
+superseded_by: backlog-cockpit-file-watch-reliability (groom merge bd3b3a7, 2026-07-22)
 created: 2026-07-20
 updated: 2026-07-24
 tags: []
-release_binding: v0.3.0
+release_binding: null
 gate_origin: refactor
 ---
 

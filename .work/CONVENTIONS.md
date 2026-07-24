@@ -161,6 +161,26 @@ not whichever component release is running.
 
 ## Routing
 
+### Archive-tier semantics (added 2026-07-24)
+
+`.work/archive/` holds two classes: **done items** awaiting release
+late-binding, and **retired husks** — merge-absorbed, duplicate, superseded,
+or resolved-in-substance items whose substance lives elsewhere. Rules:
+
+- Retired husks MUST carry `status: superseded|duplicate` plus a pointer
+  (`superseded_by:` / `folded_into:` / `duplicate_of:`) at retirement time.
+  The release-deploy archived-stub gather skips status-stamped and non-`done`
+  archive files (patched 2026-07-24 after the same stale-stub sweep hit both
+  v0.2.0 and v0.3.0).
+- Grooms that merge/absorb items MUST stamp the absorbed files as part of the
+  merge commit (the 2026-07-22 groom merged 15 findings into 3 backlog items
+  without stamping; release-deploy re-swept the husks twice).
+- Genuinely incomplete work belongs in `.work/backlog/`, not `.work/archive/`.
+  An archived item at `stage: drafting|implementing` is a smell — either stamp
+  it as retired or move it back to backlog.
+
+## Routing
+
 - Keep code-owned Remote Pi bugs here.
 - Keep SNC root `.work/` for SNC operational orchestration only.
 - Keep `plan/` for broader architectural plans already used by this repo; `.work/` is the queue for concrete bugs/slices.

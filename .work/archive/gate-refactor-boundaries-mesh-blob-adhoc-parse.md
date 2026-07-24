@@ -8,7 +8,7 @@ stage: drafting
 tags: []
 parent: null
 depends_on: []
-release_binding: v0.3.0
+release_binding: null
 gate_origin: refactor
 created: 2026-07-01
 updated: 2026-07-24
