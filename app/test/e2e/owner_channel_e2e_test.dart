@@ -147,6 +147,106 @@ void main() {
   );
 
   test(
+    'five forged frames detach and the next valid frame reattaches',
+    () async {
+      final hiveDirectory = await _openHive('owner_channel_reattach');
+      await host.restartForIsolation();
+      final pairCode = await waitForPairCode(host);
+      final storage = PairingStorage(SecureStorageFixture());
+      final stack = await PairingStack.connect(
+        endpoints: endpoints,
+        qr: pairCode.qr,
+        storage: storage,
+      );
+      final paired = await stack.pair(deviceName: 'Circuit Breaker Phone');
+      final session = await stack.adoptAndHydrate(paired);
+      addTearDown(() => _closeSession(session, stack, hiveDirectory));
+      await session.ping();
+
+      final raw = await stack.openRawOwnerRelayClient();
+      addTearDown(raw.close);
+      final ownerPeer = await _ownerPublicKey(stack.ownerKey);
+      final auditBefore = await _auditCount(
+        inspector,
+        peer: ownerPeer,
+        reason: 'open_failed',
+      );
+      final pairedEventsBefore = await _pairedEventCount(host);
+      final channelFingerprint = await inspector.channelKeyFingerprint(
+        ownerPeer,
+      );
+      expect(channelFingerprint, isNotNull);
+      var forgedSequence =
+          (await session.persistedChannelState()).sendSequence + 1000;
+
+      Future<void> injectFailures(int count, int expectedTotal) async {
+        for (var index = 0; index < count; index++) {
+          final forged = await sealOwnerChannelFrame(
+            key: Uint8List(32),
+            sequence: forgedSequence++,
+            json: jsonEncode(<String, Object>{
+              'type': 'ping',
+              'id': uuid7(),
+            }),
+          );
+          raw.inject(
+            piPublicKey: pairCode.qr.epk,
+            piRoomId: pairCode.qr.roomId!,
+            payload: forged,
+          );
+        }
+        await eventually<int>(
+          () async {
+            final count = await _auditCount(
+              inspector,
+              peer: ownerPeer,
+              reason: 'open_failed',
+            );
+            return count >= auditBefore + expectedTotal ? count : null;
+          },
+          timeout: const Duration(seconds: 10),
+          description: '$expectedTotal forged-frame audit events',
+        );
+      }
+
+      await injectFailures(4, 4);
+      expect(
+        (await _openFailureEvents(inspector, ownerPeer))
+            .skip(auditBefore)
+            .take(4)
+            .map((event) => event['consecutiveFailures'])
+            .toList(),
+        <int>[1, 2, 3, 4],
+      );
+
+      await session.ping();
+      await injectFailures(5, 9);
+      expect(
+        (await _openFailureEvents(inspector, ownerPeer))
+            .skip(auditBefore)
+            .take(9)
+            .map((event) => event['consecutiveFailures'])
+            .toList(),
+        <int>[1, 2, 3, 4, 1, 2, 3, 4, 5],
+        reason: 'the valid ping must reset the consecutive-failure streak',
+      );
+
+      await session.ping();
+      expect(await inspector.peerCount(), 1);
+      expect(
+        await inspector.channelKeyFingerprint(ownerPeer),
+        channelFingerprint,
+        reason: 'reattach must reuse persisted keys rather than re-pair',
+      );
+      expect(await _pairedEventCount(host), pairedEventsBefore);
+      final after = await session.persistedChannelState();
+      expect(after.sendSequence, greaterThan(0));
+      expect(after.receiveSequence, greaterThan(0));
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
+
+  test(
     'tampered dh_sig is rejected before token consumption or persistence',
     () async {
       await host.restartForIsolation();
@@ -438,6 +538,13 @@ Future<int> _waitForNewAudit(
   timeout: const Duration(seconds: 10),
   description: 'new owner-channel $reason audit event',
 );
+
+Future<List<Map<String, dynamic>>> _openFailureEvents(
+  PiHostInspector inspector,
+  String peer,
+) async => (await inspector.ownerChannelAudit())
+    .where((event) => event['peer'] == peer && event['reason'] == 'open_failed')
+    .toList();
 
 Future<int> _pairedEventCount(PiHostClient host) async =>
     (await host.eventsAfter(0)).where((event) {
