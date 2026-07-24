@@ -7,6 +7,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 const _kPeersService = 'dev.outpostpi.peers';
 const _kChannelsService = 'dev.outpostpi.owner-channels';
 const _kRoomsService = 'dev.outpostpi.rooms';
+// Separate from the Owner-reset prefixes: a returning Owner must retain its
+// rollback floor even after PairingStorage.wipeAll() clears its pairings.
+const _kMeshWatermarkService = 'dev.outpostpi.meshwatermark';
 
 /// Plan-17 follow-up — persisted snapshot of every room we have ever
 /// learned about for a peer (relay-announced via `room_announced` /
@@ -329,6 +332,8 @@ class PairingStorage extends ChangeNotifier {
 
   String _peerKey(String remoteEpk) => '$_kPeersService:$remoteEpk';
   String _channelKey(String remoteEpk) => '$_kChannelsService:$remoteEpk';
+  String _meshWatermarkKey(String ownerPkHash) =>
+      '$_kMeshWatermarkService:$ownerPkHash';
 
   /// Replace a peer through the authenticated pairing flow.
   ///
@@ -536,11 +541,40 @@ class PairingStorage extends ChangeNotifier {
     );
   }
 
+  /// Load the highest relay mesh version verified for [ownerPkHash].
+  ///
+  /// An absent entry is the first-boot value 0. Malformed or unavailable
+  /// secure-storage state throws so callers fail closed instead of guessing a
+  /// rollback floor.
+  Future<int> loadMeshHighWatermark(String ownerPkHash) async {
+    final raw = await _store.read(key: _meshWatermarkKey(ownerPkHash));
+    if (raw == null) return 0;
+    final value = int.tryParse(raw);
+    if (value == null || value < 0) {
+      throw const FormatException('invalid mesh high-water mark');
+    }
+    return value;
+  }
+
+  /// Persist a new highest verified relay mesh version for [ownerPkHash].
+  ///
+  /// Never lowers an existing mark, even if a stale caller attempts to do so.
+  Future<void> saveMeshHighWatermark(String ownerPkHash, int version) async {
+    if (version < 0) {
+      throw ArgumentError.value(version, 'version', 'must not be negative');
+    }
+    final key = _meshWatermarkKey(ownerPkHash);
+    final current = await loadMeshHighWatermark(ownerPkHash);
+    if (version <= current) return;
+    await _store.write(key: key, value: '$version');
+  }
+
   /// Wipe every peer + every persisted room map. Used by the
   /// Owner-key bridge when iCloud / Backup sync brings a different
   /// Owner-pk — the previous device's peer list is meaningless for
   /// the newly-synced identity, so we start clean rather than risk
-  /// connecting against stale `remote_epk`s.
+  /// connecting against stale `remote_epk`s. Mesh rollback watermarks are
+  /// intentionally outside this wipe: they are scoped to each Owner key.
   Future<void> wipeAll() => _serializePeerMutation(() async {
     final all = await _store.readAll();
     final prefixes = [

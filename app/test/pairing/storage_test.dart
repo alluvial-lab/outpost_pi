@@ -425,6 +425,20 @@ void main() {
       expect(await storage.loadRooms('epk-a'), isEmpty);
     });
 
+    test('preserves owner-scoped mesh watermarks', () async {
+      final storage = PairingStorage(_FakeSecureStorage());
+      await storage.saveMeshHighWatermark('owner-a', 9);
+
+      expect(await storage.loadMeshHighWatermark('owner-b'), 0);
+      await storage.wipeAll();
+
+      expect(
+        await storage.loadMeshHighWatermark('owner-a'),
+        9,
+        reason: 'a returning Owner must retain its durable rollback floor',
+      );
+    });
+
     test('notifies listeners exactly once', () async {
       final storage = PairingStorage(_FakeSecureStorage());
       var notifications = 0;
