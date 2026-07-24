@@ -1,7 +1,7 @@
 ---
 id: gate-docs-vision-owner-channel-e2e-split
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,11 @@ Replace both assertions with the split trust model: app↔Pi owner payloads are 
 ## Implementation notes
 
 Rewrote both `docs/VISION.md` assertions as current split trust-model prose: sealed app↔Pi owner payloads, with relay-visible routing metadata and cross-PC Pi↔Pi envelopes. Verified against `secure_channel.ts` sealing and `pi_forward.rs` opaque envelope forwarding.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against the
+Required edit and cited sources — shipped key lifecycle (signed ephemeral
+X25519 per pairing, persisted directional keys), one active channel
+generation per Owner key, and the env_id_tail cross-PC-only correlation
+boundary all match implementation. Rolling-foundation style. Approved -> done.
