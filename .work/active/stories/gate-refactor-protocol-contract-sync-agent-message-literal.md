@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-sync-agent-message-literal
 kind: story
-stage: drafting
+stage: review
 tags: []
 parent: null
 depends_on: []
@@ -33,4 +33,24 @@ Expose or consume a generated canonical discriminator for `AgentMessage` and pas
 
 ## Implementation discovery
 
-The adjacent replay identity path is `app/lib/data/sync/session_history_replay.dart`, which contains the matching two `agent_message` literals. The declared write scope forbids editing that file, so a shared canonical value cannot be introduced and consumed by both paths without violating the task boundary. Additionally, generated `AgentMessage.type` is an instance getter rather than the stated static constant. Return this item to drafting so its scope can explicitly include `session_history_replay.dart` and choose the generated-contract access shape.
+First worker bounce (2026-07-23) was an orchestrator scope error, not a design
+flaw: the adjacent replay identity path is `app/lib/data/sync/session_history_replay.dart`
+(matching two `agent_message` literals at ~:75), which the first brief wrongly
+excluded from write scope. Scope corrected on re-dispatch. Note: generated
+`AgentMessage.type` is an instance getter and generated dispatch uses switch
+literals, so the canonical-value shape must accommodate that (single handwritten
+const consumed by all four call sites, ideally bound to `AgentMessage.type` by a
+drift-guard test).
+
+## Implementation notes
+
+- Changed `app/lib/data/sync/session_history_replay.dart` and
+  `app/lib/data/sync/sync_service.dart` so all four transcript-identity call
+  sites use `agentMessageWireType`, declared alongside `serverReplayEventId` /
+  `serverReplayMessageId`.
+- Added the generated-contract drift guard in
+  `app/test/data/sync/session_history_replay_test.dart`; it compares the
+  constant with `const AgentMessage(inReplyTo: '', text: '').type`.
+- Verification: focused replay test passed; `flutter analyze` passed with no
+  issues; full `flutter test` completed with 814 passing tests and only the six
+  known e2e failures caused by unavailable pairing-endpoint environment.

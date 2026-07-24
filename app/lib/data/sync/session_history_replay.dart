@@ -72,7 +72,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
         // story-mobile-assistant-message-duplicated-live-replay decision 1.
         eventId: serverReplayEventId(
           sessionId,
-          'agent_message',
+          agentMessageWireType,
           messageId ?? inReplyTo,
           event.ts,
         ),
@@ -80,7 +80,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
         ts: ts,
         messageId: serverReplayMessageId(
           sessionId,
-          'agent_message',
+          agentMessageWireType,
           messageId ?? inReplyTo,
           event.ts,
         ),
@@ -129,6 +129,10 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
     ),
   };
 }
+
+/// Mirrors generated `AgentMessage.type`, which is only an instance getter,
+/// while transcript identity needs a shared value.
+const String agentMessageWireType = 'agent_message';
 
 /// Derive a stable event identity shared by live and history-replay paths.
 String serverReplayEventId(
