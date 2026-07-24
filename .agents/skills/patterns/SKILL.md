@@ -13,6 +13,11 @@ This skill contains detailed pattern documentation for this project.
 See individual pattern files for full details with code examples.
 
 Available patterns:
+- [content-free-diagnostic-categories.md](content-free-diagnostic-categories.md) — Project boundary failures to closed reason codes and bounded metadata before logging; never persist raw payloads or arbitrary error text.
+- [frame-byte-bounded-admission.md](frame-byte-bounded-admission.md) — Check count and retained-byte budgets before enqueueing burst-controlled work, then release both counters on every exit path.
+- [identity-scoped-monotonic-high-watermarks.md](identity-scoped-monotonic-high-watermarks.md) — Advance security watermarks only under their matching owner/key generation and never permit stale or lower values to win.
+- [recoverable-secure-channel-circuit-breakers.md](recoverable-secure-channel-circuit-breakers.md) — Detach after a bounded invalid-frame streak, retain valid persisted keys, and recover through authenticated reattach plus state synchronization.
+- [cross-language-known-answer-fixture-triangulation.md](cross-language-known-answer-fixture-triangulation.md) — Generate one deterministic protocol fixture independently and require every language endpoint to reproduce it byte-for-byte.
 - [command-surface-adapter-classes.md](command-surface-adapter-classes.md) — Keep command-surface logic in thin, dependency-injected adapter classes.
 - [typed-wire-decoders.md](typed-wire-decoders.md) — Parse/validate untrusted wire text through shared decode helpers before routing typed handlers.
 - [subscription-unsubscribe-contract.md](subscription-unsubscribe-contract.md) — Return unsubscribe closures for event handlers and keep callback registration/teardown explicit.
