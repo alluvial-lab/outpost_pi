@@ -36,6 +36,29 @@ final class _FailingLoadStore implements OwnerIdentityStore {
   Future<void> delete() async {}
 }
 
+final class _SecondLoadSyncUnavailableStore implements OwnerIdentityStore {
+  int _loads = 0;
+  int saveCalls = 0;
+
+  @override
+  Future<bool> isSyncAvailable() async => true;
+
+  @override
+  Future<OwnerIdentity?> load() async {
+    if (_loads++ == 0) return null;
+    throw const SyncUnavailable('sync disabled during first-run creation');
+  }
+
+  @override
+  Future<void> save(OwnerIdentity identity) async => saveCalls++;
+
+  @override
+  Stream<OwnerIdentity> watch() => const Stream.empty();
+
+  @override
+  Future<void> delete() async {}
+}
+
 final class _RestoringStore implements OwnerIdentityStore {
   _RestoringStore(this.restored);
 
@@ -261,6 +284,22 @@ void main() {
       'returns sync-required when the load reports sync unavailable',
       () async {
         final store = _FailingLoadStore(const SyncUnavailable('sync disabled'));
+        final bridge = OwnerIdentityBridge(
+          store,
+          PairingStorage(_FakeSecureStorage()),
+        );
+
+        expect(await bridge.boot(), isA<SyncUnavailableResult>());
+        expect(store.saveCalls, 0);
+
+        bridge.dispose();
+      },
+    );
+
+    test(
+      'returns sync-required when the creation recheck loses sync',
+      () async {
+        final store = _SecondLoadSyncUnavailableStore();
         final bridge = OwnerIdentityBridge(
           store,
           PairingStorage(_FakeSecureStorage()),
