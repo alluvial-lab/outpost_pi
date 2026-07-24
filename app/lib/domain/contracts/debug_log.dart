@@ -1,11 +1,45 @@
 import 'package:app/domain/contracts/service.dart';
 
+/// Closed set of wire failure codes admissible into diagnostics.
+///
+/// Protocol values mirror `knownErrorCode` in
+/// `defs/app-pi-common.schema.json`, which is not generated into Dart. Unknown
+/// wire values project to [kUnrecognizedFailureCode] rather than entering a
+/// diagnostic surface as arbitrary text.
+const Set<String> kAdmissibleFailureCodes = {
+  // Protocol `knownErrorCode`.
+  'tool_approval_required',
+  'invalid_message',
+  'unsupported_type',
+  'too_large',
+  'rate_limited',
+  'timeout',
+  'internal_error',
+  'session_mismatch',
+  'delivery_pending',
+  // App-local codes.
+  'send_error',
+  'send_timeout',
+  'cancelled',
+};
+
+/// Fixed diagnostic category for an unrecognized wire failure code.
+const String kUnrecognizedFailureCode = 'unrecognized';
+
+/// Admit a failure code into diagnostics only when it belongs to the closed set.
+String admitFailureCode(String wireCode) =>
+    kAdmissibleFailureCodes.contains(wireCode)
+    ? wireCode
+    : kUnrecognizedFailureCode;
+
 /// Per-variant tag for a [DebugEvent]. The enum IS the capture surface — a
 /// new capture site adds a variant + a tag, not a free-form string.
 ///
 /// Privacy invariant: no variant carries message bodies, previews, image data,
-/// or tool args/results. Enforced by the registry test (see
-/// `story-app-debug-log-adapter` acceptance).
+/// tool args/results, server-originated error text, or arbitrary error text.
+/// Failure diagnostics admit only closed code sets or fixed categories.
+/// Enforced by the registry test (see `story-app-debug-log-adapter`
+/// acceptance).
 enum DebugTag {
   wsIn,
   peerFrame,
@@ -146,19 +180,13 @@ final class MsgEchoEvent extends DebugEvent {
   };
 }
 
-/// Send-failure surfacing (20s no-echo timeout or cancel). `detail` is a short
-/// reason, never the full error object.
+/// Send-failure surfacing (20s no-echo timeout or cancel).
 final class MsgFailedEvent extends DebugEvent {
   final String id;
   final String? code;
-  final String? detail;
 
-  const MsgFailedEvent({
-    required super.ts,
-    required this.id,
-    this.code,
-    this.detail,
-  }) : super(tag: DebugTag.msgFailed);
+  const MsgFailedEvent({required super.ts, required this.id, this.code})
+    : super(tag: DebugTag.msgFailed);
 
   @override
   Map<String, Object?> toJson() => {
@@ -166,7 +194,6 @@ final class MsgFailedEvent extends DebugEvent {
     'ts': ts.toUtc().toIso8601String(),
     'id': _cap(id),
     if (code != null) 'code': _cap(code!),
-    if (detail != null) 'detail': _cap(detail!),
   };
 }
 
@@ -194,18 +221,15 @@ final class SessionGateEvent extends DebugEvent {
   };
 }
 
-/// `session_sync` request failure. `err` is a short reason, no content.
+/// `session_sync` request failure.
 final class SessionSyncEvent extends DebugEvent {
-  final String? err;
-
-  const SessionSyncEvent({required super.ts, this.err})
+  const SessionSyncEvent({required super.ts})
     : super(tag: DebugTag.sessionSync);
 
   @override
   Map<String, Object?> toJson() => {
     'tag': tag.name,
     'ts': ts.toUtc().toIso8601String(),
-    if (err != null) 'err': _cap(err!),
   };
 }
 

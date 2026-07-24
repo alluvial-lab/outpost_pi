@@ -802,7 +802,7 @@ void main() {
         DebugTag.msgFailed,
       );
       expect(failed.code, 'send_error');
-      expect(failed.detail!.length, lessThanOrEqualTo(121));
+      expect(failed.toJson().keys, isNot(contains('detail')));
 
       s.sync.requestSync();
       await _settle();
@@ -810,8 +810,7 @@ void main() {
         s.log.events,
         DebugTag.sessionSync,
       );
-      expect(sync.err, contains('socket write refused'));
-      expect(sync.err!.length, lessThanOrEqualTo(121));
+      expect(sync.toJson().keys, isNot(contains('err')));
 
       s.channel.sendFailure = null;
       final history = SessionHistory(
@@ -1289,11 +1288,7 @@ void main() {
         'session-mismatch',
         (e) => e is SessionGateEvent && e.reason == 'session_mismatch',
       ),
-      (
-        DebugTag.sessionSync,
-        'request-failed',
-        (e) => e is SessionSyncEvent && (e.err?.isNotEmpty ?? false),
-      ),
+      (DebugTag.sessionSync, 'request-failed', (e) => e is SessionSyncEvent),
       (
         DebugTag.lifecycleFailure,
         'channel-close',
