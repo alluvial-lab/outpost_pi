@@ -1,7 +1,7 @@
 ---
 id: gate-security-owner-reset-retains-transcripts
 kind: story
-stage: implementing
+stage: done
 tags: [app, security]
 parent: feature-owner-identity-transition
 depends_on: []
@@ -50,3 +50,21 @@ explicit data-loss policy recorded in the parent feature body). Note:
 transcripts only. Exact design (facade API, index-derived enumeration +
 directory backstop, router hook point, acceptance criteria) is Unit 2 of the
 parent feature body.
+
+## Implementation notes
+
+- Added `LocalBoxes.wipeTranscriptsForOwnerTransition()`: derives event and
+  projection boxes from valid index rows, scans the Hive directory for orphan
+  v3 boxes, clears/reopens common index/runtime boxes, and retains the
+  transcript key and security metadata.
+- Hive 2 does not publicly expose `Hive.homePath`; the directory backstop uses
+  the open sessions-index box's public `path`, which is the same Hive home
+  directory on supported native targets.
+- Wired the wipe after `conn.disconnect()` and before router reboot; existing
+  same-pk bridge coverage proves that this reset path is unreachable for a
+  same-owner re-watch.
+- Added replacement-owner same-tuple, orphan-backstop, metadata-survival,
+  router ordering, and same-owner regression coverage.
+- Verification: `flutter analyze` passed; focused local/router/owner-bridge
+  tests passed (14 tests). Full `flutter test` ran with only the six documented
+  unavailable pairing-endpoint e2e failures.
