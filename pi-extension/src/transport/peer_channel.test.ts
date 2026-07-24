@@ -46,7 +46,8 @@ function makeChannel(options: {
   onDisconnect?: () => void;
   auditPath?: string;
   persisted?: { send: bigint; recv: bigint };
-  persistSequences?: (patch: { sendSeq?: bigint; recvSeq?: bigint }) => Promise<boolean>;
+  reserveSendSeq?: () => Promise<bigint | null>;
+  persistRecvSeq?: (recvSeq: bigint) => Promise<boolean>;
 }) {
   const relay = options.relay ?? new FakeRelay();
   const persisted = options.persisted ?? { send: options.sendSeq ?? 0n, recv: options.recvSeq ?? 0n };
@@ -58,11 +59,13 @@ function makeChannel(options: {
     options.onMessage ?? vi.fn(),
     {
       keys: { send: sendKey, recv: recvKey },
-      sendSeq: options.sendSeq ?? persisted.send,
       recvSeq: options.recvSeq ?? persisted.recv,
-      persistSequences: options.persistSequences ?? (async (patch) => {
-        if (patch.sendSeq !== undefined) persisted.send = patch.sendSeq;
-        if (patch.recvSeq !== undefined) persisted.recv = patch.recvSeq;
+      reserveSendSeq: options.reserveSendSeq ?? (async () => {
+        persisted.send += 1n;
+        return persisted.send;
+      }),
+      persistRecvSeq: options.persistRecvSeq ?? (async (recvSeq) => {
+        if (recvSeq > persisted.recv) persisted.recv = recvSeq;
         return true;
       }),
       onDisconnect: options.onDisconnect ?? vi.fn(),
@@ -182,40 +185,46 @@ describe("SecurePeerChannel", () => {
     expect(statSync(auditPath).size).toBeLessThanOrEqual(OWNER_CHANNEL_AUDIT_MAX_BYTES);
   });
 
-  test("persists the send high-water before exposing its frame to the relay", async () => {
-    let resolvePersistence!: (value: boolean) => void;
-    const persistence = new Promise<boolean>((resolve) => { resolvePersistence = resolve; });
-    const persistSequences = vi.fn(() => persistence);
-    const { channel, relay } = makeChannel({ persistSequences });
+  test("reserves the send high-water before sealing and exposing its frame", async () => {
+    let resolveReservation!: (value: bigint | null) => void;
+    const reservation = new Promise<bigint | null>((resolve) => { resolveReservation = resolve; });
+    const reserveSendSeq = vi.fn(() => reservation);
+    const { channel, relay } = makeChannel({ reserveSendSeq });
 
     channel.send({ type: "pong", in_reply_to: "persist-first" });
-    await vi.waitFor(() => expect(persistSequences).toHaveBeenCalledWith({ sendSeq: 1n }));
+    await vi.waitFor(() => expect(reserveSendSeq).toHaveBeenCalledTimes(1));
     expect(relay.send).not.toHaveBeenCalled();
 
-    resolvePersistence(true);
+    resolveReservation(41n);
     await channel.whenIdle();
     expect(relay.send).toHaveBeenCalledTimes(1);
+    const outer = JSON.parse(relay.send.mock.calls[0]![0] as string) as { ct: string };
+    const frame = Buffer.from(outer.ct, "base64");
+    expect(new DataView(frame.buffer, frame.byteOffset + 1, 8).getBigUint64(0, true)).toBe(41n);
     channel.detach();
   });
 
-  test("bounds blocked outbound persistence, detaches on overflow, and drains accepted sends in sequence", async () => {
+  test("bounds blocked outbound reservation, detaches on overflow, and drains accepted sends in sequence", async () => {
     const auditPath = makeAuditPath();
     const onDisconnect = vi.fn();
-    let resolveFirstPersistence!: (value: boolean) => void;
-    const firstPersistence = new Promise<boolean>((resolve) => { resolveFirstPersistence = resolve; });
+    let resolveFirstReservation!: (value: bigint | null) => void;
+    const firstReservation = new Promise<bigint | null>((resolve) => { resolveFirstReservation = resolve; });
     const persistedSeqs: bigint[] = [];
-    const persistSequences = vi.fn(async (patch: { sendSeq?: bigint; recvSeq?: bigint }) => {
-      if (patch.sendSeq === undefined) return true;
-      persistedSeqs.push(patch.sendSeq);
-      if (patch.sendSeq === 1n) return firstPersistence;
-      return true;
+    let durableSeq = 0n;
+    const reserveSendSeq = vi.fn(async () => {
+      const reserved = durableSeq + 1n;
+      const next = reserved === 1n ? await firstReservation : reserved;
+      if (next === null) return null;
+      durableSeq = next;
+      persistedSeqs.push(next);
+      return next;
     });
-    const { channel, relay } = makeChannel({ auditPath, onDisconnect, persistSequences });
+    const { channel, relay } = makeChannel({ auditPath, onDisconnect, reserveSendSeq });
 
     for (let index = 0; index < MAX_PENDING_OWNER_OUTBOUND_FRAMES; index += 1) {
       channel.send({ type: "pong", in_reply_to: `accepted-${index}` });
     }
-    await vi.waitFor(() => expect(persistSequences).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(reserveSendSeq).toHaveBeenCalledTimes(1));
     const outboundState = channel as unknown as {
       pendingOutboundFrames: number;
       pendingOutboundBytes: number;
@@ -234,7 +243,7 @@ describe("SecurePeerChannel", () => {
       expect(audit).not.toContain("secret-overflow-suffix");
     });
 
-    resolveFirstPersistence(true);
+    resolveFirstReservation(1n);
     await channel.whenIdle();
 
     expect(outboundState).toMatchObject({ pendingOutboundFrames: 0, pendingOutboundBytes: 0 });
@@ -252,10 +261,10 @@ describe("SecurePeerChannel", () => {
 
   test("bounds blocked outbound payload bytes before the frame-count cap", async () => {
     const onDisconnect = vi.fn();
-    let resolvePersistence!: (value: boolean) => void;
-    const persistence = new Promise<boolean>((resolve) => { resolvePersistence = resolve; });
-    const persistSequences = vi.fn(() => persistence);
-    const { channel } = makeChannel({ onDisconnect, persistSequences });
+    let resolveReservation!: (value: bigint | null) => void;
+    const reservation = new Promise<bigint | null>((resolve) => { resolveReservation = resolve; });
+    const reserveSendSeq = vi.fn(() => reservation);
+    const { channel } = makeChannel({ onDisconnect, reserveSendSeq });
     const message = {
       type: "agent_chunk",
       session_id: "session-1",
@@ -267,7 +276,7 @@ describe("SecurePeerChannel", () => {
     expect(acceptedByBytes).toBeLessThan(MAX_PENDING_OWNER_OUTBOUND_FRAMES);
 
     for (let index = 0; index < acceptedByBytes; index += 1) channel.send(message);
-    await vi.waitFor(() => expect(persistSequences).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(reserveSendSeq).toHaveBeenCalledTimes(1));
     const outboundState = channel as unknown as {
       pendingOutboundFrames: number;
       pendingOutboundBytes: number;
@@ -280,18 +289,18 @@ describe("SecurePeerChannel", () => {
     expect(outboundState.pendingOutboundFrames).toBe(acceptedByBytes);
     expect(outboundState.pendingOutboundBytes).toBe(acceptedByBytes * messageBytes);
 
-    resolvePersistence(true);
+    resolveReservation(1n);
     await channel.whenIdle();
     expect(outboundState).toMatchObject({ pendingOutboundFrames: 0, pendingOutboundBytes: 0 });
   });
 
-  test("does not expose a frame when send high-water persistence rejects", async () => {
+  test("does not expose a frame when send-sequence reservation rejects", async () => {
     const auditPath = makeAuditPath();
     const onDisconnect = vi.fn();
     const { channel, relay } = makeChannel({
       auditPath,
       onDisconnect,
-      persistSequences: async () => { throw new Error("disk unavailable"); },
+      reserveSendSeq: async () => { throw new Error("disk unavailable"); },
     });
 
     channel.send({ type: "pong", in_reply_to: "persist-rejected" });
@@ -305,17 +314,17 @@ describe("SecurePeerChannel", () => {
   test("a detached stale channel cannot disconnect its replacement when fenced persistence settles", async () => {
     const relay = new FakeRelay();
     const onDisconnect = vi.fn();
-    let resolvePersistence!: (value: boolean) => void;
-    const persistence = new Promise<boolean>((resolve) => { resolvePersistence = resolve; });
+    let resolveReservation!: (value: bigint | null) => void;
+    const reservation = new Promise<bigint | null>((resolve) => { resolveReservation = resolve; });
     const channel = new SecurePeerChannel(
       relay as unknown as RelayClient,
       "owner-stale",
       vi.fn(),
       {
         keys: { send: new Uint8Array(32).fill(1), recv: new Uint8Array(32).fill(2) },
-        sendSeq: 0n,
         recvSeq: 0n,
-        persistSequences: () => persistence,
+        reserveSendSeq: () => reservation,
+        persistRecvSeq: async () => true,
         onDisconnect,
         auditPath: makeAuditPath(),
       },
@@ -323,7 +332,7 @@ describe("SecurePeerChannel", () => {
 
     channel.send({ type: "pong", in_reply_to: "old-channel" });
     channel.detach();
-    resolvePersistence(false); // expected-channel-key fence after a re-pair
+    resolveReservation(null); // expected-channel-key fence after a re-pair
     await channel.whenIdle();
 
     expect(onDisconnect).not.toHaveBeenCalled();

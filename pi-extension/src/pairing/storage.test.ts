@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,6 +19,7 @@ import { join } from "node:path";
 const _tmpHome = mkdtempSync(join(tmpdir(), "pi-storage-"));
 const PEERS_DIR_FOR_TEST = join(_tmpHome, ".pi", "remote");
 const PEERS_FILE_FOR_TEST = join(PEERS_DIR_FOR_TEST, "peers.json");
+const PEERS_LOCK_FOR_TEST = join(PEERS_DIR_FOR_TEST, "peers.lock");
 vi.mock("node:os", async (importOriginal) => {
   const orig = await importOriginal<typeof import("node:os")>();
   return { ...orig, homedir: () => _tmpHome };
@@ -38,7 +40,10 @@ const {
   encodePeerChannelKeys,
   decodePeerChannelKeys,
   parsePeerChannelSequence,
-  updatePeerChannelSequences,
+  reserveSendSeq,
+  updateRecvSeq,
+  PeerStorage,
+  PeerStorageLockTimeoutError,
 } = storage;
 import type { KeyStoreBackend } from "./storage.js";
 
@@ -124,6 +129,7 @@ beforeEach(async () => {
   _setKeyringRetryForTest(3, 0);
   await _unlinkIdentityFileForTest();
   rmSync(PEERS_FILE_FOR_TEST, { force: true });
+  rmSync(PEERS_LOCK_FOR_TEST, { recursive: true, force: true });
 });
 
 afterEach(() => {
@@ -288,14 +294,12 @@ describe("peers.json storage permissions", () => {
     await addPeer({
       ...PHONE_PEER,
       channel_key: channelKey,
-      send_seq: "0",
+      send_seq: "9007199254740992",
       recv_seq: "0",
     });
 
-    expect(await updatePeerChannelSequences(PHONE_PEER.remote_epk, channelKey, {
-      sendSeq: 9_007_199_254_740_993n,
-      recvSeq: 42n,
-    })).toBe(true);
+    expect(await reserveSendSeq(PHONE_PEER.remote_epk, channelKey)).toBe(9_007_199_254_740_993n);
+    expect(await updateRecvSeq(PHONE_PEER.remote_epk, channelKey, 42n)).toBe(true);
 
     // Re-read from disk rather than retaining the object passed to addPeer.
     const [reloaded] = await listPeers();
@@ -309,42 +313,91 @@ describe("peers.json storage permissions", () => {
     expectPrivateFileMode(PEERS_FILE_FOR_TEST);
   });
 
-  test("queued sequence writes max-merge and readers wait for their durable high-water", async () => {
+  test("independent stores reserve unique send sequences and stale instances self-correct", async () => {
     const channelKey = encodePeerChannelKeys({
       send: new Uint8Array(32).fill(31),
       recv: new Uint8Array(32).fill(32),
     });
-    await addPeer({
-      ...PHONE_PEER,
-      channel_key: channelKey,
-      send_seq: "0",
-      recv_seq: "0",
-    });
+    const first = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
+    const stale = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
+    await first.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
+    expect((await stale.listPeers())[0]?.send_seq).toBe("0");
 
-    const highWrite = updatePeerChannelSequences(PHONE_PEER.remote_epk, channelKey, {
-      sendSeq: 512n,
-      recvSeq: 700n,
-    });
-    const staleWrite = updatePeerChannelSequences(PHONE_PEER.remote_epk, channelKey, {
-      sendSeq: 2n,
-      recvSeq: 3n,
-    });
-    const snapshot = listPeers();
+    const reservations = await Promise.all(
+      Array.from({ length: 100 }, (_, index) =>
+        (index % 2 === 0 ? first : stale).reserveSendSeq(PHONE_PEER.remote_epk, channelKey)
+      ),
+    );
+    expect(new Set(reservations).size).toBe(100);
+    expect(reservations.map((value) => value!).sort((a, b) => a < b ? -1 : 1)).toEqual(
+      Array.from({ length: 100 }, (_, index) => BigInt(index + 1)),
+    );
 
-    expect(await highWrite).toBe(true);
-    expect(await staleWrite).toBe(true);
-    expect((await snapshot)[0]).toMatchObject({ send_seq: "512", recv_seq: "700" });
-    expect((await listPeers())[0]).toMatchObject({ send_seq: "512", recv_seq: "700" });
+    const advanced = await first.reserveSendSeq(PHONE_PEER.remote_epk, channelKey);
+    expect(advanced).toBe(101n);
+    expect(await stale.reserveSendSeq(PHONE_PEER.remote_epk, channelKey)).toBe(102n);
+    expect((await first.listPeers())[0]?.send_seq).toBe("102");
   });
 
-  test("stale channel updates cannot overwrite freshly re-paired key material", async () => {
+  test("independent stores max-merge receive high-waters without regression", async () => {
+    const channelKey = encodePeerChannelKeys({
+      send: new Uint8Array(32).fill(41),
+      recv: new Uint8Array(32).fill(42),
+    });
+    const first = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
+    const second = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
+    await first.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
+
+    expect(await Promise.all([
+      first.updateRecvSeq(PHONE_PEER.remote_epk, channelKey, 700n),
+      second.updateRecvSeq(PHONE_PEER.remote_epk, channelKey, 3n),
+    ])).toEqual([true, true]);
+    expect((await second.listPeers())[0]?.recv_seq).toBe("700");
+  });
+
+  test("stale channel operations cannot overwrite freshly re-paired key material", async () => {
     const oldKey = encodePeerChannelKeys({ send: new Uint8Array(32).fill(1), recv: new Uint8Array(32).fill(2) });
     const freshKey = encodePeerChannelKeys({ send: new Uint8Array(32).fill(3), recv: new Uint8Array(32).fill(4) });
     await addPeer({ ...PHONE_PEER, channel_key: oldKey, send_seq: "0", recv_seq: "0" });
     await addPeer({ ...PHONE_PEER, channel_key: freshKey, send_seq: "0", recv_seq: "0" });
 
-    expect(await updatePeerChannelSequences(PHONE_PEER.remote_epk, oldKey, { sendSeq: 99n })).toBe(false);
-    expect((await listPeers())[0]).toMatchObject({ channel_key: freshKey, send_seq: "0" });
+    expect(await reserveSendSeq(PHONE_PEER.remote_epk, oldKey)).toBeNull();
+    expect(await updateRecvSeq(PHONE_PEER.remote_epk, oldKey, 99n)).toBe(false);
+    expect((await listPeers())[0]).toMatchObject({ channel_key: freshKey, send_seq: "0", recv_seq: "0" });
+  });
+
+  test("reclaims an old lock owned by a dead process", async () => {
+    const channelKey = encodePeerChannelKeys({ send: new Uint8Array(32).fill(51), recv: new Uint8Array(32).fill(52) });
+    const store = new PeerStorage({ directory: PEERS_DIR_FOR_TEST, lockTimeoutMs: 100, lockRetryMs: 1, lockStaleMs: 10 });
+    await store.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
+    mkdirSync(PEERS_LOCK_FOR_TEST, { recursive: true, mode: 0o700 });
+    writeFileSync(join(PEERS_LOCK_FOR_TEST, "owner.json"), JSON.stringify({ pid: 2_147_483_647 }));
+    const old = new Date(Date.now() - 1_000);
+    utimesSync(PEERS_LOCK_FOR_TEST, old, old);
+
+    await expect(store.reserveSendSeq(PHONE_PEER.remote_epk, channelKey)).resolves.toBe(1n);
+    expect(existsSync(PEERS_LOCK_FOR_TEST)).toBe(false);
+  });
+
+  test("respects an old lock owned by a live process and fails after a bounded wait", async () => {
+    const channelKey = encodePeerChannelKeys({ send: new Uint8Array(32).fill(61), recv: new Uint8Array(32).fill(62) });
+    const seed = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
+    await seed.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
+    mkdirSync(PEERS_LOCK_FOR_TEST, { recursive: true, mode: 0o700 });
+    writeFileSync(join(PEERS_LOCK_FOR_TEST, "owner.json"), JSON.stringify({ pid: process.pid }));
+    const old = new Date(Date.now() - 1_000);
+    utimesSync(PEERS_LOCK_FOR_TEST, old, old);
+    const contender = new PeerStorage({
+      directory: PEERS_DIR_FOR_TEST,
+      lockTimeoutMs: 25,
+      lockRetryMs: 2,
+      lockStaleMs: 10,
+    });
+
+    await expect(contender.reserveSendSeq(PHONE_PEER.remote_epk, channelKey))
+      .rejects.toBeInstanceOf(PeerStorageLockTimeoutError);
+    expect(JSON.parse(readFileSync(PEERS_FILE_FOR_TEST, "utf8")).peers[0].send_seq).toBe("0");
+    expect(existsSync(PEERS_LOCK_FOR_TEST)).toBe(true);
   });
 
   test("addPeer migrates an existing permissive peers.json on update", async () => {
