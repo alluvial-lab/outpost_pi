@@ -17,8 +17,12 @@ import 'package:outpost_pi_identity/outpost_pi_identity.dart';
 
 class _FakeSecureStorage implements FlutterSecureStorage {
   final Map<String, String> _store = {};
+  bool failReads = false;
   @override
-  Future<String?> read({required String key, IOSOptions? iOptions, AndroidOptions? aOptions, LinuxOptions? lOptions, WebOptions? webOptions, MacOsOptions? mOptions, WindowsOptions? wOptions}) async => _store[key];
+  Future<String?> read({required String key, IOSOptions? iOptions, AndroidOptions? aOptions, LinuxOptions? lOptions, WebOptions? webOptions, MacOsOptions? mOptions, WindowsOptions? wOptions}) async {
+    if (failReads) throw StateError('secure storage unavailable');
+    return _store[key];
+  }
   @override
   Future<void> write({required String key, required String? value, IOSOptions? iOptions, AndroidOptions? aOptions, LinuxOptions? lOptions, WebOptions? webOptions, MacOsOptions? mOptions, WindowsOptions? wOptions}) async {
     if (value == null) {
@@ -277,6 +281,70 @@ void main() {
       expect(peers.first.nickname, 'Work mac');
     });
 
+    test('durable watermark rejects a validly-signed rollback after cold start', () async {
+      final owner = await _newOwner();
+      final backingStore = _FakeSecureStorage();
+      final storage = PairingStorage(backingStore);
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final hash = await MeshClient.ownerPkHash(owner.ownerPk);
+      final newest = MeshBlob(
+        version: 7,
+        issuedAt: 7,
+        ownerPk: owner.ownerPk,
+        members: const [
+          MeshMember(remoteEpk: 'epk-current', relayUrl: 'wss://r', pairedAt: '2026-07-23T00:00:00Z'),
+        ],
+      );
+      final newestEnvelope = await newest.signWith(owner.keyPair);
+      final firstDio = _stubDio();
+      firstDio.adapter.on('GET', '/mesh/$hash', _Reply(200, jsonEncode({
+        'blob': base64.encode(newestEnvelope.blob),
+        'sig': base64.encode(newestEnvelope.sig),
+        'version': 7,
+        'updated_at': 7,
+      })));
+      final first = MeshSyncService(
+        MeshClient(baseUrlProvider: () => 'https://r', dio: firstDio.dio),
+        bridge,
+        storage,
+      );
+      expect(await first.pullOnDemand(), isTrue);
+      expect(await storage.loadMeshHighWatermark(hash), 7);
+
+      final rollback = MeshBlob(
+        version: 6,
+        issuedAt: 6,
+        ownerPk: owner.ownerPk,
+        members: const [
+          MeshMember(remoteEpk: 'epk-revoked', relayUrl: 'wss://r', pairedAt: '2026-07-22T00:00:00Z'),
+        ],
+      );
+      final rollbackEnvelope = await rollback.signWith(owner.keyPair);
+      final secondDio = _stubDio();
+      secondDio.adapter.on('GET', '/mesh/$hash', _Reply(200, jsonEncode({
+        'blob': base64.encode(rollbackEnvelope.blob),
+        'sig': base64.encode(rollbackEnvelope.sig),
+        'version': 6,
+        'updated_at': 6,
+      })));
+      final log = _FakeDebugLog();
+      final coldStart = MeshSyncService(
+        MeshClient(baseUrlProvider: () => 'https://r', dio: secondDio.dio),
+        bridge,
+        storage,
+        debugLog: log,
+      );
+
+      expect(await coldStart.pullOnDemand(), isFalse);
+      expect(
+        (await storage.listPeers()).map((peer) => peer.remoteEpk),
+        ['epk-current'],
+        reason: 'a rollback must not overwrite the hydrated local cache',
+      );
+      final failure = log.events.whereType<LifecycleFailureEvent>().single;
+      expect(failure.reason, 'mesh_rollback_rejected');
+    });
+
     test('200 with bad signature is dropped (cache untouched)', () async {
       final owner = await _newOwner();
       final other = await _newOwner();
@@ -347,6 +415,63 @@ void main() {
       await svc.pullOnDemand();
       final peers = await storage.listPeers();
       expect(peers.map((p) => p.remoteEpk), ['epk-kept']);
+    });
+  });
+
+  group('MeshSyncService durable watermark', () {
+    test('applied mark floors a fresh service publish version', () async {
+      final owner = await _newOwner();
+      final storage = PairingStorage(_FakeSecureStorage());
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final hash = await MeshClient.ownerPkHash(owner.ownerPk);
+      final hydrated = MeshBlob(
+        version: 4,
+        issuedAt: 4,
+        ownerPk: owner.ownerPk,
+        members: const [
+          MeshMember(remoteEpk: 'epk-existing', relayUrl: 'wss://r', pairedAt: '2026-07-23T00:00:00Z'),
+        ],
+      );
+      final envelope = await hydrated.signWith(owner.keyPair);
+      final dio = _stubDio();
+      dio.adapter.on('GET', '/mesh/$hash', _Reply(200, jsonEncode({
+        'blob': base64.encode(envelope.blob),
+        'sig': base64.encode(envelope.sig),
+        'version': 4,
+        'updated_at': 4,
+      })));
+      final first = MeshSyncService(
+        MeshClient(baseUrlProvider: () => 'https://r', dio: dio.dio),
+        bridge,
+        storage,
+      );
+      expect(await first.pullOnDemand(), isTrue);
+
+      final publisher = _ScriptedMeshClient(
+        publishScripts: [() async => const MeshPublishOk(version: 5, updatedAt: 5)],
+      );
+      final coldStart = MeshSyncService(publisher, bridge, storage);
+      expect(await coldStart.publish(), isA<MeshPublishOk>());
+      expect(MeshBlob.fromCanonicalBytes(publisher.publishedEnvelopes.single.blob).version, 5);
+      expect(await storage.loadMeshHighWatermark(hash), 5);
+    });
+
+    test('unavailable watermark storage fails pulls and publishes closed', () async {
+      final owner = await _newOwner();
+      final backingStore = _FakeSecureStorage();
+      final storage = PairingStorage(backingStore);
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      backingStore.failReads = true;
+      final client = _ScriptedMeshClient(
+        publishScripts: [() async => const MeshPublishOk(version: 1, updatedAt: 1)],
+      );
+      final service = MeshSyncService(client, bridge, storage);
+
+      expect(await service.pullOnDemand(), isFalse);
+      expect(client.fetchCalls, 0);
+      final published = await service.publish();
+      expect(published, const MeshPublishFailure('watermark_unavailable'));
+      expect(client.publishCalls, 0);
     });
   });
 
@@ -619,6 +744,11 @@ void main() {
         expect(result, isA<MeshPublishOk>(),
             reason: 'allowEmpty:true must bypass the safety net');
         expect(svc.lastVersion, 2);
+        expect(
+          await storage.loadMeshHighWatermark(hash),
+          2,
+          reason: 'legitimate empty revocation still advances the rollback floor',
+        );
       },
     );
 
