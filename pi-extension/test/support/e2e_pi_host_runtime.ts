@@ -10,6 +10,7 @@ import {
   type EventBus,
   type Extension,
   type ExtensionActions,
+  type ExtensionCommandContextActions,
   type ExtensionContextActions,
   type ExtensionFactory,
   type ExtensionRuntime,
@@ -30,6 +31,10 @@ export interface PiHostTuiEvent {
   readonly seq: number;
   readonly kind: "tui_message" | "notification";
   readonly payload: unknown;
+}
+
+export interface PiHostTurnControlStatus {
+  readonly phase: "idle" | "armed" | "pending" | "settled";
 }
 
 type ProductionModule = {
@@ -57,10 +62,12 @@ export class E2ePiHostRuntime {
   private readonly events: PiHostTuiEvent[] = [];
   private seq = 0;
   private disposed = false;
+  private turnControlPhase: PiHostTurnControlStatus["phase"] = "idle";
+  private deferredTurnResolve: (() => void) | null = null;
 
   private constructor(
     private readonly cwd: string,
-    private readonly sessionManager: SessionManager,
+    private sessionManager: SessionManager,
     private readonly runner: ExtensionRunner,
     private readonly production: ProductionModule,
     private readonly sessionContextHasMessageActions: boolean,
@@ -116,10 +123,11 @@ export class E2ePiHostRuntime {
     runner.bindCore(actions(
       sessionManager,
       (kind, payload) => instance.record(kind, payload),
+      (content) => instance.handleSendUserMessage(content),
     ), contextActions(options.cwd));
     runner.bindCommandContext({
       waitForIdle: async () => undefined,
-      newSession: async () => ({ cancelled: false }),
+      newSession: async (newSessionOptions) => instance.replaceSession(newSessionOptions),
       fork: async () => ({ cancelled: false }),
       navigateTree: async () => ({ cancelled: false }),
       switchSession: async () => ({ cancelled: false }),
@@ -164,6 +172,30 @@ export class E2ePiHostRuntime {
     return this.events.filter((event) => event.seq > seq);
   }
 
+  /** Arm the next SDK user-message action to settle only on explicit release. */
+  deferNextTurn(): PiHostTurnControlStatus {
+    if (this.turnControlPhase === "armed" || this.turnControlPhase === "pending") {
+      throw new Error("a deferred turn is already active");
+    }
+    this.turnControlPhase = "armed";
+    return this.turnControlStatus();
+  }
+
+  /** Release the currently deferred SDK user-message action. */
+  resolveDeferredTurn(): PiHostTurnControlStatus {
+    if (this.turnControlPhase !== "pending" || !this.deferredTurnResolve) {
+      throw new Error("no deferred turn is pending");
+    }
+    const resolve = this.deferredTurnResolve;
+    this.deferredTurnResolve = null;
+    resolve();
+    return this.turnControlStatus();
+  }
+
+  turnControlStatus(): PiHostTurnControlStatus {
+    return { phase: this.turnControlPhase };
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
@@ -174,6 +206,59 @@ export class E2ePiHostRuntime {
   private record(kind: PiHostTuiEvent["kind"], payload: unknown): void {
     this.events.push({ seq: ++this.seq, kind, payload });
     if (this.events.length > 200) this.events.splice(0, this.events.length - 200);
+  }
+
+  private async replaceSession(
+    options?: Parameters<ExtensionCommandContextActions["newSession"]>[0],
+  ): Promise<{ cancelled: boolean }> {
+    const before = await this.runner.emit({ type: "session_before_switch", reason: "new" });
+    if (before?.cancel) return { cancelled: true };
+
+    const previousSessionFile = this.sessionManager.getSessionFile();
+    const sessionDir = this.sessionManager.getSessionDir();
+    this.sessionManager = SessionManager.create(this.cwd, sessionDir, {
+      parentSession: options?.parentSession,
+    });
+    // The narrow host keeps one SDK runner but rotates the actual
+    // SessionManager. ExtensionRunner's runtime getter then exposes the fresh
+    // session identity to session_start and the replacement context.
+    (this.runner as unknown as { sessionManager: SessionManager }).sessionManager = this.sessionManager;
+    this.runner.bindCore(actions(
+      this.sessionManager,
+      this.record.bind(this),
+      (content) => this.handleSendUserMessage(content),
+    ), contextActions(this.cwd));
+    await this.runner.emit({ type: "session_start", reason: "new", previousSessionFile });
+    await options?.setup?.(this.sessionManager);
+
+    if (options?.withSession) {
+      const context = Object.defineProperties(
+        {},
+        Object.getOwnPropertyDescriptors(this.runner.createCommandContext()),
+      ) as ReturnType<ExtensionRunner["createCommandContext"]> & {
+        sendMessage: (...args: Parameters<ExtensionActions["sendMessage"]>) => Promise<void>;
+        sendUserMessage: (...args: Parameters<ExtensionActions["sendUserMessage"]>) => Promise<void>;
+      };
+      context.sendMessage = async (message) => {
+        actionsSendMessage(this.sessionManager, this.record.bind(this), message);
+      };
+      context.sendUserMessage = async (content) => this.handleSendUserMessage(content);
+      await options.withSession(context);
+    }
+    return { cancelled: false };
+  }
+
+  private async handleSendUserMessage(
+    content: Parameters<ExtensionActions["sendUserMessage"]>[0],
+  ): Promise<void> {
+    const message = { role: "user" as const, content, timestamp: Date.now() };
+    this.sessionManager.appendMessage(message as never);
+    await this.runner.emitMessageEnd({ type: "message_end", message: message as never });
+
+    if (this.turnControlPhase !== "armed") return;
+    this.turnControlPhase = "pending";
+    await new Promise<void>((resolve) => { this.deferredTurnResolve = resolve; });
+    this.turnControlPhase = "settled";
   }
 }
 
@@ -190,18 +275,11 @@ async function realSdkFactoryLoader(): Promise<LoadExtensionFromFactory> {
 function actions(
   sessionManager: SessionManager,
   record: (kind: PiHostTuiEvent["kind"], payload: unknown) => void,
+  sendUserMessage: ExtensionActions["sendUserMessage"],
 ): ExtensionActions {
   return {
-    sendMessage: (message) => {
-      sessionManager.appendCustomMessageEntry(
-        message.customType,
-        message.content,
-        message.display,
-        message.details,
-      );
-      record("tui_message", message);
-    },
-    sendUserMessage: () => undefined,
+    sendMessage: (message) => actionsSendMessage(sessionManager, record, message),
+    sendUserMessage,
     appendEntry: (customType, data) => { sessionManager.appendCustomEntry(customType, data); },
     setSessionName: (name) => { sessionManager.appendSessionInfo(name); },
     getSessionName: () => sessionManager.getSessionName(),
@@ -215,6 +293,20 @@ function actions(
     getThinkingLevel: () => "off",
     setThinkingLevel: () => undefined,
   };
+}
+
+function actionsSendMessage(
+  sessionManager: SessionManager,
+  record: (kind: PiHostTuiEvent["kind"], payload: unknown) => void,
+  message: Parameters<ExtensionActions["sendMessage"]>[0],
+): void {
+  sessionManager.appendCustomMessageEntry(
+    message.customType,
+    message.content,
+    message.display,
+    message.details,
+  );
+  record("tui_message", message);
 }
 
 function contextActions(cwd: string): ExtensionContextActions {
