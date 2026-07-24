@@ -1,3 +1,6 @@
+@Tags(['e2e'])
+library;
+
 import 'dart:convert';
 
 import 'package:app/pairing/qr_scanner.dart';

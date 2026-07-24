@@ -1,3 +1,6 @@
+@Tags(['e2e'])
+library;
+
 import 'package:app/pairing/storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
