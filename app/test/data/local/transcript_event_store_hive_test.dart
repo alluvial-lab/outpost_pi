@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -27,9 +28,42 @@ void main() {
     });
 
     tearDown(() async {
+      LocalBoxes.beforeOwnerTransitionCommonClearForTesting = null;
+      LocalBoxes.afterOwnerTransitionBoxDeleteForTesting = null;
+      LocalBoxes.beforeTranscriptBoxOpenForTesting = null;
       await Hive.close();
       await dir.delete(recursive: true);
     });
+
+    test(
+      'an append blocked in box open is rejected by an overlapping wipe',
+      () async {
+        const key = TranscriptSessionKey(
+          peerId: 'racing-peer',
+          roomId: 'racing-room',
+          sessionId: 'racing-session',
+        );
+        final boxName = LocalBoxes.transcriptEventsBoxName(key);
+        final openStarted = Completer<void>();
+        final releaseOpen = Completer<void>();
+        LocalBoxes.beforeTranscriptBoxOpenForTesting = (name) async {
+          if (name != boxName) return;
+          if (!openStarted.isCompleted) openStarted.complete();
+          await releaseOpen.future;
+        };
+
+        final appending = store.appendAll(key, <TranscriptEvent>[
+          _submitted('racing-event', key.sessionId, 'client-id', 'old owner'),
+        ]);
+        await openStarted.future;
+        final wiping = LocalBoxes.wipeTranscriptsForOwnerTransition();
+        releaseOpen.complete();
+
+        await expectLater(appending, throwsA(isA<StateError>()));
+        await wiping;
+        expect(await Hive.boxExists(boxName), isFalse);
+      },
+    );
 
     test('dedupes by event id and preserves original seq and order', () async {
       const key = TranscriptSessionKey(

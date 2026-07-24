@@ -6,6 +6,7 @@
 //   msgs_v3_<sha256 tuple>                    -> MessageRecord projection
 // Runtime reachability remains plaintext and is wiped on every boot.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:app/data/local/records/session_index_record.dart';
@@ -15,6 +16,7 @@ import 'package:app/data/local/transcript_storage_migration.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 const String _kNamespace = 'rp_v2';
@@ -23,6 +25,7 @@ const String _kRuntime = 'runtime';
 const String _kSecurityMeta = TranscriptStorageMigrator.metadataBoxName;
 const String _kKeyProvisioned = 'key_provisioned_v3';
 const String _kKeyVerifier = 'key_verifier_v3';
+const String _kOwnerTransitionWipePending = 'owner_transition_wipe_pending';
 
 /// Facade over encrypted transcript storage and volatile runtime state.
 ///
@@ -33,15 +36,45 @@ class LocalBoxes {
   static bool _initialized = false;
   static Future<void>? _initialization;
   static HiveCipher? _cipher;
+  static bool _transitionGateClosed = false;
+  static int _inFlightOpens = 0;
+  static Completer<void>? _opensDrained;
+  static Future<void>? _wipeInFlight;
 
-  /// Open transcript storage and wipe volatile runtime state before bootstrap.
+  /// Inject a test-only failure after latching but before common-box clearing.
+  @visibleForTesting
+  static Future<void> Function()? beforeOwnerTransitionCommonClearForTesting;
+
+  /// Observe a test-only per-session deletion checkpoint.
+  @visibleForTesting
+  static Future<void> Function(String boxName)?
+  afterOwnerTransitionBoxDeleteForTesting;
+
+  /// Pause a test-only transcript open before Hive receives it.
+  @visibleForTesting
+  static Future<void> Function(String boxName)?
+  beforeTranscriptBoxOpenForTesting;
+
+  /// Open transcript storage and converge any latched Owner-transition wipe.
   static Future<void> init({TranscriptKeyValueStore? keyStore}) {
-    if (_initialized) return Future.value();
+    if (_initialized) return _convergePendingOwnerTransitionWipe();
     final inflight = _initialization;
     if (inflight != null) return inflight;
-    final future = _initProduction(keyStore);
+    late final Future<void> future;
+    future = _initProduction(keyStore).whenComplete(() {
+      if (identical(_initialization, future)) _initialization = null;
+    });
     _initialization = future;
     return future;
+  }
+
+  /// Resume a latched Owner-transition wipe before a router boot retry.
+  ///
+  /// App startup initializes storage before routing; the uninitialized no-op
+  /// keeps isolated router tests and pre-storage error paths side-effect free.
+  static Future<void> convergePendingOwnerTransitionWipe() {
+    if (!_initialized) return Future.value();
+    return _convergePendingOwnerTransitionWipe();
   }
 
   static Future<void> _initProduction(TranscriptKeyValueStore? keyStore) async {
@@ -52,7 +85,7 @@ class LocalBoxes {
     ).loadOrCreate(keyWasProvisioned: meta.get(_kKeyProvisioned) == true);
     await _validateKey(meta, key);
     _cipher = HiveAesCipher(key);
-    await _openCommon();
+    await _openCommonOrConvergeWipe(meta);
     await _migrateLegacy(meta);
     await meta.put(_kKeyProvisioned, true);
     _initialized = true;
@@ -71,7 +104,7 @@ class LocalBoxes {
     final meta = await Hive.openBox<dynamic>(_kSecurityMeta);
     await _validateKey(meta, key);
     _cipher = HiveAesCipher(key);
-    await _openCommon();
+    await _openCommonOrConvergeWipe(meta);
     await _migrateLegacy(meta);
     _initialized = true;
   }
@@ -85,20 +118,58 @@ class LocalBoxes {
     if (stored == null) await meta.put(_kKeyVerifier, verifier);
   }
 
-  static Future<void> _openCommon() async {
-    await _openEncrypted(_kSessionsIndex);
+  static Future<void> _openCommonOrConvergeWipe(Box<dynamic> metadata) async {
+    if (_transitionGateClosed ||
+        metadata.get(_kOwnerTransitionWipePending) == true) {
+      await wipeTranscriptsForOwnerTransition();
+      return;
+    }
+    await _openCommonUnchecked();
+  }
+
+  static Future<void> _convergePendingOwnerTransitionWipe() async {
+    final metadata = Hive.isBoxOpen(_kSecurityMeta)
+        ? Hive.box<dynamic>(_kSecurityMeta)
+        : await Hive.openBox<dynamic>(_kSecurityMeta);
+    if (_transitionGateClosed ||
+        metadata.get(_kOwnerTransitionWipePending) == true) {
+      await wipeTranscriptsForOwnerTransition();
+    }
+  }
+
+  static Future<void> _openCommonUnchecked() async {
+    await _openEncryptedUnchecked(_kSessionsIndex);
     final runtime = await Hive.openBox<dynamic>(_kRuntime);
     await runtime.clear();
   }
 
   /// Wipe every transcript-bearing box after a confirmed Owner-key change.
   ///
-  /// The stable app key and security metadata remain intact; only the prior
-  /// Owner's index, event logs, projections, and volatile runtime state leave
-  /// the device. Reopens the common boxes so the router can immediately boot
-  /// the replacement Owner against empty storage.
-  static Future<void> wipeTranscriptsForOwnerTransition() async {
-    final index = Hive.box<dynamic>(_kSessionsIndex);
+  /// The operation latches pending state before deletion and keeps transcript
+  /// opens gated until every deletion and common-box reopen succeeds. A retry
+  /// or cold boot resumes an interrupted wipe before exposing storage.
+  static Future<void> wipeTranscriptsForOwnerTransition() {
+    final inflight = _wipeInFlight;
+    if (inflight != null) return inflight;
+    late final Future<void> tracked;
+    tracked = _runOwnerTransitionWipe().whenComplete(() {
+      if (identical(_wipeInFlight, tracked)) _wipeInFlight = null;
+    });
+    _wipeInFlight = tracked;
+    return tracked;
+  }
+
+  static Future<void> _runOwnerTransitionWipe() async {
+    _transitionGateClosed = true;
+    final metadata = Hive.isBoxOpen(_kSecurityMeta)
+        ? Hive.box<dynamic>(_kSecurityMeta)
+        : await Hive.openBox<dynamic>(_kSecurityMeta);
+    await metadata.put(_kOwnerTransitionWipePending, true);
+    await _drainInFlightOpens();
+    await beforeOwnerTransitionCommonClearForTesting?.call();
+
+    final index = await _openEncryptedUnchecked(_kSessionsIndex);
+    final runtime = await Hive.openBox<dynamic>(_kRuntime);
     final transcriptBoxes = <String>{};
     for (final value in index.values) {
       if (value is! Map) continue;
@@ -148,15 +219,22 @@ class LocalBoxes {
 
     await index.clear();
     await index.close();
-    final runtime = Hive.box<dynamic>(_kRuntime);
     await runtime.clear();
     await runtime.close();
 
     for (final name in transcriptBoxes) {
       if (Hive.isBoxOpen(name)) await Hive.box<dynamic>(name).close();
-      await Hive.deleteBoxFromDisk(name);
+      if (await Hive.boxExists(name)) await Hive.deleteBoxFromDisk(name);
+      await afterOwnerTransitionBoxDeleteForTesting?.call(name);
     }
-    await _openCommon();
+    await _openCommonUnchecked();
+    await metadata.delete(_kOwnerTransitionWipePending);
+    _transitionGateClosed = false;
+  }
+
+  static Future<void> _drainInFlightOpens() {
+    if (_inFlightOpens == 0) return Future.value();
+    return (_opensDrained ??= Completer<void>()).future;
   }
 
   static Future<void> _migrateLegacy(Box<dynamic> metadata) async {
@@ -193,6 +271,28 @@ class LocalBoxes {
   }
 
   static Future<Box<dynamic>> _openEncrypted(String name) async {
+    if (_transitionGateClosed) {
+      throw StateError('Owner-transition transcript wipe is pending');
+    }
+    _inFlightOpens += 1;
+    try {
+      await beforeTranscriptBoxOpenForTesting?.call(name);
+      final box = await _openEncryptedUnchecked(name);
+      if (_transitionGateClosed) {
+        throw StateError('Owner-transition transcript wipe is pending');
+      }
+      return box;
+    } finally {
+      _inFlightOpens -= 1;
+      if (_inFlightOpens == 0) {
+        final drained = _opensDrained;
+        _opensDrained = null;
+        if (drained != null && !drained.isCompleted) drained.complete();
+      }
+    }
+  }
+
+  static Future<Box<dynamic>> _openEncryptedUnchecked(String name) async {
     final cipher = _cipher;
     if (cipher == null) {
       throw const TranscriptStorageKeyException('key_not_initialized');

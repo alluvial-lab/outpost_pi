@@ -126,6 +126,43 @@ class _FakeSecureStorage implements FlutterSecureStorage {
   dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
+class _WatermarkWriteRaceStorage extends _FakeSecureStorage {
+  final writeSevenStarted = Completer<void>();
+  final releaseWriteSeven = Completer<void>();
+  final releaseWriteSix = Completer<void>();
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (key.startsWith('dev.outpostpi.meshwatermark:')) {
+      if (value == '7') {
+        if (!writeSevenStarted.isCompleted) writeSevenStarted.complete();
+        await releaseWriteSeven.future;
+      } else if (value == '6') {
+        await releaseWriteSix.future;
+      }
+    }
+    await super.write(
+      key: key,
+      value: value,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+}
+
 class _RecordingTransport implements PeerTransport {
   final List<Uint8List> sent = <Uint8List>[];
 
@@ -391,6 +428,25 @@ void main() {
 
       expect(await storage.loadPeer(peer.remoteEpk), isNull);
       expect(mutations, isEmpty);
+    });
+  });
+
+  group('PairingStorage mesh high-water mark', () {
+    test('concurrent max updates cannot regress durable state', () async {
+      final backingStore = _WatermarkWriteRaceStorage();
+      backingStore._store['dev.outpostpi.meshwatermark:owner'] = '5';
+      final storage = PairingStorage(backingStore);
+
+      final saveSeven = storage.saveMeshHighWatermark('owner', 7);
+      await backingStore.writeSevenStarted.future;
+      final saveSix = storage.saveMeshHighWatermark('owner', 6);
+      await Future<void>.delayed(Duration.zero);
+      backingStore.releaseWriteSeven.complete();
+      await saveSeven;
+      backingStore.releaseWriteSix.complete();
+      await saveSix;
+
+      expect(await storage.loadMeshHighWatermark('owner'), 7);
     });
   });
 

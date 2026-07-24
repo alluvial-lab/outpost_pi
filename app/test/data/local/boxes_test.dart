@@ -20,6 +20,9 @@ void main() {
     });
 
     tearDown(() async {
+      LocalBoxes.beforeOwnerTransitionCommonClearForTesting = null;
+      LocalBoxes.afterOwnerTransitionBoxDeleteForTesting = null;
+      LocalBoxes.beforeTranscriptBoxOpenForTesting = null;
       await Hive.close();
       await directory.delete(recursive: true);
     });
@@ -78,6 +81,81 @@ void main() {
         final replacementMessages = await boxes.msgsBox(ref);
         await replacementMessages.put(0, {'text': 'replacement transcript'});
         expect(replacementMessages.get(0), {'text': 'replacement transcript'});
+      },
+    );
+
+    test(
+      'a failure before common clearing stays latched and init retries it',
+      () async {
+        const ref = RemoteSessionRef(
+          peerEpk: 'failure-peer',
+          roomId: 'failure-room',
+          sessionId: 'failure-session',
+        );
+        final messagesName = LocalBoxes.msgsBoxName(ref);
+        await (await boxes.msgsBox(ref)).put(0, {'text': 'prior owner'});
+        LocalBoxes.beforeOwnerTransitionCommonClearForTesting = () async {
+          throw StateError('injected before common clear');
+        };
+
+        await expectLater(
+          LocalBoxes.wipeTranscriptsForOwnerTransition(),
+          throwsA(isA<StateError>()),
+        );
+        final metadata = Hive.box<dynamic>(
+          TranscriptStorageMigrator.metadataBoxName,
+        );
+        expect(metadata.get('owner_transition_wipe_pending'), isTrue);
+
+        LocalBoxes.beforeOwnerTransitionCommonClearForTesting = null;
+        await LocalBoxes.init();
+
+        expect(metadata.get('owner_transition_wipe_pending'), isNull);
+        expect(await Hive.boxExists(messagesName), isFalse);
+        expect(boxes.sessionsIndexBox(), isEmpty);
+        expect(boxes.runtimeBox(), isEmpty);
+      },
+    );
+
+    test(
+      'a partial per-session deletion stays latched and retry converges',
+      () async {
+        const first = RemoteSessionRef(
+          peerEpk: 'partial-peer',
+          roomId: 'partial-room',
+          sessionId: 'partial-one',
+        );
+        const second = RemoteSessionRef(
+          peerEpk: 'partial-peer',
+          roomId: 'partial-room',
+          sessionId: 'partial-two',
+        );
+        final firstName = LocalBoxes.msgsBoxName(first);
+        final secondName = LocalBoxes.msgsBoxName(second);
+        await (await boxes.msgsBox(first)).put(0, {'text': 'first'});
+        await (await boxes.msgsBox(second)).put(0, {'text': 'second'});
+        var deleted = 0;
+        LocalBoxes.afterOwnerTransitionBoxDeleteForTesting = (_) async {
+          deleted += 1;
+          if (deleted == 1) throw StateError('injected during deletion');
+        };
+
+        await expectLater(
+          LocalBoxes.wipeTranscriptsForOwnerTransition(),
+          throwsA(isA<StateError>()),
+        );
+        final metadata = Hive.box<dynamic>(
+          TranscriptStorageMigrator.metadataBoxName,
+        );
+        expect(metadata.get('owner_transition_wipe_pending'), isTrue);
+
+        LocalBoxes.afterOwnerTransitionBoxDeleteForTesting = null;
+        await LocalBoxes.init();
+
+        expect(metadata.get('owner_transition_wipe_pending'), isNull);
+        expect(await Hive.boxExists(firstName), isFalse);
+        expect(await Hive.boxExists(secondName), isFalse);
+        expect(boxes.sessionsIndexBox(), isEmpty);
       },
     );
 
