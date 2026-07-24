@@ -61,7 +61,10 @@ class OwnerIdentityBridge extends ChangeNotifier {
   Uint8List? get currentOwnerPk => _current?.ownerPk;
 
   /// Check sync availability, load (or generate) the Owner identity.
-  /// Idempotent — repeated calls are cheap once `_current` is populated.
+  ///
+  /// Generates only after [OwnerIdentityStore.load] returns null. A sync outage
+  /// remains gateable, while a platform failure propagates so it cannot silently
+  /// replace the durable Owner key.
   Future<OwnerIdentityBootResult> boot() async {
     if (!await _store.isSyncAvailable()) {
       return const SyncUnavailableResult();
@@ -72,25 +75,31 @@ class OwnerIdentityBridge extends ChangeNotifier {
         _current = loaded;
         return IdentityReady(loaded, generated: false);
       }
-    } on IdentityStoreError {
-      // Load failed — fall through and generate a fresh identity.
+    } on SyncUnavailable {
+      return const SyncUnavailableResult();
     }
 
-    final generated = await _generateAndSave();
+    final generated = await _generateIdentity();
+    // A restored identity can arrive after the first null read. Re-read before
+    // saving so a concurrent restoration wins over a local first-run key.
+    final restored = await _store.load();
+    if (restored != null) {
+      _current = restored;
+      return IdentityReady(restored, generated: false);
+    }
+    await _store.save(generated);
     _current = generated;
     return IdentityReady(generated, generated: true);
   }
 
-  Future<OwnerIdentity> _generateAndSave() async {
+  Future<OwnerIdentity> _generateIdentity() async {
     final kp = await _ed25519.newKeyPair();
     final pub = await kp.extractPublicKey();
     final priv = await kp.extractPrivateKeyBytes();
-    final id = OwnerIdentity(
+    return OwnerIdentity(
       ownerPk: Uint8List.fromList(pub.bytes),
       ownerSk: Uint8List.fromList(priv),
     );
-    await _store.save(id);
-    return id;
   }
 
   /// Rehydrate a `SimpleKeyPair` from the cached Owner identity. Used
