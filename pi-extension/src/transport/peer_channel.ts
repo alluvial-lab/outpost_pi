@@ -101,9 +101,9 @@ export class PlainPeerChannel implements PeerChannel {
 /** State and boundary effects required by one persisted secure owner channel. */
 export interface SecurePeerChannelOptions {
   keys: DirectionalKeys;
-  sendSeq: bigint;
   recvSeq: bigint;
-  persistSequences(patch: { sendSeq?: bigint; recvSeq?: bigint }): Promise<boolean>;
+  reserveSendSeq(): Promise<bigint | null>;
+  persistRecvSeq(recvSeq: bigint): Promise<boolean>;
   onDisconnect(): void;
   auditPath?: string;
 }
@@ -139,12 +139,12 @@ const MAX_OPEN_FAILURES = 5;
 /** Maximum protected inbound frames retained while sequence persistence is pending. */
 export const MAX_PENDING_OWNER_FRAMES = 64;
 /**
- * Maximum outbound frames retained while send-sequence persistence is pending.
+ * Maximum outbound frames retained while send-sequence reservation is pending.
  * 512 comfortably absorbs normal agent_chunk streaming bursts.
  */
 export const MAX_PENDING_OWNER_OUTBOUND_FRAMES = 512;
 /**
- * Maximum serialized outbound payload retained while persistence is pending.
+ * Maximum serialized outbound payload retained while reservation is pending.
  * 16 MiB admits several schema-maximum messages while bounding image/replay bursts.
  */
 export const MAX_PENDING_OWNER_OUTBOUND_BYTES = 16 * 1024 * 1024;
@@ -355,7 +355,6 @@ export class SecurePeerChannel implements PeerChannel {
   private readonly auditor: OwnerChannelAuditor;
   private detached = false;
   private disconnectNotified = false;
-  private sendSeq: bigint;
   private recvSeq: bigint;
   private consecutiveOpenFailures = 0;
   private outboundTail: Promise<void> = Promise.resolve();
@@ -370,7 +369,6 @@ export class SecurePeerChannel implements PeerChannel {
     private readonly onMessage: (msg: ClientMessage) => void,
     private readonly options: SecurePeerChannelOptions,
   ) {
-    this.sendSeq = options.sendSeq;
     this.recvSeq = options.recvSeq;
     this.auditor = ownerChannelAuditorFor(options.auditPath ?? DEFAULT_OWNER_CHANNEL_AUDIT_PATH);
     this.unsubscribe = subscribeRelayIngress(relay, (ingress) => this.onIngress(ingress));
@@ -405,27 +403,30 @@ export class SecurePeerChannel implements PeerChannel {
         // Work accepted before detach remains eligible to finish (notably the
         // best-effort bye queued immediately before listener teardown). Calls
         // made after detach are rejected at the send() boundary above.
-        const nextSeq = this.sendSeq + 1n;
+        let nextSeq: bigint;
+        try {
+          const reserved = await this.options.reserveSendSeq();
+          if (reserved === null) {
+            this.audit({ reason: "sequence_persist_failed" });
+            if (!this.detached) this.disconnect();
+            return;
+          }
+          nextSeq = reserved;
+        } catch (error) {
+          this.audit({
+            reason: error instanceof RangeError ? "sequence_exhausted" : "sequence_persist_failed",
+          });
+          if (!this.detached) this.disconnect();
+          return;
+        }
+
         let frame: Uint8Array;
         try {
           frame = seal(this.options.keys.send, nextSeq, json);
         } catch {
+          // Reservation is already durable. A sealing failure leaves a safe gap.
           this.audit({ reason: "sequence_exhausted", seq: nextSeq });
           this.disconnect();
-          return;
-        }
-        this.sendSeq = nextSeq;
-
-        try {
-          const persisted = await this.options.persistSequences({ sendSeq: nextSeq });
-          if (!persisted) {
-            this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
-            if (!this.detached) this.disconnect();
-            return;
-          }
-        } catch {
-          this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
-          if (!this.detached) this.disconnect();
           return;
         }
 
@@ -459,7 +460,7 @@ export class SecurePeerChannel implements PeerChannel {
     }
   }
 
-  /** Test/teardown seam: wait until queued persistence, ingress, and audit work settles. */
+  /** Test/teardown seam: wait until queued reservation/persistence, ingress, and audit work settles. */
   async whenIdle(): Promise<void> {
     await this.outboundTail;
     while (this.inboundDrain) await this.inboundDrain;
@@ -531,7 +532,7 @@ export class SecurePeerChannel implements PeerChannel {
     }
 
     try {
-      const persisted = await this.options.persistSequences({ recvSeq: opened.seq });
+      const persisted = await this.options.persistRecvSeq(opened.seq);
       if (this.detached) return;
       if (!persisted) {
         this.audit({ reason: "sequence_persist_failed", seq: opened.seq });

@@ -563,21 +563,20 @@ describe("OwnerMultiplexer", () => {
           (message) => { void input.onMessage(message); },
           {
             keys,
-            sendSeq,
             recvSeq,
-            persistSequences: async (patch) => {
-              if (patch.sendSeq !== undefined) {
-                if (blockFirstSend) {
-                  blockFirstSend = false;
-                  persistenceStarted.resolve();
-                  if (!await firstPersistence.promise) return false;
-                }
-                // Deliberately assign like the regressed store did: the test
-                // catches any fresh channel that starts below the drained high-water.
-                durableSend = patch.sendSeq;
-                durableSendHistory.push(durableSend);
+            reserveSendSeq: async () => {
+              const reserved = durableSend + 1n;
+              if (blockFirstSend) {
+                blockFirstSend = false;
+                persistenceStarted.resolve();
+                if (!await firstPersistence.promise) return null;
               }
-              if (patch.recvSeq !== undefined) durableRecv = patch.recvSeq;
+              durableSend = reserved;
+              durableSendHistory.push(durableSend);
+              return reserved;
+            },
+            persistRecvSeq: async (seq) => {
+              if (seq > durableRecv) durableRecv = seq;
               return true;
             },
             onDisconnect: () => input.onDisconnect(input.peerId),
@@ -680,13 +679,13 @@ describe("OwnerMultiplexer", () => {
           (message) => { void input.onMessage(message); },
           {
             keys,
-            sendSeq,
             recvSeq,
-            persistSequences: async () => {
+            reserveSendSeq: async () => {
               persistenceStarted.resolve();
               await persistence.promise;
               throw new Error("disk failed terminally");
             },
+            persistRecvSeq: async () => true,
             onDisconnect: () => input.onDisconnect(input.peerId),
             auditPath: join(auditDir, "audit.jsonl"),
           },

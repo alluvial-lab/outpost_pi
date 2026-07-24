@@ -14,7 +14,8 @@ import type { Ed25519Keypair } from "../pairing/crypto.js";
 import {
   decodePeerChannelKeys,
   parsePeerChannelSequence,
-  updatePeerChannelSequences,
+  reserveSendSeq,
+  updateRecvSeq,
 } from "../pairing/storage.js";
 import {
   REACHABILITY_RELAY_LIVENESS_CHECK_MS,
@@ -640,9 +641,9 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
       (message) => { void input.onMessage(message); },
       {
         keys,
-        sendSeq,
         recvSeq,
-        persistSequences: (patch) => updatePeerChannelSequences(input.peerId, channelKey, patch),
+        reserveSendSeq: () => reserveSendSeq(input.peerId, channelKey),
+        persistRecvSeq: (seq) => updateRecvSeq(input.peerId, channelKey, seq),
         onDisconnect: () => input.onDisconnect(input.peerId),
       },
     );
