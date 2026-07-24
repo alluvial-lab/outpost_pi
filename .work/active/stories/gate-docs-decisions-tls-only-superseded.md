@@ -1,7 +1,7 @@
 ---
 id: gate-docs-decisions-tls-only-superseded
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ The accepted and implemented decision is signed ephemeral-DH pairing plus persis
 
 ## Required edit
 Rewrite these decision rows in place around owner-channel E2E, retaining the limits for routing metadata and cross-PC traffic.
+
+## Implementation notes
+
+Replaced the superseded TLS-only rows with the shipped signed ephemeral-X25519-per-pairing, persisted-key, sealed owner-channel contract and retained relay visibility limits. Verified against `PROTOCOL.md` protection-model rows and `secure_channel.ts`.
