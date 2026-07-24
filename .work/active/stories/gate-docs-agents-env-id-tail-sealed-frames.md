@@ -1,7 +1,7 @@
 ---
 id: gate-docs-agents-env-id-tail-sealed-frames
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,11 @@ Separate owner-channel app↔extension ID correlation from cross-PC relay-envelo
 ## Implementation notes
 
 Updated `AGENTS.md` so `env_id_tail` is documented as cross-PC relay-envelope correlation only, while app↔extension owner-message IDs are explicitly local tracing data inside sealed `outer.ct`. Verified against `pi_forward.rs` tail logging and `PROTOCOL.md` sealed-frame protection.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against the
+Required edit and cited sources — shipped key lifecycle (signed ephemeral
+X25519 per pairing, persisted directional keys), one active channel
+generation per Owner key, and the env_id_tail cross-PC-only correlation
+boundary all match implementation. Rolling-foundation style. Approved -> done.
