@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-ts-secure-channel-throws
 kind: story
-stage: review
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
@@ -35,3 +35,12 @@ Add focused @throws clauses to x25519Shared, deriveDirectionalKeys, pairMacMessa
 
 - Documented malformed key/locator/nonce and uint64 sequence error contracts on each explicitly throwing owner-channel export.
 - Verification: `./node_modules/.bin/vitest run src/transport/secure_channel.test.ts` (3 passed).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected. @throws
+contracts match throwing exports. Pairing QR/token moved from context-persisted
+pi.sendMessage to a TUI-only ctx.ui.custom dialog (non-TUI mode gets a
+token-free warning); regression proves token/URI absent from custom messages
+and assembled model context. Full extension suite green (929 passed, 3
+skipped) + typecheck + build. Approved -> done.
