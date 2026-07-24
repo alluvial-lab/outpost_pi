@@ -825,7 +825,7 @@ class SyncService extends Service {
         // Remove from in-flight so a later healthy reconnect can retry —
         // a failed re-send must NOT be permanently suppressed.
         _resentHeldPendingIds.remove(id);
-        debugPrint('[msg-resend] id=$id failed: $err');
+        debugPrint('[msg-resend] id=$id failed');
       }
     }
   }
