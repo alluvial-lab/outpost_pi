@@ -1,5 +1,4 @@
 import 'dart:async' show StreamSubscription, unawaited;
-import 'dart:io';
 
 import 'package:cockpit/app/core/app_intents.dart';
 import 'package:cockpit/app/cockpit/domain/entities/project.dart';
@@ -117,45 +116,28 @@ class _CockpitPageState extends State<CockpitPage> {
   }
 
   /// Run the Create Workspace flow with editable folder-derived defaults.
-  // Temporary debug markers isolate a Windows native crash. Synchronous writes
-  // with flush survive a native crash where print output may not.
-  // File: <temp>/ck_trace.log
-  void _mark(String m) {
-    try {
-      File(
-        '${Directory.systemTemp.path}/ck_trace.log',
-      ).writeAsStringSync('$m\n', mode: FileMode.append, flush: true);
-    } catch (_) {}
-  }
-
   Future<bool> _createWorkspace() async {
     final vm = _vm;
-    _mark('picker:start');
     final path = await FilePicker.platform.getDirectoryPath(
       dialogTitle: 'Choose the workspace folder',
     );
-    _mark('picker:done path=$path mounted=$mounted');
     if (path == null || !mounted) return false;
     final suggestedName = path.split('/').where((p) => p.isNotEmpty).lastOrNull;
     final suggestedColor =
         kWorkspacePalette[vm.rootProjects.length % kWorkspacePalette.length];
-    _mark('dialog:show');
     final result = await showWorkspaceSettingsDialog(
       context,
       name: suggestedName ?? path,
       colorValue: suggestedColor,
       path: path,
     );
-    _mark('dialog:done result=$result');
     if (result == null) return false;
-    _mark('addProject:start');
     await vm.addProject(
       path,
       name: result.name,
       colorValue: result.colorValue,
       imagePath: result.imagePath,
     );
-    _mark('addProject:done');
     return true;
   }
 
