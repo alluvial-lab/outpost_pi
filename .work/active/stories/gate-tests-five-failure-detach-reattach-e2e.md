@@ -1,7 +1,7 @@
 ---
 id: gate-tests-five-failure-detach-reattach-e2e
 kind: story
-stage: implementing
+stage: review
 tags: [testing]
 parent: null
 depends_on: []
@@ -35,3 +35,8 @@ test("five forged frames detach and the next valid sealed frame reattaches", () 
 
 ## Test location (suggested)
 `app/test/e2e/owner_channel_e2e_test.dart`
+
+## Implementation notes
+
+- Added an end-to-end circuit-breaker regression that injects four forged sealed frames, proves a valid protected ping resets the audit streak, then injects five consecutive forged frames and observes the exact `1..5` threshold. The next valid protected ping must return a pong while the persisted Pi channel-key fingerprint, peer count, and pairing-event count remain unchanged, proving same-key reattach rather than re-pair.
+- Verification: `flutter analyze test/e2e/owner_channel_e2e_test.dart test/e2e/support/pi_host_inspector.dart` passed with no issues. The Docker harness was not rerun after this test was added: both harness attempts made immediately beforehand (shared tree and clean detached worktree) failed every existing E2E case at the common pair-code-publication prerequisite, so this test could not currently reach its assertions. No harness-green claim is made.
