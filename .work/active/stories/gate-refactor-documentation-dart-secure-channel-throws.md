@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-dart-secure-channel-throws
 kind: story
-stage: review
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
@@ -34,3 +34,13 @@ Add `Throws [ArgumentError]` and `Throws [RangeError]` contract notes to the aff
 ## Implementation notes
 - Documented the invalid-length, low-order-key, and sequence-range failure contracts on the public derivation, proof, transcript, and sealing helpers.
 - Verification: `cd app && flutter test test/data/transport/secure_channel_test.dart` (passed).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against
+acceptance. Verified: throws contracts match implementation; orphan msgs_v3
+test asserts real wipe behavior; fatal reads propagate (router's `on Object`
+boot guard surfaces them — no silent rotation), conditional re-read before
+save; pairing-viewmodel has dispose()+generation fences after every await
+incl. persistPeer revalidation (absorbed generation-fence item's acceptance
+ships here). flutter analyze + focused tests green. Approved -> done.
