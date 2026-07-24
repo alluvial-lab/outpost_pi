@@ -1,7 +1,7 @@
 ---
 id: feature-owner-identity-transition
 kind: feature
-stage: implementing
+stage: review
 tags: [security, app, pi-extension]
 parent: null
 depends_on: [feature-owner-message-e2e-authentication]
@@ -258,3 +258,20 @@ constraint; one feature worker carries them sequentially. No new stories.
 - **A→B→A churn destroys A's local transcripts**: accepted in the data-loss
   policy (operator-confirmed); the bridge's same-pk drop + initial-emit guard
   keep spurious transitions from reaching the wipe.
+
+## Implementation
+
+- **`app-owner-key-version-rollback-hardening`**: persisted an owner-hash
+  scoped mesh high-water mark outside `wipeAll`; mesh pull rejects lower valid
+  versions fail-closed and publish is floored above both in-memory and durable
+  marks. Added rollback cold-start, owner-scoping, unavailable-store,
+  fresh-publish-floor, and last-peer-revoke coverage.
+- **`gate-security-owner-reset-retains-transcripts`**: added the transcript
+  wipe facade and inserted it after old-generation disconnect and before the
+  router's replacement-owner boot. It derives indexed boxes, deletes orphaned
+  event/projection boxes discovered in the Hive home directory, preserves key
+  and security metadata, then reopens empty common boxes. Added same-tuple,
+  orphan, metadata, router-ordering, and same-owner no-reset coverage.
+- **Integrated verification**: `flutter analyze` passed. `flutter test` ran
+  825 passing tests; its only six failures are the documented e2e
+  pairing-endpoint environment limitation, unrelated to this feature.
