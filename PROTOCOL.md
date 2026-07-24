@@ -57,8 +57,8 @@ Updated 2026-07-23.
 │                    device (a Wi-Fi→cellular reconnect can leave TCP │
 │                    half-open) for immediate recovery rather than    │
 │                    waiting for the 25s ping timeout. Different      │
-│                    devices for the same Owner (shared Keychain key) │
-│                    coexist.                                         │
+│                    same-key re-pair replaces the active owner       │
+│                    channel generation.                              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
