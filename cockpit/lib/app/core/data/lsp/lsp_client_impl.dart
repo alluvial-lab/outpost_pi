@@ -43,6 +43,7 @@ class LspClientImpl implements LspClient {
   StreamSubscription<Map<String, dynamic>>? _stdoutSub;
   StreamSubscription<String>? _stderrSub;
   bool _initialized = false;
+  int _stderrLineCount = 0;
 
   @override
   Stream<LspDiagnosticsBatch> get diagnostics => _diagnostics.stream;
@@ -68,6 +69,7 @@ class LspClientImpl implements LspClient {
         runInShell: Platform.isWindows,
       );
       _process = process;
+      _stderrLineCount = 0;
       unawaited(LspProcessRegistry.register(process.pid));
 
       _stdoutSub = process.stdout
@@ -329,11 +331,17 @@ class LspClientImpl implements LspClient {
 
   void _onStderrLine(String line) {
     if (line.trim().isEmpty) return;
-    debugPrint('[lsp:${spec.languageId}][err] $line');
+    _stderrLineCount += 1;
+    if (_stderrLineCount == 1) {
+      debugPrint(
+        '[lsp:${spec.languageId}][err] server diagnostic output '
+        '(content hidden)',
+      );
+    }
   }
 
   void _onStreamError(Object error, StackTrace stackTrace) {
-    debugPrint('[lsp:${spec.languageId}] stream error: $error');
+    debugPrint('[lsp:${spec.languageId}] stream error (content hidden)');
   }
 
   void _onExit(int code) {
@@ -353,7 +361,10 @@ class LspClientImpl implements LspClient {
       }
     }
     _pending.clear();
-    debugPrint('[lsp:${spec.languageId}] exited code=$code');
+    debugPrint(
+      '[lsp:${spec.languageId}] exited code=$code '
+      'stderrLines=$_stderrLineCount',
+    );
   }
 }
 

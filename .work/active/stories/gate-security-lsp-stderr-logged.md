@@ -1,7 +1,7 @@
 ---
 id: gate-security-lsp-stderr-logged
 kind: story
-stage: implementing
+stage: done
 tags: [cockpit, security]
 parent: feature-diagnostic-privacy-hardening
 depends_on: []
@@ -41,3 +41,14 @@ Project LSP diagnostics to fixed categories and bounded structural metadata (lan
 
 ## Audit execution
 The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.
+
+## Implementation notes
+
+- Non-empty stderr now increments a per-process counter and emits one fixed
+  content-hidden category; stream errors likewise use a fixed category.
+- Exit diagnostics retain only the exit code and `stderrLines` count.
+- Added a subprocess-backed canary with path/token-bearing stderr, verifying
+  raw lines never reach debug output while the count and exit code survive.
+- Verification: `flutter test` passed (260 tests). `flutter analyze` retains
+  the unrelated pre-existing `unnecessary_underscores` info at
+  `lib/app/cockpit/data/rpc/pi_rpc_process.dart:470`.
