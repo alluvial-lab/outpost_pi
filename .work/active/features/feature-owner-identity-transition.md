@@ -1,7 +1,7 @@
 ---
 id: feature-owner-identity-transition
 kind: feature
-stage: review
+stage: done
 tags: [security, app, pi-extension]
 parent: null
 depends_on: [feature-owner-message-e2e-authentication]
@@ -275,3 +275,45 @@ constraint; one feature worker carries them sequentially. No new stories.
 - **Integrated verification**: `flutter analyze` passed. `flutter test` ran
   825 passing tests; its only six failures are the documented e2e
   pairing-endpoint environment limitation, unrelated to this feature.
+
+## Review (standard, cross-model, 2026-07-23) — adjudicated, closed
+
+One balanced fresh-context cross-model pass (`openai-codex/gpt-5.6-sol` vs host
+`umans/umans-glm-5.2`). Verdict REQUEST CHANGES with 3 proposed blockers
+(0 important, 0 nits) — all in the async/lifecycle defect class. All three
+receiver-confirmed against code and fixed in `f9c416d`:
+
+1. **Watermark race** — ACCEPTED, fixed. Overlapping pulls could apply v6
+   after v7 advanced the floor; a late A pull during A→B transition could
+   clobber B's shared watermark context; the durable max-update was a
+   non-atomic read-then-write. Fix: immutable owner-bound `_WatermarkContext`
+   carried per operation, a narrow `_watermarkTail` serialization chain around
+   context commit / floor check / advance / cache-replace / publish version
+   preparation (network stays outside the chain — conflict rebase cannot
+   deadlock), currency revalidation after each serialized section, and durable
+   max updates routed through `PairingStorage`'s mutation queue. Tests:
+   deterministic overlapping v6/v7, A→B load-race, concurrent durable max.
+2. **Wipe failure → retry skips wipe** — ACCEPTED, fixed. The wipe is now
+   self-latching (`owner_transition_wipe_pending` metadata flag set before any
+   deletion, cleared only on full success) and boot-convergent:
+   `LocalBoxes.init`/router retry resume a pending wipe idempotently before
+   initialization completes — the data-loss boundary is fail-closed by
+   construction, not caller discipline. Tests: failure before common-clear,
+   failure mid-delete, router retry convergence.
+3. **Wipe not exclusive with transcript writer** — ACCEPTED, fixed. Facade
+   transition gate: closes first, drains tracked in-flight opens, then
+   enumerates/deletes; opens re-check the gate after awaiting Hive so a racing
+   open throws before returning a writable box. Test: gated append-vs-wipe
+   race regression.
+
+### Verification (post-fix, orchestrator)
+
+`flutter analyze` clean; full `flutter test` 832 passed (+7 corrective tests),
+only the 6 known pairing-endpoint e2e environment failures.
+
+Foundation note: `PROTOCOL.md:471` / `docs/DECISIONS.md:106` assert
+anti-rollback protection; the pass-1 race left them untrue, and these fixes
+restore alignment — no doc change needed.
+
+Closure: `standard` weight — one independent pass, all receiver-confirmed
+blockers fixed and verified, no second pass. Advanced `review → done`.
