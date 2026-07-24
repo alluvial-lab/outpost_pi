@@ -1,7 +1,7 @@
 ---
 id: gate-security-identity-store-fatal-read-rotates-owner-key
 kind: story
-stage: review
+stage: done
 tags: [security]
 parent: null
 depends_on: []
@@ -40,3 +40,13 @@ Generate only when load() returns null. Return the sync-required result for Sync
 - Restricted first-run key creation to a successful null load; sync-unavailable reads return the gate result and platform failures now propagate without writing a replacement.
 - Added a second load before saving a generated identity so a concurrent restored identity wins.
 - Verification: `cd app && flutter test test/pairing/owner_identity_bridge_test.dart` (passed).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against
+acceptance. Verified: throws contracts match implementation; orphan msgs_v3
+test asserts real wipe behavior; fatal reads propagate (router's `on Object`
+boot guard surfaces them — no silent rotation), conditional re-read before
+save; pairing-viewmodel has dispose()+generation fences after every await
+incl. persistPeer revalidation (absorbed generation-fence item's acceptance
+ships here). flutter analyze + focused tests green. Approved -> done.
