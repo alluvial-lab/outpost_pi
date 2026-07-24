@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-session-replay-handwritten-discriminators
 kind: story
-stage: review
+stage: done
 tags: []
 parent: null
 depends_on: []
@@ -46,3 +46,13 @@ Pass each generated event's event.type into identity helpers and remove agentMes
   warning in `test/pairing/owner_identity_bridge_test.dart`; the broad
   `flutter test test/data` run has two unrelated existing sync-service failures,
   while the touched replay and generated-contract suites pass.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): generator-first fixes with
+regenerated output committed together; discriminators now derive from the
+schema (SERVER_MESSAGE_DISCRIMINATORS / generated Dart constant via
+discriminatorConstantName with duplicate validation); isFiniteNumber emits
+conditionally. Codegen/multiplexer/replay tests green; earlier sync-test
+noise was cross-worker mid-flight contamination (suite green on integrated
+tree). Approved -> done.
