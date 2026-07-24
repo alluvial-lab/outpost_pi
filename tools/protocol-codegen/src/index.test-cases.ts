@@ -110,6 +110,7 @@ test("minimal manifest schema emits deterministic TypeScript output", async () =
   assert.match(first, /export const CLIENT_MESSAGE_TYPES = \[/);
   assert.match(first, /export const appPiClientTypes = CLIENT_MESSAGE_TYPES;/);
   assert.match(first, /export function isClientMessage\(value: unknown\): value is ClientMessage/);
+  assert.doesNotMatch(first, /function isFiniteNumber/);
 
   const generated = await importGeneratedProtocol(first);
   assert.deepEqual(generated.CLIENT_MESSAGE_TYPES, ["pong", "error"]);
@@ -119,6 +120,30 @@ test("minimal manifest schema emits deterministic TypeScript output", async () =
   assert.equal(generated.isClientMessage?.({ in_reply_to: "reply-1" }), false);
   assert.equal(generated.isClientMessage?.({ type: "pong" }), false);
   assert.equal(generated.isClientMessage?.({ type: "error", message: "bad", code: "future_code" }), false);
+});
+
+test("number schemas emit only the finite-number helpers their validators reference", async () => {
+  const protocolRoot = await writeFixtureProtocol({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    oneOf: [{ $ref: "#/$defs/measurement" }],
+    $defs: {
+      measurement: {
+        type: "object",
+        required: ["type", "ratio"],
+        properties: {
+          type: { const: "measurement" },
+          ratio: { type: "number", minimum: 0 },
+        },
+        additionalProperties: false,
+      },
+    },
+  });
+
+  const manifest = await loadOutpostPiManifest(join(protocolRoot, "schema", "manifest.json"));
+  const output = renderTypeScriptProtocol(await buildOutpostPiIr(manifest, { profile: "compat" }));
+
+  assert.match(output, /function isFiniteNumber\(value: unknown\): value is number/);
+  assert.match(output, /function isFiniteNumberAtLeast\(value: unknown, minimum: number\): value is number/);
 });
 
 test("Outpost-Pi schema emits generated app/Pi unions and shared value types", async () => {
