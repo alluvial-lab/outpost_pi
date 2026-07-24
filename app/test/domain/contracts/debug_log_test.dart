@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 const Map<DebugTag, Set<String>> kAllowedKeys = {
   DebugTag.wsIn: {
     'bytes',
+    'count',
     'kind',
     'stage',
     'senderRoom',
@@ -98,6 +99,7 @@ void main() {
       WsInEvent(
         ts: now,
         bytes: 9999,
+        count: 100,
         kind: huge,
         stage: huge,
         senderRoom: huge,

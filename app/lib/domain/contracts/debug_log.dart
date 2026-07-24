@@ -59,6 +59,7 @@ sealed class DebugEvent {
 /// `ws-in` frame demux (transport inbound). No payload — lengths/kinds only.
 final class WsInEvent extends DebugEvent {
   final int? bytes;
+  final int? count;
   final String? kind; // envelope / control / malformed / dropped
   final String? stage;
   final String? senderRoom;
@@ -68,6 +69,7 @@ final class WsInEvent extends DebugEvent {
   const WsInEvent({
     required super.ts,
     this.bytes,
+    this.count,
     this.kind,
     this.stage,
     this.senderRoom,
@@ -80,6 +82,7 @@ final class WsInEvent extends DebugEvent {
     'tag': tag.name,
     'ts': ts.toUtc().toIso8601String(),
     if (bytes != null) 'bytes': bytes,
+    if (count != null) 'count': count,
     if (kind != null) 'kind': _cap(kind!),
     if (stage != null) 'stage': _cap(stage!),
     if (senderRoom != null) 'senderRoom': _cap(senderRoom!),
