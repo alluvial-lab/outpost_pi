@@ -113,6 +113,7 @@ type OwnerChannelAuditReason =
   | "plaintext_post_key"
   | "open_failed"
   | "ingress_overflow"
+  | "outbound_overflow"
   | "sequence_persist_failed"
   | "sequence_exhausted";
 
@@ -135,8 +136,18 @@ interface OwnerChannelAuditBucket {
 
 const DEFAULT_OWNER_CHANNEL_AUDIT_PATH = join(homedir(), ".pi", "remote", "owner-channel-audit.jsonl");
 const MAX_OPEN_FAILURES = 5;
-/** Maximum protected frames retained while sequence persistence is pending. */
+/** Maximum protected inbound frames retained while sequence persistence is pending. */
 export const MAX_PENDING_OWNER_FRAMES = 64;
+/**
+ * Maximum outbound frames retained while send-sequence persistence is pending.
+ * 512 comfortably absorbs normal agent_chunk streaming bursts.
+ */
+export const MAX_PENDING_OWNER_OUTBOUND_FRAMES = 512;
+/**
+ * Maximum serialized outbound payload retained while persistence is pending.
+ * 16 MiB admits several schema-maximum messages while bounding image/replay bursts.
+ */
+export const MAX_PENDING_OWNER_OUTBOUND_BYTES = 16 * 1024 * 1024;
 /** Emit a counted repeat summary after this many suppressed identical decisions. */
 export const OWNER_CHANNEL_AUDIT_SUMMARY_EVENTS = 100;
 /** Hard cap for the active audit file; one equally bounded rotated predecessor is retained. */
@@ -331,12 +342,13 @@ export function appendOwnerChannelAudit(
 /**
  * Relay-backed protected owner channel with persisted replay high-waters.
  *
- * Outbound work is serialized and persists each new send high-water before the
- * corresponding frame is exposed to the relay. Inbound plaintext, AEAD failures,
- * and replay are dropped without reaching the message router. Five consecutive
- * protected-frame failures detach this adapter; the next protected frame can
- * automatically reattach from the same persisted key, while AEAD remains the
- * authorization boundary.
+ * Outbound work is serialized, bounded, and persists each new send high-water
+ * before the corresponding frame is exposed to the relay. Overflow detaches the
+ * adapter so reconnect + session_sync can recover instead of silently losing an
+ * arbitrary suffix. Inbound plaintext, AEAD failures, and replay are dropped
+ * without reaching the message router. Five consecutive protected-frame failures
+ * detach this adapter; the next protected frame can automatically reattach from
+ * the same persisted key, while AEAD remains the authorization boundary.
  */
 export class SecurePeerChannel implements PeerChannel {
   private readonly unsubscribe: () => void;
@@ -347,6 +359,8 @@ export class SecurePeerChannel implements PeerChannel {
   private recvSeq: bigint;
   private consecutiveOpenFailures = 0;
   private outboundTail: Promise<void> = Promise.resolve();
+  private pendingOutboundFrames = 0;
+  private pendingOutboundBytes = 0;
   private readonly inboundQueue: Uint8Array[] = [];
   private inboundDrain: Promise<void> | null = null;
 
@@ -370,47 +384,68 @@ export class SecurePeerChannel implements PeerChannel {
     } catch {
       return;
     }
+    const jsonBytes = Buffer.byteLength(json, "utf8");
+    if (
+      this.pendingOutboundFrames >= MAX_PENDING_OWNER_OUTBOUND_FRAMES ||
+      jsonBytes > MAX_PENDING_OWNER_OUTBOUND_BYTES - this.pendingOutboundBytes
+    ) {
+      // Never silently drop an arbitrary streaming suffix while the channel
+      // appears healthy. Detach is the established recoverable fail-safe:
+      // a protected app frame reattaches, then session_sync converges state.
+      this.audit({ reason: "outbound_overflow" });
+      this.disconnect();
+      return;
+    }
 
-    this.outboundTail = this.outboundTail.then(async () => {
-      // Work accepted before detach remains eligible to finish (notably the
-      // best-effort bye queued immediately before listener teardown). Calls
-      // made after detach are rejected at the send() boundary above.
-      const nextSeq = this.sendSeq + 1n;
-      let frame: Uint8Array;
-      try {
-        frame = seal(this.options.keys.send, nextSeq, json);
-      } catch {
-        this.audit({ reason: "sequence_exhausted", seq: nextSeq });
-        this.disconnect();
-        return;
-      }
-      this.sendSeq = nextSeq;
+    // Account before allocating the promise continuation that retains `json`.
+    this.pendingOutboundFrames += 1;
+    this.pendingOutboundBytes += jsonBytes;
+    this.outboundTail = this.outboundTail
+      .then(async () => {
+        // Work accepted before detach remains eligible to finish (notably the
+        // best-effort bye queued immediately before listener teardown). Calls
+        // made after detach are rejected at the send() boundary above.
+        const nextSeq = this.sendSeq + 1n;
+        let frame: Uint8Array;
+        try {
+          frame = seal(this.options.keys.send, nextSeq, json);
+        } catch {
+          this.audit({ reason: "sequence_exhausted", seq: nextSeq });
+          this.disconnect();
+          return;
+        }
+        this.sendSeq = nextSeq;
 
-      try {
-        const persisted = await this.options.persistSequences({ sendSeq: nextSeq });
-        if (!persisted) {
+        try {
+          const persisted = await this.options.persistSequences({ sendSeq: nextSeq });
+          if (!persisted) {
+            this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
+            if (!this.detached) this.disconnect();
+            return;
+          }
+        } catch {
           this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
           if (!this.detached) this.disconnect();
           return;
         }
-      } catch {
-        this.audit({ reason: "sequence_persist_failed", seq: nextSeq });
-        if (!this.detached) this.disconnect();
-        return;
-      }
 
-      const outer: RelayOuterEnvelope = {
-        peer: this.remotePeerId,
-        room: APP_DESTINATION_ROOM,
-        ct: Buffer.from(frame).toString("base64"),
-      };
-      try {
-        this.relay.send(JSON.stringify(outer));
-      } catch {
-        // The authenticated seq header permits a safe gap after reconnect;
-        // session_sync recovers the dropped application frame.
-      }
-    });
+        const outer: RelayOuterEnvelope = {
+          peer: this.remotePeerId,
+          room: APP_DESTINATION_ROOM,
+          ct: Buffer.from(frame).toString("base64"),
+        };
+        try {
+          this.relay.send(JSON.stringify(outer));
+        } catch {
+          // The authenticated seq header permits a safe gap after reconnect;
+          // session_sync recovers the dropped application frame.
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.pendingOutboundFrames -= 1;
+        this.pendingOutboundBytes -= jsonBytes;
+      });
   }
 
   /** Detach the channel's relay subscription without closing the shared relay. */

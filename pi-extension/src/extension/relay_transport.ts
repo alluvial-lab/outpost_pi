@@ -101,6 +101,16 @@ export const MAX_PENDING_RELAY_DISPATCH_FRAMES = 256;
  * 8 MiB admits a schema-maximum owner frame plus normal text replay while bounding images.
  */
 export const MAX_PENDING_RELAY_DISPATCH_BYTES = 8 * 1024 * 1024;
+/**
+ * Maximum control frames retained by one relay connection's dispatch FIFO.
+ * Presence/room metadata is low-frequency; 64 still absorbs generous bursts.
+ */
+export const MAX_PENDING_RELAY_CONTROL_FRAMES = 64;
+/**
+ * Maximum raw UTF-8 control bytes retained by one relay connection's dispatch FIFO.
+ * 256 KiB accommodates large presence snapshots without permitting an unbounded flood.
+ */
+export const MAX_PENDING_RELAY_CONTROL_BYTES = 256 * 1024;
 /** Emit a counted overflow summary after this many suppressed drops. */
 export const RELAY_DISPATCH_AUDIT_SUMMARY_EVENTS = 100;
 const RELAY_DISPATCH_AUDIT_SUMMARY_MS = 5_000;
@@ -147,6 +157,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     onMessage(line: string): void;
     onClose(): void;
     flushOverflowAudit(): void;
+    releasePendingDispatch(): void;
     releaseIngressFanout(): void;
   };
   let relayBinding: RelayBinding | null = null;
@@ -199,29 +210,67 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   }
 
   function bindRelay(next: RelayClient): void {
-    let dispatchTail: Promise<void> = Promise.resolve();
-    let pendingFrames = 0;
-    let pendingBytes = 0;
-    let droppedFrames = 0;
-    let droppedBytes = 0;
-    let overflowAuditEmitted = false;
-    let overflowAuditTimer: ReturnType<typeof setTimeout> | null = null;
+    type DispatchQueue = RelayDispatchOverflowAudit["queue"];
+    type OverflowState = {
+      readonly queue: DispatchQueue;
+      readonly maxPendingFrames: number;
+      readonly maxPendingBytes: number;
+      droppedFrames: number;
+      droppedBytes: number;
+      auditEmitted: boolean;
+      timer: ReturnType<typeof setTimeout> | null;
+    };
+    type RetainedDispatch = {
+      readonly queue: DispatchQueue;
+      readonly lineBytes: number;
+      line: string | null;
+      controlFrame: RelayControlFrame | null;
+      accounted: boolean;
+    };
 
-    const flushOverflowAudit = (): void => {
-      if (overflowAuditTimer) {
-        deps.clearTimer(overflowAuditTimer);
-        overflowAuditTimer = null;
+    let dispatchDrain: Promise<void> | null = null;
+    let activeDispatch: RetainedDispatch | null = null;
+    let bindingAlive = true;
+    let pendingDataFrames = 0;
+    let pendingDataBytes = 0;
+    let pendingControlFrames = 0;
+    let pendingControlBytes = 0;
+    const pendingDispatches: RetainedDispatch[] = [];
+    const dataOverflow: OverflowState = {
+      queue: "data",
+      maxPendingFrames: MAX_PENDING_RELAY_DISPATCH_FRAMES,
+      maxPendingBytes: MAX_PENDING_RELAY_DISPATCH_BYTES,
+      droppedFrames: 0,
+      droppedBytes: 0,
+      auditEmitted: false,
+      timer: null,
+    };
+    const controlOverflow: OverflowState = {
+      queue: "control",
+      maxPendingFrames: MAX_PENDING_RELAY_CONTROL_FRAMES,
+      maxPendingBytes: MAX_PENDING_RELAY_CONTROL_BYTES,
+      droppedFrames: 0,
+      droppedBytes: 0,
+      auditEmitted: false,
+      timer: null,
+    };
+
+    const flushOverflow = (state: OverflowState): void => {
+      if (state.timer) {
+        deps.clearTimer(state.timer);
+        state.timer = null;
       }
-      if (droppedFrames === 0) return;
+      if (state.droppedFrames === 0) return;
       const event = {
-        droppedFrames,
-        droppedBytes,
-        maxPendingFrames: MAX_PENDING_RELAY_DISPATCH_FRAMES,
-        maxPendingBytes: MAX_PENDING_RELAY_DISPATCH_BYTES,
+        queue: state.queue,
+        droppedFrames: state.droppedFrames,
+        droppedBytes: state.droppedBytes,
+        maxPendingFrames: state.maxPendingFrames,
+        maxPendingBytes: state.maxPendingBytes,
       } satisfies RelayDispatchOverflowAudit;
-      droppedFrames = 0;
-      droppedBytes = 0;
-      overflowAuditEmitted = true;
+      state.droppedFrames = 0;
+      state.droppedBytes = 0;
+      state.auditEmitted = true;
       try {
         void Promise.resolve(auditDispatchOverflow(event)).catch(() => undefined);
       } catch {
@@ -229,62 +278,152 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
       }
     };
 
-    const recordOverflow = (lineBytes: number): void => {
-      droppedFrames += 1;
-      droppedBytes += lineBytes;
-      if (!overflowAuditEmitted || droppedFrames >= RELAY_DISPATCH_AUDIT_SUMMARY_EVENTS) {
-        flushOverflowAudit();
+    const flushOverflowAudit = (): void => {
+      flushOverflow(dataOverflow);
+      flushOverflow(controlOverflow);
+    };
+
+    const recordOverflow = (state: OverflowState, lineBytes: number): void => {
+      state.droppedFrames += 1;
+      state.droppedBytes += lineBytes;
+      if (!state.auditEmitted || state.droppedFrames >= RELAY_DISPATCH_AUDIT_SUMMARY_EVENTS) {
+        flushOverflow(state);
         return;
       }
-      if (overflowAuditTimer) return;
-      overflowAuditTimer = deps.setTimer(flushOverflowAudit, RELAY_DISPATCH_AUDIT_SUMMARY_MS);
-      overflowAuditTimer.unref?.();
+      if (state.timer) return;
+      state.timer = deps.setTimer(
+        () => flushOverflow(state),
+        RELAY_DISPATCH_AUDIT_SUMMARY_MS,
+      );
+      state.timer.unref?.();
+    };
+
+    const releaseDispatch = (work: RetainedDispatch): void => {
+      work.line = null;
+      work.controlFrame = null;
+      if (!work.accounted) return;
+      work.accounted = false;
+      if (work.queue === "control") {
+        pendingControlFrames -= 1;
+        pendingControlBytes -= work.lineBytes;
+      } else {
+        pendingDataFrames -= 1;
+        pendingDataBytes -= work.lineBytes;
+      }
+    };
+
+    const releasePendingDispatch = (): void => {
+      bindingAlive = false;
+      // Reconnect invalidates this generation. Queued app frames are
+      // recoverable through reconnect + session_sync (pairing retries through
+      // its existing timeout), so discard the explicit queue and release raw
+      // strings/DTOs immediately. Work already inside a handler continues;
+      // its finalizer is idempotent against the zeroed accounting.
+      if (activeDispatch) releaseDispatch(activeDispatch);
+      for (const work of pendingDispatches.splice(0)) releaseDispatch(work);
+    };
+
+    const drainDispatches = async (): Promise<void> => {
+      while (bindingAlive) {
+        const work = pendingDispatches.shift();
+        if (!work) return;
+        activeDispatch = work;
+        try {
+          if (work.queue === "control") {
+            const frame = work.controlFrame;
+            work.controlFrame = null;
+            if (frame) await dispatchRelayControlFrame(frame);
+          } else {
+            const line = work.line;
+            work.line = null;
+            if (line) {
+              await dispatchRelayMessage(next, line, () => connectionIsCurrent(binding));
+            }
+          }
+        } catch {
+          // One handler failure cannot poison accounting or later accepted work.
+        } finally {
+          releaseDispatch(work);
+          if (activeDispatch === work) activeDispatch = null;
+        }
+      }
+    };
+
+    const ensureDispatchDrain = (): void => {
+      if (dispatchDrain || !bindingAlive) return;
+      dispatchDrain = drainDispatches().finally(() => {
+        dispatchDrain = null;
+        if (pendingDispatches.length > 0 && bindingAlive) ensureDispatchDrain();
+      });
+    };
+
+    const enqueue = (work: RetainedDispatch): void => {
+      if (work.queue === "control") {
+        pendingControlFrames += 1;
+        pendingControlBytes += work.lineBytes;
+      } else {
+        pendingDataFrames += 1;
+        pendingDataBytes += work.lineBytes;
+      }
+      // Both classes deliberately share this explicit FIFO. Presence updates
+      // can affect owner fanout state, so retaining WebSocket order across
+      // control and data avoids a frame overtaking the transition preceding it.
+      // Independent budgets plus queue clearing on unbind prevent either class
+      // or stale reconnect generations from retaining memory without bound.
+      pendingDispatches.push(work);
+      ensureDispatchDrain();
     };
 
     const binding = {
       relay: next,
       generation: nextRelayGeneration++,
       onMessage: (line: string) => {
-        // Relay-owned control is intentionally outside the data-plane budget:
-        // authenticated peers can flood outer/cross-PC traffic but cannot mint
-        // valid server control frames. It remains on the shared FIFO so control
-        // and accepted data retain their original WebSocket ordering.
         // Outer envelopes cannot contain a top-level `type` key (closed
         // generated shape), so ordinary data avoids even a speculative parse.
+        const lineBytes = Buffer.byteLength(line, "utf8");
         const controlFrame = line.includes('"type"') ? decodeRelayControlFrame(line) : null;
         if (controlFrame) {
-          dispatchTail = dispatchTail
-            .then(() => dispatchRelayControlFrame(controlFrame))
-            .catch(() => undefined);
-          return;
-        }
-
-        const lineBytes = Buffer.byteLength(line, "utf8");
-        if (
-          pendingFrames >= MAX_PENDING_RELAY_DISPATCH_FRAMES ||
-          lineBytes > MAX_PENDING_RELAY_DISPATCH_BYTES - pendingBytes
-        ) {
-          // Known keyed owners recover through session_sync; pair_request is
-          // retried by the pairing UX after its timeout. Drop only the NEW raw
-          // frame so every accepted frame remains strict FIFO and recoverable.
-          recordOverflow(lineBytes);
-          return;
-        }
-
-        pendingFrames += 1;
-        pendingBytes += lineBytes;
-        // Bound raw lines before promise allocation while preserving WebSocket
-        // FIFO across async owner lookup and sequence persistence.
-        dispatchTail = dispatchTail
-          .then(() => dispatchRelayMessage(next, line, () => connectionIsCurrent(binding)))
-          .catch(() => undefined)
-          .finally(() => {
-            pendingFrames -= 1;
-            pendingBytes -= lineBytes;
+          if (
+            pendingControlFrames >= MAX_PENDING_RELAY_CONTROL_FRAMES ||
+            lineBytes > MAX_PENDING_RELAY_CONTROL_BYTES - pendingControlBytes
+          ) {
+            recordOverflow(controlOverflow, lineBytes);
+            return;
+          }
+          enqueue({
+            queue: "control",
+            lineBytes,
+            line: null,
+            controlFrame,
+            accounted: true,
           });
+          return;
+        }
+
+        if (
+          pendingDataFrames >= MAX_PENDING_RELAY_DISPATCH_FRAMES ||
+          lineBytes > MAX_PENDING_RELAY_DISPATCH_BYTES - pendingDataBytes
+        ) {
+          // Drop only the NEW raw frame so every accepted frame remains strict
+          // FIFO. Known owners recover through session_sync; pairing retries
+          // through its existing timeout.
+          recordOverflow(dataOverflow, lineBytes);
+          return;
+        }
+
+        // Admission precedes work-cell allocation. The explicit queue lets
+        // unbind remove every queued cell while the active handler is blocked.
+        enqueue({
+          queue: "data",
+          lineBytes,
+          line,
+          controlFrame: null,
+          accounted: true,
+        });
       },
       onClose: () => onRelayClose(binding),
       flushOverflowAudit,
+      releasePendingDispatch,
       releaseIngressFanout: claimRelayIngressFanout(next),
     } satisfies RelayBinding;
     relayBinding = binding;
@@ -298,6 +437,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     relayBinding = null;
     current.off("close", binding.onClose);
     current.off("message", binding.onMessage);
+    binding.releasePendingDispatch();
     binding.flushOverflowAudit();
     binding.releaseIngressFanout();
   }
