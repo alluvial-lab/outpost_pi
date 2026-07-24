@@ -131,10 +131,37 @@ void main() {
       );
 
       expect(event, isA<RpcUnknown>());
-      expect(
-        (event as RpcUnknown).type,
-        'message_start:custom:outpost-pi:future-event',
-      );
+      expect((event as RpcUnknown).type, '<unknown-custom-message>');
+    });
+
+    test('projects unknown wire discriminators to fixed categories', () {
+      const secret = 'path=/Users/operator token=secret-7F3A';
+      final cases = <(Map<String, dynamic>, String)>[
+        (<String, dynamic>{'type': secret}, '<unknown-frame>'),
+        (
+          _customMessage(secret, <String, Object?>{}),
+          '<unknown-custom-message>',
+        ),
+        (
+          <String, dynamic>{'type': 'extension_ui_request', 'method': secret},
+          '<unknown-ui-request>',
+        ),
+        (
+          <String, dynamic>{
+            'type': 'message_update',
+            'assistantMessageEvent': <String, dynamic>{'type': secret},
+          },
+          '<unknown-message-update>',
+        ),
+      ];
+
+      for (final (frame, category) in cases) {
+        final event = mapper.fromJson(frame);
+        expect(event, isA<RpcUnknown>());
+        final unknown = event as RpcUnknown;
+        expect(unknown.type, category);
+        expect(unknown.type, isNot(contains(secret)));
+      }
     });
   });
 }
