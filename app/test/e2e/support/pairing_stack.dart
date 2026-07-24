@@ -84,8 +84,9 @@ final class PairingStack {
     required HarnessEndpoints endpoints,
     required QrPairPayload qr,
     required PairingStorage storage,
+    SimpleKeyPair? ownerKey,
   }) async {
-    final ownerKey = await Ed25519().newKeyPair();
+    ownerKey ??= await Ed25519().newKeyPair();
     final deviceId = 'pairing-e2e-${DateTime.now().microsecondsSinceEpoch}';
     final ws = await WsTransport.connect(
       relayUrl: endpoints.relay.toString(),
