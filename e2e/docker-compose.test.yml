@@ -45,6 +45,7 @@ services:
       HOME: /tmp/outpost-pi-e2e-home
       OUTPOST_PI_RELAY: http://relay:3000
       OUTPOST_PI_ALLOW_FILE_IDENTITY: "1"
+      OUTPOST_PI_PAIR_CODE_FILE: /tmp/outpost-pi-e2e-pair-code.json
       E2E_PI_HOST_PORT: "4317"
       E2E_PI_CWD: /tmp/outpost-pi-e2e-cwd
       E2E_SEEDED_TRANSCRIPT: e2e persisted transcript

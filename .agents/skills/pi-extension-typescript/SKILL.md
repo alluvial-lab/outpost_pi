@@ -199,6 +199,7 @@ The app may debounce or render transitions, but the extension must not leave dur
 - Peer records live in `~/.pi/remote/peers.json`; relay config in `~/.pi/remote/config.json`; local per-cwd config in `<cwd>/.pi/remote-pi/config.json`. [remote-pi-pairing-storage]{1}
 - Do not hand-roll crypto. Use existing helpers in `src/pairing/crypto.ts` and protocol helpers.
 - Peer records and owner keys are machine/global state; update caches after add/remove and avoid stale in-memory assumptions.
+- `OUTPOST_PI_PAIR_CODE_FILE` is an E2E-only headless harness seam. When set, `/outpost-pi pair` writes the production-generated `{uri, token, expiresAt, roomId, name}` JSON with mode `0600`; it must not be enabled in normal operation, logged, or routed through `sendMessage`/model context.
 
 Protocol families to recognize:
 
