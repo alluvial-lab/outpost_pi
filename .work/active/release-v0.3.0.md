@@ -73,6 +73,15 @@ unbound (extension-0.3.0 skipped).
 - idea-mobile-user-message-not-delivered-timeout (superseded by story-fix-resumed-session-echo-gate-rejection)
 - idea-cross-side-logging-for-debug (superseded by feature-cross-side-observability)
 
+### Binding-consistency warnings
+
+BINDING CONSISTENCY — release v0.3.0 (epic_cohesion: phased) — 0 CONFLICTs; 7 informational INCOMPLETEs, all expected phased splits (children held for app-v0.3.0 / cockpit-v0.3.0):
+- gate-security-lsp-stderr-logged, gate-security-rpcunknown-retains-wire-discriminator, gate-security-formatter-reload-diagnostics-path-disclosure, gate-security-cockpit-temp-workspace-trace (children of feature-diagnostic-privacy-hardening → cockpit-v0.3.0)
+- gate-security-mobile-failure-detail-logged (child of feature-diagnostic-privacy-hardening → app-v0.3.0)
+- gate-security-owner-reset-retains-transcripts, app-owner-key-version-rollback-hardening (children of feature-owner-identity-transition → app-v0.3.0)
+
 ## Gate runs
+
+- **gate-cruft** (2026-07-24) — 3 findings (1 high, 2 medium, 0 low). High → `gate-cruft-generated-validator-unused-number-helper` (implementing, bound). Medium ×2 parked to backlog per gate_finding_routing (`gate-cruft-plain-peer-channel-unused-disconnect-callback`, `gate-cruft-qr-terminal-rotation-dead-path`).
 
 <pending>
