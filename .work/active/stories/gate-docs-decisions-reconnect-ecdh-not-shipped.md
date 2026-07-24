@@ -1,7 +1,7 @@
 ---
 id: gate-docs-decisions-reconnect-ecdh-not-shipped
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ X25519 is ephemeral per pairing, not per reconnect. Directional channel keys are
 
 ## Required edit
 Replace the row with the actual signed ephemeral-X25519-per-pairing and persisted-key reconnect contract.
+
+## Implementation notes
+
+Replaced the reconnect-time ECDH claim with the shipped signed ephemeral-X25519-per-pairing and persisted directional-key reconnect contract. Verified against `owner_multiplexer.ts` pairing persistence and reattach flow plus `secure_channel.ts` key derivation.

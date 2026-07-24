@@ -67,7 +67,7 @@ resolved they move here.
 | **No account** | QR pairing only. An optional account is deferred until multi-device sync or recovery pain demands it. |
 | **Ephemeral QR (60s, rotating)** | Short window reduces photo/screenshot leak risk. Single-use token. |
 | **Optional safety number** | 6-emoji bilateral (Signal-style) to visually confirm pairing wasn't MITM. |
-| **Forward secrecy** | ECDH ephemeral per reconnect. Long-lived Curve25519 key only authenticates identity. |
+| **Owner-channel key lifecycle** | Signed ephemeral X25519 is performed per pairing. Directional channel keys are persisted and reused across reconnects; Ed25519 Owner/Pi keys authenticate the pairing transcript. |
 | **Identity = pubkey** | No username. Relay auth via Ed25519 challenge-response. |
 | **Pairing lifetime** | Until someone revokes. |
 | **Revoke in app** | Settings list with swipe-to-delete + confirmation modal. |
