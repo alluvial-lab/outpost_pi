@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-stale-capability-anchors
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -25,6 +25,10 @@ pattern-skill-staleness
 
 ## Contradiction
 The quoted sendPiMessage, wakeAgent, and wrapped setModel implementations moved to lines 678, 695, and 906 after the replacement-session delivery changes; the old anchors point into unrelated methods or comments.
+
+## Implementation notes
+
+Refreshed all three pattern anchors to the current `sendPiMessage`, `wakeAgent`, and wrapped `setModel` implementations; retained the identity-checked eviction examples.
 
 ## Required edit
 Refresh the three anchors in place; retain the still-valid identity-checked eviction examples.
