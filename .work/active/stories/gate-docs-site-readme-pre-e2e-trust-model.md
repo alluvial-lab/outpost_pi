@@ -1,7 +1,7 @@
 ---
 id: gate-docs-site-readme-pre-e2e-trust-model
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,10 @@ Replace the statement with the owner-channel E2E/current limitation split.
 ## Implementation notes
 
 Updated the site README to describe authenticated owner-channel E2E and the relay's metadata and cross-PC visibility limits.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against the
+item's Required edit and the cited contradicting sources — claims match the
+shipped owner-channel E2E contract (sealed ct, metadata/cross-PC caveats
+retained, rolling-foundation prose). Approved -> done.
