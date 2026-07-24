@@ -391,7 +391,7 @@ function makeMockPi(): { pi: ExtensionAPI; registeredCommands: string[] } {
 }
 
 function makeMockCtx(cwd = "/home/user/projects/outpost_pi") {
-  return { ui: { notify: vi.fn() }, cwd, abort: vi.fn() };
+  return { ui: { notify: vi.fn(), custom: vi.fn(async () => undefined) }, mode: "tui", cwd, abort: vi.fn() };
 }
 
 type CmdHandler = (args: string, ctx: ReturnType<typeof makeMockCtx>) => Promise<void>;
@@ -1376,10 +1376,10 @@ describe("multi-channel broadcast (W2D)", () => {
     const ctx = makeMockCtx();
     await pair("", ctx);
 
-    // Should have notified about a QR being ready, not warned about
-    // an existing pairing.
+    // The TUI-only pairing panel opens even when another owner is attached.
+    // Rendering content itself is covered by pairing_coordinator.test.ts.
     const calls = ctx.ui.notify.mock.calls.map((c) => c[0] as string);
-    expect(calls.some((m) => m.includes("QR ready"))).toBe(true);
+    expect(ctx.ui.custom).toHaveBeenCalledOnce();
     expect(calls.every((m) => !m.includes("Already paired"))).toBe(true);
   });
 
