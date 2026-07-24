@@ -10,6 +10,68 @@ import type { OwnerMultiplexerPort } from "../ports.js";
 
 export type PairingCoordinatorState = "idle" | "started";
 
+type PairingUiContext = Pick<ExtensionContext, "ui" | "cwd"> & Partial<Pick<ExtensionContext, "mode">>;
+
+type PairingDialogTheme = {
+  accent(text: string): string;
+  dim(text: string): string;
+};
+
+/** Render a QR pairing code in a keyboard-dismissible TUI-only dialog. */
+class PairingCodeDialog {
+  private readonly qrLines: string[];
+  private readonly expiresAtText: string;
+  private readonly minimumWidth: number;
+
+  constructor(
+    qrAscii: string,
+    private readonly qrUri: string,
+    expiresAt: number,
+    private readonly theme: PairingDialogTheme,
+    private readonly done: () => void,
+  ) {
+    this.qrLines = qrAscii.trimEnd().split("\n");
+    this.expiresAtText = `Valid until ${new Date(expiresAt).toLocaleTimeString()}.`;
+    this.minimumWidth = Math.max(
+      ...this.qrLines.map((line) => line.length),
+      "Press Enter or Esc to close.".length,
+    );
+  }
+
+  render(width: number): string[] {
+    if (width < this.minimumWidth) {
+      return [
+        `Terminal is too narrow for this pairing code; widen to ${this.minimumWidth} columns.`.slice(0, width),
+        "Press Enter or Esc to close.".slice(0, width),
+      ];
+    }
+    return [
+      this.theme.accent("Scan to pair"),
+      "",
+      ...this.qrLines,
+      "",
+      ...wrapForTui("Or copy this pairing code (camera-less devices):", width),
+      "",
+      ...wrapForTui(this.qrUri, width),
+      "",
+      ...wrapForTui(this.expiresAtText, width).map((line) => this.theme.dim(line)),
+      ...wrapForTui("Press Enter or Esc to close.", width).map((line) => this.theme.dim(line)),
+    ];
+  }
+
+  handleInput(data: string): void {
+    if (data === "\r" || data === "\n" || data === "\x1b") this.done();
+  }
+
+  invalidate(): void {}
+}
+
+function wrapForTui(text: string, width: number): string[] {
+  const lines: string[] = [];
+  for (let start = 0; start < text.length; start += width) lines.push(text.slice(start, start + width));
+  return lines.length > 0 ? lines : [""];
+}
+
 export interface PairingCoordinatorDeps {
   getState(): PairingCoordinatorState;
   startRelay(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void>;
@@ -66,7 +128,13 @@ export class PairingCoordinator {
     await this.deps.startRelay(ctx);
   }
 
-  async showPairQr(ctx: Pick<ExtensionContext, "ui" | "cwd">, args = ""): Promise<void> {
+  /** Show a QR pairing token in a TUI-only component without adding it to model context. */
+  async showPairQr(ctx: PairingUiContext, args = ""): Promise<void> {
+    if (ctx.mode !== "tui") {
+      ctx.ui.notify("[outpost-pi] Pairing QR display requires an interactive TUI session.", "warning");
+      return;
+    }
+
     const cwd = cwdFrom(ctx);
 
     if (this.deps.getState() === "idle") {
@@ -103,20 +171,16 @@ export class PairingCoordinator {
     const roomId = this.deps.roomId() ?? roomIdFor(cwd, sessionName);
     const qrUri = buildQRUri(token, edKp.publicKey, sessionName, roomId);
     const qrAscii = renderQRAscii(qrUri);
-    this.deps.sendPiMessage({
-      customType: "outpost-pi:pair-code",
-      content:
-        `📱 Scan to pair:\n\n${qrAscii}\n` +
-        `📋 Or copy this pairing code (camera-less devices):\n\n${qrUri}`,
-      details: { uri: qrUri, token, expiresAt, roomId, name: sessionName },
-      display: true,
-    }, undefined, "pair-code");
-
-    ctx.ui.notify(
-      `[outpost-pi] QR ready — valid until ${new Date(expiresAt).toLocaleTimeString()}. ` +
-      `Scan with the app, or copy the pairing code printed above.`,
-      "info",
-    );
+    await ctx.ui.custom<void>((_tui, theme, _keybindings, done) => new PairingCodeDialog(
+      qrAscii,
+      qrUri,
+      expiresAt,
+      {
+        accent: (text) => theme.fg("accent", theme.bold(text)),
+        dim: (text) => theme.fg("dim", text),
+      },
+      done,
+    ));
   }
 
   async listDevices(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
