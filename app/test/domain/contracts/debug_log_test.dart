@@ -20,9 +20,9 @@ const Map<DebugTag, Set<String>> kAllowedKeys = {
   DebugTag.peerFrame: {'kind', 'bytes', 'error'},
   DebugTag.msgSend: {'id', 'blocked'},
   DebugTag.msgEcho: {'id'},
-  DebugTag.msgFailed: {'id', 'code', 'detail'},
+  DebugTag.msgFailed: {'id', 'code'},
   DebugTag.sessionGate: {'messageType', 'reason', 'sessionIdTail'},
-  DebugTag.sessionSync: {'err'},
+  DebugTag.sessionSync: {},
   DebugTag.connStatus: {'status', 'attempt', 'delayMs', 'peerTail', 'room'},
   DebugTag.connChannelLost: {'stale', 'peerTail', 'room'},
   DebugTag.connHydrate: {'action', 'room', 'snapshotCount'},
@@ -46,6 +46,7 @@ const Set<String> kUniversalKeys = {'tag', 'ts'};
 /// persisted/shared log. Backstop to the per-tag allow-list.
 const Set<String> kForbiddenKeys = {
   'body', 'image', 'data', 'args', 'result', 'prompt', 'message', 'ct',
+  'detail', 'err',
   // payload-like aliases the allow-list must also reject:
   'content', 'payload', 'preview', 'summary', 'fullText', 'bodyText', 'raw',
   'toolOutput', 'imageBytes',
@@ -109,14 +110,14 @@ void main() {
       PeerFrameEvent(ts: now, kind: huge, bytes: 1234, error: huge),
       MsgSendEvent(ts: now, id: huge, blocked: true),
       MsgEchoEvent(ts: now, id: huge),
-      MsgFailedEvent(ts: now, id: huge, code: huge, detail: huge),
+      MsgFailedEvent(ts: now, id: huge, code: huge),
       SessionGateEvent(
         ts: now,
         messageType: huge,
         reason: huge,
         sessionIdTail: huge,
       ),
-      SessionSyncEvent(ts: now, err: huge),
+      SessionSyncEvent(ts: now),
       ConnStatusEvent(
         ts: now,
         status: huge,
@@ -288,5 +289,10 @@ void main() {
 
     expect(json.keys, unorderedEquals(<String>['tag', 'ts', 'id', 'blocked']));
     expect(json, isNot(contains('preview')));
+  });
+
+  test('failure diagnostics admit only known codes', () {
+    expect(admitFailureCode('internal_error'), 'internal_error');
+    expect(admitFailureCode('future_secret_code'), kUnrecognizedFailureCode);
   });
 }
