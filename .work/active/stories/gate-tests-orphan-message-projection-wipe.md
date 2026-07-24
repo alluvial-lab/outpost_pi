@@ -1,7 +1,7 @@
 ---
 id: gate-tests-orphan-message-projection-wipe
 kind: story
-stage: review
+stage: done
 tags: [testing]
 parent: null
 depends_on: []
@@ -38,3 +38,13 @@ test("deletes an orphan message projection absent from the session index", () as
 ## Implementation notes
 - Added an orphan `msgs_v3_*` projection regression test that verifies the directory-scan backstop deletes it and reopening the same tuple yields an empty projection.
 - Verification: `cd app && flutter test test/data/local/boxes_test.dart` (passed).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against
+acceptance. Verified: throws contracts match implementation; orphan msgs_v3
+test asserts real wipe behavior; fatal reads propagate (router's `on Object`
+boot guard surfaces them — no silent rotation), conditional re-read before
+save; pairing-viewmodel has dispose()+generation fences after every await
+incl. persistPeer revalidation (absorbed generation-fence item's acceptance
+ships here). flutter analyze + focused tests green. Approved -> done.
