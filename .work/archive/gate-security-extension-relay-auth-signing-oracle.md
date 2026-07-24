@@ -1,11 +1,13 @@
 ---
 id: gate-security-extension-relay-auth-signing-oracle
+status: superseded
+superseded_by: 0.1.0 relay auth domain separation (code-verified, groom dd34b5f)
 kind: story
 stage: implementing
 tags: [security]
 parent: null
 depends_on: []
-release_binding: v0.3.0
+release_binding: null
 gate_origin: security
 created: 2026-07-01
 updated: 2026-07-24
