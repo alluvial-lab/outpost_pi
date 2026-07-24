@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-dart-secure-channel-throws
 kind: story
-stage: implementing
+stage: review
 tags: [refactor]
 parent: null
 depends_on: []
@@ -30,3 +30,7 @@ Exported cryptographic helpers explicitly throw for invalid key lengths, low-ord
 
 ## Fix
 Add `Throws [ArgumentError]` and `Throws [RangeError]` contract notes to the affected derivation, transcript, proof, and sealing helpers.
+
+## Implementation notes
+- Documented the invalid-length, low-order-key, and sequence-range failure contracts on the public derivation, proof, transcript, and sealing helpers.
+- Verification: `cd app && flutter test test/data/transport/secure_channel_test.dart` (passed).
