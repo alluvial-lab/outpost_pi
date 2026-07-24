@@ -104,9 +104,11 @@ from your phone. The phone and the Pi process find each other through a
 **relay**: a small WebSocket server that ferries messages between them.
 Pairing is one-time and per device, via QR code.
 
-Communication: WebSocket over TLS to the relay (ciphertext in transit).
-The relay sees plaintext envelopes at rest and in forwarding — see
-[`PROTOCOL.md`](../PROTOCOL.md) for the trust model.
+Communication: WebSocket over TLS to the relay. After pairing, app↔Pi
+owner-channel payloads are sealed and authenticated end to end (including
+inline images), so the relay forwards them as opaque ciphertext. The relay
+still sees routing metadata, and cross-PC Pi↔Pi envelopes remain relay-readable
+plaintext — see [`PROTOCOL.md`](../PROTOCOL.md) for the trust model.
 
 **Get the app** — current direct downloads and store availability while
 operator-owned public releases roll out:
@@ -153,10 +155,10 @@ Whether a model accepts images is surfaced as a `vision` flag on each
 `WireModel` (derived from the SDK's `Model.input` including `"image"`); the app
 greys out the attach button when the active model is text-only.
 
-The **relay is unchanged** — the image travels inline in the same JSON envelope
-as the rest of the message, so there's no binary channel (large files are a
-future track). This is not app-layer E2E encryption; the relay can see current
-plaintext envelope contents. Text-only messages are unaffected.
+The **relay is unchanged** — the image travels inline in the same owner-channel
+JSON payload as the rest of the message, so there's no binary channel (large
+files are a future track). The owner-channel seal protects the image along with
+the text; text-only messages use the same protection.
 
 ---
 
@@ -244,15 +246,16 @@ The shortid is the first 8 chars shown by `devices`.
 
 ## The relay
 
-The relay is the only network-touching piece of Outpost-Pi. It forwards
-authenticated WebSocket envelopes over TLS, but there is **no app-layer E2E
-encryption** in the current implementation. The relay can see plaintext envelope
-contents while forwarding, plus connection metadata: which keypair is online,
-which room/cwd identifiers exist, message timing, and sizes.
+The relay is the only network-touching piece of Outpost-Pi. After pairing,
+app↔Pi owner-channel payloads are sealed and authenticated end to end, so the
+relay forwards their `ct` as opaque ciphertext. It still sees connection and
+routing metadata — which keypair is online, room/cwd identifiers, message
+timing, and sizes — and cross-PC Pi↔Pi envelopes remain relay-readable
+plaintext.
 
-You must self-host a relay. TLS + Ed25519 pairing/relay authentication are
-built in, but there is **no IP allow-listing, VPN gating, or app-layer E2E
-encryption**.
+You must self-host a relay. TLS + Ed25519 pairing/relay authentication and the
+owner-channel E2E seal are built in; there is no IP allow-listing or VPN gating.
+Use a VPN for additional network access control.
 
 ### Self-host a relay
 

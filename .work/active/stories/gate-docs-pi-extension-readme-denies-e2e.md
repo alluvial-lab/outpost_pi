@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pi-extension-readme-denies-e2e
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ Pairing now derives and persists directional owner-channel keys, and post-pairin
 
 ## Required edit
 Replace all three stale sections with one consistent owner-channel E2E description and retain the cross-PC/metadata caveats.
+
+## Implementation notes
+
+Replaced the three stale README sections with the shipped sealed owner-channel model, including inline-image protection, metadata visibility, and relay-readable cross-PC caveats.
