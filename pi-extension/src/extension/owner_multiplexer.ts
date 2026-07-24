@@ -1,4 +1,7 @@
 import {
+  SERVER_MESSAGE_DISCRIMINATORS,
+} from "../protocol/generated/protocol.generated.js";
+import {
   decodeRelayClientPayload,
   type DecodedRelayIngress,
 } from "../protocol/relay_ingress.js";
@@ -357,7 +360,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     inner: Extract<ClientMessage, { type: "pair_request" }>,
   ): Promise<void> {
     const sendError = (code: PairErrorCode, message: string) => {
-      input.sendToPeer(peerId, { type: "pair_error", in_reply_to: inner.id, code, message });
+      input.sendToPeer(peerId, { type: SERVER_MESSAGE_DISCRIMINATORS.pair_error, in_reply_to: inner.id, code, message });
     };
 
     const tokenId = decodeCanonicalBase64(inner.token_id, 16);
@@ -455,7 +458,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
 
     const session = this.deps.currentPairingSession();
     input.sendToPeer(peerId, {
-      type: "pair_ok",
+      type: SERVER_MESSAGE_DISCRIMINATORS.pair_ok,
       in_reply_to: inner.id,
       session_name: session.sessionName,
       session_started_at: session.sessionStartedAt,
@@ -528,7 +531,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     if (!channel) return Promise.resolve();
 
     if (reason) {
-      try { channel.send({ type: "bye", reason }); } catch { /* best-effort per owner channel */ }
+      try { channel.send({ type: SERVER_MESSAGE_DISCRIMINATORS.bye, reason }); } catch { /* best-effort per owner channel */ }
     }
     let channelSettled: Promise<void>;
     try {
