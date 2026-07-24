@@ -1,7 +1,7 @@
 ---
 id: gate-security-identity-store-fatal-read-rotates-owner-key
 kind: story
-stage: implementing
+stage: review
 tags: [security]
 parent: null
 depends_on: []
@@ -35,3 +35,8 @@ Generate only when load() returns null. Return the sync-required result for Sync
 - `SyncUnavailable` returns the sync-required result; `PlatformFailure` propagates or is explicitly surfaced (no silent rotation).
 - Save is conditional/rechecked so concurrent restoration cannot overwrite a durable identity.
 - Tests cover fatal read failures and concurrent restoration.
+
+## Implementation notes
+- Restricted first-run key creation to a successful null load; sync-unavailable reads return the gate result and platform failures now propagate without writing a replacement.
+- Added a second load before saving a generated identity so a concurrent restored identity wins.
+- Verification: `cd app && flutter test test/pairing/owner_identity_bridge_test.dart` (passed).
