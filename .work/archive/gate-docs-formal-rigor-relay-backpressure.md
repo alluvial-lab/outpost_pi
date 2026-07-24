@@ -1,9 +1,11 @@
 ---
 id: gate-docs-formal-rigor-relay-backpressure
+status: superseded
+superseded_by: resolved-in-substance (formal-rigor-stack/SKILL.md:60 now documents the bounded 16-frame mailbox)
 created: 2026-07-20
 updated: 2026-07-24
 tags: [documentation]
-release_binding: v0.3.0
+release_binding: null
 gate_origin: docs
 ---
 

@@ -1,11 +1,13 @@
 ---
 id: gate-refactor-lifecycle-mesh-poll-floating
+status: superseded
+superseded_by: backlog-app-lifecycle-owned-operations (groom merge bd3b3a7, 2026-07-22)
 kind: story
 stage: drafting
 tags: []
 parent: null
 depends_on: []
-release_binding: v0.3.0
+release_binding: null
 gate_origin: refactor
 created: 2026-07-20
 updated: 2026-07-24
