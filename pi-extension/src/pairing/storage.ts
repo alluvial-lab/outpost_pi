@@ -333,8 +333,7 @@ async function _writePeersFile(peers: PeerRecord[]): Promise<void> {
   }
 }
 
-/** Load the persisted pairing roster, returning an empty roster when it is absent or unreadable. */
-export async function listPeers(): Promise<PeerRecord[]> {
+async function _readPeersFile(): Promise<PeerRecord[]> {
   await _hardenPeersFilePermissions();
   try {
     const raw = await readFile(PEERS_PATH, "utf8");
@@ -347,13 +346,28 @@ export async function listPeers(): Promise<PeerRecord[]> {
 
 let _peerMutationTail: Promise<void> = Promise.resolve();
 
+function _serializePeerFileOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = _peerMutationTail.then(operation);
+  _peerMutationTail = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+/**
+ * Load a pairing snapshot after every previously accepted roster mutation settles.
+ *
+ * Reads join the same file-operation tail as mutations, so reattachment cannot
+ * observe the pre-write snapshot of a sequence update already accepted in this
+ * process. An absent or unreadable roster remains an empty snapshot.
+ */
+export function listPeers(): Promise<PeerRecord[]> {
+  return _serializePeerFileOperation(_readPeersFile);
+}
+
 function _mutatePeers<T>(mutate: (peers: PeerRecord[]) => Promise<T> | T): Promise<T> {
-  const operation = _peerMutationTail.then(async () => {
-    const peers = await listPeers();
+  return _serializePeerFileOperation(async () => {
+    const peers = await _readPeersFile();
     return mutate(peers);
   });
-  _peerMutationTail = operation.then(() => undefined, () => undefined);
-  return operation;
 }
 
 /**
@@ -376,8 +390,9 @@ export function addPeer(record: PeerRecord): Promise<void> {
 /**
  * Persist one or both sequence high-waters without overwriting a newer re-pair.
  *
- * The expected channel key fences queued writes from a detached channel after
- * the same Owner has established fresh key material.
+ * Values max-merge with the serialized current record, so a stale generation
+ * cannot regress durable replay state. The expected channel key also fences
+ * queued writes after the same Owner establishes fresh key material.
  */
 export function updatePeerChannelSequences(
   remoteEpk: string,
@@ -392,9 +407,28 @@ export function updatePeerChannelSequences(
         throw new RangeError("owner channel sequence must fit uint64");
       }
     }
-    if (patch.sendSeq !== undefined) peer.send_seq = patch.sendSeq.toString(10);
-    if (patch.recvSeq !== undefined) peer.recv_seq = patch.recvSeq.toString(10);
-    await _writePeersFile(peers);
+    let changed = false;
+    if (patch.sendSeq !== undefined) {
+      const stored = parsePeerChannelSequence(peer.send_seq);
+      if (stored === null) return false;
+      const next = patch.sendSeq > stored ? patch.sendSeq : stored;
+      const serialized = next.toString(10);
+      if (peer.send_seq !== serialized) {
+        peer.send_seq = serialized;
+        changed = true;
+      }
+    }
+    if (patch.recvSeq !== undefined) {
+      const stored = parsePeerChannelSequence(peer.recv_seq);
+      if (stored === null) return false;
+      const next = patch.recvSeq > stored ? patch.recvSeq : stored;
+      const serialized = next.toString(10);
+      if (peer.recv_seq !== serialized) {
+        peer.recv_seq = serialized;
+        changed = true;
+      }
+    }
+    if (changed) await _writePeersFile(peers);
     return true;
   });
 }
