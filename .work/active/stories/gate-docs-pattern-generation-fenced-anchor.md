@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-generation-fenced-anchor
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,10 @@ Update the anchor and example to the current owner-bound _replaceLocalCacheWith 
 ## Implementation notes
 
 Updated the pattern anchor and cache-replacement example to match the current owner-bound implementation at `mesh_sync_service.dart:300-344`.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): refreshed anchors and
+quoted snippets verified line-by-line against current sources
+(mesh_sync_service.dart:300, sdk_session_projection.ts:678/695/906,
+relay_transport.ts:567-577, relay_ingress.ts:81). Approved -> done.
