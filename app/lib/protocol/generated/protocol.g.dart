@@ -654,6 +654,8 @@ const Set<String> generatedServerMessageTypes = {
   'models_list',
 };
 
+const String agentMessageWireType = 'agent_message';
+
 const Set<String> generatedSessionScopedServerMessageTypes = {
   'user_input',
   'user_message',
