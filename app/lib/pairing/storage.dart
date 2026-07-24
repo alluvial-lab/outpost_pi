@@ -559,14 +559,16 @@ class PairingStorage extends ChangeNotifier {
   /// Persist a new highest verified relay mesh version for [ownerPkHash].
   ///
   /// Never lowers an existing mark, even if a stale caller attempts to do so.
-  Future<void> saveMeshHighWatermark(String ownerPkHash, int version) async {
+  Future<void> saveMeshHighWatermark(String ownerPkHash, int version) {
     if (version < 0) {
       throw ArgumentError.value(version, 'version', 'must not be negative');
     }
-    final key = _meshWatermarkKey(ownerPkHash);
-    final current = await loadMeshHighWatermark(ownerPkHash);
-    if (version <= current) return;
-    await _store.write(key: key, value: '$version');
+    return _serializePeerMutation(() async {
+      final key = _meshWatermarkKey(ownerPkHash);
+      final current = await loadMeshHighWatermark(ownerPkHash);
+      if (version <= current) return;
+      await _store.write(key: key, value: '$version');
+    });
   }
 
   /// Wipe every peer + every persisted room map. Used by the
