@@ -773,6 +773,83 @@ void main() {
   );
 
   test(
+    'server failures retain user-visible text but omit it from diagnostics',
+    () async {
+      const secret = 'path=/Users/operator/workspace token=secret-7F3A';
+      final store = _MemoryTranscriptStore();
+      final debugLog = _RecordingDebugLog();
+      final console = <String>[];
+      final originalDebugPrint = debugPrint;
+      final s = await setup(transcriptEventStore: store, debugLog: debugLog);
+
+      debugPrint = (message, {wrapWidth}) {
+        if (message != null) console.add(message);
+      };
+      try {
+        await s.sync.sendMessage('known failure');
+        final knownId = s.ch.sent.whereType<UserMessage>().last.id;
+        s.ch.push(
+          ErrorMessage(
+            sessionId: s.sessionId,
+            inReplyTo: knownId,
+            code: 'internal_error',
+            message: secret,
+          ),
+        );
+        await _waitUntil(
+          () => store
+              .eventsFor(transcriptKeyFor(s.epk))
+              .whereType<UserMessageFailed>()
+              .any((event) => event.clientMessageId == knownId),
+          reason: 'known server failure is persisted for transcript projection',
+        );
+
+        await s.sync.sendMessage('unknown failure');
+        final unknownId = s.ch.sent.whereType<UserMessage>().last.id;
+        s.ch.push(
+          ErrorMessage(
+            sessionId: s.sessionId,
+            inReplyTo: unknownId,
+            code: 'future_error_code',
+            message: secret,
+          ),
+        );
+        await _waitUntil(
+          () => debugLog.events.whereType<MsgFailedEvent>().length == 2,
+          reason: 'both diagnostic projections are captured',
+        );
+      } finally {
+        debugPrint = originalDebugPrint;
+      }
+
+      final failures = store
+          .eventsFor(transcriptKeyFor(s.epk))
+          .whereType<UserMessageFailed>()
+          .toList(growable: false);
+      expect(failures, hasLength(2));
+      expect(failures.map((event) => event.message), everyElement(secret));
+
+      final diagnostics = debugLog.events.whereType<MsgFailedEvent>().toList(
+        growable: false,
+      );
+      expect(diagnostics.map((event) => event.toJson()['code']), [
+        'internal_error',
+        kUnrecognizedFailureCode,
+      ]);
+      final diagnosticText = <String>[
+        ...console,
+        ...diagnostics.map((event) => event.toJson().toString()),
+      ].join('\n');
+      expect(diagnosticText, isNot(contains(secret)));
+      expect(diagnosticText, isNot(contains('/Users/operator/workspace')));
+      expect(diagnosticText, isNot(contains('token=secret-7F3A')));
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
     'steer send keeps active working target and sets streaming behavior on wire',
     () async {
       final s = await setup();
