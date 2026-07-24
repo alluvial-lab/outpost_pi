@@ -5,10 +5,10 @@ stage: done
 tags: [security, cockpit, app]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.3.0
 gate_origin: security
 created: 2026-07-23
-updated: 2026-07-23
+updated: 2026-07-24
 ---
 
 # Diagnostic-privacy hardening (round 2)

@@ -3,7 +3,9 @@ id: rebrand-branding-assets-redraw
 status: superseded
 superseded_by: story-epic-rebrand-external-surfaces-hostname-migration-branding-svg-redraw
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-24
+stage: done
+release_binding: v0.3.0
 tags: [rebrand, branding, design]
 ---
 
