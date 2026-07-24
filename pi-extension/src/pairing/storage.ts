@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, chmod, unlink, rename } from "node:fs/promises";
+import { mkdir, readFile, writeFile, chmod, unlink, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { AsyncEntry } from "@napi-rs/keyring";
@@ -50,7 +50,6 @@ export class KeyringUnavailableError extends Error {
 
 const PI_DIR = join(homedir(), ".pi", "remote");
 const IDENTITY_FILE = join(PI_DIR, "identity.json");
-const PEERS_PATH = join(PI_DIR, "peers.json");
 
 // ── KeyStore abstraction ─────────────────────────────────────────────────────
 
@@ -311,126 +310,271 @@ export function parsePeerChannelSequence(value: string | undefined): bigint | nu
   return parsed <= MAX_UINT64 ? parsed : null;
 }
 
-async function _hardenPeersFilePermissions(): Promise<void> {
-  try { await chmod(PEERS_PATH, 0o600); } catch { /* missing/non-POSIX/not fatal */ }
+const DEFAULT_PEER_LOCK_TIMEOUT_MS = 2_000;
+const DEFAULT_PEER_LOCK_RETRY_MS = 10;
+const DEFAULT_PEER_LOCK_STALE_MS = 30_000;
+
+/** Tune one process-local peer store and its machine-wide mutation lock. */
+export interface PeerStorageOptions {
+  directory?: string;
+  lockTimeoutMs?: number;
+  lockRetryMs?: number;
+  lockStaleMs?: number;
 }
 
-async function _writePeersFile(peers: PeerRecord[]): Promise<void> {
-  const dir = dirname(PEERS_PATH);
-  await _ensurePrivateStorageDir(dir);
-  const tmpPath = join(
-    dir,
-    `.peers.json.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`,
-  );
-  try {
-    await writeFile(tmpPath, JSON.stringify({ peers }, null, 2), { mode: 0o600 });
-    try { await chmod(tmpPath, 0o600); } catch { /* mode may be unsupported */ }
-    await rename(tmpPath, PEERS_PATH);
-    await _hardenPeersFilePermissions();
-  } catch (err) {
-    try { await unlink(tmpPath); } catch { /* temp file may not exist */ }
-    throw err;
+/** Raised when another live process holds the peers.json mutation lock beyond the bounded wait. */
+export class PeerStorageLockTimeoutError extends Error {
+  constructor(lockPath: string, timeoutMs: number) {
+    super(`timed out after ${timeoutMs}ms acquiring peer storage lock ${lockPath}`);
+    this.name = "PeerStorageLockTimeoutError";
   }
 }
 
-async function _readPeersFile(): Promise<PeerRecord[]> {
-  await _hardenPeersFilePermissions();
+function _hasErrorCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+function _pidIsAlive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try {
-    const raw = await readFile(PEERS_PATH, "utf8");
-    const parsed = JSON.parse(raw) as { peers: PeerRecord[] };
-    return parsed.peers ?? [];
-  } catch {
-    return [];
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !(typeof error === "object" && error !== null && "code" in error && error.code === "ESRCH");
   }
 }
 
-let _peerMutationTail: Promise<void> = Promise.resolve();
-
-function _serializePeerFileOperation<T>(operation: () => Promise<T>): Promise<T> {
-  const result = _peerMutationTail.then(operation);
-  _peerMutationTail = result.then(() => undefined, () => undefined);
-  return result;
-}
-
 /**
- * Load a pairing snapshot after every previously accepted roster mutation settles.
+ * Serialize peers.json read-modify-write operations across every local Pi process.
  *
- * Reads join the same file-operation tail as mutations, so reattachment cannot
- * observe the pre-write snapshot of a sequence update already accepted in this
- * process. An absent or unreadable roster remains an empty snapshot.
+ * Each instance retains its own promise tail for in-process ordering. Beneath that
+ * tail, an atomic-mkdir lock protects the shared file. Old locks are reclaimed only
+ * when both their mtime is stale and their recorded PID is no longer live.
  */
-export function listPeers(): Promise<PeerRecord[]> {
-  return _serializePeerFileOperation(_readPeersFile);
-}
+export class PeerStorage {
+  private readonly peersPath: string;
+  private readonly lockPath: string;
+  private readonly lockOwnerPath: string;
+  private readonly lockTimeoutMs: number;
+  private readonly lockRetryMs: number;
+  private readonly lockStaleMs: number;
+  private mutationTail: Promise<void> = Promise.resolve();
 
-function _mutatePeers<T>(mutate: (peers: PeerRecord[]) => Promise<T> | T): Promise<T> {
-  return _serializePeerFileOperation(async () => {
-    const peers = await _readPeersFile();
-    return mutate(peers);
-  });
-}
+  constructor(options: PeerStorageOptions = {}) {
+    const directory = options.directory ?? PI_DIR;
+    this.peersPath = join(directory, "peers.json");
+    this.lockPath = join(directory, "peers.lock");
+    this.lockOwnerPath = join(this.lockPath, "owner.json");
+    this.lockTimeoutMs = options.lockTimeoutMs ?? DEFAULT_PEER_LOCK_TIMEOUT_MS;
+    this.lockRetryMs = options.lockRetryMs ?? DEFAULT_PEER_LOCK_RETRY_MS;
+    this.lockStaleMs = options.lockStaleMs ?? DEFAULT_PEER_LOCK_STALE_MS;
+  }
 
-/**
- * Persist a pairing record, replacing an existing entry for the same remote key atomically.
- *
- * @throws when the roster cannot be written.
- */
-export function addPeer(record: PeerRecord): Promise<void> {
-  return _mutatePeers(async (peers) => {
-    const idx = peers.findIndex((p) => p.remote_epk === record.remote_epk);
-    if (idx >= 0) {
-      peers[idx] = record; // idempotent re-pair refreshes the channel key and counters
-    } else {
-      peers.push(record);
-    }
-    await _writePeersFile(peers);
-  });
-}
+  /** Load a snapshot after every earlier operation accepted by this instance settles. */
+  listPeers(): Promise<PeerRecord[]> {
+    return this.serialize(() => this.readPeersFile());
+  }
 
-/**
- * Persist one or both sequence high-waters without overwriting a newer re-pair.
- *
- * Values max-merge with the serialized current record, so a stale generation
- * cannot regress durable replay state. The expected channel key also fences
- * queued writes after the same Owner establishes fresh key material.
- */
-export function updatePeerChannelSequences(
-  remoteEpk: string,
-  expectedChannelKey: string,
-  patch: { sendSeq?: bigint; recvSeq?: bigint },
-): Promise<boolean> {
-  return _mutatePeers(async (peers) => {
-    const peer = peers.find((candidate) => candidate.remote_epk === remoteEpk);
-    if (!peer || peer.channel_key !== expectedChannelKey) return false;
-    for (const seq of [patch.sendSeq, patch.recvSeq]) {
-      if (seq !== undefined && (seq < 0n || seq > MAX_UINT64)) {
-        throw new RangeError("owner channel sequence must fit uint64");
-      }
-    }
-    let changed = false;
-    if (patch.sendSeq !== undefined) {
+  /** Replace or append one Owner pairing without clobbering concurrent sequence state. */
+  addPeer(record: PeerRecord): Promise<void> {
+    return this.mutatePeers(async (peers) => {
+      const idx = peers.findIndex((peer) => peer.remote_epk === record.remote_epk);
+      if (idx >= 0) peers[idx] = record;
+      else peers.push(record);
+      await this.writePeersFile(peers);
+    });
+  }
+
+  /**
+   * Atomically reserve and persist the next Pi-to-Owner sequence.
+   *
+   * @returns the durable reserved value, or `null` when the peer/key generation no longer matches
+   * @throws {RangeError} when the persisted uint64 sequence is exhausted
+   * @throws {PeerStorageLockTimeoutError} when a live holder outlasts the bounded lock wait
+   */
+  reserveSendSeq(remoteEpk: string, expectedChannelKey: string): Promise<bigint | null> {
+    return this.mutatePeers(async (peers) => {
+      const peer = peers.find((candidate) => candidate.remote_epk === remoteEpk);
+      if (!peer || peer.channel_key !== expectedChannelKey) return null;
       const stored = parsePeerChannelSequence(peer.send_seq);
-      if (stored === null) return false;
-      const next = patch.sendSeq > stored ? patch.sendSeq : stored;
-      const serialized = next.toString(10);
-      if (peer.send_seq !== serialized) {
-        peer.send_seq = serialized;
-        changed = true;
+      if (stored === null) return null;
+      if (stored === MAX_UINT64) throw new RangeError("owner channel send sequence exhausted uint64");
+      const reserved = stored + 1n;
+      peer.send_seq = reserved.toString(10);
+      await this.writePeersFile(peers);
+      return reserved;
+    });
+  }
+
+  /**
+   * Max-merge one accepted Owner-to-Pi sequence under the machine-wide lock.
+   *
+   * @returns false when the peer/key generation or persisted sequence is invalid
+   * @throws {PeerStorageLockTimeoutError} when a live holder outlasts the bounded lock wait
+   */
+  updateRecvSeq(remoteEpk: string, expectedChannelKey: string, recvSeq: bigint): Promise<boolean> {
+    return this.mutatePeers(async (peers) => {
+      const peer = peers.find((candidate) => candidate.remote_epk === remoteEpk);
+      if (!peer || peer.channel_key !== expectedChannelKey) return false;
+      if (recvSeq < 0n || recvSeq > MAX_UINT64) {
+        throw new RangeError("owner channel receive sequence must fit uint64");
       }
-    }
-    if (patch.recvSeq !== undefined) {
       const stored = parsePeerChannelSequence(peer.recv_seq);
       if (stored === null) return false;
-      const next = patch.recvSeq > stored ? patch.recvSeq : stored;
+      const next = recvSeq > stored ? recvSeq : stored;
       const serialized = next.toString(10);
       if (peer.recv_seq !== serialized) {
         peer.recv_seq = serialized;
-        changed = true;
+        await this.writePeersFile(peers);
+      }
+      return true;
+    });
+  }
+
+  /** Remove every pairing for one remote key without clobbering concurrent sequence state. */
+  removePeer(remoteEpk: string): Promise<boolean> {
+    return this.mutatePeers(async (peers) => {
+      const filtered = peers.filter((peer) => peer.remote_epk !== remoteEpk);
+      if (filtered.length === peers.length) return false;
+      await this.writePeersFile(filtered);
+      return true;
+    });
+  }
+
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationTail.then(operation);
+    this.mutationTail = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  private mutatePeers<T>(mutate: (peers: PeerRecord[]) => Promise<T> | T): Promise<T> {
+    return this.serialize(() => this.withFileLock(async () => mutate(await this.readPeersFile())));
+  }
+
+  private async withFileLock<T>(operation: () => Promise<T>): Promise<T> {
+    await _ensurePrivateStorageDir(dirname(this.peersPath));
+    const deadline = Date.now() + this.lockTimeoutMs;
+    while (true) {
+      try {
+        await mkdir(this.lockPath, { mode: 0o700 });
+        try {
+          await writeFile(this.lockOwnerPath, JSON.stringify({ pid: process.pid }), { mode: 0o600 });
+        } catch (error) {
+          await rm(this.lockPath, { recursive: true, force: true });
+          throw error;
+        }
+        break;
+      } catch (error) {
+        if (!_hasErrorCode(error, "EEXIST")) throw error;
+        if (await this.reclaimStaleLock()) continue;
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new PeerStorageLockTimeoutError(this.lockPath, this.lockTimeoutMs);
+        await _sleep(Math.min(this.lockRetryMs, remaining));
       }
     }
-    if (changed) await _writePeersFile(peers);
+
+    try {
+      return await operation();
+    } finally {
+      await rm(this.lockPath, { recursive: true, force: true });
+    }
+  }
+
+  private async reclaimStaleLock(): Promise<boolean> {
+    let lockStat;
+    try {
+      lockStat = await stat(this.lockPath);
+    } catch (error) {
+      return _hasErrorCode(error, "ENOENT");
+    }
+    if (Date.now() - lockStat.mtimeMs < this.lockStaleMs) return false;
+
+    let holderPid = 0;
+    try {
+      const raw = await readFile(this.lockOwnerPath, "utf8");
+      const parsed = JSON.parse(raw) as { pid?: unknown };
+      if (typeof parsed.pid === "number") holderPid = parsed.pid;
+    } catch {
+      // An old lock whose owner record was never completed is reclaimable.
+    }
+    if (_pidIsAlive(holderPid)) return false;
+
+    const quarantinePath = `${this.lockPath}.reclaim.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
+    try {
+      await rename(this.lockPath, quarantinePath);
+    } catch (error) {
+      return _hasErrorCode(error, "ENOENT");
+    }
+    await rm(quarantinePath, { recursive: true, force: true });
     return true;
-  });
+  }
+
+  private async hardenPeersFilePermissions(): Promise<void> {
+    try { await chmod(this.peersPath, 0o600); } catch { /* missing/non-POSIX/not fatal */ }
+  }
+
+  private async writePeersFile(peers: PeerRecord[]): Promise<void> {
+    const dir = dirname(this.peersPath);
+    await _ensurePrivateStorageDir(dir);
+    const tmpPath = join(
+      dir,
+      `.peers.json.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`,
+    );
+    try {
+      await writeFile(tmpPath, JSON.stringify({ peers }, null, 2), { mode: 0o600 });
+      try { await chmod(tmpPath, 0o600); } catch { /* mode may be unsupported */ }
+      await rename(tmpPath, this.peersPath);
+      await this.hardenPeersFilePermissions();
+    } catch (error) {
+      try { await unlink(tmpPath); } catch { /* temp file may not exist */ }
+      throw error;
+    }
+  }
+
+  private async readPeersFile(): Promise<PeerRecord[]> {
+    await this.hardenPeersFilePermissions();
+    try {
+      const raw = await readFile(this.peersPath, "utf8");
+      const parsed = JSON.parse(raw) as { peers: PeerRecord[] };
+      return parsed.peers ?? [];
+    } catch {
+      return [];
+    }
+  }
+}
+
+const defaultPeerStorage = new PeerStorage();
+
+/** Load the persisted machine pairing roster. */
+export function listPeers(): Promise<PeerRecord[]> {
+  return defaultPeerStorage.listPeers();
+}
+
+/** Persist one Owner pairing through the machine-wide roster lock. */
+export function addPeer(record: PeerRecord): Promise<void> {
+  return defaultPeerStorage.addPeer(record);
+}
+
+/**
+ * Reserve and persist the next Pi-to-Owner sequence before frame sealing.
+ *
+ * @throws when lock acquisition or durable persistence fails
+ */
+export function reserveSendSeq(remoteEpk: string, expectedChannelKey: string): Promise<bigint | null> {
+  return defaultPeerStorage.reserveSendSeq(remoteEpk, expectedChannelKey);
+}
+
+/**
+ * Max-merge one Owner-to-Pi receive high-water through the machine-wide roster lock.
+ *
+ * @throws when lock acquisition or durable persistence fails
+ */
+export function updateRecvSeq(
+  remoteEpk: string,
+  expectedChannelKey: string,
+  recvSeq: bigint,
+): Promise<boolean> {
+  return defaultPeerStorage.updateRecvSeq(remoteEpk, expectedChannelKey, recvSeq);
 }
 
 /**
@@ -454,12 +598,7 @@ export async function listOwnerPubkeys(): Promise<string[]> {
  * @throws when the updated roster cannot be written.
  */
 export function removePeer(remoteEpk: string): Promise<boolean> {
-  return _mutatePeers(async (peers) => {
-    const filtered = peers.filter((p) => p.remote_epk !== remoteEpk);
-    if (filtered.length === peers.length) return false;
-    await _writePeersFile(filtered);
-    return true;
-  });
+  return defaultPeerStorage.removePeer(remoteEpk);
 }
 
 // ── Test-only helpers ────────────────────────────────────────────────────────
