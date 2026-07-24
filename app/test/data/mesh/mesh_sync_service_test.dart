@@ -39,6 +39,47 @@ class _FakeSecureStorage implements FlutterSecureStorage {
   noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
+class _BlockingWatermarkStorage extends PairingStorage {
+  _BlockingWatermarkStorage(super.store);
+
+  final blockedSaveStarted = Completer<void>();
+  final releaseBlockedSave = Completer<void>();
+
+  @override
+  Future<void> saveMeshHighWatermark(String ownerPkHash, int version) async {
+    if (version == 6) {
+      if (!blockedSaveStarted.isCompleted) blockedSaveStarted.complete();
+      await releaseBlockedSave.future;
+    }
+    await super.saveMeshHighWatermark(ownerPkHash, version);
+  }
+}
+
+class _OwnerLoadRaceStorage extends PairingStorage {
+  _OwnerLoadRaceStorage(super.store, this.blockedOwnerHash);
+
+  final String blockedOwnerHash;
+  final blockedLoadStarted = Completer<void>();
+  final releaseBlockedLoad = Completer<void>();
+  final persisted = <({String ownerHash, int version})>[];
+
+  @override
+  Future<int> loadMeshHighWatermark(String ownerPkHash) async {
+    if (ownerPkHash == blockedOwnerHash &&
+        !releaseBlockedLoad.isCompleted) {
+      if (!blockedLoadStarted.isCompleted) blockedLoadStarted.complete();
+      await releaseBlockedLoad.future;
+    }
+    return super.loadMeshHighWatermark(ownerPkHash);
+  }
+
+  @override
+  Future<void> saveMeshHighWatermark(String ownerPkHash, int version) async {
+    persisted.add((ownerHash: ownerPkHash, version: version));
+    await super.saveMeshHighWatermark(ownerPkHash, version);
+  }
+}
+
 class _RestoreSchedulingStorage extends PairingStorage {
   _RestoreSchedulingStorage(super.store);
 
@@ -279,6 +320,110 @@ void main() {
       expect(peers, hasLength(1));
       expect(peers.first.remoteEpk, 'epk-a');
       expect(peers.first.nickname, 'Work mac');
+    });
+
+    test('overlapping v6 then v7 apply cannot leave the cache at v6', () async {
+      final owner = await _newOwner();
+      final backingStore = _FakeSecureStorage();
+      final storage = _BlockingWatermarkStorage(backingStore);
+      final bridge = await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+      final stale = MeshBlob(
+        version: 6,
+        issuedAt: 6,
+        ownerPk: owner.ownerPk,
+        members: const [
+          MeshMember(remoteEpk: 'epk-stale', relayUrl: 'wss://r', pairedAt: '2026-07-22T00:00:00Z'),
+        ],
+      );
+      final current = MeshBlob(
+        version: 7,
+        issuedAt: 7,
+        ownerPk: owner.ownerPk,
+        members: const [
+          MeshMember(remoteEpk: 'epk-current', relayUrl: 'wss://r', pairedAt: '2026-07-23T00:00:00Z'),
+        ],
+      );
+      final staleEnvelope = await stale.signWith(owner.keyPair);
+      final currentEnvelope = await current.signWith(owner.keyPair);
+      final client = _ScriptedMeshClient(
+        publishScripts: const [],
+        fetchScripts: [
+          () async => MeshFetchOk(envelope: staleEnvelope, version: 6, updatedAt: 6),
+          () async => MeshFetchOk(envelope: currentEnvelope, version: 7, updatedAt: 7),
+        ],
+      );
+      final service = MeshSyncService(client, bridge, storage);
+
+      final stalePull = service.pullOnDemand();
+      await storage.blockedSaveStarted.future;
+      final currentPull = service.pullOnDemand();
+      await client.waitForFetchCount(2);
+      storage.releaseBlockedSave.complete();
+
+      expect(await Future.wait([stalePull, currentPull]), [isTrue, isTrue]);
+      expect((await storage.listPeers()).map((peer) => peer.remoteEpk), ['epk-current']);
+      final hash = await MeshClient.ownerPkHash(owner.ownerPk);
+      expect(await storage.loadMeshHighWatermark(hash), 7);
+      service.dispose();
+      bridge.dispose();
+    });
+
+    test('late Owner-A watermark load cannot clobber Owner B context', () async {
+      final ownerA = await _newOwner();
+      final ownerB = await _newOwner();
+      final hashA = await MeshClient.ownerPkHash(ownerA.ownerPk);
+      final hashB = await MeshClient.ownerPkHash(ownerB.ownerPk);
+      final backingStore = _FakeSecureStorage();
+      final storage = _OwnerLoadRaceStorage(backingStore, hashA);
+      final identityA = OwnerIdentity(
+        ownerPk: ownerA.ownerPk,
+        ownerSk: Uint8List.fromList(await ownerA.keyPair.extractPrivateKeyBytes()),
+      );
+      final identityB = OwnerIdentity(
+        ownerPk: ownerB.ownerPk,
+        ownerSk: Uint8List.fromList(await ownerB.keyPair.extractPrivateKeyBytes()),
+      );
+      final ownerStore = InMemoryOwnerIdentityStore(initial: identityA);
+      final bridge = OwnerIdentityBridge(ownerStore, storage);
+      await bridge.boot();
+      final reset = Completer<void>();
+      bridge.startWatching(onReset: () async {
+        if (!reset.isCompleted) reset.complete();
+      });
+      final blobB = MeshBlob(
+        version: 4,
+        issuedAt: 4,
+        ownerPk: ownerB.ownerPk,
+        members: const [
+          MeshMember(remoteEpk: 'epk-owner-b', relayUrl: 'wss://r', pairedAt: '2026-07-23T00:00:00Z'),
+        ],
+      );
+      final envelopeB = await blobB.signWith(ownerB.keyPair);
+      final fetchB = Completer<MeshFetchResult>();
+      final client = _ScriptedMeshClient(
+        publishScripts: const [],
+        fetchScripts: [() => fetchB.future],
+      );
+      final service = MeshSyncService(client, bridge, storage);
+
+      final lateA = service.pullOnDemand();
+      await storage.blockedLoadStarted.future;
+      await ownerStore.save(identityB);
+      await reset.future;
+      final pullB = service.pullOnDemand();
+      await client.waitForFetchCount(1);
+      storage.releaseBlockedLoad.complete();
+      expect(await lateA, isFalse);
+      fetchB.complete(MeshFetchOk(envelope: envelopeB, version: 4, updatedAt: 4));
+
+      expect(await pullB, isTrue);
+      expect((await storage.listPeers()).map((peer) => peer.remoteEpk), ['epk-owner-b']);
+      expect(await storage.loadMeshHighWatermark(hashA), 0);
+      expect(await storage.loadMeshHighWatermark(hashB), 4);
+      expect(storage.persisted, [(ownerHash: hashB, version: 4)]);
+      service.dispose();
+      bridge.dispose();
+      await ownerStore.dispose();
     });
 
     test('durable watermark rejects a validly-signed rollback after cold start', () async {
