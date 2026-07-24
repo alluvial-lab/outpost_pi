@@ -1,7 +1,7 @@
 ---
 id: gate-security-owner-transition-committed-before-durable-cleanup
 kind: story
-stage: implementing
+stage: drafting
 tags: [security]
 parent: null
 depends_on: []
@@ -35,3 +35,6 @@ Persist a pending Owner-transition record before changing the active identity. G
 - Cleanup is boot-convergent: a restart with a pending transition retries cleanup instead of loading the incoming key normally.
 - Access is gated while a transition is pending.
 - Tests cover partial storage failure mid-transition and restart convergence.
+
+## Implementation discovery
+The transition coordinator is split across `app/lib/pairing/owner_identity_bridge.dart` and the out-of-scope `app/lib/routing/app_router.dart`. The router currently performs disconnect, transcript cleanup, and boot reload through the `onReset` callback only after the bridge assigns `_current`; moving that commit behind the complete cleanup requires changing the callback/boot coordination in `app/lib/routing/` as well as bridge tests. A bridge-only change would either retain the existing early commit or make the router reload against an uncommitted identity, so it cannot meet the atomicity and boot-convergence acceptance criteria within this worker's write scope.
