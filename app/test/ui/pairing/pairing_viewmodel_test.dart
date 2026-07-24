@@ -141,6 +141,7 @@ class _PrefsForTest extends Preferences {
 
 class _FakeStorage extends PairingStorage {
   final List<PeerRecord> _saved = [];
+  bool _transitionPending = false;
 
   @override
   Future<List<PeerRecord>> listPeers() async => _saved;
@@ -150,6 +151,16 @@ class _FakeStorage extends PairingStorage {
 
   @override
   Future<void> savePeer(PeerRecord r) async => _saved.add(r);
+
+  // Owner-transition marker (W4b): kept in-memory so boot() stays hermetic.
+  @override
+  Future<bool> hasPendingOwnerTransition() async => _transitionPending;
+
+  @override
+  Future<void> beginOwnerTransition() async => _transitionPending = true;
+
+  @override
+  Future<void> completeOwnerTransition() async => _transitionPending = false;
 }
 
 /// Helper: build a fully-booted [OwnerIdentityBridge] backed by an
