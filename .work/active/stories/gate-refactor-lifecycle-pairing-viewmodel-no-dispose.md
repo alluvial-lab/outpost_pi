@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-pairing-viewmodel-no-dispose
 kind: story
-stage: review
+stage: done
 tags: []
 parent: null
 depends_on: []
@@ -48,3 +48,13 @@ as part of this fix — one change, both acceptance sets.
 - Deferred peer persistence from the pairing flow to the current ViewModel generation so a stale successful handshake cannot persist, adopt, or emit a paired state.
 - Added disposal-mid-pairing and stale-completion regression coverage.
 - Verification: `cd app && flutter test test/ui/pairing/pairing_viewmodel_test.dart`; `flutter test test/pairing/pair_request_flow_test.dart`; `flutter analyze` (all passed).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against
+acceptance. Verified: throws contracts match implementation; orphan msgs_v3
+test asserts real wipe behavior; fatal reads propagate (router's `on Object`
+boot guard surfaces them — no silent rotation), conditional re-read before
+save; pairing-viewmodel has dispose()+generation fences after every await
+incl. persistPeer revalidation (absorbed generation-fence item's acceptance
+ships here). flutter analyze + focused tests green. Approved -> done.
