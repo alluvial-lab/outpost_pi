@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-generation-fenced-anchor
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ That range now covers fetch-result handling. The quoted cache-replacement fence 
 
 ## Required edit
 Update the anchor and example to the current owner-bound _replaceLocalCacheWith implementation.
+
+## Implementation notes
+
+Updated the pattern anchor and cache-replacement example to match the current owner-bound implementation at `mesh_sync_service.dart:300-344`.
