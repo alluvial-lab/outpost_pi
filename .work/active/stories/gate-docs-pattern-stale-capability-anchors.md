@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-stale-capability-anchors
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,10 @@ Refreshed all three pattern anchors to the current `sendPiMessage`, `wakeAgent`,
 
 ## Required edit
 Refresh the three anchors in place; retain the still-valid identity-checked eviction examples.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): refreshed anchors and
+quoted snippets verified line-by-line against current sources
+(mesh_sync_service.dart:300, sdk_session_projection.ts:678/695/906,
+relay_transport.ts:567-577, relay_ingress.ts:81). Approved -> done.
