@@ -1,7 +1,7 @@
 ---
 id: gate-tests-session-replacement-real-rotation-e2e
 kind: story
-stage: implementing
+stage: drafting
 tags: [testing]
 parent: null
 depends_on: []
@@ -36,3 +36,9 @@ test("real replacement confirms cli id before replacement turn settles", () asyn
 
 ## Test location (suggested)
 `app/test/e2e/session_replacement_e2e_test.dart`
+
+## Implementation discovery
+
+The requested deterministic regression is not implementable inside this worker's write scope. The existing Pi-host runtime in `pi-extension/test/support/e2e_pi_host_runtime.ts` binds `newSession` to an immediate `{ cancelled: false }` without rotating its `SessionManager`, and its `sendUserMessage` action settles immediately. The HTTP server exposes only status, events, command, and process restart; there is no control seam for pausing and resolving the first replacement turn. App-side test changes cannot create a distinct production session id or hold the extension's full-turn promise, so replacing the five-second sleep would only restate the existing weak test rather than reproduce the defect.
+
+Redesign this item to include narrowly scoped Pi-host harness changes: rotate to a fresh `SessionManager`/session id on `session_new`, expose a content-free deferred-turn control endpoint, and surface enough event state to assert the original `cli_` confirmation and timer disarm before resolving that turn. Then update the app E2E to use those deterministic controls and remove the sleep. No code or harness verification was performed for this bounced design.
