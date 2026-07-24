@@ -40,3 +40,13 @@ Make Owner identity part of the transcript security boundary. On a confirmed Own
 
 ## Audit execution
 The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.
+
+## Remediation chosen (feature-design 2026-07-23)
+
+Operator confirmed Option A: WIPE all transcript-bearing boxes on a confirmed
+owner-key replacement (zero residue; same-owner device replacement unaffected;
+explicit data-loss policy recorded in the parent feature body). Note:
+`wipeAll` already covers channel keys (`_kChannelsService:`) — the gap is
+transcripts only. Exact design (facade API, index-derived enumeration +
+directory backstop, router hook point, acceptance criteria) is Unit 2 of the
+parent feature body.

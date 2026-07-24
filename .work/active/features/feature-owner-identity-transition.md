@@ -1,7 +1,7 @@
 ---
 id: feature-owner-identity-transition
 kind: feature
-stage: drafting
+stage: implementing
 tags: [security, app, pi-extension]
 parent: null
 depends_on: [feature-owner-message-e2e-authentication]
@@ -44,3 +44,217 @@ handling.
 
 Groom 2026-07-23, cluster F7 — promoted per advisor-review recommendation
 that it pairs with the owner-channel E2E authentication feature.
+
+## Design decisions
+
+- **Transcript policy on confirmed owner-key replacement**: **WIPE** —
+  operator-confirmed 2026-07-23 (Option A). Delete every transcript-bearing
+  box (sessions index, all event logs, all message projections, runtime
+  snapshots) so zero previous-owner residue remains on-device. Namespacing by
+  owner-pk hash rejected: it forces `LocalBoxes.init` reordering after owner
+  boot, a migration of every existing install's encrypted boxes, runtime
+  re-init of a static facade — and still leaves ciphertext residue.
+- **Data-loss policy (explicit)**: a genuine owner-key transition destroys the
+  previous identity's LOCAL transcripts irrecoverably. Pi-side session history
+  is unaffected; the new identity re-pairs and syncs fresh. Same-owner device
+  replacement (platform sync restores the SAME key) is not a transition and
+  loses nothing. A→B→A churn loses A's local transcripts — accepted.
+- **Recovery UX**: no new UI. Owner-key loss recovery remains the existing
+  re-pair flow; channel keys are already wiped by `PairingStorage.wipeAll`
+  (`_kChannelsService:` prefix) on transition.
+- **Transcript key NOT rotated**: the app-global AES key stays; the ciphertext
+  it protected is deleted, so rotation adds re-provisioning complexity with no
+  gain against this finding's adversary (app-level projection by the
+  replacement owner). Metadata box (`key_verifier_v3`, migration state) kept.
+- **Mesh rollback finding CONFIRMED, not low-confidence**: grounding shows
+  `_lastVersion` is in-memory only (cold start ⇒ `since=null` full fetch) and
+  `_applyVerified` performs NO version-monotonicity check — an untrusted relay
+  can serve any historical validly-signed blob (rollback reintroducing a
+  revoked peer). The relay is untrusted by design; signed blobs exist for
+  exactly this. A durable per-owner highest-version watermark is adopted.
+- **Watermark scoped per owner-pk hash, never wiped**: stored under a distinct
+  secure-storage prefix that `wipeAll` does not touch, so owner-key change
+  starts the NEW identity at 0 automatically while a RETURNING identity
+  (A→B→A) keeps its high-water mark. Wiping watermarks on transition would
+  re-open the rollback window.
+- **Fail-closed watermark**: if the durable watermark cannot be read, pulls do
+  not apply and publishes fail — consistent with the project's fail-closed
+  posture; a storage failure must not silently reopen the rollback window.
+- **No wire/protocol/relay/extension change**: blob shape, schema, relay
+  endpoints, and pairing are untouched. Not a paired wire change; ships with
+  v0.3.0 without cutover ordering.
+
+## Architectural choice
+
+### Options considered (transcripts)
+
+1. **Namespace key + boxes by owner-pk hash** — non-destructive; rejected per
+   the operator decision above (complexity + residue).
+2. **Wipe on confirmed transition (chosen)** — one facade API that closes and
+   deletes all transcript-bearing boxes and reopens fresh common boxes, called
+   from the existing router `onReset` path (already disconnects and reboots
+   the router generation on transition).
+3. **Rotate key only** — leaves orphaned ciphertext boxes readable via derived
+   names; does not meet the finding.
+
+### Options considered (mesh watermark)
+
+1. **Rely on relay 409 conflict self-healing (status quo)** — publish conflicts
+   rebase correctly, but the APPLY path remains rollback-exposed on every cold
+   start; rejected.
+2. **Durable per-owner high-water mark (chosen)** — persist
+   `mesh_high_watermark_v1:<ownerPkHash>` in FlutterSecureStorage; enforce
+   monotonicity on apply and floor the publish version; in-memory
+   `_lastVersion` stays as the session fetch hint.
+3. **Persist `_lastVersion` as-is per owner** — conflates fetch hint with
+   security invariant; a regressed write would lower protection. A
+   highest-ever mark can only move forward.
+
+## Implementation Units
+
+### Unit 1: Durable per-owner mesh version watermark (trickiest — fail-closed + monotonicity)
+
+**Files**:
+- `app/lib/pairing/storage.dart`
+- `app/lib/data/mesh/mesh_sync_service.dart`
+- `app/test/data/mesh/mesh_sync_service_test.dart` (existing home)
+- `app/test/pairing/storage_test.dart` (existing home, if present)
+
+**Story**: `app-owner-key-version-rollback-hardening`
+
+```dart
+// PairingStorage — distinct prefix; wipeAll must NOT match it.
+const _kMeshWatermarkService = 'dev.outpostpi.meshwatermark';
+
+/// Highest relay mesh version ever verified for [ownerPkHash]; 0 when none.
+/// Throws on storage failure (fail-closed: callers must not proceed on a
+/// guess).
+Future<int> loadMeshHighWatermark(String ownerPkHash);
+
+/// Persist a new high-water mark. Callers only ever move it forward.
+Future<void> saveMeshHighWatermark(String ownerPkHash, int version);
+```
+
+**Implementation Notes**:
+- `MeshSyncService` gains an `_highWatermark` (int, starts 0) + `_watermarkLoaded`
+  guard, loaded lazily once per owner hash inside the pk-known paths
+  (`_pullOnDemand`, `_publishOnce`) before fetch/publish. Load failure ⇒ pull
+  returns false / publish returns `MeshPublishFailure('watermark_unavailable')`.
+- Apply path (`_applyVerified`, after signature + owner-pk verification):
+  reject `blob.version < _highWatermark` (return false + a fixed-category
+  diagnostic, e.g. lifecycleFailure reason `mesh_rollback_rejected`).
+  `blob.version == _highWatermark` is an idempotent re-apply — allowed.
+- On successful apply: if `v > _highWatermark`, set + persist.
+- Publish: `nextVersion = max(_lastVersion, _highWatermark) + 1`; on
+  `MeshPublishOk` set + persist. This also removes the cold-start
+  publish-at-v1 conflict round-trip.
+- `resetVersionWatermark()` keeps clearing only the in-memory `_lastVersion`
+  (session fetch hint). The durable mark is per-owner and survives transitions.
+- First boot after upgrade has mark 0: one unavoidable acceptance window of
+  the relay's current version — recorded in Risks.
+
+**Acceptance Criteria**:
+- [ ] Rollback canary: relay serves a validly-signed blob with version LOWER
+  than the persisted mark → not applied, local cache unchanged, fixed
+  diagnostic emitted.
+- [ ] Monotonic forward motion: apply/publish at v=N persists N; a later cold
+  start (fresh service, same storage) still rejects v<N.
+- [ ] Owner scoping: a different owner hash sees mark 0; `wipeAll()` does not
+  delete watermark entries.
+- [ ] Fail-closed: storage read failure ⇒ no apply, no publish.
+- [ ] Revoke-last-peer (`allowEmpty`) publish still succeeds and advances the
+  mark.
+
+---
+
+### Unit 2: Wipe transcripts on confirmed owner-key replacement
+
+**Files**:
+- `app/lib/data/local/boxes.dart`
+- `app/lib/routing/app_router.dart` (hook into the existing `onReset`)
+- `app/test/data/local/boxes_test.dart` (existing home, if present — else new)
+- wiring regression in the existing owner-reset test home (search
+  `app/test/` for `startWatching` / `resetVersionWatermark` coverage)
+
+**Story**: `gate-security-owner-reset-retains-transcripts`
+
+```dart
+/// Wipe every transcript-bearing box for a CONFIRMED owner-key replacement:
+/// the sessions index, all `transcript_events_v3_*` event logs, all
+/// `msgs_v3_*` projections, and the volatile runtime box. Keeps the
+/// app-global key and the security-metadata box (verifier, migration state).
+/// Reopens fresh common boxes so the subsequent router reboot boots onto
+/// empty storage. The previous identity's ciphertext leaves the device.
+static Future<void> wipeTranscriptsForOwnerTransition()
+```
+
+**Implementation Notes**:
+- Enumerate deletion set TWO ways: (a) derive `eventsName`/`messagesName`
+  from every `SessionIndexRecord` in the sessions index; (b) backstop-scan
+  `Directory(Hive.homePath)` for `transcript_events_v3_*.hive` /
+  `msgs_v3_*.hive` files so orphan boxes (no index record) are also caught.
+- Close any open box before `Hive.deleteBoxFromDisk(name)`; close + clear +
+  reopen `_kSessionsIndex` and `_kRuntime` via `_openCommon()`.
+- Call site: `app_router.dart` `onReset`, AFTER `conn.disconnect()` (old
+  generation can no longer write) and BEFORE `boot.load(...)`, adjacent to
+  `meshSync.resetVersionWatermark()`. Late zombie writes are already dropped
+  by lifecycle-generation guards; a write racing a closed box throws inside
+  the old generation and is discarded.
+- No key rotation, no metadata wipe (decision above).
+
+**Acceptance Criteria**:
+- [ ] Replacement-owner regression: seed index + event + projection rows under
+  identity A, run the transition path, boot identity B paired to the SAME
+  peer/room/session tuple — derived box names are identical but storage is
+  EMPTY; no A row can be projected.
+- [ ] Orphan backstop: an events box with no index record is also deleted.
+- [ ] The key verifier, provisioning flag, and migration metadata survive;
+  storage remains fully usable for B (write + read round-trip).
+- [ ] Same-owner re-watch (identical pk) triggers no wipe (bridge already
+  drops same-pk events — wiring test must prove the wipe is not reachable
+  from that path).
+
+## Implementation Order
+
+1. `app-owner-key-version-rollback-hardening` — self-contained watermark
+   (storage + mesh service).
+2. `gate-security-owner-reset-retains-transcripts` — lifecycle-sensitive wipe
+   (facade + router wiring).
+
+Both child stories stay `depends_on: []` — different files, no ordering
+constraint; one feature worker carries them sequentially. No new stories.
+
+## Simplification
+
+- No namespace/migration machinery: deletion replaces a whole box-renaming
+  subsystem.
+- No key rotation: deletes the ciphertext instead of re-keying.
+- Watermark reuses `PairingStorage`'s existing secure-storage ownership rather
+  than a new store class.
+
+## Testing
+
+- **Mesh rollback canary** (Unit 1): the security core of this feature —
+  proves an untrusted relay cannot roll membership back.
+- **Replacement-owner regression** (Unit 2): proves the finding's exact attack
+  (same tuple ⇒ same box names ⇒ empty storage) is closed.
+- **Fail-closed + scoping tests** (Unit 1): storage failure and per-owner
+  isolation.
+- **Orphan backstop + metadata survival** (Unit 2).
+- No UI tests; no wire/schema tests (unchanged).
+
+## Risks
+
+- **First-boot-after-upgrade window**: existing installs start with mark 0 and
+  accept the relay's current version once. Unavoidable without prior durable
+  state; bounded because the relay's CURRENT row is the honest-majority state
+  and every subsequent apply is monotonic.
+- **Wipe races a zombie old-generation write**: mitigated by disconnect-first
+  ordering + lifecycle-generation guards; worst case is a closed-box throw in
+  a discarded generation.
+- **Directory-scan backstop is platform-dependent** (Hive file layout):
+  mitigated by also deriving names from the index; a missed orphan is
+  ciphertext without an index entry — unreadable through app paths anyway.
+- **A→B→A churn destroys A's local transcripts**: accepted in the data-loss
+  policy (operator-confirmed); the bridge's same-pk drop + initial-emit guard
+  keep spurious transitions from reaching the wipe.
