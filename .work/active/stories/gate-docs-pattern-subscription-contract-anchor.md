@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-subscription-contract-anchor
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,10 @@ Replaced the obsolete raw RelayClient listener example with the current decoded-
 
 ## Required edit
 Replace the example and line anchor with the current decoded-ingress handler-set contract.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): refreshed anchors and
+quoted snippets verified line-by-line against current sources
+(mesh_sync_service.dart:300, sdk_session_projection.ts:678/695/906,
+relay_transport.ts:567-577, relay_ingress.ts:81). Approved -> done.
