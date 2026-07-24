@@ -97,8 +97,8 @@ resolved they move here.
 
 | Decision | Current truth |
 |---|---|
-| **No E2E today; TLS only** | Transport is TLS. The relay sees plaintext envelope contents. No product copy claims E2E. (Noise XX / Curve25519 + ChaCha20-Poly1305 was designed then rolled back as an MVP bottleneck; re-enabling is roadmap-additive and must not change the envelope shape — only the `ct` generator/parser.) |
-| **Self-hosting is the mitigation** | For an operator who needs confidentiality from the relay, run a self-hosted relay (open source, ~one Rust binary). |
+| **Owner channel E2E protection** | Post-pairing app↔Pi owner payloads use signed ephemeral-X25519-per-pairing key agreement, persisted directional channel keys, and sealed XChaCha20-Poly1305 frames. The relay cannot read the sealed owner payload. |
+| **Relay visibility remains bounded** | TLS protects the WebSocket in transit, but the relay sees routing metadata and cross-PC Pi↔Pi envelope contents. Self-hosting limits exposure to an operator-controlled relay. |
 | **Ed25519 everywhere for identity** | Owner-key signs `mesh_versions`; Pi-key authenticates to relay and signs cross-PC envelopes; App-key is ephemeral per pairing. |
 | **One Pi-key per PC** | Hardware change = re-pairing. No Pi-key migration; Owner-key (mobile, synced via system Keychain) compensates. |
 | **Relay never decides membership** | It forwards between Pi-siblings of the same Owner (verified via Owner signature on `mesh_versions`) and verifies signatures, but never adjudicates who is in the mesh. |
