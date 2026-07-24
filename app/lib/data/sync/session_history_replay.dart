@@ -53,7 +53,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
   final ts = DateTime.fromMillisecondsSinceEpoch(event.ts);
   return switch (event) {
     UserInputEvt(:final id, :final text, :final image) => UserMessageConfirmed(
-      eventId: serverReplayEventId(sessionId, 'user_input', id, event.ts),
+      eventId: serverReplayEventId(sessionId, event.type, id, event.ts),
       sessionId: sessionId,
       ts: ts,
       clientMessageId: id,
@@ -72,7 +72,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
         // story-mobile-assistant-message-duplicated-live-replay decision 1.
         eventId: serverReplayEventId(
           sessionId,
-          agentMessageWireType,
+          event.type,
           messageId ?? inReplyTo,
           event.ts,
         ),
@@ -80,7 +80,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
         ts: ts,
         messageId: serverReplayMessageId(
           sessionId,
-          agentMessageWireType,
+          event.type,
           messageId ?? inReplyTo,
           event.ts,
         ),
@@ -91,7 +91,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
       ToolRequested(
         eventId: serverReplayEventId(
           sessionId,
-          'tool_request',
+          event.type,
           toolCallId,
           event.ts,
         ),
@@ -105,7 +105,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
       ToolFinished(
         eventId: serverReplayEventId(
           sessionId,
-          'tool_result',
+          event.type,
           toolCallId,
           event.ts,
         ),
@@ -118,7 +118,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
     CompactionEvt(:final summary, :final tokensBefore) => CompactionRecorded(
       eventId: serverReplayEventId(
         sessionId,
-        'compaction',
+        event.type,
         'compaction',
         event.ts,
       ),
@@ -129,10 +129,6 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
     ),
   };
 }
-
-/// Mirrors generated `AgentMessage.type`, which is only an instance getter,
-/// while transcript identity needs a shared value.
-const String agentMessageWireType = 'agent_message';
 
 /// Derive a stable event identity shared by live and history-replay paths.
 String serverReplayEventId(
