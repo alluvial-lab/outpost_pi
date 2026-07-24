@@ -31,16 +31,23 @@ final class IdentityReady extends OwnerIdentityBootResult {
   const IdentityReady(this.identity, {required this.generated});
 }
 
+/// A previously-started Owner replacement must finish cleanup before its
+/// identity can become active.
+final class OwnerTransitionPending extends OwnerIdentityBootResult {
+  const OwnerTransitionPending(this.identity);
+
+  final OwnerIdentity identity;
+}
+
 /// Bridge between the `outpost_pi_identity` plugin and the rest of the
 /// app. Responsibilities:
 ///
 /// - Boot-time decision: sync available? identity present?
 /// - `currentIdentity` getter for callers that need the Owner-sk for
 ///   relay challenge-response (production transport factory).
-/// - Watch-on-sync hook: when the platform delivers a different
-///   Owner-key (restored on a new device, owner re-installed elsewhere),
-///   wipe local peer/room caches because the previous device's
-///   `remote_epk` set is meaningless against a fresh identity.
+/// - Watch-on-sync hook: when the platform delivers a different Owner key,
+///   durably gate access until the router removes local state tied to the
+///   previous Owner.
 class OwnerIdentityBridge extends ChangeNotifier {
   final OwnerIdentityStore _store;
   final PairingStorage _pairing;
@@ -48,35 +55,55 @@ class OwnerIdentityBridge extends ChangeNotifier {
 
   OwnerIdentity? _current;
   StreamSubscription<OwnerIdentity>? _watchSub;
+  Future<void> _watchTail = Future<void>.value();
+  bool _transitionPending = false;
   bool _disposed = false;
 
   OwnerIdentityBridge(this._store, this._pairing);
 
   /// Return the bootstrapped owner identity, or null before the router gate runs.
-  OwnerIdentity? get currentIdentity => _current;
+  OwnerIdentity? get currentIdentity => _transitionPending ? null : _current;
 
   /// Public key of the currently-loaded Owner identity (or null when
   /// the bridge hasn't booted yet). Surfaces this for the router's
   /// guard logic.
-  Uint8List? get currentOwnerPk => _current?.ownerPk;
+  Uint8List? get currentOwnerPk =>
+      _transitionPending ? null : _current?.ownerPk;
+
+  /// Whether a replacement Owner is blocked until old local state is removed.
+  bool get isTransitionPending => _transitionPending;
 
   /// Check sync availability, load (or generate) the Owner identity.
   ///
   /// Generates only after [OwnerIdentityStore.load] returns null. A sync outage
   /// remains gateable, while a platform failure propagates so it cannot silently
-  /// replace the durable Owner key.
+  /// replace the durable Owner key. When durable transition cleanup is pending,
+  /// returns [OwnerTransitionPending] without making the loaded key active.
   Future<OwnerIdentityBootResult> boot() async {
     if (!await _store.isSyncAvailable()) {
       return const SyncUnavailableResult();
     }
+    final transitionPending = await _pairing.hasPendingOwnerTransition();
     try {
       final loaded = await _store.load();
       if (loaded != null) {
+        if (transitionPending) {
+          _current = null;
+          _transitionPending = true;
+          return OwnerTransitionPending(loaded);
+        }
+        _transitionPending = false;
         _current = loaded;
         return IdentityReady(loaded, generated: false);
       }
     } on SyncUnavailable {
       return const SyncUnavailableResult();
+    }
+
+    if (transitionPending) {
+      _current = null;
+      _transitionPending = true;
+      throw StateError('Owner transition is pending identity restoration');
     }
 
     final generated = await _generateIdentity();
@@ -97,6 +124,22 @@ class OwnerIdentityBridge extends ChangeNotifier {
     return IdentityReady(generated, generated: true);
   }
 
+  /// Commit [identity] only after the router has completed every cleanup step.
+  ///
+  /// The durable marker is deleted first, so a failed delete leaves access
+  /// gated and boot-convergent rather than exposing a partially reset device.
+  Future<void> completePendingTransition(OwnerIdentity identity) async {
+    if (!await _pairing.hasPendingOwnerTransition()) {
+      throw StateError(
+        'cannot complete an Owner transition that is not pending',
+      );
+    }
+    await _pairing.completeOwnerTransition();
+    _transitionPending = false;
+    _current = identity;
+    notifyListeners();
+  }
+
   Future<OwnerIdentity> _generateIdentity() async {
     final kp = await _ed25519.newKeyPair();
     final pub = await kp.extractPublicKey();
@@ -112,7 +155,7 @@ class OwnerIdentityBridge extends ChangeNotifier {
   /// through [boot] (otherwise [currentIdentity] would still be null
   /// and this throws `StateError`).
   Future<SimpleKeyPair> requireKeyPair() async {
-    final id = _current;
+    final id = currentIdentity;
     if (id == null) {
       throw StateError(
         'OwnerIdentityBridge.requireKeyPair() called before boot() — '
@@ -122,11 +165,10 @@ class OwnerIdentityBridge extends ChangeNotifier {
     return _ed25519.newKeyPairFromSeed(id.ownerSk);
   }
 
-  /// Subscribe to platform sync events. When the incoming Owner-pk
-  /// differs from [_current], the bridge:
-  ///   1. wipes [PairingStorage] (peers + rooms) — stale handles.
-  ///   2. caches the new identity.
-  ///   3. calls [onReset] so the host can force a fresh router boot.
+  /// Subscribe to platform sync events. When the incoming Owner-pk differs
+  /// from [_current], the bridge persists a transition gate, then calls
+  /// [onTransition]. The router must wipe pairing, disconnect, wipe
+  /// transcripts, and finally call [completePendingTransition].
   ///
   /// Same-pk events are dropped — re-saves of identical content (echo
   /// from our own write) shouldn't reset state.
@@ -148,21 +190,35 @@ class OwnerIdentityBridge extends ChangeNotifier {
   /// runs after `boot()` whenever possible, but this guard makes the
   /// bridge correct even when the order is reversed (e.g. router
   /// boot is fire-and-forget).
-  void startWatching({required Future<void> Function() onReset}) {
+  void startWatching({
+    required Future<void> Function(OwnerIdentity incoming) onTransition,
+  }) {
     _watchSub?.cancel();
-    _watchSub = _store.watch().listen((incoming) async {
-      final current = _current;
-      if (current == null) {
-        _current = incoming;
-        return;
-      }
-      if (_bytesEqual(current.ownerPk, incoming.ownerPk)) {
-        return;
-      }
+    _watchSub = _store.watch().listen((incoming) {
+      _watchTail = _watchTail
+          .then((_) => _handleIncoming(incoming, onTransition))
+          .catchError((Object _) {});
+    }, onError: (Object _) {});
+  }
+
+  Future<void> _handleIncoming(
+    OwnerIdentity incoming,
+    Future<void> Function(OwnerIdentity incoming) onTransition,
+  ) async {
+    if (_disposed || _transitionPending) return;
+    final current = _current;
+    if (current == null) {
       _current = incoming;
-      await _pairing.wipeAll();
-      await onReset();
-    }, onError: (Object e) {});
+      return;
+    }
+    if (_bytesEqual(current.ownerPk, incoming.ownerPk)) return;
+
+    // The durable marker is the first transition side effect. Do not publish
+    // [incoming] until the router has removed every old-Owner capability.
+    await _pairing.beginOwnerTransition();
+    _transitionPending = true;
+    notifyListeners();
+    await onTransition(incoming);
   }
 
   @override

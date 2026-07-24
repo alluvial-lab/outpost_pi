@@ -29,7 +29,13 @@ class _BootStorage extends PairingStorage {
 
   final List<PeerRecord> _peers;
   Object? listError;
+  int wipeCalls = 0;
   final List<Completer<List<PeerRecord>>> queuedLists = [];
+
+  @override
+  Future<void> wipeAll() async {
+    wipeCalls++;
+  }
 
   @override
   Future<List<PeerRecord>> listPeers() async {
@@ -88,7 +94,9 @@ class _BootIdentityBridge extends OwnerIdentityBridge {
   Object? bootError;
   int watcherInstalls = 0;
   int watcherFailuresRemaining = 0;
-  Future<void> Function()? resetCallback;
+  Future<void> Function(OwnerIdentity)? transitionCallback;
+  Future<void> Function()? beforeCompleteTransition;
+  int completedTransitions = 0;
 
   @override
   Future<OwnerIdentityBootResult> boot() async {
@@ -98,13 +106,21 @@ class _BootIdentityBridge extends OwnerIdentityBridge {
   }
 
   @override
-  void startWatching({required Future<void> Function() onReset}) {
+  void startWatching({
+    required Future<void> Function(OwnerIdentity incoming) onTransition,
+  }) {
     watcherInstalls++;
     if (watcherFailuresRemaining > 0) {
       watcherFailuresRemaining--;
       throw StateError('watcher install failed');
     }
-    resetCallback = onReset;
+    transitionCallback = onTransition;
+  }
+
+  @override
+  Future<void> completePendingTransition(OwnerIdentity identity) async {
+    await beforeCompleteTransition?.call();
+    completedTransitions++;
   }
 }
 
@@ -423,7 +439,7 @@ void main() {
         reason: 'boot retry after watcher installation failure',
       );
       expect(identity.watcherInstalls, 2);
-      expect(identity.resetCallback, isNotNull);
+      expect(identity.transitionCallback, isNotNull);
 
       owner.dispose();
       connection.dispose();
@@ -454,15 +470,59 @@ void main() {
       final owner = buildRouter(storage, connection, prefs, identity, mesh);
 
       await _waitUntil(
-        () => owner.bootState.ready && identity.resetCallback != null,
+        () => owner.bootState.ready && identity.transitionCallback != null,
         reason: 'the initial boot and watcher installation',
       );
-      await identity.resetCallback!();
+      await identity.transitionCallback!(_identity);
 
       expect(connection.disconnectCalls, 1);
       expect((await LocalBoxes().msgsBox(ref)), isEmpty);
       expect(mesh.resetVersionCalls, 1);
 
+      owner.dispose();
+      connection.dispose();
+      identity.dispose();
+      mesh.dispose();
+      await Hive.close();
+      await directory.delete(recursive: true);
+    },
+  );
+
+  test(
+    'boot resumes a pending Owner transition before committing its identity',
+    () async {
+      final directory = Directory.systemTemp.createTempSync(
+        'router_pending_owner_transition_',
+      );
+      await LocalBoxes.initForTest(directory.path);
+      const ref = RemoteSessionRef(
+        peerEpk: 'pending-peer',
+        roomId: 'pending-room',
+        sessionId: 'pending-session',
+      );
+      await (await LocalBoxes().msgsBox(ref)).put(0, {'text': 'old owner'});
+
+      final storage = _BootStorage();
+      final prefs = _BootPreferences();
+      final identity = _BootIdentityBridge(storage)
+        ..result = OwnerTransitionPending(_identity);
+      final mesh = _BootMeshSync(identity, storage);
+      final connection = _BootConnectionManager(storage);
+      identity.beforeCompleteTransition = () async {
+        expect(storage.wipeCalls, 1);
+        expect(connection.disconnectCalls, 1);
+        expect(await LocalBoxes().msgsBox(ref), isEmpty);
+        expect(mesh.resetVersionCalls, 1);
+      };
+
+      final owner = buildRouter(storage, connection, prefs, identity, mesh);
+      await _waitUntil(
+        () => owner.bootState.ready,
+        reason: 'pending Owner cleanup and boot completion',
+      );
+
+      expect(identity.completedTransitions, 1);
+      expect(owner.bootState.failure, isNull);
       owner.dispose();
       connection.dispose();
       identity.dispose();
@@ -495,13 +555,16 @@ void main() {
       final owner = buildRouter(storage, connection, prefs, identity, mesh);
 
       await _waitUntil(
-        () => owner.bootState.ready && identity.resetCallback != null,
+        () => owner.bootState.ready && identity.transitionCallback != null,
         reason: 'the initial boot and watcher installation',
       );
       LocalBoxes.beforeOwnerTransitionCommonClearForTesting = () async {
         throw StateError('injected reset wipe failure');
       };
-      await identity.resetCallback!();
+      await expectLater(
+        identity.transitionCallback!(_identity),
+        throwsA(isA<StateError>()),
+      );
       expect(owner.bootState.failure, isNotNull);
 
       LocalBoxes.beforeOwnerTransitionCommonClearForTesting = null;
@@ -537,12 +600,12 @@ void main() {
       final owner = buildRouter(storage, connection, prefs, identity, mesh);
 
       await _waitUntil(
-        () => owner.bootState.ready && identity.resetCallback != null,
+        () => owner.bootState.ready && identity.transitionCallback != null,
         reason: 'the initial boot and watcher installation',
       );
       expect(connection.bootCalls, 1);
 
-      final resetting = identity.resetCallback!();
+      final resetting = identity.transitionCallback!(_identity);
       await disconnectStarted.future.timeout(const Duration(seconds: 1));
       owner.dispose();
       disconnectGate.complete();
