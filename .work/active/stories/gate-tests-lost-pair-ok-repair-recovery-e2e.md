@@ -1,7 +1,7 @@
 ---
 id: gate-tests-lost-pair-ok-repair-recovery-e2e
 kind: story
-stage: implementing
+stage: review
 tags: [testing]
 parent: null
 depends_on: []
@@ -35,3 +35,9 @@ test("lost pair_ok recovers through a new QR using the same Owner identity", () 
 
 ## Test location (suggested)
 `app/test/e2e/pairing_failures_e2e_test.dart`
+
+## Implementation notes
+
+- Added a production-wire regression that sends a valid signed pairing request, closes the app-side relay client without persisting `pair_ok`, waits for Pi persistence, then obtains a new QR and re-pairs with the same Owner key. The test proves the abandoned and replacement Pi channel-key fingerprints differ, the repaired app/Pi state persists one replacement channel, and a sealed ping/pong advances both app sequence high-waters.
+- Extended only the test harness adapters: `PairingStack.connect` can reuse an explicit Owner key, and `PiHostInspector` exposes a SHA-256 fingerprint of persisted channel material without returning the key.
+- Verification: `flutter analyze test/e2e/pairing_failures_e2e_test.dart test/e2e/support/pairing_stack.dart test/e2e/support/pi_host_inspector.dart` passed with no issues. The Docker harness was executed twice (once in the shared tree and once in a detached clean worktree with this patch); both runs built and started relay/Toxiproxy/Pi-host, but every existing suite case timed out before pairing because the Pi-host published no pair-code event. This target therefore did not reach its new assertions; no harness-green claim is made.
