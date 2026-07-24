@@ -3,6 +3,8 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createRelayTransportPort,
   decodeRelayControlFrame,
+  MAX_PENDING_RELAY_CONTROL_BYTES,
+  MAX_PENDING_RELAY_CONTROL_FRAMES,
   MAX_PENDING_RELAY_DISPATCH_BYTES,
   MAX_PENDING_RELAY_DISPATCH_FRAMES,
 } from "./relay_transport.js";
@@ -273,7 +275,7 @@ describe("relay transport control frames", () => {
     transport.stop();
   });
 
-  test("bounds a blocked data-plane FIFO, coalesces drop audits, and exempts control", async () => {
+  test("bounds a blocked data-plane FIFO and preserves accepted cross-class order", async () => {
     const { transport, relays, auditDispatchOverflow } = makeTransport();
     const blocker = deferred();
     const dispatched: string[] = [];
@@ -299,13 +301,13 @@ describe("relay transport control frames", () => {
     expect(auditDispatchOverflow.mock.calls.length).toBeLessThan(droppedByFlood);
     expect(
       auditDispatchOverflow.mock.calls.reduce(
-        (total, [event]) => total + event.droppedFrames,
+        (total, [event]) => total + (event.queue === "data" ? event.droppedFrames : 0),
         0,
       ),
     ).toBe(droppedByFlood);
     expect(
       auditDispatchOverflow.mock.calls.reduce(
-        (total, [event]) => total + event.droppedBytes,
+        (total, [event]) => total + (event.queue === "data" ? event.droppedBytes : 0),
         0,
       ),
     ).toBe(
@@ -321,6 +323,126 @@ describe("relay transport control frames", () => {
       Array.from({ length: MAX_PENDING_RELAY_DISPATCH_FRAMES }, (_, index) => String(index)),
     );
     expect(controls).toEqual([{ type: "peer_online", peer: "owner-a" }]);
+    transport.stop();
+  });
+
+  test("bounds and coalesces audit for a blocked control-frame flood", async () => {
+    const { transport, relays, auditDispatchOverflow } = makeTransport();
+    const blocker = deferred();
+    const controls: string[] = [];
+    transport.onControlFrame(async (frame) => {
+      if (frame.type === "peer_online") controls.push(frame.peer);
+      if (controls.length === 1) await blocker.promise;
+    });
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    const relay = relays[0]!;
+    const droppedByFlood = 201;
+    for (let index = 0; index < MAX_PENDING_RELAY_CONTROL_FRAMES + droppedByFlood; index += 1) {
+      relay.emit("message", JSON.stringify({ type: "peer_online", peer: `owner-${index}` }));
+    }
+    await flushDispatch();
+
+    expect(controls).toEqual(["owner-0"]);
+    const controlAudits = auditDispatchOverflow.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.queue === "control");
+    expect(controlAudits.length).toBeGreaterThan(0);
+    expect(controlAudits.length).toBeLessThan(droppedByFlood);
+    expect(controlAudits.reduce((total, event) => total + event.droppedFrames, 0)).toBe(droppedByFlood);
+    expect(controlAudits.every((event) =>
+      event.maxPendingFrames === MAX_PENDING_RELAY_CONTROL_FRAMES &&
+      event.maxPendingBytes === MAX_PENDING_RELAY_CONTROL_BYTES
+    )).toBe(true);
+
+    blocker.resolve();
+    await flushDispatch();
+    expect(controls).toEqual(
+      Array.from({ length: MAX_PENDING_RELAY_CONTROL_FRAMES }, (_, index) => `owner-${index}`),
+    );
+    transport.stop();
+  });
+
+  test("bounds retained control bytes independently of frame count", async () => {
+    const { transport, relays, auditDispatchOverflow } = makeTransport();
+    const blocker = deferred();
+    const controls: unknown[] = [];
+    transport.onControlFrame(async (frame) => {
+      controls.push(frame);
+      if (controls.length === 1) await blocker.promise;
+    });
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    const relay = relays[0]!;
+    const line = JSON.stringify({ type: "peer_online", peer: "x".repeat(64 * 1024) });
+    const lineBytes = Buffer.byteLength(line, "utf8");
+    const acceptedByBytes = Math.floor(MAX_PENDING_RELAY_CONTROL_BYTES / lineBytes);
+    expect(acceptedByBytes).toBeLessThan(MAX_PENDING_RELAY_CONTROL_FRAMES);
+
+    for (let index = 0; index < acceptedByBytes + 3; index += 1) relay.emit("message", line);
+    await flushDispatch();
+    expect(controls).toHaveLength(1);
+    await vi.waitFor(() => expect(auditDispatchOverflow.mock.calls.reduce(
+      (total, [event]) => total + (event.queue === "control" ? event.droppedFrames : 0),
+      0,
+    )).toBe(3));
+
+    blocker.resolve();
+    await flushDispatch();
+    expect(controls).toHaveLength(acceptedByBytes);
+    transport.stop();
+  });
+
+  test("unbind releases a blocked generation and the replacement dispatches independently", async () => {
+    const { transport, relays } = makeTransport();
+    const blocker = deferred();
+    const dispatched: string[] = [];
+    transport.onOuterMessage(async (ingress) => {
+      dispatched.push(ingress.payloadUtf8);
+      if (ingress.payloadUtf8 === "old-0") await blocker.promise;
+    });
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    for (let index = 0; index < MAX_PENDING_RELAY_DISPATCH_FRAMES; index += 1) {
+      relays[0]!.emit("message", outerLine(`old-${index}`));
+    }
+    await flushDispatch();
+    expect(dispatched).toEqual(["old-0"]);
+
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    relays[1]!.emit("message", outerLine("new-0"));
+    await flushDispatch();
+    expect(dispatched).toEqual(["old-0", "new-0"]);
+
+    blocker.resolve();
+    await flushDispatch();
+    expect(dispatched).toEqual(["old-0", "new-0"]);
+    transport.stop();
+  });
+
+  test("dispatch errors and reconnect cycles do not drift generation accounting", async () => {
+    const { transport, relays, auditDispatchOverflow } = makeTransport();
+    const dispatched: string[] = [];
+    transport.onOuterMessage((ingress) => {
+      dispatched.push(ingress.payloadUtf8);
+      if (ingress.payloadUtf8.startsWith("fail-")) throw new Error("handler failed");
+    });
+
+    for (let generation = 0; generation < 3; generation += 1) {
+      await transport.start({ relayUrl: "ws://relay.test", keypair });
+      const current = relays[generation]!;
+      for (let batch = 0; batch < 2; batch += 1) {
+        for (let index = 0; index < 200; index += 1) {
+          current.emit("message", outerLine(`fail-${generation}-${batch}-${index}`));
+        }
+        await flushDispatch();
+      }
+    }
+    relays[2]!.emit("message", outerLine("healthy"));
+    await flushDispatch();
+
+    expect(dispatched.at(-1)).toBe("healthy");
+    expect(auditDispatchOverflow).not.toHaveBeenCalled();
     transport.stop();
   });
 
@@ -346,12 +468,12 @@ describe("relay transport control frames", () => {
     }
     await flushDispatch();
     expect(dispatched).toHaveLength(1);
-    expect(
+    await vi.waitFor(() => expect(
       auditDispatchOverflow.mock.calls.reduce(
-        (total, [event]) => total + event.droppedFrames,
+        (total, [event]) => total + (event.queue === "data" ? event.droppedFrames : 0),
         0,
       ),
-    ).toBe(3);
+    ).toBe(3));
 
     blocker.resolve();
     await flushDispatch();
