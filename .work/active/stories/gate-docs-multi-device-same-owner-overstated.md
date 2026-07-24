@@ -1,7 +1,7 @@
 ---
 id: gate-docs-multi-device-same-owner-overstated
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ Secure channels and persisted channel material are keyed only by the Owner publi
 
 ## Required edit
 Roll both assertions forward to the actual one-active-channel-generation-per-Owner-key behavior, including that same-key re-pair replaces the prior generation.
+
+## Implementation notes
+
+Updated `docs/DECISIONS.md` and `PROTOCOL.md` to state one active secure channel generation per Owner key, with same-key attach/re-pair replacing the prior channel and peer record. Verified against `owner_multiplexer.ts` replacement attach flow and `storage.ts` Owner-key replacement.
