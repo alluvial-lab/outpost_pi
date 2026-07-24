@@ -1,7 +1,7 @@
 ---
 id: gate-security-formatter-reload-diagnostics-path-disclosure
 kind: story
-stage: implementing
+stage: done
 tags: [cockpit, security]
 parent: feature-diagnostic-privacy-hardening
 depends_on: []
@@ -42,3 +42,15 @@ Emit a fixed, content-free formatter-reload failure category (or at most a norma
 
 ## Audit execution
 The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.
+
+## Implementation notes
+
+- Replaced formatter reload exception/stack logging with the fixed
+  `reload-from-disk failed (<runtime type>)` diagnostic.
+- Added a small `@visibleForTesting` formatter function in the owning widget
+  file so the exact production diagnostic can be checked with a path-bearing
+  `FileSystemException`; it preserves the specified output while avoiding a
+  heavyweight widget/DI harness.
+- Verification: `flutter test` passed (261 tests). `flutter analyze` retains
+  the unrelated pre-existing `unnecessary_underscores` info at
+  `lib/app/cockpit/data/rpc/pi_rpc_process.dart:470`.
