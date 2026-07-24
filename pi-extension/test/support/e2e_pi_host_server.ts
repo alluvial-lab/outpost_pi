@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { E2ePiHostRuntime } from "./e2e_pi_host_runtime.js";
 
@@ -36,11 +37,29 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     json(response, 200, { events: runtime.eventsAfter(Number.isFinite(after) ? after : 0) });
     return;
   }
+  if (request.method === "GET" && url.pathname === "/pair-code") {
+    const path = requiredEnv("OUTPOST_PI_PAIR_CODE_FILE");
+    const pairCode = JSON.parse(await readFile(path, "utf8")) as unknown;
+    json(response, 200, pairCode);
+    return;
+  }
   if (request.method === "POST" && url.pathname === "/command") {
     const body = await readJson(request);
     const args = typeof body.args === "string" ? body.args : "";
     await runtime.invokeOutpostPi(args);
     json(response, 200, { ok: true });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/turn-control") {
+    json(response, 200, runtime.turnControlStatus());
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/turn-control/defer-next") {
+    json(response, 200, runtime.deferNextTurn());
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/turn-control/resolve") {
+    json(response, 200, runtime.resolveDeferredTurn());
     return;
   }
   if (request.method === "POST" && url.pathname === "/__restart") {

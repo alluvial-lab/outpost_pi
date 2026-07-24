@@ -31,6 +31,15 @@ final class PiHostStatus {
   final bool sessionContextHasMessageActions;
 }
 
+final class PiHostTurnControlStatus {
+  const PiHostTurnControlStatus({required this.phase});
+
+  factory PiHostTurnControlStatus.fromJson(Map<String, dynamic> json) =>
+      PiHostTurnControlStatus(phase: json['phase'] as String);
+
+  final String phase;
+}
+
 final class PiHostEvent {
   const PiHostEvent({
     required this.sequence,
@@ -55,9 +64,8 @@ final class PiHostClient {
 
   final Uri baseUri;
 
-  Future<PiHostStatus> status() async => PiHostStatus.fromJson(
-    await _json('GET', '/status'),
-  );
+  Future<PiHostStatus> status() async =>
+      PiHostStatus.fromJson(await _json('GET', '/status'));
 
   Future<PiHostStatus> waitUntilReady() => eventually<PiHostStatus>(
     () async {
@@ -77,6 +85,23 @@ final class PiHostClient {
     return (response['events'] as List<dynamic>)
         .map((event) => PiHostEvent.fromJson(event as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Read the production-generated pair code through the headless E2E seam.
+  Future<Map<String, dynamic>> pairCode() => _json('GET', '/pair-code');
+
+  /// Defer settlement of the next SDK user-message action.
+  Future<PiHostTurnControlStatus> deferNextTurn() async =>
+      PiHostTurnControlStatus.fromJson(
+        await _json('POST', '/turn-control/defer-next'),
+      );
+
+  Future<PiHostTurnControlStatus> turnControlStatus() async =>
+      PiHostTurnControlStatus.fromJson(await _json('GET', '/turn-control'));
+
+  /// Resolve the deferred SDK action; callers poll for its settled phase.
+  Future<void> resolveDeferredTurn() async {
+    await _json('POST', '/turn-control/resolve');
   }
 
   Future<PiHostStatus> restartForIsolation() async {
