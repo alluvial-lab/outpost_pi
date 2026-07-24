@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pi-extension-readme-denies-e2e
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,10 @@ Replace all three stale sections with one consistent owner-channel E2E descripti
 ## Implementation notes
 
 Replaced the three stale README sections with the shipped sealed owner-channel model, including inline-image protection, metadata visibility, and relay-readable cross-PC caveats.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against the
+item's Required edit and the cited contradicting sources — claims match the
+shipped owner-channel E2E contract (sealed ct, metadata/cross-PC caveats
+retained, rolling-foundation prose). Approved -> done.
