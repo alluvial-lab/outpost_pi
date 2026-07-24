@@ -3,20 +3,29 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:app/data/local/boxes.dart';
 import 'package:app/data/transport/relay_config.dart';
+import 'package:app/data/transport/secure_channel.dart';
 import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/pairing/pair_request_flow.dart';
 import 'package:app/pairing/storage.dart';
+import 'package:app/protocol/protocol.dart';
+import 'package:app/protocol/uuid7.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'support/eventually.dart';
 import 'support/failure_log_redaction.dart';
 import 'support/harness_endpoints.dart';
 import 'support/pairing_stack.dart';
 import 'support/pi_host_client.dart';
+import 'support/pi_host_inspector.dart';
+import 'support/raw_owner_relay_client.dart';
 import 'support/secure_storage_fixture.dart';
 import 'support/toxiproxy_client.dart';
 
@@ -158,6 +167,118 @@ void main() {
       expect(await storage.listPeers(), isEmpty);
     },
     timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'lost pair_ok recovers through a new QR with the same Owner identity',
+    () async {
+      await host.restartForIsolation();
+      final inspector = PiHostInspector.fromEnvironment();
+      final firstCode = await waitForPairCode(host);
+      final ownerKey = await Ed25519().newKeyPair();
+      final ownerPeer = base64.encode(
+        (await ownerKey.extractPublicKey()).bytes,
+      );
+      final secureStorage = SecureStorageFixture();
+      final storage = PairingStorage(secureStorage);
+      final dropped = await RawOwnerRelayClient.connect(
+        relay: endpoints.relay,
+        ownerKey: ownerKey,
+        deviceId: 'lost-pair-ok-${DateTime.now().microsecondsSinceEpoch}',
+      );
+
+      final dh = await generateOwnerChannelKeyPair();
+      try {
+        final ownerPublic = await ownerKey.extractPublicKey();
+        final proof = await buildOwnerChannelPairProof(
+          token: firstCode.qr.token,
+          ownerEdPublicKey: ownerPublic.bytes,
+          appDhPublicKey: dh.publicKey,
+          piEdPublicKey: firstCode.qr.epkBytes,
+        );
+        final signature = await Ed25519().sign(
+          buildAppOwnerChannelTranscript(
+            token: firstCode.qr.token,
+            appDhPublicKey: dh.publicKey,
+            piEdPublicKey: firstCode.qr.epkBytes,
+          ),
+          keyPair: ownerKey,
+        );
+        dropped.inject(
+          piPublicKey: firstCode.qr.epk,
+          piRoomId: firstCode.qr.roomId!,
+          payload: utf8.encode(
+            jsonEncode(
+              PairRequest(
+                id: uuid7(),
+                tokenId: base64.encode(proof.tokenId),
+                pairMac: base64.encode(proof.mac),
+                deviceName: 'Lost Pair OK Phone',
+                dhPk: base64.encode(dh.publicKey),
+                dhSig: base64.encode(signature.bytes),
+              ).toJson(),
+            ),
+          ),
+        );
+      } finally {
+        dh.secretKey.fillRange(0, dh.secretKey.length, 0);
+        await dropped.close();
+      }
+
+      await eventually<int>(
+        () async => await inspector.peerCount() == 1 ? 1 : null,
+        timeout: const Duration(seconds: 10),
+        description: 'Pi persistence before the lost pair_ok response',
+      );
+      expect(await storage.listPeers(), isEmpty);
+      final abandonedFingerprint = await inspector.channelKeyFingerprint(
+        ownerPeer,
+      );
+      expect(abandonedFingerprint, isNotNull);
+
+      final replacementCode = await waitForPairCode(host);
+      expect(replacementCode.qr.token, isNot(firstCode.qr.token));
+      final hiveDirectory = Directory.systemTemp.createTempSync(
+        'outpost_pi_pair_repair_e2e_',
+      );
+      await LocalBoxes.initForTest(hiveDirectory.path);
+      final repair = await PairingStack.connect(
+        endpoints: endpoints,
+        qr: replacementCode.qr,
+        storage: storage,
+        ownerKey: ownerKey,
+      );
+      HydratedSession? session;
+      addTearDown(() async {
+        if (session != null) await session.close();
+        await repair.close();
+        await Hive.close();
+        if (hiveDirectory.existsSync()) {
+          await hiveDirectory.delete(recursive: true);
+        }
+      });
+
+      final paired = await repair.pair(deviceName: 'Recovered Pair OK Phone');
+      session = await repair.adoptAndHydrate(paired);
+      final persisted = await storage.loadPeer(paired.peer.remoteEpk);
+      expect(persisted?.channel, isNotNull);
+      expect(await inspector.peerCount(), 1);
+      final replacementFingerprint = await inspector.channelKeyFingerprint(
+        ownerPeer,
+      );
+      expect(replacementFingerprint, isNotNull);
+      expect(replacementFingerprint, isNot(abandonedFingerprint));
+
+      await session.ping();
+      final channel = await session.persistedChannelState();
+      expect(channel.sendSequence, greaterThan(0));
+      expect(channel.receiveSequence, greaterThan(0));
+      expect(
+        await inspector.channelKeyFingerprint(ownerPeer),
+        replacementFingerprint,
+      );
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 }
 
