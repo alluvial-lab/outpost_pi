@@ -5,10 +5,10 @@ stage: done
 tags: [app, pi-extension, relay, bug, transport, session, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on: []
-release_binding: null
+release_binding: v0.3.0
 gate_origin: null
 created: 2026-07-21
-updated: 2026-07-23
+updated: 2026-07-24
 reproduced: 2026-07-21
 root_cause_confirmed: 2026-07-21
 ---

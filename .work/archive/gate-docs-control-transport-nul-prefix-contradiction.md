@@ -1,7 +1,9 @@
 ---
 id: gate-docs-control-transport-nul-prefix-contradiction
 created: 2026-07-19
-updated: 2026-07-19
+updated: 2026-07-24
+stage: done
+release_binding: v0.3.0
 tags: [docs, cockpit, pi-extension]
 ---
 
