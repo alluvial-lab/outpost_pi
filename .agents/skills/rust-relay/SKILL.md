@@ -39,7 +39,7 @@ Remote Pi's relay is a transport and coordination service, not the owner of Pi s
 - It forwards outer-envelope `ct` values opaquely: parse JSON shape, enforce size, rewrite sender peer/room, and never decode or inspect payload content. [remote-pi-relay-outer-envelope]{1} [remote-pi-relay-router-handler]{1}
 - It stores Owner-signed mesh membership blobs and verifies signatures/version monotonicity, but the Owner-signed blob remains the authority for membership. [remote-pi-relay-protocol]{1} [remote-pi-relay-mesh-auth]{1}
 - It reports transport failures (`offline`, `not_authorized`, `bad_envelope`) as `_relay` envelopes correlated with the original message id, matching `PROTOCOL.md`. [remote-pi-relay-protocol]{1} [remote-pi-relay-mesh-auth]{1}
-- It does **not** currently provide end-to-end encryption. `PROTOCOL.md` explicitly says TLS protects transport, but the relay operator can read current plaintext envelope contents; do not claim E2E in relay docs or copy unless the protocol changes. [remote-pi-relay-protocol]{1}
+- It does not provide end-to-end encryption itself. The paired app↔Pi owner channel supplies endpoint-established E2E: its `ct` is a sealed XChaCha20-Poly1305 frame opaque to the relay. Cross-PC Pi↔Pi envelopes remain unprotected and relay-readable, while routing metadata remains visible for owner traffic. [remote-pi-relay-protocol]{1}
 
 ## Runtime and router shape
 
@@ -151,7 +151,7 @@ Do not pass raw `serde_json::Value` deep into new business logic unless the boun
 
 ## Anti-patterns
 
-- Claiming the relay is E2E encrypted today.
+- Claiming that the relay itself provides E2E encryption, or implying that cross-PC Pi↔Pi envelopes are protected.
 - Logging payloads, ciphertext, raw inner envelopes, signatures, or full mesh blobs.
 - Adding durable payload/session queues to the relay; offline queuing belongs elsewhere unless the protocol is redesigned.
 - Treating `room_meta_update` omission as clear; omission means preserve, `working: false` clears working.
@@ -161,7 +161,7 @@ Do not pass raw `serde_json::Value` deep into new business logic unless the boun
 
 ## Review checklist
 
-- Protocol/security: Does the change preserve relay opacity, no-E2E honesty, mesh authorization, and transport-error shapes from `PROTOCOL.md`?
+- Protocol/security: Does the change preserve opaque owner-channel `ct`, honest cross-PC plaintext and metadata caveats, mesh authorization, and transport-error shapes from `PROTOCOL.md`?
 - Lifecycle: Is each long-lived socket/channel/task owned and cleaned on disconnect or shutdown?
 - State convergence: Do rooms/presence/working states converge after disconnect, reconnect, multi-device attach, and room/session replacement?
 - Privacy: Are logs/metrics content-free and structured with `tracing`?
