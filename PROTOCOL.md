@@ -399,10 +399,11 @@ the canonical session boundary.
   use the name-scoped derivation. The cwd/name lock uses the same id, so two live
   processes claiming the same cwd and assigned name are a lock violation, not a
   supported topology.
-- **Relay delivery fans out only inside the addressed room.** One inner app↔Pi
-  envelope targets `(owner_pk, room_id)`; the relay copies it to every live
-  connection registered at that exact key (supporting multiple devices for one
-  Owner) and does not route it to other rooms.
+- **Relay delivery is room-targeted for the active Owner channel generation.**
+  One inner app↔Pi envelope targets `(owner_pk, room_id)`; the extension keeps
+  one active secure channel generation per Owner key. Attaching or re-pairing
+  that same key replaces the prior channel and peer record, and delivery does
+  not preserve simultaneous independently keyed same-key device channels.
 - **A `user_message` targets one Pi SDK session.** Its required `session_id`
   selects the session inside the addressed room. The extension rejects a
   missing or non-current id before SDK delivery; the relay carries it opaquely.
