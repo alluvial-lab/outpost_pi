@@ -6,6 +6,9 @@
 //   msgs_v3_<sha256 tuple>                    -> MessageRecord projection
 // Runtime reachability remains plaintext and is wiped on every boot.
 
+import 'dart:io';
+
+import 'package:app/data/local/records/session_index_record.dart';
 import 'package:app/data/local/transcript_box_identity.dart';
 import 'package:app/data/local/transcript_storage_key.dart';
 import 'package:app/data/local/transcript_storage_migration.dart';
@@ -86,6 +89,74 @@ class LocalBoxes {
     await _openEncrypted(_kSessionsIndex);
     final runtime = await Hive.openBox<dynamic>(_kRuntime);
     await runtime.clear();
+  }
+
+  /// Wipe every transcript-bearing box after a confirmed Owner-key change.
+  ///
+  /// The stable app key and security metadata remain intact; only the prior
+  /// Owner's index, event logs, projections, and volatile runtime state leave
+  /// the device. Reopens the common boxes so the router can immediately boot
+  /// the replacement Owner against empty storage.
+  static Future<void> wipeTranscriptsForOwnerTransition() async {
+    final index = Hive.box<dynamic>(_kSessionsIndex);
+    final transcriptBoxes = <String>{};
+    for (final value in index.values) {
+      if (value is! Map) continue;
+      try {
+        final record = SessionIndexRecord.tryFromJson(
+          Map<String, dynamic>.from(value),
+        );
+        if (record == null) continue;
+        transcriptBoxes.add(
+          transcriptEventsBoxName(
+            TranscriptSessionKey(
+              peerId: record.epk,
+              roomId: record.roomId,
+              sessionId: record.sessionId,
+            ),
+          ),
+        );
+        transcriptBoxes.add(msgsBoxName(record.ref));
+      } on Object {
+        // A malformed index row cannot stop the directory backstop below from
+        // deleting any transcript boxes it left behind.
+      }
+    }
+
+    // Hive 2 does not expose its home directory publicly; the open common
+    // index's path is the same directory and remains available on every
+    // supported native platform.
+    final indexPath = index.path;
+    if (indexPath != null) {
+      final home = File(indexPath).parent;
+      if (await home.exists()) {
+        await for (final entity in home.list(followLinks: false)) {
+          if (entity is! File) continue;
+          final fileName = entity.uri.pathSegments.last;
+          if (!fileName.endsWith('.hive')) continue;
+          final boxName = fileName.substring(
+            0,
+            fileName.length - '.hive'.length,
+          );
+          if (boxName.startsWith('transcript_events_v3_') ||
+              boxName.startsWith('msgs_v3_')) {
+            transcriptBoxes.add(boxName);
+          }
+        }
+      }
+    }
+
+    await index.clear();
+    await index.close();
+    final runtime = Hive.box<dynamic>(_kRuntime);
+    await runtime.clear();
+    await runtime.close();
+
+    for (final name in transcriptBoxes) {
+      if (Hive.isBoxOpen(name)) await Hive.box<dynamic>(name).close();
+      await Hive.deleteBoxFromDisk(name);
+    }
+    await _openCommon();
   }
 
   static Future<void> _migrateLegacy(Box<dynamic> metadata) async {

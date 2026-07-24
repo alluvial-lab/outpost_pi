@@ -1,14 +1,18 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:app/data/local/boxes.dart';
 import 'package:app/data/mesh/mesh_client.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/routing/app_router.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
 import 'package:outpost_pi_identity/outpost_pi_identity.dart';
 
 const _peer = PeerRecord(
@@ -425,6 +429,44 @@ void main() {
       connection.dispose();
       identity.dispose();
       mesh.dispose();
+    },
+  );
+
+  test(
+    'confirmed Owner reset disconnects before wiping transcripts and rebooting',
+    () async {
+      final directory = Directory.systemTemp.createTempSync('router_owner_reset_');
+      await LocalBoxes.initForTest(directory.path);
+      const ref = RemoteSessionRef(
+        peerEpk: 'same-peer',
+        roomId: 'same-room',
+        sessionId: 'same-session',
+      );
+      await (await LocalBoxes().msgsBox(ref)).put(0, {'text': 'prior owner'});
+
+      final storage = _BootStorage();
+      final prefs = _BootPreferences();
+      final identity = _BootIdentityBridge(storage);
+      final mesh = _BootMeshSync(identity, storage);
+      final connection = _BootConnectionManager(storage);
+      final owner = buildRouter(storage, connection, prefs, identity, mesh);
+
+      await _waitUntil(
+        () => owner.bootState.ready && identity.resetCallback != null,
+        reason: 'the initial boot and watcher installation',
+      );
+      await identity.resetCallback!();
+
+      expect(connection.disconnectCalls, 1);
+      expect((await LocalBoxes().msgsBox(ref)), isEmpty);
+      expect(mesh.resetVersionCalls, 1);
+
+      owner.dispose();
+      connection.dispose();
+      identity.dispose();
+      mesh.dispose();
+      await Hive.close();
+      await directory.delete(recursive: true);
     },
   );
 
