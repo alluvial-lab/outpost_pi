@@ -908,7 +908,20 @@ function emitRegistryConst(constName: string, variants: OutpostPiIrVariant[]): s
   return lines;
 }
 
-function emitValidatorHelpers(): string {
+function emitValidatorHelpers(options: {
+  needsFiniteNumber: boolean;
+  needsFiniteNumberAtLeast: boolean;
+}): string {
+  const finiteNumberHelpers = options.needsFiniteNumber ? `
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+${options.needsFiniteNumberAtLeast ? `
+function isFiniteNumberAtLeast(value: unknown, minimum: number): value is number {
+  return isFiniteNumber(value) && value >= minimum;
+}
+` : ""}` : "";
+
   return `type ProtocolRecord = Record<string, unknown>;
 
 type ProtocolValidator<T> = (value: unknown) => value is T;
@@ -926,7 +939,6 @@ function isObjectLike(value: unknown, allowedKeys: readonly string[] | undefined
   return record !== undefined && (allowedKeys === undefined || hasOnlyKeys(record, allowedKeys)) && validate(record);
 }
 
-
 function isInteger(value: unknown): value is number {
   return Number.isInteger(value);
 }
@@ -934,11 +946,7 @@ function isInteger(value: unknown): value is number {
 function isIntegerAtLeast(value: unknown, minimum: number): value is number {
   return isInteger(value) && value >= minimum;
 }
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-`;
+${finiteNumberHelpers}`;
 }
 
 function emitValidatorFunction(variant: OutpostPiIrVariant): string {
@@ -1084,7 +1092,15 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     sections.push("");
   }
 
-  sections.push(emitValidatorHelpers());
+  const validatorBodies = [
+    ir.relayOuter?.strictValidationFunctionBody,
+    ir.relayOuter?.compatValidationFunctionBody,
+    ...ir.nestedRegistries.flatMap((registry) => registry.variants.map((variant) => variant.validationFunctionBody)),
+    ...ir.families.flatMap((family) => family.variants.map((variant) => variant.validationFunctionBody)),
+  ].filter((body): body is string => body !== undefined);
+  const needsFiniteNumberAtLeast = validatorBodies.some((body) => body.includes("isFiniteNumberAtLeast("));
+  const needsFiniteNumber = needsFiniteNumberAtLeast || validatorBodies.some((body) => body.includes("isFiniteNumber("));
+  sections.push(emitValidatorHelpers({ needsFiniteNumber, needsFiniteNumberAtLeast }));
   sections.push("");
 
   if (ir.relayOuter !== undefined) {

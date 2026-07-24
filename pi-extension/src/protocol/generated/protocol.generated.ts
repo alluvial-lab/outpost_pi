@@ -815,17 +815,12 @@ function isObjectLike(value: unknown, allowedKeys: readonly string[] | undefined
   return record !== undefined && (allowedKeys === undefined || hasOnlyKeys(record, allowedKeys)) && validate(record);
 }
 
-
 function isInteger(value: unknown): value is number {
   return Number.isInteger(value);
 }
 
 function isIntegerAtLeast(value: unknown, minimum: number): value is number {
   return isInteger(value) && value >= minimum;
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
 }
 
 
