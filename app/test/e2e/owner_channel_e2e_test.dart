@@ -3,6 +3,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:app/data/local/boxes.dart';
@@ -166,10 +167,14 @@ void main() {
       final raw = await stack.openRawOwnerRelayClient();
       addTearDown(raw.close);
       final ownerPeer = await _ownerPublicKey(stack.ownerKey);
-      final auditBefore = await _auditCount(
+      final auditBefore = await _auditOccurrences(
         inspector,
         peer: ownerPeer,
         reason: 'open_failed',
+      );
+      final attachedEventsBefore = await _ownerAttachedEventCount(
+        host,
+        ownerPeer,
       );
       final pairedEventsBefore = await _pairedEventCount(host);
       final channelFingerprint = await inspector.channelKeyFingerprint(
@@ -197,7 +202,7 @@ void main() {
         }
         await eventually<int>(
           () async {
-            final count = await _auditCount(
+            final count = await _auditOccurrences(
               inspector,
               peer: ownerPeer,
               reason: 'open_failed',
@@ -211,27 +216,38 @@ void main() {
 
       await injectFailures(4, 4);
       expect(
-        (await _openFailureEvents(inspector, ownerPeer))
-            .skip(auditBefore)
-            .take(4)
-            .map((event) => event['consecutiveFailures'])
-            .toList(),
-        <int>[1, 2, 3, 4],
+        await _maxConsecutiveFailures(inspector, ownerPeer),
+        4,
+      );
+      expect(
+        await _ownerAttachedEventCount(host, ownerPeer),
+        attachedEventsBefore,
       );
 
       await session.ping();
+      expect(
+        await _ownerAttachedEventCount(host, ownerPeer),
+        attachedEventsBefore,
+        reason: 'four failures must not detach the established channel',
+      );
+
       await injectFailures(5, 9);
       expect(
-        (await _openFailureEvents(inspector, ownerPeer))
-            .skip(auditBefore)
-            .take(9)
-            .map((event) => event['consecutiveFailures'])
-            .toList(),
-        <int>[1, 2, 3, 4, 1, 2, 3, 4, 5],
-        reason: 'the valid ping must reset the consecutive-failure streak',
+        await _maxConsecutiveFailures(inspector, ownerPeer),
+        5,
+      );
+      expect(
+        await _ownerAttachedEventCount(host, ownerPeer),
+        attachedEventsBefore,
+        reason: 'the valid ping must reset the streak before the next five',
       );
 
       await session.ping();
+      expect(
+        await _ownerAttachedEventCount(host, ownerPeer),
+        attachedEventsBefore + 1,
+        reason: 'the valid frame after threshold must reattach exactly once',
+      );
       expect(await inspector.peerCount(), 1);
       expect(
         await inspector.channelKeyFingerprint(ownerPeer),
@@ -539,12 +555,39 @@ Future<int> _waitForNewAudit(
   description: 'new owner-channel $reason audit event',
 );
 
-Future<List<Map<String, dynamic>>> _openFailureEvents(
+Future<int> _auditOccurrences(
+  PiHostInspector inspector, {
+  required String peer,
+  required String reason,
+}) async => (await inspector.ownerChannelAudit())
+    .where((event) => event['peer'] == peer && event['reason'] == reason)
+    .fold<int>(0, (sum, event) => sum + ((event['count'] as num?)?.toInt() ?? 1));
+
+Future<int> _maxConsecutiveFailures(
   PiHostInspector inspector,
   String peer,
 ) async => (await inspector.ownerChannelAudit())
     .where((event) => event['peer'] == peer && event['reason'] == 'open_failed')
-    .toList();
+    .fold<int>(
+      0,
+      (maximum, event) => max(
+        maximum,
+        (event['consecutive_failures'] as num?)?.toInt() ?? 0,
+      ),
+    );
+
+Future<int> _ownerAttachedEventCount(
+  PiHostClient host,
+  String peer,
+) async => (await host.eventsAfter(0)).where((event) {
+  final payload = event.payload;
+  return event.kind == 'notification' &&
+      payload is Map<String, dynamic> &&
+      payload['message'] is String &&
+      (payload['message'] as String).startsWith(
+        '[outpost-pi] Owner attached: peer=${peer.substring(0, 8)}',
+      );
+}).length;
 
 Future<int> _pairedEventCount(PiHostClient host) async =>
     (await host.eventsAfter(0)).where((event) {
