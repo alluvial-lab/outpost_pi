@@ -43,14 +43,10 @@ const Map<DebugTag, Set<String>> kAllowedKeys = {
 const Set<String> kUniversalKeys = {'tag', 'ts'};
 
 /// Forbidden in ANY variant — payload-like names that must never reach the
-/// persisted/shared log. Backstop to the per-tag allow-list.
-const Set<String> kForbiddenKeys = {
-  'body', 'image', 'data', 'args', 'result', 'prompt', 'message', 'ct',
-  'detail', 'err',
-  // payload-like aliases the allow-list must also reject:
-  'content', 'payload', 'preview', 'summary', 'fullText', 'bodyText', 'raw',
-  'toolOutput', 'imageBytes',
-};
+/// persisted/shared log. Backstop to the per-tag allow-list. Aliases the
+/// production set the file-backed log's load/export filters enforce, so the
+/// contract has one source.
+const Set<String> kForbiddenKeys = kForbiddenDiagnosticKeys;
 
 /// Compiler-enforced exhaustiveness: every [DebugEvent] variant MUST be
 /// handled here. If a new variant is added to the sealed class but not listed,

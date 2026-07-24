@@ -4115,6 +4115,74 @@ void main() {
         s.sync.dispose();
       },
     );
+
+    test(
+      'a failed held-pending re-send keeps arbitrary exceptions out of diagnostics',
+      () async {
+        // Privacy canary (feature-diagnostic-privacy-hardening review): the
+        // resend failure path once printed `failed: $err` — arbitrary local
+        // exception text (paths, tokens, provider responses). The console
+        // line must be a fixed category.
+        const secret = '/Users/operator/workspace token=secret-7F3A';
+        const short = Duration(milliseconds: 60);
+        final console = <String>[];
+        final originalDebugPrint = debugPrint;
+        final s = await setup(pendingSendTimeout: short);
+        String heldId = '';
+        debugPrint = (message, {wrapWidth}) {
+          if (message != null) console.add(message);
+        };
+        try {
+          s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 0));
+          for (var i = 0; i < 50 && s.conn.isRoomLive(s.epk, 'main'); i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 4));
+          }
+          expect(s.conn.isRoomLive(s.epk, 'main'), isFalse);
+
+          await s.sync.sendMessage('held, resend fails with secret');
+          await _settle();
+          heldId = messages(s.epk).single.id;
+          await Future<void>.delayed(const Duration(milliseconds: 140));
+          await _settle();
+
+          final reconnect = _FakeChannel()..defaultSessionId = s.sessionId;
+          reconnect.sendFailure = Exception('boom $secret');
+          s.conn.adopt(
+            reconnect,
+            PeerRecord(
+              remoteEpk: s.epk,
+              sessionName: 'Pi',
+              relayUrl: 'ws://localhost',
+              pairedAt: '2026-01-01T00:00:00Z',
+            ),
+          );
+          reconnect.pushControl(
+            RoomAnnounced(
+              peer: s.epk,
+              roomId: 'main',
+              startedAt: 1,
+              sessionId: s.sessionId,
+            ),
+          );
+          await _settle();
+          await _settle();
+          expect(reconnect.sent.whereType<UserMessage>(), isEmpty);
+        } finally {
+          debugPrint = originalDebugPrint;
+        }
+
+        expect(
+          console,
+          contains('[msg-resend] id=$heldId failed'),
+          reason: 'fixed failure category is still emitted',
+        );
+        final all = console.join('\n');
+        expect(all, isNot(contains(secret)));
+        expect(all, isNot(contains('boom')));
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
   });
 
   group('turn projection convergence', () {
