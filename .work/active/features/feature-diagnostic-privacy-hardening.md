@@ -1,7 +1,7 @@
 ---
 id: feature-diagnostic-privacy-hardening
 kind: feature
-stage: review
+stage: done
 tags: [security, cockpit, app]
 parent: null
 depends_on: []
@@ -350,3 +350,48 @@ verified and committed; feature advanced to `review`.
 - `cockpit`: `flutter analyze` clean (after `73a3fe8` fixed the pre-existing
   `unnecessary_underscores` lint at `pi_rpc_process.dart:470` that had blocked
   the worker's transition); `flutter test` 261/261 passed.
+
+## Review (standard, cross-model, 2026-07-23) — adjudicated, closed
+
+One balanced fresh-context cross-model pass (`openai-codex/gpt-5.6-sol` vs host
+`umans/umans-glm-5.2`). Verdict REQUEST CHANGES with 2 proposed blockers + 2
+important, 0 nits. Adjudication:
+
+### Material — fixed + verified this cycle (`82ddbb9`)
+
+1. **Pre-upgrade sensitive ring entries remain exportable** — ACCEPTED
+   material, fixed. `_doLoad()`/`export()` in `debug_log_impl.dart` retained
+   and returned legacy JSONL lines unchanged, so pre-upgrade
+   `MsgFailedEvent.detail` / `SessionSyncEvent.err` (and 0.2.0-era `preview`)
+   rows survived the upgrade and could still egress on export. Fix: promoted
+   the forbidden-key set to production `kForbiddenDiagnosticKeys`
+   (single-sourced with the registry test) and drop any line carrying a
+   forbidden key at BOTH egress boundaries (ring load + export) — discard, not
+   scrub, per policy. Seeded legacy-row export canary added.
+2. **Held-message resend logs arbitrary exception content** — ACCEPTED
+   material, fixed. `sync_service.dart:828` printed `failed: $err` from
+   `_resendHeldPendingMessages`; a persistence/transport exception can carry
+   paths/tokens. Fix: fixed-category console line + secret-shaped
+   resend-failure console canary.
+
+### Important — one fixed, one parked
+
+3. **`MsgFailedEvent.code` accepted any String** (capture surface not closed
+   by construction) — fixed in the same commit: the constructor now normalizes
+   through `admitFailureCode`, so admission is enforced by the type, not by
+   caller discipline.
+4. **Three canaries don't drive their production capture branch**
+   (file-viewer helper-only, session-sync keys-only, LSP onError uncovered) —
+   PARKED unbound as `idea-privacy-canaries-production-boundary-coverage` with
+   risk rationale: all three call sites are now fixed strings with no
+   interpolation; exposure requires a future edit re-introducing it, and the
+   shared pattern is covered by this cycle's other canaries.
+
+### Verification (post-fix)
+
+`flutter analyze` clean; full `flutter test` 818 passed (+2 net new canaries),
+only the 6 known pairing-endpoint e2e environment failures. Cockpit untouched
+by the fixes (261/261 from wave verification stands).
+
+Closure: `standard` weight — one independent pass, receiver-confirmed blockers
+fixed and verified, no second pass. Advanced `review → done`.
