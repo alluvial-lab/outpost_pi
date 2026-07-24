@@ -1,14 +1,14 @@
 ---
 id: story-mobile-stuck-message-after-new-session-replacement
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, relay, bug, transport, session, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-21
-updated: 2026-07-21
+updated: 2026-07-23
 reproduced: 2026-07-21
 root_cause_confirmed: 2026-07-21
 ---
@@ -239,3 +239,25 @@ delayed-real-echo mechanism documented above.
 - `pi-extension/src/session/sdk_session_projection.ts` — echo / wake paths
   (candidate for the `sync_` echo origin; unconfirmed).
 - Parent: `feature-reconnect-reproduction.md`.
+
+## Reconciliation (2026-07-23) — closed as landed
+
+The fix this story was routed for shipped in
+`feature-replacement-session-wake-confirmation` (**done** 2026-07-21):
+Problem A fixed (the `cli_`→message mapping is reserved BEFORE the awaited
+wake, so `message_end` broadcasts the real `cli_` id immediately — no `sync_`
+fallback), Problem B deliberately deferred per option B1. Reviewed (standard,
+approved) and **live-verified on the operator's phone 2026-07-22** (capture
+`debug/591-11f1-9656-5799420aa9fe.bin`): post-`/new` echo carried the correct
+`cli_` id at +71ms, zero `sync_` echoes, no false `send_timeout`, no stuck
+message, no duplicate after the turn.
+
+Both user-visible symptoms in this story's brief are facets of that one
+mechanism and are resolved. Closing `drafting → done` as retroactive capture
+of work landed and verified under the routed feature; no review lane
+(child-story checkpoint of an already-reviewed feature).
+
+Residual, DIFFERENT symptom class (not this story): the brief red "timeout"
+on pressing "New session" itself — no `msgFailed` logged, replacement
+converges in ~1s. Tracked separately in
+`.work/backlog/idea-mobile-new-session-red-timeout-affordance.md`.
