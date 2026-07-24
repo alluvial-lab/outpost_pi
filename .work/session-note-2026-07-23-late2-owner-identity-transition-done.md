@@ -32,3 +32,28 @@ story-reconnect-derived-contract-claims-audit (drafting).
    privacy hardening + owner-identity transition + (optionally) reconnect.
 
 Local main: 53 commits ahead of origin, nothing pushed.
+
+## Addendum (2026-07-23, reconnect cluster triage)
+
+The "design the reconnect children" pickup was triaged and found to be an
+ENVIRONMENT GATE, not a design gate. Disposition of the 5 drafting items:
+
+- `story-mobile-stuck-message-after-new-session-replacement` → reconciled to
+  DONE (07ccf7f): landed + live-verified via
+  `feature-replacement-session-wake-confirmation`.
+- `idea-mobile-drop-slow-recovery`, `idea-mobile-outgoing-message-swallowed`
+  — deliberately parked live-repro (feature body: "leave at drafting; do not
+  fabricate a reproduction"). Need a physical phone + real
+  wifi↔cellular/WireGuard transition.
+- `story-mobile-send-timeout-relay-room-main-mismatch` — fix in source,
+  deps terminal, sole remaining AC is DEPLOY+VERIFY on a phone.
+- `story-reconnect-derived-contract-claims-audit` — depends_on the two
+  idea items; blocked with them.
+- Residual observation parked: `idea-mobile-new-session-red-timeout-affordance`
+  (brief red "timeout" on pressing New session itself — different symptom
+  class, needs one phone capture).
+
+The whole reconnect cluster unblocks on the operator's next live phone
+session (rebuild app APK + sideload, run the three-log drop protocol in the
+feature body). Everything else on the board is DONE — v0.3.0 can ship now
+without the reconnect cluster (all unbound), or wait for the phone session.
