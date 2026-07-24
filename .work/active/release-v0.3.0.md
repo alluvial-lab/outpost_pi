@@ -85,15 +85,25 @@ status-stamped and non-done archive files).
 
 **Bound set after unbind:** 17 active done items + 7 done archived stubs +
 28 gate-produced items (27 blocking at implementing + gate-patterns-v0.3.0
-done). Readiness blocks on the 27 gate findings below.
+done).
+
+**Operator decisions 2026-07-24 (pre-drain):** the two parked gate-security
+mediums (`gate-security-owner-transition-committed-before-durable-cleanup`,
+`gate-security-identity-store-fatal-read-rotates-owner-key`) were **promoted
+to release-blocking** and bound at implementing — both defeat the v0.3
+owner-transition boundary on partial-failure paths. And
+`gate-patterns-inconsistency-pairing-viewmodel-generation-fence` was merged
+into `gate-refactor-lifecycle-pairing-viewmodel-no-dispose` (stamped
+superseded in archive; combined acceptance on the bound item).
+Readiness now blocks on the **29** gate findings below.
 
 ## Gate runs
 
 - **gate-cruft** (2026-07-24) — 3 findings (1 high, 2 medium, 0 low). High → `gate-cruft-generated-validator-unused-number-helper` (implementing, bound). Medium ×2 parked to backlog per gate_finding_routing (`gate-cruft-plain-peer-channel-unused-disconnect-callback`, `gate-cruft-qr-terminal-rotation-dead-path`).
 - **gate-docs** (2026-07-24) — 14 findings (all high-confidence, all release-relevant): 5 foundation-doc assertions (VISION/DECISIONS/AGENTS pre-E2E trust model + overstated same-Owner multi-device + env_id_tail correlation), 4 README staleness (root/relay/pi-extension/site), 1 repo-skill (rust-relay), 4 pattern-skill anchor drift (typed-wire-decoders, generation-fenced, subscription-contract, stale-capability). All 14 bound at stage: implementing — the E2E ship invalidated the pre-E2E trust-model prose repo-wide.
 - **gate-tests** (2026-07-24) — 6 findings (2 critical, 4 high). 5 release-relevant bound at implementing: `gate-tests-ci-lane-runs-env-dependent-e2e` (critical), `gate-tests-lost-pair-ok-repair-recovery-e2e`, `gate-tests-five-failure-detach-reattach-e2e`, `gate-tests-orphan-message-projection-wipe`, `gate-tests-session-replacement-real-rotation-e2e` (high). 1 ambient critical (pre-bundle tautological debug-log assertions) parked to backlog unbound: `gate-tests-debug-log-literal-success-assertions`.
-- **gate-security** (2026-07-24) — 7 findings (0 critical, 2 high, 3 medium, 2 low), all release-relevant. Highs bound at implementing: `gate-security-pairing-token-in-model-context` (QR bearer token reaches LLM context via pi.sendMessage), `gate-security-high-severity-dependency-audit-failures` (next/sharp/brace-expansion/fast-uri advisories; deps-audit lane red). Mediums parked: identity-store-fatal-read-rotates-owner-key, owner-transition-committed-before-durable-cleanup (**operator may want to promote these two — they touch the v0.3 owner-transition boundary**), ci-mutable-action-refs. Lows parked: debug-log-fallback-raw-exceptions, plaintext-pair-error-internal-details.
-- **gate-patterns** (2026-07-24) — 5 new patterns codified (`content-free-diagnostic-categories`, `frame-byte-bounded-admission`, `identity-scoped-monotonic-high-watermarks`, `recoverable-secure-channel-circuit-breakers`, `cross-language-known-answer-fixture-triangulation`); index + rules digest regenerated (16 patterns). 3 inconsistencies flagged → unbound [refactor] drafting stories for a subsequent release (`gate-patterns-inconsistency-pairing-viewmodel-generation-fence`, `-pairing-coordinator-stale-capability`, `-pair-request-flow-typed-decoder`). Tracking item `gate-patterns-v0.3.0` done.
+- **gate-security** (2026-07-24) — 7 findings (0 critical, 2 high, 3 medium, 2 low), all release-relevant. Highs bound at implementing: `gate-security-pairing-token-in-model-context` (QR bearer token reaches LLM context via pi.sendMessage), `gate-security-high-severity-dependency-audit-failures` (next/sharp/brace-expansion/fast-uri advisories; deps-audit lane red). Mediums: identity-store-fatal-read-rotates-owner-key, owner-transition-committed-before-durable-cleanup **promoted to release-blocking + bound at implementing 2026-07-24 (operator decision)**; ci-mutable-action-refs parked. Lows parked: debug-log-fallback-raw-exceptions, plaintext-pair-error-internal-details.
+- **gate-patterns** (2026-07-24) — 5 new patterns codified (`content-free-diagnostic-categories`, `frame-byte-bounded-admission`, `identity-scoped-monotonic-high-watermarks`, `recoverable-secure-channel-circuit-breakers`, `cross-language-known-answer-fixture-triangulation`); index + rules digest regenerated (16 patterns). 3 inconsistencies flagged → unbound [refactor] drafting stories for a subsequent release; `gate-patterns-inconsistency-pairing-viewmodel-generation-fence` was later merged into `gate-refactor-lifecycle-pairing-viewmodel-no-dispose` (2026-07-24), leaving `-pairing-coordinator-stale-capability` and `-pair-request-flow-typed-decoder` parked. Tracking item `gate-patterns-v0.3.0` done.
 - **gate-refactor** (2026-07-24) — 14 findings (11 high, 3 medium) from 4 libraries: protocol-contract (7), lifecycle (4), documentation (3), boundaries (0). Note: `scan-documentation` was discovered as a 4th library (declares findings-route: refactor) — CONVENTIONS prose mentions only 3; update at next conventions touch. 5 release-relevant highs bound at implementing (`gate-refactor-lifecycle-pairing-viewmodel-no-dispose`, `gate-refactor-protocol-contract-session-replay-handwritten-discriminators`, `gate-refactor-protocol-contract-owner-multiplexer-handwritten-types`, `gate-refactor-documentation-dart-secure-channel-throws`, `gate-refactor-documentation-ts-secure-channel-throws`). 6 ambient highs + 3 mediums parked to backlog unbound.
 
 <pending>
