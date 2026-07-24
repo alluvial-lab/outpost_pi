@@ -1,7 +1,7 @@
 ---
 id: gate-docs-multi-device-same-owner-overstated
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,11 @@ Roll both assertions forward to the actual one-active-channel-generation-per-Own
 ## Implementation notes
 
 Updated `docs/DECISIONS.md` and `PROTOCOL.md` to state one active secure channel generation per Owner key, with same-key attach/re-pair replacing the prior channel and peer record; corrected the protocol overview diagram to match. Verified against `owner_multiplexer.ts` replacement attach flow and `storage.ts` Owner-key replacement.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against the
+Required edit and cited sources — shipped key lifecycle (signed ephemeral
+X25519 per pairing, persisted directional keys), one active channel
+generation per Owner key, and the env_id_tail cross-PC-only correlation
+boundary all match implementation. Rolling-foundation style. Approved -> done.
