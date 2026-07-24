@@ -1,14 +1,14 @@
 ---
 id: gate-refactor-lifecycle-legacy-migration-source-boxes
 kind: story
-stage: implementing
+stage: review
 tags: []
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: refactor
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-23
 ---
 
 # Close legacy transcript source boxes on every migration exit
@@ -30,3 +30,9 @@ High
 
 ## Fix
 Give every opened legacy source box an explicit local owner and close it in `finally` on all non-deletion exits, while preserving the verified-success path that deletes the source only after every destination has been copied and reopened successfully.
+
+## Implementation notes
+
+- Wrapped each legacy event/projection source-box read in `try`/`finally` and closes its locally owned Hive box before any migration exit; verified sources remain on disk until the existing post-copy deletion phase.
+- Added a malformed-projection regression assertion that the retained source box is no longer open.
+- Verification: targeted `flutter test test/data/local/transcript_storage_migration_test.dart` passed (12 tests); `flutter analyze` passed with no issues. Full `flutter test` ran 814 passing tests but could not run six pre-existing E2E tests because the runner did not supply required pairing endpoint environment values (`pairing e2e endpoints were not provided by the runner`).

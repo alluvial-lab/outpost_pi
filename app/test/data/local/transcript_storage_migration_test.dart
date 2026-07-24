@@ -401,6 +401,11 @@ void main() {
 
         expect(await Hive.boxExists(sourceName), isTrue);
         expect(
+          Hive.isBoxOpen(sourceName),
+          isFalse,
+          reason: 'a malformed source must be closed before migration aborts',
+        );
+        expect(
           await Hive.boxExists(TranscriptStorageMigrator.legacyIndexBoxName),
           isTrue,
         );

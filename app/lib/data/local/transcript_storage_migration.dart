@@ -129,35 +129,39 @@ final class TranscriptStorageMigrator {
     for (final entry in eventGroups.entries) {
       if (!await Hive.boxExists(entry.key)) continue;
       final source = await _openLegacy(entry.key);
-      for (final sourceKey in source.keys) {
-        final record = _readEventRecord(source.get(sourceKey), entry.key);
-        if (sourceKey is! String || sourceKey != record.eventId) {
-          throw TranscriptMigrationException(
-            code: 'malformed_legacy_event',
-            sourceBox: entry.key,
+      try {
+        for (final sourceKey in source.keys) {
+          final record = _readEventRecord(source.get(sourceKey), entry.key);
+          if (sourceKey is! String || sourceKey != record.eventId) {
+            throw TranscriptMigrationException(
+              code: 'malformed_legacy_event',
+              sourceBox: entry.key,
+            );
+          }
+          final matches = entry.value
+              .where(
+                (candidate) => candidate.record.sessionId == record.sessionId,
+              )
+              .toList(growable: false);
+          if (matches.length != 1) {
+            throw TranscriptMigrationException(
+              code: matches.isEmpty
+                  ? 'unattributed_legacy_event'
+                  : 'ambiguous_legacy_event',
+              sourceBox: entry.key,
+            );
+          }
+          final candidate = matches.single;
+          _addExpectedEvent(
+            eventsBySession[candidate.key]!,
+            record.toJson(),
+            entry.key,
           );
+          canonicalEventCounts[candidate.key] =
+              canonicalEventCounts[candidate.key]! + 1;
         }
-        final matches = entry.value
-            .where(
-              (candidate) => candidate.record.sessionId == record.sessionId,
-            )
-            .toList(growable: false);
-        if (matches.length != 1) {
-          throw TranscriptMigrationException(
-            code: matches.isEmpty
-                ? 'unattributed_legacy_event'
-                : 'ambiguous_legacy_event',
-            sourceBox: entry.key,
-          );
-        }
-        final candidate = matches.single;
-        _addExpectedEvent(
-          eventsBySession[candidate.key]!,
-          record.toJson(),
-          entry.key,
-        );
-        canonicalEventCounts[candidate.key] =
-            canonicalEventCounts[candidate.key]! + 1;
+      } finally {
+        await source.close();
       }
     }
 
@@ -169,46 +173,50 @@ final class TranscriptStorageMigrator {
     for (final entry in projectionGroups.entries) {
       if (!await Hive.boxExists(entry.key)) continue;
       final source = await _openLegacy(entry.key);
-      final rows = _readProjectionRows(source, entry.key);
-      if (rows.isEmpty) continue;
+      try {
+        final rows = _readProjectionRows(source, entry.key);
+        if (rows.isEmpty) continue;
 
-      if (entry.value.length != 1) {
-        final candidateWithoutEvents = entry.value.any(
-          (candidate) => canonicalEventCounts[candidate.key] == 0,
-        );
-        if (candidateWithoutEvents) {
+        if (entry.value.length != 1) {
+          final candidateWithoutEvents = entry.value.any(
+            (candidate) => canonicalEventCounts[candidate.key] == 0,
+          );
+          if (candidateWithoutEvents) {
+            throw TranscriptMigrationException(
+              code: 'ambiguous_legacy_projection',
+              sourceBox: entry.key,
+            );
+          }
+          continue;
+        }
+
+        final candidate = entry.value.single;
+        if (canonicalEventCounts[candidate.key] != 0) continue;
+        try {
+          final imported = LegacyProjectionImport.toEvents(
+            session: candidate.transcriptKey,
+            rows: rows,
+          );
+          for (var sequence = 0; sequence < imported.length; sequence += 1) {
+            _addExpectedEvent(
+              eventsBySession[candidate.key]!,
+              TranscriptEventRecord.fromEvent(
+                imported[sequence],
+                sequence,
+              ).toJson(),
+              entry.key,
+            );
+          }
+        } on FormatException {
           throw TranscriptMigrationException(
-            code: 'ambiguous_legacy_projection',
+            code: 'malformed_legacy_projection',
             sourceBox: entry.key,
           );
         }
-        continue;
+        importedProjectionRows += rows.length;
+      } finally {
+        await source.close();
       }
-
-      final candidate = entry.value.single;
-      if (canonicalEventCounts[candidate.key] != 0) continue;
-      try {
-        final imported = LegacyProjectionImport.toEvents(
-          session: candidate.transcriptKey,
-          rows: rows,
-        );
-        for (var sequence = 0; sequence < imported.length; sequence += 1) {
-          _addExpectedEvent(
-            eventsBySession[candidate.key]!,
-            TranscriptEventRecord.fromEvent(
-              imported[sequence],
-              sequence,
-            ).toJson(),
-            entry.key,
-          );
-        }
-      } on FormatException {
-        throw TranscriptMigrationException(
-          code: 'malformed_legacy_projection',
-          sourceBox: entry.key,
-        );
-      }
-      importedProjectionRows += rows.length;
     }
 
     for (final candidate in candidates) {
