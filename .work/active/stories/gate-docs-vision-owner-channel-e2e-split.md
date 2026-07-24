@@ -1,7 +1,7 @@
 ---
 id: gate-docs-vision-owner-channel-e2e-split
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ The shipped owner channel seals post-pairing JSON with XChaCha20-Poly1305. Only 
 
 ## Required edit
 Replace both assertions with the split trust model: app↔Pi owner payloads are E2E-protected; routing metadata and cross-PC Pi↔Pi envelopes remain visible to the relay. Rolling-foundation: no "previously" prose.
+
+## Implementation notes
+
+Rewrote both `docs/VISION.md` assertions as current split trust-model prose: sealed app↔Pi owner payloads, with relay-visible routing metadata and cross-PC Pi↔Pi envelopes. Verified against `secure_channel.ts` sealing and `pi_forward.rs` opaque envelope forwarding.
