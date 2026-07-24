@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-owner-multiplexer-handwritten-types
 kind: story
-stage: review
+stage: done
 tags: []
 parent: null
 depends_on: []
@@ -38,3 +38,13 @@ Generate a keyed discriminator registry from the schema and use its pair_error, 
 - Updated pairing error/success and detach messages to use
   `SERVER_MESSAGE_DISCRIMINATORS` rather than handwritten discriminators.
 - Verification: `cd pi-extension && node --import tsx ../tools/protocol-codegen/src/index.test.ts` (6 passing); `./node_modules/.bin/vitest run src/extension/owner_multiplexer.test.ts` (27 passing); regenerated with `node --import tsx ../tools/protocol-codegen/src/index.ts --target ts --out src/protocol/generated/protocol.generated.ts`.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): generator-first fixes with
+regenerated output committed together; discriminators now derive from the
+schema (SERVER_MESSAGE_DISCRIMINATORS / generated Dart constant via
+discriminatorConstantName with duplicate validation); isFiniteNumber emits
+conditionally. Codegen/multiplexer/replay tests green; earlier sync-test
+noise was cross-worker mid-flight contamination (suite green on integrated
+tree). Approved -> done.
