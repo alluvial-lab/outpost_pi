@@ -1,7 +1,7 @@
 ---
 id: gate-tests-session-replacement-real-rotation-e2e
 kind: story
-stage: drafting
+stage: review
 tags: [testing]
 parent: null
 depends_on: []
@@ -39,6 +39,16 @@ test("real replacement confirms cli id before replacement turn settles", () asyn
 
 ## Implementation discovery
 
-The requested deterministic regression is not implementable inside this worker's write scope. The existing Pi-host runtime in `pi-extension/test/support/e2e_pi_host_runtime.ts` binds `newSession` to an immediate `{ cancelled: false }` without rotating its `SessionManager`, and its `sendUserMessage` action settles immediately. The HTTP server exposes only status, events, command, and process restart; there is no control seam for pausing and resolving the first replacement turn. App-side test changes cannot create a distinct production session id or hold the extension's full-turn promise, so replacing the five-second sleep would only restate the existing weak test rather than reproduce the defect.
+The expanded write scope supplied the missing harness boundary. The Pi host now rotates to a fresh SDK `SessionManager` on `session_new`, rebinds its runner/actions to that manager, emits `session_start` with the replacement identity, and supplies the extension's `withSession` callback a fresh command/message context. Content-free HTTP controls arm, observe, and resolve the next SDK `sendUserMessage` settlement; the harness emits the real `message_end` while that Promise remains deferred.
 
-Redesign this item to include narrowly scoped Pi-host harness changes: rotate to a fresh `SessionManager`/session id on `session_new`, expose a content-free deferred-turn control endpoint, and surface enough event state to assert the original `cli_` confirmation and timer disarm before resolving that turn. Then update the app E2E to use those deterministic controls and remove the sleep. No code or harness verification was performed for this bounced design.
+## Implementation notes
+
+- Execution capability: inline flagship implementation; cross-language lifecycle timing and real Docker verification required one owner to retain context.
+- Review weight: standard (caller requested stop at `stage: review`).
+- Files changed: `pi-extension/test/support/e2e_pi_host_runtime.ts`, `pi-extension/test/support/e2e_pi_host_server.ts`, `app/test/e2e/support/pi_host_client.dart`, `app/test/e2e/session_replacement_e2e_test.dart` (plus the shared pair-code seam files needed to restore the lane).
+- Tests changed: replaced the five-second observational sleep with a deterministic production-wire regression. It proves the host and app rotate from the original session id to one distinct replacement id; the deferred SDK turn is still pending when the original `cli_` row becomes confirmed; the pending timer count is zero; no `sync_` or failed row exists; explicit settlement leaves exactly one confirmed row.
+- Simplification: removed the old same-session harness limitation and fixed sleep; no production compatibility paths added.
+- Discrepancies from design: the narrow Pi host retains one `ExtensionRunner` while rotating the actual SDK `SessionManager`, using the extension's documented same-factory replacement compatibility path instead of rebuilding the entire host process.
+- Adjacent issues parked: none.
+- Real harness evidence (2026-07-24): `e2e/run-pairing.sh` ran 16/16 tagged tests green, including `real replacement confirms cli id before replacement turn settles`; suite distribution was owner channel 7, pairing failures 5, session replacement 1, cross-room 1, hydration 1, QR lifecycle 1. Redaction checked 20 sensitive canaries.
+- Broader verification: extension typecheck passed; extension Vitest passed 930 tests with 3 skipped; `flutter analyze` passed. The required non-E2E Flutter command was run twice: the load-sensitive full suite reported 840 passed/2 timing failures and then 841 passed/1 timing failure in pre-existing `sync_service_test.dart`; all reported cases passed immediately when rerun individually. No full non-E2E green claim is made.
