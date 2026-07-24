@@ -1,7 +1,7 @@
 ---
 id: gate-tests-ci-lane-runs-env-dependent-e2e
 kind: story
-stage: implementing
+stage: review
 tags: [testing]
 parent: null
 depends_on: []
@@ -33,3 +33,8 @@ important-interface
 
 ## Test location (suggested)
 `.github/workflows/ci.yml`
+
+## Implementation notes
+
+- Tagged every harness-backed `app/test/e2e/*_test.dart` suite with the library-level `e2e` tag and changed the ordinary app CI lane to `flutter test --exclude-tags e2e`. The dedicated pairing workflow still selects `test/e2e/` through `e2e/run-pairing.sh`, so harness coverage remains in its Docker/Toxiproxy-owned lane.
+- Verification: in a detached clean worktree containing only this item patch, ran `flutter pub get`, then ran `env -u E2E_PI_HOST_URL -u E2E_RELAY_URL -u E2E_TOXIPROXY_URL -u E2E_COMPOSE_PROJECT -u E2E_COMPOSE_FILE -u E2E_REDACTION_CANARY_FILE flutter test --no-pub --exclude-tags e2e`; the rerun exited zero with 839 tests passed and no harness endpoint defines. The first clean invocation hit the existing timing-sensitive `sync_service_test.dart` no-echo assertion and the immediate identical rerun passed. The Docker harness was not executed for this CI-routing item.
