@@ -49,17 +49,20 @@ onReconnect(handler: () => void): () => void {
 }
 ```
 
-### Example 3: transport subscription with closure cleanup
+### Example 3: decoded-ingress handler-set subscription with closure cleanup
 
-**File:** `pi-extension/src/extension/relay_transport.ts:258`
+**File:** `pi-extension/src/extension/relay_transport.ts:567-577`
 
 ```ts
-function onOuterMessage(handler: (line: string) => void | Promise<void>): () => void {
+function onOuterMessage(
+  handler: (
+    ingress: DecodedOuterIngress,
+    isCurrent: () => boolean,
+  ) => boolean | void | Promise<boolean | void>,
+): () => void {
   outerMessageHandlers.add(handler);
-  relay?.on("message", handler);
   return () => {
     outerMessageHandlers.delete(handler);
-    relay?.off("message", handler);
   };
 }
 ```
