@@ -87,6 +87,7 @@ final class _RestoringStore implements OwnerIdentityStore {
 
 class _FakeSecureStorage implements FlutterSecureStorage {
   final Map<String, String> _store = {};
+  int failDeletesRemaining = 0;
   @override
   Future<String?> read({
     required String key,
@@ -124,7 +125,14 @@ class _FakeSecureStorage implements FlutterSecureStorage {
     WebOptions? webOptions,
     MacOsOptions? mOptions,
     WindowsOptions? wOptions,
-  }) async => _store.remove(key);
+  }) async {
+    if (failDeletesRemaining > 0) {
+      failDeletesRemaining--;
+      throw StateError('injected secure-storage delete failure');
+    }
+    _store.remove(key);
+  }
+
   @override
   Future<Map<String, String>> readAll({
     IOSOptions? iOptions,
@@ -170,7 +178,7 @@ void main() {
       final bridge = OwnerIdentityBridge(store, storage);
 
       var resetCalls = 0;
-      bridge.startWatching(onReset: () async => resetCalls++);
+      bridge.startWatching(onTransition: (_) async => resetCalls++);
 
       // Force the initial-emit through the in-memory store. The
       // production iOS/Android plugins do this from onListen; the
@@ -207,7 +215,9 @@ void main() {
 
       final resetCompleter = Completer<void>();
       bridge.startWatching(
-        onReset: () async {
+        onTransition: (incoming) async {
+          await storage.wipeAll();
+          await bridge.completePendingTransition(incoming);
           if (!resetCompleter.isCompleted) resetCompleter.complete();
         },
       );
@@ -247,7 +257,7 @@ void main() {
         );
         final bridge = OwnerIdentityBridge(store, storage);
         var resets = 0;
-        bridge.startWatching(onReset: () async => resets++);
+        bridge.startWatching(onTransition: (_) async => resets++);
 
         await store.save(id); // initial-emit adoption
         await store.save(id); // same-pk echo — must be ignored
@@ -256,6 +266,88 @@ void main() {
 
         expect(await storage.listPeers(), hasLength(1));
         expect(resets, 0);
+      },
+    );
+  });
+
+  group('OwnerIdentityBridge owner-transition recovery', () {
+    test(
+      'keeps the old identity gated when pairing cleanup partially fails',
+      () async {
+        final first = await _freshIdentity();
+        final incoming = await _freshIdentity();
+        final store = InMemoryOwnerIdentityStore(initial: first);
+        final secureStorage = _FakeSecureStorage();
+        final storage = PairingStorage(secureStorage);
+        await storage.savePairedPeer(
+          const PeerRecord(
+            remoteEpk: 'old-peer',
+            sessionName: 'Pi',
+            relayUrl: 'https://relay',
+            pairedAt: '2026-07-24T00:00:00Z',
+          ),
+        );
+        final bridge = OwnerIdentityBridge(store, storage);
+        await bridge.boot();
+        final cleanupFailed = Completer<void>();
+        bridge.startWatching(
+          onTransition: (identity) async {
+            try {
+              await storage.wipeAll();
+              await bridge.completePendingTransition(identity);
+            } on Object {
+              cleanupFailed.complete();
+            }
+          },
+        );
+
+        secureStorage.failDeletesRemaining = 1;
+        await store.save(incoming);
+        await cleanupFailed.future.timeout(const Duration(seconds: 1));
+
+        expect(bridge.isTransitionPending, isTrue);
+        expect(bridge.currentIdentity, isNull);
+        expect(bridge.currentOwnerPk, isNull);
+        await expectLater(bridge.requireKeyPair(), throwsA(isA<StateError>()));
+        expect(await storage.hasPendingOwnerTransition(), isTrue);
+
+        bridge.dispose();
+      },
+    );
+
+    test(
+      'boot retries a pending transition before activating the incoming key',
+      () async {
+        final incoming = await _freshIdentity();
+        final store = InMemoryOwnerIdentityStore(initial: incoming);
+        final storage = PairingStorage(_FakeSecureStorage());
+        await storage.savePairedPeer(
+          const PeerRecord(
+            remoteEpk: 'stale-peer',
+            sessionName: 'Pi',
+            relayUrl: 'https://relay',
+            pairedAt: '2026-07-24T00:00:00Z',
+          ),
+        );
+        await storage.beginOwnerTransition();
+        final restarted = OwnerIdentityBridge(store, storage);
+
+        final result = await restarted.boot();
+
+        expect(result, isA<OwnerTransitionPending>());
+        expect(restarted.currentIdentity, isNull);
+        expect(restarted.isTransitionPending, isTrue);
+        expect(await storage.listPeers(), hasLength(1));
+
+        final pending = result as OwnerTransitionPending;
+        await storage.wipeAll();
+        await restarted.completePendingTransition(pending.identity);
+
+        expect(restarted.currentOwnerPk, orderedEquals(incoming.ownerPk));
+        expect(await storage.listPeers(), isEmpty);
+        expect(await storage.hasPendingOwnerTransition(), isFalse);
+
+        restarted.dispose();
       },
     );
   });
