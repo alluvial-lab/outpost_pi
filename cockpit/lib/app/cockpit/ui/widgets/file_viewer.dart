@@ -24,6 +24,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
+/// Format a content-free diagnostic for a formatter reload failure.
+///
+/// The error class distinguishes failure families without retaining paths,
+/// messages, or stack traces from filesystem exceptions.
+@visibleForTesting
+String fileViewerReloadFailureDiagnostic(Object error) =>
+    '[file-viewer] reload-from-disk failed (${error.runtimeType})';
+
 /// Present Markdown, text, images, or audio/video within a file tab.
 ///
 /// Text and Markdown can switch between rendered/read-only and guttered editing.
@@ -376,10 +384,10 @@ class _FileViewerState extends State<FileViewer> {
       _baseline = fresh;
       _updateDirty(false);
       unawaited(_vm?.lspChangeDocument(widget.session.path, fresh));
-    } catch (e, st) {
+    } catch (e) {
       // Non-invasive signal only: preserve the prior fallback (no buffer change)
       // so a formatter/read failure does not silently mask as success.
-      debugPrint('[file-viewer] _reloadFromDisk failed: $e\n$st');
+      debugPrint(fileViewerReloadFailureDiagnostic(e));
     }
   }
 
