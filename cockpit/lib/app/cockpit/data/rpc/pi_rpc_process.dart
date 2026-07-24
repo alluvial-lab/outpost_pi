@@ -467,7 +467,7 @@ class PiRpcProcess implements RpcProcessGateway {
     _emit(const RpcDiagnostic(RpcDiagnosticKind.childStderr));
   }
 
-  void _onStreamError(Object _, StackTrace __) {
+  void _onStreamError(Object _, StackTrace _) {
     _emit(const RpcDiagnostic(RpcDiagnosticKind.streamReadFailure));
   }
 
