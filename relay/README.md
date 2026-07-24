@@ -2,7 +2,8 @@
 
 A lightweight WebSocket relay server that connects the **Outpost-Pi** mobile app to
 `pi-extension` processes running on your Operational System. It handles peer routing and presence
-tracking without ever reading message content.
+tracking; paired app↔Pi owner `ct` is encrypted and opaque to the relay, while cross-PC Pi↔Pi
+envelopes remain relay-readable.
 
 For a full overview of the project, see the
 [root README](../README.md).
@@ -21,8 +22,10 @@ for everything the relay enforces on the wire.
 ## How it works
 
 Every device authenticates with an Ed25519 keypair during the WebSocket handshake
-(challenge-response). After that, the relay routes opaque messages between peers
-identified by their public key. It never decrypts or inspects payload content.
+(challenge-response). After that, the relay routes messages between peers identified
+by their public key. Paired app↔Pi owner `ct` contains a versioned XChaCha20-Poly1305
+sealed frame and remains opaque to the relay; cross-PC Pi↔Pi envelope bodies are not
+E2E-protected and remain readable to the relay.
 
 ---
 
@@ -41,10 +44,11 @@ Messages are protected in two ways on your self-hosted relay:
 - **Ed25519 pairing key** — only devices that completed the pairing flow can
   exchange messages; the relay enforces this via challenge-response authentication.
 
-What the relay **cannot** protect against is the relay operator reading the content
-of your messages. The payload (`ct` field) is forwarded as opaque bytes and is not
-end-to-end encrypted in the current version. A compromised or malicious relay would
-be able to see the commands you send to your Mac and the agent responses.
+Post-pairing app↔Pi owner payloads are protected by an endpoint-established
+XChaCha20-Poly1305 channel. The relay forwards the `ct` field as opaque ciphertext,
+so a compromised or malicious relay cannot read those commands or responses. The
+relay still sees routing metadata, and cross-PC Pi↔Pi envelopes are not E2E-protected
+and remain readable to the relay.
 
 **If you handle sensitive work — private code, credentials, proprietary data — we
 strongly recommend running your own relay.**
