@@ -1,7 +1,7 @@
 ---
 id: gate-docs-decisions-tls-only-superseded
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,11 @@ Rewrite these decision rows in place around owner-channel E2E, retaining the lim
 ## Implementation notes
 
 Replaced the superseded TLS-only rows with the shipped signed ephemeral-X25519-per-pairing, persisted-key, sealed owner-channel contract and retained relay visibility limits. Verified against `PROTOCOL.md` protection-model rows and `secure_channel.ts`.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected against the
+Required edit and cited sources — shipped key lifecycle (signed ephemeral
+X25519 per pairing, persisted directional keys), one active channel
+generation per Owner key, and the env_id_tail cross-PC-only correlation
+boundary all match implementation. Rolling-foundation style. Approved -> done.
