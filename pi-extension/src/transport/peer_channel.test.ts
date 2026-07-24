@@ -47,7 +47,9 @@ function makeChannel(options: {
   auditPath?: string;
   persisted?: { send: bigint; recv: bigint };
   reserveSendSeq?: () => Promise<bigint | null>;
-  persistRecvSeq?: (recvSeq: bigint) => Promise<boolean>;
+  compareAndAdvanceRecvSeq?: (
+    recvSeq: bigint,
+  ) => Promise<"accepted" | "replay" | "stale_generation">;
 }) {
   const relay = options.relay ?? new FakeRelay();
   const persisted = options.persisted ?? { send: options.sendSeq ?? 0n, recv: options.recvSeq ?? 0n };
@@ -64,9 +66,10 @@ function makeChannel(options: {
         persisted.send += 1n;
         return persisted.send;
       }),
-      persistRecvSeq: options.persistRecvSeq ?? (async (recvSeq) => {
-        if (recvSeq > persisted.recv) persisted.recv = recvSeq;
-        return true;
+      compareAndAdvanceRecvSeq: options.compareAndAdvanceRecvSeq ?? (async (recvSeq) => {
+        if (recvSeq <= persisted.recv) return "replay";
+        persisted.recv = recvSeq;
+        return "accepted";
       }),
       onDisconnect: options.onDisconnect ?? vi.fn(),
       auditPath: options.auditPath ?? makeAuditPath(),
@@ -96,6 +99,57 @@ describe("SecurePeerChannel", () => {
     expect(received).toHaveBeenCalledWith({ type: "ping", id: "ping-in" });
     expect(persisted.recv).toBe(3n);
     channel.detach();
+  });
+
+  test("durable replay gate rejects a frame when local state is stale without regressing it", async () => {
+    const auditPath = makeAuditPath();
+    const received = vi.fn();
+    const onDisconnect = vi.fn();
+    const durableRecv = 10n;
+    const compareAndAdvanceRecvSeq = vi.fn(async (seq: bigint) =>
+      seq <= durableRecv ? "replay" as const : "accepted" as const
+    );
+    const { channel, relay, recvKey } = makeChannel({
+      auditPath,
+      recvSeq: 2n,
+      onMessage: received,
+      onDisconnect,
+      compareAndAdvanceRecvSeq,
+    });
+    const replay = seal(
+      recvKey,
+      5n,
+      JSON.stringify({ type: "cancel", id: "captured-cancel", target_id: "turn-1" }),
+    );
+
+    for (let index = 0; index < 5; index += 1) emitOuter(relay, "owner-a", replay);
+    await channel.whenIdle();
+
+    expect(compareAndAdvanceRecvSeq).toHaveBeenCalledTimes(5);
+    expect(received).not.toHaveBeenCalled();
+    expect((channel as unknown as { recvSeq: bigint }).recvSeq).toBe(2n);
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+    expect(readFileSync(auditPath, "utf8")).toContain('"reason":"open_failed"');
+  });
+
+  test("stale key generation is audited and detached without dispatch", async () => {
+    const auditPath = makeAuditPath();
+    const received = vi.fn();
+    const onDisconnect = vi.fn();
+    const { channel, relay, recvKey } = makeChannel({
+      auditPath,
+      onMessage: received,
+      onDisconnect,
+      compareAndAdvanceRecvSeq: async () => "stale_generation",
+    });
+
+    emitOuter(relay, "owner-a", seal(recvKey, 1n, JSON.stringify({ type: "session_new", id: "stale" })));
+    await channel.whenIdle();
+
+    expect(received).not.toHaveBeenCalled();
+    expect((channel as unknown as { recvSeq: bigint }).recvSeq).toBe(0n);
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+    expect(readFileSync(auditPath, "utf8")).toContain('"reason":"stale_generation"');
   });
 
   test("drops plaintext after key establishment and writes a content-free audit line", async () => {
@@ -324,7 +378,7 @@ describe("SecurePeerChannel", () => {
         keys: { send: new Uint8Array(32).fill(1), recv: new Uint8Array(32).fill(2) },
         recvSeq: 0n,
         reserveSendSeq: () => reservation,
-        persistRecvSeq: async () => true,
+        compareAndAdvanceRecvSeq: async () => "accepted",
         onDisconnect,
         auditPath: makeAuditPath(),
       },

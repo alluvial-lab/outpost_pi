@@ -12,10 +12,10 @@ import {
 } from "../protocol/relay_ingress.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import {
+  compareAndAdvanceRecvSeq,
   decodePeerChannelKeys,
   parsePeerChannelSequence,
   reserveSendSeq,
-  updateRecvSeq,
 } from "../pairing/storage.js";
 import {
   REACHABILITY_RELAY_LIVENESS_CHECK_MS,
@@ -643,7 +643,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
         keys,
         recvSeq,
         reserveSendSeq: () => reserveSendSeq(input.peerId, channelKey),
-        persistRecvSeq: (seq) => updateRecvSeq(input.peerId, channelKey, seq),
+        compareAndAdvanceRecvSeq: (seq) => compareAndAdvanceRecvSeq(input.peerId, channelKey, seq),
         onDisconnect: () => input.onDisconnect(input.peerId),
       },
     );

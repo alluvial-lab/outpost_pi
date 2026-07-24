@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   utimesSync,
@@ -41,7 +42,7 @@ const {
   decodePeerChannelKeys,
   parsePeerChannelSequence,
   reserveSendSeq,
-  updateRecvSeq,
+  compareAndAdvanceRecvSeq,
   PeerStorage,
   PeerStorageLockTimeoutError,
 } = storage;
@@ -105,6 +106,12 @@ function expectPrivateFileMode(path: string): void {
 function expectPrivateDirMode(path: string): void {
   if (!POSIX_MODES_SUPPORTED) return;
   expect(statSync(path).mode & 0o777).toBe(0o700);
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((res) => { resolve = res; });
+  return { promise, resolve };
 }
 
 const PHONE_PEER = {
@@ -299,7 +306,7 @@ describe("peers.json storage permissions", () => {
     });
 
     expect(await reserveSendSeq(PHONE_PEER.remote_epk, channelKey)).toBe(9_007_199_254_740_993n);
-    expect(await updateRecvSeq(PHONE_PEER.remote_epk, channelKey, 42n)).toBe(true);
+    expect(await compareAndAdvanceRecvSeq(PHONE_PEER.remote_epk, channelKey, 42n)).toBe("accepted");
 
     // Re-read from disk rather than retaining the object passed to addPeer.
     const [reloaded] = await listPeers();
@@ -339,20 +346,41 @@ describe("peers.json storage permissions", () => {
     expect((await first.listPeers())[0]?.send_seq).toBe("102");
   });
 
-  test("independent stores max-merge receive high-waters without regression", async () => {
+  test("stale receive submissions are rejected instead of max-merged as success", async () => {
     const channelKey = encodePeerChannelKeys({
       send: new Uint8Array(32).fill(41),
       recv: new Uint8Array(32).fill(42),
     });
     const first = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
+    const stale = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
+    await first.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
+
+    expect(await first.compareAndAdvanceRecvSeq(PHONE_PEER.remote_epk, channelKey, 700n))
+      .toBe("accepted");
+    // A stale channel must not receive a successful no-op: callers use this
+    // result as the authority to dispatch security-sensitive owner actions.
+    expect(await stale.compareAndAdvanceRecvSeq(PHONE_PEER.remote_epk, channelKey, 3n))
+      .toBe("replay");
+    expect((await stale.listPeers())[0]?.recv_seq).toBe("700");
+  });
+
+  test("concurrent duplicate receive delivery is accepted exactly once across stores", async () => {
+    const channelKey = encodePeerChannelKeys({
+      send: new Uint8Array(32).fill(43),
+      recv: new Uint8Array(32).fill(44),
+    });
+    const first = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
     const second = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
     await first.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
 
-    expect(await Promise.all([
-      first.updateRecvSeq(PHONE_PEER.remote_epk, channelKey, 700n),
-      second.updateRecvSeq(PHONE_PEER.remote_epk, channelKey, 3n),
-    ])).toEqual([true, true]);
-    expect((await second.listPeers())[0]?.recv_seq).toBe("700");
+    const results = await Promise.all([
+      first.compareAndAdvanceRecvSeq(PHONE_PEER.remote_epk, channelKey, 9n),
+      second.compareAndAdvanceRecvSeq(PHONE_PEER.remote_epk, channelKey, 9n),
+    ]);
+
+    expect(results.filter((result) => result === "accepted")).toHaveLength(1);
+    expect(results.filter((result) => result === "replay")).toHaveLength(1);
+    expect((await first.listPeers())[0]?.recv_seq).toBe("9");
   });
 
   test("stale channel operations cannot overwrite freshly re-paired key material", async () => {
@@ -362,7 +390,8 @@ describe("peers.json storage permissions", () => {
     await addPeer({ ...PHONE_PEER, channel_key: freshKey, send_seq: "0", recv_seq: "0" });
 
     expect(await reserveSendSeq(PHONE_PEER.remote_epk, oldKey)).toBeNull();
-    expect(await updateRecvSeq(PHONE_PEER.remote_epk, oldKey, 99n)).toBe(false);
+    expect(await compareAndAdvanceRecvSeq(PHONE_PEER.remote_epk, oldKey, 99n))
+      .toBe("stale_generation");
     expect((await listPeers())[0]).toMatchObject({ channel_key: freshKey, send_seq: "0", recv_seq: "0" });
   });
 
@@ -371,7 +400,10 @@ describe("peers.json storage permissions", () => {
     const store = new PeerStorage({ directory: PEERS_DIR_FOR_TEST, lockTimeoutMs: 100, lockRetryMs: 1, lockStaleMs: 10 });
     await store.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
     mkdirSync(PEERS_LOCK_FOR_TEST, { recursive: true, mode: 0o700 });
-    writeFileSync(join(PEERS_LOCK_FOR_TEST, "owner.json"), JSON.stringify({ pid: 2_147_483_647 }));
+    writeFileSync(
+      join(PEERS_LOCK_FOR_TEST, "owner.json"),
+      JSON.stringify({ pid: 2_147_483_647, token: "dead-owner-generation" }),
+    );
     const old = new Date(Date.now() - 1_000);
     utimesSync(PEERS_LOCK_FOR_TEST, old, old);
 
@@ -384,7 +416,10 @@ describe("peers.json storage permissions", () => {
     const seed = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
     await seed.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
     mkdirSync(PEERS_LOCK_FOR_TEST, { recursive: true, mode: 0o700 });
-    writeFileSync(join(PEERS_LOCK_FOR_TEST, "owner.json"), JSON.stringify({ pid: process.pid }));
+    writeFileSync(
+      join(PEERS_LOCK_FOR_TEST, "owner.json"),
+      JSON.stringify({ pid: process.pid, token: "live-owner-generation" }),
+    );
     const old = new Date(Date.now() - 1_000);
     utimesSync(PEERS_LOCK_FOR_TEST, old, old);
     const contender = new PeerStorage({
@@ -398,6 +433,118 @@ describe("peers.json storage permissions", () => {
       .rejects.toBeInstanceOf(PeerStorageLockTimeoutError);
     expect(JSON.parse(readFileSync(PEERS_FILE_FOR_TEST, "utf8")).peers[0].send_seq).toBe("0");
     expect(existsSync(PEERS_LOCK_FOR_TEST)).toBe(true);
+  });
+
+  test("a delayed holder release cannot remove a successor lock generation", async () => {
+    const channelKey = encodePeerChannelKeys({
+      send: new Uint8Array(32).fill(69),
+      recv: new Uint8Array(32).fill(70),
+    });
+    const seed = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
+    await seed.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
+
+    const holderAcquired = deferred<void>();
+    const releaseHolder = deferred<void>();
+    const holder = new PeerStorage({
+      directory: PEERS_DIR_FOR_TEST,
+      lockHooks: {
+        afterLockOwnerWritten: async () => {
+          holderAcquired.resolve();
+          await releaseHolder.promise;
+        },
+      },
+    });
+    const reservation = holder.reserveSendSeq(PHONE_PEER.remote_epk, channelKey);
+    await holderAcquired.promise;
+
+    const displacedPath = `${PEERS_LOCK_FOR_TEST}.displaced`;
+    renameSync(PEERS_LOCK_FOR_TEST, displacedPath);
+    mkdirSync(PEERS_LOCK_FOR_TEST, { mode: 0o700 });
+    const successorOwner = JSON.stringify({ pid: process.pid, token: "successor-after-holder" });
+    writeFileSync(join(PEERS_LOCK_FOR_TEST, "owner.json"), successorOwner);
+
+    releaseHolder.resolve();
+    await expect(reservation).resolves.toBe(1n);
+    expect(readFileSync(join(PEERS_LOCK_FOR_TEST, "owner.json"), "utf8")).toBe(successorOwner);
+
+    rmSync(PEERS_LOCK_FOR_TEST, { recursive: true, force: true });
+    rmSync(displacedPath, { recursive: true, force: true });
+  });
+
+  test("a delayed second reclaimer cannot rename a live successor lock generation", async () => {
+    const channelKey = encodePeerChannelKeys({
+      send: new Uint8Array(32).fill(71),
+      recv: new Uint8Array(32).fill(72),
+    });
+    const seed = new PeerStorage({ directory: PEERS_DIR_FOR_TEST });
+    await seed.addPeer({ ...PHONE_PEER, channel_key: channelKey, send_seq: "0", recv_seq: "0" });
+    mkdirSync(PEERS_LOCK_FOR_TEST, { recursive: true, mode: 0o700 });
+    writeFileSync(
+      join(PEERS_LOCK_FOR_TEST, "owner.json"),
+      JSON.stringify({ pid: 2_147_483_647, token: "dead-before-aba" }),
+    );
+    const old = new Date(Date.now() - 1_000);
+    utimesSync(PEERS_LOCK_FOR_TEST, old, old);
+
+    const delayedClassified = deferred<void>();
+    const resumeDelayed = deferred<void>();
+    const delayedMarkedSuccessor = deferred<void>();
+    let pauseFirstClassification = true;
+    let committedReclaims = 0;
+    const delayed = new PeerStorage({
+      directory: PEERS_DIR_FOR_TEST,
+      lockTimeoutMs: 2_000,
+      lockRetryMs: 1,
+      lockStaleMs: 0,
+      lockHooks: {
+        afterReclaimClassified: async () => {
+          if (!pauseFirstClassification) return;
+          pauseFirstClassification = false;
+          delayedClassified.resolve();
+          await resumeDelayed.promise;
+        },
+        afterReclaimMarkerCreated: () => delayedMarkedSuccessor.resolve(),
+        onReclaimCommitted: () => { committedReclaims += 1; },
+      },
+    });
+    const delayedReservation = delayed.reserveSendSeq(PHONE_PEER.remote_epk, channelKey);
+    await delayedClassified.promise;
+
+    const winner = new PeerStorage({
+      directory: PEERS_DIR_FOR_TEST,
+      lockStaleMs: 0,
+      lockHooks: { onReclaimCommitted: () => { committedReclaims += 1; } },
+    });
+    await expect(winner.reserveSendSeq(PHONE_PEER.remote_epk, channelKey)).resolves.toBe(1n);
+
+    const successorHeld = deferred<void>();
+    const releaseSuccessor = deferred<void>();
+    const successor = new PeerStorage({
+      directory: PEERS_DIR_FOR_TEST,
+      lockHooks: {
+        afterLockOwnerWritten: async () => {
+          successorHeld.resolve();
+          await releaseSuccessor.promise;
+        },
+      },
+    });
+    const successorReservation = successor.reserveSendSeq(PHONE_PEER.remote_epk, channelKey);
+    await successorHeld.promise;
+    const successorOwner = readFileSync(join(PEERS_LOCK_FOR_TEST, "owner.json"), "utf8");
+
+    resumeDelayed.resolve();
+    await delayedMarkedSuccessor.promise;
+    await vi.waitFor(() => {
+      expect(readFileSync(join(PEERS_LOCK_FOR_TEST, "owner.json"), "utf8")).toBe(successorOwner);
+      expect(existsSync(join(PEERS_LOCK_FOR_TEST, "reclaim"))).toBe(false);
+    });
+    expect(committedReclaims).toBe(1);
+
+    releaseSuccessor.resolve();
+    await expect(successorReservation).resolves.toBe(2n);
+    await expect(delayedReservation).resolves.toBe(3n);
+    expect(committedReclaims).toBe(1);
+    expect((await seed.listPeers())[0]?.send_seq).toBe("3");
   });
 
   test("addPeer migrates an existing permissive peers.json on update", async () => {
