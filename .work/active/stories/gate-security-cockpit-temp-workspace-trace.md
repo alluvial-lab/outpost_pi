@@ -1,7 +1,7 @@
 ---
 id: gate-security-cockpit-temp-workspace-trace
 kind: story
-stage: implementing
+stage: done
 tags: [cockpit, security]
 parent: feature-diagnostic-privacy-hardening
 depends_on: []
@@ -40,3 +40,13 @@ Remove the temporary marker now that it has served its investigation, or replace
 
 ## Audit execution
 The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.
+
+## Implementation notes
+
+- Deleted `_mark`, all Create Workspace trace calls, the `ck_trace.log`
+  reference, and the now-unused `dart:io` import. The Create Workspace flow is
+  otherwise unchanged.
+- Verification: confirmed no `_mark` or `ck_trace` reference remains;
+  `flutter test` passed (261 tests). `flutter analyze` retains the unrelated
+  pre-existing `unnecessary_underscores` info at
+  `lib/app/cockpit/data/rpc/pi_rpc_process.dart:470`.
