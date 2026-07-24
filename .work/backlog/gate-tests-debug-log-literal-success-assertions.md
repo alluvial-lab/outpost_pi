@@ -1,0 +1,36 @@
+---
+id: gate-tests-debug-log-literal-success-assertions
+created: 2026-07-24
+updated: 2026-07-24
+tags: [testing]
+---
+
+# Two debug-log tests retain prohibited literal-success assertions
+
+## Source
+gate-tests scan for v0.3.0 (2026-07-24). Critical-priority test-integrity
+finding, but **ambient** (git blame attributes to pre-bundle commits 01dad29f
+and 4a84df72) → parked to backlog per the ambient-findings rule.
+
+## Evidence
+`app/test/data/debug/debug_log_impl_test.dart:250-260` and `:332-336` end with
+`expect(true, isTrue)`. These assertions cannot fail from product behavior and
+violate the repo's test-integrity prohibition. The surrounding calls still
+exercise no-throw behavior, so no production bug appears silenced; the literal
+assertions themselves add no evidence.
+
+## Suggested rework
+```dart
+test('I/O failure remains contained and leaves no exportable state', () async {
+  // Exercise the failing adapter path.
+  // Assert a stable postcondition such as export() == null or no file present.
+});
+
+test('throwing debugEnabled callback is contained', () async {
+  // Call log(), then assert no event became exportable.
+  // Remove expect(true, isTrue).
+});
+```
+
+## Test location
+`app/test/data/debug/debug_log_impl_test.dart`
