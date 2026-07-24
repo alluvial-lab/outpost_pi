@@ -1,7 +1,7 @@
 ---
 id: gate-docs-relay-readme-ct-not-e2e
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ Post-pairing owner-channel ct contains a versioned XChaCha20-Poly1305 sealed fra
 
 ## Required edit
 Describe opaque encrypted owner ct, retain honest metadata/cross-PC limits, and remove the blanket command/response readability claim.
+
+## Implementation notes
+
+Updated relay operator documentation to describe opaque encrypted owner `ct`, visible routing metadata, and readable cross-PC envelopes.
