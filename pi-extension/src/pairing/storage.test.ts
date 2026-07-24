@@ -309,6 +309,34 @@ describe("peers.json storage permissions", () => {
     expectPrivateFileMode(PEERS_FILE_FOR_TEST);
   });
 
+  test("queued sequence writes max-merge and readers wait for their durable high-water", async () => {
+    const channelKey = encodePeerChannelKeys({
+      send: new Uint8Array(32).fill(31),
+      recv: new Uint8Array(32).fill(32),
+    });
+    await addPeer({
+      ...PHONE_PEER,
+      channel_key: channelKey,
+      send_seq: "0",
+      recv_seq: "0",
+    });
+
+    const highWrite = updatePeerChannelSequences(PHONE_PEER.remote_epk, channelKey, {
+      sendSeq: 512n,
+      recvSeq: 700n,
+    });
+    const staleWrite = updatePeerChannelSequences(PHONE_PEER.remote_epk, channelKey, {
+      sendSeq: 2n,
+      recvSeq: 3n,
+    });
+    const snapshot = listPeers();
+
+    expect(await highWrite).toBe(true);
+    expect(await staleWrite).toBe(true);
+    expect((await snapshot)[0]).toMatchObject({ send_seq: "512", recv_seq: "700" });
+    expect((await listPeers())[0]).toMatchObject({ send_seq: "512", recv_seq: "700" });
+  });
+
   test("stale channel updates cannot overwrite freshly re-paired key material", async () => {
     const oldKey = encodePeerChannelKeys({ send: new Uint8Array(32).fill(1), recv: new Uint8Array(32).fill(2) });
     const freshKey = encodePeerChannelKeys({ send: new Uint8Array(32).fill(3), recv: new Uint8Array(32).fill(4) });
