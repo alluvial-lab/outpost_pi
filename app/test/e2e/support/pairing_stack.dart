@@ -32,7 +32,10 @@ final class PairCodeObservation {
   final DateTime expiresAt;
 }
 
-/// Read a production pair-code only after it crossed the SDK TUI action boundary.
+/// Read a production-generated pair code through the headless E2E file seam.
+///
+/// The real extension still issues the bearer token; the harness only exposes
+/// that file to the test process and never fabricates pairing material.
 Future<PairCodeObservation> waitForPairCode(
   PiHostClient host, {
   String args = 'pair',
@@ -40,31 +43,21 @@ Future<PairCodeObservation> waitForPairCode(
   await host.invokeOutpostPi(args);
   return eventually<PairCodeObservation>(
     () async {
-      final events = await host.eventsAfter(0);
-      for (final event in events.reversed) {
-        final payload = event.payload;
-        if (event.kind != 'tui_message' ||
-            payload is! Map<String, dynamic> ||
-            payload['customType'] != 'outpost-pi:pair-code') {
-          continue;
-        }
-        final details = payload['details'];
-        if (details is! Map<String, dynamic>) continue;
-        final uri = details['uri'];
-        final expiresAt = details['expiresAt'];
-        if (uri is! String || expiresAt is! num) continue;
-        final qr = QrPairPayload.tryParse(uri);
-        if (qr == null) continue;
-        return PairCodeObservation(
-          qr: qr,
-          uri: uri,
-          expiresAt: DateTime.fromMillisecondsSinceEpoch(expiresAt.toInt()),
-        );
-      }
-      return null;
+      final payload = await host.pairCode();
+      final uri = payload['uri'];
+      final token = payload['token'];
+      final expiresAt = payload['expiresAt'];
+      if (uri is! String || token is! String || expiresAt is! num) return null;
+      final qr = QrPairPayload.tryParse(uri);
+      if (qr == null || qr.token != token) return null;
+      return PairCodeObservation(
+        qr: qr,
+        uri: uri,
+        expiresAt: DateTime.fromMillisecondsSinceEpoch(expiresAt.toInt()),
+      );
     },
     timeout: const Duration(seconds: 10),
-    description: 'pair-code publication',
+    description: 'pair-code file publication',
   );
 }
 
