@@ -31,4 +31,4 @@ Roll both assertions forward to the actual one-active-channel-generation-per-Own
 
 ## Implementation notes
 
-Updated `docs/DECISIONS.md` and `PROTOCOL.md` to state one active secure channel generation per Owner key, with same-key attach/re-pair replacing the prior channel and peer record. Verified against `owner_multiplexer.ts` replacement attach flow and `storage.ts` Owner-key replacement.
+Updated `docs/DECISIONS.md` and `PROTOCOL.md` to state one active secure channel generation per Owner key, with same-key attach/re-pair replacing the prior channel and peer record; corrected the protocol overview diagram to match. Verified against `owner_multiplexer.ts` replacement attach flow and `storage.ts` Owner-key replacement.
