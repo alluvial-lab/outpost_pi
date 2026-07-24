@@ -25,6 +25,26 @@ process.stdout.write(JSON.stringify({count}));
     return (value['count'] as num).toInt();
   }
 
+  Future<String?> channelKeyFingerprint(String peer) async {
+    final value = await _runNode('''
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = '/tmp/outpost-pi-e2e-home/.pi/remote/peers.json';
+const peer = ${jsonEncode(peer)};
+let fingerprint = null;
+try {
+  const record = JSON.parse(fs.readFileSync(path, 'utf8')).peers?.find(
+    candidate => candidate.remote_epk === peer,
+  );
+  if (typeof record?.channel_key === 'string') {
+    fingerprint = crypto.createHash('sha256').update(record.channel_key).digest('hex');
+  }
+} catch {}
+process.stdout.write(JSON.stringify({fingerprint}));
+''');
+    return value['fingerprint'] as String?;
+  }
+
   Future<List<Map<String, dynamic>>> ownerChannelAudit() async {
     final value = await _runNode('''
 const fs = require('node:fs');
