@@ -34,6 +34,14 @@ class MeshSyncService extends ChangeNotifier {
   /// to 304. Reset to 0 when the Owner key changes (sync drift).
   int _lastVersion = 0;
 
+  // Security invariant distinct from the conditional-fetch hint above: this
+  // is the greatest version ever verified for the current Owner and survives
+  // process restarts. It is loaded lazily because the Owner key may not exist
+  // during app bootstrap.
+  int _highWatermark = 0;
+  bool _watermarkLoaded = false;
+  String? _watermarkOwnerHash;
+
   /// True while any direct or mutation-owned publication is in flight.
   bool _publishing = false;
 
@@ -61,6 +69,40 @@ class MeshSyncService extends ChangeNotifier {
   /// Return the verified relay version used as the next conditional-fetch watermark.
   int get lastVersion => _lastVersion;
 
+  /// Load the durable rollback floor for [ownerPk] once per Owner identity.
+  ///
+  /// Storage errors intentionally escape so the calling pull or publish path
+  /// can fail closed rather than accepting a blob against an unknown floor.
+  Future<void> _ensureWatermarkLoaded(Uint8List ownerPk) async {
+    final ownerPkHash = await MeshClient.ownerPkHash(ownerPk);
+    if (_watermarkLoaded && _watermarkOwnerHash == ownerPkHash) return;
+    final watermark = await _storage.loadMeshHighWatermark(ownerPkHash);
+    _highWatermark = watermark;
+    _watermarkOwnerHash = ownerPkHash;
+    _watermarkLoaded = true;
+  }
+
+  /// Persist a strictly higher verified relay version before exposing it.
+  Future<void> _advanceHighWatermark(int version) async {
+    if (version <= _highWatermark) return;
+    final ownerPkHash = _watermarkOwnerHash;
+    if (!_watermarkLoaded || ownerPkHash == null) {
+      throw StateError('mesh high-water mark was not loaded');
+    }
+    await _storage.saveMeshHighWatermark(ownerPkHash, version);
+    _highWatermark = version;
+  }
+
+  void _diagnoseRollbackRejection() {
+    _debugLog?.log(
+      LifecycleFailureEvent(
+        ts: DateTime.now().toUtc(),
+        operation: LifecycleOperation.meshPublish,
+        reason: 'mesh_rollback_rejected',
+      ),
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Pull
   // -------------------------------------------------------------------------
@@ -86,6 +128,14 @@ class MeshSyncService extends ChangeNotifier {
     final pk = _ownerBridge.currentOwnerPk;
     if (pk == null ||
         !_isPullCurrent(mutationRevision, allowPendingMutation, pk)) {
+      return false;
+    }
+    try {
+      await _ensureWatermarkLoaded(pk);
+    } on Object {
+      return false;
+    }
+    if (!_isPullCurrent(mutationRevision, allowPendingMutation, pk)) {
       return false;
     }
     final hash = await MeshClient.ownerPkHash(pk);
@@ -168,6 +218,17 @@ class MeshSyncService extends ChangeNotifier {
           expectedOwnerPk,
         )) {
       return false;
+    }
+    if (blob.version < _highWatermark) {
+      _diagnoseRollbackRejection();
+      return false;
+    }
+    if (blob.version > _highWatermark) {
+      try {
+        await _advanceHighWatermark(blob.version);
+      } on Object {
+        return false;
+      }
     }
     return _replaceLocalCacheWith(
       blob,
@@ -323,6 +384,12 @@ class MeshSyncService extends ChangeNotifier {
     required bool refetchOnConflict,
     required bool allowEmpty,
   }) async {
+    try {
+      await _ensureWatermarkLoaded(pk);
+    } on Object {
+      return const MeshPublishFailure('watermark_unavailable');
+    }
+    if (_disposed) return const MeshPublishFailure('disposed');
     final peers = await _storage.listPeers();
     if (_disposed) return const MeshPublishFailure('disposed');
     // Safety net (plan/24-fix-app-publish-race): never overwrite a
@@ -354,7 +421,8 @@ class MeshSyncService extends ChangeNotifier {
           ),
         )
         .toList(growable: false);
-    final nextVersion = _lastVersion + 1;
+    final nextVersion =
+        (_lastVersion > _highWatermark ? _lastVersion : _highWatermark) + 1;
     final blob = MeshBlob(
       version: nextVersion,
       issuedAt: DateTime.now().toUtc().millisecondsSinceEpoch,
@@ -371,6 +439,11 @@ class MeshSyncService extends ChangeNotifier {
     if (_disposed) return const MeshPublishFailure('disposed');
     switch (result) {
       case MeshPublishOk(version: final v, updatedAt: final u):
+        try {
+          await _advanceHighWatermark(v);
+        } on Object {
+          return const MeshPublishFailure('watermark_unavailable');
+        }
         _lastVersion = v;
         lastUpdatedAt = u;
         notifyListeners();

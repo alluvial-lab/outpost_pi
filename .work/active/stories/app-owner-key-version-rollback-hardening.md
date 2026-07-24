@@ -1,7 +1,7 @@
 ---
 id: app-owner-key-version-rollback-hardening
 kind: story
-stage: implementing
+stage: done
 tags: [app, security]
 parent: feature-owner-identity-transition
 depends_on: []
@@ -24,3 +24,17 @@ validly-signed blob — a rollback that reintroduces a revoked peer. The durable
 per-owner highest-version watermark IS warranted. Exact design (persistence
 shape, fail-closed semantics, publish flooring, owner-hash scoping, acceptance
 criteria) is Unit 1 of the parent feature body.
+
+## Implementation notes
+
+- Added the distinct `dev.outpostpi.meshwatermark` secure-storage namespace;
+  `wipeAll()` deliberately retains its per-owner entries.
+- `MeshSyncService` now lazily loads the owner-scoped high-water mark, fails
+  pulls/publishes closed when it is unavailable, rejects signed rollbacks with
+  `mesh_rollback_rejected`, and persists forward movement after verified apply
+  and publish. Publishing starts at `max(lastVersion, highWatermark) + 1`.
+- Added rollback cold-start, owner-scope/wipe retention, fail-closed,
+  fresh-publish-floor, and `allowEmpty` advancement coverage.
+- Verification: `flutter analyze` passed; focused mesh/storage tests passed
+  (45 tests). Full `flutter test` ran with only the six documented unavailable
+  pairing-endpoint e2e failures.
