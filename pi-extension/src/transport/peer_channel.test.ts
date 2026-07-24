@@ -7,6 +7,8 @@ import type { ClientMessage } from "../protocol/types.js";
 import type { RelayClient } from "./relay_client.js";
 import {
   MAX_PENDING_OWNER_FRAMES,
+  MAX_PENDING_OWNER_OUTBOUND_BYTES,
+  MAX_PENDING_OWNER_OUTBOUND_FRAMES,
   OWNER_CHANNEL_AUDIT_MAX_BYTES,
   SecurePeerChannel,
 } from "./peer_channel.js";
@@ -194,6 +196,93 @@ describe("SecurePeerChannel", () => {
     await channel.whenIdle();
     expect(relay.send).toHaveBeenCalledTimes(1);
     channel.detach();
+  });
+
+  test("bounds blocked outbound persistence, detaches on overflow, and drains accepted sends in sequence", async () => {
+    const auditPath = makeAuditPath();
+    const onDisconnect = vi.fn();
+    let resolveFirstPersistence!: (value: boolean) => void;
+    const firstPersistence = new Promise<boolean>((resolve) => { resolveFirstPersistence = resolve; });
+    const persistedSeqs: bigint[] = [];
+    const persistSequences = vi.fn(async (patch: { sendSeq?: bigint; recvSeq?: bigint }) => {
+      if (patch.sendSeq === undefined) return true;
+      persistedSeqs.push(patch.sendSeq);
+      if (patch.sendSeq === 1n) return firstPersistence;
+      return true;
+    });
+    const { channel, relay } = makeChannel({ auditPath, onDisconnect, persistSequences });
+
+    for (let index = 0; index < MAX_PENDING_OWNER_OUTBOUND_FRAMES; index += 1) {
+      channel.send({ type: "pong", in_reply_to: `accepted-${index}` });
+    }
+    await vi.waitFor(() => expect(persistSequences).toHaveBeenCalledTimes(1));
+    const outboundState = channel as unknown as {
+      pendingOutboundFrames: number;
+      pendingOutboundBytes: number;
+    };
+    expect(outboundState.pendingOutboundFrames).toBe(MAX_PENDING_OWNER_OUTBOUND_FRAMES);
+    expect(outboundState.pendingOutboundBytes).toBeLessThanOrEqual(MAX_PENDING_OWNER_OUTBOUND_BYTES);
+    expect(relay.send).not.toHaveBeenCalled();
+
+    channel.send({ type: "pong", in_reply_to: "secret-overflow-suffix" });
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+    expect(relay.listenerCount("message")).toBe(0);
+    expect(outboundState.pendingOutboundFrames).toBe(MAX_PENDING_OWNER_OUTBOUND_FRAMES);
+    await vi.waitFor(() => {
+      const audit = readFileSync(auditPath, "utf8");
+      expect(audit).toContain('"reason":"outbound_overflow"');
+      expect(audit).not.toContain("secret-overflow-suffix");
+    });
+
+    resolveFirstPersistence(true);
+    await channel.whenIdle();
+
+    expect(outboundState).toMatchObject({ pendingOutboundFrames: 0, pendingOutboundBytes: 0 });
+    expect(persistedSeqs).toEqual(
+      Array.from({ length: MAX_PENDING_OWNER_OUTBOUND_FRAMES }, (_, index) => BigInt(index + 1)),
+    );
+    expect(relay.send).toHaveBeenCalledTimes(MAX_PENDING_OWNER_OUTBOUND_FRAMES);
+    const exposedSeqs = relay.send.mock.calls.map(([serialized]) => {
+      const outer = JSON.parse(serialized as string) as { ct: string };
+      const frame = Buffer.from(outer.ct, "base64");
+      return new DataView(frame.buffer, frame.byteOffset + 1, 8).getBigUint64(0, true);
+    });
+    expect(exposedSeqs).toEqual(persistedSeqs);
+  });
+
+  test("bounds blocked outbound payload bytes before the frame-count cap", async () => {
+    const onDisconnect = vi.fn();
+    let resolvePersistence!: (value: boolean) => void;
+    const persistence = new Promise<boolean>((resolve) => { resolvePersistence = resolve; });
+    const persistSequences = vi.fn(() => persistence);
+    const { channel } = makeChannel({ onDisconnect, persistSequences });
+    const message = {
+      type: "agent_chunk",
+      session_id: "session-1",
+      in_reply_to: "turn-1",
+      delta: "x".repeat(1024 * 1024),
+    } as const;
+    const messageBytes = Buffer.byteLength(JSON.stringify(message), "utf8");
+    const acceptedByBytes = Math.floor(MAX_PENDING_OWNER_OUTBOUND_BYTES / messageBytes);
+    expect(acceptedByBytes).toBeLessThan(MAX_PENDING_OWNER_OUTBOUND_FRAMES);
+
+    for (let index = 0; index < acceptedByBytes; index += 1) channel.send(message);
+    await vi.waitFor(() => expect(persistSequences).toHaveBeenCalledTimes(1));
+    const outboundState = channel as unknown as {
+      pendingOutboundFrames: number;
+      pendingOutboundBytes: number;
+    };
+    expect(outboundState.pendingOutboundFrames).toBe(acceptedByBytes);
+    expect(outboundState.pendingOutboundBytes).toBe(acceptedByBytes * messageBytes);
+
+    channel.send(message);
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+    expect(outboundState.pendingOutboundFrames).toBe(acceptedByBytes);
+    expect(outboundState.pendingOutboundBytes).toBe(acceptedByBytes * messageBytes);
+
+    resolvePersistence(true);
+    await channel.whenIdle();
+    expect(outboundState).toMatchObject({ pendingOutboundFrames: 0, pendingOutboundBytes: 0 });
   });
 
   test("does not expose a frame when send high-water persistence rejects", async () => {
