@@ -78,16 +78,19 @@ class PairingResult {
 // performPairing
 // ---------------------------------------------------------------------------
 
-/// Perform the signed ephemeral-DH pairing exchange and persist its peer record.
+/// Perform the signed ephemeral-DH pairing exchange and optionally persist it.
 ///
-/// Rejects a relay mismatch or invalid Pi signature before persistence. The
-/// caller retains transport-close ownership to coordinate channel adoption.
+/// Rejects a relay mismatch or invalid Pi signature before persistence. Set
+/// [persistPeer] to false when a lifecycle owner must revalidate before the
+/// durable write; that caller owns persisting the returned peer. The caller
+/// retains transport-close ownership to coordinate channel adoption.
 Future<PairingResult> performPairing({
   required QrPairPayload qr,
   required PeerTransport transport,
   required PairingStorage storage,
   SimpleKeyPair? ownerKey,
   required String deviceName,
+  bool persistPeer = true,
 
   /// Effective relay URL the app is currently connected to. Used to
   /// detect mismatch vs `qr.relayUrl` for legacy QRs. Passed in by
@@ -217,7 +220,7 @@ Future<PairingResult> performPairing({
           receiveKey: base64.encode(keys.receive),
         ),
       );
-      await storage.savePairedPeer(peer);
+      if (persistPeer) await storage.savePairedPeer(peer);
       return PairingResult(peer: peer, hostnameHint: pairOk.hostname);
     }
 
