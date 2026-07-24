@@ -82,7 +82,12 @@ class OwnerIdentityBridge extends ChangeNotifier {
     final generated = await _generateIdentity();
     // A restored identity can arrive after the first null read. Re-read before
     // saving so a concurrent restoration wins over a local first-run key.
-    final restored = await _store.load();
+    OwnerIdentity? restored;
+    try {
+      restored = await _store.load();
+    } on SyncUnavailable {
+      return const SyncUnavailableResult();
+    }
     if (restored != null) {
       _current = restored;
       return IdentityReady(restored, generated: false);
