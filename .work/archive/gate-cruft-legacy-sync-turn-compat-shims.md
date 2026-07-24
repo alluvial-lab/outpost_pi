@@ -1,11 +1,13 @@
 ---
 id: gate-cruft-legacy-sync-turn-compat-shims
+status: superseded
+superseded_by: backlog-cruft-removal-batch (groom merge bd3b3a7, 2026-07-22)
 kind: story
 stage: drafting
 tags: [cleanup]
 parent: null
 depends_on: []
-release_binding: v0.3.0
+release_binding: null
 gate_origin: cruft
 created: 2026-07-01
 updated: 2026-07-24
