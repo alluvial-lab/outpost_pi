@@ -1,7 +1,7 @@
 ---
 id: gate-docs-rust-relay-skill-plaintext-model
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ The protocol changed. Owner-channel payloads are ciphertext opaque to the relay;
 
 ## Required edit
 Roll the responsibility, anti-pattern, and review-checklist wording forward to distinguish endpoint-provided owner E2E from unprotected cross-PC traffic.
+
+## Implementation notes
+
+Updated relay agent guidance to distinguish opaque paired owner-channel `ct` from relay-readable cross-PC envelopes and visible metadata.
