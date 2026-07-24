@@ -1,7 +1,7 @@
 ---
 id: gate-docs-readme-owner-payload-plaintext
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,7 @@ Owner-channel payloads are now sealed end to end. The relay still sees metadata 
 
 ## Required edit
 Replace the blanket plaintext claim with the current owner-channel/cross-PC distinction.
+
+## Implementation notes
+
+Updated the root README to describe sealed app↔Pi owner payloads, visible routing metadata, and relay-readable cross-PC envelopes.

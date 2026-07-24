@@ -49,7 +49,7 @@ Flutter app ──wss──► Relay (Rust) ◄──wss── Pi extension (Nod
 - **Pairing** via short-lived QR code; peers persisted in Keychain (mobile) and `~/.pi/remote/` (desktop)
 - **TLS in transit** on the WebSocket connection
 - **Ed25519 pairing authentication** — only paired devices can route messages through your peer slot on the relay (challenge-response handshake)
-- **The relay forwards authenticated WebSocket envelopes over TLS**, but it can see the current plaintext envelope contents; payloads are **not end-to-end encrypted in the current version** — see [`relay/README.md`](./relay/README.md) for the security trade-offs
+- **Owner-channel payloads are end-to-end encrypted after pairing**: the app and Pi authenticate the pairing and exchange sealed payloads that the relay forwards as opaque ciphertext. The relay still sees routing metadata, and cross-PC Pi↔Pi envelopes remain relay-readable plaintext — see [`relay/README.md`](./relay/README.md) for the security trade-offs
 
 ## Local agent mesh
 
@@ -71,9 +71,10 @@ mobile pairing.
 ## Relay
 
 Outpost-Pi is local-relay-only — you run your own relay from the
-`relay/` source. There is no public/community relay. The relay can see the
-content of messages it routes, so running your own is both the privacy stance
-and the default: the only thing your traffic ever touches is your own
+`relay/` source. There is no public/community relay. The relay forwards paired
+app↔Pi owner payloads as opaque ciphertext, but it still sees routing metadata
+and can read cross-PC Pi↔Pi envelopes. Running your own is both the privacy
+stance and the default: the only thing your traffic ever touches is your own
 infrastructure.
 
 Full security trade-offs and the self-hosting guide live in
