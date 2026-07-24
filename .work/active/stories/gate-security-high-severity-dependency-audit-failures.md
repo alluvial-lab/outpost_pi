@@ -1,7 +1,7 @@
 ---
 id: gate-security-high-severity-dependency-audit-failures
 kind: story
-stage: implementing
+stage: review
 tags: [security]
 parent: null
 depends_on: []
@@ -27,3 +27,9 @@ Read-only `pnpm audit` exits nonzero with high advisories: site locks next@16.2.
 
 ## Remediation direction
 Update Next.js to >=16.2.11, Sharp to >=0.35.0, fast-uri to >=3.1.4, brace-expansion to >=5.0.7, directly or through parent dependency updates. Require clean audit results before release.
+
+## Implementation notes
+
+- `site` directly upgrades `next` and `eslint-config-next` to `16.2.11`, adds `sharp` `^0.35.3`, and pins the transitive Sharp resolution to `0.35.3`. Its existing dependency policy overrides are retained; `postcss` now pins to `8.5.18` because the high-threshold audit also identified the newly disclosed PostCSS advisory.
+- `pi-extension` retains its existing dependency policy overrides and adds transitive pins for `fast-uri` `3.1.4`, `brace-expansion` `5.0.7`, and `postcss` `8.5.18` (also required for a clean high-threshold audit).
+- Verification: `pnpm audit --audit-level high` is clean in `site`; it reports only two moderate findings and no high findings in `pi-extension`. `site` lint and production build, plus `pi-extension` typecheck and build, all pass.
