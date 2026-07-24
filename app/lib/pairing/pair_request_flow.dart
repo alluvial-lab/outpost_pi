@@ -35,6 +35,15 @@ abstract class PeerTransport {
   Future<void> close();
 }
 
+/// Report transport closure independently of its ordered data receive path.
+///
+/// Secure channels use this optional capability to trigger reconnect while a
+/// previously received frame is blocked on durable sequence persistence.
+abstract interface class PeerTransportCloseSignal {
+  /// Complete when the underlying transport can no longer carry frames.
+  Future<void> get transportClosed;
+}
+
 // ---------------------------------------------------------------------------
 // PairingError
 // ---------------------------------------------------------------------------

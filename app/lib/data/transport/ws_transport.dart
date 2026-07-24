@@ -48,19 +48,52 @@ class WsTransportError implements Exception {
   String toString() => 'WsTransportError: $message';
 }
 
+/// Maximum data-plane frames buffered while a peer channel is busy.
+const int maxPendingWsInboundFrames = 256;
+
+/// Maximum data-plane bytes buffered while a peer channel is busy.
+const int maxPendingWsInboundBytes = 8 * 1024 * 1024;
+
+const int _wsOverflowAuditSummaryEvents = 100;
+const Duration _wsOverflowAuditSummaryInterval = Duration(seconds: 5);
+
 /// Carry peer envelopes and relay control frames over one authenticated WebSocket.
 ///
 /// [connect] completes only after challenge-response authentication; [close]
-/// owns the socket subscription, peer queue, and control stream lifecycle.
-class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
+/// owns the socket subscription, bounded peer queue, and control stream
+/// lifecycle. Relay control frames bypass the data queue and therefore remain
+/// available while secure-channel persistence is blocked.
+class WsTransport
+    implements
+        PeerTransport,
+        PeerTransportCloseSignal,
+        IControlLink,
+        IActiveRoomTarget {
   final WebSocketChannel _ws;
   final DebugLog? _debugLog;
-  final _queue = _MsgQueue();
+  late final WsInboundMessageQueue _queue;
   final _controlController = StreamController<ControlInbound>.broadcast();
+  final _transportClosedCompleter = Completer<void>();
+  int _droppedQueueFrames = 0;
+  int _droppedQueueBytes = 0;
+  bool _queueOverflowAuditEmitted = false;
+  bool _closed = false;
+  Timer? _queueOverflowAuditTimer;
 
-  WsTransport._(this._ws, {DebugLog? debugLog, String activeRoom = 'main'})
-    : _debugLog = debugLog,
-      _activeRoom = activeRoom;
+  WsTransport._(
+    this._ws, {
+    DebugLog? debugLog,
+    String activeRoom = 'main',
+    int maxPendingInboundFrames = maxPendingWsInboundFrames,
+    int maxPendingInboundBytes = maxPendingWsInboundBytes,
+  }) : _debugLog = debugLog,
+       _activeRoom = activeRoom {
+    _queue = WsInboundMessageQueue(
+      maxFrames: maxPendingInboundFrames,
+      maxBytes: maxPendingInboundBytes,
+      onOverflow: _recordQueueOverflow,
+    );
+  }
 
   // Connect, authenticate with relay, and return a ready transport.
   //
@@ -164,18 +197,19 @@ class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
             // → dropMalformed), so envelopeBytes is always non-null here.
             // The previous `envelopeBytes == null` defensive branch was
             // unreachable dead code; removed during review.
-            debugPrint(
-              '[ws-in] kind=envelope ct.bytes=${envelopeBytes.length}',
-            );
-            transport._logWsIn(
-              WsInEvent(
-                ts: DateTime.now(),
-                bytes: envelopeBytes.length,
-                kind: 'envelope',
-                stage: 'enqueue',
-              ),
-            );
-            transport._queue.add(envelopeBytes);
+            if (transport._queue.add(envelopeBytes)) {
+              debugPrint(
+                '[ws-in] kind=envelope ct.bytes=${envelopeBytes.length}',
+              );
+              transport._logWsIn(
+                WsInEvent(
+                  ts: DateTime.now(),
+                  bytes: envelopeBytes.length,
+                  kind: 'envelope',
+                  stage: 'enqueue',
+                ),
+              );
+            }
             return;
 
           case WsInboundFrameKind.dropMissingRoom:
@@ -255,6 +289,11 @@ class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
           challengeCompleter.completeError(e);
         }
         transport._queue.error(e);
+        transport._flushQueueOverflowAudit();
+        transport._signalTransportClosed();
+        if (!transport._controlController.isClosed) {
+          transport._controlController.close();
+        }
       },
       onDone: () {
         if (!challengeCompleter.isCompleted) {
@@ -263,6 +302,8 @@ class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
           );
         }
         transport._queue.close();
+        transport._flushQueueOverflowAudit();
+        transport._signalTransportClosed();
         if (!transport._controlController.isClosed) {
           transport._controlController.close();
         }
@@ -319,6 +360,47 @@ class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
 
   void _logWsIn(WsInEvent event) => _debugLog?.log(event);
 
+  void _recordQueueOverflow(int bytes) {
+    _droppedQueueFrames++;
+    _droppedQueueBytes += bytes;
+    if (!_queueOverflowAuditEmitted ||
+        _droppedQueueFrames >= _wsOverflowAuditSummaryEvents) {
+      _flushQueueOverflowAudit();
+      return;
+    }
+    _queueOverflowAuditTimer ??= Timer(
+      _wsOverflowAuditSummaryInterval,
+      _flushQueueOverflowAudit,
+    );
+  }
+
+  void _flushQueueOverflowAudit() {
+    _queueOverflowAuditTimer?.cancel();
+    _queueOverflowAuditTimer = null;
+    if (_droppedQueueFrames == 0) return;
+    _logWsIn(
+      WsInEvent(
+        ts: DateTime.now(),
+        bytes: _droppedQueueBytes,
+        count: _droppedQueueFrames,
+        kind: 'envelope',
+        stage: 'queue-overflow',
+      ),
+    );
+    _droppedQueueFrames = 0;
+    _droppedQueueBytes = 0;
+    _queueOverflowAuditEmitted = true;
+  }
+
+  void _signalTransportClosed() {
+    if (!_transportClosedCompleter.isCompleted) {
+      _transportClosedCompleter.complete();
+    }
+  }
+
+  @override
+  Future<void> get transportClosed => _transportClosedCompleter.future;
+
   /// Active target room on the Pi side. The outer envelope embeds this so
   /// the Pi can route the inner message to the right per-cwd session, AND
   /// the inbound demux compares each envelope's `room` against it. Set from
@@ -365,9 +447,13 @@ class WsTransport implements PeerTransport, IControlLink, IActiveRoomTarget {
 
   @override
   Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    _queue.close();
+    _flushQueueOverflowAudit();
+    _signalTransportClosed();
     await _sub?.cancel();
     await _ws.sink.close();
-    _queue.close();
     if (!_controlController.isClosed) await _controlController.close();
   }
 }
@@ -454,43 +540,81 @@ WsInboundFrameDecision demuxPostAuthInboundFrame({
 
 // ---------------------------------------------------------------------------
 
-class _MsgQueue {
+/// Bounded FIFO for authenticated relay data-plane payloads.
+///
+/// Admission drops only the new frame and reports only its byte count to the
+/// overflow callback. Closing clears accepted data and preempts future reads so
+/// transport loss is never hidden behind stale frames.
+@visibleForTesting
+final class WsInboundMessageQueue {
+  WsInboundMessageQueue({
+    required this.maxFrames,
+    required this.maxBytes,
+    void Function(int bytes)? onOverflow,
+  }) : assert(maxFrames > 0),
+       assert(maxBytes > 0),
+       _onOverflow = onOverflow;
+
+  final int maxFrames;
+  final int maxBytes;
+  final void Function(int bytes)? _onOverflow;
   final _buf = <Uint8List>[];
   final _waiters = <Completer<Uint8List>>[];
+  int _pendingBytes = 0;
   bool _closed = false;
 
-  void add(Uint8List msg) {
+  @visibleForTesting
+  int get pendingFrames => _buf.length;
+
+  @visibleForTesting
+  int get pendingBytes => _pendingBytes;
+
+  bool add(Uint8List msg) {
+    if (_closed) return false;
     if (_waiters.isNotEmpty) {
       _waiters.removeAt(0).complete(msg);
-    } else if (!_closed) {
-      _buf.add(msg);
+      return true;
     }
+    if (_buf.length >= maxFrames || msg.length > maxBytes - _pendingBytes) {
+      _onOverflow?.call(msg.length);
+      return false;
+    }
+    _buf.add(msg);
+    _pendingBytes += msg.length;
+    return true;
   }
 
   void error(Object e) {
-    for (final w in _waiters) {
-      w.completeError(e);
+    if (_closed) return;
+    _closed = true;
+    _clearBuffered();
+    for (final waiter in _waiters) {
+      waiter.completeError(e);
     }
     _waiters.clear();
-    _closed = true;
   }
 
   void close() {
-    for (final w in _waiters) {
-      w.completeError(const WsTransportError('transport closed'));
-    }
-    _waiters.clear();
-    _closed = true;
+    error(const WsTransportError('transport closed'));
   }
 
   Future<Uint8List> next() {
     if (_closed) {
       return Future.error(const WsTransportError('transport closed'));
     }
-    if (_buf.isNotEmpty) return Future.value(_buf.removeAt(0));
-    final c = Completer<Uint8List>();
-    _waiters.add(c);
-    return c.future;
+    if (_buf.isNotEmpty) {
+      final message = _buf.removeAt(0);
+      _pendingBytes -= message.length;
+      return Future.value(message);
+    }
+    final completer = Completer<Uint8List>();
+    _waiters.add(completer);
+    return completer.future;
+  }
+
+  void _clearBuffered() {
+    _buf.clear();
+    _pendingBytes = 0;
   }
 }
 
