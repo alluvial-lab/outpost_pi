@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-subscription-contract-anchor
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -25,6 +25,10 @@ pattern-skill-staleness
 
 ## Contradiction
 onOuterMessage now subscribes handlers to decoded outer ingress plus a generation predicate. The relay transport centrally owns the raw listener and decode/dispatch FIFO; subscribers no longer register directly on RelayClient.
+
+## Implementation notes
+
+Replaced the obsolete raw RelayClient listener example with the current decoded-ingress handler-set subscription contract at `relay_transport.ts:567-577`.
 
 ## Required edit
 Replace the example and line anchor with the current decoded-ingress handler-set contract.
