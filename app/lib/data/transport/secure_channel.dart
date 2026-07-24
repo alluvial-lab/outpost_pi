@@ -92,6 +92,9 @@ Future<OwnerChannelKeyPair> generateOwnerChannelKeyPair() async {
 }
 
 /// Derive the X25519 shared secret from a local secret and remote public key.
+///
+/// Throws [ArgumentError] when either key has the wrong length or the remote
+/// public key produces the all-zero shared secret.
 Future<Uint8List> deriveOwnerChannelSharedSecret(
   List<int> secretKey,
   List<int> remotePublicKey,
@@ -119,6 +122,9 @@ Future<Uint8List> deriveOwnerChannelSharedSecret(
 }
 
 /// Build the token locator and HMAC that authenticate a pairing request.
+///
+/// Throws [ArgumentError] when an Owner, app-DH, or Pi public key is not 32
+/// bytes.
 Future<OwnerChannelPairProof> buildOwnerChannelPairProof({
   required String token,
   required List<int> ownerEdPublicKey,
@@ -150,6 +156,8 @@ Future<OwnerChannelPairProof> buildOwnerChannelPairProof({
 }
 
 /// Derive domain-separated directional keys using RFC 5869 HKDF-SHA256.
+///
+/// Throws [ArgumentError] when [sharedSecret] is not 32 bytes.
 Future<DirectionalKeys> deriveOwnerChannelKeys({
   required List<int> sharedSecret,
   required String token,
@@ -174,6 +182,8 @@ Future<DirectionalKeys> deriveOwnerChannelKeys({
 }
 
 /// Build the exact Owner-signed app handshake transcript.
+///
+/// Throws [ArgumentError] when an app-DH or Pi public key is not 32 bytes.
 Uint8List buildAppOwnerChannelTranscript({
   required String token,
   required List<int> appDhPublicKey,
@@ -190,6 +200,8 @@ Uint8List buildAppOwnerChannelTranscript({
 }
 
 /// Build the exact Pi-signed handshake response transcript.
+///
+/// Throws [ArgumentError] when a transcript public key is not 32 bytes.
 Uint8List buildPiOwnerChannelTranscript({
   required String token,
   required List<int> appDhPublicKey,
@@ -213,6 +225,10 @@ Uint8List buildPiOwnerChannelTranscript({
 /// The transmitted sequence is also authenticated as AEAD AAD. [nonce] is
 /// test-only deterministic input; production callers omit it for a random
 /// 192-bit nonce.
+///
+/// Throws [ArgumentError] when [key] or a supplied [nonce] has the wrong
+/// length. Throws [RangeError] when [sequence] is outside the supported
+/// non-negative signed-64 range.
 Future<Uint8List> sealOwnerChannelFrame({
   required List<int> key,
   required int sequence,
