@@ -1,7 +1,7 @@
 ---
 id: gate-security-owner-transition-committed-before-durable-cleanup
 kind: story
-stage: review
+stage: done
 tags: [security]
 parent: null
 depends_on: []
@@ -58,3 +58,16 @@ The transition coordinator is split across `app/lib/pairing/owner_identity_bridg
   passed. The broad non-e2e command was attempted but timed out after existing
   `sync_service_test.dart` degradation/index failures and unrelated
   secure-storage plugin failures in `pairing_viewmodel_test.dart`.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): the bridge+router redesign
+meets all four acceptance points — durable marker written FIRST (outside
+wipeAll prefixes), identity committed only after pairing wipe + disconnect +
+transcript wipe + watermark reset, boot-convergent resume via
+OwnerTransitionPending, and access gated while pending (currentIdentity/
+currentOwnerPk null, requireKeyPair throws). Watch events serialized and
+dropped while pending; failure paths fail-closed (marker persists, next boot
+resumes). Sync-required _recheck now surfaces fatal reads. Orchestrator-
+verified on the integrated tree: flutter analyze clean, 117 focused tests
+green. Approved -> done.
