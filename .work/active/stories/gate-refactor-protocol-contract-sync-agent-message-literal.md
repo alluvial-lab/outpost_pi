@@ -5,10 +5,10 @@ stage: done
 tags: []
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.3.0
 gate_origin: refactor
 created: 2026-07-20
-updated: 2026-07-23
+updated: 2026-07-24
 ---
 
 # Derive transcript identity discriminator from the generated protocol contract

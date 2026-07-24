@@ -1,9 +1,9 @@
 ---
 id: gate-refactor-lifecycle-workspace-file-watch-debounce-floating
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-24
 tags: []
-release_binding: null
+release_binding: v0.3.0
 gate_origin: refactor
 ---
 

@@ -5,10 +5,10 @@ stage: done
 tags: [security, app, pi-extension, relay, protocol]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.3.0
 gate_origin: security
 created: 2026-07-01
-updated: 2026-07-23
+updated: 2026-07-24
 ---
 
 # End-to-end authentication for relay-routed owner messages

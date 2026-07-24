@@ -5,10 +5,10 @@ stage: done
 tags: [workflow, security]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.3.0
 gate_origin: null
 created: 2026-06-28
-updated: 2026-07-23
+updated: 2026-07-24
 ---
 
 # CI verification matrix + dependency-audit automation

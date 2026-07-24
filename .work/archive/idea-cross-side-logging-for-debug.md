@@ -3,7 +3,9 @@ id: idea-cross-side-logging-for-debug
 status: superseded
 superseded_by: feature-cross-side-observability
 created: 2026-06-29
-updated: 2026-06-29
+updated: 2026-07-24
+stage: done
+release_binding: v0.3.0
 tags: [app, pi-extension, relay, debug]
 ---
 

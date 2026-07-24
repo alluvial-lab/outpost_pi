@@ -5,10 +5,10 @@ stage: done
 tags: [security, app, pi-extension]
 parent: null
 depends_on: [feature-owner-message-e2e-authentication]
-release_binding: null
+release_binding: v0.3.0
 gate_origin: security
 created: 2026-07-23
-updated: 2026-07-23
+updated: 2026-07-24
 ---
 
 # Owner-identity transition boundary
