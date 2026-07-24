@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-owner-multiplexer-handwritten-types
 kind: story
-stage: implementing
+stage: review
 tags: []
 parent: null
 depends_on: []
@@ -30,3 +30,11 @@ The pairing and detach paths handwrite pair_error, pair_ok, and bye, duplicating
 
 ## Fix
 Generate a keyed discriminator registry from the schema and use its pair_error, pair_ok, and bye entries when constructing messages.
+
+## Implementation notes
+
+- Added schema-derived client and server keyed discriminator registries to the
+  TypeScript protocol generator and regenerated the extension protocol output.
+- Updated pairing error/success and detach messages to use
+  `SERVER_MESSAGE_DISCRIMINATORS` rather than handwritten discriminators.
+- Verification: `cd pi-extension && node --import tsx ../tools/protocol-codegen/src/index.test.ts` (6 passing); `./node_modules/.bin/vitest run src/extension/owner_multiplexer.test.ts` (27 passing); regenerated with `node --import tsx ../tools/protocol-codegen/src/index.ts --target ts --out src/protocol/generated/protocol.generated.ts`.

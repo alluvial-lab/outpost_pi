@@ -140,6 +140,21 @@ export const CLIENT_MESSAGE_TYPES = [
   "thinking_set",
   "list_models",
 ] as const;
+export const CLIENT_MESSAGE_DISCRIMINATORS = {
+  pair_request: "pair_request",
+  user_message: "user_message",
+  queued_message_set: "queued_message_set",
+  queued_message_clear: "queued_message_clear",
+  approve_tool: "approve_tool",
+  cancel: "cancel",
+  ping: "ping",
+  session_sync: "session_sync",
+  session_new: "session_new",
+  session_compact: "session_compact",
+  model_set: "model_set",
+  thinking_set: "thinking_set",
+  list_models: "list_models",
+} as const;
 export type ClientMessageType = (typeof CLIENT_MESSAGE_TYPES)[number];
 export const SESSION_SCOPED_CLIENT_MESSAGE_TYPES = [
   "user_message",
@@ -286,6 +301,27 @@ export const SERVER_MESSAGE_TYPES = [
   "action_error",
   "models_list",
 ] as const;
+export const SERVER_MESSAGE_DISCRIMINATORS = {
+  pair_ok: "pair_ok",
+  pair_error: "pair_error",
+  user_input: "user_input",
+  user_message: "user_message",
+  queued_message_state: "queued_message_state",
+  agent_chunk: "agent_chunk",
+  agent_done: "agent_done",
+  agent_message: "agent_message",
+  compaction: "compaction",
+  tool_request: "tool_request",
+  tool_result: "tool_result",
+  error: "error",
+  cancelled: "cancelled",
+  pong: "pong",
+  bye: "bye",
+  session_history: "session_history",
+  action_ok: "action_ok",
+  action_error: "action_error",
+  models_list: "models_list",
+} as const;
 export type ServerMessageType = (typeof SERVER_MESSAGE_TYPES)[number];
 export const SESSION_SCOPED_SERVER_MESSAGE_TYPES = [
   "user_input",
