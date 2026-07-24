@@ -205,6 +205,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
   private readonly channels = new Map<string, PeerChannelHandle>();
   private readonly peerIdsByChannel = new Map<PeerChannelHandle, string>();
   private readonly messageRouters = new Map<PeerChannelHandle, OwnerAttachInput["onMessage"]>();
+  private readonly reattachDrainGates = new Map<string, Promise<void>>();
   private readonly offlinePeerIds = new Set<string>();
   private readonly offlineBuffers = new Map<string, OfflinePeerBuffer>();
   private readonly flushedCompactionKeysByPeer = new Map<string, Set<string>>();
@@ -306,8 +307,25 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     }
     if (this.channels.has(outer.peer)) return false;
 
+    while (true) {
+      const drainGate = this.reattachDrainGates.get(outer.peer);
+      if (!drainGate) break;
+      // A detached secure generation may still own accepted send sequences.
+      // Holding this dispatch cell keeps later frames in RelayTransport's
+      // bounded FIFO until persistence settles. Rejections are terminal
+      // settlement too: the gate releases and reattach uses whatever durable
+      // high-water remains instead of wedging the owner forever.
+      await drainGate;
+      if (!input.isCurrent()) return false;
+      // A valid re-pair may have installed fresh key material while the old
+      // same-key generation drained; never replace that channel here.
+      if (this.channels.has(outer.peer)) return false;
+      // A replacement could itself detach while the captured generation was
+      // draining. Loop until the latest per-peer generation has settled.
+    }
+
     const known = await this.deps.findKnownPeer(outer.peer);
-    if (!input.isCurrent()) return false;
+    if (!input.isCurrent() || this.channels.has(outer.peer)) return false;
     if (known) {
       if (!known.channel_key) {
         this.deps.auditDrop(outer.peer, "missing_channel_key");
@@ -512,7 +530,13 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     if (reason) {
       try { channel.send({ type: "bye", reason }); } catch { /* best-effort per owner channel */ }
     }
-    const outboundSettled = channel.whenIdle?.() ?? Promise.resolve();
+    let channelSettled: Promise<void>;
+    try {
+      channelSettled = channel.whenIdle?.() ?? Promise.resolve();
+    } catch (error) {
+      channelSettled = Promise.reject(error);
+    }
+    if (channel.whenIdle) this.trackReattachDrain(peerId, channelSettled);
 
     try { channel.detach(); } catch { /* best-effort per owner channel */ }
 
@@ -529,7 +553,19 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       this.peerShort = next ? next.slice(0, 8) : "";
     }
     this.deps.refreshFooter();
-    return outboundSettled;
+    return channelSettled;
+  }
+
+  private trackReattachDrain(peerId: string, channelSettled: Promise<void>): void {
+    const prior = this.reattachDrainGates.get(peerId);
+    const gate = Promise.allSettled(prior ? [prior, channelSettled] : [channelSettled])
+      .then(() => undefined);
+    this.reattachDrainGates.set(peerId, gate);
+    void gate.then(() => {
+      if (this.reattachDrainGates.get(peerId) === gate) {
+        this.reattachDrainGates.delete(peerId);
+      }
+    });
   }
 
   detachAll(reason?: ByeReason): void {
