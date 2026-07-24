@@ -38,5 +38,16 @@ When a server `error` rejects a pending message, `message` is supplied directly 
 ## Remediation direction
 Map failure diagnostics to a closed set of content-free categories/codes before both console and ring-log capture. Keep the user-visible error behavior separate if product UX still requires detail, but remove arbitrary `message`/`Error.message` strings from `MsgFailedEvent` and add a canary regression covering server-originated delivery/action errors.
 
+## Scope widening (feature-design 2026-07-23)
+
+The design (Unit 1 of `feature-diagnostic-privacy-hardening`) folds the identical
+leak shape one field away into this checkpoint: `SessionSyncEvent.err`
+(`sync_service.dart:647` passes `_shortReason(err)` from an arbitrary Object).
+This story therefore also owns: deleting `SessionSyncEvent.err`, deleting the
+now-dead `debugDetail` parameter and `_shortReason`, introducing
+`kAdmissibleFailureCodes` / `admitFailureCode`, and extending the registry
+test's forbidden keys with `detail`/`err`. Exact signatures and acceptance
+criteria live in the parent feature body.
+
 ## Audit execution
 The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.
