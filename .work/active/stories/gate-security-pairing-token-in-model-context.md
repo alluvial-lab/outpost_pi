@@ -1,7 +1,7 @@
 ---
 id: gate-security-pairing-token-in-model-context
 kind: story
-stage: review
+stage: done
 tags: [security]
 parent: null
 depends_on: []
@@ -33,3 +33,12 @@ Render pairing material through a TUI-only mechanism such as appendEntry plus a 
 - Replaced the persistent `sendMessage` pair-code payload with a `ctx.ui.custom()` TUI-only pairing dialog; non-TUI modes refuse QR display before issuing a token.
 - Added regression coverage that renders a live token while modeling `sendMessage` as a context-building sink, then proves neither the pairing URI nor token appears in custom messages or assembled model context.
 - Verification: `./node_modules/.bin/tsc --noEmit`; `./node_modules/.bin/vitest run` (55 files, 929 passed, 3 skipped); `./node_modules/.bin/tsc` build.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diff inspected. @throws
+contracts match throwing exports. Pairing QR/token moved from context-persisted
+pi.sendMessage to a TUI-only ctx.ui.custom dialog (non-TUI mode gets a
+token-free warning); regression proves token/URI absent from custom messages
+and assembled model context. Full extension suite green (929 passed, 3
+skipped) + typecheck + build. Approved -> done.
