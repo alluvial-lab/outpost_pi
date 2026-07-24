@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-sync-agent-message-literal
 kind: story
-stage: review
+stage: done
 tags: []
 parent: null
 depends_on: []
@@ -54,3 +54,10 @@ drift-guard test).
 - Verification: focused replay test passed; `flutter analyze` passed with no
   issues; full `flutter test` completed with 814 passing tests and only the six
   known e2e failures caused by unavailable pairing-endpoint environment.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-23): diff inspected — single
+`agentMessageWireType` const beside the identity helpers, all four call sites
+substituted, drift-guard test binds it to generated `AgentMessage.type`.
+Minimal diff, no generated files touched. Approved -> done.
