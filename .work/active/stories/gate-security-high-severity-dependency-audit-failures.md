@@ -1,7 +1,7 @@
 ---
 id: gate-security-high-severity-dependency-audit-failures
 kind: story
-stage: review
+stage: done
 tags: [security]
 parent: null
 depends_on: []
@@ -33,3 +33,15 @@ Update Next.js to >=16.2.11, Sharp to >=0.35.0, fast-uri to >=3.1.4, brace-expan
 - `site` directly upgrades `next` and `eslint-config-next` to `16.2.11`, adds `sharp` `^0.35.3`, and pins the transitive Sharp resolution to `0.35.3`. Its existing dependency policy overrides are retained; `postcss` now pins to `8.5.18` because the high-threshold audit also identified the newly disclosed PostCSS advisory.
 - `pi-extension` retains its existing dependency policy overrides and adds transitive pins for `fast-uri` `3.1.4`, `brace-expansion` `5.0.7`, and `postcss` `8.5.18` (also required for a clean high-threshold audit).
 - Verification: `pnpm audit --audit-level high` is clean in `site`; it reports only two moderate findings and no high findings in `pi-extension`. `site` lint and production build, plus `pi-extension` typecheck and build, all pass.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): audit claims verified
+directly (site: none; extension: 2 moderate, below high threshold). Caught a
+latent defect in the first pass: pnpm 11 ignores package.json
+`pnpm.overrides`, so the pins were lockfile-only and fresh/frozen installs
+hit a config-mismatch purge — corrected by moving all overrides into
+pnpm-workspace.yaml (matching the lockfile exactly) and fixing the
+pre-existing site `allowBuilds` placeholder that blocked unrs-resolver's
+postinstall (follow-up commit 20c39a8). Frozen installs, site lint+build,
+extension typecheck+build all green. Approved -> done.
