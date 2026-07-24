@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-generated-validator-unused-number-helper
 kind: story
-stage: review
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -45,3 +45,13 @@ regenerates it. Generated file — fix the generator, not the output.
 - Regenerated `pi-extension/src/protocol/generated/protocol.generated.ts` from
   the codegen source; its unused helper is removed.
 - Verification: `cd pi-extension && node --import tsx ../tools/protocol-codegen/src/index.test.ts` (6 passing); regenerated with `node --import tsx ../tools/protocol-codegen/src/index.ts --target ts --out src/protocol/generated/protocol.generated.ts`.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): generator-first fixes with
+regenerated output committed together; discriminators now derive from the
+schema (SERVER_MESSAGE_DISCRIMINATORS / generated Dart constant via
+discriminatorConstantName with duplicate validation); isFiniteNumber emits
+conditionally. Codegen/multiplexer/replay tests green; earlier sync-test
+noise was cross-worker mid-flight contamination (suite green on integrated
+tree). Approved -> done.
