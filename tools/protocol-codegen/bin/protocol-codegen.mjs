@@ -284,6 +284,7 @@ function normalizeSchemaInput(schema, schemaPath) {
 
 function validateSchema(schema) {
   const unions = requireArray(schema.unions, 'schema.unions');
+  const seenDiscriminatorConstantNames = new Set();
   for (const union of unions) {
     assertIdentifier(union.name, 'union.name');
     const variants = requireArray(union.variants, `${union.name}.variants`);
@@ -293,6 +294,13 @@ function validateSchema(schema) {
       assertWireName(variant.type, `${union.name}.variant.type`);
       assertIdentifier(variant.className, `${union.name}.variant.className`);
       if (variant.aliasOf !== undefined) assertIdentifier(variant.aliasOf, `${union.name}.variant.aliasOf`);
+      if (variant.discriminatorConstantName !== undefined) {
+        assertIdentifier(variant.discriminatorConstantName, `${union.name}.variant.discriminatorConstantName`);
+        if (seenDiscriminatorConstantNames.has(variant.discriminatorConstantName)) {
+          throw new Error(`Duplicate Dart discriminator constant ${variant.discriminatorConstantName}`);
+        }
+        seenDiscriminatorConstantNames.add(variant.discriminatorConstantName);
+      }
       if (seenTypes.has(variant.type)) {
         throw new Error(`Duplicate wire type ${variant.type} in ${union.name}`);
       }
@@ -420,6 +428,13 @@ function emitUnion(union) {
   }
   lines.push('};');
   lines.push('');
+  for (const variant of union.variants) {
+    if (variant.discriminatorConstantName === undefined) continue;
+    lines.push(`const String ${variant.discriminatorConstantName} = ${dartLiteral(variant.type)};`);
+  }
+  if (union.variants.some((variant) => variant.discriminatorConstantName !== undefined)) {
+    lines.push('');
+  }
   const sessionScopedRegistry = emitSessionScopedRegistry(union);
   if (sessionScopedRegistry.length > 0) {
     lines.push(sessionScopedRegistry);
