@@ -85,19 +85,54 @@ if (!_isCurrentLifecycle(generation, nextRef)) return;
 
 ### Mesh pull validates its mutation revision throughout cache replacement
 
-**File:** `app/lib/data/mesh/mesh_sync_service.dart:200-224`
+**File:** `app/lib/data/mesh/mesh_sync_service.dart:300-344`
 
 ```dart
-bool current() =>
-    _isPullCurrent(mutationRevision, allowPendingMutation, expectedOwnerPk);
+Future<bool> _replaceLocalCacheWith(
+  MeshBlob blob, {
+  required Uint8List expectedOwnerPk,
+  required int mutationRevision,
+  required bool allowPendingMutation,
+}) async {
+  bool current() =>
+      _isPullCurrent(mutationRevision, allowPendingMutation, expectedOwnerPk);
 
-final peers = await _storage.listPeers();
-if (!current()) return false;
-for (final m in blob.members) {
+  final peers = await _storage.listPeers();
   if (!current()) return false;
-  // ...
-  await _storage.savePeerSilent(next);
-  if (!current()) return false;
+  final existing = {for (final p in peers) p.remoteEpk: p};
+  final keep = <String>{};
+  for (final m in blob.members) {
+    if (!current()) return false;
+    keep.add(m.remoteEpk);
+    final prev = existing[m.remoteEpk];
+    final next = PeerRecord(
+      remoteEpk: m.remoteEpk,
+      sessionName: prev?.sessionName ?? m.nickname ?? 'outpost_pi',
+      relayUrl: m.relayUrl,
+      pairedAt: m.pairedAt,
+      nickname: m.nickname,
+      roomId: prev?.roomId,
+      harness: prev?.harness,
+      // Owner-channel keys are device-local secret state. Mesh membership
+      // updates may change labels/relay metadata but must never carry them
+      // onto a newly hydrated peer or replace an existing channel.
+      channel: prev?.channel,
+    );
+    if (prev == null || !_peerEqualsForMesh(prev, next)) {
+      await _storage.saveMeshPeerMetadata(next);
+      if (!current()) return false;
+    }
+  }
+  for (final p in existing.values) {
+    if (!current()) return false;
+    if (!keep.contains(p.remoteEpk)) {
+      await _storage.deletePeerSilent(p.remoteEpk);
+      if (!current()) return false;
+      await _storage.deleteRooms(p.remoteEpk);
+      if (!current()) return false;
+    }
+  }
+  return current();
 }
 ```
 
