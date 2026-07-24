@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:app/data/preferences/preferences.dart';
@@ -39,6 +40,8 @@ class PairingViewModel extends ViewModel<PairingState> {
   final DebugLog? _debugLog;
   pair_flow.PeerTransport? _transport;
   SecurePeerChannel? _liveChannel;
+  int _generation = 0;
+  bool _disposed = false;
 
   PairingViewModel(
     this._storage,
@@ -56,14 +59,16 @@ class PairingViewModel extends ViewModel<PairingState> {
 
   /// Called when MobileScanner detects a barcode.
   Future<void> onQrScanned(String rawUri) async {
-    if (state is PairingConnecting) return;
+    if (_disposed || state is PairingConnecting) return;
+    final generation = ++_generation;
 
     final qr = QrPairPayload.tryParse(rawUri);
     if (qr == null) return; // not an outpostpi:// QR — ignore silently
 
     final relayResolution = resolveRelayUrl(_prefs);
     if (relayResolution is! ConfiguredRelay) {
-      emit(
+      _emitIfCurrent(
+        generation,
         const PairingError(
           message: kRelayNotConfiguredMessage,
           canRetry: false,
@@ -72,21 +77,27 @@ class PairingViewModel extends ViewModel<PairingState> {
       return;
     }
 
-    emit(PairingConnecting(sessionName: qr.sessionName));
+    _emitIfCurrent(generation, PairingConnecting(sessionName: qr.sessionName));
 
     try {
       // Close any active session before opening a new WS to the relay.
       // Same device Ed25519 key on a second WS would collide in the relay's
       // peer registry, causing the old handler to unregister our new entry.
       await _conn.disconnect();
+      if (!_isCurrent(generation)) return;
 
       // Plan 23 — challenge-response now uses the Owner-key (synced
       // via iCloud Keychain / Block Store). The bridge is hydrated by
       // the router's _BootState well before pairing is reachable, so
       // requireKeyPair() never throws here.
       final ownerKey = await _ownerBridge.requireKeyPair();
+      if (!_isCurrent(generation)) return;
 
       final transport = await _transportFactory(qr, ownerKey);
+      if (!_isCurrent(generation)) {
+        await transport.close();
+        return;
+      }
       _transport = transport;
 
       final result = await pair_flow
@@ -96,6 +107,7 @@ class PairingViewModel extends ViewModel<PairingState> {
             storage: _storage,
             ownerKey: ownerKey,
             deviceName: _deviceName(),
+            persistPeer: false,
             currentRelayUrl: relayResolution.url,
           )
           .timeout(
@@ -106,6 +118,15 @@ class PairingViewModel extends ViewModel<PairingState> {
                   'Timed out — make sure /outpost-pi is running on your Mac',
             ),
           );
+      if (!_isCurrent(generation)) {
+        await _closeTransient();
+        return;
+      }
+      await _storage.savePairedPeer(result.peer);
+      if (!_isCurrent(generation)) {
+        await _closeTransient();
+        return;
+      }
 
       final channel = SecurePeerChannel(
         transport: transport,
@@ -113,16 +134,28 @@ class PairingViewModel extends ViewModel<PairingState> {
         peer: result.peer,
         debugLog: _debugLog,
       );
+      if (!_isCurrent(generation)) {
+        await channel.close();
+        return;
+      }
       _liveChannel = channel;
       _transport = null; // channel now owns the transport
 
+      if (!_isCurrent(generation)) {
+        await _closeTransient();
+        return;
+      }
       _conn.adopt(channel, result.peer);
       _liveChannel = null;
 
-      emit(PairingPaired(peer: result.peer, hostnameHint: result.hostnameHint));
+      _emitIfCurrent(
+        generation,
+        PairingPaired(peer: result.peer, hostnameHint: result.hostnameHint),
+      );
     } on RelayNotConfiguredException {
       await _closeTransient();
-      emit(
+      _emitIfCurrent(
+        generation,
         const PairingError(
           message: kRelayNotConfiguredMessage,
           canRetry: false,
@@ -130,15 +163,26 @@ class PairingViewModel extends ViewModel<PairingState> {
       );
     } on pair_flow.PairingError catch (e) {
       await _closeTransient();
-      emit(PairingError(message: _friendlyError(e), canRetry: true));
+      _emitIfCurrent(
+        generation,
+        PairingError(message: _friendlyError(e), canRetry: true),
+      );
     } catch (e) {
       await _closeTransient();
-      emit(PairingError(message: e.toString(), canRetry: true));
+      _emitIfCurrent(
+        generation,
+        PairingError(message: e.toString(), canRetry: true),
+      );
     }
   }
 
   /// Retry after an error.
-  void retry() => emit(const PairingScanning());
+  void retry() {
+    if (_disposed) return;
+    _generation++;
+    unawaited(_closeTransient());
+    emit(const PairingScanning());
+  }
 
   /// Persist a nickname on the just-paired peer. Called by the
   /// post-pair nickname modal (plan/27 Wave A) — `null` or empty
@@ -150,22 +194,44 @@ class PairingViewModel extends ViewModel<PairingState> {
   /// the post-frame navigation to /home shows the chosen label
   /// immediately (no flicker waiting for `loadPeer`).
   Future<void> applyNickname(String? nickname) async {
+    if (_disposed) return;
+    final generation = _generation;
     final s = state;
     if (s is! PairingPaired) return;
     final trimmed = nickname?.trim();
     if (trimmed == null || trimmed.isEmpty) return;
     final updated = s.peer.copyWith(nickname: trimmed);
     await _storage.savePeer(updated);
-    emit(PairingPaired(peer: updated, hostnameHint: s.hostnameHint));
+    _emitIfCurrent(
+      generation,
+      PairingPaired(peer: updated, hostnameHint: s.hostnameHint),
+    );
   }
 
   // ---------------------------------------------------------------------------
 
+  bool _isCurrent(int generation) => !_disposed && generation == _generation;
+
+  void _emitIfCurrent(int generation, PairingState next) {
+    if (_isCurrent(generation)) emit(next);
+  }
+
   Future<void> _closeTransient() async {
-    await _liveChannel?.close();
+    final liveChannel = _liveChannel;
+    final transport = _transport;
     _liveChannel = null;
-    await _transport?.close();
     _transport = null;
+    await liveChannel?.close();
+    await transport?.close();
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _generation++;
+    unawaited(_closeTransient());
+    super.dispose();
   }
 
   static String _friendlyError(pair_flow.PairingError e) => switch (e.code) {

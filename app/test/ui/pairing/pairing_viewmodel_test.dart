@@ -57,6 +57,25 @@ class _MemTransport implements PeerTransport {
   Future<void> close() async {}
 }
 
+class _HangingTransport implements PeerTransport {
+  final _reply = Completer<Uint8List>();
+  int closeCalls = 0;
+
+  @override
+  Future<void> send(Uint8List data) async {}
+
+  @override
+  Future<Uint8List> receive() => _reply.future;
+
+  @override
+  Future<void> close() async {
+    closeCalls++;
+    if (!_reply.isCompleted) {
+      _reply.complete(Uint8List(0));
+    }
+  }
+}
+
 /// In-memory fake of FlutterSecureStorage so Preferences can be
 /// constructed in tests without touching the platform channel.
 class _FakeSecureStorage implements FlutterSecureStorage {
@@ -149,7 +168,11 @@ late String _qrUri;
 
 /// A pairing transport factory that runs a fake "Pi" responder which replies
 /// with the given inner message to whatever `pair_request` it receives.
-PairingTransportFactory _factoryReplyingWith(Map<String, dynamic> reply) {
+PairingTransportFactory _factoryReplyingWith(
+  Map<String, dynamic> reply, {
+  Future<void>? beforeReply,
+  void Function()? onRequest,
+}) {
   return (qr, deviceEd25519) async {
     final q1 = _Q();
     final q2 = _Q();
@@ -159,6 +182,8 @@ PairingTransportFactory _factoryReplyingWith(Map<String, dynamic> reply) {
     // Responder runs in background and performs the real signed Pi half.
     unawaited(() async {
       final raw = await rTrans.receive();
+      onRequest?.call();
+      await beforeReply;
       final req = PairRequest.fromJson(
         jsonDecode(utf8.decode(raw)) as Map<String, dynamic>,
       );
@@ -372,6 +397,73 @@ void main() {
         expect(vm.state, isA<PairingScanning>());
 
         vm.dispose();
+      },
+    );
+
+    test(
+      'disposal mid-pairing closes its transient transport without emitting',
+      () async {
+        final storage = _FakeStorage();
+        final bridge = await _bootedBridge(storage);
+        final conn = _SpyConn();
+        final transport = _HangingTransport();
+        final factoryCalled = Completer<void>();
+        final vm = PairingViewModel(
+          storage,
+          (qr, key) async {
+            factoryCalled.complete();
+            return transport;
+          },
+          conn,
+          _PrefsForTest(),
+          bridge,
+        );
+
+        final attempt = vm.onQrScanned(_qrUri);
+        await factoryCalled.future;
+        vm.dispose();
+        await attempt;
+
+        expect(transport.closeCalls, 1);
+        expect(conn.adoptedChannel, isNull);
+        expect(vm.state, isA<PairingConnecting>());
+
+        conn.dispose();
+      },
+    );
+
+    test(
+      'a stale pairing completion cannot adopt a channel or emit paired',
+      () async {
+        final storage = _FakeStorage();
+        final bridge = await _bootedBridge(storage);
+        final conn = _SpyConn();
+        final releaseReply = Completer<void>();
+        final requestSent = Completer<void>();
+        final vm = PairingViewModel(
+          storage,
+          _factoryReplyingWith(
+            {'type': 'pair_ok', 'session_name': 'stale session'},
+            beforeReply: releaseReply.future,
+            onRequest: requestSent.complete,
+          ),
+          conn,
+          _PrefsForTest(),
+          bridge,
+        );
+
+        final attempt = vm.onQrScanned(_qrUri);
+        await requestSent.future;
+        vm.retry();
+        releaseReply.complete();
+        await attempt;
+
+        expect(vm.state, isA<PairingScanning>());
+        expect(storage._saved, isEmpty);
+        expect(conn.adoptedChannel, isNull);
+
+        vm.dispose();
+        conn.dispose();
       },
     );
   });

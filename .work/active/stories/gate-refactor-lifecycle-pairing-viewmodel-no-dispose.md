@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-pairing-viewmodel-no-dispose
 kind: story
-stage: implementing
+stage: review
 tags: []
 parent: null
 depends_on: []
@@ -42,3 +42,9 @@ as part of this fix — one change, both acceptance sets.
 - A lifecycle generation fences every async gap in the pairing attempt (`pairing_viewmodel.dart:81-122`): after each await, the generation/disposed state is revalidated before assigning, adopting the channel, or emitting UI state — conforming to the `generation-fenced-async-ownership` pattern.
 - A stale-generation or disposed ViewModel never adopts a channel or emits state.
 - Tests cover disposal mid-pairing and stale-generation completion.
+
+## Implementation notes
+- Added a lifecycle generation and disposal fence around every pairing async gap; disposal and retry now invalidate the attempt and close transient transport/channel ownership.
+- Deferred peer persistence from the pairing flow to the current ViewModel generation so a stale successful handshake cannot persist, adopt, or emit a paired state.
+- Added disposal-mid-pairing and stale-completion regression coverage.
+- Verification: `cd app && flutter test test/ui/pairing/pairing_viewmodel_test.dart`; `flutter test test/pairing/pair_request_flow_test.dart`; `flutter analyze` (all passed).
