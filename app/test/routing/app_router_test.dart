@@ -11,6 +11,7 @@ import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/routing/app_router.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:outpost_pi_identity/outpost_pi_identity.dart';
@@ -23,6 +24,91 @@ const _peer = PeerRecord(
 );
 
 final _identity = OwnerIdentity(ownerPk: Uint8List(32), ownerSk: Uint8List(32));
+final _replacementIdentity = OwnerIdentity(
+  ownerPk: Uint8List.fromList(List<int>.filled(32, 1)),
+  ownerSk: Uint8List.fromList(List<int>.filled(32, 1)),
+);
+
+class _TransitionSecureStorage implements FlutterSecureStorage {
+  final Map<String, String> _values = {};
+  String? failDeleteKey;
+  int ownerFingerprintWrites = 0;
+
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => _values[key];
+
+  @override
+  Future<Map<String, String>> readAll({
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => Map.of(_values);
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (key == 'dev.outpostpi.owner-transition:owner-state-fingerprint') {
+      ownerFingerprintWrites++;
+    }
+    if (value == null) {
+      _values.remove(key);
+    } else {
+      _values[key] = value;
+    }
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (key == failDeleteKey) {
+      throw StateError('injected delete failure');
+    }
+    _values.remove(key);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TransitionStorage extends PairingStorage {
+  _TransitionStorage(FlutterSecureStorage store) : super(store);
+
+  bool failAfterWipe = false;
+  int wipeCalls = 0;
+
+  @override
+  Future<void> wipeAll() async {
+    wipeCalls++;
+    await super.wipeAll();
+    if (failAfterWipe) throw StateError('injected pairing wipe failure');
+  }
+}
 
 class _BootStorage extends PairingStorage {
   _BootStorage({List<PeerRecord> peers = const []}) : _peers = peers;
@@ -166,6 +252,7 @@ class _BootConnectionManager extends ConnectionManager {
   Completer<void>? disconnectGate;
   Completer<void>? disconnectStarted;
   Object? bootError;
+  Object? disconnectError;
   int bootCalls = 0;
   int disconnectCalls = 0;
 
@@ -185,6 +272,8 @@ class _BootConnectionManager extends ConnectionManager {
     if (started != null && !started.isCompleted) started.complete();
     final gate = disconnectGate;
     if (gate != null) await gate.future;
+    final error = disconnectError;
+    if (error != null) throw error;
   }
 }
 
@@ -204,6 +293,25 @@ Future<void> _load(
   mesh,
   installWatcherAfterBoot: installWatcher,
 );
+
+Future<void> _waitForState(BootState state, bool Function() condition) {
+  if (condition()) return Future<void>.value();
+  final completer = Completer<void>();
+  void listener() {
+    if (!condition() || completer.isCompleted) return;
+    state.removeListener(listener);
+    completer.complete();
+  }
+
+  state.addListener(listener);
+  return completer.future.timeout(
+    const Duration(seconds: 2),
+    onTimeout: () {
+      state.removeListener(listener);
+      throw StateError('timed out waiting for boot state');
+    },
+  );
+}
 
 Future<void> _waitUntil(
   bool Function() condition, {
@@ -618,6 +726,108 @@ void main() {
       connection.dispose();
       identity.dispose();
       mesh.dispose();
+    },
+  );
+
+  test(
+    'router retains the real Owner marker and identity gate through each cleanup failure',
+    () async {
+      for (final failureStep in [
+        'pairing wipe',
+        'disconnect',
+        'transcript wipe',
+        'marker deletion',
+      ]) {
+        final directory = Directory.systemTemp.createTempSync(
+          'router_owner_transition_failure_',
+        );
+        await LocalBoxes.initForTest(directory.path);
+        final secureStorage = _TransitionSecureStorage();
+        final storage = _TransitionStorage(secureStorage);
+        final original = OwnerIdentityBridge(
+          InMemoryOwnerIdentityStore(initial: _identity),
+          storage,
+        );
+        final replacement = OwnerIdentityBridge(
+          InMemoryOwnerIdentityStore(initial: _replacementIdentity),
+          storage,
+        );
+        final prefs = _BootPreferences();
+        final mesh = _BootMeshSync(replacement, storage);
+        final connection = _BootConnectionManager(storage);
+        AppRouterOwner? owner;
+        try {
+          await original.boot();
+          await storage.savePairedPeer(_peer);
+          const ref = RemoteSessionRef(
+            peerEpk: 'old-peer',
+            roomId: 'old-room',
+            sessionId: 'old-session',
+          );
+          await (await LocalBoxes().msgsBox(ref)).put(0, {'text': 'old owner'});
+
+          switch (failureStep) {
+            case 'pairing wipe':
+              storage.failAfterWipe = true;
+            case 'disconnect':
+              connection.disconnectError = StateError('injected disconnect');
+            case 'transcript wipe':
+              LocalBoxes.beforeOwnerTransitionCommonClearForTesting = () async {
+                throw StateError('injected transcript wipe');
+              };
+            case 'marker deletion':
+              secureStorage.failDeleteKey =
+                  'dev.outpostpi.owner-transition:pending';
+          }
+
+          owner = buildRouter(storage, connection, prefs, replacement, mesh);
+          await _waitForState(
+            owner.bootState,
+            () => owner!.bootState.failure != null,
+          );
+
+          expect(
+            owner.bootState.failure!.stage,
+            BootFailureStage.storage,
+            reason: failureStep,
+          );
+          expect(await storage.hasPendingOwnerTransition(), isTrue);
+          expect(replacement.currentIdentity, isNull);
+          expect(replacement.currentOwnerPk, isNull);
+          await expectLater(
+            replacement.requireKeyPair(),
+            throwsA(isA<StateError>()),
+          );
+
+          storage.failAfterWipe = false;
+          connection.disconnectError = null;
+          LocalBoxes.beforeOwnerTransitionCommonClearForTesting = null;
+          secureStorage.failDeleteKey = null;
+          owner.retryBoot();
+          await _waitForState(owner.bootState, () => owner!.bootState.ready);
+
+          expect(await storage.hasPendingOwnerTransition(), isFalse);
+          expect(
+            replacement.currentOwnerPk,
+            orderedEquals(_replacementIdentity.ownerPk),
+          );
+          expect(
+            secureStorage.ownerFingerprintWrites,
+            2,
+            reason:
+                '$failureStep must commit exactly one replacement fingerprint',
+          );
+        } finally {
+          LocalBoxes.beforeOwnerTransitionCommonClearForTesting = null;
+          owner?.dispose();
+          connection.dispose();
+          original.dispose();
+          replacement.dispose();
+          mesh.dispose();
+          await Hive.close();
+          await directory.delete(recursive: true);
+        }
+      }
     },
   );
 }
