@@ -2,6 +2,8 @@
 id: gate-tests-fakesession-buildcontext-duplicate-projection
 created: 2026-07-24
 updated: 2026-07-24
+stage: done
+note: Implemented in commit `implement: gate-tests-pairing-token-context-regression-representation-blind`.
 tags: [testing]
 gate_origin: tests
 ---
