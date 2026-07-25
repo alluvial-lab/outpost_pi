@@ -720,7 +720,6 @@ export const cockpitControlTypes = [
   "outpost_pi_control",
   "outpost-pi:relay-state",
   "outpost-pi:name-assigned",
-  "outpost-pi:pair-code",
   "outpost-pi:paired",
   "outpost-pi:mesh-revoked",
 ] as const;
@@ -739,7 +738,7 @@ export interface CockpitControlFrameOutpostPiControl {
 
 export interface CockpitControlFrameOutpostPiRelayState {
   readonly role: "custom";
-  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:pair-code" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
+  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
   readonly content: string;
   readonly details?: unknown;
   readonly display?: boolean;
@@ -747,15 +746,7 @@ export interface CockpitControlFrameOutpostPiRelayState {
 
 export interface CockpitControlFrameOutpostPiNameAssigned {
   readonly role: "custom";
-  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:pair-code" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
-  readonly content: string;
-  readonly details?: unknown;
-  readonly display?: boolean;
-}
-
-export interface CockpitControlFrameOutpostPiPairCode {
-  readonly role: "custom";
-  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:pair-code" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
+  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
   readonly content: string;
   readonly details?: unknown;
   readonly display?: boolean;
@@ -763,7 +754,7 @@ export interface CockpitControlFrameOutpostPiPairCode {
 
 export interface CockpitControlFrameOutpostPiPaired {
   readonly role: "custom";
-  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:pair-code" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
+  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
   readonly content: string;
   readonly details?: unknown;
   readonly display?: boolean;
@@ -771,7 +762,7 @@ export interface CockpitControlFrameOutpostPiPaired {
 
 export interface CockpitControlFrameOutpostPiMeshRevoked {
   readonly role: "custom";
-  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:pair-code" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
+  readonly customType: "outpost-pi:relay-state" | "outpost-pi:name-assigned" | "outpost-pi:paired" | "outpost-pi:mesh-revoked";
   readonly content: string;
   readonly details?: unknown;
   readonly display?: boolean;
@@ -782,7 +773,6 @@ export type CockpitControlFrame =
   | CockpitControlFrameOutpostPiControl
   | CockpitControlFrameOutpostPiRelayState
   | CockpitControlFrameOutpostPiNameAssigned
-  | CockpitControlFrameOutpostPiPairCode
   | CockpitControlFrameOutpostPiPaired
   | CockpitControlFrameOutpostPiMeshRevoked;
 
