@@ -5,7 +5,6 @@
 {"type":"outpost_pi_control","command":"rename","name":"desk-agent"}
 {"customType":"outpost-pi:relay-state","details":{"status":"connected","connected":true,"relayUrl":"https://relay.example","room":"main"}}
 {"customType":"outpost-pi:name-assigned","details":{"requested":"desk-agent","assigned":"desk-agent#2","changed":true}}
-{"customType":"outpost-pi:pair-code","details":{"uri":"outpostpi://pair?t=MDEyMzQ1Njc4OWFiY2RlZg&epk=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY&n=desk-agent","token":"abc","expiresAt":1760000000000,"roomId":"main","name":"desk-agent"}}
 {"customType":"outpost-pi:paired","details":{"name":"Phone","peerId":"owner-peer","pairedAt":1760000000001}}
 {"customType":"outpost-pi:mesh-revoked"}
 {"role":"custom","customType":"outpost-pi:relay-state","content":"Relay connected","details":{"status":"connected","connected":true},"display":false}
