@@ -1,7 +1,7 @@
 ---
 id: gate-docs-next-site-skill-version-bump
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -34,3 +34,10 @@ and include the direct `sharp` dependency.
 ## Implementation notes
 Updated `.agents/skills/next-site/SKILL.md` to match the versions and direct
 `sharp` dependency declared in `site/package.json`.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): edits match the Required
+edit and verify against cited sources (TUI-only QR + seam, ci.yml tag
+exclusion + run-pairing.sh + VM concurrency note in all five locations,
+Next 16.2.11 / React 19.2.6 / direct sharp). Approved -> done.
