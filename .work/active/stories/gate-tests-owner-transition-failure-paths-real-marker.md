@@ -1,7 +1,7 @@
 ---
 id: gate-tests-owner-transition-failure-paths-real-marker
 kind: story
-stage: implementing
+stage: review
 tags: [testing]
 parent: null
 depends_on: []
@@ -38,3 +38,13 @@ subsequent clean retry commits exactly once.
 
 ## Test location (suggested)
 `app/test/routing/app_router_test.dart`
+
+## Implementation notes
+
+- Added a real `OwnerIdentityBridge` + fake `FlutterSecureStorage` router test.
+  It injects failures after the pairing wipe, during disconnect, during
+  transcript wiping, and while deleting the durable marker.
+- Each case asserts a typed boot failure, retained marker, gated identity/key
+  access, and a clean retry with exactly one replacement-fingerprint commit.
+- Verification: `flutter test test/routing/app_router_test.dart` passed (12
+  tests).
