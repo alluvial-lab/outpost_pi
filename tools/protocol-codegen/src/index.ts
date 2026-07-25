@@ -875,7 +875,7 @@ function emitInterface(variant: OutpostPiIrVariant): string {
 
 interface PublicFamilyRegistry {
   constName: string;
-  discriminatorsName: string;
+  discriminatorsName?: string;
   typeName: string;
   validatorsName: string;
   predicateName: string;
@@ -886,7 +886,6 @@ function publicRegistryForFamily(family: OutpostPiIrFamily): PublicFamilyRegistr
     case "ClientMessage":
       return {
         constName: "CLIENT_MESSAGE_TYPES",
-        discriminatorsName: "CLIENT_MESSAGE_DISCRIMINATORS",
         typeName: "ClientMessageType",
         validatorsName: "CLIENT_MESSAGE_VALIDATORS",
         predicateName: "isClientMessage",
@@ -1049,7 +1048,9 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     const publicRegistry = publicRegistryForFamily(family);
     if (publicRegistry) {
       sections.push(...emitRegistryConst(publicRegistry.constName, family.variants));
-      sections.push(...emitDiscriminatorRegistry(publicRegistry.discriminatorsName, family.variants));
+      if (publicRegistry.discriminatorsName) {
+        sections.push(...emitDiscriminatorRegistry(publicRegistry.discriminatorsName, family.variants));
+      }
       sections.push(`export type ${publicRegistry.typeName} = (typeof ${publicRegistry.constName})[number];`);
       const sessionScopedConstName = `SESSION_SCOPED_${publicRegistry.constName}`;
       sections.push(...emitRegistryConst(sessionScopedConstName, family.variants.filter((variant) => variant.sessionScoped)));
