@@ -1,7 +1,7 @@
 ---
 id: gate-docs-flutter-test-excludes-e2e-tag
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -37,3 +37,9 @@ Make `flutter test --exclude-tags e2e` the normal app verification command
 in all five docs, name `e2e/run-pairing.sh` as the dedicated E2E command,
 and keep the VM concurrency note where agent-facing (AGENTS.md,
 flutter-mobile skill, testing-integrity rule).
+
+## Implementation notes
+Updated all five specified documentation surfaces with the filtered Flutter
+verification command and dedicated `e2e/run-pairing.sh` harness command. Added
+the VM `--concurrency=2` note to `AGENTS.md`, the Flutter mobile skill, and the
+testing-integrity rule.
