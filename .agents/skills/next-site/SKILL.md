@@ -8,7 +8,7 @@ provenance: skill-reference
 # Next Site Reference
 
 > Local scope: `site/`
-> Versions/context: Next `16.2.6`, React `19.2.4`, React DOM `19.2.4`, TypeScript `^5`, Tailwind `^4` via `@tailwindcss/postcss`, ESLint `^9`, pnpm, `output: "standalone"`. [remote-pi-site-package-config]{1}
+> Versions/context: Next `16.2.11`, React `19.2.6`, React DOM `19.2.6`, direct `sharp` dependency, TypeScript `^5`, Tailwind `^4` via `@tailwindcss/postcss`, ESLint `^9`, pnpm, `output: "standalone"`. [remote-pi-site-package-config]{1}
 > Canonical local docs: `site/CLAUDE.md`, `site/package.json`, `site/next.config.ts`, `site/Dockerfile`.
 
 ## When to load

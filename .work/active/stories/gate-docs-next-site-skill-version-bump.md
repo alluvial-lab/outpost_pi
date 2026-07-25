@@ -1,7 +1,7 @@
 ---
 id: gate-docs-next-site-skill-version-bump
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -30,3 +30,7 @@ React/React DOM are `19.2.6`, and `sharp` is now a direct dependency.
 ## Required edit
 Update the version/context line to Next `16.2.11`, React/React DOM `19.2.6`,
 and include the direct `sharp` dependency.
+
+## Implementation notes
+Updated `.agents/skills/next-site/SKILL.md` to match the versions and direct
+`sharp` dependency declared in `site/package.json`.
