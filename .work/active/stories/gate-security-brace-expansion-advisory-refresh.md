@@ -1,7 +1,7 @@
 ---
 id: gate-security-brace-expansion-advisory-refresh
 kind: story
-stage: review
+stage: done
 tags: [security]
 parent: null
 depends_on: []
@@ -45,3 +45,14 @@ the exact CI audit commands (prod for extension, full for site) clean.
 - Updated both workspace pins to `brace-expansion@5: 5.0.8` and regenerated both lockfiles.
 - Audit verification showed the existing `brace-expansion@1: 1.1.16` override is also in GHSA-mh99-v99m-4gvg's `<=5.0.7` range. It has no patched 1.x release, so site now routes legacy ESLint consumers through `minimatch@3: 10.2.5`, whose compatible `Minimatch` class consumes the patched brace-expansion 5.x API.
 - Verification: frozen installs passed in both workspaces; `pnpm audit --prod --audit-level=high` (extension) and `pnpm audit --audit-level=high` (site) reported no high vulnerabilities; extension typecheck/build and site lint/build passed.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diffs inspected and
+verification independently reproduced — direct sendPiMessage-never-called
+assertion with duplicate projection removed (parked item closed in-commit);
+server-only discriminator emission with regenerated output and consumers
+typechecking; brace-expansion@5 5.0.8 + minimatch@3->10.2.5 legacy-path
+removal with orchestrator-run audits clean at high in both packages (prod
+extension: 2 moderate below threshold; site: none), frozen installs,
+extension 930 tests, site lint+build green. Approved -> done.
