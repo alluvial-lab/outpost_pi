@@ -7,13 +7,25 @@ resumption point** — supersedes
 ## TL;DR — where we are
 
 `release-deploy v0.3.0` ran bind → all 6 gates → readiness, then the
-operator **paused the release cycle to drain the board first**. Everything
-is committed; nothing is in flight. **Next action: drain the 29 bound
+operator **paused the release cycle to drain the board first**. The drain
+is now complete (29/29 done). **Next action: drain the 29 bound
 blocking items via `/agile-workflow:implement-orchestrator`, then re-run
 `/agile-workflow:release-deploy v0.3.0`** (idempotent — resumes at
 readiness → changelog → UAT checkpoint → local tag → collapse).
 
-**Update 2026-07-24 (pre-drain operator decisions, applied):** the OPEN
+**Update 2026-07-24 (drain COMPLETE): all 29 bound blocking items are
+`stage: done`.** Full record in
+`.work/session-notes/2026-07-24-implement-orchestrator-v030-drain.md`.
+**Next action: re-run `/agile-workflow:release-deploy v0.3.0`** (idempotent
+— resumes at readiness → changelog → UAT checkpoint → local tag →
+collapse). Notable drain outcomes beyond the item list: pair-code E2E seam
+(`OUTPOST_PI_PAIR_CODE_FILE`) added to heal the e2e-lane regression from
+the TUI-only security fix (harness 16/16 verified twice, incl. once by the
+orchestrator); pnpm overrides live in `pnpm-workspace.yaml` (pnpm 11
+ignores package.json `pnpm.overrides`); full-suite flutter on this VM wants
+`--concurrency=2`.
+
+~~**Update 2026-07-24 (pre-drain operator decisions, applied):**~~ the OPEN
 OPERATOR DECISION below is resolved — both owner-transition security mediums
 promoted + bound (drain queue: 27 → 29). The pairing-viewmodel overlap is
 resolved — generation-fence item merged into the bound no-dispose item
