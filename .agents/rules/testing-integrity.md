@@ -41,9 +41,17 @@ corepack pnpm build
 
 ```bash
 flutter analyze
-flutter test
+flutter test --exclude-tags e2e
 flutter build apk --debug   # or an appropriate platform build smoke
 ```
+
+Run the dedicated cross-component E2E pairing harness from the repository root:
+
+```bash
+e2e/run-pairing.sh
+```
+
+On this VM, full-suite runs use `--concurrency=2` for load-sensitive timing tests.
 
 ### `relay/`
 
