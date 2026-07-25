@@ -1,7 +1,7 @@
 ---
 id: gate-tests-stale-completion-during-peer-persistence
 kind: story
-stage: review
+stage: done
 tags: [testing]
 parent: null
 depends_on: []
@@ -62,3 +62,13 @@ close captured attempt-local resources, not the ViewModel's current fields.
   both prove no peer write, adoption, paired/error emission, or cross-attempt
   resource closure. Verification: `flutter test
   test/ui/pairing/pairing_viewmodel_test.dart` passed (12 tests).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diffs inspected against
+acceptance — SHA-256 owner-state fingerprint initialized once, compared
+before every boot acceptance, updated only on committed cleanup; real-bridge
+failure-path tests assert marker retention + gated identity + exactly-once
+commit; pairing attempts now own attempt-local resources with a commit-time
+stillCurrent fence. Orchestrator-verified: flutter analyze clean, full
+non-e2e suite 847/847 green. Approved -> done.
