@@ -61,7 +61,7 @@ void main() {
       expect((emptyTool as RpcToolStart).args, same(RpcJsonObject.empty));
     });
 
-    test('maps pair-code, paired, and mesh-revoked schema neighbors', () {
+    test('maps paired and mesh-revoked schema neighbors', () {
       final meshWithDetails = mapper.fromJson(
         _customMessage('outpost-pi:mesh-revoked', <String, Object?>{
           'reason': 'removed',
@@ -72,23 +72,6 @@ void main() {
         'reason': 'removed',
         'future': <Object?>[1, 'two'],
       });
-      final pairCode = mapper.fromJson(
-        _customMessage('outpost-pi:pair-code', <String, Object?>{
-          'uri': 'outpost-pi://pair?token=abc',
-          'token': 'abc',
-          'expiresAt': 1760000000000,
-          'roomId': 'main',
-          'name': 'desk-agent',
-        }),
-      );
-      expect(pairCode, isA<RpcPairCode>());
-      final pairCodeEvent = pairCode as RpcPairCode;
-      expect(pairCodeEvent.uri, 'outpost-pi://pair?token=abc');
-      expect(pairCodeEvent.token, 'abc');
-      expect(pairCodeEvent.expiresAt, 1760000000000);
-      expect(pairCodeEvent.roomId, 'main');
-      expect(pairCodeEvent.name, 'desk-agent');
-
       final paired = mapper.fromJson(
         _customMessage('outpost-pi:paired', <String, Object?>{
           'name': 'Phone',
