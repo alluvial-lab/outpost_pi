@@ -38,3 +38,14 @@ item.
 
 ## Test location (suggested)
 `app/test/ui/pairing/pairing_viewmodel_test.dart`
+
+## Absorbed refactor finding (2026-07-24 drain-delta refactor gate)
+
+`lifecycle/resource-no-dispose` (High) at `pairing_viewmodel.dart:125`: the
+generation is checked before `savePairedPeer`, but the asynchronous durable
+write can complete after `retry()`/`dispose()` invalidates the attempt, and
+the stale continuation then closes mutable GLOBAL transient fields via
+`_closeTransient()` — which may belong to a NEWER attempt. Fix direction
+(merged into this item's scope): bind persistence and transient resources to
+the initiating generation; gate the serialized write at commit time and
+close captured attempt-local resources, not the ViewModel's current fields.
