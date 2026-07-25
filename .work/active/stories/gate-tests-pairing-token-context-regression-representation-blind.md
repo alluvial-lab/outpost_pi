@@ -1,7 +1,7 @@
 ---
 id: gate-tests-pairing-token-context-regression-representation-blind
 kind: story
-stage: implementing
+stage: review
 tags: [testing]
 parent: null
 depends_on: []
@@ -35,3 +35,8 @@ assertion exists, the hand-built context projection can go.)
 
 ## Test location (suggested)
 `pi-extension/src/extension/command_surface/pairing_coordinator.test.ts`
+
+## Implementation notes
+- Replaced representation-dependent URI/token substring checks with a direct `sendPiMessage` never-called assertion after TUI rendering and an empty custom-message sink assertion.
+- Removed `FakeSession.buildContext()` and its duplicate test-owned model-context projection.
+- Verification: `cd pi-extension && ./node_modules/.bin/vitest run src/extension/command_surface/pairing_coordinator.test.ts` (2 passed).
