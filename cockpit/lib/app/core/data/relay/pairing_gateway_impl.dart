@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cockpit/app/core/env.dart';
 import 'package:cockpit/app/core/data/relay/ephemeral_pi_rpc.dart';
@@ -18,16 +19,23 @@ class PairingGatewayFactoryImpl implements PairingGatewayFactory {
   PairingGateway create() => PairingGatewayImpl(_config);
 }
 
-/// Implement [PairingGateway] over an [EphemeralPiRpc] session.
+/// Implement [PairingGateway] over an [EphemeralPiRpcSession].
 ///
-/// Runs `/outpost-pi pair` and converts stdout messages with `role: "custom"`
-/// (`outpost-pi:pair-code` and `outpost-pi:paired`) into [PairEvent] values. Each
-/// pair code arrives twice, as `message_start` and `message_end` with identical
-/// payloads, so events are deduplicated by signature.
+/// The gateway gives its child process a Cockpit-owned, private file path through
+/// `OUTPOST_PI_PAIR_CODE_FILE`, then polls that path for the token-bearing pair
+/// code. It only consumes token-free `outpost-pi:paired` custom messages from
+/// the RPC stream and removes the seam file when the attempt ends.
 class PairingGatewayImpl implements PairingGateway {
-  PairingGatewayImpl(PiSpawnConfig config) : _rpc = EphemeralPiRpc(config);
+  PairingGatewayImpl(
+    PiSpawnConfig config, {
+    EphemeralPiRpcSession? rpc,
+    this.bootTimeout = const Duration(seconds: 30),
+    this.pollInterval = const Duration(milliseconds: 50),
+  }) : _rpc = rpc ?? EphemeralPiRpc(config);
 
-  final EphemeralPiRpc _rpc;
+  final EphemeralPiRpcSession _rpc;
+  final Duration bootTimeout;
+  final Duration pollInterval;
   final StreamController<PairEvent> _events =
       StreamController<PairEvent>.broadcast();
 
@@ -36,6 +44,9 @@ class PairingGatewayImpl implements PairingGateway {
   bool _gotCode = false;
   bool _closed = false;
   Timer? _bootTimeout;
+  Timer? _pollTimer;
+  Directory? _pairCodeDirectory;
+  File? _pairCodeFile;
 
   @override
   Stream<PairEvent> get events => _events.stream;
@@ -45,25 +56,35 @@ class PairingGatewayImpl implements PairingGateway {
     if (_started) return;
     _started = true;
     try {
+      final pairCodeFile = await _createPairCodeFile();
       final command = jsonEncode(<String, dynamic>{
         'type': 'prompt',
         'message': '/outpost-pi pair --ttl ${ttl.inSeconds}',
       });
-      await _rpc.start(prompt: command, onLine: _onLine, onExit: _onExit);
-
-      // `/outpost-pi pair` starts the relay connection itself. Allow time for
-      // that connection before failing; no pair code indicates a missing
-      // extension or unavailable relay.
-      _bootTimeout = Timer(const Duration(seconds: 30), () {
-        if (!_gotCode) {
-          _emit(
-            const PairFailed(
-              'Could not start pairing. Check that the outpost-pi extension is '
-              'installed and that a relay is configured.',
-            ),
-          );
-        }
-      });
+      await _rpc.start(
+        prompt: command,
+        onLine: _onLine,
+        onExit: _onExit,
+        additionalEnvironment: <String, String>{
+          'OUTPOST_PI_PAIR_CODE_FILE': pairCodeFile.path,
+        },
+      );
+      await _pollPairCodeFile();
+      if (!_gotCode) {
+        _pollTimer = Timer.periodic(pollInterval, (_) {
+          unawaited(_pollPairCodeFile());
+        });
+        _bootTimeout = Timer(bootTimeout, () {
+          if (!_gotCode) {
+            _emit(
+              const PairFailed(
+                'Could not start pairing. Check that the outpost-pi extension is '
+                'installed and that a relay is configured.',
+              ),
+            );
+          }
+        });
+      }
     } catch (error) {
       _emit(PairFailed('Failed to start pairing: $error'));
       await _cleanup();
@@ -72,6 +93,63 @@ class PairingGatewayImpl implements PairingGateway {
 
   @override
   Future<void> cancel() => _cleanup();
+
+  Future<File> _createPairCodeFile() async {
+    // Directory.createTemp uses a 0700 directory on supported platforms; the
+    // child receives only the path inside this Cockpit-owned directory.
+    final directory = await Directory.systemTemp.createTemp('outpost-pi-pair-');
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}pair-code.json',
+    );
+    _pairCodeDirectory = directory;
+    _pairCodeFile = file;
+    return file;
+  }
+
+  Future<void> _pollPairCodeFile() async {
+    if (_closed || _gotCode) return;
+    final file = _pairCodeFile;
+    if (file == null || !await file.exists()) return;
+
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map) return;
+      final uri = decoded['uri'];
+      final token = decoded['token'];
+      final expiresAt = decoded['expiresAt'];
+      final roomId = decoded['roomId'];
+      final name = decoded['name'];
+      if (uri is! String ||
+          uri.isEmpty ||
+          token is! String ||
+          token.isEmpty ||
+          expiresAt is! num ||
+          roomId is! String ||
+          roomId.isEmpty ||
+          name is! String ||
+          name.isEmpty) {
+        return;
+      }
+
+      _gotCode = true;
+      _bootTimeout?.cancel();
+      _pollTimer?.cancel();
+      _emit(
+        PairCodeReady(
+          uri: uri,
+          token: token,
+          expiresAt: expiresAt.toString(),
+          roomId: roomId,
+          name: name,
+        ),
+      );
+    } on FileSystemException catch (_) {
+      // The extension may be atomically replacing the seam file; retry on the
+      // next poll rather than exposing a partial filesystem state to the UI.
+    } on FormatException catch (_) {
+      // A non-seam file must not become a pairing event.
+    }
+  }
 
   void _onLine(Map<String, dynamic> json) {
     final type = json['type'];
@@ -86,28 +164,10 @@ class PairingGatewayImpl implements PairingGateway {
   }
 
   void _handleCustom(String? customType, Map<dynamic, dynamic> details) {
-    if (customType == null) return;
+    if (customType != 'outpost-pi:paired') return;
     final signature = '$customType|${jsonEncode(details)}';
     if (!_seen.add(signature)) return; // Deduplicate start/end messages.
-
-    switch (customType) {
-      case 'outpost-pi:pair-code':
-        final uri = details['uri'];
-        if (uri is! String || uri.isEmpty) return;
-        _gotCode = true;
-        _bootTimeout?.cancel();
-        _emit(
-          PairCodeReady(
-            uri: uri,
-            token: details['token']?.toString(),
-            expiresAt: details['expiresAt']?.toString(),
-            roomId: details['roomId']?.toString(),
-            name: details['name']?.toString(),
-          ),
-        );
-      case 'outpost-pi:paired':
-        _emit(PairDevicePaired(name: details['name']?.toString()));
-    }
+    _emit(PairDevicePaired(name: details['name']?.toString()));
   }
 
   void _onExit(int code) {
@@ -121,7 +181,18 @@ class PairingGatewayImpl implements PairingGateway {
     if (_closed) return;
     _closed = true;
     _bootTimeout?.cancel();
+    _pollTimer?.cancel();
     await _rpc.dispose();
+    final directory = _pairCodeDirectory;
+    _pairCodeDirectory = null;
+    _pairCodeFile = null;
+    if (directory != null) {
+      try {
+        await directory.delete(recursive: true);
+      } on FileSystemException {
+        // Cleanup is best-effort after process exit or cancellation.
+      }
+    }
     if (!_events.isClosed) await _events.close();
   }
 
