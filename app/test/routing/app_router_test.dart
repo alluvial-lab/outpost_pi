@@ -97,7 +97,7 @@ class _TransitionSecureStorage implements FlutterSecureStorage {
 }
 
 class _TransitionStorage extends PairingStorage {
-  _TransitionStorage(FlutterSecureStorage store) : super(store);
+  _TransitionStorage(super.store);
 
   bool failAfterWipe = false;
   int wipeCalls = 0;
