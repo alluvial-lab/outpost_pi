@@ -9,7 +9,6 @@
     { "$ref": "#/$defs/customMessage" },
     { "$ref": "#/$defs/relayStateEvent" },
     { "$ref": "#/$defs/nameAssignedEvent" },
-    { "$ref": "#/$defs/pairCodeEvent" },
     { "$ref": "#/$defs/pairedEvent" },
     { "$ref": "#/$defs/meshRevokedEvent" }
   ],
@@ -81,18 +80,6 @@
       },
       "additionalProperties": false
     },
-    "pairCodeDetails": {
-      "type": "object",
-      "required": ["uri", "token", "expiresAt", "roomId", "name"],
-      "properties": {
-        "uri": { "type": "string", "minLength": 1 },
-        "token": { "type": "string", "minLength": 1 },
-        "expiresAt": { "type": "integer", "minimum": 0 },
-        "roomId": { "type": "string", "minLength": 1 },
-        "name": { "type": "string", "minLength": 1 }
-      },
-      "additionalProperties": false
-    },
     "pairedDetails": {
       "type": "object",
       "required": ["name", "peerId", "pairedAt"],
@@ -118,15 +105,6 @@
       "properties": {
         "customType": { "const": "outpost-pi:name-assigned" },
         "details": { "$ref": "#/$defs/nameAssignedDetails" }
-      },
-      "additionalProperties": false
-    },
-    "pairCodeEvent": {
-      "type": "object",
-      "required": ["customType", "details"],
-      "properties": {
-        "customType": { "const": "outpost-pi:pair-code" },
-        "details": { "$ref": "#/$defs/pairCodeDetails" }
       },
       "additionalProperties": false
     },
@@ -157,7 +135,6 @@
           "enum": [
             "outpost-pi:relay-state",
             "outpost-pi:name-assigned",
-            "outpost-pi:pair-code",
             "outpost-pi:paired",
             "outpost-pi:mesh-revoked"
           ]
