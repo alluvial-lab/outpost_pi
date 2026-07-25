@@ -23,7 +23,6 @@ interface GeneratedProtocolModule {
   readonly RELAY_MAX_RAW_MESSAGE_BYTES?: number;
   readonly RELAY_SERVER_CONTROL_FRAME_TYPES?: readonly string[];
   readonly CLIENT_MESSAGE_TYPES?: readonly string[];
-  readonly CLIENT_MESSAGE_DISCRIMINATORS?: Readonly<Record<string, string>>;
   readonly SERVER_MESSAGE_TYPES?: readonly string[];
   readonly SERVER_MESSAGE_DISCRIMINATORS?: Readonly<Record<string, string>>;
   readonly SESSION_SCOPED_CLIENT_MESSAGE_TYPES?: readonly string[];
@@ -110,6 +109,7 @@ test("minimal manifest schema emits deterministic TypeScript output", async () =
 
   assert.equal(second, first);
   assert.match(first, /export const CLIENT_MESSAGE_TYPES = \[/);
+  assert.doesNotMatch(first, /CLIENT_MESSAGE_DISCRIMINATORS/);
   assert.match(first, /export const appPiClientTypes = CLIENT_MESSAGE_TYPES;/);
   assert.match(first, /export function isClientMessage\(value: unknown\): value is ClientMessage/);
   assert.doesNotMatch(first, /function isFiniteNumber/);
@@ -188,6 +188,7 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
 
   assert.match(output, /export type ClientMessage =\n  \| PairRequest\n  \| UserMessage\n  \| QueuedMessageSet\n  \| QueuedMessageClear\n  \| ApproveTool\n  \| Cancel\n  \| Ping\n  \| SessionSync\n  \| SessionNew\n  \| SessionCompact\n  \| ModelSet\n  \| ThinkingSet\n  \| ListModels;/);
   assert.match(output, /export type ServerMessage =\n  \| PairOk\n  \| PairError\n  \| UserInput\n  \| UserMessage\n  \| QueuedMessageState\n  \| AgentChunk\n  \| AgentDone\n  \| AgentMessage\n  \| Compaction\n  \| ToolRequest\n  \| ToolResult\n  \| ErrorMessage\n  \| Cancelled\n  \| Pong\n  \| Bye\n  \| SessionHistory\n  \| ActionOk\n  \| ActionError\n  \| ModelsList;/);
+  assert.doesNotMatch(output, /CLIENT_MESSAGE_DISCRIMINATORS/);
   assert.match(output, /export const SERVER_MESSAGE_TYPES = \[/);
   assert.match(output, /export const SERVER_MESSAGE_DISCRIMINATORS = \{[\s\S]*pair_ok: "pair_ok",[\s\S]*pair_error: "pair_error",[\s\S]*bye: "bye",/);
   assert.match(output, /export const SESSION_SCOPED_CLIENT_MESSAGE_TYPES = \[/);
