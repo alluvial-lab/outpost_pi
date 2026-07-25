@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:app/pairing/storage.dart';
@@ -77,8 +78,8 @@ class OwnerIdentityBridge extends ChangeNotifier {
   ///
   /// Generates only after [OwnerIdentityStore.load] returns null. A sync outage
   /// remains gateable, while a platform failure propagates so it cannot silently
-  /// replace the durable Owner key. When durable transition cleanup is pending,
-  /// returns [OwnerTransitionPending] without making the loaded key active.
+  /// replace the durable Owner key. The candidate is compared to the durable
+  /// owner-of-local-state fingerprint before it is assigned to [_current].
   Future<OwnerIdentityBootResult> boot() async {
     if (!await _store.isSyncAvailable()) {
       return const SyncUnavailableResult();
@@ -87,14 +88,11 @@ class OwnerIdentityBridge extends ChangeNotifier {
     try {
       final loaded = await _store.load();
       if (loaded != null) {
-        if (transitionPending) {
-          _current = null;
-          _transitionPending = true;
-          return OwnerTransitionPending(loaded);
-        }
-        _transitionPending = false;
-        _current = loaded;
-        return IdentityReady(loaded, generated: false);
+        return _acceptBootCandidate(
+          loaded,
+          generated: false,
+          transitionPending: transitionPending,
+        );
       }
     } on SyncUnavailable {
       return const SyncUnavailableResult();
@@ -116,28 +114,63 @@ class OwnerIdentityBridge extends ChangeNotifier {
       return const SyncUnavailableResult();
     }
     if (restored != null) {
-      _current = restored;
-      return IdentityReady(restored, generated: false);
+      return _acceptBootCandidate(
+        restored,
+        generated: false,
+        transitionPending: false,
+      );
     }
     await _store.save(generated);
-    _current = generated;
-    return IdentityReady(generated, generated: true);
+    return _acceptBootCandidate(
+      generated,
+      generated: true,
+      transitionPending: false,
+    );
   }
 
   /// Commit [identity] only after the router has completed every cleanup step.
   ///
-  /// The durable marker is deleted first, so a failed delete leaves access
-  /// gated and boot-convergent rather than exposing a partially reset device.
+  /// The durable marker is deleted before its replacement fingerprint is
+  /// recorded, so a failed deletion leaves access gated and boot-convergent.
   Future<void> completePendingTransition(OwnerIdentity identity) async {
-    if (!await _pairing.hasPendingOwnerTransition()) {
-      throw StateError(
-        'cannot complete an Owner transition that is not pending',
-      );
-    }
-    await _pairing.completeOwnerTransition();
+    final fingerprint = await _ownerFingerprint(identity.ownerPk);
+    await _pairing.completeOwnerTransition(fingerprint);
     _transitionPending = false;
     _current = identity;
     notifyListeners();
+  }
+
+  Future<OwnerIdentityBootResult> _acceptBootCandidate(
+    OwnerIdentity candidate, {
+    required bool generated,
+    required bool transitionPending,
+  }) async {
+    if (transitionPending || await _pairing.hasPendingOwnerTransition()) {
+      _current = null;
+      _transitionPending = true;
+      return OwnerTransitionPending(candidate);
+    }
+
+    final candidateFingerprint = await _ownerFingerprint(candidate.ownerPk);
+    final storedFingerprint = await _pairing.loadOwnerStateFingerprint();
+    final ownerFingerprint =
+        storedFingerprint ??
+        await _pairing.initializeOwnerStateFingerprint(candidateFingerprint);
+    if (ownerFingerprint != candidateFingerprint) {
+      await _pairing.beginOwnerTransition();
+      _current = null;
+      _transitionPending = true;
+      return OwnerTransitionPending(candidate);
+    }
+
+    _transitionPending = false;
+    _current = candidate;
+    return IdentityReady(candidate, generated: generated);
+  }
+
+  Future<String> _ownerFingerprint(Uint8List ownerPk) async {
+    final digest = await Sha256().hash(ownerPk);
+    return base64Url.encode(digest.bytes).replaceAll('=', '');
   }
 
   Future<OwnerIdentity> _generateIdentity() async {

@@ -15,6 +15,7 @@ const _kMeshWatermarkService = 'dev.outpostpi.meshwatermark';
 // access to the previous Owner's local state.
 const _kOwnerTransitionService = 'dev.outpostpi.owner-transition';
 const _kOwnerTransitionPending = 'pending';
+const _kOwnerStateFingerprint = 'owner-state-fingerprint';
 
 /// Plan-17 follow-up — persisted snapshot of every room we have ever
 /// learned about for a peer (relay-announced via `room_announced` /
@@ -359,12 +360,46 @@ class PairingStorage extends ChangeNotifier {
       ) !=
       null;
 
-  /// Remove the Owner-transition gate after every cleanup boundary has passed.
-  Future<void> completeOwnerTransition() => _serializePeerMutation(
-    () => _store.delete(
-      key: '$_kOwnerTransitionService:$_kOwnerTransitionPending',
-    ),
-  );
+  /// Read the public-key fingerprint that owns the local state.
+  ///
+  /// An absent value is the one-time migration/first-run case. Callers must
+  /// bind it to the candidate identity before that identity can use local data.
+  Future<String?> loadOwnerStateFingerprint() =>
+      _store.read(key: '$_kOwnerTransitionService:$_kOwnerStateFingerprint');
+
+  /// Bind first-run local state to [fingerprint] without replacing an owner.
+  ///
+  /// Returns the durable value, so concurrent boot callers cannot each claim a
+  /// different identity. Replacements use [completeOwnerTransition] instead.
+  Future<String> initializeOwnerStateFingerprint(String fingerprint) =>
+      _serializePeerMutation(() async {
+        final key = '$_kOwnerTransitionService:$_kOwnerStateFingerprint';
+        final existing = await _store.read(key: key);
+        if (existing != null) return existing;
+        await _store.write(key: key, value: fingerprint);
+        return fingerprint;
+      });
+
+  /// Commit a completed Owner transition by removing its gate then recording
+  /// [fingerprint].
+  ///
+  /// Deleting the gate first means a failed deletion cannot advance ownership.
+  /// A later fingerprint-write failure is conservative: the next boot sees the
+  /// old fingerprint, starts another cleanup, and never exposes old state.
+  Future<void> completeOwnerTransition(String fingerprint) =>
+      _serializePeerMutation(() async {
+        final markerKey = '$_kOwnerTransitionService:$_kOwnerTransitionPending';
+        if (await _store.read(key: markerKey) == null) {
+          throw StateError(
+            'cannot complete an Owner transition that is not pending',
+          );
+        }
+        await _store.delete(key: markerKey);
+        await _store.write(
+          key: '$_kOwnerTransitionService:$_kOwnerStateFingerprint',
+          value: fingerprint,
+        );
+      });
 
   /// Replace a peer through the authenticated pairing flow.
   ///

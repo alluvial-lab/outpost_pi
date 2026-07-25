@@ -1,7 +1,7 @@
 ---
 id: gate-security-stopped-app-owner-replacement-undetected
 kind: story
-stage: implementing
+stage: review
 tags: [security]
 parent: null
 depends_on: []
@@ -53,3 +53,14 @@ the drain's begin/complete transition machinery.
 - First-run (no fingerprint) behaves as today.
 - Tests: stopped-app replacement with existing local state; fingerprint not
   updated on failed cleanup; clean retry commits exactly once.
+
+## Implementation notes
+
+- Added a SHA-256 public-key fingerprint owned by `PairingStorage`. First boot
+  binds an absent value atomically; later replacements can update it only after
+  the pending marker has been deleted.
+- `OwnerIdentityBridge.boot()` now compares each loaded, restored, or generated
+  candidate before activation. A mismatch writes the durable marker and returns
+  `OwnerTransitionPending`, leaving all identity access gated.
+- Added stopped-app replacement and failed-marker-deletion/retry regressions.
+  `flutter test test/pairing/owner_identity_bridge_test.dart` passed (11 tests).
