@@ -124,7 +124,10 @@ Run from the owning subproject root:
 corepack pnpm typecheck && corepack pnpm test && corepack pnpm build
 
 # app/
-flutter analyze && flutter test
+flutter analyze && flutter test --exclude-tags e2e
+
+# Dedicated cross-component E2E pairing harness (from repository root):
+e2e/run-pairing.sh
 
 # relay/
 cargo fmt --check && cargo clippy -- -D warnings && cargo test && cargo build

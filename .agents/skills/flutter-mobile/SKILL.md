@@ -23,13 +23,17 @@ Run from `app/`: [remote-pi-app-guidance]{1}
 ```bash
 flutter pub get
 flutter analyze
-flutter test
+flutter test --exclude-tags e2e
+# Dedicated cross-component E2E pairing harness (from repository root):
+cd .. && e2e/run-pairing.sh
 dart format .
 flutter build apk --debug
 flutter build ios --no-codesign
 ```
 
 Do not commit `build/`, `.dart_tool/`, `ios/Pods/`, secrets, device-local files, or generated artifacts.
+
+The full Flutter suite on this VM uses `--concurrency=2` for load-sensitive timing tests.
 
 ### Android APK build on the dev VM (`dev-vm`)
 
@@ -226,4 +230,4 @@ Practical rule: foreground/resume should re-check relay/session state; backgroun
 - [ ] Are stream subscriptions/timers cancelled on dispose and session switch?
 - [ ] Are hot widgets using `select` or narrow ViewModel fields instead of broad rebuilds?
 - [ ] If touching transcript identity (live `agent_message`/`user_input` broadcasts, `session_history` replay), does every broadcast site stamp the same deterministic `(sessionId, stableKey, ts)` as `message_end`? (See `single-source-live-identity` pattern — a legacy broadcast with a random id is a dupe source.)
-- [ ] Did `flutter analyze`, `flutter test`, and relevant build smoke pass?
+- [ ] Did `flutter analyze`, `flutter test --exclude-tags e2e`, and relevant build smoke pass?

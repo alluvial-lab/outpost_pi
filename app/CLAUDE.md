@@ -33,7 +33,9 @@ cd app
 export PUB_CACHE=~/projects/outpost_pi/.pub-cache
 ~/projects/outpost_pi/.tools/flutter/bin/flutter pub get
 ~/projects/outpost_pi/.tools/flutter/bin/flutter analyze              # must pass with zero issues
-~/projects/outpost_pi/.tools/flutter/bin/flutter test
+~/projects/outpost_pi/.tools/flutter/bin/flutter test --exclude-tags e2e
+# From the repository root, run the dedicated E2E pairing harness:
+# e2e/run-pairing.sh
 ~/projects/outpost_pi/.tools/flutter/bin/flutter build apk --debug    # or --no-codesign ios
 ```
 
