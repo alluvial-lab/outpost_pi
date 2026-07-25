@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pi-extension-readme-tui-only-pair
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -37,3 +37,10 @@ operationally relevant.
 Updated `pi-extension/README.md` to document the interactive TUI dialog,
 non-TUI warning/no-QR behavior, and the E2E-only `OUTPOST_PI_PAIR_CODE_FILE`
 seam, matching `pairing_coordinator.ts`.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): edits match the Required
+edit and verify against cited sources (TUI-only QR + seam, ci.yml tag
+exclusion + run-pairing.sh + VM concurrency note in all five locations,
+Next 16.2.11 / React 19.2.6 / direct sharp). Approved -> done.
