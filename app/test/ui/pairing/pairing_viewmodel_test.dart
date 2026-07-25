@@ -48,13 +48,14 @@ class _Q {
 class _MemTransport implements PeerTransport {
   final _Q _s;
   final _Q _r;
+  int closeCalls = 0;
   _MemTransport({required _Q send, required _Q recv}) : _s = send, _r = recv;
   @override
   Future<void> send(Uint8List d) async => _s.add(d);
   @override
   Future<Uint8List> receive() => _r.next();
   @override
-  Future<void> close() async {}
+  Future<void> close() async => closeCalls++;
 }
 
 class _HangingTransport implements PeerTransport {
@@ -142,12 +143,23 @@ class _PrefsForTest extends Preferences {
 class _FakeStorage extends PairingStorage {
   final List<PeerRecord> _saved = [];
   bool _transitionPending = false;
+  String? _ownerFingerprint;
 
   @override
   Future<List<PeerRecord>> listPeers() async => _saved;
 
   @override
   Future<void> savePairedPeer(PeerRecord r) async => _saved.add(r);
+
+  @override
+  Future<bool> savePairedPeerIfCurrent(
+    PeerRecord r, {
+    required bool Function() stillCurrent,
+  }) async {
+    if (!stillCurrent()) return false;
+    _saved.add(r);
+    return true;
+  }
 
   @override
   Future<void> savePeer(PeerRecord r) async => _saved.add(r);
@@ -157,11 +169,35 @@ class _FakeStorage extends PairingStorage {
   Future<bool> hasPendingOwnerTransition() async => _transitionPending;
 
   @override
+  Future<String?> loadOwnerStateFingerprint() async => _ownerFingerprint;
+
+  @override
+  Future<String> initializeOwnerStateFingerprint(String fingerprint) async =>
+      _ownerFingerprint ??= fingerprint;
+
+  @override
   Future<void> beginOwnerTransition() async => _transitionPending = true;
 
   @override
   Future<void> completeOwnerTransition(String fingerprint) async =>
       _transitionPending = false;
+}
+
+class _DeferredPairingStorage extends _FakeStorage {
+  final saveStarted = Completer<void>();
+  final releaseSave = Completer<void>();
+
+  @override
+  Future<bool> savePairedPeerIfCurrent(
+    PeerRecord r, {
+    required bool Function() stillCurrent,
+  }) async {
+    if (!saveStarted.isCompleted) saveStarted.complete();
+    await releaseSave.future;
+    if (!stillCurrent()) return false;
+    _saved.add(r);
+    return true;
+  }
 }
 
 /// Helper: build a fully-booted [OwnerIdentityBridge] backed by an
@@ -184,12 +220,14 @@ PairingTransportFactory _factoryReplyingWith(
   Map<String, dynamic> reply, {
   Future<void>? beforeReply,
   void Function()? onRequest,
+  void Function(_MemTransport transport)? onTransport,
 }) {
   return (qr, deviceEd25519) async {
     final q1 = _Q();
     final q2 = _Q();
     final iTrans = _MemTransport(send: q1, recv: q2);
     final rTrans = _MemTransport(send: q2, recv: q1);
+    onTransport?.call(iTrans);
 
     // Responder runs in background and performs the real signed Pi half.
     unawaited(() async {
@@ -475,6 +513,96 @@ void main() {
         expect(conn.adoptedChannel, isNull);
 
         vm.dispose();
+        conn.dispose();
+      },
+    );
+
+    test(
+      'retry during peer persistence fences the write and closes its attempt transport',
+      () async {
+        final storage = _DeferredPairingStorage();
+        final bridge = await _bootedBridge(storage);
+        final conn = _SpyConn();
+        late _MemTransport firstTransport;
+        final secondTransport = _HangingTransport();
+        final secondFactoryStarted = Completer<void>();
+        final firstFactory = _factoryReplyingWith({
+          'type': 'pair_ok',
+          'session_name': 'stale persistence',
+        }, onTransport: (value) => firstTransport = value);
+        var factoryCalls = 0;
+        final vm = PairingViewModel(
+          storage,
+          (qr, key) async {
+            if (factoryCalls++ == 0) return firstFactory(qr, key);
+            secondFactoryStarted.complete();
+            return secondTransport;
+          },
+          conn,
+          _PrefsForTest(),
+          bridge,
+        );
+
+        final emitted = <PairingState>[];
+        vm.addListener(() => emitted.add(vm.state));
+        final pairing = vm.onQrScanned(_qrUri);
+        await storage.saveStarted.future;
+        emitted.clear();
+        vm.retry();
+        final retryPairing = vm.onQrScanned(_qrUri);
+        await secondFactoryStarted.future;
+        storage.releaseSave.complete();
+        await pairing;
+
+        expect(storage._saved, isEmpty);
+        expect(firstTransport.closeCalls, 1);
+        expect(secondTransport.closeCalls, 0);
+        expect(conn.adoptedChannel, isNull);
+        expect(vm.state, isA<PairingConnecting>());
+        expect(emitted.whereType<PairingPaired>(), isEmpty);
+        expect(emitted.whereType<PairingError>(), isEmpty);
+
+        vm.dispose();
+        await retryPairing;
+        expect(secondTransport.closeCalls, 1);
+        conn.dispose();
+      },
+    );
+
+    test(
+      'dispose during peer persistence fences the write and closes its attempt transport',
+      () async {
+        final storage = _DeferredPairingStorage();
+        final bridge = await _bootedBridge(storage);
+        final conn = _SpyConn();
+        late _MemTransport transport;
+        final vm = PairingViewModel(
+          storage,
+          _factoryReplyingWith({
+            'type': 'pair_ok',
+            'session_name': 'disposed persistence',
+          }, onTransport: (value) => transport = value),
+          conn,
+          _PrefsForTest(),
+          bridge,
+        );
+
+        final emitted = <PairingState>[];
+        vm.addListener(() => emitted.add(vm.state));
+        final pairing = vm.onQrScanned(_qrUri);
+        await storage.saveStarted.future;
+        emitted.clear();
+        vm.dispose();
+        storage.releaseSave.complete();
+        await pairing;
+
+        expect(storage._saved, isEmpty);
+        expect(transport.closeCalls, 1);
+        expect(conn.adoptedChannel, isNull);
+        expect(vm.state, isA<PairingConnecting>());
+        expect(emitted.whereType<PairingPaired>(), isEmpty);
+        expect(emitted.whereType<PairingError>(), isEmpty);
+
         conn.dispose();
       },
     );

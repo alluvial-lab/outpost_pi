@@ -412,6 +412,21 @@ class PairingStorage extends ChangeNotifier {
         _onPeersMutated?.call(PeerMutationKind.upsert);
       });
 
+  /// Persist [record] only if its pairing attempt still owns the commit turn.
+  ///
+  /// Evaluates [stillCurrent] inside the mutation queue, rather than before it
+  /// is enqueued. A retry or disposal while an earlier write is in flight can
+  /// therefore fence this durable peer creation before it starts.
+  Future<bool> savePairedPeerIfCurrent(
+    PeerRecord record, {
+    required bool Function() stillCurrent,
+  }) => _serializePeerMutation(() async {
+    if (!stillCurrent()) return false;
+    await _writePeer(record, allowCreate: true, replaceChannelKeys: true);
+    _onPeersMutated?.call(PeerMutationKind.upsert);
+    return true;
+  });
+
   /// Merge peer metadata without creating a peer or replacing channel keys.
   ///
   /// Same-key channel state is max-merged so reconnect persistence remains

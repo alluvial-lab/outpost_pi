@@ -38,8 +38,7 @@ class PairingViewModel extends ViewModel<PairingState> {
   final Preferences _prefs;
   final OwnerIdentityBridge _ownerBridge;
   final DebugLog? _debugLog;
-  pair_flow.PeerTransport? _transport;
-  SecurePeerChannel? _liveChannel;
+  _PairingAttempt? _activeAttempt;
   int _generation = 0;
   bool _disposed = false;
 
@@ -79,6 +78,7 @@ class PairingViewModel extends ViewModel<PairingState> {
 
     _emitIfCurrent(generation, PairingConnecting(sessionName: qr.sessionName));
 
+    _PairingAttempt? attempt;
     try {
       // Close any active session before opening a new WS to the relay.
       // Same device Ed25519 key on a second WS would collide in the relay's
@@ -98,7 +98,8 @@ class PairingViewModel extends ViewModel<PairingState> {
         await transport.close();
         return;
       }
-      _transport = transport;
+      attempt = _PairingAttempt(transport);
+      _activeAttempt = attempt;
 
       final result = await pair_flow
           .performPairing(
@@ -119,12 +120,15 @@ class PairingViewModel extends ViewModel<PairingState> {
             ),
           );
       if (!_isCurrent(generation)) {
-        await _closeTransient();
+        await _closeAttempt(attempt);
         return;
       }
-      await _storage.savePairedPeer(result.peer);
-      if (!_isCurrent(generation)) {
-        await _closeTransient();
+      final persisted = await _storage.savePairedPeerIfCurrent(
+        result.peer,
+        stillCurrent: () => _isCurrent(generation),
+      );
+      if (!persisted) {
+        await _closeAttempt(attempt);
         return;
       }
 
@@ -134,26 +138,20 @@ class PairingViewModel extends ViewModel<PairingState> {
         peer: result.peer,
         debugLog: _debugLog,
       );
+      attempt.attachChannel(channel);
       if (!_isCurrent(generation)) {
-        await channel.close();
-        return;
-      }
-      _liveChannel = channel;
-      _transport = null; // channel now owns the transport
-
-      if (!_isCurrent(generation)) {
-        await _closeTransient();
+        await _closeAttempt(attempt);
         return;
       }
       _conn.adopt(channel, result.peer);
-      _liveChannel = null;
+      _releaseAttempt(attempt);
 
       _emitIfCurrent(
         generation,
         PairingPaired(peer: result.peer, hostnameHint: result.hostnameHint),
       );
     } on RelayNotConfiguredException {
-      await _closeTransient();
+      await _closeAttempt(attempt);
       _emitIfCurrent(
         generation,
         const PairingError(
@@ -162,13 +160,13 @@ class PairingViewModel extends ViewModel<PairingState> {
         ),
       );
     } on pair_flow.PairingError catch (e) {
-      await _closeTransient();
+      await _closeAttempt(attempt);
       _emitIfCurrent(
         generation,
         PairingError(message: _friendlyError(e), canRetry: true),
       );
     } catch (e) {
-      await _closeTransient();
+      await _closeAttempt(attempt);
       _emitIfCurrent(
         generation,
         PairingError(message: e.toString(), canRetry: true),
@@ -180,7 +178,9 @@ class PairingViewModel extends ViewModel<PairingState> {
   void retry() {
     if (_disposed) return;
     _generation++;
-    unawaited(_closeTransient());
+    final attempt = _activeAttempt;
+    _activeAttempt = null;
+    if (attempt != null) unawaited(attempt.close());
     emit(const PairingScanning());
   }
 
@@ -216,13 +216,15 @@ class PairingViewModel extends ViewModel<PairingState> {
     if (_isCurrent(generation)) emit(next);
   }
 
-  Future<void> _closeTransient() async {
-    final liveChannel = _liveChannel;
-    final transport = _transport;
-    _liveChannel = null;
-    _transport = null;
-    await liveChannel?.close();
-    await transport?.close();
+  Future<void> _closeAttempt(_PairingAttempt? attempt) async {
+    if (attempt == null) return;
+    if (identical(_activeAttempt, attempt)) _activeAttempt = null;
+    await attempt.close();
+  }
+
+  void _releaseAttempt(_PairingAttempt attempt) {
+    if (identical(_activeAttempt, attempt)) _activeAttempt = null;
+    attempt.release();
   }
 
   @override
@@ -230,7 +232,9 @@ class PairingViewModel extends ViewModel<PairingState> {
     if (_disposed) return;
     _disposed = true;
     _generation++;
-    unawaited(_closeTransient());
+    final attempt = _activeAttempt;
+    _activeAttempt = null;
+    if (attempt != null) unawaited(attempt.close());
     super.dispose();
   }
 
@@ -250,6 +254,43 @@ class PairingViewModel extends ViewModel<PairingState> {
       return 'Mobile';
     } catch (_) {
       return 'Mobile';
+    }
+  }
+}
+
+/// Own the transport or channel created by one pairing generation.
+///
+/// A stale completion closes this captured object, never the ViewModel's
+/// mutable active-attempt reference, which may belong to a later QR scan.
+final class _PairingAttempt {
+  _PairingAttempt(this._transport);
+
+  final pair_flow.PeerTransport _transport;
+  SecurePeerChannel? _channel;
+  bool _closed = false;
+  bool _released = false;
+
+  void attachChannel(SecurePeerChannel channel) {
+    if (_closed) {
+      unawaited(channel.close());
+      return;
+    }
+    _channel = channel;
+  }
+
+  void release() {
+    _released = true;
+    _channel = null;
+  }
+
+  Future<void> close() async {
+    if (_closed || _released) return;
+    _closed = true;
+    final channel = _channel;
+    if (channel != null) {
+      await channel.close();
+    } else {
+      await _transport.close();
     }
   }
 }
