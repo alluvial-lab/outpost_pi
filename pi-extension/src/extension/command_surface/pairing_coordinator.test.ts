@@ -19,13 +19,6 @@ class FakeSession {
   sendMessage(message: CustomMessage): void {
     this.customMessages.push(message);
   }
-
-  buildContext(): unknown[] {
-    return this.customMessages.map((message) => ({
-      role: "custom",
-      content: message.content,
-    }));
-  }
 }
 
 describe("PairingCoordinator.showPairQr", () => {
@@ -37,8 +30,12 @@ describe("PairingCoordinator.showPairQr", () => {
     vi.restoreAllMocks();
   });
 
-  test("keeps the rendered pairing token out of custom messages and assembled model context", async () => {
+  test("renders pairing only in the TUI without sending model-context messages", async () => {
     const session = new FakeSession();
+    const sendPiMessage = vi.fn((message: CustomMessage) => {
+      session.sendMessage(message);
+      return true;
+    });
     let rendered = "";
     const custom = vi.fn(async (factory: PairingDialogFactory) => {
       const component = await factory(
@@ -62,12 +59,7 @@ describe("PairingCoordinator.showPairQr", () => {
       ownerHas: () => false,
       refreshPairingsCache: () => undefined,
       joinLocalMesh: async () => undefined,
-      // If pairing regresses to sendMessage, this fake records the exact
-      // custom message that the SDK would assemble into model context.
-      sendPiMessage: (message) => {
-        session.sendMessage(message);
-        return true;
-      },
+      sendPiMessage,
       setSiblings: () => undefined,
     });
     coordinator.recordCurrentKeypair({ publicKey: new Uint8Array(32), secretKey: new Uint8Array(32) });
@@ -84,12 +76,8 @@ describe("PairingCoordinator.showPairQr", () => {
     const token = new URL(uri!).searchParams.get("t");
     expect(token).toBeTruthy();
 
-    const sessionCustomMessages = JSON.stringify(session.customMessages);
-    const assembledModelContext = JSON.stringify(session.buildContext());
-    expect(sessionCustomMessages).not.toContain(uri!);
-    expect(sessionCustomMessages).not.toContain(token!);
-    expect(assembledModelContext).not.toContain(uri!);
-    expect(assembledModelContext).not.toContain(token!);
+    expect(sendPiMessage).not.toHaveBeenCalled();
+    expect(session.customMessages).toEqual([]);
   });
 
   test("writes the production pair code to the headless E2E seam with owner-only permissions", async () => {
