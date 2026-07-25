@@ -1,7 +1,7 @@
 ---
 id: gate-tests-pairing-token-context-regression-representation-blind
 kind: story
-stage: review
+stage: done
 tags: [testing]
 parent: null
 depends_on: []
@@ -40,3 +40,14 @@ assertion exists, the hand-built context projection can go.)
 - Replaced representation-dependent URI/token substring checks with a direct `sendPiMessage` never-called assertion after TUI rendering and an empty custom-message sink assertion.
 - Removed `FakeSession.buildContext()` and its duplicate test-owned model-context projection.
 - Verification: `cd pi-extension && ./node_modules/.bin/vitest run src/extension/command_surface/pairing_coordinator.test.ts` (2 passed).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diffs inspected and
+verification independently reproduced — direct sendPiMessage-never-called
+assertion with duplicate projection removed (parked item closed in-commit);
+server-only discriminator emission with regenerated output and consumers
+typechecking; brace-expansion@5 5.0.8 + minimatch@3->10.2.5 legacy-path
+removal with orchestrator-run audits clean at high in both packages (prod
+extension: 2 moderate below threshold; site: none), frozen installs,
+extension 930 tests, site lint+build green. Approved -> done.
