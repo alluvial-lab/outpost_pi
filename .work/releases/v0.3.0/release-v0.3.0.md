@@ -1,14 +1,14 @@
 ---
 id: release-v0.3.0
 kind: release
-stage: quality-gate
+stage: released
 tags: []
 parent: null
 depends_on: []
 release_binding: v0.3.0
 gate_origin: null
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-25
 ---
 
 # Release v0.3.0
@@ -126,3 +126,24 @@ UAT manual checkpoint → local tag → collapse. Cockpit pair-code fix
 operator-expedited: seam-based fix in flight in parallel.
 
 <pending>
+
+## Shipped (2026-07-25)
+
+- Readiness GREEN: every bound item done (57 active bodies moved to
+  `.work/releases/v0.3.0/`; archived stubs remain in `.work/archive/` per
+  retain-bodies).
+- Gate re-scan of the drain delta (all six gates) produced 9 bound blockers,
+  all fixed and reviewed same-day; 2 patterns codified (18 total).
+- Changelog v0.3.0 entry operator-confirmed and committed.
+- **UAT manual checkpoint: PASS (operator ack 2026-07-25).** Live smoke:
+  TUI-only QR pairing, sealed round-trip, three reconnects with zero
+  re-pair (relay-log verified: fresh Ed25519 auth per socket, metadata-only
+  visibility), bounded hydration confirmed as designed contract
+  (`SYNC_LIMIT_DEFAULT = 30`; truncated-flag UX gap parked as
+  `app-hydration-truncated-flag-not-surfaced`).
+- Cockpit pair-code consumer break fixed ahead of cockpit-v0.3.0
+  (`gate-cruft-cockpit-pair-code-consumer-dead` done; seam productionalized
+  + hardened; schema variant dropped).
+- Local tag `v0.3.0` cut on HEAD; operator pushes. Component releases next:
+  app-v0.3.0, cockpit-v0.3.0, relay-0.3.0 (verify binds with the
+  attribution rule; extension-0.3.0 stays skipped).
