@@ -6,6 +6,8 @@
 - identity-scoped-monotonic-high-watermarks — Advance security watermarks only under their matching owner/key generation and never permit stale or lower values to win.
 - recoverable-secure-channel-circuit-breakers — Detach after a bounded invalid-frame streak, retain valid persisted keys, and recover through authenticated reattach plus state synchronization.
 - cross-language-known-answer-fixture-triangulation — Generate one deterministic protocol fixture independently and require every language endpoint to reproduce it byte-for-byte.
+- durable-transition-latches — Persist a pending latch before destructive cleanup, gate access while latched, resume at boot, and clear only after commit.
+- explicit-async-interleaving-tests — Test async ordering through explicit started/release barriers in fakes or harnesses, never elapsed time.
 - command-surface-adapter-classes — Keep command-surface logic in thin, dependency-injected adapter classes.
 - typed-wire-decoders — Parse/validate untrusted wire text through shared decode helpers before routing typed handlers.
 - subscription-unsubscribe-contract — Return unsubscribe closures for event handlers and keep callback registration/teardown explicit.
