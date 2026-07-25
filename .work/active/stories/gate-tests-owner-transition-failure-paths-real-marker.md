@@ -1,7 +1,7 @@
 ---
 id: gate-tests-owner-transition-failure-paths-real-marker
 kind: story
-stage: review
+stage: done
 tags: [testing]
 parent: null
 depends_on: []
@@ -48,3 +48,13 @@ subsequent clean retry commits exactly once.
   access, and a clean retry with exactly one replacement-fingerprint commit.
 - Verification: `flutter test test/routing/app_router_test.dart` passed (12
   tests).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diffs inspected against
+acceptance — SHA-256 owner-state fingerprint initialized once, compared
+before every boot acceptance, updated only on committed cleanup; real-bridge
+failure-path tests assert marker retention + gated identity + exactly-once
+commit; pairing attempts now own attempt-local resources with a commit-time
+stillCurrent fence. Orchestrator-verified: flutter analyze clean, full
+non-e2e suite 847/847 green. Approved -> done.
