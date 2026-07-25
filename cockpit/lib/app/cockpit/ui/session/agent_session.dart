@@ -735,7 +735,7 @@ class AgentSession extends PaneItem {
         if (changed) {
           rename(assigned); // Persist the assigned name immediately.
         }
-      case RpcPairCode() || RpcPaired() || RpcMeshRevoked():
+      case RpcPaired() || RpcMeshRevoked():
         return;
       case RpcUnknown():
         return;

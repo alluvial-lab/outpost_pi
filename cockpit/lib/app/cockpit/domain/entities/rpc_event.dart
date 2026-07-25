@@ -188,7 +188,6 @@ enum RelayStatus { connected, reconnecting, disconnected }
 enum RpcControlOverlayEventType {
   relayState('outpost-pi:relay-state'),
   nameAssigned('outpost-pi:name-assigned'),
-  pairCode('outpost-pi:pair-code'),
   paired('outpost-pi:paired'),
   meshRevoked('outpost-pi:mesh-revoked');
 
@@ -243,26 +242,6 @@ final class RpcNameAssigned extends RpcEvent {
 
   /// Whether the broker changed the requested name to resolve a collision.
   final bool changed;
-}
-
-/// `message_start` with `customType:"outpost-pi:pair-code"`.
-///
-/// Carry structured data so Cockpit can render or copy the QR code without
-/// scraping Pi's display text.
-final class RpcPairCode extends RpcEvent {
-  const RpcPairCode({
-    required this.uri,
-    required this.token,
-    required this.expiresAt,
-    required this.roomId,
-    required this.name,
-  });
-
-  final String uri;
-  final String token;
-  final int expiresAt;
-  final String roomId;
-  final String name;
 }
 
 /// `message_start` with `customType:"outpost-pi:paired"`.
