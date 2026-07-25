@@ -117,4 +117,12 @@ Readiness now blocks on the **29** gate findings below.
 
 **Bound blocking after re-scan: 9 items at implementing** (2 security, 3 tests, 1 cruft, 3 docs) — fix wave dispatched 2026-07-24.
 
+**Fix wave complete (2026-07-24): all 9 done** after bounded inline review
+(847/847 app tests, 930 extension tests, clean audits at high, harness
+16/16). Readiness re-check: **GREEN — every v0.3.0-bound item done**.
+Changelog v0.3.0 entry drafted, operator-confirmed, committed. Remaining:
+UAT manual checkpoint → local tag → collapse. Cockpit pair-code fix
+(`gate-cruft-cockpit-pair-code-consumer-dead`, cockpit-v0.3.0-bound)
+operator-expedited: seam-based fix in flight in parallel.
+
 <pending>
