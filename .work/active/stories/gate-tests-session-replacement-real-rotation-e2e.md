@@ -1,7 +1,7 @@
 ---
 id: gate-tests-session-replacement-real-rotation-e2e
 kind: story
-stage: review
+stage: done
 tags: [testing]
 parent: null
 depends_on: []
@@ -52,3 +52,13 @@ The expanded write scope supplied the missing harness boundary. The Pi host now 
 - Adjacent issues parked: none.
 - Real harness evidence (2026-07-24): `e2e/run-pairing.sh` ran 16/16 tagged tests green, including `real replacement confirms cli id before replacement turn settles`; suite distribution was owner channel 7, pairing failures 5, session replacement 1, cross-room 1, hydration 1, QR lifecycle 1. Redaction checked 20 sensitive canaries.
 - Broader verification: extension typecheck passed; extension Vitest passed 930 tests with 3 skipped; `flutter analyze` passed. The required non-E2E Flutter command was run twice: the load-sensitive full suite reported 840 passed/2 timing failures and then 841 passed/1 timing failure in pre-existing `sync_service_test.dart`; all reported cases passed immediately when rerun individually. No full non-E2E green claim is made.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diffs inspected; tests are
+deterministic and defect-targeted (no sleeps, real assertions). Harness
+evidence independently reproduced by the orchestrator: `e2e/run-pairing.sh`
+16/16 passed + 20 redaction canaries on a fresh run. The pair-code seam
+(OUTPOST_PI_PAIR_CODE_FILE, 0600, never logged, never in model context)
+heals the e2e-lane regression from the TUI-only security fix while
+preserving its invariant. Approved -> done.
