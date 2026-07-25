@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-client-message-discriminators-unused
 kind: story
-stage: implementing
+stage: review
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -35,3 +35,8 @@ Emit discriminator registries only for the server-message family (or only
 on schema demand), regenerate `protocol.generated.ts`, and remove the
 client family from generated output and test declarations. Fix the
 generator, not the output.
+
+## Implementation notes
+- Made discriminator registries opt-in in the TypeScript emitter and requested one only for `ServerMessage`; regenerated protocol output no longer exports `CLIENT_MESSAGE_DISCRIMINATORS`.
+- Removed the client discriminator declaration from generator test imports and added absence assertions while retaining server-registry coverage.
+- Verification: `cd protocol && node --import tsx --test ../tools/protocol-codegen/src/index.test.ts` (6 passed); `cd pi-extension && ./node_modules/.bin/tsc --noEmit`; `cd pi-extension && ./node_modules/.bin/vitest run` (930 passed, 3 skipped).
