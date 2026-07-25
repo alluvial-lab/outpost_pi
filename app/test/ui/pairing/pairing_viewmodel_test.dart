@@ -160,7 +160,8 @@ class _FakeStorage extends PairingStorage {
   Future<void> beginOwnerTransition() async => _transitionPending = true;
 
   @override
-  Future<void> completeOwnerTransition() async => _transitionPending = false;
+  Future<void> completeOwnerTransition(String fingerprint) async =>
+      _transitionPending = false;
 }
 
 /// Helper: build a fully-booted [OwnerIdentityBridge] backed by an

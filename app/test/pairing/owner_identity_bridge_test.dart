@@ -88,6 +88,8 @@ final class _RestoringStore implements OwnerIdentityStore {
 class _FakeSecureStorage implements FlutterSecureStorage {
   final Map<String, String> _store = {};
   int failDeletesRemaining = 0;
+  String? failDeleteKey;
+  int ownerFingerprintWrites = 0;
   @override
   Future<String?> read({
     required String key,
@@ -109,6 +111,9 @@ class _FakeSecureStorage implements FlutterSecureStorage {
     MacOsOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    if (key == 'dev.outpostpi.owner-transition:owner-state-fingerprint') {
+      ownerFingerprintWrites++;
+    }
     if (value == null) {
       _store.remove(key);
     } else {
@@ -126,8 +131,8 @@ class _FakeSecureStorage implements FlutterSecureStorage {
     MacOsOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
-    if (failDeletesRemaining > 0) {
-      failDeletesRemaining--;
+    if (key == failDeleteKey || failDeletesRemaining > 0) {
+      if (failDeletesRemaining > 0) failDeletesRemaining--;
       throw StateError('injected secure-storage delete failure');
     }
     _store.remove(key);
@@ -312,6 +317,107 @@ void main() {
         expect(await storage.hasPendingOwnerTransition(), isTrue);
 
         bridge.dispose();
+      },
+    );
+
+    test(
+      'stopped-app Owner replacement gates existing local state until cleanup commits',
+      () async {
+        final first = await _freshIdentity();
+        final replacement = await _freshIdentity();
+        final secureStorage = _FakeSecureStorage();
+        final storage = PairingStorage(secureStorage);
+        await storage.savePairedPeer(
+          const PeerRecord(
+            remoteEpk: 'old-peer',
+            sessionName: 'Pi',
+            relayUrl: 'https://relay',
+            pairedAt: '2026-07-24T00:00:00Z',
+          ),
+        );
+        final firstBridge = OwnerIdentityBridge(
+          InMemoryOwnerIdentityStore(initial: first),
+          storage,
+        );
+        await firstBridge.boot();
+        final firstFingerprint = await storage.loadOwnerStateFingerprint();
+
+        final restarted = OwnerIdentityBridge(
+          InMemoryOwnerIdentityStore(initial: replacement),
+          storage,
+        );
+        final pending = await restarted.boot();
+
+        expect(pending, isA<OwnerTransitionPending>());
+        expect(await storage.listPeers(), hasLength(1));
+        expect(await storage.hasPendingOwnerTransition(), isTrue);
+        expect(restarted.currentIdentity, isNull);
+        expect(restarted.currentOwnerPk, isNull);
+        await expectLater(
+          restarted.requireKeyPair(),
+          throwsA(isA<StateError>()),
+        );
+        expect(await storage.loadOwnerStateFingerprint(), firstFingerprint);
+
+        firstBridge.dispose();
+        restarted.dispose();
+      },
+    );
+
+    test(
+      'failed marker deletion retains the fingerprint and a clean retry commits once',
+      () async {
+        final first = await _freshIdentity();
+        final replacement = await _freshIdentity();
+        final secureStorage = _FakeSecureStorage();
+        final storage = PairingStorage(secureStorage);
+        final original = OwnerIdentityBridge(
+          InMemoryOwnerIdentityStore(initial: first),
+          storage,
+        );
+        await original.boot();
+        final firstFingerprint = await storage.loadOwnerStateFingerprint();
+        final replacementStore = InMemoryOwnerIdentityStore(
+          initial: replacement,
+        );
+        final interrupted = OwnerIdentityBridge(replacementStore, storage);
+        final pending = await interrupted.boot() as OwnerTransitionPending;
+        await storage.wipeAll();
+
+        secureStorage.failDeleteKey = 'dev.outpostpi.owner-transition:pending';
+        await expectLater(
+          interrupted.completePendingTransition(pending.identity),
+          throwsA(isA<StateError>()),
+        );
+        expect(await storage.hasPendingOwnerTransition(), isTrue);
+        expect(await storage.loadOwnerStateFingerprint(), firstFingerprint);
+        expect(interrupted.currentIdentity, isNull);
+        await expectLater(
+          interrupted.requireKeyPair(),
+          throwsA(isA<StateError>()),
+        );
+
+        secureStorage.failDeleteKey = null;
+        final retry = OwnerIdentityBridge(replacementStore, storage);
+        final retryPending = await retry.boot() as OwnerTransitionPending;
+        await retry.completePendingTransition(retryPending.identity);
+
+        expect(await storage.hasPendingOwnerTransition(), isFalse);
+        expect(
+          await storage.loadOwnerStateFingerprint(),
+          isNot(firstFingerprint),
+        );
+        expect(retry.currentOwnerPk, orderedEquals(replacement.ownerPk));
+        expect(secureStorage.ownerFingerprintWrites, 2);
+        await expectLater(
+          retry.completePendingTransition(retryPending.identity),
+          throwsA(isA<StateError>()),
+        );
+        expect(secureStorage.ownerFingerprintWrites, 2);
+
+        original.dispose();
+        interrupted.dispose();
+        retry.dispose();
       },
     );
 
