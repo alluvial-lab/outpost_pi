@@ -1,7 +1,7 @@
 ---
 id: gate-docs-flutter-test-excludes-e2e-tag
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -43,3 +43,10 @@ Updated all five specified documentation surfaces with the filtered Flutter
 verification command and dedicated `e2e/run-pairing.sh` harness command. Added
 the VM `--concurrency=2` note to `AGENTS.md`, the Flutter mobile skill, and the
 testing-integrity rule.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): edits match the Required
+edit and verify against cited sources (TUI-only QR + seam, ci.yml tag
+exclusion + run-pairing.sh + VM concurrency note in all five locations,
+Next 16.2.11 / React 19.2.6 / direct sharp). Approved -> done.
