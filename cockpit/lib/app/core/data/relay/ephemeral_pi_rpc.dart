@@ -7,6 +7,24 @@ import 'package:cockpit/app/core/env.dart';
 import 'package:cockpit/app/core/data/rpc/jsonl_line_splitter.dart';
 import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 
+/// Define the process boundary for a one-off outpost-pi RPC session.
+///
+/// Implementations start a process, deliver decoded stdout JSON to [onLine], and
+/// must dispose its process and temporary working directory at the end of the
+/// owning operation.
+abstract interface class EphemeralPiRpcSession {
+  /// Start the RPC process and submit [prompt].
+  Future<void> start({
+    required String prompt,
+    required void Function(Map<String, dynamic> json) onLine,
+    void Function(int code)? onExit,
+    Map<String, String> additionalEnvironment,
+  });
+
+  /// Stop the RPC process and release its temporary resources.
+  Future<void> dispose();
+}
+
 /// Run one-off outpost-pi commands in a dedicated ephemeral RPC session.
 ///
 /// Starts `pi --mode rpc --no-session` in a unique temporary directory to avoid
@@ -18,7 +36,7 @@ import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 /// Does not interpret the protocol. Each stdout JSON object is delivered through
 /// [onLine] for the caller to classify as a response or event. [dispose]
 /// idempotently prevents orphan processes and removes the temporary directory.
-class EphemeralPiRpc {
+class EphemeralPiRpc implements EphemeralPiRpcSession {
   EphemeralPiRpc(this._config);
 
   final PiSpawnConfig _config;
@@ -32,11 +50,15 @@ class EphemeralPiRpc {
   /// Start the process and send [prompt] as one JSON line.
   ///
   /// Delivers each stdout JSON object to [onLine] and, when supplied, the exit
-  /// code to [onExit]. Throws when the process cannot be spawned.
+  /// code to [onExit]. [additionalEnvironment] carries operation-owned process
+  /// inputs such as the pairing-code file path. Throws when the process cannot
+  /// be spawned.
+  @override
   Future<void> start({
     required String prompt,
     required void Function(Map<String, dynamic> json) onLine,
     void Function(int code)? onExit,
+    Map<String, String> additionalEnvironment = const <String, String>{},
   }) async {
     final dir = await Directory.systemTemp.createTemp('outpost-pi-rpc-');
     _tempDir = dir;
@@ -48,6 +70,7 @@ class EphemeralPiRpc {
         'agent_name': _randomName(),
         'workspace': 'pairing',
       }),
+      ...additionalEnvironment,
     };
 
     final process = await Process.start(
@@ -81,6 +104,7 @@ class EphemeralPiRpc {
     await process.stdin.flush();
   }
 
+  @override
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;

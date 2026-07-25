@@ -122,29 +122,6 @@ class RpcEventMapper {
           assigned: assigned,
           changed: detailValues['changed'] == true,
         );
-      case RpcControlOverlayEventType.pairCode:
-        if (detailValues == null) {
-          return const RpcUnknown('message_start:pair-code:no-details');
-        }
-        final uri = _nonEmptyString(detailValues['uri']);
-        final token = _nonEmptyString(detailValues['token']);
-        final expiresAt = _int(detailValues['expiresAt']);
-        final roomId = _nonEmptyString(detailValues['roomId']);
-        final name = _nonEmptyString(detailValues['name']);
-        if (uri == null ||
-            token == null ||
-            expiresAt == null ||
-            roomId == null ||
-            name == null) {
-          return const RpcUnknown('message_start:pair-code:invalid-details');
-        }
-        return RpcPairCode(
-          uri: uri,
-          token: token,
-          expiresAt: expiresAt,
-          roomId: roomId,
-          name: name,
-        );
       case RpcControlOverlayEventType.paired:
         if (detailValues == null) {
           return const RpcUnknown('message_start:paired:no-details');

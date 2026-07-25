@@ -1,13 +1,13 @@
 /// Represent typed events from an `/outpost-pi pair` session.
 ///
-/// The `data/` adapter translates `role: "custom"` messages carrying
-/// `customType` and `details` from the `pi --mode rpc` stream. The UI never
+/// The `data/` adapter reads the token-bearing pair code from its private file
+/// seam and translates the token-free pairing-complete RPC event. The UI never
 /// receives an untyped `Map<String, dynamic>`.
 sealed class PairEvent {
   const PairEvent();
 }
 
-/// Carry a newly generated `outpost-pi:pair-code` event.
+/// Carry a newly generated pair code read from Cockpit's private file seam.
 ///
 /// [uri] becomes the QR code; the remaining fields support copying pairing
 /// details. Periodic renewal re-emits this event so callers can refresh the QR.
