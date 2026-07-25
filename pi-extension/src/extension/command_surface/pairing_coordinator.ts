@@ -1,4 +1,7 @@
-import { chmod, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, rename, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Ed25519Keypair } from "../../pairing/crypto.js";
 import { buildQRUri, clampPairTtlMs, qrSession, renderQRAscii, TOKEN_TTL_MS } from "../../pairing/qr.js";
@@ -95,6 +98,44 @@ function cwdFrom(ctx: Pick<ExtensionContext, "cwd">): string {
   return "cwd" in ctx && typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
 }
 
+/** Reject a configured seam target that already resolves to any filesystem entry. */
+async function assertPairCodeTargetAbsent(target: string): Promise<void> {
+  try {
+    const targetStat = await lstat(target);
+    const kind = targetStat.isSymbolicLink() ? "symlink" : "filesystem entry";
+    throw new Error(`Pair code file already exists as a ${kind}: ${target}`);
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return;
+    throw error;
+  }
+}
+
+/** Publish the headless pairing payload without ever writing bearer bytes to an existing file. */
+async function writePairCodeFile(target: string, payload: string): Promise<void> {
+  await assertPairCodeTargetAbsent(target);
+  const temporary = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+
+  try {
+    handle = await open(
+      temporary,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+      0o600,
+    );
+    await handle.writeFile(payload, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+
+    // Recheck to reject a target created while the private temporary file was written.
+    await assertPairCodeTargetAbsent(target);
+    await rename(temporary, target);
+  } finally {
+    await handle?.close();
+    await rm(temporary, { force: true });
+  }
+}
+
 /**
  * Owns relay-facing pairing commands plus their long-lived resources.
  *
@@ -174,16 +215,16 @@ export class PairingCoordinator {
     const qrUri = buildQRUri(token, edKp.publicKey, sessionName, roomId);
 
     if (pairCodeFile) {
-      // E2E-only headless observation seam. The production-generated bearer
-      // token stays out of SDK messages/model context and is never logged.
-      await writeFile(pairCodeFile, JSON.stringify({
+      // Headless pairing-code retrieval seam for Cockpit and the E2E harness.
+      // Its production-generated bearer token stays out of SDK messages/model
+      // context and logs; publishing uses a private temporary file + rename.
+      await writePairCodeFile(pairCodeFile, JSON.stringify({
         uri: qrUri,
         token,
         expiresAt,
         roomId,
         name: sessionName,
-      }), { encoding: "utf8", mode: 0o600 });
-      await chmod(pairCodeFile, 0o600);
+      }));
     }
 
     if (ctx.mode !== "tui") return;
