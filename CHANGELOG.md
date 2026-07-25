@@ -9,6 +9,36 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ---
 
+## [v0.3.0] — 2026-07-24
+
+The owner-channel security arc: end-to-end owner-message protection, owner-identity transition hardening, and a full six-gate quality pass (run twice — initial bundle + drain-delta re-scan). Binds 54 items. **Paired cutover:** rebuild extension `dist/` → full Pi restart (not `/reload`) → sideload app; pre-E2E pairings must re-pair once. Relay deploy is independent.
+
+### Features
+- **Owner-channel E2E authentication** — signed ephemeral-X25519 pairing with `pair_mac` token proof, persisted directional keys, and sealed XChaCha20-Poly1305 post-pairing frames; plaintext/unauthenticated frames rejected with detach-after-five-failures circuit breaker and same-key reattach. (`feature-owner-message-e2e-authentication` + 5 children)
+- **Owner identity transition** — replacement Owner keys wipe pairings/transcripts with rollback hardening. (`feature-owner-identity-transition`)
+- **Replacement-session wake confirmation** — app confirms the original `cli_` id before a replacement turn settles. (`feature-replacement-session-wake-confirmation`)
+- **Diagnostic privacy hardening** — content-free diagnostic categories across app/extension/cockpit. (`feature-diagnostic-privacy-hardening`)
+- **CI verification matrix** — six lanes incl. deps-audit; app lane excludes harness E2E via `--exclude-tags e2e`. (`feature-ci-verification-matrix`)
+
+### Security
+- **Pairing bearer token removed from model context** — QR/pairing URI renders in a TUI-only dialog; headless retrieval is an opt-in `OUTPOST_PI_PAIR_CODE_FILE` seam (0600, never logged).
+- **Owner transition is atomic and boot-convergent** — durable pending-transition latch gates identity access until cleanup commits; a boot-time owner-of-local-state fingerprint catches identity replacement while the app was stopped.
+- **Fatal identity-store reads can no longer silently rotate the Owner key** — generation only on genuine first run; conditional re-read before save.
+- **Dependency advisories remediated** — next 16.2.11, sharp 0.35.3, fast-uri 3.1.4, brace-expansion 5.0.8 (+ minimatch@3→10.2.5 legacy-path removal); overrides live in `pnpm-workspace.yaml`.
+
+### Fixes
+- PairingViewModel disposal + generation fencing: no leaked transports, stale attempts can't persist/adopt/emit — including the commit-time persistence fence for mid-write invalidation.
+- E2E seam regressions covered: lost-`pair_ok` re-pair recovery, five-failure detach/same-key reattach, real session-rotation replacement (deterministic, no sleeps).
+
+### Refactor
+- Wire discriminators generated once from the schema (`SERVER_MESSAGE_DISCRIMINATORS`, Dart `discriminatorConstantName`); replay identity derives from generated `event.type`; conditional validator-helper emission in protocol codegen.
+
+### Documentation
+- Foundation docs, READMEs, and agent skills rolled forward to the owner-channel E2E trust model (17 items).
+- Patterns catalog grew to 18 (incl. `durable-transition-latches`, `explicit-async-interleaving-tests`).
+
+---
+
 ## [v0.2.0] — 2026-07-20
 
 First post-rebrand repo-level release. The cross-cutting companion to the
