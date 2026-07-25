@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pi-extension-readme-tui-only-pair
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -32,3 +32,8 @@ warns and does not display a QR; the only headless path is the E2E-only
 State that `/outpost-pi pair` shows the QR/pairing URI in an interactive TUI
 dialog only; describe non-TUI behavior and the E2E-only file seam if
 operationally relevant.
+
+## Implementation notes
+Updated `pi-extension/README.md` to document the interactive TUI dialog,
+non-TUI warning/no-QR behavior, and the E2E-only `OUTPOST_PI_PAIR_CODE_FILE`
+seam, matching `pairing_coordinator.ts`.
