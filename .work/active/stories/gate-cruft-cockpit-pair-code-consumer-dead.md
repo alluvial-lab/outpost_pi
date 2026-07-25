@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-cockpit-pair-code-consumer-dead
 kind: story
-stage: implementing
+stage: review
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -38,3 +38,16 @@ Remove the obsolete `outpost-pi:pair-code` protocol variant and Cockpit
 parsing/UI path, OR replace Cockpit pairing with a token-safe transport
 (e.g. control-channel QR retrieval that never enters model context) before
 retaining that UI. Decide per cockpit-v0.3.0 scope.
+
+## Implementation notes
+
+- Cockpit now creates a private temporary directory for each pairing attempt,
+  passes its seam-file path to the ephemeral Pi process, and polls the atomic
+  JSON payload into `PairCodeReady`.
+- Only the token-free `outpost-pi:paired` RPC custom event remains consumed;
+  the stale pair-code RPC mapping was removed.
+- Cleanup cancels polling/timeouts, disposes the process, and deletes the
+  Cockpit-owned seam directory. Targeted tests cover code discovery, boot
+  timeout, and cleanup deletion.
+- Verification: `flutter test test/core/data/relay/pairing_gateway_impl_test.dart`
+  (3 passing).
