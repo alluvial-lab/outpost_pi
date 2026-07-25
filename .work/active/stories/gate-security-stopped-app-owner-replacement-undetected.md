@@ -1,7 +1,7 @@
 ---
 id: gate-security-stopped-app-owner-replacement-undetected
 kind: story
-stage: review
+stage: done
 tags: [security]
 parent: null
 depends_on: []
@@ -64,3 +64,13 @@ the drain's begin/complete transition machinery.
   `OwnerTransitionPending`, leaving all identity access gated.
 - Added stopped-app replacement and failed-marker-deletion/retry regressions.
   `flutter test test/pairing/owner_identity_bridge_test.dart` passed (11 tests).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diffs inspected against
+acceptance — SHA-256 owner-state fingerprint initialized once, compared
+before every boot acceptance, updated only on committed cleanup; real-bridge
+failure-path tests assert marker retention + gated identity + exactly-once
+commit; pairing attempts now own attempt-local resources with a commit-time
+stillCurrent fence. Orchestrator-verified: flutter analyze clean, full
+non-e2e suite 847/847 green. Approved -> done.
