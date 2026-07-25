@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-client-message-discriminators-unused
 kind: story
-stage: review
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -40,3 +40,14 @@ generator, not the output.
 - Made discriminator registries opt-in in the TypeScript emitter and requested one only for `ServerMessage`; regenerated protocol output no longer exports `CLIENT_MESSAGE_DISCRIMINATORS`.
 - Removed the client discriminator declaration from generator test imports and added absence assertions while retaining server-registry coverage.
 - Verification: `cd protocol && node --import tsx --test ../tools/protocol-codegen/src/index.test.ts` (6 passed); `cd pi-extension && ./node_modules/.bin/tsc --noEmit`; `cd pi-extension && ./node_modules/.bin/vitest run` (930 passed, 3 skipped).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diffs inspected and
+verification independently reproduced — direct sendPiMessage-never-called
+assertion with duplicate projection removed (parked item closed in-commit);
+server-only discriminator emission with regenerated output and consumers
+typechecking; brace-expansion@5 5.0.8 + minimatch@3->10.2.5 legacy-path
+removal with orchestrator-run audits clean at high in both packages (prod
+extension: 2 moderate below threshold; site: none), frozen installs,
+extension 930 tests, site lint+build green. Approved -> done.
