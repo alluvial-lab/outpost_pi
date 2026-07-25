@@ -224,7 +224,7 @@ Once the relay is up (`/outpost-pi relay status` shows `started` or `paired`):
 /outpost-pi pair
 ```
 
-`/outpost-pi pair` shows the QR code and pairing URI in an interactive TUI dialog. Scan the QR code with the Outpost-Pi mobile app. Non-TUI invocation warns and does not display a QR; the `OUTPOST_PI_PAIR_CODE_FILE` file seam is reserved for E2E harness use.
+`/outpost-pi pair` shows the QR code and pairing URI in an interactive TUI dialog. Scan the QR code with the Outpost-Pi mobile app. Non-TUI invocation requires the `OUTPOST_PI_PAIR_CODE_FILE` headless pairing-code retrieval seam, used by Cockpit and the E2E harness; it publishes the generated payload through a private, atomically renamed file rather than model context.
 Pairing is **per machine** — once a device is paired, every Pi process on
 this machine accepts it (it lives in `~/.pi/remote/peers.json`).
 
