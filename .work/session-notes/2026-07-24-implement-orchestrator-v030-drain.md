@@ -67,12 +67,24 @@ full; no nested delegation; no push.
 - W5b (sol/high) dispatched: pair-code env-file seam
   (OUTPOST_PI_PAIR_CODE_FILE + pi-host endpoint), real-harness verification
   of lost-pair-ok + five-failure, session-replacement harness controls.
+- W5b: all 3 items done. Seam `04550fc`; orchestrator independently re-ran
+  `e2e/run-pairing.sh`: 16/16 + 20 redaction canaries. Extension 930
+  passed/3 skipped + typecheck. App analyze clean; non-e2e 842/842 green
+  at `--concurrency=2` (C=4 still flakes sync timing tests on this VM —
+  every victim passes standalone; pre-existing suite characteristic).
+
+## Final result: 29/29 bound blocking items done (2026-07-24)
+
+v0.3.0 readiness is unblocked. Next: re-run
+`/agile-workflow:release-deploy v0.3.0` (idempotent — resumes at
+readiness → changelog → UAT checkpoint → local tag → collapse).
 
 ## Notes for release
 
 - `backlog/app-sync-detached-transcript-degradation-regression.md`: did NOT
   reproduce on the integrated tree (107/107 sync tests green repeatedly) —
   cross-worker mid-flight contamination, annotated.
-- Full-suite flutter runs on this VM need `--concurrency=4` (842 green);
-  default concurrency produced non-deterministic timing-test failures under
-  load (three different victims across three runs; all pass standalone).
+- Full-suite flutter runs on this VM need `--concurrency=2` for a
+  reliable green (842 passed); higher concurrency under residual load
+  produces non-deterministic sync timing-test failures (all pass
+  standalone).
