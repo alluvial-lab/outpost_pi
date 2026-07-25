@@ -1,7 +1,7 @@
 ---
 id: gate-tests-stale-completion-during-peer-persistence
 kind: story
-stage: implementing
+stage: review
 tags: [testing]
 parent: null
 depends_on: []
@@ -49,3 +49,16 @@ the stale continuation then closes mutable GLOBAL transient fields via
 (merged into this item's scope): bind persistence and transient resources to
 the initiating generation; gate the serialized write at commit time and
 close captured attempt-local resources, not the ViewModel's current fields.
+
+## Implementation notes
+
+- Added `PairingStorage.savePairedPeerIfCurrent`, which evaluates the
+  generation predicate inside the serialized mutation turn immediately before
+  durable peer creation.
+- Replaced mutable-global transient teardown with generation-local
+  `_PairingAttempt` ownership; stale retry/dispose continuations only close
+  their captured transport/channel.
+- Added completer-gated retry and dispose tests while persistence is pending;
+  both prove no peer write, adoption, paired/error emission, or cross-attempt
+  resource closure. Verification: `flutter test
+  test/ui/pairing/pairing_viewmodel_test.dart` passed (12 tests).
