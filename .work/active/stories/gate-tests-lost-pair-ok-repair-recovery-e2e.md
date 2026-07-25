@@ -1,7 +1,7 @@
 ---
 id: gate-tests-lost-pair-ok-repair-recovery-e2e
 kind: story
-stage: review
+stage: done
 tags: [testing]
 parent: null
 depends_on: []
@@ -43,3 +43,13 @@ test("lost pair_ok recovers through a new QR using the same Owner identity", () 
 - Healed the shared W7 pair-code regression with an E2E-only `OUTPOST_PI_PAIR_CODE_FILE` seam: the real extension writes its production-generated `{uri, token, expiresAt, roomId, name}` at mode `0600`, the headless Pi host exposes it at `/pair-code`, and the Dart harness reads it without fabricating pairing material or sending the bearer token through SDK/model messages.
 - Real harness evidence (2026-07-24): `e2e/run-pairing.sh` built the repository relay and Pi host, ran all 16 tagged tests across `owner_channel_e2e_test.dart` (7), `pairing_failures_e2e_test.dart` (5), `session_replacement_e2e_test.dart` (1), `cross_room_pairing_e2e_test.dart` (1), `session_hydration_e2e_test.dart` (1), and `qr_lifecycle_e2e_test.dart` (1), and finished `All tests passed!`; redaction checked 20 sensitive canaries. The `lost pair_ok recovers through a new QR with the same Owner identity` case reached and passed its persistence, replacement-key, and sealed ping/pong assertions.
 - Broader verification: extension typecheck passed; extension Vitest passed 930 tests with 3 skipped; `flutter analyze` passed. `flutter test --exclude-tags e2e --concurrency=4` was run twice and exposed load-sensitive pre-existing `sync_service_test.dart` timing flakes (first: 840 passed/2 failed; second: 841 passed/1 failed); every reported failure passed immediately in a targeted rerun. No non-E2E full-suite green claim is made.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): diffs inspected; tests are
+deterministic and defect-targeted (no sleeps, real assertions). Harness
+evidence independently reproduced by the orchestrator: `e2e/run-pairing.sh`
+16/16 passed + 20 redaction canaries on a fresh run. The pair-code seam
+(OUTPOST_PI_PAIR_CODE_FILE, 0600, never logged, never in model context)
+heals the e2e-lane regression from the TUI-only security fix while
+preserving its invariant. Approved -> done.
