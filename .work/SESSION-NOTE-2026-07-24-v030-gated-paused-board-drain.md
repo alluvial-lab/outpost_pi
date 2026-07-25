@@ -1,5 +1,21 @@
 # SESSION NOTE — 2026-07-24 — v0.3.0 gated + paused; board drain next (RESUME HERE AFTER CONTEXT RESET)
 
+**SUPERSEDED 2026-07-25: v0.3.0 SHIPPED.** Drain completed (29/29), gates
+re-run on the drain delta (9 new bound blockers, all fixed same-day),
+UAT passed (operator ack), tag `v0.3.0` cut on `fedf37f` (operator pushes),
+release collapsed retain-bodies to `.work/releases/v0.3.0/`. Remaining:
+component releases `app-v0.3.0` (3 active + 2 stubs), `cockpit-v0.3.0`
+(4 active + 1 stub — includes the pair-code seam fix), `relay-0.3.0`
+(5 relay stubs). Verify each bind with the attribution rule; the local
+gather patch skips stamped husks. `extension-0.3.0` stays skipped;
+`backlog-piext-extension-test-19-failures` stays unbound. The deployed
+stack is live: extension dist rebuilt + full Pi restart done, app
+0.3.0+2 debug APK sideloaded, relay 0.2.0 container unchanged (no v0.3.0
+relay changes). This note is kept for the deploy/cutover reference below;
+delete at next substrate groom.
+
+---
+
 Transient handoff note. Delete when superseded. **This is the master
 resumption point** — supersedes
 `SESSION-NOTE-2026-07-23-release-v030-handoff.md` (deleted).
