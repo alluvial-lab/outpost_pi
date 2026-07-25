@@ -1,0 +1,40 @@
+---
+id: gate-tests-stale-completion-during-peer-persistence
+kind: story
+stage: implementing
+tags: [testing]
+parent: null
+depends_on: []
+release_binding: v0.3.0
+gate_origin: tests
+created: 2026-07-24
+updated: 2026-07-24
+---
+
+# Stale pairing completion during savePairedPeer await is unfenced and untested
+
+## Priority
+High
+
+## Value evidence
+Item: `gate-refactor-lifecycle-pairing-viewmodel-no-dispose` says a stale
+successful handshake cannot persist, adopt, or emit. The stale-completion
+test invalidates before `performPairing` returns; it does not cover
+invalidation while `savePairedPeer` itself is awaiting. Current code can
+finish that durable write after retry/dispose before noticing the stale
+generation.
+
+## Gap type
+complex-unit
+
+## Suggested test
+Gate `savePairedPeer` with completers. Let the handshake succeed and
+persistence start, then call `retry()` and separately `dispose()`. Release
+persistence and assert no durable peer remains, the transient transport
+closes, no channel is adopted, and no paired/error state is emitted. If the
+test proves the durable write lands post-invalidation, fence the write
+itself (re-check generation immediately before persisting) as part of this
+item.
+
+## Test location (suggested)
+`app/test/ui/pairing/pairing_viewmodel_test.dart`
