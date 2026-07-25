@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-cockpit-pair-code-consumer-dead
 kind: story
-stage: review
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -51,3 +51,16 @@ retaining that UI. Decide per cockpit-v0.3.0 scope.
   timeout, and cleanup deletion.
 - Verification: `flutter test test/core/data/relay/pairing_gateway_impl_test.dart`
   (3 passing).
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-24): three commit groups
+inspected. Cockpit now retrieves the pair code via a private 0700-dir seam
+file passed through OUTPOST_PI_PAIR_CODE_FILE (polling + boot-timeout +
+cleanup deletion; token-free `outpost-pi:paired` consumer retained). Seam
+hardened: exclusive-create 0600 temp, fsync, symlink/pre-existing-target
+rejection, atomic rename — the parked low security item closed in-commit.
+Producer-less `outpost-pi:pair-code` variant dropped from the cockpit-control
+schema + fixture + regenerated output. Orchestrator-verified: cockpit analyze
+clean + 264 tests green, extension typecheck green (worker: 931 tests,
+protocol check green). Approved -> done.
