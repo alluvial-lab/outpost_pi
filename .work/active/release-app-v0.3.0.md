@@ -51,3 +51,16 @@ awaiting cockpit-v0.3.0: gate-security-cockpit-temp-workspace-trace,
 gate-security-formatter-reload-diagnostics-path-disclosure,
 gate-security-lsp-stderr-logged,
 gate-security-rpcunknown-retains-wire-discriminator (expected).
+
+## Gate runs (2026-07-25; consolidated scanners recorded per gate)
+
+- **gate-cruft** — 1 finding (high): `savePeerSilent` dead export →
+  `gate-cruft-savepeersilent-dead-export` (bound, fixed inline, done).
+- **gate-docs** — 2 findings (high): stale `pullAndApply` refs +
+  DebugLog env_id_tail correlation drift →
+  `gate-docs-pullandapply-stale-refs`,
+  `gate-docs-debug-log-env-id-tail-correlation` (bound, fixed inline, done).
+- **gate-patterns** — no new patterns (both drain shapes already codified).
+- **gate-refactor** — no findings (boundary/lifecycle/protocol/documentation
+  libraries clean over the bundle).
+- **gate-security / gate-tests** — combined scanner in flight.
