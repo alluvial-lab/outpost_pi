@@ -437,10 +437,6 @@ class PairingStorage extends ChangeNotifier {
     if (written) _onPeersMutated?.call(PeerMutationKind.upsert);
   });
 
-  /// Same as [savePeer] but skips the mutation hook.
-  Future<void> savePeerSilent(PeerRecord record) =>
-      _serializePeerMutation(() => _writePeer(record));
-
   /// Apply Owner-signed mesh metadata without importing channel secrets.
   ///
   /// Mesh membership may hydrate a metadata-only peer on another device, but
@@ -478,8 +474,8 @@ class PairingStorage extends ChangeNotifier {
     _onPeersMutated?.call(PeerMutationKind.delete);
   });
 
-  /// Same as [deletePeer] but skips the mutation hook — see
-  /// [savePeerSilent] for the rationale.
+  /// Same as [deletePeer] but skips the mutation hook — silent writes are
+  /// for mesh-apply paths that must not re-signal the change they reconcile.
   Future<void> deletePeerSilent(String remoteEpk) =>
       _serializePeerMutation(() => _erasePeer(remoteEpk));
 
