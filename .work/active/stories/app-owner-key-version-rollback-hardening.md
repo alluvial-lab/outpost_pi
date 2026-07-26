@@ -5,10 +5,10 @@ stage: done
 tags: [app, security]
 parent: feature-owner-identity-transition
 depends_on: []
-release_binding: null
+release_binding: app-v0.3.0
 gate_origin: null
 created: 2026-06-28
-updated: 2026-07-23
+updated: 2026-07-25
 ---
 
 # Harden app owner-key mesh version rollback handling
