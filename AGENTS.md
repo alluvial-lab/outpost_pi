@@ -153,6 +153,17 @@ and the pi-extension is registered as a **local-path** extension (not npm).
   a full pi restart to take effect (not `/reload`).
 - **app** — Flutter mobile; sideloaded via `adb install <apk>` to a phone on a
   workstation (the VM has no phone attached).
+- **tailscale** — docker container `tailscale` (tailscale/tailscale,
+  `--network host`, `--cap-add NET_ADMIN`, `/dev/net/tun`, state volume
+  `tailscale-state`, `--entrypoint tailscaled` — NOT the stock entrypoint,
+  whose boot script kills `tailscale up` at 60s and crash-loops the
+  nodekey). Node `codebox` = `<tailnet-ip>`; advertises subnet route
+  `<lan-ip>/24` (approved in the admin console) so the relay's LAN URL
+  (`http://<lan-ip>:3300`) works both direct on the home LAN and
+  remotely through the tailnet. Phone: Tailscale app with split tunneling
+  (include mode) for Outpost-Pi; WireGuard must be fully off (single
+  Android VPN slot). Full setup + incident notes:
+  `.work/session-notes/2026-07-26-tailscale-deploy-and-phone-routing-incident.md`.
 
 ### Paired wire changes (deploy together)
 
