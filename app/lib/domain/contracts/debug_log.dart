@@ -452,9 +452,12 @@ String _cap(String s) =>
 /// per-variant scrub (no body/image/args/result) is enforced by the registry
 /// test. Callers pass already-scrubbed fields.
 ///
-/// **Cross-side correlation.** The message id is the join key across the three
-/// sides: the app's `MsgSendEvent.id` / `MsgEchoEvent.id`, the extension's
-/// `app user_message id` (`audit.jsonl`), and the relay's `env_id_tail`.
+/// **Cross-side correlation.** The owner-message id joins the app's
+/// `MsgSendEvent.id` / `MsgEchoEvent.id` with the extension's `app
+/// user_message id` (`audit.jsonl`) for app↔extension tracing. Sealed owner
+/// frames keep that id inside `outer.ct`, so the relay cannot join it; the
+/// relay's `env_id_tail` is a separate correlation key for cross-PC
+/// `pi_envelope` traffic only.
 abstract interface class DebugLog implements Service {
   /// Appends a structured line. Early no-op when debug mode is OFF.
   void log(DebugEvent event);
