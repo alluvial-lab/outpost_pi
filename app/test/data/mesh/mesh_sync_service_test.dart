@@ -756,7 +756,7 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('MeshSyncService — publish race fix', () {
-    test('pullAndApply hydrates PairingStorage WITHOUT calling publish',
+    test('pullOnDemand hydrates PairingStorage WITHOUT calling publish',
         () async {
       final owner = await _newOwner();
       final storage = PairingStorage(_FakeSecureStorage());
