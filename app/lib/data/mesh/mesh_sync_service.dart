@@ -18,7 +18,7 @@ import 'mesh_envelope.dart';
 /// (plan/24); the local storage is a hydrated cache. Mutations:
 ///   1. write through to local storage immediately (UI responsiveness)
 ///   2. publish in background; on conflict/failure, the next
-///      [pullAndApply] reconciles.
+///      [pullOnDemand] reconciles.
 ///
 /// Reads: [pullOnDemand] runs at boot, WS reconnect, deep links;
 /// [startPolling] keeps the cache fresh while the app is in foreground.
@@ -396,7 +396,7 @@ class MeshSyncService extends ChangeNotifier {
   /// Snapshot the current local peer list, bump version, sign, POST.
   /// Conflict (409) → re-fetch then publish again with the higher
   /// version. Network failure leaves the cache as-is — the next
-  /// [pullAndApply] tick will reconcile (LWW from plan/24 § Q5).
+  /// [pullOnDemand] tick will reconcile (LWW from plan/24 § Q5).
   ///
   /// [allowEmpty] opts out of the empty-on-existing safety net (see
   /// [_publishOnce]). Used by the revoke-last-peer flow, which is the
