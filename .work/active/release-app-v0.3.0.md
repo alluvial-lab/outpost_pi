@@ -63,4 +63,11 @@ gate-security-rpcunknown-retains-wire-discriminator (expected).
 - **gate-patterns** — no new patterns (both drain shapes already codified).
 - **gate-refactor** — no findings (boundary/lifecycle/protocol/documentation
   libraries clean over the bundle).
-- **gate-security / gate-tests** — combined scanner in flight.
+- **gate-security** — no findings (content-free diagnostics, wipe+latch,
+  owner-scoped watermarks verified clean).
+- **gate-tests** — no findings (shipped tests directly target their
+  contracts: redaction, rollback rejection, watermark fail-closed, wipe
+  retries, cleanup ordering).
+
+Readiness: GREEN (6/6 bound items done — 3 original + 3 gate findings
+fixed inline).
