@@ -5,10 +5,10 @@ stage: done
 tags: [app, security]
 parent: feature-diagnostic-privacy-hardening
 depends_on: []
-release_binding: null
+release_binding: app-v0.3.0
 gate_origin: security
 created: 2026-07-20
-updated: 2026-07-23
+updated: 2026-07-25
 ---
 
 # Mobile failure diagnostics retain raw server error details
