@@ -424,9 +424,11 @@ void main() {
       final mutations = <PeerMutationKind>[];
       storage.attachPeerMutationHook(mutations.add);
 
-      await storage.savePeerSilent(peer);
+      await storage.saveMeshPeerMetadata(peer);
 
-      expect(await storage.loadPeer(peer.remoteEpk), isNull);
+      final hydrated = await storage.loadPeer(peer.remoteEpk);
+      expect(hydrated, isNotNull);
+      expect(hydrated!.channel, isNull);
       expect(mutations, isEmpty);
     });
   });
