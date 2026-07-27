@@ -25,6 +25,19 @@ abstract interface class EphemeralPiRpcSession {
   Future<void> dispose();
 }
 
+/// Start an owned Pi process with the configuration required by this adapter.
+///
+/// The narrow seam lets lifecycle tests supply a process that controls exit
+/// timing without spawning a real Pi executable.
+typedef PiProcessStarter =
+    Future<Process> Function(
+      String executable,
+      List<String> arguments, {
+      required String workingDirectory,
+      required Map<String, String> environment,
+      required bool runInShell,
+    });
+
 /// Run one-off outpost-pi commands in a dedicated ephemeral RPC session.
 ///
 /// Starts `pi --mode rpc --no-session` in a unique temporary directory to avoid
@@ -37,9 +50,16 @@ abstract interface class EphemeralPiRpcSession {
 /// [onLine] for the caller to classify as a response or event. [dispose]
 /// idempotently prevents orphan processes and removes the temporary directory.
 class EphemeralPiRpc implements EphemeralPiRpcSession {
-  EphemeralPiRpc(this._config);
+  EphemeralPiRpc(
+    this._config, {
+    PiProcessStarter? processStarter,
+    Future<void> Function(Future<int> exitCode)? waitForExit,
+  }) : _processStarter = processStarter ?? _startProcess,
+       _waitForExit = waitForExit;
 
   final PiSpawnConfig _config;
+  final PiProcessStarter _processStarter;
+  final Future<void> Function(Future<int> exitCode)? _waitForExit;
 
   Process? _process;
   Directory? _tempDir;
@@ -73,7 +93,7 @@ class EphemeralPiRpc implements EphemeralPiRpcSession {
       ...additionalEnvironment,
     };
 
-    final process = await Process.start(
+    final process = await _processStarter(
       _config.executable,
       _args(),
       workingDirectory: dir.path,
@@ -115,9 +135,15 @@ class EphemeralPiRpc implements EphemeralPiRpcSession {
         await process.stdin.close(); // Graceful shutdown (code 0).
       } catch (_) {}
       try {
-        await process.exitCode.timeout(const Duration(seconds: 2));
+        await _awaitExit(process.exitCode);
       } on TimeoutException {
         process.kill(ProcessSignal.sigterm);
+        try {
+          await _awaitExit(process.exitCode);
+        } on TimeoutException {
+          process.kill(ProcessSignal.sigkill);
+          await process.exitCode;
+        }
       }
     }
     await _stdoutSub?.cancel();
@@ -130,6 +156,24 @@ class EphemeralPiRpc implements EphemeralPiRpcSession {
       } catch (_) {}
     }
   }
+
+  Future<void> _awaitExit(Future<int> exitCode) =>
+      _waitForExit?.call(exitCode) ??
+      exitCode.timeout(const Duration(seconds: 2));
+
+  static Future<Process> _startProcess(
+    String executable,
+    List<String> arguments, {
+    required String workingDirectory,
+    required Map<String, String> environment,
+    required bool runInShell,
+  }) => Process.start(
+    executable,
+    arguments,
+    workingDirectory: workingDirectory,
+    environment: environment,
+    runInShell: runInShell,
+  );
 
   /// Build arguments for a non-persistent RPC session with extensions enabled.
   ///
