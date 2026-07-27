@@ -55,3 +55,31 @@ App debug captures in debug/ (90b/914/935/938 series); relay log
 extension audit ~/.pi/remote/owner-channel-audit.jsonl (17:41 pairing-storm
 sequence_persist_failed burst, self-resolved; separate ~24-peer
 cross-PC cluster at 17:45 worth a later look — other room SF_DCbXsmreE).
+
+## RESOLVED (2026-07-27 addendum) — stale split-tunnel UID binding
+
+The "app on include list but cannot connect over TS" mystery from above
+recurred and was root-caused: **Android binds split-tunnel app entries by
+app UID, and an app reinstall mints a new UID.** The Tailscale UI shows the
+checkmark (package name matches), but the binding is dead — the app's
+traffic never enters tailscale0 on ANY network. On WiFi this is invisible
+(direct LAN route to 192.168.50.110 works); on cellular the app has no
+path to the relay → permanent connect timeouts (10s TimeoutException per
+attempt, clean retry backoff — verified in debug capture
+9c5-11f1-8bfc-9dddd10d2135.bin).
+
+**Fix:** Tailscale app → split tunneling → uncheck + recheck Outpost-Pi.
+Instant.
+
+**Proof at the relay:** phone peer had only ever authenticated from its
+WiFi IP (192.168.40.136); after the re-toggle, first non-WiFi-direct auth
+ever (14:26:09Z, source 172.17.0.1 = docker gateway — tailnet packets to
+the host-published port are proxied locally). ts-forward/ts-postrouting
+counters, ip_forward, and the subnet route were healthy all along — the
+07-26 "works remotely" verification covered Termux (genuinely tunneled)
+but never the app.
+
+**Operational rule:** after EVERY Outpost-Pi uninstall/reinstall (incl.
+sideloads that replace the package), re-toggle the app's entry in
+Tailscale split tunneling. Symptom of a stale binding: app works on WiFi,
+permanent relay-offline on cellular, relay log shows zero arrival attempts.
