@@ -1,7 +1,7 @@
 ---
 id: gate-docs-cockpit-rpc-protocol-pair-code-row
 kind: story
-stage: review
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -31,3 +31,12 @@ only current notice behavior.
 - Removed the obsolete `outpost-pi:pair-code`/`RpcPairCode` protocol-map row.
 - Narrowed `RpcNotice` documentation to current extension status and error notices.
 - Verification: confirmed no `RpcPairCode` or QR-ready notice assertion remains in the edited protocol documentation/entity surface.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-27): diffs inspected —
+serialized finalizer with _closed re-checks after every await, SIGTERM
+await + SIGKILL escalation + final-exit await before dir removal, stale
+pair-code row removed. Orchestrator-verified: flutter analyze clean, 267
+tests green (incl. new deterministic fake-process and interleaving tests).
+Approved -> done.
