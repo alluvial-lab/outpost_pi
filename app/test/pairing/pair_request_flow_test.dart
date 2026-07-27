@@ -166,6 +166,64 @@ void main() {
     _piEpk = base64Url.encode(piPublic.bytes).replaceAll('=', '');
   });
 
+  test('channel traffic racing pair_ok is skipped, pairing completes', () async {
+    final appToPi = _Q();
+    final piToApp = _Q();
+    final pi = _MemTransport(send: piToApp, receive: appToPi);
+    final app = _MemTransport(send: appToPi, receive: piToApp);
+    final storage = _FakeStorage();
+    unawaited(() async {
+      // Sealed-looking ciphertext (invalid UTF-8 — the live failure was
+      // FormatException: Unexpected extension byte (at offset 1)), then a
+      // JSON frame replying to a different id, then the real pair_ok.
+      await pi.send(Uint8List.fromList([0x80, 0xBF, 0x00, 0xFE]));
+      await pi.send(
+        Uint8List.fromList(
+          utf8.encode(jsonEncode({'type': 'agent_chunk', 'in_reply_to': 'other'})),
+        ),
+      );
+      await _replyPairOk(pi, fields: const {'session_name': 'race session'});
+    }());
+
+    final result = await _perform(qr: _qr(), transport: app, storage: storage);
+
+    expect(result.peer.sessionName, 'race session');
+    expect(result.peer.channel, isNotNull);
+    expect(storage.saved, [result.peer]);
+  });
+
+  test('garbage frame before pair_error still surfaces the error code', () async {
+    final appToPi = _Q();
+    final piToApp = _Q();
+    final pi = _MemTransport(send: piToApp, receive: appToPi);
+    final app = _MemTransport(send: appToPi, receive: piToApp);
+    final storage = _FakeStorage();
+    unawaited(() async {
+      // Wait for the request to arrive so our frames are ordered after it
+      // and the error replies to the right id.
+      final raw = await pi.receive();
+      final requestId =
+          (jsonDecode(utf8.decode(raw)) as Map<String, dynamic>)['id'];
+      await pi.send(Uint8List.fromList([0x80, 0xBF]));
+      await pi.send(
+        Uint8List.fromList(
+          utf8.encode(jsonEncode({
+            'type': 'pair_error',
+            'in_reply_to': requestId,
+            'code': 'token_unknown',
+            'message': 'nope',
+          })),
+        ),
+      );
+    }());
+
+    await expectLater(
+      _perform(qr: _qr(), transport: app, storage: storage),
+      throwsA(isA<PairingError>().having((e) => e.code, 'code', 'token_unknown')),
+    );
+    expect(storage.saved, isEmpty);
+  });
+
   test('relay mismatch aborts before sending or persisting', () async {
     final storage = _FakeStorage();
     final transport = _MemTransport(send: _Q(), receive: _Q());

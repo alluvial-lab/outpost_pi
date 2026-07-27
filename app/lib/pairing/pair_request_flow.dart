@@ -162,9 +162,33 @@ Future<PairingResult> performPairing({
       Uint8List.fromList(utf8.encode(jsonEncode(request.toJson()))),
     );
 
-    final raw = await transport.receive();
-    final inner = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
-    final type = inner['type'] as String?;
+    // Read until the pair_ok/pair_error reply to OUR request arrives.
+    // Channel traffic (e.g. a sealed backlog flush racing the handshake) is
+    // skipped, never decoded as the reply — the frames it carries belong to
+    // the post-attach channel, which replays idempotently on session_sync.
+    Map<String, dynamic> inner;
+    String? type;
+    while (true) {
+      final raw = await transport.receive();
+      // A zero-length frame is never valid protocol; it is how a closed
+      // transport drains its receive path. Fail rather than busy-loop.
+      if (raw.isEmpty) {
+        throw const PairingError(
+          code: 'transport_closed',
+          message: 'Pairing transport closed before the pairing reply arrived',
+        );
+      }
+      try {
+        final decoded = jsonDecode(utf8.decode(raw));
+        if (decoded is! Map<String, dynamic>) continue;
+        if (decoded['in_reply_to'] != id) continue;
+        inner = decoded;
+        type = decoded['type'] as String?;
+        break;
+      } on Object {
+        continue; // not a JSON frame — not the pairing reply
+      }
+    }
 
     if (type == 'pair_ok' && inner['in_reply_to'] == id) {
       final pairOk = PairOk.fromJson(inner);
