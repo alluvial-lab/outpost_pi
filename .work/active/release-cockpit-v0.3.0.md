@@ -37,4 +37,19 @@ Archived stub (1), late-bound 2026-07-27 per operator decision:
 
 ## Gate runs
 
-Pending.
+2026-07-27 (consolidated scanners recorded per gate):
+- **gate-security** — 2 findings (both low, parked):
+  `gate-security-cockpit-agent-boot-path-debugprint`,
+  `gate-security-cockpit-stale-pair-dir-orphan-sweep` (its timeout-cleanup
+  half is covered by the bound finalizer item). 6 verified-clean incl. seam
+  write hardening, LSP stderr, RPC discriminator, file-viewer diagnostics.
+- **gate-tests** — 1 finding (medium): pairing-gateway tests lacked
+  exit/timeout/orphan cleanup coverage — covered by the bound finalizer
+  item's acceptance; orphan-sweep test follows the parked sweep item.
+- **gate-cruft** — no findings.
+- **gate-docs** — 1 finding (high): stale pair-code row + RpcNotice dartdoc
+  → `gate-docs-cockpit-rpc-protocol-pair-code-row` (bound, in fix wave).
+- **gate-patterns** — no new patterns.
+- **gate-refactor** — 2 findings (both high, lifecycle):
+  `gate-refactor-pairing-gateway-finalizer-leaks`,
+  `gate-refactor-ephemeral-pi-rpc-sigterm-no-await` (bound, in fix wave).
