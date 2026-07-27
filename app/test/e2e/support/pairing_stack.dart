@@ -41,7 +41,7 @@ Future<PairCodeObservation> waitForPairCode(
   String args = 'pair',
 }) async {
   await host.invokeOutpostPi(args);
-  return eventually<PairCodeObservation>(
+  final observation = await eventually<PairCodeObservation>(
     () async {
       final payload = await host.pairCode();
       final uri = payload['uri'];
@@ -59,6 +59,11 @@ Future<PairCodeObservation> waitForPairCode(
     timeout: const Duration(seconds: 10),
     description: 'pair-code file publication',
   );
+  // The extension refuses to overwrite a pre-existing pair-code file
+  // (assertPairCodeTargetAbsent); consume the seam so a later `pair`
+  // command in the same host generation can publish a fresh code.
+  await host.consumePairCode();
+  return observation;
 }
 
 /// Own one real app transport from relay auth through pairing and hydration.

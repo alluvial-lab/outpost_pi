@@ -90,6 +90,11 @@ export class E2ePiHostRuntime {
     // every process generation rather than inventing in-process reset hooks.
     rmSync(homedir(), { recursive: true, force: true });
     rmSync(options.cwd, { recursive: true, force: true });
+    // The headless pair-code seam lives outside HOME and the extension refuses
+    // to overwrite a pre-existing target (symlink-attack hardening), so a stale
+    // file from an earlier generation would 500 every later `pair` command.
+    const pairCodeFile = process.env.OUTPOST_PI_PAIR_CODE_FILE;
+    if (pairCodeFile) rmSync(pairCodeFile, { force: true });
     mkdirSync(homedir(), { recursive: true, mode: 0o700 });
     mkdirSync(options.cwd, { recursive: true });
 

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { E2ePiHostRuntime } from "./e2e_pi_host_runtime.js";
 
@@ -41,6 +41,16 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     const path = requiredEnv("OUTPOST_PI_PAIR_CODE_FILE");
     const pairCode = JSON.parse(await readFile(path, "utf8")) as unknown;
     json(response, 200, pairCode);
+    return;
+  }
+  if (request.method === "DELETE" && url.pathname === "/pair-code") {
+    // Mirror the Cockpit seam contract: the consumer removes the pair-code
+    // file when the attempt ends, so a later `pair` command in the same
+    // process generation does not hit the extension's refuse-to-overwrite
+    // hardening (assertPairCodeTargetAbsent).
+    const path = requiredEnv("OUTPOST_PI_PAIR_CODE_FILE");
+    await rm(path, { force: true });
+    json(response, 200, { ok: true });
     return;
   }
   if (request.method === "POST" && url.pathname === "/command") {

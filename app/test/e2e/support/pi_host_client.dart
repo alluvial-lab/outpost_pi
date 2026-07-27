@@ -90,6 +90,10 @@ final class PiHostClient {
   /// Read the production-generated pair code through the headless E2E seam.
   Future<Map<String, dynamic>> pairCode() => _json('GET', '/pair-code');
 
+  /// Remove the seam file after a successful observation, mirroring the
+  /// Cockpit consumer contract so a later `pair` command can publish anew.
+  Future<void> consumePairCode() => _json('DELETE', '/pair-code');
+
   /// Defer settlement of the next SDK user-message action.
   Future<PiHostTurnControlStatus> deferNextTurn() async =>
       PiHostTurnControlStatus.fromJson(
