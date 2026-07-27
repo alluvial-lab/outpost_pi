@@ -7,6 +7,13 @@ import 'package:cockpit/app/core/data/relay/ephemeral_pi_rpc.dart';
 import 'package:cockpit/app/core/domain/contracts/pairing_gateway.dart';
 import 'package:cockpit/app/core/domain/entities/pair_event.dart';
 
+/// Cancel a scheduled pairing timer.
+typedef PairingTimerCancel = void Function();
+
+/// Schedule pairing work and return the operation that cancels it.
+typedef PairingTimerScheduler =
+    PairingTimerCancel Function(Duration duration, void Function() callback);
+
 /// Create a [PairingGateway] backed by a fresh ephemeral RPC session.
 ///
 /// Each pairing attempt owns its own `pi --mode rpc` process.
@@ -31,11 +38,17 @@ class PairingGatewayImpl implements PairingGateway {
     EphemeralPiRpcSession? rpc,
     this.bootTimeout = const Duration(seconds: 30),
     this.pollInterval = const Duration(milliseconds: 50),
-  }) : _rpc = rpc ?? EphemeralPiRpc(config);
+    PairingTimerScheduler? scheduleOnce,
+    PairingTimerScheduler? schedulePeriodically,
+  }) : _rpc = rpc ?? EphemeralPiRpc(config),
+       _scheduleOnce = scheduleOnce ?? _scheduleOneShot,
+       _schedulePeriodically = schedulePeriodically ?? _schedulePeriodic;
 
   final EphemeralPiRpcSession _rpc;
   final Duration bootTimeout;
   final Duration pollInterval;
+  final PairingTimerScheduler _scheduleOnce;
+  final PairingTimerScheduler _schedulePeriodically;
   final StreamController<PairEvent> _events =
       StreamController<PairEvent>.broadcast();
 
@@ -43,10 +56,11 @@ class PairingGatewayImpl implements PairingGateway {
   bool _started = false;
   bool _gotCode = false;
   bool _closed = false;
-  Timer? _bootTimeout;
-  Timer? _pollTimer;
+  PairingTimerCancel? _bootTimeoutCancel;
+  PairingTimerCancel? _pollTimerCancel;
   Directory? _pairCodeDirectory;
   File? _pairCodeFile;
+  Future<void>? _finalization;
 
   @override
   Stream<PairEvent> get events => _events.stream;
@@ -57,6 +71,10 @@ class PairingGatewayImpl implements PairingGateway {
     _started = true;
     try {
       final pairCodeFile = await _createPairCodeFile();
+      if (_closed) {
+        await _deletePairCodeDirectory();
+        return;
+      }
       final command = jsonEncode(<String, dynamic>{
         'type': 'prompt',
         'message': '/outpost-pi pair --ttl ${ttl.inSeconds}',
@@ -69,30 +87,32 @@ class PairingGatewayImpl implements PairingGateway {
           'OUTPOST_PI_PAIR_CODE_FILE': pairCodeFile.path,
         },
       );
+      if (_closed) return;
       await _pollPairCodeFile();
-      if (!_gotCode) {
-        _pollTimer = Timer.periodic(pollInterval, (_) {
-          unawaited(_pollPairCodeFile());
-        });
-        _bootTimeout = Timer(bootTimeout, () {
-          if (!_gotCode) {
-            _emit(
-              const PairFailed(
-                'Could not start pairing. Check that the outpost-pi extension is '
-                'installed and that a relay is configured.',
-              ),
-            );
-          }
-        });
+      if (_closed || _gotCode) return;
+
+      final cancelPoll = _schedulePeriodically(pollInterval, () {
+        unawaited(_pollPairCodeFile());
+      });
+      if (_closed) {
+        cancelPoll();
+        return;
       }
+      _pollTimerCancel = cancelPoll;
+
+      final cancelBootTimeout = _scheduleOnce(bootTimeout, _onBootTimeout);
+      if (_closed) {
+        cancelBootTimeout();
+        return;
+      }
+      _bootTimeoutCancel = cancelBootTimeout;
     } catch (error) {
-      _emit(PairFailed('Failed to start pairing: $error'));
-      await _cleanup();
+      await _finalize(failure: PairFailed('Failed to start pairing: $error'));
     }
   }
 
   @override
-  Future<void> cancel() => _cleanup();
+  Future<void> cancel() => _finalize();
 
   Future<File> _createPairCodeFile() async {
     // Directory.createTemp uses a 0700 directory on supported platforms; the
@@ -109,11 +129,11 @@ class PairingGatewayImpl implements PairingGateway {
   Future<void> _pollPairCodeFile() async {
     if (_closed || _gotCode) return;
     final file = _pairCodeFile;
-    if (file == null || !await file.exists()) return;
+    if (file == null || !await file.exists() || _closed) return;
 
     try {
       final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! Map) return;
+      if (_closed || decoded is! Map) return;
       final uri = decoded['uri'];
       final token = decoded['token'];
       final expiresAt = decoded['expiresAt'];
@@ -132,8 +152,7 @@ class PairingGatewayImpl implements PairingGateway {
       }
 
       _gotCode = true;
-      _bootTimeout?.cancel();
-      _pollTimer?.cancel();
+      _cancelTimers();
       _emit(
         PairCodeReady(
           uri: uri,
@@ -170,30 +189,95 @@ class PairingGatewayImpl implements PairingGateway {
     _emit(PairDevicePaired(name: details['name']?.toString()));
   }
 
-  void _onExit(int code) {
-    if (!_gotCode && !_closed) {
-      _emit(PairFailed('The pairing process exited (code=$code).'));
-    }
-    unawaited(_cleanup());
+  void _onBootTimeout() {
+    if (_closed || _gotCode) return;
+    unawaited(
+      _finalize(
+        failure: const PairFailed(
+          'Could not start pairing. Check that the outpost-pi extension is '
+          'installed and that a relay is configured.',
+        ),
+      ),
+    );
   }
 
-  Future<void> _cleanup() async {
-    if (_closed) return;
+  void _onExit(int code) {
+    unawaited(
+      _finalize(
+        failure: _gotCode
+            ? null
+            : PairFailed('The pairing process exited (code=$code).'),
+      ),
+    );
+  }
+
+  Future<void> _finalize({PairFailed? failure}) {
+    final existing = _finalization;
+    if (existing != null) return existing;
+
     _closed = true;
-    _bootTimeout?.cancel();
-    _pollTimer?.cancel();
-    await _rpc.dispose();
+    _cancelTimers();
+    final completion = Completer<void>();
+    _finalization = completion.future;
+    unawaited(_completeFinalization(failure, completion));
+    return completion.future;
+  }
+
+  Future<void> _completeFinalization(
+    PairFailed? failure,
+    Completer<void> completion,
+  ) async {
+    try {
+      if (failure != null) _emit(failure);
+      try {
+        await _rpc.dispose();
+      } catch (_) {
+        // Continue removing the bearer-token seam when process shutdown fails.
+      }
+      await _deletePairCodeDirectory();
+      if (!_events.isClosed) await _events.close();
+      completion.complete();
+    } catch (error, stackTrace) {
+      completion.completeError(error, stackTrace);
+    }
+  }
+
+  Future<void> _deletePairCodeDirectory() async {
     final directory = _pairCodeDirectory;
     _pairCodeDirectory = null;
     _pairCodeFile = null;
-    if (directory != null) {
-      try {
-        await directory.delete(recursive: true);
-      } on FileSystemException {
-        // Cleanup is best-effort after process exit or cancellation.
-      }
+    if (directory == null) return;
+
+    try {
+      await directory.delete(recursive: true);
+    } on FileSystemException {
+      // Cleanup is best-effort after process exit or cancellation.
     }
-    if (!_events.isClosed) await _events.close();
+  }
+
+  void _cancelTimers() {
+    final bootTimeoutCancel = _bootTimeoutCancel;
+    _bootTimeoutCancel = null;
+    bootTimeoutCancel?.call();
+    final pollTimerCancel = _pollTimerCancel;
+    _pollTimerCancel = null;
+    pollTimerCancel?.call();
+  }
+
+  static PairingTimerCancel _scheduleOneShot(
+    Duration duration,
+    void Function() callback,
+  ) {
+    final timer = Timer(duration, callback);
+    return timer.cancel;
+  }
+
+  static PairingTimerCancel _schedulePeriodic(
+    Duration duration,
+    void Function() callback,
+  ) {
+    final timer = Timer.periodic(duration, (_) => callback());
+    return timer.cancel;
   }
 
   void _emit(PairEvent event) {
