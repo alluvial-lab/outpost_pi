@@ -51,7 +51,7 @@ export const APP_MOCK_MANIFEST: AppManifest = {
       platform: "android",
       arch: "universal",
       format: "apk",
-      url: "https://github.com/KevounC/outpost_pi/releases/download/app-v1.1.0/OutpostPi.apk",
+      url: "https://github.com/alluvial-lab/outpost_pi/releases/download/app-v1.1.0/OutpostPi.apk",
       sha256: "7a1b2c3d4e5f60718293a4b5c6d7e8f900112233445566778899aabbccddeeff",
       size: 53477376,
     },

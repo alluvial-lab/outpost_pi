@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-const GITHUB_URL = "https://github.com/KevounC/outpost_pi";
+const GITHUB_URL = "https://github.com/alluvial-lab/outpost_pi";
 
 /** Render the shared site footer and external resource links. */
 export function SiteFooter() {

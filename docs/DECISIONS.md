@@ -39,7 +39,7 @@ resolved they move here.
 
 - Outpost-Pi is derived from Jacob Moura's `remote_pi` (MIT-licensed); the
   LICENSE and NOTICE preserve that attribution. Work is pushed only to
-  `origin` (`https://github.com/KevounC/outpost_pi.git`), the only configured
+  `origin` (`https://github.com/alluvial-lab/outpost_pi.git`), the only configured
   remote.
 - **Patchbay is the long-term play.** The bold refactor hardens the product's
   structure in the short term; patchbay is the intended successor direction.

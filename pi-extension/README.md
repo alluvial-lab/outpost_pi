@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/KevounC/outpost_pi/main/branding/logo-full.svg" width="160" alt="Outpost-Pi logo" />
+  <img src="https://raw.githubusercontent.com/alluvial-lab/outpost_pi/main/branding/logo-full.svg" width="160" alt="Outpost-Pi logo" />
 </p>
 
 <h1 align="center">Outpost-Pi</h1>
@@ -276,7 +276,7 @@ independently. Layering a VPN on top means **only your devices** can even reach
 the WebSocket port — defense in depth.
 
 Quick Docker outline (see the
-[relay README](https://github.com/KevounC/outpost_pi/blob/main/relay/README.md#self-hosted-relay-recommended-for-privacy)
+[relay README](https://github.com/alluvial-lab/outpost_pi/blob/main/relay/README.md#self-hosted-relay-recommended-for-privacy)
 for the full setup, environment variables, and reverse-proxy guidance):
 
 ```bash
@@ -602,24 +602,24 @@ other terminal first.
 ## Branding
 
 Official brand assets live in
-[`/branding`](https://github.com/KevounC/outpost_pi/tree/main/branding) —
+[`/branding`](https://github.com/alluvial-lab/outpost_pi/tree/main/branding) —
 SVG sources for the logo (full, foreground, background, monochrome) plus a
 banner. See the
-[branding README](https://github.com/KevounC/outpost_pi/blob/main/branding/README.md)
+[branding README](https://github.com/alluvial-lab/outpost_pi/blob/main/branding/README.md)
 for palette and export sizes.
 
 <table>
   <tr>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/KevounC/outpost_pi/main/branding/logo-full.svg" width="96" alt="logo-full" /><br/>
+      <img src="https://raw.githubusercontent.com/alluvial-lab/outpost_pi/main/branding/logo-full.svg" width="96" alt="logo-full" /><br/>
       <sub><code>logo-full</code></sub>
     </td>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/KevounC/outpost_pi/main/branding/logo-foreground.svg" width="96" alt="logo-foreground" /><br/>
+      <img src="https://raw.githubusercontent.com/alluvial-lab/outpost_pi/main/branding/logo-foreground.svg" width="96" alt="logo-foreground" /><br/>
       <sub><code>logo-foreground</code></sub>
     </td>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/KevounC/outpost_pi/main/branding/logo-monochrome.svg" width="96" alt="logo-monochrome" /><br/>
+      <img src="https://raw.githubusercontent.com/alluvial-lab/outpost_pi/main/branding/logo-monochrome.svg" width="96" alt="logo-monochrome" /><br/>
       <sub><code>logo-monochrome</code></sub>
     </td>
   </tr>
@@ -630,10 +630,10 @@ for palette and export sizes.
 ## Links
 
 - Homepage: <https://outpost-pi.kevoun.com>
-- Source: <https://github.com/KevounC/outpost_pi>
+- Source: <https://github.com/alluvial-lab/outpost_pi>
 - Pi coding agent: <https://github.com/earendil-works/pi>
-- Relay (self-hosting guide): <https://github.com/KevounC/outpost_pi/blob/main/relay/README.md>
-- Issues / bugs: <https://github.com/KevounC/outpost_pi/issues>
+- Relay (self-hosting guide): <https://github.com/alluvial-lab/outpost_pi/blob/main/relay/README.md>
+- Issues / bugs: <https://github.com/alluvial-lab/outpost_pi/issues>
 
 ---
 

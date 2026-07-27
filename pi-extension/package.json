@@ -37,18 +37,18 @@
     "extensions": [
       "./dist"
     ],
-    "image": "https://raw.githubusercontent.com/KevounC/outpost_pi/main/branding/banner.png"
+    "image": "https://raw.githubusercontent.com/alluvial-lab/outpost_pi/main/branding/banner.png"
   },
   "author": "KevounC",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/KevounC/outpost_pi.git",
+    "url": "git+https://github.com/alluvial-lab/outpost_pi.git",
     "directory": "pi-extension"
   },
   "homepage": "https://outpost-pi.kevoun.com",
   "bugs": {
-    "url": "https://github.com/KevounC/outpost_pi/issues"
+    "url": "https://github.com/alluvial-lab/outpost_pi/issues"
   },
   "files": [
     "dist",

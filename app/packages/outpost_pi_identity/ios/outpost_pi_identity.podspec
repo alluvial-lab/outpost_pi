@@ -7,7 +7,7 @@ Owner-key Ed25519 identity for Outpost-Pi, persisted as a generic-password
 Keychain item with kSecAttrSynchronizable=true so it propagates between
 devices of the same Apple ID via iCloud Keychain.
                        DESC
-  s.homepage         = 'https://github.com/KevounC/outpost_pi'
+  s.homepage         = 'https://github.com/alluvial-lab/outpost_pi'
   s.license          = { :type => 'Proprietary', :text => 'Internal use only' }
   s.author           = { 'Outpost-Pi' => 'contact@kevoun.com' }
   s.source           = { :path => '.' }

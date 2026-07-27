@@ -560,5 +560,5 @@ Long term:
 ## Report security issues
 
 Open an issue marked `security` on
-[GitHub](https://github.com/KevounC/outpost_pi/issues) or contact the
+[GitHub](https://github.com/alluvial-lab/outpost_pi/issues) or contact the
 maintainer (KevounC) directly.

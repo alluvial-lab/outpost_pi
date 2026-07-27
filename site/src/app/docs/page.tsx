@@ -16,11 +16,11 @@ export const metadata: Metadata = {
     "Reference for Outpost-Pi: the relay, protocol & security, the full command reference, configuration files, and troubleshooting.",
 };
 
-const GITHUB_URL = "https://github.com/KevounC/outpost_pi";
+const GITHUB_URL = "https://github.com/alluvial-lab/outpost_pi";
 const PI_URL = "https://github.com/earendil-works/pi";
 const RELAY_README_URL =
-  "https://github.com/KevounC/outpost_pi/blob/main/relay/README.md";
-const ISSUES_URL = "https://github.com/KevounC/outpost_pi/issues";
+  "https://github.com/alluvial-lab/outpost_pi/blob/main/relay/README.md";
+const ISSUES_URL = "https://github.com/alluvial-lab/outpost_pi/issues";
 
 const DOCS_TOC: TocItem[] = [
   { id: "quick-start", label: "Quick start" },
@@ -906,7 +906,7 @@ export default function DocsPage() {
           <li>
             Source:{" "}
             <a className="text-accent underline" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
-              github.com/KevounC/outpost_pi
+              github.com/alluvial-lab/outpost_pi
             </a>
           </li>
           <li>
@@ -935,7 +935,7 @@ export default function DocsPage() {
           <li>
             Issues / bugs:{" "}
             <a className="text-accent underline" href={ISSUES_URL} target="_blank" rel="noopener noreferrer">
-              github.com/KevounC/outpost_pi/issues
+              github.com/alluvial-lab/outpost_pi/issues
             </a>
           </li>
         </ul>

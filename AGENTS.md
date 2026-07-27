@@ -7,7 +7,7 @@ rebuilding our own artifacts.
 
 ## Repository scope
 
-- `origin` → `https://github.com/KevounC/outpost_pi.git` — the only push
+- `origin` → `https://github.com/alluvial-lab/outpost_pi.git` — the only push
   target.
 - Provenance: Outpost-Pi is derived from Jacob Moura's `remote_pi`
   (MIT-licensed); the LICENSE and NOTICE preserve that attribution as a

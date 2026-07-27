@@ -1,6 +1,6 @@
 # Outpost-Pi — Site
 
-Landing page for [Outpost-Pi](https://github.com/KevounC/outpost_pi) — the
+Landing page for [Outpost-Pi](https://github.com/alluvial-lab/outpost_pi) — the
 project that lets you control a Pi coding agent from your phone through a
 self-hosted relay with Ed25519 challenge-response authentication. Direct relay
 connections use cleartext `ws://`; `wss://` requires an external TLS-terminating

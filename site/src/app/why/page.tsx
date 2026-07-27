@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     "Deciding how to run an always-on coding agent? outpost-pi keeps Pi alive 24/7 and puts it in your pocket. Here's when that's the right shape — and when an all-in-one platform isn't.",
 };
 
-const GITHUB_URL = "https://github.com/KevounC/outpost_pi";
+const GITHUB_URL = "https://github.com/alluvial-lab/outpost_pi";
 
 const highlights = [
   {
