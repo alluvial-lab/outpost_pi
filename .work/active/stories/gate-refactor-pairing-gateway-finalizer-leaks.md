@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-pairing-gateway-finalizer-leaks
 kind: story
-stage: implementing
+stage: review
 tags: [refactor]
 parent: null
 depends_on: []
@@ -37,3 +37,9 @@ Funnel timeout, process exit, cancellation, and startup failure through one
 serialized finalizer; check `_closed` after awaited startup/poll work before
 installing timers; add an explicit interleaving test for exit-during-start
 and a timeout-cleanup test.
+
+## Implementation notes
+- Routed timeout, child exit, cancellation, and startup failure through the serialized finalizer, which emits its terminal failure before disposing the RPC process, deleting the bearer-token seam directory, and closing events.
+- Re-checks closure after each awaited startup/poll operation; late-created seams are also deleted if cancellation won the creation race.
+- Replaced timing-based pairing tests with deterministic timer and RPC fakes. The exit-during-start barrier verifies neither timer is installed, and boot timeout verifies process disposal, timer cancellation, event closure, and seam deletion.
+- Verification: `flutter test test/core/data/relay/pairing_gateway_impl_test.dart` and `flutter analyze` passed.
