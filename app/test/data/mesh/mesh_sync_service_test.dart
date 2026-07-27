@@ -563,6 +563,204 @@ void main() {
       final peers = await storage.listPeers();
       expect(peers.map((p) => p.remoteEpk), ['epk-kept']);
     });
+
+    test(
+      'blob that omits a channel-bearing peer does not delete it '
+      '(owner-channel keys are device-local and unrecoverable)',
+      () async {
+        final owner = await _newOwner();
+        final storage = PairingStorage(_FakeSecureStorage());
+        const pairedEpk = 'Bz02uLiwrmQZ0S8qiwtFJAt0KzUvrgepYO_oMQ6yyQE';
+        final paired = const PeerRecord(
+          remoteEpk: pairedEpk,
+          sessionName: 'codebox',
+          relayUrl: 'wss://r',
+          pairedAt: '2026-07-26T00:00:00Z',
+        ).copyWith(
+          channel: OwnerChannelState(
+            sendKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+            receiveKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+            sendSequence: 3,
+            receiveSequence: 11,
+          ),
+        );
+        await storage.savePairedPeer(paired);
+        final bridge =
+            await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+        final hash = await MeshClient.ownerPkHash(owner.ownerPk);
+
+        // A lagging blob that knows nothing of the local pairing (LWW
+        // register behind this device's latest pairing).
+        final blob = MeshBlob(
+          version: 1,
+          issuedAt: 1,
+          ownerPk: owner.ownerPk,
+          members: const [
+            MeshMember(
+              remoteEpk: 'epk-other-device',
+              relayUrl: 'wss://r',
+              pairedAt: '2026-07-20T00:00:00Z',
+            ),
+          ],
+        );
+        final env = await blob.signWith(owner.keyPair);
+        final body = jsonEncode({
+          'blob': base64.encode(env.blob),
+          'sig': base64.encode(env.sig),
+          'version': 1,
+          'updated_at': 1,
+        });
+        final s = _stubDio();
+        s.adapter.on('GET', '/mesh/$hash', _Reply(200, body));
+        final client =
+            MeshClient(baseUrlProvider: () => 'https://r', dio: s.dio);
+        final svc = MeshSyncService(client, bridge, storage);
+
+        expect(await svc.pullOnDemand(), isTrue);
+        final restored = await storage.loadPeer(pairedEpk);
+        expect(restored, isNotNull,
+            reason: 'blob absence must not delete a paired record');
+        expect(restored!.channel, isNotNull,
+            reason: 'channel keys must survive a blob that omits the peer');
+        expect(restored.channel!.sendSequence, 3);
+        expect(restored.channel!.receiveSequence, 11);
+        // The blob's own member still hydrates.
+        expect(await storage.loadPeer('epk-other-device'), isNotNull);
+      },
+    );
+
+    test(
+      'standard-b64 blob member matches the url-safe local record: '
+      'channel preserved, no duplicate spelling hydrated',
+      () async {
+        final owner = await _newOwner();
+        final storage = PairingStorage(_FakeSecureStorage());
+        // Same 32-byte key, two spellings: QR/storage (base64url) vs the
+        // published blob (base64 standard).
+        const urlSafeEpk = 'Bz02uLiwrmQZ0S8qiwtFJAt0KzUvrgepYO_oMQ6yyQE';
+        const standardEpk =
+            'Bz02uLiwrmQZ0S8qiwtFJAt0KzUvrgepYO/oMQ6yyQE=';
+        final paired = const PeerRecord(
+          remoteEpk: urlSafeEpk,
+          sessionName: 'codebox',
+          relayUrl: 'wss://r',
+          pairedAt: '2026-07-26T00:00:00Z',
+        ).copyWith(
+          channel: OwnerChannelState(
+            sendKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+            receiveKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+          ),
+        );
+        await storage.savePairedPeer(paired);
+        final bridge =
+            await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+        final hash = await MeshClient.ownerPkHash(owner.ownerPk);
+
+        final blob = MeshBlob(
+          version: 1,
+          issuedAt: 1,
+          ownerPk: owner.ownerPk,
+          members: const [
+            MeshMember(
+              remoteEpk: standardEpk,
+              relayUrl: 'wss://relay-updated',
+              pairedAt: '2026-07-26T00:00:00Z',
+              nickname: 'renamed box',
+            ),
+          ],
+        );
+        final env = await blob.signWith(owner.keyPair);
+        final body = jsonEncode({
+          'blob': base64.encode(env.blob),
+          'sig': base64.encode(env.sig),
+          'version': 1,
+          'updated_at': 1,
+        });
+        final s = _stubDio();
+        s.adapter.on('GET', '/mesh/$hash', _Reply(200, body));
+        final client =
+            MeshClient(baseUrlProvider: () => 'https://r', dio: s.dio);
+        final svc = MeshSyncService(client, bridge, storage);
+
+        expect(await svc.pullOnDemand(), isTrue);
+        final peers = await storage.listPeers();
+        expect(peers, hasLength(1),
+            reason: 'no duplicate record under the blob spelling');
+        expect(peers.single.remoteEpk, urlSafeEpk,
+            reason: 'the local record keeps its stored spelling');
+        expect(peers.single.channel, isNotNull,
+            reason: 'channel keys survive a metadata refresh');
+        expect(peers.single.nickname, 'renamed box');
+        expect(peers.single.relayUrl, 'wss://relay-updated');
+      },
+    );
+
+    test(
+      'duplicate spellings of one member collapse to the channel-bearing '
+      'record (incident debris cleanup)',
+      () async {
+        final owner = await _newOwner();
+        final storage = PairingStorage(_FakeSecureStorage());
+        const urlSafeEpk = 'Bz02uLiwrmQZ0S8qiwtFJAt0KzUvrgepYO_oMQ6yyQE';
+        const standardEpk =
+            'Bz02uLiwrmQZ0S8qiwtFJAt0KzUvrgepYO/oMQ6yyQE=';
+        final paired = const PeerRecord(
+          remoteEpk: urlSafeEpk,
+          sessionName: 'codebox',
+          relayUrl: 'wss://r',
+          pairedAt: '2026-07-26T00:00:00Z',
+        ).copyWith(
+          channel: OwnerChannelState(
+            sendKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+            receiveKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+          ),
+        );
+        await storage.savePairedPeer(paired);
+        // Debris from the pre-fix reconciliation: a channel-less record
+        // hydrated under the blob's standard spelling of the same key.
+        await storage.saveMeshPeerMetadata(const PeerRecord(
+          remoteEpk: standardEpk,
+          sessionName: 'outpost_pi',
+          relayUrl: 'wss://r',
+          pairedAt: '2026-07-26T00:00:00Z',
+        ));
+        final bridge =
+            await _bootedBridge(storage, owner.keyPair, owner.ownerPk);
+        final hash = await MeshClient.ownerPkHash(owner.ownerPk);
+
+        final blob = MeshBlob(
+          version: 1,
+          issuedAt: 1,
+          ownerPk: owner.ownerPk,
+          members: const [
+            MeshMember(
+              remoteEpk: standardEpk,
+              relayUrl: 'wss://r',
+              pairedAt: '2026-07-26T00:00:00Z',
+            ),
+          ],
+        );
+        final env = await blob.signWith(owner.keyPair);
+        final body = jsonEncode({
+          'blob': base64.encode(env.blob),
+          'sig': base64.encode(env.sig),
+          'version': 1,
+          'updated_at': 1,
+        });
+        final s = _stubDio();
+        s.adapter.on('GET', '/mesh/$hash', _Reply(200, body));
+        final client =
+            MeshClient(baseUrlProvider: () => 'https://r', dio: s.dio);
+        final svc = MeshSyncService(client, bridge, storage);
+
+        expect(await svc.pullOnDemand(), isTrue);
+        final peers = await storage.listPeers();
+        expect(peers, hasLength(1),
+            reason: 'the channel-less duplicate spelling is removed');
+        expect(peers.single.remoteEpk, urlSafeEpk);
+        expect(peers.single.channel, isNotNull);
+      },
+    );
   });
 
   group('MeshSyncService durable watermark', () {
