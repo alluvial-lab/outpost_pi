@@ -32,17 +32,22 @@ E2E-protected and remain readable to the relay.
 ## Self-hosted relay
 
 Outpost-Pi is local-relay-only: you run your own relay from the
-`relay/` source. There is no public/community relay. Running your own
-means only your devices ever touch the connection — no third party can
-observe your traffic.
+`relay/` source. There is no public/community relay. Running your own means
+no third-party relay operator handles your traffic.
 
 ### Security considerations
 
-Messages are protected in two ways on your self-hosted relay:
+Messages have distinct transport, authentication, and endpoint protections:
 
-- **TLS (SSL)** — the WebSocket connection is encrypted in transit.
-- **Ed25519 pairing key** — only devices that completed the pairing flow can
-  exchange messages; the relay enforces this via challenge-response authentication.
+- **Transport** — direct relay deployments use cleartext `ws://`. Use `wss://`
+  only behind an external TLS-terminating reverse proxy; the reference deployment
+  uses plain `ws://` on a LAN/tailnet.
+- **Relay authentication and authorization** — challenge-response proves control
+  of any advertised Ed25519 key. The relay forwards app↔Pi outer envelopes to
+  the requested authenticated peer and room without a pairing lookup; pairing is
+  endpoint-enforced, and sealed owner-channel payloads are undecryptable without
+  the pairing keys. Only cross-PC `pi_envelope` delivery checks signed mesh
+  membership.
 
 Post-pairing app↔Pi owner payloads are protected by an endpoint-established
 XChaCha20-Poly1305 channel. The relay forwards the `ct` field as opaque ciphertext,
@@ -57,8 +62,7 @@ strongly recommend running your own relay.**
 
 ## Self-hosted relay (recommended for privacy)
 
-Running your own relay means only your devices ever touch the connection. No third
-party can observe your traffic.
+Running your own relay means no third-party relay operator handles your traffic.
 
 ### Docker (quickest)
 
@@ -87,9 +91,10 @@ if you put it behind a TLS-terminating reverse proxy such as Caddy or nginx).
 **`/data` volume**: the relay stores its SQLite database (signed membership
 versions) at `/data/mesh.db` inside the container. Mount a named volume (as in
 the example above) or a host directory (`-v /srv/outpost-pi:/data`) so the state
-survives `docker rm` and image upgrades. Without a mount, the database is
-recreated empty each time the container starts and clients re-publish their
-state at the next mutation.
+survives `docker rm` and image upgrades. Without an explicit mount, Docker
+creates an anonymous `/data` volume, so the database survives restarts of that
+container but is not a durable, reusable upgrade strategy; clients re-publish
+their state at the next mutation if it is lost.
 
 ### Environment variables
 
@@ -97,7 +102,7 @@ state at the next mutation.
 |---|---|---|
 | `OUTPOSTPI_RELAY_PORT` | `3000` | TCP port that serves the WebSocket upgrade, `/health`, and `/mesh/*` (all on the same port) |
 | `OUTPOSTPI_MESH_DB_PATH` | `/data/mesh.db` in Docker · `data/mesh.db` (cwd-relative) for bare-metal builds | Path to the SQLite database that stores signed membership versions. The parent directory is created automatically on first boot. The Docker image presets this to `/data/mesh.db` and declares `/data` as a volume — see the volume note above |
-| `RUST_LOG` | _(none)_ | Log level filter — e.g. `info`, `debug`, `warn` |
+| `RUST_LOG` | `info` | Log level filter — e.g. `info`, `debug`, `warn` |
 
 Example with a custom port and logging (volume mount is the same):
 

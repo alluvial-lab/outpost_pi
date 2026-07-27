@@ -38,39 +38,42 @@ Then in any Pi terminal:
 /outpost-pi
 ```
 
-The first run shows a short interactive wizard (agent name, whether to
-auto-start the relay). The wizard sets your preferences but does not configure
-a relay URL — run `/outpost-pi set-relay <url>` once first (there is no
-default relay). On every following run, `/outpost-pi` joins the local agent
-session and starts the relay automatically — no extra typing.
+The first run shows a short interactive wizard (agent name, whether this
+terminal should use the relay for mobile and cross-PC access). The wizard sets
+your preferences but does not configure a relay URL — run
+`/outpost-pi set-relay <url>` once first (there is no default relay). On every
+following run, `/outpost-pi` joins the fixed local mesh and connects to the
+relay only if you enabled it — no extra typing.
 
 ### Try the agent network in 30 seconds
 
 Open **two** Pi terminals in the same directory and run `/outpost-pi` in each.
-Both join the same session. Now just talk to the LLM — it has the tools.
+Both join the same local mesh. Now just talk to the LLM — it has the tools.
 
 In terminal A (say it ended up named `agent-A`):
 
 ```text
-Who else is connected in our agent session? List them.
+Who else is connected in our agent mesh? List them.
 ```
 
-The LLM calls `agent_send` to `broker` with `{ type: "list_peers" }` and
-replies with the names it sees.
+The LLM calls `list_peers` and replies with the addresses it sees. Each address
+has the form `<cwd>@<name>` (or `<pc>:<cwd>@<name>` cross-PC).
 
 Then, still in terminal A:
 
 ```text
-Send a ping to agent-B and wait for a reply.
+Send a ping to the other agent and ask it to reply.
 ```
 
-Pi calls `agent_request({ to: "agent-B", body: { type: "ping" } })`. The
-message arrives in terminal B as a user-facing turn — terminal B's LLM
-answers, and the reply lands back in terminal A. Two agents, one prompt
-each, full round trip.
+Pi calls `agent_send({ to: "<address-from-list_peers>", body: { type: "ping" } })`.
+The unicast call returns a delivery ACK. The message arrives in terminal B as
+an incoming turn; terminal B's LLM replies with another `agent_send`, setting
+`re` to the incoming message id, and the reply reaches terminal A on a later
+turn. The synchronous `agent_request` tool still exists for compatibility but
+is deprecated.
 
-(Replace `agent-B` with whatever name terminal B reports for itself — the
-wizard's default is the directory name plus a `#N` suffix on collision.)
+(Always copy the address returned by `list_peers` verbatim; never compose one
+from a name.)
 
 ---
 
@@ -79,23 +82,25 @@ wizard's default is the directory name plus a `#N` suffix on collision.)
 Outpost-Pi adds two independent layers on top of Pi. You can use either, or
 both:
 
-### 1) Agent network (local, same machine)
+### 1) Agent network (local mesh, optional cross-PC)
 
 Several Pi instances running side-by-side in different terminals can discover
-each other and exchange messages. Each instance is a peer in a named
-*session* and gets two tools the LLM can call directly:
+each other and exchange messages through one fixed local mesh. Each instance
+gets three native tools the LLM can call directly:
 
-- `agent_send` — fire-and-forget message to another agent
-- `agent_request` — send and await a reply (correlated by message id)
+- `list_peers` — list opaque `<cwd>@<name>` addresses (with a `<pc>:` prefix cross-PC)
+- `agent_send` — unicast with a delivery ACK, or fire-and-forget broadcast
+- `agent_request` — deprecated synchronous request/reply compatibility tool
 
-This is purely local: the agents talk over a Unix domain socket at
-`~/.pi/remote/sessions/<session-name>/broker.sock`. No network involved.
-Useful for splitting work across roles (`backend`, `frontend`, `tests`,
-`orchestrator`, …) and letting them coordinate.
+On POSIX, local peers use a Unix domain socket at
+`~/.pi/remote/sessions/local/broker.sock`; Windows uses a per-user named pipe.
+When relay use is enabled, the same peer inventory also includes cross-PC
+agents reached through the relay. Useful for splitting work across roles
+(`backend`, `frontend`, `tests`, `orchestrator`, …) and letting them coordinate.
 
-The first agent to enter a session becomes the *leader* (hosts the broker);
-the rest are *followers*. If the leader exits, a follower automatically takes
-over — the failover is invisible to the LLMs.
+The first local agent becomes the *leader* (hosts the broker); the rest are
+*followers*. If the leader exits, a follower automatically takes over — the
+failover is invisible to the LLMs.
 
 ### 2) Mobile app (over the relay)
 
@@ -104,11 +109,13 @@ from your phone. The phone and the Pi process find each other through a
 **relay**: a small WebSocket server that ferries messages between them.
 Pairing is one-time and per device, via QR code.
 
-Communication: WebSocket over TLS to the relay. After pairing, app↔Pi
-owner-channel payloads are sealed and authenticated end to end (including
-inline images), so the relay forwards them as opaque ciphertext. The relay
-still sees routing metadata, and cross-PC Pi↔Pi envelopes remain relay-readable
-plaintext — see [`PROTOCOL.md`](../PROTOCOL.md) for the trust model.
+Communication uses a WebSocket to the configured relay: an `https://` endpoint
+maps to TLS-protected `wss://`, while `http://` maps to cleartext `ws://`.
+Independently of transport TLS, after pairing app↔Pi owner-channel payloads are
+sealed and authenticated end to end (including inline images), so the relay
+forwards them as opaque ciphertext. The relay still sees routing metadata, and
+cross-PC Pi↔Pi envelopes remain relay-readable plaintext — see
+[`PROTOCOL.md`](../PROTOCOL.md) for the trust model.
 
 **Get the app** — current direct downloads and store availability while
 operator-owned public releases roll out:
@@ -171,7 +178,8 @@ pi install npm:outpost-pi
 ```
 
 The extension self-registers the `/outpost-pi` slash command and deploys an
-agent skill that teaches the LLM how to use `agent_send` / `agent_request`.
+agent skill that teaches the LLM how to discover peers with `list_peers`, send
+with `agent_send`, and handle asynchronous replies.
 
 To verify:
 
@@ -198,19 +206,17 @@ Behavior depends on whether there's a local config for this directory:
 
 | State | What happens |
 |---|---|
-| First run (no `.pi/outpost-pi/config.json`) | Interactive wizard → saves config → joins agent session → starts relay (if you opted in) |
-| Returning user, auto-start enabled | Joins agent session + starts relay automatically, then prints status |
-| Returning user, auto-start disabled | Prints status only; join/relay must be run manually |
+| First run (no `.pi/outpost-pi/config.json`) | Interactive wizard → saves config → joins the local mesh → starts relay (if you opted in) |
+| Returning user, auto-start enabled | Joins the local mesh + starts the relay automatically, then prints status |
+| Returning user, auto-start disabled | Joins the local mesh without the relay, then prints status |
 
-The wizard asks three questions:
+The wizard asks for two settings, then asks you to confirm them:
 
-1. **Agent name** — how other agents will address you in `agent_send` /
-   `agent_request`. Defaults to the directory name.
-2. **Default session** — the name of the agent-network room for this
-   directory. Multiple terminals in the same directory join the same session.
-3. **Auto-start relay (for mobile app access)?** — `Yes` if you want
-   `/outpost-pi` to also connect to the relay so the mobile app can reach this
-   Pi. `No` for local-only use (agent network without mobile access).
+1. **Agent name** — the name component of this agent's mesh address. Defaults
+   to the directory name.
+2. **Use the relay on this terminal?** — `Yes` connects this Pi to mobile
+   devices and other PCs in your mesh. `No` keeps the agent network local to
+   this machine.
 
 Re-run the wizard later with `/outpost-pi setup`.
 
@@ -218,7 +224,7 @@ Re-run the wizard later with `/outpost-pi setup`.
 
 ## Pairing a mobile device
 
-Once the relay is up (`/outpost-pi relay status` shows `started` or `paired`):
+Once the relay is up (check with `/outpost-pi status`):
 
 ```text
 /outpost-pi pair
@@ -246,24 +252,28 @@ The shortid is the first 8 chars shown by `devices`.
 
 ## The relay
 
-The relay is the only network-touching piece of Outpost-Pi. After pairing,
+The extension opens the relay WebSocket and makes HTTP(S) mesh-membership
+requests; the relay is the server-side network component. After pairing,
 app↔Pi owner-channel payloads are sealed and authenticated end to end, so the
 relay forwards their `ct` as opaque ciphertext. It still sees connection and
 routing metadata — which keypair is online, room/cwd identifiers, message
 timing, and sizes — and cross-PC Pi↔Pi envelopes remain relay-readable
 plaintext.
 
-You must self-host a relay. TLS + Ed25519 pairing/relay authentication and the
-owner-channel E2E seal are built in; there is no IP allow-listing or VPN gating.
-Use a VPN for additional network access control.
+You must self-host a relay. Ed25519 pairing/relay authentication and the
+owner-channel E2E seal are built in. Transport TLS is present only when you
+configure an `https://` endpoint (typically through a reverse proxy);
+`http://` maps to cleartext `ws://`. There is no IP allow-listing or VPN
+gating. Use a VPN for additional network access control.
 
 ### Self-host a relay
 
 Run the relay yourself in Docker and put it behind a VPN like
 [Tailscale](https://tailscale.com), [WireGuard](https://www.wireguard.com),
-or your own VPC. Because the relay's network-level protection is just TLS +
-keypair authentication, layering a VPN on top means **only your devices** can
-even reach the WebSocket port — defense in depth.
+or your own VPC. With an HTTPS endpoint, TLS and keypair authentication protect
+the network connection; the owner-channel payload remains E2E sealed
+independently. Layering a VPN on top means **only your devices** can even reach
+the WebSocket port — defense in depth.
 
 Quick Docker outline (see the
 [relay README](https://github.com/KevounC/outpost_pi/blob/main/relay/README.md#self-hosted-relay-recommended-for-privacy)
@@ -319,49 +329,51 @@ both pointing at the same relay.
 
 ## Agent network: deeper look
 
-Each session is one Unix-domain-socket broker plus N peers. The broker
-multiplexes messages by `to` name and broadcasts system events
-(`peer_joined`, `peer_left`).
+One fixed local mesh uses one local-IPC broker plus N peers. The broker routes
+messages by opaque `<cwd>@<name>` addresses; cross-PC addresses add a `<pc>:`
+prefix and must also be echoed verbatim.
 
-Inside the LLM, the agent skill registers two tools:
+Inside the LLM, the extension registers three native tools:
 
 ```jsonc
-// Fire-and-forget
-agent_send({
-  to: "backend",      // peer name (or array for multicast)
-  body: { task: "add /healthz endpoint" },
-  re: "<id>"          // optional — set when replying to a previous request
-})
+list_peers({})
 
-// Send + await reply (default 30s timeout)
-agent_request({
-  to: "backend",
-  body: { question: "is the migration applied?" }
+// Unicast returns a delivery ACK; broadcast is fire-and-forget.
+agent_send({
+  to: "<address-from-list_peers>", // one exact address, or "broadcast"
+  body: { task: "add /healthz endpoint" },
+  re: "<id>"                      // optional — set when replying
 })
 ```
 
+`agent_send.to` is a single string; the native Pi tool does not accept an array
+for multicast. `agent_request` is still registered but deprecated because it
+blocks the current turn; prefer `agent_send` and let replies arrive on a later
+turn. Native Pi has no `get_messages` tool — incoming mesh messages are
+injected as turns. `get_messages` exists only in the Claude MCP adapter.
+
 The wire format is a 5-field envelope `{ from, to, id, re, body }` serialized
 as one JSON line per message. The leader's broker writes an `audit.jsonl`
-log at `~/.pi/remote/sessions/<name>/audit.jsonl` for postmortem inspection.
+log at `~/.pi/remote/sessions/local/audit.jsonl` for postmortem inspection.
 
 Useful commands:
 
 | Command | What it does |
 |---|---|
-| `/outpost-pi join [name]` | Join (or create) a session — only needed manually if `auto_start_relay=false` |
-| `/outpost-pi leave` | Leave the current session |
-| `/outpost-pi sessions` | List local sessions and which are live |
-| `/outpost-pi rename <new>` | Rename this agent in the current session |
+| `/outpost-pi` | Join the fixed local mesh and connect the relay if enabled |
+| `/outpost-pi peers` | List local + cross-PC peer addresses |
+| `/outpost-pi setup` | Update the agent name and relay-use preference |
+| `/outpost-pi stop` | Leave the local mesh and disconnect the relay |
 
-Name collisions inside a session get a numeric suffix automatically
+Name collisions in the same directory get a numeric suffix automatically
 (`backend`, `backend#2`, `backend#3`). The broker assigns it and returns the
-real name to the peer.
+real address to the peer.
 
 ---
 
 ## Command reference
 
-### Local session (one Pi, one terminal)
+### Local Pi process (one Pi, one terminal)
 
 | Command | Description |
 |---|---|
@@ -373,6 +385,7 @@ real name to the peer.
 | `/outpost-pi devices` | List paired mobile devices (online/offline per device) |
 | `/outpost-pi revoke <shortid>` | Revoke a paired device by its shortid |
 | `/outpost-pi set-relay <url>` | Persist a new relay URL (http:// or https://) |
+| `/outpost-pi peers` | List local + cross-PC mesh peers, grouped by PC label |
 
 ### Daemon fleet (one supervisor, N background Pis — see [Daemon mode](#daemon-mode))
 
@@ -395,9 +408,11 @@ real name to the peer.
 | `/outpost-pi install` | Install `pi-supervisord` as a system service |
 | `/outpost-pi uninstall` | Remove the system service (registry preserved) |
 
-All commands above work both as Pi slash commands (interactive) and as
-shell-level `outpost-pi <subcommand>` when the package is installed
-globally (`npm install -g outpost-pi`).
+The daemon, cron, service, device, relay-setting, peer-list, and Claude-launch
+operations are also available as shell-level `outpost-pi <subcommand>` when
+the package is installed globally (`npm install -g outpost-pi`). The
+interactive `/outpost-pi` setup, status, stop, and pair flows are Pi slash
+commands only.
 
 ### Scheduled prompts (`cron`)
 
@@ -428,7 +443,7 @@ Step-by-step walkthrough: the [daemon tutorial](https://outpost-pi.kevoun.com/tu
 
 ### Footer + title
 
-- `📡 local (N)` — current agent session and peer count (local mesh)
+- `📡 local (N)` — current local-mesh state and peer count
 - `🟢 relay` — relay connected, at least one device paired (globally)
 - `🟡 relay waiting for pairing` — relay connected, no device paired yet
 - `📱 <shortid>` — a mobile device is actively connected right now
@@ -530,8 +545,9 @@ with a `[<cwd>]` prefix, so a single log stream shows every agent.
   prompting. Configure Pi's tool permissions to taste before promoting
   a folder to daemon.
 - **Pairing still happens interactively.** Daemons don't show a QR
-  themselves; the keypair + paired devices come from the prior `pi`
-  session in the same folder.
+  themselves; the keypair (system keyring, with a file fallback) and the
+  `~/.pi/remote/peers.json` roster are machine-global, so pairing from any
+  interactive Pi folder supplies them.
 - **Single supervisor.** If `pi-supervisord` crashes all daemons go
   down with it. systemd/launchd restarts it within seconds; daemons
   come back automatically.
@@ -544,10 +560,10 @@ with a `[<cwd>]` prefix, so a single log stream shows every agent.
 
 | Path | Scope | What's in it |
 |---|---|---|
-| `<cwd>/.pi/outpost-pi/config.json` | Per-directory | `agent_name`, `session_name`, `auto_start_relay` |
+| `<cwd>/.pi/outpost-pi/config.json` | Per-directory | `agent_name`, `auto_start_relay` |
 | `~/.pi/remote/config.json` | Per-user | `relay` URL |
 | `~/.pi/remote/peers.json` | Per-machine | Paired mobile devices |
-| `~/.pi/remote/sessions/<name>/` | Per-session | Broker socket + `audit.jsonl` |
+| `~/.pi/remote/sessions/local/` | Fixed local mesh | Broker socket + `audit.jsonl` |
 | `~/.pi/remote/skills/agent-network/SKILL.md` | Per-user | Agent skill the LLM reads |
 
 Override the relay for a single run without persisting:
@@ -570,13 +586,14 @@ release; report a bug if it recurs).
 on both sides. If you self-host behind a VPN, your phone must also be on the
 VPN (Tailscale on iOS/Android works fine).
 
-**`agent_request` keeps timing out.** Default timeout is 30 s. For tasks
-that legitimately take longer, the receiver should reply with `agent_send`
-including `re: "<original-id>"` so the requester can correlate. The skill
-explains this to the LLM automatically.
+**A mesh reply has not arrived yet.** Prefer `agent_send`; its unicast result
+is only a delivery ACK, and a content reply arrives on a later Pi turn when the
+receiver sends `agent_send` with `re: "<original-id>"`. The synchronous
+`agent_request` compatibility tool is deprecated and blocks for at most 30 s
+by default.
 
-**Multiple terminals in the same directory.** Supported. They share the same
-agent-network session (UDS broker) and the relay handles each Pi process
+**Multiple terminals in the same directory.** Supported. They share the fixed
+local mesh (local-IPC broker), and the relay handles each Pi process
 independently. If the relay refuses with `RoomAlreadyOpenError`, stop the
 other terminal first.
 
