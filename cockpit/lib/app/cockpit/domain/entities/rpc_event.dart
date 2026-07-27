@@ -149,7 +149,7 @@ enum RpcNoticeLevel { info, warning, error }
 
 /// `extension_ui_request` method `notify` — a fire-and-forget extension notice.
 ///
-/// Carries mesh status, "QR ready", or errors and expects no response.
+/// Carries extension status or errors and expects no response.
 final class RpcNotice extends RpcEvent {
   const RpcNotice(this.message, this.level);
   final String message;

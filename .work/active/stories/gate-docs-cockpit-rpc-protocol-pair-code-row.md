@@ -1,7 +1,7 @@
 ---
 id: gate-docs-cockpit-rpc-protocol-pair-code-row
 kind: story
-stage: implementing
+stage: review
 tags: [documentation]
 parent: null
 depends_on: []
@@ -26,3 +26,8 @@ QR-ready message exists.
 ## Required edit
 Remove the obsolete table row; update the `RpcNotice` dartdoc to describe
 only current notice behavior.
+
+## Implementation notes
+- Removed the obsolete `outpost-pi:pair-code`/`RpcPairCode` protocol-map row.
+- Narrowed `RpcNotice` documentation to current extension status and error notices.
+- Verification: confirmed no `RpcPairCode` or QR-ready notice assertion remains in the edited protocol documentation/entity surface.
