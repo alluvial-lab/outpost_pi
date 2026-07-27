@@ -1,5 +1,6 @@
 ---
 id: gate-security-pair-code-file-preexisting-perms-window
+kind: story
 created: 2026-07-24
 updated: 2026-07-24
 stage: done
