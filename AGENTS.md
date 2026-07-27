@@ -162,7 +162,11 @@ and the pi-extension is registered as a **local-path** extension (not npm).
   (`http://<lan-ip>:3300`) works both direct on the home LAN and
   remotely through the tailnet. Phone: Tailscale app with split tunneling
   (include mode) for Outpost-Pi; WireGuard must be fully off (single
-  Android VPN slot). Full setup + incident notes:
+  Android VPN slot). **After every app uninstall/reinstall (incl.
+  sideloads), re-toggle Outpost-Pi in Tailscale's split-tunnel list** —
+  Android binds entries by app UID, reinstalls mint a new UID, and the
+  stale checkmark looks applied but the app's traffic never enters the
+  tunnel (works on WiFi, permanent relay-offline on cellular). Full setup + incident notes:
   `.work/session-notes/2026-07-26-tailscale-deploy-and-phone-routing-incident.md`.
 
 ### Paired wire changes (deploy together)
