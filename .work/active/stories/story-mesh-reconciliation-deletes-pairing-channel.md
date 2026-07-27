@@ -1,7 +1,7 @@
 ---
 id: story-mesh-reconciliation-deletes-pairing-channel
 kind: story
-stage: drafting
+stage: done
 tags: [bug, app, security]
 parent: null
 depends_on: []
@@ -57,3 +57,48 @@ record.
   authority alone (channel keys are device-local; deleting them is
   unrecoverable without re-pair).
 - Until fixed, every cold start risks bricking the phone pairing.
+
+## Resolution (2026-07-27, done)
+
+**Confirmed root cause — the narrower epk-keying mismatch, not the
+multi-publisher model.** The extension never publishes a mesh blob (its
+`MeshClient` is GET-only; `SelfRevoke` only polls), so the app is the sole
+publisher. The deterministic brick: `PairingStorage` keys records by the
+QR/pair_ok string (base64url) while `_publishOnce` normalizes blob members
+to base64 standard. `_replaceLocalCacheWith` matched blob members to local
+records by RAW STRING, so for any key whose encodings differ (~3/4 of
+random keys) the keep-set check missed → `deletePeerSilent` destroyed the
+channel-bearing record and a channel-less duplicate was hydrated under the
+standard spelling → next cold start threw `PeerChannelError` pre-network.
+Pre-v0.3.0 this was invisible (no channel to lose; the record was
+rehydrated). The extension-side "Revoked by Owner" was downstream: once
+the phone's record was wiped, the next delete-kind mutation published a
+pi-less blob through the `allowEmpty` path and the extension self-revoked.
+
+**Membership-model decision (option 2 + canonical keying).**
+- All reconciliation matching is by canonical (standard-b64) epk; a matched
+  local record keeps its stored spelling and its channel; new members
+  hydrate under the storage-canonical (base64url) spelling so a later
+  pairing overwrites instead of duplicating.
+- Blob absence is no longer deletion authority for channel-bearing
+  records: the LWW blob can lag the local pairing, and channel keys are
+  unrecoverable without re-pair. Channel-less (metadata-only) records
+  absent from the blob are still deleted, so revocation/roster hygiene
+  propagates for records this device never paired. Trade-off: a peer
+  genuinely revoked from ANOTHER device leaves a ghost record on this one
+  (the Pi self-revoked, so the channel is dead); the user revokes locally.
+- Duplicate spellings of one canonical key collapse to the channel-bearing
+  (else storage-canonical) record — cleans incident debris on the next
+  pull.
+
+**Also fixed (e2e harness, unblocked verification):** the
+`pair-code-seam-hardening` refuse-to-overwrite check
+(`assertPairCodeTargetAbsent`) broke the e2e suite — the pair-code file
+survives host generations inside the container, so only the first `pair`
+per container worked (1 pass / 15 fails). The host runtime now wipes the
+seam file per generation, and `waitForPairCode` consumes it (DELETE
+/pair-code) after observation, mirroring the Cockpit consumer contract.
+
+**Verification:** 3 new failing-then-passing reconciliation tests;
+app suite 852/852; `flutter analyze` clean; `e2e/run-pairing.sh` 16/16 +
+redaction canaries.
