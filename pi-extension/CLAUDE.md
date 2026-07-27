@@ -5,11 +5,12 @@ adds the `/outpost-pi` slash command. It embeds the Pi SDK
 (`@earendil-works/pi-coding-agent`) and exposes it to the relay through
 WebSocket.
 
-It is part of Outpost-Pi's **cross-PC coding-agent mesh**: each PC runs this
-extension (a Node daemon) with an Ed25519 Pi key in the system keyring; the
-phone is the initial QR authenticator; among sibling PCs owned by the same
-Owner, a local UDS broker plus Pi-to-Pi relay forwarding over WS route
-envelopes prefixed with `<pc>:<peer>`.
+It is part of Outpost-Pi's **cross-PC coding-agent mesh**: each PC loads this
+`ExtensionFactory` in Pi with an Ed25519 Pi key in the system keyring; optional
+daemon mode runs background Pi processes under `pi-supervisord`. The phone is
+the initial QR authenticator; among sibling PCs owned by the same Owner, a
+local UDS broker plus Pi-to-Pi relay forwarding over WS routes opaque
+`<cwd>@<name>` addresses, prefixed `<pc>:<cwd>@<name>` cross-PC.
 
 For protocol, identities, ACKs, cross-PC routing, and the trust model, see
 [`../PROTOCOL.md`](../PROTOCOL.md) (the repository's canonical document).
@@ -39,7 +40,8 @@ corepack pnpm install --store-dir ~/projects/outpost_pi/.pnpm-store   # if node_
 corepack pnpm typecheck   # tsc --noEmit, must pass with zero errors
 corepack pnpm build      # tsc -> dist/
 corepack pnpm dev        # tsx src/index.ts
-corepack pnpm exec vitest run <path/to/test.ts>   # targeted tests; full `pnpm test` has known environment failures (EPERM in /tmp/claude/*.sock)
+corepack pnpm test      # full Vitest suite; IPC tests use isolated temporary paths
+corepack pnpm exec vitest run <path/to/test.ts>   # targeted tests
 ```
 
 See [`../.agents/skills/pi-extension-typescript/SKILL.md`](../.agents/skills/pi-extension-typescript/SKILL.md) for the rationale.
