@@ -7,6 +7,16 @@ this file.
 
 ## [Unreleased]
 
+### Changed — Outpost-Pi rebrand
+- Product identity migration: macOS app ID `work.jacobmoura.cockpit` →
+  `dev.kevoun.outpostpi.cockpit`, Windows display name **Remote Pi Cockpit** →
+  **Outpost-Pi Cockpit**, and onboarding installs the `outpost-pi` extension
+  (was `remote-pi`). The control-RPC discriminator moves to
+  `\x00outpost-pi-ctrl:` / `outpost_pi_control` (hard cutover — old Cockpit +
+  new extension break the control channel; see repo-root `AGENTS.md` paired
+  wire changes). The pre-rebrand `cockpit-v1.x` series is superseded; this is
+  the first Outpost-Pi Cockpit release family.
+
 ### Added
 - **Self-update (plan 47):** Cockpit now updates itself on **macOS**
   through Sparkle (`auto_updater` package): checks and downloads in the
