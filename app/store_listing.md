@@ -16,9 +16,9 @@ the operator to select their own team in Xcode. `ExportOptions.plist` likewise
 omits `teamID`, so an automatic App Store export can only resolve the team from
 an operator-owned signed archive rather than an inherited repository default.
 
-> ⚠️ **Copy rule:** never claim "end-to-end encrypted". The relay still sees
-> plaintext traffic. The honest privacy story is **TLS + a self-hostable relay
-> you control**. Keep this line in all marketing copy.
+> ⚠️ **Copy rule:** post-pair owner-channel payloads are end-to-end encrypted.
+> Pairing frames and routing metadata remain relay-visible. TLS depends on the
+> configured endpoint (`https`/`wss`); keep this distinction in marketing copy.
 
 ---
 
@@ -64,18 +64,18 @@ WHAT YOU CAN DO
 • Move between machines without losing context
 
 YOUR PHONE IS JUST THE AUTHENTICATOR
-You don't run the heavy work on your phone. The agents live on your computers; your phone holds the cryptographic identity that vouches for new devices and gives you a window into what's happening. Pairing uses Ed25519 device keys over TLS.
+You don't run the heavy work on your phone. The agents live on your computers; your phone holds the cryptographic identity that vouches for new devices and gives you a window into what's happening. Pairing uses signed ephemeral X25519 keys and a QR-token proof; after pairing, owner-channel payloads are end-to-end encrypted.
 
 WORKS WITH THE HARNESS YOU USE
 Outpost-Pi rides alongside the coding-agent setup you already run on your machines instead of replacing it.
 
 OPEN SOURCE & SELF-HOSTABLE
-Outpost-Pi is open source. Start with the public relay, or point the app at your own self-hosted relay so the connection between your devices runs on infrastructure you control.
+Outpost-Pi is open source and self-hostable. Enter the URL of the relay you operate so your devices connect through infrastructure you control.
 
 Built for developers who want their agents within reach — on the couch, on the move, or away from the desk.
 ```
 
-## What's New (1.0.1)
+## What's New (0.3.0)
 ```
 First public release of Outpost-Pi. Pair your phone with your machines, watch your coding agents work in real time, and approve their tool calls from anywhere. Feedback is very welcome.
 ```
@@ -93,14 +93,11 @@ Privacy Policy URL: https://outpost-pi.kevoun.com/privacy
 - **Age rating:** 4+ (no sensitive content)
 
 ## App Privacy
-Declare **Data Not Collected**.
-
-Rationale: no analytics/crash SDK; ML Kit (QR scan via `mobile_scanner`) is
-on-device; `flutter_secure_storage` / `hive` are local-only; the relay only
-routes ephemeral traffic.
-
-> Confirm the public relay does not persist/log personal data. If it does, that
-> data type must be declared instead.
+Do **not** pre-declare Data Not Collected. Before completing the privacy form,
+review the relay's mesh-membership retention: the app publishes and fetches
+owner-signed membership records containing public keys, relay URLs, timestamps,
+and nicknames, which the relay persists. Map those fields and the deployment's
+logging/retention policy to the store's current definitions.
 
 ---
 
@@ -156,13 +153,13 @@ WHY A DEMO VIDEO IS PROVIDED
 Pairing requires a live companion machine, and each pairing code is single-use and expires after 60 seconds (a security measure). A static code in these notes would expire before review. The video here — [PUBLIC VIDEO LINK] — shows the complete flow end to end on a physical iPhone: pairing, the live session list across machines, streaming agent output, and approving a tool call.
 
 WHAT YOU CAN VERIFY WITHOUT A COMPANION
-On a fresh install you can complete onboarding, choose the public relay, and reach the pairing screen. The camera permission is used only to scan the pairing QR shown by the companion machine. A "Can't scan? Paste code instead" option accepts the code as text, so no camera or second device is required to exercise the pairing UI.
+On a fresh install you can complete onboarding by entering a self-hosted relay URL and reach the pairing screen. The camera permission supports pairing-QR scans and image attachments; a "Can't scan? Paste code instead" option accepts the pairing code as text, so no camera or second device is required to exercise the pairing UI.
 
 LIVE DEMO ON REQUEST
 If you would like to exercise pairing live, contact us via Resolution Center and we will bring a sandboxed demo machine online and provide a fresh pairing code in real time.
 
 NETWORK & PRIVACY
-The app connects to a relay over TLS to reach your machines. Public relays must use TLS; cleartext (http/ws) is permitted only on the local network for self-hosted relays. No personal data is collected.
+Post-pair owner-channel payloads are end-to-end encrypted; pairing frames and routing metadata remain relay-visible. The app accepts `https://` relay URLs (opened as `wss://`) and `http://` for local cleartext deployments (opened as `ws://`); direct `ws://`/`wss://` input is rejected. Current Android releases do not support cleartext relays (no cleartext network config); iOS permits cleartext only for local networking. Review the relay's mesh-membership retention and logging before completing store privacy disclosures.
 
 CONTACT
 Kevoun — <operator contact email>
@@ -172,7 +169,7 @@ Kevoun — <operator contact email>
 Record on the same iPhone 17 Pro Max used for screenshots. Have a Mac running
 the relay + harness + a coding agent on a **sandboxed / innocuous project**.
 
-1. Launch app → onboarding → relay = **community** (default)
+1. Launch app → onboarding → enter the sandboxed relay URL
 2. Pair step → scan the QR shown on the Mac (or show "Can't scan? Paste code instead")
 3. Sessions / peer list with **1–2 active sessions** visible (the mesh)
 4. Open a chat → show the agent **streaming** output live
@@ -187,23 +184,23 @@ above. (A direct .mp4 can also be uploaded to the attachment field.)
 
 # Google Play (Android)
 
-Reuses the same brand voice and the **no-E2E copy rule** above.
+Reuses the same brand voice and the protection-copy rule above.
 
 - **applicationId:** `dev.kevoun.outpostpi` (Play namespace is independent of
   Apple — the iOS rename does NOT apply here; this ID is fine on Play)
 - **Min SDK:** API 34 (Android 14) — intentional, `outpost_pi_identity` needs
   Block Store. **Target SDK:** Flutter default (verify it meets Play's current
   minimum target — API 35 for new apps).
-- **Signing:** already configured. Upload key in `android/signing/outpostpi-release.jks`
-  (alias `outpostpi`), loaded via `android/key.properties`. On first upload, enroll
-  in **Play App Signing** (Google manages the app key; this keystore is the upload key).
-  - Upload key **SHA-1:** `C6:F8:AF:C9:4B:31:98:D7:5B:75:08:78:4E:F3:8C:AD:70:1A:06:89`
-  - Upload key **SHA-256:** `92:5C:FB:3B:90:76:E0:81:19:E0:12:5B:34:77:38:44:9B:70:BF:CF:53:8F:8A:DC:A6:63:5A:68:AC:B1:9E:40`
-  - ⚠️ **Back up this keystore + `key.properties` securely.** Losing the upload key
-    means contacting Google to reset it; losing it before Play App Signing enrollment
-    is unrecoverable.
+- **Signing:** local-only. Before any release task, provide `android/key.properties`
+  with non-blank `storeFile`, `storePassword`, `keyAlias`, and `keyPassword`, plus
+  the referenced keystore. The release-task guard intentionally fails without them;
+  release builds never fall back to debug signing. On first upload, enroll in **Play
+  App Signing** (Google manages the app key; the local keystore is the upload key).
+  - ⚠️ **Back up the upload keystore + `key.properties` securely.** Losing the upload
+    key means contacting Google to reset it; losing it before Play App Signing
+    enrollment is unrecoverable.
 - **Bundle:** `flutter build appbundle --release` → `build/app/outputs/bundle/release/app-release.aab`
-  (Play requires `.aab`, not `.apk`). Current: versionCode 2, versionName 1.0.1.
+  (Play requires `.aab`, not `.apk`). Current: versionCode 3, versionName 0.3.0.
 
 ## Listing fields
 
@@ -233,13 +230,13 @@ WHAT YOU CAN DO
 • Move between machines without losing context
 
 YOUR PHONE IS JUST THE AUTHENTICATOR
-You don't run the heavy work on your phone. The agents live on your computers; your phone holds the cryptographic identity that vouches for new devices and gives you a window into what's happening. Pairing uses Ed25519 device keys over TLS.
+You don't run the heavy work on your phone. The agents live on your computers; your phone holds the cryptographic identity that vouches for new devices and gives you a window into what's happening. Pairing uses signed ephemeral X25519 keys and a QR-token proof; after pairing, owner-channel payloads are end-to-end encrypted.
 
 WORKS WITH THE HARNESS YOU USE
 Outpost-Pi rides alongside the coding-agent setup you already run on your machines instead of replacing it.
 
 OPEN SOURCE & SELF-HOSTABLE
-Outpost-Pi is open source. Start with the public relay, or point the app at your own self-hosted relay so the connection between your devices runs on infrastructure you control.
+Outpost-Pi is open source and self-hostable. Enter the URL of the relay you operate so your devices connect through infrastructure you control.
 
 Built for developers who want their agents within reach — on the couch, on the move, or away from the desk.
 ```
@@ -260,10 +257,12 @@ Built for developers who want their agents within reach — on the couch, on the
 - **Tablet screenshots:** optional (only if you want the "Designed for tablets" badge).
 
 ## Data safety form (Play's privacy questionnaire — required)
-- **Data collected / shared:** None. No analytics/crash SDK; ML Kit (QR) is on-device;
-  storage is local; the relay only routes ephemeral traffic.
-- Declare the **Camera** permission usage (QR scan, on-device, not collected).
-- Confirm the public relay does not persist personal data (else declare it).
+- Do **not** pre-declare Data collected / shared: None. Review the relay's
+  mesh-membership retention first: the app publishes and fetches owner-signed records
+  containing public keys, relay URLs, timestamps, and nicknames, which the relay
+  persists. Map those fields and deployment logging/retention to Play's current form.
+- Declare the **Camera** permission for pairing-QR scans and image attachments, then
+  answer collection questions from the actual deployment behavior.
 
 ## Content rating
 Complete the IARC questionnaire → expected **Everyone / PEGI 3** (no sensitive content).
@@ -275,21 +274,12 @@ explaining the app is a companion to a desktop coding-agent harness, that no log
 required, and link the **demo video** (see the iOS recording checklist above — the same
 video works). Optionally add it as the listing **Promo video** (YouTube).
 
-## Known Android gaps / v1.1 follow-ups (not submission blockers)
+## Android release verification
 
-**1. 16 KB memory page alignment.** Play warns the app isn't compatible with 16 KB
-page sizes (publishable with the warning for now, but a growing hard requirement).
-Two native libs from `mobile_scanner` (5.2.3) are 4 KB-aligned, not 16 KB:
-- `libbarhopper_v3.so` (GoogleMLKit barcode)
-- `libimage_processing_util_jni.so` (CameraX)
-
-The Flutter/Dart libs (`libapp.so`, `libflutter.so`, `libdartjni.so`) are already
-16 KB-aligned. Fix for v1.1: upgrade `mobile_scanner` to 7.x (pulls 16 KB-aligned
-MLKit + CameraX; needs Dart scanner-API migration + test), or override the MLKit/
-CameraX dependency versions in `android/app/build.gradle.kts`. Shipping v1 with the
-warning is low-risk: 16 KB-page devices are rare and the app has a camera-less
-"Paste code" pairing fallback. Verify with:
-`flutter build appbundle --release` then check `.so` LOAD-segment alignment ≥ 0x4000.
+**1. 16 KB memory page alignment.** This is handled by explicit 16 KB-aligned ML
+Kit and CameraX dependency pins in `android/app/build.gradle.kts`. Before every Play
+release, build the AAB and verify every packaged native `.so` has LOAD-segment
+alignment ≥ `0x4000`; dependency resolution can change the final artifact.
 
 **2. Cleartext to local relays.** `AndroidManifest.xml` has no `usesCleartextTraffic`
 / network-security-config, so **http:// self-hosted local relays won't connect on
