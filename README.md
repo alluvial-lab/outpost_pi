@@ -13,9 +13,9 @@
 
 ## Links
 
-- **Official site** — <https://outpost-pi.kevoun.com>
-- **Package documentation** — <https://pi.dev/packages/outpost-pi?name=outpost-pi>
-- **GitHub** — <https://github.com/KevounC/outpost_pi>
+- **Official site** — _TBD_
+- **Package documentation** — _TBD_
+- **GitHub** — <https://github.com/alluvial-lab/outpost_pi>
 
 ### Downloads
 
@@ -23,7 +23,7 @@
 |---|---|
 | Google Play (Android) | _Coming soon — sideload-only as of app-v0.3.x (post-rebrand applicationId)_ |
 | App Store (iOS) | _Unavailable until operator-owned Apple signing and listing are provisioned_ |
-| APK (sideload, Android) | [GitHub Releases](https://github.com/KevounC/outpost_pi/releases) |
+| APK (sideload, Android) | [GitHub Releases](https://github.com/alluvial-lab/outpost_pi/releases) |
 
 ## What's in this repo
 

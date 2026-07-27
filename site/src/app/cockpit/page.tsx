@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     "Outpost-Pi Cockpit — a desktop command center for Pi. Run a fleet of AI agents and real terminals side by side, each in its own folder, in one window.",
 };
 
-const GITHUB_URL = "https://github.com/KevounC/outpost_pi";
+const GITHUB_URL = "https://github.com/alluvial-lab/outpost_pi";
 
 /* requires-Pi line shown next to each download CTA (honest onboarding note) */
 function RequiresPi() {
