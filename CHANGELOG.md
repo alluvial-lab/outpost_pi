@@ -39,6 +39,24 @@ The owner-channel security arc: end-to-end owner-message protection, owner-ident
 
 ---
 
+## [app-v0.3.0] — 2026-07-27
+
+App component release companion to repo v0.3.0, which carried the paired owner-channel E2E + owner-identity transition arc (app side: sealed frames, per-pairing X25519 keys, transition wipe, replacement-session wake confirmation). This release binds the app-only hardening items. Deployed for UAT as debug APK `0.3.0+2`; pre-E2E pairings re-pair once at cutover.
+
+### Security
+- **Failure details no longer logged raw on mobile** — diagnostics carry closed reason codes, not server error text. (`gate-security-mobile-failure-detail-logged`)
+- **Owner reset wipes transcripts alongside pairings** — residual prior-owner transcript boxes are deleted on reset/transition. (`gate-security-owner-reset-retains-transcripts`)
+- **Owner-key version rollback hardening** — the monotonic version floor survives pairing wipes; a rolled-back mesh blob can't win after re-pair. (`app-owner-key-version-rollback-hardening`)
+
+### Fixes
+- **Pairing survives channel traffic racing `pair_ok`** — the handshake now reads replies by `in_reply_to` instead of assuming the next frame is the reply, so a backlog flush can no longer crash pairing with `FormatException`. (`story-pairing-flow-single-frame-read-race`)
+
+### Cleanup & docs
+- Removed the dead `savePeerSilent` export; silent mesh-apply coverage retained. (`gate-cruft-savepeersilent-dead-export`)
+- Doc drift fixes: `pullOnDemand` references, DebugLog env_id_tail correlation contract. (`gate-docs-pullandapply-stale-refs`, `gate-docs-debug-log-env-id-tail-correlation`)
+
+---
+
 ## [v0.2.0] — 2026-07-20
 
 First post-rebrand repo-level release. The cross-cutting companion to the
