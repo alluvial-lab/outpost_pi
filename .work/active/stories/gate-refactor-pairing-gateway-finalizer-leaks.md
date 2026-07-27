@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-pairing-gateway-finalizer-leaks
 kind: story
-stage: review
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
@@ -43,3 +43,12 @@ and a timeout-cleanup test.
 - Re-checks closure after each awaited startup/poll operation; late-created seams are also deleted if cancellation won the creation race.
 - Replaced timing-based pairing tests with deterministic timer and RPC fakes. The exit-during-start barrier verifies neither timer is installed, and boot timeout verifies process disposal, timer cancellation, event closure, and seam deletion.
 - Verification: `flutter test test/core/data/relay/pairing_gateway_impl_test.dart` and `flutter analyze` passed.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-27): diffs inspected —
+serialized finalizer with _closed re-checks after every await, SIGTERM
+await + SIGKILL escalation + final-exit await before dir removal, stale
+pair-code row removed. Orchestrator-verified: flutter analyze clean, 267
+tests green (incl. new deterministic fake-process and interleaving tests).
+Approved -> done.
