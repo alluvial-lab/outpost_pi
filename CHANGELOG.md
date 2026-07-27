@@ -57,6 +57,22 @@ App component release companion to repo v0.3.0, which carried the paired owner-c
 
 ---
 
+## [cockpit-v0.3.0] — 2026-07-27
+
+Cockpit component release companion to repo v0.3.0. Headline: cockpit pairing is repaired after the extension's pairing QR moved TUI-only — the pairing gateway now retrieves the code through a private file seam, and the seam itself is hardened.
+
+### Security
+- **Pairing without model-context tokens** — cockpit pairing spawns its ephemeral RPC pi with a private `OUTPOST_PI_PAIR_CODE_FILE` path (owner-only dir) instead of reading the removed `outpost-pi:pair-code` custom message; `outpost-pi:paired` completion retained. Seam writes are exclusive-`0600` temp + fsync + symlink/pre-existing-target rejection + atomic rename. (`gate-cruft-cockpit-pair-code-consumer-dead`, `gate-security-pair-code-file-preexisting-perms-window`)
+- **Diagnostic privacy hardening** — temp-workspace traces, formatter reload paths, LSP stderr, and unknown-RPC wire discriminators no longer leak paths or raw content. (`gate-security-cockpit-temp-workspace-trace`, `gate-security-formatter-reload-diagnostics-path-disclosure`, `gate-security-lsp-stderr-logged`, `gate-security-rpcunknown-retains-wire-discriminator`)
+
+### Fixes
+- **Pairing lifecycle leaks closed** — one serialized finalizer covers timeout/exit/cancel/startup-failure (incl. the token-bearing seam dir); ephemeral pi processes get SIGTERM-await → SIGKILL escalation → final-exit confirmation before directory removal. (`gate-refactor-pairing-gateway-finalizer-leaks`, `gate-refactor-ephemeral-pi-rpc-sigterm-no-await`)
+
+### Documentation
+- RPC protocol table + `RpcNotice` dartdoc rolled forward past the removed pair-code event. (`gate-docs-cockpit-rpc-protocol-pair-code-row`)
+
+---
+
 ## [v0.2.0] — 2026-07-20
 
 First post-rebrand repo-level release. The cross-cutting companion to the
