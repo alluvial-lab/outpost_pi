@@ -15,7 +15,9 @@ import 'mesh_envelope.dart';
 /// [PairingStorage] (local cache) and the [MeshClient] (network).
 ///
 /// Single source of truth for the Owner's membership is the relay
-/// (plan/24); the local storage is a hydrated cache. Mutations:
+/// (plan/24); the local storage is a hydrated cache — except device-local
+/// owner-channel keys, which blob authority can never destroy (see
+/// [_replaceLocalCacheWith]). Mutations:
 ///   1. write through to local storage immediately (UI responsiveness)
 ///   2. publish in background; on conflict/failure, the next
 ///      [pullOnDemand] reconciles.
@@ -285,9 +287,31 @@ class MeshSyncService extends ChangeNotifier {
   }
 
   /// Overwrite local peers + nicknames with what the relay says.
-  /// Implements the "relay is source of truth" contract from plan/24:
-  /// any peer in the local cache but absent from `blob.members` is
-  /// removed; renamed nicknames propagate; relay_url updates.
+  /// Implements the "relay is source of truth" contract from plan/24 with
+  /// two qualifications added after the 2026-07-26/27 pairing-bricking
+  /// incident (story-mesh-reconciliation-deletes-pairing-channel):
+  ///
+  ///   1. **Canonical epk matching.** PairingStorage keys records by the
+  ///      QR/pair_ok string (base64url) while blob members are published
+  ///      base64 standard (see [_publishOnce]). Raw string equality across
+  ///      that boundary misses same-key records: the keep-set check used to
+  ///      delete the channel-bearing local record and hydrate a channel-less
+  ///      duplicate under the standard spelling, bricking the pairing on the
+  ///      next cold-start pull. All membership matching here is by canonical
+  ///      (standard-b64) form; a matched local record keeps its stored
+  ///      spelling, and a genuinely new member hydrates under the
+  ///      storage-canonical (base64url) spelling so a later pairing
+  ///      overwrites it instead of duplicating it.
+  ///   2. **Blob absence is not revocation authority for paired records.**
+  ///      The blob is a last-writer-wins register that can lag this device's
+  ///      latest pairing, and owner-channel keys are device-local and
+  ///      unrecoverable without re-pair. A channel-bearing record absent
+  ///      from the blob is kept whole; if the peer was genuinely revoked
+  ///      elsewhere it becomes a harmless ghost (the Pi self-revoked, so
+  ///      the channel is dead) that the user revokes locally. Channel-less
+  ///      (metadata-only hydrated) records absent from the blob are still
+  ///      removed, so revocation and roster hygiene propagate for records
+  ///      this device never paired.
   ///
   /// Uses the **silent** variants of save/delete so the mutation hook
   /// (which republishes) does not fire. Otherwise every pull would
@@ -308,14 +332,31 @@ class MeshSyncService extends ChangeNotifier {
 
     final peers = await _storage.listPeers();
     if (!current()) return false;
-    final existing = {for (final p in peers) p.remoteEpk: p};
+    // Canonical-epk survivor map. Incident debris and pre-fix hydrations can
+    // leave one member stored under two spellings; collapse each canonical
+    // key to a single surviving record (see [_preferSurvivor]).
+    final survivors = <String, PeerRecord>{};
+    final shadowed = Set<PeerRecord>.identity();
+    for (final p in peers) {
+      final key = toStandardB64(p.remoteEpk);
+      final prev = survivors[key];
+      if (prev == null) {
+        survivors[key] = p;
+      } else {
+        final (keepRecord, dropRecord) = _preferSurvivor(prev, p);
+        survivors[key] = keepRecord;
+        shadowed.add(dropRecord);
+      }
+    }
+
     final keep = <String>{};
     for (final m in blob.members) {
       if (!current()) return false;
-      keep.add(m.remoteEpk);
-      final prev = existing[m.remoteEpk];
+      final key = toStandardB64(m.remoteEpk);
+      keep.add(key);
+      final prev = survivors[key];
       final next = PeerRecord(
-        remoteEpk: m.remoteEpk,
+        remoteEpk: prev?.remoteEpk ?? toAppEpk(m.remoteEpk),
         sessionName: prev?.sessionName ?? m.nickname ?? 'outpost_pi',
         relayUrl: m.relayUrl,
         pairedAt: m.pairedAt,
@@ -332,9 +373,31 @@ class MeshSyncService extends ChangeNotifier {
         if (!current()) return false;
       }
     }
-    for (final p in existing.values) {
+    for (final p in peers) {
       if (!current()) return false;
-      if (!keep.contains(p.remoteEpk)) {
+      if (shadowed.contains(p)) {
+        // Same-key duplicate under a second spelling. Only metadata-only
+        // shadows are droppable; a channel-bearing duplicate should not
+        // exist (pairing writes one record per spelling) and is kept
+        // defensively rather than destroying unrecoverable keys.
+        if (p.channel == null) {
+          await _storage.deletePeerSilent(p.remoteEpk);
+          if (!current()) return false;
+          await _storage.deleteRooms(p.remoteEpk);
+          if (!current()) return false;
+        }
+        continue;
+      }
+      if (!keep.contains(toStandardB64(p.remoteEpk))) {
+        if (p.channel != null) {
+          // Blob absence is not revocation authority for a paired record —
+          // see the method doc. Kept whole, rooms included.
+          debugPrint(
+            'MeshSyncService: kept channel-bearing peer '
+            '${_epkTail(p.remoteEpk)} absent from mesh blob v${blob.version}',
+          );
+          continue;
+        }
         await _storage.deletePeerSilent(p.remoteEpk);
         if (!current()) return false;
         await _storage.deleteRooms(p.remoteEpk);
@@ -343,6 +406,24 @@ class MeshSyncService extends ChangeNotifier {
     }
     return current();
   }
+
+  /// Pick the surviving record for one canonical epk stored under two
+  /// spellings. A channel-bearing record always wins: owner-channel keys
+  /// are device-local and unrecoverable, while metadata-only hydrations are
+  /// replaceable. Ties prefer the storage-canonical (base64url) spelling so
+  /// the survivor matches what the pairing flow writes.
+  (PeerRecord, PeerRecord) _preferSurvivor(PeerRecord a, PeerRecord b) {
+    final aHasChannel = a.channel != null;
+    final bHasChannel = b.channel != null;
+    if (aHasChannel != bHasChannel) return aHasChannel ? (a, b) : (b, a);
+    final aCanonical = a.remoteEpk == toAppEpk(a.remoteEpk);
+    final bCanonical = b.remoteEpk == toAppEpk(b.remoteEpk);
+    if (aCanonical != bCanonical) return aCanonical ? (a, b) : (b, a);
+    return (a, b);
+  }
+
+  static String _epkTail(String epk) =>
+      epk.length <= 8 ? epk : epk.substring(epk.length - 8);
 
   Future<bool> _restoreProtectedLocalSnapshot(
     List<PeerRecord> protectedPeers, {
