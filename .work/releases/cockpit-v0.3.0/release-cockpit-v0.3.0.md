@@ -1,7 +1,7 @@
 ---
 id: release-cockpit-v0.3.0
 kind: release
-stage: quality-gate
+stage: released
 tags: []
 parent: null
 depends_on: []
@@ -53,3 +53,16 @@ Archived stub (1), late-bound 2026-07-27 per operator decision:
 - **gate-refactor** — 2 findings (both high, lifecycle):
   `gate-refactor-pairing-gateway-finalizer-leaks`,
   `gate-refactor-ephemeral-pi-rpc-sigterm-no-await` (bound, in fix wave).
+
+## Shipped (2026-07-27)
+
+- Readiness GREEN: 9/9 bound items done (6 original + 3 gate findings).
+- Changelog cockpit-v0.3.0 entry committed; local tag `cockpit-v0.3.0` cut
+  on 530cf7b (operator pushes).
+- **UAT: PASS with note (operator, 2026-07-27): the operator does not use
+  cockpit.** Evidence accepted in lieu of a live cockpit smoke: 267-test
+  suite incl. new deterministic lifecycle/interleaving tests, gate
+  verified-clean list, and the extension-side live smoke of the pairing
+  surface. The next live cockpit pairing will exercise the seam flow for
+  real; the crash-orphan seam-dir sweep is parked
+  (`gate-security-cockpit-stale-pair-dir-orphan-sweep`).
