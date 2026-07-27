@@ -5,10 +5,10 @@ stage: done
 tags: [cockpit, security]
 parent: feature-diagnostic-privacy-hardening
 depends_on: []
-release_binding: null
+release_binding: cockpit-v0.3.0
 gate_origin: security
 created: 2026-07-20
-updated: 2026-07-23
+updated: 2026-07-27
 ---
 
 # Production workspace flow writes paths to a predictable temp trace
