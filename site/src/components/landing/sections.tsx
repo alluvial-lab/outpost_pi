@@ -16,7 +16,7 @@ import {
 } from "@/components/landing/icons";
 import type { ReactNode } from "react";
 
-const GITHUB_URL = "https://github.com/KevounC/outpost_pi";
+const GITHUB_URL = "https://github.com/alluvial-lab/outpost_pi";
 const PROTOCOL_URL = `${GITHUB_URL}/blob/main/PROTOCOL.md`;
 
 /* ---------------- Pillars ---------------- */

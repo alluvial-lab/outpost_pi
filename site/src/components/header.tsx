@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { LogoMark, IconDownload } from "@/components/landing/icons";
 
-const GITHUB_URL = "https://github.com/KevounC/outpost_pi";
+const GITHUB_URL = "https://github.com/alluvial-lab/outpost_pi";
 
 function HamburgerIcon({ open }: { open: boolean }) {
   return (

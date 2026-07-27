@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { LegalShell, LegalSection } from "@/components/legal-shell";
 
-const GITHUB_URL = "https://github.com/KevounC/outpost_pi";
+const GITHUB_URL = "https://github.com/alluvial-lab/outpost_pi";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
