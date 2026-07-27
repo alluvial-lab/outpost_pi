@@ -1,14 +1,21 @@
 # Outpost-Pi — Site
 
 Landing page for [Outpost-Pi](https://github.com/KevounC/outpost_pi) — the
-project that lets you control a Pi coding agent from your phone over a
-TLS-protected relay connection with Ed25519 pairing authentication. After pairing,
-app↔Pi owner-channel payloads are end-to-end encrypted and authenticated; the relay
-still sees routing metadata, and cross-PC Pi↔Pi envelopes remain relay-readable.
+project that lets you control a Pi coding agent from your phone through a
+self-hosted relay with Ed25519 challenge-response authentication. Direct relay
+connections use cleartext `ws://`; `wss://` requires an external TLS-terminating
+reverse proxy. After pairing, app↔Pi owner-channel payloads are end-to-end encrypted
+and authenticated; the relay still sees routing metadata, and cross-PC Pi↔Pi envelopes
+remain relay-readable.
 
-This package ships three static routes:
+This package provides these routes:
 
 - `/` — landing (hero, features, quick start, GitHub CTA)
+- `/cockpit` — Cockpit overview
+- `/docs` — documentation
+- `/download` — app and Cockpit downloads
+- `/why` — product rationale
+- `/tutorials` and topic pages — tutorials
 - `/terms` — Terms of Service
 - `/privacy` — Privacy Policy (LGPD)
 
@@ -29,7 +36,7 @@ Dark-only theme; visual identity lives in `../branding/`.
 ```bash
 pnpm install   # install deps
 pnpm dev       # dev server at http://localhost:3000
-pnpm build     # production build (SSG)
+pnpm build     # production standalone build
 pnpm start     # serve the production build
 pnpm lint      # ESLint
 ```
@@ -41,18 +48,26 @@ src/
 ├── app/
 │   ├── layout.tsx              # Root layout: header + main + footer, global metadata
 │   ├── page.tsx                # Landing
+│   ├── cockpit/page.tsx        # Cockpit overview
+│   ├── docs/page.tsx           # Documentation
+│   ├── download/page.tsx       # App and Cockpit downloads
+│   ├── why/page.tsx            # Product rationale
+│   ├── tutorials/              # Tutorial index and topic pages
+│   ├── terms/page.tsx
+│   ├── privacy/page.tsx
 │   ├── icon.svg                # Favicon (served as /icon.svg)
 │   ├── opengraph-image.tsx     # Generated OG image (next/og)
-│   ├── globals.css             # Tailwind + design tokens
-│   ├── terms/page.tsx
-│   └── privacy/page.tsx
-└── components/
-    ├── header.tsx              # Logo + nav
-    ├── footer.tsx              # Terms/Privacy/GitHub + copyright
-    ├── hero.tsx                # Landing hero
-    ├── feature-card.tsx        # Reusable card
-    ├── code-block.tsx          # Snippet block
-    └── legal-shell.tsx         # Shared shell for legal pages
+│   └── globals.css             # Tailwind + design tokens
+├── components/
+│   ├── header.tsx              # Logo + nav
+│   ├── footer.tsx              # Terms/Privacy/GitHub + copyright
+│   ├── landing/                # Landing-specific components
+│   ├── download/               # Download-specific components
+│   ├── code-block.tsx          # Snippet block
+│   └── legal-shell.tsx         # Shared shell for legal pages
+└── lib/
+    ├── app-release.ts          # Request-time app release manifest
+    └── cockpit-release.ts      # Request-time Cockpit release manifest
 ```
 
 ## Conventions
@@ -64,5 +79,6 @@ src/
 
 ## Deploy
 
-Vercel is the expected target (zero-config for Next.js). Domain wiring is
-handled outside this repo.
+Production runs as a locally built standalone Docker image; use
+`./build-docker.sh` to build it. Vercel is optional for contributor previews.
+Domain wiring is handled outside this repo.

@@ -14,7 +14,7 @@ app/extension/relay, read `../.agents/skills/mobile-remote-coding/SKILL.md`.
 - State management: `ChangeNotifier` + `provider` (reactive ViewModels)
 - DI: `auto_injector` (registry in `lib/config/`)
 - Routing: `go_router`
-- Typed result: `Result<T, E>` (explicit success/failure)
+- Outcomes: feature-specific sealed result hierarchies (for example, mesh fetch/publish) plus typed exceptions such as `PairingError`
 - Crypto: `package:cryptography` (X25519 / Ed25519 / HKDF-SHA256 / XChaCha20-Poly1305 — the owner-channel E2E stack in `lib/data/transport/secure_channel.dart`)
 - WebSocket: `web_socket_channel` or similar
 
@@ -32,7 +32,7 @@ so online `pub get` works (or `--offline` if the cache is already populated).
 cd app
 export PUB_CACHE=~/projects/outpost_pi/.pub-cache
 ~/projects/outpost_pi/.tools/flutter/bin/flutter pub get
-~/projects/outpost_pi/.tools/flutter/bin/flutter analyze              # must pass with zero issues
+~/projects/outpost_pi/.tools/flutter/bin/flutter analyze              # no warnings or errors
 ~/projects/outpost_pi/.tools/flutter/bin/flutter test --exclude-tags e2e
 # From the repository root, run the dedicated E2E pairing harness:
 # e2e/run-pairing.sh
@@ -41,8 +41,8 @@ export PUB_CACHE=~/projects/outpost_pi/.pub-cache
 
 - `dart format .` — formats (or `~/.tools/flutter/bin/cache/dart-sdk/bin/dart format .`)
 
-Note: `flutter analyze` in `app/` emits one pre-existing, unrelated `info`:
-deprecated `axisAlignment` in `lib/ui/chat/widgets/input_bar.dart:802`. Do not fail reviews because of it.
+Note: `flutter analyze` in `app/` emits one known `deprecated_member_use` `info` at
+`lib/ui/chat/widgets/input_bar.dart:806` (`axisAlignment`; explanatory comment at line 802). Do not fail reviews because of it.
 
 > For the complete APK build path on the dev VM (`codebox`) — JDK 21 toolchain
 > + Android SDK API 36, `--release --split-per-abi` build (~31 MB per ABI), and the
@@ -85,7 +85,7 @@ ui ──► domain ◄── data
 
 - `domain/` **does not** import anything from `data/`, `ui/`, `routing/`, or `config/`.
 - `data/` imports contracts from `domain/`, never from `ui/`.
-- `ui/` consumes `domain/` (use cases) through ViewModels — it never calls `data/` directly.
+- `ui/` ViewModels consume selected `data/` repositories/services directly; pages still interact through their ViewModels.
 - `config/` is the only place that knows all layers (to register bindings).
 
 ## Conventions
@@ -96,7 +96,7 @@ ui ──► domain ◄── data
 - **Barrel files**: each feature/module can expose a `<name>.dart` aggregating
   public symbols; external consumers import only the barrel
 - **Async**: prefer typed `Future`/`Stream`, avoid `dynamic`
-- **Errors**: `Result<T, E>` or typed exceptions; never generic `catch (e)` in production
+- **Errors**: prefer feature-specific sealed outcomes or typed exceptions; at infrastructure boundaries, convert catch-alls to safe typed outcomes or bounded-context logs
 - **ViewModels**: registered in `config/` and injected in `routing/` through Provider;
   pages never instantiate ViewModels directly — always use `context.watch/read/select`
 

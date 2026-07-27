@@ -4,8 +4,10 @@ Before editing or reviewing `cockpit/`, read the stack reference in [`../.agents
 
 Outpost-Pi's **desktop** client (macOS first). A multi-pane GUI over the Pi engine:
 projects on the left, agents in the center, file tree on the right. Each agent is a
-`pi --mode rpc` that the app spawns and drives **locally** — no relay, pairing, or
-crypto. It is the local counterpart to `app/` (the remote gateway). Reference plan:
+local `pi --mode rpc` process that the app spawns and drives. Through its
+extension-loaded RPC sessions, Cockpit also exposes relay controls and mobile
+pairing; cryptography remains extension-owned. It is the local counterpart to `app/`
+(the remote gateway). Reference plan:
 [`../plan/37-desktop-cockpit.md`](../plan/37-desktop-cockpit.md).
 
 ## Current scope (post-refactor: workspace projection + remote control)
@@ -17,8 +19,12 @@ projections**: the workspace is a pure `WorkspaceDocument` (`LeafPane`/
 derived from `pi --mode rpc` state — the UI consumes immutable projections, not
 direct mutable fields. Workspace mutations go through pure *command transforms*
 (`WorkspaceDocumentCommands` → `WorkspaceCommandResult`) with a single reducer
-(`CockpitViewModel._applyWorkspaceCommand`). Remote control (relay/mesh/crypto) is
-active through the RPC-control overlay — the pi extensions remain loaded.
+(`CockpitViewModel._applyWorkspaceCommand`). Remote-control surfaces use three
+distinct paths: (1) **structured relay overlay commands** (`relay_on`/`off`/`toggle`/`status`,
+`rename`) ride the cockpit-control schema over a live RPC session; (2) **Settings**
+relays through the CLI adapter and reads paired devices from `peers.json`; (3)
+**pairing and revocation** run as dedicated ephemeral RPC prompt sessions. The pi
+extensions remain loaded and own all cryptography — Cockpit performs no crypto itself.
 
 Settled decisions (plan 37, 2026-06-05; revised in bold-refactor):
 
@@ -175,12 +181,9 @@ await viewModel.spawnAgent().onSuccess((_) {
 ## Do NOT
 
 - Edit files outside `cockpit/`
-- Add **relay, mesh, crypto, or pairing** at this stage — Cockpit is local-only
-  (decision B). Remote reachability is a future evolution (plan 37)
-- Create **panes/multiplexing** before revalidating the concept with the basic
-  layout (plan 37 — panes deliberately deferred)
 - Reuse the plan 26 supervisor (decision C — own spawn)
-- Implement crypto manually (there is no crypto at this stage)
+- Implement cryptography manually — the extension owns pairing keys and
+  owner-channel cryptography
 - Commit `build/`, `.dart_tool/`, `macos/Pods/`
 - Add a dependency without registering it in plan 37
 - Mix responsibilities between layers/features — when in doubt, read

@@ -1,12 +1,14 @@
 # Outpost-Pi — Relay (Rust)
 
 WebSocket server that pairs connections by `peer_id` and forwards app↔Pi and
-cross-PC traffic. TLS terminates at the relay: app↔Pi owner-channel payloads
-are app-layer E2E ciphertext (opaque to the relay), while cross-PC Pi↔Pi
-payloads remain relay-readable plaintext; routing handlers treat all payloads
-as opaque and never log them. Message routing has no durable queue. The relay
-persists only signed mesh membership in SQLite and keeps room, presence,
-registry, and metrics state in memory.
+cross-PC traffic. Its direct listener serves cleartext `ws://`; use `wss://`
+only behind an external TLS-terminating reverse proxy. The reference deployment
+uses plain `ws://` on a LAN/tailnet. App↔Pi owner-channel payloads are
+app-layer E2E ciphertext (opaque to the relay), while cross-PC Pi↔Pi payloads
+remain relay-readable plaintext; routing handlers treat all payloads as opaque
+and never log them. Message routing has no durable queue. The relay persists
+only signed mesh membership in SQLite and keeps room, presence, registry, and
+metrics state in memory.
 
 Before editing or reviewing relay code, read the agent-neutral Rust relay reference at `../.agents/skills/rust-relay/SKILL.md`.
 
@@ -38,14 +40,16 @@ Before editing or reviewing relay code, read the agent-neutral Rust relay refere
 
 ## Security policy
 
-- TLS protects traffic in transit. The app↔Pi owner channel carries app-layer
-  E2E-encrypted payloads (`outpost-pi-owner-channel-v1` sealed frames — the
-  relay sees ciphertext); cross-PC Pi↔Pi payloads are NOT E2E and remain
-  relay-readable
+- The direct listener is cleartext `ws://`; use an external TLS-terminating
+  reverse proxy when transport encryption (`wss://`) is required. The app↔Pi
+  owner channel carries app-layer E2E-encrypted payloads
+  (`outpost-pi-owner-channel-v1` sealed frames — the relay sees ciphertext);
+  cross-PC Pi↔Pi payloads are NOT E2E and remain relay-readable
 - Routing code treats payload contents as opaque and does not inspect them for
   application behavior
 - Logs **MUST NOT** contain payload contents
-- Rate limit by `peer_id` and source IP
+- Rate limits are per connection: cross-PC forwarding attempts and
+  presence/rooms control-check peer cost
 
 ## Must not do
 

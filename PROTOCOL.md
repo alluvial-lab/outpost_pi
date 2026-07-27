@@ -3,6 +3,10 @@
 Canonical documentation for the Outpost-Pi protocol and protection model.
 Updated 2026-07-23.
 
+`plan/NN-*` citations in this document are historical references: `plan/`
+was retired to git history (see `docs/DECISIONS.md`); recover a retired
+plan with `git show <commit>:plan/NN-name.md`.
+
 ---
 
 ## 30-second overview
@@ -11,7 +15,11 @@ Updated 2026-07-23.
 - **Each PC** runs `pi-extension` (Node.js daemon) with **one Pi-key** Ed25519 key in the system Keychain (macOS/Linux/Windows)
 - **The mobile app** is the **initial authenticator** (WhatsApp Web QR style) — after pairing, PCs operate autonomously with one another
 - **Owner-key** Ed25519 lives in the mobile Keychain (iOS Keychain / Android Block Store), synced across devices under the same Apple ID / Google Account
-- **Relay** WebSocket routes opaque owner-channel envelopes over TLS + stores Owner-signed `mesh_versions` — it never decides membership and always verifies signatures
+- **Relay** WebSocket routes opaque owner-channel envelopes (TLS when the
+  relay sits behind a TLS-terminating proxy; the reference self-host runs
+  plain `ws` on a LAN/tailnet, where the owner-channel E2E seal is what
+  protects payloads) + stores Owner-signed `mesh_versions` — it never
+  decides membership and always verifies signatures
 - **Cross-PC routing** uses the `<pc>:<peer>` prefix in the envelope; a local UDS broker runs on each PC, and the relay forwards Pi-to-Pi traffic over WS
 
 ---
@@ -43,7 +51,9 @@ Updated 2026-07-23.
 │                    TS wrapper replies without token cost            │
 │                    Legacy busy handled defensively; not emitted     │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Transport         UDS (local)  /  WebSocket over TLS (relay)       │
+│  Transport         UDS (local)  /  WebSocket (relay; TLS when the   │
+│                    endpoint is served over wss, e.g. a reverse      │
+│                    proxy)                                           │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Trust             Ed25519 challenge-response                       │
 │                    Owner-sig on mesh_versions                       │
@@ -199,15 +209,20 @@ Errors are not custom WS frames — they are normal envelopes with `from: "_rela
 
 ```json
 {
-  "version": 7,
-  "owner_pk": "<base64 standard, 32B>",
+  "issued_at": 1747958400000,
   "members": [
-    { "pc_pubkey": "<base64>", "nickname": "casa", "paired_at": "2026-05-22T..." },
-    { "pc_pubkey": "<base64>", "nickname": "trab", "paired_at": "2026-05-23T..." }
+    { "paired_at": "2026-05-22T…", "relay_url": "http://…", 
+      "remote_epk": "<base64>", "nickname": "casa" }
   ],
-  "sig": "<Ed25519(canonical_json) by owner_sk>"
+  "owner_pk": "<base64 standard, 32B>",
+  "version": 7
 }
 ```
+
+Canonical JSON (keys sorted, no whitespace) is signed with the Owner key.
+The HTTP body carries `{blob: base64(canonicalBytes), sig: base64(Ed25519
+signature)}`; the relay responds with its stored `version`/`updated_at`.
+`nickname` is omitted when null.
 
 ### Storage
 
@@ -466,7 +481,12 @@ Details in `plan/04-pairing.md`.
   integrity, and replay; sequence high-waters and derived keys persist across
   reconnects (`peers.json` mode `0600` on the extension, FlutterSecureStorage
   on the app).
-- **WS to the relay over TLS**: no one on the route (ISP, NAT, classic MITM) sees transport plaintext.
+- **WS transport encryption is deployment-dependent**: the relay serves a
+  plain WebSocket; TLS arrives only when the endpoint is served over `wss`
+  (e.g. a TLS-terminating reverse proxy). On the reference LAN/tailnet
+  deployment the owner-channel E2E seal is what protects payload contents —
+  but routing metadata and cross-PC envelopes are visible on a cleartext
+  path.
 - **Cross-PC cryptographic authorization**: the relay forwards only between sibling Pis of the same Owner (verified through the Owner-sig in `mesh_versions`).
 - **Anti-spoofing between Pis**: the broker rejects envelopes whose `envelope.from` prefix does not match authenticated `from_pc`.
 - **Membership anti-rollback**: monotonic versioning + signature prevents a relay/attacker from rolling back the mesh.
@@ -490,8 +510,8 @@ Details in `plan/04-pairing.md`.
 
 | Adversary | Capability | Protected? |
 |---|---|---|
-| Network passive | Sniff TLS | ✅ Yes (TLS cipher) |
-| Network active (MITM) | Sniff + inject | ✅ Yes (TLS + Ed25519 pairing) |
+| Network passive | Sniff the wire | ✅ Payloads (owner-channel E2E seal); transport plaintext only when the relay is deployed behind TLS (`wss`) — metadata and cross-PC envelopes are exposed on cleartext `ws` |
+| Network active (MITM) | Sniff + inject | ⚠️ Partial — owner channel resists active MITM (Ed25519-authenticated pairing + AEAD + replay high-waters); cross-PC envelopes have **no end-to-end integrity on cleartext `ws`** and require authenticated TLS/VPN transport for MITM resistance. Relay challenge-response authenticates the *client* to the relay, not the relay to the client or the envelope end-to-end |
 | Public relay operator | Sees routing metadata (who talks to whom, room names, cwd, model, timing); can read unprotected cross-PC envelopes | ⚠️ Partial — owner-channel payload contents are E2E-protected; mitigation: self-host |
 | Other user on the target PC | Reads target filesystem | ✅ Yes (user-bound Keychain) |
 | Attacker with root on target PC | Memory dump, process injection | ❌ No (acceptable threat model: root = game over) |
@@ -539,4 +559,6 @@ Long term:
 
 ## Report security issues
 
-[Define channel] — for now, open an issue marked `security` or contact the maintainers directly.
+Open an issue marked `security` on
+[GitHub](https://github.com/KevounC/outpost_pi/issues) or contact the
+maintainer (KevounC) directly.
