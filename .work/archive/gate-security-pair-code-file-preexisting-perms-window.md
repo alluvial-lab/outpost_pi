@@ -3,6 +3,7 @@ id: gate-security-pair-code-file-preexisting-perms-window
 created: 2026-07-24
 updated: 2026-07-24
 stage: done
+release_binding: cockpit-v0.3.0
 tags: [security]
 gate_origin: security
 ---
