@@ -868,5 +868,5 @@ chat-state recovery, onboarding, mirror cache, rooms, agent network, agent
 tools, setup wizard, and the site MVP. See [`plan/`](plan/) for the design
 history of each.
 
-[Unreleased]: https://github.com/KevounC/outpost_pi/compare/v0.1.0...HEAD
-[v0.1.0]: https://github.com/KevounC/outpost_pi/releases/tag/v0.1.0
+[Unreleased]: https://github.com/alluvial-lab/outpost_pi/compare/v0.1.0...HEAD
+[v0.1.0]: https://github.com/alluvial-lab/outpost_pi/releases/tag/v0.1.0
