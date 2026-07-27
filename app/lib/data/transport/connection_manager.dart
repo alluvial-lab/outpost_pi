@@ -620,7 +620,16 @@ class ConnectionManager extends Service {
         ),
       );
     } catch (e) {
-      if (!token.isCancelled) _scheduleRetry(peer);
+      if (!token.isCancelled) {
+        _logLifecycleFailure(
+          LifecycleOperation.retryConnect,
+          e,
+          peerTail: _peerTail(peer.remoteEpk),
+          room: _activeRoomId,
+          retryScheduled: true,
+        );
+        _scheduleRetry(peer);
+      }
     }
   }
 
