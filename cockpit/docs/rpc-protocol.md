@@ -164,7 +164,6 @@ agent_end
 | `{"type":"response","command":"prompt","success":true}` | `RpcCommandResponse` | ACK; shows error if `success:false` |
 | `message_start` with `role:"custom"` + `customType:"outpost-pi:relay-state"` | `RpcRelayState` | relay button/indicator status |
 | `message_start` with `role:"custom"` + `customType:"outpost-pi:name-assigned"` | `RpcNameAssigned` | renames the tab when the broker resolves a collision |
-| `message_start` with `role:"custom"` + `customType:"outpost-pi:pair-code"` | `RpcPairCode` | schema-mapped event; the session UI ignores it for now |
 | `message_start` with `role:"custom"` + `customType:"outpost-pi:paired"` | `RpcPaired` | schema-mapped event; the session UI ignores it for now |
 | `message_start` with `role:"custom"` + `customType:"outpost-pi:mesh-revoked"` | `RpcMeshRevoked` | schema-mapped event; the session UI ignores it for now |
 | `{"type":"message_end","message":{"stopReason":"error","errorMessage":"Connection error."}}` | `RpcStreamError` | shows the turn error (provider down, etc.) |
