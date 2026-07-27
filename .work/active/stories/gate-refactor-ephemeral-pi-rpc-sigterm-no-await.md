@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-ephemeral-pi-rpc-sigterm-no-await
 kind: story
-stage: review
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
@@ -40,3 +40,12 @@ directory.
 - `dispose()` now waits for graceful exit, then SIGTERM exit, then escalates to SIGKILL and waits for the child's final exit before releasing stream subscriptions and its temporary directory.
 - Added an owned-process starter seam and deterministic fake-process tests: an ignored SIGTERM reaches SIGKILL and retains the working directory until final exit; a graceful exit sends no signal.
 - Verification: `flutter test test/core/data/relay/ephemeral_pi_rpc_test.dart` passed.
+
+## Review
+
+Bounded inline review (orchestrator, 2026-07-27): diffs inspected —
+serialized finalizer with _closed re-checks after every await, SIGTERM
+await + SIGKILL escalation + final-exit await before dir removal, stale
+pair-code row removed. Orchestrator-verified: flutter analyze clean, 267
+tests green (incl. new deterministic fake-process and interleaving tests).
+Approved -> done.
