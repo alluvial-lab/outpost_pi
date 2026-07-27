@@ -8,11 +8,12 @@ allowBuilds:
 # Keep transitive packages above known vulnerable ranges until upstreams
 # release dependency updates that naturally resolve these versions.
 overrides:
+  '@hono/node-server': 2.0.12   # GHSA-frvp-7c67-39w9 + GHSA-9mqv-5hh9-4cgg — path traversal (fixed 2.0.5) + WS handshake memleak (fixed 2.0.10); peers with hono ^4
   brace-expansion@5: 5.0.8
   esbuild: ^0.28.1
   fast-uri: 3.1.4
   hono: ^4.12.25
   postcss: 8.5.18
-  protobufjs: ^7.6.3
+  protobufjs: ^7.6.5            # GHSA-j3f2-48v5-ccww — DoS in .proto option parsing (fixed 7.6.5)
   vite: ^8.0.16
   ws: ^8.21.0
