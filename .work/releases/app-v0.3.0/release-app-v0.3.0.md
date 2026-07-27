@@ -1,14 +1,14 @@
 ---
 id: release-app-v0.3.0
 kind: release
-stage: quality-gate
+stage: released
 tags: []
 parent: null
 depends_on: []
 release_binding: app-v0.3.0
 gate_origin: null
 created: 2026-07-25
-updated: 2026-07-25
+updated: 2026-07-27
 ---
 
 # Release app-v0.3.0
@@ -71,3 +71,19 @@ gate-security-rpcunknown-retains-wire-discriminator (expected).
 
 Readiness: GREEN (6/6 bound items done — 3 original + 3 gate findings
 fixed inline).
+
+## Shipped (2026-07-27)
+
+- Readiness GREEN: 7/7 bound items done (3 original + 3 gate findings fixed
+  inline + story-pairing-flow-single-frame-read-race bound mid-release).
+- **UAT: PASS (operator ack 2026-07-27)** — two live smokes on the 0.3.0+2
+  debug APK: (1) 2026-07-25 pairing/sealed round-trip/3 reconnects/bounded
+  hydration; (2) 2026-07-27 re-pair over 5G via Tailscale subnet route,
+  backlog-race survival, seamless 5G→WiFi transition with zero re-pair.
+- Changelog app-v0.3.0 entry committed; local tag `app-v0.3.0` cut on
+  46a888c (operator pushes).
+- Post-release notes: the 2026-07-26 owner-transition wipe on the phone was
+  traced to a reinstall restore-race (fresh install → identity generated
+  before Block Store restore landed → later restore arrived as an identity
+  change). Fix scoped separately: identity boot should distinguish
+  "restore pending" from genuine first run.
