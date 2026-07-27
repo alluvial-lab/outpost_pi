@@ -167,3 +167,14 @@ merge-absorbed, 3 duplicates — 2 fold targets shipped in extension-0.2.0,
   the operator's machine; branch is pushed).
 - The skills-repo checkout has an untracked `package-lock.json` — left alone.
 - main is ~90 commits ahead of origin; nothing pushed (push is external).
+
+---
+
+**Update 2026-07-27 (component releases COMPLETE):** app-v0.3.0 (tag
+46a888c) and cockpit-v0.3.0 (tag 530cf7b) shipped, collapsed
+retain-bodies. relay-0.3.0 SKIPPED as empty: of the 5 expected stubs, 4
+are stamped retired husks (gather skips) and 1 was already bound to
+v0.1.0; no relay code changed this cycle. 3 unfinished cruft items moved
+archive→backlog per archive-tier semantics. Release family complete:
+v0.3.0 + app-v0.3.0 + cockpit-v0.3.0; extension-0.3.0 and relay-0.3.0
+both skipped. Push: git push origin main v0.3.0 app-v0.3.0 cockpit-v0.3.0.
