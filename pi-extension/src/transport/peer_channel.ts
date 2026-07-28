@@ -45,11 +45,8 @@ export class PlainPeerChannel implements PeerChannel {
     private readonly relay: RelayClient,
     private readonly remotePeerId: string,
     private readonly onMessage: (msg: ClientMessage) => void,
-    /** Called when this specific peer connection is considered lost. */
-    _onDisconnect?: () => void,
   ) {
     this._unsubscribe = subscribeRelayIngress(relay, (ingress) => this._onIngress(ingress));
-    void _onDisconnect;
   }
 
   // ── PeerChannel interface ──────────────────────────────────────────────────
