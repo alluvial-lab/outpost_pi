@@ -1,7 +1,7 @@
 ---
 id: gate-tests-sync-service-noecho-wallclock-timing
 kind: story
-stage: implementing
+stage: review
 tags: [testing, app]
 parent: null
 depends_on: []
@@ -23,3 +23,9 @@ Fix: injected clock/timer scheduler or `fake_async` — advance deterministicall
 to just before the deadline, inject, then advance past and assert
 cancellation/extension. Location: `app/test/data/sync/sync_service_test.dart`.
 Worth promoting if CI flakiness recurs.
+
+## Implementation notes
+
+- Added an injectable pending-send timer factory to `SyncService`; production retains the system `Timer` implementation.
+- No-echo cases (b) and (c) now use a controllable test scheduler and advance past the original deadline deterministically, preserving their cancellation/extension assertions.
+- Verification: `flutter test test/data/sync/sync_service_test.dart --concurrency=2` (93 passing).
