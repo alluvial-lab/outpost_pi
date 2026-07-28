@@ -1,7 +1,7 @@
 ---
 id: gate-tests-offline-buffer-per-peer-isolation
 kind: story
-stage: implementing
+stage: review
 tags: [testing, pi-extension]
 parent: null
 depends_on: []
@@ -36,3 +36,13 @@ test("simultaneous offline owners keep independent buffers and overflow state", 
 
 ## Test location (suggested)
 `pi-extension/src/extension/owner_multiplexer.test.ts`
+
+## Implementation notes
+
+- Added a simultaneous-offline-owner regression: owner A has an older completed
+  interval, then both owners buffer a frame-cap current interval. A's combined
+  cap evicts only A's older interval; B's independent FIFO remains intact and
+  flushes before A resumes.
+- Changed `pi-extension/src/extension/owner_multiplexer.test.ts` only.
+- Verified with `vitest run src/extension/owner_multiplexer.test.ts` (30 tests)
+  and `tsc --noEmit`.
