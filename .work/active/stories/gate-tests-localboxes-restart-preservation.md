@@ -1,7 +1,7 @@
 ---
 id: gate-tests-localboxes-restart-preservation
 kind: story
-stage: implementing
+stage: review
 tags: [testing, app]
 parent: null
 depends_on: []
@@ -24,3 +24,9 @@ AC uncovered (bound item: epic-bold-transcript-event-log-store-step-1): Existing
 
 ## Recommendation
 Add a focused test in app/test/data/local/records_test.dart that seeds both sessions_index and runtime, calls LocalBoxes.initForTest(...) again to simulate restart, then asserts runtime is cleared while sessions_index data remains present.
+
+## Implementation notes
+
+- Expanded the runtime-restart coverage to seed a `SessionIndexRecord` alongside runtime state.
+- The simulated restart verifies runtime is empty and the durable session index round-trips unchanged.
+- Verification: `flutter test test/data/local/records_test.dart --concurrency=2` (6 passing).
