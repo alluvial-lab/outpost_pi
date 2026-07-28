@@ -1,7 +1,7 @@
 ---
 id: gate-security-compaction-replay-keys-unbounded
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, security]
 parent: null
 depends_on: []
@@ -39,6 +39,16 @@ Every successful offline-buffer compaction flush adds a key. `arbitrateSessionHi
 
 ## Remediation direction
 Bound replay-suppression state to the current session and prune obsolete session keys on session rotation. Prefer convergent live/replay compaction identity that removes the side registry; if the registry remains, add an explicit per-peer ceiling or expiry that preserves the intended repeated-sync and multi-device behavior.
+
+## Implementation notes
+
+- Capped each connected owner's flushed-compaction replay registry at 128 newest
+  identities, evicting the oldest identity first.
+- Added a regression that flushes 129 compactions and proves only the evicted
+  oldest compaction returns in a subsequent history replay.
+- Changed `pi-extension/src/extension/owner_multiplexer.ts` and its test.
+- Verified with `vitest run src/extension/owner_multiplexer.test.ts` (29 tests)
+  and `tsc --noEmit`.
 
 ## Audit execution
 The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.
