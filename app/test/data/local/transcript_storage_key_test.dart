@@ -114,4 +114,7 @@ final class _MemoryKeyStore implements TranscriptKeyValueStore {
     if (delayWrites) await Future<void>.delayed(Duration.zero);
     if (!dropWrites) initial = encodedKey;
   }
+
+  @override
+  Future<void> delete() async => initial = null;
 }

@@ -1,7 +1,7 @@
 ---
 id: gate-security-secure-transcript-key-loss-recovery-ux
 kind: story
-stage: implementing
+stage: done
 tags: [app, security]
 parent: feature-secure-transcript-key-loss-recovery-ux
 depends_on: []
@@ -71,6 +71,22 @@ Cycle check: `.work/bin/work-view --blocking gate-security-secure-transcript-key
 - `setupDependencies`, `SyncService`, router construction, and the ready app sentinel remain blocked until guarded storage initialization succeeds; non-discardable exceptions never enter the recovery/ready path.
 - UI copy states that local deletion is permanent, that some current Pi-session history may sync after reconnect, that older/local-only history may not return, and that pairing is required only if its separate credentials were also lost.
 - Tests establish that `audit.jsonl` is never presented as a restoration source. The actual replay source remains the extension's bounded Pi SDK-backed `session_history` projection.
+
+## Implementation notes
+
+- Added a narrow, latch-backed encrypted-transcript discard that removes only
+  v3 transcript/index/projection files, volatile runtime, and transcript key
+  metadata; Owner identity, pairing, preferences, mesh, and unrelated boxes
+  remain intact.
+- Added the pre-router `OutpostPiBootstrap` gate and explicit destructive
+  recovery confirmation. Dependencies and eager `SyncService` construction
+  remain downstream of a successful `LocalBoxes.init()`.
+- Added file-backed recovery, bootstrap, and widget coverage for fail-closed
+  detection, confirmed discard, crash convergence, retained unrelated state,
+  retry, and honest no-restoration-guarantee copy.
+- Verification: focused recovery suite passed (12 tests), `flutter analyze`
+  passed, and `flutter test --exclude-tags e2e --concurrency=2` passed
+  (863 tests).
 
 ## Verification plan
 
