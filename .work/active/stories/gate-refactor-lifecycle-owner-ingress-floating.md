@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-owner-ingress-floating
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension]
 parent: feature-lifecycle-disposal-async-void
 depends_on: []
@@ -48,3 +48,10 @@ function _handleOwnerOuterFrame(
 
 ## Gate run note
 The scanner ran inline at the operator's direction rather than in an isolated scanner sub-agent; this finding therefore has reduced review isolation.
+
+## Implementation notes
+
+- Confirmed the production registration already returns `_handleOwnerOuterFrame(...)` and `RelayTransport` awaits it in the generation-owned retained-dispatch FIFO; no duplicate catch layer or source rewrite was needed.
+- Added an explicit async-rejection regression proving the failure is observed, pending accounting is released, a later healthy owner frame routes, and no process-level `unhandledRejection` fires.
+- Changed `pi-extension/src/extension/relay_transport.test.ts` only.
+- Verification: `tsc --noEmit`; targeted relay-transport suite (18 passed); full Vitest suite (945 passed, 3 skipped; 55 files).
