@@ -119,6 +119,13 @@ async function disposeRuntimePorts(
 ): Promise<void> {
   epoch.dispose();
   ports.commands.prepareSessionShutdown?.();
+  // Converge the turn projection and publish working=false BEFORE the relay
+  // stops — a session_shutdown during an active turn invalidates the old
+  // runner, so terminal agent_end/turn_end events are dropped and the
+  // reducer-owned working=true would never publish. resetTurnSnapshot crosses
+  // the true→false edge (publishing via the diff) and leaves the projection
+  // idle for the successor. Must run while the relay is still connected.
+  ports.session.resetTurnSnapshot();
   ports.session.clearStaleContexts(reason);
   ports.relay.detachCrossPcBridge();
   ports.relay.stop();
