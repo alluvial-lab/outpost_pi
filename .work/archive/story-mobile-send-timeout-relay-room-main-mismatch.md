@@ -1,7 +1,7 @@
 ---
 id: story-mobile-send-timeout-relay-room-main-mismatch
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, relay, bug, transport, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on:
@@ -190,3 +190,11 @@ injected (session not bound). The operator sees both.
   stage: review) — the inbound twin of this bug.
 - `.work/backlog/idea-mobile-user-message-not-delivered-timeout.md` — the
   original idea (now grounded with a confirmed root cause).
+
+## Retirement (2026-07-28)
+
+Closed/archived with parent epic `epic-targeting-and-session-lifecycle-contracts`.
+The observability unlock shipped; this bug was either resolved by it,
+re-investigated with its original mechanism disproven, or left unreproduced
+with instrumentation in place and no recurrence in 3+ weeks. See the epic's
+retirement note for the full disposition.

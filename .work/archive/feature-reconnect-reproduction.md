@@ -1,7 +1,7 @@
 ---
 id: feature-reconnect-reproduction
 kind: feature
-stage: implementing
+stage: done
 tags: [app, pi-extension, relay, bug, observability]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on:
@@ -388,3 +388,13 @@ Downstream `feature-contract-gap-audit` (depends_on this feature) remains
 blocked until this reaches `review`/`done`. That is the correct state — the
 audit must consume reproduction evidence, not pre-write contracts from
 unverified assumptions.
+
+## Retirement (2026-07-28)
+
+Closed. The observation workstream ran its course: the observability unlock
+(feature-cross-side-observability, shipped v0.1.0) resolved 3 of 5 cluster
+bugs and left 2 as unreproduced-with-instrumentation (no recurrence in 3+
+weeks). The send-timeout story's original relay-drop mechanism was a misread
+(directionality backwards; zero phone-originated drops); its real cousin
+(the `_activeRoom` reorder) shipped independently 2026-07-08. Archived with
+the parent epic.

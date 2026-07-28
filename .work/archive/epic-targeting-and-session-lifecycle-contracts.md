@@ -1,7 +1,7 @@
 ---
 id: epic-targeting-and-session-lifecycle-contracts
 kind: epic
-stage: implementing
+stage: done
 tags: [pi-extension, app, relay, bug, docs, observability]
 parent: null
 depends_on: []
@@ -287,3 +287,29 @@ under "undefined state machines"; the operator's framing — that the bug class
 exists because productions/reproductions can't be captured on the app side
 except anecdotally — is the actual root cause and drives the observability-first
 reorder.
+
+## Retirement (2026-07-28)
+
+Closed. The epic's reframe thesis — that the bug cluster was observability
+debt, not contract debt — self-executed:
+
+- **Feature #1 (cross-side-observability): shipped** (v0.1.0). The phone-side
+  ring log + export, relay persistent logging, transport-frame observability,
+  and session-replacement harness all landed. This unlocked retroactive
+  diagnosis of the whole cluster.
+- **Feature #2 (feature-reconnect-reproduction): ran its course.** The
+  observability unlock resolved 3 of 5 cluster bugs
+  (`idea-extension-pumps-into-dead-app-peer`,
+  `idea-mobile-user-message-not-delivered-timeout`,
+  `idea-mobile-drop-half-open-tcp`) and left 2 as unreproduced-with-
+  instrumentation (`idea-mobile-drop-slow-recovery`,
+  `idea-mobile-outgoing-message-swallowed`) — no recurrence in 3+ weeks.
+- **Feature #3 (contract-gap-audit): dissolved.** The contract prose audit
+  (`story-reconnect-derived-contract-claims-audit`) had nothing to audit
+  that wasn't already documented by the released bold-refactor epics
+  (`epic-bold-canonical-session`, `epic-bold-reachability-contract`,
+  `epic-bold-transcript-event-log`, `epic-bold-turn-state-machine`).
+
+The 2026-07-27 live observation `story-mobile-transcript-reorder-after-backlog-flush`
+was promoted to standalone (it is a fresh, concrete repro, not residue of
+this epic). The epic body is retained here in archive for provenance.
