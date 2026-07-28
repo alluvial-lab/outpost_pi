@@ -1,7 +1,7 @@
 ---
 id: story-reconnect-derived-contract-claims-audit
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, relay, docs, observability]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on:
@@ -37,3 +37,11 @@ proves a current invariant or exposes a genuine contract gap.
 - [ ] Local app/relay/extension bugs route to focused implementation work rather
       than expanding this prose audit.
 - [ ] Any durable edit rewrites current-state prose in place.
+
+## Retirement (2026-07-28)
+
+Closed/archived with parent epic `epic-targeting-and-session-lifecycle-contracts`.
+The observability unlock shipped; this bug was either resolved by it,
+re-investigated with its original mechanism disproven, or left unreproduced
+with instrumentation in place and no recurrence in 3+ weeks. See the epic's
+retirement note for the full disposition.

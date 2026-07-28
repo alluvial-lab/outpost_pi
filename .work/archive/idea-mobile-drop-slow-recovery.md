@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-drop-slow-recovery
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, relay, bug, lifecycle]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -77,3 +77,11 @@ auth/supersession logs to split app backoff, half-open detection, and external
 network bring-up. Whichever feature records the attributed trace owns the
 resulting fix; this copy then closes as provenance. Do not tune backoff from the
 current anecdote.
+
+## Retirement (2026-07-28)
+
+Closed/archived with parent epic `epic-targeting-and-session-lifecycle-contracts`.
+The observability unlock shipped; this bug was either resolved by it,
+re-investigated with its original mechanism disproven, or left unreproduced
+with instrumentation in place and no recurrence in 3+ weeks. See the epic's
+retirement note for the full disposition.
