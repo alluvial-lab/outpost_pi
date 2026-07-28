@@ -1,7 +1,7 @@
 ---
 id: gate-security-broker-audit-log-unbounded
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, security]
 parent: null
 depends_on: []

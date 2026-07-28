@@ -1,7 +1,7 @@
 ---
 id: gate-security-unindexed-plaintext-transcripts-retained
 kind: story
-stage: review
+stage: done
 tags: [app, security]
 parent: null
 depends_on: []

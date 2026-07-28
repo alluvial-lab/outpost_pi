@@ -1,7 +1,7 @@
 ---
 id: gate-security-ci-mutable-action-refs
 kind: story
-stage: review
+stage: done
 tags: [security, workflow]
 parent: null
 depends_on: []
