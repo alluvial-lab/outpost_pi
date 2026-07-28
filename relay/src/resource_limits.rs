@@ -30,6 +30,8 @@ pub const MAX_NEW_MESH_OWNERS_PER_WINDOW: usize = 32;
 pub const PI_FORWARD_WINDOW: Duration = Duration::from_secs(60);
 /// Maximum cross-PC forwarding attempts accepted per connection and window.
 pub const MAX_PI_FORWARDS_PER_WINDOW: usize = 256;
+/// Maximum offline peer timestamps retained for presence snapshots.
+pub const MAX_PRESENCE_OFFLINE_TIMESTAMPS: usize = 1_024;
 /// Maximum peer IDs accepted in one presence/rooms control frame.
 pub const MAX_CONTROL_FRAME_PEERS: usize = 64;
 /// Maximum presence/rooms peer-cost accepted per connection and window.
