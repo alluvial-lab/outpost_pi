@@ -25,5 +25,11 @@ Error Handling & Logging / Data Protection
 ## Evidence
 All logger failure paths interpolate raw exceptions into _safeLog; _safeLog prints that text and prints the full stack in debug builds. File and platform exceptions commonly include absolute sandbox paths and platform details, contradicting the method's scrubbed contract.
 
+## Blocker
+
+The specified source and tests are exclusively under `app/`, outside this
+worker's authorized `pi-extension/src/` and `pi-extension/test/` write scope.
+No change was made; the story remains `implementing` for its app owner.
+
 ## Remediation direction
 Pass fixed failure categories — or at most an admitted runtime error class — to _safeLog, and never print stacks. Add a FileSystemException path canary covering every fallback route.
