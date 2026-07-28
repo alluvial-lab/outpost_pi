@@ -2,7 +2,7 @@
 id: gate-refactor-lifecycle-owner-identity-watcher-no-dispose
 kind: story
 stage: drafting
-tags: [app, refactor]
+tags: [app]
 parent: feature-lifecycle-disposal-async-void
 depends_on: []
 release_binding: null

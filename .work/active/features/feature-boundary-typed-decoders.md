@@ -2,7 +2,7 @@
 id: feature-boundary-typed-decoders
 kind: feature
 stage: drafting
-tags: [relay, cockpit, pi-extension, refactor]
+tags: [relay, cockpit, pi-extension]
 parent: null
 depends_on: []
 release_binding: null
