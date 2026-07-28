@@ -9,7 +9,8 @@ import 'dart:typed_data';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/relay_config.dart';
 import 'package:app/data/transport/secure_channel.dart';
-import 'package:app/protocol/protocol.dart' show PairOk, PairRequest;
+import 'package:app/protocol/codec.dart';
+import 'package:app/protocol/protocol.dart' show PairError, PairOk, PairRequest, ServerMessage;
 import 'package:app/protocol/uuid7.dart';
 import 'package:cryptography/cryptography.dart';
 
@@ -166,8 +167,8 @@ Future<PairingResult> performPairing({
     // Channel traffic (e.g. a sealed backlog flush racing the handshake) is
     // skipped, never decoded as the reply — the frames it carries belong to
     // the post-attach channel, which replays idempotently on session_sync.
-    Map<String, dynamic> inner;
-    String? type;
+    late ServerMessage response;
+    var pairOkHasRoomId = false;
     while (true) {
       final raw = await transport.receive();
       // A zero-length frame is never valid protocol; it is how a closed
@@ -179,19 +180,23 @@ Future<PairingResult> performPairing({
         );
       }
       try {
-        final decoded = jsonDecode(utf8.decode(raw));
-        if (decoded is! Map<String, dynamic>) continue;
-        if (decoded['in_reply_to'] != id) continue;
-        inner = decoded;
-        type = decoded['type'] as String?;
+        final decoded = decodeServerFrame(utf8.decode(raw));
+        final candidate = decoded.message;
+        final isReplyToRequest = switch (candidate) {
+          PairOk(:final inReplyTo) => inReplyTo == id,
+          PairError(:final inReplyTo) => inReplyTo == id,
+          _ => false,
+        };
+        if (!isReplyToRequest) continue;
+        response = candidate;
+        pairOkHasRoomId = decoded.hasRoomId;
         break;
       } on Object {
-        continue; // not a JSON frame — not the pairing reply
+        continue; // not a typed pairing reply — keep waiting
       }
     }
 
-    if (type == 'pair_ok' && inner['in_reply_to'] == id) {
-      final pairOk = PairOk.fromJson(inner);
+    if (response case final PairOk pairOk) {
       final piDhPublicKey = _decodeFixedBase64(pairOk.dhPk, 32);
       final piDhSignature = _decodeFixedBase64(pairOk.dhSig, 64);
       if (piDhPublicKey == null || piDhSignature == null) {
@@ -229,9 +234,9 @@ Future<PairingResult> performPairing({
         token: qr.token,
         side: OwnerChannelSide.app,
       );
-      final rawRoom = inner['room_id'];
-      final piEchoedRoom = rawRoom is String && rawRoom.isNotEmpty;
-      final piRoomId = piEchoedRoom ? pairOk.roomId : (qr.roomId ?? 'main');
+      final piRoomId = pairOkHasRoomId && pairOk.roomId.isNotEmpty
+          ? pairOk.roomId
+          : (qr.roomId ?? 'main');
       final peer = PeerRecord(
         remoteEpk: qr.epk,
         sessionName: pairOk.sessionName,
@@ -248,16 +253,13 @@ Future<PairingResult> performPairing({
       return PairingResult(peer: peer, hostnameHint: pairOk.hostname);
     }
 
-    if (type == 'pair_error') {
-      throw PairingError(
-        code: inner['code'] as String,
-        message: inner['message'] as String? ?? '',
-      );
+    if (response case final PairError pairError) {
+      throw PairingError(code: pairError.code, message: pairError.message);
     }
 
-    throw PairingError(
+    throw const PairingError(
       code: 'unexpected_response',
-      message: 'Unknown response type: $type',
+      message: 'Unknown pairing response',
     );
   } finally {
     dh.secretKey.fillRange(0, dh.secretKey.length, 0);
