@@ -33,6 +33,26 @@ import 'package:app/protocol/protocol.dart';
 import 'package:app/protocol/uuid7.dart';
 import 'package:flutter/foundation.dart';
 
+/// A cancellable scheduled callback used for pending-send expiry.
+abstract interface class PendingSendTimer {
+  /// Prevent the callback from running if it has not fired.
+  void cancel();
+}
+
+/// Schedule a pending-send expiry callback.
+typedef PendingSendTimerFactory =
+    PendingSendTimer Function(Duration delay, void Function() callback);
+
+final class _SystemPendingSendTimer implements PendingSendTimer {
+  _SystemPendingSendTimer(Duration delay, void Function() callback)
+    : _timer = Timer(delay, callback);
+
+  final Timer _timer;
+
+  @override
+  void cancel() => _timer.cancel();
+}
+
 /// Own the app-side transcript write pipeline and active-turn convergence.
 ///
 /// Serializes canonical event persistence, materializes disposable Hive
@@ -135,7 +155,8 @@ class SyncService extends Service {
   // timers are cancelled on echo, user-cancel, session switch, and dispose.
   final Duration deliveryPendingEchoTimeout;
   final Duration pendingSendTimeout;
-  final Map<String, Timer> _pendingSendTimers = {};
+  final PendingSendTimerFactory _pendingSendTimerFactory;
+  final Map<String, PendingSendTimer> _pendingSendTimers = {};
 
   /// Ids of held-pending messages already re-sent on reconnect this session
   /// (story-app-reattempt-held-pending-on-reconnect). Prevents the
@@ -159,9 +180,12 @@ class SyncService extends Service {
     runtimeRecordWriter,
     this.pendingSendTimeout = const Duration(seconds: 20),
     this.deliveryPendingEchoTimeout = const Duration(seconds: 60),
+    PendingSendTimerFactory? pendingSendTimerFactory,
   }) : _eventStore = transcriptEventStore ?? HiveTranscriptEventStore(_boxes),
        _debugLog = debugLog,
-       _runtimeRecordWriter = runtimeRecordWriter {
+       _runtimeRecordWriter = runtimeRecordWriter,
+       _pendingSendTimerFactory =
+           pendingSendTimerFactory ?? _SystemPendingSendTimer.new {
     _connSub = _conn.statusStream.listen(_onStatus);
     _roomsSub = _conn.roomsStream.listen((_) {
       _writeRuntime();
@@ -455,7 +479,7 @@ class SyncService extends Service {
     if (ref == null) return;
     _pendingSendTimers.remove(id)?.cancel();
     final remaining = pendingSendTimeout - DateTime.now().difference(ts);
-    _pendingSendTimers[id] = Timer(
+    _pendingSendTimers[id] = _pendingSendTimerFactory(
       remaining > Duration.zero ? remaining : Duration.zero,
       () => _onSendTimeout(id, ref),
     );
@@ -486,7 +510,7 @@ class SyncService extends Service {
     existing.cancel();
     final ref = _activeRef;
     if (ref == null) return;
-    _pendingSendTimers[id] = Timer(
+    _pendingSendTimers[id] = _pendingSendTimerFactory(
       deliveryPendingEchoTimeout,
       () => _onDeliveryPendingTimeout(id, ref),
     );
