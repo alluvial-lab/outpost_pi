@@ -95,6 +95,62 @@ void main() {
       },
     );
 
+    test(
+      'missing legacy index leaves an orphan plaintext box unmarked',
+      () async {
+        const orphanName = 'msgs_orphaned_plaintext';
+        final orphan = await Hive.openBox<dynamic>(orphanName);
+        await orphan.put(0, {'text': 'must not be silently retained'});
+        await Hive.close();
+
+        await expectLater(
+          LocalBoxes.initForTest(directory.path, encryptionKey: encryptionKey),
+          throwsA(
+            isA<TranscriptMigrationException>()
+                .having((error) => error.code, 'code', 'unindexed_legacy_source')
+                .having((error) => error.sourceBox, 'sourceBox', orphanName),
+          ),
+        );
+        expect(
+          Hive.box<dynamic>(TranscriptStorageMigrator.metadataBoxName).get(
+            TranscriptStorageMigrator.migrationVersionKey,
+          ),
+          isNull,
+          reason: 'an orphan plaintext box must block migration completion',
+        );
+        expect(await Hive.boxExists(orphanName), isTrue);
+      },
+    );
+
+    test(
+      'incomplete legacy index leaves an orphan plaintext box unmarked',
+      () async {
+        final indexed = _session('indexed-peer', 'main', 'indexed-session');
+        const orphanName = 'transcript_events_orphaned_plaintext';
+        await _seedIndex([indexed]);
+        final orphan = await Hive.openBox<dynamic>(orphanName);
+        await orphan.put('orphan-event', {'event_id': 'orphan-event'});
+        await Hive.close();
+
+        await expectLater(
+          LocalBoxes.initForTest(directory.path, encryptionKey: encryptionKey),
+          throwsA(
+            isA<TranscriptMigrationException>()
+                .having((error) => error.code, 'code', 'unindexed_legacy_source')
+                .having((error) => error.sourceBox, 'sourceBox', orphanName),
+          ),
+        );
+        expect(
+          Hive.box<dynamic>(TranscriptStorageMigrator.metadataBoxName).get(
+            TranscriptStorageMigrator.migrationVersionKey,
+          ),
+          isNull,
+          reason: 'a partial manifest must not complete migration',
+        );
+        expect(await Hive.boxExists(orphanName), isTrue);
+      },
+    );
+
     test('partitions a lossy-name collision by embedded session id', () async {
       final first = _session('peer', 'room/a', 'session/a');
       final second = _session('peer', 'room?a', 'session?a');

@@ -89,6 +89,7 @@ final class TranscriptStorageMigrator {
     required Box<dynamic> legacyIndex,
     required Box<dynamic> secureIndex,
     required Box<dynamic> metadata,
+    Set<String>? legacySourceNames,
   }) async {
     if (isComplete(metadata)) {
       return const TranscriptMigrationReport(
@@ -100,6 +101,20 @@ final class TranscriptStorageMigrator {
     }
 
     final candidates = _readCandidates(legacyIndex);
+    final indexedSourceNames = <String>{
+      for (final candidate in candidates)
+        legacyEventsBoxName(candidate.record.ref),
+      for (final candidate in candidates)
+        legacyMessagesBoxName(candidate.record.ref),
+    };
+    final discoveredSourceNames = legacySourceNames ?? indexedSourceNames;
+    final unindexedSources = discoveredSourceNames.difference(indexedSourceNames);
+    if (unindexedSources.isNotEmpty) {
+      throw TranscriptMigrationException(
+        code: 'unindexed_legacy_source',
+        sourceBox: unindexedSources.first,
+      );
+    }
     if (metadata.get(copyVerifiedKey) == true) {
       final deleted = await _deleteVerifiedSources(
         candidates: candidates,
