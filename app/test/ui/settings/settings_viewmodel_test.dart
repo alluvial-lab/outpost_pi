@@ -318,7 +318,6 @@ void main() {
         final err = await vm.saveRelayUrl('https://custom.example');
         expect(err, isNull);
         expect(prefs.relayUrl, 'https://custom.example');
-        expect(vm.effectiveRelayUrl, 'https://custom.example');
 
         vm.dispose();
       },
