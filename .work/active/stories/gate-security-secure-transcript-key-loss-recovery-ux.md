@@ -1,8 +1,14 @@
 ---
 id: gate-security-secure-transcript-key-loss-recovery-ux
-created: 2026-07-19
-updated: 2026-07-19
+kind: story
+stage: drafting
 tags: [app, security]
+parent: feature-secure-transcript-key-loss-recovery-ux
+depends_on: []
+release_binding: null
+gate_origin: security
+created: 2026-07-19
+updated: 2026-07-28
 ---
 
 # No recovery path after secure-storage key loss (fail-closed bricks startup)
