@@ -1,7 +1,7 @@
 ---
 id: gate-security-ci-mutable-action-refs
 kind: story
-stage: implementing
+stage: review
 tags: [security, workflow]
 parent: null
 depends_on: []
@@ -27,3 +27,8 @@ Workflows execute major-version or mutable refs (actions/checkout@v4, dorny/path
 
 ## Remediation direction
 Pin every action to a reviewed full commit SHA and let the existing GitHub Actions Dependabot entry propose controlled SHA updates.
+
+## Implementation notes
+- Pinned every `uses:` reference in the owned `.github/workflows/ci.yml` workflow to a full commit SHA with its reviewed tag/branch retained as an inline comment.
+- Verification: checked that `ci.yml` has no `uses:` reference at `@v…` or `@stable`; the prior relay `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` run remained green.
+- Parked issues: the finding also names `deps-audit.yml` and `e2e-pairing.yml`, but this story's assigned write scope is `ci.yml` only; their refs require separately scoped follow-up.
