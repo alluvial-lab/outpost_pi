@@ -1,14 +1,14 @@
 ---
 id: gate-security-unindexed-plaintext-transcripts-retained
 kind: story
-stage: drafting
+stage: implementing
 tags: [app, security]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-28
 ---
 
 # Migration can complete while unindexed plaintext transcript boxes remain

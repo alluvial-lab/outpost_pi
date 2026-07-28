@@ -1,14 +1,14 @@
 ---
 id: gate-security-windows-path-separator-validation
 kind: story
-stage: drafting
-tags: [security]
+stage: implementing
+tags: [security, pi-extension]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-28
 ---
 
 # File name validation misses Windows path separators

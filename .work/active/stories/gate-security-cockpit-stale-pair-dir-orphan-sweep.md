@@ -1,9 +1,14 @@
 ---
 id: gate-security-cockpit-stale-pair-dir-orphan-sweep
-created: 2026-07-27
-updated: 2026-07-27
-tags: [security]
+kind: story
+stage: implementing
+tags: [security, cockpit]
+parent: null
+depends_on: []
+release_binding: null
 gate_origin: security
+created: 2026-07-27
+updated: 2026-07-28
 ---
 
 # Cockpit crash orphans the token-bearing pair seam directory

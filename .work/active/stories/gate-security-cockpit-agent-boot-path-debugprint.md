@@ -1,9 +1,14 @@
 ---
 id: gate-security-cockpit-agent-boot-path-debugprint
-created: 2026-07-27
-updated: 2026-07-27
-tags: [security]
+kind: story
+stage: implementing
+tags: [security, cockpit]
+parent: null
+depends_on: []
+release_binding: null
 gate_origin: security
+created: 2026-07-27
+updated: 2026-07-28
 ---
 
 # Agent boot debugPrints the absolute workspace path

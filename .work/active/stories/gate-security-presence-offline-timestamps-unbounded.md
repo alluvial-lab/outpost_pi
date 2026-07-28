@@ -1,8 +1,14 @@
 ---
 id: gate-security-presence-offline-timestamps-unbounded
-created: 2026-07-19
-updated: 2026-07-19
+kind: story
+stage: implementing
 tags: [relay, security]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: security
+created: 2026-07-19
+updated: 2026-07-28
 ---
 
 # Presence offline timestamps retain attacker-created peer identities forever

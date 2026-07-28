@@ -1,8 +1,14 @@
 ---
 id: gate-security-debug-log-fallback-raw-exceptions
+kind: story
+stage: implementing
+tags: [security, pi-extension]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: security
 created: 2026-07-24
-updated: 2026-07-24
-tags: [security]
+updated: 2026-07-28
 ---
 
 # Debug-log fallback prints raw exceptions and stack traces

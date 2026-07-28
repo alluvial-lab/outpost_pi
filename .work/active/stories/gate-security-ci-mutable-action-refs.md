@@ -1,8 +1,14 @@
 ---
 id: gate-security-ci-mutable-action-refs
+kind: story
+stage: implementing
+tags: [security, workflow]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: security
 created: 2026-07-24
-updated: 2026-07-24
-tags: [security]
+updated: 2026-07-28
 ---
 
 # CI executes mutable action references
