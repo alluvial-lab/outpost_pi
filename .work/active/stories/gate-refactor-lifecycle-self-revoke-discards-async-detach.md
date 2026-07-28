@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-self-revoke-discards-async-detach
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension]
 parent: feature-lifecycle-disposal-async-void
 depends_on: [gate-refactor-lifecycle-bye-frames-race-relay-shutdown]
@@ -47,3 +47,11 @@ Reuse `OwnerMultiplexerPort.detach`; do not add another helper or a nested `void
 
 ## Ordering
 Depends on `gate-refactor-lifecycle-bye-frames-race-relay-shutdown`, which establishes and verifies the shared awaited detach/drain contract.
+
+## Implementation notes
+
+- Made the `SelfRevoke` callback async and awaited `owners.detach(ownerEpk, "session_replaced")` before publishing the existing payload-free local revoke notice.
+- Added an injected poller factory seam so focused tests can exercise the production callback without network polling.
+- Added deterministic ordering and rejection-chain tests: the notice remains pending behind a deferred detach, and detach rejection propagates through the awaited callback.
+- Changed `pi-extension/src/extension/command_surface/pairing_coordinator.ts` and its test.
+- Verification: `tsc --noEmit`; targeted pairing-coordinator suite (7 passed); full Vitest suite (950 passed, 3 skipped; 55 files).
