@@ -33,6 +33,7 @@ function ports(): OutpostPiRuntimePorts {
       sendPiMessage: vi.fn(() => false),
       wakeAgent: vi.fn(async () => ({ ok: false, detail: "not bound" })),
       publishWorking: vi.fn(),
+      resetTurnSnapshot: vi.fn(),
       handleClientMessage: vi.fn(),
     },
     commands: {
@@ -124,6 +125,23 @@ describe("composition root runtime", () => {
     expect(disposeOrder).toBeLessThan(clearOrder);
     expect(clearOrder).toBeLessThan(stopOrder);
     expect(stopOrder).toBeLessThan(closeMeshOrder);
+  });
+
+  test("owner session_shutdown converges the turn projection before stopping the relay", async () => {
+    const p = ports();
+    const { pi, handlers } = piWithHandlers();
+    const runtime = createOutpostPiExtensionRuntime(pi, p, new OutpostPiRuntimeCoordinator());
+    runtime.register();
+    handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
+
+    await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" });
+
+    expect(p.session.resetTurnSnapshot).toHaveBeenCalledOnce();
+    const resetOrder = vi.mocked(p.session.resetTurnSnapshot!).mock.invocationCallOrder[0]!;
+    const stopOrder = vi.mocked(p.relay.stop!).mock.invocationCallOrder[0]!;
+    // working=false must be publishable while the relay is still connected,
+    // so the turn convergence runs BEFORE relay.stop().
+    expect(resetOrder).toBeLessThan(stopOrder);
   });
 
   test("satellite shutdown cannot tear down owner resources", async () => {
