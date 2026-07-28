@@ -18,8 +18,15 @@ class CustomInjector {
   T get<T extends Object>() => _injector.get<T>();
 
   /// Register an already-constructed instance for the app lifetime.
-  void addInstance<T>(T instance) {
-    _injector.addInstance<T>(instance);
+  ///
+  /// An optional [onDispose] binds cleanup to this injector's application
+  /// lifetime, rather than leaving the instance's resource ownership to a
+  /// widget or ad-hoc global teardown list.
+  void addInstance<T>(T instance, {void Function(T value)? onDispose}) {
+    _injector.addInstance<T>(
+      instance,
+      config: onDispose == null ? null : BindConfig<T>(onDispose: onDispose),
+    );
   }
 
   /// Register a lazy singleton without imposing a domain disposal contract.
