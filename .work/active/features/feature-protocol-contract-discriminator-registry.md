@@ -1,7 +1,7 @@
 ---
 id: feature-protocol-contract-discriminator-registry
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, app, relay]
 parent: null
 depends_on: []
@@ -322,3 +322,11 @@ Units 2-4 may run in parallel with Unit 1 under one feature owner; only Unit 5 h
 ## Open questions
 
 None. The existing generated exports, canonical protocol documentation, and KAT settle the reversible design choices without product-direction changes.
+
+## Implementation summary
+
+All five child stories are done. Session projection and app live-user identity now consume their existing generated discriminator surfaces; relay authentication, room metadata, and presence construction consume the newly generated `RELAY_CONTROL_DISCRIMINATORS`; and the owner-channel binary framing now carries a documented, narrowly-scoped schema exception tied to `PROTOCOL.md` and the independently generated cross-language KAT.
+
+The two bounced stories were resolved without weakening the generated-contract boundary: the expanded write scope allowed `tools/protocol-codegen/src/index.ts` to emit the keyed relay-control registry from the existing IR variants, extended the codegen contract tests, regenerated the TypeScript artifact, and then unblocked the dependent relay-transport consumer. No generated artifact was hand-edited, no source-local discriminator facade was introduced, and literal wire assertions remain independent equivalence checks.
+
+Integrated verification is green: protocol-codegen tests passed (7/7), generated-artifact freshness passed, Pi-extension TypeScript typecheck passed, the full Vitest suite passed (950 passed, 3 skipped; 55 files), and the production TypeScript build completed. The previously completed app child records its targeted sync suite (106 tests) and analyzer pass; no wire value, owner-channel fixture, or AEAD byte changed.
