@@ -348,11 +348,11 @@ void main() {
     },
   );
 
-  test('log() catches a throwing _debugEnabled callback (never throws)', () {
+  test('a throwing debugEnabled callback leaves no exportable event', () async {
     final log = DebugLogImpl(debugEnabled: () => throw StateError('boom'));
-    // Must not throw — the whole public body is wrapped, including the callback.
+    // The callback failure is contained and no event enters the ring.
     log.log(MsgSendEvent(ts: DateTime.now(), id: 'msg-1'));
-    expect(true, isTrue); // reached here → no throw
+    expect(await log.export(), isNull);
     log.dispose();
   });
 
