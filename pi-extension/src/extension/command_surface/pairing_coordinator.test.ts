@@ -31,6 +31,26 @@ describe("PairingCoordinator.showPairQr", () => {
     vi.restoreAllMocks();
   });
 
+  test("listDevices treats a stale UI capability after storage await as a safe no-op", async () => {
+    const coordinator = new PairingCoordinator({
+      getState: () => "started",
+      startRelay: async () => undefined,
+      isRelayConnected: () => true,
+      roomId: () => "room",
+      displayName: () => "Test Pi",
+      owners: {} as never,
+      ownerHas: () => false,
+      refreshPairingsCache: () => undefined,
+      joinLocalMesh: async () => undefined,
+      sendPiMessage: () => true,
+      setSiblings: () => undefined,
+    });
+    const ui = { notify: vi.fn(() => { throw new Error("stale after session replacement or reload"); }) };
+
+    await expect(coordinator.listDevices({ ui } as never)).resolves.toBeUndefined();
+    expect(ui.notify).toHaveBeenCalledOnce();
+  });
+
   test("renders pairing only in the TUI without sending model-context messages", async () => {
     const session = new FakeSession();
     const sendPiMessage = vi.fn((message: CustomMessage) => {
