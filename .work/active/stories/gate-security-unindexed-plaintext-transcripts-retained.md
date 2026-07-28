@@ -1,7 +1,7 @@
 ---
 id: gate-security-unindexed-plaintext-transcripts-retained
 kind: story
-stage: implementing
+stage: review
 tags: [app, security]
 parent: null
 depends_on: []
@@ -41,3 +41,10 @@ Before writing the completion marker, inventory the app-owned Hive directory for
 
 ## Audit execution
 The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.
+
+## Implementation notes
+
+- `LocalBoxes` now inventories legacy `msgs_*` and `transcript_events_*` Hive files before migration completion.
+- Missing indexes and index manifests that omit an on-disk source fail closed with `unindexed_legacy_source`; unknown plaintext data is retained rather than discarded.
+- Added missing-index and incomplete-index orphan coverage in `transcript_storage_migration_test.dart`.
+- Verification: `flutter test test/data/local/transcript_storage_migration_test.dart --concurrency=2` (14 passing).
