@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-owner-identity-watcher-no-dispose
 kind: story
-stage: implementing
+stage: done
 tags: [app]
 parent: feature-lifecycle-disposal-async-void
 depends_on: []
@@ -43,3 +43,14 @@ Adapt the callback to `BindConfig<T>(onDispose: onDispose)`, then register `Owne
 - A platform-store event after bridge disposal cannot invoke transition work or remain subscribed.
 
 Use a focused `app/test/config/custom_injector_test.dart` plus the existing `app/test/pairing/owner_identity_bridge_test.dart`; do not re-bootstrap the committed module-global production injector in tests.
+
+## Implementation notes
+
+- Added optional typed instance disposal to `CustomInjector` and bound the
+  production `OwnerIdentityBridge` to `bridge.dispose()` at app teardown.
+- Added focused injector exactly-once disposal and bridge watch-cancellation
+  regressions.
+- Verification: focused injector/bridge tests passed; `flutter analyze`
+  passed. The combined suite hit the tracked pre-existing `ToolRequest flush
+  is not re-amplified` flake; the affected SyncService suite passes in
+  isolation.

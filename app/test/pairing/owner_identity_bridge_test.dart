@@ -85,6 +85,31 @@ final class _RestoringStore implements OwnerIdentityStore {
   Future<void> delete() async {}
 }
 
+final class _WatchStore implements OwnerIdentityStore {
+  final _events = StreamController<OwnerIdentity>.broadcast();
+
+  bool get hasWatchListener => _events.hasListener;
+
+  @override
+  Future<bool> isSyncAvailable() async => true;
+
+  @override
+  Future<OwnerIdentity?> load() async => null;
+
+  @override
+  Future<void> save(OwnerIdentity identity) async {}
+
+  @override
+  Stream<OwnerIdentity> watch() => _events.stream;
+
+  void emit(OwnerIdentity identity) => _events.add(identity);
+
+  Future<void> close() => _events.close();
+
+  @override
+  Future<void> delete() async {}
+}
+
 class _FakeSecureStorage implements FlutterSecureStorage {
   final Map<String, String> _store = {};
   int failDeletesRemaining = 0;
@@ -454,6 +479,33 @@ void main() {
         expect(await storage.hasPendingOwnerTransition(), isFalse);
 
         restarted.dispose();
+      },
+    );
+  });
+
+  group('OwnerIdentityBridge.dispose', () {
+    test(
+      'cancels the platform watch before later emissions can transition',
+      () async {
+        final store = _WatchStore();
+        final bridge = OwnerIdentityBridge(
+          store,
+          PairingStorage(_FakeSecureStorage()),
+        );
+        var transitions = 0;
+
+        bridge.startWatching(onTransition: (_) async => transitions += 1);
+        expect(store.hasWatchListener, isTrue);
+
+        bridge.dispose();
+        await Future<void>.delayed(Duration.zero);
+        expect(store.hasWatchListener, isFalse);
+
+        store.emit(await _freshIdentity());
+        await Future<void>.delayed(Duration.zero);
+        expect(transitions, 0);
+
+        await store.close();
       },
     );
   });

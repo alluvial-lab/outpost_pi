@@ -93,7 +93,10 @@ Future<void> setupDependencies() async {
     ownerStore,
     _injector.get<PairingStorage>(),
   );
-  _injector.addInstance<OwnerIdentityBridge>(ownerBridge);
+  _injector.addInstance<OwnerIdentityBridge>(
+    ownerBridge,
+    onDispose: (bridge) => bridge.dispose(),
+  );
 
   // Per-install device id for the relay hello frame — lets the relay close
   // prior same-device conns on reconnect (see
