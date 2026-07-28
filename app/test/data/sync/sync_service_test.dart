@@ -242,6 +242,45 @@ class _FakeStorage extends PairingStorage {
   Future<List<PeerRecord>> listPeers() async => const [];
 }
 
+class _PendingTimerScheduler {
+  Duration _elapsed = Duration.zero;
+  final List<_ScheduledPendingTimer> _timers = [];
+
+  PendingSendTimer schedule(Duration delay, void Function() callback) {
+    final timer = _ScheduledPendingTimer(_elapsed + delay, callback);
+    _timers.add(timer);
+    return timer;
+  }
+
+  void elapse(Duration duration) {
+    _elapsed += duration;
+    for (final timer in List<_ScheduledPendingTimer>.of(_timers)) {
+      if (!timer.cancelled && timer.deadline <= _elapsed) {
+        timer.fire();
+      }
+    }
+    _timers.removeWhere((timer) => timer.cancelled || timer.fired);
+  }
+}
+
+class _ScheduledPendingTimer implements PendingSendTimer {
+  _ScheduledPendingTimer(this.deadline, this._callback);
+
+  final Duration deadline;
+  final void Function() _callback;
+  bool cancelled = false;
+  bool fired = false;
+
+  @override
+  void cancel() => cancelled = true;
+
+  void fire() {
+    if (cancelled || fired) return;
+    fired = true;
+    _callback();
+  }
+}
+
 int _counter = 0;
 final Map<String, String> _sessionByEpk = <String, String>{};
 
@@ -285,6 +324,7 @@ void main() {
   setup({
     Duration pendingSendTimeout = const Duration(seconds: 20),
     Duration deliveryPendingEchoTimeout = const Duration(seconds: 60),
+    PendingSendTimerFactory? pendingSendTimerFactory,
     TranscriptEventStore? transcriptEventStore,
     DebugLog? debugLog,
     Future<void> Function(String key, Map<String, dynamic> value)?
@@ -304,6 +344,7 @@ void main() {
       runtimeRecordWriter: runtimeRecordWriter,
       pendingSendTimeout: pendingSendTimeout,
       deliveryPendingEchoTimeout: deliveryPendingEchoTimeout,
+      pendingSendTimerFactory: pendingSendTimerFactory,
     );
     final epk = 'epk_sync_${++_counter}';
     final sessionId = 'session_$_counter';
@@ -3517,9 +3558,12 @@ void main() {
     test(
       '(b) echo within the window confirms the row and cancels the timer',
       () async {
-        final s = await setup(pendingSendTimeout: short);
+        final timers = _PendingTimerScheduler();
+        final s = await setup(
+          pendingSendTimeout: short,
+          pendingSendTimerFactory: timers.schedule,
+        );
         await s.sync.sendMessage('hello');
-        final originalDeadline = DateTime.now().add(short);
         await _settle();
         expect(s.sync.debugPendingSendTimerCount, 1, reason: 'timer armed');
         final id = s.ch.sent.whereType<UserMessage>().last.id;
@@ -3539,14 +3583,9 @@ void main() {
           reason: 'echo cancelled timer',
         );
 
-        // Cross the configured timeout deadline — the cancelled timer must not
-        // replace the confirmed row even if a removed callback was still queued.
-        await _waitUntil(
-          () => DateTime.now().isAfter(
-            originalDeadline.add(const Duration(milliseconds: 40)),
-          ),
-          reason: 'the cancelled pending-send timer deadline',
-        );
+        // Cross the configured timeout deadline deterministically — a
+        // cancelled callback must not replace the confirmed row.
+        timers.elapse(short + const Duration(milliseconds: 1));
         await _settle();
         expect(
           messages(s.epk),
@@ -3562,12 +3601,13 @@ void main() {
     test(
       '(c) delivery_pending extends the no-echo window without scarring the row',
       () async {
+        final timers = _PendingTimerScheduler();
         final s = await setup(
           pendingSendTimeout: short,
           deliveryPendingEchoTimeout: const Duration(milliseconds: 500),
+          pendingSendTimerFactory: timers.schedule,
         );
         await s.sync.sendMessage('hello during reload');
-        final originalDeadline = DateTime.now().add(short);
         await _settle();
         final id = s.ch.sent.whereType<UserMessage>().last.id;
         expect(s.sync.debugPendingSendTimerCount, 1, reason: 'timer armed');
@@ -3587,14 +3627,9 @@ void main() {
           reason: 'original timer was replaced by the extended pending timer',
         );
 
-        // Cross the original 60 ms deadline. The replacement timer must keep
-        // the row pending while the extension replay queue still has time.
-        await _waitUntil(
-          () => DateTime.now().isAfter(
-            originalDeadline.add(const Duration(milliseconds: 40)),
-          ),
-          reason: 'the original pending-send timer deadline',
-        );
+        // Cross the original 60 ms deadline deterministically. The
+        // replacement timer must keep the row pending while replay has time.
+        timers.elapse(short + const Duration(milliseconds: 1));
         await _settle();
         expect(messages(s.epk), hasLength(1));
         expect(messages(s.epk).single.pending, isTrue);
