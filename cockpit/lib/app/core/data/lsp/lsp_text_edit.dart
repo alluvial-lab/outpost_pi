@@ -1,5 +1,7 @@
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 
+import 'lsp_diagnostic_decoder.dart';
+
 /// Represent an LSP `TextEdit` returned by `textDocument/formatting`.
 ///
 /// Replaces the text in [range] with [newText] when applied to a buffer.
@@ -9,10 +11,13 @@ class LspTextEdit {
   final LspRange range;
   final String newText;
 
-  factory LspTextEdit.fromJson(Map<String, dynamic> json) => LspTextEdit(
-    range: LspRange.fromJson((json['range'] as Map).cast<String, dynamic>()),
-    newText: json['newText'] as String? ?? '',
-  );
+  factory LspTextEdit.fromJson(Map<String, dynamic> json) {
+    final range = const LspDiagnosticDecoder().decodeRange(json['range']);
+    if (range == null) {
+      throw const FormatException('LSP text edit has an invalid range.');
+    }
+    return LspTextEdit(range: range, newText: json['newText'] as String? ?? '');
+  }
 }
 
 /// Parse a `textDocument/formatting` result into typed edits.

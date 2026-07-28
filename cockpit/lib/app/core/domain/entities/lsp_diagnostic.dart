@@ -10,13 +10,6 @@ class LspPosition {
 
   final int line;
   final int character;
-
-  factory LspPosition.fromJson(Map<String, dynamic> json) => LspPosition(
-    (json['line'] as num?)?.toInt() ?? 0,
-    (json['character'] as num?)?.toInt() ?? 0,
-  );
-
-  Map<String, dynamic> toJson() => {'line': line, 'character': character};
 }
 
 /// Represent a half-open `[start, end)` document range.
@@ -25,16 +18,6 @@ class LspRange {
 
   final LspPosition start;
   final LspPosition end;
-
-  factory LspRange.fromJson(Map<String, dynamic> json) => LspRange(
-    LspPosition.fromJson((json['start'] as Map).cast<String, dynamic>()),
-    LspPosition.fromJson((json['end'] as Map).cast<String, dynamic>()),
-  );
-
-  Map<String, dynamic> toJson() => {
-    'start': start.toJson(),
-    'end': end.toJson(),
-  };
 }
 
 /// Represent the one-based LSP `DiagnosticSeverity` values.
@@ -74,16 +57,8 @@ class LspDiagnostic {
   /// Optional source, such as `dart` or `eslint`, shown beside the message.
   final String? source;
 
-  /// Optional diagnostic code normalized from either a string or number.
+  /// Optional diagnostic code supplied by the language server.
   final String? code;
-
-  factory LspDiagnostic.fromJson(Map<String, dynamic> json) => LspDiagnostic(
-    range: LspRange.fromJson((json['range'] as Map).cast<String, dynamic>()),
-    severity: LspSeverity.fromWire(json['severity']),
-    message: (json['message'] as String?)?.trim() ?? '',
-    source: json['source'] as String?,
-    code: json['code']?.toString(),
-  );
 }
 
 /// Group one publication's diagnostics for a document URI.
