@@ -6,6 +6,7 @@ import 'package:app/config/dependencies.dart';
 import 'package:app/data/debug/debug_log_impl.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/domain/contracts/debug_log.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -247,18 +248,36 @@ void main() {
     },
   );
 
-  test('never throws — file I/O failure does not propagate', () async {
-    // Point path_provider at a non-existent dir to force I/O failure.
-    provider.appDocsDir = '/nonexistent/path/that/does/not/exist';
-    final log = newLog();
-    // None of these should throw.
-    log.log(MsgSendEvent(ts: DateTime.now(), id: 'msg-1'));
-    await disposeAndDrain(log);
-    await log.export();
-    await log.clear();
-    // Reached here → no throw.
-    expect(true, isTrue);
-  });
+  test(
+    'FileSystemException fallbacks are scrubbed and leave no exportable state',
+    () async {
+      const inaccessibleDir = '/nonexistent/path/that/does/not/exist';
+      final diagnostics = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (message, {wrapWidth}) {
+        if (message != null) diagnostics.add(message);
+      };
+      try {
+        // Point path_provider at a non-existent dir to force FileSystemException
+        // on log/dispose/export flush attempts; clear must remain contained too.
+        provider.appDocsDir = inaccessibleDir;
+        final log = newLog();
+        log.log(MsgSendEvent(ts: DateTime.now(), id: 'msg-1'));
+        await disposeAndDrain(log);
+        expect(await log.export(), isNull);
+        await log.clear();
+        expect(await log.export(), isNull);
+      } finally {
+        debugPrint = originalDebugPrint;
+      }
+
+      expect(diagnostics, isNotEmpty);
+      expect(diagnostics, everyElement('[debug-log] flush failed'));
+      expect(diagnostics.join('\n'), isNot(contains(inaccessibleDir)));
+      expect(diagnostics.join('\n'), isNot(contains('PathNotFoundException')));
+      expect(diagnostics.join('\n'), isNot(contains('#0')));
+    },
+  );
 
   test(
     'export reads from the file (source of truth) after a forced flush',

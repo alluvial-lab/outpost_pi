@@ -1,7 +1,7 @@
 ---
 id: gate-security-debug-log-fallback-raw-exceptions
 kind: story
-stage: implementing
+stage: review
 tags: [security, pi-extension]
 parent: null
 depends_on: []
@@ -25,11 +25,17 @@ Error Handling & Logging / Data Protection
 ## Evidence
 All logger failure paths interpolate raw exceptions into _safeLog; _safeLog prints that text and prints the full stack in debug builds. File and platform exceptions commonly include absolute sandbox paths and platform details, contradicting the method's scrubbed contract.
 
-## Blocker
+## Implementation notes
 
-The specified source and tests are exclusively under `app/`, outside this
-worker's authorized `pi-extension/src/` and `pi-extension/test/` write scope.
-No change was made; the story remains `implementing` for its app owner.
+- Changed `app/lib/data/debug/debug_log_impl.dart`: fallback diagnostics now
+  receive only fixed failure categories and never print exception text or stack
+  traces.
+- Changed `app/test/data/debug/debug_log_impl_test.dart`: added a
+  `FileSystemException` fallback canary which exercises the file-I/O callers,
+  asserts no exportable state, and proves diagnostics contain neither the path,
+  runtime exception class, nor a stack frame.
+- Verified: `flutter analyze` and
+  `flutter test test/data/debug/debug_log_impl_test.dart --concurrency=1`.
 
 ## Remediation direction
 Pass fixed failure categories — or at most an admitted runtime error class — to _safeLog, and never print stacks. Add a FileSystemException path canary covering every fallback route.
