@@ -1,7 +1,7 @@
 ---
 id: gate-patterns-inconsistency-pairing-coordinator-stale-capability
 kind: story
-stage: implementing
+stage: review
 tags: [refactor, pi-extension]
 parent: null
 depends_on: []
@@ -35,3 +35,15 @@ before evicting the capability, and provide a safe adapter fallback (or
 re-resolve `ctx.ui` after the await). Closely related to the lifecycle-
 disposal cluster (`feature-lifecycle-disposal-async-void`) — the same
 stale-capability-across-replacement class; coordinate the fix approach.
+
+## Implementation notes
+
+- `listDevices` captures UI before storage I/O and routes post-await rendering
+  through a stale-context classifier. A stale error clears only the matching
+  captured UI reference and safely degrades to no output; unrelated errors
+  still propagate.
+- Added the post-await stale-UI regression.
+- Changed `pi-extension/src/extension/command_surface/pairing_coordinator.ts`
+  and its test.
+- Verified with `vitest run src/extension/command_surface/pairing_coordinator.test.ts`
+  (5 tests) and `tsc --noEmit`.
