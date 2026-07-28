@@ -5,6 +5,13 @@ import { x25519 } from "@noble/curves/ed25519.js";
 /** Domain separator for the paired app↔Pi owner channel. */
 export const OWNER_CHANNEL_SUITE = "outpost-pi-owner-channel-v1";
 
+/**
+ * Keep owner-channel framing outside JSON Schema: it is a byte-level AEAD
+ * construction, not a JSON message family. `PROTOCOL.md` is the canonical
+ * byte and security contract; `protocol/fixtures/app-pi/owner-channel-kat.json`
+ * pins the cross-language bytes through the independent
+ * `protocol/scripts/generate-owner-channel-kat.ts` generator.
+ */
 const FRAME_VERSION = 0x01;
 const SEQ_BYTES = 8;
 const NONCE_BYTES = 24;

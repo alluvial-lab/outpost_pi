@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-owner-channel-binary-island
 kind: story
-stage: drafting
+stage: done
 tags: [pi-extension]
 parent: feature-protocol-contract-discriminator-registry
 depends_on: []
@@ -30,3 +30,14 @@ Document that the byte-level AEAD format is intentionally outside JSON Schema an
 The accepted design is a two-part durable documentation change: a source comment in `pi-extension/src/transport/secure_channel.ts` plus a narrow `## When NOT to Use` exception in `.agents/skills/scan-protocol-contract/references/undocumented-protocol-island.md`. This worker's explicit write boundary excludes `.agents/skills/`, so completing only the source comment would leave the scanner rule unable to recognize the intentional binary exception and would not meet acceptance.
 
 Bounced to drafting for reassignment with the scan-rule reference write root included. No framing constant, wire byte, KAT, or production source was changed.
+
+## Implementation notes
+
+- Execution capability: direct-read documentation implementation with the current high-reasoning coding worker; the accepted exception and its canonical references were already explicit.
+- Review weight: standard (project default); not applicable independently because this is a child-story checkpoint.
+- Files changed: `pi-extension/src/transport/secure_channel.ts` and `.agents/skills/scan-protocol-contract/references/undocumented-protocol-island.md`.
+- Tests added/removed: none; the existing cross-language known-answer fixture remains the independent exact-byte guard.
+- Simplification: documented the existing binary contract instead of adding a second binary manifest or generator surface.
+- Discrepancies from design: none after the expanded scan-rule write scope resolved the prior bounce.
+- Adjacent issues parked: none.
+- Verification: TypeScript typecheck passed; full Vitest suite, including the owner-channel KAT tests, passed (950 passed, 3 skipped; 55 files). No framing constant, fixture, or wire byte changed.

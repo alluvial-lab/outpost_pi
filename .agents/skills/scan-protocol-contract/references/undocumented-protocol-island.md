@@ -71,6 +71,23 @@ class FancyNewFrame { ... }
 - **Generated code** — skip `generated/`.
 - **Test fixtures** — skip.
 
+## When NOT to Use
+
+Do not report an undocumented-protocol-island finding for a handwritten format only when all of
+these safeguards are present:
+
+1. the format is non-JSON binary or cryptographic framing rather than an ordinary message family;
+2. a durable canonical contract specifies the exact bytes and security semantics;
+3. the implementation links to that canonical contract; and
+4. an independently generated cross-language known-answer test pins the exact bytes.
+
+`pi-extension/src/transport/secure_channel.ts` is the concrete exception: its byte-level AEAD
+frame is specified by `PROTOCOL.md`, linked beside the framing constants, and pinned by
+`protocol/fixtures/app-pi/owner-channel-kat.json` plus
+`protocol/scripts/generate-owner-channel-kat.ts`. This exception does not apply to handwritten
+JSON DTOs, discriminators, validators, or control frames; those remain findings unless generated
+or covered by the documented temporary-island rule above.
+
 ## Scope
 
 `app/lib/protocol/**` (non-generated), `relay/src/protocol/**` (non-generated),
