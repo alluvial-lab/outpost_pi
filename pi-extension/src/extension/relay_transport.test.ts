@@ -420,6 +420,32 @@ describe("relay transport control frames", () => {
     transport.stop();
   });
 
+  test("async owner-handler rejection is observed and later frames keep routing", async () => {
+    const { transport, relays, auditDispatchOverflow } = makeTransport();
+    const dispatched: string[] = [];
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      transport.onOuterMessage(async (ingress) => {
+        dispatched.push(ingress.payloadUtf8);
+        if (ingress.payloadUtf8 === "reject") throw new Error("owner lookup failed");
+      });
+
+      await transport.start({ relayUrl: "ws://relay.test", keypair });
+      relays[0]!.emit("message", outerLine("reject"));
+      relays[0]!.emit("message", outerLine("healthy"));
+      await flushDispatch();
+      await flushDispatch();
+
+      expect(dispatched).toEqual(["reject", "healthy"]);
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(auditDispatchOverflow).not.toHaveBeenCalled();
+      transport.stop();
+    } finally {
+      process.removeListener("unhandledRejection", unhandled);
+    }
+  });
+
   test("dispatch errors and reconnect cycles do not drift generation accounting", async () => {
     const { transport, relays, auditDispatchOverflow } = makeTransport();
     const dispatched: string[] = [];
