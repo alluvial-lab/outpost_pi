@@ -1,14 +1,14 @@
 ---
 id: gate-refactor-lifecycle-relay-auth-timeout-listener
 kind: story
-stage: implementing
-tags: []
-parent: null
+stage: drafting
+tags: [pi-extension, refactor]
+parent: feature-lifecycle-disposal-async-void
 depends_on: []
 release_binding: null
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-28
 ---
 
 # Relay auth timeout leaves its challenge listener attached
