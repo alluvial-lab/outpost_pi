@@ -1,5 +1,5 @@
 import { Server, Socket, createConnection, createServer } from "node:net";
-import { existsSync, lstatSync, unlinkSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, unlinkSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { usesNamedPipe } from "./ipc.js";
 
@@ -95,7 +95,10 @@ function _tryBind(sockPath: string): Promise<Server | null> {
       resolve(val);
     };
     server.once("error", () => settle(null));
-    server.listen(sockPath, () => settle(server));
+    server.listen(sockPath, () => {
+      if (!usesNamedPipe()) chmodSync(sockPath, 0o600);
+      settle(server);
+    });
   });
 }
 

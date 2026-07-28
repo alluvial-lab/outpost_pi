@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ipcAddress, usesNamedPipe } from "./ipc.js";
@@ -19,8 +19,13 @@ export const LOCAL_SESSION_NAME = "local";
 
 /** Ensures the new subdirs exist inside the existing ~/.pi/remote/. */
 export function ensureGlobalDirs(): void {
-  mkdirSync(SESSIONS_DIR, { recursive: true });
-  mkdirSync(SKILLS_DIR, { recursive: true });
+  mkdirSync(SESSIONS_DIR, { recursive: true, mode: 0o700 });
+  mkdirSync(SKILLS_DIR, { recursive: true, mode: 0o700 });
+  if (!usesNamedPipe()) {
+    chmodSync(HOME_PI_REMOTE, 0o700);
+    chmodSync(SESSIONS_DIR, 0o700);
+    chmodSync(SKILLS_DIR, 0o700);
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
-import { mkdirSync, realpathSync } from "node:fs";
+import { chmodSync, mkdirSync, realpathSync } from "node:fs";
 import type { ByeReason } from "../../protocol/types.js";
 import { acquireCwdLock, type AcquiredLock } from "../../session/cwd_lock.js";
 import {
@@ -17,6 +17,7 @@ import {
   localConfigExists,
   saveLocalConfig,
 } from "../../session/local_config.js";
+import { usesNamedPipe } from "../../session/ipc.js";
 import { MeshNode } from "../../session/mesh_node.js";
 import { formatPeerInventory } from "../../session/peer_inventory.js";
 import { runSetupWizard, type WizardUI } from "../../session/setup_wizard.js";
@@ -277,7 +278,9 @@ export class LocalMeshCommands {
     }
 
     ensureGlobalDirs();
-    mkdirSync(join(skillsDir(), "..", "sessions", sessionName), { recursive: true });
+    const sessionDir = join(skillsDir(), "..", "sessions", sessionName);
+    mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+    if (!usesNamedPipe()) chmodSync(sessionDir, 0o700);
 
     const sock = sessionSockPath(sessionName);
     const audit = sessionAuditPath(sessionName);
