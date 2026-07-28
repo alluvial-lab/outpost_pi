@@ -1617,6 +1617,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
       sendPiMessage: (...args) => _sendPiMessage(...args),
       wakeAgent: (...args) => _sdkSessionProjection.wakeAgent(...args),
       publishWorking: _publishWorking,
+      resetTurnSnapshot: () => _sdkSessionProjection.resetTurnSnapshot(),
       handleClientMessage: (sender, message) => _sdkSessionProjection.handleClientMessage(sender, message),
       onSessionLifecycle: (reason: string, sessionIdTail: string) => {
         _deliveryDebugLog.log({

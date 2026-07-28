@@ -745,3 +745,45 @@ describe("SdkSessionProjection delivery-path debug events", () => {
     expect(ctx[0]).toMatchObject({ armed: true, via: "withSession" });
   });
 });
+
+describe("SdkSessionProjection resetTurnSnapshot converges working on shutdown", () => {
+  // Regression: the SDK session_shutdown handler must publish working=false
+  // and reset the turn for the successor. If an active turn is abandoned by a
+  // replacement (old runner invalidated, terminal agent_end/turn_end events
+  // dropped on the stale runner), the only convergence point is
+  // resetTurnSnapshot() called from disposeRuntimePorts before relay.stop().
+  // Without it the app's working indicator stays stuck true.
+  test("resetTurnSnapshot on an active turn publishes working=false and converges idle", () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
+    projection.setSessionIdForTest("session-shutdown-turn");
+    // Seed an active turn (working=true) and confirm the working=true publish.
+    projection.applyTurn({ type: "turn_start", fallbackTurnId: "turn-active" });
+    expect(outputs.publishRoomMeta).toHaveBeenCalledWith({ working: true });
+    expect(projection.turnProjection().working).toBe(true);
+
+    // resetTurnSnapshot is the shutdown convergence point: it must publish
+    // working=false (the true→false edge) while the relay is still connected,
+    // and leave the projection idle for the successor session.
+    outputs.publishRoomMeta.mockClear();
+    projection.resetTurnSnapshot();
+    expect(outputs.publishRoomMeta).toHaveBeenCalledWith({ working: false });
+    expect(projection.turnProjection()).toMatchObject({
+      working: false,
+      activeTurnId: null,
+      phase: "idle",
+    });
+  });
+
+  test("resetTurnSnapshot on an already-idle projection does not republish working", () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
+    projection.setSessionIdForTest("session-shutdown-idle");
+    // No turn seeded — projection starts idle.
+    outputs.publishRoomMeta.mockClear();
+    projection.resetTurnSnapshot();
+    // No working edge to cross (false→false); must not spam a redundant frame.
+    expect(outputs.publishRoomMeta).not.toHaveBeenCalled();
+    expect(projection.turnProjection().working).toBe(false);
+  });
+});
