@@ -136,6 +136,13 @@ export interface SdkSessionProjectionPort {
   sendPiMessage(...args: Parameters<ExtensionAPI["sendMessage"]>): boolean;
   wakeAgent(...args: Parameters<ExtensionAPI["sendUserMessage"]>): Promise<WakeAgentResult>;
   publishWorking(working: boolean): void;
+  /** Converge the turn projection to idle and publish `working=false` while
+   *  the relay is still connected. Called at session shutdown so a replacement
+   *  or quit during an active turn does not leave the app's working indicator
+   *  stuck true (the old runner is invalidated and its terminal `agent_end`/
+   *  `turn_end` events are dropped, so the reducer-owned `working=true` would
+   *  otherwise never transition or publish). */
+  resetTurnSnapshot(): void;
   handleClientMessage(sender: PeerChannel, message: ClientMessage): void | Promise<void>;
   /** Delivery-path debug: session lifecycle transition (the precursor that
    * opens the null window). `reason` is the SDK event reason
