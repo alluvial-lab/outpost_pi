@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createConnection } from "node:net";
 import { join } from "node:path";
@@ -131,6 +131,11 @@ describe("Supervisor — exit-42 fresh-session recycle", () => {
 });
 
 describe("Supervisor — control UDS surface", () => {
+  test.skipIf(process.platform === "win32")("hardens its IPC directory and socket against other local users", () => {
+    expect(statSync(join(testHome, ".pi", "remote")).mode & 0o777).toBe(0o700);
+    expect(statSync(getSupervisorSockPath()).mode & 0o777).toBe(0o600);
+  });
+
   test("list returns empty daemons array when registry is empty", async () => {
     const r = await ask({ op: "list" });
     expect(r).toMatchObject({ ok: true, data: { daemons: [] } });
