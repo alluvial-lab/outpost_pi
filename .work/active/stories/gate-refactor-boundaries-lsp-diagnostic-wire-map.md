@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-boundaries-lsp-diagnostic-wire-map
 kind: story
-stage: implementing
+stage: done
 tags: [cockpit]
 parent: feature-boundary-typed-decoders
 depends_on: []
@@ -36,3 +36,9 @@ Release-relevant, but non-blocking under the configured medium-confidence routin
 
 ## Gate run note
 The scanner ran inline at the operator's direction rather than in an isolated scanner sub-agent, so this finding has reduced review isolation.
+
+## Implementation notes
+- Added `LspDiagnosticDecoder` in the LSP data layer to narrow publication, diagnostic, range, and position wire values before constructing typed domain entities.
+- Removed JSON constructors/serializers from `LspPosition`, `LspRange`, and `LspDiagnostic`; formatting text edits now reuse the boundary range decoder.
+- Preserved empty-batch, scalar fallback, and malformed-range skip behavior, with non-string `source`/`code` normalized to null.
+- Verification: `flutter analyze` passed and `flutter test` passed (277 tests).
