@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-boundaries-ad-hoc-wire-parse-pi-forward
 kind: story
-stage: drafting
+stage: implementing
 tags: [relay]
 parent: feature-boundary-typed-decoders
 depends_on: []
