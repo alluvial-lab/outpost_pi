@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-qr-terminal-rotation-dead-path
 kind: story
-stage: implementing
+stage: review
 tags: [cleanup, pi-extension]
 parent: null
 depends_on: []
@@ -48,3 +48,12 @@ callers. The direct-run branch in `index.ts:2919` invokes
 Remove `displayQR` and `startQRRotation`, update the stale "standalone CLI
 mode" comment, and remove test mocks for `displayQR` that no longer serve a
 production dependency.
+
+## Implementation notes
+
+- Removed unreachable terminal-writing and rotating-QR exports, plus the stale
+  `displayQR` mock.
+- Changed `pi-extension/src/pairing/qr.ts` and
+  `pi-extension/src/extension.test.ts`.
+- Verified with `vitest run src/extension.test.ts` (200 tests) and
+  `tsc --noEmit`.
