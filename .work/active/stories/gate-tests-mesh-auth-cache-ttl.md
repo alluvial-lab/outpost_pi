@@ -1,14 +1,14 @@
 ---
 id: gate-tests-mesh-auth-cache-ttl
 kind: story
-stage: drafting
+stage: implementing
 tags: [testing, relay]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: tests
 created: 2026-07-20
-updated: 2026-07-19
+updated: 2026-07-28
 ---
 
 # Cover mesh-authorization cache expiry and refresh

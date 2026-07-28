@@ -1,9 +1,14 @@
 ---
 id: gate-tests-pairing-qr-rpc-mode-no-seam-untested
-created: 2026-07-24
-updated: 2026-07-24
-tags: [testing]
+kind: story
+stage: implementing
+tags: [testing, pi-extension]
+parent: null
+depends_on: []
+release_binding: null
 gate_origin: tests
+created: 2026-07-24
+updated: 2026-07-28
 ---
 
 # showPairQr in non-TUI mode without the seam is untested
