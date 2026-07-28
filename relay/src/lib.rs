@@ -48,8 +48,9 @@ pub struct AppState {
     pub presence: Arc<PresenceManager>,
     pub rooms: Arc<RoomManager>,
     pub mesh: Arc<MeshStore>,
-    /// Plan 25 — caches `Pi-pubkey → mesh siblings` to avoid hitting SQLite
-    /// for every `pi_envelope` forward (60 s TTL).
+    /// Bounded, 60-second positive/negative mesh-membership cache for
+    /// `pi_envelope` authorization; publish invalidation and single-flight
+    /// scans keep membership checks current without scanning SQLite per forward.
     pub mesh_auth: Arc<MeshAuthCache>,
     /// In-process counters for emit/suppress accounting (firehose dedup).
     /// A background task drains and logs them every 10 s.
