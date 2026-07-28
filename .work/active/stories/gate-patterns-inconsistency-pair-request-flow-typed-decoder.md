@@ -1,7 +1,7 @@
 ---
 id: gate-patterns-inconsistency-pair-request-flow-typed-decoder
 kind: story
-stage: implementing
+stage: review
 tags: [refactor, app]
 parent: null
 depends_on: []
@@ -36,3 +36,10 @@ registry; consume them. If the pairing response is a genuine protocol island
 (distinct from server messages), amend the `typed-wire-decoders` pattern's
 "When NOT to Use" with the rationale rather than forcing it through. Black-box
 preserving: the decoded result must not change for valid responses.
+
+## Implementation notes
+
+- Added `decodeServerFrame`, the shared generated server-message decoder with the wire-presence metadata pairing needs for legacy `room_id` fallback.
+- Pairing now filters typed `PairOk`/`PairError` responses and no longer parses or dispatches a raw JSON map.
+- Existing pairing tests preserve valid `pair_ok`, legacy missing-`room_id`, and `pair_error` outcomes.
+- Verification: `flutter test test/pairing/pair_request_flow_test.dart --concurrency=2` (9 passing).
