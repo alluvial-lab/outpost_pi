@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-boundaries-protocol-env-read
 kind: story
-stage: implementing
+stage: done
 tags: [relay]
 parent: feature-boundary-typed-decoders
 depends_on: []
@@ -29,4 +29,13 @@ relay/src/protocol/outer.rs is an authored protocol module, but max_ct_bytes() r
 needs analysis: move env parsing to the relay configuration/composition boundary and inject/pass the max ct byte limit into the parser.
 
 ## Fix
+
+## Implementation notes
+
+- Added `RelayConfig` as the sole `RELAY_MAX_CT_MIB` environment reader, with
+  the prior default, trimming, positive-integer, and saturating-MiB policy.
+- Added injected `OuterEnvelopeParser`; the same instance configures WebSocket
+  admission and authenticated frame decoding through `AppState`.
+- Verified with `cargo fmt --check`, `cargo clippy -- -D warnings`, and
+  `cargo test` (168 unit, 64 integration, 0 doc tests).
 
