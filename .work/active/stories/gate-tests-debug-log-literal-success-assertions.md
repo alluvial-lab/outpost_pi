@@ -1,7 +1,7 @@
 ---
 id: gate-tests-debug-log-literal-success-assertions
 kind: story
-stage: implementing
+stage: review
 tags: [testing, pi-extension]
 parent: null
 depends_on: []
@@ -25,11 +25,14 @@ violate the repo's test-integrity prohibition. The surrounding calls still
 exercise no-throw behavior, so no production bug appears silenced; the literal
 assertions themselves add no evidence.
 
-## Blocker
+## Implementation notes
 
-The specified test is exclusively under `app/`, outside this worker's
-authorized `pi-extension/src/` and `pi-extension/test/` write scope. No change
-was made; the story remains `implementing` for its app owner.
+- Changed `app/test/data/debug/debug_log_impl_test.dart`: replaced both
+  literal-success assertions with stable postconditions. The I/O failure test
+  asserts no exportable state after the failed adapter operations; the throwing
+  callback test asserts its event never enters the exportable ring.
+- Verified: `flutter analyze` and
+  `flutter test test/data/debug/debug_log_impl_test.dart --concurrency=1`.
 
 ## Suggested rework
 ```dart
