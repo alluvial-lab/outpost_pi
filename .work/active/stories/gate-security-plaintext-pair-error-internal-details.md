@@ -1,7 +1,7 @@
 ---
 id: gate-security-plaintext-pair-error-internal-details
 kind: story
-stage: implementing
+stage: review
 tags: [security, pi-extension]
 parent: null
 depends_on: []
@@ -27,3 +27,12 @@ Failure while deriving or persisting channel state is returned in the pre-key pa
 
 ## Remediation direction
 Send a fixed internal_error message on the wire and retain only a content-free local category or normalized error class.
+
+## Implementation notes
+
+- Replaced raw caught-error interpolation with a fixed `internal_error` message.
+- Added a persistence-failure regression proving a path-bearing error is absent
+  from the relay-bound pairing response.
+- Changed `pi-extension/src/extension/owner_multiplexer.ts` and its test.
+- Verified with `vitest run src/extension/owner_multiplexer.test.ts` (28 tests)
+  and `tsc --noEmit`.

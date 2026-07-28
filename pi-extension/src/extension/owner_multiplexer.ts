@@ -448,9 +448,9 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       // Persist key material before the plaintext pair_ok makes the app adopt it.
       await this.deps.addPeer(record);
       this.deps.onPeerPersisted();
-    } catch (err) {
+    } catch {
       if (input.isCurrent()) {
-        sendError("internal_error", `Failed to establish protected channel: ${String(err)}`);
+        sendError("internal_error", "Pairing could not be completed.");
       }
       return;
     }
