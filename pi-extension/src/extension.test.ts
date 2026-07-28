@@ -313,7 +313,6 @@ vi.mock("./pairing/qr.js", async (importOriginal) => {
   const orig = await importOriginal<typeof import("./pairing/qr.js")>();
   return {
     ...orig,
-    displayQR: vi.fn(),  // suppress side effects (terminal spawn) in tests
     qrSession: {
       issueToken: vi.fn().mockReturnValue({
         token: "test-token",
