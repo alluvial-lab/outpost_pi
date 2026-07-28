@@ -1048,10 +1048,11 @@ class SyncService extends Service {
         // Falls back to the old scheme when `ts` is absent (legacy extension /
         // the early delivery-time echo). See story-mobile-assistant-message-
         // duplicated-live-replay user-message follow-up.
+        final messageType = typeOfServerMessage(msg);
         final userEventId = ts != null
             ? serverReplayEventId(
                 _activeTranscriptSessionId(),
-                'user_input',
+                messageType,
                 id,
                 ts,
               )
