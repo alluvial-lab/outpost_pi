@@ -4,10 +4,12 @@ Before editing or reviewing `cockpit/`, read the stack reference in [`../.agents
 
 Outpost-Pi's **desktop** client (macOS first). A multi-pane GUI over the Pi engine:
 projects on the left, agents in the center, file tree on the right. Each agent is a
-local `pi --mode rpc` process that the app spawns and drives. Through its
-extension-loaded RPC sessions, Cockpit also exposes relay controls and mobile
-pairing; cryptography remains extension-owned. It is the local counterpart to `app/`
-(the remote gateway). Reference plan:
+local `pi --mode rpc` process that Cockpit owns, spawns, and drives. The active
+RPC-control overlay exposes relay controls and pairing/revocation commands by
+asking the loaded extension through those local sessions; Cockpit does not connect
+directly to the relay, implement pairing cryptography, or own remote transport.
+Direct relay/mesh transport and remote process/session ownership remain deferred.
+It is the local counterpart to `app/` (the remote gateway). Reference plan:
 [`../plan/37-desktop-cockpit.md`](../plan/37-desktop-cockpit.md).
 
 ## Current scope (post-refactor: workspace projection + remote control)
@@ -182,8 +184,9 @@ await viewModel.spawnAgent().onSuccess((_) {
 
 - Edit files outside `cockpit/`
 - Reuse the plan 26 supervisor (decision C — own spawn)
-- Implement cryptography manually — the extension owns pairing keys and
-  owner-channel cryptography
+- Add direct relay/mesh transport, a direct pairing protocol, or Cockpit-owned
+  cryptography; remote capabilities go through the existing RPC-control overlay
+  and the extension owns pairing keys and owner-channel cryptography
 - Commit `build/`, `.dart_tool/`, `macos/Pods/`
 - Add a dependency without registering it in plan 37
 - Mix responsibilities between layers/features — when in doubt, read
