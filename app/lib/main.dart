@@ -1,5 +1,6 @@
 import 'package:app/config/dependencies.dart';
 import 'package:app/data/local/boxes.dart';
+import 'package:app/data/local/transcript_storage_key.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/sync/sync_service.dart';
@@ -9,6 +10,7 @@ import 'package:app/pairing/storage.dart';
 import 'package:app/routing/adaptive.dart';
 import 'package:app/routing/app_router.dart';
 import 'package:app/ui/core/themes/themes.dart';
+import 'package:app/ui/storage_recovery/transcript_storage_recovery_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -39,16 +41,98 @@ Future<void> reconcileOnAppResume({
   }
 }
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Provision the transcript-storage key, open encrypted v3 boxes, and wipe
-  // volatile runtime state before any service can read or write local data.
-  await LocalBoxes.init();
-  await setupDependencies();
-  // Eagerly construct the SSOT writer so it's consuming the channel from boot
-  // (messages can arrive before the chat screen mounts).
-  injector.get<SyncService>();
-  runApp(const OutpostPiApp());
+  runApp(
+    OutpostPiBootstrap(
+      initializeStorage: LocalBoxes.init,
+      discardUnreadableTranscripts: LocalBoxes.discardUnreadableTranscripts,
+      initializeDependencies: () async {
+        await setupDependencies();
+        // Eagerly construct the SSOT writer so it's consuming the channel from
+        // boot (messages can arrive before the chat screen mounts).
+        injector.get<SyncService>();
+      },
+      appBuilder: (_) => const OutpostPiApp(),
+    ),
+  );
+}
+
+enum _BootstrapPhase { loading, recovery, ready }
+
+/// Gate dependency setup and the production router on encrypted storage.
+///
+/// Only a recognized lost-key/ciphertext failure reaches the recovery UI. A
+/// confirmed discard returns through the same [initializeStorage] boundary;
+/// no recovery path can open transcript data without a fresh successful init.
+class OutpostPiBootstrap extends StatefulWidget {
+  const OutpostPiBootstrap({
+    super.key,
+    required this.initializeStorage,
+    required this.discardUnreadableTranscripts,
+    required this.initializeDependencies,
+    required this.appBuilder,
+  });
+
+  final Future<void> Function() initializeStorage;
+  final Future<void> Function() discardUnreadableTranscripts;
+  final Future<void> Function() initializeDependencies;
+  final WidgetBuilder appBuilder;
+
+  @override
+  State<OutpostPiBootstrap> createState() => _OutpostPiBootstrapState();
+}
+
+class _OutpostPiBootstrapState extends State<OutpostPiBootstrap> {
+  _BootstrapPhase _phase = _BootstrapPhase.loading;
+  int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap({bool discard = false}) async {
+    final generation = ++_generation;
+    if (mounted) setState(() => _phase = _BootstrapPhase.loading);
+    try {
+      if (discard) await widget.discardUnreadableTranscripts();
+      if (!mounted || generation != _generation) return;
+      await widget.initializeStorage();
+      if (!mounted || generation != _generation) return;
+      await widget.initializeDependencies();
+      if (!mounted || generation != _generation) return;
+      setState(() => _phase = _BootstrapPhase.ready);
+    } on TranscriptStorageKeyException catch (error) {
+      if (!mounted || generation != _generation) return;
+      if (error.canDiscardUnreadableTranscripts) {
+        setState(() => _phase = _BootstrapPhase.recovery);
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (_phase) {
+      _BootstrapPhase.ready => widget.appBuilder(context),
+      _BootstrapPhase.recovery => MaterialApp(
+        theme: buildLightTheme(),
+        darkTheme: buildDarkTheme(),
+        home: TranscriptStorageRecoveryPage(
+          onRetry: _bootstrap,
+          onDiscard: () => _bootstrap(discard: true),
+        ),
+      ),
+      _BootstrapPhase.loading => MaterialApp(
+        theme: buildLightTheme(),
+        darkTheme: buildDarkTheme(),
+        home: const Scaffold(body: Center(child: CircularProgressIndicator())),
+      ),
+    };
+  }
 }
 
 class OutpostPiApp extends StatefulWidget {
