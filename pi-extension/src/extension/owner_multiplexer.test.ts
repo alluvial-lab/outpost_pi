@@ -922,6 +922,32 @@ describe("OwnerMultiplexer", () => {
     }
   });
 
+  test("pairing persistence failure returns a content-free internal error", async () => {
+    const { mux, identity, consumePairToken, deps } = makeMultiplexer();
+    const pair = signedPairRequest(identity.publicKey);
+    consumePairToken.mockReturnValue("ok");
+    deps.addPeer = async () => { throw new Error("keyring unavailable at /private/secret"); };
+    const sendToPeer = vi.fn();
+
+    await mux.handleOuterFrame({
+      ingress: ownerIngress(pair.peerId, encodeClientMessage(pair.message)),
+      roomId: "room-1",
+      turnActive: () => false,
+      isCurrent: () => true,
+      onMessage: vi.fn(),
+      onDisconnect: vi.fn(),
+      sendToPeer,
+    });
+
+    expect(sendToPeer).toHaveBeenCalledWith(pair.peerId, {
+      type: "pair_error",
+      in_reply_to: pair.message.id,
+      code: "internal_error",
+      message: "Pairing could not be completed.",
+    });
+    expect(JSON.stringify(sendToPeer.mock.calls)).not.toContain("/private/secret");
+  });
+
   test("successful signed handshake persists keys before plaintext pair_ok and emits a verifiable Pi share", async () => {
     const { mux, identity, consumePairToken, knownPeers, deps } = makeMultiplexer();
     const pair = signedPairRequest(identity.publicKey);
