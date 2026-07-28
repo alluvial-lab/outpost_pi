@@ -1,12 +1,14 @@
 ---
 id: gate-docs-cockpit-guidance-local-only-contradiction
 kind: story
-stage: drafting
+stage: implementing
 tags: [cockpit, documentation]
+parent: null
+depends_on: []
 release_binding: null
 gate_origin: docs
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-28
 ---
 
 # Reconcile Cockpit's local-only guidance with its active control overlay
