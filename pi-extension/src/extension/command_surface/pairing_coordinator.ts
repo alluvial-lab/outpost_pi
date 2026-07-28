@@ -76,6 +76,13 @@ function wrapForTui(text: string, width: number): string[] {
   return lines.length > 0 ? lines : [""];
 }
 
+/**
+ * Supply the relay, owner-channel, mesh, and Pi-message adapters for pairing commands.
+ *
+ * The composition root owns relay/session teardown and supplies only live adapters;
+ * this coordinator owns its cached identity and self-revoke poller, stopping the
+ * latter through {@link PairingCoordinator.stopSelfRevoke} on replacement.
+ */
 export interface PairingCoordinatorDeps {
   getState(): PairingCoordinatorState;
   startRelay(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void>;
