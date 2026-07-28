@@ -1,9 +1,14 @@
 ---
 id: gate-tests-sync-service-noecho-wallclock-timing
-created: 2026-07-24
-updated: 2026-07-24
-tags: [testing]
+kind: story
+stage: implementing
+tags: [testing, app]
+parent: null
+depends_on: []
+release_binding: null
 gate_origin: tests
+created: 2026-07-24
+updated: 2026-07-28
 ---
 
 # sync_service no-echo cases race the production 60ms timer under load

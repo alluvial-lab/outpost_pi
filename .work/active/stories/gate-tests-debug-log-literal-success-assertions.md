@@ -1,8 +1,14 @@
 ---
 id: gate-tests-debug-log-literal-success-assertions
+kind: story
+stage: implementing
+tags: [testing, pi-extension]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: tests
 created: 2026-07-24
-updated: 2026-07-24
-tags: [testing]
+updated: 2026-07-28
 ---
 
 # Two debug-log tests retain prohibited literal-success assertions

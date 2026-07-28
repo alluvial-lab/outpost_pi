@@ -1,14 +1,14 @@
 ---
 id: gate-tests-localboxes-restart-preservation
 kind: story
-stage: drafting
-tags: [testing]
+stage: implementing
+tags: [testing, app]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: tests
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-28
 ---
 
 # LocalBoxes.init restart preservation is only partially covered
