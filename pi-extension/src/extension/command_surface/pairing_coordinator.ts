@@ -101,6 +101,11 @@ export interface PairingCoordinatorDeps {
   setSiblings(siblings: SiblingInfo[]): void;
 }
 
+function isStaleContextError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("stale after session replacement or reload");
+}
+
 function cwdFrom(ctx: Pick<ExtensionContext, "cwd">): string {
   return "cwd" in ctx && typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
 }
@@ -153,6 +158,7 @@ async function writePairCodeFile(target: string, payload: string): Promise<void>
 export class PairingCoordinator {
   private cachedEd25519: Ed25519Keypair | null = null;
   private selfRevoke: SelfRevoke | null = null;
+  private listDevicesUi: PairingUiContext["ui"] | null = null;
 
   constructor(private readonly deps: PairingCoordinatorDeps) {}
 
@@ -249,9 +255,11 @@ export class PairingCoordinator {
   }
 
   async listDevices(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
+    const ui = ctx.ui;
+    this.listDevicesUi = ui;
     const peers = await listPeers();
     if (peers.length === 0) {
-      ctx.ui.notify("[outpost-pi] No paired devices.", "info");
+      this.notifyListDevices(ui, "[outpost-pi] No paired devices.");
       return;
     }
     const lines = peers.map((p) => {
@@ -259,7 +267,19 @@ export class PairingCoordinator {
       const tag = this.deps.ownerHas(p.remote_epk) ? " 🟢 online" : " ⚪ offline";
       return `• ${shortid} — ${p.name}${tag}`;
     }).join("\n");
-    ctx.ui.notify(`[outpost-pi] Paired devices:\n${lines}`, "info");
+    this.notifyListDevices(ui, `[outpost-pi] Paired devices:\n${lines}`);
+  }
+
+  private notifyListDevices(ui: PairingUiContext["ui"], message: string): void {
+    try {
+      ui.notify(message, "info");
+    } catch (error) {
+      if (isStaleContextError(error)) {
+        if (this.listDevicesUi === ui) this.listDevicesUi = null;
+        return;
+      }
+      throw error;
+    }
   }
 
   async revokeDevice(arg: string, ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
