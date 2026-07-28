@@ -80,7 +80,7 @@ export interface RelayPeerChannelInput {
 export interface RelayTransportPort {
   status(): RelayConnectivity;
   start(input: RelayStartInput): Promise<RelayStartResult>;
-  stop(reason?: ByeReason): void;
+  stop(reason?: ByeReason): Promise<void>;
   sendRoomMeta(patch: Partial<RoomMeta> & { working?: boolean; thinking?: ThinkingLevel }): void;
   onOuterMessage(
     handler: (

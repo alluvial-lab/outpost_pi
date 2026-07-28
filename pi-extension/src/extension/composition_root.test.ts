@@ -9,7 +9,7 @@ function ports(): OutpostPiRuntimePorts {
     relay: {
       status: () => "disconnected",
       start: vi.fn(),
-      stop: vi.fn(),
+      stop: vi.fn(async () => undefined),
       sendRoomMeta: vi.fn(),
       onOuterMessage: vi.fn(() => vi.fn()),
       createPeerChannel: vi.fn(),
@@ -125,6 +125,26 @@ describe("composition root runtime", () => {
     expect(disposeOrder).toBeLessThan(clearOrder);
     expect(clearOrder).toBeLessThan(stopOrder);
     expect(stopOrder).toBeLessThan(closeMeshOrder);
+  });
+
+  test("owner session_shutdown awaits relay drain before closing mesh", async () => {
+    const p = ports();
+    let release!: () => void;
+    const drain = new Promise<void>((resolve) => { release = resolve; });
+    p.relay.stop = vi.fn(() => drain);
+    const { pi, handlers } = piWithHandlers();
+    const runtime = createOutpostPiExtensionRuntime(pi, p, new OutpostPiRuntimeCoordinator());
+    runtime.register();
+    handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("parent"));
+
+    const shutdown = handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }) as Promise<void>;
+    await Promise.resolve();
+    expect(p.relay.stop).toHaveBeenCalledOnce();
+    expect(p.commands.closeMesh).not.toHaveBeenCalled();
+
+    release();
+    await shutdown;
+    expect(p.commands.closeMesh).toHaveBeenCalledOnce();
   });
 
   test("owner session_shutdown converges the turn projection before stopping the relay", async () => {

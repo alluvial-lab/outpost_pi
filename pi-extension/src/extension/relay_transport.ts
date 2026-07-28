@@ -531,7 +531,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     return { roomId: input.roomId };
   }
 
-  function stop(_reason?: ByeReason): void {
+  async function stop(_reason?: ByeReason): Promise<void> {
     stopping = true;
     clearReconnectTimer();
     reconnectAttempt = 0;

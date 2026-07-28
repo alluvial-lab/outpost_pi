@@ -4616,6 +4616,63 @@ describe("bye on teardown", () => {
     expect(outpostPiTestHarness.state()).toBe("idle");
   });
 
+  test("concurrent stops share a bye drain and close relay only after sequence persistence", async () => {
+    await _pairForTest("peer-bye-drain");
+    const relay = relayRef.current!;
+    const sendsBefore = relay.send.mock.calls.length;
+    const storage = await import("./pairing/storage.js");
+    const reserve = vi.mocked(storage.reserveSendSeq);
+    const originalReserve = reserve.getMockImplementation()!;
+    let release!: () => void;
+    let started!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const reserveStarted = new Promise<void>((resolve) => { started = resolve; });
+    reserve.mockImplementationOnce(async (peerId, channelKey) => {
+      started();
+      await barrier;
+      return originalReserve(peerId, channelKey);
+    });
+
+    const stop = captureHandler("outpost-pi stop");
+    const first = stop("", makeMockCtx());
+    const second = stop("", makeMockCtx());
+    await reserveStarted;
+
+    expect(relay.close).not.toHaveBeenCalled();
+    expect(outpostPiTestHarness.state()).toBe("started");
+
+    release();
+    await Promise.all([first, second]);
+
+    const sent = relay.send.mock.calls.slice(sendsBefore).map((call) => call[0] as string);
+    const byes = sent.map(decodeSentCt).filter((decoded) => decoded.inner.type === "bye");
+    expect(byes).toHaveLength(1);
+    expect(byes[0]!.inner).toMatchObject({ type: "bye", reason: "peer_stop" });
+    expect(relay.close).toHaveBeenCalledOnce();
+    expect(outpostPiTestHarness.state()).toBe("idle");
+  });
+
+  test("a rejected owner drain is observed and does not block relay close", async () => {
+    await _pairForTest("peer-bye-reject");
+    const relay = relayRef.current!;
+    const storage = await import("./pairing/storage.js");
+    vi.mocked(storage.reserveSendSeq).mockRejectedValueOnce(new Error("sequence persistence failed"));
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const stop = captureHandler("outpost-pi stop");
+      await expect(stop("", makeMockCtx())).resolves.toBeUndefined();
+      await flushSecureOutbound();
+
+      expect(relay.close).toHaveBeenCalledOnce();
+      expect(_getActivePeerCountForTest()).toBe(0);
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(outpostPiTestHarness.state()).toBe("idle");
+    } finally {
+      process.removeListener("unhandledRejection", unhandled);
+    }
+  });
+
   test("started (no peer paired) + /outpost-pi stop → no bye sent (channel is null)", async () => {
     captureHandler("outpost-pi");
     await outpostPiTestHarness.connect(makeMockCtx());
