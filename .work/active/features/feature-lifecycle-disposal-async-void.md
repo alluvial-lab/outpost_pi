@@ -1,7 +1,7 @@
 ---
 id: feature-lifecycle-disposal-async-void
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, app, lifecycle]
 parent: null
 depends_on: []
@@ -269,3 +269,16 @@ Units 2, 3, and 5 are independent and may be implemented in the same feature own
 
 ## Open questions
 None. The feature changes lifecycle guarantees and teardown ordering only; it introduces no open product-direction or external-contract decision.
+
+## Implementation summary
+
+Completed checkpoints:
+- `gate-refactor-lifecycle-bye-frames-race-relay-shutdown` — awaited/coalesced owner drains now precede relay close across every stop surface.
+- `gate-refactor-lifecycle-self-revoke-discards-async-detach` — self-revoke awaits owner detach before its local notice.
+- `gate-refactor-lifecycle-owner-ingress-floating` — the existing transport-owned promise boundary is pinned by async-rejection/no-unhandled regression coverage.
+- `gate-refactor-lifecycle-relay-auth-timeout-listener` — auth wait cleanup now removes the exact listener on timeout and success.
+- `gate-refactor-lifecycle-owner-identity-watcher-no-dispose` — completed by the app owner and integrated in the shared feature.
+
+Deviations: the owner-ingress production boundary had already converged at HEAD, so that checkpoint added regression evidence without rewriting working source. Self-revoke gained a narrow poller-factory test seam to verify callback ordering without network polling.
+
+Integrated pi-extension verification: `tsc --noEmit` passed; final `vitest run` passed 950 tests with 3 skipped across 55 files.
