@@ -164,6 +164,49 @@ describe("RelayClient", () => {
     client.close();
   });
 
+  test("connect: auth timeout removes its pending challenge listener", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
+      const connecting = client.connect();
+      const rejection = expect(connecting).rejects.toThrow("relay auth timeout");
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(currentWs().listenerCount("message")).toBe(1);
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      await rejection;
+      expect(currentWs().listenerCount("message")).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("connect: successful challenge replaces the auth listener with one data listener", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
+      const received: string[] = [];
+      client.on("message", (line) => received.push(line));
+      const connecting = client.connect();
+
+      await vi.advanceTimersByTimeAsync(1);
+      const ws = currentWs();
+      expect(ws.listenerCount("message")).toBe(1);
+      simulateChallenge(ws);
+      await connecting;
+      expect(ws.listenerCount("message")).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      const outer = JSON.stringify({ peer: "app_peer_1", ct: "AAAA" });
+      ws.emit("message", Buffer.from(outer));
+      expect(received).toEqual([outer]);
+      client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("connect: malformed challenge errors never echo attacker-controlled content", async () => {
     const client = new RelayClient("ws://localhost:9999", keypair, "test-device");
     const connecting = client.connect();
