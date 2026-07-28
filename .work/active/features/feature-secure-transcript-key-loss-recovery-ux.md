@@ -1,7 +1,7 @@
 ---
 id: feature-secure-transcript-key-loss-recovery-ux
 kind: feature
-stage: implementing
+stage: review
 tags: [app, security]
 parent: null
 depends_on: []
@@ -249,3 +249,12 @@ None block implementation. The two commissioning questions are resolved by the c
 - **Discard scope**: delete only unreadable transcript-bearing v3 storage and its key metadata; do not offer or perform a full local identity/pairing reset in this feature.
 
 If the operator later wants a separate “reset this device and mesh identity” affordance, it should be scoped as its own security-sensitive product flow rather than silently expanding this recovery action.
+
+## Implementation summary
+
+Implemented the only child checkpoint: a confirmed, crash-resumable encrypted
+transcript discard; a fail-closed pre-router bootstrap gate; and a blocking
+recovery screen with non-dismissible destructive confirmation and honest
+partial-replay copy. The discard retains identity, pairings, preferences, mesh
+state, and unrelated Hive/secure-storage data. Verification passed with
+`flutter analyze` and 863 non-E2E Flutter tests.
