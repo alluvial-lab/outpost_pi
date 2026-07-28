@@ -1,7 +1,7 @@
 ---
 id: story-fix-working-flag-stuck-after-session-shutdown
 kind: story
-stage: review
+stage: done
 tags: [bug, pi-extension, lifecycle]
 parent: null
 depends_on: []
