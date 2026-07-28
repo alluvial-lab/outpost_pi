@@ -21,3 +21,9 @@ schemas, but omit: a plain `type: "number"` field (no minimum) needs
 schema, assert base present / at-least absent, and prove the generated
 validator accepts finite values and rejects NaN/infinities. Location:
 `tools/protocol-codegen/src/index.test-cases.ts`.
+
+## Blocker
+
+The specified code-generator test is under `tools/`, outside this worker's
+authorized `pi-extension/src/` and `pi-extension/test/` write scope. No change
+was made; the story remains `implementing` for the generator owner.
