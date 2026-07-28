@@ -41,7 +41,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use rand::{RngCore, thread_rng};
 use tracing::{debug, warn};
 
-use crate::mesh::{MeshStore, owner_pk_hash, verify_envelope};
+use crate::mesh::{MeshStore, decode_member_keys, owner_pk_hash, verify_envelope};
 use crate::peers::connections::ConnectionRegistry;
 use crate::protocol::generated::cross_pc::{
     AgentEnvelope, CrossPcFrame, PiEnvelopeFrame, PiEnvelopeInFrame,
@@ -243,9 +243,12 @@ impl MeshAuthCache {
                 continue;
             }
 
-            let members = match member_keys(&envelope.blob) {
-                Some(members) => members,
-                None => continue,
+            let members = match decode_member_keys(&envelope.blob) {
+                Ok(members) => members,
+                Err(err) => {
+                    warn!(%err, "invalid stored mesh members skipped during auth");
+                    continue;
+                }
             };
             if members.contains(pi_pk) {
                 return Some(ScannedMembership {
@@ -259,7 +262,13 @@ impl MeshAuthCache {
 
     /// Invalidate membership affected by one successful Owner publish.
     pub fn invalidate_owner_publish(&self, owner_hash: &str, blob: &[u8]) {
-        let current_members = member_keys(blob).unwrap_or_default();
+        let current_members = match decode_member_keys(blob) {
+            Ok(members) => members,
+            Err(err) => {
+                warn!(%err, "invalid published mesh members omitted from cache invalidation");
+                HashSet::new()
+            }
+        };
         let mut inner = self.inner.lock().unwrap();
         inner.generation = inner.generation.wrapping_add(1);
         inner.entries.retain(|pi_pk, entry| {
@@ -291,30 +300,6 @@ impl MeshAuthCache {
             gate.release.wait();
         }
     }
-}
-
-fn member_keys(blob: &[u8]) -> Option<HashSet<String>> {
-    let parsed: serde_json::Value = match serde_json::from_slice(blob) {
-        Ok(value) => value,
-        Err(err) => {
-            warn!(%err, "verified mesh blob failed member parse during auth");
-            return None;
-        }
-    };
-    let members = parsed
-        .get("members")
-        .and_then(serde_json::Value::as_array)?;
-    Some(
-        members
-            .iter()
-            .filter_map(|member| {
-                member
-                    .get("remote_epk")
-                    .and_then(serde_json::Value::as_str)
-                    .map(String::from)
-            })
-            .collect(),
-    )
 }
 
 /// What the routing loop should do after calling `handle_pi_envelope`.
@@ -590,6 +575,32 @@ mod tests {
             .unwrap();
     }
 
+    fn write_owner_blob_with_members_json(
+        store: &MeshStore,
+        owner_sk: &SigningKey,
+        members: serde_json::Value,
+        version: u64,
+    ) {
+        let owner_pk = owner_sk.verifying_key().to_bytes();
+        let blob_bytes = serde_json::to_vec(&serde_json::json!({
+            "owner_pk": B64.encode(owner_pk),
+            "version": version,
+            "members": members,
+        }))
+        .unwrap();
+        let sig = owner_sk.sign(&blob_bytes).to_bytes();
+        store
+            .upsert(
+                &owner_pk_hash(&owner_pk),
+                &owner_pk,
+                version,
+                &blob_bytes,
+                &sig,
+                0,
+            )
+            .unwrap();
+    }
+
     fn write_owner_blob_with_hash(
         store: &MeshStore,
         owner_sk: &SigningKey,
@@ -800,6 +811,35 @@ mod tests {
 
         assert_eq!(cache.scan_count.load(Ordering::Relaxed), 3);
         assert!(cache.inner.lock().unwrap().entries.len() <= MESH_AUTH_CACHE_CAPACITY);
+    }
+
+    #[tokio::test]
+    async fn malformed_member_entry_rejects_the_whole_signed_record() {
+        let (cache, store) = fresh_cache_and_store();
+        let owner = make_owner_key();
+        write_owner_blob_with_members_json(
+            &store,
+            &owner,
+            serde_json::json!([{"remote_epk": "pi_a"}, {"remote_epk": 7}]),
+            1,
+        );
+
+        assert!(!cache.is_authorized("pi_a", "pi_b", &store));
+    }
+
+    #[test]
+    fn malformed_publish_invalidates_cached_owner_without_authorizing_members() {
+        let (cache, store) = fresh_cache_and_store();
+        let owner = make_owner_key();
+        write_owner_blob(&store, &owner, &["pi_a", "pi_b"], 1);
+        assert!(cache.is_authorized("pi_a", "pi_b", &store));
+
+        write_owner_blob_with_members_json(&store, &owner, serde_json::json!({}), 2);
+        let owner_hash = owner_pk_hash(&owner.verifying_key().to_bytes());
+        let record = store.get(&owner_hash).unwrap().unwrap();
+        cache.invalidate_owner_publish(&owner_hash, &record.blob);
+
+        assert!(!cache.is_authorized("pi_a", "pi_b", &store));
     }
 
     #[tokio::test]
