@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-boundaries-lsp-diagnostic-wire-map
 kind: story
-stage: drafting
+stage: implementing
 tags: [cockpit]
 parent: feature-boundary-typed-decoders
 depends_on: []
