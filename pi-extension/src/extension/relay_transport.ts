@@ -624,7 +624,6 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
         current,
         input.peerId,
         (message) => { void input.onMessage(message); },
-        () => input.onDisconnect(input.peerId),
       );
     }
 

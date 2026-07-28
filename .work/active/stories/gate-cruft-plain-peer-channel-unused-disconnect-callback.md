@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-plain-peer-channel-unused-disconnect-callback
 kind: story
-stage: implementing
+stage: review
 tags: [cleanup, pi-extension]
 parent: null
 depends_on: []
@@ -44,3 +44,11 @@ The sole production caller supplies the callback at
 ## Removal
 Remove `_onDisconnect` from `PlainPeerChannel` and the unused callback
 allocation at its production call site.
+
+## Implementation notes
+
+- Removed the unused constructor callback and its production allocation.
+- Changed `pi-extension/src/transport/peer_channel.ts` and
+  `pi-extension/src/extension/relay_transport.ts`.
+- Verified with `vitest run src/session/broker_remote.test.ts` (41 tests) and
+  `tsc --noEmit`.
