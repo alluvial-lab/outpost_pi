@@ -1,7 +1,7 @@
 ---
 id: feature-protocol-contract-discriminator-registry
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, app, relay]
 parent: null
 depends_on: []
