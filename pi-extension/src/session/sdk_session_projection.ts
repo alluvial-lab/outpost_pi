@@ -4,6 +4,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { ClientMessage, ServerMessage, ThinkingLevel, SessionHistoryEvent } from "../protocol/types.js";
+import { SERVER_MESSAGE_DISCRIMINATORS } from "../protocol/generated/protocol.generated.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
 import type { SdkSessionProjectionPort, WakeAgentResult } from "../extension/ports.js";
 import type { ActionCtx, ActionPi, SdkModelLike } from "../actions/handlers.js";
@@ -512,7 +513,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
       // UserInput handler keys the row by this id and derives the eventId
       // from (sessionId, id, ts), so a single broadcast commits one row.
       this.opts.outputs.broadcast(this.currentSessionMessage({
-        type: "user_input",
+        type: SERVER_MESSAGE_DISCRIMINATORS.user_input,
         id: clientMessageId,
         text,
         ts,
@@ -552,7 +553,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
           // this frame, not from the streamed buffer at agent_done. See
           // story-mobile-assistant-message-duplicated-live-replay decision 1.
           this.opts.outputs.broadcast(this.currentSessionMessage({
-            type: "agent_message",
+            type: SERVER_MESSAGE_DISCRIMINATORS.agent_message,
             in_reply_to: this.lastTranscriptUserId ?? `sync_${ts}`,
             text,
             ts,
@@ -640,7 +641,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     });
 
     return this.currentSessionMessage({
-      type: "session_history",
+      type: SERVER_MESSAGE_DISCRIMINATORS.session_history,
       in_reply_to: inReplyTo,
       session_started_at: this.sessionStartedAt ?? 0,
       events: projection.events,
@@ -651,7 +652,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
 
   emptySessionHistoryMessage(inReplyTo: string): Extract<ServerMessage, { type: "session_history" }> {
     return this.currentSessionMessage({
-      type: "session_history",
+      type: SERVER_MESSAGE_DISCRIMINATORS.session_history,
       in_reply_to: inReplyTo,
       session_started_at: this.sessionStartedAt ?? 0,
       events: [],
@@ -746,8 +747,8 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   queuedMessageState(): Extract<ServerMessage, { type: "queued_message_state" }> {
     const queued = this.turnProjection().queuedMessage;
     return queued
-      ? this.currentSessionMessage({ type: "queued_message_state", id: queued.id, text: queued.text })
-      : this.currentSessionMessage({ type: "queued_message_state" });
+      ? this.currentSessionMessage({ type: SERVER_MESSAGE_DISCRIMINATORS.queued_message_state, id: queued.id, text: queued.text })
+      : this.currentSessionMessage({ type: SERVER_MESSAGE_DISCRIMINATORS.queued_message_state });
   }
 
   broadcastQueuedMessageState(): void {
@@ -793,7 +794,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.applyTurn({ type: "queued_message_clear" });
     this.broadcastQueuedMessageState();
     const message: Extract<ClientMessage, { type: "user_message" }> = this.currentSessionMessage({
-      type: "user_message",
+      type: SERVER_MESSAGE_DISCRIMINATORS.user_message,
       id: queued.id,
       text: queued.text,
     });
