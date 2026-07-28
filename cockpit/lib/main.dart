@@ -5,6 +5,7 @@ import 'package:cockpit/app/app_module.dart';
 import 'package:cockpit/app/app_widget.dart';
 import 'package:cockpit/app/cockpit/data/rpc/pi_process_registry.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_process_registry.dart';
+import 'package:cockpit/app/core/data/relay/pairing_seam_cleanup.dart';
 import 'package:cockpit/app/core/data/repositories/hive_settings_store.dart';
 import 'package:cockpit/app/core/env.dart';
 import 'package:cockpit/app/core/ui/settings_controller.dart';
@@ -32,6 +33,7 @@ Future<void> main() async {
   // restart after a crash).
   await PiProcessRegistry.cleanOrphans();
   await LspProcessRegistry.cleanOrphans();
+  await PairingSeamCleanup.sweep();
 
   // Own subdirectory; in debug mode separated from the production build. The
   // feature boxes are opened by their own async builders (see
