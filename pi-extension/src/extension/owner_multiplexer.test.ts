@@ -234,6 +234,31 @@ describe("OwnerMultiplexer", () => {
     expect(channels[1]!.sent).toEqual([droppedForA, resumed]);
   });
 
+  test("simultaneous offline owners keep completed intervals and cap accounting isolated", () => {
+    const { mux, channels } = makeMultiplexer();
+    mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
+    mux.markPeerOffline("owner-a");
+    const oldAOnly = agentChunk("a-only completed interval");
+    mux.broadcast(oldAOnly);
+    mux.completeOfflineTurn();
+    mux.attach({ peerId: "owner-b", onMessage: vi.fn() });
+    mux.markPeerOffline("owner-b");
+
+    const current = Array.from(
+      { length: OFFLINE_BUFFER_MAX_FRAMES },
+      (_, index) => agentChunk(`shared-current-${index}`),
+    );
+    for (const message of current) mux.broadcast(message);
+
+    mux.markPeerOnline("owner-b");
+    expect(channels[1]!.sent).toEqual(current);
+    expect(channels[0]!.sent).toEqual([]);
+
+    mux.markPeerOnline("owner-a");
+    expect(channels[0]!.sent).toEqual(current);
+    expect(channels[1]!.sent).toEqual(current);
+  });
+
   test("resume drains buffered and synchronously re-entrant frames before live fan-out", () => {
     const { mux, channels } = makeMultiplexer();
     mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
