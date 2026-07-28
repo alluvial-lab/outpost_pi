@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cockpit/app/core/data/lsp/lsp_codec.dart';
+import 'package:cockpit/app/core/data/lsp/lsp_diagnostic_decoder.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_process_registry.dart';
 import 'package:cockpit/app/core/data/setup/outpost_pi_resolver.dart';
 import 'package:cockpit/app/core/domain/contracts/lsp_client.dart';
@@ -25,6 +26,7 @@ class LspClientImpl implements LspClient {
   LspClientImpl({required this.spec, required this.rootPath});
 
   final LspServerSpec spec;
+  static const LspDiagnosticDecoder _diagnosticDecoder = LspDiagnosticDecoder();
 
   @override
   final String rootPath;
@@ -270,17 +272,10 @@ class LspClientImpl implements LspClient {
   }
 
   void _handleNotification(String method, Object? params) {
-    if (method == 'textDocument/publishDiagnostics' &&
-        params is Map<String, dynamic>) {
-      final uri = params['uri'] as String? ?? '';
-      final raw = params['diagnostics'];
-      final list = <LspDiagnostic>[
-        if (raw is List)
-          for (final d in raw)
-            if (d is Map<String, dynamic>) LspDiagnostic.fromJson(d),
-      ];
-      if (!_diagnostics.isClosed) {
-        _diagnostics.add(LspDiagnosticsBatch(uri: uri, diagnostics: list));
+    if (method == 'textDocument/publishDiagnostics') {
+      final batch = _diagnosticDecoder.decodePublishDiagnostics(params);
+      if (batch != null && !_diagnostics.isClosed) {
+        _diagnostics.add(batch);
       }
     }
     // Other notifications (logMessage, progress, …) are currently ignored.
