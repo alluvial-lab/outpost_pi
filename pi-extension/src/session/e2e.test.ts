@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { setTimeout as wait } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -451,6 +451,32 @@ describe("ACK protocol (plan/25 Wave 0)", () => {
     expect(uds.ack_status).toBe("received");
 
     await orq.leave(); await backend.leave();
+  });
+
+  test("audit rotation bounds retained broker metadata across sustained routes", async () => {
+    const sock = tmpSock();
+    const auditDir = mkdtempSync(join(tmpdir(), "pi-audit-bound-"));
+    const audit = join(auditDir, "audit.jsonl");
+    const orq = await makePeer(sock, "orq", audit);
+    const broker = orq.localBroker()!;
+    const address = "casa:" + "x".repeat(1_000);
+
+    for (let index = 0; index < 1_000; index += 1) {
+      expect(broker.injectFromRemote({
+        from: address,
+        to: "orq",
+        id: `audit-bound-${index}`,
+        re: null,
+        body: { ignored: "payload" },
+      })).toBe("received");
+    }
+    await wait(1_000);
+
+    const active = statSync(audit).size;
+    const prior = statSync(`${audit}.1`).size;
+    expect(active).toBeLessThanOrEqual(256 * 1024);
+    expect(prior).toBeLessThanOrEqual(256 * 1024);
+    await orq.leave();
   });
 
   test("audit.jsonl tags injectFromRemote envelopes with via=relay", async () => {
