@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { qrSession } from "../../pairing/qr.js";
 import { PairingCoordinator } from "./pairing_coordinator.js";
+import type { SelfRevokeOptions } from "../../mesh/self_revoke.js";
 
 type CustomMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
 type PairingDialogFactory = (
@@ -49,6 +50,74 @@ describe("PairingCoordinator.showPairQr", () => {
 
     await expect(coordinator.listDevices({ ui } as never)).resolves.toBeUndefined();
     expect(ui.notify).toHaveBeenCalledOnce();
+  });
+
+  test("self-revoke waits for owner detach before publishing its local notice", async () => {
+    let onRevoke!: NonNullable<SelfRevokeOptions["onRevoke"]>;
+    let release!: () => void;
+    const detachGate = new Promise<void>((resolve) => { release = resolve; });
+    const detach = vi.fn(() => detachGate);
+    const sendPiMessage = vi.fn(() => true);
+    const poller = { start: vi.fn(), stop: vi.fn() };
+    const coordinator = new PairingCoordinator({
+      getState: () => "started",
+      startRelay: async () => undefined,
+      isRelayConnected: () => true,
+      roomId: () => "room",
+      displayName: () => "Test Pi",
+      owners: { detach } as never,
+      ownerHas: () => true,
+      refreshPairingsCache: vi.fn(),
+      joinLocalMesh: async () => undefined,
+      sendPiMessage,
+      setSiblings: () => undefined,
+    }, (options) => {
+      onRevoke = options.onRevoke!;
+      return poller as never;
+    });
+
+    coordinator.startSelfRevoke("https://relay.test", {
+      publicKey: new Uint8Array(32),
+      secretKey: new Uint8Array(32),
+    });
+    const revoking = onRevoke("owner-epk");
+    await Promise.resolve();
+
+    expect(detach).toHaveBeenCalledOnce();
+    expect(detach).toHaveBeenCalledWith("owner-epk", "session_replaced");
+    expect(sendPiMessage).not.toHaveBeenCalled();
+
+    release();
+    await revoking;
+    expect(sendPiMessage).toHaveBeenCalledOnce();
+  });
+
+  test("self-revoke detach rejection stays on the awaited callback chain", async () => {
+    let onRevoke!: NonNullable<SelfRevokeOptions["onRevoke"]>;
+    const detachError = new Error("detach failed");
+    const coordinator = new PairingCoordinator({
+      getState: () => "started",
+      startRelay: async () => undefined,
+      isRelayConnected: () => true,
+      roomId: () => "room",
+      displayName: () => "Test Pi",
+      owners: { detach: vi.fn(async () => { throw detachError; }) } as never,
+      ownerHas: () => true,
+      refreshPairingsCache: vi.fn(),
+      joinLocalMesh: async () => undefined,
+      sendPiMessage: vi.fn(() => true),
+      setSiblings: () => undefined,
+    }, (options) => {
+      onRevoke = options.onRevoke!;
+      return { start: vi.fn(), stop: vi.fn() } as never;
+    });
+
+    coordinator.startSelfRevoke("https://relay.test", {
+      publicKey: new Uint8Array(32),
+      secretKey: new Uint8Array(32),
+    });
+
+    await expect(onRevoke("owner-epk")).rejects.toBe(detachError);
   });
 
   test("renders pairing only in the TUI without sending model-context messages", async () => {
