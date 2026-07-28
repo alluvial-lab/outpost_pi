@@ -1,5 +1,5 @@
 import type { Server, Socket } from "node:net";
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { type Envelope, parse, serialize, uuidv7, EnvelopeError } from "./envelope.js";
 import { sanitizeSegment } from "./local_config.js";
@@ -133,6 +133,21 @@ interface PeerConn {
 }
 
 const BROKER_NAME = "broker";
+const BROKER_AUDIT_MAX_BYTES = 256 * 1024;
+const BROKER_AUDIT_MAX_RECIPIENTS = 32;
+const BROKER_AUDIT_MAX_FIELD_LENGTH = 256;
+
+function auditText(value: unknown): string {
+  return typeof value === "string" ? value.slice(0, BROKER_AUDIT_MAX_FIELD_LENGTH) : "";
+}
+
+function auditRecipients(value: unknown): string[] {
+  const recipients = Array.isArray(value) ? value : [value];
+  return recipients
+    .filter((recipient): recipient is string => typeof recipient === "string")
+    .slice(0, BROKER_AUDIT_MAX_RECIPIENTS)
+    .map((recipient) => recipient.slice(0, BROKER_AUDIT_MAX_FIELD_LENGTH));
+}
 
 type AckStatus = "received" | "denied";
 
@@ -180,6 +195,7 @@ export class Broker {
   private readonly server: Server;
   /** Plan/25 Wave C: optional handoff for cross-PC routing. Null = local only. */
   private remoteRouter: RemoteRouter | null = null;
+  private auditWrite: Promise<void> = Promise.resolve();
 
   constructor(opts: BrokerOptions) {
     this.server = opts.server;
@@ -562,17 +578,26 @@ export class Broker {
     if (!this.auditPath) return;
     const line = JSON.stringify({
       ts: Date.now(),
-      from: env.from,
-      to: env.to,
-      id: env.id,
-      re: env.re,
-      delivered,
+      from: auditText(env.from),
+      to: Array.isArray(env.to) ? auditRecipients(env.to) : auditText(env.to),
+      id: auditText(env.id),
+      re: env.re === null ? null : auditText(env.re),
+      delivered: auditRecipients(delivered),
       ack_status: ackStatus,
       via,
     }) + "\n";
-    try {
-      await mkdir(dirname(this.auditPath), { recursive: true });
-      await appendFile(this.auditPath, line, "utf8");
-    } catch { /* audit best-effort */ }
+    const write = this.auditWrite.then(async () => {
+      await mkdir(dirname(this.auditPath!), { recursive: true, mode: 0o700 });
+      const bytes = Buffer.byteLength(line);
+      const currentBytes = await stat(this.auditPath!).then((entry) => entry.size).catch(() => 0);
+      if (currentBytes > 0 && currentBytes + bytes > BROKER_AUDIT_MAX_BYTES) {
+        const previous = `${this.auditPath}.1`;
+        await unlink(previous).catch(() => undefined);
+        await rename(this.auditPath!, previous);
+      }
+      await appendFile(this.auditPath!, line, "utf8");
+    });
+    this.auditWrite = write.catch(() => undefined);
+    await write.catch(() => undefined);
   }
 }
