@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-owner-identity-watcher-no-dispose
 kind: story
-stage: drafting
+stage: implementing
 tags: [app]
 parent: feature-lifecycle-disposal-async-void
 depends_on: []
@@ -24,3 +24,22 @@ OwnerIdentityBridge owns a platform stream subscription and implements dispose()
 
 ## Fix
 Register the bridge through an injector binding with an onDispose callback, or explicitly call OwnerIdentityBridge.dispose() from disposeDependencies().
+
+## Design checkpoint
+Use injector ownership, not a one-off manual disposal list. Extend `app/lib/config/utils/injector.dart`:
+
+```dart
+void addInstance<T>(
+  T instance, {
+  void Function(T value)? onDispose,
+});
+```
+
+Adapt the callback to `BindConfig<T>(onDispose: onDispose)`, then register `OwnerIdentityBridge` in `app/lib/config/dependencies.dart` with `onDispose: (bridge) => bridge.dispose()`. Registrations without a callback retain existing behavior, and `disposeDependencies()` remains the sole app-lifetime boundary.
+
+## Acceptance evidence
+- A fresh `CustomInjector` invokes an owned instance's disposal callback exactly once.
+- The production bridge binding supplies `dispose`.
+- A platform-store event after bridge disposal cannot invoke transition work or remain subscribed.
+
+Use a focused `app/test/config/custom_injector_test.dart` plus the existing `app/test/pairing/owner_identity_bridge_test.dart`; do not re-bootstrap the committed module-global production injector in tests.
