@@ -1,14 +1,14 @@
 ---
 id: gate-tests-offline-buffer-per-peer-isolation
 kind: story
-stage: drafting
+stage: implementing
 tags: [testing, pi-extension]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: tests
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-28
 ---
 
 # Cover independent buffering and cap accounting for simultaneous offline owners

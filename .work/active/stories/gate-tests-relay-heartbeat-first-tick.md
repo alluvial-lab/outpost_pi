@@ -1,14 +1,14 @@
 ---
 id: gate-tests-relay-heartbeat-first-tick
 kind: story
-stage: drafting
-tags: [testing]
+stage: implementing
+tags: [testing, relay]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: tests
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-28
 ---
 
 # Relay heartbeat first-tick timing has only partial test coverage
