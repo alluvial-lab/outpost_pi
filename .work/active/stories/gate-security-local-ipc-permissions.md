@@ -1,14 +1,14 @@
 ---
 id: gate-security-local-ipc-permissions
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension, security]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-28
 ---
 
 # Supervisor control socket relies on ambient filesystem permissions

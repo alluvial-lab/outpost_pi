@@ -1,14 +1,14 @@
 ---
 id: gate-security-orphaned-pre-rebrand-launchd-daemon
 kind: story
-stage: drafting
+stage: implementing
 tags: [security, pi-extension]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-28
 ---
 
 # Launchd identifier cutover leaves the pre-rebrand daemon running
