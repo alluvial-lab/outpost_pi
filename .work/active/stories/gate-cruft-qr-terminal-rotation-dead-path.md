@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-qr-terminal-rotation-dead-path
 kind: story
-stage: review
+stage: done
 tags: [cleanup, pi-extension]
 parent: null
 depends_on: []

@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-unused-settings-relay-url-compatibility
 kind: story
-stage: review
+stage: done
 tags: [app, cleanup]
 parent: null
 depends_on: []
