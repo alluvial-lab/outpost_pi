@@ -1,10 +1,10 @@
 ---
 id: gate-refactor-protocol-contract-relay-transport-control-literals
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension]
 parent: feature-protocol-contract-discriminator-registry
-depends_on: []
+depends_on: [gate-refactor-protocol-contract-relay-client-hello-auth-literals]
 release_binding: null
 gate_origin: refactor
 created: 2026-07-24
