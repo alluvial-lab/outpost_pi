@@ -42,6 +42,8 @@ import 'package:path_provider/path_provider.dart';
 /// callback and `jsonEncode`); the flush timer callback catches internally;
 /// failures emit a scrubbed `debugPrint('[debug-log] …')` and never rethrow.
 /// The logger must not break the app even on platform/quota/permission failure.
+enum _DebugLogFailure { load, log, export, clear, dispose, flush }
+
 class DebugLogImpl implements DebugLog {
   /// Ring buffer capacity. 1 MiB covers ~48h of the expanded capture surface
   /// (state-transition lines, NOT per-token streaming) with headroom.
@@ -117,8 +119,8 @@ class DebugLogImpl implements DebugLog {
     // Concurrent callers share the same load future; _filePath is set only
     // after resolution, so a concurrent log()/flush() sees a consistent state.
     if (_loadFuture != null) return _loadFuture!;
-    _loadFuture = _doLoad().catchError((Object e, StackTrace s) {
-      _safeLog('load failed: $e', s);
+    _loadFuture = _doLoad().catchError((Object _) {
+      _safeLog(_DebugLogFailure.load);
       // Allow a retry on a later call if this load failed.
       _loadFuture = null;
     });
@@ -169,8 +171,8 @@ class DebugLogImpl implements DebugLog {
       } else {
         _scheduleDebouncedFlush();
       }
-    } catch (e, s) {
-      _safeLog('log failed for ${event.tag}: $e', s);
+    } catch (_) {
+      _safeLog(_DebugLogFailure.log);
     }
   }
 
@@ -187,7 +189,11 @@ class DebugLogImpl implements DebugLog {
       // (review F2 — export-from-file). Recovers on-disk state even if the
       // in-memory ring diverged.
       final lines = <String>[];
-      await for (final line in file.openRead().transform(utf8.decoder).transform(const LineSplitter())) {
+      await for (final line
+          in file
+              .openRead()
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
         if (line.isEmpty) continue;
         try {
           final decoded = jsonDecode(line);
@@ -202,8 +208,8 @@ class DebugLogImpl implements DebugLog {
       }
       if (lines.isEmpty) return null;
       return lines.join('\n');
-    } catch (e, s) {
-      _safeLog('export failed: $e', s);
+    } catch (_) {
+      _safeLog(_DebugLogFailure.export);
       return null;
     }
   }
@@ -233,8 +239,8 @@ class DebugLogImpl implements DebugLog {
           await file.writeAsString('');
         }
       }
-    } catch (e, s) {
-      _safeLog('clear failed: $e', s);
+    } catch (_) {
+      _safeLog(_DebugLogFailure.clear);
     }
   }
 
@@ -250,8 +256,8 @@ class DebugLogImpl implements DebugLog {
       // `log()`; routine events logged right before teardown may not finish.
       // ignore: discarded_futures
       _flushNow();
-    } catch (e, s) {
-      _safeLog('dispose failed: $e', s);
+    } catch (_) {
+      _safeLog(_DebugLogFailure.dispose);
     }
   }
 
@@ -291,8 +297,8 @@ class DebugLogImpl implements DebugLog {
         final delay = flushDelayForTesting;
         if (delay != null) await Future<void>.delayed(delay);
         await file.writeAsString(snapshot, flush: true);
-      } catch (e, s) {
-        _safeLog('flush failed: $e', s);
+      } catch (_) {
+        _safeLog(_DebugLogFailure.flush);
       }
     });
     _flushFuture = thisFlush;
@@ -309,16 +315,18 @@ class DebugLogImpl implements DebugLog {
   /// Truncate oldest lines until under [_maxBytes], using UTF-8 byte length to
   /// match what's written to disk (review Nit — byte accounting).
   void _truncate() {
-    var size = _ring.fold<int>(0, (sum, line) => sum + utf8.encode(line).length + 1);
+    var size = _ring.fold<int>(
+      0,
+      (sum, line) => sum + utf8.encode(line).length + 1,
+    );
     while (size > _maxBytes && _ring.isNotEmpty) {
       final removed = _ring.removeAt(0);
       size -= utf8.encode(removed).length + 1;
     }
   }
 
-  /// Emit a scrubbed fallback log (no user fields) and never rethrow.
-  void _safeLog(String message, StackTrace stack) {
-    debugPrint('[debug-log] $message');
-    if (kDebugMode) debugPrint('$stack');
+  /// Emit a fixed failure category without exception details or stack traces.
+  void _safeLog(_DebugLogFailure failure) {
+    debugPrint('[debug-log] ${failure.name} failed');
   }
 }
