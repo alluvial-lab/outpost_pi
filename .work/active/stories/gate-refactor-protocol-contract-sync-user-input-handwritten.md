@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-sync-user-input-handwritten
 kind: story
-stage: implementing
+stage: done
 tags: [app]
 parent: feature-protocol-contract-discriminator-registry
 depends_on: []
@@ -24,3 +24,13 @@ The live user-input identity path hardcodes user_input, duplicating generatedSer
 
 ## Fix
 Derive the discriminator from the matched generated message, such as through typeOfServerMessage(msg), before calling serverReplayEventId.
+
+## Implementation notes
+
+- Derived the timestamped live `UserInput` replay identity from
+  `typeOfServerMessage(msg)`; the no-timestamp legacy confirmation fallback is
+  unchanged.
+- Verification: targeted `sync_service_test.dart` passed (106 tests) and
+  `flutter analyze` passed. The combined suite hit the tracked pre-existing
+  `ToolRequest flush is not re-amplified` flake; the owning file passes in
+  isolation.
