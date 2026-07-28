@@ -1,7 +1,7 @@
 ---
 id: gate-security-local-ipc-permissions
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, security]
 parent: null
 depends_on: []
@@ -40,6 +40,18 @@ The local mesh directories and broker sockets are created through the same defau
 
 ## Remediation direction
 Create and re-harden all POSIX IPC parent directories as `0700`, chmod bound socket files to `0600`, and add permission regressions that begin from an absent or deliberately loose `~/.pi/remote/`. Keep Windows named-pipe access restricted to the current user with an explicit ACL or a verified platform guarantee. Do not rely on pairing/key-storage startup having run first.
+
+## Implementation notes
+
+- Explicitly create and re-harden POSIX IPC parents/session directories as
+  `0700`; harden bound supervisor and broker UDS files as `0600`.
+- Windows named-pipe paths remain fileless and skip POSIX chmod operations.
+- Added a supervisor regression from a fresh home that checks directory and
+  socket modes.
+- Changed `pi-extension/src/daemon/supervisor.ts`,
+  `src/session/global_config.ts`, `src/session/leader_election.ts`,
+  `src/extension/command_surface/local_mesh_commands.ts`, and supervisor test.
+- Verified with targeted Vitest (29 tests) and `tsc --noEmit`.
 
 ## Audit execution
 The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.

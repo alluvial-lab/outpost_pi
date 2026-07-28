@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, unlinkSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -180,7 +180,9 @@ export class Supervisor {
   private _mkdirParent(): void {
     // A named pipe has no parent directory to create (the addr is `\\.\pipe\…`).
     if (usesNamedPipe()) return;
-    mkdirSync(dirname(supervisorSockPath()), { recursive: true });
+    const parent = dirname(supervisorSockPath());
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    chmodSync(parent, 0o700);
   }
 
   private async _bindUds(): Promise<void> {
@@ -206,6 +208,7 @@ export class Supervisor {
       server.once("error", reject);
       server.listen(path, () => resolve());
     });
+    if (!pipe) chmodSync(path, 0o600);
     this.server = server;
   }
 
