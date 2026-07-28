@@ -1,8 +1,14 @@
 ---
 id: gate-refactor-protocol-contract-sync-user-input-handwritten
+kind: story
+stage: drafting
+tags: [app, refactor]
+parent: feature-protocol-contract-discriminator-registry
+depends_on: []
+release_binding: null
+gate_origin: refactor
 created: 2026-07-24
-updated: 2026-07-24
-tags: []
+updated: 2026-07-28
 ---
 
 # Live user-input identity uses a handwritten generated discriminator

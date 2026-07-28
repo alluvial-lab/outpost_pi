@@ -1,8 +1,14 @@
 ---
 id: gate-refactor-protocol-contract-relay-client-hello-auth-literals
+kind: story
+stage: drafting
+tags: [pi-extension, refactor]
+parent: feature-protocol-contract-discriminator-registry
+depends_on: []
+release_binding: null
+gate_origin: refactor
 created: 2026-07-24
-updated: 2026-07-24
-tags: []
+updated: 2026-07-28
 ---
 
 # Relay authentication handwrites generated hello and auth types
