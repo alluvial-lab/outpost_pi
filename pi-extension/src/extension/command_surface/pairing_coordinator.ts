@@ -7,7 +7,7 @@ import type { Ed25519Keypair } from "../../pairing/crypto.js";
 import { buildQRUri, clampPairTtlMs, qrSession, renderQRAscii, TOKEN_TTL_MS } from "../../pairing/qr.js";
 import { listOwnerPubkeys, listPeers, removePeer } from "../../pairing/storage.js";
 import { MeshClient } from "../../mesh/client.js";
-import { SelfRevoke, type SiblingInfo } from "../../mesh/self_revoke.js";
+import { SelfRevoke, type SelfRevokeOptions, type SiblingInfo } from "../../mesh/self_revoke.js";
 import { roomIdFor } from "../../rooms.js";
 import { localConfigExists } from "../../session/local_config.js";
 import type { OwnerMultiplexerPort } from "../ports.js";
@@ -160,7 +160,11 @@ export class PairingCoordinator {
   private selfRevoke: SelfRevoke | null = null;
   private listDevicesUi: PairingUiContext["ui"] | null = null;
 
-  constructor(private readonly deps: PairingCoordinatorDeps) {}
+  constructor(
+    private readonly deps: PairingCoordinatorDeps,
+    private readonly createSelfRevoke: (options: SelfRevokeOptions) => SelfRevoke =
+      (options) => new SelfRevoke(options),
+  ) {}
 
   currentKeypair(): Ed25519Keypair | null {
     return this.cachedEd25519;
@@ -352,14 +356,14 @@ export class PairingCoordinator {
 
   private ensureSelfRevoke(relayUrl: string, edKp: Ed25519Keypair): void {
     if (this.selfRevoke !== null) return;
-    this.selfRevoke = new SelfRevoke({
+    this.selfRevoke = this.createSelfRevoke({
       client: new MeshClient(relayUrl),
       storage: { listOwnerPubkeys, removePeer },
       myPubkey: edKp.publicKey,
-      onRevoke: (ownerEpk) => {
+      onRevoke: async (ownerEpk): Promise<void> => {
         this.deps.refreshPairingsCache();
         if (this.deps.ownerHas(ownerEpk)) {
-          this.deps.owners.detach(ownerEpk, "session_replaced");
+          await this.deps.owners.detach(ownerEpk, "session_replaced");
         }
         const short = ownerEpk.slice(0, 8);
         this.deps.sendPiMessage({
