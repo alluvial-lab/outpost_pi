@@ -1,14 +1,14 @@
 ---
 id: gate-tests-codegen-number-only-partition
 kind: story
-stage: implementing
+stage: review
 tags: [testing, pi-extension]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: tests
 created: 2026-07-24
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 # Codegen conditional-helper tests miss the number-only partition
@@ -22,8 +22,15 @@ schema, assert base present / at-least absent, and prove the generated
 validator accepts finite values and rejects NaN/infinities. Location:
 `tools/protocol-codegen/src/index.test-cases.ts`.
 
-## Blocker
+## Implementation notes
 
-The specified code-generator test is under `tools/`, outside this worker's
-authorized `pi-extension/src/` and `pi-extension/test/` write scope. No change
-was made; the story remains `implementing` for the generator owner.
+- Changed `tools/protocol-codegen/src/index.test-cases.ts`.
+- Added a plain `type: "number"` schema partition test that asserts
+  `isFiniteNumber` is emitted while `isFiniteNumberAtLeast` is absent.
+- The generated client validator accepts finite values and rejects `NaN`,
+  positive infinity, and negative infinity.
+- Verification: `NODE_PATH=/home/agent/projects/outpost_pi/pi-extension/node_modules CI=true
+  /home/agent/projects/outpost_pi/pi-extension/node_modules/.bin/vitest run
+  --root tools/protocol-codegen` passed with 7 tests; the package-local command
+  was unavailable because `tools/protocol-codegen` has no installed
+  `node_modules`.

@@ -148,6 +148,37 @@ test("number schemas emit only the finite-number helpers their validators refere
   assert.match(output, /function isFiniteNumberAtLeast\(value: unknown, minimum: number\): value is number/);
 });
 
+test("number-only schemas emit the base finite-number helper and reject non-finite values", async () => {
+  const protocolRoot = await writeFixtureProtocol({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    oneOf: [{ $ref: "#/$defs/measurement" }],
+    $defs: {
+      measurement: {
+        type: "object",
+        required: ["type", "ratio"],
+        properties: {
+          type: { const: "measurement" },
+          ratio: { type: "number" },
+        },
+        additionalProperties: false,
+      },
+    },
+  });
+
+  const manifest = await loadOutpostPiManifest(join(protocolRoot, "schema", "manifest.json"));
+  const output = renderTypeScriptProtocol(await buildOutpostPiIr(manifest, { profile: "compat" }));
+
+  assert.match(output, /function isFiniteNumber\(value: unknown\): value is number/);
+  assert.doesNotMatch(output, /function isFiniteNumberAtLeast\(/);
+
+  const generated = await importGeneratedProtocol(output);
+  assert.equal(generated.isClientMessage?.({ type: "measurement", ratio: 1.5 }), true);
+  assert.equal(generated.isClientMessage?.({ type: "measurement", ratio: 0 }), true);
+  assert.equal(generated.isClientMessage?.({ type: "measurement", ratio: Number.NaN }), false);
+  assert.equal(generated.isClientMessage?.({ type: "measurement", ratio: Number.POSITIVE_INFINITY }), false);
+  assert.equal(generated.isClientMessage?.({ type: "measurement", ratio: Number.NEGATIVE_INFINITY }), false);
+});
+
 test("Outpost-Pi schema emits generated app/Pi unions and shared value types", async () => {
   const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
   const manifest = await loadOutpostPiManifest(join(repoRoot, "protocol", "schema", "manifest.json"));
