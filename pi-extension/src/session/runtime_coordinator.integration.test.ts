@@ -173,6 +173,7 @@ class RealSdkHarness {
         sendPiMessage: () => false,
         wakeAgent: async () => ({ ok: false }),
         publishWorking: () => undefined,
+        resetTurnSnapshot: () => undefined,
         handleClientMessage: () => undefined,
       },
       commands: {
