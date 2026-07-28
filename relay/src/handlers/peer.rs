@@ -180,10 +180,7 @@ async fn handle_peer(
     // ── 4. Routing loop ───────────────────────────────────────────────────
     // Send a WS Ping every 25 s so NAT/LB idle timers don't close the connection.
     // First tick fires after 25 s (not immediately).
-    let mut heartbeat = time::interval_at(
-        time::Instant::now() + RELAY_WS_PING_INTERVAL,
-        RELAY_WS_PING_INTERVAL,
-    );
+    let mut heartbeat = relay_heartbeat();
     // Bound attacker-triggerable diagnostics per authenticated connection.
     // Rejected frame content is never logged; the byte count and category are
     // sufficient to diagnose a bad client without creating a log amplifier.
@@ -276,6 +273,13 @@ async fn handle_peer(
         rooms.unsubscribe_all(&peer_id).await;
     }
     info!(peer = %peer_short, room = %room_id, addr = %peer_addr, "disconnected");
+}
+
+fn relay_heartbeat() -> time::Interval {
+    time::interval_at(
+        time::Instant::now() + RELAY_WS_PING_INTERVAL,
+        RELAY_WS_PING_INTERVAL,
+    )
 }
 
 fn registry_message_to_transport(message: RegistryMessage) -> Message {
@@ -460,6 +464,31 @@ where
 mod tests {
     use super::*;
     use futures_util::stream;
+    use std::time::Duration;
+
+    #[tokio::test(start_paused = true)]
+    async fn heartbeat_first_tick_waits_one_full_interval_then_repeats() {
+        let mut heartbeat = relay_heartbeat();
+
+        assert!(
+            tokio::time::timeout(Duration::ZERO, heartbeat.tick())
+                .await
+                .is_err(),
+            "heartbeat must not send a ping immediately on connection"
+        );
+        tokio::time::advance(RELAY_WS_PING_INTERVAL - Duration::from_secs(1)).await;
+        assert!(
+            tokio::time::timeout(Duration::ZERO, heartbeat.tick())
+                .await
+                .is_err(),
+            "heartbeat must wait for the complete first interval"
+        );
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        heartbeat.tick().await;
+        tokio::time::advance(RELAY_WS_PING_INTERVAL).await;
+        heartbeat.tick().await;
+    }
 
     #[tokio::test(start_paused = true)]
     async fn handshake_text_times_out_for_stalled_step() {
