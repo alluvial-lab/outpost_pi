@@ -1,7 +1,7 @@
 ---
 id: idea-mobile-outgoing-message-swallowed
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, relay, bug]
 parent: feature-reconnect-reproduction
 depends_on: []
@@ -81,3 +81,11 @@ to locate the loss before choosing retry, queue, or error-surface semantics. If
 the trace instead reproduces the normal-navigation timeout/duplication path,
 link it to `idea-mobile-message-duplication-send-timeout`; do not add an offline
 send queue speculatively.
+
+## Retirement (2026-07-28)
+
+Closed/archived with parent epic `epic-targeting-and-session-lifecycle-contracts`.
+The observability unlock shipped; this bug was either resolved by it,
+re-investigated with its original mechanism disproven, or left unreproduced
+with instrumentation in place and no recurrence in 3+ weeks. See the epic's
+retirement note for the full disposition.
