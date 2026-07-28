@@ -26,6 +26,7 @@ const String _kSecurityMeta = TranscriptStorageMigrator.metadataBoxName;
 const String _kKeyProvisioned = 'key_provisioned_v3';
 const String _kKeyVerifier = 'key_verifier_v3';
 const String _kOwnerTransitionWipePending = 'owner_transition_wipe_pending';
+const String _kTranscriptDiscardPending = 'transcript_discard_pending_v3';
 
 /// Facade over encrypted transcript storage and volatile runtime state.
 ///
@@ -40,6 +41,7 @@ class LocalBoxes {
   static int _inFlightOpens = 0;
   static Completer<void>? _opensDrained;
   static Future<void>? _wipeInFlight;
+  static Future<void>? _transcriptDiscardInFlight;
 
   /// Inject a test-only failure after latching but before common-box clearing.
   @visibleForTesting
@@ -54,6 +56,11 @@ class LocalBoxes {
   @visibleForTesting
   static Future<void> Function(String boxName)?
   beforeTranscriptBoxOpenForTesting;
+
+  /// Observe a test-only per-box recovery deletion checkpoint.
+  @visibleForTesting
+  static Future<void> Function(String boxName)?
+  afterTranscriptRecoveryBoxDeleteForTesting;
 
   /// Open transcript storage and converge any latched Owner-transition wipe.
   static Future<void> init({TranscriptKeyValueStore? keyStore}) {
@@ -80,8 +87,10 @@ class LocalBoxes {
   static Future<void> _initProduction(TranscriptKeyValueStore? keyStore) async {
     await Hive.initFlutter(_kNamespace);
     final meta = await Hive.openBox<dynamic>(_kSecurityMeta);
+    final effectiveKeyStore = keyStore ?? SecureTranscriptKeyValueStore();
+    await _convergePendingTranscriptDiscard(meta, effectiveKeyStore);
     final key = await TranscriptStorageKeyManager(
-      keyStore ?? SecureTranscriptKeyValueStore(),
+      effectiveKeyStore,
     ).loadOrCreate(keyWasProvisioned: meta.get(_kKeyProvisioned) == true);
     await _validateKey(meta, key);
     _cipher = HiveAesCipher(key);
@@ -98,10 +107,14 @@ class LocalBoxes {
   static Future<void> initForTest(
     String path, {
     List<int>? encryptionKey,
+    TranscriptKeyValueStore? keyStore,
   }) async {
     Hive.init(path);
-    final key = encryptionKey ?? List<int>.generate(32, (index) => index);
     final meta = await Hive.openBox<dynamic>(_kSecurityMeta);
+    if (keyStore != null) {
+      await _convergePendingTranscriptDiscard(meta, keyStore);
+    }
+    final key = encryptionKey ?? List<int>.generate(32, (index) => index);
     await _validateKey(meta, key);
     _cipher = HiveAesCipher(key);
     await _openCommonOrConvergeWipe(meta);
@@ -141,6 +154,86 @@ class LocalBoxes {
     await _openEncryptedUnchecked(_kSessionsIndex);
     final runtime = await Hive.openBox<dynamic>(_kRuntime);
     await runtime.clear();
+  }
+
+  /// Discard unreadable local transcript ciphertext after explicit confirmation.
+  ///
+  /// This narrow recovery preserves Owner identity, pairings, preferences, and
+  /// mesh state. The pending latch is written only by this method; startup may
+  /// resume an already-confirmed deletion but never creates deletion intent in
+  /// response to a key error.
+  static Future<void> discardUnreadableTranscripts({
+    TranscriptKeyValueStore? keyStore,
+  }) {
+    final inFlight = _transcriptDiscardInFlight;
+    if (inFlight != null) return inFlight;
+    late final Future<void> tracked;
+    tracked = _runTranscriptDiscard(keyStore ?? SecureTranscriptKeyValueStore())
+        .whenComplete(() {
+          if (identical(_transcriptDiscardInFlight, tracked)) {
+            _transcriptDiscardInFlight = null;
+          }
+        });
+    _transcriptDiscardInFlight = tracked;
+    return tracked;
+  }
+
+  static Future<void> _convergePendingTranscriptDiscard(
+    Box<dynamic> metadata,
+    TranscriptKeyValueStore keyStore,
+  ) async {
+    if (metadata.get(_kTranscriptDiscardPending) == true) {
+      await _runTranscriptDiscard(keyStore, metadata: metadata);
+    }
+  }
+
+  static Future<void> _runTranscriptDiscard(
+    TranscriptKeyValueStore keyStore, {
+    Box<dynamic>? metadata,
+  }) async {
+    final securityMetadata =
+        metadata ??
+        (Hive.isBoxOpen(_kSecurityMeta)
+            ? Hive.box<dynamic>(_kSecurityMeta)
+            : await Hive.openBox<dynamic>(_kSecurityMeta));
+    await securityMetadata.put(_kTranscriptDiscardPending, true);
+
+    final targetBoxes = await _recoveryTranscriptBoxNames(securityMetadata);
+    for (final name in targetBoxes) {
+      if (Hive.isBoxOpen(name)) await Hive.box<dynamic>(name).close();
+      if (await Hive.boxExists(name)) await Hive.deleteBoxFromDisk(name);
+      await afterTranscriptRecoveryBoxDeleteForTesting?.call(name);
+    }
+
+    await keyStore.delete();
+    await securityMetadata.delete(_kKeyProvisioned);
+    await securityMetadata.delete(_kKeyVerifier);
+    await securityMetadata.delete(TranscriptStorageMigrator.copyVerifiedKey);
+    await securityMetadata.delete(_kTranscriptDiscardPending);
+    _cipher = null;
+    _initialized = false;
+  }
+
+  static Future<Set<String>> _recoveryTranscriptBoxNames(
+    Box<dynamic> metadata,
+  ) async {
+    final names = <String>{_kSessionsIndex, _kRuntime};
+    final metadataPath = metadata.path;
+    if (metadataPath == null) return names;
+    final home = File(metadataPath).parent;
+    if (!await home.exists()) return names;
+
+    await for (final entity in home.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final fileName = entity.uri.pathSegments.last;
+      if (!fileName.endsWith('.hive')) continue;
+      final name = fileName.substring(0, fileName.length - '.hive'.length);
+      if (name.startsWith('transcript_events_v3_') ||
+          name.startsWith('msgs_v3_')) {
+        names.add(name);
+      }
+    }
+    return names;
   }
 
   /// Wipe every transcript-bearing box after a confirmed Owner-key change.

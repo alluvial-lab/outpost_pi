@@ -8,6 +8,7 @@ import 'package:hive/hive.dart';
 abstract interface class TranscriptKeyValueStore {
   Future<String?> read();
   Future<void> write(String encodedKey);
+  Future<void> delete();
 }
 
 /// Store the transcript encryption key in the platform secure store.
@@ -24,6 +25,9 @@ final class SecureTranscriptKeyValueStore implements TranscriptKeyValueStore {
   @override
   Future<void> write(String encodedKey) =>
       _storage.write(key: _key, value: encodedKey);
+
+  @override
+  Future<void> delete() => _storage.delete(key: _key);
 }
 
 /// Load or provision the single AES-256 key shared by transcript-bearing boxes.
@@ -76,6 +80,18 @@ final class TranscriptStorageKeyException implements Exception {
   const TranscriptStorageKeyException(this.code);
 
   final String code;
+
+  /// Whether explicit transcript discard can safely recover this failure.
+  ///
+  /// Other bootstrap failures may leave data salvageable or need a different
+  /// operator action, so they must remain fail-closed without a discard UI.
+  bool get canDiscardUnreadableTranscripts => switch (code) {
+    'missing_provisioned_key' ||
+    'malformed_key' ||
+    'key_mismatch' ||
+    'encrypted_box_unreadable' => true,
+    _ => false,
+  };
 
   @override
   String toString() => 'TranscriptStorageKeyException($code)';
