@@ -363,6 +363,7 @@ mod tests {
     use crate::presence::PresenceManager;
     use crate::protocol::frame::{FrameDecodeError, RelayControlFrame, decode_relay_frame};
     use crate::protocol::generated::control::{RELAY_CONTROL_FRAME_TYPES, RoomMetaUpdateFrame};
+    use crate::protocol::outer::OuterEnvelopeParser;
     use crate::rooms::{RoomManager, RoomMeta, RoomMetaPatch};
     use crate::test_support::bounded_mpsc as mpsc;
 
@@ -637,16 +638,22 @@ mod tests {
 
     #[test]
     fn malformed_control_peers_reject_at_decode_boundary() {
-        let err = decode_relay_frame(r#"{"type":"subscribe_presence","peers":"pi"}"#)
-            .expect_err("malformed control frame must fail before dispatch");
+        let err = decode_relay_frame(
+            &OuterEnvelopeParser::new(1024),
+            r#"{"type":"subscribe_presence","peers":"pi"}"#,
+        )
+        .expect_err("malformed control frame must fail before dispatch");
 
         assert!(matches!(err, FrameDecodeError::InvalidJson(_)));
     }
 
     #[test]
     fn empty_control_peers_remain_valid_at_decode_boundary() {
-        let frame = decode_relay_frame(r#"{"type":"presence_check","peers":[]}"#)
-            .expect("empty peer list is a valid typed control frame");
+        let frame = decode_relay_frame(
+            &OuterEnvelopeParser::new(1024),
+            r#"{"type":"presence_check","peers":[]}"#,
+        )
+        .expect("empty peer list is a valid typed control frame");
 
         assert!(matches!(
             frame,

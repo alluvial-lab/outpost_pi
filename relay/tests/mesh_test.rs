@@ -39,6 +39,9 @@ async fn spawn_relay() -> (String, tempfile::TempDir) {
         presence,
         rooms,
         mesh,
+        outer_parser: relay::protocol::outer::OuterEnvelopeParser::new(
+            relay::protocol::outer::DEFAULT_MAX_CT_MIB * 1024 * 1024,
+        ),
         mesh_auth,
         metrics,
     };
