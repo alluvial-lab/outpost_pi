@@ -1,7 +1,7 @@
 ---
 id: gate-docs-cockpit-guidance-local-only-contradiction
 kind: story
-stage: implementing
+stage: review
 tags: [cockpit, documentation]
 parent: null
 depends_on: []
@@ -38,3 +38,10 @@ Rewrite the Cockpit scope and prohibited-work statements in place to distinguish
 
 ## Audit provenance
 The documentation drift scan ran inline at operator instruction, rather than in the gate's isolated scanner agent. This is reduced isolation.
+
+## Implementation notes
+
+- Rewrote `cockpit/CLAUDE.md` scope and prohibited-work guidance to document the active RPC-control overlay while preserving local Pi process ownership and deferred direct relay/mesh transport.
+- No code or tests changed (documentation-only story).
+- Verification: final `flutter analyze` and `flutter test` run for the completed cockpit batch.
+- Parked issue: none.
