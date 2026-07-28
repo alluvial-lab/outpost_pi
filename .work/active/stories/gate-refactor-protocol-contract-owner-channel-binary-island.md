@@ -2,7 +2,7 @@
 id: gate-refactor-protocol-contract-owner-channel-binary-island
 kind: story
 stage: drafting
-tags: [pi-extension, refactor]
+tags: [pi-extension]
 parent: feature-protocol-contract-discriminator-registry
 depends_on: []
 release_binding: null

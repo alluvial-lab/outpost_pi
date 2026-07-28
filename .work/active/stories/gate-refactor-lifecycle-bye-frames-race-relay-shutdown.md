@@ -2,7 +2,7 @@
 id: gate-refactor-lifecycle-bye-frames-race-relay-shutdown
 kind: story
 stage: drafting
-tags: [pi-extension, refactor]
+tags: [pi-extension]
 parent: feature-lifecycle-disposal-async-void
 depends_on: []
 release_binding: null

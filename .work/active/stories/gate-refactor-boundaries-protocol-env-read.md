@@ -2,7 +2,7 @@
 id: gate-refactor-boundaries-protocol-env-read
 kind: story
 stage: drafting
-tags: [relay, refactor]
+tags: [relay]
 parent: feature-boundary-typed-decoders
 depends_on: []
 release_binding: null

@@ -2,7 +2,7 @@
 id: feature-protocol-contract-discriminator-registry
 kind: feature
 stage: drafting
-tags: [pi-extension, app, relay, refactor]
+tags: [pi-extension, app, relay]
 parent: null
 depends_on: []
 release_binding: null

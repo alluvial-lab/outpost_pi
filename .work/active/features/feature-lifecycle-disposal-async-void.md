@@ -2,7 +2,7 @@
 id: feature-lifecycle-disposal-async-void
 kind: feature
 stage: drafting
-tags: [pi-extension, app, refactor, lifecycle]
+tags: [pi-extension, app, lifecycle]
 parent: null
 depends_on: []
 release_binding: null
