@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-unused-settings-relay-url-compatibility
 kind: story
-stage: implementing
+stage: review
 tags: [app, cleanup]
 parent: null
 depends_on: []
@@ -32,3 +32,9 @@ The only remaining consumer is `app/test/ui/settings/settings_viewmodel_test.dar
 
 ## Removal
 Remove `effectiveRelayUrl` and its implementation-bound assertion in the Settings ViewModel test. Keep `relayResolution` as the canonical state projection; no user-visible behavior or compatibility guarantee is removed.
+
+## Implementation notes
+
+- Removed the unused `effectiveRelayUrl` compatibility projection; `relayResolution` and `effectiveRelayLabel` remain canonical.
+- Removed its implementation-bound settings ViewModel assertion.
+- Verification: targeted coverage is included in the full app suite run for this batch.

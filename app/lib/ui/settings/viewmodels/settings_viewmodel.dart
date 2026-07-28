@@ -62,9 +62,6 @@ class SettingsViewModel extends ViewModel<SettingsState> {
     UnconfiguredRelay() => 'Not configured',
   };
 
-  /// Compatibility projection for the existing Settings field label.
-  String get effectiveRelayUrl => effectiveRelayLabel;
-
   bool get isDebugLogging => _prefs.debugLogging;
 
   Future<void> setDebugLogging(bool value) async {
