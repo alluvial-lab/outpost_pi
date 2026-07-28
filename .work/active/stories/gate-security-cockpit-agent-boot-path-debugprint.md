@@ -1,7 +1,7 @@
 ---
 id: gate-security-cockpit-agent-boot-path-debugprint
 kind: story
-stage: implementing
+stage: review
 tags: [security, cockpit]
 parent: null
 depends_on: []
@@ -19,3 +19,10 @@ Severity: Low (parked per gate_finding_routing).
 workspace paths to console/collected diagnostics despite the release's
 path-redaction hardening. Fix: content-free boot diagnostic (or remove it) +
 a debug-output canary with a path-bearing workspace.
+
+## Implementation notes
+
+- Changed `cockpit/lib/app/cockpit/ui/session/agent_session.dart` to emit only the session ID in the boot diagnostic.
+- Added a canary in `cockpit/test/ui/agent_session_turn_projection_test.dart` using a path-bearing workspace and capturing `debugPrint` output.
+- Verification: `flutter analyze` and `flutter test` pass after all three stories are implemented.
+- Parked issue: none.
