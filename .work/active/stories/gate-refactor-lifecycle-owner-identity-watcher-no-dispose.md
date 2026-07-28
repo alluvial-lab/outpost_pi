@@ -1,8 +1,14 @@
 ---
 id: gate-refactor-lifecycle-owner-identity-watcher-no-dispose
+kind: story
+stage: drafting
+tags: [app, refactor]
+parent: feature-lifecycle-disposal-async-void
+depends_on: []
+release_binding: null
+gate_origin: refactor
 created: 2026-07-24
-updated: 2026-07-24
-tags: []
+updated: 2026-07-28
 ---
 
 # Owner identity watcher is registered without lifecycle disposal
