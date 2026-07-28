@@ -109,6 +109,17 @@ export function launchdPlistPath(): string {
 }
 
 export const LAUNCHD_LABEL = "dev.outpostpi.supervisord";
+export const LEGACY_LAUNCHD_LABEL = "dev.remotepi.supervisord";
+
+/** Return the idempotent pre-rebrand launchd cleanup commands for one user. */
+export function legacyLaunchdCleanup(uid: number, home: string = homedir()): Array<{ cmd: string; args: string[] }> {
+  const legacyPath = join(home, "Library", "LaunchAgents", `${LEGACY_LAUNCHD_LABEL}.plist`);
+  return [
+    { cmd: "launchctl", args: ["bootout", `gui/${uid}/${LEGACY_LAUNCHD_LABEL}`] },
+    { cmd: "launchctl", args: ["bootout", `gui/${uid}`, legacyPath] },
+    { cmd: "launchctl", args: ["unload", legacyPath] },
+  ];
+}
 /** systemd --user unit name (with `.service`) for the supervisor. */
 export const SYSTEMD_UNIT = "outpost-pi-supervisord.service";
 /** Windows Task Scheduler task name (plan/40). */
@@ -241,6 +252,8 @@ export function installService(vars: RenderVars = defaultRenderVars()): InstallR
     // `launchctl bootstrap` errors out otherwise. `bootout` is the modern
     // API; `unload` is the legacy fallback. Either may fail silently.
     const uid = userInfo().uid;
+    for (const step of legacyLaunchdCleanup(uid)) _tryExec(step.cmd, step.args, log);
+    log.push(`removed legacy launchd service if present (${LEGACY_LAUNCHD_LABEL})`);
     _tryExec("launchctl", ["bootout", `gui/${uid}`, unitPath], log);
     _tryExec("launchctl", ["unload", unitPath], log);
     _exec("launchctl", ["bootstrap", `gui/${uid}`, unitPath], log);
