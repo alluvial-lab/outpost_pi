@@ -19,10 +19,35 @@ import 'package:cockpit/app/cockpit/domain/exceptions/rpc_error.dart';
 import 'package:cockpit/app/cockpit/ui/session/agent_entry.dart';
 import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/core/domain/result.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('boot diagnostic does not disclose the workspace path', () async {
+    final originalDebugPrint = debugPrint;
+    final output = <String>[];
+    debugPrint = (message, {wrapWidth}) {
+      if (message != null) output.add(message);
+    };
+    try {
+      final factory = _RpcFactory(_RpcGateway());
+      final session = AgentSession(
+        id: 'path-canary',
+        projectId: 'p1',
+        workingDirectory: '/private/customer/workspace',
+        factory: factory,
+      );
+      await session.boot();
+      await session.close();
+    } finally {
+      debugPrint = originalDebugPrint;
+    }
+
+    expect(output, isNotEmpty);
+    expect(output.join('\\n'), isNot(contains('/private/customer/workspace')));
+  });
 
   test('projects start to streaming to end and clears elapsed state', () async {
     final (session, gateway) = await _bootSession();
