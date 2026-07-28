@@ -1,7 +1,7 @@
 ---
 id: gate-tests-sync-service-noecho-wallclock-timing
 kind: story
-stage: review
+stage: done
 tags: [testing, app]
 parent: null
 depends_on: []

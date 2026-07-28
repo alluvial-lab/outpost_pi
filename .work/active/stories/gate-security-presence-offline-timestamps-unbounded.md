@@ -1,7 +1,7 @@
 ---
 id: gate-security-presence-offline-timestamps-unbounded
 kind: story
-stage: review
+stage: done
 tags: [relay, security]
 parent: null
 depends_on: []

@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-relay-plan-era-comments
 kind: story
-stage: review
+stage: done
 tags: [cleanup, relay]
 parent: null
 depends_on: []

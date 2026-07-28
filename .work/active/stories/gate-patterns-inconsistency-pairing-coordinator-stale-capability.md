@@ -1,7 +1,7 @@
 ---
 id: gate-patterns-inconsistency-pairing-coordinator-stale-capability
 kind: story
-stage: review
+stage: done
 tags: [refactor, pi-extension]
 parent: null
 depends_on: []

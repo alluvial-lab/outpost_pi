@@ -1,7 +1,7 @@
 ---
 id: gate-tests-debug-log-literal-success-assertions
 kind: story
-stage: review
+stage: done
 tags: [testing, pi-extension]
 parent: null
 depends_on: []

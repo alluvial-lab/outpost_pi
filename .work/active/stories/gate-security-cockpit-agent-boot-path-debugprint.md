@@ -1,7 +1,7 @@
 ---
 id: gate-security-cockpit-agent-boot-path-debugprint
 kind: story
-stage: review
+stage: done
 tags: [security, cockpit]
 parent: null
 depends_on: []

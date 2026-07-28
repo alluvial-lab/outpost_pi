@@ -1,7 +1,7 @@
 ---
 id: gate-tests-mesh-auth-cache-ttl
 kind: story
-stage: review
+stage: done
 tags: [testing, relay]
 parent: null
 depends_on: []

@@ -1,7 +1,7 @@
 ---
 id: gate-docs-cockpit-guidance-local-only-contradiction
 kind: story
-stage: review
+stage: done
 tags: [cockpit, documentation]
 parent: null
 depends_on: []

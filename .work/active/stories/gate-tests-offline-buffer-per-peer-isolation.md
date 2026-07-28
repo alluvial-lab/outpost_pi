@@ -1,7 +1,7 @@
 ---
 id: gate-tests-offline-buffer-per-peer-isolation
 kind: story
-stage: review
+stage: done
 tags: [testing, pi-extension]
 parent: null
 depends_on: []

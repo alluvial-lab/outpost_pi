@@ -1,7 +1,7 @@
 ---
 id: gate-security-orphaned-pre-rebrand-launchd-daemon
 kind: story
-stage: review
+stage: done
 tags: [security, pi-extension]
 parent: null
 depends_on: []

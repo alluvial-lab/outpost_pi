@@ -1,7 +1,7 @@
 ---
 id: gate-patterns-inconsistency-pair-request-flow-typed-decoder
 kind: story
-stage: review
+stage: done
 tags: [refactor, app]
 parent: null
 depends_on: []

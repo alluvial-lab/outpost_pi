@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-pairing-coordinator-deps-jsdoc
 kind: story
-stage: review
+stage: done
 tags: [refactor, pi-extension, docs]
 parent: null
 depends_on: []

@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-plain-peer-channel-unused-disconnect-callback
 kind: story
-stage: review
+stage: done
 tags: [cleanup, pi-extension]
 parent: null
 depends_on: []

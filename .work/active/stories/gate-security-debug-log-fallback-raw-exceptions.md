@@ -1,7 +1,7 @@
 ---
 id: gate-security-debug-log-fallback-raw-exceptions
 kind: story
-stage: review
+stage: done
 tags: [security, pi-extension]
 parent: null
 depends_on: []

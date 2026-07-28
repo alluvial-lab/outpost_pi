@@ -1,7 +1,7 @@
 ---
 id: gate-tests-localboxes-restart-preservation
 kind: story
-stage: review
+stage: done
 tags: [testing, app]
 parent: null
 depends_on: []
