@@ -1,7 +1,7 @@
 ---
 id: gate-tests-pairing-qr-rpc-mode-no-seam-untested
 kind: story
-stage: implementing
+stage: review
 tags: [testing, pi-extension]
 parent: null
 depends_on: []
@@ -22,3 +22,11 @@ it: assert a token-free warning, no token issuance, no `ui.custom`, no
 `pi-extension/src/extension/command_surface/pairing_coordinator.test.ts`.
 Affinity: same file as the bound
 `gate-tests-pairing-token-context-regression-representation-blind` item.
+
+## Implementation notes
+
+- Added the RPC/non-TUI/no-seam regression: it asserts warning-only behavior,
+  no token issuance, no custom UI, and no model-context message.
+- Changed `pi-extension/src/extension/command_surface/pairing_coordinator.test.ts`.
+- Verified with `vitest run src/extension/command_surface/pairing_coordinator.test.ts`
+  (4 tests) and `tsc --noEmit`.

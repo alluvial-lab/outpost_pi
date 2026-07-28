@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { qrSession } from "../../pairing/qr.js";
 import { PairingCoordinator } from "./pairing_coordinator.js";
 
 type CustomMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
@@ -78,6 +79,40 @@ describe("PairingCoordinator.showPairQr", () => {
 
     expect(sendPiMessage).not.toHaveBeenCalled();
     expect(session.customMessages).toEqual([]);
+  });
+
+  test("non-TUI pairing without the seam warns without issuing or displaying a token", async () => {
+    delete process.env["OUTPOST_PI_PAIR_CODE_FILE"];
+    const notify = vi.fn();
+    const custom = vi.fn();
+    const sendPiMessage = vi.fn(() => true);
+    const coordinator = new PairingCoordinator({
+      getState: () => "started",
+      startRelay: async () => undefined,
+      isRelayConnected: () => true,
+      roomId: () => "headless-room",
+      displayName: () => "Headless Pi",
+      owners: {} as never,
+      ownerHas: () => false,
+      refreshPairingsCache: () => undefined,
+      joinLocalMesh: async () => undefined,
+      sendPiMessage,
+      setSiblings: () => undefined,
+    });
+    coordinator.recordCurrentKeypair({ publicKey: new Uint8Array(32), secretKey: new Uint8Array(32) });
+    const issueToken = vi.spyOn(qrSession, "issueToken");
+    const ctx = {
+      cwd: "/tmp/outpost-pi-pairing-headless-test",
+      mode: "rpc",
+      ui: { custom, notify },
+    } as unknown as ExtensionContext;
+
+    await coordinator.showPairQr(ctx);
+
+    expect(notify).toHaveBeenCalledWith(expect.stringMatching(/requires an interactive TUI/i), "warning");
+    expect(issueToken).not.toHaveBeenCalled();
+    expect(custom).not.toHaveBeenCalled();
+    expect(sendPiMessage).not.toHaveBeenCalled();
   });
 
   test("writes the production pair code to the headless E2E seam with owner-only permissions", async () => {
