@@ -1,10 +1,14 @@
 ---
 id: gate-refactor-lifecycle-owner-ingress-floating
-created: 2026-07-20
-updated: 2026-07-20
-tags: []
+kind: story
+stage: drafting
+tags: [pi-extension, refactor]
+parent: feature-lifecycle-disposal-async-void
+depends_on: []
 release_binding: null
 gate_origin: refactor
+created: 2026-07-20
+updated: 2026-07-28
 ---
 
 # Observe asynchronous owner-ingress routing failures

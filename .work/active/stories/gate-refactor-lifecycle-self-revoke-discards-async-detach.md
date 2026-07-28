@@ -1,8 +1,14 @@
 ---
 id: gate-refactor-lifecycle-self-revoke-discards-async-detach
+kind: story
+stage: drafting
+tags: [pi-extension, refactor]
+parent: feature-lifecycle-disposal-async-void
+depends_on: []
+release_binding: null
+gate_origin: refactor
 created: 2026-07-24
-updated: 2026-07-24
-tags: []
+updated: 2026-07-28
 ---
 
 # Self-revoke discards asynchronous owner-channel teardown

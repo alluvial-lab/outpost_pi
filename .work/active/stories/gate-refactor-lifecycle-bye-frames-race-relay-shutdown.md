@@ -1,8 +1,14 @@
 ---
 id: gate-refactor-lifecycle-bye-frames-race-relay-shutdown
+kind: story
+stage: drafting
+tags: [pi-extension, refactor]
+parent: feature-lifecycle-disposal-async-void
+depends_on: []
+release_binding: null
+gate_origin: refactor
 created: 2026-07-24
-updated: 2026-07-24
-tags: []
+updated: 2026-07-28
 ---
 
 # Secure-channel bye frames race relay shutdown
