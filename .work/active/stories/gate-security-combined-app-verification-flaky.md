@@ -1,8 +1,14 @@
 ---
 id: gate-security-combined-app-verification-flaky
-created: 2026-07-19
-updated: 2026-07-19
+kind: story
+stage: drafting
 tags: [app, testing]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: security
+created: 2026-07-19
+updated: 2026-07-28
 ---
 
 # Combined app verification command is flaky

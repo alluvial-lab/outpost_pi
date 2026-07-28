@@ -1,8 +1,14 @@
 ---
 id: gate-refactor-documentation-pairing-coordinator-deps-jsdoc
+kind: story
+stage: implementing
+tags: [refactor, pi-extension, docs]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: refactor
 created: 2026-07-24
-updated: 2026-07-24
-tags: [refactor]
+updated: 2026-07-28
 ---
 
 # Pairing coordinator dependency contract lacks JSDoc
