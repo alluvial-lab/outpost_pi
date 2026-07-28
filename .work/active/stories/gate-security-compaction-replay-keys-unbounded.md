@@ -1,14 +1,14 @@
 ---
 id: gate-security-compaction-replay-keys-unbounded
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension, security]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-28
 ---
 
 # Compaction replay-suppression keys grow for the full owner-channel lifetime
