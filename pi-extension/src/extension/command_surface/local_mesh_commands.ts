@@ -43,7 +43,7 @@ export interface LocalMeshCommandsDeps {
   readonly setMeshNode: (node: MeshNode | null) => void;
   readonly setSessionState: (sessionName: string | null, peerCount: number) => void;
   readonly startRelay: (ctx: Pick<ExtensionContext, "ui" | "cwd">) => Promise<void>;
-  readonly stopRelay: (reason?: ByeReason) => void;
+  readonly stopRelay: (reason?: ByeReason) => Promise<void>;
   readonly status: (ctx: Pick<ExtensionContext, "ui">) => void;
   readonly controlCtx: () => Pick<ExtensionContext, "ui" | "cwd">;
   readonly emitRelayState: (force?: boolean) => void;
@@ -247,7 +247,7 @@ export class LocalMeshCommands {
       this.deps.setSessionState(null, 0);
     }
 
-    if (relayUp) this.deps.stopRelay("peer_stop");
+    if (relayUp) await this.deps.stopRelay("peer_stop");
 
     ctx.ui.notify("[outpost-pi] Stopped (mesh + relay disconnected).", "info");
     this.deps.refreshFooter(ctx);
