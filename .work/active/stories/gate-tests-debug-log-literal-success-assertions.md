@@ -25,6 +25,12 @@ violate the repo's test-integrity prohibition. The surrounding calls still
 exercise no-throw behavior, so no production bug appears silenced; the literal
 assertions themselves add no evidence.
 
+## Blocker
+
+The specified test is exclusively under `app/`, outside this worker's
+authorized `pi-extension/src/` and `pi-extension/test/` write scope. No change
+was made; the story remains `implementing` for its app owner.
+
 ## Suggested rework
 ```dart
 test('I/O failure remains contained and leaves no exportable state', () async {
