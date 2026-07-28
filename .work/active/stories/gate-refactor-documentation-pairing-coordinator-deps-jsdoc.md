@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-pairing-coordinator-deps-jsdoc
 kind: story
-stage: implementing
+stage: review
 tags: [refactor, pi-extension, docs]
 parent: null
 depends_on: []
@@ -24,3 +24,11 @@ The exported service dependency interface does not document its lifecycle owners
 
 ## Fix
 Add JSDoc describing the injected relay, owner-channel, mesh, identity, and teardown contract.
+
+## Implementation notes
+
+- Added lifecycle-focused JSDoc to `PairingCoordinatorDeps`, identifying the
+  injected adapters and the composition root's teardown ownership.
+- Changed `pi-extension/src/extension/command_surface/pairing_coordinator.ts`.
+- Verified with `vitest run src/extension/command_surface/pairing_coordinator.test.ts`
+  (4 tests) and `tsc --noEmit`.
