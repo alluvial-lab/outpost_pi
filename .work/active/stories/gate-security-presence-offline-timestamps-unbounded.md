@@ -1,7 +1,7 @@
 ---
 id: gate-security-presence-offline-timestamps-unbounded
 kind: story
-stage: implementing
+stage: review
 tags: [relay, security]
 parent: null
 depends_on: []
@@ -38,3 +38,9 @@ retained-state risk of the same DoS class.
 Add an expiry/retention bound to `last_offline_ts` (evict entries older than a
 retention window, or cap the map size with LRU eviction) consistent with the
 subscription-target retention bound the feature already added.
+
+## Implementation notes
+- Added the shared `MAX_PRESENCE_OFFLINE_TIMESTAMPS` bound (1,024) and evicts the oldest timestamp before admitting a new peer at capacity.
+- Added `presence::tests::offline_timestamp_retention_evicts_oldest_peer_at_capacity`.
+- Verification: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` (159 unit tests plus all integration suites) passed from `relay/`.
+- Parked issues: none.

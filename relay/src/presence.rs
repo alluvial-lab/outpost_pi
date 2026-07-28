@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::protocol::generated::control::RelayPresenceState;
+use crate::resource_limits::MAX_PRESENCE_OFFLINE_TIMESTAMPS;
 use crate::subscriptions::SubscriptionIndex;
 
 #[derive(Debug, Default)]
@@ -80,12 +81,23 @@ impl PresenceManager {
     }
 
     /// Records when `peer` went offline (stored for `since_ts` in future snapshots).
+    ///
+    /// The oldest timestamp is evicted before admitting a new peer at the
+    /// process-wide retention cap, preventing identity churn from growing this
+    /// optional snapshot metadata without bound.
     pub async fn record_offline(&self, peer: &str, ts: i64) {
-        self.inner
-            .lock()
-            .await
-            .last_offline_ts
-            .insert(peer.to_string(), ts);
+        let mut inner = self.inner.lock().await;
+        if !inner.last_offline_ts.contains_key(peer)
+            && inner.last_offline_ts.len() >= MAX_PRESENCE_OFFLINE_TIMESTAMPS
+            && let Some(oldest_peer) = inner
+                .last_offline_ts
+                .iter()
+                .min_by_key(|(_, timestamp)| *timestamp)
+                .map(|(peer, _)| peer.clone())
+        {
+            inner.last_offline_ts.remove(&oldest_peer);
+        }
+        inner.last_offline_ts.insert(peer.to_string(), ts);
     }
 }
 
@@ -135,5 +147,25 @@ mod tests {
         assert_eq!(x.since_ts, Some(1_000_000));
         assert!(y.online);
         assert!(y.since_ts.is_none());
+    }
+
+    #[tokio::test]
+    async fn offline_timestamp_retention_evicts_oldest_peer_at_capacity() {
+        let pm = PresenceManager::new();
+        for index in 0..MAX_PRESENCE_OFFLINE_TIMESTAMPS {
+            pm.record_offline(&format!("peer-{index}"), index as i64)
+                .await;
+        }
+
+        pm.record_offline("new-peer", MAX_PRESENCE_OFFLINE_TIMESTAMPS as i64)
+            .await;
+
+        let inner = pm.inner.lock().await;
+        assert_eq!(inner.last_offline_ts.len(), MAX_PRESENCE_OFFLINE_TIMESTAMPS);
+        assert!(!inner.last_offline_ts.contains_key("peer-0"));
+        assert_eq!(
+            inner.last_offline_ts.get("new-peer"),
+            Some(&(MAX_PRESENCE_OFFLINE_TIMESTAMPS as i64))
+        );
     }
 }
