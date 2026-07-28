@@ -385,6 +385,40 @@ describe("OwnerMultiplexer", () => {
     ]);
   });
 
+  test("compaction replay suppression retains only the newest bounded identities per owner", () => {
+    const { mux } = makeMultiplexer();
+    const channel = mux.attach({ peerId: "owner-a", onMessage: vi.fn() });
+    mux.markPeerOffline("owner-a");
+    const compactions = Array.from({ length: 129 }, (_, index) => ({
+      type: "compaction" as const,
+      session_id: "session-1",
+      summary: `compact-${index}`,
+      tokens_before: index,
+      ts: index,
+    }));
+    for (const compaction of compactions) mux.broadcast(compaction);
+    mux.markPeerOnline("owner-a");
+
+    const history: Extract<ServerMessage, { type: "session_history" }> = {
+      type: "session_history",
+      session_id: "session-1",
+      in_reply_to: "sync-1",
+      session_started_at: 1,
+      events: compactions.map(({ summary, tokens_before, ts }) => ({
+        type: "compaction" as const,
+        summary,
+        tokens_before,
+        ts,
+      })),
+      eos: true,
+      truncated: false,
+    };
+
+    expect(mux.arbitrateSessionHistory(channel, history).events).toEqual([
+      { type: "compaction", summary: "compact-0", tokens_before: 0, ts: 0 },
+    ]);
+  });
+
   test("a failed buffered send still converges the peer online", () => {
     const { mux, channels } = makeMultiplexer();
     mux.attach({ peerId: "owner-a", onMessage: vi.fn() });

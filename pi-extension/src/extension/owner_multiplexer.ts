@@ -85,6 +85,8 @@ export const OFFLINE_BUFFER_MAX_FRAMES = 2_048;
 
 /** Cap each offline owner's serialized UTF-8 payload across completed and active intervals. */
 export const OFFLINE_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
+/** Bound replay-suppression identities retained for one connected owner. */
+export const FLUSHED_COMPACTION_KEYS_MAX_PER_PEER = 128;
 
 function createOfflinePeerBuffer(): OfflinePeerBuffer {
   return {
@@ -704,6 +706,11 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
       this.flushedCompactionKeysByPeer.set(peerId, keys);
     }
     keys.add(`${message.session_id ?? ""}:${message.ts}`);
+    while (keys.size > FLUSHED_COMPACTION_KEYS_MAX_PER_PEER) {
+      const oldest = keys.values().next().value;
+      if (oldest === undefined) break;
+      keys.delete(oldest);
+    }
   }
 
   /**
