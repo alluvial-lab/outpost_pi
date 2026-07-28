@@ -24,3 +24,7 @@ room_meta_update and subscribe_presence are handwritten despite both being defin
 
 ## Fix
 Consume schema-generated named discriminator constants derived from relayControlTypes for both outbound control frames.
+
+## Blocker
+
+Not started: declared dependency `gate-refactor-protocol-contract-relay-client-hello-auth-literals` bounced to drafting because the required generated `RELAY_CONTROL_DISCRIMINATORS` interface can only be added through the assignment-excluded, read-only `tools/protocol-codegen/` write root. Starting this consumer first would violate the dependency wave and require either a handwritten facade or a hand-edited generated artifact.
