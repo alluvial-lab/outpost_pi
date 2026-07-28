@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-relay-plan-era-comments
 kind: story
-stage: implementing
+stage: review
 tags: [cleanup, relay]
 parent: null
 depends_on: []
@@ -47,3 +47,9 @@ Remove historical plan/wave labels and describe the current bounded positive/neg
 
 ## Gate scan context
 Scanner execution was inline at the operator's direction, with reduced isolation and no scanner sub-agent.
+
+## Implementation notes
+- Changed `relay/src/lib.rs` and `relay/src/handlers/pi_forward.rs` to describe the bounded positive/negative, single-flight authorization cache and opaque cross-PC forwarding as current contracts.
+- No behavior changed; no test was needed for this comment-only cleanup.
+- Verification: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` (run from `relay/`).
+- Parked issues: none.

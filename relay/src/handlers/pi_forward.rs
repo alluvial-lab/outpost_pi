@@ -1,4 +1,4 @@
-//! Plan 25 Wave A — Pi-to-Pi envelope forwarding via the relay.
+//! Relay-mediated Pi-to-Pi envelope forwarding.
 //!
 //! Pi-A sends a control frame:
 //!
@@ -21,7 +21,7 @@
 //! from it, log it, or use it as a metric key.
 //!
 //! Failures don't use a custom error frame — the relay synthesizes an envelope
-//! with `body.type = "transport_error"` (per the plan's ACK protocol section),
+//! with `body.type = "transport_error"`,
 //! correlated to the sender's original envelope via `re: <original_id>`.
 
 use std::collections::{HashMap, HashSet};
