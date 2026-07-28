@@ -1,7 +1,7 @@
 ---
 id: gate-security-plaintext-pair-error-internal-details
 kind: story
-stage: review
+stage: done
 tags: [security, pi-extension]
 parent: null
 depends_on: []

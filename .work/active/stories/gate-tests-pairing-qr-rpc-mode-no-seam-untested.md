@@ -1,7 +1,7 @@
 ---
 id: gate-tests-pairing-qr-rpc-mode-no-seam-untested
 kind: story
-stage: review
+stage: done
 tags: [testing, pi-extension]
 parent: null
 depends_on: []

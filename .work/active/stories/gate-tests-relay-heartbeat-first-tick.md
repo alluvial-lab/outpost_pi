@@ -1,7 +1,7 @@
 ---
 id: gate-tests-relay-heartbeat-first-tick
 kind: story
-stage: review
+stage: done
 tags: [testing, relay]
 parent: null
 depends_on: []

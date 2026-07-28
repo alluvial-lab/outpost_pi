@@ -1,7 +1,7 @@
 ---
 id: gate-security-cockpit-stale-pair-dir-orphan-sweep
 kind: story
-stage: review
+stage: done
 tags: [security, cockpit]
 parent: null
 depends_on: []
