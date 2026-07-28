@@ -19,5 +19,11 @@ cockpit/lib/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart:532
 ## Issue
 File/folder create and rename validation rejects / but not \, so Windows names such as ..\target can escape the intended directory when joined into a path.
 
+## Blocker
+
+The specified source is exclusively under `cockpit/`, outside this worker's
+authorized `pi-extension/src/` and `pi-extension/test/` write scope. No change
+was made; the story remains `implementing` for its cockpit owner.
+
 ## Recommendation
 Reject both / and \, reject drive/UNC/control characters, and normalize the final path before verifying it remains inside the intended parent directory.
