@@ -271,14 +271,25 @@ export class RelayClient extends EventEmitter {
   /** Waits for the next single WS message with a timeout. */
   private _nextMsg(ws: WebSocket): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error("relay auth timeout")),
-        AUTH_TIMEOUT_MS,
-      );
-      ws.once("message", (raw) => {
+      let settled = false;
+      const cleanup = (): void => {
         clearTimeout(timer);
+        ws.removeListener("message", onMessage);
+      };
+      const onMessage = (raw: WebSocket.RawData): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
         resolve(Buffer.isBuffer(raw) ? raw.toString() : String(raw));
-      });
+      };
+      const onTimeout = (): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error("relay auth timeout"));
+      };
+      const timer = setTimeout(onTimeout, AUTH_TIMEOUT_MS);
+      ws.once("message", onMessage);
     });
   }
 
