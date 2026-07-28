@@ -27,6 +27,7 @@ import 'package:cockpit/app/cockpit/domain/entities/workspace_document.dart';
 import 'package:cockpit/app/cockpit/domain/entities/workspace_document_commands.dart';
 import 'package:cockpit/app/cockpit/domain/entities/workspace_tab.dart';
 import 'package:cockpit/app/cockpit/domain/entities/worktree.dart';
+import 'package:cockpit/app/cockpit/domain/validators/file_name_validator.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_server_pool.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_text_edit.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
@@ -473,9 +474,9 @@ class CockpitViewModel extends ChangeNotifier {
     String name, {
     bool open = true,
   }) async {
-    final invalid = _validateName(name);
-    if (invalid != null) return Failure(invalid);
-    final path = _join(dirPath, name.trim());
+    final checked = FileNameValidator.validate(dirPath, name);
+    if (!checked.isValid) return Failure(checked.error!);
+    final path = checked.path!;
     final r = await _fileMutator.createFile(path);
     if (r.isSuccess) {
       _bumpFileTree();
@@ -486,18 +487,18 @@ class CockpitViewModel extends ChangeNotifier {
 
   /// Create a folder below [dirPath] and refresh the tree on success.
   Future<Result<void, String>> createDirIn(String dirPath, String name) async {
-    final invalid = _validateName(name);
-    if (invalid != null) return Failure(invalid);
-    final r = await _fileMutator.createDirectory(_join(dirPath, name.trim()));
+    final checked = FileNameValidator.validate(dirPath, name);
+    if (!checked.isValid) return Failure(checked.error!);
+    final r = await _fileMutator.createDirectory(checked.path!);
     if (r.isSuccess) _bumpFileTree();
     return r;
   }
 
   /// Rename [path] within its parent and retarget affected viewer tabs.
   Future<Result<void, String>> renamePath(String path, String newName) async {
-    final invalid = _validateName(newName);
-    if (invalid != null) return Failure(invalid);
-    final to = _join(_parentOf(path), newName.trim());
+    final checked = FileNameValidator.validate(_parentOf(path), newName);
+    if (!checked.isValid) return Failure(checked.error!);
+    final to = checked.path!;
     final r = await _fileMutator.rename(path, to);
     if (r.isSuccess) {
       await _retargetSessions(path, to);
@@ -521,22 +522,8 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Return a name validation message, or `null` when valid.
-  String? _validateName(String name) {
-    final n = name.trim();
-    if (n.isEmpty) return 'Name cannot be empty.';
-    if (n.contains('/')) return 'Name cannot contain “/”.';
-    if (n == '.' || n == '..') return 'Invalid name.';
-    return null;
-  }
-
-  String _join(String dir, String name) {
-    final base = dir.endsWith('/') ? dir.substring(0, dir.length - 1) : dir;
-    return '$base/$name';
-  }
-
   String _parentOf(String path) {
-    final i = path.lastIndexOf('/');
+    final i = max(path.lastIndexOf('/'), path.lastIndexOf(r'\'));
     return i <= 0 ? path : path.substring(0, i);
   }
 

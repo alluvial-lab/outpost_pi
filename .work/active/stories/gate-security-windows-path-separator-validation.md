@@ -1,7 +1,7 @@
 ---
 id: gate-security-windows-path-separator-validation
 kind: story
-stage: implementing
+stage: review
 tags: [security, pi-extension]
 parent: null
 depends_on: []
@@ -19,11 +19,9 @@ cockpit/lib/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart:532
 ## Issue
 File/folder create and rename validation rejects / but not \, so Windows names such as ..\target can escape the intended directory when joined into a path.
 
-## Blocker
+## Implementation notes
 
-The specified source is exclusively under `cockpit/`, outside this worker's
-authorized `pi-extension/src/` and `pi-extension/test/` write scope. No change
-was made; the story remains `implementing` for its cockpit owner.
-
-## Recommendation
-Reject both / and \, reject drive/UNC/control characters, and normalize the final path before verifying it remains inside the intended parent directory.
+- Added `cockpit/lib/app/cockpit/domain/validators/file_name_validator.dart` to reject `/`, `\\`, drive/UNC indicators, and control characters; normalize the final child path and verify it remains inside the normalized parent.
+- Updated `cockpit/lib/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart` so file/folder creation and rename use the shared validator, including Windows parent separators.
+- Added `cockpit/test/domain/file_name_validator_test.dart` covering Windows separators, drive/UNC paths, control characters, and normalized containment.
+- Verification: `flutter analyze` clean; `flutter test` green (273 tests passed).
