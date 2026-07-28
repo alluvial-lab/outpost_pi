@@ -103,22 +103,36 @@ void main() {
       await dir.delete(recursive: true);
     });
 
-    test('runtime box opens EMPTY after a simulated restart', () async {
+    test('restart clears runtime but preserves the durable session index', () async {
       await LocalBoxes.initForTest(dir.path);
       final boxes = LocalBoxes();
+      const session = SessionIndexRecord(
+        epk: 'epk1',
+        roomId: 'main',
+        sessionId: 'session-1',
+        displayName: 'durable session',
+      );
+      await boxes.sessionsIndexBox().put(session.key, session.toJson());
       // Seed runtime as if a prior run left an "online" record.
       await boxes.runtimeBox().put(
         'epk1:main',
         const RuntimeRecord(connection: RuntimeConnection.online).toJson(),
       );
-      expect(boxes.runtimeBox().isEmpty, isFalse);
 
-      // "Restart": re-init wipes the volatile box.
+      // "Restart": re-init wipes only the volatile box.
       await LocalBoxes.initForTest(dir.path);
       expect(
         boxes.runtimeBox().isEmpty,
         isTrue,
         reason: 'runtime must never survive a boot (#3)',
+      );
+      expect(
+        SessionIndexRecord.fromJson(
+          (boxes.sessionsIndexBox().get(session.key) as Map)
+              .cast<String, dynamic>(),
+        ),
+        session,
+        reason: 'the durable index must survive a restart',
       );
     });
   });
