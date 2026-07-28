@@ -1,7 +1,7 @@
 ---
 id: feature-boundary-typed-decoders
 kind: feature
-stage: implementing
+stage: review
 tags: [relay, cockpit, pi-extension]
 parent: null
 depends_on: []
@@ -233,3 +233,12 @@ Each has `depends_on: []`; no cycle is introduced.
 None. The existing generated mesh schema demonstrably covers only the outer
 mesh HTTP records, so an authored interior-blob DTO is the appropriate
 contract.
+
+## Implementation summary
+
+- Relay mesh authorization now decodes signed member blobs through strict
+  authored Serde DTOs, rejecting malformed records as a whole.
+- Relay outer-envelope limits now enter through composition config and one
+  injected parser shared by WebSocket admission and frame decoding.
+- Cockpit LSP notifications now narrow wire data in the data adapter before
+  constructing typed domain diagnostics.
