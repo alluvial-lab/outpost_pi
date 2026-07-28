@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-relay-client-hello-auth-literals
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension]
 parent: feature-protocol-contract-discriminator-registry
 depends_on: []

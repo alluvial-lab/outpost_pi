@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-sync-user-input-handwritten
 kind: story
-stage: drafting
+stage: implementing
 tags: [app]
 parent: feature-protocol-contract-discriminator-registry
 depends_on: []
