@@ -2,13 +2,13 @@
 id: gate-refactor-boundaries-protocol-env-read
 kind: story
 stage: drafting
-tags: []
-parent: null
+tags: [relay, refactor]
+parent: feature-boundary-typed-decoders
 depends_on: []
 release_binding: null
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-28
 ---
 
 # relay/src/protocol/outer.rs:34

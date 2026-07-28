@@ -1,8 +1,14 @@
 ---
 id: gate-refactor-boundaries-ad-hoc-wire-parse-pi-forward
+kind: story
+stage: drafting
+tags: [relay, refactor]
+parent: feature-boundary-typed-decoders
+depends_on: []
+release_binding: null
+gate_origin: refactor
 created: 2026-07-12
-updated: 2026-07-16
-tags: [relay]
+updated: 2026-07-28
 ---
 
 # Parse mesh-members blobs through a typed boundary DTO

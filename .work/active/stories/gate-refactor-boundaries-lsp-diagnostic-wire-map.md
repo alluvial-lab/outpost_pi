@@ -1,10 +1,14 @@
 ---
 id: gate-refactor-boundaries-lsp-diagnostic-wire-map
-created: 2026-07-20
-updated: 2026-07-20
-tags: []
+kind: story
+stage: drafting
+tags: [cockpit, refactor]
+parent: feature-boundary-typed-decoders
+depends_on: []
 release_binding: null
 gate_origin: refactor
+created: 2026-07-20
+updated: 2026-07-28
 ---
 
 # Decode LSP diagnostic maps at the adapter boundary
