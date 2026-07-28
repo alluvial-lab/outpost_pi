@@ -1,9 +1,11 @@
 import type { ByeReason, ThinkingLevel } from "../protocol/types.js";
 import {
   isRelayPostAuthControlFrame,
+  RELAY_CONTROL_DISCRIMINATORS,
   RELAY_MAX_RAW_MESSAGE_BYTES,
   type RelayControlFrame,
   type RelayControlFrameRoomMetaUpdate,
+  type RelayControlFrameSubscribePresence,
 } from "../protocol/generated/protocol.generated.js";
 import {
   decodeRelayIngress,
@@ -557,7 +559,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     if (!roomId) return;
     if (roomMeta) roomMeta = { ...roomMeta, ...patch };
     const frame = {
-      type: "room_meta_update",
+      type: RELAY_CONTROL_DISCRIMINATORS.room_meta_update,
       room_id: roomId,
       meta: patch,
     } satisfies RelayControlFrameRoomMetaUpdate;
@@ -649,7 +651,11 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   }
 
   function subscribePresence(peers: readonly string[]): void {
-    relay?.sendControl({ type: "subscribe_presence", peers: [...peers] });
+    const frame = {
+      type: RELAY_CONTROL_DISCRIMINATORS.subscribe_presence,
+      peers: [...peers],
+    } satisfies RelayControlFrameSubscribePresence;
+    relay?.sendControl(frame);
   }
 
   function bridgeKeyId(nextKeypair: Ed25519Keypair): string {
