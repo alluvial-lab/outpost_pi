@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-relay-auth-timeout-listener
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension]
 parent: feature-lifecycle-disposal-async-void
 depends_on: []
@@ -40,3 +40,10 @@ In `pi-extension/src/transport/relay_client.ts`, keep `_nextMsg(ws): Promise<str
 - A timeout/message race cannot consume a later data-plane frame or settle twice.
 
 Tests belong in `pi-extension/src/transport/relay_client.test.ts`; preserve the payload-free `relay auth timeout` error.
+
+## Implementation notes
+
+- `_nextMsg` now uses named `cleanup`, `onMessage`, and `onTimeout` callbacks with a shared settlement guard; both settlement paths clear the timer and remove the exact challenge listener.
+- Added fake-timer regressions proving timeout leaves no message listener and successful auth replaces the challenge listener with exactly one data-plane listener that remains healthy after the old timeout deadline.
+- Changed `pi-extension/src/transport/relay_client.ts` and `pi-extension/src/transport/relay_client.test.ts`.
+- Verification: `tsc --noEmit`; targeted relay-client suite (14 passed); full Vitest suite (944 passed, 3 skipped; 55 files).
