@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-session-projection-type-literals
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension]
 parent: feature-protocol-contract-discriminator-registry
 depends_on: []
@@ -24,3 +24,10 @@ Session projection constructs user_input, agent_message, session_history, queued
 
 ## Fix
 Add keyed generated message discriminator constants and use them throughout projection construction instead of source-local literals.
+
+## Implementation notes
+
+- Reused the existing generated `SERVER_MESSAGE_DISCRIMINATORS` registry for all runtime construction of `user_input`, `agent_message`, `session_history`, `queued_message_state`, and drained `user_message` frames.
+- Preserved compile-time `Extract<..., { type: "..." }>` constraints and existing literal wire assertions; no casts or wire changes were introduced.
+- Changed `pi-extension/src/session/sdk_session_projection.ts`.
+- Verification: `tsc --noEmit`; targeted projection suite (48 passed); full Vitest suite (942 passed, 3 skipped; 55 files).
