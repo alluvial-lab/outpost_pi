@@ -1,14 +1,14 @@
 ---
 id: gate-cruft-relay-test-bool-assertions
 kind: story
-stage: drafting
+stage: implementing
 tags: [cleanup, relay]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: cruft
 created: 2026-07-20
-updated: 2026-07-19
+updated: 2026-07-28
 ---
 
 # Replace clippy-rejected boolean equality assertions in relay tests

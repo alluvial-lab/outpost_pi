@@ -1,8 +1,14 @@
 ---
 id: gate-cruft-qr-terminal-rotation-dead-path
+kind: story
+stage: implementing
+tags: [cleanup, pi-extension]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: cruft
 created: 2026-07-24
-updated: 2026-07-24
-tags: [cleanup]
+updated: 2026-07-28
 ---
 
 # Unreachable legacy QR terminal rotation path remains in the extension

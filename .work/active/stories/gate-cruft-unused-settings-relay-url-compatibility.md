@@ -1,10 +1,14 @@
 ---
 id: gate-cruft-unused-settings-relay-url-compatibility
-created: 2026-07-20
-updated: 2026-07-20
+kind: story
+stage: implementing
 tags: [app, cleanup]
+parent: null
+depends_on: []
 release_binding: null
 gate_origin: cruft
+created: 2026-07-20
+updated: 2026-07-28
 ---
 
 # Remove unused Settings relay-URL compatibility projection
