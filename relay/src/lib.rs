@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod config;
 pub mod handlers;
 pub mod mesh;
 pub mod metrics;
@@ -30,6 +31,7 @@ use axum::{
     routing::get,
 };
 
+pub use config::RelayConfig;
 pub use handlers::pi_forward::MeshAuthCache;
 pub use mesh::MeshStore;
 pub use metrics::FirehoseMetrics;
@@ -48,6 +50,8 @@ pub struct AppState {
     pub presence: Arc<PresenceManager>,
     pub rooms: Arc<RoomManager>,
     pub mesh: Arc<MeshStore>,
+    /// Parser shared by WebSocket admission and authenticated frame decoding.
+    pub outer_parser: protocol::outer::OuterEnvelopeParser,
     /// Bounded, 60-second positive/negative mesh-membership cache for
     /// `pi_envelope` authorization; publish invalidation and single-flight
     /// scans keep membership checks current without scanning SQLite per forward.
