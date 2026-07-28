@@ -21,10 +21,12 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(3000);
 
-    // Read (and memoize) the outer-envelope size ceiling once at startup, then
-    // log the effective value so ops can confirm RELAY_MAX_CT_MIB took effect.
-    let max_ct_bytes = relay::protocol::outer::max_ct_bytes();
-    info!(max_ct_bytes, "outer envelope size limit");
+    let config = relay::RelayConfig::from_env();
+    let outer_parser = relay::protocol::outer::OuterEnvelopeParser::new(config.max_ct_bytes());
+    info!(
+        max_ct_bytes = outer_parser.max_ct_bytes(),
+        "outer envelope size limit"
+    );
 
     // Default puts the SQLite file (and any transient -journal) under data/,
     // so bare-metal `cargo run` doesn't litter the project root.
@@ -64,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
         presence,
         rooms,
         mesh,
+        outer_parser,
         mesh_auth,
         metrics,
     };
