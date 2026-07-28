@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-relay-auth-timeout-listener
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension]
 parent: feature-lifecycle-disposal-async-void
 depends_on: []
@@ -30,3 +30,13 @@ High
 
 ## Fix
 Use named cleanup shared by the timeout and message paths: clear the timer, remove the pending message listener (and any close/error listener added for the wait), then resolve or reject exactly once.
+
+## Design checkpoint
+In `pi-extension/src/transport/relay_client.ts`, keep `_nextMsg(ws): Promise<string>` private. Introduce named `cleanup`, `onMessage`, and `onTimeout` closures plus a settlement guard. Both paths call the same cleanup before resolve/reject; any future close/error callbacks must be named and join that cleanup.
+
+## Acceptance evidence
+- A fake-timer timeout rejects once and leaves no pending `message` listener.
+- A successful challenge clears the timeout and removes the auth listener before post-auth frames are forwarded.
+- A timeout/message race cannot consume a later data-plane frame or settle twice.
+
+Tests belong in `pi-extension/src/transport/relay_client.test.ts`; preserve the payload-free `relay auth timeout` error.

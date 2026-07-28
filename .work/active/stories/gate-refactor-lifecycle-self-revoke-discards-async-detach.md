@@ -1,10 +1,10 @@
 ---
 id: gate-refactor-lifecycle-self-revoke-discards-async-detach
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension]
 parent: feature-lifecycle-disposal-async-void
-depends_on: []
+depends_on: [gate-refactor-lifecycle-bye-frames-race-relay-shutdown]
 release_binding: null
 gate_origin: refactor
 created: 2026-07-24
@@ -24,3 +24,26 @@ The onRevoke callback discards the Promise returned by owners.detach, even thoug
 
 ## Fix
 Make onRevoke async and await owners.detach(ownerEpk, "session_replaced") before completing the callback.
+
+## Design checkpoint
+In `pi-extension/src/extension/command_surface/pairing_coordinator.ts`:
+
+```ts
+onRevoke: async (ownerEpk: string): Promise<void> => {
+  this.deps.refreshPairingsCache();
+  if (this.deps.ownerHas(ownerEpk)) {
+    await this.deps.owners.detach(ownerEpk, "session_replaced");
+  }
+  // existing local revoke notice follows
+};
+```
+
+Reuse `OwnerMultiplexerPort.detach`; do not add another helper or a nested `void` observer. Preserve the fresh injected capability posture from `ea074e0` and do not capture a command UI context across the await.
+
+## Acceptance evidence
+- With `owners.detach` held by a deferred barrier, `SelfRevoke.checkOnce()` and the local revoke notice remain pending until release.
+- The owner receives `session_replaced` exactly once.
+- A detach rejection travels through the awaited self-revoke chain and never becomes unhandled.
+
+## Ordering
+Depends on `gate-refactor-lifecycle-bye-frames-race-relay-shutdown`, which establishes and verifies the shared awaited detach/drain contract.
