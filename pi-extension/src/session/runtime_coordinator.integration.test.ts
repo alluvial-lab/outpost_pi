@@ -141,7 +141,7 @@ class RealSdkHarness {
       relay: {
         status: () => "disconnected",
         start: async () => { throw new Error("not used"); },
-        stop: () => { this.relayStops += 1; },
+        stop: async () => { this.relayStops += 1; },
         sendRoomMeta: () => undefined,
         onOuterMessage: () => () => undefined,
         attachCrossPcBridge: async () => undefined,

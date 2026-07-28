@@ -128,7 +128,7 @@ async function disposeRuntimePorts(
   ports.session.resetTurnSnapshot();
   ports.session.clearStaleContexts(reason);
   ports.relay.detachCrossPcBridge();
-  ports.relay.stop();
+  await ports.relay.stop();
   await ports.commands.closeMesh?.();
 }
 

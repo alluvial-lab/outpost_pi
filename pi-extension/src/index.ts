@@ -927,48 +927,58 @@ function _displayName(cwd: string): string {
 
 // ── Transition helpers ────────────────────────────────────────────────────────
 
+let _goIdleInFlight: Promise<void> | null = null;
+
 /**
- * Full teardown: stop listener, detach channel, close relay → idle.
+ * Drain every owner channel before closing the shared relay and becoming idle.
  *
- * `byeReason` (optional): when present and the channel is up, sends a
- * `{type:"bye", reason}` to the app before detaching so it sees offline
- * immediately instead of waiting ~50s for a ping miss. Fire-and-forget —
- * if the WS already failed (e.g., `relay.on("close")` callback) skip it
- * by omitting the reason; app falls back to ping miss naturally.
+ * Overlapping lifecycle and command stops share one completion boundary. Owner
+ * drains end after local persistence and synchronous relay enqueue; they never
+ * wait for a relay ACK or future inbound frame.
  */
-function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): void {
-  // Broadcast bye to every still-attached owner so each app surfaces
-  // "offline" immediately instead of waiting ~50s for a ping miss.
-  if (byeReason && _state !== "idle" && _owners.activeCount() > 0) {
-    _owners.broadcast({ type: "bye", reason: byeReason });
-  }
+function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): Promise<void> {
+  if (_goIdleInFlight) return _goIdleInFlight;
 
-  _stopOwnerIngressListener();
+  const teardown = async (): Promise<void> => {
+    _stopOwnerIngressListener();
+    // The poller is relay-lifecycle-owned and must not race a new detach while
+    // the current owner snapshot drains.
+    _pairingCoordinator.stopSelfRevoke();
 
-  // Tear down every per-owner channel and clear the multiplexer registry.
-  _owners.detachAll();
-  _applyTurnAndPublish({ type: "session_shutdown" });
-  _resetTurnSnapshot();
-  _publishWorking(false);
+    const ownerIds = [..._owners.peerIds()];
+    const drains = ownerIds.map((peerId) => _owners.detach(peerId, byeReason));
 
-  // Cancel any pending reconnect attempt and close the live relay. Critical:
-  // /outpost-pi stop must win the race against a scheduled reconnect.
-  _relayTransport.stop(byeReason);
+    // Preserve turn convergence while the relay remains usable. This is the
+    // last chance to publish working=false on session replacement/shutdown.
+    _applyTurnAndPublish({ type: "session_shutdown" });
+    _resetTurnSnapshot();
+    _publishWorking(false);
 
-  // Stop the mesh poller — it's bound to the relay-up lifecycle so a new
-  // relay start will spin up a fresh instance (with potentially a new relay
-  // URL if the user changed it via /outpost-pi relay url).
-  _pairingCoordinator.stopSelfRevoke();
+    // One failed owner drain must not strand the shared runtime. allSettled
+    // observes every rejection before the relay is closed.
+    await Promise.allSettled(drains);
 
-  // Preserve projection-owned sessionStartedAt + transcript events across
-  // stop/start cycles. The Pi agent session outlives the relay connection —
-  // `message_end` keeps firing for terminal turns even while idle, and the
-  // transcript event log must survive so those turns appear in session_sync.
-  // Only Pi session replacement resets these.
+    // Cancel any pending reconnect attempt and close the live relay only after
+    // protected bye persistence/enqueue has settled for every snapshotted owner.
+    await _relayTransport.stop(byeReason);
 
-  _state = "idle";
-  _refreshFooter();
-  _emitRelayState();  // → disconnected
+    // Preserve projection-owned sessionStartedAt + transcript events across
+    // stop/start cycles. The Pi agent session outlives the relay connection —
+    // `message_end` keeps firing for terminal turns even while idle, and the
+    // transcript event log must survive so those turns appear in session_sync.
+    // Only Pi session replacement resets these.
+    _state = "idle";
+    _refreshFooter();
+    _emitRelayState();  // → disconnected
+  };
+
+  const inFlight = teardown();
+  _goIdleInFlight = inFlight;
+  void inFlight.then(
+    () => { if (_goIdleInFlight === inFlight) _goIdleInFlight = null; },
+    () => { if (_goIdleInFlight === inFlight) _goIdleInFlight = null; },
+  );
+  return inFlight;
 }
 
 /**
@@ -1546,7 +1556,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
           onUnexpectedClose: () => _onRelayClose(),
         });
       },
-      stop: (reason) => { _goIdle(reason); },
+      stop: (reason) => _goIdle(reason),
       sendRoomMeta: (patch) => {
         _publishRoomMetaPatch({
           session_id: patch.session_id,

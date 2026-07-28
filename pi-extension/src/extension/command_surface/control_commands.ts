@@ -10,7 +10,7 @@ export interface ControlCommandsDeps {
   readonly meshNode: () => MeshNode | null;
   readonly controlCtx: () => Pick<ExtensionContext, "ui" | "cwd">;
   readonly startRelay: (ctx: Pick<ExtensionContext, "ui" | "cwd">) => Promise<void>;
-  readonly stopRelay: (reason?: ByeReason) => void;
+  readonly stopRelay: (reason?: ByeReason) => Promise<void>;
   readonly emitRelayState: (force?: boolean) => void;
   readonly notify: (
     msg: string,
@@ -49,12 +49,12 @@ export class ControlCommands {
         this.deps.emitRelayState(true);
         return;
       case "relay:off":
-        if (this.deps.getState() !== "idle") this.deps.stopRelay("peer_stop");
+        if (this.deps.getState() !== "idle") await this.deps.stopRelay("peer_stop");
         this.deps.emitRelayState(true);
         return;
       case "relay:toggle":
         if (this.deps.getState() === "idle") await this.deps.startRelay(this.deps.controlCtx());
-        else this.deps.stopRelay("peer_stop");
+        else await this.deps.stopRelay("peer_stop");
         this.deps.emitRelayState(true);
         return;
       case "relay:status":
@@ -97,7 +97,7 @@ export class ControlCommands {
     // first (also detaches the bridge) so the broker re-register below starts
     // clean; bring it back up after with the new name.
     const wasStarted = this.deps.getState() !== "idle";
-    if (wasStarted) this.deps.stopRelay("peer_stop");
+    if (wasStarted) await this.deps.stopRelay("peer_stop");
 
     let assigned = newName;
     try {

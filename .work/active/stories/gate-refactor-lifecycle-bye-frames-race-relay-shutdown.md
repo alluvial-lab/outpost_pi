@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-bye-frames-race-relay-shutdown
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension]
 parent: feature-lifecycle-disposal-async-void
 depends_on: []
@@ -40,3 +40,11 @@ Make teardown awaitable, detach each owner with the bye reason, await returned w
 
 ## Ordering
 This establishes the awaited `owners.detach` lifecycle contract consumed by `gate-refactor-lifecycle-self-revoke-discards-async-detach`.
+
+## Implementation notes
+
+- `_goIdle` now returns and coalesces one in-flight `Promise<void>`, stops ingress/self-revoke first, snapshots owner ids, detaches each owner once with the requested reason, observes all drains with `Promise.allSettled`, and closes the shared relay only after they settle.
+- Propagated the awaited stop contract through `RelayTransportPort`, composition-root disposal, slash stop, Cockpit off/toggle, and rename cycling. Working-state convergence remains before relay close.
+- Added deterministic sequence-persistence barrier coverage for bye-before-close and concurrent-stop coalescing, rejection-observation coverage for a failed owner drain, and composition-root coverage proving mesh close waits for relay teardown.
+- Changed `pi-extension/src/index.ts`, relay/composition ports, command surfaces, and matching extension/composition/runtime-coordinator tests.
+- Verification: `tsc --noEmit`; targeted lifecycle suites (223 passed); full Vitest suite (948 passed, 3 skipped; 55 files).
