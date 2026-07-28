@@ -17,6 +17,7 @@ import {
   findTemplate,
   isOnPath,
   launchdPlistPath,
+  legacyLaunchdCleanup,
   linkCliBinaries,
   renderTemplate,
   systemdUnitPath,
@@ -225,6 +226,16 @@ describe.skipIf(posixOnly)("paths", () => {
 
   test("launchdPlistPath lives under ~/Library/LaunchAgents/", () => {
     expect(launchdPlistPath()).toMatch(/Library\/LaunchAgents\/dev\.outpostpi\.supervisord\.plist$/);
+  });
+});
+
+describe("legacyLaunchdCleanup", () => {
+  test("targets the old label and plist idempotently before replacement activation", () => {
+    expect(legacyLaunchdCleanup(501, "/Users/tester")).toEqual([
+      { cmd: "launchctl", args: ["bootout", "gui/501/dev.remotepi.supervisord"] },
+      { cmd: "launchctl", args: ["bootout", "gui/501", "/Users/tester/Library/LaunchAgents/dev.remotepi.supervisord.plist"] },
+      { cmd: "launchctl", args: ["unload", "/Users/tester/Library/LaunchAgents/dev.remotepi.supervisord.plist"] },
+    ]);
   });
 });
 
