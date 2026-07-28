@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-owner-channel-binary-island
 kind: story
-stage: implementing
+stage: drafting
 tags: [pi-extension]
 parent: feature-protocol-contract-discriminator-registry
 depends_on: []
@@ -24,3 +24,9 @@ The version, sequence, nonce, tag, transcript, and directional-key wire format i
 
 ## Fix
 Document that the byte-level AEAD format is intentionally outside JSON Schema and identify its canonical contract, or add a canonical binary-format manifest/codegen source.
+
+## Implementation discovery
+
+The accepted design is a two-part durable documentation change: a source comment in `pi-extension/src/transport/secure_channel.ts` plus a narrow `## When NOT to Use` exception in `.agents/skills/scan-protocol-contract/references/undocumented-protocol-island.md`. This worker's explicit write boundary excludes `.agents/skills/`, so completing only the source comment would leave the scanner rule unable to recognize the intentional binary exception and would not meet acceptance.
+
+Bounced to drafting for reassignment with the scan-rule reference write root included. No framing constant, wire byte, KAT, or production source was changed.
