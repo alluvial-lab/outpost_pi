@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-relay-test-bool-assertions
 kind: story
-stage: implementing
+stage: review
 tags: [cleanup, relay]
 parent: null
 depends_on: []
@@ -46,3 +46,8 @@ Use `assert!` and `assert!(!...)` so all-target clippy remains useful and the te
 
 ## Gate scan context
 Scanner execution was inline at the operator's direction, with reduced isolation and no scanner sub-agent.
+
+## Implementation notes
+- Inspected `relay/src/peers/registry.rs`: all four cited `working` assertions already use idiomatic `assert!` / `assert!(!...)`; no production or test change was necessary.
+- Verification: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` (run from `relay/`) all passed, including the affected registry tests.
+- Parked issues: none.
