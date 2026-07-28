@@ -10,7 +10,7 @@ pub use crate::protocol::generated::control::RelayControlFrame;
 pub use crate::protocol::generated::cross_pc::PiEnvelopeFrame;
 use crate::protocol::generated::frame::{RELAY_INBOUND_FRAME_TYPES, RelayInboundFrame};
 pub use crate::protocol::generated::outer::OuterEnvelope;
-use crate::protocol::outer::{self, parse_line_with_max};
+use crate::protocol::outer::{self, OuterEnvelopeParser};
 
 /// Classifies one validated inbound relay frame for typed dispatch.
 #[derive(Debug)]
@@ -58,8 +58,11 @@ impl FrameDecodeError {
 /// [`FrameDecodeError::UnknownType`] for unsupported typed frames, or
 /// [`FrameDecodeError::OuterTooLarge`] when an outer envelope exceeds its
 /// configured ciphertext limit.
-pub fn decode_relay_frame(text: &str) -> Result<DecodedRelayFrame, FrameDecodeError> {
-    decode_relay_frame_with_limits(text, outer::max_ws_message_bytes(), outer::max_ct_bytes())
+pub fn decode_relay_frame(
+    parser: &OuterEnvelopeParser,
+    text: &str,
+) -> Result<DecodedRelayFrame, FrameDecodeError> {
+    decode_relay_frame_with_limits(text, parser.max_ws_message_bytes(), parser)
 }
 
 /// Decode with injected raw and decoded-payload limits.
@@ -67,10 +70,10 @@ pub fn decode_relay_frame(text: &str) -> Result<DecodedRelayFrame, FrameDecodeEr
 /// This testable boundary checks the UTF-8 text size before any JSON
 /// allocation. Outer payloads remain opaque and are size-estimated from their
 /// base64 representation rather than decoded by the relay.
-pub fn decode_relay_frame_with_limits(
+pub(crate) fn decode_relay_frame_with_limits(
     text: &str,
     max_raw_bytes: usize,
-    max_decoded_ct_bytes: usize,
+    parser: &OuterEnvelopeParser,
 ) -> Result<DecodedRelayFrame, FrameDecodeError> {
     if text.len() > max_raw_bytes {
         return Err(FrameDecodeError::RawTooLarge {
@@ -85,10 +88,7 @@ pub fn decode_relay_frame_with_limits(
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
     else {
-        return Ok(DecodedRelayFrame::Outer(parse_line_with_max(
-            text,
-            max_decoded_ct_bytes,
-        )?));
+        return Ok(DecodedRelayFrame::Outer(parser.parse_line(text)?));
     };
 
     if !RELAY_INBOUND_FRAME_TYPES.contains(&frame_type.as_str()) {
@@ -133,14 +133,14 @@ mod tests {
     #[test]
     fn invalid_json_rejects_before_dispatch() {
         assert!(matches!(
-            decode_relay_frame("not json"),
+            decode_relay_frame(&OuterEnvelopeParser::new(1024), "not json"),
             Err(FrameDecodeError::InvalidJson(_))
         ));
     }
 
     #[test]
     fn raw_limit_runs_before_json_parse() {
-        let err = decode_relay_frame_with_limits("not json", 3, 1024)
+        let err = decode_relay_frame_with_limits("not json", 3, &OuterEnvelopeParser::new(1024))
             .expect_err("over-limit malformed input must fail on size first");
         assert!(matches!(
             err,
@@ -151,11 +151,13 @@ mod tests {
     #[test]
     fn injected_decoded_limit_accepts_boundary_and_rejects_next_quantum() {
         let accepted = r#"{"peer":"dest","room":"main","ct":"AAAA"}"#;
-        assert!(decode_relay_frame_with_limits(accepted, 1024, 3).is_ok());
+        assert!(
+            decode_relay_frame_with_limits(accepted, 1024, &OuterEnvelopeParser::new(3)).is_ok()
+        );
 
         let rejected = r#"{"peer":"dest","room":"main","ct":"AAAAAAAA"}"#;
         assert!(matches!(
-            decode_relay_frame_with_limits(rejected, 1024, 3),
+            decode_relay_frame_with_limits(rejected, 1024, &OuterEnvelopeParser::new(3)),
             Err(FrameDecodeError::OuterTooLarge {
                 estimated: 6,
                 max: 3
@@ -165,8 +167,11 @@ mod tests {
 
     #[test]
     fn unknown_typed_frame_records_only_its_byte_count() {
-        let err = decode_relay_frame(r#"{"type":"mystery_frame","peers":[]}"#)
-            .expect_err("unknown typed frame must fail at decode boundary");
+        let err = decode_relay_frame(
+            &OuterEnvelopeParser::new(1024),
+            r#"{"type":"mystery_frame","peers":[]}"#,
+        )
+        .expect_err("unknown typed frame must fail at decode boundary");
         assert!(matches!(
             &err,
             FrameDecodeError::UnknownType { type_bytes: 13 }
@@ -177,8 +182,11 @@ mod tests {
 
     #[test]
     fn no_type_outer_envelope_decodes() {
-        let frame = decode_relay_frame(r#"{"peer":"dest","room":"main","ct":"QUJDRA=="}"#)
-            .expect("outer envelope without type must decode");
+        let frame = decode_relay_frame(
+            &OuterEnvelopeParser::new(1024),
+            r#"{"peer":"dest","room":"main","ct":"QUJDRA=="}"#,
+        )
+        .expect("outer envelope without type must decode");
         assert!(matches!(
             frame,
             DecodedRelayFrame::Outer(OuterEnvelope { peer, room, ct })
@@ -193,7 +201,7 @@ mod tests {
         let err = decode_relay_frame_with_limits(
             &line,
             line.len() + 1,
-            outer::DEFAULT_MAX_CT_MIB * 1024 * 1024,
+            &OuterEnvelopeParser::new(outer::DEFAULT_MAX_CT_MIB * 1024 * 1024),
         )
         .expect_err("oversized ct must fail");
         assert!(matches!(
@@ -205,8 +213,11 @@ mod tests {
 
     #[test]
     fn known_control_frame_decodes_to_generated_variant() {
-        let frame = decode_relay_frame(r#"{"type":"subscribe_presence","peers":["pi-a"]}"#)
-            .expect("known control frame must decode");
+        let frame = decode_relay_frame(
+            &OuterEnvelopeParser::new(1024),
+            r#"{"type":"subscribe_presence","peers":["pi-a"]}"#,
+        )
+        .expect("known control frame must decode");
         assert!(matches!(
             frame,
             DecodedRelayFrame::Control(RelayControlFrame::SubscribePresence { peers })

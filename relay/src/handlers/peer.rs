@@ -27,7 +27,6 @@ use crate::AppState;
 use crate::auth::challenge::{challenge_line, gen_nonce, parse_hello_bootstrap, verify_auth};
 use crate::handlers::connection_actor::{ActorDispatch, ConnectionActor, ConnectionActorServices};
 use crate::protocol::frame::decode_relay_frame;
-use crate::protocol::outer::max_ws_message_bytes;
 use crate::reachability::RELAY_WS_PING_INTERVAL;
 use crate::resource_limits::{
     HANDSHAKE_STEP_TIMEOUT, OUTBOUND_QUEUE_CAPACITY, PRE_AUTH_MESSAGE_MAX_BYTES,
@@ -64,8 +63,8 @@ pub async fn ws_handler(
         let authenticated = Arc::new(AtomicBool::new(false));
         let guarded = PreAuthGuard::new(TokioIo::new(upgraded), authenticated.clone());
         let mut config = WebSocketConfig::default();
-        config.max_frame_size = Some(max_ws_message_bytes());
-        config.max_message_size = Some(max_ws_message_bytes());
+        config.max_frame_size = Some(state.outer_parser.max_ws_message_bytes());
+        config.max_message_size = Some(state.outer_parser.max_ws_message_bytes());
         let socket = WebSocketStream::from_raw_socket(guarded, Role::Server, Some(config)).await;
         handle_peer(socket, authenticated, addr, state).await;
     });
@@ -207,7 +206,7 @@ async fn handle_peer(
                             Message::Frame(_) => continue, // raw frame; not handled at this layer
                         };
 
-                        let frame = match decode_relay_frame(&text) {
+                        let frame = match decode_relay_frame(&state.outer_parser, &text) {
                             Ok(frame) => frame,
                             Err(err) => {
                                 if invalid_frame_logs_remaining > 0 {
