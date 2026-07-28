@@ -260,7 +260,7 @@ class AgentSession extends PaneItem {
     String? restoreSessionPath,
   }) async {
     if (_closed || _status == AgentStatus.booting || isAlive) return;
-    debugPrint('[agent-boot] boot() id=$id cwd=$workingDirectory');
+    debugPrint('[agent-boot] boot() id=$id');
     _status = AgentStatus.booting;
     _turn = AgentTurnProjection.idle;
     _pendingSend = false;
