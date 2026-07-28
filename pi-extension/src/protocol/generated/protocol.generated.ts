@@ -516,6 +516,25 @@ export const relayControlTypes = [
   "room_meta_update",
   "room_meta_updated",
 ] as const;
+export const RELAY_CONTROL_DISCRIMINATORS = {
+  hello: "hello",
+  auth: "auth",
+  challenge: "challenge",
+  subscribe_presence: "subscribe_presence",
+  unsubscribe_presence: "unsubscribe_presence",
+  presence_check: "presence_check",
+  presence: "presence",
+  peer_online: "peer_online",
+  peer_offline: "peer_offline",
+  subscribe_rooms: "subscribe_rooms",
+  unsubscribe_rooms: "unsubscribe_rooms",
+  rooms_check: "rooms_check",
+  rooms: "rooms",
+  room_announced: "room_announced",
+  room_ended: "room_ended",
+  room_meta_update: "room_meta_update",
+  room_meta_updated: "room_meta_updated",
+} as const;
 export type RelayControlType = (typeof relayControlTypes)[number];
 
 export interface RelayControlFrameHello {

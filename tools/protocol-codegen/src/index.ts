@@ -1046,18 +1046,20 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     const constName = familyConstName(family.id);
     const typeName = familyTypeName(family.id);
     const publicRegistry = publicRegistryForFamily(family);
+    const registryConstName = publicRegistry?.constName ?? constName;
+    const discriminatorsName = publicRegistry?.discriminatorsName ??
+      (family.id === "relayControl" ? "RELAY_CONTROL_DISCRIMINATORS" : undefined);
+    sections.push(...emitRegistryConst(registryConstName, family.variants));
+    if (discriminatorsName) {
+      sections.push(...emitDiscriminatorRegistry(discriminatorsName, family.variants));
+    }
     if (publicRegistry) {
-      sections.push(...emitRegistryConst(publicRegistry.constName, family.variants));
-      if (publicRegistry.discriminatorsName) {
-        sections.push(...emitDiscriminatorRegistry(publicRegistry.discriminatorsName, family.variants));
-      }
       sections.push(`export type ${publicRegistry.typeName} = (typeof ${publicRegistry.constName})[number];`);
       const sessionScopedConstName = `SESSION_SCOPED_${publicRegistry.constName}`;
       sections.push(...emitRegistryConst(sessionScopedConstName, family.variants.filter((variant) => variant.sessionScoped)));
       sections.push(`export const ${constName} = ${publicRegistry.constName};`);
       sections.push(`export type ${typeName} = ${publicRegistry.typeName};`);
     } else {
-      sections.push(...emitRegistryConst(constName, family.variants));
       sections.push(`export type ${typeName} = (typeof ${constName})[number];`);
     }
     sections.push("");
