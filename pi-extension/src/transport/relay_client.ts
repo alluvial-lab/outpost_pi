@@ -4,6 +4,7 @@ import { ed25519Sign } from "../pairing/crypto.js";
 import type { Ed25519Keypair } from "../pairing/crypto.js";
 import {
   RELAY_AUTH_DOMAIN_PREFIX,
+  RELAY_CONTROL_DISCRIMINATORS,
   type RelayControlFrameAuth,
   type RelayControlFrameHello,
 } from "../protocol/generated/protocol.generated.js";
@@ -218,7 +219,7 @@ export class RelayClient extends EventEmitter {
   private async _authenticate(ws: WebSocket, opts: ConnectOptions): Promise<void> {
     const pubkeyB64 = Buffer.from(this.keypair.publicKey).toString("base64");
     const hello = {
-      type: "hello",
+      type: RELAY_CONTROL_DISCRIMINATORS.hello,
       pubkey: pubkeyB64,
       device_id: this.deviceId,
       ...(opts.roomId ? { room_id: opts.roomId } : {}),
@@ -259,7 +260,7 @@ export class RelayClient extends EventEmitter {
     // rejected by relay-0.2.0 as `invalid signature`.
     const sig = ed25519Sign(this.keypair.secretKey, relayAuthSigningBytes(nonce));
     const auth = {
-      type: "auth",
+      type: RELAY_CONTROL_DISCRIMINATORS.auth,
       sig: Buffer.from(sig).toString("base64"),
     } satisfies RelayControlFrameAuth;
     this._rawSend(ws, JSON.stringify(auth));

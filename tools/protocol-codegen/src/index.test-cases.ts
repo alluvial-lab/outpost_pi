@@ -22,6 +22,8 @@ interface GeneratedProtocolModule {
   readonly RELAY_MAX_PRE_AUTH_FRAME_BYTES?: number;
   readonly RELAY_MAX_RAW_MESSAGE_BYTES?: number;
   readonly RELAY_SERVER_CONTROL_FRAME_TYPES?: readonly string[];
+  readonly relayControlTypes?: readonly string[];
+  readonly RELAY_CONTROL_DISCRIMINATORS?: Readonly<Record<string, string>>;
   readonly CLIENT_MESSAGE_TYPES?: readonly string[];
   readonly SERVER_MESSAGE_TYPES?: readonly string[];
   readonly SERVER_MESSAGE_DISCRIMINATORS?: Readonly<Record<string, string>>;
@@ -192,6 +194,7 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
   assert.match(output, /export interface RelayOuterEnvelope \{\n  readonly peer: string;\n  readonly room: string;\n  readonly ct: string;\n\}/);
   assert.match(output, /export interface RelayOuterEnvelopeCompat \{\n  readonly peer: string;\n  readonly room\?: string;\n  readonly ct: string;\n\}/);
   assert.match(output, /export type RelayServerControlFrame = Extract<RelayControlFrame/);
+  assert.match(output, /export const RELAY_CONTROL_DISCRIMINATORS = \{[\s\S]*hello: "hello",[\s\S]*auth: "auth",[\s\S]*subscribe_presence: "subscribe_presence",[\s\S]*room_meta_update: "room_meta_update",/);
   assert.match(output, /export function isRelayOuterEnvelope\(value: unknown\): value is RelayOuterEnvelope/);
   assert.match(output, /export function isRelayOuterEnvelopeCompat\(value: unknown\): value is RelayOuterEnvelopeCompat/);
   assert.match(output, /export function isCrossPcFrame\(value: unknown\): value is CrossPcFrame/);
@@ -254,6 +257,14 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     "room_ended",
     "room_meta_updated",
   ]);
+  assert.deepEqual(
+    generated.RELAY_CONTROL_DISCRIMINATORS,
+    Object.fromEntries((generated.relayControlTypes ?? []).map((type) => [type, type])),
+  );
+  assert.equal(generated.RELAY_CONTROL_DISCRIMINATORS?.hello, "hello");
+  assert.equal(generated.RELAY_CONTROL_DISCRIMINATORS?.auth, "auth");
+  assert.equal(generated.RELAY_CONTROL_DISCRIMINATORS?.room_meta_update, "room_meta_update");
+  assert.equal(generated.RELAY_CONTROL_DISCRIMINATORS?.subscribe_presence, "subscribe_presence");
   assert.equal(generated.isRelayServerControlFrame?.({ type: "peer_online", peer: "pi-a" }), true);
   assert.equal(generated.isRelayServerControlFrame?.({ type: "subscribe_presence", peers: [] }), false);
 
