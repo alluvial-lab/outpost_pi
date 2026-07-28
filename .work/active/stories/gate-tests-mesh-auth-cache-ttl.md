@@ -1,7 +1,7 @@
 ---
 id: gate-tests-mesh-auth-cache-ttl
 kind: story
-stage: implementing
+stage: review
 tags: [testing, relay]
 parent: null
 depends_on: []
@@ -37,3 +37,9 @@ fn positive_and_negative_membership_refresh_at_ttl() {
 
 ## Test location (suggested)
 `relay/src/handlers/pi_forward.rs`
+
+## Implementation notes
+- Added a test-only monotonic-clock seam to `MeshAuthCache`, keeping production time sourced from `Instant::now()`.
+- Added `positive_and_negative_membership_refresh_at_ttl`: both result types are reused one nanosecond before the 60-second TTL and rescanned/replaced at the exact TTL boundary; it also confirms the capacity invariant.
+- Verification: `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` passed from `relay/` (161 unit tests plus all integration suites).
+- Parked issues: none.
