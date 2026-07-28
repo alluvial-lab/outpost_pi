@@ -1,7 +1,7 @@
 ---
 id: feature-boundary-typed-decoders
 kind: feature
-stage: review
+stage: done
 tags: [relay, cockpit, pi-extension]
 parent: null
 depends_on: []

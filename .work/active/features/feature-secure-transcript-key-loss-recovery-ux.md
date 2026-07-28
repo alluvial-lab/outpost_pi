@@ -1,7 +1,7 @@
 ---
 id: feature-secure-transcript-key-loss-recovery-ux
 kind: feature
-stage: review
+stage: done
 tags: [app, security]
 parent: null
 depends_on: []

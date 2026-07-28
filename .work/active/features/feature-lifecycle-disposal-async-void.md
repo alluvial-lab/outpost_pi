@@ -1,7 +1,7 @@
 ---
 id: feature-lifecycle-disposal-async-void
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, app, lifecycle]
 parent: null
 depends_on: []
