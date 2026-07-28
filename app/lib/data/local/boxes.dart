@@ -239,7 +239,14 @@ class LocalBoxes {
 
   static Future<void> _migrateLegacy(Box<dynamic> metadata) async {
     if (TranscriptStorageMigrator.isComplete(metadata)) return;
+    final legacySources = await _legacyTranscriptBoxNames();
     if (!await Hive.boxExists(TranscriptStorageMigrator.legacyIndexBoxName)) {
+      if (legacySources.isNotEmpty) {
+        throw TranscriptMigrationException(
+          code: 'unindexed_legacy_source',
+          sourceBox: legacySources.first,
+        );
+      }
       await metadata.delete(TranscriptStorageMigrator.copyVerifiedKey);
       await metadata.put(
         TranscriptStorageMigrator.migrationVersionKey,
@@ -267,7 +274,35 @@ class LocalBoxes {
       legacyIndex: legacyIndex,
       secureIndex: Hive.box<dynamic>(_kSessionsIndex),
       metadata: metadata,
+      legacySourceNames: legacySources,
     );
+  }
+
+  /// Inventory plaintext legacy transcript boxes before migration completion.
+  ///
+  /// Hive does not expose its home directly, but the encrypted common index
+  /// does. Only the two pre-v3 transcript name generations are considered;
+  /// v3 boxes share neither plaintext storage nor these exact prefixes.
+  static Future<Set<String>> _legacyTranscriptBoxNames() async {
+    final index = Hive.box<dynamic>(_kSessionsIndex);
+    final indexPath = index.path;
+    if (indexPath == null) return const <String>{};
+    final home = File(indexPath).parent;
+    if (!await home.exists()) return const <String>{};
+
+    final names = <String>{};
+    await for (final entity in home.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final fileName = entity.uri.pathSegments.last;
+      if (!fileName.endsWith('.hive')) continue;
+      final name = fileName.substring(0, fileName.length - '.hive'.length);
+      if ((name.startsWith('transcript_events_') &&
+              !name.startsWith('transcript_events_v3_')) ||
+          (name.startsWith('msgs_') && !name.startsWith('msgs_v3_'))) {
+        names.add(name);
+      }
+    }
+    return names;
   }
 
   static Future<Box<dynamic>> _openEncrypted(String name) async {
