@@ -69,6 +69,8 @@ pub struct MeshAuthCache {
     #[cfg(test)]
     scan_delay: Mutex<Option<Duration>>,
     #[cfg(test)]
+    clock: Mutex<Option<Instant>>,
+    #[cfg(test)]
     publish_gate: Mutex<Option<Arc<TestScanGate>>>,
 }
 
@@ -129,7 +131,7 @@ impl MeshAuthCache {
             let generation = {
                 let mut inner = self.inner.lock().unwrap();
                 if let Some(entry) = inner.entries.get(pi_pk)
-                    && entry.cached_at.elapsed() < MESH_AUTH_CACHE_TTL
+                    && self.is_fresh(entry)
                 {
                     return match &entry.membership {
                         CachedMembership::Found { members, .. } => Some(members.clone()),
@@ -160,9 +162,7 @@ impl MeshAuthCache {
                 continue;
             }
 
-            inner
-                .entries
-                .retain(|_, entry| entry.cached_at.elapsed() < MESH_AUTH_CACHE_TTL);
+            inner.entries.retain(|_, entry| self.is_fresh(entry));
             if inner.entries.len() >= MESH_AUTH_CACHE_CAPACITY
                 && !inner.entries.contains_key(pi_pk)
                 && let Some(oldest) = inner
@@ -182,12 +182,24 @@ impl MeshAuthCache {
                             owner_hash: found.owner_hash,
                             members: found.members,
                         }),
-                    cached_at: Instant::now(),
+                    cached_at: self.now(),
                 },
             );
             self.scan_completed.notify_all();
             return membership.map(|found| found.members);
         }
+    }
+
+    fn is_fresh(&self, entry: &CacheEntry) -> bool {
+        self.now().duration_since(entry.cached_at) < MESH_AUTH_CACHE_TTL
+    }
+
+    fn now(&self) -> Instant {
+        #[cfg(test)]
+        if let Some(now) = *self.clock.lock().unwrap() {
+            return now;
+        }
+        Instant::now()
     }
 
     fn scan_membership(&self, pi_pk: &str, store: &MeshStore) -> Option<ScannedMembership> {
@@ -662,6 +674,41 @@ mod tests {
         assert!(cache.is_authorized("pi_x", "pi_y", &store));
         assert_eq!(cache.scan_count.load(Ordering::Relaxed), 1);
         assert!(cache.inner.lock().unwrap().entries.contains_key("pi_x"));
+    }
+
+    #[test]
+    fn positive_and_negative_membership_refresh_at_ttl() {
+        let (cache, store) = fresh_cache_and_store();
+        let base = Instant::now();
+        *cache.clock.lock().unwrap() = Some(base);
+        let owner = make_owner_key();
+
+        write_owner_blob(&store, &owner, &["pi_a", "pi_b"], 1);
+        assert!(cache.is_authorized("pi_a", "pi_b", &store));
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 1);
+
+        *cache.clock.lock().unwrap() = Some(base + MESH_AUTH_CACHE_TTL - Duration::from_nanos(1));
+        assert!(cache.is_authorized("pi_a", "pi_b", &store));
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 1);
+
+        write_owner_blob(&store, &owner, &["pi_a", "pi_c"], 2);
+        *cache.clock.lock().unwrap() = Some(base + MESH_AUTH_CACHE_TTL);
+        assert!(!cache.is_authorized("pi_a", "pi_b", &store));
+        assert!(cache.is_authorized("pi_a", "pi_c", &store));
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 2);
+
+        assert!(!cache.is_authorized("pi_missing", "dest", &store));
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 3);
+        *cache.clock.lock().unwrap() =
+            Some(base + (MESH_AUTH_CACHE_TTL * 2) - Duration::from_nanos(1));
+        assert!(!cache.is_authorized("pi_missing", "dest", &store));
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 3);
+
+        write_owner_blob(&store, &owner, &["pi_missing", "dest"], 3);
+        *cache.clock.lock().unwrap() = Some(base + (MESH_AUTH_CACHE_TTL * 2));
+        assert!(cache.is_authorized("pi_missing", "dest", &store));
+        assert_eq!(cache.scan_count.load(Ordering::Relaxed), 4);
+        assert!(cache.inner.lock().unwrap().entries.len() <= MESH_AUTH_CACHE_CAPACITY);
     }
 
     #[test]
