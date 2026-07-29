@@ -170,6 +170,59 @@ describe("PairingCoordinator.showPairQr", () => {
     expect(session.customMessages).toEqual([]);
   });
 
+  test("narrow terminal still shows the copyable pairing URI when the QR won't fit", async () => {
+    const session = new FakeSession();
+    const sendPiMessage = vi.fn((message: CustomMessage) => {
+      session.sendMessage(message);
+      return true;
+    });
+    let renderedNarrow = "";
+    const custom = vi.fn(async (factory: PairingDialogFactory) => {
+      const component = await factory(
+        {} as never,
+        {
+          fg: (_color: string, text: string) => text,
+          bold: (text: string) => text,
+        } as never,
+        {} as never,
+        () => undefined,
+      );
+      // Render at a width too narrow for the QR ASCII but wide enough for the
+      // wrapped URI. The camera-less URI path must remain visible.
+      renderedNarrow = component.render(40).join("\n");
+    });
+    const coordinator = new PairingCoordinator({
+      getState: () => "started",
+      startRelay: async () => undefined,
+      isRelayConnected: () => true,
+      roomId: () => "room-under-test",
+      displayName: () => "Test Pi",
+      owners: {} as never,
+      ownerHas: () => false,
+      refreshPairingsCache: () => undefined,
+      joinLocalMesh: async () => undefined,
+      sendPiMessage,
+      setSiblings: () => undefined,
+    });
+    coordinator.recordCurrentKeypair({ publicKey: new Uint8Array(32), secretKey: new Uint8Array(32) });
+    const ctx = {
+      cwd: "/tmp/outpost-pi-pairing-narrow-test",
+      mode: "tui",
+      ui: { custom, notify: vi.fn() },
+    } as unknown as ExtensionContext;
+
+    await coordinator.showPairQr(ctx);
+
+    // The QR is hidden, but the outpostpi:// URI is still present (wrapped
+    // across lines) so a camera-less device can copy it.
+    const uri = renderedNarrow.match(/outpostpi:\/\/pair\?[^\s"]+/)?.[0]
+      ?? renderedNarrow.split("\n").find((line) => line.includes("outpostpi://"));
+    expect(uri).toBeDefined();
+    expect(renderedNarrow).not.toContain("widen to");
+    expect(sendPiMessage).not.toHaveBeenCalled();
+    expect(session.customMessages).toEqual([]);
+  });
+
   test("non-TUI pairing without the seam warns without issuing or displaying a token", async () => {
     delete process.env["OUTPOST_PI_PAIR_CODE_FILE"];
     const notify = vi.fn();
