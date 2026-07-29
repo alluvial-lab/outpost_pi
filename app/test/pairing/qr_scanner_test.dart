@@ -86,5 +86,28 @@ void main() {
       expect(qr, isNotNull);
       expect(qr!.roomId, isNull);
     });
+
+    test('tolerates surrounding whitespace and trailing newlines (paste)', () {
+      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
+      expect(QrPairPayload.tryParse('  $raw  '), isNotNull,
+          reason: 'leading/trailing spaces');
+      expect(QrPairPayload.tryParse('\n$raw\n'), isNotNull,
+          reason: 'trailing newlines');
+    });
+
+    test('tolerates surrounding quote characters (terminal/message paste)', () {
+      final raw = 'outpostpi://pair?t=$goodToken&epk=$goodEpk&n=$sessionName';
+      expect(QrPairPayload.tryParse('"$raw"'), isNotNull,
+          reason: 'double quotes');
+      expect(QrPairPayload.tryParse("'$raw'"), isNotNull,
+          reason: 'single quotes');
+    });
+
+    test('still rejects a genuinely malformed scheme after trimming', () {
+      expect(
+        QrPairPayload.tryParse('  https://example.com/pair?t=x  '),
+        isNull,
+      );
+    });
   });
 }

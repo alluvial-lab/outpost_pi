@@ -43,11 +43,24 @@ class QrPairPayload {
 
   /// Parse and validate an Outpost-Pi pairing URI at the untrusted QR boundary.
   ///
-  /// Returns `null` for a wrong scheme, malformed encoding, or a token/public
-  /// key with an invalid byte length; callers must not open a transport first.
+  /// Tolerates common paste artifacts — surrounding whitespace, trailing
+  /// newlines, and wrapping quote characters — so a pasted pairing code is
+  /// not silently rejected for formatting alone. Returns `null` for a wrong
+  /// scheme, malformed encoding, or a token/public key with an invalid byte
+  /// length; callers must not open a transport first.
   static QrPairPayload? tryParse(String raw) {
+    // Normalize paste artifacts: trim whitespace/newlines and strip a single
+    // pair of surrounding quotes that a terminal copy or message app may add.
+    var input = raw.trim();
+    if (input.length >= 2) {
+      final first = input[0];
+      final last = input[input.length - 1];
+      if ((first == '"' && last == '"') || (first == "'" && last == "'")) {
+        input = input.substring(1, input.length - 1).trim();
+      }
+    }
     try {
-      final uri = Uri.parse(raw);
+      final uri = Uri.parse(input);
       if (uri.scheme != 'outpostpi' || uri.host != 'pair') return null;
       final t = uri.queryParameters['t'];
       final epk = uri.queryParameters['epk'];
