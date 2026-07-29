@@ -335,6 +335,31 @@ void main() {
     });
 
     test(
+      'malformed but intentional pairing code surfaces PairingError',
+      () async {
+        final storage = _FakeStorage();
+        final bridge = await _bootedBridge(storage);
+        final vm = PairingViewModel(
+          storage,
+          (qr, key) async => throw Exception('should not be called'),
+          _SpyConn(),
+          _PrefsForTest(),
+          bridge,
+        );
+        // Looks like a pairing code (outpostpi://) but has a bad token —
+        // must surface an error rather than silently swallowing it.
+        await vm.onQrScanned(
+          'outpostpi://pair?t=BADTOKEN&epk=AAAA&n=test',
+        );
+        expect(vm.state, isA<PairingError>());
+        final error = vm.state as PairingError;
+        expect(error.canRetry, isTrue);
+        expect(error.message, contains('could not be read'));
+        vm.dispose();
+      },
+    );
+
+    test(
       'unconfigured relay fails before disconnecting or opening transport',
       () async {
         final storage = _FakeStorage();
