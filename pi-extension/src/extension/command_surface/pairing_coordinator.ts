@@ -44,9 +44,16 @@ class PairingCodeDialog {
 
   render(width: number): string[] {
     if (width < this.minimumWidth) {
+      // The QR won't fit, but the camera-less URI path is exactly what a
+      // narrow terminal needs — show it wrapped rather than hiding the only
+      // usable pairing code behind a width gate.
       return [
-        `Terminal is too narrow for this pairing code; widen to ${this.minimumWidth} columns.`.slice(0, width),
-        "Press Enter or Esc to close.".slice(0, width),
+        ...wrapForTui("Terminal is too narrow for the QR; copy this pairing code instead:", width),
+        "",
+        ...wrapForTui(this.qrUri, width),
+        "",
+        ...wrapForTui(this.expiresAtText, width).map((line) => this.theme.dim(line)),
+        ...wrapForTui("Press Enter or Esc to close.", width).map((line) => this.theme.dim(line)),
       ];
     }
     return [
