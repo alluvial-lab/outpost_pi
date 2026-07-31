@@ -101,6 +101,17 @@ export function registerLifecycleHooks(
     ports.session.bindSessionContext(ctx);
     ports.session.onSessionLifecycle?.(reason, tail(sessionId));
     if (!epoch.isCurrent()) return;
+
+    // A new session is genuinely idle. Force-publish working=false to clear a
+    // stale working=true left in the relay's room state by a killed
+    // predecessor (SIGKILL/SIGTERM during an active turn skips session_shutdown,
+    // so resetTurnSnapshot never converges). resetTurnSnapshot is a no-op when
+    // the projection is already idle (false→false publishes nothing), so an
+    // explicit publishWorking(false) is required. Safe to no-op if the relay
+    // is not connected yet (sendControl is optional-chained); the first real
+    // turn's working=true will publish on the live connection.
+    ports.session.publishWorking(false);
+
     ports.commands.ensureStarted?.(ctx);
   });
 
