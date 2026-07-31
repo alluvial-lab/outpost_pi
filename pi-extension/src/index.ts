@@ -434,6 +434,7 @@ let _meshNode: MeshNode | null = null;
 // this flag after each await and abort (closing any peer that already connected)
 // so a torn-down instance never lingers on the broker. Per-module (jiti
 // re-evaluates the module on every session replacement), so the replacement
+// Starts `true` so the first `session_start` auto-starts the relay (the
 // instance starts fresh with `_disposed = false`.
 let _disposed = false;
 
@@ -1650,7 +1651,13 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
     commands: {
       register: (boundPi, runtime) => { createRuntimeCommandSurface().register(boundPi, runtime); },
       ensureStarted: (ctx) => {
-        if (!_disposed) return;
+        // Auto-start when the relay is not yet connected on this process —
+        // covers both a fresh process (_state="idle", _disposed=false) and a
+        // post-replacement restart (_disposed=true). Skip only if already
+        // started, preventing double-start on repeated session_start events.
+        // Without this, a fresh pi process (including after a hot-reload
+        // restart) never auto-connects the relay.
+        if (_state === "started") return;
         _disposed = false;
         _startRootInBackground(ctx, "session-start");
       },
