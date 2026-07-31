@@ -2632,8 +2632,10 @@ function _sweepStaleRuntimeIdentities(dir: string): void {
   let names: string[];
   try { names = readdirSync(dir); } catch { return; }
   for (const name of names) {
-    const prefix = ".runtime-self-";
-    if (!name.startsWith(prefix)) continue;
+    // Sweep PID-scoped state files left by crashed/restarted processes.
+    const pidPrefixes = [".runtime-self-", ".claimed-", ".restart-marker-"];
+    const prefix = pidPrefixes.find((p) => name.startsWith(p));
+    if (!prefix) continue;
     const pidText = name.slice(prefix.length);
     if (!/^[0-9]+$/.test(pidText)) continue;
     const path = join(dir, name);
