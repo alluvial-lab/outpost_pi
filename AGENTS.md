@@ -222,23 +222,54 @@ also hard-cutover — old Cockpit + new extension break the control channel.
 
 ### Reload vs restart (pi-extension)
 
-`/reload` in the pi TUI re-fires `session_start` against the **already-loaded**
-module instance — it does **not** re-import `dist/index.js`. A source edit is
-only picked up by a **full pi process restart** (quit + relaunch), not
-`/reload`. If a fix is in `dist/` but the symptom persists after `/reload`, a
-stale module is still in memory; restart pi.
+`/reload` in the pi TUI does **not** re-import `dist/index.js` for a
+`type: module` (ESM) extension. A source edit is only picked up by a **full
+pi process restart** (quit + relaunch), not `/reload`.
 
-This was verified empirically (2026-07-07): instrumentation fields added to
-`dist/transport/peer_channel.js` (commit `01006f9`, built 15:17) were absent
-from a capture taken immediately after `/reload`, while earlier fields (commit
-`9a15503`, built 13:35, loaded by the prior full restart) were present. So the
-running process kept the stale module despite `/reload`. A static trace of
-`agent-session.reload()` → `resourceLoader.reload()` → `clearExtensionCache()`
-→ `jiti.import` suggested re-import SHOULD occur, but the harness's `/reload`
-does not re-import the extension module in practice (the in-memory
-`extensionCache` factory is retained, or the harness `/reload` does not invoke
-the full `agent-session.reload()` path). Trust the empirical result, not the
-trace: **full restart to load a `dist/` change**.
+**Root cause (verified 2026-07-31 against jiti 2.7.0):** `/reload` does call
+`clearExtensionCache()` (clears pi's factory Map) and then `jiti.import()`,
+so pi's own cache IS cleared. But jiti's async import path for a
+`type: module` `.js` file takes the `nativeImport` branch:
+`nativeImport = (id) => import(id)` — Node's native dynamic `import()`, whose
+ESM module cache is **immutable at runtime** (no API to invalidate it).
+`moduleCache: false` (which pi sets) only clears the CJS `require.cache`,
+not the ESM cache. So the stale module from the first load is returned on
+every subsequent `/reload`. The earlier 2026-07-07 empirical note
+(hypothesizing a retained factory or incomplete `/reload` path) was
+mistaken about the *mechanism* but correct about the *result*.
+
+### Hot-reloading dist/ via process restart (interactive session)
+
+Since `/reload` cannot load new ESM `dist/` code, the extension ships a
+**turn_end sentinel + process restart** mechanism that makes a full restart
+cheap enough to use as a hot-reload from within a turn (e.g. while working
+via mobile):
+
+1. Rebuild `dist/` (`./node_modules/.bin/tsc` or `corepack pnpm build`).
+2. `touch ~/.pi/remote/.restart-pending` (or `$OUTPOST_PI_HOME/.restart-pending`).
+3. On the next `turn_end` (after the response fully streams), the extension
+   consumes the sentinel and schedules `SIGTERM` after a 500ms flush delay.
+4. pi's `SIGTERM` handler fires `session_shutdown` (publishes `working=false`,
+   closes the relay cleanly) then `process.exit(0)`.
+5. `scripts/pi-restart-loop.sh` (run under tmux with `RESTART_ON_EXIT_ZERO=1`)
+   sees the exit and relaunches `pi --continue` with a fresh ESM cache.
+   The relay reconnects in ~2s; the app converges to idle.
+
+The agent's response fully streams before the restart — no cut-short turn.
+
+```bash
+# Start pi under the restart loop (run once):
+tmux new -d -s outpost 'cd /home/agent/projects/outpost_pi && RESTART_ON_EXIT_ZERO=1 ./scripts/pi-restart-loop.sh'
+tmux attach -t outpost
+
+# After rebuilding dist/ (from within a turn or the TUI):
+touch ~/.pi/remote/.restart-pending
+```
+
+A plain `kill -TERM $(pgrep -x pi)` also triggers the same graceful shutdown +
+relaunch when running under the loop, but skips the turn_end flush (the
+current turn's response may be cut short). Prefer the sentinel for
+in-turn reloads.
 
 ### Relay container commands
 
