@@ -1,7 +1,7 @@
 ---
 id: story-hot-reload-agent-settled-hook-and-wrapper
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, workflow]
 parent: feature-extension-hot-reload-via-process-restart
 depends_on: []
@@ -39,17 +39,17 @@ to have 5 blockers. The revised design addresses all of them:
 5. **Daemon exclusion** (B4): `OUTPOST_PI_DAEMON=1` → handler returns immediately.
 
 ## Acceptance criteria
-- [ ] B1: two rapid agent_settled events → only one writes `.claimed` (O_EXCL) → only one SIGTERM.
-- [ ] B2: `ctx.isIdle()=false` → handler defers (no SIGTERM, `_hotReloading` reset).
-- [ ] B2: `_hotReloading=true` + `_deliverUserMessage` → message rejected with `recoverable: true`.
-- [ ] B3: handler calls `process.kill(pid, "SIGTERM")` (not process.exit). Marker written before kill.
-- [ ] B3: wrapper relaunches on exit 0 + marker; stops on exit 0 without marker; stops on non-zero.
-- [ ] B4: `OUTPOST_PI_DAEMON=1` → handler returns immediately (no restart).
-- [ ] B5: bash helper discovers PID from parent, reads nonce, writes armed file. Nonce mismatch → ignored.
-- [ ] PID reuse: stale armed file with wrong nonce → ignored + unlinked.
-- [ ] Toggle off: toggle absent + armed request → no restart.
-- [ ] M3: request is PID-scoped + nonce-checked (NOT room-scoped, NOT _myRoomId).
-- [ ] M5: identity/armed/claimed/marker files written with `mode: 0o600, flag: "wx"`.
+- [x] B1: two rapid agent_settled events → only one writes `.claimed` (O_EXCL) → only one SIGTERM.
+- [x] B2: `ctx.isIdle()=false` → handler defers (no SIGTERM, `_hotReloading` reset).
+- [x] B2: `_hotReloading=true` + `_deliverUserMessage` → message rejected with `recoverable: true`.
+- [x] B3: handler calls `process.kill(pid, "SIGTERM")` (not process.exit). Marker written before kill.
+- [x] B3: wrapper relaunches on exit 0 + marker; stops on exit 0 without marker; stops on non-zero.
+- [x] B4: `OUTPOST_PI_DAEMON=1` → handler returns immediately (no restart).
+- [x] B5: bash helper discovers PID from parent, reads nonce, writes armed file. Nonce mismatch → ignored.
+- [x] PID reuse: stale armed file with wrong nonce → ignored + unlinked.
+- [x] Toggle off: toggle absent + armed request → no restart.
+- [x] M3: request is PID-scoped + nonce-checked (NOT room-scoped, NOT _myRoomId).
+- [x] M5: identity/armed/claimed/marker files written with `mode: 0o600, flag: "wx"`.
 
 ## Files
 - `pi-extension/src/index.ts` — runtime identity, arming command, agent_settled handler, quiescing gate
@@ -61,3 +61,15 @@ to have 5 blockers. The revised design addresses all of them:
 ## Out of scope
 - Lifecycle-fence hardening (M1 flush documentation, M2 user-message-during-restart documentation,
   nonce-file startup cleanup) → folded into acceptance criteria or a sibling story.
+
+## Implementation notes
+- Replaced the turn_end timer/sentinel implementation with PID-scoped runtime identity,
+  nonce-bound O_EXCL arming and claiming, synchronous agent_settled handling, and the
+  recoverable delivery_pending quiescing gate.
+- Added the marker-based wrapper handshake and nonce-aware shell arming helper. Normal
+  clean exits and crashes stop the wrapper; only exit 0 plus .restart-marker relaunches.
+- Added focused coverage for exclusive claiming, idle deferral, graceful SIGTERM ordering,
+  daemon/toggle/nonce gates, and quiesced ingress, plus the composition-root session-start
+  identity capability.
+- Verification: `./node_modules/.bin/tsc --noEmit`, full Vitest (957 passed, 3 skipped),
+  `./node_modules/.bin/tsc`, and `bash -n` for both hot-reload scripts passed.
