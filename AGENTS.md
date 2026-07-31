@@ -246,12 +246,15 @@ cheap enough to use as a hot-reload from within a turn (e.g. while working
 via mobile):
 
 1. Rebuild `dist/` (`./node_modules/.bin/tsc` or `corepack pnpm build`).
-2. `touch ~/.pi/remote/.restart-pending` (or `$OUTPOST_PI_HOME/.restart-pending`).
-3. On the next `turn_end` (after the response fully streams), the extension
-   consumes the sentinel and schedules `SIGTERM` after a 500ms flush delay.
-4. pi's `SIGTERM` handler fires `session_shutdown` (publishes `working=false`,
+2. Enable the toggle (one-time, persists): `./scripts/hot-reload.sh on`
+3. Arm the restart: `./scripts/hot-reload.sh arm` (touches
+   `~/.pi/remote/.restart-pending`). Or combine: `./scripts/hot-reload.sh on+arm`.
+4. On the next `turn_end` (after the response fully streams), the extension
+   checks: toggle enabled + sentinel present → consumes the sentinel and
+   schedules `SIGTERM` after a 500ms flush delay.
+5. pi's `SIGTERM` handler fires `session_shutdown` (publishes `working=false`,
    closes the relay cleanly) then `process.exit(0)`.
-5. `scripts/pi-restart-loop.sh` (run under tmux with `RESTART_ON_EXIT_ZERO=1`)
+6. `scripts/pi-restart-loop.sh` (run under tmux with `RESTART_ON_EXIT_ZERO=1`)
    sees the exit and relaunches `pi --continue` with a fresh ESM cache.
    The relay reconnects in ~2s; the app converges to idle.
 
@@ -262,8 +265,12 @@ The agent's response fully streams before the restart — no cut-short turn.
 tmux new -d -s outpost 'cd /home/agent/projects/outpost_pi && RESTART_ON_EXIT_ZERO=1 ./scripts/pi-restart-loop.sh'
 tmux attach -t outpost
 
-# After rebuilding dist/ (from within a turn or the TUI):
-touch ~/.pi/remote/.restart-pending
+# Manage the hot-reload toggle:
+./scripts/hot-reload.sh on       # enable (persistent)
+./scripts/hot-reload.sh off      # disable (sentinels ignored)
+./scripts/hot-reload.sh arm      # request restart at next turn_end
+./scripts/hot-reload.sh on+arm   # enable + arm in one step
+./scripts/hot-reload.sh status   # show state
 ```
 
 A plain `kill -TERM $(pgrep -x pi)` also triggers the same graceful shutdown +
