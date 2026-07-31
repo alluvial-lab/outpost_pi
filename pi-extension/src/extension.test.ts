@@ -6675,6 +6675,51 @@ describe("model meta", () => {
     expect(updates[0]!.meta?.working).toBe(false);
   });
 
+  test("onConnected republishes the AUTHORITATIVE working state, not unconditional false (reconnect mid-turn keeps working=true)", async () => {
+    // Regression (story-fix-onconnected-clobbers-working-midturn): the
+    // onConnected relay-reconnect callback hardcoded publishWorking(false) to
+    // clear stale state from a killed predecessor. But onConnected fires on
+    // EVERY reconnect, including a transient relay drop mid-turn. That
+    // clobbered a genuine working=true, making the app render pi idle while a
+    // turn was actively streaming. The fix: publish the projection's actual
+    // working value, not a hardcoded false.
+    vi.useFakeTimers();
+    try {
+      captureHandler("outpost-pi");
+      await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-onconnected-midturn"));
+      expect(relayInstances).toHaveLength(1);
+      relayRef.current!.sendControl.mockClear();
+
+      // Seed an active turn → projection working=true.
+      const onTurnStart = captureEventHandler("turn_start");
+      onTurnStart({ type: "turn_start", turnIndex: 0, timestamp: 0 });
+      const turnUpdates = relayRef.current!.sendControl.mock.calls
+        .map((c) => c[0] as { type: string; meta?: { working?: boolean } })
+        .filter((f) => f.type === "room_meta_update");
+      expect(turnUpdates.at(-1)!.meta?.working).toBe(true);
+
+      // Relay drops mid-turn. The active turn is preserved (not reset).
+      relayInstances[0]!.emit("close");
+      expect(_hasPendingReconnect()).toBe(true);
+
+      // Reconnect fires after the backoff. onConnected must republish the
+      // AUTHORITATIVE state (working=true), NOT a hardcoded false.
+      relayRef.current!.sendControl.mockClear();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(relayInstances).toHaveLength(2);
+
+      const reconnectUpdates = relayRef.current!.sendControl.mock.calls
+        .map((c) => c[0] as { type: string; meta?: { working?: boolean } })
+        .filter((f) => f.type === "room_meta_update" && f.meta?.working !== undefined);
+      // The onConnected publish must carry working=true (the live turn state),
+      // proving it did NOT clobber the active turn with a stale false.
+      expect(reconnectUpdates.some((u) => u.meta?.working === true)).toBe(true);
+      expect(reconnectUpdates.some((u) => u.meta?.working === false)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("hot-reload: turn_end sends SIGTERM after a delay when toggle is on + sentinel exists", async () => {
     // Regression: /reload does not re-import a type:module ESM extension
     // (jiti nativeImport hits Node's immutable ESM cache). The workaround
