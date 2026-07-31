@@ -85,6 +85,23 @@ describe("composition root runtime", () => {
     expect(p.session.bindSessionContext).toHaveBeenCalledOnce();
   });
 
+  test("session_start publishes working=false to clear stale true from a killed predecessor", () => {
+    // Regression: when a pi process is killed mid-turn (SIGKILL), session_shutdown
+    // never fires, so resetTurnSnapshot() never converges working=false. The
+    // relay retains working=true in its room state. The successor process starts
+    // idle but must explicitly publish working=false to clear the stale value —
+    // resetTurnSnapshot is a no-op on an already-idle projection (false→false
+    // publishes nothing via the diff).
+    const p = ports();
+    const { pi, handlers } = piWithHandlers();
+    const runtime = createOutpostPiExtensionRuntime(pi, p, new OutpostPiRuntimeCoordinator());
+    runtime.register();
+
+    handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("successor"));
+
+    expect(p.session.publishWorking).toHaveBeenCalledWith(false);
+  });
+
   test("duplicate session_start is idempotent and a disposed epoch does not restart", () => {
     const p = ports();
     const { pi, handlers } = piWithHandlers();
