@@ -366,6 +366,7 @@ const {
   _getDeliveryDebugLogForTest,
   _handleControl,
   _parseControlFrame,
+  _setHotReloadingForTest,
   CTRL_PREFIX,
 } = await import("./index.js");
 const { runStandaloneOutpostPiCli } = await import("./extension/command_surface/standalone_cli.js");
@@ -564,9 +565,8 @@ describe("extension default export", () => {
   test("no deprecated or removed commands leak back into the surface", () => {
     const { pi, registeredCommands } = makeMockPi();
     (extension as ExtensionFactory)(pi);
-    // 8 plan-25 + 2 daemon registry (W1) + 6 fleet ops (W2) + 2 install (W3)
-    // + 1 cross-PC inventory (plan-25 W D) + 1 cron (plan-39).
-    expect(registeredCommands).toHaveLength(20);
+    // Existing command surface plus the hot-reload process-restart control.
+    expect(registeredCommands).toHaveLength(21);
     for (const removed of [
       "outpost-pi join", "outpost-pi leave", "outpost-pi rename", "outpost-pi sessions",
       "outpost-pi relay", "outpost-pi relay start", "outpost-pi relay stop",
@@ -6720,79 +6720,137 @@ describe("model meta", () => {
     }
   });
 
-  test("hot-reload: turn_end sends SIGTERM after a delay when toggle is on + sentinel exists", async () => {
-    // Regression: /reload does not re-import a type:module ESM extension
-    // (jiti nativeImport hits Node's immutable ESM cache). The workaround
-    // is a process restart triggered by a sentinel file consumed at
-    // turn_end, so the agent's response fully streams before the restart.
-    // The behavior is gated by a persistent toggle (.hot-reload-enabled).
-    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-on-"));
-    const togglePath = join(fakeHome, ".hot-reload-enabled");
-    const sentinelPath = join(fakeHome, ".restart-pending");
-    writeFileSync(togglePath, "");
-    writeFileSync(sentinelPath, "");
+  test("hot-reload: agent_settled claims once, writes marker before graceful SIGTERM", async () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-v2-"));
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    process.env["OUTPOST_PI_HOME"] = fakeHome;
+    process.env["OUTPOST_PI_DAEMON"] = "";
+    const ctx = { isIdle: () => true };
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+      expect(existsSync(join(fakeHome, ".restart-marker"))).toBe(true);
+      return true;
+    });
+    _setHotReloadingForTest(false);
+
+    try {
+      writeFileSync(join(fakeHome, ".hot-reload-enabled"), "", { mode: 0o600 });
+      const arm = captureHandler("outpost-pi hot-reload");
+      await arm("arm", makeMockCtx());
+      const onSettled = captureEventHandler("agent_settled");
+
+      onSettled({ type: "agent_settled" }, ctx);
+      onSettled({ type: "agent_settled" }, ctx);
+
+      expect(killSpy).toHaveBeenCalledTimes(1);
+      expect(existsSync(join(fakeHome, `.claimed-${process.pid}`))).toBe(true);
+      expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(false);
+      expect(readFileSync(join(fakeHome, ".restart-marker"), "utf8")).toBe(String(process.pid));
+    } finally {
+      killSpy.mockRestore();
+      _setHotReloadingForTest(false);
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      delete process.env["OUTPOST_PI_DAEMON"];
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test("hot-reload: non-idle settlement defers and resets the quiescing gate", async () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-defer-"));
     const previousHome = process.env["OUTPOST_PI_HOME"];
     process.env["OUTPOST_PI_HOME"] = fakeHome;
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
-    vi.useFakeTimers();
+    _setHotReloadingForTest(false);
 
     try {
-      captureHandler("outpost-pi");
-      await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-restart-on"));
-      relayRef.current!.sendControl.mockClear();
-
-      const onTurnEnd = captureEventHandler("turn_end");
-      onTurnEnd({ type: "turn_end", turnIndex: 0 });
-
-      // The sentinel must be consumed (unlinked) immediately so a stale
-      // sentinel from a crashed run cannot loop.
-      expect(existsSync(sentinelPath)).toBe(false);
-
-      // SIGTERM must NOT fire immediately — the response needs time to flush.
+      writeFileSync(join(fakeHome, ".hot-reload-enabled"), "", { mode: 0o600 });
+      const arm = captureHandler("outpost-pi hot-reload");
+      await arm("arm", makeMockCtx());
+      const onSettled = captureEventHandler("agent_settled");
+      onSettled({ type: "agent_settled" }, { isIdle: () => false });
       expect(killSpy).not.toHaveBeenCalled();
+      expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(true);
 
-      // After the delay, SIGTERM fires.
-      vi.advanceTimersByTime(500);
-      expect(killSpy).toHaveBeenCalledWith(process.pid, "SIGTERM");
+      onSettled({ type: "agent_settled" }, { isIdle: () => true });
+      expect(killSpy).toHaveBeenCalledTimes(1);
     } finally {
-      vi.useRealTimers();
       killSpy.mockRestore();
+      _setHotReloadingForTest(false);
       if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
       else process.env["OUTPOST_PI_HOME"] = previousHome;
       rmSync(fakeHome, { recursive: true, force: true });
     }
   });
 
-  test("hot-reload: sentinel is ignored when the toggle is off (no SIGTERM)", async () => {
-    // The persistent toggle (.hot-reload-enabled) gates the whole behavior.
-    // A stray sentinel without the toggle must NOT trigger a restart — this
-    // prevents accidental restarts from stale or manually-created sentinels.
-    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-off-"));
-    const sentinelPath = join(fakeHome, ".restart-pending");
-    writeFileSync(sentinelPath, ""); // sentinel present, toggle absent
+  test("hot-reload: quiescing rejects user messages as recoverable delivery_pending", async () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-gate-"));
     const previousHome = process.env["OUTPOST_PI_HOME"];
     process.env["OUTPOST_PI_HOME"] = fakeHome;
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
-    vi.useFakeTimers();
+    const sender = { send: vi.fn() };
+    _setHotReloadingForTest(true);
 
     try {
-      captureHandler("outpost-pi");
-      await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-restart-off"));
-      relayRef.current!.sendControl.mockClear();
-
-      const onTurnEnd = captureEventHandler("turn_end");
-      onTurnEnd({ type: "turn_end", turnIndex: 0 });
-
-      // Toggle is off → sentinel is NOT consumed, no SIGTERM.
-      expect(existsSync(sentinelPath)).toBe(true);
-      expect(killSpy).not.toHaveBeenCalled();
-      vi.advanceTimersByTime(500);
+      _routeClientMessageFrom(sender as never, {
+        type: "user_message",
+        id: "during-restart",
+        text: "hello",
+        session_id: _getRemoteSessionIdForTest() ?? "successor-session-id",
+      } as never, { abort: vi.fn() });
+      await Promise.resolve();
+      expect(sender.send).toHaveBeenCalledWith(expect.objectContaining({
+        type: "error",
+        code: "delivery_pending",
+        in_reply_to: "during-restart",
+      }));
       expect(killSpy).not.toHaveBeenCalled();
     } finally {
-      vi.useRealTimers();
       killSpy.mockRestore();
+      _setHotReloadingForTest(false);
       if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
       else process.env["OUTPOST_PI_HOME"] = previousHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test("hot-reload: daemon mode, nonce mismatch, and toggle-off requests never restart", async () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-gates-"));
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    const previousDaemon = process.env["OUTPOST_PI_DAEMON"];
+    process.env["OUTPOST_PI_HOME"] = fakeHome;
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    _setHotReloadingForTest(false);
+
+    try {
+      const armedPath = join(fakeHome, `.hot-reload-armed-${process.pid}`);
+      const togglePath = join(fakeHome, ".hot-reload-enabled");
+      writeFileSync(togglePath, "", { mode: 0o600 });
+      writeFileSync(armedPath, JSON.stringify({ nonce: "wrong-process", ts: Date.now() }), { mode: 0o600 });
+      const onSettled = captureEventHandler("agent_settled");
+      onSettled({ type: "agent_settled" }, { isIdle: () => true });
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(existsSync(armedPath)).toBe(false);
+
+      writeFileSync(armedPath, JSON.stringify({ nonce: "wrong-process", ts: Date.now() }), { mode: 0o600 });
+      process.env["OUTPOST_PI_DAEMON"] = "1";
+      onSettled({ type: "agent_settled" }, { isIdle: () => true });
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(existsSync(armedPath)).toBe(true);
+
+      delete process.env["OUTPOST_PI_DAEMON"];
+      // Toggle off: an armed request is inert and remains for the explicit
+      // off-cleanup command rather than being consumed accidentally.
+      unlinkSync(togglePath);
+      onSettled({ type: "agent_settled" }, { isIdle: () => true });
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(existsSync(armedPath)).toBe(true);
+    } finally {
+      killSpy.mockRestore();
+      _setHotReloadingForTest(false);
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      if (previousDaemon === undefined) delete process.env["OUTPOST_PI_DAEMON"];
+      else process.env["OUTPOST_PI_DAEMON"] = previousDaemon;
       rmSync(fakeHome, { recursive: true, force: true });
     }
   });

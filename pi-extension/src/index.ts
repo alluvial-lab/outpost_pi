@@ -1497,7 +1497,14 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     if (!before.working && !after.working) _publishWorking(false);
     _maybeSendLateAttachSessionSync();
     _maybeDrainQueuedMessage();
-    _maybeRestartForExtensionReload();
+  });
+
+  // agent_settled is the first boundary after retries, compaction, and queued
+  // continuations have drained. Keep this handler synchronous: the ingress gate
+  // must be visible before the handler returns so a new prompt cannot start
+  // between settlement and the graceful process shutdown.
+  ownerPi.on("agent_settled", (_event, ctx) => {
+    _maybeRestartForExtensionReload(ctx);
   });
 
   // Plan/32: compaction feedback. compact() doesn't run a turn, so bracket it
@@ -1601,6 +1608,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
         _sdkSessionProjection.bindApi(boundPi);
         _drainPendingDeliveryQueue();
       },
+      onSessionStart: _writeRuntimeIdentity,
       bindCommandContext: _rememberCommandCtx,
       bindSessionContext: (ctx) => {
         // The runtime coordinator is the single ownership authority. A real
@@ -1638,7 +1646,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
           roomId: _myRoomId ?? undefined,
         });
       },
-    },
+    } as OutpostPiRuntimePorts["session"],
     commands: {
       register: (boundPi, runtime) => { createRuntimeCommandSurface().register(boundPi, runtime); },
       ensureStarted: (ctx) => {
@@ -1703,6 +1711,7 @@ function _registerOutpostPiCommands(pi: ExtensionAPI): void {
 
   const specs: OutpostPiCommandSpec[] = [
     { suffix: "setup", description: "Run the setup wizard and update local config", run: runWithCtx(async (_args, ctx) => { await _cmdSetup(ctx); }) },
+    { suffix: "hot-reload", description: "Manage process-restart hot reload: on, off, arm, or status", run: runWithCtx((args, ctx) => { _cmdHotReload(args, ctx); }) },
     { suffix: "status", description: "Show local mesh + relay status", run: runWithCtx((_args, ctx) => { _cmdStatus(ctx); }) },
     { suffix: "stop", description: "Stop everything (leave local mesh + disconnect relay)", run: runWithCtx(async (_args, ctx) => { await _cmdStop(ctx); }) },
     { suffix: "pair", description: "Show a QR code to pair a new mobile device (optional: --ttl <seconds>)", run: runWithCtx(async (args, ctx) => { await _cmdPair(ctx, args); }) },
@@ -2519,6 +2528,13 @@ async function _deliverUserMessage(
   sender: PlainPeerChannel | null,
   mode: "auto" | "normal" = "auto",
 ): Promise<void> {
+  // Hot-reload owns the next settled boundary. Reject rather than enqueueing a
+  // prompt that could begin after the graceful shutdown has been requested;
+  // the delivery_pending response is recoverable by the app on reconnect.
+  if (_hotReloading) {
+    _sendDeliveryPending(sender, msg.id);
+    return;
+  }
   const prepared = _prepareUserDelivery(msg, sender, mode);
   _deliveryDebugLog.log({
     tag: "msg_received",
@@ -2550,57 +2566,162 @@ function _maybeSendLateAttachSessionSync(): void {
   _sdkSessionProjection.maybeSendLateAttachSessionSync((turnId) => _buildSessionHistoryMessage(turnId, undefined));
 }
 
-/**
- * Extension hot-reload via process restart.
- *
- * pi's `/reload` does NOT re-import a `type: module` (ESM) extension: jiti's
- * async path uses `nativeImport = (id) => import(id)`, which hits Node's
- * ESM cache — immutable at runtime. The only way to load new `dist/` code is
- * a full process restart. This hook makes that restart cheap: the agent
- * rebuilds `dist/` (via the bash tool), then touches a sentinel file. On the
- * next `turn_end` (after the response fully streams), this function sends
- * SIGTERM to the pi process. The wrapper script (`scripts/pi-restart-loop.sh`)
- * sees the graceful exit and relaunches `pi --continue` with a fresh ESM
- * cache. The relay disconnect is ~2s; `session_shutdown` publishes
- * `working=false` before the relay closes, so the app converges to idle.
- *
- * The sentinel lives at `~/.pi/remote/.restart-pending` and is consumed
- * (unlinked) before the signal fires so a stale sentinel from a crashed
- * run doesn't loop.
- */
-/** Resolve state file paths lazily so tests can redirect
- *  `OUTPOST_PI_HOME` to a tmpdir after module load. */
+/** Resolve hot-reload state paths lazily so tests can redirect
+ * `OUTPOST_PI_HOME` after module evaluation. */
 function _outpostPiRemoteDir(): string {
   return process.env["OUTPOST_PI_HOME"] || join(homedir(), ".pi", "remote");
 }
 
-/** Persistent toggle: presence enables the hot-reload-via-restart behavior.
- *  The agent creates/removes this to turn the feature on/off. Without it,
- *  the sentinel is ignored — so a stray `.restart-pending` from a crashed
- *  run or a manual experiment never triggers an unexpected restart. */
+function _ensureHotReloadRemoteDir(): string {
+  const dir = _outpostPiRemoteDir();
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
 function _hotReloadEnabledPath(): string {
   return join(_outpostPiRemoteDir(), ".hot-reload-enabled");
 }
 
-/** Transient trigger: presence requests a restart at the next turn_end.
- *  Consumed (unlinked) before the signal fires so it cannot loop. */
-function _restartPendingSentinelPath(): string {
-  return join(_outpostPiRemoteDir(), ".restart-pending");
+function _hotReloadArmedPath(): string {
+  return join(_outpostPiRemoteDir(), `.hot-reload-armed-${process.pid}`);
 }
 
-function _maybeRestartForExtensionReload(): void {
-  // Guard: the persistent toggle must be enabled. This lets the agent turn
-  // the whole behavior on/off without worrying about stale sentinels.
-  if (!existsSync(_hotReloadEnabledPath())) return;
-  const sentinel = _restartPendingSentinelPath();
-  if (!existsSync(sentinel)) return;
-  try { unlinkSync(sentinel); } catch { /* best-effort */ }
-  // Defer the signal so the turn_end response (including this function's
-  // own turn_projection publish) flushes to the relay and the TUI before
-  // the process exits. 500ms is generous for a local relay + TUI render.
-  setTimeout(() => {
-    if (!_disposed) process.kill(process.pid, "SIGTERM");
-  }, 500);
+function _hotReloadClaimedPath(): string {
+  return join(_outpostPiRemoteDir(), `.claimed-${process.pid}`);
+}
+
+function _runtimeIdentityPath(): string {
+  return join(_outpostPiRemoteDir(), `.runtime-self-${process.pid}`);
+}
+
+function _restartMarkerPath(): string {
+  return join(_outpostPiRemoteDir(), ".restart-marker");
+}
+
+const _hotReloadNonce = randomUUID();
+let _hotReloading = false;
+
+/** Test-only override for resetting the synchronous ingress fence between cases. */
+export function _setHotReloadingForTest(value: boolean): void {
+  _hotReloading = value;
+}
+
+/** Publish this process's nonce so an external arming command can target it. */
+function _writeRuntimeIdentity(): void {
+  if (process.env["OUTPOST_PI_DAEMON"] === "1") return;
+  const dir = _ensureHotReloadRemoteDir();
+  writeFileSync(
+    join(dir, `.runtime-self-${process.pid}`),
+    JSON.stringify({ pid: process.pid, nonce: _hotReloadNonce, ts: Date.now() }),
+    { mode: 0o600 },
+  );
+}
+
+/** Arm one process-scoped hot-reload request from the interactive command surface. */
+function _armHotReload(ctx?: OutpostPiUiContext): void {
+  if (process.env["OUTPOST_PI_DAEMON"] === "1") return;
+  if (!existsSync(_hotReloadEnabledPath())) {
+    _notify("[outpost-pi] hot-reload toggle is off — run /outpost-pi hot-reload on first", "warning", ctx);
+    return;
+  }
+  const dir = _ensureHotReloadRemoteDir();
+  try {
+    writeFileSync(
+      join(dir, `.hot-reload-armed-${process.pid}`),
+      JSON.stringify({ nonce: _hotReloadNonce, ts: Date.now() }),
+      { mode: 0o600, flag: "wx" },
+    );
+    _notify(`[outpost-pi] hot-reload armed — restart fires at next agent_settled (pid=${process.pid})`, "info", ctx);
+  } catch {
+    _notify(`[outpost-pi] hot-reload is already armed for pid=${process.pid}`, "warning", ctx);
+  }
+}
+
+function _cmdHotReload(args: string, ctx: Pick<ExtensionContext, "ui">): void {
+  const command = args.trim() || "status";
+  if (process.env["OUTPOST_PI_DAEMON"] === "1") {
+    _notify("[outpost-pi] hot-reload is disabled in daemon mode", "warning", ctx);
+    return;
+  }
+  const dir = _ensureHotReloadRemoteDir();
+  if (command === "on") {
+    try { writeFileSync(_hotReloadEnabledPath(), "", { mode: 0o600, flag: "wx" }); } catch { /* already enabled */ }
+    _notify("[outpost-pi] hot-reload enabled", "info", ctx);
+    return;
+  }
+  if (command === "off") {
+    for (const path of [_hotReloadEnabledPath(), _hotReloadArmedPath(), _hotReloadClaimedPath(), _restartMarkerPath(), _runtimeIdentityPath()]) {
+      try { unlinkSync(path); } catch { /* best-effort cleanup */ }
+    }
+    _notify("[outpost-pi] hot-reload disabled", "info", ctx);
+    return;
+  }
+  if (command === "arm") {
+    _armHotReload(ctx);
+    return;
+  }
+  if (command === "status") {
+    _notify(
+      `[outpost-pi] hot-reload: ${existsSync(_hotReloadEnabledPath()) ? "on" : "off"}, ` +
+      `${existsSync(_hotReloadArmedPath()) ? "armed" : "not armed"} (pid=${process.pid})`,
+      "info",
+      ctx,
+    );
+    return;
+  }
+  _notify("[outpost-pi] Usage: /outpost-pi hot-reload <on|off|arm|status>", "warning", ctx);
+  void dir;
+}
+
+/**
+ * Restart only after Pi reports that all agent work has settled.
+ *
+ * This handler is intentionally synchronous. The armed request is bound to the
+ * current PID and module nonce, and O_EXCL on the claim file makes the restart
+ * single-winner when multiple settled notifications arrive.
+ */
+function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">): void {
+  if (process.env["OUTPOST_PI_DAEMON"] === "1") return;
+  if (_hotReloading || !existsSync(_hotReloadEnabledPath())) return;
+
+  const armedPath = _hotReloadArmedPath();
+  if (!existsSync(armedPath)) return;
+
+  let request: { nonce?: unknown; ts?: unknown };
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(armedPath, "utf8"));
+    if (!parsed || typeof parsed !== "object") return;
+    request = parsed as { nonce?: unknown; ts?: unknown };
+  } catch {
+    return;
+  }
+  if (request.nonce !== _hotReloadNonce) {
+    try { unlinkSync(armedPath); } catch { /* best-effort stale-request cleanup */ }
+    return;
+  }
+  if (typeof request.ts === "number" && Date.now() - request.ts > 5 * 60_000) {
+    try { unlinkSync(armedPath); } catch { /* best-effort stale-request cleanup */ }
+    return;
+  }
+
+  _hotReloading = true;
+  if (!ctx.isIdle()) {
+    _hotReloading = false;
+    return;
+  }
+
+  try {
+    writeFileSync(_hotReloadClaimedPath(), "", { mode: 0o600, flag: "wx" });
+  } catch {
+    _hotReloading = false;
+    return;
+  }
+
+  try { unlinkSync(armedPath); } catch { /* best-effort request consumption */ }
+  try {
+    writeFileSync(_restartMarkerPath(), String(process.pid), { mode: 0o600 });
+  } catch { /* wrapper will stop rather than relaunch if marker persistence fails */ }
+  process.kill(process.pid, "SIGTERM");
 }
 
 export function _routeClientMessageFrom(
