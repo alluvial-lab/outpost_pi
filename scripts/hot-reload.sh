@@ -73,7 +73,7 @@ cmd_off() {
     "$REMOTE_DIR"/.hot-reload-armed-* \
     "$REMOTE_DIR"/.runtime-self-* \
     "$REMOTE_DIR"/.claimed-* \
-    "$REMOTE_DIR"/.restart-marker \
+    "$REMOTE_DIR"/.restart-marker-* \
     "$REMOTE_DIR"/.restart-pending-*
   echo "[hot-reload] disabled (toggle off) — pending runtime state removed"
 }
