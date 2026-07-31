@@ -125,7 +125,7 @@ import {
 import { updateFooter, type FooterState } from "./ui/footer.js";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdirSync, copyFileSync, existsSync, unlinkSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, copyFileSync, existsSync, unlinkSync, readFileSync, writeFileSync, lstatSync, readdirSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import {
   resolveRelayUrl,
@@ -2530,7 +2530,10 @@ async function _deliverUserMessage(
 ): Promise<void> {
   // Hot-reload owns the next settled boundary. Reject rather than enqueueing a
   // prompt that could begin after the graceful shutdown has been requested;
-  // the delivery_pending response is recoverable by the app on reconnect.
+  // the delivery_pending response is recoverable by the app on reconnect. This
+  // does not recover an input that was already accepted by the relay but never
+  // reached Pi; the app's reconnect/session_sync path is the correctness backstop
+  // for that roughly two-second shutdown window.
   if (_hotReloading) {
     _sendDeliveryPending(sender, msg.id);
     return;
@@ -2572,10 +2575,76 @@ function _outpostPiRemoteDir(): string {
   return process.env["OUTPOST_PI_HOME"] || join(homedir(), ".pi", "remote");
 }
 
+function _stateOwnerUid(): number | undefined {
+  return typeof process.getuid === "function" ? process.getuid() : undefined;
+}
+
+function _isOwnerOnlyDirectory(path: string): boolean {
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isDirectory() || (stat.mode & 0o777) !== 0o700) return false;
+    const uid = _stateOwnerUid();
+    return uid === undefined || stat.uid === uid;
+  } catch {
+    return false;
+  }
+}
+
+function _isOwnerOnlyRegularFile(path: string): boolean {
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isFile() || (stat.mode & 0o777) !== 0o600) return false;
+    const uid = _stateOwnerUid();
+    return uid === undefined || stat.uid === uid;
+  } catch {
+    return false;
+  }
+}
+
+function _secureHotReloadRemoteDir(): string | null {
+  const dir = _outpostPiRemoteDir();
+  if (_isOwnerOnlyDirectory(dir)) return dir;
+  if (existsSync(dir)) {
+    console.warn(`[outpost-pi] refusing hot-reload state in insecure directory: ${dir}`);
+  }
+  return null;
+}
+
 function _ensureHotReloadRemoteDir(): string {
   const dir = _outpostPiRemoteDir();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (!_isOwnerOnlyDirectory(dir)) {
+    throw new Error(`[outpost-pi] hot-reload state directory must be owner-only (0700): ${dir}`);
+  }
   return dir;
+}
+
+function _removeIfOwnerOnlyRegularFile(path: string): void {
+  if (!_isOwnerOnlyRegularFile(path)) return;
+  try { unlinkSync(path); } catch { /* best-effort stale-state cleanup */ }
+}
+
+function _sweepStaleRuntimeIdentities(dir: string): void {
+  let names: string[];
+  try { names = readdirSync(dir); } catch { return; }
+  for (const name of names) {
+    const prefix = ".runtime-self-";
+    if (!name.startsWith(prefix)) continue;
+    const pidText = name.slice(prefix.length);
+    if (!/^[0-9]+$/.test(pidText)) continue;
+    const path = join(dir, name);
+    if (!_isOwnerOnlyRegularFile(path)) continue;
+    const pid = Number(pidText);
+    if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) continue;
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      // EPERM means the process exists but is not probeable; only remove an
+      // identity when the kernel positively reports that its PID is gone.
+      if (error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "EPERM") continue;
+      _removeIfOwnerOnlyRegularFile(path);
+    }
+  }
 }
 
 function _hotReloadEnabledPath(): string {
@@ -2609,22 +2678,45 @@ export function _setHotReloadingForTest(value: boolean): void {
 /** Publish this process's nonce so an external arming command can target it. */
 function _writeRuntimeIdentity(): void {
   if (process.env["OUTPOST_PI_DAEMON"] === "1") return;
-  const dir = _ensureHotReloadRemoteDir();
-  writeFileSync(
-    join(dir, `.runtime-self-${process.pid}`),
-    JSON.stringify({ pid: process.pid, nonce: _hotReloadNonce, ts: Date.now() }),
-    { mode: 0o600 },
-  );
+  _hotReloading = false;
+  try {
+    const dir = _ensureHotReloadRemoteDir();
+    _sweepStaleRuntimeIdentities(dir);
+    // A failed prior hook may have left this process's claim behind while a
+    // session replacement was already underway. It must not fence the successor.
+    _removeIfOwnerOnlyRegularFile(_hotReloadClaimedPath());
+    const identityPath = join(dir, `.runtime-self-${process.pid}`);
+    if (existsSync(identityPath)) {
+      if (!_isOwnerOnlyRegularFile(identityPath)) {
+        console.warn(`[outpost-pi] refusing insecure hot-reload identity: ${identityPath}`);
+        return;
+      }
+      _removeIfOwnerOnlyRegularFile(identityPath);
+    }
+    writeFileSync(
+      identityPath,
+      JSON.stringify({ pid: process.pid, nonce: _hotReloadNonce, ts: Date.now() }),
+      { mode: 0o600, flag: "wx" },
+    );
+    _removeIfOwnerOnlyRegularFile(_restartMarkerPath());
+  } catch (error) {
+    console.warn(`[outpost-pi] hot-reload runtime identity unavailable: ${String(error)}`);
+  }
 }
 
 /** Arm one process-scoped hot-reload request from the interactive command surface. */
 function _armHotReload(ctx?: OutpostPiUiContext): void {
   if (process.env["OUTPOST_PI_DAEMON"] === "1") return;
-  if (!existsSync(_hotReloadEnabledPath())) {
+  const dir = _secureHotReloadRemoteDir();
+  if (!dir) {
+    _notify("[outpost-pi] hot-reload state directory is missing or insecure", "warning", ctx);
+    return;
+  }
+  const togglePath = join(dir, ".hot-reload-enabled");
+  if (!_isOwnerOnlyRegularFile(togglePath)) {
     _notify("[outpost-pi] hot-reload toggle is off — run /outpost-pi hot-reload on first", "warning", ctx);
     return;
   }
-  const dir = _ensureHotReloadRemoteDir();
   try {
     writeFileSync(
       join(dir, `.hot-reload-armed-${process.pid}`),
@@ -2643,15 +2735,26 @@ function _cmdHotReload(args: string, ctx: Pick<ExtensionContext, "ui">): void {
     _notify("[outpost-pi] hot-reload is disabled in daemon mode", "warning", ctx);
     return;
   }
-  const dir = _ensureHotReloadRemoteDir();
+  let dir: string;
+  try { dir = _ensureHotReloadRemoteDir(); }
+  catch (error) {
+    _notify(`[outpost-pi] hot-reload state directory unavailable: ${String(error)}`, "warning", ctx);
+    return;
+  }
   if (command === "on") {
-    try { writeFileSync(_hotReloadEnabledPath(), "", { mode: 0o600, flag: "wx" }); } catch { /* already enabled */ }
+    try { writeFileSync(join(dir, ".hot-reload-enabled"), "", { mode: 0o600, flag: "wx" }); } catch { /* already enabled */ }
     _notify("[outpost-pi] hot-reload enabled", "info", ctx);
     return;
   }
   if (command === "off") {
-    for (const path of [_hotReloadEnabledPath(), _hotReloadArmedPath(), _hotReloadClaimedPath(), _restartMarkerPath(), _runtimeIdentityPath()]) {
-      try { unlinkSync(path); } catch { /* best-effort cleanup */ }
+    for (const path of [
+      join(dir, ".hot-reload-enabled"),
+      _hotReloadArmedPath(),
+      _hotReloadClaimedPath(),
+      _restartMarkerPath(),
+      _runtimeIdentityPath(),
+    ]) {
+      _removeIfOwnerOnlyRegularFile(path);
     }
     _notify("[outpost-pi] hot-reload disabled", "info", ctx);
     return;
@@ -2662,15 +2765,14 @@ function _cmdHotReload(args: string, ctx: Pick<ExtensionContext, "ui">): void {
   }
   if (command === "status") {
     _notify(
-      `[outpost-pi] hot-reload: ${existsSync(_hotReloadEnabledPath()) ? "on" : "off"}, ` +
-      `${existsSync(_hotReloadArmedPath()) ? "armed" : "not armed"} (pid=${process.pid})`,
+      `[outpost-pi] hot-reload: ${_isOwnerOnlyRegularFile(join(dir, ".hot-reload-enabled")) ? "on" : "off"}, ` +
+      `${_isOwnerOnlyRegularFile(_hotReloadArmedPath()) ? "armed" : "not armed"} (pid=${process.pid})`,
       "info",
       ctx,
     );
     return;
   }
   _notify("[outpost-pi] Usage: /outpost-pi hot-reload <on|off|arm|status>", "warning", ctx);
-  void dir;
 }
 
 /**
@@ -2678,14 +2780,24 @@ function _cmdHotReload(args: string, ctx: Pick<ExtensionContext, "ui">): void {
  *
  * This handler is intentionally synchronous. The armed request is bound to the
  * current PID and module nonce, and O_EXCL on the claim file makes the restart
- * single-winner when multiple settled notifications arrive.
+ * single-winner when multiple settled notifications arrive. `agent_settled` is
+ * not an end-to-end WebSocket flush acknowledgment: Pi's graceful shutdown
+ * provides a bounded local drain, while the app rehydrates from session_sync
+ * after reconnect if the final frame was not received.
  */
 function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">): void {
-  if (process.env["OUTPOST_PI_DAEMON"] === "1") return;
-  if (_hotReloading || !existsSync(_hotReloadEnabledPath())) return;
+  if (process.env["OUTPOST_PI_DAEMON"] === "1" || _disposed) return;
+  if (_hotReloading) return;
 
-  const armedPath = _hotReloadArmedPath();
-  if (!existsSync(armedPath)) return;
+  const dir = _secureHotReloadRemoteDir();
+  if (!dir) return;
+  const togglePath = join(dir, ".hot-reload-enabled");
+  if (!_isOwnerOnlyRegularFile(togglePath)) return;
+
+  const armedPath = join(dir, `.hot-reload-armed-${process.pid}`);
+  // lstat-based admission rejects symlinks and directories without touching
+  // their targets. This is the security boundary for OUTPOST_PI_HOME state.
+  if (!_isOwnerOnlyRegularFile(armedPath)) return;
 
   let request: { nonce?: unknown; ts?: unknown };
   try {
@@ -2696,31 +2808,57 @@ function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">):
     return;
   }
   if (request.nonce !== _hotReloadNonce) {
-    try { unlinkSync(armedPath); } catch { /* best-effort stale-request cleanup */ }
+    _removeIfOwnerOnlyRegularFile(armedPath);
     return;
   }
   if (typeof request.ts === "number" && Date.now() - request.ts > 5 * 60_000) {
-    try { unlinkSync(armedPath); } catch { /* best-effort stale-request cleanup */ }
+    _removeIfOwnerOnlyRegularFile(armedPath);
     return;
   }
 
   _hotReloading = true;
-  if (!ctx.isIdle()) {
+  if (_disposed || !ctx.isIdle()) {
     _hotReloading = false;
     return;
   }
 
+  const claimedPath = join(dir, `.claimed-${process.pid}`);
   try {
-    writeFileSync(_hotReloadClaimedPath(), "", { mode: 0o600, flag: "wx" });
+    writeFileSync(claimedPath, "", { mode: 0o600, flag: "wx" });
   } catch {
     _hotReloading = false;
     return;
   }
+  if (_disposed) {
+    _removeIfOwnerOnlyRegularFile(claimedPath);
+    _hotReloading = false;
+    return;
+  }
 
-  try { unlinkSync(armedPath); } catch { /* best-effort request consumption */ }
+  const markerPath = join(dir, ".restart-marker");
+  if (existsSync(markerPath)) {
+    if (!_isOwnerOnlyRegularFile(markerPath)) {
+      _removeIfOwnerOnlyRegularFile(claimedPath);
+      _hotReloading = false;
+      return;
+    }
+    _removeIfOwnerOnlyRegularFile(markerPath);
+  }
   try {
-    writeFileSync(_restartMarkerPath(), String(process.pid), { mode: 0o600 });
-  } catch { /* wrapper will stop rather than relaunch if marker persistence fails */ }
+    writeFileSync(markerPath, String(process.pid), { mode: 0o600, flag: "wx" });
+  } catch {
+    // A missing marker deliberately makes the wrapper stop instead of
+    // relaunching a process whose restart intent was not durably recorded.
+    _removeIfOwnerOnlyRegularFile(claimedPath);
+    _hotReloading = false;
+    return;
+  }
+  _removeIfOwnerOnlyRegularFile(armedPath);
+  if (_disposed) {
+    _removeIfOwnerOnlyRegularFile(claimedPath);
+    _hotReloading = false;
+    return;
+  }
   process.kill(process.pid, "SIGTERM");
 }
 
