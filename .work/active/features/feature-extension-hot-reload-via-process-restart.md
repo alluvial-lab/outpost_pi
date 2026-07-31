@@ -1,7 +1,7 @@
 ---
 id: feature-extension-hot-reload-via-process-restart
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, workflow]
 parent: null
 depends_on: []
@@ -425,3 +425,21 @@ Both child stories implemented and verified:
 - The marker write uses `flag: "wx"` (O_CREAT|O_EXCL) — if a stale marker exists, it's validated (owner-only regular file) and removed before the new write.
 - `_secureHotReloadRemoteDir()` validates the OUTPOST_PI_HOME dir is owner-only 0o700 before any file operation.
 - Stale identity sweep (`_sweepStaleRuntimeIdentities`) removes `.runtime-self-<PID>` files for PIDs that no longer exist, preventing accumulation.
+
+## Review record (2026-07-31, standard weight, gpt-5.6-sol cross-model)
+
+**Pass 1 verdict**: Request changes — 4 blockers found.
+
+**Blockers fixed (commit ec2908c)**:
+- B1: quiescing gate delivery_pending → delivery_error (recoverable) — no false replay promise
+- B2: marker PID-scoped (.restart-marker-<PID>) + wrapper validates child PID
+- B3: /outpost-pi hot-reload off globs all PID-scoped state via readdirSync
+- B4: AGENTS.md updated to v2 protocol (removed all v1 references)
+
+**Important findings parked** (unbound, non-blocking):
+- Shell arming PPID assumption (walk ancestor chain for robustness) — I1
+- Wrapper filesystem security validation — I2
+- Subprocess tests for wrapper/helper — I3
+- Command error misreporting — I4
+
+**Closure**: standard weight — one pass, receiver-confirmed blockers fixed + verified, closed without another independent pass. 962 tests green.
