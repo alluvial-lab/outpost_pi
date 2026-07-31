@@ -12,13 +12,50 @@ umask 077
 REMOTE_DIR="${OUTPOST_PI_HOME:-$HOME/.pi/remote}"
 TOGGLE="$REMOTE_DIR/.hot-reload-enabled"
 
+stat_mode() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
+}
+
+stat_uid() {
+  stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1"
+}
+
+validate_dir() {
+  local mode owner
+  [ ! -L "$REMOTE_DIR" ] && [ -d "$REMOTE_DIR" ] || return 1
+  mode="$(stat_mode "$REMOTE_DIR")"
+  owner="$(stat_uid "$REMOTE_DIR")"
+  [ "$mode" = "700" ] && [ "$owner" = "$(id -u)" ]
+}
+
+validate_file() {
+  local path="$1" mode owner
+  [ ! -L "$path" ] && [ -f "$path" ] || return 1
+  mode="$(stat_mode "$path")"
+  owner="$(stat_uid "$path")"
+  [ "$mode" = "600" ] && [ "$owner" = "$(id -u)" ]
+}
+
 ensure_dir() {
+  if [ -L "$REMOTE_DIR" ]; then
+    echo "[hot-reload] refusing symlink state directory: $REMOTE_DIR" >&2
+    return 1
+  fi
   mkdir -p "$REMOTE_DIR"
+  if ! validate_dir; then
+    echo "[hot-reload] state directory must be owner-only (0700): $REMOTE_DIR" >&2
+    return 1
+  fi
 }
 
 cmd_on() {
   ensure_dir
-  if [ ! -e "$TOGGLE" ]; then
+  if [ -e "$TOGGLE" ] || [ -L "$TOGGLE" ]; then
+    validate_file "$TOGGLE" || {
+      echo "[hot-reload] toggle exists but is not an owner-only regular file: $TOGGLE" >&2
+      return 1
+    }
+  else
     (umask 077; printf '' > "$TOGGLE")
   fi
   chmod 600 "$TOGGLE"
@@ -26,6 +63,9 @@ cmd_on() {
 }
 
 cmd_off() {
+  if [ -e "$REMOTE_DIR" ] || [ -L "$REMOTE_DIR" ]; then
+    ensure_dir
+  fi
   rm -f -- "$TOGGLE"
   # Disable is also a cleanup boundary: no request or wrapper marker should
   # survive into a later enable cycle or a different process occupying a PID.
@@ -33,25 +73,26 @@ cmd_off() {
     "$REMOTE_DIR"/.hot-reload-armed-* \
     "$REMOTE_DIR"/.runtime-self-* \
     "$REMOTE_DIR"/.claimed-* \
-    "$REMOTE_DIR"/.restart-marker
+    "$REMOTE_DIR"/.restart-marker \
+    "$REMOTE_DIR"/.restart-pending-*
   echo "[hot-reload] disabled (toggle off) — pending runtime state removed"
 }
 
 cmd_arm() {
   local pid identity nonce armed
-  if [ ! -f "$TOGGLE" ]; then
+  ensure_dir
+  if ! validate_file "$TOGGLE"; then
     echo "[hot-reload] toggle is off — run 'hot-reload.sh on' first" >&2
     return 1
   fi
-  ensure_dir
   pid="$(ps -o ppid= -p $$ | tr -d '[:space:]')"
   if [ -z "$pid" ] || ! [[ "$pid" =~ ^[0-9]+$ ]]; then
     echo "[hot-reload] could not discover the pi parent PID" >&2
     return 1
   fi
   identity="$REMOTE_DIR/.runtime-self-$pid"
-  if [ ! -f "$identity" ]; then
-    echo "[hot-reload] no runtime identity for pid=$pid — is pi running?" >&2
+  if ! validate_file "$identity"; then
+    echo "[hot-reload] no secure runtime identity for pid=$pid — is pi running?" >&2
     return 1
   fi
   nonce="$(python3 - "$identity" <<'PY'
@@ -60,6 +101,8 @@ import sys
 
 with open(sys.argv[1], encoding="utf-8") as stream:
     identity = json.load(stream)
+if identity.get("pid") != int(sys.argv[1].rsplit("-", 1)[-1]):
+    raise SystemExit("runtime identity PID mismatch")
 nonce = identity.get("nonce")
 if not isinstance(nonce, str) or not nonce:
     raise SystemExit("runtime identity has no nonce")
@@ -67,7 +110,7 @@ print(nonce)
 PY
 )"
   armed="$REMOTE_DIR/.hot-reload-armed-$pid"
-  python3 - "$armed" "$nonce" <<'PY'
+  if ! python3 - "$armed" "$nonce" <<'PY'
 import json
 import os
 import sys
@@ -81,12 +124,16 @@ try:
 finally:
     os.close(fd)
 PY
+  then
+    echo "[hot-reload] already armed for pid=$pid" >&2
+    return 1
+  fi
   echo "[hot-reload] armed for pid=$pid — restart at next agent_settled"
 }
 
 cmd_status() {
   local toggle_state="off"
-  [ -f "$TOGGLE" ] && toggle_state="on"
+  [ -f "$TOGGLE" ] && [ ! -L "$TOGGLE" ] && toggle_state="on"
   echo "[hot-reload] toggle: $toggle_state"
   echo "[hot-reload]   toggle: $TOGGLE"
   echo "[hot-reload]   runtime identities: $REMOTE_DIR/.runtime-self-*"
