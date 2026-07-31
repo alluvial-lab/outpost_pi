@@ -6675,13 +6675,16 @@ describe("model meta", () => {
     expect(updates[0]!.meta?.working).toBe(false);
   });
 
-  test("turn_end sends SIGTERM after a delay when .restart-pending sentinel exists (extension hot-reload via process restart)", async () => {
+  test("hot-reload: turn_end sends SIGTERM after a delay when toggle is on + sentinel exists", async () => {
     // Regression: /reload does not re-import a type:module ESM extension
     // (jiti nativeImport hits Node's immutable ESM cache). The workaround
     // is a process restart triggered by a sentinel file consumed at
     // turn_end, so the agent's response fully streams before the restart.
-    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-sentinel-"));
+    // The behavior is gated by a persistent toggle (.hot-reload-enabled).
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-on-"));
+    const togglePath = join(fakeHome, ".hot-reload-enabled");
     const sentinelPath = join(fakeHome, ".restart-pending");
+    writeFileSync(togglePath, "");
     writeFileSync(sentinelPath, "");
     const previousHome = process.env["OUTPOST_PI_HOME"];
     process.env["OUTPOST_PI_HOME"] = fakeHome;
@@ -6690,7 +6693,7 @@ describe("model meta", () => {
 
     try {
       captureHandler("outpost-pi");
-      await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-restart-sentinel"));
+      await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-restart-on"));
       relayRef.current!.sendControl.mockClear();
 
       const onTurnEnd = captureEventHandler("turn_end");
@@ -6706,6 +6709,40 @@ describe("model meta", () => {
       // After the delay, SIGTERM fires.
       vi.advanceTimersByTime(500);
       expect(killSpy).toHaveBeenCalledWith(process.pid, "SIGTERM");
+    } finally {
+      vi.useRealTimers();
+      killSpy.mockRestore();
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test("hot-reload: sentinel is ignored when the toggle is off (no SIGTERM)", async () => {
+    // The persistent toggle (.hot-reload-enabled) gates the whole behavior.
+    // A stray sentinel without the toggle must NOT trigger a restart — this
+    // prevents accidental restarts from stale or manually-created sentinels.
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-off-"));
+    const sentinelPath = join(fakeHome, ".restart-pending");
+    writeFileSync(sentinelPath, ""); // sentinel present, toggle absent
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    process.env["OUTPOST_PI_HOME"] = fakeHome;
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    vi.useFakeTimers();
+
+    try {
+      captureHandler("outpost-pi");
+      await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-restart-off"));
+      relayRef.current!.sendControl.mockClear();
+
+      const onTurnEnd = captureEventHandler("turn_end");
+      onTurnEnd({ type: "turn_end", turnIndex: 0 });
+
+      // Toggle is off → sentinel is NOT consumed, no SIGTERM.
+      expect(existsSync(sentinelPath)).toBe(true);
+      expect(killSpy).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(500);
+      expect(killSpy).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
       killSpy.mockRestore();

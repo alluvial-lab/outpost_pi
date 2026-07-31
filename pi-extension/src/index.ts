@@ -2565,16 +2565,30 @@ function _maybeSendLateAttachSessionSync(): void {
  * (unlinked) before the signal fires so a stale sentinel from a crashed
  * run doesn't loop.
  */
-/** Resolve the restart-pending sentinel lazily so tests can redirect
+/** Resolve state file paths lazily so tests can redirect
  *  `OUTPOST_PI_HOME` to a tmpdir after module load. */
+function _outpostPiRemoteDir(): string {
+  return process.env["OUTPOST_PI_HOME"] || join(homedir(), ".pi", "remote");
+}
+
+/** Persistent toggle: presence enables the hot-reload-via-restart behavior.
+ *  The agent creates/removes this to turn the feature on/off. Without it,
+ *  the sentinel is ignored — so a stray `.restart-pending` from a crashed
+ *  run or a manual experiment never triggers an unexpected restart. */
+function _hotReloadEnabledPath(): string {
+  return join(_outpostPiRemoteDir(), ".hot-reload-enabled");
+}
+
+/** Transient trigger: presence requests a restart at the next turn_end.
+ *  Consumed (unlinked) before the signal fires so it cannot loop. */
 function _restartPendingSentinelPath(): string {
-  return join(
-    process.env["OUTPOST_PI_HOME"] || join(homedir(), ".pi", "remote"),
-    ".restart-pending",
-  );
+  return join(_outpostPiRemoteDir(), ".restart-pending");
 }
 
 function _maybeRestartForExtensionReload(): void {
+  // Guard: the persistent toggle must be enabled. This lets the agent turn
+  // the whole behavior on/off without worrying about stale sentinels.
+  if (!existsSync(_hotReloadEnabledPath())) return;
   const sentinel = _restartPendingSentinelPath();
   if (!existsSync(sentinel)) return;
   try { unlinkSync(sentinel); } catch { /* best-effort */ }
