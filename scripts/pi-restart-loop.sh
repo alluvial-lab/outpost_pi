@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Run interactive pi under an explicit hot-reload restart handshake.
 #
-# A hot-reload request writes .restart-marker before sending SIGTERM. Pi's
-# graceful shutdown exits with code 0; only that marker authorizes relaunch.
-# Normal /quit (also exit 0) and crashes stop the loop.
+# A hot-reload request writes .restart-marker-<PID> before sending SIGTERM. Pi's
+# graceful shutdown exits with code 0; only a marker matching the exact child PID
+# authorizes relaunch. Normal /quit (also exit 0) and crashes stop the loop.
+# The PID-scoped marker prevents multi-pi wrappers from consuming each other's
+# restart intent.
 
 set -euo pipefail
 
@@ -11,24 +13,26 @@ CWD="${1:-$(pwd)}"
 if [ "${1:-}" = "$CWD" ]; then shift; fi
 PI_ARGS=("--continue" "$@")
 REMOTE_DIR="${OUTPOST_PI_HOME:-$HOME/.pi/remote}"
-MARKER="$REMOTE_DIR/.restart-marker"
 
 echo "[pi-restart-loop] cwd=$CWD args=${PI_ARGS[*]}"
-echo "[pi-restart-loop] restart handshake: $MARKER"
 
 cd "$CWD"
 
 while true; do
-  set +e
-  pi "${PI_ARGS[@]}"
+  # Launch pi as a backgrounded child so we can capture its PID, then wait for it.
+  pi "${PI_ARGS[@]}" &
+  child_pid=$!
+  wait "$child_pid"
   exit_code=$?
-  set -e
 
-  echo "[pi-restart-loop] pi exited with code $exit_code at $(date -u +%FT%TZ)"
+  # PID-scoped marker — only this exact child's marker authorizes relaunch.
+  marker="$REMOTE_DIR/.restart-marker-$child_pid"
 
-  if [ "$exit_code" -eq 0 ] && [ -f "$MARKER" ] && [ ! -L "$MARKER" ]; then
-    rm -f -- "$MARKER"
-    echo "[pi-restart-loop] restart marker consumed → relaunching in 1s"
+  echo "[pi-restart-loop] pi (pid=$child_pid) exited with code $exit_code at $(date -u +%FT%TZ)"
+
+  if [ "$exit_code" -eq 0 ] && [ -f "$marker" ] && [ ! -L "$marker" ]; then
+    rm -f -- "$marker"
+    echo "[pi-restart-loop] restart marker for pid=$child_pid consumed → relaunching in 1s"
     sleep 1
     continue
   fi
