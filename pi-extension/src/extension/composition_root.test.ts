@@ -4,7 +4,8 @@ import type { OutpostPiRuntimePorts } from "./ports.js";
 import { createOutpostPiExtensionRuntime } from "./composition_root.js";
 import { OutpostPiRuntimeCoordinator } from "./runtime_coordinator.js";
 
-function ports(): OutpostPiRuntimePorts {
+function ports(): OutpostPiRuntimePorts & { sessionStart: ReturnType<typeof vi.fn> } {
+  const sessionStart = vi.fn();
   return {
     relay: {
       status: () => "disconnected",
@@ -27,6 +28,7 @@ function ports(): OutpostPiRuntimePorts {
     },
     session: {
       bindApi: vi.fn(),
+      onSessionStart: sessionStart,
       bindCommandContext: vi.fn(),
       bindSessionContext: vi.fn(),
       clearStaleContexts: vi.fn(),
@@ -35,7 +37,8 @@ function ports(): OutpostPiRuntimePorts {
       publishWorking: vi.fn(),
       resetTurnSnapshot: vi.fn(),
       handleClientMessage: vi.fn(),
-    },
+    } as OutpostPiRuntimePorts["session"],
+    sessionStart,
     commands: {
       register: vi.fn(),
       ensureStarted: vi.fn(),
@@ -83,6 +86,7 @@ describe("composition root runtime", () => {
     expect(result).toBeUndefined();
     expect(p.session.bindApi).toHaveBeenCalledWith(pi);
     expect(p.session.bindSessionContext).toHaveBeenCalledOnce();
+    expect(p.sessionStart).toHaveBeenCalledOnce();
   });
 
   test("session_start publishes working=false to clear stale true from a killed predecessor", () => {

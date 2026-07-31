@@ -102,6 +102,13 @@ export function registerLifecycleHooks(
     ports.session.onSessionLifecycle?.(reason, tail(sessionId));
     if (!epoch.isCurrent()) return;
 
+    // Runtime identity is written only after this epoch wins ownership. The
+    // optional capability keeps the filesystem adapter out of this composition
+    // root's lifecycle policy while allowing the extension to publish a
+    // process-scoped identity for shell-based hot-reload arming.
+    const sessionStart = ports.session as typeof ports.session & { onSessionStart?: () => void };
+    sessionStart.onSessionStart?.();
+
     // A new session is genuinely idle. Force-publish working=false to clear a
     // stale working=true left in the relay's room state by a killed
     // predecessor (SIGKILL/SIGTERM during an active turn skips session_shutdown,
