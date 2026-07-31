@@ -302,6 +302,22 @@ A plain `kill -TERM $(pgrep -x pi)` triggers graceful shutdown but does NOT writ
 the restart marker — the wrapper stops (no relaunch). Use the arm command for
 hot-reload; use `kill -TERM` only for a clean stop.
 
+**Agent workflow (for code agents working on the extension via mobile):**
+After editing extension source and rebuilding `dist/`, arm the hot-reload as the
+LAST bash command in the turn (after the build succeeds). The restart fires at
+`agent_settled` — after the response fully streams to the app. The agent's turn
+completes normally; the operator sees ~2s of relay offline, then the app
+reconnects to the fresh process. Do NOT call `process.exit` or `kill` directly;
+the arm command is the only safe trigger. If the toggle is off, arm is a no-op
+(warns); enable it first with `/outpost-pi hot-reload on` or
+`./scripts/hot-reload.sh on`.
+
+```bash
+# The agent's rebuild + reload pattern (run from the project root):
+corepack pnpm build  # or: cd pi-extension && ./node_modules/.bin/tsc
+./scripts/hot-reload.sh arm  # restart fires at next agent_settled
+```
+
 ### Relay container commands
 
 ```bash
