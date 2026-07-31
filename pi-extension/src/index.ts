@@ -2535,7 +2535,11 @@ async function _deliverUserMessage(
   // reached Pi; the app's reconnect/session_sync path is the correctness backstop
   // for that roughly two-second shutdown window.
   if (_hotReloading) {
-    _sendDeliveryPending(sender, msg.id);
+    // Do NOT send delivery_pending (which promises replay the extension cannot
+    // honor — the process is about to exit). Send a recoverable delivery_error
+    // so the app knows the message was not delivered and can resend after the
+    // restart reconnect. session_sync recovers output; input must be resent.
+    _sendDeliveryError(sender, msg.id, "agent is restarting for extension hot-reload; resend after reconnect");
     return;
   }
   const prepared = _prepareUserDelivery(msg, sender, mode);
@@ -2664,7 +2668,9 @@ function _runtimeIdentityPath(): string {
 }
 
 function _restartMarkerPath(): string {
-  return join(_outpostPiRemoteDir(), ".restart-marker");
+  // PID-scoped so multi-pi wrappers don't consume each other's markers.
+  // The wrapper validates the marker against its child PID before relaunch.
+  return join(_outpostPiRemoteDir(), `.restart-marker-${process.pid}`);
 }
 
 const _hotReloadNonce = randomUUID();
@@ -2747,16 +2753,21 @@ function _cmdHotReload(args: string, ctx: Pick<ExtensionContext, "ui">): void {
     return;
   }
   if (command === "off") {
-    for (const path of [
-      join(dir, ".hot-reload-enabled"),
-      _hotReloadArmedPath(),
-      _hotReloadClaimedPath(),
-      _restartMarkerPath(),
-      _runtimeIdentityPath(),
-    ]) {
-      _removeIfOwnerOnlyRegularFile(path);
-    }
-    _notify("[outpost-pi] hot-reload disabled", "info", ctx);
+    // Remove the toggle + ALL PID-scoped state files (armed, claimed, identity,
+    // marker) across all processes — not just THIS process. A per-process glob
+    // prevents a stale armed request from another pi from firing after re-enable.
+    _removeIfOwnerOnlyRegularFile(join(dir, ".hot-reload-enabled"));
+    try {
+      for (const name of readdirSync(dir)) {
+        if (name.startsWith(".hot-reload-armed-") ||
+            name.startsWith(".claimed-") ||
+            name.startsWith(".runtime-self-") ||
+            name.startsWith(".restart-marker-")) {
+          _removeIfOwnerOnlyRegularFile(join(dir, name));
+        }
+      }
+    } catch { /* best-effort */ }
+    _notify("[outpost-pi] hot-reload disabled (all pending requests cleared)", "info", ctx);
     return;
   }
   if (command === "arm") {
@@ -2835,7 +2846,7 @@ function _maybeRestartForExtensionReload(ctx: Pick<ExtensionContext, "isIdle">):
     return;
   }
 
-  const markerPath = join(dir, ".restart-marker");
+  const markerPath = _restartMarkerPath();
   if (existsSync(markerPath)) {
     if (!_isOwnerOnlyRegularFile(markerPath)) {
       _removeIfOwnerOnlyRegularFile(claimedPath);

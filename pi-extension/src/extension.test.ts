@@ -6729,7 +6729,7 @@ describe("model meta", () => {
     process.env["OUTPOST_PI_DAEMON"] = "";
     const ctx = { isIdle: () => true };
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => {
-      expect(existsSync(join(fakeHome, ".restart-marker"))).toBe(true);
+      expect(existsSync(join(fakeHome, `.restart-marker-${process.pid}`))).toBe(true);
       return true;
     });
     _setHotReloadingForTest(false);
@@ -6746,7 +6746,7 @@ describe("model meta", () => {
       expect(killSpy).toHaveBeenCalledTimes(1);
       expect(existsSync(join(fakeHome, `.claimed-${process.pid}`))).toBe(true);
       expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(false);
-      expect(readFileSync(join(fakeHome, ".restart-marker"), "utf8")).toBe(String(process.pid));
+      expect(readFileSync(join(fakeHome, `.restart-marker-${process.pid}`), "utf8")).toBe(String(process.pid));
     } finally {
       killSpy.mockRestore();
       _setHotReloadingForTest(false);
@@ -6784,7 +6784,10 @@ describe("model meta", () => {
     }
   });
 
-  test("hot-reload: quiescing rejects user messages as recoverable delivery_pending", async () => {
+  test("hot-reload: quiescing rejects user messages as recoverable delivery_error (not delivery_pending)", async () => {
+    // The quiescing gate must NOT send delivery_pending (which promises replay
+    // the extension cannot honor — the process is exiting). It sends a
+    // recoverable delivery_error so the app knows to resend after reconnect.
     const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-gate-"));
     const previousHome = process.env["OUTPOST_PI_HOME"];
     process.env["OUTPOST_PI_HOME"] = fakeHome;
@@ -6802,7 +6805,7 @@ describe("model meta", () => {
       await Promise.resolve();
       expect(sender.send).toHaveBeenCalledWith(expect.objectContaining({
         type: "error",
-        code: "delivery_pending",
+        code: "internal_error",
         in_reply_to: "during-restart",
       }));
       expect(killSpy).not.toHaveBeenCalled();
@@ -6960,7 +6963,8 @@ describe("model meta", () => {
         ".runtime-self-200",
         ".claimed-100",
         ".claimed-200",
-        ".restart-marker",
+        ".restart-marker-100",
+        ".restart-marker-200",
         ".restart-pending-old",
       ]) writeFileSync(join(fakeHome, name), "state", { mode: 0o600 });
       execFileSync("bash", [hotReloadScript, "off"], {

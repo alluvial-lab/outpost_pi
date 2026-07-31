@@ -241,42 +241,66 @@ mistaken about the *mechanism* but correct about the *result*.
 ### Hot-reloading dist/ via process restart (interactive session)
 
 Since `/reload` cannot load new ESM `dist/` code, the extension ships a
-**turn_end sentinel + process restart** mechanism that makes a full restart
+**`agent_settled` PID-scoped restart** mechanism that makes a full restart
 cheap enough to use as a hot-reload from within a turn (e.g. while working
-via mobile):
+via mobile). The design was cross-model reviewed (gpt-5.6-sol) and addresses
+5 prior blockers: PID-scoped state (multi-pi safe), exclusive `O_EXCL` claim,
+synchronous `agent_settled` boundary with `ctx.isIdle()` recheck + quiescing
+ingress gate, graceful SIGTERM (not `process.exit`), and a marker-based wrapper
+handshake (not exit code 42).
 
 1. Rebuild `dist/` (`./node_modules/.bin/tsc` or `corepack pnpm build`).
-2. Enable the toggle (one-time, persists): `./scripts/hot-reload.sh on`
-3. Arm the restart: `./scripts/hot-reload.sh arm` (touches
-   `~/.pi/remote/.restart-pending`). Or combine: `./scripts/hot-reload.sh on+arm`.
-4. On the next `turn_end` (after the response fully streams), the extension
-   checks: toggle enabled + sentinel present → consumes the sentinel and
-   schedules `SIGTERM` after a 500ms flush delay.
-5. pi's `SIGTERM` handler fires `session_shutdown` (publishes `working=false`,
-   closes the relay cleanly) then `process.exit(0)`.
-6. `scripts/pi-restart-loop.sh` (run under tmux with `RESTART_ON_EXIT_ZERO=1`)
-   sees the exit and relaunches `pi --continue` with a fresh ESM cache.
-   The relay reconnects in ~2s; the app converges to idle.
+2. Enable the toggle (one-time, persists): `/outpost-pi hot-reload on` (TUI)
+   or `./scripts/hot-reload.sh on`.
+3. Arm the restart: `/outpost-pi hot-reload arm` (TUI) or
+   `./scripts/hot-reload.sh arm` (bash — discovers the pi PID from the parent
+   chain + reads the nonce from `~/.pi/remote/.runtime-self-<PID>`).
+4. On the next `agent_settled` (the SDK's true idle boundary — fires after ALL
+   turns, retries, compactions, and queued follow-ups settle), the extension:
+   - checks daemon exclusion (`OUTPOST_PI_DAEMON=1` → skip)
+   - checks the toggle + PID-scoped armed request (`.hot-reload-armed-<PID>`)
+   - verifies the nonce (PID-reuse protection) + checks expiry (5min)
+   - sets a `_hotReloading` quiescing gate (rejects new messages as
+     recoverable `delivery_error`, NOT `delivery_pending` — the process is
+     exiting, so replay is impossible; the app resends on reconnect)
+   - rechecks `ctx.isIdle()` (a run may have started between `agent_settled`
+     firing and the handler running)
+   - claims exclusively via `O_CREAT|O_EXCL` on `.claimed-<PID>`
+   - writes `.restart-marker-<PID>` (the wrapper's relaunch signal)
+   - sends `process.kill(process.pid, "SIGTERM")` (graceful, NOT `process.exit`)
+5. pi's `SIGTERM` handler fires `session_shutdown` → `resetTurnSnapshot`
+   (publishes `working=false`) → bounded owner-channel drain → `relay.stop()`
+   → `process.exit(0)`.
+6. `scripts/pi-restart-loop.sh` (run under tmux) sees exit 0, checks for
+   `.restart-marker-<child-PID>`: present → consume + relaunch `pi --continue`
+   with a fresh ESM cache. Absent (normal `/quit`) → stop. Non-zero (crash) → stop.
 
-The agent's response fully streams before the restart — no cut-short turn.
+**Honest guarantee**: the response is handed to the relay before disconnect, but
+end-to-end receipt is NOT acknowledged — the app rehydrates via `session_sync` on
+reconnect (~2s). Input sent during the ~2s restart window is rejected with a
+recoverable error; the app should resend on reconnect (app-side resend-on-recoverable
+is a future improvement).
 
 ```bash
 # Start pi under the restart loop (run once):
-tmux new -d -s outpost 'cd /home/agent/projects/outpost_pi && RESTART_ON_EXIT_ZERO=1 ./scripts/pi-restart-loop.sh'
+tmux new -d -s outpost 'cd /home/agent/projects/outpost_pi && ./scripts/pi-restart-loop.sh'
 tmux attach -t outpost
 
-# Manage the hot-reload toggle:
-./scripts/hot-reload.sh on       # enable (persistent)
-./scripts/hot-reload.sh off      # disable (sentinels ignored)
-./scripts/hot-reload.sh arm      # request restart at next turn_end
-./scripts/hot-reload.sh on+arm   # enable + arm in one step
-./scripts/hot-reload.sh status   # show state
+# Manage hot-reload (from TUI or bash):
+/outpost-pi hot-reload on       # enable the toggle (persistent)
+/outpost-pi hot-reload arm      # request restart at next agent_settled
+/outpost-pi hot-reload off      # disable + clear ALL pending state
+/outpost-pi hot-reload status   # show current state
+# OR from bash:
+./scripts/hot-reload.sh on      # enable
+./scripts/hot-reload.sh arm     # arm (discovers PID from parent chain)
+./scripts/hot-reload.sh off     # disable + cleanup
+./scripts/hot-reload.sh status  # show state
 ```
 
-A plain `kill -TERM $(pgrep -x pi)` also triggers the same graceful shutdown +
-relaunch when running under the loop, but skips the turn_end flush (the
-current turn's response may be cut short). Prefer the sentinel for
-in-turn reloads.
+A plain `kill -TERM $(pgrep -x pi)` triggers graceful shutdown but does NOT write
+the restart marker — the wrapper stops (no relaunch). Use the arm command for
+hot-reload; use `kill -TERM` only for a clean stop.
 
 ### Relay container commands
 
