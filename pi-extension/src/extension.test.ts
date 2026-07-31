@@ -6,7 +6,7 @@
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeDeliveryDebugLog } from "./session/delivery_debug_log.test.js";
@@ -6673,6 +6673,46 @@ describe("model meta", () => {
       .filter((f) => f.type === "room_meta_update");
     expect(updates).toHaveLength(1);
     expect(updates[0]!.meta?.working).toBe(false);
+  });
+
+  test("turn_end sends SIGTERM after a delay when .restart-pending sentinel exists (extension hot-reload via process restart)", async () => {
+    // Regression: /reload does not re-import a type:module ESM extension
+    // (jiti nativeImport hits Node's immutable ESM cache). The workaround
+    // is a process restart triggered by a sentinel file consumed at
+    // turn_end, so the agent's response fully streams before the restart.
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-sentinel-"));
+    const sentinelPath = join(fakeHome, ".restart-pending");
+    writeFileSync(sentinelPath, "");
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    process.env["OUTPOST_PI_HOME"] = fakeHome;
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    vi.useFakeTimers();
+
+    try {
+      captureHandler("outpost-pi");
+      await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-restart-sentinel"));
+      relayRef.current!.sendControl.mockClear();
+
+      const onTurnEnd = captureEventHandler("turn_end");
+      onTurnEnd({ type: "turn_end", turnIndex: 0 });
+
+      // The sentinel must be consumed (unlinked) immediately so a stale
+      // sentinel from a crashed run cannot loop.
+      expect(existsSync(sentinelPath)).toBe(false);
+
+      // SIGTERM must NOT fire immediately — the response needs time to flush.
+      expect(killSpy).not.toHaveBeenCalled();
+
+      // After the delay, SIGTERM fires.
+      vi.advanceTimersByTime(500);
+      expect(killSpy).toHaveBeenCalledWith(process.pid, "SIGTERM");
+    } finally {
+      vi.useRealTimers();
+      killSpy.mockRestore();
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
   });
 
   test("plan/32: pi.on('session_before_compact') publishes working=true", async () => {

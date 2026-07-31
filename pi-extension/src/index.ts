@@ -126,7 +126,7 @@ import { updateFooter, type FooterState } from "./ui/footer.js";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdirSync, copyFileSync, existsSync, unlinkSync, readFileSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
+import { homedir, hostname } from "node:os";
 import {
   resolveRelayUrl,
   saveConfig,
@@ -1497,6 +1497,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     if (!before.working && !after.working) _publishWorking(false);
     _maybeSendLateAttachSessionSync();
     _maybeDrainQueuedMessage();
+    _maybeRestartForExtensionReload();
   });
 
   // Plan/32: compaction feedback. compact() doesn't run a turn, so bracket it
@@ -2544,6 +2545,45 @@ function _maybeDrainQueuedMessage(): void {
 
 function _maybeSendLateAttachSessionSync(): void {
   _sdkSessionProjection.maybeSendLateAttachSessionSync((turnId) => _buildSessionHistoryMessage(turnId, undefined));
+}
+
+/**
+ * Extension hot-reload via process restart.
+ *
+ * pi's `/reload` does NOT re-import a `type: module` (ESM) extension: jiti's
+ * async path uses `nativeImport = (id) => import(id)`, which hits Node's
+ * ESM cache — immutable at runtime. The only way to load new `dist/` code is
+ * a full process restart. This hook makes that restart cheap: the agent
+ * rebuilds `dist/` (via the bash tool), then touches a sentinel file. On the
+ * next `turn_end` (after the response fully streams), this function sends
+ * SIGTERM to the pi process. The wrapper script (`scripts/pi-restart-loop.sh`)
+ * sees the graceful exit and relaunches `pi --continue` with a fresh ESM
+ * cache. The relay disconnect is ~2s; `session_shutdown` publishes
+ * `working=false` before the relay closes, so the app converges to idle.
+ *
+ * The sentinel lives at `~/.pi/remote/.restart-pending` and is consumed
+ * (unlinked) before the signal fires so a stale sentinel from a crashed
+ * run doesn't loop.
+ */
+/** Resolve the restart-pending sentinel lazily so tests can redirect
+ *  `OUTPOST_PI_HOME` to a tmpdir after module load. */
+function _restartPendingSentinelPath(): string {
+  return join(
+    process.env["OUTPOST_PI_HOME"] || join(homedir(), ".pi", "remote"),
+    ".restart-pending",
+  );
+}
+
+function _maybeRestartForExtensionReload(): void {
+  const sentinel = _restartPendingSentinelPath();
+  if (!existsSync(sentinel)) return;
+  try { unlinkSync(sentinel); } catch { /* best-effort */ }
+  // Defer the signal so the turn_end response (including this function's
+  // own turn_projection publish) flushes to the relay and the TUI before
+  // the process exits. 500ms is generous for a local relay + TUI render.
+  setTimeout(() => {
+    if (!_disposed) process.kill(process.pid, "SIGTERM");
+  }, 500);
 }
 
 export function _routeClientMessageFrom(
