@@ -1,7 +1,7 @@
 ---
 id: story-hot-reload-lifecycle-fence
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension, workflow]
 parent: feature-extension-hot-reload-via-process-restart
 depends_on: [story-hot-reload-agent-settled-hook-and-wrapper]
