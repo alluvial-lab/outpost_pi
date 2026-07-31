@@ -1,7 +1,7 @@
 ---
 id: feature-extension-hot-reload-via-process-restart
 kind: feature
-stage: implementing
+stage: drafting
 tags: [pi-extension, workflow]
 parent: null
 depends_on: []
@@ -306,3 +306,75 @@ Chosen: **the agent writes the sentinel directly** (it knows `_myRoomId` via the
 - **`agent_settled` timing**: if the SDK ever changes `agent_settled` to fire before the response fully flushes to the relay, the "no cut-short turn" guarantee breaks. Mitigation: the relay's `send()` is synchronous-queueing; `agent_settled` fires after the agent loop, by which point all frames are queued. Low risk.
 - **`_myRoomId` null before connect**: if `agent_settled` fires before the relay connects (theoretical), the sentinel path is null and the hook no-ops. Safe — no spurious restart.
 - **Multi-pi with the SAME room**: if two pi processes auth to the same room (the multi-pi hazard), the room-scoped sentinel doesn't disambiguate them. This is the existing `peers.lock` contention hazard — out of scope (documented in AGENTS.md as a single-identity constraint).
+
+## Cross-model design review (2026-07-31, gpt-5.6-sol) — design needs revision
+
+Verdict: **design needs revision.** The core direction is promising
+(`agent_settled` > `turn_end`; room/process scoping is necessary; explicit
+handshake > restart-on-every-clean-exit) but the three central design claims
+are overstated. Do NOT implement as written.
+
+### Verified claims
+
+- **`agent_settled` is a better boundary than `turn_end`**: TRUE that it fires
+  after Pi drains its continuation queue (retries, compaction, queued
+  follow-ups). But it is NOT an exclusive lock — `_isAgentRunActive` is set false
+  BEFORE extension handlers run, so a new run can start mid-handler. And it does
+  NOT await Outpost-Pi's async outbound transport (secure-channel sealing, WS
+  send). So "agent_settled IS the flush boundary" is false.
+- **Room sentinel + atomic rename**: FALSE. `rename(guard, sentinel)` is not an
+  exclusive claim — POSIX `rename(old, existingDest)` atomically *replaces* the
+  destination, so two processes each writing their own guard and renaming it
+  over the same destination BOTH succeed. The "loser gets ENOENT" assertion is
+  wrong. Need `O_CREAT|O_EXCL` (exclusive create) instead.
+- **Exit 42 is a safe handshake**: FALSE. 42 means "fresh session, drop
+  `--continue`" in the daemon supervisor, NOT "restart with --continue". And
+  direct `process.exit(42)` bypasses graceful shutdown entirely (no
+  session_shutdown, no working=false, no relay drain).
+
+### Blockers found
+
+- **B1**: the proposed atomic claim lets every contender win (rename is not
+  compare-and-swap). Use `O_CREAT|O_EXCL`.
+- **B2**: `agent_settled` still permits a new run before the restart handler
+  exits (`_disposed` tracks session replacement, not new runs). Need a
+  synchronous quiescing ingress gate + `ctx.isIdle()` recheck.
+- **B3**: `process.exit(42)` bypasses the graceful lifecycle (no
+  session_shutdown, no working=false, no relay drain). Must trigger Pi's
+  SIGTERM/shutdown path with a durable wrapper-consumed restart marker.
+- **B4**: exit 42 collides with daemon fresh-session semantics — would rotate
+  daemons to fresh sessions. Must explicitly disable in `OUTPOST_PI_DAEMON=1`
+  mode or use a distinct protocol.
+- **B5**: no concrete way to arm the correct room — the shell script can't know
+  `_myRoomId` (internal runtime state; assigned name can be `name#2`). Arming
+  must be an extension-owned command.
+
+### Majors found
+
+- M1: `agent_settled` is not an outbound-delivery flush boundary.
+- M2: `session_sync` can't recover a user message Pi never accepted (input sent
+  during the quiesce window is lost, not replayed). Need ack/resend or a
+  quiescing presence state.
+- M3: `_myRoomId` is not a safe lifecycle token (stale after replacement, never
+  reset to null). Bind to runtime epoch/lease, not the mutable string.
+- M4: same-room multi-Pi isn't harmlessly out of scope (mixed extension versions
+  after one restarts). Need process-instance scoping or duplicate-ownership
+  detection.
+- M5: filesystem perm checks remain TOCTOU-prone. Use `O_NOFOLLOW`, `O_EXCL`,
+  `fstat` on the opened fd, owner-uid check.
+
+### Revision direction (from reviewer)
+
+1. Extension-owned, process/runtime-scoped arming command (not a shell script
+   guessing the room).
+2. Real exclusive claim primitive (`O_CREAT|O_EXCL`, not rename).
+3. Synchronous quiescing ingress gate + `ctx.isIdle()` recheck (not just
+   `_disposed`).
+4. Graceful Pi shutdown (trigger SIGTERM, not direct `process.exit`) + a
+   durable wrapper-consumed restart marker (not the exit code).
+5. Explicit daemon exclusion (don't run the hook in `OUTPOST_PI_DAEMON=1`).
+6. Bounded owner-channel drain + honest reconnect guarantees.
+7. Acknowledgment/resend or quiescing for user messages during restart.
+
+Stage rolled back to `drafting` pending revision. The child stories are also
+back at `drafting` (their design depends on the revised approach).

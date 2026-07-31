@@ -1,7 +1,7 @@
 ---
 id: story-hot-reload-agent-settled-hook-and-wrapper
 kind: story
-stage: implementing
+stage: drafting
 tags: [pi-extension, workflow]
 parent: feature-extension-hot-reload-via-process-restart
 depends_on: []
