@@ -1,14 +1,14 @@
 ---
 id: feature-extension-hot-reload-via-process-restart
 kind: feature
-stage: drafting
+stage: implementing
 tags: [pi-extension, workflow]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-07-30
-updated: 2026-07-30
+updated: 2026-07-31
 ---
 
 # Extension hot-reload via process restart (since `/reload` can't load ESM dist)
@@ -141,17 +141,168 @@ enforce `0700`/`0600`.
   lets a resumed session see the current state. The toggle defaults to OFF, so the
   broken behavior is inert until explicitly enabled.
 
-## Open design questions (for feature-design)
-1. Does pi expose an `agent_settled` / idle boundary the extension can hook, or
-   must the restart be deferred to the next genuine idle (turn_end with no queued
-   message + no pending follow-up)? This determines whether the "no cut-short
-   turn" guarantee is achievable or must be downgraded to "best-effort, may cut
-   short a queued follow-up."
-2. Should the restart request be an extension command (RPC from the agent's bash
-   tool to the extension via a UDS/IPC) rather than a filesystem sentinel? This
-   would solve B2 (process-scoped by construction) and M1 (lifecycle-owned by the
-   extension) at once, but adds an IPC surface.
-3. Is the restart-loop wrapper even the right architecture, or should this use the
-   existing outpost-pi supervisor (`src/daemon/supervisor.ts`) extended to manage
-   an interactive (not just RPC) child? The supervisor already does auto-restart
-   with backoff and process-scoped tracking.
+## Design decisions (resolves the open questions)
+
+- **Q1 (agent_settled boundary)**: pi DOES expose `agent_settled`. It fires in the `finally` of `_runAgentRun()` (agent-session.js:755) — AFTER the `prompt` + `continue()` loop exits, meaning all retries, compactions, and follow-up turns have genuinely settled. `turn_end` fires per-turn; `agent_settled` fires once when the whole agent run is done. This is the correct restart boundary — it eliminates B1 (the queued-message race) entirely because no follow-up turn can be in-flight at `agent_settled` time. The extension hooks `ownerPi.on("agent_settled", ...)`.
+- **Q2 (RPC-vs-sentinel)**: Neither. The mechanism stays a filesystem sentinel but is made **process-scoped** by keying on the relay room (each pi's room is unique per cwd). The sentinel filename includes the room id, so the outpost pi and the patchbay pi read different files. This solves B2 (machine-global) without adding an IPC surface. Atomic claim via `rename(2)` (not `existsSync`+`unlink`, which is TOCTOU-racy).
+- **Q3 (supervisor-vs-wrapper)**: Use the existing `scripts/pi-restart-loop.sh` wrapper (interactive pi needs the TUI; the supervisor only spawns headless `--mode rpc` children). The wrapper handshake uses exit code `42` — which is ALREADY defined (`EXIT_DAEMON_FRESH_SESSION = 42`) and ALREADY handled by the supervisor as "intentional recycle, restart immediately, don't burn crash backoff." The wrapper adopts the same semantics: exit 42 → relaunch; exit 0 → stop; non-zero → stop (crash safety). This solves B3 (ambiguous exit protocol) with an established code.
+
+## Architectural choice
+
+**Filesystem sentinel keyed by relay room + `agent_settled` boundary + exit-42 restart handshake.**
+
+The inline first cut had the right shape (sentinel + wrapper) but wrong details (turn_end + machine-global sentinel + `RESTART_ON_EXIT_ZERO`). The redesign fixes all three seams:
+
+1. **Restart trigger moves from `turn_end` → `agent_settled`**: eliminates B1 (no turn can be in-flight at agent_settled time). Removes the 500ms delay entirely — `agent_settled` IS the "response fully streamed" boundary, so no timer is needed.
+2. **Sentinel becomes room-scoped**: `<REMOTE_DIR>/.restart-pending-<roomId>` instead of a single machine-global file. Atomic claim via `fs.renameSync(guardFile, sentinel)` — `rename` is atomic on POSIX, so exactly one process wins the claim even if both see the guard.
+3. **Exit handshake uses code 42**: the wrapper relaunches only on 42 (established `EXIT_DAEMON_FRESH_SESSION` semantics); normal `exit 0` (`/quit`, Ctrl+D) stops the loop. No more `RESTART_ON_EXIT_ZERO`.
+
+## Implementation Units
+
+### Unit 1: `agent_settled` restart hook + room-scoped sentinel
+**File**: `pi-extension/src/index.ts`
+**Story**: `feature-extension-hot-reload-via-process-restart-agent-settled-hook`
+
+Replace the `turn_end`-based `_maybeRestartForExtensionReload()` with an `agent_settled` handler. The sentinel becomes room-scoped.
+
+```typescript
+// The restart request is room-scoped so multi-pi (outpost + patchbay) don't
+// contend on one machine-global file. Keyed on the relay room, which is unique
+// per cwd.
+function _restartPendingSentinelPath(): string {
+  const base = process.env["OUTPOST_PI_HOME"] || join(homedir(), ".pi", "remote");
+  // _myRoomId is the relay room this pi authenticated in; null before connect.
+  return _myRoomId ? join(base, `.restart-pending-${_myRoomId}`) : null!;
+}
+
+// Atomic claim: rename a guard file into the sentinel path. rename(2) is atomic
+// on POSIX — exactly one caller wins even if two see the guard. The losing
+// caller's rename throws ENOENT (guard already moved) → caught, no restart.
+function _claimRestartRequest(): boolean {
+  const sentinel = _restartPendingSentinelPath();
+  if (!sentinel) return false;
+  const guard = `${sentinel}.guard.${process.pid}`;
+  try {
+    writeFileSync(guard, "");
+    renameSync(guard, sentinel);  // atomic on POSIX
+    return true;
+  } catch {
+    try { unlinkSync(guard); } catch { /* best-effort */ }
+    return false;
+  }
+}
+
+// Hooks agent_settled (fires after ALL turns/retries/compactions settle — the
+// true idle boundary). No timer needed: agent_settled IS the flush boundary.
+ownerPi.on("agent_settled", () => {
+  if (!existsSync(_hotReloadEnabledPath())) return;  // persistent toggle
+  if (!_claimRestartRequest()) return;  // no request for THIS room
+  // Exit with the established "intentional recycle" code. The wrapper restarts.
+  process.exit(EXIT_HOT_RELOAD_RESTART);
+});
+```
+
+**Implementation Notes**:
+- `EXIT_HOT_RELOAD_RESTART = 42` — reuse the existing `EXIT_DAEMON_FRESH_SESSION` constant (same value, same supervisor semantics). Export it from `daemon/rpc_child.ts` or alias it.
+- The toggle (`.hot-reload-enabled`) stays machine-global — it's a deliberate opt-in, not per-room. The REQUEST is per-room.
+- `_myRoomId` is set during `_startRelayViaTransport`; before that, the sentinel path is null and the hook no-ops.
+- No `setTimeout` — `agent_settled` already means the response streamed. This removes M1 (untracked timer) entirely.
+
+**Acceptance Criteria**:
+- [ ] Restart fires at `agent_settled`, NOT `turn_end` — a queued follow-up turn is NOT cut short (the hook fires only after the follow-up settles).
+- [ ] Sentinel is room-scoped: outpost pi (room A) and patchbay pi (room B) read different files.
+- [ ] Atomic claim: two processes cannot both restart from one sentinel.
+- [ ] Toggle off + sentinel present → no restart (sentinel ignored).
+- [ ] Exit code is 42, not 0.
+
+---
+
+### Unit 2: Wrapper handshake (exit 42 relaunch, exit 0 stops)
+**File**: `scripts/pi-restart-loop.sh`
+**Story**: (same story — the wrapper + hook ship together)
+
+Replace the `RESTART_ON_EXIT_ZERO` logic with exit-code discrimination:
+
+```bash
+while true; do
+  set +e; pi --continue; exit_code=$?; set -e
+  if [ "$exit_code" -eq 42 ]; then
+    sleep 1; continue          # intentional hot-reload restart
+  fi
+  if [ "$exit_code" -eq 0 ]; then
+    break                       # normal /quit, Ctrl+D — stop
+  fi
+  break                         # crash (non-zero) — stop, don't loop
+  fi
+done
+```
+
+**Implementation Notes**:
+- Removes `RESTART_ON_EXIT_ZERO` entirely — exit 0 always stops.
+- Exit 42 is the ONLY restart trigger. This means `/quit` from the TUI stops the loop (operator can actually quit).
+- Crash safety: non-zero, non-42 exits stop the loop (no auto-restart loops on crash — the supervisor does that for daemons; the interactive wrapper doesn't).
+
+**Acceptance Criteria**:
+- [ ] Exit 42 → relaunch `pi --continue`.
+- [ ] Exit 0 (`/quit`) → stop (no relaunch).
+- [ ] Non-zero non-42 (crash) → stop.
+
+---
+
+### Unit 3: `hot-reload.sh` arm uses room-scoped sentinel
+**File**: `scripts/hot-reload.sh`
+**Story**: (same story)
+
+The `arm` command can't know the room id (it's a shell script, not the extension). Two options:
+- **Option A**: `arm` writes a guard file per running pi by querying the relay (overkill for a shell script).
+- **Option B** (chosen): `arm` writes a generic `.restart-pending-requested` marker; each pi's `agent_settled` hook checks for BOTH its room-scoped sentinel AND a generic "any room" request. Simpler: the agent (via the bash tool) writes the room-scoped sentinel directly since it knows its own room.
+
+Chosen: **the agent writes the sentinel directly** (it knows `_myRoomId` via the extension's state). `hot-reload.sh arm` becomes a convenience that writes a generic request resolved at hook time, OR the agent calls a new `/outpost-pi hot-reload arm` command. Keep `hot-reload.sh` for `on`/`off`/`status` only; `arm` moves to an extension command or the agent's bash tool.
+
+**Acceptance Criteria**:
+- [ ] `arm` writes a request that only the CURRENT pi's room consumes.
+- [ ] `off` clears ALL pending sentinels (glob `.restart-pending-*`).
+- [ ] `status` shows per-room state.
+
+---
+
+### Unit 4: Lifecycle fence + M2/M4 fixes
+**File**: `pi-extension/src/index.ts`, `scripts/hot-reload.sh`
+**Story**: `feature-extension-hot-reload-via-process-restart-lifecycle-fence`
+
+- **M1 (timer not fenced)**: eliminated — no timer (agent_settled is synchronous, fires once). The only lifecycle concern is a session replacement between `agent_settled` and `process.exit(42)` — guard with `_disposed` (if replaced mid-hook, don't exit; the successor will pick up the next request).
+- **M2 (stale sentinel)**: `off` globs and removes `.restart-pending-*`. The toggle-off check at hook time means a sentinel without the toggle is ignored.
+- **M3 (dropped messages)**: document that the app rehydrates via `session_sync` on reconnect; the restart window is ~2s. No quiescing state in v1 (out of scope — the session_sync path is the correctness backstop).
+- **M4 (OUTPOST_PI_HOME perms)**: validate the dir is `0o700` owner-only at hook time; reject symlink/non-regular sentinel files.
+
+**Acceptance Criteria**:
+- [ ] `_disposed` guard prevents exit if session replaced mid-hook.
+- [ ] `off` removes all pending sentinels.
+- [ ] Symlink sentinel files are rejected.
+
+---
+
+## Implementation Order
+1. Unit 1 + Unit 2 (the hook + wrapper handshake — ship together, since the wrapper must understand exit 42 for the hook to work)
+2. Unit 3 (hot-reload.sh arm refinement)
+3. Unit 4 (lifecycle fence + M2/M4 hardening)
+
+## Simplification
+- **Delete**: `RESTART_ON_EXIT_ZERO` env var and its logic in `pi-restart-loop.sh` (replaced by exit-42 discrimination).
+- **Delete**: the `turn_end`-based `_maybeRestartForExtensionReload()` and its 500ms `setTimeout` (replaced by `agent_settled`).
+- **Delete**: the machine-global `.restart-pending` sentinel path (replaced by room-scoped).
+- **Retain**: the `.hot-reload-enabled` toggle (machine-global deliberate opt-in is correct).
+- **Retain**: `scripts/hot-reload.sh` for `on`/`off`/`status` (the `arm` subcommand moves to an extension command or the bash tool).
+
+## Testing
+- **Regression test (B1)**: seed a turn + a queued follow-up → `agent_settled` fires only after BOTH settle → restart happens after the follow-up, not mid-turn. (The old `turn_end` + 500ms code would cut short the follow-up; verify the new code doesn't.)
+- **Contract test (B2)**: two rooms (outpost + patchbay) → arm outpost's room → only outpost restarts.
+- **Atomic claim test (B2)**: two processes race the rename → exactly one wins.
+- **Exit-code test (B3)**: `process.exit(42)` → wrapper relaunches; `process.exit(0)` → wrapper stops.
+- **Toggle-off test (existing)**: toggle off + sentinel → no restart.
+- **Lifecycle fence test (M1)**: session replacement between `agent_settled` and exit → no exit (successor survives).
+
+## Risks
+- **`agent_settled` timing**: if the SDK ever changes `agent_settled` to fire before the response fully flushes to the relay, the "no cut-short turn" guarantee breaks. Mitigation: the relay's `send()` is synchronous-queueing; `agent_settled` fires after the agent loop, by which point all frames are queued. Low risk.
+- **`_myRoomId` null before connect**: if `agent_settled` fires before the relay connects (theoretical), the sentinel path is null and the hook no-ops. Safe — no spurious restart.
+- **Multi-pi with the SAME room**: if two pi processes auth to the same room (the multi-pi hazard), the room-scoped sentinel doesn't disambiguate them. This is the existing `peers.lock` contention hazard — out of scope (documented in AGENTS.md as a single-identity constraint).
