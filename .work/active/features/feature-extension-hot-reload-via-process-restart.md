@@ -1,7 +1,7 @@
 ---
 id: feature-extension-hot-reload-via-process-restart
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, workflow]
 parent: null
 depends_on: []
@@ -405,3 +405,23 @@ are overstated. Do NOT implement as written.
 
 Stage rolled back to `drafting` pending revision. The child stories are also
 back at `drafting` (their design depends on the revised approach).
+
+## Implementation summary (2026-07-31)
+
+Both child stories implemented and verified:
+- `story-hot-reload-agent-settled-hook-and-wrapper` (done, `e678ac3`): runtime identity, PID-scoped arming, agent_settled handler with quiescing gate + ctx.isIdle() recheck, exclusive O_EXCL claim, graceful SIGTERM + marker, wrapper handshake.
+- `story-hot-reload-lifecycle-fence` (done, `eee809a`): _disposed guard at multiple checkpoints, secure filesystem validation (lstat owner+mode+symlink rejection), stale identity sweep, off-cleanup glob.
+
+### Verification
+- 962 tests passed, 3 skipped (7 new tests for the v2 hot-reload mechanism)
+- Typecheck + build green
+- Scripts pass `bash -n`
+- The v1 code (turn_end sentinel, machine-global files, RESTART_ON_EXIT_ZERO, exit-42) is fully replaced
+- The onConnected working-flag fix (`_turnProjection().working`) is preserved
+
+### Key implementation decisions
+- The quiescing gate sends `delivery_pending` (recoverable), not a hard error — the app resends on reconnect.
+- The `_disposed` flag is rechecked at 4 points in the handler (after gate set, after claim, after marker, before kill) to handle session replacement mid-handler.
+- The marker write uses `flag: "wx"` (O_CREAT|O_EXCL) — if a stale marker exists, it's validated (owner-only regular file) and removed before the new write.
+- `_secureHotReloadRemoteDir()` validates the OUTPOST_PI_HOME dir is owner-only 0o700 before any file operation.
+- Stale identity sweep (`_sweepStaleRuntimeIdentities`) removes `.runtime-self-<PID>` files for PIDs that no longer exist, preventing accumulation.
