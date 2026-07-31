@@ -1,7 +1,7 @@
 ---
 id: story-hot-reload-agent-settled-hook-and-wrapper
 kind: story
-stage: drafting
+stage: implementing
 tags: [pi-extension, workflow]
 parent: feature-extension-hot-reload-via-process-restart
 depends_on: []
@@ -11,31 +11,53 @@ created: 2026-07-31
 updated: 2026-07-31
 ---
 
-# Hot-reload: agent_settled hook + room-scoped sentinel + exit-42 wrapper handshake
+# Hot-reload v2: PID-scoped arming + agent_settled quiescing gate + graceful SIGTERM + marker handshake
 
 ## Brief
-Implements Units 1, 2, and 3 of `feature-extension-hot-reload-via-process-restart`.
+Implements the revised design (all 4 units) of `feature-extension-hot-reload-via-process-restart`.
 
-Replaces the flawed `turn_end` + 500ms-timer + machine-global-sentinel + `RESTART_ON_EXIT_ZERO`
-inline cut with:
-1. An `agent_settled` hook (the true idle boundary — fires after ALL turns/retries/compactions settle, so no follow-up turn can be cut short).
-2. A room-scoped sentinel (`.restart-pending-<roomId>`) so multi-pi (outpost + patchbay) don't contend.
-3. An atomic `rename(2)`-based claim (no TOCTOU race).
-4. Exit code 42 (`EXIT_DAEMON_FRESH_SESSION`, already handled by the supervisor) as the restart signal; `pi-restart-loop.sh` relaunches only on 42, stops on 0 (so `/quit` works) and on non-zero non-42 (crash safety).
+The prior design (turn_end + rename-sentinel + exit-42 + process.exit) was reviewed and found
+to have 5 blockers. The revised design addresses all of them:
+
+1. **PID-scoped identity + arming** (B5): extension writes `.runtime-self-<PID>` on session_start
+   (PID + nonce + epoch). Operator arms via `/outpost-pi hot-reload arm`; agent arms via
+   `scripts/hot-reload.sh arm` (discovers PID from bash parent, reads nonce). Armed request is
+   `.hot-reload-armed-<PID>` with the nonce — multi-pi can't cross-fire, PID reuse is detected.
+
+2. **agent_settled handler with quiescing gate + ctx.isIdle() recheck** (B2): handler runs
+   synchronously (no await → no preemption), sets `_hotReloading` gate, rechecks `ctx.isIdle()`.
+   If a run started → defer. The gate rejects new messages with `recoverable: true` in
+   `_deliverUserMessage` so the app resends on reconnect.
+
+3. **Exclusive claim via O_CREAT|O_EXCL** (B1): `.claimed-<PID>` file with `flag: "wx"`. Exactly
+   one agent_settled wins.
+
+4. **Graceful SIGTERM + durable restart marker** (B3): `process.kill(pid, "SIGTERM")` (NOT
+   process.exit). Pi's SIGTERM handler fires session_shutdown → working=false → relay.stop →
+   exit 0. The wrapper checks for `.restart-marker` after exit 0: present → relaunch, absent → stop.
+
+5. **Daemon exclusion** (B4): `OUTPOST_PI_DAEMON=1` → handler returns immediately.
 
 ## Acceptance criteria
-- [ ] Restart fires at `agent_settled`, NOT `turn_end` — a queued follow-up turn is NOT cut short (regression test: seed turn + queued message → restart fires only after both settle).
-- [ ] Sentinel is room-scoped: outpost pi (room A) and patchbay pi (room B) read different files; arming A does not restart B (contract test).
-- [ ] Atomic claim: two processes racing the rename → exactly one wins (test).
-- [ ] Toggle off + sentinel present → no restart (existing test preserved).
-- [ ] `process.exit(42)` → wrapper relaunches; `process.exit(0)` → wrapper stops; non-zero non-42 → wrapper stops (wrapper behavior test).
-- [ ] `_disposed` guard: if session replaces between `agent_settled` and exit, no exit (successor survives).
+- [ ] B1: two rapid agent_settled events → only one writes `.claimed` (O_EXCL) → only one SIGTERM.
+- [ ] B2: `ctx.isIdle()=false` → handler defers (no SIGTERM, `_hotReloading` reset).
+- [ ] B2: `_hotReloading=true` + `_deliverUserMessage` → message rejected with `recoverable: true`.
+- [ ] B3: handler calls `process.kill(pid, "SIGTERM")` (not process.exit). Marker written before kill.
+- [ ] B3: wrapper relaunches on exit 0 + marker; stops on exit 0 without marker; stops on non-zero.
+- [ ] B4: `OUTPOST_PI_DAEMON=1` → handler returns immediately (no restart).
+- [ ] B5: bash helper discovers PID from parent, reads nonce, writes armed file. Nonce mismatch → ignored.
+- [ ] PID reuse: stale armed file with wrong nonce → ignored + unlinked.
+- [ ] Toggle off: toggle absent + armed request → no restart.
+- [ ] M3: request is PID-scoped + nonce-checked (NOT room-scoped, NOT _myRoomId).
+- [ ] M5: identity/armed/claimed/marker files written with `mode: 0o600, flag: "wx"`.
 
 ## Files
-- `pi-extension/src/index.ts` — replace `_maybeRestartForExtensionReload` (turn_end) with `agent_settled` hook + room-scoped sentinel + atomic claim
-- `pi-extension/src/extension.test.ts` — the regression + contract tests above
-- `scripts/pi-restart-loop.sh` — exit-42 discrimination (delete `RESTART_ON_EXIT_ZERO`)
-- `scripts/hot-reload.sh` — `arm` writes room-scoped sentinel (or delegate to an extension command); `off` globs `.restart-pending-*`
+- `pi-extension/src/index.ts` — runtime identity, arming command, agent_settled handler, quiescing gate
+- `pi-extension/src/extension/composition_root.ts` — `_writeRuntimeIdentity()` call on session_start
+- `pi-extension/src/extension.test.ts` — all acceptance criteria above
+- `scripts/pi-restart-loop.sh` — marker-based handshake (delete exit-42/RESTART_ON_EXIT_ZERO)
+- `scripts/hot-reload.sh` — revised `arm` (PID discovery + nonce), `off` globs cleanup
 
 ## Out of scope
-- Lifecycle fence + M2/M4 hardening (M1 eliminated by removing the timer; M3 documented as session_sync backstop) → tracked in the sibling story `story-hot-reload-lifecycle-fence`.
+- Lifecycle-fence hardening (M1 flush documentation, M2 user-message-during-restart documentation,
+  nonce-file startup cleanup) → folded into acceptance criteria or a sibling story.
