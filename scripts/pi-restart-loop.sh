@@ -26,7 +26,7 @@ while true; do
 
   echo "[pi-restart-loop] pi exited with code $exit_code at $(date -u +%FT%TZ)"
 
-  if [ "$exit_code" -eq 0 ] && [ -f "$MARKER" ]; then
+  if [ "$exit_code" -eq 0 ] && [ -f "$MARKER" ] && [ ! -L "$MARKER" ]; then
     rm -f -- "$MARKER"
     echo "[pi-restart-loop] restart marker consumed → relaunching in 1s"
     sleep 1

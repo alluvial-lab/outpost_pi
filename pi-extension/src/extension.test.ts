@@ -6,7 +6,8 @@
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeDeliveryDebugLog } from "./session/delivery_debug_log.test.js";
@@ -397,6 +398,7 @@ function makeMockCtx(cwd = "/home/user/projects/outpost_pi") {
 type CmdHandler = (args: string, ctx: ReturnType<typeof makeMockCtx>) => Promise<void>;
 
 const flushSecureOutbound = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+const hotReloadScript = fileURLToPath(new URL("../../scripts/hot-reload.sh", import.meta.url));
 
 function captureHandler(commandName: string): CmdHandler {
   resetOutpostPiRuntimeCoordinatorForTest();
@@ -6851,6 +6853,149 @@ describe("model meta", () => {
       else process.env["OUTPOST_PI_HOME"] = previousHome;
       if (previousDaemon === undefined) delete process.env["OUTPOST_PI_DAEMON"];
       else process.env["OUTPOST_PI_DAEMON"] = previousDaemon;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test("hot-reload lifecycle fence: disposed session cannot be killed after settlement", async () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-disposed-"));
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    process.env["OUTPOST_PI_HOME"] = fakeHome;
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    _setDisposedForTest(false);
+    _setHotReloadingForTest(false);
+
+    try {
+      writeFileSync(join(fakeHome, ".hot-reload-enabled"), "", { mode: 0o600 });
+      const arm = captureHandler("outpost-pi hot-reload");
+      await arm("arm", makeMockCtx());
+      const onSettled = captureEventHandler("agent_settled");
+      onSettled({ type: "agent_settled" }, {
+        isIdle: () => {
+          _setDisposedForTest(true);
+          return true;
+        },
+      });
+
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(existsSync(join(fakeHome, `.claimed-${process.pid}`))).toBe(false);
+      expect(existsSync(join(fakeHome, `.hot-reload-armed-${process.pid}`))).toBe(true);
+    } finally {
+      killSpy.mockRestore();
+      _setDisposedForTest(false);
+      _setHotReloadingForTest(false);
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test("hot-reload lifecycle fence: symlink armed request is rejected without touching its target", async () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-symlink-"));
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    process.env["OUTPOST_PI_HOME"] = fakeHome;
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    _setDisposedForTest(false);
+    _setHotReloadingForTest(false);
+
+    try {
+      writeFileSync(join(fakeHome, ".hot-reload-enabled"), "", { mode: 0o600 });
+      const target = join(fakeHome, "target-request");
+      const armed = join(fakeHome, `.hot-reload-armed-${process.pid}`);
+      writeFileSync(target, JSON.stringify({ nonce: "wrong", ts: Date.now() }), { mode: 0o600 });
+      symlinkSync(target, armed);
+      const onSettled = captureEventHandler("agent_settled");
+      onSettled({ type: "agent_settled" }, { isIdle: () => true });
+
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(existsSync(armed)).toBe(true);
+      expect(readFileSync(target, "utf8")).toContain("wrong");
+    } finally {
+      killSpy.mockRestore();
+      _setDisposedForTest(false);
+      _setHotReloadingForTest(false);
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test("hot-reload lifecycle fence: permissive state directory is refused", async () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-perms-"));
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    process.env["OUTPOST_PI_HOME"] = fakeHome;
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    _setDisposedForTest(false);
+    _setHotReloadingForTest(false);
+
+    try {
+      chmodSync(fakeHome, 0o755);
+      writeFileSync(join(fakeHome, ".hot-reload-enabled"), "", { mode: 0o600 });
+      writeFileSync(join(fakeHome, `.hot-reload-armed-${process.pid}`), JSON.stringify({ nonce: "wrong", ts: Date.now() }), { mode: 0o600 });
+      const onSettled = captureEventHandler("agent_settled");
+      onSettled({ type: "agent_settled" }, { isIdle: () => true });
+
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining("insecure directory"));
+    } finally {
+      warning.mockRestore();
+      killSpy.mockRestore();
+      _setDisposedForTest(false);
+      _setHotReloadingForTest(false);
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test("hot-reload lifecycle fence: off removes every process-scoped state file", () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-off-cleanup-"));
+    try {
+      for (const name of [
+        ".hot-reload-enabled",
+        ".hot-reload-armed-100",
+        ".hot-reload-armed-200",
+        ".runtime-self-100",
+        ".runtime-self-200",
+        ".claimed-100",
+        ".claimed-200",
+        ".restart-marker",
+        ".restart-pending-old",
+      ]) writeFileSync(join(fakeHome, name), "state", { mode: 0o600 });
+      execFileSync("bash", [hotReloadScript, "off"], {
+        env: { ...process.env, OUTPOST_PI_HOME: fakeHome },
+        stdio: "ignore",
+      });
+      expect(readdirSync(fakeHome)).toEqual([]);
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  test("hot-reload lifecycle fence: startup sweeps identities for dead PIDs", () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "pi-ext-restart-sweep-"));
+    const previousHome = process.env["OUTPOST_PI_HOME"];
+    process.env["OUTPOST_PI_HOME"] = fakeHome;
+    _setDisposedForTest(false);
+    _setHotReloadingForTest(false);
+
+    try {
+      const stale = join(fakeHome, ".runtime-self-999999");
+      writeFileSync(stale, JSON.stringify({ pid: 999999, nonce: "stale", ts: Date.now() }), { mode: 0o600 });
+      const onStart = captureEventHandler("session_start");
+      onStart({ type: "session_start", reason: "startup" }, {
+        sessionManager: { getSessionId: () => "sweep-session" },
+        ui: {},
+      });
+
+      expect(existsSync(stale)).toBe(false);
+      expect(existsSync(join(fakeHome, `.runtime-self-${process.pid}`))).toBe(true);
+    } finally {
+      _setDisposedForTest(false);
+      _setHotReloadingForTest(false);
+      if (previousHome === undefined) delete process.env["OUTPOST_PI_HOME"];
+      else process.env["OUTPOST_PI_HOME"] = previousHome;
       rmSync(fakeHome, { recursive: true, force: true });
     }
   });
