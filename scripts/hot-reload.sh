@@ -85,14 +85,20 @@ cmd_arm() {
     echo "[hot-reload] toggle is off — run 'hot-reload.sh on' first" >&2
     return 1
   fi
-  pid="$(ps -o ppid= -p $$ | tr -d '[:space:]')"
-  if [ -z "$pid" ] || ! [[ "$pid" =~ ^[0-9]+$ ]]; then
-    echo "[hot-reload] could not discover the pi parent PID" >&2
-    return 1
-  fi
-  identity="$REMOTE_DIR/.runtime-self-$pid"
-  if ! validate_file "$identity"; then
-    echo "[hot-reload] no secure runtime identity for pid=$pid — is pi running?" >&2
+  # Walk UP the ancestor chain to find the nearest PID with a runtime identity.
+  # The immediate parent may be an intermediate bash/subshell (e.g. the agent's
+  # bash tool), not pi itself.
+  pid=$$
+  identity=""
+  while [ "$pid" != "1" ] && [ -n "$pid" ]; do
+    if validate_file "$REMOTE_DIR/.runtime-self-$pid"; then
+      identity="$REMOTE_DIR/.runtime-self-$pid"
+      break
+    fi
+    pid="$(ps -o ppid= -p "$pid" | tr -d '[:space:]')"
+  done
+  if [ -z "$identity" ]; then
+    echo "[hot-reload] no secure runtime identity in ancestor chain — is pi running?" >&2
     return 1
   fi
   nonce="$(python3 - "$identity" <<'PY'
