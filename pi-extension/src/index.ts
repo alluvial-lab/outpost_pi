@@ -1920,14 +1920,17 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
       roomMeta,
       isDisposed: () => _disposed,
       onUnexpectedClose: () => _onRelayClose(),
-      // On every (re)connect, force-publish working=false to clear stale
-      // working=true that a killed predecessor left in the relay's room state.
+      // On every (re)connect, republish the AUTHORITATIVE working state rather
+      // than an unconditional false. This clears stale working=true left by a
+      // killed predecessor (whose successor starts idle → projection false)
+      // WITHOUT clobbering a genuine working=true if the relay drops and
+      // reconnects mid-turn (a transient network blip during a live turn).
       // session_start publishes too, but it fires before the relay connects
       // (the transport starts later via _startRelayViaTransport), so that
       // publish is a no-op on a fresh process. This callback covers both the
       // initial connect and subsequent reconnects after a relay drop.
       onConnected: () => {
-        _sdkSessionProjection.publishWorking(false);
+        _sdkSessionProjection.publishWorking(_turnProjection().working);
       },
     });
   } catch (err) {
