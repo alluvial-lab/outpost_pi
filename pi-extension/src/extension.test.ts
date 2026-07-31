@@ -6576,6 +6576,10 @@ describe("model meta", () => {
   test("pi.on('model_select') fires room_meta_update via relay.sendControl", async () => {
     captureHandler("outpost-pi");
     await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-model-switch"));
+    // Clear connect-time publishes (onConnected publishes working=false to clear
+    // stale state from a killed predecessor) so the assertion sees only the
+    // model_select publish.
+    relayRef.current!.sendControl.mockClear();
 
     const onModelSelect = captureEventHandler("model_select");
     onModelSelect({
@@ -6597,6 +6601,7 @@ describe("model meta", () => {
   test("plan/32: pi.on('turn_start') publishes working=true via room_meta_update", async () => {
     captureHandler("outpost-pi");
     await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-working-on"));
+    relayRef.current!.sendControl.mockClear();
 
     const onTurnStart = captureEventHandler("turn_start");
     onTurnStart({ type: "turn_start", turnIndex: 0, timestamp: 0 });
@@ -6658,6 +6663,7 @@ describe("model meta", () => {
   test("plan/32: pi.on('turn_end') publishes working=false via room_meta_update", async () => {
     captureHandler("outpost-pi");
     await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-working-off"));
+    relayRef.current!.sendControl.mockClear();
 
     const onTurnEnd = captureEventHandler("turn_end");
     onTurnEnd({ type: "turn_end", turnIndex: 0 });
@@ -6672,6 +6678,7 @@ describe("model meta", () => {
   test("plan/32: pi.on('session_before_compact') publishes working=true", async () => {
     captureHandler("outpost-pi");
     await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-compact-working"));
+    relayRef.current!.sendControl.mockClear();
 
     const onBefore = captureEventHandler("session_before_compact");
     onBefore({ type: "session_before_compact" });
@@ -6686,6 +6693,7 @@ describe("model meta", () => {
   test("model_select with no model.name falls back to model.id", async () => {
     captureHandler("outpost-pi");
     await outpostPiTestHarness.connect(makeMockCtx("/tmp/outpost-pi-model-fallback"));
+    relayRef.current!.sendControl.mockClear();
 
     const onModelSelect = captureEventHandler("model_select");
     onModelSelect({

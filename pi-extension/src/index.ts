@@ -1919,6 +1919,15 @@ async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">
       roomMeta,
       isDisposed: () => _disposed,
       onUnexpectedClose: () => _onRelayClose(),
+      // On every (re)connect, force-publish working=false to clear stale
+      // working=true that a killed predecessor left in the relay's room state.
+      // session_start publishes too, but it fires before the relay connects
+      // (the transport starts later via _startRelayViaTransport), so that
+      // publish is a no-op on a fresh process. This callback covers both the
+      // initial connect and subsequent reconnects after a relay drop.
+      onConnected: () => {
+        _sdkSessionProjection.publishWorking(false);
+      },
     });
   } catch (err) {
     if (err instanceof RelayStartAbortedError) return;
