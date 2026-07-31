@@ -9,6 +9,9 @@
 
 set -euo pipefail
 
+# Ensure pi is on PATH (tmux/systemd contexts may not source ~/.bashrc).
+export PATH="$HOME/.local/bin:$PATH"
+
 CWD="${1:-$(pwd)}"
 if [ "${1:-}" = "$CWD" ]; then shift; fi
 PI_ARGS=("--continue" "$@")
