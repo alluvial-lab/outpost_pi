@@ -408,6 +408,7 @@ export interface ToolRequest {
   readonly tool_call_id: string;
   readonly tool: string;
   readonly args: unknown;
+  readonly ts?: number;
 }
 
 export interface ToolResult {
@@ -416,6 +417,7 @@ export interface ToolResult {
   readonly tool_call_id: string;
   readonly result?: unknown;
   readonly error?: string;
+  readonly ts?: number;
 }
 
 export interface ErrorMessage {
@@ -967,11 +969,11 @@ function isCompaction(value: unknown): value is Compaction {
 }
 
 function isToolRequest(value: unknown): value is ToolRequest {
-  return isObjectLike(value, ["type", "session_id", "tool_call_id", "tool", "args"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "tool_request") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "tool_call_id") && (typeof record["tool_call_id"] === "string" && record["tool_call_id"].length >= 1)) && (Object.hasOwn(record, "tool") && (typeof record["tool"] === "string" && record["tool"].length >= 1)) && (Object.hasOwn(record, "args") && true)));
+  return isObjectLike(value, ["type", "session_id", "tool_call_id", "tool", "args", "ts"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "tool_request") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "tool_call_id") && (typeof record["tool_call_id"] === "string" && record["tool_call_id"].length >= 1)) && (Object.hasOwn(record, "tool") && (typeof record["tool"] === "string" && record["tool"].length >= 1)) && (Object.hasOwn(record, "args") && true) && (record["ts"] === undefined || isIntegerAtLeast(record["ts"], 0))));
 }
 
 function isToolResult(value: unknown): value is ToolResult {
-  return isObjectLike(value, ["type", "session_id", "tool_call_id", "result", "error"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "tool_result") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "tool_call_id") && (typeof record["tool_call_id"] === "string" && record["tool_call_id"].length >= 1)) && (record["result"] === undefined || true) && (record["error"] === undefined || typeof record["error"] === "string")));
+  return isObjectLike(value, ["type", "session_id", "tool_call_id", "result", "error", "ts"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "tool_result") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "tool_call_id") && (typeof record["tool_call_id"] === "string" && record["tool_call_id"].length >= 1)) && (record["result"] === undefined || true) && (record["error"] === undefined || typeof record["error"] === "string") && (record["ts"] === undefined || isIntegerAtLeast(record["ts"], 0))));
 }
 
 function isErrorMessage(value: unknown): value is ErrorMessage {

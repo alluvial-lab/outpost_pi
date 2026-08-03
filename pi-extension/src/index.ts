@@ -1342,11 +1342,12 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     subagentGate.enter(event.toolName);
     const sessionId = _currentRemoteSessionId();
     const args = _enrichToolArgs(event.toolName, event.args);
+    const ts = Date.now();
     _appendTranscriptEvent({
       kind: "tool_requested",
       eventId: deterministicTranscriptEventId(sessionId, "tool_requested", event.toolCallId),
       sessionId,
-      ts: Date.now(),
+      ts,
       toolCallId: event.toolCallId,
       tool: event.toolName,
       args,
@@ -1357,6 +1358,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
       tool_call_id: event.toolCallId,
       tool: event.toolName,
       args,
+      ts,
     }));
   });
 
@@ -1365,12 +1367,13 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // Stringify through the transcript projection helper so live == re-sync.
     const text = stringifyToolResult(event.result);
     const sessionId = _currentRemoteSessionId();
+    const ts = Date.now();
     _appendTranscriptEvent(event.isError
       ? {
           kind: "tool_finished",
           eventId: deterministicTranscriptEventId(sessionId, "tool_finished", event.toolCallId),
           sessionId,
-          ts: Date.now(),
+          ts,
           toolCallId: event.toolCallId,
           error: text,
         }
@@ -1378,14 +1381,14 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
           kind: "tool_finished",
           eventId: deterministicTranscriptEventId(sessionId, "tool_finished", event.toolCallId),
           sessionId,
-          ts: Date.now(),
+          ts,
           toolCallId: event.toolCallId,
           result: text,
         });
     if (_owners.activeCount() === 0) return;
     const msg: ServerMessage = event.isError
-      ? _withCurrentSession({ type: "tool_result", tool_call_id: event.toolCallId, error: text })
-      : _withCurrentSession({ type: "tool_result", tool_call_id: event.toolCallId, result: text });
+      ? _withCurrentSession({ type: "tool_result", tool_call_id: event.toolCallId, error: text, ts })
+      : _withCurrentSession({ type: "tool_result", tool_call_id: event.toolCallId, result: text, ts });
     _owners.broadcast(msg);
   });
 
