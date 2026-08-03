@@ -129,6 +129,9 @@ TranscriptProjection deriveTranscriptProjection({
   final failedUsers = <String, UserMessageFailed>{};
   final authoritativeMessages = <ChatMessage>[];
   final authoritativeIds = <String>{};
+  final messageTs = <String, int>{};
+  final messageArrival = <String, int>{};
+  var arrivalCounter = 0;
   final assistantReplyTo = <String, String>{};
   final toolIndexes = <String, int>{};
   StreamingMessage? streaming;
@@ -136,18 +139,28 @@ TranscriptProjection deriveTranscriptProjection({
   var turn = TranscriptTurnView.idle;
   SteeringProjection steering = const NoSteering();
 
-  void appendAuthoritative(ChatMessage message) {
-    if (authoritativeIds.add(message.id)) authoritativeMessages.add(message);
+  void appendAuthoritative(ChatMessage message, int ts) {
+    if (authoritativeIds.add(message.id)) {
+      authoritativeMessages.add(message);
+      messageTs[message.id] = ts;
+      messageArrival[message.id] = arrivalCounter++;
+    }
   }
 
-  void upsertTool(ToolEvent tool) {
+  void upsertTool(ToolEvent tool, int ts) {
     final existingIndex = toolIndexes[tool.toolCallId];
+    final previousTs = messageTs[tool.toolCallId];
+    final requestTs = previousTs == null || ts < previousTs ? ts : previousTs;
     if (existingIndex == null) {
       toolIndexes[tool.toolCallId] = authoritativeMessages.length;
       authoritativeMessages.add(tool);
       authoritativeIds.add(tool.id);
+      messageTs[tool.id] = ts;
+      messageArrival[tool.id] = arrivalCounter++;
+      messageTs[tool.toolCallId] = requestTs;
       return;
     }
+    messageTs[tool.toolCallId] = requestTs;
     final previous = authoritativeMessages[existingIndex];
     if (previous is ToolEvent) {
       authoritativeMessages[existingIndex] = ToolEvent(
@@ -195,6 +208,7 @@ TranscriptProjection deriveTranscriptProjection({
             text: event.text,
             image: event.image,
           ),
+          event.ts.millisecondsSinceEpoch,
         );
         if (steering case SteeringPending(
           :final clientMessageId,
@@ -244,6 +258,7 @@ TranscriptProjection deriveTranscriptProjection({
         assistantReplyTo[event.messageId] = event.replyTo;
         appendAuthoritative(
           AssistantMsg(id: event.messageId, text: event.text),
+          event.ts.millisecondsSinceEpoch,
         );
         streaming = null;
         turn = TranscriptTurnView.idle;
@@ -259,6 +274,7 @@ TranscriptProjection deriveTranscriptProjection({
             tool: event.tool,
             args: event.args,
           ),
+          event.ts.millisecondsSinceEpoch,
         );
         final replyAnchor =
             turn.replyTo ?? streaming?.inReplyTo ?? activeReplyAnchor;
@@ -283,6 +299,7 @@ TranscriptProjection deriveTranscriptProjection({
             result: event.result,
             error: event.error,
           ),
+          event.ts.millisecondsSinceEpoch,
         );
         if (turn.status == AppTurnStatus.awaitingTool) {
           turn = TranscriptTurnView(
@@ -299,11 +316,22 @@ TranscriptProjection deriveTranscriptProjection({
             summary: event.summary,
             tokensBefore: event.tokensBefore,
           ),
+          event.ts.millisecondsSinceEpoch,
         );
         streaming = null;
         turn = TranscriptTurnView.idle;
     }
   }
+
+  // Lifecycle state reduces in arrival order above. Rendered authoritative
+  // bubbles use canonical server time with arrival as the stable tiebreaker.
+  // Phone-receipt-time deltas and local-time optimistic submissions never enter
+  // this list, so the ordering remains single-clock.
+  authoritativeMessages.sort((a, b) {
+    final byTs = (messageTs[a.id] ?? 0).compareTo(messageTs[b.id] ?? 0);
+    if (byTs != 0) return byTs;
+    return (messageArrival[a.id] ?? 0).compareTo(messageArrival[b.id] ?? 0);
+  });
 
   final localTail = <ChatMessage>[];
   for (final submitted in submittedUsers.values) {
@@ -325,9 +353,8 @@ TranscriptProjection deriveTranscriptProjection({
   }
 
   final messages = [...authoritativeMessages, ...localTail];
-  // Append order remains the event-log replay contract. The materialized chat
-  // adds only the stable reply relationship: a prompt must precede assistant
-  // rows that name it, even when confirmation arrived after the response.
+  // Preserve the stable reply relationship as a same-timestamp safety net: a
+  // prompt must precede assistant rows that name it.
   for (final user in messages.whereType<UserMsg>().toList(growable: false)) {
     final userIndex = messages.indexWhere((message) => message.id == user.id);
     final responseIndex = messages.indexWhere(
