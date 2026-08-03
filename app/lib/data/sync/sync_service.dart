@@ -901,8 +901,15 @@ class SyncService extends Service {
         );
         _setTurnActive(status: AppTurnStatus.streaming, replyTo: inReplyTo);
 
-      case AgentDone(:final inReplyTo):
+      case AgentDone(:final inReplyTo, :final ts):
         final buffered = _streaming?.buffer ?? '';
+        // Legacy streamed turns have no agent_message commit to carry the
+        // canonical timestamp. Prefer agent_done's server timestamp for the
+        // fallback authoritative bubble; retain the local clock only for old
+        // extensions that omit it.
+        final assistantTs = ts != null
+            ? DateTime.fromMillisecondsSinceEpoch(ts)
+            : DateTime.now();
         // Identity-source (a): if a deterministic `agent_message` (from the
         // extension's `message_end`) already committed the final assistant
         // text for this turn, skip the buffer-commit — it would duplicate
@@ -935,7 +942,7 @@ class SyncService extends Service {
             AssistantMessageCommitted(
               eventId: 'server:assistant_committed:$inReplyTo:${uuid7()}',
               sessionId: _activeTranscriptSessionId(),
-              ts: DateTime.now(),
+              ts: assistantTs,
               messageId: 'agent_${uuid7()}',
               replyTo: inReplyTo,
               text: buffered,
