@@ -1,7 +1,7 @@
 ---
 id: feature-canonical-transcript-ordering
 kind: feature
-stage: implementing
+stage: review
 tags: [app, pi-extension, bug]
 parent: null
 depends_on: []
@@ -255,3 +255,41 @@ required-`ts` bump becomes its own hard-cutover pair.
   invariant).
 - Destructive `upsertTool` on result-before-request backfill (terminal status
   overwritten by a later pending request) — pre-existing; track separately.
+
+## Implementation summary (2026-08-03)
+
+All four child stories landed and verified; the feature is review-ready.
+
+| Unit | Story | Commit | Outcome |
+|---|---|---|---|
+| 1 — extension broadcasts tool `ts` | `…-extension-broadcast-tool-ts` | `0a048de` | optional `ts` on LIVE `toolRequest`/`toolResult` schema + dart IR fixture; extension broadcasts the history `Date.now()` on owner-channel tool frames; TS+Dart regenerated; Rust untouched (app-pi excluded by design) |
+| 2 — app consumes tool `ts` | `…-app-consume-tool-ts` | `a51fd5f` | `ToolRequested`/`ToolFinished` use the wire `ts` with `DateTime.now()` fallback, mirroring the existing user/assistant/compaction pattern |
+| 3 — projection render sort | `…-projection-render-sort` | `455dce8` | `deriveTranscriptProjection` sorts the authoritative bubbles by canonical server `ts` (arrival-index tiebreak) AFTER the unchanged arrival-order lifecycle pass; tool bubbles take the earliest request/result `ts` |
+| 4 — ts-provenance audit | `…-ts-provenance-audit` | `c9c9495` | confirmed user/assistant/compaction already thread server `ts`; **found + fixed** an `AgentDone` fallback leak (phone→server `ts`); error-diagnostic documented as a wire-has-no-`ts` compat exception |
+
+Key as-built notes:
+
+- **Dart protocol source-of-truth** is the committed fixture
+  `tools/protocol-codegen/fixtures/app_pi_client_dart_ir.json` (maintained in
+  lockstep with the schema), regenerated via
+  `protocol-codegen.mjs --target dart --schema <fixture> --out protocol.g.dart`.
+  There is no `generate:dart` wrapper script (a tooling gap worth a future
+  cleanup); the orchestrator derived the command by reproducing a byte-identical file.
+- A **pre-existing** hot-reload restart-sweep `ENOENT` race makes the full
+  extension suite exit nonzero on HEAD too (all 962 tests pass); parked as
+  `backlog-extension-hot-reload-restart-sweep-enoent-race` (`ac8c4c5`), not
+  folded into any item.
+
+## Integrated verification
+
+- App: `flutter test --concurrency=2 --exclude-tags e2e test/domain test/data
+  test/ui/chat` → **524 passed** (incl. the new user/assistant + tool
+  regressions and the 3 `streaming`-convergence guards as no-lifecycle-regression
+  sentinels).
+- Extension: `check:protocol` ✅, `typecheck` ✅, focused tool-visibility 8/8 ✅,
+  generated-dart `flutter analyze` ✅. Full suite green save the parked flake.
+- Wire compatibility: `ts` is optional on every path; old app/extension fall
+  back to `DateTime.now()`. No hard cutover.
+- Not yet run: cross-component E2E pairing smoke (`e2e/run-pairing.sh`) and the
+  deploy (extension `dist/` rebuild + full Pi restart + app sideload) — these
+  are deploy/UAT steps, not story verification.
