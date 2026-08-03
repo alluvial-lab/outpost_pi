@@ -1107,6 +1107,26 @@ void main() {
     s.sync.dispose();
   });
 
+  test('legacy streamed assistant commit uses agent_done server ts', () async {
+    final store = _MemoryTranscriptStore();
+    final s = await setup(transcriptEventStore: store);
+    const canonicalTs = 4242;
+
+    s.ch.push(const AgentChunk(inReplyTo: 'r-ts', delta: 'server-timed text'));
+    await _settle();
+    s.ch.push(const AgentDone(inReplyTo: 'r-ts', ts: canonicalTs));
+    await _settle();
+
+    final committed = store
+        .eventsFor(transcriptKeyFor(s.epk))
+        .whereType<AssistantMessageCommitted>()
+        .single;
+    expect(committed.ts, DateTime.fromMillisecondsSinceEpoch(canonicalTs));
+    expect(committed.text, 'server-timed text');
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
   test('cancel sends a Cancel frame for the active turn target', () async {
     final s = await setup();
     s.ch.push(UserInput(id: 'u1', text: 'hi'));
