@@ -93,6 +93,105 @@ void main() {
     }
   });
 
+  test('authoritative replay backfill renders by canonical server time', () {
+    final projection = deriveTranscriptProjection(
+      sessionId: session,
+      events: [
+        UserMessageConfirmed(
+          eventId: 'server:user:cli_1',
+          sessionId: session,
+          ts: base,
+          clientMessageId: 'cli_1',
+          text: 'live prompt',
+        ),
+        AssistantMessageCommitted(
+          eventId: 'server:assistant:msg_1',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 100)),
+          messageId: 'msg_1',
+          replyTo: 'cli_1',
+          text: 'live response',
+        ),
+        UserMessageConfirmed(
+          eventId: 'server:user:cli_2',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 50)),
+          clientMessageId: 'cli_2',
+          text: 'backfilled prompt',
+        ),
+        AssistantMessageCommitted(
+          eventId: 'server:assistant:msg_2',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 60)),
+          messageId: 'msg_2',
+          replyTo: 'cli_2',
+          text: 'backfilled response',
+        ),
+      ],
+    );
+
+    expect(projection.messages.map((message) => message.id), [
+      'cli_1',
+      'cli_2',
+      'msg_2',
+      'msg_1',
+    ]);
+  });
+
+  test('server-timed tool ignores phone skew when result precedes request', () {
+    final skewedPhoneNow = base.add(const Duration(hours: 12));
+    final projection = deriveTranscriptProjection(
+      sessionId: session,
+      events: [
+        UserMessageSubmitted(
+          eventId: 'local:phone-skew',
+          sessionId: session,
+          ts: skewedPhoneNow,
+          clientMessageId: 'phone-local',
+          text: 'optimistic local tail',
+        ),
+        AssistantMessageCommitted(
+          eventId: 'server:assistant:before-tool',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 10)),
+          messageId: 'before-tool',
+          replyTo: 'cli_1',
+          text: 'Starting the inspection.',
+        ),
+        AssistantMessageCommitted(
+          eventId: 'server:assistant:after-tool',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 40)),
+          messageId: 'after-tool',
+          replyTo: 'cli_1',
+          text: 'Inspection complete.',
+        ),
+        ToolFinished(
+          eventId: 'server:tool:done:t1',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 50)),
+          toolCallId: 't1',
+          result: 'ok',
+        ),
+        ToolRequested(
+          eventId: 'server:tool:req:t1',
+          sessionId: session,
+          ts: base.add(const Duration(milliseconds: 20)),
+          toolCallId: 't1',
+          tool: 'Bash',
+          args: const {'command': 'pwd'},
+        ),
+      ],
+    );
+
+    expect(projection.messages.map((message) => message.id), [
+      'before-tool',
+      't1',
+      'after-tool',
+      'phone-local',
+    ]);
+  });
+
   test('local pending remains visible after authoritative replay prefix', () {
     final projection = deriveTranscriptProjection(
       sessionId: session,
