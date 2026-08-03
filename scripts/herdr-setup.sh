@@ -18,7 +18,16 @@ export PATH="$HOME/.local/bin:$PATH"
 PROJECTS=(
   "outpost|/home/agent/projects/outpost_pi|1"
   "patchbay|/home/agent/projects/patchbay|0"
+  "skills|/home/agent/projects/skills|0"
+  "silas|/home/agent/projects/silas|0"
+  "coordination|/home/agent/projects/personal-coordination|0"
+  "snc|/home/agent/projects/SNC|0"
+  "snc-platform|/home/agent/projects/SNC/platform|0"
+  "snc-library|/home/agent/projects/SNC/games/library|0"
+  "snc-org|/home/agent/projects/SNC/org|0"
   "snc-video|/home/agent/projects/SNC/video|0"
+  "snc-animal-future|/home/agent/projects/SNC/records/animal-future|0"
+  "token-commune|/home/agent/projects/token-commune|0"
 )
 
 echo "[herdr-setup] creating workspaces + starting agents..."
