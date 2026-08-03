@@ -1105,7 +1105,7 @@ class SyncService extends Service {
           }
         }
 
-      case ToolRequest(:final toolCallId, :final tool, :final args):
+      case ToolRequest(:final toolCallId, :final tool, :final args, :final ts):
         // Sequential ordering: close the current text segment as its own row
         // BEFORE the tool, so "narration → command → narration" renders in
         // order instead of all text landing after the commands.
@@ -1155,7 +1155,9 @@ class SyncService extends Service {
           ToolRequested(
             eventId: 'server:tool_requested:$toolCallId',
             sessionId: _activeTranscriptSessionId(),
-            ts: DateTime.now(),
+            ts: ts != null
+                ? DateTime.fromMillisecondsSinceEpoch(ts)
+                : DateTime.now(),
             toolCallId: toolCallId,
             tool: tool,
             args: _objectMap(args),
@@ -1166,13 +1168,20 @@ class SyncService extends Service {
           expectedRef: expectedRef,
         );
 
-      case ToolResult(:final toolCallId, :final result, :final error):
+      case ToolResult(
+        :final toolCallId,
+        :final result,
+        :final error,
+        :final ts,
+      ):
         _runDetachedTranscriptWrite(
           () => _appendTranscriptEvent(
             ToolFinished(
               eventId: 'server:tool_finished:$toolCallId',
               sessionId: _activeTranscriptSessionId(),
-              ts: DateTime.now(),
+              ts: ts != null
+                  ? DateTime.fromMillisecondsSinceEpoch(ts)
+                  : DateTime.now(),
               toolCallId: toolCallId,
               result: result,
               error: error,
