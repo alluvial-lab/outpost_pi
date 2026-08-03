@@ -40,22 +40,19 @@ for entry in "${PROJECTS[@]}"; do
   fi
   echo "[herdr-setup] workspace: $label ($cwd)"
 
-  # Create the workspace (each gets w<N>:p1 — a shell pane at the cwd)
-  herdr workspace create --cwd "$cwd" --label "$label" 2>/dev/null || {
+  # Create the workspace and capture the pane ID from the response JSON
+  create_output=$(herdr workspace create --cwd "$cwd" --label "$label" --json 2>/dev/null) || {
     echo "[herdr-setup]   workspace already exists or failed — skipping"
     continue
   }
-
-  # Get the pane ID for this workspace's first pane
-  # Herdr assigns w1:p1, w2:p1, etc. in creation order
-  pane_id=$(herdr pane list --json 2>/dev/null | \
-    python3 -c "
+  pane_id=$(echo "$create_output" | python3 -c "
 import sys, json
-panes = json.load(sys.stdin)
-for p in panes:
-    if p.get('workspace_label') == '$label':
-        print(p['id']); break
-" 2>/dev/null || echo "")
+try:
+    d = json.load(sys.stdin)
+    print(d['result']['root_pane']['pane_id'])
+except:
+    print('')
+" 2>/dev/null)
 
   if [ -z "$pane_id" ]; then
     echo "[herdr-setup]   could not find pane for $label — start pi manually"
