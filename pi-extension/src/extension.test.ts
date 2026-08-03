@@ -14,6 +14,7 @@ import { FakeDeliveryDebugLog } from "./session/delivery_debug_log.test.js";
 import { fileURLToPath } from "node:url";
 import { createEventBus, type ExtensionAPI, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { resetOutpostPiRuntimeCoordinatorForTest } from "./extension/runtime_coordinator.js";
+import { decodeServer } from "./protocol/codec.js";
 import { createHash } from "node:crypto";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import {
@@ -3442,7 +3443,22 @@ describe("tool visibility", () => {
       tool_call_id: "tc_1",
       tool: "bash",
       args: { command: "ls" },
+      ts: expect.any(Number),
     });
+  });
+
+  test("tool_request and tool_result remain decodable without optional ts", () => {
+    expect(decodeServer(JSON.stringify({
+      type: "tool_request",
+      tool_call_id: "tc_compat",
+      tool: "bash",
+      args: { command: "ls" },
+    }))).toMatchObject({ type: "tool_request", tool_call_id: "tc_compat" });
+    expect(decodeServer(JSON.stringify({
+      type: "tool_result",
+      tool_call_id: "tc_compat",
+      result: "ok",
+    }))).toMatchObject({ type: "tool_result", tool_call_id: "tc_compat" });
   });
 
   test("tool_execution_start enriches edit args with numbered context hunks", async () => {
@@ -3608,7 +3624,20 @@ describe("tool visibility", () => {
     expect(results[0]!.inner).toMatchObject({
       type: "tool_result",
       tool_call_id: "tc_2",
+      ts: expect.any(Number),
     });
+
+    const transcriptEvents = _getTranscriptEventsForTest();
+    const requestEvent = transcriptEvents.find(
+      (event) => event.kind === "tool_requested" && event.toolCallId === "tc_2",
+    );
+    const resultEvent = transcriptEvents.find(
+      (event) => event.kind === "tool_finished" && event.toolCallId === "tc_2",
+    );
+    expect(requests[0]!.inner.ts).toBe(requestEvent?.ts);
+    expect(results[0]!.inner.ts).toBe(resultEvent?.ts);
+    expect(requestEvent?.ts).toBeGreaterThan(1_000_000_000_000);
+    expect(resultEvent?.ts).toBeGreaterThan(1_000_000_000_000);
   });
 
   test("tool_result stringifies content-array/object (no [object Object]) and == re-sync", async () => {
@@ -3644,6 +3673,20 @@ describe("tool visibility", () => {
     expect(err?.inner.error).toBe("command failed: boom");
     expect(obj?.inner.error).toBe(JSON.stringify({ code: 1, msg: "nope" }));
     expect(JSON.stringify(sent)).not.toContain("[object Object]");
+
+    const transcriptEvents = _getTranscriptEventsForTest();
+    const liveOkEvent = transcriptEvents.find(
+      (event) => event.kind === "tool_finished" && event.toolCallId === "tc_ok",
+    );
+    const liveErrEvent = transcriptEvents.find(
+      (event) => event.kind === "tool_finished" && event.toolCallId === "tc_err",
+    );
+    const liveObjEvent = transcriptEvents.find(
+      (event) => event.kind === "tool_finished" && event.toolCallId === "tc_obj",
+    );
+    expect(ok?.inner.ts).toBe(liveOkEvent?.ts);
+    expect(err?.inner.ts).toBe(liveErrEvent?.ts);
+    expect(obj?.inner.ts).toBe(liveObjEvent?.ts);
 
     // live == re-sync: the history mapper yields identical text for the same tool.
     const histOk = _mapAgentMessagesToEvents([

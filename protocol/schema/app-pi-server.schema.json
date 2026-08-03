@@ -165,7 +165,8 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
         "tool_call_id": { "type": "string", "minLength": 1 },
         "tool": { "type": "string", "minLength": 1 },
-        "args": { "$ref": "./defs/common.schema.json#/$defs/openJson" }
+        "args": { "$ref": "./defs/common.schema.json#/$defs/openJson" },
+        "ts": { "type": "integer", "minimum": 0, "description": "Canonical server timestamp for the live tool request. Optional (compat); new clients use it to preserve transcript ordering with session_history replay." }
       },
       "additionalProperties": false,
       "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
@@ -178,7 +179,8 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
         "tool_call_id": { "type": "string", "minLength": 1 },
         "result": { "$ref": "./defs/common.schema.json#/$defs/openJson" },
-        "error": { "type": "string" }
+        "error": { "type": "string" },
+        "ts": { "type": "integer", "minimum": 0, "description": "Canonical server timestamp for the live tool result. Optional (compat); new clients use it to preserve transcript ordering with session_history replay." }
       },
       "additionalProperties": false,
       "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
