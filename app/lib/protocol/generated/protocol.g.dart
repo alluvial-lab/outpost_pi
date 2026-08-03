@@ -973,7 +973,7 @@ final class Compaction extends ServerMessage {
 }
 
 final class ToolRequest extends ServerMessage {
-  const ToolRequest({this.sessionId = '', required this.toolCallId, required this.tool, required this.args});
+  const ToolRequest({this.sessionId = '', required this.toolCallId, required this.tool, required this.args, this.ts});
 
   @override
   String get type => 'tool_request';
@@ -982,12 +982,14 @@ final class ToolRequest extends ServerMessage {
   final String toolCallId;
   final String tool;
   final dynamic args;
+  final int? ts;
 
   factory ToolRequest.fromJson(Map<String, dynamic> json) => ToolRequest(
         sessionId: _sessionIdFromJson(json),
         toolCallId: json['tool_call_id'] as String,
         tool: json['tool'] as String,
         args: json['args'],
+        ts: (json['ts'] as num?)?.toInt(),
       );
 
   @override
@@ -997,11 +999,13 @@ final class ToolRequest extends ServerMessage {
         'tool_call_id': toolCallId,
         'tool': tool,
         'args': args,
+        if (ts case final ts?)
+          'ts': ts,
       };
 }
 
 final class ToolResult extends ServerMessage {
-  const ToolResult({this.sessionId = '', required this.toolCallId, this.result, this.error});
+  const ToolResult({this.sessionId = '', required this.toolCallId, this.result, this.error, this.ts});
 
   @override
   String get type => 'tool_result';
@@ -1010,12 +1014,14 @@ final class ToolResult extends ServerMessage {
   final String toolCallId;
   final dynamic result;
   final String? error;
+  final int? ts;
 
   factory ToolResult.fromJson(Map<String, dynamic> json) => ToolResult(
         sessionId: _sessionIdFromJson(json),
         toolCallId: json['tool_call_id'] as String,
         result: json['result'],
         error: json['error'] as String?,
+        ts: (json['ts'] as num?)?.toInt(),
       );
 
   @override
@@ -1027,6 +1033,8 @@ final class ToolResult extends ServerMessage {
           'result': result,
         if (error case final error?)
           'error': error,
+        if (ts case final ts?)
+          'ts': ts,
       };
 }
 
