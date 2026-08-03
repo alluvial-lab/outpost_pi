@@ -1,7 +1,7 @@
 ---
 id: story-canonical-transcript-ordering-projection-render-sort
 kind: story
-stage: implementing
+stage: done
 tags: [app, bug]
 parent: feature-canonical-transcript-ordering
 depends_on: [story-canonical-transcript-ordering-app-consume-tool-ts]
@@ -55,3 +55,35 @@ forensic; it is only landed now that tools carry server `ts`.
 `depends_on: [story-canonical-transcript-ordering-app-consume-tool-ts]`
 (transitively Unit 1 — needs server `ts` on tools or the tool sort mixes
 clocks, which is exactly the regression attempt 2 introduced).
+
+## Implementation notes
+
+- Execution capability: direct inline implementation; the verified change was
+  confined to one projection reducer and its focused regression tests.
+- Review weight: standard (project default); this child-story checkpoint does
+  not receive independent review, and the parent feature retains the integrated
+  review boundary.
+- Files changed: `app/lib/domain/transcript/transcript_projection.dart` and
+  `app/test/domain/transcript/transcript_projection_test.dart`.
+- Design as built: the lifecycle reducer still consumes arrival order. Each
+  authoritative bubble records its canonical server `ts` and first-arrival
+  index, and only the rendered authoritative list sorts by `(ts, arrival)`
+  before the optimistic local tail is appended. The existing prompt-before-
+  reply fixup remains as the same-`ts` safety net.
+- Tool ordering: every request/result upsert keeps the minimum timestamp for the
+  tool-call id, so a result-before-request bubble is corrected to the request
+  time when the request arrives.
+- Tests added: a live-then-backfill user/assistant regression and a skewed-phone
+  tool regression that delivers the result before the request and proves the
+  request timestamp positions the tool between surrounding narrations.
+- Red/green evidence: before adding the render sort, the user/assistant
+  regression failed with `[cli_1, msg_1, cli_2, msg_2]` instead of
+  `[cli_1, cli_2, msg_2, msg_1]`; after implementation, the focused projection
+  file passed 21 tests.
+- Verification: all three streaming-convergence guards passed; the broad
+  `test/domain test/data test/ui/chat` sweep passed 524 tests with
+  `--concurrency=2 --exclude-tags e2e`; focused analyzer reported no issues.
+- Simplification: none; the verified design required only timestamp metadata
+  and one post-reduction sort.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
