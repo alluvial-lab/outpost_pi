@@ -1127,6 +1127,77 @@ void main() {
     s.sync.dispose();
   });
 
+  test(
+    'live tool frames consume server ts and fall back for legacy frames',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      const requestTs = 1_700_000_000_123;
+      const resultTs = 1_700_000_000_456;
+
+      s.ch.pushRaw(
+        ToolRequest(
+          sessionId: s.sessionId,
+          toolCallId: 'tool-with-ts',
+          tool: 'Read',
+          args: const {'path': 'pubspec.yaml'},
+          ts: requestTs,
+        ),
+      );
+      await _settle();
+      s.ch.pushRaw(
+        ToolResult(
+          sessionId: s.sessionId,
+          toolCallId: 'tool-with-ts',
+          result: const {'ok': true},
+          ts: resultTs,
+        ),
+      );
+      await _settle();
+
+      final requestedWithTs = store
+          .eventsFor(transcriptKeyFor(s.epk))
+          .whereType<ToolRequested>()
+          .single;
+      final finishedWithTs = store
+          .eventsFor(transcriptKeyFor(s.epk))
+          .whereType<ToolFinished>()
+          .single;
+      expect(
+        requestedWithTs.ts,
+        DateTime.fromMillisecondsSinceEpoch(requestTs),
+      );
+      expect(finishedWithTs.ts, DateTime.fromMillisecondsSinceEpoch(resultTs));
+
+      final requestBefore = DateTime.now();
+      s.ch.push(
+        ToolRequest(toolCallId: 'tool-without-ts', tool: 'Read', args: {}),
+      );
+      await _settle();
+      final requestAfter = DateTime.now();
+      final resultBefore = DateTime.now();
+      s.ch.push(ToolResult(toolCallId: 'tool-without-ts', result: 'ok'));
+      await _settle();
+      final resultAfter = DateTime.now();
+
+      final requestedWithoutTs = store
+          .eventsFor(transcriptKeyFor(s.epk))
+          .whereType<ToolRequested>()
+          .singleWhere((event) => event.toolCallId == 'tool-without-ts');
+      final finishedWithoutTs = store
+          .eventsFor(transcriptKeyFor(s.epk))
+          .whereType<ToolFinished>()
+          .singleWhere((event) => event.toolCallId == 'tool-without-ts');
+      expect(requestedWithoutTs.ts.isBefore(requestBefore), isFalse);
+      expect(requestedWithoutTs.ts.isAfter(requestAfter), isFalse);
+      expect(finishedWithoutTs.ts.isBefore(resultBefore), isFalse);
+      expect(finishedWithoutTs.ts.isAfter(resultAfter), isFalse);
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
   test('cancel sends a Cancel frame for the active turn target', () async {
     final s = await setup();
     s.ch.push(UserInput(id: 'u1', text: 'hi'));

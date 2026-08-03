@@ -1,7 +1,7 @@
 ---
 id: story-canonical-transcript-ordering-app-consume-tool-ts
 kind: story
-stage: implementing
+stage: done
 tags: [app, bug]
 parent: feature-canonical-transcript-ordering
 depends_on: [story-canonical-transcript-ordering-extension-broadcast-tool-ts]
@@ -44,3 +44,15 @@ Unit 2 of `feature-canonical-transcript-ordering`. Once the extension broadcasts
 `depends_on: [story-canonical-transcript-ordering-extension-broadcast-tool-ts]`
 (needs the wire field + regenerated DTO). Unblocks
 `story-canonical-transcript-ordering-projection-render-sort`.
+
+## Implementation notes
+
+- Updated the live `ToolRequest` and `ToolResult` handlers to consume optional
+  server epoch-millisecond `ts` values when creating `ToolRequested` and
+  `ToolFinished` events.
+- Mirrored the existing optional-`ts` provenance pattern: server timestamps are
+  converted with `DateTime.fromMillisecondsSinceEpoch`, while missing values
+  fall back to `DateTime.now()` for old extensions.
+- Added focused live-frame tests covering server timestamps and both legacy
+  fallback paths. The focused sync-service suite passed all 95 tests, and
+  `flutter analyze lib/data/sync/sync_service.dart` reported no issues.
