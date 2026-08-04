@@ -1,7 +1,7 @@
 ---
 id: feature-canonical-transcript-timestamp-ownership
 kind: feature
-stage: drafting
+stage: implementing
 tags: [app, pi-extension, bug]
 parent: null
 depends_on: []
@@ -100,6 +100,130 @@ notifications).
   consume wire `ts` everywhere it exists.
 - Producer-connected tests (extension asserts live `ts` == history `ts`;
   app asserts real wire `ts` flow).
+
+## Implementation Units (feature-design pass, 2026-08-03)
+
+The decided design (Q1=B, extension sole authority; Q2=a, mesh authoritative)
+decomposes into 4 child-story checkpoints. Trickiest unit (A) first.
+
+### Unit A — Timestamp-ownership foundation (extension)
+**Story**: `story-canonical-transcript-timestamp-ownership-ownership-foundation`
+**Depends on**: none (foundation).
+
+Make the execution/delivery hook the single canonical `ts` owner per event, so
+live broadcast == history == durable replay.
+
+**Files**:
+- `pi-extension/src/session/transcript_event_log.ts` — add a recorded-`ts`
+  lookup (e.g. `recordedTsFor(eventId): number | undefined`) over the existing
+  `events`/`seen` structures (the log is append-only, first-writer-wins by
+  `eventId`; today it exposes no ts lookup).
+- `pi-extension/src/session/sdk_session_projection.ts` (~`:563-573` and the
+  `toolResult` arm) — `message_end`-driven recording **reuses** the
+  already-recorded `ts` (via the new lookup) for `tool_requested`/
+  `tool_finished`/`user_confirmed` instead of stamping the SDK block `ts`, so
+  the late hook no longer competes with the earlier execution/delivery hook.
+- `pi-extension/src/index.ts` — `tool_execution_start`/`tool_execution_end`,
+  `_confirmUserDelivery` broadcast sites read + reuse the owner `ts` (one
+  `Date.now()` per event, shared by the history append and the live broadcast).
+
+**Acceptance**:
+- [ ] For tool-request, tool-result, and app-origin user-confirmed, the LIVE
+  broadcast `ts` EQUALS the history/replay `ts` (producer-connected extension
+  test, not an injected value).
+- [ ] `TranscriptEventLog` exposes the recorded-`ts` lookup; no second
+  `Date.now()` per logical event.
+
+### Unit B — Extension producer-`ts` coverage (agent_done, user_message echoes, mesh cards)
+**Story**: `story-canonical-transcript-timestamp-ownership-extension-producer-ts`
+**Depends on**: [Unit A].
+
+Stamp a server `ts` on the authoritative producers that still omit it.
+
+**Files**:
+- `pi-extension/src/index.ts` — `agent_end`/`agent_done` broadcast includes the
+  terminal `ts`; initial + dedupe `user_message` echoes reuse the existing
+  recorded `ts` (via Unit A's lookup) instead of emitting ts-less frames.
+- `pi-extension/src/index.ts` `_deliverMeshMessageToAgent` (Q2=a) — stamp a
+  server `ts` on the `tool="agent-network"` `tool_request`/`tool_result` pair.
+
+**Acceptance**:
+- [ ] `agent_done`, `user_message` echoes, and `tool="agent-network"` frames
+  carry a server `ts` equal to their history/owner `ts` (producer-connected
+  tests).
+
+### Unit C — Error-frame `ts` (schema + extension + app + codegen)
+**Story**: `story-canonical-transcript-timestamp-ownership-error-frame-ts`
+**Depends on**: [Unit A] (parallel with B).
+
+The error path is schema-spanning (like the prior feature's Unit 1), so it's its
+own checkpoint.
+
+**Files**:
+- `protocol/schema/app-pi-server.schema.json` — add optional `ts` (integer,
+  min 0) to the `error` message definition.
+- `tools/protocol-codegen/fixtures/app_pi_client_dart_ir.json` + regenerate
+  `protocol.generated.ts` (`corepack pnpm generate:protocol`) and
+  `protocol.g.dart` (`protocol-codegen.mjs --target dart --schema <fixture>
+  --out app/lib/protocol/generated/protocol.g.dart`). Rust unchanged.
+- `pi-extension/src/index.ts` error producers (incl. `provider_error`,
+  `internal_error`, other renderable codes) — stamp the computed server `ts`.
+- `app/lib/data/sync/sync_service.dart` — error diagnostic consumes wire `ts`
+  with the `DateTime.now()` fallback.
+
+**Acceptance**:
+- [ ] Optional `ts` on error frames; extension stamps it; app consumes it;
+  `check:protocol` clean; error diagnostic no longer phone-timestamped.
+
+### Unit D — App consume + fallback cleanup
+**Story**: `story-canonical-transcript-timestamp-ownership-app-consume-cleanup`
+**Depends on**: [Unit B, Unit C].
+
+Close the app-side residuals now that every producer carries server `ts`.
+
+**Files**:
+- `app/lib/data/sync/sync_service.dart` — buffered tool fallback narration uses
+  one derived `requestTs` (from the wire `ts`, legacy fallback) shared with the
+  `ToolRequested`, not an independent `DateTime.now()`.
+- Verify EVERY authoritative producer consumes wire `ts`; `DateTime.now()` only
+  for genuinely-missing fields.
+
+**Acceptance**:
+- [ ] No authoritative app event stamps `DateTime.now()` when the wire carries
+  `ts`; producer-connected app tests assert real wire `ts` flow.
+- [ ] The (updated) enumeration table shows zero remaining authoritative
+  phone-`ts` paths.
+
+## Implementation Order
+
+1. **A** (ownership foundation) — design-first; resolves the durable-owner
+   model (see Risks).
+2. **B** and **C** in parallel after A.
+3. **D** after B + C.
+
+## Risks (pre-mortem)
+
+- **Riskiest assumption — SDK durability agreement (Unit A).** `TranscriptEventLog`
+  is process-local; the SDK owns the DURABLE record that backfills on restart.
+  Reusing the execution-hook `ts` in `message_end` fixes in-process live/replay
+  divergence, but post-restart backfill may re-stamp the SDK `ts`. Unit A must
+  START by spiking whether the durable record can carry the execution-hook `ts`
+  (so live == durable across restart). If the SDK cannot be made to agree
+  durably, fall back to: the app re-syncs from `session_history` on reconnect
+  (canonical by then), so the render sort tolerates a transient live≠durable
+  pre-reconnect — document and accept that residual.
+- Error-frame codegen (Unit C) reuses the Unit-1 pattern; low risk.
+
+## Testing
+
+- Producer-connected tests in every unit (extension: live `ts` == history `ts`;
+  app: real wire `ts` flow) — the prior synthetic-ts tests are the anti-pattern.
+- Extension: `check:protocol`, `typecheck`, `test` (full suite's only known
+  nonzero-exit is the parked hot-reload flake).
+- App: `flutter test --exclude-tags e2e test/domain test/data test/ui/chat`;
+  the 3 `streaming`-convergence guards as sentinels.
+- Final cross-model review walks the updated enumeration table to confirm zero
+  remaining authoritative phone-`ts` paths.
 
 ## Out of scope
 
