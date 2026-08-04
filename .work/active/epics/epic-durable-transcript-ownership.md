@@ -1,0 +1,114 @@
+---
+id: epic-durable-transcript-ownership
+kind: epic
+stage: drafting
+tags: [pi-extension, app, bug]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-08-03
+updated: 2026-08-03
+---
+
+# Durable transcript ownership (the extension owns its transcript event log)
+
+## The architectural shift
+
+Today the extension's transcript is a **lossy re-derivation from SDK messages**.
+`TranscriptEventLog` (`pi-extension/src/session/transcript_event_log.ts`) is
+purely in-memory; on every Pi process restart it is rebuilt by projecting the
+SDK's durable messages. The extension persists **nothing** of its own (it does
+not use the SDK custom-entry API anywhere today — confirmed).
+
+That re-derivation is the root of an entire **divergence class**: the extension's
+live events (execution/delivery-hook `ts`, outpost-pi-specific events the SDK
+doesn't model) and the SDK's durable messages (SDK-persisted `ts`) are two
+different sources of truth, and restart backfill silently picks the SDK's. It
+has burned four review rounds (deltas → tools → tool-history divergence +
+fallback narration + agent_done producer + error diagnostics) and a systematic
+enumeration (see
+`story-canonical-transcript-ordering-systematic-ts-provenance-sweep`) before we
+stopped patching instances and named the class.
+
+This epic makes the **extension the authoritative owner of its own durable
+transcript event log**, persisted alongside SDK messages via the SDK's
+custom-entry API, with the SDK's messages becoming one *input* (for LLM
+context), not the source of transcript truth.
+
+## Why it's worth it (value beyond the timestamp bug)
+
+1. **Retires the divergence class** — not just timestamps. Any transcript event
+   the SDK doesn't perfectly model (tool request vs result timing, app-origin
+   user-confirmation, …) stops being ambiguously re-derived on restart.
+2. **Durable-izes Outpost-Pi-specific events** — mesh tool cards, compaction
+   markers, tool-request-as-distinct-from-result, steering — currently
+   in-memory only, lost on restart.
+3. **Decouples transcript time from SDK-persistence time** — events carry when
+   they *actually happened* in the hook lifecycle, not when the SDK persisted
+   for LLM context.
+4. **Clean versioned extension point** — `outpost-pi.transcript-event.v1` makes
+   future event kinds (approvals, annotations, …) additive + durable instead of
+   crammed into SDK message semantics.
+5. **Stable replay contract** — the app's `session_history` becomes exactly what
+   was rendered live, durably; no re-derivation drift.
+6. **Aligns with the repo's single-source-of-truth principle** — the transcript
+   stops being an inferred projection (the smell) and becomes an owned durable
+   aggregate. SDK owns LLM context; the extension owns the transcript.
+
+## Cost / risk
+
+Net-new durable responsibility for the extension (new module + codec +
+backfill-preference + file-backed reopen tests), and a **second durable source**
+(SDK messages + extension entries) that backfill must reconcile. The
+reconciliation is the design-bearing core: SDK messages remain authoritative for
+LLM context; extension entries are authoritative for the transcript.
+
+## Spike (done — FEASIBLE)
+
+`story-canonical-transcript-timestamp-ownership-ownership-foundation` carries
+the read-only durability spike. Verdict: the SDK does **not** immutably own
+`message.timestamp` (a `message_end` handler may return a same-role replacement;
+`ExtensionAPI.appendEntry` → `SessionManager.appendCustomEntry` → session JSONL
+→ recoverable via compaction-aware `buildContextEntries()`). Nuance: assistant
+`message_end` fires **before** `tool_execution_start`, so the execution `ts`
+can't be retrofitted into an already-persisted assistant message (esp.
+multi-tool) — hence the custom-entry path rather than simple reuse. Full
+live==durable agreement is achievable; no forced fallback residual.
+
+## Decomposition sketch (for `epic-design` to refine)
+
+- **F1 — Durable transcript event log (foundation).** Custom-entry codec
+  (`outpost-pi.transcript-event.v1`), `appendEntry` binding, `TranscriptEventLog`
+  becomes durable, backfill from `buildContextEntries()` preferring validated
+  Outpost-Pi events over SDK-derived. The architectural capability.
+- **F2 — Close the single-clock timestamp invariant.** Migrate the diverging
+  kinds (tool_requested/finished, user_confirmed) to durable ownership; producer
+  `ts` coverage (agent_done, error frames, user_message echoes, mesh cards);
+  app consume cleanup. The timestamp payoff (the original motivation).
+- **F3 — Durable-ize Outpost-Pi-specific events.** Mesh cards, compaction, and
+  other extension-only transcript events become durable (currently in-memory).
+- **F4 — Retire SDK-message re-derivation + two-source reconciliation.** Remove
+  the lossy re-derivation; formalize SDK-messages-vs-extension-entries
+  (LLM-context vs transcript) as the consistency contract.
+
+## Relationship to in-flight work
+
+`feature-canonical-transcript-timestamp-ownership` (implementing, 4 child
+stories designed around the custom-entry plan from the spike) is the **seed** for
+F1 + F2. `epic-design` will reconcile it — likely splitting its Unit A (durable
+foundation) into F1 as a sibling feature, with the timestamp-payoff units (B/C/D)
+becoming F2. The systematic enumeration
+(`story-canonical-transcript-ordering-systematic-ts-provenance-sweep`) is the
+ground-truth gap table for F2/F3.
+
+`feature-canonical-transcript-ordering` (done) shipped the projection render-sort
+that MOTIVATED this epic; it stays done. Its enumerated residual gaps are what
+this epic retires.
+
+## Next
+
+`epic-design epic-durable-transcript-ownership` to decompose into features with
+declared `depends_on` (F1 first; F2/F3 depend on it; F4 last), then feature-level
+design + implement. The durable foundation (F1) is the riskiest, most novel unit
+— design it first and most carefully.
