@@ -1,7 +1,7 @@
 ---
 id: backlog-mobile-new-button-newsession-no-command-ctx
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-04
 tags: [app, pi-extension, bug]
 ---
 
@@ -9,9 +9,8 @@ tags: [app, pi-extension, bug]
 
 ## Symptom (operator, 2026-08-03)
 
-Tapping the **New** button on mobile surfaces an error along the lines of
-"newSession unavailable (no command ctx yet)" (operator paraphrase; confirm the
-exact string during investigation).
+Tapping the **New** button on mobile surfaces the exact error
+`newSession unavailable (no command ctx yet)`.
 
 ## Pinned code path (quick grep, not a full investigation)
 
@@ -24,24 +23,121 @@ exact string during investigation).
   (`_runVoid(ActionName.sessionNew, _repo.…)`) → sends the `sessionNew` action
   to the extension → hits the handler above.
 - **Command-context binding (extension):** `bindCommandContext` /
-  `_rememberCommandContext` (`pi-extension/src/index.ts`) and the tracked
+  `_rememberCommandCtx` (`pi-extension/src/index.ts`) and the tracked
   context in `pi-extension/src/session/sdk_session_projection.ts`
   (`bindCommandContext` / `bindReplacementContext`). "no command ctx yet" =
   none of these has bound a context with `newSession` at the moment the action
   fires.
 
-## Likely cause (to confirm)
+## Confirmed root cause (2026-08-04)
 
-A command-context **binding-lifecycle gap**: the app can fire the "New" action
-before the extension has bound a command context carrying `newSession`
-(e.g. before the first agent turn / `session_start`, or after a context was
-cleared but the app still shows New as available). Needs investigation to
-confirm exactly when `bindCommandContext` runs vs when the action is allowed to
-fire, and whether the app should gate/disable the New button until the context
-is armed (there's already a `message_api_armed`/`n { armed }` signal in the
-projection that may be the right gate).
+The installed `@earendil-works/pi-coding-agent` 0.80.6 does **not** provide an
+`ExtensionCommandContext` to `session_start` or ordinary turn/event handlers.
+Its lifecycle is precise:
 
-## Not done here
+1. Each run mode calls `AgentSession.bindExtensions(...)` at startup with
+   host-owned `commandContextActions` (including `newSession`). Internally this
+   calls `ExtensionRunner.bindCommandContext(actions)` **before** emitting
+   `session_start`, but that SDK method only stores the action implementations
+   inside the runner; it does not expose a command context to extensions.
+2. `session_start`, `turn_start`, and all other ordinary hooks are emitted via
+   `ExtensionRunner.emit()`, which always passes `createContext()` — the base
+   `ExtensionContext`, intentionally lacking `newSession` because the SDK says
+   session-control methods are command-only to avoid event-handler deadlocks.
+3. The SDK creates an `ExtensionCommandContext` only when
+   `AgentSession._tryExecuteExtensionCommand()` invokes a registered extension
+   slash command. It also creates a fresh command-capable
+   `ReplacedSessionContext` for an already-started replacement's `withSession`
+   callback. An ordinary first agent turn does **not** arm this capability.
+4. Outpost-Pi's similarly named `bindCommandContext` port is not an SDK startup
+   hook. It runs only from `_rememberCommandCtx`, which wraps actual
+   `/outpost-pi ...` command handlers, or after a successful replacement via
+   `withSession`. Therefore `SdkSessionProjection.commandCtx` is null after a
+   fresh process start until an extension command has actually run.
 
-Parked only — symptom + pinned path + likely cause. No investigation or fix
-performed.
+A probe against the installed SDK confirmed the runtime shapes:
+
+```text
+session_start  hasNewSession=false
+turn_start     hasNewSession=false
+command        hasNewSession=true
+```
+
+There is no public `ExtensionAPI` method to obtain the runner's command context,
+to invoke an extension command programmatically without an LLM turn, or to
+replace the host's active `AgentSessionRuntime`. `pi.sendUserMessage()` is not a
+back door: the SDK calls `prompt(..., expandPromptTemplates: false)`, explicitly
+skipping extension-command dispatch.
+
+The observed handler `throw` is caught by `runAsync`; the wire result is already
+a sender-scoped `action_error`, which `ActionsRepository` converts to
+`ActionFailure` and the quick-action sheet displays. The defect is therefore
+not an uncaught process crash or silent drop: the command is explicitly rejected
+and the required fresh session is not created.
+
+## Design options
+
+### A. Add a host-safe SDK session-replacement capability (recommended)
+
+Upstream Pi should expose a public capability for extensions whose external
+callbacks need to request a session replacement after startup — for example an
+idle-safe `ExtensionAPI.newSession()` or an explicit host-operation gateway.
+Simply adding `newSession` to every event context would violate the SDK's stated
+deadlock boundary. Once the SDK has a supported operation, Outpost-Pi can bind
+it during factory/session startup and keep the existing `withSession` re-arm,
+session reset, and daemon behavior.
+
+This is the only option that works uniformly for interactive Pis regardless of
+which terminal/process manager launched them.
+
+### B. Extend process-recycle semantics beyond daemons
+
+The daemon path is sound because `RpcChild` and `Supervisor` own both sides of
+`EXIT_DAEMON_FRESH_SESSION`: they ACK/reset/exit, then omit `--continue` exactly
+once on the next spawn. Interactive processes do not have that contract:
+
+- `scripts/pi-restart-loop.sh` relaunches only after exit 0 plus a hot-reload
+  marker, and its fixed args always include `--continue`; exit 42 is treated as
+  a crash and stops the loop.
+- The other live Pi panes are Herdr-managed. Herdr records each managed Pi's
+  exact session path in its session state, so an ordinary restart resumes that
+  session rather than creating a fresh one.
+
+Making this reliable requires coordinated wrapper/Herdr work: a distinct
+fresh-session restart request, ACK and graceful-shutdown semantics, relaunch
+without a resume target, and successor `session_start`/room-meta convergence.
+That is cross-subsystem work outside this focused bug's allowed write scope.
+An extension-only `process.exit(42)` would stop interactive Pi or resume the old
+session and would falsely ACK success.
+
+### C. Improve the unavailable-state UX only (does not fix the use case)
+
+A stable reason code/capability signal could let the app say that a Pi extension
+command must run before New is available. The current app already surfaces the
+`action_error` text, so this would be UX polish rather than a functional repair;
+gating New also directly blocks the reported post-restart use case. Do not ship
+this alone as the bug fix.
+
+## Investigation outcome
+
+Stopped without code changes. A correct repair is larger than a focused
+handler/projection patch: it needs either a supported Pi SDK operation or a
+coordinated interactive process-manager fresh-session contract. No known-red
+regression test was committed; the existing handler test already proves the
+current no-context `action_error`, while an acceptance test requiring a created
+session cannot pass until one of the designs above is selected. The daemon
+`EXIT_DAEMON_FRESH_SESSION` path remains unchanged.
+
+Verification of the unchanged behavior:
+
+- Installed-SDK probe: `session_start=false`, `turn_start=false`, registered
+  extension command=true for `typeof ctx.newSession === "function"`.
+- `./node_modules/.bin/vitest run src/actions/handlers.test.ts
+  src/session/sdk_session_projection.test.ts`: 70 passed.
+- `./node_modules/.bin/vitest run src/extension.test.ts -t "daemon session_new
+  ACKs and resets before exit 42"`: 1 passed (212 unrelated tests skipped by
+  the name filter).
+- A full `pnpm test` attempt completed all 55 test files with 963 passed / 3
+  skipped, then exited non-zero on the suite's existing environment-sensitive
+  UDS cleanup race (`chmod .../.pi/remote/locks/*.sock`: `ENOENT`). No product
+  test failed, and no test was weakened or skipped to hide it.
