@@ -293,3 +293,46 @@ Key as-built notes:
 - Not yet run: cross-component E2E pairing smoke (`e2e/run-pairing.sh`) and the
   deploy (extension `dist/` rebuild + full Pi restart + app sideload) — these
   are deploy/UAT steps, not story verification.
+
+## Review (standard, pass 1 — `gpt-5.6-sol` xhigh): REQUEST CHANGES
+
+Core fix (Unit 3) sound; neither prior regression reintroduced; tool min-ts,
+backward-compat, agent-network exclusion all confirmed safe. But the
+single-clock invariant Unit 3 relies on is **not yet fully achieved** — 4
+remaining clock-mixing paths in edge/secondary paths (the main
+user/assistant/tool path is fixed):
+
+1. **Tool live/history `ts` divergence.** `message_end` records `tool_requested`
+   with the SDK assistant `ts` (`sdk_session_projection.ts:563-573`);
+   `tool_execution_start` broadcasts a fresh `Date.now()` whose history append
+   is discarded (duplicate event-id, first-writer-wins). So live tool `ts` ≠
+   replay tool `ts` → a tool bubble can shift on reconnect. Fix: one ts owner
+   (reuse the recorded request ts in the broadcast, or make `tool_execution_start`
+   the sole recorder).
+2. **Buffered assistant fallback narration** (`sync_service.dart:1140-1150`)
+   uses `DateTime.now()` while the tool uses wire `ts`. When the deterministic
+   `agent_message` is absent (frame loss/compat), narration sorts by phone time
+   + tool by server time → attempt-2 failure under skew. Fix: derive one
+   `requestTs` from the wire `ts` (legacy fallback) for both.
+3. **`AgentDone` producer gap.** The audit's app-side consume is dead code: the
+   extension records a terminal `ts` but omits it from the live `agent_done`
+   frame (`index.ts:1457-1474`), so the app always hits `DateTime.now()`. Fix:
+   extension includes `ts` in the `agent_done` broadcast.
+4. **Error diagnostics** — no `ts` on the wire (schema `:188-197`); the app
+   creates an authoritative `AssistantMessageCommitted` with phone time
+   (`sync_service.dart:1310-1326`). Under skew an error bubble misorders. Fix:
+   optional `ts` on error frames (schema+extension+app, like a mini-Unit-1),
+   OR model diagnostics as non-authoritative/local-tail.
+
+This is the third round of clock-provenance discovery (attempt 1: deltas;
+attempt 2: tools; now: tool-history-divergence + fallback narration +
+agent_done producer + error diagnostics) — strong signal that fully closing
+the single-clock invariant is a deeper arc than one feature pass. Decision
+pending operator input: grind another corrective wave vs. land the main fix +
+park these 4 edge-path findings as follow-ups.
+
+## Blocker
+
+Feature held at `stage: review` pending resolution of the 4 review findings
+above (or an explicit operator decision to ship the main-path fix and track
+the edge gaps as follow-up stories).
