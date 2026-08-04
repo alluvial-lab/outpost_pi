@@ -1,7 +1,7 @@
 ---
 id: feature-canonical-transcript-ordering
 kind: feature
-stage: review
+stage: done
 tags: [app, pi-extension, bug]
 parent: null
 depends_on: []
@@ -336,3 +336,21 @@ park these 4 edge-path findings as follow-ups.
 Feature held at `stage: review` pending resolution of the 4 review findings
 above (or an explicit operator decision to ship the main-path fix and track
 the edge gaps as follow-up stories).
+
+## Resolution (operator, 2026-08-03)
+
+**Shipped as-is; closure spun to a new feature.** Units 1–4 are verified and
+fix the observed reorder bug on the dominant user/assistant/tool path. A
+systematic enumeration (option C; recorded in
+`story-canonical-transcript-ordering-systematic-ts-provenance-sweep`) proved
+the single-clock invariant is a design arc, not a patch — it found the 4 review
+gaps + 3 more + a mesh-path scope contradiction, and showed closure needs a
+durable timestamp-*owner* design + an app-facing-mesh-notification decision.
+
+This feature therefore closes at `done` with the residual gap paths
+(skew-dependent: error diagnostics, fallback narration, restart/backfill
+tool-result divergence, app-facing mesh tool notifications) **fully enumerated
+and documented** in the sweep story, not hidden. Full invariant closure is
+spun to `feature-canonical-transcript-timestamp-ownership` (drafting), seeded
+by that enumeration. Operator override to close despite the REQUEST-CHANGES
+review: the main fix ships; the closure is tracked separately.
