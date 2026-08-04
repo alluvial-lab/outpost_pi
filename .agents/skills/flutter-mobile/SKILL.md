@@ -59,9 +59,11 @@ installed and persisted; these notes are so a fresh agent does not re-derive it.
 **Build commands (run from `app/`):**
 
 ```bash
-# debug — fat (all ABIs, ~184 MB), debug-signed, fastest to iterate
+# ⭐ DEPLOY TARGET — debug (release signing was dropped at the 0.1.0 rebrand;
+#    release builds fail the task-graph guard without android/key.properties).
 flutter build apk --debug
 
+# (Release variants below are vestigial, kept in case signing is ever restored.)
 # release, one APK per ABI — small. Build the one matching the device:
 #   arm64-v8a   → modern Android phones (Pixel etc.)        ~31 MB
 #   armeabi-v7a → old 32-bit ARM devices                     ~27 MB
@@ -97,13 +99,14 @@ same-package build signed with a different key first to avoid
 Kit/CameraX deps. If the VM is low, reclaim from the systemd journal
 (`journalctl --vacuum-size=100M`) and the apt cache (`apt-get clean`) first.
 
-**Release signing:** configuration-only, test, and debug Gradle tasks work
-without `android/key.properties`. A task-graph guard rejects release APK/AAB
-tasks before execution unless all four signing properties are non-blank and the
-configured keystore file exists; release builds never fall back to debug keys.
-Run `android/check_release_signing_guard.sh` from `app/` to exercise both the
-no-key non-release pass and no-key release rejection. CI additionally compares
-the produced APK signer fingerprint with the configured release keystore.
+**Release signing (vestigial):** release signing was **dropped at the 0.1.0
+rebrand** — the project ships **debug** builds (`flutter build apk --debug`),
+which need no `android/key.properties`. The task-graph guard that rejects
+release APK/AAB tasks without a complete keystore still lives in the build
+config, so `flutter build apk --release` now fails fast ("release keystore
+missing") by design; debug builds bypass it. `android/check_release_signing_guard.sh`
+exercises the guard. If release signing is ever restored, seed
+`android/key.properties` + the keystore first; until then, build debug.
 
 ## App architecture
 

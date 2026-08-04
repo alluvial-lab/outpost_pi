@@ -364,8 +364,11 @@ the VM**; `/tmp` is a **tmpfs** (RAM-backed) that Gradle also uses for build
 - cap the Gradle heap to `3G` and redirect its temp off tmpfs:
   `org.gradle.jvmargs=-Xmx3G ... -Djava.io.tmpdir=/home/agent/.gradle-tmp`
   (mkdir `/home/agent/.gradle-tmp` first; it's on the 54G disk)
-- prefer `flutter build apk --release` (single fat APK, one dart2native pass)
-  over `--split-per-abi` (3 passes, ~3× peak RAM) when RAM is tight
+- the project ships **debug** builds — release signing was dropped at the
+  0.1.0 rebrand, so `flutter build apk --debug` is the deploy target. Release
+  builds fail the task-graph guard without `android/key.properties`, which is
+  intentionally absent (if release signing is ever restored, the fat-vs-`--split-per-abi`
+  RAM note still applies: prefer a single fat APK when RAM is tight)
 
 Toolchain: Flutter at `~/projects/outpost_pi/.tools/flutter`, JDK 21
 (`JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`), Android SDK API 36 at
@@ -376,7 +379,7 @@ Toolchain: Flutter at `~/projects/outpost_pi/.tools/flutter`, JDK 21
 The phone is attached to a workstation, not the VM. After building on the VM,
 copy the APK to the workstation and install with `adb` (USB debugging on):
 ```bash
-scp app/build/app/outputs/flutter-apk/app-release.apk <workstation>:~/app.apk
+scp app/build/app/outputs/flutter-apk/app-debug.apk <workstation>:~/app.apk
 # on the workstation:
 # First 0.1.0 sideload: the applicationId changed (work.jacobmoura.remotepi →
 # dev.kevoun.outpostpi), so `adb install -r` installs ALONGSIDE the old app
