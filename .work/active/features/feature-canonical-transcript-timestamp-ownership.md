@@ -24,6 +24,26 @@ ownership** being decided by first-writer-wins process-local dedupe, so live
 broadcasts and durable replay disagree, and from an unresolved question about
 **app-facing mesh tool notifications**. This feature closes the invariant.
 
+## Design decisions (operator, 2026-08-03)
+
+- **Q1 — timestamp ownership: (B).** The execution/delivery hook owns each
+  event's canonical `ts` (it fires first AND broadcasts live, so its `ts` is
+  available at broadcast time); `message_end` is changed to **reuse** the
+  already-recorded `ts` instead of stamping a fresh one, so live == replay ==
+  durable-across-restart. Governing principle: **the extension (Pi/SDK) is the
+  sole authoritative `ts` owner; the app is consumer-only** (`DateTime.now()`
+  only as a transient fallback for a genuinely-missing field); the app's own
+  clock is confined to non-authoritative optimistic UI state (`UserMessageSubmitted`
+  local tail). The relay has no transcript-`ts` role (opaque transport).
+- **Q2 — app-facing mesh tool notifications: (a) authoritative.** The
+  `tool="agent-network"` cards (`_deliverMeshMessageToAgent`) are real
+  transcript bubbles. Rationale: keeps the inbound peer message + the agent's
+  reply in ONE coherent, reconnect-durable, canonically-ordered transcript, so
+  future hide/filter/UX changes are a single-place view-layer operation over a
+  complete dataset (the `tool="agent-network"` discriminator already exists).
+  Mechanical consequence (consistent with Q1): the **extension stamps a server
+  `ts`** on these frames; the app consumes it.
+
 ## Origin / seed
 
 The complete gap surface is enumerated in
