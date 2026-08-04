@@ -3,7 +3,7 @@ id: feature-canonical-transcript-timestamp-ownership
 kind: feature
 stage: implementing
 tags: [app, pi-extension, bug]
-parent: null
+parent: epic-durable-transcript-ownership
 depends_on: []
 release_binding: null
 gate_origin: null
@@ -12,6 +12,13 @@ updated: 2026-08-03
 ---
 
 # Canonical transcript timestamp ownership (close the single-clock invariant)
+
+> **Rescoped 2026-08-03 under `epic-durable-transcript-ownership`.** The
+> durable-ownership architecture (custom-entry persistence) is now owned by
+> that epic. This feature is the **seed for the epic's F1 (durable foundation)
+> + F2 (timestamp payoff)**; `epic-design` will reconcile — likely splitting
+> Unit A (durable foundation) into F1 as a sibling feature. The 4 child stories
+> below remain a valid design sketch pending that decomposition.
 
 ## Brief
 
