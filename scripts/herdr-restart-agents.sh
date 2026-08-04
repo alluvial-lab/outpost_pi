@@ -54,7 +54,7 @@ export QUIT_WAIT_S POLL_DEADLINE_S
 export PANES_JSON="$(herdr pane list 2>/dev/null || true)"
 
 python3 - "$DRY" "${WRAPPERS[@]}" <<'PY'
-import json, os, subprocess, sys, time
+import json, os, signal, subprocess, sys, time
 
 dry = sys.argv[1] == "1"
 wrappers = set(sys.argv[2:])
@@ -109,18 +109,41 @@ for p in panes:
               ("./scripts/pi-restart-loop.sh" if use_wrapper else "herdr agent start --continue"))
         continue
 
-    # 1) graceful quit
-    run(["herdr","pane","send-text", pane, "/quit\n"])
-    # 2) wait for pi to actually exit
+    # 1) find the pane's pi PID
+    r = run(["herdr","pane","process-info","--pane", pane])
+    try:
+        procs = json.loads(r.stdout).get("result",{}).get("process_info",{}).get("foreground_processes",[])
+        pid = procs[0]["pid"] if procs else None
+    except Exception:
+        pid = None
+    if not pid:
+        print(f"  ✗ {label}: no pi PID found in pane {pane} — skipping")
+        continue
+
+    # 2) graceful SIGTERM — pi's SIGTERM handler runs session_shutdown
+    #    (publishes working=false, drains the relay) then exits. Same path the
+    #    hot-reload feature uses; NOT a kill -9.
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        print(f"  · {label}: pid {pid} already gone")
+    # 3) wait for the pid to actually exit
     deadline = time.time() + poll_deadline
+    gone = False
     while time.time() < deadline:
         time.sleep(1)
-        if not pane_still_running_pi(pane):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            gone = True
             break
-    else:
-        print(f"  ⚠ {label}: pi still running after {poll_deadline}s — sending Ctrl-C")
-        run(["herdr","pane","send-text", pane, "C-c"])  # best-effort; herdr may need literal C-c
-        time.sleep(quit_wait)
+    if not gone:
+        print(f"  ⚠ {label}: pid {pid} still alive after {poll_deadline}s — SIGKILL")
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    time.sleep(quit_wait)  # let the pane settle back to a shell prompt
     # 3) relaunch in the same pane
     if use_wrapper:
         cmd = f"cd {cwd} && ./scripts/pi-restart-loop.sh\n"
