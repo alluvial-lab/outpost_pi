@@ -100,6 +100,10 @@ for p in panes:
     if skip and ws in skip:
         print(f"[skip] {label} ({ws}) — in skip list")
         continue
+    status = p.get("agent_status", "")
+    if status not in ("idle", "done"):
+        print(f"[skip] {label} ({ws}) — agent_status={status!r} (in a turn / not idle) — deferring")
+        continue
 
     use_wrapper = any(cwd.rstrip("/").endswith(w) for w in wrappers)
     print(f"[restart] {label} ({ws}, pane {pane}, cwd {cwd}, wrapper={use_wrapper})")
@@ -144,12 +148,20 @@ for p in panes:
         except ProcessLookupError:
             pass
     time.sleep(quit_wait)  # let the pane settle back to a shell prompt
-    # 3) relaunch in the same pane
+    # 3) relaunch in the same pane. herdr agent names must be lowercase
+    #    (workspace ids like "wA" fail validation) and the start can race
+    #    herdr's pane-idle detection right after the SIGTERM, so retry once
+    #    after a short settle.
     if use_wrapper:
         cmd = f"cd {cwd} && ./scripts/pi-restart-loop.sh\n"
         r = run(["herdr","pane","send-text", pane, cmd])
     else:
-        r = run(["herdr","agent","start", ws, "--kind","pi","--pane", pane, "--","--continue"])
+        name = ws.lower()
+        r = run(["herdr","agent","start", name, "--kind","pi","--pane", pane, "--","--continue"])
+        if r.returncode != 0:
+            time.sleep(3)
+            r = run(["herdr","agent","start", name, "--kind","pi","--pane", pane, "--","--continue"])
     print(f"  {'✓' if r.returncode==0 else '✗'} relaunch rc={r.returncode}" +
           (f" ({r.stderr.strip()[:80]})" if r.returncode else ""))
+    time.sleep(2)  # let the next pane settle before we SIGTERM it
 PY
