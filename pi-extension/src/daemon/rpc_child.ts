@@ -52,7 +52,8 @@ export interface RpcChildExitEvent {
   isCrash: boolean;
 }
 
-export const EXIT_DAEMON_FRESH_SESSION = 42;
+/** Process-manager handshake requesting one restart without `--continue`. */
+export const EXIT_FRESH_SESSION = 42;
 
 /** Windows extensions `spawn` (without `shell`) can actually launch, in
  *  preference order: native `.exe` first, then the `.cmd`/`.bat` shims (run via
@@ -410,7 +411,7 @@ export class RpcChild extends EventEmitter {
     // Daemon app-action `/new`: child exits with a private code, supervisor
     // restarts it, and the next spawn omits --continue once to create a fresh
     // session. Later restarts go back to --continue.
-    if (code === EXIT_DAEMON_FRESH_SESSION) this.forceFreshSessionOnNextSpawn = true;
+    if (code === EXIT_FRESH_SESSION) this.forceFreshSessionOnNextSpawn = true;
     // A deliberate stop() kills by signal — not a crash, so the supervisor
     // must NOT auto-restart it. Only an UNexpected exit counts as a crash.
     const isCrash = !this._stopping && (code !== 0 || signal !== null);

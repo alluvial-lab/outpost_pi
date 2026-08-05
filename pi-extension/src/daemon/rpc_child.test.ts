@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EXIT_DAEMON_FRESH_SESSION, RpcChild, busyTransition, resolvePiBin, resolvePiSpawn, _npmShimTarget, rpcSpawnArgs, type RpcChildExitEvent } from "./rpc_child.js";
+import { EXIT_FRESH_SESSION, RpcChild, busyTransition, resolvePiBin, resolvePiSpawn, _npmShimTarget, rpcSpawnArgs, type RpcChildExitEvent } from "./rpc_child.js";
 
 /**
  * Regression for the orphaned-daemon bug: a deliberate `stop()` kills the
@@ -74,7 +74,7 @@ describe("RpcChild — daemon fresh-session recycle", () => {
       child.spawn();
       await waitForExit();
 
-      expect(first).toMatchObject({ code: EXIT_DAEMON_FRESH_SESSION, isCrash: true });
+      expect(first).toMatchObject({ code: EXIT_FRESH_SESSION, isCrash: true });
       expect(second.code).toBe(0);
 
       const spawns = JSON.parse(readFileSync(capture, "utf8")) as Array<{
