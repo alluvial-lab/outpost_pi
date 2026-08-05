@@ -184,6 +184,9 @@ async function runAsync(
 
 type SessionCompactMsg = Extract<ClientMessage, { type: "session_compact" }>;
 type SessionNewMsg = Extract<ClientMessage, { type: "session_new" }>;
+type SessionNewActionCtx = ActionCtx & {
+  newSession: NonNullable<ActionCtx["newSession"]>;
+};
 type ModelSetMsg = Extract<ClientMessage, { type: "model_set" }>;
 type ThinkingSetMsg = Extract<ClientMessage, { type: "thinking_set" }>;
 type ListModelsMsg = Extract<ClientMessage, { type: "list_models" }>;
@@ -212,7 +215,7 @@ export function handleSessionCompact(
  * @returns Whether a new session was created; cancellation and SDK failures reply with `action_error`.
  */
 export async function handleSessionNew(
-  ctx: ActionCtx | null,
+  ctx: SessionNewActionCtx,
   sender: ActionReplySender,
   msg: SessionNewMsg,
   onReplaced?: (freshCtx: ActionCtx) => void,
@@ -222,7 +225,6 @@ export async function handleSessionNew(
   // fan out an empty session_history) off this signal — a `cancelled`/errored
   // new-session must NOT reset, so we return runAsync's success boolean.
   return runAsync(sender, msg, "session_new", async () => {
-    if (!ctx?.newSession) throw new Error("newSession unavailable (no command ctx yet)");
     // newSession marks the caller's captured ctx (index.ts's `_lastCtx`) STALE
     // — reusing it later throws "stale after session replacement" (the
     // compact-after-New-session crash). `withSession` hands back a fresh,

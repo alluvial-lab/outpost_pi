@@ -117,7 +117,7 @@ import {
   sessionSockPath,
   skillsDir,
 } from "./session/global_config.js";
-import { EXIT_DAEMON_FRESH_SESSION } from "./daemon/rpc_child.js";
+import { EXIT_FRESH_SESSION } from "./daemon/rpc_child.js";
 import {
   defaultAgentName,
   loadLocalConfig,
@@ -712,6 +712,11 @@ export function _setSessionStartedAtForTest(ts: number | null): void {
 
 export function _getRemoteSessionIdForTest(): string | null {
   return _sdkSessionProjection.currentSessionIdForTest();
+}
+
+/** Test-only: simulate the pre-command state where no SDK context is captured. */
+export function _clearSdkContextsForTest(): void {
+  _sdkSessionProjection.clearStaleContexts();
 }
 
 export function _setRemoteSessionIdForTest(id: string | null): void {
@@ -2978,19 +2983,32 @@ export function _routeClientMessageFrom(
       break;
     case "session_new": {
       const actionCtx = _sdkSessionProjection.freshCommandActionCtx();
-      if (process.env["OUTPOST_PI_DAEMON"] === "1" && !actionCtx?.newSession) {
-        // Headless RPC daemon has no ExtensionCommandContext, so ctx.newSession
-        // is unavailable. Ack, rotate outpost-pi's session-scoped replay state,
-        // then exit with a private code; the supervisor restarts once without
-        // --continue, which creates a fresh Pi session. Later restarts resume
-        // that fresh session.
+      const newSession = actionCtx?.newSession;
+      if (!newSession) {
+        const restartManaged = process.env["OUTPOST_PI_DAEMON"] === "1"
+          || process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"] === "1";
+        if (!restartManaged) {
+          sender.send({
+            type: "action_error",
+            session_id: msg.session_id,
+            in_reply_to: msg.id,
+            action: "session_new",
+            error: "fresh_session_restart_unavailable: /new is not available in this agent mode",
+          });
+          break;
+        }
+        // Neither the headless daemon nor a pre-command interactive extension
+        // has ExtensionCommandContext. Ack and rotate session-scoped replay
+        // state before the owning supervisor/wrapper restarts exactly once
+        // without --continue. The wrapper env gate prevents a bare interactive
+        // process (including herdr-managed agents) from being killed.
         sender.send({ type: "action_ok", session_id: msg.session_id, in_reply_to: msg.id, action: "session_new" });
         _resetSessionForNew(msg.id);
-        setTimeout(() => process.exit(EXIT_DAEMON_FRESH_SESSION), 100);
+        setTimeout(() => process.exit(EXIT_FRESH_SESSION), 100);
         break;
       }
       void handleSessionNew(
-        actionCtx,
+        { ...actionCtx, newSession },
         sender,
         msg,
         (freshCtx) => {
