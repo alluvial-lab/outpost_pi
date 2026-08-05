@@ -127,16 +127,6 @@ describe("handleSessionNew", () => {
     });
   });
 
-  test("ctx without newSession → action_error + returns false (no reset)", async () => {
-    const sender = makeSender();
-    const created = await handleSessionNew({}, sender, { type: "session_new", id: "r2", session_id: "s1" });
-    expect(created).toBe(false);
-    expect(sender.sent[0]).toMatchObject({
-      type: "action_error",
-      error: expect.stringContaining("newSession unavailable"),
-    });
-  });
-
   test("re-captures the fresh withSession ctx via onReplaced (avoids stale ctx)", async () => {
     // Simulate the SDK invoking withSession with a fresh, command-capable ctx
     // bound to the replacement session — exactly what makes the captured ctx

@@ -14,6 +14,7 @@ import { FakeDeliveryDebugLog } from "./session/delivery_debug_log.test.js";
 import { fileURLToPath } from "node:url";
 import { createEventBus, type ExtensionAPI, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { resetOutpostPiRuntimeCoordinatorForTest } from "./extension/runtime_coordinator.js";
+import { EXIT_FRESH_SESSION } from "./daemon/rpc_child.js";
 import { decodeServer } from "./protocol/codec.js";
 import { createHash } from "node:crypto";
 import { ed25519 } from "@noble/curves/ed25519.js";
@@ -358,6 +359,7 @@ const {
   _setDisposedForTest,
   _setRemoteSessionIdForTest,
   _getRemoteSessionIdForTest,
+  _clearSdkContextsForTest,
   _hasMeshNodeForTest,
   _getLockedNameForTest,
   _resetCwdLockForTest,
@@ -2390,7 +2392,112 @@ describe("multi-channel broadcast (W2D)", () => {
     }
   });
 
-  test("daemon session_new ACKs and resets before exit 42; successor keeps room identity and publishes a fresh session", async () => {
+  test("wrapper-managed session_new without command ctx ACKs and resets before the shared fresh-session exit", async () => {
+    const peer = "owner-wrapper-session-new";
+    await _pairForTest(peer);
+    const oldSessionId = currentSessionIdFromSends();
+    const status = captureHandler("outpost-pi status");
+    await status("", makeMockCtx("/tmp/outpost-pi-wrapper-session-new"));
+    _clearSdkContextsForTest();
+    _setMessageBufferForTest([
+      { role: "user", content: "old wrapper history", timestamp: 1_700_001_000_100 },
+    ]);
+
+    const previousDaemonMode = process.env["OUTPOST_PI_DAEMON"];
+    const previousWrapperMode = process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+    const exitCodes: number[] = [];
+    const exit = vi.spyOn(process, "exit").mockImplementation((code?: number) => {
+      exitCodes.push(code ?? 0);
+      return undefined as never;
+    });
+    vi.useFakeTimers();
+    try {
+      delete process.env["OUTPOST_PI_DAEMON"];
+      process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"] = "1";
+      const order: string[] = [];
+      relayRef.current!.send.mockImplementation((raw: string) => {
+        const type = decodeSentCt(raw).inner.type;
+        if (type === "action_ok" || type === "session_history") order.push(type);
+      });
+
+      emitClientMessage(peer, {
+        type: "session_new",
+        id: "wrapper-new-1",
+        session_id: oldSessionId,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(order.indexOf("action_ok")).toBeGreaterThanOrEqual(0);
+      expect(order.indexOf("session_history")).toBeGreaterThan(order.indexOf("action_ok"));
+      expect(_getTranscriptEventsForTest()).toEqual([]);
+      expect(exitCodes).toEqual([]);
+
+      vi.advanceTimersByTime(100);
+      expect(exitCodes).toEqual([EXIT_FRESH_SESSION]);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      exit.mockRestore();
+      if (previousDaemonMode === undefined) delete process.env["OUTPOST_PI_DAEMON"];
+      else process.env["OUTPOST_PI_DAEMON"] = previousDaemonMode;
+      if (previousWrapperMode === undefined) delete process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+      else process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"] = previousWrapperMode;
+    }
+  });
+
+  test("unmanaged session_new without command ctx returns a structured error and never exits or resets", async () => {
+    const peer = "owner-unmanaged-session-new";
+    await _pairForTest(peer);
+    const oldSessionId = currentSessionIdFromSends();
+    const status = captureHandler("outpost-pi status");
+    await status("", makeMockCtx("/tmp/outpost-pi-unmanaged-session-new"));
+    _clearSdkContextsForTest();
+    _setMessageBufferForTest([
+      { role: "user", content: "history must survive rejected new", timestamp: 1_700_001_000_100 },
+    ]);
+    const oldEvents = _getTranscriptEventsForTest();
+    const sendsBefore = relayRef.current!.send.mock.calls.length;
+
+    const previousDaemonMode = process.env["OUTPOST_PI_DAEMON"];
+    const previousWrapperMode = process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    vi.useFakeTimers();
+    try {
+      delete process.env["OUTPOST_PI_DAEMON"];
+      delete process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+
+      emitClientMessage(peer, {
+        type: "session_new",
+        id: "unmanaged-new-1",
+        session_id: oldSessionId,
+      });
+      await vi.advanceTimersByTimeAsync(200);
+
+      const sent = sentToPeerSince(sendsBefore, peer).map(({ inner }) => inner);
+      expect(sent).toContainEqual({
+        type: "action_error",
+        session_id: oldSessionId,
+        in_reply_to: "unmanaged-new-1",
+        action: "session_new",
+        error: "fresh_session_restart_unavailable: /new is not available in this agent mode",
+      });
+      expect(sent.some((message) => message.type === "action_ok")).toBe(false);
+      expect(sent.some((message) => message.type === "session_history")).toBe(false);
+      expect(_getTranscriptEventsForTest()).toEqual(oldEvents);
+      expect(_getRemoteSessionIdForTest()).toBe(oldSessionId);
+      expect(exit).not.toHaveBeenCalled();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      exit.mockRestore();
+      if (previousDaemonMode === undefined) delete process.env["OUTPOST_PI_DAEMON"];
+      else process.env["OUTPOST_PI_DAEMON"] = previousDaemonMode;
+      if (previousWrapperMode === undefined) delete process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"];
+      else process.env["OUTPOST_PI_UNDER_RESTART_WRAPPER"] = previousWrapperMode;
+    }
+  });
+
+  test("daemon session_new ACKs and resets before the shared fresh-session exit; successor keeps room identity and publishes a fresh session", async () => {
     await _pairForTest("owner-daemon-session-new");
     const relay = relayRef.current!;
     const initialConnect = relay.connect.mock.calls[0]![0] as {
@@ -2400,6 +2507,7 @@ describe("multi-channel broadcast (W2D)", () => {
     const oldSessionId = currentSessionIdFromSends();
     const status = captureHandler("outpost-pi status");
     await status("", makeMockCtx(initialConnect.roomMeta.cwd));
+    _clearSdkContextsForTest();
 
     _setMessageBufferForTest([
       { role: "user", content: "old daemon history", timestamp: 1_700_001_000_100 },
@@ -2439,7 +2547,7 @@ describe("multi-channel broadcast (W2D)", () => {
       vi.advanceTimersByTime(99);
       expect(exitCodes).toEqual([]);
       vi.advanceTimersByTime(1);
-      expect(exitCodes).toEqual([42]);
+      expect(exitCodes).toEqual([EXIT_FRESH_SESSION]);
 
       // The successor is a fresh Pi session in the same daemon room. The
       // room id/config are held by the relay transport; session_start only
