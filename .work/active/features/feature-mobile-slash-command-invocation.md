@@ -11,204 +11,97 @@ created: 2026-08-04
 updated: 2026-08-04
 ---
 
-# Mobile slash-command invocation
+# Mobile command invocation (dedicated-ops model)
 
 ## Brief
 
-Let the mobile app issue **arbitrary pi slash commands** (`/new`, `/reload`,
-custom skills, extension commands like `/outpost-pi …`) — not just `newSession`.
-In-process via the **editor-seam** (`ctx.ui.setEditorComponent` + `editor.onSubmit`),
-which the spike proved reaches pi's native command parser generally (supports
-everything the TUI can type). Delivered through **two entry modes** (operator
-decision): a dedicated **command picker/sheet** AND **`/`-routing in the composer**.
-Unblocks the original `/new` bug (the `session_new` action retires in favor of
-issuing `/new` natively).
+Let the mobile app invoke the pi commands it actually needs — via **dedicated
+operations per command** (the Pi ecosystem's own pattern), NOT a general
+slash-command invoke (which the SDK does not provide) and NOT the fragile
+editor-seam (rejected on design review). Core deliverable: **`/new` works from
+mobile** by extending the daemon's restart-fresh approach to interactive agents.
+Plus a verify-first look at invoking the extension's own commands from mobile.
+Upstream host-operation API tracked as the long-term clean general solution.
 
-## Origin
+## How we got here (the editor-seam detour, recorded so it's not retried)
 
-- `.work/backlog/backlog-mobile-new-button-newsession-no-command-ctx.md` — the
-  `/new` bug + the confirmed root cause (mobile can't issue slash commands;
-  `sendMessage` → `_wakeAgent` prompt-injects, bypassing pi's command parser)
-  + the spike finding (editor-seam works in TUI mode; `pi.sendUserMessage("/x")`
-  does NOT; no supported SDK submit-input API).
-- The operator's criterion: a direction that also supports `/reload`, skills,
-  and extension commands — which the editor-seam satisfies (general parser
-  access) and restart-fresh does not (`/new` only).
+1. Origin: the `/new` bug — `newSession unavailable (no command ctx yet)`
+   (`.work/backlog/backlog-mobile-new-button-newsession-no-command-ctx.md`).
+2. Confirmed root cause: the mobile app can't issue slash commands — `sendMessage`
+   → `_wakeAgent` prompt-injects, bypassing pi's command parser.
+3. A spike found an editor-seam (`setEditorComponent` + `editor.onSubmit`) that
+   reaches pi's parser programmatically.
+4. A `gpt-5.6-sol` design review **killed the editor-seam**: not a transparent
+   proxy (history lost across `/reload`), `onSubmit` is a user-event callback
+   whose programmatic invoke can **clobber a TUI draft being composed**, no robust
+   ack, composer `/`-routing unsafe (unknown commands become model prompts).
+5. The operator's push ("surely others issue commands programmatically") led to
+   the real model: **dedicated operations per command** — the cockpit does exactly
+   this (`agent_composer.dart:470`: "Route a pure built-in (/new, /compact)
+   through its dedicated RPC"). The SDK gates session-control (`newSession`/
+   `fork`/`switch`/`reload`) behind `ExtensionCommandContext` — *"only safe in
+   user-initiated commands"* — while safe ops (`compact`/`abort`/`shutdown`) sit
+   on the base `ExtensionContext`. **That's why `compact` works from mobile but
+   `/new` doesn't: `compact()` is base-context; `newSession()` is command-gated
+   by design.** No general command-invoke API exists.
 
-## Design decisions (operator, 2026-08-04)
+## Rescoped direction
 
-- **Both entry modes:** (1) a dedicated command picker/sheet; (2) `/`-routing in
-  the existing composer.
-- **Mechanism: in-process editor-seam (a).** Long-term clean = (c) an upstream
-  host-operation/submit-input API in `@earendil-works/pi-coding-agent` (tracked,
-  not blocking). (d) restart-fresh rejected (`/new` only). (b) `process.stdin.emit`
-  remains a known stopgap, not the real answer.
-- **`session_new` action retires:** it maps to issuing `/new` via the seam; the
-  fragile `ctx.newSession()`/command-context path is removed.
+Drop "arbitrary slash commands, both modes." Deliver the commands mobile needs
+through the right dedicated path each:
 
-## Implementation Units
+| Need | Path | Story |
+|---|---|---|
+| **`/new`** (the original bug) | **restart-fresh**: interactive `session_new` (no command-ctx) acks + resets + exits with the fresh-session code; the process manager restarts **without `--continue`** (the daemon `EXIT_DAEMON_FRESH_SESSION` pattern, extended to interactive) | `…-restart-fresh-*` (core) |
+| **Extension commands** (`/outpost-pi …`) | the extension owns those handlers — verify whether they're callable from mobile without the command-context gate | `…-extension-command-invocation` (verify-first) |
+| Native safe ops (`/compact`, set_model, …) | already work via existing actions | n/a |
+| Arbitrary unknown commands | none, and unsafe | out of scope |
+| General durable solution | upstream host-operation API in `@earendil-works/pi-coding-agent` | tracked, not blocking |
 
-### Unit A — Transparent passthrough editor (extension) — RISKIEST
-**Story**: `story-mobile-slash-command-passthrough-editor`
-**Depends on**: none (foundation).
+## Child stories
 
-Install a custom editor via `ctx.ui.setEditorComponent(...)` that (1) **faithfully
-proxies the default editor** (rendering + key handling) so direct TUI typing in
-herdr panes is unaffected, and (2) exposes an inject seam (`editor.onSubmit(cmd)`)
-for programmatic command submission. Re-capture the editor ref across session
-replacement (`new`/`fork`/`reload` → fresh editor; refs go stale).
+- `story-new-session-restart-fresh-extension-exit` — interactive `session_new`
+  with no command-context → ack + reset + `process.exit(EXIT_FRESH_SESSION)`
+  (mirror the daemon path at `index.ts:2981`). `depends_on: []`.
+- `story-new-session-restart-fresh-restart-mechanism` — the process manager
+  restarts **without `--continue`** on that exit code: `pi-restart-loop.sh`
+  enhancement (outpost) **+** a mechanism for the 11 herdr-managed agents.
+  `depends_on: [extension-exit]`. **Key design risk** (below).
+- `story-mobile-extension-command-invocation` — verify-first whether the
+  extension's own commands can be invoked from mobile without the command-context
+  gate (per-command check of what context the handlers use). `depends_on: []`.
 
-**START by validating** the default editor can be obtained/wrapped (the SDK's
-`setEditorComponent` factory receives `(tui, theme, keybindings)` — confirm the
-default editor is constructable/delegatable). If a transparent wrap is NOT
-feasible (would require reimplementing the editor), STOP and escalate to (b)
-stdin-emit or (c) upstream — record the finding rather than ship a broken wrap.
+## Key design risk (the restart-mechanism story)
 
-**Acceptance:**
-- [ ] Direct TUI input is unaffected (type `/reload` in a herdr pane → pi reloads).
-- [ ] Programmatic `onSubmit("/new")` → pi starts a new session; `onSubmit("/reload")`
-      → pi reloads; an extension command round-trips.
-- [ ] Editor ref re-captured after session replacement (no stale-ref crash).
-- [ ] A validation note records the default-editor-wrap feasibility (the riskiest
-      assumption) before implementation proceeds.
+The daemon auto-restarts via its supervisor; **herdr-managed agents do NOT
+auto-restart on exit** (a SIGTERM'd agent sits at a bash pane until manually
+re-launched), and `herdr agent start -- …` resumes with `--continue`. So
+restart-fresh for the 11 herdr agents needs a real mechanism — candidates:
+- run **all 12 agents under the `pi-restart-loop` wrapper** (today only `outpost`
+  is), with the wrapper restarting without `--continue` on the fresh-session code;
+  or
+- a "fresh-session-requested" marker the next launch reads + drops `--continue`.
+This is the open design point for that story; resolve before implementing.
 
-### Unit B — Extension command-submission action + wire
-**Story**: `story-mobile-slash-command-extension-action`
-**Depends on**: [Unit A].
+## Out of scope (rejected)
 
-Expose a wire action (e.g. `slash_command { command }`, or extend the existing
-`session_new` to drive `/new`) that calls `editor.onSubmit(cmd)`. Ack/error:
-`onSubmit` returns `void` → confirm via lifecycle events (`session_start
-reason=new` for `/new`, etc.); map ack/timeout to a structured `action_ok`/
-`action_error`. Map `session_new` → `onSubmit("/new")` and retire the
-`ctx.newSession()`/command-context path (the original bug). Wire schema for the
-action (`protocol/schema/app-pi-client.schema.json` + dart fixture + regen).
+- The editor-seam (`setEditorComponent` + `onSubmit`) — killed by design review
+  (draft-clobber hazard, not a transparent proxy, no robust ack, unsafe composer
+  routing).
+- "Arbitrary slash commands / both modes" — the cockpit doesn't even do this;
+  the SDK has no general command-invoke API.
+- Retiring `session_new` — the daemon path + deploy-compat + the durable protocol
+  depend on it; keep it (the fix changes its interactive implementation, not its
+  wire contract).
+- Upstream host-operation API — tracked as the long-term clean general solution,
+  not blocked on.
 
-**Acceptance:**
-- [ ] App `slash_command("/reload")` → pi reloads; `session_new` → new session
-      (via `/new`, not the old fragile path).
-- [ ] Structured ack/error (success confirmed via lifecycle, not fire-and-forget).
-- [ ] `check:protocol` clean; the old `newSession unavailable` throw is gone.
+## Verification (per story at implement time)
 
-### Unit C — App composer `/`-routing
-**Story**: `story-mobile-slash-command-composer-routing`
-**Depends on**: [Unit B].
-
-When the user types a `/`-prefixed string in the composer and sends, route it as
-a **command** (the `slash_command` action) instead of `sendMessage` (which
-prompt-injects). Detect the `/` prefix at send time; route accordingly. Bare `/`
-or unknown commands still go to the parser (pi surfaces the error).
-
-**Acceptance:**
-- [ ] Typing `/reload` in the mobile composer → pi reloads (not sent to the agent
-      as a prompt).
-- [ ] Non-`/` input unchanged (still a normal prompt).
-
-### Unit D — App command picker/sheet
-**Story**: `story-mobile-slash-command-picker-sheet`
-**Depends on**: [Unit B] (parallel with C).
-
-A dedicated command-entry UI (browse/search + free-text) modeled on the existing
-quick-actions sheet. **Phase 1:** free-text command entry + a small set of common
-commands (`/new`, `/reload`, `/outpost-pi …`). **Phase 2 (follow-up):** full
-command-catalog enumeration (querying the extension for all available commands —
-native + extension-registered + skills), which needs a new command-catalog wire
-surface.
-
-**Acceptance:**
-- [ ] Picker lets the user select/type a command → invokes the `slash_command`
-      action; result surfaces in the transcript.
-- [ ] Phase-1 common-command set + free-text entry works end-to-end.
-
-## Implementation Order
-
-1. **A** (passthrough editor) — riskiest; **validate the default-editor wrap first**,
-   then implement. Gates everything.
-2. **B** (extension action + wire) — `depends_on` A.
-3. **C** and **D** (app both modes) — `depends_on` B; run in parallel.
-
-## Risks (pre-mortem)
-
-- **Riskiest assumption — transparent default-editor wrap.** `setEditorComponent`
-  replaces the editor; a custom editor that doesn't perfectly proxy rendering +
-  keys would degrade direct TUI typing. Unit A validates this before building;
-  if infeasible, escalate to (b) stdin-emit or (c) upstream.
-- **Editor-ref staleness** across session replacement — re-capture on `new`/`fork`/`reload`.
-- **`onSubmit` returns void** — ack via lifecycle events (latency + error detection
-  imprecision); design the ack contract carefully.
-- **TUI-only** — the editor-seam no-ops in RPC/daemon mode; the daemon keeps its
-  existing restart-fresh path for `/new` (unaffected).
-- **Command catalog** for the picker is phase 2 (needs a wire surface to enumerate
-  commands incl. skills).
-
-## Testing
-
-- **A:** harness test installing the passthrough editor → assert direct input
-  proxies + `onSubmit` reaches the parser + re-capture after replacement.
-- **B:** action dispatch → `onSubmit`; structured ack via lifecycle; the
-  `session_new` → `/new` mapping.
-- **C/D:** app tests for `/`-routing + picker invocation.
-- **E2E:** `/new`, `/reload`, and a custom skill all round-trip from mobile; the
-  original "New button" repro (post-restart/re-pair) now works.
-
-## Out of scope
-
-- The upstream SDK submit-input API (c) — tracked as the long-term clean
-  replacement; not blocked on.
-- Full command-catalog enumeration (picker phase 2).
-- Daemon-mode `/new` (unchanged — it keeps restart-fresh).
-
-## Design review (`gpt-5.6-sol`, xhigh) — RECONSIDER DIRECTION
-
-The editor-seam is **not a sound durable foundation** for a capability expected
-to survive SDK updates. Reverted to `drafting` pending direction. Key findings:
-
-1. **Not a transparent proxy.** `setEditorComponent`'s factory receives
-   `(tui, theme, keybindings)` but NOT the default editor instance;
-   `getEditorComponent()` returns the custom factory or undefined, not the
-   default. Installing a custom editor constructs a NEW editor copying only
-   selected state (text, callbacks, border, padding, autocomplete, app
-   handlers) — NOT history/full state; refs reset across `/reload`; conflicts
-   with other extensions' custom editors. So the design's "direct TUI
-   unaffected" guarantee is **invalid**.
-2. **`onSubmit` is a user-event callback, not an injection contract.** It's
-   documented as "called when user submits (e.g., Enter)"; programmatic
-   invocation works only because InteractiveMode assigns the default's handler
-   to the new component after the factory returns (an internal detail a future
-   SDK could change). **Hazard:** direct invocation bypasses the editor's
-   pre-clear, so a mobile `/new`/`/reload` can **clobber text being composed in
-   the TUI**.
-3. **No robust ack.** `session_start` carries no request id (concurrent local
-   `/new` indistinguishable); many commands give NO completion signal
-   (`/reload` warns+returns; extension-command exceptions are swallowed;
-   `/settings`/`/fork`/`/login` are local UI; `/quit` exits). "Lifecycle-confirmed
-   success" is over-promised; the durable protocol already says `action_ok` =
-   dispatch only.
-4. **Composer `/`-routing is unsafe.** `AgentSession.prompt()` does NOT error on
-   unknown commands — it falls through to **sending the slash-prefixed text to
-   the model as a prompt**. So `/tmp/file` or a typo becomes an agent prompt;
-   no way to send a literal `/` message; image behavior undefined. The picker
-   is safer as primary; raw composer routing needs an escape (`//text`) +
-   guards.
-5. **Don't retire `session_new`.** The daemon depends on it (ACK/reset/exit/
-   respawn-without-`--continue`); it's the compat path for staggered app/
-   extension deploys; the durable protocol deliberately chose curated typed
-   actions over a generic picker.
-6. **Phase-2 catalog can't enumerate native commands.** `getCommands()` exposes
-   only extension commands + templates + skills, NOT native TUI built-ins →
-   needs upstream work or a drifting handwritten list.
-
-**Recommended direction (reviewer):** the durable foundation is an **upstream
-host-operation/submit-input API** in `@earendil-works/pi-coding-agent`
-(`ExtensionAPI.submitHostInput(text) -> accepted|rejected|unsupported_in_mode`,
-or a narrower host-operation gateway) — the only option durable across SDK
-updates, mode-capable, with correlated ack. Until that exists: **retain typed
-actions (esp. `session_new`)**, keep daemon restart-fresh, and at most ship the
-editor-seam as a **version-pinned, TUI-only experimental bridge for a CURATED
-set** (e.g. `/new`, `/reload`), picker-only (not composer routing), behind
-capability gates, ack="submitted" only, with a pty test gated on every SDK
-upgrade. No supported `eventBus`/`input`-emitter/RPC command-invoke API was
-missed.
-
-**Decision pending operator:** upstream-first (durable, external timeline) vs.
-narrow curated editor-seam interim vs. park.
+- `/new` from mobile → fresh session (new `session_start reason=new`), no
+  `newSession unavailable` error; works for the wrapper agent AND herdr-managed
+  agents; `--continue`-resumed agents correctly go fresh on `/new`.
+- Extension tests (`corepack pnpm test`); the daemon `EXIT_DAEMON_FRESH_SESSION`
+  path unchanged (no regression).
+- Extension-command invocation (if the verify pans out): relevant `flutter test`
+  + a round-trip of an `/outpost-pi …` command from mobile.
