@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-slash-command-invocation
 kind: feature
-stage: implementing
+stage: drafting
 tags: [app, pi-extension, bug]
 parent: null
 depends_on: []
@@ -157,3 +157,58 @@ surface.
   replacement; not blocked on.
 - Full command-catalog enumeration (picker phase 2).
 - Daemon-mode `/new` (unchanged — it keeps restart-fresh).
+
+## Design review (`gpt-5.6-sol`, xhigh) — RECONSIDER DIRECTION
+
+The editor-seam is **not a sound durable foundation** for a capability expected
+to survive SDK updates. Reverted to `drafting` pending direction. Key findings:
+
+1. **Not a transparent proxy.** `setEditorComponent`'s factory receives
+   `(tui, theme, keybindings)` but NOT the default editor instance;
+   `getEditorComponent()` returns the custom factory or undefined, not the
+   default. Installing a custom editor constructs a NEW editor copying only
+   selected state (text, callbacks, border, padding, autocomplete, app
+   handlers) — NOT history/full state; refs reset across `/reload`; conflicts
+   with other extensions' custom editors. So the design's "direct TUI
+   unaffected" guarantee is **invalid**.
+2. **`onSubmit` is a user-event callback, not an injection contract.** It's
+   documented as "called when user submits (e.g., Enter)"; programmatic
+   invocation works only because InteractiveMode assigns the default's handler
+   to the new component after the factory returns (an internal detail a future
+   SDK could change). **Hazard:** direct invocation bypasses the editor's
+   pre-clear, so a mobile `/new`/`/reload` can **clobber text being composed in
+   the TUI**.
+3. **No robust ack.** `session_start` carries no request id (concurrent local
+   `/new` indistinguishable); many commands give NO completion signal
+   (`/reload` warns+returns; extension-command exceptions are swallowed;
+   `/settings`/`/fork`/`/login` are local UI; `/quit` exits). "Lifecycle-confirmed
+   success" is over-promised; the durable protocol already says `action_ok` =
+   dispatch only.
+4. **Composer `/`-routing is unsafe.** `AgentSession.prompt()` does NOT error on
+   unknown commands — it falls through to **sending the slash-prefixed text to
+   the model as a prompt**. So `/tmp/file` or a typo becomes an agent prompt;
+   no way to send a literal `/` message; image behavior undefined. The picker
+   is safer as primary; raw composer routing needs an escape (`//text`) +
+   guards.
+5. **Don't retire `session_new`.** The daemon depends on it (ACK/reset/exit/
+   respawn-without-`--continue`); it's the compat path for staggered app/
+   extension deploys; the durable protocol deliberately chose curated typed
+   actions over a generic picker.
+6. **Phase-2 catalog can't enumerate native commands.** `getCommands()` exposes
+   only extension commands + templates + skills, NOT native TUI built-ins →
+   needs upstream work or a drifting handwritten list.
+
+**Recommended direction (reviewer):** the durable foundation is an **upstream
+host-operation/submit-input API** in `@earendil-works/pi-coding-agent`
+(`ExtensionAPI.submitHostInput(text) -> accepted|rejected|unsupported_in_mode`,
+or a narrower host-operation gateway) — the only option durable across SDK
+updates, mode-capable, with correlated ack. Until that exists: **retain typed
+actions (esp. `session_new`)**, keep daemon restart-fresh, and at most ship the
+editor-seam as a **version-pinned, TUI-only experimental bridge for a CURATED
+set** (e.g. `/new`, `/reload`), picker-only (not composer routing), behind
+capability gates, ack="submitted" only, with a pty test gated on every SDK
+upgrade. No supported `eventBus`/`input`-emitter/RPC command-invoke API was
+missed.
+
+**Decision pending operator:** upstream-first (durable, external timeline) vs.
+narrow curated editor-seam interim vs. park.
