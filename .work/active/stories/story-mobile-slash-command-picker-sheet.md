@@ -1,7 +1,7 @@
 ---
 id: story-mobile-slash-command-picker-sheet
 kind: story
-stage: implementing
+stage: drafting
 tags: [app]
 parent: feature-mobile-slash-command-invocation
 depends_on: [story-mobile-slash-command-extension-action]
