@@ -1,7 +1,7 @@
 ---
 id: story-mobile-slash-command-passthrough-editor
 kind: story
-stage: implementing
+stage: drafting
 tags: [pi-extension]
 parent: feature-mobile-slash-command-invocation
 depends_on: []
