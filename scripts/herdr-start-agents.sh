@@ -1,61 +1,41 @@
 #!/usr/bin/env bash
 # herdr-start-agents.sh — start pi agents in existing Herdr workspaces.
 #
-# The workspaces are already created (w3-wE from herdr-setup.sh). This script
-# starts pi in each pane. Run from a shell outside the Herdr TUI.
+# COLD start: assumes each project pane is sitting at a bash prompt (no pi
+# running). Launches the pi-restart-loop wrapper in every project pane.
+#
+# Every agent runs under the wrapper (cwd-parameterized) so mobile /new and
+# hot-reload dist-refresh work on any session. Agents are discovered DYNAMICALLY
+# from `herdr pane list` — add/remove project panes freely; new ones auto-wrap.
+#
+# To convert ALREADY-RUNNING bare-pi agents to wrapped (without a full restart),
+# use wrap-agents.sh (turn-aware). Run this script from outside the Herdr TUI.
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 
-# Map workspace labels to pane IDs (from the herdr-setup.sh creation output).
-# For outpost, use the wrapper; for others, use herdr agent start --kind pi.
-declare -A WRAPPER=( [outpost]=1 )
+WRAPPER_SCRIPT="/home/agent/projects/outpost_pi/scripts/pi-restart-loop.sh"
 
-# Get all panes with their workspace labels
-panes_json=$(herdr pane list --json 2>/dev/null)
-
-# Parse and start agents
-echo "$panes_json" | python3 -c "
+herdr pane list | python3 -c "
 import sys, json, subprocess
-
-panes = json.load(sys.stdin)
+WRAPPER = '$WRAPPER_SCRIPT'
+panes = json.load(sys.stdin).get('result', {}).get('panes', [])
 for p in panes:
-    ws = p.get('workspace_label', p.get('workspace_id', ''))
-    pane_id = p['id']
     cwd = p.get('cwd', '')
-    label = ws
-
-    # Skip workspaces without a known project cwd
     if not cwd or '/home/agent/projects/' not in cwd:
         continue
-
-    use_wrapper = label == 'outpost'
+    pane_id = p.get('pane_id')
+    label = p.get('workspace_id', '?')
     print(f'[herdr-start] {label} ({pane_id}, {cwd})')
-
-    if use_wrapper:
-        # outpost: send the wrapper command to the pane
-        cmd = f\"cd {cwd} && ./scripts/pi-restart-loop.sh\"
-        result = subprocess.run(
-            ['herdr', 'pane', 'send-text', pane_id, cmd + '\n'],
-            capture_output=True, text=True
-        )
-        if result.returncode == 0:
-            print(f'  ✓ started pi under wrapper')
-        else:
-            print(f'  ✗ send-text failed: {result.stderr.strip()[:80]}')
+    cmd = f\"cd {cwd} && bash {WRAPPER}\"
+    result = subprocess.run(
+        ['herdr', 'pane', 'send-text', pane_id, cmd + '\n'],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        print(f'  \u2713 started pi under wrapper')
     else:
-        # Others: start as managed agent
-        result = subprocess.run(
-            ['herdr', 'agent', 'start', label, '--kind', 'pi', '--pane', pane_id, '--', '--continue'],
-            capture_output=True, text=True
-        )
-        if result.returncode == 0:
-            print(f'  ✓ started pi as managed agent')
-        else:
-            # Fallback: send pi --continue as text
-            subprocess.run(['herdr', 'pane', 'send-text', pane_id, 'pi --continue\n'],
-                          capture_output=True, text=True)
-            print(f'  ~ agent start failed, sent pi --continue as text')
+        print(f'  \u2717 send-text failed: {result.stderr.strip()[:80]}')
 " 2>&1
 
 echo "[herdr-start] done. Run 'herdr' to see agents in the sidebar."
