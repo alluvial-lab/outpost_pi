@@ -318,6 +318,53 @@ corepack pnpm build  # or: cd pi-extension && ./node_modules/.bin/tsc
 ./scripts/hot-reload.sh arm  # restart fires at next agent_settled
 ```
 
+### All agents under the restart wrapper (mobile-managed deploys)
+
+Every Herdr agent (all project panes) runs under `scripts/pi-restart-loop.sh`,
+which is **cwd-parameterized** (`CWD="${1:-$(pwd)}"`) so one copy serves every
+project. This puts two mobile capabilities on **any** session:
+
+- **`/new` (fresh session)** — the phone pairs once (all agents share one owner
+  identity at `~/.pi/remote/identity.json`); each agent is its own relay room
+  (`rooms.ts`, keyed by `(cwd, name)`); the app's home page lists them as
+  tappable session tiles. Switch to a session → tap **New** → that agent's pi
+  exits 42 → the wrapper relaunches once **without** `--continue` (fresh session).
+- **hot-reload dist refresh** — rebuild `dist/` once, then restart every agent
+  **with** `--continue` so sessions resume onto the new code.
+
+Both are **turn-aware**: the wrapper's hot-reload fires at `agent_settled` (the
+SDK idle boundary), and the scripts below skip any agent whose `agent_status`
+is `working`. Nothing interrupts a running turn. herdr does **not** supervise or
+auto-restart agents, so stopping/relaunching them is safe.
+
+#### Operational scripts (run from the repo root)
+
+| Script | When to use |
+|---|---|
+| `scripts/herdr-start-agents.sh` | **Cold start** — launches the wrapper in every project pane (panes at bash, no pi running). New project panes auto-wrap (dynamic discovery). |
+| `scripts/wrap-agents.sh` | **Hot convert** — cycles already-running bare-pi agents into the wrapper. Turn-aware + idempotent + dynamic. Re-run any time to catch newly-added or newly-idle agents. |
+| `scripts/refresh-dist.sh` | **Dist refresh** — rebuilds `dist/` (`tsc`) + restarts every wrapped agent **with** `--continue` (sessions resumed, new code live). The orchestrator running it restarts itself last via hot-reload arm (fires at `agent_settled`). |
+
+All three discover agents at runtime from `herdr pane list` — the agent count is
+irrelevant; add/remove projects freely.
+
+#### Mobile-managed deploy surface
+
+From the phone (talking to any agent, typically the outpost orchestrator), the
+operator manages every deploy except the phone app itself:
+
+- **Extension (`dist/`)** — "refresh dist" → run `scripts/refresh-dist.sh`.
+- **Relay** — "redeploy relay" → `docker build -t outpost-pi-relay:<v> relay/` +
+  stop/rm/re-run the container (see Relay container commands below).
+- **`/new` on any session** — switch in the app, tap New.
+- **App APK** — the one off-mobile surface (workstation + `adb`, see Sideload).
+
+**Agent guidance:** when the operator asks to "refresh dist", "redeploy the
+extension", or "restart the agents onto the new code", run
+`scripts/refresh-dist.sh`. When they ask to wrap a new or converted agent, run
+`scripts/wrap-agents.sh`. These supersede the single-agent hot-reload `arm`
+pattern above for multi-agent dist refreshes.
+
 ### Relay container commands
 
 ```bash
