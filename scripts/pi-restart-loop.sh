@@ -8,9 +8,9 @@
 # (exit 0 without a marker) and all other non-zero exits stop the loop.
 #
 # pi MUST run in the foreground (it's a TUI app — backgrounding it disconnects
-# the terminal and pi exits immediately). The marker is checked via glob after
-# pi exits; the PID in the filename is for the extension's tracking, the wrapper
-# just checks for presence of any recent marker.
+# the terminal and pi exits immediately). A foreground exec shim records the pi
+# child PID; after exit, the wrapper checks only that child's owner-only regular
+# marker. Foreign or malformed markers are never consumed.
 
 set -euo pipefail
 
@@ -21,12 +21,39 @@ CWD="${1:-$(pwd)}"
 if [ "${1:-}" = "$CWD" ]; then shift; fi
 PI_ARGS=("$@")
 REMOTE_DIR="${OUTPOST_PI_HOME:-$HOME/.pi/remote}"
+CHILD_PID_FILE="$(mktemp "${TMPDIR:-/tmp}/outpost-pi-child.XXXXXX")"
+trap 'rm -f -- "$CHILD_PID_FILE"' EXIT
 # Must match pi-extension/src/daemon/rpc_child.ts EXIT_FRESH_SESSION.
 EXIT_FRESH_SESSION=42
 # This is the extension's safety gate: only this wrapper and the daemon
 # supervisor are allowed to turn a mobile /new request into process exit.
 export OUTPOST_PI_UNDER_RESTART_WRAPPER=1
 fresh_launch=0
+
+stat_mode() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
+}
+
+stat_uid() {
+  stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1"
+}
+
+validate_marker() {
+  local path="$1" mode owner
+  [ ! -L "$path" ] && [ -f "$path" ] || return 1
+  mode="$(stat_mode "$path")"
+  owner="$(stat_uid "$path")"
+  [ "$mode" = "600" ] && [ "$owner" = "$(id -u)" ]
+}
+
+run_pi_foreground() {
+  local pid_file="$1"
+  shift
+  # The shim stays in the foreground and execs pi, so its recorded PID is the
+  # exact pi process PID without breaking TUI terminal ownership.
+  "$BASH" -c 'set -e; pid_file="$1"; shift; printf "%s\n" "$$" > "$pid_file"; exec pi "$@"' \
+    outpost-pi-child "$pid_file" "$@"
+}
 
 echo "[pi-restart-loop] cwd=$CWD args=${PI_ARGS[*]}"
 
@@ -35,17 +62,23 @@ cd "$CWD"
 while true; do
   # Run pi in the FOREGROUND so it gets the terminal (TUI requires it).
   # Backgrounding pi (+ wait) breaks the TUI — pi exits immediately.
+  : > "$CHILD_PID_FILE"
   set +e
   if [ "$fresh_launch" -eq 1 ]; then
     fresh_launch=0
-    pi "${PI_ARGS[@]}"
+    run_pi_foreground "$CHILD_PID_FILE" "${PI_ARGS[@]}"
   else
-    pi --continue "${PI_ARGS[@]}"
+    run_pi_foreground "$CHILD_PID_FILE" --continue "${PI_ARGS[@]}"
   fi
   exit_code=$?
   set -e
 
-  echo "[pi-restart-loop] pi exited with code $exit_code at $(date -u +%FT%TZ)"
+  child_pid="$(tr -d '[:space:]' < "$CHILD_PID_FILE")"
+  if ! [[ "$child_pid" =~ ^[0-9]+$ ]]; then
+    echo "[pi-restart-loop] could not determine exited pi child PID → stopping loop" >&2
+    break
+  fi
+  echo "[pi-restart-loop] pi pid=$child_pid exited with code $exit_code at $(date -u +%FT%TZ)"
 
   if [ "$exit_code" -eq "$EXIT_FRESH_SESSION" ]; then
     fresh_launch=1
@@ -54,24 +87,21 @@ while true; do
     continue
   fi
 
-  # Check for a restart marker (PID-scoped filename, globbed by the wrapper).
-  # Only a graceful exit (0) + a marker authorizes relaunch with --continue.
+  # Only a graceful exit (0) plus this exact child's validated marker authorizes
+  # relaunch. Foreign PID markers remain untouched for their owning wrappers.
   if [ "$exit_code" -eq 0 ]; then
-    marker=""
-    for f in "$REMOTE_DIR"/.restart-marker-*; do
-      # glob didn't match (no marker) → literal pattern string
-      [ -e "$f" ] || continue
-      [ -L "$f" ] && continue  # reject symlinks
-      marker="$f"
-      break
-    done
-    if [ -n "$marker" ]; then
+    marker="$REMOTE_DIR/.restart-marker-$child_pid"
+    if [ -e "$marker" ] || [ -L "$marker" ]; then
+      if ! validate_marker "$marker"; then
+        echo "[pi-restart-loop] refusing invalid restart marker for pid=$child_pid: $marker" >&2
+        break
+      fi
       rm -f -- "$marker"
       echo "[pi-restart-loop] restart marker consumed ($marker) → relaunching in 1s"
       sleep 1
       continue
     fi
-    echo "[pi-restart-loop] graceful exit without restart marker → stopping loop"
+    echo "[pi-restart-loop] graceful exit without restart marker for pid=$child_pid → stopping loop"
     break
   fi
 

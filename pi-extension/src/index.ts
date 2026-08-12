@@ -2684,8 +2684,8 @@ function _runtimeIdentityPath(): string {
 }
 
 function _restartMarkerPath(): string {
-  // PID-scoped so multi-pi wrappers don't consume each other's markers.
-  // The wrapper validates the marker against its child PID before relaunch.
+  // The foreground wrapper records the exact exec'd Pi child PID, then accepts
+  // only this owner-only regular marker after that child exits successfully.
   return join(_outpostPiRemoteDir(), `.restart-marker-${process.pid}`);
 }
 
