@@ -96,7 +96,15 @@ function _tryBind(sockPath: string): Promise<Server | null> {
     };
     server.once("error", () => settle(null));
     server.listen(sockPath, () => {
-      if (!usesNamedPipe()) chmodSync(sockPath, 0o600);
+      // Best-effort owner-only perms. The bind already succeeded, so a chmod
+      // failure must not crash acquisition. The socket file can disappear
+      // between `listen` binding it and this callback firing when a concurrent
+      // teardown sweeps the locks dir (e.g. the restart-sweep test's rmSync,
+      // or a rapid process restart) — ENOENT here was an unhandled error that
+      // turned ci.yml's unit run red. Guard it like the other chmod sites.
+      if (!usesNamedPipe()) {
+        try { chmodSync(sockPath, 0o600); } catch { /* best-effort — socket may be gone */ }
+      }
       settle(server);
     });
   });
