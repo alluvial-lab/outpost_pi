@@ -106,3 +106,16 @@ formalizing.
 - **App forward-compat:** Flutter warned the Android build will break in a future
   Flutter version (Kotlin-Gradle-Plugin usage in several plugins). Not a v0.4.0
   issue; park a migration item when convenient.
+
+## Post-ship: pairing-e2e CI red (regression, parked — NEXT FOCUSED FIX)
+
+After ship + push, `pairing-e2e` CI failed every run. **Initially misdiagnosed** as a
+parallel-contamination flake (wrong: `e2e/run-pairing.sh` already runs
+`flutter test --concurrency=1` — serial). Real bug: the pi-host emits **divergent
+room IDs** — status room `wc3B14rFnkrH` ≠ QR/pair-code room `KzJ3MohnQOvq`,
+deterministic, within-host; reproduced locally (`bash e2e/run-pairing.sh` → +12 -4,
+plus a 10s timeout). Regression from the done-work push (green-capable at `0023ccd`,
+red from `56c5701` onward). Characterized + parked →
+`backlog-pairing-e2e-room-id-divergence`. **CI is red on this; it is the next
+focused fix.** Lead: `pi-extension/src/pairing/qr.ts:113` is the QR room sink; the
+status-side counterpart + shared derivation diverge.
