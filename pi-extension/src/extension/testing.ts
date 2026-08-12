@@ -34,6 +34,15 @@ export interface OutpostPiTestHarness {
   connect(ctx: unknown): Promise<void>;
   stop(ctx: unknown): Promise<void>;
   state(): "idle" | "started" | "paired";
+  /**
+   * The room this Pi actually registered with the relay (`_myRoomId`), or `null`
+   * while idle (relay not yet started). Single source of truth for the
+   * App↔Pi room — derived from the mesh-assigned agent name, which may carry a
+   * broker collision suffix (`agent#2`, …) that a cwd/name re-derivation can
+   * NOT reconstruct. Test harnesses MUST read this rather than re-deriving the
+   * room, or they pair on a room the Pi never announced.
+   */
+  roomId(): string | null;
   routeClientMessage(message: ClientMessage, ctx: Pick<ExtensionContext, "abort">): void;
 }
 

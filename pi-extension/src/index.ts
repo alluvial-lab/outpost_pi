@@ -887,6 +887,17 @@ function getStateForTest(): "idle" | "started" | "paired" {
   return _owners.activeCount() > 0 ? "paired" : "started";
 }
 
+/**
+ * Test-only: the room this Pi currently has registered with the relay, or `null`
+ * while idle. Gates on `_state` because `_goIdle` clears the relay session but
+ * does not clear `_myRoomId` — returning the stale room while idle would violate
+ * the accessor's contract. Authoritative App↔Pi room — see
+ * `OutpostPiTestHarness.roomId`.
+ */
+function getRoomIdForTest(): string | null {
+  return _state === "idle" ? null : _myRoomId;
+}
+
 /** Test-only: number of owners currently attached through managed owner channels. */
 export const _getActivePeerCountForTest = (): number => ownerHarness.activeOwnerCount();
 
@@ -3078,6 +3089,7 @@ export const outpostPiTestHarness: OutpostPiTestHarness = createOutpostPiTestHar
   connect: (ctx) => connectForTest(ctx),
   stop: (ctx) => stopForTest(ctx),
   state: () => getStateForTest(),
+  roomId: () => getRoomIdForTest(),
   routeClientMessage: (message, ctx) => routeClientMessageForTest(message, ctx),
 });
 

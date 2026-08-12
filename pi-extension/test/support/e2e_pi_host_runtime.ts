@@ -39,7 +39,11 @@ export interface PiHostTurnControlStatus {
 
 type ProductionModule = {
   default: ExtensionFactory;
-  outpostPiTestHarness: { state(): "idle" | "started" | "paired" };
+  outpostPiTestHarness: {
+    state(): "idle" | "started" | "paired";
+    /** The room this Pi actually registered with the relay; null while idle. */
+    roomId(): string | null;
+  };
 };
 
 type LoadExtensionFromFactory = (
@@ -160,7 +164,15 @@ export class E2ePiHostRuntime {
       generation: this.generation,
       state,
       sessionId: this.sessionManager.getSessionId(),
-      roomId: roomIdFor(this.cwd, "e2e-agent"),
+      // Read the room the production extension ACTUALLY registered with the
+      // relay — do NOT re-derive it. The registered room is derived from the
+      // mesh-assigned agent name, which may carry a broker collision suffix
+      // (e.g. `e2e-agent#2`) that a `(cwd, "e2e-agent")` re-derivation cannot
+      // reconstruct. Re-deriving here diverged from the QR/pair-code room and
+      // turned every `*.roomId == status.roomId` e2e assertion red whenever a
+      // collision occurred. The idle fallback is the no-mesh derivation (config
+      // agent name, no suffix possible) and is never the asserted state.
+      roomId: this.production.outpostPiTestHarness.roomId() ?? roomIdFor(this.cwd, "e2e-agent"),
       relayConnected: state !== "idle",
       sessionContextHasMessageActions: this.sessionContextHasMessageActions,
     };
