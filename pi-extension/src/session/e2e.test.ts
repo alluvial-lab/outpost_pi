@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { setTimeout as wait } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -476,6 +476,32 @@ describe("ACK protocol (plan/25 Wave 0)", () => {
     const prior = statSync(`${audit}.1`).size;
     expect(active).toBeLessThanOrEqual(256 * 1024);
     expect(prior).toBeLessThanOrEqual(256 * 1024);
+    await orq.leave();
+  });
+
+  test("audit rotation drops an oversized pre-hardening active log", async () => {
+    const sock = tmpSock();
+    const auditDir = mkdtempSync(join(tmpdir(), "pi-audit-upgrade-bound-"));
+    const audit = join(auditDir, "audit.jsonl");
+    const orq = await makePeer(sock, "orq", audit);
+    const broker = orq.localBroker()!;
+    const ceiling = 256 * 1024;
+
+    await wait(40);
+    writeFileSync(audit, "x".repeat(ceiling + 1));
+    writeFileSync(`${audit}.1`, "p".repeat(ceiling));
+    expect(broker.injectFromRemote({
+      from: "casa:legacy",
+      to: "orq",
+      id: "audit-upgrade-regression",
+      re: null,
+      body: { ignored: "payload" },
+    })).toBe("received");
+    await wait(40);
+
+    expect(statSync(audit).size).toBeLessThanOrEqual(ceiling);
+    expect(existsSync(`${audit}.1`)).toBe(false);
+    expect(readFileSync(audit, "utf8")).toContain('"id":"audit-upgrade-regression"');
     await orq.leave();
   });
 
