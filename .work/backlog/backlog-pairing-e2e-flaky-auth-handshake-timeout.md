@@ -9,11 +9,15 @@ depends_on: []
 # pairing-e2e flaky 10s auth-handshake timeout (CI-runner-specific)
 
 ## Status
-**OPEN.** Pre-existing (ci.yml + pairing-e2e were both red before the
-2026-08-12 session). Distinct from `backlog-pairing-e2e-room-id-divergence`
-(that one is FIXED). The room fix UNMASKED this one — tests now reach the
-actual pairing path instead of failing fast at the room assertion, so this
-latent flakiness surfaces on more runs.
+**ROOT-CAUSED + FIX LANDED (2026-08-12).** See session-note
+`2026-08-12-pairing-e2e-room-divergence-fix.md`. The relay wrote tracing to
+`std::io::stdout` synchronously on the tokio worker thread; under the e2e's
+connection churn a full CI stdout pipe blocked workers, starving WS handshake
+tasks. Fix: route stdout through `tracing_appender::non_blocking` (relay/src/main.rs),
+like the file path already did. Relay unit tests green. Validating on CI over
+multiple runs (flake was ~30%, dev-VM-unreproducible). Keep this open until CI
+is stably green; if it recurs, the surfaced relay+pi-host logs (e2e/run-pairing.sh)
+will re-diagnose.
 
 ## Symptom
 `pairing-e2e` CI job fails ~20-40% of runs with `TimeoutException after

@@ -75,37 +75,39 @@ was `_tryBind` (leader_election.ts) chmod'ing the bound lock socket
 unguarded; a concurrent teardown `rmSync` removed it first → ENOENT. Guarded
 the chmod (best-effort, like other sites). ci.yml unit job now **GREEN**.
 
-## OPEN: pairing-e2e flaky 10s auth-handshake timeout
-After the two fixes above, `bash e2e/run-pairing.sh` is reliably green LOCALLY
-(6 consecutive green runs), but the **CI** `pairing-e2e` job still fails
-~20-40% of runs with `TimeoutException after 0:00:10` on a **different test
-each run** (owner_channel negative tests, session_hydration, cross_room, even
-the first test). This is **pre-existing** (ci.yml+pairing-e2e were both red
-before this session's push) and **orthogonal** to the room fix (the app pairs
-on the QR room, unaffected by status.roomId).
+## OPEN→ROOT-CAUSED+FIXED: pairing-e2e flaky 10s auth-handshake timeout
+After the two fixes above, `bash e2e/run-pairing.sh` was reliably green LOCALLY
+(6+ runs) but the **CI** `pairing-e2e` job still failed ~20-40% of runs with
+`TimeoutException after 0:00:10` on a **different test each run**. Pre-existing
+(ci.yml+pairing-e2e were both red before this session) and orthogonal to the
+room fix.
 
-**Symptom localization:** the stall is in the app's relay WS auth handshake
-(`WsTransport.connect`, `app/lib/data/transport/ws_transport.dart`). The app
-receives the relay's preauth challenge (`[ws-in] bytes=75 stage=preauth`), sends
-its signed auth, and sets `authDone=true` **optimistically — without waiting for
-relay confirmation**. It then proceeds to `performPairing` (pair_request),
-which stalls the full 10s if the relay never accepted the auth. The relay's
-`HANDSHAKE_STEP_TIMEOUT = 5s` (`relay/src/resource_limits.rs`); if the app's
-auth lands >5s after the challenge the relay closes and the app stalls.
+**Root cause (confirmed via surfaced CI relay logs):** the relay wrote `tracing`
+to `std::io::stdout` SYNCHRONOUSLY on the tokio worker thread (`relay/src/main.rs:init_tracing`).
+Under the e2e's connection churn (auth/disconnect per restart + per-event
+presence/rooms/room_meta broadcasts), when the CI stdout pipe (log collector)
+fills, that write blocks the worker. A blocked worker starves WS handshake tasks:
+a peer's `handle_peer` stops being polled, so neither its auth nor the 5s
+`HANDSHAKE_STEP_TIMEOUT` fires — and the app's optimistic `authDone=true`
+(ws_transport.dart, set WITHOUT relay confirmation) proceeds to pair_request on
+an unauthed connection, stalling the full 10s.
 
-**Could not reproduce locally** (6 green runs on this VM, prebuilt + source) to
-capture the failing run's relay logs. The CI runner (faster/different
-scheduling) hits it; this VM doesn't.
+Decisive evidence: failing connections produced NO relay log line at all — not
+`authenticated`, not `auth failed`, not even `phase=auth handshake step failed`
+(which the timer MUST emit if the task is ever polled). No panics. Did NOT
+reproduce on the dev VM (slower machine, faster stdout drain) — required the
+CI-capture path (e2e/run-pairing.sh now surfaces relay+pi-host logs on failure).
 
-**Next step to root-cause:** run the e2e on CI with `RUST_LOG=info,relay=debug`
-AND surface the relay log on failure (run-pairing.sh currently writes it to a
-scrubbed file that isn't in CI stdout). Then check whether the failing run's
-relay logged `authenticated … room=main` (app authed → stall is post-auth, e.g.
-firehose backpressure from accumulated stale peers) or `warn phase=auth
-handshake step failed, closing` (app auth timed out at 5s → the app's auth send
-is being starved on the CI runner). Candidate fixes depend on which: tighten /
-priority-send the app auth, or relax the relay handshake bound, or make the app
-fail-fast on relay close instead of stalling 10s.
+**Fix:** route stdout through `tracing_appender::non_blocking` (a dedicated
+appender thread), exactly as the file path already did when
+`OUTPOSTPI_RELAY_LOG_DIR` is set. The worker only pushes to a channel; it never
+blocks on stdout (worst case a few log lines drop under extreme backpressure —
+acceptable; the e2e asserts no relay log content). stdout now always returns a
+WorkerGuard so buffered records flush on shutdown.
+
+**Validating:** CI (the flake is dev-VM-unreproducible). Relay unit tests green
+(fmt/clippy/20 tests). The diagnostic log-surfacing in run-pairing.sh is kept
+until CI is stably green, then revert it.
 
 **Do NOT bump the e2e 10s timeouts to mask this** — that hides a real race.
 
