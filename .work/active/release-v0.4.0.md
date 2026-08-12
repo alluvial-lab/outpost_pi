@@ -28,7 +28,9 @@ post-v0.3.0 backlog of completed gate findings plus the real feature/fix arcs.
   (feature + 4 stories, `implementing`) and 6 `drafting` items — incomplete work
   is not bound.
 
-## Bound items (60)
+## Bound items (66)
+
+> 60 items from the initial bind + 4 autopilot-drain blockers + 2 Phase 8 completion fixes (see Gate runs).
 
 ### Features & fixes (13)
 - feature-canonical-transcript-ordering
@@ -115,4 +117,15 @@ Both are legitimately in-flight children excluded from this release; they will
 bind to a later release when they reach `done`.
 
 ## Gate runs
-<pending — Phase 4>
+
+**Tiered-gate trial (2026-08-12)** — first cut under the tiered model (evaluation tracked in backlog-idea-evaluate-tiered-release-gates): full gates (security / tests / refactor / cruft / docs / patterns) on the 13 feature items; security-only regression on the 14 security-origin items.
+
+Raw findings (pre-dedupe): refactor 4H/1M · security 0H/3M · security-regression 2H/2M/1L (12 of 14 prior fixes held) · tests 4H/1M · cruft 1H/4M · docs 3H/4M/1L · patterns 4 candidates.
+
+Deduped to 6 distinct High root causes:
+- 5 genuine v0.4.0 blockers — restart-marker cross-process race; broker audit-log oversized-predecessor regression; launchd plist-not-unlinked regression; hot-reload recoverable-delivery doc drift; (+Phase 8) refresh-dist marker mode, launchd deactivation postcondition.
+- 1 cluster (5 highs) routed to the in-flight `canonical-transcript-timestamp-ownership` arc (NOT blocking v0.4.0).
+
+Disposition: 6 bound fix stories driven to `done` via autopilot drain + Phase 8 (all verified, tests green, commits bbecb92/92c5c3f/caf9e8d/ebbac4c/b4c33ca/96b2faf). 3 deferred items + the timestamp cluster + 14 mediums/lows + 4 pattern candidates → `.work/backlog/`.
+
+**Phase 8 completion review (standard weight, one pass):** 2 material blockers found in the drain fixes (refresh-dist marker mode; launchd deactivation postcondition) — both fixed + verified; 2 lower-risk parked (marker handoff race; audit-test fixed-sleep flake).
