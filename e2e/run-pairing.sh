@@ -104,18 +104,18 @@ REDACTION_STATUS=$?
 set -e
 
 if [[ "$FLUTTER_STATUS" -ne 0 ]]; then
-  # Surface the relay auth-handshake sequence on failure so CI can diagnose
-  # flaky pairing timeouts WITHOUT a local repro (the relay log is already a
-  # check-redaction input, so this structural grep is redaction-safe; it goes
-  # to stderr, which the tee'd FLUTTER_LOG does not capture). The key question:
-  # did the app's relay WS auth complete? `authenticated ... room=main` => yes
-  # (stall is post-auth); `phase=auth handshake step failed` => the app's auth
-  # missed the relay's 5s HANDSHAKE_STEP_TIMEOUT.
-  echo "===== relay auth-handshake diagnostics (flutter failed) =====" >&2
-  grep -E "handshake step failed|auth failed|duplicate auth|phase=|authenticated" \
-    "$RELAY_LOG" | tail -200 >&2 || true
-  echo "===== relay disconnect/order diagnostics (tail) =====" >&2
-  tail -60 "$RELAY_LOG" >&2 || true
+  # Surface the relay + pi-host sequence on failure so CI can diagnose
+  # flaky pairing timeouts WITHOUT a local repro (both logs are already
+  # check-redaction inputs — structural only, no payload; this goes to stderr,
+  # which the tee'd FLUTTER_LOG does not capture). Open questions for the next
+  # failure: (1) did the app's relay WS auth complete? `authenticated ... room=main`
+  # vs `phase=auth handshake step failed` vs `auth failed`. (2) did pair_request
+  # reach the pi-host and what did it do? See the pi-host log tail.
+  echo "===== relay auth/handshake/conn diagnostics (flutter failed) =====" >&2
+  grep -E "handshake step failed|auth failed|duplicate auth|phase=|authenticated|upgrade failed|WebSocket|reset|close" \
+    "$RELAY_LOG" | tail -120 >&2 || true
+  echo "===== pi-host diagnostics (tail 120) =====" >&2
+  tail -120 "$PI_HOST_LOG" >&2 || true
   exit "$FLUTTER_STATUS"
 fi
 if [[ "$REDACTION_STATUS" -ne 0 ]]; then
