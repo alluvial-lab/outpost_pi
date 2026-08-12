@@ -108,11 +108,12 @@ esac`,
     );
   });
 
-  test("an own marker relaunches while a foreign marker remains for its wrapper", () => {
+  test("a refresh-dist marker relaunches under the default umask while a foreign marker remains", () => {
     const foreignPid = process.pid;
     runRestartHarness(
       `if [ "$count" -eq 1 ]; then
-  (umask 077; : > "$OUTPOST_PI_HOME/.restart-marker-$$")
+  umask 022
+  python3 -c 'import os, sys; fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600); os.fchmod(fd, 0o600); os.close(fd)' "$OUTPOST_PI_HOME/.restart-marker-$$"
   (umask 077; : > "$OUTPOST_PI_HOME/.restart-marker-${foreignPid}")
 fi
 exit 0`,
@@ -133,10 +134,10 @@ exit 0`,
     });
   });
 
-  test("an insecure matching marker is rejected and left untouched", () => {
+  test("a group-readable matching marker is rejected and left untouched", () => {
     runRestartHarness(
       `: > "$OUTPOST_PI_HOME/.restart-marker-$$"
-chmod 644 "$OUTPOST_PI_HOME/.restart-marker-$$"
+chmod 640 "$OUTPOST_PI_HOME/.restart-marker-$$"
 exit 0`,
       ({ capture, remoteDir }) => {
         expect(launches(capture)).toEqual(["1|--continue --model test-model"]);

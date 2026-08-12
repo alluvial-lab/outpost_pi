@@ -99,7 +99,12 @@ for p in panes:
         failed.append(label)
         continue
     print(f'[hot]  {label:<6} ({pane}, pid {pid}) marker + SIGTERM → --continue')
-    open(f'{REMOTE}/.restart-marker-{pid}', 'w').close()
+    marker_path = f'{REMOTE}/.restart-marker-{pid}'
+    marker_fd = os.open(marker_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(marker_fd, 0o600)
+    finally:
+        os.close(marker_fd)
     run('kill', '-TERM', str(pid))
     ok = False
     for _ in range(20):
