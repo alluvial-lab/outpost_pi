@@ -1,7 +1,7 @@
 ---
 id: gate-docs-hot-reload-recoverable-delivery-drift
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, docs]
 parent: null
 depends_on: []
@@ -24,3 +24,16 @@ Docs/comments claim restart fires "after the response fully streams to the app" 
 
 ## Remediation direction
 Align AGENTS.md and the code comments with reality: restart fires at settlement, and final-frame receipt is not acknowledged; the recoverable/resend contract is aspirational future work (tracked in backlog-recoverable-delivery-resend-contract). Fix the quiescing comment to say delivery_error (not delivery_pending) and the resend-on-reconnect caveat. No code-contract change in this item.
+
+## Implementation notes
+- Execution capability: inline host execution; the bounded docs/comment-only correction had no coordination need.
+- Review weight: standard (project default), using the required bounded inline standalone-story review with no independent reviewer.
+- Files changed: `AGENTS.md` and `pi-extension/src/index.ts` now describe settlement rather than delivery acknowledgement, distinguish failed-send behavior from `delivery_pending`, and identify automatic resend as aspirational.
+- Tests added/removed: none; this item intentionally changes no code contract.
+- Verification: re-read the edited text against `_sendDeliveryError` (`internal_error`), `_sendDeliveryPending`, and the hot-reload settlement path; `git diff --check` passed.
+- Simplification: removed contradictory recoverable-delivery claims rather than adding another explanatory layer.
+- Discrepancies from design: none.
+- Adjacent issues parked: none; the existing `backlog-recoverable-delivery-resend-contract` remains the future contract owner.
+
+## Bounded inline review
+Approved. The durable guidance and local comments now state the implemented behavior without implying an end-to-end acknowledgement or automatic resend, and no runtime behavior changed.

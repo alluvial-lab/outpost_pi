@@ -2544,16 +2544,15 @@ async function _deliverUserMessage(
   mode: "auto" | "normal" = "auto",
 ): Promise<void> {
   // Hot-reload owns the next settled boundary. Reject rather than enqueueing a
-  // prompt that could begin after the graceful shutdown has been requested;
-  // the delivery_pending response is recoverable by the app on reconnect. This
-  // does not recover an input that was already accepted by the relay but never
-  // reached Pi; the app's reconnect/session_sync path is the correctness backstop
-  // for that roughly two-second shutdown window.
+  // prompt that could begin after graceful shutdown has been requested. This is
+  // a delivery-error response, not delivery_pending: the exiting process cannot
+  // replay the input, and the app does not yet resend it automatically. The
+  // reconnect/session_sync path only rehydrates output after the restart.
   if (_hotReloading) {
-    // Do NOT send delivery_pending (which promises replay the extension cannot
-    // honor — the process is about to exit). Send a recoverable delivery_error
-    // so the app knows the message was not delivered and can resend after the
-    // restart reconnect. session_sync recovers output; input must be resent.
+    // Do NOT send delivery_pending, which promises replay the extension cannot
+    // honor. _sendDeliveryError currently reports a failed send; the operator
+    // must resend the input after reconnect until the recoverable resend contract
+    // is implemented.
     _sendDeliveryError(sender, msg.id, "agent is restarting for extension hot-reload; resend after reconnect");
     return;
   }
