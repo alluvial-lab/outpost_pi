@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension]
 parent: feature-protocol-contract-discriminator-registry
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: refactor
 created: 2026-07-24
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # Session projection re-enumerates generated server message types

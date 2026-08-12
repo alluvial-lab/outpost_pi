@@ -5,10 +5,10 @@ stage: done
 tags: [security, pi-extension]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: security
 created: 2026-07-01
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # File name validation misses Windows path separators

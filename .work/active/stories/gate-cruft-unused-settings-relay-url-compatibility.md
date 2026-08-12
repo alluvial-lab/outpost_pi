@@ -5,10 +5,10 @@ stage: done
 tags: [app, cleanup]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: cruft
 created: 2026-07-20
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # Remove unused Settings relay-URL compatibility projection
