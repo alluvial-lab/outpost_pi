@@ -126,43 +126,76 @@ export function legacyLaunchdCleanup(uid: number, home: string = homedir()): Arr
   ];
 }
 
+function _isLaunchdServiceLoaded(uid: number, label: string, log: string[]): boolean {
+  const args = ["print", `gui/${uid}/${label}`];
+  try {
+    execFileSync("launchctl", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    log.push(`$ launchctl ${args.join(" ")}`);
+    return true;
+  } catch (error) {
+    const err = error as { stderr?: Buffer | string; status?: number; message: string };
+    const stderr = typeof err.stderr === "string" ? err.stderr : err.stderr?.toString() ?? "";
+    if (err.status === 113 || /could not find (?:specified )?service/i.test(stderr)) {
+      log.push(`$ launchctl ${args.join(" ")} (not loaded)`);
+      return false;
+    }
+    throw new Error(
+      `unable to verify legacy launchd service state: \`launchctl ${args.join(" ")}\` ` +
+      `exited ${err.status ?? "?"}\n${stderr.trim() || err.message}`,
+    );
+  }
+}
+
 /**
  * Deactivate the pre-rebrand launchd service and remove its persisted plist.
  *
  * Missing launchctl registrations and an absent plist are idempotent success.
- * A plist that exists but cannot be removed is a blocking cleanup failure:
- * leaving it discoverable would allow launchd to resurrect the legacy daemon.
+ * Installation remains blocked unless the persisted plist is absent and a
+ * post-cleanup launchctl probe confirms the legacy label is no longer loaded.
  *
- * @throws `Error` when the legacy plist exists but cannot be removed.
+ * @throws `Error` when the plist cannot be removed, the label remains loaded,
+ * or launchctl cannot verify the postcondition.
  */
 export function cleanupLegacyLaunchdService(
   uid: number,
   log: string[],
   home: string = homedir(),
   run: (cmd: string, args: string[]) => void = (cmd, args) => _tryExec(cmd, args, log),
+  isLoaded: (uid: number, label: string, log: string[]) => boolean = _isLaunchdServiceLoaded,
 ): void {
   for (const step of legacyLaunchdCleanup(uid, home)) run(step.cmd, step.args);
-  log.push(`deactivated legacy launchd service if loaded (${LEGACY_LAUNCHD_LABEL})`);
 
   const legacyPath = legacyLaunchdPlistPath(home);
+  let legacyPlistExists = true;
   try {
     lstatSync(legacyPath);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw new Error(`failed to inspect legacy launchd plist ${legacyPath}: ${String(error)}`);
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") legacyPlistExists = false;
+    else throw new Error(`failed to inspect legacy launchd plist ${legacyPath}: ${String(error)}`);
   }
-  try {
-    unlinkSync(legacyPath);
-  } catch (error) {
-    throw new Error(`failed to remove legacy launchd plist ${legacyPath}: ${String(error)}`);
+
+  if (legacyPlistExists) {
+    try {
+      unlinkSync(legacyPath);
+    } catch (error) {
+      throw new Error(`failed to remove legacy launchd plist ${legacyPath}: ${String(error)}`);
+    }
+    try {
+      lstatSync(legacyPath);
+      throw new Error(`failed to remove legacy launchd plist ${legacyPath}: file still exists after unlink`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    log.push(`removed legacy launchd plist ${legacyPath}`);
   }
-  try {
-    lstatSync(legacyPath);
-    throw new Error(`failed to remove legacy launchd plist ${legacyPath}: file still exists after unlink`);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+
+  if (isLoaded(uid, LEGACY_LAUNCHD_LABEL, log)) {
+    throw new Error(
+      `legacy launchd service remains loaded after deactivation (${LEGACY_LAUNCHD_LABEL}); ` +
+      "refusing to activate the replacement supervisor",
+    );
   }
-  log.push(`removed legacy launchd plist ${legacyPath}`);
+  log.push(`deactivated legacy launchd service (${LEGACY_LAUNCHD_LABEL})`);
 }
 
 /** systemd --user unit name (with `.service`) for the supervisor. */

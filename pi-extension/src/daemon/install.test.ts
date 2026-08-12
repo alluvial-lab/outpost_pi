@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 
@@ -17,7 +17,9 @@ import {
   findOutpostPiScript,
   findTemplate,
   isOnPath,
+  installService,
   launchdPlistPath,
+  LEGACY_LAUNCHD_LABEL,
   legacyLaunchdCleanup,
   legacyLaunchdPlistPath,
   linkCliBinaries,
@@ -249,11 +251,18 @@ describe("legacyLaunchdCleanup", () => {
       mkdirSync(dirname(legacyPath), { recursive: true });
       writeFileSync(legacyPath, "legacy plist");
 
-      cleanupLegacyLaunchdService(501, log, home, (cmd, args) => { commands.push({ cmd, args }); });
+      cleanupLegacyLaunchdService(
+        501,
+        log,
+        home,
+        (cmd, args) => { commands.push({ cmd, args }); },
+        () => false,
+      );
 
       expect(commands).toEqual(legacyLaunchdCleanup(501, home));
       expect(existsSync(legacyPath)).toBe(false);
       expect(log).toContain(`removed legacy launchd plist ${legacyPath}`);
+      expect(log).toContain(`deactivated legacy launchd service (${LEGACY_LAUNCHD_LABEL})`);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
@@ -267,6 +276,79 @@ describe("legacyLaunchdCleanup", () => {
       expect(() => cleanupLegacyLaunchdService(501, [], home, () => undefined))
         .toThrow(/failed to remove legacy launchd plist/);
       expect(existsSync(legacyPath)).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test.skipIf(process.platform === "win32")("blocks installation when launchctl still reports the legacy supervisor loaded", () => {
+    const home = mkdtempSync(join(tmpdir(), "pi-legacy-launchd-install-"));
+    const binDir = join(home, "bin");
+    const supervisor = join(home, "supervisord.js");
+    const activated = join(home, "replacement-activated");
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    const originalHome = process.env["HOME"];
+    const originalPath = process.env["PATH"];
+    const originalActivated = process.env["OUTPOST_TEST_ACTIVATED"];
+    try {
+      mkdirSync(binDir);
+      writeFileSync(supervisor, "// supervisor stub\n");
+      const launchctl = join(binDir, "launchctl");
+      writeFileSync(launchctl, `#!/usr/bin/env bash
+if [ "$1" = "print" ]; then exit 0; fi
+if [ "$1" = "bootstrap" ]; then : > "$OUTPOST_TEST_ACTIVATED"; exit 0; fi
+exit 1
+`);
+      chmodSync(launchctl, 0o755);
+      Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+      process.env["HOME"] = home;
+      process.env["PATH"] = `${binDir}:${originalPath ?? ""}`;
+      process.env["OUTPOST_TEST_ACTIVATED"] = activated;
+
+      expect(() => installService({
+        node: process.execPath,
+        supervisor,
+        home,
+        user: "tester",
+        path: process.env["PATH"],
+        vbs: "",
+        logPath: join(home, "supervisord.log"),
+      })).toThrow(/legacy launchd service remains loaded/);
+      expect(existsSync(activated)).toBe(false);
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, "platform", originalPlatform);
+      if (originalHome === undefined) delete process.env["HOME"];
+      else process.env["HOME"] = originalHome;
+      if (originalPath === undefined) delete process.env["PATH"];
+      else process.env["PATH"] = originalPath;
+      if (originalActivated === undefined) delete process.env["OUTPOST_TEST_ACTIVATED"];
+      else process.env["OUTPOST_TEST_ACTIVATED"] = originalActivated;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("does not log deactivation when the legacy supervisor remains loaded", () => {
+    const home = mkdtempSync(join(tmpdir(), "pi-legacy-launchd-loaded-"));
+    const legacyPath = legacyLaunchdPlistPath(home);
+    const commands: Array<{ cmd: string; args: string[] }> = [];
+    const log: string[] = [];
+    try {
+      mkdirSync(dirname(legacyPath), { recursive: true });
+      writeFileSync(legacyPath, "legacy plist");
+
+      expect(() => cleanupLegacyLaunchdService(
+        501,
+        log,
+        home,
+        (cmd, args) => { commands.push({ cmd, args }); },
+        (uid, label) => {
+          expect([uid, label]).toEqual([501, LEGACY_LAUNCHD_LABEL]);
+          return true;
+        },
+      )).toThrow(/legacy launchd service remains loaded/);
+      expect(commands).toEqual(legacyLaunchdCleanup(501, home));
+      expect(existsSync(legacyPath)).toBe(false);
+      expect(log.some((line) => line.includes("deactivated legacy launchd service"))).toBe(false);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
