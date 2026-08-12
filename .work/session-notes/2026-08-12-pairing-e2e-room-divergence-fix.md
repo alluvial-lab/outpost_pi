@@ -75,7 +75,7 @@ was `_tryBind` (leader_election.ts) chmod'ing the bound lock socket
 unguarded; a concurrent teardown `rmSync` removed it first → ENOENT. Guarded
 the chmod (best-effort, like other sites). ci.yml unit job now **GREEN**.
 
-## OPEN→ROOT-CAUSED+FIXED: pairing-e2e flaky 10s auth-handshake timeout
+## OPEN (root-cause-elusive): pairing-e2e flaky 10s auth-handshake timeout
 After the two fixes above, `bash e2e/run-pairing.sh` was reliably green LOCALLY
 (6+ runs) but the **CI** `pairing-e2e` job still failed ~20-40% of runs with
 `TimeoutException after 0:00:10` on a **different test each run**. Pre-existing
@@ -105,9 +105,15 @@ blocks on stdout (worst case a few log lines drop under extreme backpressure —
 acceptable; the e2e asserts no relay log content). stdout now always returns a
 WorkerGuard so buffered records flush on shutdown.
 
-**Validating:** CI (the flake is dev-VM-unreproducible). Relay unit tests green
-(fmt/clippy/20 tests). The diagnostic log-surfacing in run-pairing.sh is kept
-until CI is stably green, then revert it.
+**Validating:** CI (the flake is dev-VM-unreproducible). The non-blocking stdout
+fix is a correct improvement and is KEPT, but it did NOT eliminate the flake —
+the first post-fix CI run was green, a rerun failed with the same no-log pattern.
+Ruled out: blocking stdout (fixed, flake persists), `std::thread::sleep`
+(`#[cfg(test)]`-only), sync `register` (fully async), panics (none). Most likely
+remaining cause is **runner-level CPU contention** (2-CPU GitHub runner runs
+relay+pi-host+toxiproxy+flutter, intermittently starving the relay's tokio
+runtime; never reproduces on the dev VM). Relay unit tests green (fmt/clippy/20).
+The diagnostic log-surfacing in run-pairing.sh is kept for the next attempt.
 
 **Do NOT bump the e2e 10s timeouts to mask this** — that hides a real race.
 
