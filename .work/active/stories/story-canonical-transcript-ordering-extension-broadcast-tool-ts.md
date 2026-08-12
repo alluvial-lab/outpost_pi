@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension, bug]
 parent: feature-canonical-transcript-ordering
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: null
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-11
 ---
 
 # Extension broadcasts canonical server ts on live tool frames

@@ -5,10 +5,10 @@ stage: done
 tags: [refactor, app]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: patterns
 created: 2026-07-24
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # pair_request_flow decodes the untrusted pairing response with raw jsonDecode
