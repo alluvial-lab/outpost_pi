@@ -5,10 +5,10 @@ stage: done
 tags: [bug, pi-extension, lifecycle]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: null
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # App's working indicator stuck true after a session shutdown during an active turn

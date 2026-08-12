@@ -5,10 +5,10 @@ stage: done
 tags: [relay, security]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: security
 created: 2026-07-19
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # Presence offline timestamps retain attacker-created peer identities forever

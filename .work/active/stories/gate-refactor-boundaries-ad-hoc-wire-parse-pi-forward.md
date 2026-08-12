@@ -5,10 +5,10 @@ stage: done
 tags: [relay]
 parent: feature-boundary-typed-decoders
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: refactor
 created: 2026-07-12
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # Parse mesh-members blobs through a typed boundary DTO
