@@ -260,9 +260,9 @@ handshake (not exit code 42).
    - checks daemon exclusion (`OUTPOST_PI_DAEMON=1` → skip)
    - checks the toggle + PID-scoped armed request (`.hot-reload-armed-<PID>`)
    - verifies the nonce (PID-reuse protection) + checks expiry (5min)
-   - sets a `_hotReloading` quiescing gate (rejects new messages as
-     recoverable `delivery_error`, NOT `delivery_pending` — the process is
-     exiting, so replay is impossible; the app resends on reconnect)
+   - sets a `_hotReloading` quiescing gate (rejects new messages with a
+     delivery-error response, NOT `delivery_pending` — the exiting process
+     cannot replay them, and automatic resend on reconnect is not implemented)
    - rechecks `ctx.isIdle()` (a run may have started between `agent_settled`
      firing and the handler running)
    - claims exclusively via `O_CREAT|O_EXCL` on `.claimed-<PID>`
@@ -275,11 +275,13 @@ handshake (not exit code 42).
    `.restart-marker-<child-PID>`: present → consume + relaunch `pi --continue`
    with a fresh ESM cache. Absent (normal `/quit`) → stop. Non-zero (crash) → stop.
 
-**Honest guarantee**: the response is handed to the relay before disconnect, but
-end-to-end receipt is NOT acknowledged — the app rehydrates via `session_sync` on
-reconnect (~2s). Input sent during the ~2s restart window is rejected with a
-recoverable error; the app should resend on reconnect (app-side resend-on-recoverable
-is a future improvement).
+**Honest guarantee**: restart is triggered at the SDK's settled boundary, not by
+an end-to-end delivery acknowledgement. The final response may have been handed
+to the relay before disconnect, but receipt is not acknowledged; the app
+rehydrates output via `session_sync` on reconnect (~2s). Input rejected during
+the restart window is currently a failed send that the operator must resend.
+Automatic recoverable delivery and resend-on-reconnect remain aspirational work
+tracked by `backlog-recoverable-delivery-resend-contract`.
 
 ```bash
 # Start pi under the restart loop (run once):
@@ -305,9 +307,10 @@ hot-reload; use `kill -TERM` only for a clean stop.
 **Agent workflow (for code agents working on the extension via mobile):**
 After editing extension source and rebuilding `dist/`, arm the hot-reload as the
 LAST bash command in the turn (after the build succeeds). The restart fires at
-`agent_settled` — after the response fully streams to the app. The agent's turn
-completes normally; the operator sees ~2s of relay offline, then the app
-reconnects to the fresh process. Do NOT call `process.exit` or `kill` directly;
+`agent_settled`, after Pi's turn/retry/compaction work settles; this is not an
+acknowledgement that the response reached the app. The agent's turn completes
+normally; the operator sees ~2s of relay offline, then the app reconnects to the
+fresh process. Do NOT call `process.exit` or `kill` directly;
 the arm command is the only safe trigger. If the toggle is off, arm is a no-op
 (warns); enable it first with `/outpost-pi hot-reload on` or
 `./scripts/hot-reload.sh on`.
