@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension, workflow]
 parent: feature-mobile-slash-command-invocation
 depends_on: [story-new-session-restart-fresh-extension-exit]
-release_binding: null
+release_binding: v0.4.0
 gate_origin: null
 created: 2026-08-04
-updated: 2026-08-04
+updated: 2026-08-11
 ---
 
 # /new from mobile: restart-without-continue mechanism (wrapper)

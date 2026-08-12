@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension]
 parent: feature-lifecycle-disposal-async-void
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: refactor
 created: 2026-07-01
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # Relay auth timeout leaves its challenge listener attached
