@@ -74,51 +74,50 @@ Start small. Current tags:
 
 ## Releases
 
-This fork ships per-component semver. Components and their tag prefixes:
+This fork ships a **single unified product version** (`vX.Y.Z`) covering the
+whole Outpost-Pi product. All items bind to the one product release regardless
+of which component they touch. Components still deploy as independent artifacts
+(docker image, APK, extension `dist/`, desktop install) and may carry their own
+artifact identifiers (`outpost-pi-relay:0.4`, app `versionName`), but those are
+deploy details recorded in the release — not separate substrate releases.
 
-| Component | Tag prefix | Current shipped |
-|-----------|-----------|----------------|
-| `app` (Flutter mobile) | `app-v` | `app-v0.1.0` |
-| `cockpit` (Flutter desktop) | `cockpit-v` | `cockpit-v0.1.0` |
-| `pi-extension` (Node/TS daemon) | `extension-` (no `v`) | `extension-0.1.0` |
-| `relay` (Rust relay) | `relay-` (no `v`) | `relay-0.1.0` |
-| repo (cross-cutting / docs / research) | `v` | `v0.1.0` |
+The fork reset to `0.1.0` at the Outpost-Pi rebrand (`release-v0.1.0`,
+2026-07-12). Earlier pre-rebrand tags (`app-v1.x`, `cockpit-v1.x`,
+`extension-0.5.x`, `relay-0.1.0`, `v0.4.0`/`v0.5.0`/`v0.6.0`) were deleted; the
+retained item bodies for those old generations were relocated to
+`.work/releases-pre-rebrand/` as historical record.
 
-The fork reset all components to `0.1.0` at the Outpost-Pi rebrand
-(`release-v0.1.0`, 2026-07-12). Earlier pre-rebrand component tags
-(`app-v1.x`, `cockpit-v1.x`, `extension-0.5.x`, `relay-0.1.0`, `v0.4.0`/`v0.5.0`/`v0.6.0`)
-were deleted; the retained item bodies for those old generations were
-relocated to `.work/releases-pre-rebrand/` as historical record.
+**Why unified (changed 2026-08-11).** Per-component semver was inherited
+convention, but this is a single-operator product whose components are
+wire-paired (app↔relay↔extension↔cockpit cut together) and co-deployed — they
+move in lockstep, so independent component versions were ceremony without
+independence. Cross-cutting work forced a repo-level release *alongside*
+component cuts, and the operator ended up cutting both `vX.Y.Z` and
+`app-vX.Y.Z`/`cockpit-vX.Y.Z` for the same batch. Unified versioning collapses
+that to one release event. Component tags are retained on items for
+routing/scan purposes but no longer split the release. Per-component semver
+would regain its value only if components gained independent external consumers
+pinning each one. (Historical per-component releases under `.work/releases/` —
+`app-v0.2.0`/`v0.3.0`, `cockpit-v0.2.0`/`v0.3.0`, `extension-0.2.0`,
+`relay-0.2.0` — remain as record.)
 
-**Why the relocation.** work-view resolves `--release <version>` by scanning
-`.work/`, `.work/active/`, `.work/archive/`, and `.work/releases/`
+**Why the pre-rebrand relocation.** work-view resolves `--release <version>`
+by scanning `.work/`, `.work/active/`, `.work/archive/`, and `.work/releases/`
 (recursively) for matching `release_binding:` frontmatter values. Pre-rebrand
-versions share exact version numbers with the post-rebrand series (e.g. relay
-climbs back to `relay-0.2.0`; extension will re-hit `extension-0.5.4`/
-`extension-0.6.0`; app re-hits `app-v1.1.1`/`app-v1.2.0`; etc.), so any retained
-item still carrying a pre-rebrand binding value would be silently swept into a
-future release's gate scope + readiness check at the version collision — a
-landmine far from cause. Moving them out of the scanned tiers
+versions share exact version numbers with the post-rebrand series, so any
+retained item still carrying a pre-rebrand binding value would be silently
+swept into a future release's gate scope + readiness check at the version
+collision — a landmine far from cause. Moving them out of the scanned tiers
 (`.work/releases-pre-rebrand/` is a top-level sibling, invisible to
 work-view) removes the whole collision class. Do not move pre-rebrand
 release artifacts back into `.work/releases/` or `.work/archive/`.
 
-### Attribution rule
+### Attribution rule (unified)
 
-A release binds only items touching its component. Attribution is by `tags:`
-frontmatter, not by path:
-
-- **Exactly one component tag** (`app` / `cockpit` / `pi-extension` / `relay`) →
-  that component's release.
-- **Multiple component tags, or none** → repo-level `vX.Y.Z`.
-- **Docs/research deliverables** (`tags:` includes `research` or `docs` but no
-  component code changed) → repo-level, even when nominally about one component.
-  They are not component code changes.
-
-`release-deploy <version>` is invoked once per component version. The bind
-(Phase 3 gather) is filtered to that component's items by the attribution rule
-above — cross-component and docs/research items go to the repo-level release,
-not whichever component release is running.
+All items bind to the single product release `vX.Y.Z` regardless of component
+tags. `release-deploy <version>` is invoked once per product version.
+Component tags on items are retained for routing/scan filtering but no longer
+split items across component releases.
 
 ### Release config
 
