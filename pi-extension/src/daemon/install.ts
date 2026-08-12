@@ -111,15 +111,60 @@ export function launchdPlistPath(): string {
 export const LAUNCHD_LABEL = "dev.outpostpi.supervisord";
 export const LEGACY_LAUNCHD_LABEL = "dev.remotepi.supervisord";
 
-/** Return the idempotent pre-rebrand launchd cleanup commands for one user. */
+/** Return the pre-rebrand launchd plist path for one user. */
+export function legacyLaunchdPlistPath(home: string = homedir()): string {
+  return join(home, "Library", "LaunchAgents", `${LEGACY_LAUNCHD_LABEL}.plist`);
+}
+
+/** Return the idempotent pre-rebrand launchd deactivation commands for one user. */
 export function legacyLaunchdCleanup(uid: number, home: string = homedir()): Array<{ cmd: string; args: string[] }> {
-  const legacyPath = join(home, "Library", "LaunchAgents", `${LEGACY_LAUNCHD_LABEL}.plist`);
+  const legacyPath = legacyLaunchdPlistPath(home);
   return [
     { cmd: "launchctl", args: ["bootout", `gui/${uid}/${LEGACY_LAUNCHD_LABEL}`] },
     { cmd: "launchctl", args: ["bootout", `gui/${uid}`, legacyPath] },
     { cmd: "launchctl", args: ["unload", legacyPath] },
   ];
 }
+
+/**
+ * Deactivate the pre-rebrand launchd service and remove its persisted plist.
+ *
+ * Missing launchctl registrations and an absent plist are idempotent success.
+ * A plist that exists but cannot be removed is a blocking cleanup failure:
+ * leaving it discoverable would allow launchd to resurrect the legacy daemon.
+ *
+ * @throws `Error` when the legacy plist exists but cannot be removed.
+ */
+export function cleanupLegacyLaunchdService(
+  uid: number,
+  log: string[],
+  home: string = homedir(),
+  run: (cmd: string, args: string[]) => void = (cmd, args) => _tryExec(cmd, args, log),
+): void {
+  for (const step of legacyLaunchdCleanup(uid, home)) run(step.cmd, step.args);
+  log.push(`deactivated legacy launchd service if loaded (${LEGACY_LAUNCHD_LABEL})`);
+
+  const legacyPath = legacyLaunchdPlistPath(home);
+  try {
+    lstatSync(legacyPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw new Error(`failed to inspect legacy launchd plist ${legacyPath}: ${String(error)}`);
+  }
+  try {
+    unlinkSync(legacyPath);
+  } catch (error) {
+    throw new Error(`failed to remove legacy launchd plist ${legacyPath}: ${String(error)}`);
+  }
+  try {
+    lstatSync(legacyPath);
+    throw new Error(`failed to remove legacy launchd plist ${legacyPath}: file still exists after unlink`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  log.push(`removed legacy launchd plist ${legacyPath}`);
+}
+
 /** systemd --user unit name (with `.service`) for the supervisor. */
 export const SYSTEMD_UNIT = "outpost-pi-supervisord.service";
 /** Windows Task Scheduler task name (plan/40). */
@@ -252,8 +297,7 @@ export function installService(vars: RenderVars = defaultRenderVars()): InstallR
     // `launchctl bootstrap` errors out otherwise. `bootout` is the modern
     // API; `unload` is the legacy fallback. Either may fail silently.
     const uid = userInfo().uid;
-    for (const step of legacyLaunchdCleanup(uid)) _tryExec(step.cmd, step.args, log);
-    log.push(`removed legacy launchd service if present (${LEGACY_LAUNCHD_LABEL})`);
+    cleanupLegacyLaunchdService(uid, log);
     _tryExec("launchctl", ["bootout", `gui/${uid}`, unitPath], log);
     _tryExec("launchctl", ["unload", unitPath], log);
     _exec("launchctl", ["bootstrap", `gui/${uid}`, unitPath], log);
