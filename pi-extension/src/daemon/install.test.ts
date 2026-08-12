@@ -9,6 +9,7 @@ const posixOnly = process.platform === "win32";
 import {
   buildCmdShim,
   buildElevatedCmd,
+  cleanupLegacyLaunchdService,
   defaultRenderVars,
   detectPlatform,
   findNodeBinary,
@@ -18,6 +19,7 @@ import {
   isOnPath,
   launchdPlistPath,
   legacyLaunchdCleanup,
+  legacyLaunchdPlistPath,
   linkCliBinaries,
   renderTemplate,
   systemdUnitPath,
@@ -236,6 +238,38 @@ describe("legacyLaunchdCleanup", () => {
       { cmd: "launchctl", args: ["bootout", "gui/501", "/Users/tester/Library/LaunchAgents/dev.remotepi.supervisord.plist"] },
       { cmd: "launchctl", args: ["unload", "/Users/tester/Library/LaunchAgents/dev.remotepi.supervisord.plist"] },
     ]);
+  });
+
+  test("deactivates the legacy service and deletes its plist from disk", () => {
+    const home = mkdtempSync(join(tmpdir(), "pi-legacy-launchd-"));
+    const legacyPath = legacyLaunchdPlistPath(home);
+    const commands: Array<{ cmd: string; args: string[] }> = [];
+    const log: string[] = [];
+    try {
+      mkdirSync(dirname(legacyPath), { recursive: true });
+      writeFileSync(legacyPath, "legacy plist");
+
+      cleanupLegacyLaunchdService(501, log, home, (cmd, args) => { commands.push({ cmd, args }); });
+
+      expect(commands).toEqual(legacyLaunchdCleanup(501, home));
+      expect(existsSync(legacyPath)).toBe(false);
+      expect(log).toContain(`removed legacy launchd plist ${legacyPath}`);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("fails cleanup when an existing legacy plist cannot be unlinked", () => {
+    const home = mkdtempSync(join(tmpdir(), "pi-legacy-launchd-blocked-"));
+    const legacyPath = legacyLaunchdPlistPath(home);
+    try {
+      mkdirSync(legacyPath, { recursive: true });
+      expect(() => cleanupLegacyLaunchdService(501, [], home, () => undefined))
+        .toThrow(/failed to remove legacy launchd plist/);
+      expect(existsSync(legacyPath)).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 
