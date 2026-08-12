@@ -9,15 +9,17 @@ depends_on: []
 # pairing-e2e flaky 10s auth-handshake timeout (CI-runner-specific)
 
 ## Status
-**ROOT-CAUSED + FIX LANDED (2026-08-12).** See session-note
-`2026-08-12-pairing-e2e-room-divergence-fix.md`. The relay wrote tracing to
-`std::io::stdout` synchronously on the tokio worker thread; under the e2e's
-connection churn a full CI stdout pipe blocked workers, starving WS handshake
-tasks. Fix: route stdout through `tracing_appender::non_blocking` (relay/src/main.rs),
-like the file path already did. Relay unit tests green. Validating on CI over
-multiple runs (flake was ~30%, dev-VM-unreproducible). Keep this open until CI
-is stably green; if it recurs, the surfaced relay+pi-host logs (e2e/run-pairing.sh)
-will re-diagnose.
+**OPEN — root-cause-elusive after deep investigation (2026-08-12).** See session-note
+`2026-08-12-pairing-e2e-room-divergence-fix.md`. The blocking-stdout fix landed
+as a correct improvement but did NOT fix this flake. Failing connections'
+relay auth still produces NO log line (`authenticated`/`auth failed`/
+`phase=auth handshake step failed`) = the `handle_peer` task is intermittently
+unpolled. Ruled out: blocking stdout (fixed), `std::thread::sleep` (test-only),
+sync `register` (it's fully async), panics (none). Most likely remaining cause:
+**runner-level CPU contention** — a 2-CPU GitHub runner runs relay+pi-host+
+toxiproxy+flutter, intermittently starving the relay's tokio runtime (never
+reproduces on the dev VM, which has more headroom). Diagnostics in place
+(e2e/run-pairing.sh surfaces relay+pi-host logs on failure) for the next attempt.
 
 ## Symptom
 `pairing-e2e` CI job fails ~20-40% of runs with `TimeoutException after
