@@ -593,7 +593,13 @@ export class Broker {
       if (currentBytes > 0 && currentBytes + bytes > BROKER_AUDIT_MAX_BYTES) {
         const previous = `${this.auditPath}.1`;
         await unlink(previous).catch(() => undefined);
-        await rename(this.auditPath!, previous);
+        if (currentBytes <= BROKER_AUDIT_MAX_BYTES) {
+          await rename(this.auditPath!, previous);
+        } else {
+          // Drop an unbounded pre-hardening log instead of preserving it as the
+          // predecessor and carrying the oversized segment forward indefinitely.
+          await unlink(this.auditPath!);
+        }
       }
       await appendFile(this.auditPath!, line, "utf8");
     });
