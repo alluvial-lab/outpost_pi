@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension, workflow]
 parent: feature-extension-hot-reload-via-process-restart
 depends_on: [story-hot-reload-agent-settled-hook-and-wrapper]
-release_binding: null
+release_binding: v0.4.0
 gate_origin: null
 created: 2026-07-31
-updated: 2026-07-31
+updated: 2026-08-11
 ---
 
 # Hot-reload: lifecycle fence + M2/M4 hardening

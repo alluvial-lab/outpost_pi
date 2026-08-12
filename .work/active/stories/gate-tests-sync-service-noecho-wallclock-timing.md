@@ -5,10 +5,10 @@ stage: done
 tags: [testing, app]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: tests
 created: 2026-07-24
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # sync_service no-echo cases race the production 60ms timer under load

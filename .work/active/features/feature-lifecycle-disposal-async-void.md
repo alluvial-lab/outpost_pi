@@ -5,10 +5,10 @@ stage: done
 tags: [pi-extension, app, lifecycle]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: refactor
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # Lifecycle disposal + unguarded-async-void convergence

@@ -5,10 +5,10 @@ stage: done
 tags: [app, bug]
 parent: feature-canonical-transcript-ordering
 depends_on: [story-canonical-transcript-ordering-app-consume-tool-ts]
-release_binding: null
+release_binding: v0.4.0
 gate_origin: null
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-11
 ---
 
 # Projection renders authoritative bubbles in canonical server-ts order

@@ -5,10 +5,10 @@ stage: done
 tags: [app, security]
 parent: feature-secure-transcript-key-loss-recovery-ux
 depends_on: []
-release_binding: null
+release_binding: v0.4.0
 gate_origin: security
 created: 2026-07-19
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # No recovery path after secure-storage key loss (fail-closed bricks startup)
