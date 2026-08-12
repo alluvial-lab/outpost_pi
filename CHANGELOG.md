@@ -9,6 +9,36 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ---
 
+## [v0.4.0] — 2026-08-12
+
+First release under **unified product versioning** (CONVENTIONS change): per-component semver retired in favor of one product `vX.Y.Z`. Binds 66 items — the post-v0.3.0 backlog of completed gate findings (47) plus 13 features/fixes that had passed review but were never release-bound, and 6 gate-finding fixes driven to done by this release's own tiered gate + Phase 8 review. Shipped after a **tiered-gate trial** (full gates on feature work; security-only regression on gate-origin work); the 5-high timestamp-ownership cluster routes to the in-flight `canonical-transcript-timestamp-ownership` arc (next release). **No wire-protocol cutover.** Deploy: rebuild extension `dist/` + full Pi restart (extension fixes); rebuild + redeploy the relay image (relay gate findings, currently a stale Jul-20 build); re-sideload app / reinstall cockpit for their gate findings to go live.
+
+### Features
+- **Canonical transcript ordering** — projection sorts authoritative bubbles by producer-owned event timestamps with a compatibility fallback, fixing send-time reordering after reconnect. *(full single-clock ownership is the in-flight timestamp-ownership arc)*
+- **Extension hot-reload via process restart** — PID-scoped marker handshake at the `agent_settled` idle boundary + graceful SIGTERM lets mobile reload `dist/` without `/reload`'s ESM-cache limitation.
+- **New-session restart** — `/new` on a restart-managed session exits fresh and relaunches without `--continue`.
+- Protocol-contract discriminator registry; boundary typed decoders; lifecycle disposal (async void); secure-transcript key-loss recovery UX.
+
+### Security
+- **Restart-marker authorization scoped to the exited child PID** (was: any sibling marker consumed); markers enforced owner-only (`0600`), including the `refresh-dist.sh` producer.
+- **Broker audit log predecessor bounded** — oversized inherited active log dropped instead of rotated to unbounded `.1` (regression of the v0.2.0 bound).
+- **Legacy launchd plist now unlinked** after deactivation, with the deactivation postcondition validated and installation blocked if a loaded legacy supervisor cannot be unloaded (regression: stale plist could resurrect the old daemon).
+- Compaction replay keys bounded (128/peer); presence offline timestamps capped (1024); broker audit fields clamped + rotated at 256 KiB; plaintext `pair_error` redacted; debug-log fallback content-free; unindexed legacy transcripts rejected; Windows path containment; cockpit agent-boot path redacted + stale-pair-dir sweep; CI action-ref pinning.
+
+### Fixes
+- `working` stuck `true` after session shutdown; `onConnected` clobbering `working` mid-turn; mesh reconciliation deleting the pairing channel.
+
+### Refactor
+- Scan-rule-driven (boundaries/lifecycle/protocol-contract): ad-hoc wire-parse → typed DTOs; bye-frames/relay-shutdown race coalesced; owner-ingress/relay-auth/self-revoke lifecycle; relay-control + session-projection + owner-channel discriminators sourced from the registry.
+
+### Documentation
+- Hot-reload delivery guarantees corrected (restart fires at settlement, not delivery ack; resend-on-reconnect is aspirational); cockpit RPC guidance local-only contradiction resolved.
+
+### Internal
+- Unified product versioning adopted (per-component semver retired); tiered release-gate model trialed (evaluation tracked).
+
+---
+
 ## [v0.3.0] — 2026-07-24
 
 The owner-channel security arc: end-to-end owner-message protection, owner-identity transition hardening, and a full six-gate quality pass (run twice — initial bundle + drain-delta re-scan). Binds 54 items. **Paired cutover:** rebuild extension `dist/` → full Pi restart (not `/reload`) → sideload app; pre-E2E pairings must re-pair once. Relay deploy is independent.
