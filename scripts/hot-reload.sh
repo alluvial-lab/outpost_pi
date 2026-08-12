@@ -3,8 +3,9 @@
 #
 # The extension publishes .runtime-self-<PID> on session_start. `arm` follows
 # the shell's parent PID to that runtime identity, then creates a nonce-bound
-# .hot-reload-armed-<PID>. The extension consumes it at agent_settled and writes
-# .restart-marker before graceful SIGTERM.
+# .hot-reload-armed-<PID>. At agent_settled the extension writes an owner-only
+# .restart-marker-<PID> before graceful SIGTERM; the wrapper validates and
+# consumes only the marker matching its exited child PID.
 
 set -euo pipefail
 umask 077
