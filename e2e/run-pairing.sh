@@ -104,6 +104,18 @@ REDACTION_STATUS=$?
 set -e
 
 if [[ "$FLUTTER_STATUS" -ne 0 ]]; then
+  # Surface the relay auth-handshake sequence on failure so CI can diagnose
+  # flaky pairing timeouts WITHOUT a local repro (the relay log is already a
+  # check-redaction input, so this structural grep is redaction-safe; it goes
+  # to stderr, which the tee'd FLUTTER_LOG does not capture). The key question:
+  # did the app's relay WS auth complete? `authenticated ... room=main` => yes
+  # (stall is post-auth); `phase=auth handshake step failed` => the app's auth
+  # missed the relay's 5s HANDSHAKE_STEP_TIMEOUT.
+  echo "===== relay auth-handshake diagnostics (flutter failed) =====" >&2
+  grep -E "handshake step failed|auth failed|duplicate auth|phase=|authenticated" \
+    "$RELAY_LOG" | tail -200 >&2 || true
+  echo "===== relay disconnect/order diagnostics (tail) =====" >&2
+  tail -60 "$RELAY_LOG" >&2 || true
   exit "$FLUTTER_STATUS"
 fi
 if [[ "$REDACTION_STATUS" -ne 0 ]]; then
