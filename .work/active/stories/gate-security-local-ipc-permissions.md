@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-20
-updated: 2026-07-28
+updated: 2026-08-11
 ---
 
 # Supervisor control socket relies on ambient filesystem permissions
@@ -52,6 +52,24 @@ Create and re-harden all POSIX IPC parent directories as `0700`, chmod bound soc
   `src/session/global_config.ts`, `src/session/leader_election.ts`,
   `src/extension/command_surface/local_mesh_commands.ts`, and supervisor test.
 - Verified with targeted Vitest (29 tests) and `tsc --noEmit`.
+
+## Implementation status (honest)
+
+**Done — POSIX.** IPC parent/session directories are created and re-hardened
+`0700`; bound supervisor and broker UDS files are chmod'd `0600`; a supervisor
+regression starts from a fresh home and asserts directory + socket modes.
+Verified: 29 targeted Vitest tests + `tsc --noEmit`.
+
+**Not done — Windows.** The remediation direction required restricting Windows
+named-pipe access to the current user via an explicit ACL or a verified
+platform guarantee. The landed change only skips POSIX chmod on fileless
+Windows pipe paths (`src/session/ipc.ts:35-49`); it adds no ACL and no
+current-user check. Embedding the username in the pipe name is not a security
+boundary, so the Windows half of this finding is an open residual, tracked in
+`.work/backlog/backlog-piext-windows-named-pipe-acl.md`. Practical exposure is
+low on this fork's macOS/Linux-primary targets; the item stays `done` for its
+POSIX scope and the Windows residual is explicitly deferred rather than silently
+shipped.
 
 ## Audit execution
 The release scanner ran inline in the gate orchestrator context as explicitly requested, without a nested scanner; independent-context isolation was therefore reduced.
