@@ -9,11 +9,14 @@ allowBuilds:
 # release dependency updates that naturally resolve these versions.
 overrides:
   '@hono/node-server': 2.0.12   # GHSA-frvp-7c67-39w9 + GHSA-9mqv-5hh9-4cgg — path traversal (fixed 2.0.5) + WS handshake memleak (fixed 2.0.10); peers with hono ^4
-  brace-expansion@5: 5.0.8
+  brace-expansion@5: 5.0.9      # GHSA-rgw5-rvv9-x895 — DoS via unbounded intermediate (fixed 5.0.9)
   esbuild: ^0.28.1
-  fast-uri: 3.1.4
+  fast-uri: 3.1.5               # GHSA-7p8r-x3mc-p8w7 + GHSA-v2hh-gcrm-f6hx — host confusion (fixed 3.1.5)
   hono: ^4.12.25
+  ip-address: ^10.3.1           # GHSA-mwp4-54f8-5fhr — leading-zero octet decode (fixed 10.3.1); via @modelcontextprotocol/sdk
+  nanoid: 3.3.18               # GHSA-28wg-ghj8-5hjv + GHSA-2v37-7h3g-55p8 — custom-generator infinite loop (fixed 3.3.18); via vite>postcss
   postcss: 8.5.18
   protobufjs: ^7.6.5            # GHSA-j3f2-48v5-ccww — DoS in .proto option parsing (fixed 7.6.5)
+  undici: ^8.9.0                # GHSA-4cwx-7wf7-3272 — cross-user info disclosure (fixed 8.9.0); via host Pi SDK
   vite: ^8.0.16
   ws: ^8.21.0
