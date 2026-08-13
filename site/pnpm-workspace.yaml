@@ -5,8 +5,9 @@ onlyBuiltDependencies:
   - sharp
   - unrs-resolver
 overrides:
-  brace-expansion@5: 5.0.8
-  js-yaml: ^4.3.0
+  brace-expansion@5: 5.0.9
+  js-yaml: ^4.3.1
+  nanoid: 3.3.18
   # Legacy ESLint consumers use the compatible Minimatch class API; move them
   # off brace-expansion 1.x, which has no patched release for this advisory.
   minimatch@3: 10.2.5
