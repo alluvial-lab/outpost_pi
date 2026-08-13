@@ -9,7 +9,13 @@ use crate::protocol::generated::limits::RELAY_MAX_PRE_AUTH_FRAME_BYTES;
 /// Maximum WebSocket message bytes admitted before peer authentication.
 pub const PRE_AUTH_MESSAGE_MAX_BYTES: usize = RELAY_MAX_PRE_AUTH_FRAME_BYTES;
 /// Deadline applied independently to the hello and auth handshake steps.
-pub const HANDSHAKE_STEP_TIMEOUT: Duration = Duration::from_secs(5);
+/// DIAGNOSTIC (pairing-e2e flake): temporarily 30s (from 5s) to test whether
+/// the app's auth send is being delayed past the original 5s deadline under CI
+/// load (Dart event-loop congestion) — which would make the relay give up while
+/// the app's optimistic post-auth pairing stalls. If the flake vanishes at 30s,
+/// app-auth-delay is confirmed and the fix is app-side (fail-fast/retry on
+/// relay close) or a principled timeout revision. REVERT after the test.
+pub const HANDSHAKE_STEP_TIMEOUT: Duration = Duration::from_secs(30);
 /// Number of frames retained for one authenticated connection's outbound mailbox.
 pub const OUTBOUND_QUEUE_CAPACITY: usize = 16;
 /// Maximum positive and negative mesh-membership entries retained together.
