@@ -9,17 +9,32 @@ depends_on: []
 # pairing-e2e flaky 10s auth-handshake timeout (CI-runner-specific)
 
 ## Status
-**OPEN — root-cause-elusive after deep investigation (2026-08-12).** See session-note
-`2026-08-12-pairing-e2e-room-divergence-fix.md`. The blocking-stdout fix landed
-as a correct improvement but did NOT fix this flake. Failing connections'
-relay auth still produces NO log line (`authenticated`/`auth failed`/
-`phase=auth handshake step failed`) = the `handle_peer` task is intermittently
-unpolled. Ruled out: blocking stdout (fixed), `std::thread::sleep` (test-only),
-sync `register` (it's fully async), panics (none). Most likely remaining cause:
-**runner-level CPU contention** — a 2-CPU GitHub runner runs relay+pi-host+
-toxiproxy+flutter, intermittently starving the relay's tokio runtime (never
-reproduces on the dev VM, which has more headroom). Diagnostics in place
-(e2e/run-pairing.sh surfaces relay+pi-host logs on failure) for the next attempt.
+**OPEN — root-cause-elusive after deep investigation (2026-08-12/13).** Two strong
+hypotheses were tested via CI A/B and BOTH REFUTED: (1) **CPU starvation** —
+boosting the relay `cpu_shares` to 4× in the e2e compose did not help (1 green
+then failure). (2) **app-auth-delay past the 5s handshake deadline** — bumping
+`HANDSHAKE_STEP_TIMEOUT` to 30s did not help (2 green then failure; failing
+connections STILL produced no `phase=auth handshake step failed` log even at
+30s). Both diagnostics were reverted. Also ruled out: blocking stdout (a correct
+non-blocking fix landed in relay/src/main.rs and is KEPT as a sound improvement,
+but did not fix this), `std::thread::sleep` (`#[cfg(test)]`-only), sync
+`register` (fully async), panics (none).
+
+The invariant evidence: failing connections' `handle_peer` task produces NO log
+at all — not `authenticated`, not `auth failed`, not `phase=auth handshake step
+failed` — at EITHER 5s or 30s. Per tokio's `time::timeout` semantics that log
+MUST fire once the task is polled after the deadline, so the task is provably
+not being polled, for a reason that is NOT CPU, NOT blocking stdout, NOT the
+auth being delayed. This points at a subtle tokio/axum/tungstenite runtime
+interaction (waker loss, I/O-driver registration, or the `PreAuthGuard`
+wrapper) that needs `tokio-console`/live-debugger instrumentation to crack —
+beyond CI-log investigation. It is dev-VM-unreproducible. Diagnostics in place
+(e2e/run-pairing.sh surfaces relay+pi-host logs on failure).
+
+Pragmatic resolution options: (a) bounded retry-on-failure on the e2e job
+(transparent masking — defensible for an integration-level e2e on a shared
+runner, once a real fix is confirmed out of reach); (b) deeper runtime
+instrumentation; (c) app-side retry/robustness in WsTransport.connect.
 
 ## Symptom
 `pairing-e2e` CI job fails ~20-40% of runs with `TimeoutException after
