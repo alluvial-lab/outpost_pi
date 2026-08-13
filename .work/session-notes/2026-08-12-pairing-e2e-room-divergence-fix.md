@@ -75,7 +75,24 @@ was `_tryBind` (leader_election.ts) chmod'ing the bound lock socket
 unguarded; a concurrent teardown `rmSync` removed it first → ENOENT. Guarded
 the chmod (best-effort, like other sites). ci.yml unit job now **GREEN**.
 
-## OPEN (root-cause-elusive): pairing-e2e flaky 10s auth-handshake timeout
+## RESOLVED-BY-SUBSIDENCE: pairing-e2e flaky 10s auth-handshake timeout
+
+**Outcome (2026-08-13):** after reverting the non-blocking stdout change (see
+below), the pairing-e2e job went **12 consecutive greens** and stayed green.
+The non-blocking `tracing_appender` stdout writer was net-harmful here: it
+**dropped log lines** under CI churn (firehose/room_meta/disconnected and the
+diagnostic probes all vanished; only `authenticated` survived) and its dedicated
+appender thread competed with the tokio workers for the 4-vCPU runner's CPU.
+Reverting to sync `std::io::stdout` restored full logging AND stability. The
+original root cause was not captured with a probe (the flake vanished post-revert
+before a failing run could be caught with the handshake probes), but the
+strongest understanding is: a tokio handshake-task stall under CI CPU pressure,
+aggravated by the non-blocking appender thread; removing it dropped the rate
+below reproduction. Probes removed; `e2e/run-pairing.sh` service-log-surfacing
+kept as a permanent aid. Full detail in
+`backlog-pairing-e2e-flaky-auth-handshake-timeout.md`.
+
+(The investigation details below are preserved for posterity.)
 After the two fixes above, `bash e2e/run-pairing.sh` was reliably green LOCALLY
 (6+ runs) but the **CI** `pairing-e2e` job still failed ~20-40% of runs with
 `TimeoutException after 0:00:10` on a **different test each run**. Pre-existing
