@@ -4,12 +4,6 @@ services:
     build:
       context: ../relay
       dockerfile: Dockerfile
-    # DIAGNOSTIC (CPU-contention hypothesis for the pairing-e2e flake): give the
-    # relay a heavy CPU-weight so a 4-vCPU GitHub runner doesn't starve its tokio
-    # runtime when the flutter test (Dart VM) spikes. If the flake disappears
-    # across several runs, CPU starvation is confirmed and this stays (or moves
-    # to a proper fix); if it still flakes, the hypothesis is refuted — revert.
-    cpu_shares: 4096
     environment:
       OUTPOSTPI_RELAY_PORT: "3000"
       OUTPOSTPI_MESH_DB_PATH: /data/mesh.db
