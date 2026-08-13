@@ -117,6 +117,11 @@ async fn handle_peer(
     }
 
     // ── 3. Receive and verify auth ────────────────────────────────────────
+    // DIAGNOSTIC (pairing-e2e flake): mark that we parked awaiting the auth
+    // frame. If this appears for a connection but no later "verified,
+    // registering" / "authenticated" line does, the task stalled at the auth
+    // wait (unpolled, or auth never arrived). Revert once the flake is understood.
+    info!(addr = %peer_addr, "handshake: challenge sent, awaiting auth");
     let auth_text = match next_handshake_text(&mut stream).await {
         Some(text) => text,
         None => {
@@ -141,6 +146,11 @@ async fn handle_peer(
     let registry = state.registry.clone();
     let rooms = state.rooms.clone();
 
+    // DIAGNOSTIC (pairing-e2e flake): mark that verify_auth passed and we're
+    // about to register. If this appears but the later "authenticated" log does
+    // not, `register().await` (or a publish_* inside it) is hanging — that's
+    // the stall. Revert once the flake is understood.
+    info!(peer = %peer_short, room = %room_id, addr = %peer_addr, "handshake: verified, registering");
     let (tx, mut rx) = mpsc::channel::<RegistryMessage>(OUTBOUND_QUEUE_CAPACITY);
     let registration = registry
         .register(peer_id.clone(), room_meta, device_id.clone(), tx)
