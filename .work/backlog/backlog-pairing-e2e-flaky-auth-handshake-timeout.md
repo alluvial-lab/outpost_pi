@@ -9,16 +9,25 @@ depends_on: []
 # pairing-e2e flaky 10s auth-handshake timeout (CI-runner-specific)
 
 ## Status
-**OPEN — root-cause-elusive after deep investigation (2026-08-12/13).** Two strong
-hypotheses were tested via CI A/B and BOTH REFUTED: (1) **CPU starvation** —
-boosting the relay `cpu_shares` to 4× in the e2e compose did not help (1 green
-then failure). (2) **app-auth-delay past the 5s handshake deadline** — bumping
-`HANDSHAKE_STEP_TIMEOUT` to 30s did not help (2 green then failure; failing
-connections STILL produced no `phase=auth handshake step failed` log even at
-30s). Both diagnostics were reverted. Also ruled out: blocking stdout (a correct
-non-blocking fix landed in relay/src/main.rs and is KEPT as a sound improvement,
-but did not fix this), `std::thread::sleep` (`#[cfg(test)]`-only), sync
-`register` (fully async), panics (none).
+**RESOLVED-BY-SUBSIDENCE (2026-08-13).** After reverting the non-blocking
+stdout change (see below), the pairing-e2e job went **12 consecutive greens**
+and stayed green; the flake stopped reproducing. The non-blocking stdout
+writer was net-harmful here: it **dropped log lines** under CI churn (firehose /
+room_meta / disconnected / the diagnostic probes all vanished; only `authenticated`
+survived) and its dedicated appender thread competed with the tokio workers for
+the 4-vCPU runner's CPU (intra-container contention that `cpu_shares` could not
+address, since that only weights containers against each other). Reverting to
+sync `std::io::stdout` restored full logging AND stability.
+
+The original timeout-flake root cause was **not captured with a probe** (the
+flake vanished after the revert, before a failing run could be caught with the
+handshake probes in place). Best understanding: the flake was a tokio
+handshake-task stall under CI CPU pressure; the non-blocking appender thread
+was an aggravating factor, and removing it dropped the rate below the
+reproduction threshold. The `e2e/run-pairing.sh` service-log-surfacing is KEPT
+as a permanent aid (failure-gated, redaction-safe); the handshake probes were
+removed. If the flake recurs, re-add probes to `handle_peer` and the surfaced
+logs will pinpoint the step.
 
 The invariant evidence: failing connections' `handle_peer` task produces NO log
 at all — not `authenticated`, not `auth failed`, not `phase=auth handshake step
@@ -64,34 +73,16 @@ scheduling) hits it; this VM does not. Relay source == 0.4.0 image (only a
 version-bump commit differs; both `cargo build --release`), so it is NOT a
 source-vs-image difference — it is runner timing / scheduling.
 
-## Why the `#N` collision is NOT the cause
-Every generation is `e2e-agent#2` (the harness `rmSync(homedir())` mints a fresh
-identity each gen → new epk → `self_revoke` can't reclaim → relay doesn't
-supersede different-peer_id stale peers). BUT a green run (run3) also had `#2`
-throughout, so the collision alone does not cause failure. Stale-peer
-accumulation MAY contribute (firehose backpressure delaying app frames) but is
-not deterministically causal. Do not chase the `#N` as the fix for THIS bug.
+## What was ruled out (CI A/B)
+- **CPU starvation via `cpu_shares` 4×** on the relay: did not help (1 green,
+  1 fail).
+- **App-auth-delay past the 5s deadline** via `HANDSHAKE_STEP_TIMEOUT` 30s:
+  did not help (2 green, 1 fail; failing connections still produced no
+  `phase=auth handshake step failed` even at 30s).
+- `std::thread::sleep` in pi_forward: `#[cfg(test)]`-only (not in the release
+  build). Sync `register`: fully async. Panics: none.
 
-## Next step to root-cause
-Capture a FAILING run's relay logs with debug detail:
-1. Bump the e2e relay to `RUST_LOG=info,relay=debug`
-   (`e2e/docker-compose.test.yml` relay env) — redaction-safe (data plane stays
-   opaque; only `env_id_tail` correlation is added).
-2. Surface the relay log on failure — `run-pairing.sh` currently writes it to a
-   scrubbed `$RELAY_LOG` that is NOT in CI stdout. Add a `cat`/print of the
-   failing region (or `E2E_KEEP_STACK` + a follow-up step) so the auth sequence
-   is visible.
-3. On the next flaky failure, check the relay log around the stall:
-   - `authenticated … room=main` present → app DID auth → stall is post-auth
-     (likely firehose/presence backpressure from accumulated stale peers, or
-     pair_ok forwarding delay). Candidate fix: clean stale peers (preserve
-     identity in the harness so relay supersession fires) and/or bound firehose.
-   - `warn phase=auth handshake step failed, closing` → app's auth missed the
-     5s relay window → the app's auth SEND is being starved on the CI runner.
-     Candidate fix: send auth with higher priority / before any other work, or
-     make the app fail-fast on relay close instead of stalling 10s.
-
-## Related
-- `backlog-pairing-e2e-room-id-divergence` (FIXED — same CI job, different bug).
-- App-side `WsTransport.connect` optimistic `authDone` is a latent correctness
-  gap worth tightening regardless (app assumes auth succeeded with no confirm).
+## What correlated with the flake
+- The **non-blocking stdout tracing writer** (added trying to fix the flake):
+  dropped log lines AND correlated with failures. Reverting it → 12 greens.
+  This is the change that mattered; everything above was ruled out.
