@@ -95,35 +95,18 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Holds the `WorkerGuard`s for the non-blocking tracing writers. Must live
-/// for the program lifetime so buffered records flush on shutdown; `main`
-/// holds it in `_log_guard`.
-pub(crate) struct RelayLogGuards {
-    _stdout: tracing_appender::non_blocking::WorkerGuard,
-    _file: Option<tracing_appender::non_blocking::WorkerGuard>,
-}
-
 /// Installs the global `tracing` subscriber.
 ///
-/// Default: an `EnvFilter` built from `RUST_LOG` (fallback `info`) fanned out
-/// to a **non-blocking** stdout writer on a dedicated appender thread.
-///
-/// Both writers (stdout + optional file) are non-blocking: `tracing`'s `fmt`
-/// layer otherwise writes synchronously on the tokio worker thread that
-/// emitted the event. Under high connection churn (the e2e pairing suite
-/// authenticates/disconnects on every restart) a synchronous write blocks the
-/// worker — and when the stdout pipe (e.g. a CI log collector) fills, that
-/// block starves the WS handshake tasks: a peer's `handle_peer` stops being
-/// polled, so neither its auth nor the 5s `HANDSHAKE_STEP_TIMEOUT` fires, and
-/// the app's optimistic post-auth pairing stalls for its full 10s. Routing
-/// the writes through a dedicated thread removes the relay worker from the
-/// blocking-I/O path entirely. (This is the file path's existing design,
-/// now applied to stdout too.)
+/// Default: an `EnvFilter` built from `RUST_LOG` (fallback `info`) fanned out to
+/// stdout only — matching the prior `tracing_subscriber::fmt::init()` behavior,
+/// so bare-metal `cargo run` is unchanged.
 ///
 /// When `OUTPOSTPI_RELAY_LOG_DIR` is set, additionally fans out to a
-/// daily-rotated file appender in that directory, so relay logs survive stdout
-/// scroll/restart and become retroactively diagnosable (closes the relay-side
-/// half of `idea-cross-side-logging-for-debug`).
+/// non-blocking daily-rotated file appender in that directory, so relay logs
+/// survive stdout scroll/restart and become retroactively diagnosable (closes
+/// the relay-side half of `idea-cross-side-logging-for-debug`). The returned
+/// `WorkerGuard` must live for the program lifetime so buffered file records
+/// flush on shutdown; `main` holds it in `_log_guard`.
 ///
 /// Privacy: handler `tracing` calls log only routing metadata — shortened peer
 /// tails, room ids, byte counts, frame type names, coarse reasons, and (on the
@@ -132,12 +115,9 @@ pub(crate) struct RelayLogGuards {
 /// The app↔pi data-plane path stays payload-opaque (no message id). Never
 /// `ct`, envelope bodies, prompts, output, or signatures (see
 /// `.agents/skills/rust-relay/SKILL.md`).
-fn init_tracing() -> RelayLogGuards {
+fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    // Non-blocking stdout: the appender owns a thread that drains the channel,
-    // so a slow/full stdout pipe (CI log collector) never blocks a tokio worker.
-    let (stdout_writer, stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
-    let stdout_layer = fmt::layer().with_writer(stdout_writer);
+    let stdout_layer = fmt::layer().with_writer(std::io::stdout);
 
     if let Ok(log_dir) = std::env::var("OUTPOSTPI_RELAY_LOG_DIR") {
         let file_appender = tracing_appender::rolling::daily(&log_dir, "relay.log");
@@ -150,19 +130,13 @@ fn init_tracing() -> RelayLogGuards {
             .init();
         info!(log_dir = %log_dir, "relay file logging enabled (daily rotation)");
         prune_old_relay_logs(&log_dir);
-        RelayLogGuards {
-            _stdout: stdout_guard,
-            _file: Some(file_guard),
-        }
+        Some(file_guard)
     } else {
         tracing_subscriber::registry()
             .with(filter)
             .with(stdout_layer)
             .init();
-        RelayLogGuards {
-            _stdout: stdout_guard,
-            _file: None,
-        }
+        None
     }
 }
 
