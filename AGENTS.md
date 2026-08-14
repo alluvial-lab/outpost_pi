@@ -118,6 +118,19 @@ pnpm build
 
 Do not commit generated `dist/`, build artifacts, local `.pi/`, or secrets.
 
+## LAN preview servers (mockup hosting)
+
+Mock/design previews are served on the LAN with `python3 -m http.server <port>
+--bind 0.0.0.0` from the mockups dir only (never the repo root — the bind is
+reachable from the LAN + tailnet). Outpost-Pi holds **:8095** for
+`.mockups/` previews (operator-pinned; restart: `cd .mockups/design-system
+&& nohup python3 -m http.server 8095 --bind 0.0.0.0 >/tmp/outpost-mockups-server.log 2>&1 &`).
+
+Cross-project port registry (coordinate via the agent mesh before binding
+or reclaiming a port — a stale-looking server may be a peer's active
+stakeholder session): SNC platform 8090-8091, SNC org 8096+, patchbay 8765,
+outpost-pi 8095. Prefer a fresh port in your own range over reclaiming.
+
 ## Deployment and running
 
 This fork runs end-to-end on the dev VM (`dev-vm` = `<lan-host>`). The
