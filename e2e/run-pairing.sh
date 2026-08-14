@@ -116,6 +116,11 @@ if [[ "$FLUTTER_STATUS" -ne 0 ]]; then
     "$RELAY_LOG" | tail -120 >&2 || true
   echo "===== pi-host container state at failure =====" >&2
   "${COMPOSE[@]}" ps -a --format 'table {{.Name}}\t{{.State}}\t{{.Status}}\t{{.ExitCode}}' >&2 || true
+  # MODE-B forensics: RestartCount/OOMKilled/Error disambiguate a silent
+  # exit-0 restart-loop (runner OOM kill shows OOMKilled=true + exit 137;
+  # State.Error surfaces docker-level start failures).
+  docker inspect --format 'pi-host inspect: RestartCount={{.RestartCount}} OOMKilled={{.State.OOMKilled}} ExitCode={{.State.ExitCode}} Error={{.State.Error}} StartedAt={{.State.StartedAt}} FinishedAt={{.State.FinishedAt}}' \
+    "$(${COMPOSE[@]} ps -q pi-host)" >&2 || true
   echo "===== pi-host diagnostics (tail 120) =====" >&2
   tail -120 "$PI_HOST_LOG" >&2 || true
   exit "$FLUTTER_STATUS"
