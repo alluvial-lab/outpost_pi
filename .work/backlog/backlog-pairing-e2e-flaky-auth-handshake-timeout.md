@@ -9,25 +9,55 @@ depends_on: []
 # pairing-e2e flaky 10s auth-handshake timeout (CI-runner-specific)
 
 ## Status
-**RESOLVED-BY-SUBSIDENCE (2026-08-13).** After reverting the non-blocking
-stdout change (see below), the pairing-e2e job went **12 consecutive greens**
-and stayed green; the flake stopped reproducing. The non-blocking stdout
-writer was net-harmful here: it **dropped log lines** under CI churn (firehose /
-room_meta / disconnected / the diagnostic probes all vanished; only `authenticated`
-survived) and its dedicated appender thread competed with the tokio workers for
-the 4-vCPU runner's CPU (intra-container contention that `cpu_shares` could not
-address, since that only weights containers against each other). Reverting to
-sync `std::io::stdout` restored full logging AND stability.
+**ROOT-CAUSED AND FIXED (2026-08-14).** Root cause found by a GLM-5.3
+fresh-eyes deep-dive over the first COMPLETE (sync-stdout) failure logs —
+verified line-by-line, then fixed and confirmed by three deterministic
+fingerprints (below). Every earlier "relay-side stall" theory was an artifact
+of two observability gaps: the non-blocking stdout writer dropped log lines,
+and the failure-time grep didn't match `dropping`/`disconnected`.
 
-The original timeout-flake root cause was **not captured with a probe** (the
-flake vanished after the revert, before a failing run could be caught with the
-handshake probes in place). Best understanding: the flake was a tokio
-handshake-task stall under CI CPU pressure; the non-blocking appender thread
-was an aggravating factor, and removing it dropped the rate below the
-reproduction threshold. The `e2e/run-pairing.sh` service-log-surfacing is KEPT
-as a permanent aid (failure-gated, redaction-safe); the handshake probes were
-removed. If the flake recurs, re-add probes to `handle_peer` and the surfaced
-logs will pinpoint the step.
+### Root cause: TWO concurrent root startups per pi-host generation
+`session_start` auto-start is fire-and-forget (`_startRootInBackground`), and
+the e2e harness immediately invokes `/outpost-pi` again
+(`e2e_pi_host_runtime.ts:156-157`). Both roots pass the "idle" guards
+(`_state` flips only AFTER the first relay connect resolves), double-join the
+mesh (second cwd-lock gets `e2e-agent#2` — the two lock files seen on day
+one), and both blind-mint a DIFFERENT file identity on the fresh HOME
+(`getOrCreateEd25519Keypair` was read-then-write, no O_EXCL). The QR references
+whichever key was recorded LAST; the live relay connection belongs to
+whichever start resolved LAST — two independent orderings. On disagreement the
+app's pair_request targets the losing connection, whose unbind-then-close
+supersede (`relay_transport.ts:514-516`) silently swallows frames (the relay
+counts them delivered during the close handshake). The one-shot app pairing
+then hangs (10s `.timeout`, or a bare `receive()` → the 2-min test timeout).
+
+Intermittency: both races lean toward entry order on an idle machine (dev VM:
+30+ greens); CI's loaded 4-vCPU runner jitters the ~900ms keyring-retry chains
+and handshake timing, flipping one ordering occasionally (~1-in-5..15).
+
+Production impact (real): any FIRST-RUN machine (no identity file, headless /
+file-identity path) with two concurrent starters (auto-start vs typed
+`/outpost-pi`, daemon-start timer, session replacement) can double-mint and
+publish a QR referencing a dead identity → silent pairing failure.
+
+### Fix (commit "fix(pi-extension): single-flight root + relay start; O_EXCL identity mint")
+- `_cmdRoot` single-flight — concurrent starters converge onto the in-flight run.
+- `_startRelayViaTransport` single-flight — covers root×pair racing below the root guard.
+- Identity mint → `O_EXCL` ("wx") create-once; EEXIST losers re-read the winner's key.
+- `e2e/run-pairing.sh` failure grep now includes `dropping|disconnected|not found`.
+
+### Deterministic confirmation (local, E2E_KEEP_STACK)
+With the fix, per pi-host generation: ONE relay auth (was always two ~3-5ms
+apart), ONE keyring-mint warning (was two), and room `wc3B14rFnkrH` (plain
+`e2e-agent` — the `KzJ3MohnQOvq` = `e2e-agent#2` collision room is GONE,
+retro-confirming the double-join). Unit: 974 passed. Local e2e: 16/16.
+
+### Residual hardening ideas (optional follow-ups, root cause is dead)
+- `owner_multiplexer.handleOuterFrame`'s `isCurrent()` early-returns drop
+  pair_requests with NO `pair_error` — a best-effort error reply would convert
+  any future silent drop into a fast app-side failure.
+- `exchangePairingJson` in the e2e app awaits a bare `receive()` with no
+  timeout (the 2-min variant); a bounded timeout would fail faster.
 
 The invariant evidence: failing connections' `handle_peer` task produces NO log
 at all — not `authenticated`, not `auth failed`, not `phase=auth handshake step
