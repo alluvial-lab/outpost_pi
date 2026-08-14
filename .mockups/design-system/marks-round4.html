@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outpost-Pi — Mark Directions, Round 4: The Expanse</title>
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#0F1115;color:#E6EAF0;padding:32px 20px 80px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto}
+  header.intro{margin-bottom:28px}
+  header.intro h1{font-size:24px;font-weight:650}
+  header.intro p{color:#8B93A1;max-width:82ch;margin-top:6px;font-size:14px}
+  section.opt{border:1px solid #2A303C;border-radius:12px;padding:24px;margin-bottom:32px;background:#141820}
+  section.opt h2{font-size:18px;font-weight:650}
+  .rationale{color:#8B93A1;font-size:13.5px;margin:4px 0 16px;max-width:84ch}
+  .badge{display:inline-block;font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #2A303C;border-radius:99px;padding:2px 9px;color:#8B93A1;vertical-align:middle;margin-left:8px}
+  .row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+  .cell{text-align:center}
+  .cell .lab{font-family:ui-monospace,monospace;font-size:10px;color:#8B93A1;margin-top:6px}
+  .tile{width:72px;height:72px;border-radius:12px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(128,128,128,.25);overflow:hidden}
+  .tile.dk{background:#0D1210}
+  .tile.lt{background:#F3F6F3}
+  .tile.mono{background:#1E2620}
+  .mini{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .minis{display:flex;gap:14px;align-items:flex-end;justify-content:center}
+  .note{font-size:12px;color:#8B93A1;margin-top:16px;max-width:84ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="intro">
+  <h1>Outpost-Pi — mark, round 4: the expanse</h1>
+  <p>Direction set by operator: <strong>"a beacon communicating in the expanse of space."</strong> The mark should feel like
+  a lone lit outpost and a signal crossing a void — not a diagram. B's block-cursor DNA survives as the beacon element
+  itself (the cursor <em>is</em> the tower of light); C's communication DNA survives as the transmission. All four lean on
+  negative space as the expanse. World: <strong>Phosphor Beacon</strong>. Geometry is adaptive-icon safe-zone checked (r ≤ ~313).</p>
+</header>
+
+<!-- 1 · EXPANSE SIGNAL -->
+<section class="opt">
+  <h2>1 — Expanse Signal <span class="badge">the transmission</span></h2>
+  <p class="rationale">A small cursor-beacon at the lower edge, and one thin signal line crossing the entire void
+  diagonally toward the upper corner — a transmission leaving the outpost into the dark. The mark is mostly emptiness:
+  the boldness is the restraint. Two elements and a lot of space; reads at any scale.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><rect x="248" y="690" width="52" height="148" rx="26" fill="#74CC9C"/><path d="M 294 678 L 780 262" stroke="#E4EFE8" stroke-width="24" stroke-linecap="round"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><rect x="248" y="690" width="52" height="148" rx="26" fill="#256E47"/><path d="M 294 678 L 780 262" stroke="#182019" stroke-width="24" stroke-linecap="round"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><rect x="248" y="690" width="52" height="148" rx="26" fill="#FFFFFF"/><path d="M 294 678 L 780 262" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><rect x="248" y="690" width="52" height="148" rx="26" fill="#74CC9C"/><path d="M 294 678 L 780 262" stroke="#E4EFE8" stroke-width="24" stroke-linecap="round"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><rect x="248" y="690" width="52" height="148" rx="26" fill="#256E47"/><path d="M 294 678 L 780 262" stroke="#182019" stroke-width="24" stroke-linecap="round"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- 2 · PLANETRISE -->
+<section class="opt">
+  <h2>2 — Planetrise <span class="badge">the outpost on a world</span></h2>
+  <p class="rationale">The only direction that draws the outpost as a <em>place</em>: a dark world's curve along the bottom,
+  one lit cursor-tower standing on it, and a single thin signal arc rising off the tower toward a distant dot — the phone,
+  somewhere out there. The space above the horizon is the expanse. The full story in one mark; degrades gracefully
+  (arc drops out first at tiny sizes, leaving world + tower + dot).</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 0 830 Q 512 706 1024 830 L 1024 1024 L 0 1024 Z" fill="#E4EFE8"/><rect x="484" y="600" width="56" height="170" rx="28" fill="#74CC9C"/><path d="M 302 562 A 210 210 0 0 1 722 562" stroke="#E4EFE8" stroke-width="20" stroke-linecap="round"/><circle cx="512" cy="280" r="44" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 0 830 Q 512 706 1024 830 L 1024 1024 L 0 1024 Z" fill="#182019"/><rect x="484" y="600" width="56" height="170" rx="28" fill="#256E47"/><path d="M 302 562 A 210 210 0 0 1 722 562" stroke="#182019" stroke-width="20" stroke-linecap="round"/><circle cx="512" cy="280" r="44" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 0 830 Q 512 706 1024 830 L 1024 1024 L 0 1024 Z" fill="#FFFFFF"/><rect x="484" y="600" width="56" height="170" rx="28" fill="#FFFFFF"/><path d="M 302 562 A 210 210 0 0 1 722 562" stroke="#FFFFFF" stroke-width="20" stroke-linecap="round"/><circle cx="512" cy="280" r="44" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 0 830 Q 512 706 1024 830 L 1024 1024 L 0 1024 Z" fill="#E4EFE8"/><rect x="484" y="600" width="56" height="170" rx="28" fill="#74CC9C"/><path d="M 302 562 A 210 210 0 0 1 722 562" stroke="#E4EFE8" stroke-width="20" stroke-linecap="round"/><circle cx="512" cy="280" r="44" fill="#74CC9C"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 0 830 Q 512 706 1024 830 L 1024 1024 L 0 1024 Z" fill="#182019"/><rect x="484" y="600" width="56" height="170" rx="28" fill="#256E47"/><path d="M 302 562 A 210 210 0 0 1 722 562" stroke="#182019" stroke-width="20" stroke-linecap="round"/><circle cx="512" cy="280" r="44" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+  <p class="note">Mono variant merges tower into the world (one silhouette — the lighthouse read); adaptive icons crop the
+  planet's corners to the mask circle, which is the intended composition.</p>
+</section>
+
+<!-- 3 · PULSAR -->
+<section class="opt">
+  <h2>3 — Pulsar <span class="badge">nature's beacon</span></h2>
+  <p class="rationale">The universe's own beacon: a lighthouse star sweeping the void. One phosphor core, two complete thin
+  rings — full circles, never stacked arcs, so it reads sonar/pulsar rather than wireless. The most iconic option —
+  nothing is lost from 16px favicon to 1024px store icon.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><circle cx="512" cy="512" r="70" fill="#74CC9C"/><circle cx="512" cy="512" r="175" stroke="#E4EFE8" stroke-width="22"/><circle cx="512" cy="512" r="288" stroke="#E4EFE8" stroke-width="22" opacity=".55"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><circle cx="512" cy="512" r="70" fill="#256E47"/><circle cx="512" cy="512" r="175" stroke="#182019" stroke-width="22"/><circle cx="512" cy="512" r="288" stroke="#182019" stroke-width="22" opacity=".55"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><circle cx="512" cy="512" r="70" fill="#FFFFFF"/><circle cx="512" cy="512" r="175" stroke="#FFFFFF" stroke-width="22"/><circle cx="512" cy="512" r="288" stroke="#FFFFFF" stroke-width="22" opacity=".55"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><circle cx="512" cy="512" r="70" fill="#74CC9C"/><circle cx="512" cy="512" r="175" stroke="#E4EFE8" stroke-width="22"/><circle cx="512" cy="512" r="288" stroke="#E4EFE8" stroke-width="22" opacity=".55"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><circle cx="512" cy="512" r="70" fill="#256E47"/><circle cx="512" cy="512" r="175" stroke="#182019" stroke-width="22"/><circle cx="512" cy="512" r="288" stroke="#182019" stroke-width="22" opacity=".55"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- 4 · THE DISH -->
+<section class="opt">
+  <h2>4 — The Dish <span class="badge">the listening post</span></h2>
+  <p class="rationale">The outpost as a listening post: one heavy open dish aimed across the void at a distant phosphor
+  point — an agent, somewhere out in the dark. The space <em>between</em> dish and dot is the expanse, and it carries the
+  mark. Receiving rather than transmitting — the operator's side of the story: everything comes home to the outpost.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 592 775 A 175 175 0 0 1 346 560" stroke="#E4EFE8" stroke-width="50" stroke-linecap="round"/><circle cx="730" cy="320" r="56" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 592 775 A 175 175 0 0 1 346 560" stroke="#182019" stroke-width="50" stroke-linecap="round"/><circle cx="730" cy="320" r="56" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 592 775 A 175 175 0 0 1 346 560" stroke="#FFFFFF" stroke-width="50" stroke-linecap="round"/><circle cx="730" cy="320" r="56" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 592 775 A 175 175 0 0 1 346 560" stroke="#E4EFE8" stroke-width="50" stroke-linecap="round"/><circle cx="730" cy="320" r="56" fill="#74CC9C"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 592 775 A 175 175 0 0 1 346 560" stroke="#182019" stroke-width="50" stroke-linecap="round"/><circle cx="730" cy="320" r="56" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<p class="note">Transmission (1, 2) vs. beacon-itself (3) vs. reception (4) — four answers to "a beacon communicating in
+the expanse of space." If one is close, tune it (weight, ring count, curvature, dot position, which element carries the
+phosphor). If the vision still isn't on the page, say which is nearest and what's missing.</p>
+
+</div>
+</body>
+</html>
