@@ -64,7 +64,7 @@ dependencies:
   gpt_markdown: ^1.1.7
 
   # Wave 2 — native OS notifications (an agent finished a turn).
-  flutter_local_notifications: ^18.0.1
+  flutter_local_notifications: ^22.3.0
 
   # Wave 2 — hides the native window bar (we have a custom one) and allows
   # drag/min/max via our bar. macOS/Windows/Linux.
