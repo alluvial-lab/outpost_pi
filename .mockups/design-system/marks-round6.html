@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outpost-Pi — Mark, Round 6: Seated</title>
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#0F1115;color:#E6EAF0;padding:32px 20px 80px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto}
+  header.intro{margin-bottom:28px}
+  header.intro h1{font-size:24px;font-weight:650}
+  header.intro p{color:#8B93A1;max-width:82ch;margin-top:6px;font-size:14px}
+  section.opt{border:1px solid #2A303C;border-radius:12px;padding:24px;margin-bottom:32px;background:#141820}
+  section.opt h2{font-size:18px;font-weight:650}
+  .rationale{color:#8B93A1;font-size:13.5px;margin:4px 0 16px;max-width:84ch}
+  .badge{display:inline-block;font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #2A303C;border-radius:99px;padding:2px 9px;color:#8B93A1;vertical-align:middle;margin-left:8px}
+  .row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+  .cell{text-align:center}
+  .cell .lab{font-family:ui-monospace,monospace;font-size:10px;color:#8B93A1;margin-top:6px}
+  .tile{width:72px;height:72px;border-radius:12px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(128,128,128,.25);overflow:hidden}
+  .tile.dk{background:#0D1210}
+  .tile.lt{background:#F3F6F3}
+  .tile.mono{background:#1E2620}
+  .mini{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .minis{display:flex;gap:14px;align-items:flex-end;justify-content:center}
+  .note{font-size:12px;color:#8B93A1;margin-top:16px;max-width:84ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="intro">
+  <h1>Outpost-Pi — mark, round 6: seated</h1>
+  <p>Round-5 verdict: <strong>Grounded</strong> wins the direction (odd dish/hill overlap, too small); <strong>Telescope</strong>
+  was close behind. Both reworked — the dish's cap now <em>geometrically kisses</em> the hill's top edge (computed
+  tangency, no straddle), and every composition is ~40% larger inside the safe zone. Plus the obvious mix of the two.
+  World: <strong>Phosphor Beacon</strong>.</p>
+</header>
+
+<!-- 1 · GROUNDED II -->
+<section class="opt">
+  <h2>1 — Grounded II <span class="badge">dish kisses the hill</span></h2>
+  <p class="rationale">The round-5 fix: the dish's lower horn ends in a cap whose bottom curve is tangent to the hill's
+  top edge — one clean point of contact, zero overlap, the way a ball rests on a table. Dish and hill weights
+  harmonized (54 vs 26), and the whole ensemble (dish, hill, sky-dot) now fills the frame instead of floating in its
+  corner. The hill bleeds past the icon's crop on both sides — the world is bigger than the frame.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 210 706 Q 465 610 745 688" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 262.5 375.5 A 205 205 0 0 1 500 613" stroke="#E4EFE8" stroke-width="54" stroke-linecap="round"/><circle cx="588" cy="287.5" r="58" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 210 706 Q 465 610 745 688" stroke="#182019" stroke-width="26" stroke-linecap="round"/><path d="M 262.5 375.5 A 205 205 0 0 1 500 613" stroke="#182019" stroke-width="54" stroke-linecap="round"/><circle cx="588" cy="287.5" r="58" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 210 706 Q 465 610 745 688" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round"/><path d="M 262.5 375.5 A 205 205 0 0 1 500 613" stroke="#FFFFFF" stroke-width="54" stroke-linecap="round"/><circle cx="588" cy="287.5" r="58" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 210 706 Q 465 610 745 688" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 262.5 375.5 A 205 205 0 0 1 500 613" stroke="#E4EFE8" stroke-width="54" stroke-linecap="round"/><circle cx="588" cy="287.5" r="58" fill="#74CC9C"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 210 706 Q 465 610 745 688" stroke="#182019" stroke-width="26" stroke-linecap="round"/><path d="M 262.5 375.5 A 205 205 0 0 1 500 613" stroke="#182019" stroke-width="54" stroke-linecap="round"/><circle cx="588" cy="287.5" r="58" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- 2 · TELESCOPE II -->
+<section class="opt">
+  <h2>2 — Telescope II <span class="badge">mass, scaled</span></h2>
+  <p class="rationale">The near-miss, reworked bigger: the crescent thickens and grows to fill the frame, the feed strut
+  finds the phosphor point with a computed clearance (no collision, no crowding), and nothing else changed — the
+  silhouette you said was close, at the presence it deserved.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 369.4 450.8 A 225 225 0 0 1 639.2 720.6" stroke="#E4EFE8" stroke-width="100" stroke-linecap="round"/><path d="M 621.5 468.5 L 674.6 415.4" stroke="#E4EFE8" stroke-width="18" stroke-linecap="round"/><circle cx="724" cy="366" r="55" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 369.4 450.8 A 225 225 0 0 1 639.2 720.6" stroke="#182019" stroke-width="100" stroke-linecap="round"/><path d="M 621.5 468.5 L 674.6 415.4" stroke="#182019" stroke-width="18" stroke-linecap="round"/><circle cx="724" cy="366" r="55" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 369.4 450.8 A 225 225 0 0 1 639.2 720.6" stroke="#FFFFFF" stroke-width="100" stroke-linecap="round"/><path d="M 621.5 468.5 L 674.6 415.4" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/><circle cx="724" cy="366" r="55" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 369.4 450.8 A 225 225 0 0 1 639.2 720.6" stroke="#E4EFE8" stroke-width="100" stroke-linecap="round"/><path d="M 621.5 468.5 L 674.6 415.4" stroke="#E4EFE8" stroke-width="18" stroke-linecap="round"/><circle cx="724" cy="366" r="55" fill="#74CC9C"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 369.4 450.8 A 225 225 0 0 1 639.2 720.6" stroke="#182019" stroke-width="100" stroke-linecap="round"/><path d="M 621.5 468.5 L 674.6 415.4" stroke="#182019" stroke-width="18" stroke-linecap="round"/><circle cx="724" cy="366" r="55" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- 3 · RIDGE OBSERVATORY -->
+<section class="opt">
+  <h2>3 — Ridge Observatory <span class="badge">the mix: mass + place</span></h2>
+  <p class="rationale">Telescope's massive crescent, <em>planted</em> on Grounded's hill — its lower horn drives 56px into
+  the ridge at a near-perpendicular crossing, the way a mast is set into rock. The hill bleeds off-frame; the dish
+  looms over its own landscape; the phosphor point hangs in the sky. The fullest mark of the exploration.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 210 706 Q 465 610 745 688" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 369.4 450.8 A 225 225 0 0 1 639.2 720.6" stroke="#E4EFE8" stroke-width="100" stroke-linecap="round"/><path d="M 621.5 468.5 L 674.6 415.4" stroke="#E4EFE8" stroke-width="18" stroke-linecap="round"/><circle cx="724" cy="366" r="55" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 210 706 Q 465 610 745 688" stroke="#182019" stroke-width="26" stroke-linecap="round"/><path d="M 369.4 450.8 A 225 225 0 0 1 639.2 720.6" stroke="#182019" stroke-width="100" stroke-linecap="round"/><path d="M 621.5 468.5 L 674.6 415.4" stroke="#182019" stroke-width="18" stroke-linecap="round"/><circle cx="724" cy="366" r="55" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 210 706 Q 465 610 745 688" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round"/><path d="M 369.4 450.8 A 225 225 0 0 1 639.2 720.6" stroke="#FFFFFF" stroke-width="100" stroke-linecap="round"/><path d="M 621.5 468.5 L 674.6 415.4" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/><circle cx="724" cy="366" r="55" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 210 706 Q 465 610 745 688" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 369.4 450.8 A 225 225 0 0 1 639.2 720.6" stroke="#E4EFE8" stroke-width="100" stroke-linecap="round"/><path d="M 621.5 468.5 L 674.6 415.4" stroke="#E4EFE8" stroke-width="18" stroke-linecap="round"/><circle cx="724" cy="366" r="55" fill="#74CC9C"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 210 706 Q 465 610 745 688" stroke="#182019" stroke-width="26" stroke-linecap="round"/><path d="M 369.4 450.8 A 225 225 0 0 1 639.2 720.6" stroke="#182019" stroke-width="100" stroke-linecap="round"/><path d="M 621.5 468.5 L 674.6 415.4" stroke="#182019" stroke-width="18" stroke-linecap="round"/><circle cx="724" cy="366" r="55" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<p class="note">1 is the minimal fix you asked for; 2 is the close-one scaled to presence; 3 is both at once. When one
+locks: lock-up pass (wordmark, favicon, adaptive layers), typography page, then tokens.css and the implementation
+sweep (icons, app/cockpit themes, site).</p>
+
+</div>
+</body>
+</html>
