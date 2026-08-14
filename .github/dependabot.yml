@@ -1,3 +1,7 @@
+# Rebase strategy is "disabled" in every entry to cap CI-minutes churn
+# (private-repo Actions budget; see .work/active/stories/story-dependabot-drain-resume.md).
+# Conflicted PRs: rebase manually (git rebase main + force-push to the
+# dependabot branch) or close and let dependabot recreate at the newer version.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -5,6 +9,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    rebase-strategy: "disabled"
     commit-message:
       prefix: deps
       include: scope
@@ -14,6 +19,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    rebase-strategy: "disabled"
     commit-message:
       prefix: deps
       include: scope
@@ -23,6 +29,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    rebase-strategy: "disabled"
     # TS majors deferred by choice (site stays on 5.9.x); remove to re-enable
     ignore:
       - dependency-name: "typescript"
@@ -36,6 +43,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    rebase-strategy: "disabled"
     # TS majors deferred by choice (protocol stays on 6.0.x); remove to re-enable
     ignore:
       - dependency-name: "typescript"
@@ -49,6 +57,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    rebase-strategy: "disabled"
     commit-message:
       prefix: deps
       include: scope
@@ -58,6 +67,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    rebase-strategy: "disabled"
     commit-message:
       prefix: deps
       include: scope
@@ -67,6 +77,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    rebase-strategy: "disabled"
     # app_settings majors deferred (5.x -> 8.x needs migration); remove to re-enable
     ignore:
       - dependency-name: "app_settings"
@@ -80,6 +91,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    rebase-strategy: "disabled"
     commit-message:
       prefix: deps
       include: scope
@@ -89,6 +101,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    rebase-strategy: "disabled"
     commit-message:
       prefix: deps
       include: scope
