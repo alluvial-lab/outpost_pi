@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outpost-Pi — Mark Directions, Round 3</title>
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#0F1115;color:#E6EAF0;padding:32px 20px 80px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto}
+  header.intro{margin-bottom:28px}
+  header.intro h1{font-size:24px;font-weight:650}
+  header.intro p{color:#8B93A1;max-width:80ch;margin-top:6px;font-size:14px}
+  section.opt{border:1px solid #2A303C;border-radius:12px;padding:24px;margin-bottom:32px;background:#141820}
+  section.opt h2{font-size:18px;font-weight:650}
+  .rationale{color:#8B93A1;font-size:13.5px;margin:4px 0 16px;max-width:82ch}
+  .badge{display:inline-block;font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #2A303C;border-radius:99px;padding:2px 9px;color:#8B93A1;vertical-align:middle;margin-left:8px}
+  .row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+  .cell{text-align:center}
+  .cell .lab{font-family:ui-monospace,monospace;font-size:10px;color:#8B93A1;margin-top:6px}
+  .tile{width:72px;height:72px;border-radius:12px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(128,128,128,.25)}
+  .tile.dk{background:#0D1210}
+  .tile.lt{background:#F3F6F3}
+  .tile.mono{background:#1E2620}
+  .mini{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center}
+  .minis{display:flex;gap:14px;align-items:flex-end;justify-content:center}
+  .note{font-size:12px;color:#8B93A1;margin-top:16px;max-width:84ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="intro">
+  <h1>Outpost-Pi — mark, round 3</h1>
+  <p>Feedback carried in from round 2: keep the <strong>terminal-native aesthetic</strong> of Session Brackets but kill the
+  REC association (no dot symmetrically flanked by brackets); keep the <strong>mesh direction</strong> of Constellation but
+  resolve the composition. Lit Outpost (tacky) and Ping (wifi) dropped. World: <strong>Phosphor Beacon</strong>.</p>
+</header>
+
+<!-- A · LIVE PROMPT -->
+<section class="opt">
+  <h2>A — Live Prompt <span class="badge">terminal-native · from #2</span></h2>
+  <p class="rationale">The shell prompt chevron (<code>❯</code>) with a phosphor dot waiting after it — <em>the agent at your
+  prompt.</em> Keeps round-2 #2's aesthetic DNA (rounded terminal geometry, one live element) but breaks the symmetric
+  bracket-dot-bracket shape that read as REC. Asymmetric, directional, instantly native to anyone who lives in a shell.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 330 322 L 528 512 L 330 702" stroke="#E4EFE8" stroke-width="66" stroke-linecap="round" stroke-linejoin="round"/><circle cx="716" cy="512" r="66" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 330 322 L 528 512 L 330 702" stroke="#182019" stroke-width="66" stroke-linecap="round" stroke-linejoin="round"/><circle cx="716" cy="512" r="66" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 330 322 L 528 512 L 330 702" stroke="#FFFFFF" stroke-width="66" stroke-linecap="round" stroke-linejoin="round"/><circle cx="716" cy="512" r="66" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 330 322 L 528 512 L 330 702" stroke="#E4EFE8" stroke-width="66" stroke-linecap="round" stroke-linejoin="round"/><circle cx="716" cy="512" r="66" fill="#74CC9C"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 330 322 L 528 512 L 330 702" stroke="#182019" stroke-width="66" stroke-linecap="round" stroke-linejoin="round"/><circle cx="716" cy="512" r="66" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- B · BLOCK CURSOR SESSION -->
+<section class="opt">
+  <h2>B — Block Cursor Session <span class="badge">terminal-native · from #2</span></h2>
+  <p class="rationale">The session brackets return, but the dot becomes a <strong>block cursor</strong> — the blinking
+  rectangle of a CRT terminal at rest. <code>[▍]</code> No circle means no REC read; the phosphor block <em>is</em> the
+  beacon: the session is open, the cursor is waiting for you. Quietest of the four; pairs perfectly with a mono wordmark.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 430 342 H 381 Q 352 342 352 371 V 653 Q 352 682 381 682 H 430" stroke="#E4EFE8" stroke-width="58" stroke-linecap="round"/><path d="M 594 342 H 643 Q 672 342 672 371 V 653 Q 672 682 643 682 H 594" stroke="#E4EFE8" stroke-width="58" stroke-linecap="round"/><rect x="478" y="392" width="68" height="240" rx="30" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 430 342 H 381 Q 352 342 352 371 V 653 Q 352 682 381 682 H 430" stroke="#182019" stroke-width="58" stroke-linecap="round"/><path d="M 594 342 H 643 Q 672 342 672 371 V 653 Q 672 682 643 682 H 594" stroke="#182019" stroke-width="58" stroke-linecap="round"/><rect x="478" y="392" width="68" height="240" rx="30" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 430 342 H 381 Q 352 342 352 371 V 653 Q 352 682 381 682 H 430" stroke="#FFFFFF" stroke-width="58" stroke-linecap="round"/><path d="M 594 342 H 643 Q 672 342 672 371 V 653 Q 672 682 643 682 H 594" stroke="#FFFFFF" stroke-width="58" stroke-linecap="round"/><rect x="478" y="392" width="68" height="240" rx="30" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 430 342 H 381 Q 352 342 352 371 V 653 Q 352 682 381 682 H 430" stroke="#E4EFE8" stroke-width="58" stroke-linecap="round"/><path d="M 594 342 H 643 Q 672 342 672 371 V 653 Q 672 682 643 682 H 594" stroke="#E4EFE8" stroke-width="58" stroke-linecap="round"/><rect x="478" y="392" width="68" height="240" rx="30" fill="#74CC9C"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 430 342 H 381 Q 352 342 352 371 V 653 Q 352 682 381 682 H 430" stroke="#182019" stroke-width="58" stroke-linecap="round"/><path d="M 594 342 H 643 Q 672 342 672 371 V 653 Q 672 682 643 682 H 594" stroke="#182019" stroke-width="58" stroke-linecap="round"/><rect x="478" y="392" width="68" height="240" rx="30" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- C · TRIAD -->
+<section class="opt">
+  <h2>C — Triad <span class="badge">the mesh · from #4</span></h2>
+  <p class="rationale">Constellation resolved: three nodes in a stable triangle, edges thick enough to carry at small scale,
+  hierarchy unambiguous — the phosphor node at the apex <em>is</em> your outpost; the two ink nodes are the phone and the
+  relay. Equilateral geometry replaces round 2's scatter; the mark now reads as one shape (a triad), not a diagram of parts.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 512 364 L 346 652 M 512 364 L 678 652 M 346 652 L 678 652" stroke="#E4EFE8" stroke-width="34" stroke-linecap="round"/><circle cx="512" cy="364" r="82" fill="#74CC9C"/><circle cx="346" cy="652" r="54" fill="#0D1210"/><circle cx="678" cy="652" r="54" fill="#0D1210"/><circle cx="346" cy="652" r="54" stroke="#E4EFE8" stroke-width="30" fill="none"/><circle cx="678" cy="652" r="54" stroke="#E4EFE8" stroke-width="30" fill="none"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 512 364 L 346 652 M 512 364 L 678 652 M 346 652 L 678 652" stroke="#182019" stroke-width="34" stroke-linecap="round"/><circle cx="512" cy="364" r="82" fill="#256E47"/><circle cx="346" cy="652" r="54" stroke="#182019" stroke-width="30" fill="none"/><circle cx="678" cy="652" r="54" stroke="#182019" stroke-width="30" fill="none"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 512 364 L 346 652 M 512 364 L 678 652 M 346 652 L 678 652" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round"/><circle cx="512" cy="364" r="82" fill="#FFFFFF"/><circle cx="346" cy="652" r="54" stroke="#FFFFFF" stroke-width="30" fill="none"/><circle cx="678" cy="652" r="54" stroke="#FFFFFF" stroke-width="30" fill="none"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 512 364 L 346 652 M 512 364 L 678 652 M 346 652 L 678 652" stroke="#E4EFE8" stroke-width="34" stroke-linecap="round"/><circle cx="512" cy="364" r="82" fill="#74CC9C"/><circle cx="346" cy="652" r="54" stroke="#E4EFE8" stroke-width="30" fill="none"/><circle cx="678" cy="652" r="54" stroke="#E4EFE8" stroke-width="30" fill="none"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 512 364 L 346 652 M 512 364 L 678 652 M 346 652 L 678 652" stroke="#182019" stroke-width="34" stroke-linecap="round"/><circle cx="512" cy="364" r="82" fill="#256E47"/><circle cx="346" cy="652" r="54" stroke="#182019" stroke-width="30" fill="none"/><circle cx="678" cy="652" r="54" stroke="#182019" stroke-width="30" fill="none"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- D · RELAY BRIDGE -->
+<section class="opt">
+  <h2>D — Relay Bridge <span class="badge">the topology · from #4</span></h2>
+  <p class="rationale">The mesh flattened to its truth: <em>phone — relay — agent</em>, one line, three stations. The relay
+  is the lit pillar in the middle (it is the product's namesake component); the two peers terminate the trace.
+  The most literal topology mark of the set. Honest risk: at a glance it can read as a circuit trace or a level indicator —
+  the vertical pillar's prominence is what says "structure," not "slider."</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 300 512 H 724" stroke="#E4EFE8" stroke-width="38" stroke-linecap="round"/><rect x="481" y="344" width="62" height="336" rx="31" fill="#74CC9C"/><circle cx="300" cy="512" r="54" fill="#E4EFE8"/><circle cx="724" cy="512" r="54" fill="#E4EFE8"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 300 512 H 724" stroke="#182019" stroke-width="38" stroke-linecap="round"/><rect x="481" y="344" width="62" height="336" rx="31" fill="#256E47"/><circle cx="300" cy="512" r="54" fill="#182019"/><circle cx="724" cy="512" r="54" fill="#182019"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 300 512 H 724" stroke="#FFFFFF" stroke-width="38" stroke-linecap="round"/><rect x="481" y="344" width="62" height="336" rx="31" fill="#FFFFFF"/><circle cx="300" cy="512" r="54" fill="#FFFFFF"/><circle cx="724" cy="512" r="54" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 300 512 H 724" stroke="#E4EFE8" stroke-width="38" stroke-linecap="round"/><rect x="481" y="344" width="62" height="336" rx="31" fill="#74CC9C"/><circle cx="300" cy="512" r="54" fill="#E4EFE8"/><circle cx="724" cy="512" r="54" fill="#E4EFE8"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 300 512 H 724" stroke="#182019" stroke-width="38" stroke-linecap="round"/><rect x="481" y="344" width="62" height="336" rx="31" fill="#256E47"/><circle cx="300" cy="512" r="54" fill="#182019"/><circle cx="724" cy="512" r="54" fill="#182019"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<p class="note">Mixes are cheap at this stage: A's chevron + C's triad nodes (prompt feeding the mesh), B's cursor inside
+D's line (the waiting session bridged), etc. If one is close-but-not-quite, name the off note (weight, spacing, which
+element carries the accent) and I'll tune it rather than re-explore.</p>
+
+</div>
+</body>
+</html>
