@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outpost-Pi — Mark, Round 8: Twin Dishes II</title>
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#0F1115;color:#E6EAF0;padding:32px 20px 80px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto}
+  header.intro{margin-bottom:28px}
+  header.intro h1{font-size:24px;font-weight:650}
+  header.intro p{color:#8B93A1;max-width:82ch;margin-top:6px;font-size:14px}
+  section.opt{border:1px solid #2A303C;border-radius:12px;padding:24px;margin-bottom:32px;background:#141820}
+  section.opt h2{font-size:18px;font-weight:650}
+  .rationale{color:#8B93A1;font-size:13.5px;margin:4px 0 16px;max-width:84ch}
+  .badge{display:inline-block;font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #2A303C;border-radius:99px;padding:2px 9px;color:#8B93A1;vertical-align:middle;margin-left:8px}
+  .row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+  .cell{text-align:center}
+  .cell .lab{font-family:ui-monospace,monospace;font-size:10px;color:#8B93A1;margin-top:6px}
+  .tile{width:72px;height:72px;border-radius:12px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(128,128,128,.25);overflow:hidden}
+  .tile.dk{background:#0D1210}
+  .tile.lt{background:#F3F6F3}
+  .tile.mono{background:#1E2620}
+  .mini{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .minis{display:flex;gap:14px;align-items:flex-end;justify-content:center}
+  .note{font-size:12px;color:#8B93A1;margin-top:16px;max-width:84ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="intro">
+  <h1>Outpost-Pi — mark, round 8: twin dishes II</h1>
+  <p>Operator's corrections on round 7's Twin Dishes: the second dish grows from a distant afterthought into a real
+  companion (larger, closer — 46px of clear air between the pair), and the moon moves to the <strong>top right,
+  far from the structure</strong> (123px clear of the big dish's vertex, 200 from the second's). The composition
+  rebalances accordingly: the pair holds the left and center of the ridge, the moon owns the upper right.
+  World: <strong>Phosphor Beacon</strong>. Both dishes seated on the hill by computed tangency; all edges safe-zone verified.</p>
+</header>
+
+<!-- geometry
+  hill:      M 240 760 Q 620 630 880 720, sw 26
+  big dish:  M 400 473 A 170 170 0 0 1 597 670, sw 48
+  second:    M 615 585 A 98 98 0 0 1 729 699, sw 32
+  moon:      (656,326) r 74
+-->
+
+<section class="opt">
+  <h2>Twin Dishes II <span class="badge">the pair · the far moon</span></h2>
+  <p class="rationale">Two instruments on one ridge — the operator's dish and the agent's, near each other, facing the
+  same sky — and one phosphor moon hanging far beyond them, top right. The distance between structure and moon is the
+  expanse; the 46px between the dishes is the partnership. The big dish still reads as the upside-down π on the left
+  crest; its smaller twin answers from the ridge.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 400 473 A 170 170 0 0 1 597 670" stroke="#E4EFE8" stroke-width="48" stroke-linecap="round"/><path d="M 615 585 A 98 98 0 0 1 729 699" stroke="#E4EFE8" stroke-width="32" stroke-linecap="round"/><circle cx="656" cy="326" r="74" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#182019" stroke-width="26" stroke-linecap="round"/><path d="M 400 473 A 170 170 0 0 1 597 670" stroke="#182019" stroke-width="48" stroke-linecap="round"/><path d="M 615 585 A 98 98 0 0 1 729 699" stroke="#182019" stroke-width="32" stroke-linecap="round"/><circle cx="656" cy="326" r="74" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round"/><path d="M 400 473 A 170 170 0 0 1 597 670" stroke="#FFFFFF" stroke-width="48" stroke-linecap="round"/><path d="M 615 585 A 98 98 0 0 1 729 699" stroke="#FFFFFF" stroke-width="32" stroke-linecap="round"/><circle cx="656" cy="326" r="74" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 400 473 A 170 170 0 0 1 597 670" stroke="#E4EFE8" stroke-width="48" stroke-linecap="round"/><path d="M 615 585 A 98 98 0 0 1 729 699" stroke="#E4EFE8" stroke-width="32" stroke-linecap="round"/><circle cx="656" cy="326" r="74" fill="#74CC9C"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#182019" stroke-width="26" stroke-linecap="round"/><path d="M 400 473 A 170 170 0 0 1 597 670" stroke="#182019" stroke-width="48" stroke-linecap="round"/><path d="M 615 585 A 98 98 0 0 1 729 699" stroke="#182019" stroke-width="32" stroke-linecap="round"/><circle cx="656" cy="326" r="74" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+  <p class="note">Small-scale note (honest): at 28px the twin blurs into the big dish's silhouette — which is the intended
+  degradation, the pair becomes one ridgeline instrument, and the moon survives. Full fidelity lives at 48px+.</p>
+</section>
+
+<p class="note">If this is the lock, next: lockup pass (wordmark pairing — the composition now wants the name low-left
+under the ridge), favicon + adaptive layers, typography page, tokens.css, then the implementation sweep.</p>
+
+</div>
+</body>
+</html>
