@@ -68,7 +68,7 @@ dependencies:
   # Plan 30 — image attachments. image_picker uses the system camera +
   # PHPicker/Photo Picker (no gallery permission); flutter_image_compress
   # shrinks to JPEG (≤1568px / q80) on-device before it goes inline.
-  image_picker: ^1.1.0
+  image_picker: ^1.2.3
   flutter_image_compress: ^2.3.0
 
   # Plan 32b — render the agent's Markdown replies (GFM + code blocks),
