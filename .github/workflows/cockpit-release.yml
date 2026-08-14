@@ -174,7 +174,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -vv "$DMG"
           rm "$RUNNER_TEMP/apikey.p8"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           # dmg (first installation) + Cockpit-<v>-macos.zip (Sparkle update).
@@ -213,7 +213,7 @@ jobs:
           mkdir -p out
           mv "$EXE" "out/OutpostPiCockpit-Setup-${VERSION}-windows-x64.exe"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-exe
           path: cockpit/out/*.exe
@@ -291,7 +291,7 @@ jobs:
             "dnf install -y /out/outpost-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm \
              && rpm -qpl /out/outpost-pi-cockpit-${VERSION}.${{ matrix.rpm_arch }}.rpm | grep -m1 '\.desktop$'"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.deb_arch }}
           path: cockpit/out/*
