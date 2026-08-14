@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outpost-Pi — Mark Directions, Round 2</title>
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#0F1115;color:#E6EAF0;padding:32px 20px 80px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto}
+  header.intro{margin-bottom:28px}
+  header.intro h1{font-size:24px;font-weight:650}
+  header.intro p{color:#8B93A1;max-width:78ch;margin-top:6px;font-size:14px}
+  section.opt{border:1px solid #2A303C;border-radius:12px;padding:24px;margin-bottom:32px;background:#141820}
+  section.opt h2{font-size:18px;font-weight:650}
+  .rationale{color:#8B93A1;font-size:13.5px;margin:4px 0 16px;max-width:80ch}
+  .badge{display:inline-block;font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #2A303C;border-radius:99px;padding:2px 9px;color:#8B93A1;vertical-align:middle;margin-left:8px}
+  .row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+  .cell{text-align:center}
+  .cell .lab{font-family:ui-monospace,monospace;font-size:10px;color:#8B93A1;margin-top:6px}
+  .tile{width:72px;height:72px;border-radius:12px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(128,128,128,.25)}
+  .tile.dk{background:#0D1210}
+  .tile.lt{background:#F3F6F3}
+  .tile.mono{background:#1E2620}
+  .mini{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center}
+  .minis{display:flex;gap:14px;align-items:flex-end;justify-content:center}
+  .note{font-size:12px;color:#8B93A1;margin-top:16px;max-width:82ch}
+  .rej{font-family:ui-monospace,monospace;font-size:11.5px;color:#8B93A1}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="intro">
+  <h1>Outpost-Pi — mark, round 2</h1>
+  <p>Round 1 (<span class="rej">π-dot evolved · prompt beacon · outpost pennant</span>) rejected 2026-08-14 — too literal.
+  Round 2 assumes <strong>Phosphor Beacon</strong> as the world and pushes more abstract/architectural compositions.
+  Every direction: pure geometry, no font dependency, Android safe-zone compliant, shown dark / light / monochrome
+  (Android 13+ themed icon) and at 28px to prove small-scale legibility.</p>
+</header>
+
+<!-- 1 · THE LIT OUTPOST -->
+<section class="opt">
+  <h2>1 — The Lit Outpost <span class="badge">architectural</span></h2>
+  <p class="rationale">A dome — the outpost's shelter — under a single hovering beacon. Sunrise geometry: the calmest,
+  most editorial mark, exactly Phosphor Beacon's restraint. The dot is the live session: <em>the light above the outpost.</em></p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024"><path d="M 312 660 A 200 200 0 0 1 712 660 Z" fill="#E4EFE8"/><rect x="292" y="660" width="440" height="34" rx="17" fill="#E4EFE8"/><circle cx="512" cy="380" r="58" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024"><path d="M 312 660 A 200 200 0 0 1 712 660 Z" fill="#182019"/><rect x="292" y="660" width="440" height="34" rx="17" fill="#182019"/><circle cx="512" cy="380" r="58" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024"><path d="M 312 660 A 200 200 0 0 1 712 660 Z" fill="#FFFFFF"/><rect x="292" y="660" width="440" height="34" rx="17" fill="#FFFFFF"/><circle cx="512" cy="380" r="58" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini dk" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024"><path d="M 312 660 A 200 200 0 0 1 712 660 Z" fill="#E4EFE8"/><rect x="292" y="660" width="440" height="34" rx="17" fill="#E4EFE8"/><circle cx="512" cy="380" r="58" fill="#74CC9C"/></svg></div>
+      <div class="mini lt" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024"><path d="M 312 660 A 200 200 0 0 1 712 660 Z" fill="#182019"/><rect x="292" y="660" width="440" height="34" rx="17" fill="#182019"/><circle cx="512" cy="380" r="58" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- 2 · SESSION BRACKETS -->
+<section class="opt">
+  <h2>2 — Session Brackets <span class="badge">terminal-native</span></h2>
+  <p class="rationale">Two rounded brackets frame a single phosphor dot — the terminal session itself holding the live agent.
+  The most type-native mark (a sibling of <code>[●]</code> rendered as pure geometry); reads instantly to anyone who lives in a shell.
+  Distinct from every sibling product and from upstream's π.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 430 342 H 381 Q 352 342 352 371 V 653 Q 352 682 381 682 H 430" stroke="#E4EFE8" stroke-width="58" stroke-linecap="round"/><path d="M 594 342 H 643 Q 672 342 672 371 V 653 Q 672 682 643 682 H 594" stroke="#E4EFE8" stroke-width="58" stroke-linecap="round"/><circle cx="512" cy="512" r="76" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 430 342 H 381 Q 352 342 352 371 V 653 Q 352 682 381 682 H 430" stroke="#182019" stroke-width="58" stroke-linecap="round"/><path d="M 594 342 H 643 Q 672 342 672 371 V 653 Q 672 682 643 682 H 594" stroke="#182019" stroke-width="58" stroke-linecap="round"/><circle cx="512" cy="512" r="76" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 430 342 H 381 Q 352 342 352 371 V 653 Q 352 682 381 682 H 430" stroke="#FFFFFF" stroke-width="58" stroke-linecap="round"/><path d="M 594 342 H 643 Q 672 342 672 371 V 653 Q 672 682 643 682 H 594" stroke="#FFFFFF" stroke-width="58" stroke-linecap="round"/><circle cx="512" cy="512" r="76" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini dk" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 430 342 H 381 Q 352 342 352 371 V 653 Q 352 682 381 682 H 430" stroke="#E4EFE8" stroke-width="58" stroke-linecap="round"/><path d="M 594 342 H 643 Q 672 342 672 371 V 653 Q 672 682 643 682 H 594" stroke="#E4EFE8" stroke-width="58" stroke-linecap="round"/><circle cx="512" cy="512" r="76" fill="#74CC9C"/></svg></div>
+      <div class="mini lt" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 430 342 H 381 Q 352 342 352 371 V 653 Q 352 682 381 682 H 430" stroke="#182019" stroke-width="58" stroke-linecap="round"/><path d="M 594 342 H 643 Q 672 342 672 371 V 653 Q 672 682 643 682 H 594" stroke="#182019" stroke-width="58" stroke-linecap="round"/><circle cx="512" cy="512" r="76" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- 3 · PING -->
+<section class="opt">
+  <h2>3 — Ping <span class="badge">kinetic · signal</span></h2>
+  <p class="rationale">A beacon dot mid-broadcast — two arcs sweeping up-right, radar-style, on the diagonal so it never
+  sits in the Wi-Fi cone's shadow. The most kinetic mark; the story is literal: <em>the outpost is transmitting.</em>
+  Honest risk: any dot-plus-arcs geometry lives near "wireless" cliché — the diagonal cut and open ends are what keep it ours.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><circle cx="430" cy="614" r="62" fill="#74CC9C"/><path d="M 608.5 549 A 190 190 0 0 0 463 426.9" stroke="#E4EFE8" stroke-width="54" stroke-linecap="round"/><path d="M 711.9 511.4 A 300 300 0 0 0 482 318.6" stroke="#E4EFE8" stroke-width="54" stroke-linecap="round"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><circle cx="430" cy="614" r="62" fill="#256E47"/><path d="M 608.5 549 A 190 190 0 0 0 463 426.9" stroke="#182019" stroke-width="54" stroke-linecap="round"/><path d="M 711.9 511.4 A 300 300 0 0 0 482 318.6" stroke="#182019" stroke-width="54" stroke-linecap="round"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><circle cx="430" cy="614" r="62" fill="#FFFFFF"/><path d="M 608.5 549 A 190 190 0 0 0 463 426.9" stroke="#FFFFFF" stroke-width="54" stroke-linecap="round"/><path d="M 711.9 511.4 A 300 300 0 0 0 482 318.6" stroke="#FFFFFF" stroke-width="54" stroke-linecap="round"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini dk" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><circle cx="430" cy="614" r="62" fill="#74CC9C"/><path d="M 608.5 549 A 190 190 0 0 0 463 426.9" stroke="#E4EFE8" stroke-width="54" stroke-linecap="round"/><path d="M 711.9 511.4 A 300 300 0 0 0 482 318.6" stroke="#E4EFE8" stroke-width="54" stroke-linecap="round"/></svg></div>
+      <div class="mini lt" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><circle cx="430" cy="614" r="62" fill="#256E47"/><path d="M 608.5 549 A 190 190 0 0 0 463 426.9" stroke="#182019" stroke-width="54" stroke-linecap="round"/><path d="M 711.9 511.4 A 300 300 0 0 0 482 318.6" stroke="#182019" stroke-width="54" stroke-linecap="round"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- 4 · CONSTELLATION -->
+<section class="opt">
+  <h2>4 — Constellation <span class="badge">topological · the mesh</span></h2>
+  <p class="rationale">The mesh itself: your outpost (the large phosphor node) tethered to two peers — the phone, the relay.
+  Asymmetric on purpose, so it reads as a live system, not a diagram. The only direction that encodes the product's
+  actual topology: many agents, one operator, always connected.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 472 540 L 676 356 M 472 540 L 664 716" stroke="#E4EFE8" stroke-width="38" stroke-linecap="round"/><circle cx="472" cy="540" r="86" fill="#74CC9C"/><circle cx="676" cy="356" r="50" fill="#E4EFE8"/><circle cx="664" cy="716" r="42" fill="#E4EFE8"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 472 540 L 676 356 M 472 540 L 664 716" stroke="#182019" stroke-width="38" stroke-linecap="round"/><circle cx="472" cy="540" r="86" fill="#256E47"/><circle cx="676" cy="356" r="50" fill="#182019"/><circle cx="664" cy="716" r="42" fill="#182019"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 472 540 L 676 356 M 472 540 L 664 716" stroke="#FFFFFF" stroke-width="38" stroke-linecap="round"/><circle cx="472" cy="540" r="86" fill="#FFFFFF"/><circle cx="676" cy="356" r="50" fill="#FFFFFF"/><circle cx="664" cy="716" r="42" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini dk" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 472 540 L 676 356 M 472 540 L 664 716" stroke="#E4EFE8" stroke-width="38" stroke-linecap="round"/><circle cx="472" cy="540" r="86" fill="#74CC9C"/><circle cx="676" cy="356" r="50" fill="#E4EFE8"/><circle cx="664" cy="716" r="42" fill="#E4EFE8"/></svg></div>
+      <div class="mini lt" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 472 540 L 676 356 M 472 540 L 664 716" stroke="#182019" stroke-width="38" stroke-linecap="round"/><circle cx="472" cy="540" r="86" fill="#256E47"/><circle cx="676" cy="356" r="50" fill="#182019"/><circle cx="664" cy="716" r="42" fill="#182019"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<p class="note">If none of these land either, the next push is: listening-post dish (arc + focus dot) · horizon lines
+with rising sun · negative-space dome inside a solid circle. Or name the quality round 1 &amp; 2 lacked (too geometric?
+too abstract? not enough "pi"?) and I'll aim round 3 at it.</p>
+
+</div>
+</body>
+</html>
