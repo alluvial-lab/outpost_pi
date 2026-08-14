@@ -32,7 +32,9 @@ void main() {
       if (message != null) output.add(message);
     };
     try {
-      final factory = _RpcFactory(_RpcGateway());
+      final factory = _RpcFactory(
+        _RpcGateway(stateTurn: AgentTurnProjection.idle),
+      );
       final session = AgentSession(
         id: 'path-canary',
         projectId: 'p1',
