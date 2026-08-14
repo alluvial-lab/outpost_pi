@@ -23,6 +23,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # TS majors deferred by choice (site stays on 5.9.x); remove to re-enable
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: deps
       include: scope
@@ -32,6 +36,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # TS majors deferred by choice (protocol stays on 6.0.x); remove to re-enable
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: deps
       include: scope
@@ -59,6 +67,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # app_settings majors deferred (5.x -> 8.x needs migration); remove to re-enable
+    ignore:
+      - dependency-name: "app_settings"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: deps
       include: scope
