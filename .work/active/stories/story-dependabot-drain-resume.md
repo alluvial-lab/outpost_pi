@@ -63,8 +63,12 @@ cockpit analyze; was path-skipped on main and silently red — see below).
    be red on main invisibly (that's how the cockpit stateTurn break hid).
 4. Billing failures look like: failing check with zero steps run and
    BlobNotFound logs. Check annotations before believing a "failure".
-5. Merge one PR per directory at a time; lockfile conflicts go DIRTY →
-   `@dependabot rebase` and move on to another directory meanwhile.
+5. Merge one PR per directory at a time; lockfile conflicts go DIRTY.
+   NOTE: rebase-strategy is now "disabled" (commit 813d2bc) — @dependabot
+   rebase comments no longer work. Rebase conflicted PRs manually instead:
+   fetch the PR head, git rebase main, force-push to the dependabot branch
+   (we have admin push rights to them), or close and let dependabot
+   recreate at the newer version. Cheaper in CI minutes either way.
 6. No branch protection (private repo): RED does not block merging, but
    don't merge past red without understanding it (rule 4 first).
 
