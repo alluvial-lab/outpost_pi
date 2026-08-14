@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outpost-Pi — Mark, Round 7: Moonrise</title>
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#0F1115;color:#E6EAF0;padding:32px 20px 80px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto}
+  header.intro{margin-bottom:28px}
+  header.intro h1{font-size:24px;font-weight:650}
+  header.intro p{color:#8B93A1;max-width:82ch;margin-top:6px;font-size:14px}
+  section.opt{border:1px solid #2A303C;border-radius:12px;padding:24px;margin-bottom:32px;background:#141820}
+  section.opt h2{font-size:18px;font-weight:650}
+  .rationale{color:#8B93A1;font-size:13.5px;margin:4px 0 16px;max-width:84ch}
+  .badge{display:inline-block;font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #2A303C;border-radius:99px;padding:2px 9px;color:#8B93A1;vertical-align:middle;margin-left:8px}
+  .row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+  .cell{text-align:center}
+  .cell .lab{font-family:ui-monospace,monospace;font-size:10px;color:#8B93A1;margin-top:6px}
+  .tile{width:72px;height:72px;border-radius:12px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(128,128,128,.25);overflow:hidden}
+  .tile.dk{background:#0D1210}
+  .tile.lt{background:#F3F6F3}
+  .tile.mono{background:#1E2620}
+  .mini{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .minis{display:flex;gap:14px;align-items:flex-end;justify-content:center}
+  .note{font-size:12px;color:#8B93A1;margin-top:16px;max-width:84ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="intro">
+  <h1>Outpost-Pi — mark, round 7: moonrise</h1>
+  <p>Operator's evolution of Grounded II: dish shifted right (it reads as an <strong>upside-down π</strong> — the heritage
+  resurfacing through the instrument), a <strong>bigger, farther dot</strong> — a moon against the outpost — and space
+  opened on the left for a second element. Three readings of that space: open expanse, a twin dish, or the wordmark.
+  World: <strong>Phosphor Beacon</strong>.</p>
+</header>
+
+<!-- shared geometry
+  hill:   M 240 760 Q 620 630 880 720, sw 26
+  dish:   M 530 475 A 175 175 0 0 1 732 677, sw 48, round caps
+  moon:   (378,328) r 84
+-->
+
+<!-- 1 · MOONRISE -->
+<section class="opt">
+  <h2>1 — Moonrise <span class="badge">dish right · moon in the opened sky</span></h2>
+  <p class="rationale">The dish stands on the hill's right crest — an upside-down π planted on the ridge — and the
+  moon hangs big and distant in the opened left sky. The expanse between them is the mark's silence. The left space
+  stays clear: reserved for whatever the lockup needs (or nothing — the void is the point).</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#E4EFE8" stroke-width="48" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#182019" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#182019" stroke-width="48" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#FFFFFF" stroke-width="48" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#E4EFE8" stroke-width="48" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#74CC9C"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#182019" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#182019" stroke-width="48" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+</section>
+
+<!-- 2 · TWIN DISHES -->
+<section class="opt">
+  <h2>2 — Twin Dishes <span class="badge">the second mark is a sibling outpost</span></h2>
+  <p class="rationale">The opened space gets a literal second mark: a small dish on the hill's left shoulder, tilted
+  upward toward the <em>same moon</em>. Two outposts, one sky — the operator and the agent, the phone and the relay,
+  gazing at the same phosphor point. The mesh, told as a landscape.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#E4EFE8" stroke-width="48" stroke-linecap="round"/><path d="M 267 673 A 85 85 0 0 1 405 690" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#74CC9C"/></svg></div><div class="lab">dark · 72</div></div>
+    <div class="cell"><div class="tile lt"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#182019" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#182019" stroke-width="48" stroke-linecap="round"/><path d="M 267 673 A 85 85 0 0 1 405 690" stroke="#182019" stroke-width="26" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#256E47"/></svg></div><div class="lab">light · 72</div></div>
+    <div class="cell"><div class="tile mono"><svg width="48" height="48" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#FFFFFF" stroke-width="48" stroke-linecap="round"/><path d="M 267 673 A 85 85 0 0 1 405 690" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#FFFFFF"/></svg></div><div class="lab">themed mono</div></div>
+    <div class="cell"><div class="minis">
+      <div class="mini" style="background:#0D1210"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#E4EFE8" stroke-width="48" stroke-linecap="round"/><path d="M 267 673 A 85 85 0 0 1 405 690" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#74CC9C"/></svg></div>
+      <div class="mini" style="background:#F3F6F3"><svg width="28" height="28" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#182019" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#182019" stroke-width="48" stroke-linecap="round"/><path d="M 267 673 A 85 85 0 0 1 405 690" stroke="#182019" stroke-width="26" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#256E47"/></svg></div>
+    </div><div class="lab">28px</div></div>
+  </div>
+  <p class="note">Busy-risk checked: the twin is one element, smaller and ink-only (no second accent), sharing the hill
+  and the moon's gravity — it reads as foreground/background, not clutter (that was Planetrise's failure mode).</p>
+</section>
+
+<!-- 3 · MOONRISE LOCKUP -->
+<section class="opt">
+  <h2>3 — Moonrise Lockup <span class="badge">the space is the wordmark's</span></h2>
+  <p class="rationale">The opened left space as the natural home of the wordmark in horizontal lockups — mark right,
+  name left, moon over the name. Type shown in a system mono placeholder only; the real face gets chosen on the
+  typography page next.</p>
+  <div class="row">
+    <div class="cell"><div class="tile dk" style="width:132px;border-radius:14px"><svg width="88" height="88" viewBox="0 0 1024 1024" fill="none"><path d="M 240 760 Q 620 630 880 720" stroke="#E4EFE8" stroke-width="26" stroke-linecap="round"/><path d="M 530 475 A 175 175 0 0 1 732 677" stroke="#E4EFE8" stroke-width="48" stroke-linecap="round"/><circle cx="378" cy="328" r="84" fill="#74CC9C"/><text x="0" y="0" fill="none">t</text></svg></div><div class="lab">mark only (icon surfaces)</div></div>
+    <div class="cell"><div class="tile dk" style="width:200px;height:72px;border-radius:14px"><svg width="200" height="72" viewBox="0 0 2000 720" fill="none"><circle cx="210" cy="270" r="118" fill="#74CC9C"/><path d="M 660 470 A 350 350 0 0 1 910 720" stroke="#E4EFE8" stroke-width="88" stroke-linecap="round"/><text x="960" y="520" fill="#E4EFE8" font-family="ui-monospace,'Cascadia Mono',monospace" font-weight="700" font-size="240" letter-spacing="4">outpost_pi</text></svg></div><div class="lab">horizontal lockup (placeholder type)</div></div>
+  </div>
+  <p class="note">In lockups the mark's left sky hosts the name; standalone icon uses variant 1 untouched.</p>
+</section>
+
+<p class="note">If Moonrise (1) is the one, we lock it: full lock-up + favicon + adaptive layers, typography page, tokens.css,
+then the implementation sweep (app/cockpit/site icons + themes — purging the upstream art everywhere).</p>
+
+</div>
+</body>
+</html>
