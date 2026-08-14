@@ -198,6 +198,15 @@ async function _mintKeypairToFileExclusive(): Promise<Ed25519Keypair> {
     return fresh;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    // A concurrent first-run minter won the O_EXCL race and may still be
+    // mid-write — a zero-byte/partial read here would otherwise throw and
+    // fail the caller. Retry briefly; the winner's single small write completes
+    // within microseconds-to-milliseconds.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const winner = await _readKeypairFromFile();
+      if (winner) return winner;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
     const winner = await _readKeypairFromFile();
     if (winner) return winner;
     throw error;
