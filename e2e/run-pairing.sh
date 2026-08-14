@@ -112,7 +112,7 @@ if [[ "$FLUTTER_STATUS" -ne 0 ]]; then
   # vs `phase=auth handshake step failed` vs `auth failed`. (2) did pair_request
   # reach the pi-host and what did it do? See the pi-host log tail.
   echo "===== relay auth/handshake/conn diagnostics (flutter failed) =====" >&2
-  grep -E "handshake step failed|auth failed|duplicate auth|phase=|authenticated|upgrade failed|WebSocket|reset|close" \
+  grep -E "handshake step failed|auth failed|duplicate auth|phase=|authenticated|upgrade failed|WebSocket|reset|close|dropping|disconnected|not found" \
     "$RELAY_LOG" | tail -120 >&2 || true
   echo "===== pi-host diagnostics (tail 120) =====" >&2
   tail -120 "$PI_HOST_LOG" >&2 || true

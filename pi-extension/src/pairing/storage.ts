@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile, chmod, unlink, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, writeFile, chmod, unlink, rename, rm, stat, open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { AsyncEntry } from "@napi-rs/keyring";
@@ -173,10 +173,35 @@ async function _ensurePrivateStorageDir(dir: string): Promise<void> {
   try { await chmod(dir, 0o700); } catch { /* not fatal */ }
 }
 
-async function _writeKeypairToFile(kp: Ed25519Keypair): Promise<void> {
+/**
+ * Mint-once file identity (O_EXCL, "wx"): the FIRST concurrent first-run
+ * caller wins; the rest get EEXIST and re-read the winner's key.
+ *
+ * A plain writeFile here let two concurrent first-run callers (e.g. the
+ * fire-and-forget session-start auto-start racing a typed `/outpost-pi`, or
+ * the daemon-start timer) mint DIFFERENT identities on a fresh HOME —
+ * whichever key the pairing QR was built from could then reference a relay
+ * connection the other start had already superseded, silently killing
+ * pairing with no error on either side (see
+ * backlog-pairing-e2e-flaky-auth-handshake-timeout for the full forensics).
+ */
+async function _mintKeypairToFileExclusive(): Promise<Ed25519Keypair> {
+  const fresh = generateEd25519Keypair();
   await _ensurePrivateStorageDir(PI_DIR);
-  await writeFile(IDENTITY_FILE, _serialize(kp), { mode: 0o600 });
-  try { await chmod(IDENTITY_FILE, 0o600); } catch { /* not fatal */ }
+  try {
+    const handle = await open(IDENTITY_FILE, "wx", 0o600);
+    try {
+      await handle.writeFile(_serialize(fresh), "utf8");
+    } finally {
+      await handle.close();
+    }
+    return fresh;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const winner = await _readKeypairFromFile();
+    if (winner) return winner;
+    throw error;
+  }
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -256,9 +281,7 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
     "[outpost-pi] keyring unavailable; using file-backed identity at " +
     `${IDENTITY_FILE}. ${String(keyringError)}`,
   );
-  const fresh = generateEd25519Keypair();
-  await _writeKeypairToFile(fresh);
-  return fresh;
+  return _mintKeypairToFileExclusive();
 }
 
 // ── peers.json ────────────────────────────────────────────────────────────────
