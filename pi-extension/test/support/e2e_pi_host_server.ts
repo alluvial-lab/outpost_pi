@@ -7,6 +7,14 @@ const relayUrl = requiredEnv("OUTPOST_PI_RELAY");
 const cwd = process.env.E2E_PI_CWD ?? "/tmp/outpost-pi-e2e-cwd";
 const seededTranscriptText = process.env.E2E_SEEDED_TRANSCRIPT ?? "e2e persisted transcript";
 
+// Boot line: printed synchronously at process start, BEFORE the awaited
+// runtime start. If a wedged run shows ready-banners up to generation N and
+// NO boot line for N+1, the container never restarted the process (docker-level);
+// if the boot line IS present but no keyring warn follows, the process hung
+// inside E2ePiHostRuntime.start() before the identity load. See
+// backlog-pairing-e2e-flaky-auth-handshake-timeout (Mode B forensics).
+process.stdout.write(`[e2e-pi-host] booting pid=${process.pid} node=${process.version}\n`);
+
 const runtime = await E2ePiHostRuntime.start({ relayUrl, cwd, seededTranscriptText });
 let restarting = false;
 

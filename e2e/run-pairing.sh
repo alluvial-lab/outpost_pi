@@ -114,6 +114,8 @@ if [[ "$FLUTTER_STATUS" -ne 0 ]]; then
   echo "===== relay auth/handshake/conn diagnostics (flutter failed) =====" >&2
   grep -E "handshake step failed|auth failed|duplicate auth|phase=|authenticated|upgrade failed|WebSocket|reset|close|dropping|disconnected|not found" \
     "$RELAY_LOG" | tail -120 >&2 || true
+  echo "===== pi-host container state at failure =====" >&2
+  "${COMPOSE[@]}" ps -a --format 'table {{.Name}}\t{{.State}}\t{{.Status}}\t{{.ExitCode}}' >&2 || true
   echo "===== pi-host diagnostics (tail 120) =====" >&2
   tail -120 "$PI_HOST_LOG" >&2 || true
   exit "$FLUTTER_STATUS"
