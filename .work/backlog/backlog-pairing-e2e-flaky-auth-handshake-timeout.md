@@ -9,55 +9,60 @@ depends_on: []
 # pairing-e2e flaky 10s auth-handshake timeout (CI-runner-specific)
 
 ## Status
-**ROOT-CAUSED AND FIXED (2026-08-14).** Root cause found by a GLM-5.3
-fresh-eyes deep-dive over the first COMPLETE (sync-stdout) failure logs —
-verified line-by-line, then fixed and confirmed by three deterministic
-fingerprints (below). Every earlier "relay-side stall" theory was an artifact
-of two observability gaps: the non-blocking stdout writer dropped log lines,
-and the failure-time grep didn't match `dropping`/`disconnected`.
+**ROOT-CAUSED AND FIXED — TWO INDEPENDENT BUGS (2026-08-14).** What CI
+lumped together as "the flake" was Mode A + Mode B co-occurring. Root causes
+found via GLM-5.3 fresh-eyes forensics + targeted instrumentation (entrypoint
+marker, boot line, docker inspect on failure).
 
-### Root cause: TWO concurrent root startups per pi-host generation
-`session_start` auto-start is fire-and-forget (`_startRootInBackground`), and
-the e2e harness immediately invokes `/outpost-pi` again
-(`e2e_pi_host_runtime.ts:156-157`). Both roots pass the "idle" guards
-(`_state` flips only AFTER the first relay connect resolves), double-join the
-mesh (second cwd-lock gets `e2e-agent#2` — the two lock files seen on day
-one), and both blind-mint a DIFFERENT file identity on the fresh HOME
-(`getOrCreateEd25519Keypair` was read-then-write, no O_EXCL). The QR references
-whichever key was recorded LAST; the live relay connection belongs to
-whichever start resolved LAST — two independent orderings. On disagreement the
-app's pair_request targets the losing connection, whose unbind-then-close
-supersede (`relay_transport.ts:514-516`) silently swallows frames (the relay
-counts them delivered during the close handshake). The one-shot app pairing
-then hangs (10s `.timeout`, or a bare `receive()` → the 2-min test timeout).
+### Mode A (pairing silence) — double root startup → QR/live-identity mismatch
+`session_start` auto-start is fire-and-forget and the e2e harness immediately
+invokes `/outpost-pi` again; both roots pass the "idle" guards, double-join
+the mesh (`e2e-agent#2` — the two lock files seen on day one), and both
+blind-mint a DIFFERENT file identity on the fresh HOME. The QR references the
+last-RECORDED key while the live relay connection belongs to the
+last-RESOLVING start — two independent orderings; on disagreement the
+pair_request targets the losing connection, whose unbind-then-close supersede
+swallows it tracelessly. One-shot app pairing then hangs (10s, or a bare
+`receive()` → 2-min test timeout). Production-real on first-run machines with
+concurrent starters.
 
-Intermittency: both races lean toward entry order on an idle machine (dev VM:
-30+ greens); CI's loaded 4-vCPU runner jitters the ~900ms keyring-retry chains
-and handshake timing, flipping one ordering occasionally (~1-in-5..15).
+Fix: `O_EXCL` create-once identity mint (EEXIST loser re-reads, brief retry
+for the winner-mid-write window) + `_startRelayViaTransport` single-flight
+(one relay connection). A root-level single-flight was tried first and
+REVERTED: it coupled the harness to the possibly-hung background root and
+turned a benign hang into a full pi-host wedge (Mode C scare, reverted in
+65b790e). Fingerprints after fix: one relay auth + one identity per generation.
 
-Production impact (real): any FIRST-RUN machine (no identity file, headless /
-file-identity path) with two concurrent starters (auto-start vs typed
-`/outpost-pi`, daemon-start timer, session replacement) can double-mint and
-publish a QR referencing a dead identity → silent pairing failure.
+### Mode B (pi-host wedge at generation ~10-11) — docker restart-policy BACKOFF
+`/__restart` exits the process; `restart: unless-stopped` had docker restart
+it — but docker's backoff doubles per restart (100ms→51s by #10) and only
+resets after a ≥10s container lifetime. Fast pairing tests cycle generations
+in 3-9s, so the backoff kept doubling until it blew the tests' 45s
+`restartForIsolation` window — every subsequent test failed with "Connection
+closed before full header" on /status. Only trips when ENOUGH consecutive
+tests are fast (one >10s test resets it) → CI-only (fast runner), never the
+slower dev VM. Pinned by forensics: RestartCount=10, ExitCode=0, OOMKilled=false,
+last lifetime 3.5s, docker in 48s backoff, restarting processes never printing
+the entrypoint echo.
 
-### Fix (commit "fix(pi-extension): single-flight root + relay start; O_EXCL identity mint")
-- `_cmdRoot` single-flight — concurrent starters converge onto the in-flight run.
-- `_startRelayViaTransport` single-flight — covers root×pair racing below the root guard.
-- Identity mint → `O_EXCL` ("wx") create-once; EEXIST losers re-read the winner's key.
-- `e2e/run-pairing.sh` failure grep now includes `dropping|disconnected|not found`.
+Fix: the container never exits — the image CMD respawns the node process in a
+shell loop (~200ms); restart policy removed from the compose. Process exit
+remains the reset boundary.
 
-### Deterministic confirmation (local, E2E_KEEP_STACK)
-With the fix, per pi-host generation: ONE relay auth (was always two ~3-5ms
-apart), ONE keyring-mint warning (was two), and room `wc3B14rFnkrH` (plain
-`e2e-agent` — the `KzJ3MohnQOvq` = `e2e-agent#2` collision room is GONE,
-retro-confirming the double-join). Unit: 974 passed. Local e2e: 16/16.
+### Validation
+Both fixes + full unit suite (974) + local e2e 16/16, then **7 consecutive CI
+greens** (vs ~3-in-5 Mode-B rate pre-fix). Improved failure-time forensics kept:
+relay grep now matches `dropping|disconnected|not found`; pi-host boot line;
+container-state + docker-inspect dump; respawn markers in the CMD.
 
-### Residual hardening ideas (optional follow-ups, root cause is dead)
-- `owner_multiplexer.handleOuterFrame`'s `isCurrent()` early-returns drop
-  pair_requests with NO `pair_error` — a best-effort error reply would convert
-  any future silent drop into a fast app-side failure.
-- `exchangePairingJson` in the e2e app awaits a bare `receive()` with no
-  timeout (the 2-min variant); a bounded timeout would fail faster.
+### Follow-ups (optional)
+- Background root's rare hang (observed once pre-revert; no longer fatal) —
+  its own hunt if it recurs.
+- `owner_multiplexer.handleOuterFrame`'s `isCurrent()` early-return drops
+  pair_requests with no `pair_error` — a best-effort error reply would convert
+  any future silent drop into a fast failure.
+- `exchangePairingJson` (e2e app) awaits a bare `receive()` with no timeout
+  (the 2-min variant); bound it.
 
 The invariant evidence: failing connections' `handle_peer` task produces NO log
 at all — not `authenticated`, not `auth failed`, not `phase=auth handshake step
