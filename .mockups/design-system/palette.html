@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outpost-Pi — Palette Options</title>
+<style>
+  /* Page chrome only — system stack, zero typographic commitment (type is its own page) */
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#0F1115;color:#E6EAF0;padding:32px 20px 80px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto}
+  header.intro{margin-bottom:28px}
+  header.intro h1{font-size:26px;font-weight:650;letter-spacing:.01em}
+  header.intro p{color:#8B93A1;max-width:75ch;margin-top:6px;font-size:14px}
+  nav.opts{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 34px}
+  nav.opts a{font-family:ui-monospace,'Cascadia Mono',monospace;font-size:12.5px;color:#E6EAF0;text-decoration:none;border:1px solid #2A303C;border-radius:6px;padding:7px 12px;background:#171B22}
+  nav.opts a:hover{border-color:#8B93A1}
+  section.opt{border:1px solid #2A303C;border-radius:12px;padding:26px;margin-bottom:38px;background:#141820}
+  section.opt>h2{font-size:20px;font-weight:650}
+  .rationale{color:#8B93A1;font-size:13.5px;margin:4px 0 18px;max-width:78ch}
+  .badge{display:inline-block;font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #2A303C;border-radius:99px;padding:2px 9px;color:#8B93A1;vertical-align:middle;margin-left:8px}
+  .modes{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.modes{grid-template-columns:1fr}}
+  .mode{border-radius:10px;padding:16px;border:1px solid transparent}
+  .mode h4{font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.55;margin-bottom:12px}
+  .swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-bottom:16px}
+  .sw{border-radius:8px;border:1px solid rgba(128,128,128,.25);padding:8px 9px;font-family:ui-monospace,monospace;font-size:10px;line-height:1.35}
+  .sw i{display:block;height:34px;border-radius:5px;margin-bottom:6px;border:1px solid rgba(128,128,128,.2)}
+  .sw span{opacity:.75}
+  .demo{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .btn{font-weight:600;font-size:13.5px;border-radius:8px;padding:8px 16px;border:none;cursor:default}
+  .card{border-radius:10px;padding:12px 14px;flex:1;min-width:220px}
+  .card .t{font-weight:600;font-size:13.5px;margin-bottom:3px}
+  .card .s{font-size:12px}
+  .chip{font-family:ui-monospace,monospace;font-size:10.5px;border-radius:99px;padding:2px 9px}
+  code.line{font-family:ui-monospace,'Cascadia Mono',monospace;font-size:12px;display:block;padding:8px 10px;border-radius:6px;margin-top:10px}
+  table.contrast{width:100%;border-collapse:collapse;margin-top:14px;font-family:ui-monospace,monospace;font-size:11.5px}
+  table.contrast th,table.contrast td{text-align:left;padding:6px 8px;border-bottom:1px solid rgba(128,128,128,.22)}
+  table.contrast th{font-weight:400;opacity:.55}
+  .pass{color:#66BB6A}
+  /* marks */
+  .marks{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  .markcell{border:1px solid #2A303C;border-radius:10px;padding:12px;text-align:center}
+  .markcell .names{font-family:ui-monospace,monospace;font-size:10.5px;margin-top:8px;color:#8B93A1}
+  .markrow{display:flex;gap:10px;justify-content:center;align-items:center}
+  .tile{width:64px;height:64px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+  .note{font-size:12px;color:#8B93A1;margin-top:14px;max-width:80ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="intro">
+  <h1>Outpost-Pi — palette &amp; mark options</h1>
+  <p>Outpost-Pi is an independent Alluvial-Lab product and gets its own identity from scratch — the same
+  exploration-led process Patchbay got (mocks → tokens), <strong>not</strong> a shared family spine. Amber-phosphor
+  instrument-panel is Patchbay's locked territory and is deliberately excluded here so the two products don't read as twins.
+  Three worlds below; each owns its full neutral system, mode priority, and accent — all pairings WCAG-AA verified
+  in both modes. S/NC's recent exploration is referenced only as process precedent.</p>
+  <nav class="opts">
+    <a href="#marks">0 · Mark directions</a>
+    <a href="#opt1">1 · Night Watch</a>
+    <a href="#opt2">2 · Field Manual</a>
+    <a href="#opt3">3 · Phosphor Beacon</a>
+  </nav>
+</header>
+
+<!-- ══════════════ MARKS ══════════════ -->
+<section class="opt" id="marks">
+  <h2>0 — Mark directions <span class="badge">orthogonal to palette</span></h2>
+  <p class="rationale">The current mark (geometric π + dot) is byte-identical to upstream remote_pi's art and must be replaced.
+  Three directions — pure geometry (no font dependency), Android safe-zone friendly, each colored by whichever accent wins below.</p>
+  <div class="marks">
+    <div class="markcell"><div class="markrow">
+      <div class="tile" style="background:#FBFAF7"><svg width="44" height="44" viewBox="0 0 1024 1024"><g fill="#17181C"><rect x="290" y="368" width="444" height="68" rx="10"/><rect x="345" y="436" width="68" height="320" rx="10"/><rect x="611" y="436" width="68" height="320" rx="10"/></g><circle cx="824" cy="300" r="64" fill="#B3372B"/></svg></div>
+      <div class="tile" style="background:#10141A"><svg width="44" height="44" viewBox="0 0 1024 1024"><g fill="#E6EBF2"><rect x="290" y="368" width="444" height="68" rx="10"/><rect x="345" y="436" width="68" height="320" rx="10"/><rect x="611" y="436" width="68" height="320" rx="10"/></g><circle cx="824" cy="300" r="64" fill="#6FC9F2"/></svg></div>
+    </div><div class="names">1 · π-dot, evolved<br>(dot escapes the bar — signal out)</div></div>
+    <div class="markcell"><div class="markrow">
+      <div class="tile" style="background:#FBFAF7"><svg width="44" height="44" viewBox="0 0 1024 1024"><rect x="330" y="330" width="150" height="364" rx="26" fill="#17181C"/><circle cx="690" cy="352" r="78" fill="#B3372B"/><rect x="330" y="740" width="540" height="26" rx="13" fill="#17181C" opacity=".35"/></svg></div>
+      <div class="tile" style="background:#10141A"><svg width="44" height="44" viewBox="0 0 1024 1024"><rect x="330" y="330" width="150" height="364" rx="26" fill="#E6EBF2"/><circle cx="690" cy="352" r="78" fill="#6FC9F2"/><rect x="330" y="740" width="540" height="26" rx="13" fill="#E6EBF2" opacity=".35"/></svg></div>
+    </div><div class="names">2 · Prompt beacon<br>(cursor + beacon dot on baseline)</div></div>
+    <div class="markcell"><div class="markrow">
+      <div class="tile" style="background:#FBFAF7"><svg width="44" height="44" viewBox="0 0 1024 1024" fill="none"><path d="M380 240 V 760" stroke="#17181C" stroke-width="56" stroke-linecap="round"/><path d="M380 260 L 740 380 L 380 500 Z" fill="#B3372B"/><circle cx="380" cy="180" r="52" fill="#17181C"/></svg></div>
+      <div class="tile" style="background:#10141A"><svg width="44" height="44" viewBox="0 0 1024 1024" fill="none"><path d="M380 240 V 760" stroke="#E6EBF2" stroke-width="56" stroke-linecap="round"/><path d="M380 260 L 740 380 L 380 500 Z" fill="#6FC9F2"/><circle cx="380" cy="180" r="52" fill="#E6EBF2"/></svg></div>
+    </div><div class="names">3 · Outpost pennant<br>(flag on the map, dot at masthead)</div></div>
+  </div>
+  <p class="note">Wordmark pairs with the typography decision (next page after palette lock) — e.g. a technical sans
+  "OUTPOST-PI" or the mono-native "outpost_pi".</p>
+</section>
+
+<!-- ══════════════ OPTION 1 ══════════════ -->
+<section class="opt" id="opt1">
+  <h2>1 — Night Watch <span class="badge">signal blue · cool · dark-first</span></h2>
+  <p class="rationale">The relay's night console. Deep cool charcoal with a faint blue cast; one signal-blue accent that
+  means "control channel open." The calmest, most tool-like world — closest in spirit to the current π-dot identity
+  (blue retained, matured), fully distinct from Patchbay's warm amber. Light mode is overcast-cool, not white.
+  Risk: nearest to "safe developer tool" — its restraint is the personality.</p>
+  <div class="modes">
+    <div class="mode" style="background:#10141A;color:#E6EBF2">
+      <h4>Dark · native</h4>
+      <div class="swatches">
+        <div class="sw"><i style="background:#10141A"></i><span>bg<br>#10141A</span></div>
+        <div class="sw"><i style="background:#1A2230"></i><span>elev<br>#1A2230</span></div>
+        <div class="sw"><i style="background:#232D3D"></i><span>border<br>#232D3D</span></div>
+        <div class="sw"><i style="background:#E6EBF2"></i><span>text<br>#E6EBF2</span></div>
+        <div class="sw"><i style="background:#87909E"></i><span>muted<br>#87909E</span></div>
+        <div class="sw"><i style="background:#6FC9F2"></i><span>accent<br>#6FC9F2</span></div>
+      </div>
+      <div class="demo">
+        <button class="btn" style="background:#6FC9F2;color:#081E30">Pair new phone</button>
+        <a href="#" style="color:#6FC9F2;font-size:13.5px">relay settings</a>
+        <span class="chip" style="background:rgba(111,201,242,.14);color:#6FC9F2">● session live</span>
+      </div>
+      <div class="card" style="margin-top:12px;background:#1A2230;border:1px solid #232D3D"><div class="t">outpost_pi · main</div><div class="s" style="color:#87909E">Agent turn 3 — draining dependabot queue (16 merged)</div></div>
+      <code class="line" style="background:rgba(111,201,242,.12);color:#6FC9F2">$ agent_send --to cockpit "rebuild dist"</code>
+    </div>
+    <div class="mode" style="background:#F2F3F5;color:#1B2129">
+      <h4>Light · overcast</h4>
+      <div class="swatches">
+        <div class="sw"><i style="background:#F2F3F5"></i><span>bg<br>#F2F3F5</span></div>
+        <div class="sw"><i style="background:#F8F9FB"></i><span>elev<br>#F8F9FB</span></div>
+        <div class="sw"><i style="background:#DDE1E7"></i><span>border<br>#DDE1E7</span></div>
+        <div class="sw"><i style="background:#1B2129"></i><span>text<br>#1B2129</span></div>
+        <div class="sw"><i style="background:#59616E"></i><span>muted<br>#59616E</span></div>
+        <div class="sw"><i style="background:#0B6A9B"></i><span>accent<br>#0B6A9B</span></div>
+      </div>
+      <div class="demo">
+        <button class="btn" style="background:#0B6A9B;color:#fff">Pair new phone</button>
+        <a href="#" style="color:#0B6A9B;font-size:13.5px">relay settings</a>
+        <span class="chip" style="background:rgba(11,106,155,.12);color:#0B6A9B">● session live</span>
+      </div>
+      <div class="card" style="margin-top:12px;background:#F8F9FB;border:1px solid #DDE1E7"><div class="t">outpost_pi · main</div><div class="s" style="color:#59616E">Agent turn 3 — draining dependabot queue (16 merged)</div></div>
+      <code class="line" style="background:rgba(11,106,155,.1);color:#0B6A9B">$ agent_send --to cockpit "rebuild dist"</code>
+    </div>
+  </div>
+  <table class="contrast">
+    <tr><th>pairing</th><th>light</th><th>dark</th></tr>
+    <tr><td>text / bg</td><td class="pass">14.59</td><td class="pass">15.42</td></tr>
+    <tr><td>muted / bg</td><td class="pass">5.63</td><td class="pass">5.73</td></tr>
+    <tr><td>accent as text / bg</td><td class="pass">5.33</td><td class="pass">9.95</td></tr>
+    <tr><td>on-accent (button)</td><td class="pass">5.92</td><td class="pass">9.13</td></tr>
+  </table>
+</section>
+
+<!-- ══════════════ OPTION 2 ══════════════ -->
+<section class="opt" id="opt2">
+  <h2>2 — Field Manual <span class="badge">map-red on paper · light-first</span></h2>
+  <p class="rationale">The outpost's logbook. Survey-map paper, hard ink, and the red of a beacon marked on a chart —
+  the only light-first world of the three, and the only one with a warm-red accent. Reads like an expedition document:
+  deliberate, annotated, human. Pairs naturally with mark 3 (pennant) or 1. Farthest from every sibling identity.
+  Risk: red-as-accent must stay disciplined (interactive + beacon semantics only) so it never reads as "error."</p>
+  <div class="modes">
+    <div class="mode" style="background:#FBFAF7;color:#17181C">
+      <h4>Light · native (chart paper)</h4>
+      <div class="swatches">
+        <div class="sw"><i style="background:#FBFAF7"></i><span>bg<br>#FBFAF7</span></div>
+        <div class="sw"><i style="background:#F4F2EC"></i><span>elev<br>#F4F2EC</span></div>
+        <div class="sw"><i style="background:#E2DFD7"></i><span>border<br>#E2DFD7</span></div>
+        <div class="sw"><i style="background:#17181C"></i><span>text<br>#17181C</span></div>
+        <div class="sw"><i style="background:#5A5852"></i><span>muted<br>#5A5852</span></div>
+        <div class="sw"><i style="background:#B3372B"></i><span>accent<br>#B3372B</span></div>
+      </div>
+      <div class="demo">
+        <button class="btn" style="background:#B3372B;color:#fff">Pair new phone</button>
+        <a href="#" style="color:#B3372B;font-size:13.5px">relay settings</a>
+        <span class="chip" style="background:rgba(179,55,43,.12);color:#B3372B">● session live</span>
+      </div>
+      <div class="card" style="margin-top:12px;background:#F4F2EC;border:1px solid #E2DFD7"><div class="t">outpost_pi · main</div><div class="s" style="color:#5A5852">Agent turn 3 — draining dependabot queue (16 merged)</div></div>
+      <code class="line" style="background:rgba(179,55,43,.1);color:#B3372B">$ agent_send --to cockpit "rebuild dist"</code>
+    </div>
+    <div class="mode" style="background:#131419;color:#E9E6E0">
+      <h4>Dark · night ink</h4>
+      <div class="swatches">
+        <div class="sw"><i style="background:#131419"></i><span>bg<br>#131419</span></div>
+        <div class="sw"><i style="background:#1B1D25"></i><span>elev<br>#1B1D25</span></div>
+        <div class="sw"><i style="background:#2A2C36"></i><span>border<br>#2A2C36</span></div>
+        <div class="sw"><i style="background:#E9E6E0"></i><span>text<br>#E9E6E0</span></div>
+        <div class="sw"><i style="background:#9A968E"></i><span>muted<br>#9A968E</span></div>
+        <div class="sw"><i style="background:#FF9082"></i><span>accent<br>#FF9082</span></div>
+      </div>
+      <div class="demo">
+        <button class="btn" style="background:#FF9082;color:#241412">Pair new phone</button>
+        <a href="#" style="color:#FF9082;font-size:13.5px">relay settings</a>
+        <span class="chip" style="background:rgba(255,144,130,.14);color:#FF9082">● session live</span>
+      </div>
+      <div class="card" style="margin-top:12px;background:#1B1D25;border:1px solid #2A2C36"><div class="t">outpost_pi · main</div><div class="s" style="color:#9A968E">Agent turn 3 — draining dependabot queue (16 merged)</div></div>
+      <code class="line" style="background:rgba(255,144,130,.12);color:#FF9082">$ agent_send --to cockpit "rebuild dist"</code>
+    </div>
+  </div>
+  <table class="contrast">
+    <tr><th>pairing</th><th>light</th><th>dark</th></tr>
+    <tr><td>text / bg</td><td class="pass">16.99</td><td class="pass">14.77</td></tr>
+    <tr><td>muted / bg</td><td class="pass">6.81</td><td class="pass">6.24</td></tr>
+    <tr><td>accent as text / bg</td><td class="pass">5.75</td><td class="pass">8.38</td></tr>
+    <tr><td>on-accent (button)</td><td class="pass">6.00</td><td class="pass">8.08</td></tr>
+  </table>
+</section>
+
+<!-- ══════════════ OPTION 3 ══════════════ -->
+<section class="opt" id="opt3">
+  <h2>3 — Phosphor Beacon <span class="badge">terminal green · dark-first</span></h2>
+  <p class="rationale">The beacon is lit. Terminal phosphor muted to something editorial — graphite with a breath of
+  green, not gamer RGB. The product story maps the accent onto presence itself: green means <em>your outpost is
+  reachable, the agent is alive</em>. Distinct from Patchbay (warm amber) by temperature and by neutral family.
+  Pairs with mark 2 (beacon) or 1. Risk: proximity to success-green semantics — accent owns brand + interactive;
+  status greens stay in tinted chips.</p>
+  <div class="modes">
+    <div class="mode" style="background:#0D1210;color:#E4EFE8">
+      <h4>Dark · native</h4>
+      <div class="swatches">
+        <div class="sw"><i style="background:#0D1210"></i><span>bg<br>#0D1210</span></div>
+        <div class="sw"><i style="background:#131A16"></i><span>elev<br>#131A16</span></div>
+        <div class="sw"><i style="background:#1E2620"></i><span>border<br>#1E2620</span></div>
+        <div class="sw"><i style="background:#E4EFE8"></i><span>text<br>#E4EFE8</span></div>
+        <div class="sw"><i style="background:#89978D"></i><span>muted<br>#89978D</span></div>
+        <div class="sw"><i style="background:#74CC9C"></i><span>accent<br>#74CC9C</span></div>
+      </div>
+      <div class="demo">
+        <button class="btn" style="background:#74CC9C;color:#0A2418">Pair new phone</button>
+        <a href="#" style="color:#74CC9C;font-size:13.5px">relay settings</a>
+        <span class="chip" style="background:rgba(116,204,156,.14);color:#74CC9C">● session live</span>
+      </div>
+      <div class="card" style="margin-top:12px;background:#131A16;border:1px solid #1E2620"><div class="t">outpost_pi · main</div><div class="s" style="color:#89978D">Agent turn 3 — draining dependabot queue (16 merged)</div></div>
+      <code class="line" style="background:rgba(116,204,156,.12);color:#74CC9C">$ agent_send --to cockpit "rebuild dist"</code>
+    </div>
+    <div class="mode" style="background:#F3F6F3;color:#182019">
+      <h4>Light · sage paper</h4>
+      <div class="swatches">
+        <div class="sw"><i style="background:#F3F6F3"></i><span>bg<br>#F3F6F3</span></div>
+        <div class="sw"><i style="background:#F8FAF8"></i><span>elev<br>#F8FAF8</span></div>
+        <div class="sw"><i style="background:#DFE6DF"></i><span>border<br>#DFE6DF</span></div>
+        <div class="sw"><i style="background:#182019"></i><span>text<br>#182019</span></div>
+        <div class="sw"><i style="background:#57635A"></i><span>muted<br>#57635A</span></div>
+        <div class="sw"><i style="background:#256E47"></i><span>accent<br>#256E47</span></div>
+      </div>
+      <div class="demo">
+        <button class="btn" style="background:#256E47;color:#fff">Pair new phone</button>
+        <a href="#" style="color:#256E47;font-size:13.5px">relay settings</a>
+        <span class="chip" style="background:rgba(37,110,71,.12);color:#256E47">● session live</span>
+      </div>
+      <div class="card" style="margin-top:12px;background:#F8FAF8;border:1px solid #DFE6DF"><div class="t">outpost_pi · main</div><div class="s" style="color:#57635A">Agent turn 3 — draining dependabot queue (16 merged)</div></div>
+      <code class="line" style="background:rgba(37,110,71,.1);color:#256E47">$ agent_send --to cockpit "rebuild dist"</code>
+    </div>
+  </div>
+  <table class="contrast">
+    <tr><th>pairing</th><th>light</th><th>dark</th></tr>
+    <tr><td>text / bg</td><td class="pass">15.31</td><td class="pass">16.03</td></tr>
+    <tr><td>muted / bg</td><td class="pass">5.78</td><td class="pass">6.19</td></tr>
+    <tr><td>accent as text / bg</td><td class="pass">5.67</td><td class="pass">9.77</td></tr>
+    <tr><td>on-accent (button)</td><td class="pass">6.18</td><td class="pass">8.49</td></tr>
+  </table>
+</section>
+
+<p class="note">All three define their own neutral families, borders, elevation, and mode priority — no shared spine,
+no borrowed tokens. Status colors (success/warning/error/info) get per-world tuned sets at lock-in, tinted-chip style,
+disambiguated from the accent by usage. Typography is the next page once a world is picked.</p>
+
+</div>
+</body>
+</html>
