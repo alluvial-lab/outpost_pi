@@ -9,6 +9,8 @@
 !.agents/**
 !.research/
 !.research/**
+!.mockups/
+!.mockups/**
 
 # work-view binary is a plugin-managed build artifact — the agile-workflow
 # plugin installs the platform-appropriate Rust binary (or its bundled bash
