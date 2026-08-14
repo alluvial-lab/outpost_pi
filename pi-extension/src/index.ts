@@ -1864,34 +1864,16 @@ function _startRootInBackground(
   });
 }
 
-/**
- * Single-flight root: several starters race in practice (the session-start
- * auto-start in `_startRootInBackground` is fire-and-forget, the daemon-start
- * timer, session replacement, or the user typing `/outpost-pi` during any of
- * them). Two concurrent roots BOTH pass the "idle" guards (`_state` flips only
- * after the first relay connect resolves), double-join the mesh (the second
- * cwd-lock gets a `#N` name suffix), and can mint two different file
- * identities on a fresh HOME — the pairing QR then references whichever key
- * was recorded last while the live relay connection belongs to whichever
- * start resolved last, silently killing pairing. Converge concurrent callers
- * onto the in-flight run instead. See
- * backlog-pairing-e2e-flaky-auth-handshake-timeout for the full forensics.
- */
-let _rootInFlight: Promise<void> | null = null;
-
 async function _cmdRoot(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
-  if (_rootInFlight) return _rootInFlight;
-  const run = _localMeshCommands.root(_safeCommandContext(ctx));
-  _rootInFlight = run.finally(() => { _rootInFlight = null; });
-  return _rootInFlight;
+  await _localMeshCommands.root(_safeCommandContext(ctx));
 }
 
 async function _cmdSetup(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
   await _localMeshCommands.setup(_safeCommandContext(ctx));
 }
 
-// See _cmdRoot's single-flight note: the pair command can also race the relay
-// start directly (pair during background auto-start), below the root guard.
+// The pair command can race the relay start directly (pair during the
+// fire-and-forget session-start auto-start), below any root-level guard.
 let _relayStartInFlight: Promise<void> | null = null;
 
 async function _startRelayViaTransport(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
