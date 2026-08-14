@@ -6,9 +6,11 @@ WORKDIR /workspace/pi-extension
 # docker-compose.test.yml. Keeping the image as a narrow host adapter avoids a
 # second package install and ensures the SDK runtime under test is the repo's
 # exact pinned installation.
-# Shell wrapper: MODE-B forensics — an entrypoint-level marker printed before
-# node even evaluates the module. If a wedged run's pi-host log lacks
-# ENTRYPPOINT-BOOT lines for the restarting generations, the process never
-# started (docker/runner level); if present but no [e2e-pi-host] booting line,
-# node died during module import (capture stderr below).
-CMD ["sh", "-c", "echo ENTRYPPOINT-BOOT $(date -u +%H:%M:%S.%3N); exec node --import tsx test/support/e2e_pi_host_server.ts"]
+# Process-respawn loop, NOT a docker restart policy: /__restart exits the node
+# process (process exit is the e2e's reset boundary), and this loop respawns it
+# in ~200ms. The container itself never exits, so docker's restart-policy
+# BACKOFF never engages — with `restart: unless-stopped`, consecutive test
+# generations that each lived <10s kept doubling the backoff (100ms→51s by
+# restart #10), blowing past the tests' 45s restartForIsolation window and
+# wedging every subsequent test ("Connection closed before full header").
+CMD ["sh", "-c", "while true; do node --import tsx test/support/e2e_pi_host_server.ts; echo \"[e2e-pi-host] process exited rc=$? — respawning\" >&2; sleep 0.2; done"]

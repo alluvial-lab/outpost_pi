@@ -37,7 +37,9 @@ services:
       context: ..
       dockerfile: e2e/services/pi-host.Dockerfile
     init: true
-    restart: unless-stopped
+    # NO restart policy: the image's CMD respawns the node process in a shell
+    # loop (see pi-host.Dockerfile). docker restart-policy backoff on fast
+    # sub-10s generations was Mode B of the e2e flake — see that comment.
     depends_on:
       relay:
         condition: service_healthy
