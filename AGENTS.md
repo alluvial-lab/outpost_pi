@@ -126,10 +126,13 @@ reachable from the LAN + tailnet). Outpost-Pi holds **:8095** for
 `.mockups/` previews (operator-pinned; restart: `cd .mockups/design-system
 && nohup python3 -m http.server 8095 --bind 0.0.0.0 >/tmp/outpost-mockups-server.log 2>&1 &`).
 
-Cross-project port registry (coordinate via the agent mesh before binding
-or reclaiming a port — a stale-looking server may be a peer's active
-stakeholder session): SNC platform 8090-8091, SNC org 8096+, patchbay 8765,
-outpost-pi 8095. Prefer a fresh port in your own range over reclaiming.
+Cross-project port registry. Port takeovers are a two-way hazard on a
+shared box — check the registry + mesh peers **before binding** `0.0.0.0`
+(a blind bind 404s a peer's live review links) and **before killing** a
+stale-looking server (staleness is a bad signal — a peer's stakeholder
+session may be mid-review; learned 2026-08-14). Registry: SNC platform
+8090-8091, SNC org 8096+, patchbay 8765, outpost-pi 8095. Prefer a fresh
+port in your own range over reclaiming.
 
 ## Deployment and running
 
