@@ -1,8 +1,8 @@
-gradle-wrapper.jar
-/.gradle
+# NOTE: the gradle wrapper (gradlew, gradlew.bat, gradle-wrapper.jar) is
+# COMMITTED deliberately (force-added): fresh clones and CI must be able to
+# build without regenerating it. Do not re-ignore.
+#/.gradle
 /captures/
-/gradlew
-/gradlew.bat
 /local.properties
 GeneratedPluginRegistrant.java
 .cxx/
