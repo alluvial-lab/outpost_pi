@@ -101,7 +101,7 @@ dependencies:
   # Wave 2 — drag files from the OS (Finder/Explorer/etc.) into the input.
   # Flutter's internal drag-drop does not catch native drops; desktop_drop
   # covers macOS/Linux/Windows. NOTE: register this dep in plan 37.
-  desktop_drop: ^0.5.0
+  desktop_drop: ^0.7.1
 
   # Wave 2 — sticky header per turn in the chat: the user's question stays
   # pinned at the top while the response scrolls. NOTE: register in plan 37.
