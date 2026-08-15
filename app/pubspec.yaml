@@ -84,7 +84,7 @@ dependencies:
   # Plan 44 — read the running app version (CFBundleShortVersionString /
   # versionName) so the Android-only in-app update notice can compare it
   # against the release manifest's semver.
-  package_info_plus: ^8.0.0
+  package_info_plus: ^9.0.1
 
   # Debug ring log — persistent, privacy-scrubbed retroactive capture for
   # intermittent mobile bugs (closes the app-side half of
