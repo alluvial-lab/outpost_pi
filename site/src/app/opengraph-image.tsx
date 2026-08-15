@@ -17,11 +17,11 @@ export default function OpengraphImage() {
           alignItems: "center",
           justifyContent: "center",
           gap: 64,
-          backgroundColor: "#000000",
+          backgroundColor: "#0D1210",
           backgroundImage:
-            "radial-gradient(circle at 80% 20%, rgba(79,195,247,0.18), transparent 60%)",
+            "radial-gradient(circle at 80% 20%, rgba(116,204,156,0.18), transparent 60%)",
           padding: 80,
-          fontFamily: "sans-serif",
+          fontFamily: "monospace",
         }}
       >
         <div
@@ -34,11 +34,16 @@ export default function OpengraphImage() {
           }}
         >
           <svg width="280" height="280" viewBox="0 0 1024 1024">
-            <rect width="1024" height="1024" fill="#000000" rx="200" />
-            <rect x="290" y="368" width="444" height="68" rx="10" fill="#FFFFFF" />
-            <rect x="345" y="436" width="68" height="320" rx="10" fill="#FFFFFF" />
-            <rect x="611" y="436" width="68" height="320" rx="10" fill="#FFFFFF" />
-            <circle cx="780" cy="332" r="58" fill="#4FC3F7" />
+            <rect width="1024" height="1024" fill="#0D1210" rx="200" />
+            <path
+              d="M 398 564 L 695 385 M 398 564 L 633 693"
+              stroke="#E4EFE8"
+              strokeWidth="34"
+              strokeLinecap="round"
+            />
+            <rect x="314" y="480" width="168" height="168" rx="25" fill="#74CC9C" />
+            <circle cx="695" cy="385" r="63" fill="#E4EFE8" />
+            <circle cx="633" cy="693" r="71" fill="#E4EFE8" />
           </svg>
         </div>
         <div
@@ -52,18 +57,18 @@ export default function OpengraphImage() {
           <div
             style={{
               fontSize: 28,
-              color: "#4FC3F7",
+              color: "#74CC9C",
               letterSpacing: 4,
               textTransform: "uppercase",
               fontWeight: 600,
             }}
           >
-            Outpost-Pi
+            outpost_pi
           </div>
           <div
             style={{
               fontSize: 64,
-              color: "#FFFFFF",
+              color: "#E4EFE8",
               fontWeight: 700,
               lineHeight: 1.1,
             }}
@@ -73,7 +78,7 @@ export default function OpengraphImage() {
           <div
             style={{
               fontSize: 28,
-              color: "#A3A3A3",
+              color: "#89978D",
               lineHeight: 1.4,
             }}
           >

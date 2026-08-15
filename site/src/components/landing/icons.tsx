@@ -30,17 +30,19 @@ function Ic({
   );
 }
 
-/* brand mark — Outpost-Pi "π" logo with accent dot */
+/* brand mark — Constellation III: cursor hub tethered to two peer nodes */
 export function LogoMark() {
   return (
-    <svg viewBox="255 250 625 545" fill="none" aria-hidden="true">
-      <g fill="currentColor">
-        <rect x="290" y="368" width="444" height="68" rx="10" />
-        <rect x="345" y="436" width="68" height="320" rx="10" />
-        <rect x="611" y="436" width="68" height="320" rx="10" />
-        <path d="M 679 720 Q 712 740 720 700 L 720 712 Q 720 756 668 756 L 668 736 Z" />
-      </g>
-      <circle cx="780" cy="332" r="58" fill="var(--green)" />
+    <svg viewBox="280 300 510 480" fill="none" aria-hidden="true">
+      <path
+        d="M 398 564 L 695 385 M 398 564 L 633 693"
+        stroke="currentColor"
+        strokeWidth="34"
+        strokeLinecap="round"
+      />
+      <rect x="314" y="480" width="168" height="168" rx="25" fill="var(--green)" />
+      <circle cx="695" cy="385" r="63" fill="currentColor" />
+      <circle cx="633" cy="693" r="71" fill="currentColor" />
     </svg>
   );
 }
@@ -198,10 +200,10 @@ export function IconAndroid() {
 export function IconPlay() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M3.6 2.3 13.5 12 3.6 21.7c-.36-.18-.6-.55-.6-1V3.3c0-.45.24-.82.6-1Z" fill="#4fc3f7" />
-      <path d="m16.8 8.7 3.1 1.7c.8.45.8 1.35 0 1.8l-3.1 1.7L13.5 12l3.3-3.3Z" fill="#4fc3f7" opacity=".8" />
-      <path d="M3.6 2.3 13.5 12l-3.3 3.3L3.6 2.3Z" fill="#4fc3f7" opacity=".5" />
-      <path d="M3.6 21.7 13.5 12l-3.3-3.3L3.6 21.7Z" fill="#4fc3f7" opacity=".65" />
+      <path d="M3.6 2.3 13.5 12 3.6 21.7c-.36-.18-.6-.55-.6-1V3.3c0-.45.24-.82.6-1Z" fill="var(--green)" />
+      <path d="m16.8 8.7 3.1 1.7c.8.45.8 1.35 0 1.8l-3.1 1.7L13.5 12l3.3-3.3Z" fill="var(--green)" opacity=".8" />
+      <path d="M3.6 2.3 13.5 12l-3.3 3.3L3.6 2.3Z" fill="var(--green)" opacity=".5" />
+      <path d="M3.6 21.7 13.5 12l-3.3-3.3L3.6 21.7Z" fill="var(--green)" opacity=".65" />
     </svg>
   );
 }

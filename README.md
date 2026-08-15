@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="branding/logo-full.svg" width="140" alt="Outpost-Pi logo" />
+  <img src="branding/logo-full-dark.svg" width="140" alt="Outpost-Pi logo" />
 </p>
 
 <h1 align="center">Outpost-Pi</h1>
