@@ -1,14 +1,14 @@
 ---
 id: story-brand-site-sync
 kind: story
-stage: drafting
+stage: implementing
 tags: [branding, site]
 parent: feature-public-flip-branding-and-exposure
 depends_on: [story-brand-icon-regen-sweep]
 release_binding: null
 gate_origin: null
 created: 2026-08-14
-updated: 2026-08-14
+updated: 2026-08-15
 ---
 
 # Site sync — Phosphor Beacon + v2 mark
@@ -29,3 +29,14 @@ updated: 2026-08-14
 
 Verify: `pnpm lint` + `pnpm build` green; dark/light toggle (if present)
 renders both modes AA.
+
+## Implementation run
+
+- Dependency `story-brand-icon-regen-sweep` is `done` with green asset/hash
+  evidence (`56bcbcd`).
+- Ownership: direct host implementation under `site/` plus the scoped root
+  README reference; the icon story already supplied canonical SVG/favicon
+  assets.
+- Capability: `openai-codex/gpt-5.6-sol`, high (caller-selected).
+- Screenshot retake is explicitly deferred: this VM has no attached phone, so
+  the deleted pre-theme screenshot will not be restored from stale imagery.
