@@ -5,7 +5,7 @@
 # Resulting artifact: outpost-pi-cockpit-<version>.<arch>.rpm
 display_name: Outpost-Pi Cockpit
 summary: Multi-pane desktop client for Outpost-Pi
-license: LicenseRef-proprietary
+license: MIT
 url: https://kevoun.com
 vendor: Kevoun
 packager: Kevoun
