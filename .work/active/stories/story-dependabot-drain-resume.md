@@ -17,10 +17,11 @@ updated: 2026-08-15
 
 The post-history-rewrite queue is drained: `gh pr list --state open` returned
 no open PRs after every stale Dependabot branch was recreated from the current
-`main`. Forty-one PRs were merged after all checks on their fresh heads
-completed with `success` or `skipped`; eight incompatible/deferred PRs were
-closed with explanatory comments. This includes the 20 additional PRs (#68–87)
-opened by the completion-time Dependabot config sync.
+`main`. Forty-six PRs were merged after all checks on their fresh heads
+completed with `success` or `skipped`; eleven incompatible/deferred/no-op PRs
+were closed with explanatory comments. This includes the additional PRs
+#68–95 opened by completion-time Dependabot config syncs as directory limits
+freed.
 
 The full CI matrix passed on the recreated actions PR, including the lanes that
 path filtering normally skips. Every later dependency PR also passed its bumped
@@ -94,6 +95,25 @@ load-sensitive history-replay test failures; its required one-time rerun passed.
   61 invalid storage overrides because v10 replaces iOS/macOS option types with
   `AppleOptions` across production and test-fixture APIs.
 
+## Merged from the final config-sync queue (5)
+
+- relay: #88 `hyper` 1.9.0→1.11.0; #90 `rand` 0.8.6→0.8.7; #91
+  `serde_json` 1.0.149→1.0.151.
+- app: #94 `google_fonts` 6.3.3→8.2.1; #95 `go_router` 14.8.1→17.5.0.
+
+## Closed from the final config-sync queue (3)
+
+- #89 `@earendil-works/pi-coding-agent` 0.80.6→0.84.0: the same fresh
+  typecheck failures as #77 proved the incompatible API removal covers the
+  0.84.x line, which is now ignored as a range.
+- #92 grouped `flutter_secure_storage` 11, `package_info_plus`, and `share_plus`
+  update: both app runs reproduced the 61 `AppleOptions` migration failures;
+  all `flutter_secure_storage` majors are now deferred rather than only v10.
+- #93 `xterm` git ref→4.0.0: closed as a zero-file no-op because Cockpit already
+  declares 4.0.0 while intentionally resolving its block-glyph fork through a
+  git override. Exact suggestion 4.0.0 is ignored while later versions remain
+  eligible.
+
 ## Security alerts
 
 The public-repository Dependabot alerts API succeeded. The drain reduced the
@@ -114,10 +134,9 @@ after the follow-on pi-extension dependency merges.
   source-breaking. It was closed rather than merged past red, and the exact
   broken version was ignored to prevent the same weekly loop.
 - #56 required manual closure after the requested 15-minute config-sync window.
-- The first completion commit's config sync immediately opened #68–87 as the
-  directory limits freed. The drain continued through that entire follow-on
-  wave; incompatible releases gained bounded ignore rules before the final
-  completion commit.
+- Completion-time config syncs opened #68–95 as directory limits freed. The
+  drain continued through every follow-on wave; incompatible releases gained
+  bounded ignore rules before the final completion commit.
 
 ## Prior drain work (completed before the resume)
 
