@@ -58,7 +58,7 @@ dependencies:
 
   # Visual identity — Space Mono for display, body, labels, and code; served
   # at runtime and cached by google_fonts.
-  google_fonts: ^6.2.1
+  google_fonts: ^8.2.1
 
   # Wave 2 — renders the agent response Markdown (GFM + code).
   gpt_markdown: ^1.1.7
