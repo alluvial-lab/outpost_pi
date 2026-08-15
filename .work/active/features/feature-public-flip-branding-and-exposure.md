@@ -86,6 +86,32 @@ Remaining child stories: icon regeneration sweep (app/cockpit/site PNGs,
 3. `story-brand-site-sync` — tokens → Tailwind vars, logo/favicon, wordmark,
    README hero, screenshot retake. Depends on 1 (screenshot on 2).
 
+## Brand cascade implementation complete — 2026-08-15
+
+The branding half is implemented and locally verified:
+
+- `story-brand-icon-regen-sweep` — `done` (`56bcbcd`): all app/cockpit/site
+  assets regenerated from Constellation III, 33/33 upstream hashes differ.
+- `story-brand-theme-replacement` — `done` (`970d74a`): mobile/Cockpit dual-mode
+  tokens + Space Mono landed; analyzers green, app 874-test serialized suite and
+  Cockpit 280-test concurrency-2 suite green. The concurrency-2 app suite still
+  exposes an unrelated pre-existing sync-test isolation failure documented in
+  the child body; its isolated test is green.
+- `story-brand-site-sync` — `done` (`c07fa20`): Tailwind/CSS dual-mode tokens,
+  Space Mono, canonical inline marks, README reference, lint and 18-route build
+  green.
+
+Bounded deviations are recorded in the child items: banner PNG uses the
+approved Noto Sans Mono fallback because Space Mono is not installed on the VM;
+the themed phone screenshot and device visual smoke await device UAT because no
+phone is attached.
+
+**Lifecycle boundary:** this feature intentionally remains active at `drafting`.
+The branding cascade is complete, but choosing and executing the fresh-public-
+repo versus history-rewrite path is operator-owned and was explicitly excluded
+from this implementation drain. No public-flip/security work was attempted and
+nothing was pushed.
+
 Parked by operator 2026-08-14: components mockup layer
 (.mockups/design-system/components.css + showcase) — run before any
 redesigned-screen mocks, not needed for the asset/theme cascade.
