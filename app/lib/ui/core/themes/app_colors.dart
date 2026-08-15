@@ -10,8 +10,9 @@ import 'package:flutter/material.dart';
 /// `buildLightTheme()` so `Theme.of(context).extension<AppColors>()` resolves
 /// the right palette for the active brightness.
 ///
-/// Design tokens originate from `app/wareframe/screens.jsx` (dark). The light
-/// palette is a first-pass derivation — tune the hexes here, in one place.
+/// Values mirror the locked Phosphor Beacon contract in
+/// `.mockups/design-system/tokens.css`; surface-specific semantic roles derive
+/// from that neutral, accent, and status ramp here in one place.
 @immutable
 class AppColors extends ThemeExtension<AppColors> {
   const AppColors({
@@ -96,54 +97,50 @@ class AppColors extends ThemeExtension<AppColors> {
   /// Text-field fill. Was the hardcoded `Color(0xFF0E0E0E)`.
   final Color inputFill;
 
-  /// Dark palette (default). Mirrors the original `app_theme.dart` constants.
+  /// Dark-native Phosphor Beacon palette.
   static const AppColors dark = AppColors(
-    bg: Color(0xFF000000),
-    surface: Color(0xFF0A0A0A),
-    border: Color(0xFF1A1A1A),
-    text: Color(0xFFFFFFFF),
-    muted: Color(0xFF6B6B6B),
-    muted2: Color(0xFF8A8A8A),
-    accent: Color(0xFF00D4FF),
-    onAccent: Color(0xFF000000),
-    highlight: Color(0xFF9FE6FF),
-    success: Color(0xFF6CD28A),
-    error: Color(0xFFE5484D),
-    warning: Color(0xFFFFB300),
-    working: Color(0xFF3FA9F5),
-    codeBg: Color(0xFF050505),
-    userBubble: Color(0xFF1A1A1A),
-    modelBadgeBg: Color(0xFF161616),
-    modelBadgeBorder: Color(0xFF1F1F1F),
-    denyBorder: Color(0xFF2A2A2A),
-    inputFill: Color(0xFF0E0E0E),
+    bg: Color(0xFF0D1210),
+    surface: Color(0xFF131A16),
+    border: Color(0xFF1E2620),
+    text: Color(0xFFE4EFE8),
+    muted: Color(0xFF89978D),
+    muted2: Color(0xFFAAB6AD),
+    accent: Color(0xFF74CC9C),
+    onAccent: Color(0xFF0A2418),
+    highlight: Color(0xFF8FD9A8),
+    success: Color(0xFF7FD99A),
+    error: Color(0xFFFF8B7D),
+    warning: Color(0xFFE6C86E),
+    working: Color(0xFF7DB8E8),
+    codeBg: Color(0xFF0D1210),
+    userBubble: Color(0xFF1E2620),
+    modelBadgeBg: Color(0xFF131A16),
+    modelBadgeBorder: Color(0xFF2A342C),
+    denyBorder: Color(0xFF2A342C),
+    inputFill: Color(0xFF1E2620),
   );
 
-  /// Light palette — derived from [dark]. Foreground tints are tuned for
-  /// WCAG-AA contrast on the white [bg] (≥4.5:1 for body, ≥3:1 for large/UI):
-  /// `muted`/`muted2` are dark grays (not the dark-theme mid-grays, which were
-  /// washed out on white), and `accent`/`highlight` are deepened cyans so
-  /// accent-colored *text* (links, "Use default" buttons) stays legible.
+  /// Light Phosphor Beacon palette with AA-verified contract values.
   static const AppColors light = AppColors(
-    bg: Color(0xFFFFFFFF),
-    surface: Color(0xFFF4F4F5),
-    border: Color(0xFFDADADD),
-    text: Color(0xFF0A0A0A),
-    muted: Color(0xFF565656), // ~7:1 on white (was 0xFF6B6B6B, ~4:1)
-    muted2: Color(0xFF424242), // ~9:1 on white
-    accent: Color(0xFF0077A3), // ~4.6:1 on white — legible as text AND fill
+    bg: Color(0xFFF3F6F3),
+    surface: Color(0xFFF8FAF8),
+    border: Color(0xFFDFE6DF),
+    text: Color(0xFF182019),
+    muted: Color(0xFF57635A),
+    muted2: Color(0xFF3D4940),
+    accent: Color(0xFF256E47),
     onAccent: Color(0xFFFFFFFF),
-    highlight: Color(0xFF005F82), // code/paths — deeper for body contrast
-    success: Color(0xFF1E7A41),
-    error: Color(0xFFC42026),
-    warning: Color(0xFF9A6300),
-    working: Color(0xFF1A6CB0),
-    codeBg: Color(0xFFF0F0F0),
-    userBubble: Color(0xFFEAEAEC),
-    modelBadgeBg: Color(0xFFEDEDEF),
-    modelBadgeBorder: Color(0xFFD7D7DA),
-    denyBorder: Color(0xFFC9C9CD),
-    inputFill: Color(0xFFF0F0F2),
+    highlight: Color(0xFF1C5A39),
+    success: Color(0xFF3E7A4E),
+    error: Color(0xFFB34234),
+    warning: Color(0xFF8A6A1F),
+    working: Color(0xFF33689B),
+    codeBg: Color(0xFFF8FAF8),
+    userBubble: Color(0xFFDFE6DF),
+    modelBadgeBg: Color(0xFFF8FAF8),
+    modelBadgeBorder: Color(0xFFC2CEC3),
+    denyBorder: Color(0xFFC2CEC3),
+    inputFill: Color(0xFFF8FAF8),
   );
 
   @override
@@ -211,7 +208,11 @@ class AppColors extends ThemeExtension<AppColors> {
       codeBg: Color.lerp(codeBg, other.codeBg, t)!,
       userBubble: Color.lerp(userBubble, other.userBubble, t)!,
       modelBadgeBg: Color.lerp(modelBadgeBg, other.modelBadgeBg, t)!,
-      modelBadgeBorder: Color.lerp(modelBadgeBorder, other.modelBadgeBorder, t)!,
+      modelBadgeBorder: Color.lerp(
+        modelBadgeBorder,
+        other.modelBadgeBorder,
+        t,
+      )!,
       denyBorder: Color.lerp(denyBorder, other.denyBorder, t)!,
       inputFill: Color.lerp(inputFill, other.inputFill, t)!,
     );
