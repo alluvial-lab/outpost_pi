@@ -1,21 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Solid black background -->
-  <rect width="1024" height="1024" fill="#000000"/>
-
-  <!-- π symbol (geometric, with no font dependency) -->
-  <!-- Centered on the canvas, within the Android safe zone (~66% of the canvas) -->
-  <g fill="#FFFFFF">
-    <!-- Upper horizontal bar -->
-    <rect x="290" y="368" width="444" height="68" rx="10"/>
-    <!-- Left leg -->
-    <rect x="345" y="436" width="68" height="320" rx="10"/>
-    <!-- Right leg -->
-    <rect x="611" y="436" width="68" height="320" rx="10"/>
-    <!-- Subtle curve on the right foot (extension to the right) -->
-    <path d="M 679 720 Q 712 740 720 700 L 720 712 Q 720 756 668 756 L 668 736 Z" fill="#FFFFFF"/>
-  </g>
-
-  <!-- Characteristic blue dot, positioned at the upper-right corner -->
-  <circle cx="780" cy="332" r="58" fill="#4FC3F7"/>
+  <!-- Outpost-Pi mark v2.0 — Constellation III (locked 2026-08-14)
+       Dark full-bleed variant. The operator's cursor (block) tethered to two peer nodes. -->
+  <rect width="1024" height="1024" fill="#0D1210"/>
+  <path d="M 398 564 L 695 385 M 398 564 L 633 693" stroke="#E4EFE8" stroke-width="34" stroke-linecap="round"/>
+  <rect x="314" y="480" width="168" height="168" rx="25" fill="#74CC9C"/>
+  <circle cx="695" cy="385" r="63" fill="#E4EFE8"/>
+  <circle cx="633" cy="693" r="71" fill="#E4EFE8"/>
 </svg>

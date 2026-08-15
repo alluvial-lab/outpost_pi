@@ -1,7 +1,7 @@
 ---
 id: story-brand-icon-regen-sweep
 kind: story
-stage: implementing
+stage: done
 tags: [branding, icons]
 parent: feature-public-flip-branding-and-exposure
 depends_on: []
@@ -45,3 +45,29 @@ screenshot — audit item 5); recommend deleting here, retake in story-brand-sit
 - Plan: render canonical geometry at 4× with Pillow/LANCZOS, preserve every
   platform export matrix, hash-compare tracked app/cockpit assets against
   upstream, then advance this child story directly to `done` on green evidence.
+
+## Implementation notes
+
+- Added `scripts/generate-brand-assets.py` as the reproducible native-geometry
+  renderer. It exports Android adaptive foreground/monochrome assets at each
+  density, no-alpha iOS and macOS icon catalogs, a multi-size Windows ICO,
+  16/32px site favicons, canonical site SVG copies, and `branding/banner.png`.
+- Updated Android adaptive/launch backgrounds to Phosphor Beacon dark
+  `#0D1210` and removed the stale pre-theme `branding/screenshot-app.png`.
+- Deviation: Space Mono is not installed on this VM. The banner uses the
+  caller-approved Noto Sans Mono regular/bold system fallback; layout and all
+  canonical mark geometry/colors are preserved. A Space Mono retake can replace
+  only the derived PNG later without changing the source SVG or generator.
+
+## Verification evidence
+
+- `python3 -m py_compile scripts/generate-brand-assets.py` — PASS.
+- Pillow structure validation — PASS: 32 PNG catalog/adaptive files, banner,
+  and ICO; Android assets are RGBA, iOS/macOS assets are RGB/no-alpha,
+  `branding/banner.png` is RGB 1280×640, ICO is 256px with embedded sizes.
+- Exact upstream check using `curl ... | git hash-object --stdin` versus
+  `git hash-object <local>` — PASS: all 33 tracked app/cockpit icon files differ
+  from `jacobaraujo7/remote_pi@main`.
+- `cd app && flutter analyze` — PASS, no issues.
+- `cd cockpit && flutter analyze` — PASS, no issues.
+- `git diff --check` — PASS.
