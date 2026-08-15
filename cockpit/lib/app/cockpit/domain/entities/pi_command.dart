@@ -45,14 +45,12 @@ enum PiRelayControlAction {
 /// to the active wire frame.
 final class PiControlCommand {
   PiControlCommand.relay(PiRelayControlAction relay)
-    : command = relay.commandName,
-      relay = relay,
-      name = null;
+    : this._(command: relay.commandName, relay: relay);
 
   PiControlCommand.rename(String name)
-    : command = PiControlCommandName.rename,
-      relay = null,
-      name = name.trim();
+    : this._(command: PiControlCommandName.rename, name: name.trim());
+
+  const PiControlCommand._({required this.command, this.relay, this.name});
 
   final PiControlCommandName command;
   final PiRelayControlAction? relay;
