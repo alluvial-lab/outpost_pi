@@ -1,11 +1,10 @@
 import 'package:flutter/widgets.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Define Cockpit typography to mirror the design.
+/// Define Cockpit's mono-native Space Mono typography.
 ///
-/// Uses Space Grotesk for display and titles, Hanken Grotesk for UI text, and
-/// JetBrains Mono for code. Fonts are served and cached by `google_fonts`
-/// without bundled `.ttf` files.
+/// Display, body, labels, tabs, and code share one 400/700 family served and
+/// cached by `google_fonts` without bundled `.ttf` files.
 @immutable
 class AppTypography {
   const AppTypography({
@@ -17,28 +16,28 @@ class AppTypography {
     required this.mono,
   });
 
-  /// Space Grotesk for large transcript headings.
+  /// Space Mono for large transcript headings.
   final TextStyle display;
 
-  /// Space Grotesk for workspace, tab, and section names.
+  /// Space Mono for workspace, tab, and section names.
   final TextStyle title;
 
-  /// Hanken Grotesk for transcript body text and inputs.
+  /// Space Mono for transcript body text and inputs.
   final TextStyle body;
 
-  /// Hanken Grotesk for small labels.
+  /// Space Mono for small labels.
   final TextStyle label;
 
-  /// Space Grotesk for tab text.
+  /// Space Mono for tab text.
   final TextStyle tab;
 
-  /// JetBrains Mono for code, tool arguments, and metrics.
+  /// Space Mono for code, tool arguments, and metrics.
   final TextStyle mono;
 
   /// Build typography from design defaults or configured font families.
   ///
-  /// Empty [uiFont] and [monoFont] values retain Space Grotesk/Hanken and
-  /// JetBrains Mono; non-empty values resolve through the operating system.
+  /// Empty [uiFont] and [monoFont] values retain Space Mono; non-empty values
+  /// resolve through the operating system.
   /// [codeSize] controls monospace text. Interface scaling is applied globally
   /// through `MediaQuery.textScaler`, not here.
   factory AppTypography.build({
@@ -48,30 +47,42 @@ class AppTypography {
   }) {
     final hasUi = uiFont != null && uiFont.trim().isNotEmpty;
     final hasMono = monoFont != null && monoFont.trim().isNotEmpty;
-    // Default display/title text to Space Grotesk and body/labels to Hanken.
-    // A configured interface font replaces both families.
+    // A configured interface font replaces Space Mono for UI roles; code keeps
+    // its independently configurable family.
     final TextStyle displayBase = hasUi
         ? TextStyle(fontFamily: uiFont)
-        : GoogleFonts.spaceGrotesk();
+        : GoogleFonts.spaceMono(fontWeight: FontWeight.w700);
     final TextStyle ui = hasUi
         ? TextStyle(fontFamily: uiFont)
-        : GoogleFonts.hankenGrotesk();
+        : GoogleFonts.spaceMono();
     final TextStyle mono = hasMono
         ? TextStyle(fontFamily: monoFont)
-        : GoogleFonts.jetBrainsMono();
+        : GoogleFonts.spaceMono();
 
     return AppTypography(
       display: displayBase.copyWith(
         fontSize: 22,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
         height: 1.25,
         letterSpacing: -0.2,
       ),
-      title: displayBase.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
-      body: ui.copyWith(fontSize: 14.5, height: 1.6),
-      label: ui.copyWith(fontSize: 12, height: 1.3),
-      tab: displayBase.copyWith(fontSize: 12.5, fontWeight: FontWeight.w500),
-      mono: mono.copyWith(fontSize: codeSize, height: 1.55),
+      title: displayBase.copyWith(fontSize: 13, fontWeight: FontWeight.w700),
+      body: ui.copyWith(
+        fontSize: 14.5,
+        fontWeight: FontWeight.w400,
+        height: 1.6,
+      ),
+      label: ui.copyWith(
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        height: 1.3,
+      ),
+      tab: displayBase.copyWith(fontSize: 12.5, fontWeight: FontWeight.w700),
+      mono: mono.copyWith(
+        fontSize: codeSize,
+        fontWeight: FontWeight.w400,
+        height: 1.55,
+      ),
     );
   }
 

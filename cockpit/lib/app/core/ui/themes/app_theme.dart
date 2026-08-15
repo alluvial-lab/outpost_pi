@@ -44,7 +44,7 @@ ThemeData buildTheme({
   final colors = brightness == Brightness.dark
       ? AppColors.dark
       : AppColors.light;
-  // Reuse AppTypography font resolution (Hanken/JetBrains or configured fonts)
+  // Reuse AppTypography font resolution (Space Mono or configured fonts)
   // and pass only the family to shadcn Typography. Every shadcn component then
   // inherits Cockpit typography: ShadcnApp installs `typography.sans` in the
   // root DefaultTextStyle, while .h3/.base/etc. only adjust size and weight.
@@ -86,9 +86,9 @@ ColorScheme _schemeFrom(AppColors c, Brightness brightness) {
     cardForeground: c.text,
     popover: c.panel,
     popoverForeground: c.text,
-    // "primary" is the Outpost-Pi blue brand; its foreground is always white.
+    // "primary" is the phosphor beacon; foreground follows the mode contract.
     primary: c.accent,
-    primaryForeground: Colors.white,
+    primaryForeground: c.onAccent,
     // "secondary" is the neutral surface for secondary buttons.
     secondary: c.panel3,
     secondaryForeground: c.text2,

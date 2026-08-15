@@ -3,24 +3,19 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:app/ui/core/themes/app_colors.dart';
 
-/// Monospace font family — used for code, terminal-style chrome, and most of
-/// the app's UI text (the product's "coding agent" identity).
+/// Google Fonts' registered family name for the product's mono-native voice.
 ///
-/// **To swap the app font, change this one line.** Bundle a real font in
-/// `pubspec.yaml` under this family name (e.g. JetBrains Mono) and it flows
-/// everywhere automatically. `'Courier'` is the platform fallback.
-const String kMonoFamily = 'Courier';
+/// [GoogleFonts.spaceMono] loads the files while this constant keeps direct
+/// `TextStyle` call sites aligned with the same family.
+const String kMonoFamily = 'SpaceMono_regular';
 
-/// Sans family for body/system text. `null` → the platform default sans.
-/// Set to a bundled family name to override globally.
-const String? kSansFamily = null;
+/// Body/system text uses the same Space Mono family as code and display text.
+const String kSansFamily = kMonoFamily;
 
-/// Brand wordmark style — the "Outpost-Pi" marca. **Always Inter** (the
-/// wireframe's `RP_SANS`: `screens.jsx` renders the title in `RP_SANS` bold),
-/// served via the `google_fonts` package so it renders identically on iOS and
-/// Android. This is the ONE font that must stay constant everywhere the product
-/// name appears (Home title, onboarding, splash) — never substitute the
-/// mono/system font for it.
+/// Build the Space Mono wordmark style for product-name lockups.
+///
+/// The locked identity uses one type voice everywhere, with the literal
+/// `outpost_pi` wordmark at weight 700.
 ///
 /// **To change the brand font, change this one call** (e.g. `GoogleFonts.x`).
 ///
@@ -33,7 +28,7 @@ TextStyle brandTextStyle({
   double? letterSpacing,
   double? height,
 }) {
-  return GoogleFonts.inter(
+  return GoogleFonts.spaceMono(
     fontSize: fontSize,
     fontWeight: fontWeight,
     color: color,
@@ -73,36 +68,37 @@ class AppTypography extends ThemeExtension<AppTypography> {
   /// hardcoded `0xFFE6E6E6` in dark).
   factory AppTypography.fromColors(AppColors c, {required Color monoColor}) {
     return AppTypography(
-      mono: TextStyle(
-        fontFamily: kMonoFamily,
+      mono: GoogleFonts.spaceMono(
         fontSize: 12.5,
         color: monoColor,
         height: 1.5,
         letterSpacing: 0,
       ),
-      monoSmall: TextStyle(
-        fontFamily: kMonoFamily,
+      monoSmall: GoogleFonts.spaceMono(
         fontSize: 11.0,
         color: c.muted2,
         height: 1.4,
       ),
-      sansBody: TextStyle(
-        fontFamily: kSansFamily,
+      sansBody: GoogleFonts.spaceMono(
         fontSize: 14.0,
         color: c.text,
         height: 1.35,
-        letterSpacing: -0.1,
+        letterSpacing: 0,
       ),
     );
   }
 
-  /// Dark typography — mono text matches the original `0xFFE6E6E6`.
-  static final AppTypography dark =
-      AppTypography.fromColors(AppColors.dark, monoColor: const Color(0xFFE6E6E6));
+  /// Dark typography follows the primary Phosphor Beacon ink.
+  static final AppTypography dark = AppTypography.fromColors(
+    AppColors.dark,
+    monoColor: AppColors.dark.text,
+  );
 
-  /// Light typography — mono text is a near-black for contrast on white.
-  static final AppTypography light =
-      AppTypography.fromColors(AppColors.light, monoColor: const Color(0xFF1A1A1A));
+  /// Light typography follows the primary Phosphor Beacon ink.
+  static final AppTypography light = AppTypography.fromColors(
+    AppColors.light,
+    monoColor: AppColors.light.text,
+  );
 
   @override
   AppTypography copyWith({

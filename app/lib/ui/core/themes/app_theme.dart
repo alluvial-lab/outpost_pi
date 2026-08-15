@@ -44,10 +44,7 @@ ThemeData _buildTheme({
         letterSpacing: -0.2,
       ),
     ),
-    textTheme: TextTheme(
-      bodyMedium: typo.sansBody,
-      bodySmall: typo.monoSmall,
-    ),
+    textTheme: TextTheme(bodyMedium: typo.sansBody, bodySmall: typo.monoSmall),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: colors.inputFill,
@@ -73,16 +70,16 @@ ThemeData _buildTheme({
   );
 }
 
-/// Dark theme — the app's original look.
+/// Dark-native Phosphor Beacon theme.
 ThemeData buildDarkTheme() => _buildTheme(
-      brightness: Brightness.dark,
-      colors: AppColors.dark,
-      typo: AppTypography.dark,
-    );
+  brightness: Brightness.dark,
+  colors: AppColors.dark,
+  typo: AppTypography.dark,
+);
 
-/// Light theme — derived palette (tune hexes in `app_colors.dart`).
+/// Light Phosphor Beacon theme.
 ThemeData buildLightTheme() => _buildTheme(
-      brightness: Brightness.light,
-      colors: AppColors.light,
-      typo: AppTypography.light,
-    );
+  brightness: Brightness.light,
+  colors: AppColors.light,
+  typo: AppTypography.light,
+);

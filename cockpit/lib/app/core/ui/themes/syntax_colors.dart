@@ -44,7 +44,7 @@ class SyntaxColors {
     base: Color(0xFFABB2BF),
     comment: Color(0xFF7F848E),
     keyword: Color(0xFFC678DD),
-    string: Color(0xFF98C379),
+    string: Color(0xFF7FD99A),
     number: Color(0xFFD19A66),
     klass: Color(0xFFE5C07B),
     builtin: Color(0xFF56B6C2),
@@ -60,7 +60,7 @@ class SyntaxColors {
     base: Color(0xFF383A42),
     comment: Color(0xFFA0A1A7),
     keyword: Color(0xFFA626A4),
-    string: Color(0xFF50A14F),
+    string: Color(0xFF3E7A4E),
     number: Color(0xFF986801),
     klass: Color(0xFFC18401),
     builtin: Color(0xFF0184BC),
@@ -81,7 +81,7 @@ class SyntaxColors {
     number: Color(0xFFBD93F9),
     klass: Color(0xFF8BE9FD),
     builtin: Color(0xFF8BE9FD),
-    function: Color(0xFF50FA7B),
+    function: Color(0xFF7FD99A),
     variable: Color(0xFFFFB86C),
     meta: Color(0xFFFF79C6),
     deletion: Color(0xFFFF5555),
@@ -97,7 +97,7 @@ class SyntaxColors {
     number: Color(0xFF7C3AED),
     klass: Color(0xFF0E7490),
     builtin: Color(0xFF0E7490),
-    function: Color(0xFF1F8A4C),
+    function: Color(0xFF3E7A4E),
     variable: Color(0xFFB45309),
     meta: Color(0xFFC2268E),
     deletion: Color(0xFFDC2626),
@@ -116,7 +116,7 @@ class SyntaxColors {
     builtin: Color(0xFF79C0FF),
     function: Color(0xFFD2A8FF),
     variable: Color(0xFFFFA657),
-    meta: Color(0xFF7EE787),
+    meta: Color(0xFF7FD99A),
     deletion: Color(0xFFFFA198),
   );
 
@@ -132,7 +132,7 @@ class SyntaxColors {
     builtin: Color(0xFF0550AE),
     function: Color(0xFF8250DF),
     variable: Color(0xFF953800),
-    meta: Color(0xFF116329),
+    meta: Color(0xFF256E47),
     deletion: Color(0xFF82071E),
   );
 
