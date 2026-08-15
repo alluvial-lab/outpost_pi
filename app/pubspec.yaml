@@ -99,7 +99,7 @@ dev_dependencies:
 
   # Test-only: mock path_provider so the debug-log adapter tests use a real
   # temp dir instead of the Android/iOS plugin.
-  path_provider_platform_interface: ^2.1.2
+  path_provider_platform_interface: ^2.1.3
 
   # Plan 29 — deterministic virtual clock for the voice elapsed-timer /
   # 60s-cap tests (no real waiting). Already resolved transitively; pinned
