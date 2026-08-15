@@ -14,7 +14,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.102"
 axum = { version = "0.7.9", features = ["ws"] }
-base64 = "0.22.1"
+base64 = "0.23.1"
 ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
 futures-util = "0.3.32"
 hyper = "1"
