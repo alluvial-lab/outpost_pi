@@ -1,7 +1,7 @@
 ---
 id: story-public-flip-shred-runbook
 kind: story
-stage: drafting
+stage: done
 tags: [security, ops, release]
 parent: feature-public-flip-branding-and-exposure
 depends_on: []
@@ -62,9 +62,10 @@ commit; all patterns zero history-wide; pre-fork truncated; session-notes
 dropped; cockpit-v1.5.1 (upstream tag) removed; fix/stale-context-reconnect
 deleted on origin, preserved as local/fix-stale-context-reconnect.
 GitHub cache-purge ticket drafted in the session note — operator files it.
-Remaining for flip: operator files ticket, waits for purge, flips visibility
-(repo Settings → Danger Zone → Change visibility; or
-`gh api -X PATCH repos/alluvial-lab/outpost_pi -f visibility=public`).
+Flip: DONE 2026-08-15 (repo public). Cache-purge ticket: operator waived it
+2026-08-15 — accepted risk: old-SHA objects unreachable except by exact hash;
+sensitive values are internal-only (LAN/tailnet IPs, hostname) behind the
+operator's firewall; GitHub caches age out on their own. Story complete.
 
 ## Operator decisions (recorded 2026-08-15)
 
