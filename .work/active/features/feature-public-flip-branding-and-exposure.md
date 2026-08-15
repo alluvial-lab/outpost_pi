@@ -66,6 +66,18 @@ Remaining child stories: icon regeneration sweep (app/cockpit/site PNGs,
  implementation = Space Mono via google_fonts in app/cockpit (already a dep),
  tokens.css ported to Tailwind/CSS vars on site.
 
+## Licensing verdict (adversarial review, 2026-08-15 — gpt-5.6-sol cross-model)
+
+**Source repo: CLEAR to flip public** after in-line fixes (all landed + pushed):
+LicenseRef-proprietary stale markers (rp-s3 Cargo.toml, cockpit rpm/metainfo) → MIT;
+identity package TODO license → real MIT; Runner.rc "All rights reserved" → MIT notice.
+Clean bills: upstream MIT attribution chain, icon pack (vscode-material-icon-theme
+5.35.0, MIT, LICENSE bundled in cockpit/assets/file_icons/), fonts (OFL via
+google_fonts, banner rasterization exempt), no GPL/AGPL/SSPL/NC deps in any
+subproject (per-direct-dep verified). Remaining licensing work is
+binary-distribution-gated, not flip-gated: .work/backlog/backlog-licensing-binary-notices.md
+(LGPL libmpv/FFmpeg notices + MPL dbus for cockpit binaries; licenses screen in both apps).
+
 ## Path decision (operator)
 
 - **Option 1 — fresh public repo**: cleaned snapshot (squashed/shallow
