@@ -19,11 +19,11 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     rebase-strategy: "disabled"
-    # 0.84.1 removes AuthStorage and ModelRegistry.create; allow later releases
-    # to be tested without reopening this exact incompatible pre-1.0 bump.
+    # 0.84.x removes AuthStorage and ModelRegistry.create; defer the line until
+    # the Pi SDK integration is migrated.
     ignore:
       - dependency-name: "@earendil-works/pi-coding-agent"
-        versions: ["0.84.1"]
+        versions: [">= 0.84.0, < 0.85.0"]
     commit-message:
       prefix: deps
       include: scope
@@ -97,7 +97,7 @@ updates:
       - dependency-name: "share_plus"
         update-types: ["version-update:semver-major"]
       - dependency-name: "flutter_secure_storage"
-        versions: [">= 10.0.0, < 11.0.0"]
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: deps
       include: scope
@@ -116,6 +116,10 @@ updates:
       # later pre-1.0 release to be tested instead of reopening this exact bump.
       - dependency-name: "shadcn_flutter"
         versions: ["0.0.53"]
+      # The dependency already resolves to 4.0.0 through an intentional git
+      # override; ignore the no-op published-version suggestion only.
+      - dependency-name: "xterm"
+        versions: ["4.0.0"]
     rebase-strategy: "disabled"
     commit-message:
       prefix: deps
