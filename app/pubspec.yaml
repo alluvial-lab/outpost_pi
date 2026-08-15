@@ -36,7 +36,7 @@ dependencies:
   cryptography: ^2.7.0
   crypto: ^3.0.7
   mobile_scanner: ^7.4.0
-  flutter_secure_storage: ^9.0.0
+  flutter_secure_storage: ^11.0.0
   web_socket_channel: ^3.0.1
   go_router: ^14.0.0
 
@@ -84,14 +84,14 @@ dependencies:
   # Plan 44 — read the running app version (CFBundleShortVersionString /
   # versionName) so the Android-only in-app update notice can compare it
   # against the release manifest's semver.
-  package_info_plus: ^9.0.1
+  package_info_plus: ^10.2.1
 
   # Debug ring log — persistent, privacy-scrubbed retroactive capture for
   # intermittent mobile bugs (closes the app-side half of
   # idea-cross-side-logging-for-debug). path_provider gives the on-device
   # file location; share_plus drives the export share sheet.
   path_provider: ^2.1.6
-  share_plus: ^10.1.4
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:
