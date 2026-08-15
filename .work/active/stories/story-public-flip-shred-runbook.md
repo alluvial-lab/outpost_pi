@@ -55,13 +55,21 @@ history. NOT a wholesale .work purge.
    SHA note: pre-July-2026 + pre-fork SHAs survive only if the email rewrite
    is skipped; any blob/email rewrite rehashes affected commits + descendants.
 
-## Open decisions (operator)
+## Operator decisions (recorded 2026-08-15)
 
-1. Operator commit email: keep `kevoun.creates@proton.me` (if intentionally
-   public) or rewrite to `KevounC@users.noreply.github.com` (rewrites ~all our
-   commit SHAs — free if truncation already chosen, costly alone)?
-2. Truncate the 231 pre-fork upstream commits? (recommended: yes, single
-   baseline import commit)
-3. Session-notes: drop whole files as planned, or IP-redact and keep?
-4. Public AGENTS.md: who does the editorial pass (agent draft + operator
-   review is the usual)?
+1. Commit email `kevoun.creates@proton.me`: **KEEP** (intentional public identity).
+2. Truncate pre-fork upstream commits: **YES** — graft recipe: after the
+   path/replace pass, `newroot=$(git commit-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 -m "Import from remote_pi at 02b2c92 (MIT) — see LICENSE/NOTICE")`,
+   `git replace --graft <first-post-fork-commit> $newroot`, re-run
+   filter-repo to bake. Public history = our ~1,616-commit arc only.
+3. Session-notes: **gitignored going forward + path-dropped whole** from
+   history (landed in worktree: .work/session-notes/ ignored, 3 tracked
+   files untracked-but-kept-on-disk; filter-repo gains --path
+   .work/session-notes). NOTE: other session notes exist on disk untracked;
+   history path-drop removes the whole dir from all history.
+4. Public AGENTS.md: **drafted, operator review pending** — sanitized edition
+   in worktree; full runbook preserved in gitignored AGENTS.local.md.
+
+Residual accepted after scrub (operator may veto at flip review): AGENTS.md
+historical versions keep runbook prose minus IP/hostname strings
+(replace-text covers <LAN-subnet>.*, <tailnet-subnet>.*, dev-vm, the mock relay URL).
