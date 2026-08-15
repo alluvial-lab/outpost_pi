@@ -1,14 +1,14 @@
 ---
 id: story-brand-icon-regen-sweep
 kind: story
-stage: drafting
+stage: implementing
 tags: [branding, icons]
 parent: feature-public-flip-branding-and-exposure
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-14
-updated: 2026-08-14
+updated: 2026-08-15
 ---
 
 # Icon regeneration sweep — Constellation III across every surface
@@ -35,3 +35,13 @@ Verify: `git hash-object` every regenerated PNG ≠ upstream raw counterpart;
 `flutter analyze` untouched (asset-only change). Also delete
 `branding/screenshot-app.png` here or in the screenshot story (stale upstream
 screenshot — audit item 5); recommend deleting here, retake in story-brand-site-sync.
+
+## Implementation run
+
+- Ownership: cohesive host implementation because no worker-subagent adapter is
+  available in this harness; the asset sweep is the shared dependency for both
+  downstream stories.
+- Capability: `openai-codex/gpt-5.6-sol`, high (caller-selected).
+- Plan: render canonical geometry at 4× with Pillow/LANCZOS, preserve every
+  platform export matrix, hash-compare tracked app/cockpit assets against
+  upstream, then advance this child story directly to `done` on green evidence.
