@@ -91,7 +91,7 @@ dependencies:
   # idea-cross-side-logging-for-debug). path_provider gives the on-device
   # file location; share_plus drives the export share sheet.
   path_provider: ^2.1.5
-  share_plus: ^10.1.4
+  share_plus: ^12.0.2
 
 dev_dependencies:
   flutter_test:
