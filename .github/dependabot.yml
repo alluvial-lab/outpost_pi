@@ -1,7 +1,6 @@
-# Rebase strategy is "disabled" in every entry to cap CI-minutes churn
-# (private-repo Actions budget; see .work/active/stories/story-dependabot-drain-resume.md).
-# Conflicted PRs: rebase manually (git rebase main + force-push to the
-# dependabot branch) or close and let dependabot recreate at the newer version.
+# Rebase strategy is "disabled" in every entry to avoid automatic branch churn.
+# Refresh stale or conflicted PRs with an `@dependabot recreate` comment; this
+# rebuilds the branch from the current main and runs CI on the fresh head.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -58,6 +57,10 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     rebase-strategy: "disabled"
+    # rand 0.9 requires replacing deprecated thread_rng call sites.
+    ignore:
+      - dependency-name: "rand"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: deps
       include: scope
@@ -78,9 +81,11 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     rebase-strategy: "disabled"
-    # app_settings majors deferred (5.x -> 8.x needs migration); remove to re-enable
+    # Deferred majors require explicit source migrations; remove to re-enable.
     ignore:
       - dependency-name: "app_settings"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "share_plus"
         update-types: ["version-update:semver-major"]
     commit-message:
       prefix: deps
@@ -96,6 +101,10 @@ updates:
     ignore:
       - dependency-name: "flutter_local_notifications"
         update-types: ["version-update:semver-major"]
+      # 0.0.53 removes dialog/popover APIs used throughout Cockpit. Allow a
+      # later pre-1.0 release to be tested instead of reopening this exact bump.
+      - dependency-name: "shadcn_flutter"
+        versions: ["0.0.53"]
     rebase-strategy: "disabled"
     commit-message:
       prefix: deps
