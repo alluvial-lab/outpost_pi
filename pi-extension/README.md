@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/alluvial-lab/outpost_pi/main/branding/logo-full.svg" width="160" alt="Outpost-Pi logo" />
+  <img src="https://raw.githubusercontent.com/alluvial-lab/outpost_pi/main/branding/logo-full-dark.svg" width="160" alt="Outpost-Pi logo" />
 </p>
 
 <h1 align="center">Outpost-Pi</h1>
@@ -611,7 +611,7 @@ for palette and export sizes.
 <table>
   <tr>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/alluvial-lab/outpost_pi/main/branding/logo-full.svg" width="96" alt="logo-full" /><br/>
+      <img src="https://raw.githubusercontent.com/alluvial-lab/outpost_pi/main/branding/logo-full-dark.svg" width="96" alt="logo-full" /><br/>
       <sub><code>logo-full</code></sub>
     </td>
     <td align="center">

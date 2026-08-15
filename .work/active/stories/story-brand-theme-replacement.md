@@ -65,6 +65,7 @@ session screens in both modes.
 
 ## Verification evidence
 
+- Completion review fix pass — aligned Cockpit dark destructive foreground with `onAccent` and refreshed the default-font documentation to Space Mono.
 - `cd app && flutter analyze --no-pub` — PASS, no issues.
 - `cd app && flutter test --no-pub --exclude-tags e2e --concurrency=1` —
   PASS, 874 tests. The prescribed `--concurrency=2` run reached 870 passes but

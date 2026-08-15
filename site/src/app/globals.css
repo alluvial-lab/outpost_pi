@@ -335,7 +335,7 @@ a {
   align-items: center;
   gap: 10px;
   font-family: var(--ff-display);
-  font-weight: 600;
+  font-weight: 700;
   font-size: 18px;
   letter-spacing: -0.01em;
 }
@@ -2069,24 +2069,9 @@ a {
 }
 
 /* ===========================================================
-   COCKPIT — product page (hero shot + requires-Pi note)
+   COCKPIT — product page (requires-Pi note)
    Sections reuse .page, .section-head, .feat-card, .callout, .btn.
    =========================================================== */
-.ck-shot {
-  margin-top: 48px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  background: var(--bg-2);
-  box-shadow:
-    0 40px 120px -40px var(--shadow-color),
-    0 0 90px -30px var(--green-glow);
-}
-.ck-shot img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
 .ck-note {
   margin-top: 18px;
   font-family: var(--ff-mono);

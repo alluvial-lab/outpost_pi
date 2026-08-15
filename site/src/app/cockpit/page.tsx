@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import { Callout } from "@/components/callout";
 import { RevealController } from "@/components/landing/reveal-controller";
 import { IconDownload, IconGithub, IconArrow } from "@/components/landing/icons";
@@ -93,18 +92,6 @@ export default function CockpitPage() {
             </div>
             <RequiresPi />
           </header>
-
-          <div className="ck-shot reveal">
-            <Image
-              src="/cockpit-hero.png"
-              alt="Outpost-Pi Cockpit showing three AI agents and a terminal running side by side across panes, with a workspace sidebar and file tree."
-              width={1550}
-              height={904}
-              priority
-              sizes="(max-width: 1180px) 100vw, 1180px"
-              style={{ width: "100%", height: "auto" }}
-            />
-          </div>
 
           {/* ---------------- FEATURES ---------------- */}
           <section id="features">
