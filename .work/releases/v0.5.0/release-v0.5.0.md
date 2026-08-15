@@ -58,12 +58,38 @@ Bundle = `git diff v0.4.0..v0.5.0`: 173 files, +5303/−3884.
 
 ## Gate runs (post-hoc, 2026-08-15)
 
-All six configured gates (`security, tests, cruft, docs, patterns, refactor`)
-ran over the v0.5.0 bundle **after** the tag, per the operator's instruction:
+All six configured gates (`security, tests, cruft, docs, patterns, refactor`) ran
+over the v0.5.0 bundle **after** the tag, per the operator's instruction:
 findings are tracked for the **next** release, not blockers for this one
-(nothing blocks a shipped tag). Findings and dispositions are recorded in the
-gate-finding items (`gate_origin: <gate>`, `release_binding: null`) and the
-summary below.
+(nothing blocks a shipped tag). Raw findings (pre-dedupe): security 1H/1M/1L ·
+tests 2H/4M · docs 2H/7M/1L · cruft 5 High-conf/1 decision-required ·
+patterns 2 genuine (cataloged) · refactor 1 Medium-conf.
+
+Deduped disposition (docs↔cruft overlaps merged):
+
+- **4 active stories** (High → `stage: implementing`, unbound — next
+  release's blocking set):
+  `gate-security-release-workflow-action-pinning` (app-release.yml 3 +
+  cockpit-release.yml 12 mutable refs holding signing/publish authority;
+  sibling backlog item covers deps-audit/e2e-pairing),
+  `gate-tests-concurrent-first-run-pairing-race`,
+  `gate-tests-mobile-scanner-v7-boundary`,
+  `gate-docs-agent-reference-refresh-post-v050` (stale version guidance +
+  nonexistent push-docker workflow instruction across the skills surface).
+- **2 pattern files written to the catalog**
+  (`paired-brightness-semantic-palettes`,
+  `canonical-mark-rasterization-fanout`) + 1 tracking backlog item for their
+  drift risks.
+- **12 backlog items** (medium/low + decision-required):
+  postcss-override-vulnerable, e2e-log-tail-before-redaction,
+  theme-dual-mode-contrast, site-light-dark-contract,
+  brand-asset-export-matrix, cockpit-native-plugin-smoke,
+  v050-doc-drift-batch (7 findings), wareframe-subsystem-decision
+  (decision required), appearance-font-hints (user-visible copy),
+  v050-dead-code-sweep, token-port-drift, cockpit-control-island.
+
+Public-flip spot-check (security gate): current tree clean — no sensitive
+pattern hits beyond benign site-docs links.
 
 ## Shipped items
 

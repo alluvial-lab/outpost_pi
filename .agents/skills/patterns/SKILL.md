@@ -31,3 +31,5 @@ Available patterns:
 - [awaited-pane-teardown-contract.md](awaited-pane-teardown-contract.md) — Remove pane ownership before awaiting teardown, and expose a Future that completes only after its resources close.
 - [stale-capability-eviction.md](stale-capability-eviction.md) — On a Pi stale-context error, evict only the matching captured capability before degrading or propagating the failure.
 - [fresh-operation-gateway-factories.md](fresh-operation-gateway-factories.md) — Create a fresh, lifecycle-owned gateway through an injected factory for each independent process, agent, terminal, or pairing operation.
+- [paired-brightness-semantic-palettes.md](paired-brightness-semantic-palettes.md) — Define semantic color roles as complete dark/light pairs and resolve brightness once at each surface's composition boundary, never in leaf components.
+- [canonical-mark-rasterization-fanout.md](canonical-mark-rasterization-fanout.md) — Render one canonical brand geometry through a single supersampled renderer and fan it out to every platform-specific raster asset.
