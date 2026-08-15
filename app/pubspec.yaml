@@ -79,7 +79,7 @@ dependencies:
 
   # Theme — Space Mono is the mono-native display/body/code/wordmark voice.
   # Served and cached by google_fonts without bundling a .ttf.
-  google_fonts: ^6.2.1
+  google_fonts: ^8.2.1
 
   # Plan 44 — read the running app version (CFBundleShortVersionString /
   # versionName) so the Android-only in-app update notice can compare it
