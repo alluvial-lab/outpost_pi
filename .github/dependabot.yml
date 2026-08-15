@@ -91,6 +91,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # flutter_local_notifications majors deferred (18->22 needs v22 API migration
+    # in local_notifier.dart + system_permissions_impl.dart); remove to re-enable
+    ignore:
+      - dependency-name: "flutter_local_notifications"
+        update-types: ["version-update:semver-major"]
     rebase-strategy: "disabled"
     commit-message:
       prefix: deps
