@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Outpost-Pi mark v2.0 — Constellation III (locked 2026-08-14)
+       Light full-bleed variant (sage paper). -->
+  <rect width="1024" height="1024" fill="#F3F6F3"/>
+  <path d="M 398 564 L 695 385 M 398 564 L 633 693" stroke="#182019" stroke-width="34" stroke-linecap="round"/>
+  <rect x="314" y="480" width="168" height="168" rx="25" fill="#256E47"/>
+  <circle cx="695" cy="385" r="63" fill="#182019"/>
+  <circle cx="633" cy="693" r="71" fill="#182019"/>
+</svg>

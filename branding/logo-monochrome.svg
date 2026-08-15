@@ -1,16 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Monochrome silhouette for Android 13+ themed icons. -->
-  <!-- All white/alpha; the system applies the theme color. -->
-
-  <!-- π symbol -->
-  <g fill="#FFFFFF">
-    <rect x="290" y="368" width="444" height="68" rx="10"/>
-    <rect x="345" y="436" width="68" height="320" rx="10"/>
-    <rect x="611" y="436" width="68" height="320" rx="10"/>
-    <path d="M 679 720 Q 712 740 720 700 L 720 712 Q 720 756 668 756 L 668 736 Z"/>
-  </g>
-
-  <!-- Dot (same color — themed icon uses a single silhouette) -->
-  <circle cx="780" cy="332" r="58" fill="#FFFFFF"/>
+  <!-- Outpost-Pi mark v2.0 — monochrome silhouette (Android 13+ themed icon; system tints). -->
+  <path d="M 398 564 L 695 385 M 398 564 L 633 693" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round"/>
+  <rect x="314" y="480" width="168" height="168" rx="25" fill="#FFFFFF"/>
+  <circle cx="695" cy="385" r="63" fill="#FFFFFF"/>
+  <circle cx="633" cy="693" r="71" fill="#FFFFFF"/>
 </svg>
