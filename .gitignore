@@ -18,6 +18,15 @@
 # binary or the stale fallback copy; the plugin owns this path.
 .work/bin/
 
+# session-notes are local-only operational records (incident narratives,
+# network/device specifics) — never tracked. Public work tracking lives in
+# .work/{backlog,active}; long-form ops notes stay on the operator's disk.
+.work/session-notes/
+
+# local ops edition of the agent instructions — full deploy runbook + infra
+# specifics; the public AGENTS.md is the sanitized edition.
+AGENTS.local.md
+
 # orchestration: results are ephemeral (per-task execution logs);
 # INSTRUCTIONS.md and contracts/ are versioned (shared contract).
 .orchestration/results/*
