@@ -42,7 +42,7 @@ dependencies:
   # that embed Material (xterm, media_kit_video, gpt_markdown) work without
   # `flutter_localizations`; and `shadcn_flutter.dart` already re-exports
   # `Icons`, so we keep the Material Icons with no extra import.
-  shadcn_flutter: 0.0.52
+  shadcn_flutter: 0.0.53
 
   # DI + routing + page-scoped state in one package: each feature is a module
   # (`createModule`) that declares its routes + binds. Replaces provider +
