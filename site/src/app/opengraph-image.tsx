@@ -59,8 +59,7 @@ export default function OpengraphImage() {
               fontSize: 28,
               color: "#74CC9C",
               letterSpacing: 4,
-              textTransform: "uppercase",
-              fontWeight: 600,
+              fontWeight: 700,
             }}
           >
             outpost_pi

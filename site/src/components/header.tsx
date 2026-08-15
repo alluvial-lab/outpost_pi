@@ -65,7 +65,7 @@ export function SiteHeader() {
           <span className="mark">
             <LogoMark />
           </span>
-          Outpost-Pi
+          outpost_pi
         </Link>
 
         {/* Desktop links */}

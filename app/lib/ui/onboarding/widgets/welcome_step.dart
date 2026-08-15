@@ -19,11 +19,11 @@ class WelcomeStep extends StatelessWidget {
           Icon(LucideIcons.terminal, color: colors.accent, size: 64),
           const SizedBox(height: 32),
           Text(
-            'Outpost-Pi',
+            'outpost_pi',
             textAlign: TextAlign.center,
             style: brandTextStyle(
               fontSize: 24,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
               color: colors.text,
               letterSpacing: -0.5,
             ),

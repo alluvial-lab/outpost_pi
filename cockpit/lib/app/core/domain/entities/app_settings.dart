@@ -26,13 +26,13 @@ class AppSettings {
 
   final AppThemeMode themeMode;
 
-  /// Interface font family; `null` or empty selects Space Grotesk/Hanken.
+  /// Interface font family; `null` or empty selects Space Mono.
   final String? interfaceFont;
 
   /// Base UI size in pixels; styles scale proportionally.
   final double interfaceSize;
 
-  /// Code font family; `null` or empty selects JetBrains Mono.
+  /// Code font family; `null` or empty selects Space Mono.
   final String? codeFont;
 
   /// Code font size in pixels for the viewer, diff, and terminal.

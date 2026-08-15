@@ -63,9 +63,11 @@ renders both modes AA.
 - Screenshot deviation: no phone is attached to this VM, so the deleted
   pre-theme `branding/screenshot-app.png` was not retaken or restored. This is
   deferred to device UAT and does not block the site build.
+- Completion review fix pass: cockpit hero removed as upstream-identical; retake with rebranded build pending phone.
 
 ## Verification evidence
 
+- Completion review fix pass — refreshed README logo references and brand-styled wordmarks, removed the upstream-identical Cockpit hero asset, and retired its generator copy.
 - `cd site && COREPACK_HOME=/tmp/corepack-home corepack pnpm
   --config.store-dir=/tmp/pnpm-store lint` — PASS.
 - Same environment with `pnpm build` — PASS: Next 16 production compile,

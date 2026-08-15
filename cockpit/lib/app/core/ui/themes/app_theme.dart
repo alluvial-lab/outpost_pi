@@ -98,7 +98,9 @@ ColorScheme _schemeFrom(AppColors c, Brightness brightness) {
     accent: c.panel3,
     accentForeground: c.text,
     destructive: c.error,
-    destructiveForeground: Colors.white,
+    destructiveForeground: brightness == Brightness.dark
+        ? c.onAccent
+        : Colors.white,
     border: c.border,
     input: c.border,
     // Use the brand color for focus rings.

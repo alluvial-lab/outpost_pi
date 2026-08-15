@@ -134,7 +134,7 @@ class HomePage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Outpost-Pi',
+                          'outpost_pi',
                           style: brandTextStyle(
                             fontSize: 32,
                             fontWeight: FontWeight.w700,
@@ -163,10 +163,10 @@ class HomePage extends StatelessWidget {
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        'Outpost-Pi',
+                        'outpost_pi',
                         style: brandTextStyle(
                           fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                           color: colors.text,
                           letterSpacing: -0.2,
                         ),
