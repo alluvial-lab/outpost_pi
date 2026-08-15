@@ -5,7 +5,7 @@ stage: done
 tags: [branding, app, cockpit]
 parent: feature-public-flip-branding-and-exposure
 depends_on: [story-brand-icon-regen-sweep]
-release_binding: null
+release_binding: v0.5.0
 gate_origin: null
 created: 2026-08-14
 updated: 2026-08-15

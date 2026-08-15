@@ -9,6 +9,24 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ---
 
+## [v0.5.0] — 2026-08-15
+
+Brand identity **v2.0 — Phosphor Beacon** lands across every surface, the repo goes **public**, and the dependency backlog is drained. Dark-native `#0D1210` / light `#F3F6F3`, accent `#74CC9C`/`#256E47` (AA-verified both modes), **Constellation III** mark, **Space Mono** everywhere; design-token contract in `.mockups/design-system/tokens.css`. **No wire-protocol changes.** Deploy: re-sideload app, reinstall cockpit, redeploy site + relay image (dep bumps only for relay). *(Substrate note: tag was cut before the release flow ran; this entry and the `.work/releases/v0.5.0/` record are a retroactive binding. Post-tag hotfixes — gradle wrapper committed for fresh clones/CI, VM-specific gradle tmpdir removed from the repo — land with the next release.)*
+
+### Brand
+- **Icon regeneration sweep** — Constellation III regenerated across every surface (Android adaptive set, iOS AppIcon, cockpit macOS/Windows/Linux/web, site favicon + logos) via the Pillow rasterizer; 33/33 asset hashes differ from upstream art.
+- **App + cockpit theme replacement** — `app_colors.dart` and cockpit themes rebuilt on Phosphor Beacon dual-mode tokens; Space Mono via google_fonts; vestigial font stanzas dropped.
+- **Site sync** — Tailwind/CSS dual-mode tokens, canonical inline marks, wordmark, README hero.
+
+### Public flip
+- **History shred + redaction executed** — origin force-pushed; history truncated at the MIT import commit; sensitive patterns zero history-wide; session-notes dropped. Repo public at `alluvial-lab/outpost_pi`. GitHub cache-purge ticket waived by operator (accepted-risk note in the shred story).
+- **Licensing adversarial review cleared** — stale proprietary markers corrected to MIT; no copyleft deps in any subproject.
+
+### Dependencies
+- **Dependabot drain finished** — post-flip refresh across all components: app (go_router 14→17, google_fonts 6→8, mobile_scanner 5→7, dio, lucide, path_provider), cockpit (pasteboard, package_info_plus 8→9, xterm 4.0, desktop_drop), relay (hyper 1.9→1.11, rusqlite 0.32→0.40, serde_json, rand), pi-extension (TypeScript 7, MCP SDK). Incompatible pi-SDK family deferred with failing evidence (tracked in backlog).
+
+---
+
 ## [v0.4.0] — 2026-08-12
 
 First release under **unified product versioning** (CONVENTIONS change): per-component semver retired in favor of one product `vX.Y.Z`. Binds 66 items — the post-v0.3.0 backlog of completed gate findings (47) plus 13 features/fixes that had passed review but were never release-bound, and 6 gate-finding fixes driven to done by this release's own tiered gate + Phase 8 review. Shipped after a **tiered-gate trial** (full gates on feature work; security-only regression on gate-origin work); the 5-high timestamp-ownership cluster routes to the in-flight `canonical-transcript-timestamp-ownership` arc (next release). **No wire-protocol cutover.** Deploy: rebuild extension `dist/` + full Pi restart (extension fixes); rebuild + redeploy the relay image (relay gate findings, currently a stale Jul-20 build); re-sideload app / reinstall cockpit for their gate findings to go live.
