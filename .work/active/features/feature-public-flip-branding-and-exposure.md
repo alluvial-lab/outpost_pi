@@ -76,21 +76,20 @@ Remaining child stories: icon regeneration sweep (app/cockpit/site PNGs,
   the private layer from all history (force-push; breaks dependabot PR refs
   + all clones), then tree cleanup. Heavier, riskier, same visual result.
 
-## Child stories (spawn on implement)
+## Child stories (tracked in .work/active/stories/)
 
-1. `story-brand-icon-redesign` — new mark + palette direction (operator picks
-   from drafts); regenerate: Android adaptive set, iOS AppIcon, cockpit
-   macOS set + Windows .ico, favicon; sync site logos from branding source;
-   update branding/README.md version note.
-2. `story-app-theme-brand-palette` — replace upstream-identical
-   app_colors.dart with brand-derived semantic palette; align cockpit theme;
-   drop vestigial font stanzas.
-3. `story-public-repo-sanitized-snapshot` — build the cleaned export
-   (exclude private layer via .public-export ignorelist, verify zero
-   infra-string hits with the audit greps, push to new public repo, flip
-   README/social preview/banner).
-4. `story-site-screenshot-refresh` — retake branding screenshot(s) post
-   rebrand; update site cockpit page.
+1. `story-brand-icon-regen-sweep` — Pillow rasterizer → every launcher/favicon/
+   banner PNG + site SVGs; hash-verify ≠ upstream; drop stale screenshot.
+2. `story-brand-theme-replacement` — app_colors.dart (byte-identical to
+   upstream) + cockpit theme → Phosphor Beacon; Space Mono via google_fonts;
+   drop vestigial font stanzas. Depends on 1.
+3. `story-brand-site-sync` — tokens → Tailwind vars, logo/favicon, wordmark,
+   README hero, screenshot retake. Depends on 1 (screenshot on 2).
+
+Parked by operator 2026-08-14: components mockup layer
+(.mockups/design-system/components.css + showcase) — run before any
+redesigned-screen mocks, not needed for the asset/theme cascade.
+
 
 ## Verification (all stories)
 
