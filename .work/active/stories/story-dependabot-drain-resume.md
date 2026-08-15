@@ -18,9 +18,9 @@ updated: 2026-08-15
 The post-history-rewrite queue is drained: `gh pr list --state open` returned
 no open PRs after every stale Dependabot branch was recreated from the current
 `main`. Forty-six PRs were merged after all checks on their fresh heads
-completed with `success` or `skipped`; fifteen incompatible/deferred/no-op PRs
+completed with `success` or `skipped`; sixteen incompatible/deferred/no-op PRs
 were closed with explanatory comments. This includes the additional PRs
-#68–99 opened by completion-time Dependabot config syncs as directory limits
+#68–100 opened by completion-time Dependabot config syncs as directory limits
 freed.
 
 The full CI matrix passed on the recreated actions PR, including the lanes that
@@ -101,7 +101,7 @@ load-sensitive history-replay test failures; its required one-time rerun passed.
   `serde_json` 1.0.149→1.0.151.
 - app: #94 `google_fonts` 6.3.3→8.2.1; #95 `go_router` 14.8.1→17.5.0.
 
-## Closed from the final config-sync queue (7)
+## Closed from the final config-sync queue (8)
 
 - #89 `@earendil-works/pi-coding-agent` 0.80.6→0.84.0: the same fresh
   typecheck failures as #77 proved the incompatible API removal covers the
@@ -119,8 +119,11 @@ load-sensitive history-replay test failures; its required one-time rerun passed.
   both pairs of pi-extension runs reproduced the same failures.
 - #99 `@earendil-works/pi-coding-agent` 0.80.6→0.80.10: both runs failed the
   same way; upstream's 0.80.8 release notes identify the SDK replacement as a
-  breaking change, bounding the deferred range to 0.80.8–0.84.x while 0.80.7
-  remains eligible.
+  breaking change.
+- #100 `@earendil-works/pi-coding-agent` 0.80.6→0.80.7: both runs passed
+  typecheck but failed five suites because the isolated coding-agent patch
+  expects a newer pi-ai `getOAuthApiKey` export. The final deferred range is
+  0.80.7–0.84.x pending a coordinated Pi SDK family migration.
 
 ## Security alerts
 
@@ -142,7 +145,7 @@ after the follow-on pi-extension dependency merges.
   source-breaking. It was closed rather than merged past red, and the exact
   broken version was ignored to prevent the same weekly loop.
 - #56 required manual closure after the requested 15-minute config-sync window.
-- Completion-time config syncs opened #68–99 as directory limits freed. The
+- Completion-time config syncs opened #68–100 as directory limits freed. The
   drain continued through every follow-on wave; incompatible releases gained
   bounded ignore rules before the final completion commit.
 
