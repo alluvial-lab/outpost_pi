@@ -1,14 +1,14 @@
 ---
 id: story-brand-theme-replacement
 kind: story
-stage: drafting
+stage: implementing
 tags: [branding, app, cockpit]
 parent: feature-public-flip-branding-and-exposure
 depends_on: [story-brand-icon-regen-sweep]
 release_binding: null
 gate_origin: null
 created: 2026-08-14
-updated: 2026-08-14
+updated: 2026-08-15
 ---
 
 # App + cockpit theme replacement — Phosphor Beacon
@@ -35,3 +35,12 @@ the contract; Dart constants mirror it — single source per
 Verify: `flutter analyze` + `flutter test --exclude-tags e2e` (app),
 `flutter analyze` + `flutter test` (cockpit); visual smoke of pairing +
 session screens in both modes.
+
+## Implementation run
+
+- Dependency `story-brand-icon-regen-sweep` is `done` with green asset/hash
+  evidence (`56bcbcd`).
+- Ownership: cohesive host implementation across the two Flutter theme roots;
+  semantic token names stay stable and platform call sites remain untouched.
+- Capability: `openai-codex/gpt-5.6-sol`, high (caller-selected for the
+  cross-file theme-contract port).
