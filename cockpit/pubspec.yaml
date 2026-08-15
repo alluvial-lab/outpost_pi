@@ -96,7 +96,7 @@ dependencies:
   # Wave 2 — paste image/files from the clipboard (Cmd/Ctrl+V) into the composer.
   # Flutter's `Clipboard` only reads text; pasteboard reads image (bytes) and paths.
   # NOTE: register this dep in plan 37 (orchestrator responsibility).
-  pasteboard: ^0.4.0
+  pasteboard: ^0.5.0
 
   # Wave 2 — drag files from the OS (Finder/Explorer/etc.) into the input.
   # Flutter's internal drag-drop does not catch native drops; desktop_drop
