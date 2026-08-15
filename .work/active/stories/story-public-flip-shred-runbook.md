@@ -55,6 +55,17 @@ history. NOT a wholesale .work purge.
    SHA note: pre-July-2026 + pre-fork SHAs survive only if the email rewrite
    is skipped; any blob/email rewrite rehashes affected commits + descendants.
 
+## EXECUTED 2026-08-15 — see .work/session-notes/2026-08-15-shred-execution.md (local)
+
+Result: origin force-pushed; main = 1,606 commits rooted at the import
+commit; all patterns zero history-wide; pre-fork truncated; session-notes
+dropped; cockpit-v1.5.1 (upstream tag) removed; fix/stale-context-reconnect
+deleted on origin, preserved as local/fix-stale-context-reconnect.
+GitHub cache-purge ticket drafted in the session note — operator files it.
+Remaining for flip: operator files ticket, waits for purge, flips visibility
+(repo Settings → Danger Zone → Change visibility; or
+`gh api -X PATCH repos/alluvial-lab/outpost_pi -f visibility=public`).
+
 ## Operator decisions (recorded 2026-08-15)
 
 1. Commit email `kevoun.creates@proton.me`: **KEEP** (intentional public identity).
