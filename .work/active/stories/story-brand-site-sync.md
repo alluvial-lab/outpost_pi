@@ -1,7 +1,7 @@
 ---
 id: story-brand-site-sync
 kind: story
-stage: implementing
+stage: done
 tags: [branding, site]
 parent: feature-public-flip-branding-and-exposure
 depends_on: [story-brand-icon-regen-sweep]
@@ -40,3 +40,43 @@ renders both modes AA.
 - Capability: `openai-codex/gpt-5.6-sol`, high (caller-selected).
 - Screenshot retake is explicitly deferred: this VM has no attached phone, so
   the deleted pre-theme screenshot will not be restored from stale imagery.
+
+## Implementation notes
+
+- Ported the locked Phosphor Beacon dark/light neutral, accent, status,
+  typography, spacing, and radius values into Tailwind 4/theme CSS variables.
+  Existing site aliases now derive from those roles instead of duplicating the
+  old black/white/sky-blue palette.
+- Added system light-mode following plus explicit `data-theme="dark|light"`
+  support. The site has no toggle control today, so the existing journey remains
+  system-driven while a future control can use the already-supported contract.
+- Replaced hardcoded dark-only component fills/glows with mode-aware variables,
+  including the animated mesh, phone mock, terminal, docs code pills/tables,
+  warning callouts, and screenshot shadows.
+- Replaced the three-font stack with Space Mono 400/700 (+ italic) through
+  `next/font/google`; display, body, code, and wordmark roles share it.
+- Replaced the stale inline header and Open Graph π marks with canonical
+  Constellation III geometry, retained the canonical `public/logo.svg` and App
+  Router icon from the icon story, and deleted the unused divergent
+  `public/logo-foreground.svg` variant.
+- Updated the root README hero reference to `branding/logo-full-dark.svg`.
+- Screenshot deviation: no phone is attached to this VM, so the deleted
+  pre-theme `branding/screenshot-app.png` was not retaken or restored. This is
+  deferred to device UAT and does not block the site build.
+
+## Verification evidence
+
+- `cd site && COREPACK_HOME=/tmp/corepack-home corepack pnpm
+  --config.store-dir=/tmp/pnpm-store lint` — PASS.
+- Same environment with `pnpm build` — PASS: Next 16 production compile,
+  TypeScript, and all 18 static routes (including `/icon.svg` and
+  `/opengraph-image`). `--config.store-dir` was used because this pnpm version
+  rejects the caller's equivalent `--store-dir` spelling at the run boundary.
+- Canonical asset byte checks — PASS: `site/public/logo.svg` and
+  `site/src/app/icon.svg` both match `branding/logo-full-dark.svg`.
+- Contrast script — PASS: primary, muted, accent-on-background, and on-accent
+  pairs are all ≥4.5:1 in both modes (minimum 5.67:1).
+- Custom-property dependency scan — PASS: 78 variables, no alias cycles.
+- Grep for old blue/font/logo references — zero matches under site source;
+  root README references only `branding/logo-full-dark.svg`.
+- `git diff --check` — PASS.

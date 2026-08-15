@@ -1,64 +1,153 @@
 @import "tailwindcss";
 
 /* ===========================================================
-   Outpost-Pi — design tokens
-   Dark, sky-blue accent (#4fc3f7), generous spacing.
-   Palette is the canonical one: black bg, white ink, blue accent.
-   Fonts are loaded via next/font (see layout.tsx) and exposed as
-   --font-display / --font-body / --font-mono.
+   Outpost-Pi — Phosphor Beacon design tokens
+   Mirrors .mockups/design-system/tokens.css. The public aliases below keep
+   existing component classes stable while Tailwind 4 and plain CSS consume
+   one dual-mode contract.
    =========================================================== */
-:root {
-  /* canonical palette (kept stable for the rest of the site) */
-  --bg: #000000;
-  --fg: #ffffff;
-  --accent: #4fc3f7;
-  --muted: #a3a3a3;
-  --surface: #0a0a0a;
-  --border-soft: rgba(255, 255, 255, 0.1);
+:root,
+:root[data-theme="dark"] {
+  --color-bg-primary: #0d1210;
+  --color-bg-secondary: #131a16;
+  --color-bg-tertiary: #1e2620;
+  --color-text-primary: #e4efe8;
+  --color-text-secondary: #89978d;
+  --color-text-inverse: #182019;
+  --color-border: #1e2620;
+  --color-border-strong: #2a342c;
+  --brand-accent: #74cc9c;
+  --brand-accent-hover: #8fd9a8;
+  --brand-accent-muted: rgba(116, 204, 156, 0.14);
+  --color-on-accent: #0a2418;
+  --color-success: #7fd99a;
+  --color-success-bg: rgba(127, 217, 154, 0.14);
+  --color-warning: #e6c86e;
+  --color-warning-bg: rgba(230, 200, 110, 0.14);
+  --color-error: #ff8b7d;
+  --color-error-bg: rgba(255, 139, 125, 0.14);
+  --color-info: #7db8e8;
+  --color-info-bg: rgba(125, 184, 232, 0.14);
+  --nav-bg: rgba(13, 18, 16, 0.78);
+  --nav-bg-solid: rgba(13, 18, 16, 0.97);
+  --shadow-color: rgba(0, 0, 0, 0.8);
+  --ambient-glow: rgba(116, 204, 156, 0.1);
+  --ambient-glow-soft: rgba(116, 204, 156, 0.05);
 
-  /* extended surfaces */
-  --bg-0: #000000;
-  --bg-1: #060606;
-  --bg-2: #0a0a0a;
-  --card: rgba(255, 255, 255, 0.025);
-  --card-2: rgba(255, 255, 255, 0.045);
-  --line: rgba(255, 255, 255, 0.1);
-  --line-2: rgba(255, 255, 255, 0.16);
+  /* Existing site vocabulary derives from the canonical roles. */
+  --bg: var(--color-bg-primary);
+  --fg: var(--color-text-primary);
+  --accent: var(--brand-accent);
+  --muted: var(--color-text-secondary);
+  --surface: var(--color-bg-secondary);
+  --border-soft: var(--color-border);
+  --bg-0: var(--color-bg-primary);
+  --bg-1: var(--color-bg-secondary);
+  --bg-2: var(--color-bg-tertiary);
+  --card: color-mix(in srgb, var(--color-text-primary) 2.5%, transparent);
+  --card-2: color-mix(in srgb, var(--color-text-primary) 4.5%, transparent);
+  --line: var(--color-border);
+  --line-2: var(--color-border-strong);
+  --ink: var(--color-text-primary);
+  --ink-soft: var(--color-text-secondary);
+  --faint: color-mix(in srgb, var(--color-text-secondary) 72%, transparent);
+  --green: var(--brand-accent);
+  --green-ink: var(--color-on-accent);
+  --green-dim: var(--brand-accent-muted);
+  --green-line: color-mix(in srgb, var(--brand-accent) 30%, transparent);
+  --green-glow: color-mix(in srgb, var(--brand-accent) 22%, transparent);
+  --ok: var(--color-success);
 
-  /* ink ramp */
-  --ink: #ffffff;
-  --ink-soft: #d4d4d4;
-  --faint: #6b6b6b;
-
-  /* accent ramp (the var is named --green for parity with the design,
-     but the value is the canonical sky-blue accent) */
-  --green: #4fc3f7;
-  --green-ink: #04222e;
-  --green-dim: rgba(79, 195, 247, 0.13);
-  --green-line: rgba(79, 195, 247, 0.3);
-  --green-glow: rgba(79, 195, 247, 0.22);
-  --ok: #5fd38a;
-
-  /* layout + radii */
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-base: 14.5px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 32px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
   --maxw: 1180px;
-  --r-sm: 12px;
-  --r-md: 18px;
-  --r-lg: 26px;
-  --r-xl: 34px;
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --ff-display: var(--font-space-mono), "Space Mono", ui-monospace, monospace;
+  --ff-body: var(--ff-display);
+  --ff-mono: var(--ff-display);
+}
 
-  /* type families (point at the next/font variables) */
-  --ff-display: var(--font-display), "Space Grotesk", system-ui, sans-serif;
-  --ff-body: var(--font-body), "Hanken Grotesk", system-ui, sans-serif;
-  --ff-mono: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
+:root[data-theme="light"] {
+  --color-bg-primary: #f3f6f3;
+  --color-bg-secondary: #f8faf8;
+  --color-bg-tertiary: #dfe6df;
+  --color-text-primary: #182019;
+  --color-text-secondary: #57635a;
+  --color-text-inverse: #e4efe8;
+  --color-border: #dfe6df;
+  --color-border-strong: #c2cec3;
+  --brand-accent: #256e47;
+  --brand-accent-hover: #1c5a39;
+  --brand-accent-muted: rgba(37, 110, 71, 0.12);
+  --color-on-accent: #ffffff;
+  --color-success: #3e7a4e;
+  --color-success-bg: rgba(62, 122, 78, 0.12);
+  --color-warning: #8a6a1f;
+  --color-warning-bg: rgba(138, 106, 31, 0.12);
+  --color-error: #b34234;
+  --color-error-bg: rgba(179, 66, 52, 0.12);
+  --color-info: #33689b;
+  --color-info-bg: rgba(51, 104, 155, 0.12);
+  --nav-bg: rgba(243, 246, 243, 0.82);
+  --nav-bg-solid: rgba(243, 246, 243, 0.97);
+  --shadow-color: rgba(24, 32, 25, 0.22);
+  --ambient-glow: rgba(37, 110, 71, 0.08);
+  --ambient-glow-soft: rgba(37, 110, 71, 0.04);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --color-bg-primary: #f3f6f3;
+    --color-bg-secondary: #f8faf8;
+    --color-bg-tertiary: #dfe6df;
+    --color-text-primary: #182019;
+    --color-text-secondary: #57635a;
+    --color-text-inverse: #e4efe8;
+    --color-border: #dfe6df;
+    --color-border-strong: #c2cec3;
+    --brand-accent: #256e47;
+    --brand-accent-hover: #1c5a39;
+    --brand-accent-muted: rgba(37, 110, 71, 0.12);
+    --color-on-accent: #ffffff;
+    --color-success: #3e7a4e;
+    --color-success-bg: rgba(62, 122, 78, 0.12);
+    --color-warning: #8a6a1f;
+    --color-warning-bg: rgba(138, 106, 31, 0.12);
+    --color-error: #b34234;
+    --color-error-bg: rgba(179, 66, 52, 0.12);
+    --color-info: #33689b;
+    --color-info-bg: rgba(51, 104, 155, 0.12);
+    --nav-bg: rgba(243, 246, 243, 0.82);
+    --nav-bg-solid: rgba(243, 246, 243, 0.97);
+    --shadow-color: rgba(24, 32, 25, 0.22);
+    --ambient-glow: rgba(37, 110, 71, 0.08);
+    --ambient-glow-soft: rgba(37, 110, 71, 0.04);
+  }
 }
 
 @theme inline {
-  --color-bg: var(--bg);
-  --color-fg: var(--fg);
-  --color-accent: var(--accent);
-  --color-muted: var(--muted);
-  --color-surface: var(--surface);
-  --color-border-soft: var(--border-soft);
+  --color-bg: var(--color-bg-primary);
+  --color-fg: var(--color-text-primary);
+  --color-accent: var(--brand-accent);
+  --color-muted: var(--color-text-secondary);
+  --color-surface: var(--color-bg-secondary);
+  --color-border-soft: var(--color-border);
   --font-sans: var(--ff-body);
   --font-mono: var(--ff-mono);
 }
@@ -67,14 +156,22 @@ html {
   color-scheme: dark;
   scroll-behavior: smooth;
 }
+html[data-theme="light"] {
+  color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]) {
+    color-scheme: light;
+  }
+}
 
 body {
   margin: 0;
   background: var(--bg-0);
   color: var(--ink);
   font-family: var(--ff-body);
-  font-size: 17px;
-  line-height: 1.6;
+  font-size: var(--font-size-base);
+  line-height: 1.75;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
@@ -88,8 +185,8 @@ body::before {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(900px 600px at 78% -8%, rgba(79, 195, 247, 0.1), transparent 60%),
-    radial-gradient(700px 500px at 8% 8%, rgba(79, 195, 247, 0.05), transparent 55%);
+    radial-gradient(900px 600px at 78% -8%, var(--ambient-glow), transparent 60%),
+    radial-gradient(700px 500px at 8% 8%, var(--ambient-glow-soft), transparent 55%);
 }
 
 a {
@@ -213,7 +310,7 @@ a {
 .btn-ghost:hover {
   transform: translateY(-2px);
   border-color: var(--line-2);
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
 /* =====================================================
@@ -224,7 +321,7 @@ a {
   top: 0;
   z-index: 50;
   backdrop-filter: blur(14px);
-  background: rgba(6, 6, 6, 0.62);
+  background: var(--nav-bg);
   border-bottom: 1px solid var(--line);
 }
 .nav-inner {
@@ -314,7 +411,7 @@ a {
   z-index: 49;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  background: rgba(6, 6, 6, 0.96);
+  background: var(--nav-bg-solid);
   backdrop-filter: blur(16px);
 }
 .mobile-nav-inner {
@@ -434,11 +531,11 @@ a {
   width: 290px;
   height: 588px;
   border-radius: 44px;
-  background: linear-gradient(180deg, #14141400, #0a0a0a 18%);
+  background: linear-gradient(180deg, transparent, var(--color-bg-secondary) 18%);
   border: 1px solid var(--line-2);
   box-shadow:
-    0 0 0 8px #0a0a0a,
-    0 50px 120px -30px rgba(0, 0, 0, 0.8),
+    0 0 0 8px var(--color-bg-secondary),
+    0 50px 120px -30px var(--shadow-color),
     0 0 90px -20px var(--green-glow);
   padding: 12px;
   z-index: 2;
@@ -449,8 +546,8 @@ a {
   height: 100%;
   border-radius: 33px;
   background:
-    radial-gradient(120% 80% at 50% 0%, rgba(79, 195, 247, 0.1), transparent 60%),
-    #050505;
+    radial-gradient(120% 80% at 50% 0%, var(--ambient-glow), transparent 60%),
+    var(--color-bg-primary);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -541,14 +638,14 @@ a {
 }
 .bubble.me {
   align-self: flex-end;
-  background: #262626;
+  background: var(--color-bg-tertiary);
   color: var(--ink);
   font-weight: 500;
 }
 
 /* tool call card */
 .tool {
-  border: 1px solid rgba(79, 195, 247, 0.42);
+  border: 1px solid color-mix(in srgb, var(--green) 42%, transparent);
   border-radius: 15px;
   padding: 13px 13px 12px;
   animation: pop 0.34s cubic-bezier(0.2, 0.7, 0.3, 1) both;
@@ -588,7 +685,7 @@ a {
 }
 .tool-code {
   margin-top: 11px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--card);
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 10px 12px;
@@ -615,7 +712,7 @@ a {
 }
 .md-response code {
   color: var(--green);
-  background: rgba(79, 195, 247, 0.1);
+  background: var(--green-dim);
   padding: 1px 5px;
   border-radius: 5px;
   font-size: 11px;
@@ -648,7 +745,7 @@ a {
 }
 .app-input .field {
   flex: 1;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--card-2);
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 11px 16px;
@@ -681,13 +778,13 @@ a {
   gap: 8px;
   padding: 9px 13px;
   border-radius: 12px;
-  background: rgba(12, 13, 13, 0.86);
+  background: var(--nav-bg-solid);
   border: 1px solid var(--line-2);
   backdrop-filter: blur(8px);
   font-family: var(--ff-mono);
   font-size: 11.5px;
   color: var(--ink-soft);
-  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 18px 40px -22px var(--shadow-color);
   animation: floaty 6s ease-in-out infinite;
   white-space: nowrap;
 }
@@ -858,7 +955,7 @@ a {
 }
 
 .terminal {
-  background: #050505;
+  background: var(--color-bg-primary);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   overflow: hidden;
@@ -878,10 +975,10 @@ a {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: #2a2a2a;
+  background: var(--color-border-strong);
 }
 .term-bar .lights i:first-child {
-  background: #2e4754;
+  background: var(--color-info);
 }
 .term-bar .tlabel {
   font-family: var(--ff-mono);
@@ -959,7 +1056,7 @@ a {
   font-family: var(--ff-mono);
   font-size: 12.5px;
   color: var(--green);
-  background: rgba(79, 195, 247, 0.1);
+  background: var(--green-dim);
   padding: 1px 5px;
   border-radius: 5px;
 }
@@ -1388,8 +1485,8 @@ a {
   font-family: var(--ff-mono);
   font-size: 0.86em;
   color: var(--green);
-  background: rgba(79, 195, 247, 0.1);
-  border: 1px solid rgba(79, 195, 247, 0.16);
+  background: var(--green-dim);
+  border: 1px solid var(--green-line);
   padding: 1px 7px;
   border-radius: 7px;
   white-space: nowrap;
@@ -1491,7 +1588,7 @@ a {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--green);
-  background: rgba(79, 195, 247, 0.07);
+  background: color-mix(in srgb, var(--green) 7%, transparent);
   padding: 13px 18px;
   border-bottom: 1px solid var(--green-line);
   white-space: nowrap;
@@ -1509,7 +1606,7 @@ a {
   transition: background 0.14s ease;
 }
 .ref-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--card);
 }
 .ref-table td code {
   white-space: nowrap;
@@ -1561,15 +1658,15 @@ a {
   margin-top: 10px;
 }
 .callout.warning {
-  background: rgba(245, 166, 35, 0.06);
-  border-color: rgba(245, 166, 35, 0.22);
+  background: var(--color-warning-bg);
+  border-color: color-mix(in srgb, var(--color-warning) 28%, transparent);
 }
 .callout.warning .ctag {
-  color: #f5b544;
+  color: var(--color-warning);
 }
 .callout.warning .ctag::before {
-  background: #f5b544;
-  box-shadow: 0 0 8px rgba(245, 181, 68, 0.4);
+  background: var(--color-warning);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-warning) 40%, transparent);
 }
 
 .doc-jump a {
@@ -1982,7 +2079,7 @@ a {
   overflow: hidden;
   background: var(--bg-2);
   box-shadow:
-    0 40px 120px -40px rgba(0, 0, 0, 0.8),
+    0 40px 120px -40px var(--shadow-color),
     0 0 90px -30px var(--green-glow);
 }
 .ck-shot img {
@@ -2234,8 +2331,8 @@ a {
   font-family: var(--ff-mono);
   font-size: 12.5px;
   color: var(--green);
-  background: rgba(79, 195, 247, 0.1);
-  border: 1px solid rgba(79, 195, 247, 0.16);
+  background: var(--green-dim);
+  border: 1px solid var(--green-line);
   padding: 1px 6px;
   border-radius: 6px;
 }
@@ -2268,8 +2365,8 @@ a {
   font-family: var(--ff-mono);
   font-size: 12.5px;
   color: var(--green);
-  background: rgba(79, 195, 247, 0.1);
-  border: 1px solid rgba(79, 195, 247, 0.16);
+  background: var(--green-dim);
+  border: 1px solid var(--green-line);
   padding: 1px 6px;
   border-radius: 6px;
 }
