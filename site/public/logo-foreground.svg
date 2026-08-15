@@ -1,16 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Symbol only (no background). Ready for the Android adaptive-icon foreground. -->
-  <!-- Content fits within the Android safe zone (~66% center = ~676px) -->
-
-  <!-- π symbol -->
-  <g fill="#FFFFFF">
-    <rect x="290" y="368" width="444" height="68" rx="10"/>
-    <rect x="345" y="436" width="68" height="320" rx="10"/>
-    <rect x="611" y="436" width="68" height="320" rx="10"/>
-    <path d="M 679 720 Q 712 740 720 700 L 720 712 Q 720 756 668 756 L 668 736 Z" fill="#FFFFFF"/>
-  </g>
-
-  <!-- Characteristic blue dot -->
-  <circle cx="780" cy="332" r="58" fill="#4FC3F7"/>
+  <!-- Outpost-Pi mark v2.0 — foreground layer (transparent bg; pair with logo-background.svg).
+       All geometry inside the Android adaptive safe zone (r<=313 of 512). -->
+  <path d="M 398 564 L 695 385 M 398 564 L 633 693" stroke="#E4EFE8" stroke-width="34" stroke-linecap="round"/>
+  <rect x="314" y="480" width="168" height="168" rx="25" fill="#74CC9C"/>
+  <circle cx="695" cy="385" r="63" fill="#E4EFE8"/>
+  <circle cx="633" cy="693" r="71" fill="#E4EFE8"/>
 </svg>
