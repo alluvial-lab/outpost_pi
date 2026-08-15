@@ -61,6 +61,7 @@ screenshot — audit item 5); recommend deleting here, retake in story-brand-sit
 
 ## Verification evidence
 
+- Completion review fix pass — regenerated Cockpit branding, Linux launcher, and web icon surfaces from the same canonical mark geometry.
 - `python3 -m py_compile scripts/generate-brand-assets.py` — PASS.
 - Pillow structure validation — PASS: 32 PNG catalog/adaptive files, banner,
   and ICO; Android assets are RGBA, iOS/macOS assets are RGB/no-alpha,

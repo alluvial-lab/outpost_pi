@@ -60,6 +60,22 @@ def save_png(image: Image.Image, path: Path) -> None:
     image.save(path, format="PNG", optimize=True)
 
 
+def save_existing_mark(
+    path: Path,
+    *,
+    background: str | None,
+    preserve_alpha: bool = False,
+) -> None:
+    """Render the canonical mark at an existing PNG's dimensions."""
+    with Image.open(path) as existing:
+        size = existing.width
+        existing_mode = existing.mode
+    image = draw_mark(size, background=background, ink=DARK_INK, accent=DARK_ACCENT)
+    if preserve_alpha and existing_mode == "RGBA" and image.mode == "RGB":
+        image = image.convert("RGBA")
+    save_png(image, path)
+
+
 def render_icons() -> None:
     android = ROOT / "app/android/app/src/main/res"
     densities = {
@@ -103,6 +119,23 @@ def render_icons() -> None:
         format="ICO",
         sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
     )
+
+    cockpit_logo = ROOT / "cockpit/assets/branding/cockpit_logo.png"
+    save_existing_mark(cockpit_logo, background=DARK_BG)
+
+    linux_icons = ROOT / "cockpit/linux/runner/resources"
+    for path in sorted(linux_icons.glob("app_icon*.png")):
+        save_existing_mark(path, background=DARK_BG)
+
+    cockpit_web = ROOT / "cockpit/web"
+    save_existing_mark(cockpit_web / "favicon.png", background=None)
+    for path in sorted((cockpit_web / "icons").glob("Icon-*.png")):
+        is_maskable = path.name.startswith("Icon-maskable-")
+        save_existing_mark(
+            path,
+            background=DARK_BG if is_maskable else None,
+            preserve_alpha=is_maskable,
+        )
 
     for size in (16, 32):
         save_png(
@@ -162,11 +195,9 @@ def render_banner() -> None:
 
 def copy_svg_assets() -> None:
     full = (ROOT / "branding/logo-full-dark.svg").read_text()
-    foreground = (ROOT / "branding/logo-foreground.svg").read_text()
     for path, content in (
         (ROOT / "site/public/logo.svg", full),
         (ROOT / "site/src/app/icon.svg", full),
-        (ROOT / "site/public/logo-foreground.svg", foreground),
     ):
         path.write_text(content)
 
