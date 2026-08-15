@@ -68,7 +68,7 @@ dependencies:
 
   # Wave 2 — hides the native window bar (we have a custom one) and allows
   # drag/min/max via our bar. macOS/Windows/Linux.
-  window_manager: ^0.4.3
+  window_manager: ^0.5.2
 
   # Wave 2 — terminal tab: emulator + widget (xterm) + native PTY
   # (kyroon_pty: PTY in native code — forkpty on macOS/Linux, ConPTY on
