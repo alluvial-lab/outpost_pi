@@ -1,83 +1,82 @@
 # Branding — Outpost-Pi
 
-Official visual identity. Source of truth: SVG files (scalable).
-Derived PNGs generated via an external tool when needed.
+Official visual identity, **v2.0 — Phosphor Beacon** (locked 2026-08-14).
+Source of truth: SVG files (scalable). Derived PNGs generated on-VM via the
+Pillow rasterizer (see below) — no external converter required.
+
+## Identity story
+
+An independent Alluvial-Lab product: **the beacon is lit** — a muted terminal
+phosphor green against cool graphite, spoken entirely in Space Mono. The mark
+is **Constellation III**: the operator's block cursor (phosphor) tethered to
+two peer nodes (ink) — your session, your agents, one mesh. The block hub
+deliberately breaks the share-icon/three-circles pattern; the asymmetric
+spread keeps it a live system, not a diagram.
+
+Sibling separation: Patchbay owns amber-phosphor/warm-panel + IBM Plex;
+Outpost-Pi owns green-phosphor/cool-graphite + Space Mono. No shared tokens.
 
 ## Palette
 
-| Color | Hex | Use |
+| Role | Dark (native) | Light |
 |---|---|---|
-| Pure black | `#000000` | Background (full + adaptive icon bg) |
-| Pure white | `#FFFFFF` | π symbol (main foreground) |
-| Pi blue | `#4FC3F7` | Characteristic dot |
+| Background | `#0D1210` | `#F3F6F3` |
+| Elevated surface | `#131A16` | `#F8FAF8` |
+| Border | `#1E2620` | `#DFE6DF` |
+| Text | `#E4EFE8` | `#182019` |
+| Text muted | `#89978D` | `#57635A` |
+| **Accent (the beacon)** | `#74CC9C` | `#256E47` |
+| On-accent ink | `#0A2418` | `#FFFFFF` |
+
+Status hues (tinted-chip usage), dark/light: success `#7FD99A`/`#3E7A4E`,
+warning `#E6C86E`/`#8A6A1F`, error `#FF8B7D`/`#B34234`, info `#7DB8E8`/`#33689B`.
+All pairings WCAG-AA verified in both modes. Full token set:
+`../.mockups/design-system/tokens.css` (the contract every surface implements).
+
+## Typography
+
+**Console Mono — Space Mono everywhere** (400/700 + italic 400; Google Fonts).
+Wordmark: `outpost_pi` — Space Mono 700, lowercase, letter-spacing ~0.01em
+(the literal mesh name). Tagline voice: "your agents, in your pocket — the
+beacon is lit."
+
+## Mark geometry (viewBox 1024)
+
+- Edges: `M 398 564 L 695 385 M 398 564 L 633 693`, stroke 34, round caps
+- Hub cursor: rounded rect x314 y480 w168 h168 r25 (accent fill)
+- Peers: circles (695,385) r63 and (633,693) r71 (ink fill)
+- All geometry within the Android adaptive safe zone (r ≤ 313 of 512)
 
 ## Files
 
-| File | Content | Recommended use |
+| File | Content | Use |
 |---|---|---|
-| `logo-full.svg` | Black background + white π + blue dot | Single-piece logo (favicon, README header, site, app store screenshots) |
-| `logo-foreground.svg` | π + dot on transparent background | iOS app icon (with a separate background), Android adaptive icon foreground layer |
-| `logo-background.svg` | Solid black 1024×1024 | Android adaptive icon background layer |
-| `logo-monochrome.svg` | Complete white silhouette | Android 13+ themed icon (system colors it to match the wallpaper) |
-| `banner.svg` / `banner.png` | 1280×640 horizontal banner — π on the left + title + tagline + install command + URL | pi.dev package card (`pi.image` in package.json), GitHub README hero, social preview |
+| `logo-full-dark.svg` | Full-bleed dark (#0D1210 bg) | Primary logo: README, store, social |
+| `logo-full-light.svg` | Full-bleed light (#F3F6F3 bg) | Light-mode surfaces |
+| `logo-foreground.svg` | Mark on transparency | Android adaptive foreground, iOS compose |
+| `logo-background.svg` | Solid #0D1210 | Android adaptive background layer |
+| `logo-monochrome.svg` | White silhouette | Android 13+ themed icon; single-color contexts |
+| `banner.svg` | 1280×640: mark + wordmark + tagline + URL | GitHub README hero, social preview |
 
-All files: **1024×1024** viewBox, Android-compatible safe zone (~66% center).
+## PNG generation (on-VM, no external tools)
 
-## How to convert to PNG
+The mark is rects/circles/lines only — the Pillow rasterizer
+(`python3` + Pillow, present on the VM) draws it natively at 4× and downscales
+with LANCZOS. Standard exports:
 
-No conversion tool is currently installed in the project. Options for
-generating PNGs when needed:
-
-### Via `rsvg-convert` (simplest)
-
-```bash
-brew install librsvg
-rsvg-convert -w 1024 -h 1024 logo-foreground.svg -o logo-foreground.png
-rsvg-convert -w 1024 -h 1024 logo-background.svg -o logo-background.png
-rsvg-convert -w 1024 -h 1024 logo-monochrome.svg -o logo-monochrome.png
-rsvg-convert -w 1024 -h 1024 logo-full.svg -o logo-full.png
-```
-
-### Via ImageMagick
-
-```bash
-brew install imagemagick
-magick -background none -resize 1024x1024 logo-foreground.svg logo-foreground.png
-```
-
-### Via Inkscape (CLI)
-
-```bash
-inkscape --export-type=png --export-width=1024 logo-foreground.svg
-```
-
-### Via Figma/online
-
-- [https://cloudconvert.com/svg-to-png](https://cloudconvert.com/svg-to-png)
-- [https://svgtopng.com](https://svgtopng.com)
-
-## Standard export sizes
-
-Before uploading to a store/site, generate the variants:
-
-| Platform | Size | Source file |
+| Platform | Size | Source |
 |---|---|---|
-| iOS App Icon | 1024×1024 PNG (no alpha) | `logo-full.svg` |
-| Android Adaptive (foreground) | 432×432 transparent PNG | `logo-foreground.svg` |
-| Android Adaptive (background) | 432×432 PNG (solid color is enough) | `logo-background.svg` |
-| Android Themed (monochrome) | 432×432 transparent PNG | `logo-monochrome.svg` |
-| Favicon | 32×32, 16×16 PNG | `logo-full.svg` |
-| App Store screenshot header | 1200×630 PNG | `logo-full.svg` (compose) |
-| npm registry README | 512×512 PNG | `logo-full.svg` |
-
-> Android adaptive icons: both foreground and background occupy a 108dp
-> total canvas, but important content must stay within the central 66dp
-> (safe zone). The SVGs already respect this proportion (~66% of 1024).
+| iOS App Icon | 1024×1024 (no alpha) | full-dark |
+| Android adaptive fg/bg | 432×432 | foreground/background SVGs |
+| Android monochrome | 432×432 | monochrome |
+| Favicon | 32/16 | full-dark |
+| npm/README logo | 512×512 | full-dark |
+| Banner PNG | 1280×640 | banner.svg (text needs Space Mono present, or convert wordmark to paths first) |
 
 ## Updates
 
-Visual changes: edit the SVG (Figma → export SVG is fine). Regenerate derived
-PNGs at the points of use (site, app, store).
-
-Before changing the palette or silhouette, update this README with the new
-visual-identity version + the reason for the change.
+- **v2.0 — 2026-08-14**: full identity replacement (Phosphor Beacon world,
+  Constellation III mark, Console Mono type). Driver: rebrand audit found all
+  launcher icons + app color theme byte-identical to upstream remote_pi art.
+  Exploration record: `.mockups/design-system/` (rounds 1–9 + finalists).
+- v1.x: upstream-derived π+dot identity (documented in git history).
