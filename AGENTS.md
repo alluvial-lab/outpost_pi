@@ -1,21 +1,24 @@
-# AGENTS.md — Outpost-Pi
+# AGENTS.md — Outpost-Pi (public edition)
 
-**Outpost-Pi** is a multi-surface product owned and shipped by the operator.
-The codebase spans five subprojects — `pi-extension/`, `app/`, `relay/`,
-`cockpit/`, `site/`; design changes freely across all of them and ship by
-rebuilding our own artifacts.
+**Outpost-Pi** pairs a coding-agent harness with the machine it runs on:
+drive your agents from your phone, keep ownership of the wire. Five
+subprojects ship as independent artifacts — `pi-extension/`, `app/`, `relay/`,
+`cockpit/`, `site/`.
+
+> Local operators: the full deploy runbook and infra specifics live in
+> `AGENTS.local.md` (gitignored). This file is what the public repo carries.
 
 ## Repository scope
 
-- `origin` → `https://github.com/alluvial-lab/outpost_pi.git` — the only push
-  target.
+- `origin` → `https://github.com/alluvial-lab/outpost_pi.git` — the only push target.
 - Provenance: Outpost-Pi is derived from Jacob Moura's `remote_pi`
-  (MIT-licensed); the LICENSE and NOTICE preserve that attribution as a
-  factual license matter, not a design constraint.
+  (MIT-licensed); LICENSE and NOTICE preserve that attribution as a factual
+  license matter. History is truncated at the import point — see NOTICE.
 
 ## Work tracking
 
-This fork has its own `.work/` queue. Use it for Outpost-Pi code/product bugs, follow-up slices, and fork-owned operational work.
+This repo carries its own `.work/` queue for Outpost-Pi code/product bugs,
+follow-up slices, and operational work.
 
 - `.work/backlog/` — parked bugs and ideas.
 - `.work/active/stories/` — scoped implementation-sized work.
@@ -23,7 +26,7 @@ This fork has its own `.work/` queue. Use it for Outpost-Pi code/product bugs, f
 - `.work/active/epics/` — larger arcs.
 - `.work/CONVENTIONS.md` — frontmatter, tags, and routing rules.
 
-Do **not** park Outpost-Pi code/product bugs in the SNC root `.work/` queue. SNC root can record high-level operator context, but concrete Outpost-Pi implementation work belongs here.
+`.work/session-notes/` is gitignored local-only territory (never commit).
 
 ## Agent operating discipline
 
@@ -34,425 +37,86 @@ Before designing, implementing, or reviewing, read the agent-neutral rules in `.
 - `.agents/rules/documentation-discipline.md` — current-state docs, inline self-defense, link/reference hygiene, README audience.
 - `.agents/rules/testing-integrity.md` — no gaming tests, failure triage, subproject verification commands.
 
-These files are harness-neutral. If Pi's agile-workflow extension auto-loads `.agents/rules/`, still read the relevant rule body directly when a task depends on it.
-
 ## Existing project guidance
 
-Read `CLAUDE.md` at the repo root for the orchestration/planning posture, and read the subproject `CLAUDE.md` before editing that subproject:
-
-- `pi-extension/CLAUDE.md` — Node/TypeScript Pi extension.
-- `app/CLAUDE.md` — Flutter mobile app.
-- `relay/CLAUDE.md` — Rust relay.
-- `cockpit/CLAUDE.md` — Flutter desktop cockpit.
-- `site/CLAUDE.md` — site.
-
-`CLAUDE.md` files are not Claude-exclusive when they describe project behavior; treat them as local reference docs. Root is primarily planning/orchestration. Code edits normally belong in the relevant subproject.
+Read `CLAUDE.md` at the repo root for orchestration/planning posture, and the subproject `CLAUDE.md` before editing that subproject (`pi-extension/`, `app/`, `relay/`, `cockpit/`, `site/`). These files are harness-neutral reference docs, not Claude-exclusive.
 
 ## Agent reference surface
 
-Outpost-Pi is adopting platform-style agent references so implementation/review agents have current language, library, and development-cycle guidance before touching code. The pattern and template live at `docs/agent-reference-surface.md`. New canonical references should prefer `.agents/skills/<reference>/SKILL.md` so Pi/Codex/non-Claude agents can read them directly; Claude-facing files may link to those references but should not become the only source of API facts.
+`.agents/skills/<reference>/SKILL.md` carries current language/library/dev-cycle guidance; load the relevant one before touching code:
 
-When picking up any active `.work` item tagged `research` or containing `research_dials`, load and follow the `research-orchestrator` skill before authoring research-backed docs, skills, briefs, or references. Treat the item's `research_dials` as the commissioning registration and surface/confirm them through that workflow rather than proceeding ad hoc.
+- `code-design-principles`, `documentation-conventions`
+- `pi-extension-typescript`, `flutter-mobile`, `rust-relay`, `flutter-desktop-cockpit`, `next-site`
+- `mobile-remote-coding` (cross-cutting reconnect/state-machine checklist)
 
-First-wave references are tracked in `.work/active/features/feature-agent-reference-surface.md` and children. Available references:
-
-- `.agents/skills/code-design-principles/SKILL.md` — generic design/implementation principles adapted from SNC/platform: ports/adapters, single source of truth, generated contracts, fail fast, lifecycle ownership, convergent state.
-- `.agents/skills/documentation-conventions/SKILL.md` — the three-tier (Always/Recommended/Skip) native-doc intent model and agent-scan enforcement for TypeScript (JSDoc), Dart (dartdoc), and Rust (rustdoc).
-- `.agents/skills/pi-extension-typescript/SKILL.md` — `pi-extension/` TypeScript/Pi SDK lifecycle work.
-- `.agents/skills/flutter-mobile/SKILL.md` — `app/` Flutter mobile lifecycle, provider/ViewModels, routing, WebSocket reconnect, and room/session state.
-- `.agents/skills/rust-relay/SKILL.md` — `relay/` Rust async WebSocket routing, mesh membership, presence/rooms, logging/privacy, and relay tests.
-- `.agents/skills/flutter-desktop-cockpit/SKILL.md` — `cockpit/` Flutter desktop lifecycle, shadcn/modular/Hive patterns, terminal/PTY, file/window/native plugin surfaces, and cockpit tests.
-- `.agents/skills/next-site/SKILL.md` — `site/` Next App Router, React Server/Client Components, Tailwind 4/PostCSS, standalone Docker deploy, and site lint/build workflow.
-- `.agents/skills/mobile-remote-coding/SKILL.md` — cross-cutting mobile remote-coding state-machine and reconnect checklist for app/extension/relay work.
-
-Until the rest are authored, agents should treat subproject `CLAUDE.md` files plus `PROTOCOL.md` as the minimum required context. Prefer adding future reusable references under `.agents/skills/`; use `.claude/skills/` only as a compatibility mirror or pointer, not as the canonical source of generic API/design facts.
+Until the rest are authored, subproject `CLAUDE.md` files plus `PROTOCOL.md` are the minimum required context.
 
 ## Common commands
 
-Run commands from the owning subproject root.
-
-From `pi-extension/`:
+Run from the owning subproject root.
 
 ```bash
-corepack pnpm typecheck
-corepack pnpm test
-corepack pnpm build
-```
+# pi-extension/
+corepack pnpm typecheck && corepack pnpm test && corepack pnpm build
 
-From `app/`:
-
-```bash
+# app/
 flutter analyze
 flutter test --exclude-tags e2e
-```
 
-Run the dedicated cross-component E2E pairing harness from the repository root:
-
-```bash
+# cross-component E2E (repo root)
 e2e/run-pairing.sh
+
+# relay/
+cargo fmt --check && cargo clippy -- -D warnings && cargo test
+
+# cockpit/
+flutter analyze && flutter test
+
+# site/
+pnpm lint && pnpm build
 ```
 
-On this VM, full-suite runs use `--concurrency=2` for load-sensitive timing tests.
+On memory-constrained machines, cap the Android Gradle heap
+(`org.gradle.jvmargs=-Xmx3G`, temp dir off tmpfs) before building the APK;
+debug builds are the deploy target.
 
-From `relay/`:
+## Paired wire changes (deploy together)
 
-```bash
-cargo fmt --check
-cargo clippy -- -D warnings
-cargo test
-```
+Version-paired changes that break across mixed versions:
 
-From `cockpit/`:
+- **Auth domain-separation** (`app ↔ relay`, v0.1.0): app signs
+  `outpost-pi-relay-auth-v1\n` ++ nonce; relay verifies the same. Hard cutover.
+- **`to_room` required** (`relay ↔ extension`, v0.1.0): relay rejects
+  `pi_envelope` frames with empty `to_room` as `bad_envelope`. Cross-PC mesh
+  only; app↔pi path unaffected.
+- **Cockpit control-RPC discriminator** (`extension ↔ cockpit`, v0.1.0):
+  NUL-prefixed control string `\x00outpost-pi-ctrl:`, structured type
+  `outpost_pi_control`. Hard cutover.
+- **Owner-channel E2E** (`app ↔ extension`, target v0.3.0): signed ephemeral-DH
+  pairing (`pair_request`/`pair_ok`; raw pair token never crosses the wire),
+  sealed `outer.ct` frames post-pairing, AEAD as the security boundary.
+  Re-pairing is the recovery path for key loss. Relay untouched (`ct` stays
+  opaque).
+- **Storage/keyring/launchd identifiers** (v0.1.0, destructive): Hive boxes
+  `dev.outpostpi.*`, keyring `dev.outpostpi.pi`, launchd `dev.outpostpi.supervisord`,
+  QR scheme `outpostpi://`, env `OUTPOST_PI_*`/`OUTPOSTPI_*`. Old-label daemon
+  cleanup: `launchctl bootout gui/$(id -u)/dev.remotepi.supervisord`.
 
-```bash
-flutter analyze
-flutter test
-```
-
-From `site/`:
-
-```bash
-pnpm lint
-pnpm build
-```
-
-Do not commit generated `dist/`, build artifacts, local `.pi/`, or secrets.
-
-## LAN preview servers (mockup hosting)
-
-Mock/design previews are served on the LAN with `python3 -m http.server <port>
---bind 0.0.0.0` from the mockups dir only (never the repo root — the bind is
-reachable from the LAN + tailnet). Outpost-Pi holds **:8095** for
-`.mockups/` previews (operator-pinned; restart: `cd .mockups/design-system
-&& nohup python3 -m http.server 8095 --bind 0.0.0.0 >/tmp/outpost-mockups-server.log 2>&1 &`).
-
-Cross-project port registry. Port takeovers are a two-way hazard on a
-shared box — check the registry + mesh peers **before binding** `0.0.0.0`
-(a blind bind 404s a peer's live review links) and **before killing** a
-stale-looking server (staleness is a bad signal — a peer's stakeholder
-session may be mid-review; learned 2026-08-14). Registry: SNC platform
-8090-8091, SNC org 8096+, patchbay 8765, outpost-pi 8095. Prefer a fresh
-port in your own range over reclaiming.
-
-## Deployment and running
-
-This fork runs end-to-end on the dev VM (`dev-vm` = `<lan-host>`). The
-three runtime components are **separate artifacts** that deploy independently,
-and the pi-extension is registered as a **local-path** extension (not npm).
-
-### Component locations and how they load
-
-- **relay** — Docker container `outpost-pi-relay` on `:3300` (host) → `:3000`
-  (container). Image built from `relay/` source (`docker build -t
-  outpost-pi-relay:<version> relay/`); the persistent `mesh_versions` SQLite DB
-  lives in the named volume `outpost-pi-data:/data`. The live
-  container runs `outpost-pi-relay:0.1.0` with the retroactive file log
-  enabled: `OUTPOSTPI_RELAY_LOG_DIR=/data/logs` (daily-rotated `relay.log`
-  in the volume) + `RUST_LOG=info,relay=debug` (lifts the cross-PC
-  `pi_envelope` forward-path `debug!` carrying `env_id_tail` — the
-  correlation key for cross-PC relay envelopes only; app↔Pi owner-message IDs
-  are inside sealed `outer.ct` and cannot be joined by the relay).
-- **pi-extension** — registered in `~/.pi/agent/settings.json` as the local path
-  `/home/agent/projects/outpost_pi/pi-extension`, loading `dist/index.js` (the
-  `package.json` `main`). The local path is authoritative. `dist/` is gitignored
-  and **not rebuilt automatically**; a source edit requires
-  `corepack pnpm build` (or `./node_modules/.bin/tsc` to bypass the corepack
-  deps-status RO-cache check) before it's live. **Note:** `corepack pnpm` in
-  this sandbox needs `COREPACK_HOME=<writable dir>` + `--store-dir <writable
-  store>` because `/home/agent/.local-state` is read-only.
-  **Delivery-path debug log:** set `OUTPOST_PI_DEBUG_LOG=1` in the pi
-  process's environment to enable a bounded ring + file at
-  `~/.pi/remote/debug/delivery.log` capturing the `messageApi`/`commandCtx`
-  lifecycle, `wakeAgent` outcomes, the replay queue, and `session_start`/
-  `session_shutdown` reasons — keyed by the local owner message `id` for app↔extension tracing; sealed
-  owner frames are not relay-correlated by `env_id_tail`. Default off (no-op). Needs
-  a full pi restart to take effect (not `/reload`).
-- **app** — Flutter mobile; sideloaded via `adb install <apk>` to a phone on a
-  workstation (the VM has no phone attached).
-- **tailscale** — docker container `tailscale` (tailscale/tailscale,
-  `--network host`, `--cap-add NET_ADMIN`, `/dev/net/tun`, state volume
-  `tailscale-state`, `--entrypoint tailscaled` — NOT the stock entrypoint,
-  whose boot script kills `tailscale up` at 60s and crash-loops the
-  nodekey). Node `dev-vm` = `<tailnet-host>`; advertises subnet route
-  `<lan-ip>/24` (approved in the admin console) so the relay's LAN URL
-  (`http://<lan-host>:3300`) works both direct on the home LAN and
-  remotely through the tailnet. Phone: Tailscale app with split tunneling
-  (include mode) for Outpost-Pi; WireGuard must be fully off (single
-  Android VPN slot). **After every app uninstall/reinstall (incl.
-  sideloads), re-toggle Outpost-Pi in Tailscale's split-tunnel list** —
-  Android binds entries by app UID, reinstalls mint a new UID, and the
-  stale checkmark looks applied but the app's traffic never enters the
-  tunnel (works on WiFi, permanent relay-offline on cellular). Full setup + incident notes:
-  `.work/session-notes/2026-07-26-tailscale-deploy-and-phone-routing-incident.md`.
-
-### Paired wire changes (deploy together)
-
-The 0.1.0 Outpost-Pi rebrand release introduced wire-stable identifier
-renames that are **version-paired** — mixed versions break:
-- **Auth domain-separation** (`app-0.1.0` ↔ `relay-0.1.0`): app signs
-  `outpost-pi-relay-auth-v1\n` ++ nonce; relay verifies the same. Hard
-  cutover — old `remote-pi-relay-auth-v1` signatures are rejected. Old app
-  + new relay (or vice versa) fails the WS handshake.
-- **`to_room` required** (`relay-0.1.0` ↔ `extension-0.1.0` sender): the
-  relay rejects `pi_envelope` frames with empty/missing `to_room` as
-  `bad_envelope`. Sender-side room-targeting has since shipped
-  (`story-to-room-sender-side-room-targeting`): the extension threads the
-  destination sibling's actual room through every `sendEnvelopeToPi` call
-  site (`broker_remote.ts`). This only affects **cross-PC agent mesh**
-  (Pi↔Pi `agent_send`); the app↔pi path is unaffected.
-- **Cockpit control-RPC discriminator** (`extension-0.1.0` ↔ `cockpit-0.1.0`):
-  the NUL-prefixed control string is now `\x00outpost-pi-ctrl:` and the
-  structured type is `outpost_pi_control`. Hard cutover — old cockpit + new
-  extension (or vice versa) break the control channel.
-- **Owner-channel E2E** (target v0.3.0; app ↔ extension): `pair_request` and
-  `pair_ok` carry signed ephemeral-DH fields (`pair_request` additionally
-  carries `token_id` + `pair_mac`, an HMAC proof of QR-token knowledge — the
-  raw pair token never crosses the wire), and post-pairing `outer.ct`
-  payloads are sealed frames rather than base64 plaintext. The extension
-  rejects unauthenticated `pair_request`s (`pair_error token_unknown` /
-  `bad_dh_sig`); it also rejects plaintext post-key frames and AEAD/replay
-  failures, detaching the channel subscription after five consecutive
-  failures — the NEXT frame from the keyed owner simply reattaches with the
-  same persisted channel keys (AEAD remains the security boundary; forged
-  frames never dispatch). Re-pairing is the recovery path for key loss or a
-  half-established pairing, not for transient frame failures. Existing
-  pairings have no channel key, so their frames are dropped and operators
-  must re-pair once at cutover. The relay remains untouched because `ct`
-  stays opaque base64; no relay version pairing is required. Safe deploy
-  order: rebuild the extension `dist/`, then fully restart Pi (not
-  `/reload`), then sideload the app.
-- **Storage/keyring/launchd identifiers** (hard cutover, destructive): Hive
-  box names (`dev.outpostpi.*`), keyring service (`dev.outpostpi.pi`), owner
-  identity (`dev.outpostpi.owner.identity`), launchd label
-  (`dev.outpostpi.supervisord`), QR URI scheme (`outpostpi://`), and env
-  vars (`OUTPOST_PI_*`/`OUTPOSTPI_*`) all renamed. The phone loses persisted
-  pairing data and re-pairs; the old launchd daemon is orphaned under the
-  old label and must be manually cleaned (`launchctl bootout
-  gui/$(id -u)/dev.remotepi.supervisord`).
-
-Safe deploy order: **relay first**, then **full Pi process restart**
-(not `/reload` — see below), then sideload the app, then upgrade Cockpit.
-Cockpit 0.1.0 is part of the paired deployment because its control channel
-(`\x00outpost-pi-ctrl:` / `outpost_pi_control` / `outpost-pi:*` events) is
-also hard-cutover — old Cockpit + new extension break the control channel.
+Safe deploy order: **relay → full Pi restart → app sideload → cockpit**.
 
 ### Reload vs restart (pi-extension)
 
-`/reload` in the pi TUI does **not** re-import `dist/index.js` for a
-`type: module` (ESM) extension. A source edit is only picked up by a **full
-pi process restart** (quit + relaunch), not `/reload`.
+`/reload` in the pi TUI does **not** re-import `dist/` for a `type: module`
+(ESM) extension — Node's ESM cache is immutable at runtime. A source edit is
+only picked up by a full pi process restart. See
+`pi-extension/docs/daemon.md` for the hot-reload/restart-wrapper mechanics
+(`scripts/pi-restart-loop.sh`, `scripts/hot-reload.sh`, agent_settled-gated).
 
-**Root cause (verified 2026-07-31 against jiti 2.7.0):** `/reload` does call
-`clearExtensionCache()` (clears pi's factory Map) and then `jiti.import()`,
-so pi's own cache IS cleared. But jiti's async import path for a
-`type: module` `.js` file takes the `nativeImport` branch:
-`nativeImport = (id) => import(id)` — Node's native dynamic `import()`, whose
-ESM module cache is **immutable at runtime** (no API to invalidate it).
-`moduleCache: false` (which pi sets) only clears the CJS `require.cache`,
-not the ESM cache. So the stale module from the first load is returned on
-every subsequent `/reload`. The earlier 2026-07-07 empirical note
-(hypothesizing a retained factory or incomplete `/reload` path) was
-mistaken about the *mechanism* but correct about the *result*.
+## Brand
 
-### Hot-reloading dist/ via process restart (interactive session)
-
-Since `/reload` cannot load new ESM `dist/` code, the extension ships a
-**`agent_settled` PID-scoped restart** mechanism that makes a full restart
-cheap enough to use as a hot-reload from within a turn (e.g. while working
-via mobile). The design was cross-model reviewed (gpt-5.6-sol) and addresses
-5 prior blockers: PID-scoped state (multi-pi safe), exclusive `O_EXCL` claim,
-synchronous `agent_settled` boundary with `ctx.isIdle()` recheck + quiescing
-ingress gate, graceful SIGTERM (not `process.exit`), and a marker-based wrapper
-handshake (not exit code 42).
-
-1. Rebuild `dist/` (`./node_modules/.bin/tsc` or `corepack pnpm build`).
-2. Enable the toggle (one-time, persists): `/outpost-pi hot-reload on` (TUI)
-   or `./scripts/hot-reload.sh on`.
-3. Arm the restart: `/outpost-pi hot-reload arm` (TUI) or
-   `./scripts/hot-reload.sh arm` (bash — discovers the pi PID from the parent
-   chain + reads the nonce from `~/.pi/remote/.runtime-self-<PID>`).
-4. On the next `agent_settled` (the SDK's true idle boundary — fires after ALL
-   turns, retries, compactions, and queued follow-ups settle), the extension:
-   - checks daemon exclusion (`OUTPOST_PI_DAEMON=1` → skip)
-   - checks the toggle + PID-scoped armed request (`.hot-reload-armed-<PID>`)
-   - verifies the nonce (PID-reuse protection) + checks expiry (5min)
-   - sets a `_hotReloading` quiescing gate (rejects new messages with a
-     delivery-error response, NOT `delivery_pending` — the exiting process
-     cannot replay them, and automatic resend on reconnect is not implemented)
-   - rechecks `ctx.isIdle()` (a run may have started between `agent_settled`
-     firing and the handler running)
-   - claims exclusively via `O_CREAT|O_EXCL` on `.claimed-<PID>`
-   - writes `.restart-marker-<PID>` (the wrapper's relaunch signal)
-   - sends `process.kill(process.pid, "SIGTERM")` (graceful, NOT `process.exit`)
-5. pi's `SIGTERM` handler fires `session_shutdown` → `resetTurnSnapshot`
-   (publishes `working=false`) → bounded owner-channel drain → `relay.stop()`
-   → `process.exit(0)`.
-6. `scripts/pi-restart-loop.sh` (run under tmux) sees exit 0, checks for
-   `.restart-marker-<child-PID>`: present → consume + relaunch `pi --continue`
-   with a fresh ESM cache. Absent (normal `/quit`) → stop. Non-zero (crash) → stop.
-
-**Honest guarantee**: restart is triggered at the SDK's settled boundary, not by
-an end-to-end delivery acknowledgement. The final response may have been handed
-to the relay before disconnect, but receipt is not acknowledged; the app
-rehydrates output via `session_sync` on reconnect (~2s). Input rejected during
-the restart window is currently a failed send that the operator must resend.
-Automatic recoverable delivery and resend-on-reconnect remain aspirational work
-tracked by `backlog-recoverable-delivery-resend-contract`.
-
-```bash
-# Start pi under the restart loop (run once):
-tmux new -d -s outpost 'cd /home/agent/projects/outpost_pi && ./scripts/pi-restart-loop.sh'
-tmux attach -t outpost
-
-# Manage hot-reload (from TUI or bash):
-/outpost-pi hot-reload on       # enable the toggle (persistent)
-/outpost-pi hot-reload arm      # request restart at next agent_settled
-/outpost-pi hot-reload off      # disable + clear ALL pending state
-/outpost-pi hot-reload status   # show current state
-# OR from bash:
-./scripts/hot-reload.sh on      # enable
-./scripts/hot-reload.sh arm     # arm (discovers PID from parent chain)
-./scripts/hot-reload.sh off     # disable + cleanup
-./scripts/hot-reload.sh status  # show state
-```
-
-A plain `kill -TERM $(pgrep -x pi)` triggers graceful shutdown but does NOT write
-the restart marker — the wrapper stops (no relaunch). Use the arm command for
-hot-reload; use `kill -TERM` only for a clean stop.
-
-**Agent workflow (for code agents working on the extension via mobile):**
-After editing extension source and rebuilding `dist/`, arm the hot-reload as the
-LAST bash command in the turn (after the build succeeds). The restart fires at
-`agent_settled`, after Pi's turn/retry/compaction work settles; this is not an
-acknowledgement that the response reached the app. The agent's turn completes
-normally; the operator sees ~2s of relay offline, then the app reconnects to the
-fresh process. Do NOT call `process.exit` or `kill` directly;
-the arm command is the only safe trigger. If the toggle is off, arm is a no-op
-(warns); enable it first with `/outpost-pi hot-reload on` or
-`./scripts/hot-reload.sh on`.
-
-```bash
-# The agent's rebuild + reload pattern (run from the project root):
-corepack pnpm build  # or: cd pi-extension && ./node_modules/.bin/tsc
-./scripts/hot-reload.sh arm  # restart fires at next agent_settled
-```
-
-### All agents under the restart wrapper (mobile-managed deploys)
-
-Every Herdr agent (all project panes) runs under `scripts/pi-restart-loop.sh`,
-which is **cwd-parameterized** (`CWD="${1:-$(pwd)}"`) so one copy serves every
-project. This puts two mobile capabilities on **any** session:
-
-- **`/new` (fresh session)** — the phone pairs once (all agents share one owner
-  identity at `~/.pi/remote/identity.json`); each agent is its own relay room
-  (`rooms.ts`, keyed by `(cwd, name)`); the app's home page lists them as
-  tappable session tiles. Switch to a session → tap **New** → that agent's pi
-  exits 42 → the wrapper relaunches once **without** `--continue` (fresh session).
-- **hot-reload dist refresh** — rebuild `dist/` once, then restart every agent
-  **with** `--continue` so sessions resume onto the new code.
-
-Both are **turn-aware**: the wrapper's hot-reload fires at `agent_settled` (the
-SDK idle boundary), and the scripts below skip any agent whose `agent_status`
-is `working`. Nothing interrupts a running turn. herdr does **not** supervise or
-auto-restart agents, so stopping/relaunching them is safe.
-
-#### Operational scripts (run from the repo root)
-
-| Script | When to use |
-|---|---|
-| `scripts/herdr-start-agents.sh` | **Cold start** — launches the wrapper in every project pane (panes at bash, no pi running). New project panes auto-wrap (dynamic discovery). |
-| `scripts/wrap-agents.sh` | **Hot convert** — cycles already-running bare-pi agents into the wrapper. Turn-aware + idempotent + dynamic. Re-run any time to catch newly-added or newly-idle agents. |
-| `scripts/refresh-dist.sh` | **Dist refresh** — rebuilds `dist/` (`tsc`) + restarts every wrapped agent **with** `--continue` (sessions resumed, new code live). The orchestrator running it restarts itself last via hot-reload arm (fires at `agent_settled`). |
-
-All three discover agents at runtime from `herdr pane list` — the agent count is
-irrelevant; add/remove projects freely.
-
-#### Mobile-managed deploy surface
-
-From the phone (talking to any agent, typically the outpost orchestrator), the
-operator manages every deploy except the phone app itself:
-
-- **Extension (`dist/`)** — "refresh dist" → run `scripts/refresh-dist.sh`.
-- **Relay** — "redeploy relay" → `docker build -t outpost-pi-relay:<v> relay/` +
-  stop/rm/re-run the container (see Relay container commands below).
-- **`/new` on any session** — switch in the app, tap New.
-- **App APK** — the one off-mobile surface (workstation + `adb`, see Sideload).
-
-**Agent guidance:** when the operator asks to "refresh dist", "redeploy the
-extension", or "restart the agents onto the new code", run
-`scripts/refresh-dist.sh`. When they ask to wrap a new or converted agent, run
-`scripts/wrap-agents.sh`. These supersede the single-agent hot-reload `arm`
-pattern above for multi-agent dist refreshes.
-
-### Relay container commands
-
-```bash
-# build from current fork source
-docker build -t outpost-pi-relay:0.1.0 relay/
-# run (reproduces the live container's config: port 3300→3000, named volume,
-# retroactive file log + cross-side debug correlation)
-docker run -d --name outpost-pi-relay -p 3300:3000 \
-  -v outpost-pi-data:/data \
-  -e OUTPOSTPI_RELAY_PORT=3000 \
-  -e OUTPOSTPI_MESH_DB_PATH=/data/mesh.db \
-  -e OUTPOSTPI_RELAY_LOG_DIR=/data/logs \
-  -e RUST_LOG="info,relay=debug" \
-  --restart unless-stopped outpost-pi-relay:0.1.0
-# rebuild from updated source + swap in
-docker stop outpost-pi-relay && docker rm outpost-pi-relay  # then build + run
-# read the persistent relay log (survives scroll/restart; daily-rotated)
-docker exec outpost-pi-relay tail -f /data/logs/relay.log.$(date -u +%F)
-```
-
-**First 0.1.0 relay cutover:** on a host still running the pre-rebrand
-container `remote-pi-relay` on port 3300, `docker run -p 3300:3000` fails
-(port occupied). Stop and remove the old container first:
-```bash
-docker stop remote-pi-relay && docker rm remote-pi-relay
-# then build + run outpost-pi-relay:0.1.0 as above
-```
-
-Without `OUTPOSTPI_RELAY_LOG_DIR`, logging is stdout-only (lost on
-scroll/restart — the pre-0.1.0 gap). `RUST_LOG` defaults to `info`; the
-`relay=debug` lift is what surfaces the `env_id_tail` correlation line on
-each cross-PC forward/drop (the app↔pi data-plane path stays
-payload-opaque at INFO with `warn!` on drops). Rotated `relay.log.YYYY-MM-DD`
-files older than 14 days are pruned on startup (`prune_old_relay_logs`) —
-`tracing-appender` rotates but does not retain, so without the sweep one
-file per day would accumulate without limit in the named volume.
-
-### App APK build on the dev VM (memory-sensitive)
-
-The VM has 11G RAM shared with ~10 other containers. The default
-`android/gradle.properties` heap (`-Xmx8G`) is for a workstation and will **OOM
-the VM**; `/tmp` is a **tmpfs** (RAM-backed) that Gradle also uses for build
-  temp. Two fixes are required for a safe build on the VM:
-- cap the Gradle heap to `3G` and redirect its temp off tmpfs:
-  `org.gradle.jvmargs=-Xmx3G ... -Djava.io.tmpdir=/home/agent/.gradle-tmp`
-  (mkdir `/home/agent/.gradle-tmp` first; it's on the 54G disk)
-- the project ships **debug** builds — release signing was dropped at the
-  0.1.0 rebrand, so `flutter build apk --debug` is the deploy target. Release
-  builds fail the task-graph guard without `android/key.properties`, which is
-  intentionally absent (if release signing is ever restored, the fat-vs-`--split-per-abi`
-  RAM note still applies: prefer a single fat APK when RAM is tight)
-
-Toolchain: Flutter at `~/projects/outpost_pi/.tools/flutter`, JDK 21
-(`JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`), Android SDK API 36 at
-`/opt/android-sdk`. Full build-path notes in `.agents/skills/flutter-mobile/SKILL.md`.
-
-### Sideload to phone
-
-The phone is attached to a workstation, not the VM. After building on the VM,
-copy the APK to the workstation and install with `adb` (USB debugging on):
-```bash
-scp app/build/app/outputs/flutter-apk/app-debug.apk <workstation>:~/app.apk
-# on the workstation:
-# First 0.1.0 sideload: the applicationId changed (work.jacobmoura.remotepi →
-# dev.kevoun.outpostpi), so `adb install -r` installs ALONGSIDE the old app
-# (no INSTALL_FAILED_UPDATE_INCOMPATIBLE). Uninstall the old package first:
-adb uninstall work.jacobmoura.remotepi
-adb install ~/app.apk
-# Subsequent 0.1.x updates: `adb install -r ~/app.apk` (-r keeps data)
-```
-The app's `pubspec.yaml` version is NOT bumped by `release-deploy`; bump it
-manually before building when shipping a new version.
+Identity v2.0 — **Phosphor Beacon** (dark `#0D1210` / light `#F3F6F3`,
+accent `#74CC9C`/`#256E47`), **Constellation III** mark, **Space Mono**
+everywhere. Contract: `.mockups/design-system/tokens.css`; canonical SVGs in
+`branding/`; regeneration: `scripts/generate-brand-assets.py` (Pillow — no
+external SVG converter needed). Do not commit generated `dist/`, build
+artifacts, or secrets.
