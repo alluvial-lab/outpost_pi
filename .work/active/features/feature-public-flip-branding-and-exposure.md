@@ -46,6 +46,26 @@ unavailable this session — provenance established via git hash-object).
 - Scattered: `scripts/herdr-setup.sh` comment (LAN IP), fixture hostname
   `dev-vm` (cosmetic). Site docs page tailscale mentions are benign links.
 
+## Status: DESIGN LOCKED 2026-08-14 — implementation pending
+
+Identity complete (see `.mockups/design-system/` + `branding/`):
+- **World**: Phosphor Beacon — dark-native #0D1210 / light #F3F6F3, accent
+  #74CC9C / #256E47, full status set AA-verified both modes.
+- **Mark**: Constellation III, enlarged — block-cursor hub (phosphor) + two
+  peer nodes (ink). Canonical SVGs in `branding/` (v2.0; upstream-derived
+  logo-full.svg + banner.png removed). Share-icon neighbor-audited.
+- **Type**: Console Mono — Space Mono everywhere; wordmark `outpost_pi` 700.
+- **Contract**: `.mockups/design-system/tokens.css` (dual-mode, 8pt, radii).
+- **PNG pipeline**: Pillow 11 on the VM rasterizes the mark natively
+  (rects/circles/lines + supersample + LANCZOS) — no external SVG converter
+  needed; banner wordmark text wants Space Mono present at export time.
+
+Remaining child stories: icon regeneration sweep (app/cockpit/site PNGs,
+ hash-verify ≠ upstream), app+cockpit theme replacement (app_colors.dart is
+ byte-identical to upstream), site logo sync, screenshot retake. Typography
+ implementation = Space Mono via google_fonts in app/cockpit (already a dep),
+ tokens.css ported to Tailwind/CSS vars on site.
+
 ## Path decision (operator)
 
 - **Option 1 — fresh public repo**: cleaned snapshot (squashed/shallow
