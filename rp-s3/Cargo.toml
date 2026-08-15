@@ -3,7 +3,7 @@ name = "rp-s3"
 version = "0.1.0"
 edition = "2021"
 description = "Outpost-Pi download server — serves artifacts and latest.json from a volume"
-license = "LicenseRef-proprietary"
+license = "MIT"
 
 [dependencies]
 axum = "0.8"

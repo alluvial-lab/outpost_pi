@@ -7,8 +7,7 @@
   <summary>Multi-pane desktop client for Outpost-Pi</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
-  <!-- Project license still pending in the monorepo; valid placeholder. -->
-  <project_license>LicenseRef-proprietary</project_license>
+  <project_license>MIT</project_license>
 
   <developer id="dev.kevoun">
     <name>Outpost-Pi</name>
