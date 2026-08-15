@@ -1,11 +1,11 @@
 {
-    "name": "cockpit",
-    "short_name": "cockpit",
+    "name": "Outpost-Pi Cockpit",
+    "short_name": "Cockpit",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0D1210",
+    "theme_color": "#0D1210",
+    "description": "Desktop cockpit for your Outpost-Pi agents.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
