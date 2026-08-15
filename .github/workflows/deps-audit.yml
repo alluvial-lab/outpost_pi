@@ -30,7 +30,7 @@ jobs:
       matrix:
         dir: [pi-extension, site, protocol]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -50,7 +50,7 @@ jobs:
       matrix:
         crate: [relay, rp-s3]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Prebuilt cargo-audit binary (avoids a ~3 min crate build). CLI form
       # fails via exit code like the pnpm lanes — rustsec/audit-check would
       # need Checks/Issues write permissions for its API reporting.
