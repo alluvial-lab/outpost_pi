@@ -119,7 +119,7 @@ dependencies:
 
   # In-app update notice (plan 43, step 7): current app version
   # (package_info_plus) + open the artifact URL in the browser (url_launcher).
-  package_info_plus: ^8.0.0
+  package_info_plus: ^9.0.1
   url_launcher: ^6.3.0
 
   # Plan 47 — native self-update: Sparkle (macOS) + WinSparkle (Windows) via the
