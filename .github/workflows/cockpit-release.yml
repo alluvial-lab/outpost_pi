@@ -37,7 +37,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       build: ${{ steps.v.outputs.build }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - id: v
@@ -69,7 +69,7 @@ jobs:
       SIGN_ID: ${{ secrets.APPLE_SIGNING_IDENTITY }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - uses: subosito/flutter-action@v2
@@ -189,7 +189,7 @@ jobs:
     env:
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - uses: subosito/flutter-action@v2
@@ -237,7 +237,7 @@ jobs:
     env:
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Flutter x64 (SDK empacotado)
@@ -305,7 +305,7 @@ jobs:
       VERSION: ${{ needs.meta.outputs.version }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v8
