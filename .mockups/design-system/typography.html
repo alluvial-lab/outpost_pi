@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outpost-Pi — Typography Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,sans-serif;background:#0F1115;color:#E6EAF0;padding:32px 20px 80px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto}
+  header.intro{margin-bottom:28px}
+  header.intro h1{font-size:24px;font-weight:650}
+  header.intro p{color:#8B93A1;max-width:82ch;margin-top:6px;font-size:14px}
+  .lockline{border:1px solid #3A4A42;border-left:3px solid #74CC9C;border-radius:10px;padding:12px 16px;background:#141820;font-size:13px;color:#C6CDD8;margin-bottom:30px}
+  .lockline b{color:#74CC9C}
+  section.opt{border:1px solid #2A303C;border-radius:12px;padding:26px;margin-bottom:36px;background:#141820}
+  section.opt h2{font-size:18px;font-weight:650}
+  .rationale{color:#8B93A1;font-size:13.5px;margin:4px 0 20px;max-width:84ch}
+  .badge{display:inline-block;font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #2A303C;border-radius:99px;padding:2px 9px;color:#8B93A1;vertical-align:middle;margin-left:8px}
+  .panel{border-radius:10px;padding:20px;border:1px solid #1E2620;background:#0D1210;color:#E4EFE8;margin-bottom:14px}
+  .panel.light{background:#F3F6F3;color:#182019;border-color:#DFE6DF}
+  .panel h4{font-family:ui-monospace,monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.55;margin-bottom:14px}
+  .alpha{font-size:17px;letter-spacing:.02em;word-break:break-all;line-height:1.8}
+  .lockup{display:flex;align-items:center;gap:28px;flex-wrap:wrap;padding:10px 4px 18px}
+  .lockup svg{flex:none}
+  .lkw1{font-size:44px;font-weight:700;letter-spacing:.01em}
+  .lkw2{font-size:44px;font-weight:700;letter-spacing:.045em}
+  .lkw2 .pi{font-family:'Geist Mono',monospace;font-weight:600;color:#74CC9C}
+  .scale{display:grid;grid-template-columns:auto 1fr;gap:10px 22px;align-items:baseline}
+  .scale .tag{font-family:ui-monospace,monospace;font-size:10.5px;color:#89978D;white-space:nowrap}
+  .body-sample{max-width:66ch}
+  .body-sample p{font-size:14.5px;line-height:1.75;margin-bottom:10px}
+  .ui{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:6px}
+  .btn{font-weight:600;font-size:13.5px;border-radius:8px;padding:8px 16px;border:none;cursor:default}
+  .chip{font-family:'Geist Mono','Space Mono',monospace;font-size:10.5px;border-radius:99px;padding:2px 9px}
+  code.line{font-size:12px;display:block;padding:8px 10px;border-radius:6px}
+  .note{font-size:12px;color:#8B93A1;margin-top:14px;max-width:84ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="intro">
+  <h1>Outpost-Pi — typography options</h1>
+  <p>Two faces for one world. Each option shows: alphabet · wordmark lockup with the <strong>enlarged locked mark</strong> ·
+  scale ladder · UI sample in Phosphor Beacon colors · body copy in the product's voice. Sibling identities avoided by
+  design (Patchbay: IBM Plex · SNC: Source Sans 3 / Newsreader / Saira / Archivo / Fragment Mono).</p>
+</header>
+
+<div class="lockline">Locked so far — world: <b>Phosphor Beacon</b> (dark #0D1210 native / light #F3F6F3 · accent
+#74CC9C / #256E47) · mark: <b>Constellation III, enlarged ~20%</b> (block-cursor hub + two peers). This page's lockups
+are the first render of the enlarged geometry — confirm the size reads right alongside type.</div>
+
+<!-- ══════ OPTION 1 ══════ -->
+<section class="opt">
+  <h2>Option 1 — Console Mono <span class="badge">Space Mono · mono-native</span></h2>
+  <p class="rationale">The whole product speaks terminal. Space Mono's retro-technical voice (NASA-document vibes,
+  distinctive Q, slashed zero) makes the wordmark and UI feel like one continuous command line — the app *is* a console.
+  Body text stays mono at lighter weight; the terminal is the brand. Boldest identity commitment of the two.</p>
+  <div class="panel">
+    <h4>alphabet · Space Mono 400 / 700</h4>
+    <div class="alpha" style="font-family:'Space Mono',monospace">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz 0123456789 <b>❯ _ # $ % &amp; *</b> → ✓</div>
+    <div class="lockup">
+      <svg width="76" height="76" viewBox="0 0 1024 1024" fill="none"><path d="M 398 564 L 695 385 M 398 564 L 633 693" stroke="#E4EFE8" stroke-width="34" stroke-linecap="round"/><rect x="314" y="480" width="168" height="168" rx="25" fill="#74CC9C"/><circle cx="695" cy="385" r="63" fill="#E4EFE8"/><circle cx="633" cy="693" r="71" fill="#E4EFE8"/></svg>
+      <div class="lkw1" style="font-family:'Space Mono',monospace;color:#E4EFE8">outpost_pi</div>
+    </div>
+    <div class="scale" style="font-family:'Space Mono',monospace">
+      <span class="tag">display 32/700</span><div style="font-size:32px;font-weight:700">The beacon is lit</div>
+      <span class="tag">h1 22/700</span><div style="font-size:22px;font-weight:700">Pair a new phone</div>
+      <span class="tag">body 14.5/400</span><div style="font-size:14.5px;max-width:56ch;line-height:1.75">Session live · agent turn 3 — draining the dependabot queue, 16 merged.</div>
+      <span class="tag">small 12/400</span><div style="font-size:12px;color:#89978D">relay <lan-host>:3300 · rtt 23ms</div>
+    </div>
+    <div class="ui" style="margin-top:18px">
+      <button class="btn" style="font-family:'Space Mono',monospace;background:#74CC9C;color:#0A2418">Pair new phone</button>
+      <span class="chip" style="background:rgba(116,204,156,.14);color:#74CC9C;font-family:'Space Mono',monospace">● session live</span>
+      <code class="line" style="font-family:'Space Mono',monospace;background:rgba(116,204,156,.12);color:#74CC9C">$ agent_send --to cockpit "rebuild dist"</code>
+    </div>
+  </div>
+  <div class="panel light">
+    <h4>body · light mode · Space Mono 400</h4>
+    <div class="body-sample" style="font-family:'Space Mono',monospace">
+      <p>Your outpost is reachable. The relay holds the wire, the phone holds the key, and every agent session lands in
+      your pocket the moment it settles. Green means the beacon never went dark.</p>
+    </div>
+  </div>
+  <p class="note">Trade-off: mono body text reads "engineer-only" — warm to us, colder to a non-terminal visitor.
+  Distinctiveness: maximum (no sibling, no default-stack overlap).</p>
+</section>
+
+<!-- ══════ OPTION 2 ══════ -->
+<section class="opt">
+  <h2>Option 2 — Instrument Console <span class="badge">Geist + Geist Mono · sans-led</span></h2>
+  <p class="rationale">A modern technical sans leads UI and prose; its matched mono carries code, labels, and the
+  wordmark's <code>_pi</code>. Reads as precision instrument rather than raw terminal — friendlier to the phone-app
+  audience while the mono accent keeps the tool credibility. Wordmark: OUTPOST in tracked caps + <span style="color:#74CC9C">_pi</span> in mono.</p>
+  <div class="panel">
+    <h4>alphabet · Geist 400/700 + Geist Mono 500</h4>
+    <div class="alpha" style="font-family:'Geist',sans-serif">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz 0123456789 <span style="font-family:'Geist Mono',monospace">❯ _ # $ % &amp; *</span> → ✓</div>
+    <div class="lockup">
+      <svg width="76" height="76" viewBox="0 0 1024 1024" fill="none"><path d="M 398 564 L 695 385 M 398 564 L 633 693" stroke="#E4EFE8" stroke-width="34" stroke-linecap="round"/><rect x="314" y="480" width="168" height="168" rx="25" fill="#74CC9C"/><circle cx="695" cy="385" r="63" fill="#E4EFE8"/><circle cx="633" cy="693" r="71" fill="#E4EFE8"/></svg>
+      <div class="lkw2" style="font-family:'Geist',sans-serif;color:#E4EFE8">OUTPOST<span class="pi">_pi</span></div>
+    </div>
+    <div class="scale" style="font-family:'Geist',sans-serif">
+      <span class="tag">display 32/700</span><div style="font-size:32px;font-weight:700;letter-spacing:-.01em">The beacon is lit</div>
+      <span class="tag">h1 22/600</span><div style="font-size:22px;font-weight:600">Pair a new phone</div>
+      <span class="tag">body 15/400</span><div style="font-size:15px;max-width:56ch;line-height:1.75">Session live · agent turn 3 — draining the dependabot queue, 16 merged.</div>
+      <span class="tag">small 12/400</span><div style="font-size:12px;color:#89978D;font-family:'Geist Mono',monospace">relay <lan-host>:3300 · rtt 23ms</div>
+    </div>
+    <div class="ui" style="margin-top:18px">
+      <button class="btn" style="font-family:'Geist',sans-serif;background:#74CC9C;color:#0A2418">Pair new phone</button>
+      <span class="chip" style="background:rgba(116,204,156,.14);color:#74CC9C;font-family:'Geist Mono',monospace">● session live</span>
+      <code class="line" style="font-family:'Geist Mono',monospace;background:rgba(116,204,156,.12);color:#74CC9C">$ agent_send --to cockpit "rebuild dist"</code>
+    </div>
+  </div>
+  <div class="panel light">
+    <h4>body · light mode · Geist 400</h4>
+    <div class="body-sample" style="font-family:'Geist',sans-serif">
+      <p>Your outpost is reachable. The relay holds the wire, the phone holds the key, and every agent session lands in
+      your pocket the moment it settles. Green means the beacon never went dark.</p>
+    </div>
+  </div>
+  <p class="note">Trade-off: Geist is a well-liked modern default (Vercel-adjacent) — cleaner and safer, less
+  fingerprintable than Space Mono. The <span style="color:#74CC9C">_pi</span> mono move keeps it ours.</p>
+</section>
+
+<p class="note">Pick one (or hybrid: Geist body + Space Mono wordmark-only). After the pick: tokens.css locks color+type,
+then the cascade — wordmark/banner regeneration, favicon + adaptive layers, app/cockpit themes, site, and the upstream-art purge.</p>
+
+</div>
+</body>
+</html>
