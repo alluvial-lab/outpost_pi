@@ -19,6 +19,11 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     rebase-strategy: "disabled"
+    # 0.84.1 removes AuthStorage and ModelRegistry.create; allow later releases
+    # to be tested without reopening this exact incompatible pre-1.0 bump.
+    ignore:
+      - dependency-name: "@earendil-works/pi-coding-agent"
+        versions: ["0.84.1"]
     commit-message:
       prefix: deps
       include: scope
@@ -61,6 +66,10 @@ updates:
     ignore:
       - dependency-name: "rand"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "ed25519-dalek"
+        versions: [">= 3.0.0, < 4.0.0"]
+      - dependency-name: "axum"
+        versions: [">= 0.8.0, < 0.9.0"]
     commit-message:
       prefix: deps
       include: scope
@@ -87,6 +96,8 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "share_plus"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "flutter_secure_storage"
+        versions: [">= 10.0.0, < 11.0.0"]
     commit-message:
       prefix: deps
       include: scope

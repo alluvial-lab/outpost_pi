@@ -17,16 +17,17 @@ updated: 2026-08-15
 
 The post-history-rewrite queue is drained: `gh pr list --state open` returned
 no open PRs after every stale Dependabot branch was recreated from the current
-`main`. Twenty-five PRs were merged after all checks on their fresh heads
-completed with `success` or `skipped`; four incompatible/deferred PRs were
-closed with explanatory comments.
+`main`. Forty-one PRs were merged after all checks on their fresh heads
+completed with `success` or `skipped`; eight incompatible/deferred PRs were
+closed with explanatory comments. This includes the 20 additional PRs (#68–87)
+opened by the completion-time Dependabot config sync.
 
 The full CI matrix passed on the recreated actions PR, including the lanes that
 path filtering normally skips. Every later dependency PR also passed its bumped
 directory's relevant lane before merge. One duplicate app run on #3 exposed two
 load-sensitive history-replay test failures; its required one-time rerun passed.
 
-## Merged in the final drain (25)
+## Merged from the original resume queue (25)
 
 - actions: #3 `actions/setup-node` 4→7; #42 `actions/checkout` 4→7.
 - relay: #12 `sha2` 0.10.9→0.11.0; #44 `thiserror` 2.0.18→2.0.20;
@@ -45,7 +46,7 @@ load-sensitive history-replay test failures; its required one-time rerun passed.
 - cockpit: #27 `media_kit_video` 1.3.1→2.0.1; #33 `window_manager`
   0.4.3→0.5.2; #65 `google_fonts` 6.3.3→8.2.1.
 
-## Closed in the final drain (4)
+## Closed from the original resume queue (4)
 
 - #9 `rand` 0.8.6→0.9.4: both fresh relay runs failed clippy because 0.9
   deprecates three `thread_rng` call sites. The major is ignored until that
@@ -62,13 +63,43 @@ load-sensitive history-replay test failures; its required one-time rerun passed.
   manually with a comment referencing the ignore rule and deferred v22 API
   migration.
 
+## Merged from the config-sync follow-on queue (16)
+
+- relay: #68 `base64` 0.22.1→0.23.1; #69 `anyhow` 1.0.102→1.0.104;
+  #70 `rusqlite` 0.32.1→0.40.2.
+- pi-extension: #71 `@noble/curves` 2.2.0→2.3.0; #74 `typebox`
+  1.3.12→1.3.13; #75 `typescript` 6.0.3→7.0.2; #78
+  `@modelcontextprotocol/sdk` 1.29.0→1.30.0.
+- site: #76 `react-dom` 19.2.6→19.2.8 and `@types/react-dom`
+  19.2.3→19.2.4.
+- app: #79 `path_provider` 2.1.5→2.1.6; #80 `lucide_icons_flutter`
+  3.1.14+2→3.1.15; #82 `mobile_scanner` 5.2.3→7.4.0; #85 `dio`
+  5.9.2→5.11.0.
+- cockpit: #81 `desktop_drop` 0.5.0→0.7.1; #83 `xterm` git ref
+  `6ef92b9`→published 4.0.0; #86 `package_info_plus` 8.3.1→9.0.1;
+  #87 `pasteboard` 0.4.0→0.5.0.
+
+## Closed from the config-sync follow-on queue (4)
+
+- #72 `ed25519-dalek` 2.2.0→3.0.0: both relay runs failed tests because the
+  existing `rand::ThreadRng` no longer satisfies the v3 `CryptoRng` bound in
+  shared and forwarding/rooms key generation.
+- #73 `axum` 0.7.9→0.8.9: both relay runs failed clippy across the WebSocket
+  adapters because axum 0.8 changes text frames from `String` to `Utf8Bytes`
+  and exposes incompatible axum/tungstenite byte types.
+- #77 `@earendil-works/pi-coding-agent` 0.80.6→0.84.1: both pi-extension runs
+  failed typecheck because 0.84.1 removes `AuthStorage` and
+  `ModelRegistry.create`. Exact version 0.84.1 is ignored.
+- #84 `flutter_secure_storage` 9.2.4→10.3.1: both app runs failed analyze with
+  61 invalid storage overrides because v10 replaces iOS/macOS option types with
+  `AppleOptions` across production and test-fixture APIs.
+
 ## Security alerts
 
 The public-repository Dependabot alerts API succeeded. The drain reduced the
-open set from six to one; API state at completion was **1 open / 31 fixed**.
-The remaining alert is #43, medium severity, `hono <4.12.34`: “Hono: ReDoS in
-CORS middleware via Access-Control-Request-Headers.” No open dependency PR
-remained for it.
+open set from six to zero; API state at completion was **0 open / 35 fixed**.
+The final medium-severity `hono <4.12.34` ReDoS alert (#43) changed to fixed
+after the follow-on pi-extension dependency merges.
 
 ## Deviations and repairs
 
@@ -83,6 +114,10 @@ remained for it.
   source-breaking. It was closed rather than merged past red, and the exact
   broken version was ignored to prevent the same weekly loop.
 - #56 required manual closure after the requested 15-minute config-sync window.
+- The first completion commit's config sync immediately opened #68–87 as the
+  directory limits freed. The drain continued through that entire follow-on
+  wave; incompatible releases gained bounded ignore rules before the final
+  completion commit.
 
 ## Prior drain work (completed before the resume)
 
