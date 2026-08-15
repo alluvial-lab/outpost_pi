@@ -84,7 +84,7 @@ dependencies:
   # `media_kit_libs_video` bundles libmpv on macOS/Windows; on Linux we use the
   # system one (see linux/packaging/*). NOTE: register in plan 46.
   media_kit: ^1.1.10
-  media_kit_video: ^1.2.4
+  media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.4
 
   # Wave 2 — syntax highlighting in the text viewer. Dart port of highlight.js;
