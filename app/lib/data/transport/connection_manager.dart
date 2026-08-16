@@ -572,18 +572,21 @@ class ConnectionManager extends Service {
     final token = CancelToken();
     _connectCancel = token;
     _reachability.onConnectRequested();
-    _activePeer = peer;
-    _activeRoomExplicitlySet = false;
-    // Plan 17 fix — set the destination room from the persisted
-    // PeerRecord BEFORE emitting StatusOnline so the very first send
-    // after connect goes to the right (peer, room) on the relay. If
-    // the PeerRecord predates this fix (`roomId == null`), we keep
-    // `_activeRoomId = 'main'` and rely on the discovery flow in
-    // `_onControl` to learn the real room from a subsequent
-    // `room_announced` push and then update _activeRoomId + persist.
-    final boundRoom = peer.roomId ?? 'main';
-    if (boundRoom != _activeRoomId) {
-      _activeRoomId = boundRoom;
+    final samePeer = _activePeer?.remoteEpk == peer.remoteEpk;
+    if (samePeer) {
+      // A retry captures the PeerRecord that originally opened the socket. It
+      // may lag behind a later explicit room switch, so retain the live room
+      // and its explicit-selection latch across same-peer reconnects.
+      _activePeer = peer.copyWith(roomId: _activeRoomId);
+    } else {
+      _activePeer = peer;
+      _activeRoomExplicitlySet = false;
+      // Set the destination room from the persisted PeerRecord before emitting
+      // StatusOnline so the first send targets the intended relay room.
+      final boundRoom = peer.roomId ?? 'main';
+      if (boundRoom != _activeRoomId) {
+        _activeRoomId = boundRoom;
+      }
     }
     _emit(const StatusConnecting());
 

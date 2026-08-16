@@ -1425,6 +1425,45 @@ void _registerRoomsTests() {
     );
 
     test(
+      'same-peer retry preserves an explicit room selected after connect',
+      () async {
+        const stalePeer = PeerRecord(
+          remoteEpk: 'epk_retry_room',
+          sessionName: 'Pi',
+          relayUrl: 'wss://x',
+          pairedAt: '2026-01-01T00:00:00Z',
+          roomId: 'room-b',
+        );
+        final first = _ControllableChannel();
+        final second = _ControllableChannel();
+        var attempts = 0;
+        final cm = ConnectionManager(
+          factory: (_, _) async => attempts++ == 0 ? first : second,
+          storage: _FakeStorage([stalePeer]),
+          emitDebounce: Duration.zero,
+        );
+
+        await cm.connectTo(stalePeer);
+        cm.switchRoom('room-a');
+        expect(cm.activeRoomId, 'room-a');
+
+        await first.closeStream();
+        await Future<void>.delayed(const Duration(milliseconds: 1100));
+
+        expect(cm.status, isA<StatusOnline>());
+        expect(
+          cm.activeRoomId,
+          'room-a',
+          reason: 'a retry must not restore the captured peer.roomId',
+        );
+        expect(cm.activePeer?.roomId, 'room-a');
+        expect(second.activeRoomIds, ['room-a']);
+
+        cm.dispose();
+      },
+    );
+
+    test(
       'legacy peer with no persisted room adopts first snapshot room once',
       () async {
         final storage = _FakeStorage([]);

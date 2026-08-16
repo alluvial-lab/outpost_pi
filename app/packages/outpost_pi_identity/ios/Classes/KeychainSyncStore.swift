@@ -75,14 +75,18 @@ final class KeychainSyncStore {
         }
     }
 
-    /// Whether iCloud Keychain looks usable right now. We require that
-    /// the user is signed into iCloud at all (the ubiquity identity
-    /// token surface). Keychain Sync itself doesn't expose a direct
-    /// "enabled?" query, so the load-side error path is the real
-    /// check; this is just a fast pre-flight to avoid generating a
-    /// keypair on a device that obviously can't sync it.
+    /// Whether the synchronizable Keychain surface answers this query.
+    ///
+    /// `ubiquityIdentityToken` describes iCloud Drive and remains nil when the
+    /// app has no ubiquity entitlement; it is not an iCloud Keychain signal.
+    /// Synchronizable Keychain items need no such entitlement. Apple exposes
+    /// no direct Keychain-sync switch, so success or item-not-found means the
+    /// surface is usable and the real load/save path handles hard errors.
     func isSyncAvailable() -> Bool {
-        return FileManager.default.ubiquityIdentityToken != nil
+        var query = baseQuery()
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 
     private func baseQuery() -> [String: Any] {
