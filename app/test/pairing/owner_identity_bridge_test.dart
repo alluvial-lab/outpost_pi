@@ -36,6 +36,27 @@ final class _FailingLoadStore implements OwnerIdentityStore {
   Future<void> delete() async {}
 }
 
+final class _FalsePreflightStore implements OwnerIdentityStore {
+  _FalsePreflightStore(this.inner);
+
+  final InMemoryOwnerIdentityStore inner;
+
+  @override
+  Future<bool> isSyncAvailable() async => false;
+
+  @override
+  Future<OwnerIdentity?> load() => inner.load();
+
+  @override
+  Future<void> save(OwnerIdentity identity) => inner.save(identity);
+
+  @override
+  Stream<OwnerIdentity> watch() => inner.watch();
+
+  @override
+  Future<void> delete() => inner.delete();
+}
+
 final class _SecondLoadSyncUnavailableStore implements OwnerIdentityStore {
   int _loads = 0;
   int saveCalls = 0;
@@ -511,6 +532,25 @@ void main() {
   });
 
   group('OwnerIdentityBridge.boot', () {
+    test(
+      'proceeds when the availability preflight is false but storage works',
+      () async {
+        final store = _FalsePreflightStore(InMemoryOwnerIdentityStore());
+        final bridge = OwnerIdentityBridge(
+          store,
+          PairingStorage(_FakeSecureStorage()),
+        );
+
+        final result = await bridge.boot();
+
+        expect(result, isA<IdentityReady>());
+        expect((result as IdentityReady).generated, isTrue);
+        expect(bridge.currentIdentity, isNotNull);
+
+        bridge.dispose();
+      },
+    );
+
     test(
       'propagates a fatal identity-store read without saving a replacement',
       () async {

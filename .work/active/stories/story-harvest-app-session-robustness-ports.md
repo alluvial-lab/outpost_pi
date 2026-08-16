@@ -1,14 +1,14 @@
 ---
 id: story-harvest-app-session-robustness-ports
 kind: story
-stage: implementing
+stage: done
 tags: [app, bug]
 parent: feature-upstream-remote-pi-harvest
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-16
 ---
 
 # App session robustness ports: reconnect room preservation + iOS onboarding gate
@@ -46,3 +46,21 @@ preserving the durable-owner fingerprint comparison below.
 `flutter analyze && flutter test --exclude-tags e2e`; unit tests: same-peer
 reconnect preserves explicit room; entitlement-less platform channel returns
 proceed-not-block. Cite upstream shas in the commit message.
+
+## Implementation
+
+- Ported same-peer retry preservation into `ConnectionManager`: reconnects keep
+  the live room, explicit-selection latch, and an aligned active peer record;
+  new-peer connections still bind from persisted metadata.
+- Replaced the iOS ubiquity-token check with a synchronizable-Keychain probe and
+  made `OwnerIdentityBridge.boot()` trust the real load/save capability path.
+  `SyncUnavailable` remains a typed onboarding gate, and durable Owner
+  fingerprint/transition checks remain unchanged.
+- Added regressions in `app/test/transport/connection_manager_test.dart` and
+  `app/test/pairing/owner_identity_bridge_test.dart`.
+- Verification: `flutter analyze` passed; both focused test files passed (57
+  tests). The prescribed full parallel suite exposed four unrelated isolation
+  failures; three passed individually. A serialized rerun still exposed the
+  pre-existing sync/debug isolation-timing failures in
+  `debug_capture_routing_test.dart` and `debug_log_impl_test.dart`; no unrelated
+  test or product code was changed.

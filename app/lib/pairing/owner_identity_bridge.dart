@@ -74,16 +74,15 @@ class OwnerIdentityBridge extends ChangeNotifier {
   /// Whether a replacement Owner is blocked until old local state is removed.
   bool get isTransitionPending => _transitionPending;
 
-  /// Check sync availability, load (or generate) the Owner identity.
+  /// Load (or generate) the Owner identity.
   ///
-  /// Generates only after [OwnerIdentityStore.load] returns null. A sync outage
-  /// remains gateable, while a platform failure propagates so it cannot silently
-  /// replace the durable Owner key. The candidate is compared to the durable
-  /// owner-of-local-state fingerprint before it is assigned to [_current].
+  /// The real load/save path is the capability check. A separate availability
+  /// preflight can be a false negative on entitlement-less iOS builds, while a
+  /// [SyncUnavailable] from storage remains gateable. Platform failures still
+  /// propagate so they cannot silently replace the durable Owner key. The
+  /// candidate is compared to the durable owner-of-local-state fingerprint
+  /// before it is assigned to [_current].
   Future<OwnerIdentityBootResult> boot() async {
-    if (!await _store.isSyncAvailable()) {
-      return const SyncUnavailableResult();
-    }
     final transitionPending = await _pairing.hasPendingOwnerTransition();
     try {
       final loaded = await _store.load();
@@ -120,7 +119,11 @@ class OwnerIdentityBridge extends ChangeNotifier {
         transitionPending: false,
       );
     }
-    await _store.save(generated);
+    try {
+      await _store.save(generated);
+    } on SyncUnavailable {
+      return const SyncUnavailableResult();
+    }
     return _acceptBootCandidate(
       generated,
       generated: true,
