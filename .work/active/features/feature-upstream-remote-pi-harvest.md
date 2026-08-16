@@ -1,14 +1,14 @@
 ---
 id: feature-upstream-remote-pi-harvest
 kind: feature
-stage: implementing
+stage: review
 tags: [pi-extension, app, relay, cockpit]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-16
 ---
 
 # Upstream remote_pi harvest — 2026-08 divergence sweep (459 commits)
@@ -81,3 +81,23 @@ Each story verifies its port against our architecture (no direct
 cherry-picks where our lineage diverged), runs the owning subproject's
 command set, and cites the upstream sha in its commit message for
 provenance.
+
+## Implementation summary (2026-08-16)
+
+All 6 child stories completed via a 4-worker subproject split (disjoint
+write sets, 4 toolchains, memory-constrained VM); orchestrator performed
+this roll-up.
+
+| story | commit | verification |
+|---|---|---|
+| story-harvest-extension-robustness-ports | 476b5b8e | pnpm typecheck + build; 982 tests |
+| story-harvest-mesh-ingress-queueing | ad72a547 | pnpm typecheck + build; 985 tests |
+| story-harvest-app-session-robustness-ports | c5850ceb | flutter analyze; 878-test suite |
+| story-harvest-app-working-idle-reconciliation | 46b61a7c | flutter analyze; focused + full suite |
+| story-harvest-relay-overlapping-owner-auth | af9c4abf | fmt + clippy -D warnings; 234 tests |
+| story-harvest-cockpit-crash-class-ports | 4f82075f | flutter analyze; 285 tests |
+
+Parked/observed: pre-existing app sync-test isolation flake (passes isolated,
+recorded in story body); two extension audit-rotation timing tests flaked once
+under full-suite load, passed focused + full reruns (no weakening); local-SDK
+`volume_controller` registrant drift left uncommitted (separate chore).
