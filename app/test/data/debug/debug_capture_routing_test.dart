@@ -607,7 +607,12 @@ void main() {
 
       // Phase 2 — markRoomWorking(false) flips the dot (mark_room_working).
       s.log.events.clear();
-      s.conn.markRoomWorking(_peerEpk, 'main', false);
+      s.conn.markRoomWorking(
+        _peerEpk,
+        'main',
+        false,
+        sessionId: 'debug-session-0001',
+      );
       await _settle();
       final working = _assertEvent<WorkingConvEvent>(
         s.log.events,

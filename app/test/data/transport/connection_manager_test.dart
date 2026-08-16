@@ -241,6 +241,44 @@ void main() {
       s.conn.dispose();
     });
 
+    test(
+      'local working correction is fenced by room session identity',
+      () async {
+        final s = await _connected();
+        s.channel.pushControl(
+          const RoomAnnounced(
+            peer: 'epk_projection',
+            roomId: 'main',
+            sessionId: 'session-current',
+            startedAt: 1,
+            working: false,
+          ),
+        );
+        await _settle();
+
+        s.conn.markRoomWorking(
+          'epk_projection',
+          'main',
+          true,
+          sessionId: 'session-old',
+        );
+        expect(s.conn.isRoomWorking('epk_projection', 'main'), isFalse);
+
+        s.conn.markRoomWorking(
+          'epk_projection',
+          'main',
+          true,
+          sessionId: 'session-current',
+        );
+        expect(s.conn.isRoomWorking('epk_projection', 'main'), isTrue);
+        expect(
+          s.conn.roomTurnProjection('epk_projection', 'main').sessionId,
+          'session-current',
+        );
+        s.conn.dispose();
+      },
+    );
+
     test('room_ended clears working and projects stale/not working', () async {
       final s = await _connected();
       s.channel.pushControl(

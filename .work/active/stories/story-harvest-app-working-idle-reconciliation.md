@@ -1,14 +1,14 @@
 ---
 id: story-harvest-app-working-idle-reconciliation
 kind: story
-stage: implementing
+stage: done
 tags: [app, bug]
 parent: feature-upstream-remote-pi-harvest
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-16
 ---
 
 # Working-state reconciliation: authoritative idle beats stale transcript.working
@@ -40,3 +40,23 @@ it describes, keyed by session identity.
 after disconnect clears stale working; live mid-turn working survives a
 reconnect-sync that carries older metadata (generation/identity keyed).
 Cite upstream sha in the commit message.
+
+## Implementation
+
+- Added session identity to room and transcript turn projections. Fresh idle
+  metadata now overrides stale transcript/streaming working state only when
+  both describe the same canonical session; older-session idle metadata cannot
+  clobber a replacement session's live turn.
+- Fenced `ConnectionManager.markRoomWorking` by session identity and separated
+  live working corrections from replay materialization, so replay-derived
+  `working` cannot rewrite an authoritative idle room snapshot.
+- Added canonical projection and connection-boundary regressions in
+  `app/test/domain/transcript/transcript_projection_test.dart` and
+  `app/test/data/transport/connection_manager_test.dart`; updated the existing
+  debug-routing fixture for the identity-scoped correction contract.
+- Verification: `flutter analyze` passed. Focused projection/connection tests
+  passed (41 tests), as did focused live-turn, terminal replay, and diagnostics
+  regressions. The prescribed parallel suite reached 878 passes with the known
+  unrelated `sync_service_test.dart` isolation failure
+  (`reconnect-history fixture replays additively without replace semantics`);
+  that test passed in isolation. No unrelated test was weakened or changed.

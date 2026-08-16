@@ -244,13 +244,17 @@ final class AppTurnProjection {
   int get hashCode => Object.hash(status, turnId, replyTo, error);
 }
 
-/// Room-level transport projection. The relay only carries the compatibility
-/// `working` bit; stale/idle gating lives here so cached room metadata cannot
-/// render as an active turn after disconnect, room end, or unhydrated reconnect.
+/// Room-level transport projection from relay metadata.
+///
+/// Session identity scopes authoritative idle/working state; stale gating keeps
+/// cached metadata from rendering as live after disconnect or room end.
 final class RoomTurnProjection {
-  const RoomTurnProjection({required this.status});
+  const RoomTurnProjection({required this.status, this.sessionId});
 
   final AppTurnStatus status;
+
+  /// Session identity described by this metadata, when the Pi supplied one.
+  final String? sessionId;
 
   static const idle = RoomTurnProjection(status: AppTurnStatus.idle);
   static const active = RoomTurnProjection(status: AppTurnStatus.working);

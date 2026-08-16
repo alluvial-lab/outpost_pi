@@ -1914,28 +1914,36 @@ class SyncService extends Service {
     if (!_turnViewController.isClosed) _turnViewController.add(next);
   }
 
-  /// Single source of the active session's turn projection. Drives the
-  /// in-memory turn stream (chat pill/cancel target), durable session index,
-  /// and the active-room relay compatibility correction.
+  /// Single source of the active session's transcript turn projection.
+  ///
+  /// Terminal observations may clear matching room metadata as a compatibility
+  /// correction. A replay-derived working state must not overwrite fresh idle
+  /// metadata; live working observations opt in through [_setTurnActive].
   void _setTurnView(TranscriptTurnView next, {String? preview}) {
     final sameTurn = _sameTurnView(_turnView, next);
-    final epk = _activeEpk;
     if (sameTurn && preview == null) {
-      if (epk != null) {
-        _conn.markRoomWorking(epk, _activeRoomId, next.working);
-      }
+      if (!next.working) _correctRoomWorking(false);
       return;
     }
     _setActivity(
       next.working ? SessionActivity.working : SessionActivity.idle,
       preview: preview,
     );
-    if (epk != null) {
-      _conn.markRoomWorking(epk, _activeRoomId, next.working);
-    }
+    if (!next.working) _correctRoomWorking(false);
     if (sameTurn) return;
     _turnView = next;
     if (!_turnViewController.isClosed) _turnViewController.add(next);
+  }
+
+  void _correctRoomWorking(bool working) {
+    final ref = _activeRef;
+    if (ref == null) return;
+    _conn.markRoomWorking(
+      ref.peerEpk,
+      ref.roomId,
+      working,
+      sessionId: ref.sessionId,
+    );
   }
 
   void _setTurnActive({
@@ -1945,9 +1953,11 @@ class SyncService extends Service {
     String? replyTo,
   }) {
     final target = replyTo ?? _turnView.replyTo ?? turnId;
+    _correctRoomWorking(true);
     _setTurnView(
       TranscriptTurnView(
         status: status,
+        sessionId: _activeRef?.sessionId,
         turnId: turnId ?? _turnView.turnId ?? target,
         replyTo: target,
       ),
