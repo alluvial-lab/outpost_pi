@@ -1,14 +1,14 @@
 ---
 name: next-site
 description: Remote Pi Next/React/Tailwind site reference. Read before editing or reviewing site/ code, Next App Router routes/layouts/metadata, React Server/Client Components, Tailwind 4/PostCSS styling, next/image usage, static/presentational site content, Docker standalone build/deploy, or site lint/build workflows.
-updated: 2026-06-28
+updated: 2026-08-16
 provenance: skill-reference
 ---
 
 # Next Site Reference
 
 > Local scope: `site/`
-> Versions/context: Next `16.2.11`, React `19.2.6`, React DOM `19.2.6`, direct `sharp` dependency, TypeScript `^5`, Tailwind `^4` via `@tailwindcss/postcss`, ESLint `^9`, pnpm, `output: "standalone"`. [remote-pi-site-package-config]{1}
+> Versions/context: Next `16.3.0`, React `19.2.8`, React DOM `19.2.8`, direct `sharp` dependency, TypeScript `^5`, Tailwind `^4` via `@tailwindcss/postcss`, ESLint `^9`, pnpm, `output: "standalone"`. [remote-pi-site-package-config]{1}
 > Canonical local docs: `site/CLAUDE.md`, `site/package.json`, `site/next.config.ts`, `site/Dockerfile`.
 
 ## When to load
@@ -31,7 +31,7 @@ pnpm start
 
 `pnpm build` first runs `scripts/sync-install-sh.mjs`, then `next build`. [remote-pi-site-package-config]{1}
 
-Deploy/publish is Docker-based per current cockpit/site guidance: `pnpm lint && pnpm build`, then `./push-docker.sh` after Docker Hub login. [remote-pi-site-guidance]{1}
+Deploy/publish uses the local Docker flow: `pnpm lint && pnpm build`, then `./build-docker.sh`; it builds for the host platform and loads the image into the local Docker daemon (no `--push`, no registry login). [remote-pi-site-guidance]{1}
 
 Do not commit `.next/`, `out/`, `node_modules/`, local env files, generated build output, or secrets.
 

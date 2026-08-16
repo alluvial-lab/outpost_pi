@@ -1,14 +1,14 @@
 ---
 name: rust-relay
 description: Remote Pi Rust relay reference. Read before editing or reviewing relay/ code, WebSocket routing, mesh membership endpoints, presence/rooms state, relay logging/privacy, cross-PC forwarding, or relay tests.
-updated: 2026-06-28
+updated: 2026-08-16
 provenance: skill-reference
 ---
 
 # Rust Relay Reference
 
 > Local scope: `relay/`
-> Versions/context: Rust 2024 crate, `tokio` 1.52.x, `axum` 0.7.x with `ws`, `serde`/`serde_json`, `ed25519-dalek` 2.2.x, `rusqlite` 0.32.x with bundled SQLite, `tracing`/`tracing-subscriber`, and `tokio-tungstenite` in tests. [remote-pi-relay-cargo]{1}
+> Versions/context: Rust 2024 crate, `tokio` 1.52.x, `axum` 0.7.x with `ws`, `serde`/`serde_json`, `ed25519-dalek` 2.2.x, `rusqlite` 0.40 with bundled SQLite, `tracing`/`tracing-subscriber`, and `tokio-tungstenite` in tests. [remote-pi-relay-cargo]{1}
 > Canonical local docs: `relay/CLAUDE.md`, `relay/README.md`, `PROTOCOL.md`.
 
 ## When to load
