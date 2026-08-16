@@ -30,11 +30,11 @@ jobs:
       matrix:
         dir: [pi-extension, site, protocol]
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 10
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
       - name: Audit ${{ matrix.dir }}
@@ -50,11 +50,11 @@ jobs:
       matrix:
         crate: [relay, rp-s3]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Prebuilt cargo-audit binary (avoids a ~3 min crate build). CLI form
       # fails via exit code like the pnpm lanes — rustsec/audit-check would
       # need Checks/Issues write permissions for its API reporting.
-      - uses: taiki-e/install-action@cargo-audit
+      - uses: taiki-e/install-action@c6e5a961001f7be56eec4766ed45de261826a205 # cargo-audit
       - name: Audit ${{ matrix.crate }}
         working-directory: ${{ matrix.crate }}
         run: cargo audit

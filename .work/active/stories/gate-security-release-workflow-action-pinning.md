@@ -1,14 +1,14 @@
 ---
 id: gate-security-release-workflow-action-pinning
 kind: story
-stage: implementing
+stage: review
 tags: [workflow, security]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-16
 ---
 
 # Pin mutable GitHub Actions refs in the release workflows (signing/publishing authority)
@@ -43,3 +43,23 @@ Pin every third-party action ref in both release workflows to a reviewed
 commit SHA with the digest noted in a comment, matching the `ci.yml`
 treatment; configure dependabot to keep the SHA pins current. Sibling:
 `backlog-ci-pin-deps-audit-e2e-pairing-refs` (complete together if cheap).
+
+## Implementation
+
+Pinned all mutable action refs to the SHA resolved from their current tag,
+with the resolved release noted in trailing comments:
+
+- `.github/workflows/app-release.yml`: 3 refs pinned (checkout, setup-java,
+  flutter-action).
+- `.github/workflows/cockpit-release.yml`: 12 refs pinned (checkout,
+  flutter-action, upload-artifact, and download-artifact).
+- `.github/workflows/deps-audit.yml`: 5 action occurrences pinned across 4
+  distinct refs (checkout appears in both jobs; also pnpm/action-setup,
+  setup-node, and taiki-e/install-action).
+- `.github/workflows/e2e-pairing.yml`: 4 refs pinned (checkout,
+  pnpm/action-setup, setup-node, and flutter-action).
+
+The existing `.github/dependabot.yml` `github-actions` entry at `/` already
+runs weekly and covers every workflow under `.github/workflows/`; no config
+change was required. The sibling backlog item is absorbed by this work and
+will be archived by the orchestrator.
