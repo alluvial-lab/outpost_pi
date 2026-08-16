@@ -1,13 +1,13 @@
 ---
 name: flutter-mobile
 description: Remote Pi Flutter mobile app reference. Read before editing or reviewing app/ code, mobile lifecycle, provider/ViewModels, routing, relay WebSocket reconnect, room/session state, secure storage, Hive cache, or UI async safety.
-updated: 2026-07-19
+updated: 2026-08-16
 ---
 
 # Flutter Mobile App Reference
 
 > Local scope: `app/`
-> Versions/context: Flutter 3.41+ / Dart 3.11+ by project guidance, Dart SDK `^3.11.5`; key package pins include `provider ^6.1.2`, `go_router ^14.0.0`, `web_socket_channel ^3.0.1`, `flutter_secure_storage ^9.0.0`, and Hive 2.x. [remote-pi-app-guidance]{1} [remote-pi-app-pubspec]{1}
+> Versions/context: Flutter 3.41+ / Dart 3.11+ by project guidance, Dart SDK `^3.11.5`; key package pins include `provider ^6.1.2`, `go_router ^17.5.0`, `web_socket_channel ^3.0.1`, `flutter_secure_storage ^9.0.0`, and Hive 2.x. [remote-pi-app-guidance]{1} [remote-pi-app-pubspec]{1}
 > Source basis: `app/CLAUDE.md`, `app/pubspec.yaml`, `ConnectionManager`, `WsTransport`, `SyncService`, and Flutter/package docs attested in `.research/attestation/`.
 
 ## When to load
@@ -165,7 +165,7 @@ Rules:
 
 ## Routing
 
-This app pins `go_router ^14.0.0`; current pub.dev docs list a newer 17.x line, so check local generated lock/API before copying newly documented patterns. [go-router-package]{1} [remote-pi-app-pubspec]{1}
+This app pins `go_router ^17.5.0`; check the local generated lock/API before copying patterns from newer package docs. [go-router-package]{1} [remote-pi-app-pubspec]{1}
 
 - Use `GoRoute` path templates and `GoRouterState` path/query parameters for route data.
 - Use redirects for auth/pairing/sync guards only when they are pure functions of app state; avoid async side effects in redirects.

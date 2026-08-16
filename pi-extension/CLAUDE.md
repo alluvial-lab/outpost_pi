@@ -17,7 +17,7 @@ For protocol, identities, ACKs, cross-PC routing, and the trust model, see
 
 ## Stack
 
-- Node 20+ / TypeScript 6
+- Node 20+ / TypeScript ^7.0.2
 - **Module system**: ESM only (NodeNext). Imports use the `.js` extension even in `.ts` files
 - Package manager: **pnpm** (do not use npm/yarn)
 - Crypto/auth: Ed25519 via `@noble/ed25519` for Pi/Owner identities, pairing signatures, and relay challenge-response. The app↔Pi owner channel has app-layer E2E encryption: signed ephemeral X25519 ECDH in the pair handshake (`@noble/curves`), HKDF-SHA256 directional keys, XChaCha20-Poly1305 frames (`@noble/ciphers`) — see `src/transport/secure_channel.ts` and `PROTOCOL.md`. Cross-PC Pi↔Pi traffic is NOT E2E (relay-visible).

@@ -1,13 +1,13 @@
 ---
 name: pi-extension-typescript
 description: Remote Pi pi-extension TypeScript/Pi SDK reference. Read before editing or reviewing pi-extension/ code, session lifecycle hooks, relay/room metadata, mesh tools, pairing, or Pi SDK integration.
-updated: 2026-07-20
+updated: 2026-08-16
 ---
 
 # Pi Extension TypeScript Reference
 
 > Local scope: `pi-extension/`
-> Versions: Node >=20, TypeScript 6.x, `@earendil-works/pi-coding-agent` 0.80.x, `ws` 8.x, Vitest 4.x
+> Versions: Node >=20, TypeScript `^7.0.2`, `@earendil-works/pi-coding-agent` 0.80.x, `ws` 8.x, Vitest 4.x
 > Canonical local docs: `pi-extension/CLAUDE.md`, `PROTOCOL.md`, Pi docs at `/home/agent/.local/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md` [pi-docs-extensions]{1}
 > Source basis: `pi-extension/package.json`, `src/index.ts`, `src/actions/handlers.ts`, `src/transport/relay_client.ts`, `src/pairing/storage.ts`, `src/protocol/{types,codec}.ts`, `src/session/*`, and matching tests. [remote-pi-package-config]{1} [remote-pi-index-lifecycle]{1}
 
