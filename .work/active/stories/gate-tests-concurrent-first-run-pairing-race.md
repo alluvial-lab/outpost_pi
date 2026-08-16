@@ -42,3 +42,11 @@ Barrier-based deterministic tests: two concurrent fallback identity creations
 → assert identical keys, one complete private identity file, both callers
 resolving from the shared operation; two concurrent relay starts → exactly one
 connect.
+
+## Upstream reference
+Upstream independently hit and solved the adjacent class (`fc2339bd` —
+coalesce concurrent startup, root-level single-flight at their
+`index.ts:494,1777-1788`). Our lineage deliberately removed root single-flight
+after it wedged Pi; our coalescing lives at `index.ts:1877-1892` + exclusive
+identity creation. Use their shape as a verification reference for what the
+tests must pin — not as a port.
