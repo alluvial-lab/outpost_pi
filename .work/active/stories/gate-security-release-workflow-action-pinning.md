@@ -1,7 +1,7 @@
 ---
 id: gate-security-release-workflow-action-pinning
 kind: story
-stage: review
+stage: done
 tags: [workflow, security]
 parent: null
 depends_on: []
@@ -63,3 +63,6 @@ The existing `.github/dependabot.yml` `github-actions` entry at `/` already
 runs weekly and covers every workflow under `.github/workflows/`; no config
 change was required. The sibling backlog item is absorbed by this work and
 will be archived by the orchestrator.
+
+### Bounded inline review (2026-08-16)
+PASS — 24 refs SHA-pinned across 4 workflows (spot-verified vs ls-remote), zero mutable refs remain, dependabot weekly already active; sibling backlog item absorbed.
