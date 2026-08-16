@@ -244,6 +244,40 @@ describe("getOrCreateEd25519Keypair — keyring path", () => {
     );
     expect(backend.writes.length).toBe(1);  // only the first call wrote
   });
+
+  test("serializes a timed-out write retry and persists the stable creation candidate", async () => {
+    vi.useFakeTimers();
+    _setKeyringRetryForTest(2, 0);
+    _setKeyringOperationTimeoutForTest(10);
+    const firstWrite = deferred<void>();
+    const writes: string[] = [];
+    const store = new Map<string, string>();
+    const backend: KeyStoreBackend = {
+      read: async (service, account) => store.get(`${service}|${account}`),
+      write: async (service, account, value) => {
+        writes.push(value);
+        if (writes.length === 1) await firstWrite.promise;
+        store.set(`${service}|${account}`, value);
+      },
+      delete: async () => false,
+    };
+    _setKeyStoreBackendForTest(backend);
+
+    const creation = getOrCreateEd25519Keypair();
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(10);
+    // The retry is queued behind the raw native completion, rather than
+    // overtaking the timed-out write with a replacement identity.
+    expect(writes).toHaveLength(1);
+
+    firstWrite.resolve();
+    const resolved = await creation;
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toBe(writes[0]);
+    const persisted = JSON.parse(store.get(`${NEW_SERVICE}|${ACCOUNT}`)!) as { pk: string };
+    expect(persisted.pk).toBe(Buffer.from(resolved.publicKey).toString("base64"));
+    vi.useRealTimers();
+  });
 });
 
 // ── Headless fallback ───────────────────────────────────────────────────────
@@ -623,6 +657,48 @@ describe("getOrCreateEd25519Keypair — identity precedence and binding fallback
 });
 
 describe("getOrCreateEd25519Keypair — existing pairings prevent identity replacement", () => {
+  test("a malformed peers.json fails closed instead of permitting identity mint", async () => {
+    mkdirSync(PEERS_DIR_FOR_TEST, { recursive: true, mode: 0o700 });
+    writeFileSync(PEERS_FILE_FOR_TEST, "{not-json", { mode: 0o600 });
+    const empty = new InMemoryBackend();
+    _setKeyStoreBackendForTest(empty);
+
+    await expect(getOrCreateEd25519Keypair()).rejects.toThrow("paired roster is malformed");
+    expect(empty.writes).toEqual([]);
+    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(false);
+  });
+
+  test("the explicit file-identity escape hatch bypasses a malformed roster", async () => {
+    mkdirSync(PEERS_DIR_FOR_TEST, { recursive: true, mode: 0o700 });
+    writeFileSync(PEERS_FILE_FOR_TEST, "{not-json", { mode: 0o600 });
+    const empty = new InMemoryBackend();
+    _setKeyStoreBackendForTest(empty);
+    _setKeyringExpectedForTest(false);
+    process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY = "1";
+
+    await expect(getOrCreateEd25519Keypair()).resolves.toMatchObject({ publicKey: expect.any(Uint8Array) });
+    expect(empty.writes).toEqual([]);
+    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(true);
+  });
+
+  test("an absent peers.json permits first-run keyring identity mint", async () => {
+    const empty = new InMemoryBackend();
+    _setKeyStoreBackendForTest(empty);
+
+    await expect(getOrCreateEd25519Keypair()).resolves.toMatchObject({ publicKey: expect.any(Uint8Array) });
+    expect(empty.writes).toHaveLength(1);
+  });
+
+  test("a valid empty peers.json permits first-run keyring identity mint", async () => {
+    mkdirSync(PEERS_DIR_FOR_TEST, { recursive: true, mode: 0o700 });
+    writeFileSync(PEERS_FILE_FOR_TEST, JSON.stringify({ peers: [] }), { mode: 0o600 });
+    const empty = new InMemoryBackend();
+    _setKeyStoreBackendForTest(empty);
+
+    await expect(getOrCreateEd25519Keypair()).resolves.toMatchObject({ publicKey: expect.any(Uint8Array) });
+    expect(empty.writes).toHaveLength(1);
+  });
+
   test("an unreadable keyring cannot mint a file identity over paired devices", async () => {
     await addPeer(PHONE_PEER);
     const unavailable = new InMemoryBackend();

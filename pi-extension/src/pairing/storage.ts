@@ -110,17 +110,22 @@ export function withKeyStoreOperationTimeout(
   backend: KeyStoreBackend,
   timeoutMs = KEYRING_OPERATION_TIMEOUT_MS,
 ): KeyStoreBackend {
+  // A timeout rejects only the caller-facing promise; it cannot cancel a
+  // native credential write. Keep the raw completion as the serialization
+  // tail so a retry never overtakes a timed-out write and gets overwritten by
+  // that older operation when the native service eventually unblocks.
+  let writeTail: Promise<void> = Promise.resolve();
   return {
     read: (service, account) => _withTimeout(
       Promise.resolve().then(() => backend.read(service, account)),
       `read(${service})`,
       timeoutMs,
     ),
-    write: (service, account, value) => _withTimeout(
-      Promise.resolve().then(() => backend.write(service, account, value)),
-      `write(${service})`,
-      timeoutMs,
-    ),
+    write: (service, account, value) => {
+      const operation = writeTail.then(() => backend.write(service, account, value));
+      writeTail = operation.then(() => undefined, () => undefined);
+      return _withTimeout(operation, `write(${service})`, timeoutMs);
+    },
     delete: (service, account) => _withTimeout(
       Promise.resolve().then(() => backend.delete(service, account)),
       `delete(${service})`,
@@ -335,6 +340,7 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
   if (existingFile) return existingFile;
 
   const backend = _getBackend();
+  const forceFile = process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY === "1";
 
   // ── Path A: keyring (retried) ──────────────────────────────────────────
   // A throw here means the keyring op FAILED — but on macOS/Windows that is
@@ -343,6 +349,7 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
   // genuine first-run signal). So we retry on throw, and only a throw that
   // SURVIVES every attempt drops us to Path B.
   let keyringError: unknown;
+  let creationCandidate: Ed25519Keypair | null = null;
   for (let attempt = 0; attempt < _keyringReadAttempts; attempt++) {
     try {
       const existing = await backend.read(NEW_SERVICE, ACCOUNT);
@@ -351,16 +358,22 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
       // A successful empty read is a genuine first run only when there is no
       // pairing roster. An alternate daemon/keyring context can read an empty
       // store even though devices are already paired to the original identity.
-      const paired = await listPeers();
+      if (forceFile) {
+        keyringError = new Error("file-backed identity explicitly requested");
+        break;
+      }
+      const paired = await listPeersForIdentityMint();
       if (paired.length > 0) {
         throw new PairedIdentityMissingError(paired.length, "keyring returned no identity");
       }
 
       // The Outpost-Pi hard cutover deliberately does not inspect legacy
-      // remote-pi/keytar services.
-      const fresh = generateEd25519Keypair();
-      await backend.write(NEW_SERVICE, ACCOUNT, _serialize(fresh));
-      return fresh;
+      // remote-pi/keytar services. A timed-out native write can still finish;
+      // every retry in this creation attempt must therefore carry the exact
+      // same identity rather than minting a replacement candidate.
+      creationCandidate ??= generateEd25519Keypair();
+      await backend.write(NEW_SERVICE, ACCOUNT, _serialize(creationCandidate));
+      return creationCandidate;
     } catch (err) {
       if (err instanceof PairedIdentityMissingError) throw err;
       keyringError = err;
@@ -388,9 +401,8 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
   //    a week idle, and the new key then masks the real Keychain identity via
   //    the file. So we FAIL LOUD instead, unless the operator explicitly
   //    opts into a file identity.
-  const forceFile = process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY === "1";
   if (!forceFile) {
-    const paired = await listPeers();
+    const paired = await listPeersForIdentityMint();
     if (paired.length > 0) {
       throw new PairedIdentityMissingError(paired.length, keyringError);
     }
@@ -545,6 +557,16 @@ export class PeerStorage {
   /** Load a snapshot after every earlier operation accepted by this instance settles. */
   listPeers(): Promise<PeerRecord[]> {
     return this.serialize(() => this.readPeersFile());
+  }
+
+  /**
+   * Load the roster for an identity-mint decision without masking corruption or I/O failure.
+   *
+   * Only an absent file or a valid `{"peers": []}` document proves that
+   * destructive first-run creation is safe.
+   */
+  listPeersForIdentityMint(): Promise<PeerRecord[]> {
+    return this.serialize(() => this.readPeersFileStrict());
   }
 
   /** Replace or append one Owner pairing without clobbering concurrent sequence state. */
@@ -818,9 +840,39 @@ export class PeerStorage {
       return [];
     }
   }
+
+  private async readPeersFileStrict(): Promise<PeerRecord[]> {
+    await this.hardenPeersFilePermissions();
+    let raw: string;
+    try {
+      raw = await readFile(this.peersPath, "utf8");
+    } catch (error) {
+      if (_hasErrorCode(error, "ENOENT")) return [];
+      throw new Error(`paired roster is unreadable at ${this.peersPath}`, { cause: error });
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(`paired roster is malformed at ${this.peersPath}`, { cause: error });
+    }
+    if (
+      typeof parsed !== "object"
+      || parsed === null
+      || !Array.isArray((parsed as { peers?: unknown }).peers)
+    ) {
+      throw new Error(`paired roster is malformed at ${this.peersPath}`);
+    }
+    return (parsed as { peers: PeerRecord[] }).peers;
+  }
 }
 
 const defaultPeerStorage = new PeerStorage();
+
+function listPeersForIdentityMint(): Promise<PeerRecord[]> {
+  return defaultPeerStorage.listPeersForIdentityMint();
+}
 
 /** Load the persisted machine pairing roster. */
 export function listPeers(): Promise<PeerRecord[]> {
