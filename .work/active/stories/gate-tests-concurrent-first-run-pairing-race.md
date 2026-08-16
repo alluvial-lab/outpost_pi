@@ -1,7 +1,7 @@
 ---
 id: gate-tests-concurrent-first-run-pairing-race
 kind: story
-stage: review
+stage: done
 tags: [pi-extension, testing]
 parent: null
 depends_on: []
@@ -72,3 +72,6 @@ tests must pin — not as a port.
   `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
   (56 files, 996 passed, 3 skipped). Both focused race tests also passed five
   consecutive runs with one worker.
+
+### Bounded inline review (2026-08-16)
+PASS — tests-only diff, genuine park/release barriers (no wall-clock), 996 tests green, race tests stable across 5 focused runs.
