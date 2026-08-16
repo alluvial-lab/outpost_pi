@@ -32,3 +32,10 @@ class of compromise.
 Pin each third-party action ref in both workflows to a commit SHA, matching the
 treatment already applied in `ci.yml`. Note the pinned digest in a comment so
 future bumps are deliberate.
+
+## Completion
+
+Absorbed by `gate-security-release-workflow-action-pinning`: all 8 distinct
+action refs (9 action occurrences, because checkout runs in both deps-audit
+jobs) in `deps-audit.yml` and `e2e-pairing.yml` were pinned in the same pass. Leave
+this backlog item in place for the orchestrator to archive.
