@@ -90,7 +90,7 @@ struct CacheEntry {
 #[derive(Debug)]
 enum CachedMembership {
     Found {
-        owner_hash: String,
+        owner_hashes: HashSet<String>,
         members: HashSet<String>,
     },
     Absent,
@@ -98,7 +98,7 @@ enum CachedMembership {
 
 #[derive(Debug, Clone)]
 struct ScannedMembership {
-    owner_hash: String,
+    owner_hashes: HashSet<String>,
     members: HashSet<String>,
 }
 
@@ -179,7 +179,7 @@ impl MeshAuthCache {
                     membership: membership
                         .clone()
                         .map_or(CachedMembership::Absent, |found| CachedMembership::Found {
-                            owner_hash: found.owner_hash,
+                            owner_hashes: found.owner_hashes,
                             members: found.members,
                         }),
                     cached_at: self.now(),
@@ -223,6 +223,8 @@ impl MeshAuthCache {
             }
         };
 
+        let mut owner_hashes = HashSet::new();
+        let mut union = HashSet::new();
         for (stored_owner_hash, envelope) in envelopes {
             let header = match verify_envelope(&envelope) {
                 Ok(header) => header,
@@ -251,13 +253,18 @@ impl MeshAuthCache {
                 }
             };
             if members.contains(pi_pk) {
-                return Some(ScannedMembership {
-                    owner_hash: stored_owner_hash,
-                    members,
-                });
+                owner_hashes.insert(stored_owner_hash);
+                union.extend(members);
             }
         }
-        None
+        if owner_hashes.is_empty() {
+            None
+        } else {
+            Some(ScannedMembership {
+                owner_hashes,
+                members: union,
+            })
+        }
     }
 
     /// Invalidate membership affected by one successful Owner publish.
@@ -277,10 +284,8 @@ impl MeshAuthCache {
             }
             !matches!(
                 &entry.membership,
-                CachedMembership::Found {
-                    owner_hash: cached_owner,
-                    ..
-                } if cached_owner == owner_hash
+                CachedMembership::Found { owner_hashes, .. }
+                    if owner_hashes.contains(owner_hash)
             )
         });
     }
@@ -674,6 +679,46 @@ mod tests {
         write_owner_blob(&store, &owner_b, &["pi_b"], 1);
         assert!(!cache.is_authorized("pi_a", "pi_b", &store));
         assert!(!cache.is_authorized("pi_b", "pi_a", &store));
+    }
+
+    #[test]
+    fn overlapping_owner_authorization_is_insertion_order_independent() {
+        for authorizing_owner_first in [false, true] {
+            let (cache, store) = fresh_cache_and_store();
+            let authorizing_owner = make_owner_key();
+            let other_owner = make_owner_key();
+
+            if authorizing_owner_first {
+                write_owner_blob(&store, &authorizing_owner, &["pi_a", "pi_b"], 1);
+                write_owner_blob(&store, &other_owner, &["pi_a", "pi_c"], 1);
+            } else {
+                write_owner_blob(&store, &other_owner, &["pi_a", "pi_c"], 1);
+                write_owner_blob(&store, &authorizing_owner, &["pi_a", "pi_b"], 1);
+            }
+
+            assert!(
+                cache.is_authorized("pi_a", "pi_b", &store),
+                "any overlapping Owner mesh may authorize the destination"
+            );
+        }
+    }
+
+    #[test]
+    fn overlapping_owner_revocation_invalidates_cached_union() {
+        let (cache, store) = fresh_cache_and_store();
+        let other_owner = make_owner_key();
+        let authorizing_owner = make_owner_key();
+        write_owner_blob(&store, &other_owner, &["pi_a", "pi_c"], 1);
+        write_owner_blob(&store, &authorizing_owner, &["pi_a", "pi_b"], 1);
+        assert!(cache.is_authorized("pi_a", "pi_b", &store));
+
+        write_owner_blob(&store, &authorizing_owner, &["pi_d"], 2);
+        let owner_hash = owner_pk_hash(&authorizing_owner.verifying_key().to_bytes());
+        let record = store.get(&owner_hash).unwrap().unwrap();
+        cache.invalidate_owner_publish(&owner_hash, &record.blob);
+
+        assert!(cache.is_authorized("pi_a", "pi_c", &store));
+        assert!(!cache.is_authorized("pi_a", "pi_b", &store));
     }
 
     #[tokio::test]
