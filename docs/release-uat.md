@@ -40,6 +40,8 @@ session-hydrate lifecycle end to end on a real deploy:
 5. **Session transcript hydrates** in the app — messages stream both
    directions; an outbound user message produces an agent response on the app.
 
+The device-gated scanner boundary smoke runs with `cd app && flutter test integration_test/mobile_scanner_boundary_test.dart -d <android-or-ios-device> --tags e2e`.
+
 Each step must actually occur; a silent skip is a failure. If any step fails,
 do not cut the tag — triage via the relay debug log + the delivery-path debug
 log (`OUTPOST_PI_DEBUG_LOG=1` → `~/.pi/remote/debug/delivery.log`), fix, redeploy,

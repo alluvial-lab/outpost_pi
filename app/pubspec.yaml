@@ -96,6 +96,11 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  integration_test:
+    sdk: flutter
+
+  # Test-only QR rasterization for the device-gated mobile_scanner boundary smoke.
+  qr: ^3.0.2
 
   # Test-only: mock path_provider so the debug-log adapter tests use a real
   # temp dir instead of the Android/iOS plugin.
