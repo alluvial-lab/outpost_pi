@@ -32,7 +32,22 @@ class TerminalSession extends PaneItem {
 
     // Start the shell and connect both directions. The cast adapts the PTY's
     // Uint8List stream for streaming UTF-8 decoding across chunk boundaries.
-    _gateway.start(workingDirectory: workingDirectory, rows: 25, columns: 80);
+    try {
+      _gateway.start(workingDirectory: workingDirectory, rows: 25, columns: 80);
+    } catch (error) {
+      _startupError = 'Could not start the terminal: $error';
+      terminal.write('\u001b[31m$_startupError\u001b[0m\r\n');
+      return;
+    }
+    final spawn = _gateway is TerminalSpawnDirectory
+        ? (_gateway as TerminalSpawnDirectory).spawnDirectory
+        : null;
+    if (spawn?.fellBack ?? false) {
+      _startupError =
+          'Workspace directory "${spawn!.requested}" is missing. '
+          'The terminal opened in "${spawn.path}".';
+      terminal.write('\u001b[31m$_startupError\u001b[0m\r\n');
+    }
     _sub = _gateway.output
         .cast<List<int>>()
         .transform(const Utf8Decoder(allowMalformed: true))
@@ -66,12 +81,16 @@ class TerminalSession extends PaneItem {
 
   final TerminalGateway _gateway;
   final KittyKeyboardTracker _kitty = KittyKeyboardTracker();
+  String? _startupError;
   String _title;
   late final Terminal terminal;
   StreamSubscription<String>? _sub;
 
   @override
   String get title => _title;
+
+  /// Describe a terminal recovery or startup failure, if one was surfaced.
+  String? get startupError => _startupError;
 
   void rename(String title) {
     final trimmed = title.trim();

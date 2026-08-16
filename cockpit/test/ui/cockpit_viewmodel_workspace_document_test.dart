@@ -40,6 +40,7 @@ import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_server_pool.dart';
 import 'package:cockpit/app/core/domain/contracts/lsp_client.dart';
+import 'package:cockpit/app/core/utils/spawn_directory.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 import 'package:cockpit/app/core/domain/exceptions/lsp_error.dart';
 import 'package:cockpit/app/core/domain/result.dart';
@@ -47,6 +48,43 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'missing workspace is surfaced while initialization becomes ready',
+    () async {
+      final project = await _project();
+      final store = _LayoutStore({
+        'p1': <String, dynamic>{
+          'v': 1,
+          'focused': 'pane1',
+          'tree': <String, dynamic>{
+            'k': 'leaf',
+            'id': 'pane1',
+            'tabs': <String>['t1'],
+            'active': 't1',
+          },
+          'sessions': <String, dynamic>{
+            't1': <String, dynamic>{'type': 'terminal'},
+          },
+        },
+      });
+      final vm = _viewModel(
+        projects: [project],
+        store: store,
+        terminalSpawnDirectory: SpawnDirectory(
+          path: Directory.systemTemp.path,
+          requested: '${project.path}/deleted',
+        ),
+      );
+
+      await vm.init();
+
+      expect(vm.ready, isTrue);
+      expect(vm.initializationError, contains('missing'));
+      await Future<void>.delayed(Duration.zero);
+      vm.dispose();
+    },
+  );
 
   test('loads, exposes, and saves a workspace document round-trip', () async {
     final project = await _project();
@@ -205,6 +243,7 @@ Future<Project> _project() async {
 CockpitViewModel _viewModel({
   required List<Project> projects,
   required _LayoutStore store,
+  SpawnDirectory? terminalSpawnDirectory,
 }) {
   return CockpitViewModel(
     _ProjectRepo(projects),
@@ -213,7 +252,7 @@ CockpitViewModel _viewModel({
     _History(),
     _Notifier(),
     _FileSystem(),
-    _TerminalFactory(),
+    _TerminalFactory(terminalSpawnDirectory),
     _FileReader(),
     store,
     _GitReader(),
@@ -382,11 +421,20 @@ final class _RpcGateway implements RpcProcessGateway {
 }
 
 final class _TerminalFactory implements TerminalGatewayFactory {
+  _TerminalFactory(this.spawnDirectory);
+
+  final SpawnDirectory? spawnDirectory;
+
   @override
-  TerminalGateway create() => _TerminalGateway();
+  TerminalGateway create() => _TerminalGateway(spawnDirectory);
 }
 
-final class _TerminalGateway implements TerminalGateway {
+final class _TerminalGateway
+    implements TerminalGateway, TerminalSpawnDirectory {
+  _TerminalGateway(this.spawnDirectory);
+
+  @override
+  final SpawnDirectory? spawnDirectory;
   final _output = StreamController<List<int>>.broadcast();
 
   @override

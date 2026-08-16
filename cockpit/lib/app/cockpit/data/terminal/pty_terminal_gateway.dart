@@ -2,14 +2,19 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_gateway.dart';
+import 'package:cockpit/app/core/utils/spawn_directory.dart';
 import 'package:kyroon_pty/kyroon_pty.dart';
 
 /// Run the platform's real shell in a native `kyroon_pty` pseudo-terminal.
 ///
 /// This adapter owns the PTY lifecycle and explicitly advertises the terminal
 /// capabilities supported by Cockpit's xterm emulator.
-class PtyTerminalGateway implements TerminalGateway {
+class PtyTerminalGateway implements TerminalGateway, TerminalSpawnDirectory {
   Pty? _pty;
+  SpawnDirectory? _spawnDirectory;
+
+  @override
+  SpawnDirectory? get spawnDirectory => _spawnDirectory;
 
   @override
   void start({
@@ -17,10 +22,12 @@ class PtyTerminalGateway implements TerminalGateway {
     int rows = 25,
     int columns = 80,
   }) {
+    final resolved = resolveSpawnDirectory(workingDirectory);
+    _spawnDirectory = resolved;
     _pty = Pty.start(
       _shell(),
       arguments: _shellArgs(),
-      workingDirectory: workingDirectory.isEmpty ? null : workingDirectory,
+      workingDirectory: resolved.path.isEmpty ? null : resolved.path,
       environment: _terminalEnv(),
       rows: rows,
       columns: columns,
