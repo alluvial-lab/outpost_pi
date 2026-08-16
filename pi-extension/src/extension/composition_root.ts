@@ -119,7 +119,14 @@ export function registerLifecycleHooks(
     // turn's working=true will publish on the live connection.
     ports.session.publishWorking(false);
 
-    ports.commands.ensureStarted?.(ctx);
+    // Print mode is a one-shot invocation. Starting the relay here retains a
+    // WebSocket handle after the answer is printed and prevents process exit.
+    // Prefer the SDK mode, with argv as a compatibility guard for older Pi
+    // contexts that did not expose it.
+    const printMode = ctx.mode === "print"
+      || process.argv.includes("-p")
+      || process.argv.includes("--print");
+    if (!printMode) ports.commands.ensureStarted?.(ctx);
   });
 
   pi.on("session_shutdown", async (_event?: unknown) => {

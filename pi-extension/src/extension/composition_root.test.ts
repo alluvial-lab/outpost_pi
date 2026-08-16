@@ -62,10 +62,11 @@ function piWithHandlers(): {
   return { pi, handlers };
 }
 
-function context(sessionId: string): ExtensionContext {
+function context(sessionId: string, mode: ExtensionContext["mode"] = "tui"): ExtensionContext {
   return {
     sessionManager: { getSessionId: () => sessionId },
     ui: {},
+    mode,
   } as unknown as ExtensionContext;
 }
 
@@ -104,6 +105,42 @@ describe("composition root runtime", () => {
     handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context("successor"));
 
     expect(p.session.publishWorking).toHaveBeenCalledWith(false);
+  });
+
+  test("print session_start binds lifecycle state without auto-starting relay resources", () => {
+    const p = ports();
+    const { pi, handlers } = piWithHandlers();
+    const runtime = createOutpostPiExtensionRuntime(pi, p, new OutpostPiRuntimeCoordinator());
+    runtime.register();
+
+    handlers.get("session_start")?.(
+      { type: "session_start", reason: "startup" },
+      context("print-session", "print"),
+    );
+
+    expect(p.session.bindApi).toHaveBeenCalledWith(pi);
+    expect(p.session.bindSessionContext).toHaveBeenCalledOnce();
+    expect(p.commands.ensureStarted).not.toHaveBeenCalled();
+  });
+
+  test("the legacy -p argv form also suppresses auto-start", () => {
+    const savedArgv = process.argv;
+    try {
+      process.argv = ["node", "pi", "-p", "answer once"];
+      const p = ports();
+      const { pi, handlers } = piWithHandlers();
+      const runtime = createOutpostPiExtensionRuntime(pi, p, new OutpostPiRuntimeCoordinator());
+      runtime.register();
+
+      handlers.get("session_start")?.(
+        { type: "session_start", reason: "startup" },
+        context("legacy-print-session"),
+      );
+
+      expect(p.commands.ensureStarted).not.toHaveBeenCalled();
+    } finally {
+      process.argv = savedArgv;
+    }
   });
 
   test("duplicate session_start is idempotent and a disposed epoch does not restart", () => {

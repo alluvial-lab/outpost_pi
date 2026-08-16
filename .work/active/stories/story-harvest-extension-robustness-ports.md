@@ -1,7 +1,7 @@
 ---
 id: story-harvest-extension-robustness-ports
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, bug]
 parent: feature-upstream-remote-pi-harvest
 depends_on: []
@@ -49,3 +49,13 @@ lifecycle (`index.ts:1672-1681`) with no print-mode guard. Add it.
 `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`; unit
 tests for the timeout wrapper (fake hanging backend) and precedence order;
 cite upstream shas in the commit message.
+
+## Implementation
+
+- Execution capability: sol/high for identity- and security-bearing keyring behavior.
+- Landed bounded read/write/delete credential operations, lazy native binding load with a non-fatal file fallback, file-first identity resolution, and paired-roster guards that refuse both unreadable-keyring and empty-alternate-keyring replacement mints while preserving the exclusive file mint and peer-store lock.
+- Added actionable `PairedIdentityMissingError` handling at relay startup and suppressed lifecycle auto-start in SDK print mode plus legacy `-p`/`--print` invocations.
+- Key files: `pi-extension/src/pairing/storage.ts`, `pi-extension/src/index.ts`, and `pi-extension/src/extension/composition_root.ts`, with focused coverage in their matching tests.
+- Verification: `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build` passed (56 files, 982 passed, 3 skipped). The first full run exposed the pre-existing timing-sensitive audit-rotation test without its `.1` file; its focused rerun passed, and the complete gate then passed on rerun.
+- Deviations: the print guard uses authoritative `ctx.mode === "print"` and retains the upstream argv check as compatibility fallback; no runtime-coordinator, peer-locking, or O_EXCL mint behavior was replaced.
+- Adjacent issues parked: none.
