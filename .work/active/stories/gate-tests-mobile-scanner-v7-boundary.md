@@ -1,7 +1,7 @@
 ---
 id: gate-tests-mobile-scanner-v7-boundary
 kind: story
-stage: review
+stage: done
 tags: [app, testing]
 parent: null
 depends_on: []
@@ -74,3 +74,6 @@ one-shot pairing rule.
   stopped at device discovery for the same reason. Operator Android/iOS UAT
   remains pending and is required before closing the gate. `flutter build apk
   --debug` passed locally; no smoke execution is claimed.
+
+### Bounded inline review (2026-08-16)
+PASS — real-scanner smoke e2e-tagged out of the default suite, analyze + debug APK compile green; device execution remains operator UAT (honestly recorded, not claimed).
