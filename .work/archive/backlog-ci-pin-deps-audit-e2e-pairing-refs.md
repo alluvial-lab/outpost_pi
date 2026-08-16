@@ -39,3 +39,8 @@ Absorbed by `gate-security-release-workflow-action-pinning`: all 8 distinct
 action refs (9 action occurrences, because checkout runs in both deps-audit
 jobs) in `deps-audit.yml` and `e2e-pairing.yml` were pinned in the same pass. Leave
 this backlog item in place for the orchestrator to archive.
+
+---
+status: folded_into
+folded_into: gate-security-release-workflow-action-pinning
+retired: 2026-08-16
