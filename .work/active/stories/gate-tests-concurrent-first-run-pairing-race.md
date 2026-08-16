@@ -1,14 +1,14 @@
 ---
 id: gate-tests-concurrent-first-run-pairing-race
 kind: story
-stage: implementing
+stage: review
 tags: [pi-extension, testing]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: tests
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-16
 ---
 
 # Deterministic coverage for the concurrent first-run pairing race
@@ -50,3 +50,25 @@ coalesce concurrent startup, root-level single-flight at their
 after it wedged Pi; our coalescing lives at `index.ts:1877-1892` + exclusive
 identity creation. Use their shape as a verification reference for what the
 tests must pin — not as a port.
+
+## Implementation
+
+- Added a deterministic first-run fallback race test in
+  `pi-extension/src/pairing/storage.test.ts`. The filesystem harness blocks the
+  exclusive winner after `open(..., "wx")`, starts the competing caller, and
+  waits until that caller observes `EEXIST` and enters its recovery read. It
+  then releases the winner's write, waits for the complete write, and releases
+  the recovery read. The assertions pin that neither caller settles early,
+  both return identical public/private key material, and the sole persisted
+  `identity.json` is complete with private file and directory permissions.
+- Added a deterministic relay single-flight test beside the room/start tests in
+  `pi-extension/src/extension.test.ts`. The fake relay exposes a connect-started
+  barrier and a separate release barrier; the second relay start is invoked
+  while the first is parked in `connect()`. Before release the test pins one
+  relay instance, one connect call, idle state, and two pending awaiters; after
+  release both awaiters settle from that shared start and the runtime reaches
+  `started` without another connection.
+- Verification passed from `pi-extension/`:
+  `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`
+  (56 files, 996 passed, 3 skipped). Both focused race tests also passed five
+  consecutive runs with one worker.

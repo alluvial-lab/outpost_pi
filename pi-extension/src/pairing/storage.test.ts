@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -26,7 +27,76 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...orig, homedir: () => _tmpHome };
 });
 
-// Re-import after the mock is installed.
+const identityFileRace = vi.hoisted(() => {
+  const signal = () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => { resolve = done; });
+    return { promise, resolve };
+  };
+  return {
+    enabled: false,
+    identityPath: "",
+    collisionClaimed: false,
+    recoveryReadClaimed: false,
+    writeStarted: signal(),
+    collisionStarted: signal(),
+    recoveryReadStarted: signal(),
+    releaseWrite: signal(),
+    writeCompleted: signal(),
+    releaseRecoveryRead: signal(),
+  };
+});
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...original,
+    open: async (...args: Parameters<typeof original.open>) => {
+      if (!identityFileRace.enabled || String(args[0]) !== identityFileRace.identityPath || args[1] !== "wx") {
+        return original.open(...args);
+      }
+      try {
+        const handle = await original.open(...args);
+        return new Proxy(handle, {
+          get(target, property) {
+            if (property === "writeFile") {
+              return async (...writeArgs: Parameters<typeof target.writeFile>) => {
+                identityFileRace.writeStarted.resolve();
+                await identityFileRace.releaseWrite.promise;
+                const result = await target.writeFile(...writeArgs);
+                identityFileRace.writeCompleted.resolve();
+                return result;
+              };
+            }
+            const value = Reflect.get(target, property, target) as unknown;
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+          identityFileRace.collisionClaimed = true;
+          identityFileRace.collisionStarted.resolve();
+        }
+        throw error;
+      }
+    },
+    readFile: async (...args: Parameters<typeof original.readFile>) => {
+      if (
+        identityFileRace.enabled &&
+        String(args[0]) === identityFileRace.identityPath &&
+        identityFileRace.collisionClaimed &&
+        !identityFileRace.recoveryReadClaimed
+      ) {
+        identityFileRace.recoveryReadClaimed = true;
+        identityFileRace.recoveryReadStarted.resolve();
+        await identityFileRace.releaseRecoveryRead.promise;
+      }
+      return original.readFile(...args);
+    },
+  };
+});
+
+// Re-import after the mocks are installed.
 const storage = await import("./storage.js");
 const {
   getOrCreateEd25519Keypair,
@@ -118,6 +188,27 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function resetIdentityFileRace(): void {
+  const writeStarted = deferred<void>();
+  const collisionStarted = deferred<void>();
+  const recoveryReadStarted = deferred<void>();
+  const releaseWrite = deferred<void>();
+  const writeCompleted = deferred<void>();
+  const releaseRecoveryRead = deferred<void>();
+  Object.assign(identityFileRace, {
+    enabled: false,
+    identityPath: _IDENTITY_FILE_FOR_TEST,
+    collisionClaimed: false,
+    recoveryReadClaimed: false,
+    writeStarted,
+    collisionStarted,
+    recoveryReadStarted,
+    releaseWrite,
+    writeCompleted,
+    releaseRecoveryRead,
+  });
+}
+
 const PHONE_PEER = {
   name: "phone",
   remote_epk: Buffer.from(new Uint8Array(32).fill(11)).toString("base64"),
@@ -131,6 +222,7 @@ const TABLET_PEER = {
 };
 
 beforeEach(async () => {
+  resetIdentityFileRace();
   // Silence fallback console output during tests so the vitest output isn't
   // polluted.
   vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -144,6 +236,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  identityFileRace.enabled = false;
   _setKeyStoreBackendForTest(null);
   _setKeyringExpectedForTest(null);
   _setKeyringRetryForTest(null);
@@ -324,6 +417,51 @@ describe("getOrCreateEd25519Keypair — headless Linux fallback", () => {
     expect(Buffer.from(first.publicKey).toString("base64")).toBe(
       Buffer.from(second.publicKey).toString("base64"),
     );
+  });
+
+  test("concurrent first-run fallback callers share the exclusive file winner", async () => {
+    const backend = new InMemoryBackend();
+    backend.failAll("read");
+    _setKeyStoreBackendForTest(backend);
+    _setKeyringExpectedForTest(false);
+    identityFileRace.enabled = true;
+
+    let firstSettled = false;
+    const first = getOrCreateEd25519Keypair().then((keypair) => {
+      firstSettled = true;
+      return keypair;
+    });
+    await identityFileRace.writeStarted.promise;
+
+    let secondSettled = false;
+    const second = getOrCreateEd25519Keypair().then((keypair) => {
+      secondSettled = true;
+      return keypair;
+    });
+    await identityFileRace.collisionStarted.promise;
+    await identityFileRace.recoveryReadStarted.promise;
+
+    expect(firstSettled).toBe(false);
+    expect(secondSettled).toBe(false);
+
+    identityFileRace.releaseWrite.resolve();
+    await identityFileRace.writeCompleted.promise;
+    identityFileRace.releaseRecoveryRead.resolve();
+    const [winner, recovered] = await Promise.all([first, second]);
+
+    expect(Buffer.from(recovered.publicKey)).toEqual(Buffer.from(winner.publicKey));
+    expect(Buffer.from(recovered.secretKey)).toEqual(Buffer.from(winner.secretKey));
+    expect(readdirSync(PEERS_DIR_FOR_TEST)).toEqual(["identity.json"]);
+    const persisted = JSON.parse(readFileSync(_IDENTITY_FILE_FOR_TEST, "utf8")) as {
+      pk: string;
+      sk: string;
+    };
+    expect(Buffer.from(persisted.pk, "base64")).toEqual(Buffer.from(winner.publicKey));
+    expect(Buffer.from(persisted.sk, "base64")).toEqual(Buffer.from(winner.secretKey));
+    expect(Buffer.from(persisted.pk, "base64")).toHaveLength(32);
+    expect(Buffer.from(persisted.sk, "base64")).toHaveLength(32);
+    expectPrivateFileMode(_IDENTITY_FILE_FOR_TEST);
+    expectPrivateDirMode(PEERS_DIR_FOR_TEST);
   });
 
 });
