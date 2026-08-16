@@ -1206,6 +1206,10 @@ const _sdkSessionProjection: SdkSessionProjection = new SdkSessionProjection({
     lateAttachTargets: () => _owners.lateAttachEntries(),
     handleClientMessage: (sender, message) => _routeClientMessageFrom(sender as PlainPeerChannel, message, _lastEventCtx ?? _lastCtx ?? _noopCtx),
     onStaleMessageApi: (api) => _forgetStaleMessageApi(api),
+    onMeshDeliveryFailure: (reason) => {
+      console.error(`[outpost-pi] queued mesh delivery failed: ${reason}`);
+      _notify("[outpost-pi] failed to process queued mesh messages", "error");
+    },
     deliveryDebugLog: _deliveryDebugLog,
   },
 });
@@ -1471,6 +1475,10 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     }
   });
 
+  ownerPi.on("agent_start", () => {
+    runtime.ports.session.markAgentRunStarted();
+  });
+
   ownerPi.on("agent_end", () => {
     // Message content is fed by `message_end`; here we record the terminal
     // assistant_done boundary and finalize the outbound turn signal.
@@ -1525,6 +1533,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // must be visible before the handler returns so a new prompt cannot start
   // between settlement and the graceful process shutdown.
   ownerPi.on("agent_settled", (_event, ctx) => {
+    runtime.ports.session.markAgentSettled();
     _maybeRestartForExtensionReload(ctx);
   });
 
@@ -1654,6 +1663,9 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
         _messageApi = null;
         _pi = null;
       },
+      markAgentRunStarted: () => _sdkSessionProjection.markAgentRunStarted(),
+      markAgentSettled: () => _sdkSessionProjection.markAgentSettled(),
+      enqueueMeshMessage: (peerId, content) => _sdkSessionProjection.enqueueMeshMessage(peerId, content),
       sendPiMessage: (...args) => _sendPiMessage(...args),
       wakeAgent: (...args) => _sdkSessionProjection.wakeAgent(...args),
       publishWorking: _publishWorking,
@@ -2153,13 +2165,29 @@ async function _wakeAgent(
  * Wake: we inject a CUSTOM message (role:"custom"), not a user message. The
  * SDK's `convertToLlm` maps custom → a user-role LLM message, so the agent
  * still sees + replies to it, but `message_end` does NOT buffer role:"custom",
- * so it never replays as `user_input` on session_sync. `triggerTurn` runs the
- * turn; `id` lets the LLM echo it via `agent_send(..., re=<id>)`.
+ * so it never replays as `user_input` on session_sync. Ingress is admitted
+ * under frame and byte limits, retained while an agent run is active, and
+ * flushed as one custom batch with one turn trigger at `agent_settled`.
+ * `id` lets the LLM echo it via `agent_send(..., re=<id>)`.
  */
 function _deliverMeshMessageToAgent(
   env: { id: string; from: string; re: string | null; body: unknown },
 ): void {
-  const bodyText = typeof env.body === "string" ? env.body : JSON.stringify(env.body);
+  const bodyText = typeof env.body === "string" ? env.body : (JSON.stringify(env.body) ?? "null");
+  const header = `[agent-network] message from "${env.from}" (id=${env.id}${env.re ? `, re=${env.re}` : ""}):`;
+  const footer = env.re
+    ? "(This is a reply to a previous message of yours.)"
+    : `(If a reply is expected, call agent_send with to="${env.from}" and re="${env.id}".)`;
+  const admission = _sdkSessionProjection.enqueueMeshMessage(
+    env.from,
+    `${header}\n${bodyText}\n\n${footer}`,
+  );
+  if (!admission.accepted) {
+    console.error(`[outpost-pi] mesh ingress rejected: ${admission.reason}`);
+    _notify("[outpost-pi] incoming mesh queue is full; message was not delivered", "error");
+    return;
+  }
+
   const toolCallId = `mesh_${env.id}`;
   _owners.broadcast(_withCurrentSession({
     type: "tool_request",
@@ -2170,22 +2198,6 @@ function _deliverMeshMessageToAgent(
       : { from: env.from, message: bodyText },
   }));
   _owners.broadcast(_withCurrentSession({ type: "tool_result", tool_call_id: toolCallId, result: { from: env.from, message: bodyText } }));
-
-  const label = `agent-network message from "${env.from}"`;
-  if (!_pi) {
-    console.error(`[outpost-pi] ${label}: agent session not bound yet — message dropped`);
-    return;
-  }
-  const header = `[agent-network] message from "${env.from}" (id=${env.id}${env.re ? `, re=${env.re}` : ""}):`;
-  const footer = env.re
-    ? "(This is a reply to a previous message of yours.)"
-    : `(If a reply is expected, call agent_send with to="${env.from}" and re="${env.id}".)`;
-  const ok = _sendPiMessage(
-    { customType: "outpost-pi:mesh-message", content: `${header}\n${bodyText}\n\n${footer}`, display: true },
-    { triggerTurn: true },
-    label,
-  );
-  if (!ok) _notify("[outpost-pi] failed to process incoming mesh message", "error");
 }
 
 async function _cmdJoin(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {

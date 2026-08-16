@@ -1,14 +1,14 @@
 ---
 id: story-harvest-mesh-ingress-queueing
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, bug]
 parent: feature-upstream-remote-pi-harvest
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-16
 ---
 
 # Queue Pi-to-Pi mesh messages between agent runs
@@ -38,3 +38,13 @@ suppressed.
 `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`;
 tests: message arriving mid-run is delivered exactly once after settle;
 buffer bound enforced; stale-session flush suppressed. Cite upstream sha.
+
+## Implementation
+
+- Execution capability: sol/high for lifecycle-sensitive cross-agent delivery.
+- Moved mesh ingress ownership into `SdkSessionProjection`: `agent_start` fences active runs, `agent_settled` flushes accepted ingress as one ordered custom-message batch with one `followUp` turn trigger, and lifecycle epoch invalidation clears stale-session work before its queued microtask can send.
+- Admission is bounded globally and per peer by both frame count and retained UTF-8 bytes. Overflow rejects the newest frame without evicting the accepted prefix and produces content-free diagnostics; admitted messages are mirrored to owner tool timelines only after admission.
+- Key files: `pi-extension/src/session/sdk_session_projection.ts`, `pi-extension/src/extension/ports.ts`, and `pi-extension/src/index.ts`, with projection regression tests and updated port fixtures.
+- Verification: `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build` passed (56 files, 985 passed, 3 skipped). Focused mesh/projection tests passed (51 tests).
+- Deviations: upstream root-level arrays/timers were not copied; batching is one SDK custom message rather than several messages with only the last triggering, which gives the required single turn trigger and a simpler exactly-once boundary while preserving each envelope's formatted id/from/re metadata.
+- Adjacent issue noted: the unrelated audit-rotation E2E cases remain timing-sensitive under full-suite load (one run observed the active file at the ceiling plus one byte; its focused rerun and the subsequent complete gate passed). No test was weakened or changed.

@@ -127,12 +127,20 @@ export interface WakeAgentResult {
   recoverable?: boolean;
 }
 
+/** Report whether one mesh frame entered the lifecycle-owned pending batch. */
+export type MeshIngressAdmission =
+  | { accepted: true }
+  | { accepted: false; reason: "frame_limit" | "byte_limit" };
+
 /** Project Pi SDK session effects while owning stale-context invalidation across replacements. */
 export interface SdkSessionProjectionPort {
   bindApi(pi: ExtensionAPI): void;
   bindCommandContext(ctx: ExtensionCommandContext): void;
   bindSessionContext(ctx: ExtensionContext): void;
   clearStaleContexts(reason?: "startup" | "reload" | "new" | "resume" | "fork" | "quit"): void;
+  markAgentRunStarted(): void;
+  markAgentSettled(): void;
+  enqueueMeshMessage(peerId: string, content: string): MeshIngressAdmission;
   sendPiMessage(...args: Parameters<ExtensionAPI["sendMessage"]>): boolean;
   wakeAgent(...args: Parameters<ExtensionAPI["sendUserMessage"]>): Promise<WakeAgentResult>;
   publishWorking(working: boolean): void;

@@ -6,7 +6,7 @@ import type {
 import type { ClientMessage, ServerMessage, ThinkingLevel, SessionHistoryEvent } from "../protocol/types.js";
 import { SERVER_MESSAGE_DISCRIMINATORS } from "../protocol/generated/protocol.generated.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
-import type { SdkSessionProjectionPort, WakeAgentResult } from "../extension/ports.js";
+import type { MeshIngressAdmission, SdkSessionProjectionPort, WakeAgentResult } from "../extension/ports.js";
 import type { ActionCtx, ActionPi, SdkModelLike } from "../actions/handlers.js";
 import type { DeliveryDebugLog } from "./delivery_debug_log.js";
 import { idTail } from "./delivery_debug_log.js";
@@ -65,6 +65,8 @@ export interface SdkSessionProjectionOutputs {
   lateAttachTargets(): readonly { peerId: string; channel: PeerChannel }[];
   handleClientMessage(sender: PeerChannel, message: ClientMessage): void | Promise<void>;
   onStaleMessageApi?(api: AgentMessageApi): void;
+  /** Surface a content-free diagnostic when an admitted mesh batch cannot reach the SDK. */
+  onMeshDeliveryFailure?(reason: "stale_session" | "send_failed"): void;
   /** Delivery-path debug log (the extension half of cross-side observability).
    * Optional — a no-op when `OUTPOST_PI_DEBUG_LOG` is unset. The projection
    * emits `message_api_armed`/`message_api_null`/`wake_outcome`/`command_ctx`
@@ -81,7 +83,34 @@ export interface SeededUserTurn {
 /** Configure the composition-owned output port used by a session projection. */
 export interface SdkSessionProjectionOptions {
   outputs: SdkSessionProjectionOutputs;
+  meshIngressLimits?: Partial<MeshIngressLimits>;
 }
+
+/** Bound retained mesh ingress globally and per sending peer. */
+export interface MeshIngressLimits {
+  maxFrames: number;
+  maxBytes: number;
+  maxFramesPerPeer: number;
+  maxBytesPerPeer: number;
+}
+
+interface PendingMeshMessage {
+  peerId: string;
+  content: string;
+  bytes: number;
+}
+
+interface PeerMeshAccounting {
+  frames: number;
+  bytes: number;
+}
+
+const DEFAULT_MESH_INGRESS_LIMITS: MeshIngressLimits = {
+  maxFrames: 128,
+  maxBytes: 1024 * 1024,
+  maxFramesPerPeer: 32,
+  maxBytesPerPeer: 256 * 1024,
+};
 
 const SYNC_LIMIT_DEFAULT = 30;
 
@@ -150,8 +179,16 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   private actionApi: FreshActionApi | null = null;
   private turn: TurnSnapshot = initialTurnSnapshot();
   private roomId: string | null = null;
+  private readonly meshIngressLimits: MeshIngressLimits;
+  private pendingMeshMessages: PendingMeshMessage[] = [];
+  private readonly pendingMeshByPeer = new Map<string, PeerMeshAccounting>();
+  private pendingMeshBytes = 0;
+  private agentRunActive = false;
+  private meshFlushScheduled = false;
 
-  constructor(private readonly opts: SdkSessionProjectionOptions) {}
+  constructor(private readonly opts: SdkSessionProjectionOptions) {
+    this.meshIngressLimits = { ...DEFAULT_MESH_INGRESS_LIMITS, ...opts.meshIngressLimits };
+  }
 
   /** Set the room id for delivery-log correlation. Called when `_myRoomId` is
    *  bound (the projection is constructed before the room is known). */
@@ -161,6 +198,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
 
   bindApi(pi: ExtensionAPI): void {
     this.bindCapabilities(pi);
+    if (!this.agentRunActive) this.scheduleMeshMessageFlush();
     this.opts.outputs.deliveryDebugLog?.log({
       tag: "message_api_armed",
       via: "factory",
@@ -359,6 +397,9 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.eventCtx = null;
     this.messageApi = null;
     this.actionApi = null;
+    this.agentRunActive = false;
+    this.meshFlushScheduled = false;
+    this.clearPendingMeshMessages();
     this.opts.outputs.deliveryDebugLog?.log({
       tag: "message_api_null",
       reason: "shutdown",
@@ -676,6 +717,46 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     }).events;
   }
 
+  /** Mark the start of an SDK run so mesh ingress waits for the settled boundary. */
+  markAgentRunStarted(): void {
+    this.agentRunActive = true;
+  }
+
+  /** Flush one accepted mesh batch after retries, compaction, and continuations settle. */
+  markAgentSettled(): void {
+    this.agentRunActive = false;
+    this.scheduleMeshMessageFlush();
+  }
+
+  /**
+   * Admit one rendered mesh message under global and per-peer frame/byte limits.
+   *
+   * Accepted messages retain arrival order. Overflow rejects the newest frame
+   * without evicting an accepted prefix.
+   */
+  enqueueMeshMessage(peerId: string, content: string): MeshIngressAdmission {
+    const bytes = Buffer.byteLength(content, "utf8");
+    const peer = this.pendingMeshByPeer.get(peerId) ?? { frames: 0, bytes: 0 };
+    if (
+      this.pendingMeshMessages.length >= this.meshIngressLimits.maxFrames
+      || peer.frames >= this.meshIngressLimits.maxFramesPerPeer
+    ) {
+      return { accepted: false, reason: "frame_limit" };
+    }
+    if (
+      bytes > this.meshIngressLimits.maxBytes - this.pendingMeshBytes
+      || bytes > this.meshIngressLimits.maxBytesPerPeer - peer.bytes
+    ) {
+      return { accepted: false, reason: "byte_limit" };
+    }
+
+    this.pendingMeshMessages.push({ peerId, content, bytes });
+    this.pendingMeshBytes += bytes;
+    this.pendingMeshByPeer.set(peerId, { frames: peer.frames + 1, bytes: peer.bytes + bytes });
+    if (!this.agentRunActive) this.scheduleMeshMessageFlush();
+    return { accepted: true };
+  }
+
   sendPiMessage(...args: Parameters<ExtensionAPI["sendMessage"]>): boolean {
     const api = this.messageApi;
     if (!api) return false;
@@ -870,6 +951,52 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   private publishTurnProjection(before: TurnProjection, after: TurnProjection): void {
     if (before.working === after.working) return;
     this.publishWorking(after.working);
+  }
+
+  private scheduleMeshMessageFlush(): void {
+    if (
+      this.meshFlushScheduled
+      || this.agentRunActive
+      || this.pendingMeshMessages.length === 0
+      || !this.messageApi
+    ) return;
+    this.meshFlushScheduled = true;
+    const generation = this.epoch;
+    queueMicrotask(() => {
+      if (generation !== this.epoch) return;
+      this.meshFlushScheduled = false;
+      if (this.agentRunActive || !this.messageApi || this.pendingMeshMessages.length === 0) return;
+
+      const batch = this.pendingMeshMessages;
+      this.pendingMeshMessages = [];
+      this.pendingMeshBytes = 0;
+      this.pendingMeshByPeer.clear();
+      const content = batch.map((entry) => entry.content).join("\n\n---\n\n");
+      const api = this.messageApi;
+      try {
+        const delivery = api.sendMessage(
+          { customType: "outpost-pi:mesh-message", content, display: true },
+          { triggerTurn: true, deliverAs: "followUp" },
+        );
+        if (isPromiseLike(delivery)) {
+          delivery.catch((error: unknown) => {
+            const stale = isStaleContextError(error);
+            if (stale) this.forget(api);
+            this.opts.outputs.onMeshDeliveryFailure?.(stale ? "stale_session" : "send_failed");
+          });
+        }
+      } catch (error) {
+        const stale = isStaleContextError(error);
+        if (stale) this.forget(api);
+        this.opts.outputs.onMeshDeliveryFailure?.(stale ? "stale_session" : "send_failed");
+      }
+    });
+  }
+
+  private clearPendingMeshMessages(): void {
+    this.pendingMeshMessages = [];
+    this.pendingMeshBytes = 0;
+    this.pendingMeshByPeer.clear();
   }
 
   private bindCapabilities(value: unknown): void {
