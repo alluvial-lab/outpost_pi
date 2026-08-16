@@ -983,7 +983,10 @@ class ConnectionManager extends Service {
     if (list == null) return RoomTurnProjection.stale;
     for (final r in list) {
       if (r.roomId == roomId) {
-        return r.working ? RoomTurnProjection.active : RoomTurnProjection.idle;
+        return RoomTurnProjection(
+          status: r.working ? AppTurnStatus.working : AppTurnStatus.idle,
+          sessionId: r.sessionId,
+        );
       }
     }
     return RoomTurnProjection.stale;
@@ -996,16 +999,25 @@ class ConnectionManager extends Service {
   /// App-side correction for the connected room's working projection.
   ///
   /// The relay remains the source for non-active rooms. This compatibility
-  /// backstop is deliberately narrowed to the active, live room so local chat
-  /// observations can clear a missed `meta.working=false` without mutating a
-  /// different room's projection.
-  void markRoomWorking(String epk, String roomId, bool working) {
+  /// backstop is deliberately narrowed to the active room and exact session so
+  /// a late local observation cannot mutate replacement-session metadata.
+  void markRoomWorking(
+    String epk,
+    String roomId,
+    bool working, {
+    required String sessionId,
+  }) {
     final active = _activePeer;
     if (active == null ||
         toStandardB64(active.remoteEpk) != toStandardB64(epk)) {
       return;
     }
     if (roomId != _activeRoomId) return;
+    final key = toStandardB64(epk);
+    final list = _roomsByPeer[key];
+    if (list == null) return;
+    final idx = list.indexWhere((r) => r.roomId == roomId);
+    if (idx < 0 || list[idx].sessionId != sessionId) return;
     if (_status is! StatusOnline || !isRoomLive(epk, roomId)) {
       if (!working) {
         _logDebug(
@@ -1020,11 +1032,7 @@ class ConnectionManager extends Service {
       }
       return;
     }
-    final key = toStandardB64(epk);
-    final list = _roomsByPeer[key];
-    if (list == null) return;
-    final idx = list.indexWhere((r) => r.roomId == roomId);
-    if (idx < 0 || list[idx].working == working) return;
+    if (list[idx].working == working) return;
     list[idx] = list[idx].copyWith(working: working);
     _logDebug(
       WorkingConvEvent(

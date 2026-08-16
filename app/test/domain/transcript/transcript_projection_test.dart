@@ -93,6 +93,57 @@ void main() {
     }
   });
 
+  test(
+    'matching-session idle metadata clears stale transcript working after reconnect',
+    () {
+      final projection = deriveChatTurnProjection(
+        room: const RoomTurnProjection(
+          status: AppTurnStatus.idle,
+          sessionId: session,
+        ),
+        transcript: const TranscriptTurnView(
+          status: AppTurnStatus.working,
+          sessionId: session,
+          turnId: 'turn-old',
+          replyTo: 'user-old',
+        ),
+        streaming: const StreamingMessage(
+          inReplyTo: 'user-old',
+          buffer: 'stale delta',
+        ),
+      );
+
+      expect(projection, AppTurnProjection.idle);
+      expect(projection.working, isFalse);
+    },
+  );
+
+  test(
+    'older-session idle metadata cannot clobber a live replacement turn',
+    () {
+      final projection = deriveChatTurnProjection(
+        room: const RoomTurnProjection(
+          status: AppTurnStatus.idle,
+          sessionId: 'sess-old',
+        ),
+        transcript: const TranscriptTurnView(
+          status: AppTurnStatus.working,
+          sessionId: 'sess-current',
+          turnId: 'turn-current',
+          replyTo: 'user-current',
+        ),
+        streaming: const StreamingMessage(
+          inReplyTo: 'user-current',
+          buffer: 'live delta',
+        ),
+      );
+
+      expect(projection.status, AppTurnStatus.streaming);
+      expect(projection.working, isTrue);
+      expect(projection.cancelTargetId, 'user-current');
+    },
+  );
+
   test('authoritative replay backfill renders by canonical server time', () {
     final projection = deriveTranscriptProjection(
       sessionId: session,
@@ -598,6 +649,7 @@ void main() {
     );
 
     expect(projection.messages, [const UserMsg(id: 'cli_1', text: 'hello')]);
+    expect(projection.turn.sessionId, session);
   });
 
   group('shared transcript projection fixtures', () {

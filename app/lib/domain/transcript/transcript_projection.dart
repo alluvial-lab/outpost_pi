@@ -19,12 +19,16 @@ abstract final class TranscriptTurnStatus {
 final class TranscriptTurnView {
   const TranscriptTurnView({
     required this.status,
+    this.sessionId,
     this.turnId,
     this.replyTo,
     this.error,
   });
 
   final AppTurnStatus status;
+
+  /// Canonical session that produced this turn state, when bound.
+  final String? sessionId;
   final String? turnId;
   final String? replyTo;
   final String? error;
@@ -60,6 +64,16 @@ AppTurnProjection deriveChatTurnProjection({
 }) {
   if (room.status == AppTurnStatus.stale) {
     return AppTurnProjection.stale;
+  }
+
+  // Fresh idle metadata is authoritative only for the exact session it
+  // describes. This clears stale transcript working state after a disconnected
+  // turn ended, without letting an older reconnect snapshot clobber a genuine
+  // mid-turn projection from a replacement session.
+  if (room.status == AppTurnStatus.idle &&
+      room.sessionId != null &&
+      room.sessionId == transcript.sessionId) {
+    return AppTurnProjection.idle;
   }
 
   if (streaming != null) {
@@ -367,10 +381,17 @@ TranscriptProjection deriveTranscriptProjection({
     }
   }
 
+  final sessionTurn = TranscriptTurnView(
+    status: turn.status,
+    sessionId: sessionId,
+    turnId: turn.turnId,
+    replyTo: turn.replyTo,
+    error: turn.error,
+  );
   return TranscriptProjection(
     messages: List.unmodifiable(messages),
     streaming: streaming,
-    turn: turn,
+    turn: sessionTurn,
     steering: steering,
   );
 }
