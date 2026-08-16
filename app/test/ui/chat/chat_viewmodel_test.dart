@@ -14,6 +14,7 @@ import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/session_state.dart';
+import 'package:app/domain/transcript/transcript_projection.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/chat/states/chat_state.dart';
@@ -222,6 +223,51 @@ class _ControlledActivateSyncService extends SyncService {
       return Future<void>.error(StateError('activation failed'));
     }
     return super.activate(epk, roomId);
+  }
+}
+
+class _ProjectionSyncService extends SyncService {
+  _ProjectionSyncService(super.connectionManager, super.boxes, this.sessionRef);
+
+  final RemoteSessionRef sessionRef;
+  final streamingController = StreamController<StreamingMessage?>.broadcast();
+  final turnController = StreamController<TranscriptTurnView>.broadcast();
+  StreamingMessage? streamingValue;
+  TranscriptTurnView turnValue = TranscriptTurnView.idle;
+
+  @override
+  RemoteSessionRef get activeSessionRef => sessionRef;
+
+  @override
+  StreamingMessage? get streaming => streamingValue;
+
+  @override
+  Stream<StreamingMessage?> get streamingStream => streamingController.stream;
+
+  @override
+  TranscriptTurnView get turnView => turnValue;
+
+  @override
+  Stream<TranscriptTurnView> get turnViewStream => turnController.stream;
+
+  @override
+  Future<void> activate(String epk, String roomId) async {}
+
+  void emitTurn(TranscriptTurnView value) {
+    turnValue = value;
+    turnController.add(value);
+  }
+
+  void emitStreaming(StreamingMessage value) {
+    streamingValue = value;
+    streamingController.add(value);
+  }
+
+  @override
+  void dispose() {
+    streamingController.close();
+    turnController.close();
+    super.dispose();
   }
 }
 
@@ -823,6 +869,143 @@ void main() {
       // "Nothing here" placeholder (shown whenever the body is empty).
       expect(state.messages, isEmpty);
       expect(state.streaming, isNull);
+
+      vm.dispose();
+      sync.dispose();
+      conn.dispose();
+    },
+  );
+
+  test(
+    'matching-session authoritative idle suppresses stale StreamingBubble input',
+    () async {
+      final ch = _FakeChannel();
+      final storage = _FakeStorage();
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+        emitDebounce: Duration.zero,
+      );
+      final boxes = LocalBoxes();
+      final prefs = Preferences(_FakeSecureStorage());
+      await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+      await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+      await _adoptWithSession(conn, ch);
+      final sessionId = ch.defaultSessionId;
+      final sync = _ProjectionSyncService(
+        conn,
+        boxes,
+        RemoteSessionRef(
+          peerEpk: _peer.remoteEpk,
+          roomId: 'main',
+          sessionId: sessionId,
+        ),
+      );
+      final vm = ChatViewModel(
+        SessionReadRepository(boxes),
+        sync,
+        conn,
+        prefs,
+        storage,
+      );
+      await vm.initialize();
+
+      sync.emitTurn(
+        TranscriptTurnView(
+          status: AppTurnStatus.streaming,
+          sessionId: sessionId,
+          turnId: 'stale-turn',
+          replyTo: 'stale-user',
+        ),
+      );
+      sync.emitStreaming(
+        const StreamingMessage(
+          inReplyTo: 'stale-user',
+          buffer: 'replayed residue',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      final room = conn.roomTurnProjection(_peer.remoteEpk, 'main');
+      expect(room.status, AppTurnStatus.idle);
+      expect(room.sessionId, sessionId);
+      final ready = vm.state as ChatReady;
+      expect(ready.status.turn, AppTurnProjection.idle);
+      expect(
+        ready.streaming,
+        isNull,
+        reason: 'ChatPage must not receive input for a StreamingBubble',
+      );
+
+      vm.dispose();
+      sync.dispose();
+      conn.dispose();
+    },
+  );
+
+  test(
+    'older-session idle preserves replacement-session StreamingBubble input',
+    () async {
+      final ch = _FakeChannel();
+      final storage = _FakeStorage();
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+        emitDebounce: Duration.zero,
+      );
+      final boxes = LocalBoxes();
+      final prefs = Preferences(_FakeSecureStorage());
+      await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+      await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+      await _adoptWithSession(conn, ch);
+      final oldSessionId = ch.defaultSessionId;
+      const replacementSessionId = 'replacement-live-session';
+      final sync = _ProjectionSyncService(
+        conn,
+        boxes,
+        const RemoteSessionRef(
+          peerEpk: 'epk_chat',
+          roomId: 'main',
+          sessionId: replacementSessionId,
+        ),
+      );
+      final vm = ChatViewModel(
+        SessionReadRepository(boxes),
+        sync,
+        conn,
+        prefs,
+        storage,
+      );
+      await vm.initialize();
+
+      sync.emitTurn(
+        const TranscriptTurnView(
+          status: AppTurnStatus.streaming,
+          sessionId: replacementSessionId,
+          turnId: 'replacement-turn',
+          replyTo: 'replacement-user',
+        ),
+      );
+      sync.emitStreaming(
+        const StreamingMessage(
+          inReplyTo: 'replacement-user',
+          buffer: 'live replacement delta',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      final room = conn.roomTurnProjection(_peer.remoteEpk, 'main');
+      expect(room.status, AppTurnStatus.idle);
+      expect(room.sessionId, oldSessionId);
+      final ready = vm.state as ChatReady;
+      expect(ready.status.turn.status, AppTurnStatus.streaming);
+      expect(
+        ready.streaming,
+        const StreamingMessage(
+          inReplyTo: 'replacement-user',
+          buffer: 'live replacement delta',
+        ),
+      );
 
       vm.dispose();
       sync.dispose();

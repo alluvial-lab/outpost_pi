@@ -60,3 +60,14 @@ Cite upstream sha in the commit message.
   unrelated `sync_service_test.dart` isolation failure
   (`reconnect-history fixture replays additively without replace semantics`);
   that test passed in isolation. No unrelated test was weakened or changed.
+
+### Review closure
+
+- `ChatReady.streaming` now follows the same session-keyed authoritative-idle
+  projection as the working state: matching-session idle suppresses stale
+  replay residue, while an older session's idle metadata cannot hide a live
+  replacement-session stream. Integrated ViewModel regressions cover both
+  rendering outcomes.
+- Review-closure verification: `flutter analyze` passed; the load-capped full
+  suite passed all 881 tests with `flutter test --exclude-tags e2e
+  --concurrency=2`.

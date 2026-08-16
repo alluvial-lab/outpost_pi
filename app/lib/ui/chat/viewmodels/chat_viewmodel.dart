@@ -357,6 +357,13 @@ class ChatViewModel extends ViewModel<ChatState> {
     );
   }
 
+  // A non-null raw cursor is not independently renderable. Matching-session
+  // authoritative idle is resolved by deriveChatTurnProjection; suppressing
+  // its cursor here keeps stale replay residue out of ChatReady without hiding
+  // a replacement session whose projection is still genuinely streaming.
+  StreamingMessage? get _visibleStreaming =>
+      _turnProjection.status == AppTurnStatus.idle ? null : _streaming;
+
   ChatTransportProjection _transportProjection() {
     final status = _lastStatus ?? _conn.status;
     return switch (status) {
@@ -448,7 +455,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     }
     return ChatReady(
       messages: _messages,
-      streaming: _streaming,
+      streaming: _visibleStreaming,
       status: statusProjection,
       pairingRevoked: _pairingRevoked,
       peerOfflineReason: _peerOfflineReason,
