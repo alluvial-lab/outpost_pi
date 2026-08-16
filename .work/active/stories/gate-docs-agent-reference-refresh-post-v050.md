@@ -1,7 +1,7 @@
 ---
 id: gate-docs-agent-reference-refresh-post-v050
 kind: story
-stage: review
+stage: done
 tags: [docs, workflow]
 parent: null
 depends_on: []
@@ -67,3 +67,6 @@ Each dependency version asserted by the refreshed reference surface was checked 
 | Next `16.3.0` | `site/package.json:13` |
 | React `19.2.8` | `site/package.json:14` |
 | React DOM `19.2.8` | `site/package.json:15` |
+
+### Bounded inline review (2026-08-16)
+PASS — every refreshed version claim cross-checked against the owning manifest; docker workflow correction mirrors site/CLAUDE.md.
