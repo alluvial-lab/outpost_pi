@@ -4316,6 +4316,43 @@ describe("rooms wiring", () => {
     expect(opts.roomMeta?.name).toContain("outpost-pi-test-room");
   });
 
+  test("concurrent relay starts share one in-flight connect", async () => {
+    let signalConnectStarted!: () => void;
+    let releaseConnect!: () => void;
+    const connectStarted = new Promise<void>((resolve) => { signalConnectStarted = resolve; });
+    const connectRelease = new Promise<void>((resolve) => { releaseConnect = resolve; });
+    _defaultConnectImpl = async () => {
+      signalConnectStarted();
+      await connectRelease;
+    };
+
+    let firstSettled = false;
+    const first = _startRelayForTest(makeMockCtx("/tmp/outpost-pi-relay-race")).then(() => {
+      firstSettled = true;
+    });
+    await connectStarted;
+
+    let secondSettled = false;
+    const second = _startRelayForTest(makeMockCtx("/tmp/outpost-pi-relay-race")).then(() => {
+      secondSettled = true;
+    });
+
+    expect(relayInstances).toHaveLength(1);
+    expect(relayInstances[0]!.connect).toHaveBeenCalledOnce();
+    expect(outpostPiTestHarness.state()).toBe("idle");
+    expect(firstSettled).toBe(false);
+    expect(secondSettled).toBe(false);
+
+    releaseConnect();
+    await Promise.all([first, second]);
+
+    expect(firstSettled).toBe(true);
+    expect(secondSettled).toBe(true);
+    expect(relayInstances).toHaveLength(1);
+    expect(relayInstances[0]!.connect).toHaveBeenCalledOnce();
+    expect(outpostPiTestHarness.state()).toBe("started");
+  });
+
   test("_cmdStart with different cwds uses different roomIds", async () => {
     const capturedOpts: Array<{ roomId?: string }> = [];
     _defaultConnectImpl = async (opts?: unknown) => {
