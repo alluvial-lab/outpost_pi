@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile, chmod, unlink, rename, rm, stat, open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { AsyncEntry } from "@napi-rs/keyring";
 import { generateEd25519Keypair, type Ed25519Keypair } from "./crypto.js";
 
 /**
@@ -49,6 +48,20 @@ export class KeyringUnavailableError extends Error {
   }
 }
 
+/** Refuse identity replacement when the persisted pairing roster proves one already existed. */
+export class PairedIdentityMissingError extends Error {
+  constructor(pairedCount: number, cause: unknown) {
+    super(
+      `No identity could be read, but ${pairedCount} device(s) are already paired. ` +
+      "Refusing to generate a new identity because that would revoke every paired device. " +
+      "Give this process access to the original keyring, or install the original keypair " +
+      "at ~/.pi/remote/identity.json with mode 0600. " +
+      `Cause: ${String(cause)}`,
+    );
+    this.name = "PairedIdentityMissingError";
+  }
+}
+
 const PI_DIR = join(homedir(), ".pi", "remote");
 const IDENTITY_FILE = join(PI_DIR, "identity.json");
 
@@ -70,19 +83,85 @@ export interface KeyStoreBackend {
   delete(service: string, account: string): Promise<boolean>;
 }
 
+const KEYRING_OPERATION_TIMEOUT_MS = 3_000;
+let _keyringOperationTimeoutMs = KEYRING_OPERATION_TIMEOUT_MS;
+
+function _withTimeout<T>(operation: Promise<T>, label: string, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`keyring ${label} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+    operation.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
+/** Bound every operation on a credential backend so a native hang cannot strand pairing startup. */
+export function withKeyStoreOperationTimeout(
+  backend: KeyStoreBackend,
+  timeoutMs = KEYRING_OPERATION_TIMEOUT_MS,
+): KeyStoreBackend {
+  return {
+    read: (service, account) => _withTimeout(
+      Promise.resolve().then(() => backend.read(service, account)),
+      `read(${service})`,
+      timeoutMs,
+    ),
+    write: (service, account, value) => _withTimeout(
+      Promise.resolve().then(() => backend.write(service, account, value)),
+      `write(${service})`,
+      timeoutMs,
+    ),
+    delete: (service, account) => _withTimeout(
+      Promise.resolve().then(() => backend.delete(service, account)),
+      `delete(${service})`,
+      timeoutMs,
+    ),
+  };
+}
+
+let _asyncEntryCtor: typeof import("@napi-rs/keyring").AsyncEntry | null = null;
+let _nativeBindingError: unknown = null;
+
+async function _loadAsyncEntry(): Promise<typeof import("@napi-rs/keyring").AsyncEntry> {
+  if (_asyncEntryCtor) return _asyncEntryCtor;
+  if (_nativeBindingError) throw _nativeBindingError;
+  try {
+    const module = await import("@napi-rs/keyring");
+    _asyncEntryCtor = module.AsyncEntry;
+    return _asyncEntryCtor;
+  } catch (error) {
+    _nativeBindingError = error;
+    throw error;
+  }
+}
+
+function _nativeBindingUnavailable(): boolean {
+  return _nativeBindingError !== null;
+}
+
 class NapiKeyringBackend implements KeyStoreBackend {
   async read(service: string, account: string): Promise<string | undefined> {
-    const entry = new AsyncEntry(service, account);
-    return entry.getPassword();  // returns undefined on no-entry
+    const AsyncEntry = await _loadAsyncEntry();
+    return new AsyncEntry(service, account).getPassword();
   }
   async write(service: string, account: string, value: string): Promise<void> {
-    const entry = new AsyncEntry(service, account);
-    await entry.setPassword(value);
+    const AsyncEntry = await _loadAsyncEntry();
+    await new AsyncEntry(service, account).setPassword(value);
   }
   async delete(service: string, account: string): Promise<boolean> {
-    const entry = new AsyncEntry(service, account);
     try {
-      return await entry.deleteCredential();
+      const AsyncEntry = await _loadAsyncEntry();
+      return await new AsyncEntry(service, account).deleteCredential();
     } catch {
       return false;
     }
@@ -92,13 +171,30 @@ class NapiKeyringBackend implements KeyStoreBackend {
 let _backend: KeyStoreBackend | null = null;
 
 function _getBackend(): KeyStoreBackend {
-  if (!_backend) _backend = new NapiKeyringBackend();
+  if (!_backend) {
+    _backend = withKeyStoreOperationTimeout(new NapiKeyringBackend(), _keyringOperationTimeoutMs);
+  }
   return _backend;
 }
 
 /** Test-only: swap (or clear with `null`) the keyring backend. */
 export function _setKeyStoreBackendForTest(backend: KeyStoreBackend | null): void {
-  _backend = backend;
+  _backend = backend
+    ? withKeyStoreOperationTimeout(backend, _keyringOperationTimeoutMs)
+    : null;
+}
+
+/** Test-only: tune operation deadlines without waiting for the production timeout. */
+export function _setKeyringOperationTimeoutForTest(timeoutMs: number | null): void {
+  _keyringOperationTimeoutMs = timeoutMs ?? KEYRING_OPERATION_TIMEOUT_MS;
+  _backend = null;
+}
+
+/** Test-only: emulate a runtime where the native keyring binding cannot load. */
+export function _setNativeBindingErrorForTest(error: unknown): void {
+  _asyncEntryCtor = null;
+  _nativeBindingError = error;
+  _backend = null;
 }
 
 /**
@@ -111,6 +207,7 @@ export function _setKeyStoreBackendForTest(backend: KeyStoreBackend | null): voi
 let _keyringExpectedOverride: boolean | null = null;
 function _keyringExpectedAvailable(): boolean {
   if (_keyringExpectedOverride !== null) return _keyringExpectedOverride;
+  if (_nativeBindingUnavailable()) return false;
   return process.platform === "darwin" || process.platform === "win32";
 }
 
@@ -218,22 +315,25 @@ async function _mintKeypairToFileExclusive(): Promise<Ed25519Keypair> {
 /**
  * Returns the Pi-secret Ed25519 keypair, generating + persisting one on
  * first call. Resolution order:
- *   1. Keyring service `dev.outpostpi.pi` (read retried — a transiently
- *      locked Keychain throws; we don't treat that as "no key")
- *   2. File `~/.pi/remote/identity.json` (use if present — never regenerate
- *      over an existing one)
- *   3. Generate a fresh keypair, BUT only when it's safe to: the keyring read
- *      succeeded and returned nothing (genuine first run), or the keyring is
- *      genuinely unavailable on a platform without a core one (headless
- *      Linux). On macOS/Windows a persistent read failure with no file identity
- *      throws `KeyringUnavailableError` instead of minting a new key —
- *      generating there silently breaks existing pairing (the "lost pairing
- *      after idle" bug). `OUTPOST_PI_ALLOW_FILE_IDENTITY=1` opts back into a
- *      file identity for headless macOS/Windows hosts.
+ *   1. Existing file `~/.pi/remote/identity.json`. File mode is sticky because
+ *      that is the identity against which existing devices paired.
+ *   2. Keyring service `dev.outpostpi.pi` (read retried — a transiently
+ *      locked Keychain throws; we don't treat that as "no key").
+ *   3. Generate a fresh keypair only when no pairing roster proves that an
+ *      earlier identity existed. On macOS/Windows a persistent read failure
+ *      throws `KeyringUnavailableError`; headless platforms use the exclusive
+ *      file mint. `OUTPOST_PI_ALLOW_FILE_IDENTITY=1` is the explicit recovery
+ *      escape hatch.
  *
  * Idempotent: subsequent calls return the same identity.
  */
 export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
+  // A file-backed installation must stay file-backed even if a keyring later
+  // becomes readable. Consulting a stale or empty keyring first can mask the
+  // identity against which the devices paired.
+  const existingFile = await _readKeypairFromFile();
+  if (existingFile) return existingFile;
+
   const backend = _getBackend();
 
   // ── Path A: keyring (retried) ──────────────────────────────────────────
@@ -248,14 +348,21 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
       const existing = await backend.read(NEW_SERVICE, ACCOUNT);
       if (existing) return _deserialize(existing);
 
-      // A successful empty read is a genuine first run on a working keyring.
+      // A successful empty read is a genuine first run only when there is no
+      // pairing roster. An alternate daemon/keyring context can read an empty
+      // store even though devices are already paired to the original identity.
+      const paired = await listPeers();
+      if (paired.length > 0) {
+        throw new PairedIdentityMissingError(paired.length, "keyring returned no identity");
+      }
+
       // The Outpost-Pi hard cutover deliberately does not inspect legacy
       // remote-pi/keytar services.
-      // Generate and save to the new service.
       const fresh = generateEd25519Keypair();
       await backend.write(NEW_SERVICE, ACCOUNT, _serialize(fresh));
       return fresh;
     } catch (err) {
+      if (err instanceof PairedIdentityMissingError) throw err;
       keyringError = err;
       if (attempt < _keyringReadAttempts - 1) {
         // Linear backoff — a locked Keychain usually frees within seconds.
@@ -282,13 +389,22 @@ export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
   //    the file. So we FAIL LOUD instead, unless the operator explicitly
   //    opts into a file identity.
   const forceFile = process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY === "1";
+  if (!forceFile) {
+    const paired = await listPeers();
+    if (paired.length > 0) {
+      throw new PairedIdentityMissingError(paired.length, keyringError);
+    }
+  }
   if (_keyringExpectedAvailable() && !forceFile) {
     throw new KeyringUnavailableError(keyringError);
   }
 
   console.warn(
-    "[outpost-pi] keyring unavailable; using file-backed identity at " +
-    `${IDENTITY_FILE}. ${String(keyringError)}`,
+    _nativeBindingUnavailable()
+      ? "[outpost-pi] @napi-rs/keyring could not load in this runtime; using " +
+        `file-backed identity at ${IDENTITY_FILE} with mode 0600. ${String(keyringError)}`
+      : "[outpost-pi] keyring unavailable; using file-backed identity at " +
+        `${IDENTITY_FILE}. ${String(keyringError)}`,
   );
   return _mintKeypairToFileExclusive();
 }

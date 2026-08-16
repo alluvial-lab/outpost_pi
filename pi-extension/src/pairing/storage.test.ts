@@ -34,8 +34,12 @@ const {
   _setKeyStoreBackendForTest,
   _setKeyringExpectedForTest,
   _setKeyringRetryForTest,
+  _setKeyringOperationTimeoutForTest,
+  _setNativeBindingErrorForTest,
   _unlinkIdentityFileForTest,
   _IDENTITY_FILE_FOR_TEST,
+  withKeyStoreOperationTimeout,
+  PairedIdentityMissingError,
   addPeer,
   listPeers,
   encodePeerChannelKeys,
@@ -143,11 +147,31 @@ afterEach(() => {
   _setKeyStoreBackendForTest(null);
   _setKeyringExpectedForTest(null);
   _setKeyringRetryForTest(null);
+  _setKeyringOperationTimeoutForTest(null);
+  _setNativeBindingErrorForTest(null);
   delete process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY;
   vi.restoreAllMocks();
 });
 
 // ── Keyring path ────────────────────────────────────────────────────────────
+
+describe("keyring operation timeout", () => {
+  test("bounds hanging read, write, and delete operations", async () => {
+    const never = new Promise<never>(() => undefined);
+    const hanging: KeyStoreBackend = {
+      read: () => never,
+      write: () => never,
+      delete: () => never,
+    };
+    const bounded = withKeyStoreOperationTimeout(hanging, 10);
+
+    await Promise.all([
+      expect(bounded.read(NEW_SERVICE, ACCOUNT)).rejects.toThrow("read(dev.outpostpi.pi) timed out"),
+      expect(bounded.write(NEW_SERVICE, ACCOUNT, "secret")).rejects.toThrow("write(dev.outpostpi.pi) timed out"),
+      expect(bounded.delete(NEW_SERVICE, ACCOUNT)).rejects.toThrow("delete(dev.outpostpi.pi) timed out"),
+    ]);
+  });
+});
 
 describe("getOrCreateEd25519Keypair — keyring path", () => {
   test("returns existing entry from new service without writing", async () => {
@@ -557,6 +581,78 @@ describe("peers.json storage permissions", () => {
     const parsed = JSON.parse(readFileSync(PEERS_FILE_FOR_TEST, "utf8")) as { peers: unknown[] };
     expect(parsed.peers).toEqual([PHONE_PEER, TABLET_PEER]);
     expectPrivateFileMode(PEERS_FILE_FOR_TEST);
+  });
+});
+
+describe("getOrCreateEd25519Keypair — identity precedence and binding fallback", () => {
+  async function seedFileIdentity() {
+    const unavailable = new InMemoryBackend();
+    unavailable.failAll("read");
+    _setKeyStoreBackendForTest(unavailable);
+    _setKeyringExpectedForTest(false);
+    return getOrCreateEd25519Keypair();
+  }
+
+  test("an existing file identity wins without consulting a readable different keyring", async () => {
+    const fileIdentity = await seedFileIdentity();
+    const keyring = new InMemoryBackend();
+    keyring.store.set(`${NEW_SERVICE}|${ACCOUNT}`, JSON.stringify({
+      pk: Buffer.from(new Uint8Array(32).fill(42)).toString("base64"),
+      sk: Buffer.from(new Uint8Array(64).fill(43)).toString("base64"),
+    }));
+    _setKeyStoreBackendForTest(keyring);
+    _setKeyringExpectedForTest(true);
+
+    const resolved = await getOrCreateEd25519Keypair();
+
+    expect(Buffer.from(resolved.publicKey)).toEqual(Buffer.from(fileIdentity.publicKey));
+    expect(keyring.reads).toEqual([]);
+    expect(keyring.writes).toEqual([]);
+  });
+
+  test("a native binding load failure is non-fatal and uses the file fallback", async () => {
+    _setNativeBindingErrorForTest(new Error("Cannot find native binding"));
+    _setKeyringRetryForTest(1, 0);
+    _setKeyringOperationTimeoutForTest(20);
+
+    const resolved = await getOrCreateEd25519Keypair();
+
+    expect(resolved.publicKey).toHaveLength(32);
+    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(true);
+  });
+});
+
+describe("getOrCreateEd25519Keypair — existing pairings prevent identity replacement", () => {
+  test("an unreadable keyring cannot mint a file identity over paired devices", async () => {
+    await addPeer(PHONE_PEER);
+    const unavailable = new InMemoryBackend();
+    unavailable.failAll("read");
+    _setKeyStoreBackendForTest(unavailable);
+    _setKeyringExpectedForTest(false);
+
+    await expect(getOrCreateEd25519Keypair()).rejects.toBeInstanceOf(PairedIdentityMissingError);
+    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(false);
+  });
+
+  test("an empty alternate keyring cannot mint over paired devices", async () => {
+    await addPeer(PHONE_PEER);
+    const empty = new InMemoryBackend();
+    _setKeyStoreBackendForTest(empty);
+
+    await expect(getOrCreateEd25519Keypair()).rejects.toBeInstanceOf(PairedIdentityMissingError);
+    expect(empty.writes).toEqual([]);
+  });
+
+  test("the explicit file-identity escape hatch remains available", async () => {
+    await addPeer(PHONE_PEER);
+    const unavailable = new InMemoryBackend();
+    unavailable.failAll("read");
+    _setKeyStoreBackendForTest(unavailable);
+    _setKeyringExpectedForTest(false);
+    process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY = "1";
+
+    await expect(getOrCreateEd25519Keypair()).resolves.toMatchObject({ publicKey: expect.any(Uint8Array) });
+    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(true);
   });
 });
 

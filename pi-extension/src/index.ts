@@ -43,6 +43,7 @@ import {
   addPeer,
   getOrCreateEd25519Keypair,
   KeyringUnavailableError,
+  PairedIdentityMissingError,
   listPeers,
   removePeer,
 } from "./pairing/storage.js";
@@ -1913,6 +1914,16 @@ async function _startRelayViaTransportInner(ctx: Pick<ExtensionContext, "ui" | "
         "keychain is locked or access was denied. Unlock it (open the app / " +
         "log in) and run /outpost-pi again. Your pairing is NOT lost. " +
         "(Set OUTPOST_PI_ALLOW_FILE_IDENTITY=1 only for headless hosts.)",
+        "error",
+      );
+      return;
+    }
+    if (err instanceof PairedIdentityMissingError) {
+      ctx.ui.notify(
+        "[outpost-pi] Could not read this machine's identity, but devices are " +
+        "already paired. Refusing to generate a replacement that would revoke " +
+        "them. Give this process access to the original keyring, or install the " +
+        "original keypair at ~/.pi/remote/identity.json with mode 0600.",
         "error",
       );
       return;
