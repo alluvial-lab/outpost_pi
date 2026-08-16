@@ -52,6 +52,13 @@ integration tests (Phosphor Beacon visual smoke, pairing e2e against relay
 
 ## Follow-ons (not this story)
 
+- **Local emulator dev loop (KVM pending host change)** — the VM is a
+  Proxmox guest with default kvm64 vCPU type (vmx masked). Operator flips
+  the host to `--cpu host` + full stop/start (2026-08-16 instructions
+  handed off); then: sdkmanager emulator + android-34 google_apis x86_64
+  image, AVD with `-camera-back virtualscene`, run the scanner smoke
+  `-d emulator-5554`. Complements the CI job (local = interactive/dev loop,
+  CI = always-on gate); does not replace it.
 - Runbook note: ADB-over-tailnet wireless debugging for real-phone UAT
   (steps 6–7 of docs/release-uat.md) — operator doc, cheap.
 - Automating the full pairing e2e (relay + extension + emulator app in one
