@@ -170,6 +170,9 @@ class RealSdkHarness {
           this.boundApi = null;
           this.bindingLabel = "";
         },
+        markAgentRunStarted: () => undefined,
+        markAgentSettled: () => undefined,
+        enqueueMeshMessage: () => ({ accepted: true }),
         sendPiMessage: () => false,
         wakeAgent: async () => ({ ok: false }),
         publishWorking: () => undefined,

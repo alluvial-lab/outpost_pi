@@ -86,6 +86,81 @@ describe("SdkSessionProjection messageApi binding across session_start", () => {
   });
 });
 
+describe("SdkSessionProjection mesh ingress batching", () => {
+  test("delivers messages arriving mid-run exactly once as one batch after settle", async () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    const pi = makePi();
+    projection.bindApi(pi);
+    projection.markAgentRunStarted();
+
+    expect(projection.enqueueMeshMessage("/repo@reviewer", "mesh-message-1")).toEqual({ accepted: true });
+    expect(projection.enqueueMeshMessage("/repo@worker", "mesh-message-2")).toEqual({ accepted: true });
+    await Promise.resolve();
+    expect(pi.sendMessage).not.toHaveBeenCalled();
+
+    projection.markAgentSettled();
+    await Promise.resolve();
+
+    expect(pi.sendMessage).toHaveBeenCalledOnce();
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customType: "outpost-pi:mesh-message",
+        content: expect.stringMatching(/mesh-message-1[\s\S]*mesh-message-2/),
+        display: true,
+      }),
+      { triggerTurn: true, deliverAs: "followUp" },
+    );
+
+    projection.markAgentSettled();
+    await Promise.resolve();
+    expect(pi.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  test("enforces per-peer frame and global byte admission without evicting accepted messages", async () => {
+    const projection = new SdkSessionProjection({
+      outputs: makeOutputs(),
+      meshIngressLimits: {
+        maxFrames: 3,
+        maxBytes: 12,
+        maxFramesPerPeer: 2,
+        maxBytesPerPeer: 8,
+      },
+    });
+    projection.markAgentRunStarted();
+
+    expect(projection.enqueueMeshMessage("peer-a", "1234")).toEqual({ accepted: true });
+    expect(projection.enqueueMeshMessage("peer-a", "5678")).toEqual({ accepted: true });
+    expect(projection.enqueueMeshMessage("peer-a", "x")).toEqual({ accepted: false, reason: "frame_limit" });
+    expect(projection.enqueueMeshMessage("peer-b", "12345")).toEqual({ accepted: false, reason: "byte_limit" });
+
+    const pi = makePi();
+    projection.bindApi(pi);
+    projection.markAgentSettled();
+    await Promise.resolve();
+    expect(pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringMatching(/1234[\s\S]*5678/) }),
+      expect.anything(),
+    );
+    const delivered = String(pi.sendMessage.mock.calls[0]![0].content);
+    expect(delivered).not.toContain("12345");
+    expect(delivered).not.toContain("\nx\n");
+  });
+
+  test("suppresses a scheduled flush after session replacement invalidates its generation", async () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    const pi = makePi();
+    projection.bindApi(pi);
+    projection.markAgentRunStarted();
+    expect(projection.enqueueMeshMessage("peer-a", "stale-session-message")).toEqual({ accepted: true });
+
+    projection.markAgentSettled();
+    projection.clearStaleContexts();
+    await Promise.resolve();
+
+    expect(pi.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe("SdkSessionProjection queued-message delivery rejection policy", () => {
   test("observes an asynchronous rejection after clearing the queue", async () => {
     const outputs = makeOutputs();
