@@ -1,14 +1,14 @@
 ---
 id: story-harvest-cockpit-crash-class-ports
 kind: story
-stage: implementing
+stage: done
 tags: [cockpit, bug]
 parent: feature-upstream-remote-pi-harvest
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-16
 ---
 
 # Cockpit crash-class ports: deleted-workspace recovery + bounded Hive-open retry
@@ -43,3 +43,22 @@ is inapplicable (no such dialog here).
 `flutter analyze && flutter test`; tests: missing workspace dir → error
 state + app ready; Hive open failing N times → bounded retry then error
 screen, never an unhandled throw. Cite upstream shas in the commit message.
+
+## Implementation
+
+- Ported deleted-workspace recovery from `8d40daf7`: PTY spawns resolve to the
+  nearest existing ancestor/home, while the terminal and Cockpit ViewModel
+  expose the missing workspace as an error instead of silently hiding the
+  fallback. ViewModel initialization now always converges to ready and the
+  shell displays a recovery banner.
+- Ported only the bounded Hive-lock retry half of `a0af1dd8`: all startup and
+  cockpit-module box opens retry transient `FileSystemException`s ten times,
+  then the bootstrap catches the final error and renders a standalone startup
+  error screen. The upstream crash-report dialog was not ported.
+- Added `test/domain/crash_recovery_test.dart` plus a ViewModel restoration
+  regression covering missing workspace error state and ready convergence.
+- Verification: `cd cockpit && flutter analyze && flutter test` passed (285
+  tests).
+- Deviation: Flutter tooling rewrote local generated plugin registrants to
+  remove unavailable `volume_controller` entries. Those generated files remain
+  uncommitted and are intentionally excluded from this story commit.

@@ -159,6 +159,7 @@ class CockpitViewModel extends ChangeNotifier {
   bool _railVisible = true;
   bool _treeVisible = true;
   bool _ready = false;
+  String? _initializationError;
   int _seq = 0;
 
   /// Mirror the app-scoped notification preference into this page-scoped model.
@@ -214,6 +215,10 @@ class CockpitViewModel extends ChangeNotifier {
 
   /// Report whether [init] has finished loading and activating the workspace.
   bool get ready => _ready;
+
+  /// Explain a workspace recovery failure while keeping the shell usable.
+  String? get initializationError => _initializationError;
+
   bool get railVisible => _railVisible;
   bool get treeVisible => _treeVisible;
   List<LaunchableApp> get availableApps =>
@@ -575,31 +580,58 @@ class CockpitViewModel extends ChangeNotifier {
   /// Marks [ready] only after the selected workspace has been realized. Git,
   /// worktree, and application discovery continue asynchronously afterward.
   Future<void> init() async {
-    _projectList.addAll(await _projects.all());
-    // Load saved layouts without realizing their live resources yet.
-    for (final project in _projectList) {
-      _savedLayouts[project.id] = await _layoutStore.load(project.id);
+    try {
+      _projectList.addAll(await _projects.all());
+      // Load saved layouts without realizing their live resources yet.
+      for (final project in _projectList) {
+        _savedLayouts[project.id] = await _layoutStore.load(project.id);
+      }
+      _selectedProjectId = await _initialSelection();
+      // Realize live resources only for the initially selected project.
+      final selected = _selectedProjectId;
+      try {
+        if (selected != null) await _activateProject(selected);
+        _startGitWatch(selected);
+      } catch (error, stack) {
+        _recordInitializationError(error);
+        debugPrint('[boot] failed to activate the workspace: $error\\n$stack');
+      }
+      _recordTerminalRecovery(selected);
+      // Refresh Git and worktrees asynchronously. Boot starts with roots only;
+      // reconciliation adds forks as results arrive.
+      for (final project in _projectList) {
+        unawaited(_refreshGit(project.id));
+        unawaited(_refreshWorktrees(project.id));
+      }
+      // Discover installed IDEs asynchronously and update the top bar on arrival.
+      unawaited(
+        _launcher.probe().then((apps) {
+          _availableApps = apps;
+          notifyListeners();
+        }),
+      );
+    } catch (error, stack) {
+      _recordInitializationError(error);
+      debugPrint('[boot] failed to initialize Cockpit: $error\\n$stack');
+    } finally {
+      // CockpitPage starts init fire-and-forget. Readiness must converge even
+      // when persistence, filesystem, or process restoration fails.
+      _ready = true;
+      notifyListeners();
     }
-    _selectedProjectId = await _initialSelection();
-    // Realize live resources only for the initially selected project.
-    final selected = _selectedProjectId;
-    if (selected != null) await _activateProject(selected);
-    _startGitWatch(selected); // Watch the initial project's working tree.
-    _ready = true;
-    notifyListeners();
-    // Refresh Git and worktrees asynchronously. Boot starts with roots only;
-    // reconciliation adds forks as results arrive.
-    for (final project in _projectList) {
-      unawaited(_refreshGit(project.id));
-      unawaited(_refreshWorktrees(project.id));
+  }
+
+  void _recordInitializationError(Object error) {
+    _initializationError ??= error.toString();
+  }
+
+  void _recordTerminalRecovery(String? projectId) {
+    if (projectId == null) return;
+    for (final item in _workspace.itemsForProject(projectId)) {
+      if (item is TerminalSession && item.startupError != null) {
+        _recordInitializationError(item.startupError!);
+      }
     }
-    // Discover installed IDEs asynchronously and update the top bar on arrival.
-    unawaited(
-      _launcher.probe().then((apps) {
-        _availableApps = apps;
-        notifyListeners();
-      }),
-    );
   }
 
   /// Resolve the initial root workspace from the last selection or first root.
@@ -1283,7 +1315,14 @@ class CockpitViewModel extends ChangeNotifier {
 
     final restored = <String>{};
     for (final tab in document.tabs.values) {
-      if (await _workspace.realize(tab, project)) restored.add(tab.id);
+      try {
+        if (await _workspace.realize(tab, project)) restored.add(tab.id);
+      } catch (error, stack) {
+        _recordInitializationError(error);
+        debugPrint(
+          '[restore] failed to restore tab ${tab.id}: $error\\n$stack',
+        );
+      }
     }
 
     document = document.filterTabs(

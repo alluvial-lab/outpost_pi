@@ -9,6 +9,7 @@ import 'package:cockpit/app/cockpit/data/filesystem/folder_lister_impl.dart';
 import 'package:cockpit/app/cockpit/data/filesystem/git_status_reader_impl.dart';
 import 'package:cockpit/app/cockpit/data/filesystem/session_history_impl.dart';
 import 'package:cockpit/app/cockpit/data/filesystem/worktree_manager_impl.dart';
+import 'package:cockpit/app/core/data/hive_box_opener.dart';
 import 'package:cockpit/app/cockpit/data/notifications/local_notifier.dart';
 import 'package:cockpit/app/cockpit/data/repositories/hive_dismissed_update_store.dart';
 import 'package:cockpit/app/cockpit/data/repositories/hive_project_repository.dart';
@@ -47,7 +48,6 @@ import 'package:cockpit/app/cockpit/ui/viewmodels/update_viewmodel.dart';
 import 'package:cockpit/app/core/data/repositories/hive_settings_store.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_modular/flutter_modular.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 /// Feature **Cockpit** — the shell (home, `path: '/'`). Registers the shell's
@@ -72,13 +72,17 @@ import 'package:package_info_plus/package_info_plus.dart';
 Future<Module> buildCockpitModule() async {
   // Async bootstrap: opens its own boxes (private in the closure), resolves the
   // version, and starts the notifier. `Hive.initFlutter` already ran in `main`.
-  final projectBox = await Hive.openBox<dynamic>(HiveProjectRepository.boxName);
-  final layoutBox = await Hive.openBox<dynamic>(
+  final projectBox = await openHiveBoxWithRetry<dynamic>(
+    HiveProjectRepository.boxName,
+  );
+  final layoutBox = await openHiveBoxWithRetry<dynamic>(
     HiveWorkspaceLayoutStore.boxName,
   );
   // Dismissed updates live in the settings box (same as SettingsController);
   // `openBox` is idempotent → returns the instance already opened by `main`.
-  final settingsBox = await Hive.openBox<dynamic>(HiveSettingsStore.boxName);
+  final settingsBox = await openHiveBoxWithRetry<dynamic>(
+    HiveSettingsStore.boxName,
+  );
   final appVersion = (await PackageInfo.fromPlatform()).version;
 
   // OS notifications — init asks for permission; failure must not crash the boot.

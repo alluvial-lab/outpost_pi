@@ -1,3 +1,13 @@
+import 'package:cockpit/app/core/utils/spawn_directory.dart';
+
+/// Expose the directory selected by a process-spawning gateway.
+///
+/// This optional capability keeps terminal recovery observable without making
+/// test gateways or non-process implementations depend on filesystem details.
+abstract interface class TerminalSpawnDirectory {
+  SpawnDirectory? get spawnDirectory;
+}
+
 /// Run a shell in a native pseudo-terminal (PTY).
 ///
 /// The `data/terminal/` implementation uses `kyroon_pty` with forkpty on

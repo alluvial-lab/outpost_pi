@@ -6,10 +6,12 @@ import 'package:cockpit/app/app_widget.dart';
 import 'package:cockpit/app/cockpit/data/rpc/pi_process_registry.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_process_registry.dart';
 import 'package:cockpit/app/core/data/relay/pairing_seam_cleanup.dart';
+import 'package:cockpit/app/core/data/hive_box_opener.dart';
 import 'package:cockpit/app/core/data/repositories/hive_settings_store.dart';
 import 'package:cockpit/app/core/env.dart';
+import 'package:cockpit/app/core/ui/bootstrap_error_screen.dart';
 import 'package:cockpit/app/core/ui/settings_controller.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_kit/media_kit.dart';
@@ -24,7 +26,15 @@ const String hiveSubdir = kDebugMode ? 'cockpit-debug' : 'cockpit';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await _bootstrap();
+  } catch (error, stack) {
+    debugPrint('Cockpit bootstrap failed: $error\n$stack');
+    runApp(BootstrapErrorApp(error: error));
+  }
+}
 
+Future<void> _bootstrap() async {
   // Plan 46 — initialize media_kit (libmpv) before any Player.
   MediaKit.ensureInitialized();
 
@@ -40,7 +50,9 @@ Future<void> main() async {
   // buildCockpitModule); here only the settings box, which SettingsController
   // needs before the first frame.
   await Hive.initFlutter(hiveSubdir);
-  final settingsBox = await Hive.openBox<dynamic>(HiveSettingsStore.boxName);
+  final settingsBox = await openHiveBoxWithRetry<dynamic>(
+    HiveSettingsStore.boxName,
+  );
 
   // Preferences loaded BEFORE the first frame → the app opens in the saved
   // theme (no flash). App-scoped: provided via `ModularApp.provide`, above the
@@ -48,7 +60,7 @@ Future<void> main() async {
   final settings = SettingsController(HiveSettingsStore(settingsBox));
   await settings.load();
 
-  final winBox = await Hive.openBox<dynamic>('window_state');
+  final winBox = await openHiveBoxWithRetry<dynamic>('window_state');
   await _setupWindow(winBox);
 
   // The only threaded value: lives in core (root-owned) and the features

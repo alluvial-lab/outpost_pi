@@ -330,6 +330,8 @@ class _CockpitPageState extends State<CockpitPage> {
           backgroundColor: colors.bg,
           child: Column(
             children: [
+              if (vm.initializationError != null)
+                _InitializationErrorBanner(message: vm.initializationError!),
               CockpitTopbar(
                 projectName: vm.selectedDisplayTitle ?? 'Cockpit',
                 railVisible: vm.railVisible,
@@ -561,6 +563,35 @@ class _CockpitPageState extends State<CockpitPage> {
 
 /// Provide an 8 px drag target for resizing a side panel.
 ///
+/// Keep workspace recovery visible while leaving the shell usable.
+class _InitializationErrorBanner extends StatelessWidget {
+  const _InitializationErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: colors.error.withValues(alpha: 0.12),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, size: 18, color: colors.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Workspace recovery issue: $message',
+              style: context.typo.label.copyWith(color: colors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The panel border supplies the visual line; the caller interprets the delta
 /// direction according to whether this is a left or right edge.
 class _ResizeHandle extends StatelessWidget {
