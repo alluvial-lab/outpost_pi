@@ -38,6 +38,16 @@ function makePi() {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 /** A realistic `ExtensionContext` from `ExtensionRunner.createContext()` —
  *  carries ui/cwd/abort/compact/sessionManager but NO sendMessage/sendUserMessage. */
 function makeSessionStartCtx() {
@@ -144,6 +154,105 @@ describe("SdkSessionProjection mesh ingress batching", () => {
     const delivered = String(pi.sendMessage.mock.calls[0]![0].content);
     expect(delivered).not.toContain("12345");
     expect(delivered).not.toContain("\nx\n");
+  });
+
+  test("restores a batch after a synchronous SDK throw and redelivers it at the next settle", async () => {
+    const outputs = { ...makeOutputs(), onMeshDeliveryFailure: vi.fn() };
+    const projection = new SdkSessionProjection({ outputs });
+    const pi = makePi();
+    pi.sendMessage
+      .mockImplementationOnce(() => { throw new Error("handoff failed"); })
+      .mockImplementationOnce(() => undefined);
+    projection.bindApi(pi);
+    projection.markAgentRunStarted();
+    expect(projection.enqueueMeshMessage("peer-a", "restore-sync")).toEqual({ accepted: true });
+
+    projection.markAgentSettled();
+    await Promise.resolve();
+    expect(outputs.onMeshDeliveryFailure).toHaveBeenCalledWith("send_failed");
+
+    projection.markAgentSettled();
+    await Promise.resolve();
+    expect(pi.sendMessage).toHaveBeenCalledTimes(2);
+    expect(pi.sendMessage.mock.calls[1]![0]).toMatchObject({ content: "restore-sync" });
+
+    projection.markAgentSettled();
+    await Promise.resolve();
+    expect(pi.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  test("restores a batch after an asynchronous SDK rejection and redelivers it at the next settle", async () => {
+    const outputs = { ...makeOutputs(), onMeshDeliveryFailure: vi.fn() };
+    const projection = new SdkSessionProjection({ outputs });
+    const failedHandoff = deferred<void>();
+    const pi = makePi();
+    pi.sendMessage
+      .mockImplementationOnce(() => failedHandoff.promise)
+      .mockImplementationOnce(() => undefined);
+    projection.bindApi(pi);
+    projection.markAgentRunStarted();
+    expect(projection.enqueueMeshMessage("peer-a", "restore-async")).toEqual({ accepted: true });
+
+    projection.markAgentSettled();
+    await Promise.resolve();
+    failedHandoff.reject(new Error("async handoff failed"));
+    await vi.waitFor(() => expect(outputs.onMeshDeliveryFailure).toHaveBeenCalledWith("send_failed"));
+
+    projection.markAgentSettled();
+    await Promise.resolve();
+    expect(pi.sendMessage).toHaveBeenCalledTimes(2);
+    expect(pi.sendMessage.mock.calls[1]![0]).toMatchObject({ content: "restore-async" });
+  });
+
+  test("evicts a stale-context rejected batch without redelivery on a fresh binding", async () => {
+    const outputs = { ...makeOutputs(), onMeshDeliveryFailure: vi.fn() };
+    const projection = new SdkSessionProjection({ outputs });
+    const stale = makePi();
+    stale.sendMessage.mockRejectedValue(
+      new Error("This extension ctx is stale after session replacement or reload"),
+    );
+    projection.bindApi(stale);
+    projection.markAgentRunStarted();
+    expect(projection.enqueueMeshMessage("peer-a", "stale-rejected")).toEqual({ accepted: true });
+
+    projection.markAgentSettled();
+    await vi.waitFor(() => expect(outputs.onMeshDeliveryFailure).toHaveBeenCalledWith("stale_session"));
+    expect(projection.messageApiBinding()).toBeNull();
+
+    const fresh = makePi();
+    projection.bindApi(fresh);
+    projection.markAgentSettled();
+    await Promise.resolve();
+    expect(fresh.sendMessage).not.toHaveBeenCalled();
+  });
+
+  test("keeps failed batches in frame and byte admission accounting until redelivery", async () => {
+    const projection = new SdkSessionProjection({
+      outputs: makeOutputs(),
+      meshIngressLimits: {
+        maxFrames: 2,
+        maxBytes: 4,
+        maxFramesPerPeer: 1,
+        maxBytesPerPeer: 4,
+      },
+    });
+    const pi = makePi();
+    pi.sendMessage
+      .mockImplementationOnce(() => { throw new Error("handoff failed"); })
+      .mockImplementationOnce(() => undefined);
+    projection.bindApi(pi);
+    projection.markAgentRunStarted();
+    expect(projection.enqueueMeshMessage("peer-a", "1234")).toEqual({ accepted: true });
+
+    projection.markAgentSettled();
+    await Promise.resolve();
+    expect(projection.enqueueMeshMessage("peer-a", "")).toEqual({ accepted: false, reason: "frame_limit" });
+    expect(projection.enqueueMeshMessage("peer-b", "x")).toEqual({ accepted: false, reason: "byte_limit" });
+
+    projection.markAgentSettled();
+    await Promise.resolve();
+    expect(pi.sendMessage).toHaveBeenCalledTimes(2);
+    expect(pi.sendMessage.mock.calls[1]![0]).toMatchObject({ content: "1234" });
   });
 
   test("suppresses a scheduled flush after session replacement invalidates its generation", async () => {

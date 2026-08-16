@@ -964,33 +964,66 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     const generation = this.epoch;
     queueMicrotask(() => {
       if (generation !== this.epoch) return;
-      this.meshFlushScheduled = false;
-      if (this.agentRunActive || !this.messageApi || this.pendingMeshMessages.length === 0) return;
+      if (this.agentRunActive || !this.messageApi || this.pendingMeshMessages.length === 0) {
+        this.meshFlushScheduled = false;
+        return;
+      }
 
-      const batch = this.pendingMeshMessages;
-      this.pendingMeshMessages = [];
-      this.pendingMeshBytes = 0;
-      this.pendingMeshByPeer.clear();
+      // Keep the admitted prefix and all accounting live until the SDK accepts
+      // the handoff. New ingress may append behind it, but cannot bypass its
+      // frame/byte budget or start a concurrent flush.
+      const batch = this.pendingMeshMessages.slice();
       const content = batch.map((entry) => entry.content).join("\n\n---\n\n");
       const api = this.messageApi;
+      const handoffSucceeded = (): void => {
+        if (generation !== this.epoch) return;
+        this.removePendingMeshBatch(batch);
+        this.meshFlushScheduled = false;
+        this.scheduleMeshMessageFlush();
+      };
+      const handoffFailed = (error: unknown): void => {
+        if (generation !== this.epoch) return;
+        const stale = isStaleContextError(error);
+        if (stale) {
+          this.forget(api);
+          // A stale SDK context cannot safely retry this session's accepted
+          // batch. Evict that prefix while preserving messages appended later
+          // for a fresh binding.
+          this.removePendingMeshBatch(batch);
+        }
+        // Non-stale failures retain the entire accounted prefix. The next
+        // agent_settled boundary retries it; no failure loop is self-scheduled.
+        this.meshFlushScheduled = false;
+        this.opts.outputs.onMeshDeliveryFailure?.(stale ? "stale_session" : "send_failed");
+      };
+
       try {
         const delivery = api.sendMessage(
           { customType: "outpost-pi:mesh-message", content, display: true },
           { triggerTurn: true, deliverAs: "followUp" },
         );
         if (isPromiseLike(delivery)) {
-          delivery.catch((error: unknown) => {
-            const stale = isStaleContextError(error);
-            if (stale) this.forget(api);
-            this.opts.outputs.onMeshDeliveryFailure?.(stale ? "stale_session" : "send_failed");
-          });
+          delivery.then(handoffSucceeded, handoffFailed);
+        } else {
+          handoffSucceeded();
         }
       } catch (error) {
-        const stale = isStaleContextError(error);
-        if (stale) this.forget(api);
-        this.opts.outputs.onMeshDeliveryFailure?.(stale ? "stale_session" : "send_failed");
+        handoffFailed(error);
       }
     });
+  }
+
+  private removePendingMeshBatch(batch: readonly PendingMeshMessage[]): void {
+    this.pendingMeshMessages.splice(0, batch.length);
+    for (const entry of batch) {
+      this.pendingMeshBytes -= entry.bytes;
+      const peer = this.pendingMeshByPeer.get(entry.peerId);
+      if (!peer) continue;
+      const frames = peer.frames - 1;
+      const bytes = peer.bytes - entry.bytes;
+      if (frames === 0) this.pendingMeshByPeer.delete(entry.peerId);
+      else this.pendingMeshByPeer.set(entry.peerId, { frames, bytes });
+    }
   }
 
   private clearPendingMeshMessages(): void {

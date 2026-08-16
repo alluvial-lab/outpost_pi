@@ -48,3 +48,7 @@ buffer bound enforced; stale-session flush suppressed. Cite upstream sha.
 - Verification: `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build` passed (56 files, 985 passed, 3 skipped). Focused mesh/projection tests passed (51 tests).
 - Deviations: upstream root-level arrays/timers were not copied; batching is one SDK custom message rather than several messages with only the last triggering, which gives the required single turn trigger and a simpler exactly-once boundary while preserving each envelope's formatted id/from/re metadata.
 - Adjacent issue noted: the unrelated audit-rotation E2E cases remain timing-sensitive under full-suite load (one run observed the active file at the ceiling plus one byte; its focused rerun and the subsequent complete gate passed). No test was weakened or changed.
+
+### Review closure
+
+- Mesh batches remain admitted and fully accounted until SDK handoff succeeds. Synchronous throws and asynchronous non-stale rejections retain the batch for the next settled boundary; stale-context rejection evicts only that batch and its stale capability, and lifecycle epochs suppress replacement-session retries.

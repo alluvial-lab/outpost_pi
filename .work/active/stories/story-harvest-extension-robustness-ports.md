@@ -59,3 +59,8 @@ cite upstream shas in the commit message.
 - Verification: `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build` passed (56 files, 982 passed, 3 skipped). The first full run exposed the pre-existing timing-sensitive audit-rotation test without its `.1` file; its focused rerun passed, and the complete gate then passed on rerun.
 - Deviations: the print guard uses authoritative `ctx.mode === "print"` and retains the upstream argv check as compatibility fallback; no runtime-coordinator, peer-locking, or O_EXCL mint behavior was replaced.
 - Adjacent issues parked: none.
+
+### Review closure
+
+- Keyring creation now reuses one candidate across retries and serializes raw native writes past caller-facing timeouts, so a delayed completion cannot overwrite a newer returned identity.
+- The destructive identity-mint guard now reads `peers.json` strictly: only absence or a valid empty roster permits minting; malformed/unreadable state fails closed unless the explicit file-identity escape hatch is set.
