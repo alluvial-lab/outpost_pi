@@ -1,7 +1,7 @@
 ---
 id: feature-upstream-remote-pi-harvest
 kind: feature
-stage: review
+stage: done
 tags: [pi-extension, app, relay, cockpit]
 parent: null
 depends_on: []
@@ -81,6 +81,34 @@ Each story verifies its port against our architecture (no direct
 cherry-picks where our lineage diverged), runs the owning subproject's
 command set, and cites the upstream sha in its commit message for
 provenance.
+
+## Review record (2026-08-16)
+
+**Standard weight, one independent pass** — fresh-context cross-model
+reviewer (gpt-5.6-sol). Verdict: Request changes → **closed done** after
+receiver-confirmed blocker fixes (standard policy: no second pass).
+
+- **Blockers (4/4 confirmed by adjudication, fixed + verified):**
+  1. Timed-out keyring write racing retries → persisted identity ≠ returned
+     identity — fixed in `1b098eb9` (stable candidate per creation attempt +
+     serialized raw writes).
+  2. Roster mint guard failing open on malformed/unreadable `peers.json` —
+     fixed in `1b098eb9` (strict read; only absent/valid-empty permits mint;
+     force-escape intact).
+  3. Mesh batch discarded before SDK handoff succeeded — fixed in `1b098eb9`
+     (retain prefix until success; retry at next settle; stale evicts).
+  4. Authoritative idle not clearing stale streaming UI — fixed in `87ea7307`
+     (session-keyed streaming suppression; replacement-session streams
+     preserved).
+- **Important (2): parked unbound** → `gate-review-reconnect-latch-test-hardening`,
+  `gate-review-cockpit-bootstrap-wiring-test`.
+- **Rejected proposals (2):** relay union cache staleness/poisoning and iOS
+  silent-identity-replacement — both unsupported on inspection (reviewer
+  self-rejected with evidence; adjudication concurs).
+- Post-fix verification: pi-extension typecheck + 994 tests + build green;
+  app analyze + 881 tests (concurrency=2) green. Known flakes: extension
+  audit-rotation timing under uncapped load, app sync-test isolation — both
+  pass focused/isolated; pre-existing, documented in story bodies.
 
 ## Implementation summary (2026-08-16)
 
