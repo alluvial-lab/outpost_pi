@@ -29,6 +29,8 @@ TIMELINE_TAGS = {
     "route",
 }
 SWALLOW_ID = "cli_01a01fd3-a3a7-760a-9c9e-ecf9676240fd"
+SWALLOW_TRACKING_ID = "story-app-send-swallowed-session-identity-unavailable"
+BLANK_CHAT_TRACKING_ID = "backlog-app-blank-chat-direct-open"
 FIXTURE = (
     Path(__file__).resolve().parent
     / "fixtures"
@@ -141,14 +143,24 @@ def _clusters(rows: Iterable[dict[str, Any]], window_seconds: int = 60) -> list[
     return clusters
 
 
-def _anomalies(capture: Capture) -> tuple[list[dict[str, Any]], list[list[dict[str, Any]]]]:
+def _anomalies(
+    capture: Capture,
+) -> tuple[list[dict[str, Any]], list[list[dict[str, Any]]], list[dict[str, Any]]]:
     swallow = [
         row
         for row, echoed in _send_correlations(capture.rows)
         if row.get("blocked") is True and not echoed
     ]
+    # A projection-empty route is the content-free signature of the known
+    # direct-open hydrate race. It remains an expected finding until the linked
+    # product bug is fixed, but must never disappear silently from triage.
+    blank_chat = [
+        row
+        for row in _ordered_rows(capture.rows)
+        if row.get("tag") == "route" and row.get("phase") == "projection-empty"
+    ]
     churn = [cluster for cluster in _clusters(capture.rows) if len(cluster) >= 2]
-    return swallow, churn
+    return swallow, churn, blank_chat
 
 
 def _span(rows: Iterable[dict[str, Any]]) -> tuple[datetime | None, datetime | None]:
@@ -166,7 +178,7 @@ def summarize(capture: Capture) -> tuple[str, bool]:
     counts = Counter(row.get("tag", "?") for row in rows)
     correlations = _send_correlations(rows)
     no_echo = [(row, echoed) for row, echoed in correlations if not echoed]
-    swallow, churn = _anomalies(capture)
+    swallow, churn, blank_chat = _anomalies(capture)
 
     lines = [f"Capture: {capture.path}", f"Rows: {len(rows)}"]
     if start is None or end is None:
@@ -188,11 +200,23 @@ def summarize(capture: Capture) -> tuple[str, bool]:
             f"id={_safe(row.get('id'))} blocked={_safe(row.get('blocked', False))}"
         )
     if swallow:
-        lines.append(f"  SWALLOW signature: {len(swallow)} blocked send(s) without echo")
+        lines.append(
+            f"  SWALLOW signature: {len(swallow)} blocked send(s) without echo "
+            f"[{SWALLOW_TRACKING_ID}]"
+        )
         for row in swallow:
             lines.append(f"    id={row.get('id')}")
     else:
         lines.append("  SWALLOW signature: none")
+
+    lines.append("Blank-chat signature:")
+    if blank_chat:
+        lines.append(
+            f"  BLANK CHAT signature: {len(blank_chat)} projection-empty route(s) "
+            f"[{BLANK_CHAT_TRACKING_ID}]"
+        )
+    else:
+        lines.append("  BLANK CHAT signature: none")
 
     lifecycle = Counter(
         f"{row.get('operation', '?')}/{row.get('reason', '?')}"
@@ -227,14 +251,15 @@ def summarize(capture: Capture) -> tuple[str, bool]:
         )
         lines.append(f"    cluster {index}: {len(cluster)} event(s); {detail}")
 
-    anomaly = bool(swallow or churn)
+    anomaly = bool(swallow or churn or blank_chat)
     lines.append("Anomalies: " + ("FOUND" if anomaly else "none"))
     return "\n".join(lines), anomaly
 
 
 def timeline(capture: Capture) -> tuple[str, bool]:
-    swallow, churn = _anomalies(capture)
+    swallow, churn, blank_chat = _anomalies(capture)
     swallow_ids = {row.get("id") for row in swallow}
+    blank_chat_rows = {id(row) for row in blank_chat}
     lines = [f"Timeline: {capture.path}"]
     for row in _ordered_rows(capture.rows):
         tag = row.get("tag")
@@ -258,11 +283,15 @@ def timeline(capture: Capture) -> tuple[str, bool]:
             if key in row:
                 fields.append(f"{key}={_safe(row[key])}")
         marker = " [SWALLOW]" if row.get("id") in swallow_ids else ""
+        if id(row) in blank_chat_rows:
+            marker += f" [BLANK CHAT: {BLANK_CHAT_TRACKING_ID}]"
         lines.append(f"{_fmt_ts(row)} {tag}{marker}" + (" " + " ".join(fields) if fields else ""))
     lines.append(
-        f"Timeline anomalies: swallow={len(swallow)}; churn_clusters={len(churn)}"
+        "Timeline anomalies: "
+        f"swallow={len(swallow)}; blank_chat={len(blank_chat)}; "
+        f"churn_clusters={len(churn)}"
     )
-    return "\n".join(lines), bool(swallow or churn)
+    return "\n".join(lines), bool(swallow or churn or blank_chat)
 
 
 def run_selftest() -> int:
@@ -270,7 +299,7 @@ def run_selftest() -> int:
         print(f"selftest: FAIL missing fixture {FIXTURE}", file=sys.stderr)
         return 1
     capture = load_capture(FIXTURE)
-    swallow, churn = _anomalies(capture)
+    swallow, churn, blank_chat = _anomalies(capture)
     timeout_count = sum(
         row.get("tag") == "lifecycleFailure"
         and row.get("operation") == "retryConnect"
