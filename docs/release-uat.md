@@ -39,9 +39,9 @@ session-hydrate lifecycle end to end on a real deploy:
 4. **App scans → `pair_ok` returns** (no 30s timeout).
 5. **Session transcript hydrates** in the app — messages stream both
    directions; an outbound user message produces an agent response on the app.
-6. **Scanner boundary smoke on a real device** (mobile_scanner v7 native
+6. **Scanner boundary smoke** (mobile_scanner v7 native
    boundary; added 2026-08-16, first executable at next phone-attached
-   checkpoint): `cd app && flutter test integration_test/mobile_scanner_boundary_test.dart -d <android-or-ios-device> --tags e2e`.
+   checkpoint): on the local emulator `scripts/emulator-scanner-smoke.sh` (boot line + prereqs in story-ci-android-emulator-test-job); on a real phone `cd app && flutter test integration_test/mobile_scanner_boundary_test.dart -d <android-or-ios-device> --tags e2e`.
 7. **Phosphor Beacon visual smoke on a real device** (dark + light modes;
    pending since v0.5.0 — themed screenshot retake for the site is tracked by
    `feature-public-flip-branding-and-exposure`): verify app theme renders the
