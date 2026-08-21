@@ -1,7 +1,7 @@
 ---
 id: feature-e2e-live-oddities-suite
 kind: feature
-stage: implementing
+stage: review
 tags: [app, pi-extension, relay, testing]
 parent: null
 depends_on: []
@@ -129,3 +129,20 @@ each captured/confirmed defect adds a regression scenario to the suite.
   way) — infra story verifies first; fallback = settings-injectable URL.
 - pi-host control gaps discovered mid-build → extend the adapter server
   (it is test support; additive endpoints are in-scope for infra).
+
+## Implementation summary (2026-08-21)
+
+All 5 child stories done via 4 workers (capture-triage luna, harness-infra sol,
+golden+failure sol, chaos luna); orchestrator roll-up.
+
+| story | commit | verification |
+|---|---|---|
+| capture-triage | 1a43ac80 | analyze + unit tests + triage selftest reproducing the capture-swallow analysis |
+| harness-infra | 55dbefaf | run-live.sh end-to-end on real emulator (QR pair via analyzeImage, all 6 fault primitives, capture pull) |
+| golden | 0bc3d1bf | 3 golden device tests × 2 consecutive green runs |
+| failure | 3771a3dc | 3 green + 2 skip-linked (tracking ids cited) × 2 runs |
+| chaos | fc0819ef | scheduler determinism unit tests + 10-min soak: zero unexpected violations, 5 attributed losses, honesty exit-3 on absent expected finding |
+
+QR-config deviation resolved: canonical QR omits relay URL; the lane injects
+the reversed localhost URL via production Preferences (no seam). Soak report:
+`.work/session-notes/live-soak-20260821T214326Z-*/report.md`.
