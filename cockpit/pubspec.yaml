@@ -50,7 +50,7 @@ dependencies:
   flutter_modular: ^7.1.0
 
   # Plan 37 — folder selection (NSOpenPanel on macOS) to open a project.
-  file_picker: ^8.1.2
+  file_picker: ^11.0.3
 
   # Wave 2 — local persistence of projects (saved folder = project).
   hive: ^2.2.3
