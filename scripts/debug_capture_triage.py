@@ -143,6 +143,57 @@ def _clusters(rows: Iterable[dict[str, Any]], window_seconds: int = 60) -> list[
     return clusters
 
 
+def _same_route_projection(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if left.get("room") != right.get("room"):
+        return False
+    left_session = left.get("sessionIdTail")
+    right_session = right.get("sessionIdTail")
+    return not (
+        isinstance(left_session, str)
+        and isinstance(right_session, str)
+        and left_session != right_session
+    )
+
+
+def _blank_chat_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Find empty hydrates that lost known history and never rendered it."""
+    ordered = _ordered_rows(rows)
+    result: list[dict[str, Any]] = []
+    for index, row in enumerate(ordered):
+        if row.get("tag") != "route" or row.get("phase") != "projection-empty":
+            continue
+        history_existed = any(
+            _same_route_projection(candidate, row)
+            and (
+                (
+                    candidate.get("tag") == "route"
+                    and candidate.get("phase") == "projection-ready"
+                    and isinstance(candidate.get("messageCount"), int)
+                    and candidate["messageCount"] > 0
+                )
+                or (
+                    candidate.get("tag") == "sessionSync"
+                    and isinstance(candidate.get("messageCount"), int)
+                    and candidate["messageCount"] > 0
+                )
+            )
+            for candidate in ordered[:index]
+        )
+        if not history_existed:
+            continue
+        rendered_after_hydrate = any(
+            candidate.get("tag") == "route"
+            and candidate.get("phase") == "projection-ready"
+            and isinstance(candidate.get("messageCount"), int)
+            and candidate["messageCount"] > 0
+            and _same_route_projection(candidate, row)
+            for candidate in ordered[index + 1 :]
+        )
+        if not rendered_after_hydrate:
+            result.append(row)
+    return result
+
+
 def _anomalies(
     capture: Capture,
 ) -> tuple[list[dict[str, Any]], list[list[dict[str, Any]]], list[dict[str, Any]]]:
@@ -151,14 +202,10 @@ def _anomalies(
         for row, echoed in _send_correlations(capture.rows)
         if row.get("blocked") is True and not echoed
     ]
-    # A projection-empty route is the content-free signature of the known
-    # direct-open hydrate race. It remains an expected finding until the linked
-    # product bug is fixed, but must never disappear silently from triage.
-    blank_chat = [
-        row
-        for row in _ordered_rows(capture.rows)
-        if row.get("tag") == "route" and row.get("phase") == "projection-empty"
-    ]
+    # Empty is legitimate at activation. The bug signature requires prior
+    # content-free proof that this session had history and no later non-empty
+    # projection showing that the cold hydrate eventually rendered it.
+    blank_chat = _blank_chat_rows(capture.rows)
     churn = [cluster for cluster in _clusters(capture.rows) if len(cluster) >= 2]
     return swallow, churn, blank_chat
 
@@ -307,8 +354,25 @@ def run_selftest() -> int:
         for row in capture.rows
     )
     ids = {row.get("id") for row in swallow}
+    legitimate_empty = Capture(
+        path=Path("selftest-legitimate-empty"),
+        rows=(
+            {
+                "tag": "route",
+                "ts": "2026-08-21T00:00:00Z",
+                "room": "new-room",
+                "phase": "projection-empty",
+                "messageCount": 0,
+            },
+        ),
+        malformed=0,
+    )
     checks = {
         "known blocked swallow": SWALLOW_ID in ids,
+        "known blank chat after existing history": bool(blank_chat),
+        "legitimate activation empty is ignored": not _blank_chat_rows(
+            legitimate_empty.rows
+        ),
         "89 retryConnect TimeoutExceptions": timeout_count == 89,
         "churn cluster": bool(churn),
     }

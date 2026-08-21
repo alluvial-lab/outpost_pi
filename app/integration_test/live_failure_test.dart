@@ -12,6 +12,8 @@ import 'package:path_provider/path_provider.dart';
 
 import 'support/live_device_harness.dart';
 
+const _phase = String.fromEnvironment('E2E_LIVE_PHASE');
+const _skipBlankChatKnownBug = true;
 const _swallowPrompt = 'identity-window message must stay visible';
 const _offlinePrompt = 'offline message held for resend';
 const _beforeRestartPrompt = 'message before extension restart';
@@ -38,28 +40,28 @@ void main() {
           () async => harness.connection.status is! StatusOnline ? true : null,
           description: 'forced reconnect edge',
         );
+        final captureBaseline = (await harness.captureEvents()).length;
         requestLiveFault('net_clear');
-        await eventually<bool>(
+        final windowEvidence = await eventually<Map<String, dynamic>>(
           tester,
-          () async => harness.connection.status is StatusOnline ? true : null,
-          description: 'online edge before canonical identity settles',
+          () async {
+            if (harness.connection.status is! StatusOnline) return null;
+            final fresh = (await harness.captureEvents()).skip(captureBaseline);
+            final routeEvents = fresh.where((event) => event['tag'] == 'route');
+            if (routeEvents.isEmpty) return null;
+            final latest = routeEvents.last;
+            return latest['phase'] == 'entry' &&
+                    !latest.containsKey('sessionIdTail')
+                ? latest
+                : null;
+          },
+          description: 'observable online route without canonical identity',
         );
+        expect(windowEvidence['phase'], 'entry');
+        expect(windowEvidence, isNot(contains('sessionIdTail')));
 
         await harness.sync.sendMessage(_swallowPrompt);
-        await eventually<bool>(
-          tester,
-          () async =>
-              find.text(_swallowPrompt).evaluate().isNotEmpty ? true : null,
-          description: 'visible immediate send bubble',
-        );
-        expect(
-          find.text('sending…').evaluate().isNotEmpty ||
-              find.text('not delivered').evaluate().isNotEmpty ||
-              (await harness.transcriptRows()).any(
-                (row) => row.text == _swallowPrompt && !row.pending,
-              ),
-          isTrue,
-        );
+        await harness.waitForSubmissionVisibility(tester, _swallowPrompt);
       } finally {
         await harness.close(tester);
       }
@@ -69,38 +71,31 @@ void main() {
   );
 
   /// Invariant 2: a direct cold chat route never hides persisted history.
-  // The fix story removes this skip; keep the hydrate assertion intact for
-  // backlog-app-blank-chat-direct-open.
+  // The fix story flips _skipBlankChatKnownBug; keep the phase gate and
+  // hydrate assertion intact for backlog-app-blank-chat-direct-open.
   testWidgets(
     'cold direct-open chat renders existing transcript history',
     (tester) async {
-      final harness = await LiveDeviceHarness.create(restorePair: false);
+      final harness = await LiveDeviceHarness.create(restorePair: true);
       try {
-        await harness.pair(tester);
+        // run-live.sh force-stops the preceding failure-main process before
+        // launching this phase. mountChat is therefore the first/direct route
+        // in a fresh app process, backed by the transcript persisted in main.
         await harness.mountChat(tester);
         await eventually<bool>(
           tester,
-          () async =>
-              find.text('e2e persisted transcript').evaluate().isNotEmpty
+          () async => find.text(_beforeRestartReply).evaluate().isNotEmpty
               ? true
               : null,
-          description: 'seeded transcript before cold route',
+          description: 'persisted history on direct cold process route',
         );
-        await harness.unmountChat(tester);
-        await harness.mountChat(tester);
-        await eventually<bool>(
-          tester,
-          () async =>
-              find.text('e2e persisted transcript').evaluate().isNotEmpty
-              ? true
-              : null,
-          description: 'history after direct cold route mount',
-        );
+        expect(find.text(_beforeRestartPrompt), findsOneWidget);
+        expect(find.text(_beforeRestartReply), findsOneWidget);
       } finally {
         await harness.close(tester);
       }
     },
-    skip: true,
+    skip: _phase != 'blank-cold' || _skipBlankChatKnownBug,
     timeout: const Timeout(Duration(minutes: 5)),
   );
 
@@ -183,6 +178,7 @@ void main() {
         await harness.close(tester);
       }
     },
+    skip: _phase == 'blank-cold',
     timeout: const Timeout(Duration(minutes: 6)),
   );
 
@@ -240,6 +236,7 @@ void main() {
         await harness.close(tester);
       }
     },
+    skip: _phase == 'blank-cold',
     timeout: const Timeout(Duration(minutes: 6)),
   );
 
@@ -307,6 +304,7 @@ void main() {
         await harness.close(tester);
       }
     },
+    skip: _phase == 'blank-cold',
     timeout: const Timeout(Duration(minutes: 6)),
   );
 }

@@ -1,4 +1,8 @@
+{"tag":"route","ts":"2026-08-20T15:37:00.000000Z","room":"new-room","phase":"projection-empty","messageCount":0}
+{"tag":"route","ts":"2026-08-20T15:38:00.000000Z","room":"SF_DCbXsmreE","phase":"projection-ready","sessionIdTail":"b349a5ef","messageCount":2}
 {"tag":"msgSend","ts":"2026-08-20T15:39:18.823750Z","id":"cli_01a01fd3-a3a7-760a-9c9e-ecf9676240fd","blocked":true}
+{"tag":"route","ts":"2026-08-20T15:39:19.000000Z","room":"SF_DCbXsmreE","phase":"entry","sessionIdTail":"b349a5ef"}
+{"tag":"route","ts":"2026-08-20T15:39:20.000000Z","room":"SF_DCbXsmreE","phase":"projection-empty","sessionIdTail":"b349a5ef","messageCount":0}
 {"tag":"lifecycleFailure","ts":"2026-08-16T21:49:08.443073Z","operation":"retryConnect","reason":"TimeoutException","peerTail":"YKC6UmHU","room":"SF_DCbXsmreE","retryScheduled":true}
 {"tag":"lifecycleFailure","ts":"2026-08-16T21:49:21.494842Z","operation":"retryConnect","reason":"TimeoutException","peerTail":"YKC6UmHU","room":"SF_DCbXsmreE","retryScheduled":true}
 {"tag":"lifecycleFailure","ts":"2026-08-16T21:49:38.552069Z","operation":"retryConnect","reason":"TimeoutException","peerTail":"YKC6UmHU","room":"SF_DCbXsmreE","retryScheduled":true}
