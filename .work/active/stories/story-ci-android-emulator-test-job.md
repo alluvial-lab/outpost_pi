@@ -1,7 +1,7 @@
 ---
 id: story-ci-android-emulator-test-job
 kind: story
-stage: drafting
+stage: review
 tags: [app, testing, workflow]
 parent: null
 depends_on: []
@@ -75,3 +75,28 @@ integration tests (Phosphor Beacon visual smoke, pairing e2e against relay
 YAML parse + zero mutable action refs; first real run on push (expect the
 scanner smoke green; emulator flakiness, if any, gets addressed by retry/
 boot-hardening, not by tagging the test out).
+
+## Implementation (2026-08-20)
+
+`app-e2e (android emulator)` job added to ci.yml — 10 steps, exactly per
+design: needs [changes, app] (serial after unit), KVM gate fails red if
+/dev/kvm unwritable (no software-emulation fallback), SDK install + AVD
+outpost34 (pixel_6, android-34 google_apis x86_64), headless boot with the
+proven local flag set + one retry then red, `scripts/emulator-scanner-smoke.sh`
+reused verbatim for the grant-loop harness (no duplication), always() kill,
+Gradle heap capped via ORG_GRADLE_PROJECT_org.gradle.jvmargs=3G. All action
+pins copied from existing in-repo verified usage (checkout v7.0.1,
+setup-java v5.7.0 temurin 17, flutter-action v2.23.0) — zero new mutable refs.
+
+Verification: YAML parses (job/steps/needs introspected); 21 pinned / 0
+mutable refs repo-wide; boot-retry run block passes bash -n; emulator-scanner-
+smoke.sh is the same script that produced 3 consecutive green local runs on
+the identical image+AVD+flags. **First live execution happens on push**
+(same honesty boundary as all release workflows); boot flakiness, if any,
+gets boot-hardening, never a silent skip.
+
+### Bounded inline review (2026-08-20)
+PASS — pins verbatim from verified in-repo usage; recipe is the
+locally-proven one (25s boot, 3× green smoke); fail-loud posture matches the
+story's "retries-or-fail, never skip" requirement; script reuse over
+duplication.
