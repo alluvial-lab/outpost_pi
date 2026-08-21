@@ -1,7 +1,7 @@
 ---
 id: story-ci-android-emulator-test-job
 kind: story
-stage: review
+stage: done
 tags: [app, testing, workflow]
 parent: null
 depends_on: []
