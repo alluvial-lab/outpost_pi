@@ -17,6 +17,7 @@ import {
   type ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
 import { roomIdFor } from "../../src/rooms.js";
+import { defaultAgentName } from "../../src/session/local_config.js";
 
 export interface PiHostStatus {
   readonly generation: string;
@@ -43,7 +44,12 @@ type ProductionModule = {
     state(): "idle" | "started" | "paired";
     /** The room this Pi actually registered with the relay; null while idle. */
     roomId(): string | null;
+    /** The effective name used to derive that room. */
+    name(): string | null;
   };
+  _getLockedNameForTest(): string | null;
+  _resetCwdLockForTest(): void;
+  _startRelayForTest(ctx: unknown): Promise<void>;
 };
 
 type LoadExtensionFromFactory = (
@@ -83,11 +89,12 @@ export class E2ePiHostRuntime {
     cwd: string;
     seededTranscriptText: string;
     preserveState?: boolean;
+    agentName?: string;
   }): Promise<E2ePiHostRuntime> {
     process.env.OUTPOST_PI_RELAY = options.relayUrl;
     process.env.OUTPOST_PI_DIRECT_CONFIG = JSON.stringify({
-      agent_name: "e2e-agent",
-      auto_start_relay: true,
+      agent_name: options.agentName ?? defaultAgentName(options.cwd),
+      auto_start_relay: false,
     });
     process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY = "1";
 
@@ -108,7 +115,9 @@ export class E2ePiHostRuntime {
     mkdirSync(options.cwd, { recursive: true });
 
     const sessionDir = join(homedir(), ".pi", "e2e-sessions");
-    const sessionManager = SessionManager.create(options.cwd, sessionDir);
+    const sessionManager = options.preserveState
+      ? SessionManager.continueRecent(options.cwd, sessionDir)
+      : SessionManager.create(options.cwd, sessionDir);
     if (!options.preserveState) {
       sessionManager.appendMessage({
         role: "user",
@@ -161,7 +170,11 @@ export class E2ePiHostRuntime {
         || typeof sessionContext.sendUserMessage === "function",
     );
     await runner.emit({ type: "session_start", reason: "startup" });
-    await instance.invokeOutpostPi("");
+    // The live app lane does not exercise the local UDS mesh. Relay-only
+    // startup avoids manufacturing a broker collision suffix in this narrow
+    // single-process adapter, keeping the production room derivation stable
+    // across preserving respawns.
+    await production._startRelayForTest(runner.createContext());
     return instance;
   }
 
@@ -179,7 +192,8 @@ export class E2ePiHostRuntime {
       // turned every `*.roomId == status.roomId` e2e assertion red whenever a
       // collision occurred. The idle fallback is the no-mesh derivation (config
       // agent name, no suffix possible) and is never the asserted state.
-      roomId: this.production.outpostPiTestHarness.roomId() ?? roomIdFor(this.cwd, "e2e-agent"),
+      roomId: this.production.outpostPiTestHarness.roomId()
+        ?? roomIdFor(this.cwd, defaultAgentName(this.cwd)),
       relayConnected: state !== "idle",
       sessionContextHasMessageActions: this.sessionContextHasMessageActions,
     };
@@ -219,6 +233,16 @@ export class E2ePiHostRuntime {
 
   turnControlStatus(): PiHostTurnControlStatus {
     return { phase: this.turnControlPhase };
+  }
+
+  /** Gracefully leave the mesh and return the assigned name for respawn. */
+  async preparePreservingRestart(): Promise<string> {
+    const assignedName = this.production.outpostPiTestHarness.name()
+      ?? this.production._getLockedNameForTest()
+      ?? defaultAgentName(this.cwd);
+    await this.invokeOutpostPi("stop");
+    this.production._resetCwdLockForTest();
+    return assignedName;
   }
 
   async dispose(): Promise<void> {

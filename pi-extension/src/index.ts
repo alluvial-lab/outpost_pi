@@ -3127,6 +3127,10 @@ export const outpostPiTestHarness: OutpostPiTestHarness = createOutpostPiTestHar
   stop: (ctx) => stopForTest(ctx),
   state: () => getStateForTest(),
   roomId: () => getRoomIdForTest(),
+  name: () => {
+    const cwd = _lastCtx?.cwd ?? _myRoomMeta?.cwd;
+    return cwd ? _displayName(cwd) : null;
+  },
   routeClientMessage: (message, ctx) => routeClientMessageForTest(message, ctx),
 });
 

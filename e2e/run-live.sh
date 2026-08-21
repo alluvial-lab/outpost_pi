@@ -112,6 +112,10 @@ apply_fault_request() {
       [[ "$state" == on || "$state" == off ]] || return 2
       [[ -z "${duration:-}" ]] || return 2
       app_airplane "$state"
+      # adb reverse keeps emulator localhost reachable even in Android airplane
+      # mode. Mirror the radio cut at the app-facing proxy so this lane observes
+      # the same transport loss a physical device would.
+      if [[ "$state" == on ]]; then net_fault down; else net_clear; fi
       ;;
     *)
       printf 'unsupported live fault request: %s\n' "$request" >&2

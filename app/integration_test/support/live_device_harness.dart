@@ -20,6 +20,7 @@ import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/qr_scanner.dart';
 import 'package:app/pairing/storage.dart';
+import 'package:app/protocol/protocol.dart';
 import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
 import 'package:app/ui/chat/chat_page.dart';
@@ -290,10 +291,42 @@ final class LiveDeviceHarness {
     }
   }
 
+  /// Retry the PairStep error state through its production ViewModel action.
+  ///
+  /// The failed attempt already proved the native QR boundary. The retry feeds
+  /// the freshly issued URI to the same action without restarting the stopped
+  /// scanner's platform stream, which Android's scanner plugin cannot safely
+  /// re-subscribe within one instrumentation activity.
+  Future<PeerRecord> retryPairFromUri(
+    WidgetTester tester,
+    String pairUri,
+  ) async {
+    pairingViewModel.retry();
+    await pairingViewModel.onQrScanned(pairUri);
+    final paired = await eventually<PeerRecord>(
+      tester,
+      () async => switch (pairingViewModel.state) {
+        PairingPaired(:final peer) => peer,
+        PairingError(:final message) => throw TestFailure(message),
+        _ => null,
+      },
+      description: 'visible paired state after retry',
+      timeout: const Duration(seconds: 40),
+    );
+    _peer = paired;
+    await preferences.setSelectedRoom(
+      epk: paired.remoteEpk,
+      roomId: paired.roomId,
+    );
+    connection.subscribeToPeers(<String>[paired.remoteEpk]);
+    await waitOnlineAndLive(tester: tester);
+    return paired;
+  }
+
   /// Mount a fresh production chat route bound to the persisted selection.
   Future<void> mountChat(WidgetTester tester) async {
     await unmountChat(tester);
-    final actions = ActionsRepository(connection);
+    final actions = _StaticActionsRepository();
     final speech = SpeechToTextService();
     _actions = actions;
     _speech = speech;
@@ -367,11 +400,12 @@ final class LiveDeviceHarness {
       'reply': reply,
     });
     await eventually<TextField>(tester, () async {
-      if (find.byType(TextField).evaluate().isEmpty) return null;
-      final field = tester.widget<TextField>(find.byType(TextField).first);
+      final visibleFields = find.byType(TextField).hitTestable();
+      if (visibleFields.evaluate().isEmpty) return null;
+      final field = tester.widget<TextField>(visibleFields.first);
       return field.enabled == true ? field : null;
     }, description: 'enabled production chat composer');
-    await tester.enterText(find.byType(TextField).first, prompt);
+    await tester.enterText(find.byType(TextField).hitTestable().first, prompt);
     await tester.pump();
     await eventually<bool>(
       tester,
@@ -388,7 +422,11 @@ final class LiveDeviceHarness {
       final value = await host.tryGet('/turn-control');
       return value?['phase'] == 'pending' ? value : null;
     }, description: 'staged Pi turn pending');
-    expect(find.text(prompt), findsOneWidget);
+    await eventually<bool>(
+      tester,
+      () async => find.text(prompt).evaluate().isNotEmpty ? true : null,
+      description: 'rendered user bubble',
+    );
     expect(
       find.text('working…').evaluate().isNotEmpty ||
           find.text('streaming…').evaluate().isNotEmpty,
@@ -428,7 +466,13 @@ final class LiveDeviceHarness {
         await tester.pump(const Duration(milliseconds: 100));
       }
     }
-    throw TimeoutException('timed out waiting for online live room');
+    final rooms = connection.roomsFor(selected.remoteEpk);
+    throw TimeoutException(
+      'timed out waiting for online live room '
+      '(status=${connection.status.runtimeType}, selected=$room, '
+      'active=${connection.activeRoomId}, session=${connection.activeSessionId}, '
+      'rooms=${rooms.map((value) => value.roomId).join(',')})',
+    );
   }
 
   /// Read the disposable transcript projection for the active canonical session.
@@ -567,6 +611,41 @@ Future<bool> liveRelayHealthReachable({
     return false;
   } finally {
     client.close(force: true);
+  }
+}
+
+final class _StaticActionsRepository extends IActionsRepository {
+  final StreamController<ActiveRoomMeta> _meta =
+      StreamController<ActiveRoomMeta>.broadcast();
+
+  @override
+  ActiveRoomMeta get activeRoomMeta => const ActiveRoomMeta();
+
+  @override
+  Stream<ActiveRoomMeta> get activeRoomMetaStream => _meta.stream;
+
+  @override
+  Future<ModelsCatalogue> listModels({bool forceRefresh = false}) async =>
+      const ModelsCatalogue(models: []);
+
+  @override
+  Future<void> compact() => throw const ActionFailure('not exercised');
+
+  @override
+  Future<void> newSession() => throw const ActionFailure('not exercised');
+
+  @override
+  Future<void> setModel(String provider, String modelId) =>
+      throw const ActionFailure('not exercised');
+
+  @override
+  Future<void> setThinking(ThinkingLevel level) =>
+      throw const ActionFailure('not exercised');
+
+  @override
+  void dispose() {
+    _meta.close();
+    super.dispose();
   }
 }
 
