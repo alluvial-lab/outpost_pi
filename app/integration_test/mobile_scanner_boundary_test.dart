@@ -100,7 +100,10 @@ Future<void> _exerciseScanner(
     await tester.pumpWidget(
       MaterialApp(
         theme: buildDarkTheme(),
-        home: ChangeNotifierProvider.value(value: vm, child: child),
+        home: ChangeNotifierProvider<PairingViewModel>.value(
+          value: vm,
+          child: child,
+        ),
       ),
     );
 
@@ -150,8 +153,13 @@ Future<void> _exerciseScanner(
   }
 }
 
+/// Polls for a started [MobileScanner] under the emulated-camera budget:
+/// cold ML-Kit init on swiftshader graphics can take well over 12s, so the
+/// bound is 60s (pump × attempts below). Emulator runs additionally need the
+/// runtime grant after install:
+///   adb shell pm grant dev.kevoun.outpostpi android.permission.CAMERA
 Future<MobileScanner> _findStartedScanner(WidgetTester tester) async {
-  for (var attempt = 0; attempt < 120; attempt++) {
+  for (var attempt = 0; attempt < 600; attempt++) {
     final finder = find.byType(MobileScanner);
     if (finder.evaluate().isNotEmpty) {
       final scanner = tester.widget<MobileScanner>(finder);
@@ -160,7 +168,7 @@ Future<MobileScanner> _findStartedScanner(WidgetTester tester) async {
     }
     await tester.pump(const Duration(milliseconds: 100));
   }
-  throw TestFailure('MobileScanner did not start within 12 seconds');
+  throw TestFailure('MobileScanner did not start within 60 seconds');
 }
 
 /// Build the same URI shape emitted by the canonical pairing producer.
