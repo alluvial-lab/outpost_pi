@@ -72,3 +72,16 @@ live device e2e passed: integration_test/live_failure_test.dart + capture
 flutter analyze
 No issues found!
 ```
+
+### Review closure
+
+- The swallow regression now waits for capture-ring proof of the online route
+  state without canonical session identity before sending, then requires both
+  the rendered bubble and transcript-DB row. It remains skip-linked to
+  `story-app-send-swallowed-session-identity-unavailable`.
+- The blank-chat regression restores the persisted pair and mounts the direct
+  chat route only after `run-live.sh` force-stops the preceding app process. It
+  remains skip-linked to `backlog-app-blank-chat-direct-open`.
+- Review-closure device run: three scenarios green in `failure-main`; both known
+  regressions remained linked/skipped, and the force-stopped `blank-cold` phase
+  relaunched cleanly with the cold regression still explicitly skipped.

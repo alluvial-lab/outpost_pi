@@ -27,18 +27,28 @@ class ScheduleTests(unittest.TestCase):
             live_soak.build_schedule(1235, 600),
         )
 
-    def test_fault_holds_are_bounded_and_events_do_not_overlap(self) -> None:
+    def test_fault_holds_are_bounded_and_a_fault_overlaps_a_staged_turn(self) -> None:
         schedule = live_soak.build_schedule(42, 600)
-        previous_end = 0
         for event in schedule:
-            self.assertGreaterEqual(event.at_seconds, previous_end)
             if event.kind == "fault":
                 self.assertGreaterEqual(event.hold_seconds, live_soak.MIN_HOLD_SECONDS)
                 self.assertLessEqual(event.hold_seconds, live_soak.MAX_HOLD_SECONDS)
-                previous_end = event.at_seconds + event.hold_seconds
-            else:
-                previous_end = event.at_seconds
         self.assertTrue(all(event.at_seconds < 600 for event in schedule))
+
+        staged = next(event for event in schedule if event.name == "stage_turn")
+        resolved = next(event for event in schedule if event.name == "resolve_turn")
+        overlapping_faults = [
+            event
+            for event in schedule
+            if event.kind == "fault"
+            and staged.at_seconds < event.at_seconds < resolved.at_seconds
+        ]
+        self.assertTrue(overlapping_faults)
+
+    def test_short_duration_boundary_never_uses_an_empty_randint_range(self) -> None:
+        for duration in (2, 3, 33, 34, 35):
+            schedule = live_soak.build_schedule(7, duration)
+            self.assertTrue(all(event.at_seconds < duration for event in schedule))
 
 
 if __name__ == "__main__":

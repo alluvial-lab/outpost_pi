@@ -83,3 +83,16 @@ bash -n e2e/run-live.sh e2e/lib/faults.sh
 
 No Dart source was changed, so `flutter analyze` was not required. No unrelated
 product bug was fixed; the swallow absence remains an explicit follow-up signal.
+
+### Review closure
+
+- Fault schedules now include a staged turn spanning a fault, guard short-duration
+  RNG bounds, and assert recovered room selection from capture events.
+- Identity-window probes require both a rendered bubble and transcript-DB row;
+  the post-soak oracle quiesces and asserts the live final `working` state false.
+- Blank-chat triage now requires known prior history with no later hydrated render;
+  an activation-time empty projection alone is legitimate.
+- The full 10-minute soak is deferred to the next scheduled run. The 180-second
+  seed `20260821` closure run passed its device test and oracle with 13 events,
+  two attributed channel losses, the targeted swallow finding recorded, and zero
+  unexpected invariant violations.

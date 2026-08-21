@@ -490,6 +490,43 @@ final class LiveDeviceHarness {
     );
   }
 
+  /// Wait until one submitted prompt is both rendered and durably projected.
+  ///
+  /// Requiring both boundaries prevents identity-window regressions from
+  /// passing on a transient widget or on a row that never reached the route.
+  Future<void> waitForSubmissionVisibility(
+    WidgetTester tester,
+    String prompt, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    expect(
+      await submissionIsVisible(tester, prompt, timeout: timeout),
+      isTrue,
+      reason: 'submission must render and have a transcript-DB row',
+    );
+  }
+
+  /// Evaluate the bubble + transcript-DB predicate without hiding a timeout.
+  Future<bool> submissionIsVisible(
+    WidgetTester tester,
+    String prompt, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        if (find.text(prompt).evaluate().isNotEmpty &&
+            (await transcriptRows()).any((row) => row.text == prompt)) {
+          return true;
+        }
+      } on StateError {
+        // The identity-window predicate is false until a canonical ref exists.
+      }
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    return false;
+  }
+
   /// Export and decode the content-free app capture ring.
   Future<List<Map<String, dynamic>>> captureEvents() async {
     final text = await debugLog.export();

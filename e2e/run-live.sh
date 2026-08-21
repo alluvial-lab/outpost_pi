@@ -287,6 +287,10 @@ if [[ "$TEST_FILE" == integration_test/live_golden_test.dart ]]; then
   run_device_test cold-open
   "$ADB_BIN" -s "$ANDROID_SERIAL" shell am force-stop dev.kevoun.outpostpi
   run_device_test reconnect
+elif [[ "$TEST_FILE" == integration_test/live_failure_test.dart ]]; then
+  run_device_test failure-main
+  "$ADB_BIN" -s "$ANDROID_SERIAL" shell am force-stop dev.kevoun.outpostpi
+  run_device_test blank-cold
 else
   run_device_test
 fi

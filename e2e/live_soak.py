@@ -32,6 +32,10 @@ KNOWN_FINDINGS = {
     "swallow": "story-app-send-swallowed-session-identity-unavailable",
     "blank_chat": "backlog-app-blank-chat-direct-open",
 }
+# The in-process soak deterministically targets the reconnect identity window.
+# Process-level blank-chat targeting belongs to run-live.sh's force-stop lane;
+# incidental blank-chat evidence is still reported, but absence is not suspicious.
+SOAK_EXPECTED_FINDINGS = frozenset({"swallow"})
 
 FAULT_CLASSES = ("timeout", "slicer", "down")
 FAULT_WEIGHTS = (
@@ -94,8 +98,9 @@ def build_schedule(seed: int, duration_seconds: int) -> tuple[ScheduleEvent, ...
     """Build a bounded, deterministic schedule for one soak duration.
 
     ``random.Random`` is local and seeded, so this function does not mutate
-    process-global randomness.  Fault holds are always 2--60 seconds and
-    events never overlap; the serialized schedule is therefore a replay key.
+    process-global randomness. Fault holds are always 2--60 seconds. Planned
+    action/fault intervals may overlap so a staged turn can remain active while
+    a fault is applied; the serialized schedule is therefore a replay key.
     """
     if duration_seconds < MIN_HOLD_SECONDS:
         raise ValueError("duration must be at least 2 seconds")
@@ -103,21 +108,26 @@ def build_schedule(seed: int, duration_seconds: int) -> tuple[ScheduleEvent, ...
     rng = random.Random(seed)
     events: list[ScheduleEvent] = []
     cursor = 0
-    # Keep the two still-open reproducer paths in every normal soak. They are
-    # deliberately ordinary device actions, not hidden assertions: the oracle
-    # must report them when the corresponding product bug is still present.
+    # Keep the identity-window reproducer and blank-chat monitoring actions in
+    # every normal soak. Only the identity window is a deterministic expected
+    # finding here; real process-cold blank targeting lives in run-live.sh.
     if duration_seconds >= 34:
         events.extend(
             (
                 ScheduleEvent(5, "action", "send"),
+                ScheduleEvent(12, "action", "stage_turn"),
                 ScheduleEvent(15, "fault", "net_down", 3, "net_fault down", "net_clear"),
                 ScheduleEvent(18, "action", "send_identity_window"),
+                ScheduleEvent(22, "action", "resolve_turn"),
                 ScheduleEvent(28, "action", "navigation"),
             )
         )
         cursor = 34
     while cursor < duration_seconds:
-        gap = rng.randint(2, min(15, duration_seconds - cursor))
+        remaining_before_gap = duration_seconds - cursor
+        if remaining_before_gap < MIN_HOLD_SECONDS:
+            break
+        gap = rng.randint(MIN_HOLD_SECONDS, min(15, remaining_before_gap))
         cursor += gap
         if cursor >= duration_seconds:
             break
@@ -184,6 +194,7 @@ void main() {{
           }}
           await _runEvent(tester, harness, event);
         }}
+        await _assertPostSoakQuiescence(tester, harness);
       }} finally {{
         await harness.close(tester);
       }}
@@ -207,6 +218,10 @@ Future<void> _runEvent(
 ) async {{
   final kind = event['kind'];
   if (kind == 'fault') {{
+    final captureBaseline = (await harness.captureEvents()).length;
+    final expectedRoom = harness.connection.activeRoomId;
+    final expectedSelection = harness.preferences.selectedRoomRaw;
+    expect(expectedRoom, isNotNull);
     requestLiveFault(event['command']! as String);
     final hold = event['hold_seconds']! as int;
     if (event['name'] == 'app_background') {{
@@ -230,19 +245,33 @@ Future<void> _runEvent(
       await harness.connection.disconnect();
     }}
     if (clear is String) requestLiveFault(clear);
+    String? identityPrompt;
     if (clear != null || event['name'] == 'pi_restart') {{
       if (event['name'] == 'net_down') {{
-        // Deliberately overlap the reconnect handshake and send. This is the
-        // checked-in reproducer for the identity-window tracking item.
+        // Deliberately overlap reconnect and send, then require the same UI +
+        // transcript-DB visibility predicate as the skipped regression test.
+        identityPrompt =
+            'live soak identity-window probe ${{event['at_seconds']}}';
         final reconnecting = harness.connection.connectTo(harness.peer);
-        await harness.sync.sendMessage(
-          'live soak identity-window probe ${{event['at_seconds']}}',
-        );
+        await harness.sync.sendMessage(identityPrompt);
         await reconnecting;
       }} else {{
         await harness.connection.connectTo(harness.peer);
       }}
       await harness.waitOnlineAndLive(tester: tester);
+      if (identityPrompt != null &&
+          !await harness.submissionIsVisible(tester, identityPrompt)) {{
+        // This is a linked known finding, not a silent pass. The post-run
+        // oracle consumes the marker and reports the tracking id.
+        debugPrintSynchronously('SOAK_KNOWN_FINDING swallow');
+      }}
+      await _assertRecoveredRoom(
+        tester,
+        harness,
+        captureBaseline: captureBaseline,
+        expectedRoom: expectedRoom!,
+        expectedSelection: expectedSelection,
+      );
     }}
     return;
   }}
@@ -260,17 +289,42 @@ Future<void> _runEvent(
         prompt: 'live soak prompt $index',
         reply: 'live soak reply $index',
       );
-    case 'send_identity_window':
-      await harness.sync.sendMessage(
-        'live soak identity-window probe ${{event['at_seconds']}}',
+    case 'stage_turn':
+      await harness.host.post('/turn-control/defer-next', <String, Object>{{
+        'reply': 'live soak staged reply',
+      }});
+      await harness.sync.sendMessage('live soak staged prompt');
+      await eventually<Map<String, dynamic>>(tester, () async {{
+        final value = await harness.host.tryGet('/turn-control');
+        return value?['phase'] == 'pending' ? value : null;
+      }}, description: 'staged turn active before overlapping fault');
+      await harness.waitForSubmissionVisibility(
+        tester,
+        'live soak staged prompt',
       );
-      await tester.pump(const Duration(seconds: 2));
+    case 'resolve_turn':
+      await harness.host.post(
+        '/turn-control/resolve',
+        const <String, Object>{{}},
+      );
+      await eventually<bool>(
+        tester,
+        () async => find.text('live soak staged reply').evaluate().isNotEmpty
+            ? true
+            : null,
+        description: 'staged turn reply after fault recovery',
+      );
+    case 'send_identity_window':
+      final prompt =
+          'live soak identity-window probe ${{event['at_seconds']}}';
+      await harness.sync.sendMessage(prompt);
+      await harness.waitForSubmissionVisibility(tester, prompt);
     case 'navigation':
       await harness.unmountChat(tester);
       await harness.mountChat(tester);
     case 'cold_restart':
-      // A process-safe cold lifecycle cycle: background/foreground the real
-      // device app, then rebuild the production route and rehydrate it.
+      // Exercise a foreground lifecycle cycle here; process-level cold-open is
+      // covered by the force-stop failure lane in run-live.sh.
       requestLiveFault('app_background');
       await Future<void>.delayed(const Duration(seconds: 2));
       requestLiveFault('app_foreground');
@@ -278,6 +332,59 @@ Future<void> _runEvent(
       await harness.mountChat(tester);
       await harness.waitOnlineAndLive(tester: tester);
   }}
+}}
+
+Future<void> _assertRecoveredRoom(
+  WidgetTester tester,
+  LiveDeviceHarness harness, {{
+  required int captureBaseline,
+  required String expectedRoom,
+  required String? expectedSelection,
+}}) async {{
+  expect(harness.connection.activeRoomId, expectedRoom);
+  expect(harness.preferences.selectedRoomRaw, expectedSelection);
+  final roomEvents = await eventually<List<Map<String, dynamic>>>(
+    tester,
+    () async {{
+      final fresh = (await harness.captureEvents()).skip(captureBaseline);
+      final relevant = fresh
+          .where(
+            (row) =>
+                (row['tag'] == 'route' ||
+                    row['tag'] == 'connHydrate' ||
+                    row['tag'] == 'connStatus') &&
+                row['room'] is String,
+          )
+          .toList(growable: false);
+      return relevant.isEmpty ? null : relevant;
+    }},
+    description: 'capture evidence for recovered active room',
+  );
+  expect(
+    roomEvents.every((row) => row['room'] == expectedRoom),
+    isTrue,
+    reason: 'fault recovery must not select another room',
+  );
+}}
+
+Future<void> _assertPostSoakQuiescence(
+  WidgetTester tester,
+  LiveDeviceHarness harness,
+) async {{
+  await harness.waitOnlineAndLive(tester: tester);
+  final room = harness.connection.activeRoomId!;
+  await eventually<bool>(
+    tester,
+    () async =>
+        harness.connection.isRoomWorking(harness.peer.remoteEpk, room)
+            ? null
+            : true,
+    description: 'post-soak working=false after quiesce',
+  );
+  expect(
+    harness.connection.isRoomWorking(harness.peer.remoteEpk, room),
+    isFalse,
+  );
 }}
 '''
 
@@ -323,6 +430,51 @@ def _has_later_echo(rows: list[dict[str, Any]], message_id: str, sent_index: int
     )
 
 
+def _blank_chat_signature(rows: list[dict[str, Any]]) -> bool:
+    for index, row in enumerate(rows):
+        if row.get("tag") != "route" or row.get("phase") != "projection-empty":
+            continue
+        room = row.get("room")
+        session = row.get("sessionIdTail")
+
+        def same_projection(candidate: dict[str, Any]) -> bool:
+            candidate_session = candidate.get("sessionIdTail")
+            return candidate.get("room") == room and not (
+                isinstance(session, str)
+                and isinstance(candidate_session, str)
+                and session != candidate_session
+            )
+
+        history_existed = any(
+            same_projection(candidate)
+            and (
+                (
+                    candidate.get("tag") == "route"
+                    and candidate.get("phase") == "projection-ready"
+                    and isinstance(candidate.get("messageCount"), int)
+                    and candidate["messageCount"] > 0
+                )
+                or (
+                    candidate.get("tag") == "sessionSync"
+                    and isinstance(candidate.get("messageCount"), int)
+                    and candidate["messageCount"] > 0
+                )
+            )
+            for candidate in rows[:index]
+        )
+        rendered_later = any(
+            same_projection(candidate)
+            and candidate.get("tag") == "route"
+            and candidate.get("phase") == "projection-ready"
+            and isinstance(candidate.get("messageCount"), int)
+            and candidate["messageCount"] > 0
+            for candidate in rows[index + 1 :]
+        )
+        if history_existed and not rendered_later:
+            return True
+    return False
+
+
 def _evaluate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     swallow = False
     for index, row in enumerate(rows):
@@ -334,10 +486,7 @@ def _evaluate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ):
             swallow = True
             break
-    blank_chat = any(
-        row.get("tag") == "route" and row.get("phase") == "projection-empty"
-        for row in rows
-    )
+    blank_chat = _blank_chat_signature(rows)
     lost = [row for row in rows if row.get("tag") == "connChannelLost"]
     missing_causes = [
         row
@@ -346,16 +495,11 @@ def _evaluate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         or not row.get("cause")
         or row.get("cause") == "unknown"
     ]
-    working: dict[str, bool] = {}
-    for row in rows:
-        if row.get("tag") == "workingConv" and isinstance(row.get("room"), str):
-            working[row["room"]] = row.get("working") is True
     return {
         "swallow": swallow,
         "blank_chat": blank_chat,
         "lost_count": len(lost),
         "missing_causes": len(missing_causes),
-        "working_stuck_rooms": sorted(room for room, active in working.items() if active),
     }
 
 
@@ -400,16 +544,30 @@ def _write_report(
         f"- Runner exit: `{runner_status}`",
         f"- Schedule events: `{len(schedule)}`",
         "",
-        "## Expected findings while fixes remain open",
+        "## Known findings while fixes remain open",
         "",
-        "These are not silently accepted. Their presence is reported and linked; "
-        "their absence is suspicious and does not count as a green soak.",
+        "These are not silently accepted. Presence is reported and linked; absence "
+        "is suspicious only for findings deterministically targeted by this schedule.",
         "",
     ]
     for key, tracking_id in KNOWN_FINDINGS.items():
         present = any(evaluation.get(key) for evaluation in evaluations)
-        lines.append(f"- `{tracking_id}` ({key}): **{'PRESENT' if present else 'ABSENT'}**")
-    lines.extend(["", "## Invariant evaluation", ""])
+        expectation = "targeted" if key in SOAK_EXPECTED_FINDINGS else "incidental"
+        lines.append(
+            f"- `{tracking_id}` ({key}, {expectation}): "
+            f"**{'PRESENT' if present else 'ABSENT'}**"
+        )
+    lines.extend(
+        [
+            "",
+            "## Invariant evaluation",
+            "",
+            "- Send visibility: every identity-window probe requires both a rendered bubble and transcript-DB row.",
+            "- Blank chat: empty projection is anomalous only with prior history and no later hydrated render.",
+            "- Room selection: the device oracle checks capture room events and persisted selection after every recovery.",
+            "- Working convergence: the device oracle quiesces after the schedule and asserts the live final state is false.",
+        ]
+    )
     if unexpected:
         lines.extend(f"- **UNEXPECTED**: {item}" for item in unexpected)
     else:
@@ -460,21 +618,25 @@ def run(args: argparse.Namespace) -> int:
 
     captures = sorted(artifact_dir.glob("*.jsonl"))
     triage_outputs, evaluations = _run_triage(captures)
+    flutter_output = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in sorted(artifact_dir.glob("flutter-live-*.log"))
+    )
+    if "SOAK_KNOWN_FINDING swallow" in flutter_output and evaluations:
+        evaluations[0]["swallow"] = True
+        evaluations[0]["swallow_source"] = "bubble/transcript-DB predicate"
     suspicious: list[str] = []
     unexpected: list[str] = []
     if not captures:
         unexpected.append("no debug capture was pulled from the device")
-    for key, tracking_id in KNOWN_FINDINGS.items():
+    for key in SOAK_EXPECTED_FINDINGS:
+        tracking_id = KNOWN_FINDINGS[key]
         if not any(evaluation.get(key) for evaluation in evaluations):
             suspicious.append(f"expected finding absent: {tracking_id}")
     for evaluation in evaluations:
         if evaluation["missing_causes"]:
             unexpected.append(
                 f"{evaluation['capture']} has {evaluation['missing_causes']} connChannelLost event(s) without an attributed cause"
-            )
-        if evaluation["working_stuck_rooms"]:
-            unexpected.append(
-                f"{evaluation['capture']} leaves working=true in room(s): {', '.join(evaluation['working_stuck_rooms'])}"
             )
     if runner_status:
         unexpected.append(f"device lane failed with exit {runner_status}")
