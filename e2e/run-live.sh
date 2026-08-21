@@ -11,6 +11,13 @@ EMULATOR="${EMULATOR_BIN:-/opt/android-sdk/emulator/emulator}"
 ADB_BIN="${ADB_BIN:-/opt/android-sdk/platform-tools/adb}"
 ANDROID_SERIAL="${E2E_ANDROID_SERIAL:-emulator-5554}"
 EMULATOR_PORT=${ANDROID_SERIAL#emulator-}
+TEST_FILE="${1:-${E2E_LIVE_TEST_FILE:-integration_test/live_infra_smoke_test.dart}}"
+case "$TEST_FILE" in
+  integration_test/*.dart) ;;
+  *) printf 'live test selector must be integration_test/*.dart\n' >&2; exit 2 ;;
+esac
+[[ "$TEST_FILE" != *..* ]] || { printf 'live test selector cannot contain ..\n' >&2; exit 2; }
+[[ -f "$ROOT/app/$TEST_FILE" ]] || { printf 'live test file not found: %s\n' "$TEST_FILE" >&2; exit 2; }
 EMULATOR_PID=""
 TEST_PID=""
 GRANT_PID=""
@@ -87,60 +94,51 @@ wait_for_device_value() {
   return 1
 }
 
-wait_for_marker() {
-  local marker=$1
-  local timeout_seconds=${2:-90}
-  local deadline=$((SECONDS + timeout_seconds))
-  while (( SECONDS < deadline )); do
-    if grep -Fq "OUTPOST_LIVE_FAULT_REQUEST $marker" "$FLUTTER_LOG" 2>/dev/null; then
-      return 0
-    fi
-    if [[ -n "$TEST_PID" ]] && ! kill -0 "$TEST_PID" 2>/dev/null; then
-      printf 'device test exited before fault request: %s\n' "$marker" >&2
-      return 1
-    fi
-    sleep 0.2
-  done
-  printf 'timed out waiting for device fault request: %s\n' "$marker" >&2
-  return 1
+apply_fault_request() {
+  local request=$1 action class duration state extra
+  read -r action class duration extra <<<"$request"
+  case "$action" in
+    net_fault)
+      [[ "$class" == timeout || "$class" == slicer || "$class" == down ]] || return 2
+      [[ -z "${extra:-}" ]] || return 2
+      net_fault "$class" "${duration:-1500}"
+      ;;
+    net_clear|relay_pause|relay_resume|pi_restart|app_background|app_foreground)
+      [[ -z "${class:-}" ]] || return 2
+      "$action"
+      ;;
+    app_airplane)
+      state=$class
+      [[ "$state" == on || "$state" == off ]] || return 2
+      [[ -z "${duration:-}" ]] || return 2
+      app_airplane "$state"
+      ;;
+    *)
+      printf 'unsupported live fault request: %s\n' "$request" >&2
+      return 2
+      ;;
+  esac
+  printf '[live] applied %s\n' "$request"
 }
 
 drive_faults() {
-  wait_for_marker 'net_fault down' 180 || return
-  net_fault down || return
-  printf '%s\n' '[live] applied net_fault down'
-
-  wait_for_marker net_clear || return
-  net_clear || return
-  printf '%s\n' '[live] applied net_clear'
-
-  wait_for_marker relay_pause || return
-  relay_pause || return
-  printf '%s\n' '[live] applied relay_pause'
-
-  wait_for_marker relay_resume || return
-  relay_resume || return
-  printf '%s\n' '[live] applied relay_resume'
-
-  wait_for_marker pi_restart || return
-  pi_restart || return
-  printf '%s\n' '[live] applied pi_restart'
-
-  wait_for_marker app_background || return
-  app_background || return
-  printf '%s\n' '[live] applied app_background'
-
-  wait_for_marker app_foreground || return
-  app_foreground || return
-  printf '%s\n' '[live] applied app_foreground'
-
-  wait_for_marker 'app_airplane on' || return
-  app_airplane on || return
-  printf '%s\n' '[live] applied app_airplane on'
-
-  wait_for_marker 'app_airplane off' || return
-  app_airplane off || return
-  printf '%s\n' '[live] applied app_airplane off'
+  local consumed=0 request
+  local -a requests=()
+  while true; do
+    mapfile -t requests < <(
+      grep -F 'OUTPOST_LIVE_FAULT_REQUEST ' "$FLUTTER_LOG" 2>/dev/null \
+        | sed 's/^.*OUTPOST_LIVE_FAULT_REQUEST //'
+    )
+    while (( consumed < ${#requests[@]} )); do
+      request=${requests[$consumed]}
+      consumed=$((consumed + 1))
+      apply_fault_request "$request" || return
+    done
+    if [[ -n "$TEST_PID" ]] && ! kill -0 "$TEST_PID" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.2
+  done
 }
 
 cd "$ROOT/pi-extension"
@@ -203,17 +201,7 @@ cd "$ROOT/app"
 "$ADB_BIN" -s "$ANDROID_SERIAL" install -r \
   "$ROOT/app/build/app/outputs/flutter-apk/app-debug.apk" >/dev/null
 
-FLUTTER_LOG="$RUN_STATE/flutter-live.log"
-: >"$FLUTTER_LOG"
-set +e
-timeout --signal=TERM 11m "$FLUTTER" test --no-pub \
-  integration_test/live_infra_smoke_test.dart \
-  -d "$ANDROID_SERIAL" --tags e2e \
-  --dart-define="E2E_PI_HOST_URL=http://127.0.0.1:${PI_HOST_PORT}" \
-  --dart-define="E2E_RELAY_URL=http://127.0.0.1:${TOXI_RELAY_PORT}" \
-  > >(tee "$FLUTTER_LOG") 2>&1 &
-TEST_PID=$!
-set -e
+"$ADB_BIN" -s "$ANDROID_SERIAL" shell pm clear dev.kevoun.outpostpi >/dev/null
 
 grant_loop() {
   while kill -0 "$TEST_PID" 2>/dev/null; do
@@ -241,36 +229,65 @@ grant_loop() {
     sleep 0.5
   done
 }
-grant_loop &
-GRANT_PID=$!
 
-set +e
-drive_faults
-DRIVER_STATUS=$?
-if [[ "$DRIVER_STATUS" -ne 0 ]]; then
-  kill "$TEST_PID" >/dev/null 2>&1 || true
+run_device_test() {
+  local phase=${1:-} label=${1:-all}
+  local -a phase_define=()
+  [[ -z "$phase" ]] || phase_define+=(--dart-define="E2E_LIVE_PHASE=$phase")
+  FLUTTER_LOG="$RUN_STATE/flutter-live-${label}.log"
+  : >"$FLUTTER_LOG"
+  set +e
+  timeout --signal=TERM 11m "$FLUTTER" test --no-pub \
+    "$TEST_FILE" \
+    -d "$ANDROID_SERIAL" --tags e2e --no-uninstall \
+    --dart-define="E2E_PI_HOST_URL=http://127.0.0.1:${PI_HOST_PORT}" \
+    --dart-define="E2E_RELAY_URL=http://127.0.0.1:${TOXI_RELAY_PORT}" \
+    "${phase_define[@]}" \
+    > >(tee "$FLUTTER_LOG") 2>&1 &
+  TEST_PID=$!
+  set -e
+
+  grant_loop &
+  GRANT_PID=$!
+  set +e
+  drive_faults
+  local driver_status=$?
+  if [[ "$driver_status" -ne 0 ]]; then
+    kill "$TEST_PID" >/dev/null 2>&1 || true
+  fi
+  wait "$TEST_PID"
+  local flutter_status=$?
+  kill "$GRANT_PID" >/dev/null 2>&1 || true
+  wait "$GRANT_PID" >/dev/null 2>&1 || true
+  GRANT_PID=""
+  TEST_PID=""
+  set -e
+
+  if [[ "$driver_status" -ne 0 ]]; then return "$driver_status"; fi
+  if [[ "$flutter_status" -ne 0 ]]; then
+    printf '%s\n' '===== flutter live tail =====' >&2
+    tail -120 "$FLUTTER_LOG" >&2 || true
+    printf '%s\n' '===== pi-host tail =====' >&2
+    "${COMPOSE[@]}" logs --no-color pi-host | tail -120 >&2 || true
+    return "$flutter_status"
+  fi
+}
+
+if [[ "$TEST_FILE" == integration_test/live_golden_test.dart ]]; then
+  run_device_test pair-chat
+  "$ADB_BIN" -s "$ANDROID_SERIAL" shell am force-stop dev.kevoun.outpostpi
+  run_device_test cold-open
+  "$ADB_BIN" -s "$ANDROID_SERIAL" shell am force-stop dev.kevoun.outpostpi
+  run_device_test reconnect
+else
+  run_device_test
 fi
-wait "$TEST_PID"
-FLUTTER_STATUS=$?
-kill "$GRANT_PID" >/dev/null 2>&1 || true
-wait "$GRANT_PID" >/dev/null 2>&1 || true
-GRANT_PID=""
-TEST_PID=""
-set -e
 
 CAPTURE_STATUS=0
 capture_diagnostics || CAPTURE_STATUS=$?
-if [[ "$DRIVER_STATUS" -ne 0 ]]; then exit "$DRIVER_STATUS"; fi
-if [[ "$FLUTTER_STATUS" -ne 0 ]]; then
-  printf '%s\n' '===== flutter live tail =====' >&2
-  tail -120 "$FLUTTER_LOG" >&2 || true
-  printf '%s\n' '===== pi-host tail =====' >&2
-  tail -120 "$RUN_STATE/pi-host.log" >&2 || true
-  exit "$FLUTTER_STATUS"
-fi
 if [[ "$CAPTURE_STATUS" -ne 0 ]]; then
   printf '%s\n' 'live device debug capture pull failed' >&2
   exit "$CAPTURE_STATUS"
 fi
 
-printf '%s\n' 'live device e2e passed: pairing + network + relay + pi restart + lifecycle + airplane + capture'
+printf 'live device e2e passed: %s + capture\n' "$TEST_FILE"

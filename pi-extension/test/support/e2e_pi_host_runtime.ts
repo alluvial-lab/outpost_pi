@@ -67,6 +67,7 @@ export class E2ePiHostRuntime {
   private seq = 0;
   private disposed = false;
   private turnControlPhase: PiHostTurnControlStatus["phase"] = "idle";
+  private stagedReply: string | null = null;
   private deferredTurnResolve: (() => void) | null = null;
 
   private constructor(
@@ -196,10 +197,11 @@ export class E2ePiHostRuntime {
   }
 
   /** Arm the next SDK user-message action to settle only on explicit release. */
-  deferNextTurn(): PiHostTurnControlStatus {
+  deferNextTurn(reply?: string): PiHostTurnControlStatus {
     if (this.turnControlPhase === "armed" || this.turnControlPhase === "pending") {
       throw new Error("a deferred turn is already active");
     }
+    this.stagedReply = reply ?? null;
     this.turnControlPhase = "armed";
     return this.turnControlStatus();
   }
@@ -279,8 +281,21 @@ export class E2ePiHostRuntime {
     await this.runner.emitMessageEnd({ type: "message_end", message: message as never });
 
     if (this.turnControlPhase !== "armed") return;
+    await this.runner.emit({ type: "agent_start" });
     this.turnControlPhase = "pending";
     await new Promise<void>((resolve) => { this.deferredTurnResolve = resolve; });
+    const stagedReply = this.stagedReply;
+    this.stagedReply = null;
+    if (stagedReply !== null) {
+      const assistant = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: stagedReply }],
+        timestamp: Date.now(),
+      };
+      this.sessionManager.appendMessage(assistant as never);
+      await this.runner.emitMessageEnd({ type: "message_end", message: assistant as never });
+    }
+    await this.runner.emit({ type: "agent_end", messages: [] });
     this.turnControlPhase = "settled";
   }
 }
