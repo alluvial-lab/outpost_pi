@@ -1,7 +1,7 @@
 ---
 id: feature-e2e-live-oddities-suite
 kind: feature
-stage: review
+stage: done
 tags: [app, pi-extension, relay, testing]
 parent: null
 depends_on: []
@@ -146,3 +146,30 @@ golden+failure sol, chaos luna); orchestrator roll-up.
 QR-config deviation resolved: canonical QR omits relay URL; the lane injects
 the reversed localhost URL via production Preferences (no seam). Soak report:
 `.work/session-notes/live-soak-20260821T214326Z-*/report.md`.
+
+## Review record (2026-08-21)
+
+**Standard weight, one independent pass** — fresh-context cross-model
+reviewer (gpt-5.6-sol). Verdict: Request changes → **closed done** after
+receiver-confirmed blocker fixes (standard policy: no second pass).
+
+- **Blockers (3/3 confirmed, fixed + verified in c7616056):** (1) swallow
+  regression now requires capture evidence of the identity window before
+  sending — no vacuous pass; visibility = bubble + transcript row. (2)
+  blank-chat scenario is a real force-stop cold open; triage predicate
+  requires prior history + no hydrated render (activation empties ignored).
+  (3) soak enforces all four invariants incl. fault-during-turn overlap,
+  room-selection recovery checks, quiescent working convergence, and the
+  identity-window visibility predicate; scheduler short-duration guard.
+- **Important (2):** randint crash folded into c7616056; static
+  ActionsRepository fake parked → `gate-review-live-harness-actions-fake`.
+- **Nits:** README entry points folded; skip-reason surfacing + `_safe`
+  capping left as optional polish.
+- **Rejected proposals (4):** triage misreading the real ring (reviewer's
+  own run validated it), pi-host endpoint exposure, shell injection,
+  ring-tag behavior changes — all unsupported on inspection.
+- Post-fix verification: failure lane 3 passed + 2 linked skips with real
+  cold-open; 180s seeded soak exit 0 (overlap exercised, 2 attributed
+  losses, zero unexpected violations); 4 scheduler unit tests; triage
+  selftest; flutter analyze clean. Full 10-min soak deferred to next
+  scheduled run (noted).
