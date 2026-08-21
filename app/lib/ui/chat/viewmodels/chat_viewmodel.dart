@@ -298,6 +298,11 @@ class ChatViewModel extends ViewModel<ChatState> {
     if (!_isCurrentRun(generation) || _activePeer == null) return;
     try {
       await _serializeSessionBinding(generation);
+      final peer = _activePeer;
+      if (peer != null && _conn.isRoomLive(peer.remoteEpk, _activeRoomId)) {
+        _peerOfflineReason = null;
+        _recompute();
+      }
     } on Object {
       await _projectInitializationFailure(generation);
     }
@@ -414,6 +419,10 @@ class ChatViewModel extends ViewModel<ChatState> {
     final wasOnline = _lastStatus is StatusOnline;
     final nowOnline = s is StatusOnline;
     _lastStatus = s;
+    // A relay reconnect supersedes the sticky peer-offline event. Room
+    // liveness still gates input independently, so clearing this reason cannot
+    // enable sends until an authoritative room snapshot/announce arrives.
+    if (nowOnline) _peerOfflineReason = null;
     // Auto re-sync on a fresh online edge so the chat catches up.
     if (nowOnline && !wasOnline) _sync.requestSync();
     _recompute();

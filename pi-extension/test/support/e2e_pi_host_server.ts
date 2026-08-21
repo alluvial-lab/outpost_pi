@@ -7,7 +7,7 @@ const relayUrl = requiredEnv("OUTPOST_PI_RELAY");
 const cwd = process.env.E2E_PI_CWD ?? "/tmp/outpost-pi-e2e-cwd";
 const seededTranscriptText = process.env.E2E_SEEDED_TRANSCRIPT ?? "e2e persisted transcript";
 const preserveStateMarker = "/tmp/outpost-pi-e2e-preserve-state";
-const preserveState = await consumePreserveStateMarker();
+const preservedAgentName = await consumePreserveStateMarker();
 
 // Boot line: printed synchronously at process start, BEFORE the awaited
 // runtime start. If a wedged run shows ready-banners up to generation N and
@@ -21,7 +21,8 @@ const runtime = await E2ePiHostRuntime.start({
   relayUrl,
   cwd,
   seededTranscriptText,
-  preserveState,
+  preserveState: preservedAgentName !== null,
+  agentName: preservedAgentName ?? undefined,
 });
 let restarting = false;
 
@@ -95,11 +96,14 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
       return;
     }
     restarting = true;
-    if (url.searchParams.get("preserve") === "1") {
-      await writeFile(preserveStateMarker, "1", { mode: 0o600 });
+    const preserving = url.searchParams.get("preserve") === "1";
+    if (preserving) {
+      const assignedName = await runtime.preparePreservingRestart();
+      process.stdout.write(`[e2e-pi-host] preserving assigned name=${assignedName}\n`);
+      await writeFile(preserveStateMarker, assignedName, { mode: 0o600 });
     }
     json(response, 202, { restarting: true, generation: runtime.generation });
-    setTimeout(() => process.exit(0), 25).unref();
+    setTimeout(() => process.exit(preserving ? 75 : 0), 25).unref();
     return;
   }
   json(response, 404, { error: "not_found" });
@@ -125,13 +129,13 @@ function json(response: ServerResponse, status: number, body: unknown): void {
   response.end(JSON.stringify(body));
 }
 
-async function consumePreserveStateMarker(): Promise<boolean> {
+async function consumePreserveStateMarker(): Promise<string | null> {
   try {
-    await readFile(preserveStateMarker);
+    const assignedName = await readFile(preserveStateMarker, "utf8");
     await rm(preserveStateMarker, { force: true });
-    return true;
+    return assignedName.trim() || "e2e-agent";
   } catch {
-    return false;
+    return null;
   }
 }
 

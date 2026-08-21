@@ -43,6 +43,8 @@ export interface OutpostPiTestHarness {
    * room, or they pair on a room the Pi never announced.
    */
   roomId(): string | null;
+  /** The effective broker-assigned name paired with [roomId]. */
+  name(): string | null;
   routeClientMessage(message: ClientMessage, ctx: Pick<ExtensionContext, "abort">): void;
 }
 
