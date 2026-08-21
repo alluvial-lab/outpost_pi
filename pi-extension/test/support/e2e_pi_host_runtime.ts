@@ -81,6 +81,7 @@ export class E2ePiHostRuntime {
     relayUrl: string;
     cwd: string;
     seededTranscriptText: string;
+    preserveState?: boolean;
   }): Promise<E2ePiHostRuntime> {
     process.env.OUTPOST_PI_RELAY = options.relayUrl;
     process.env.OUTPOST_PI_DIRECT_CONFIG = JSON.stringify({
@@ -90,10 +91,13 @@ export class E2ePiHostRuntime {
     process.env.OUTPOST_PI_ALLOW_FILE_IDENTITY = "1";
 
     // HOME is fixed by Compose before Node starts, so modules that resolve
-    // homedir() at import time see this isolated path. Clear all prior state on
-    // every process generation rather than inventing in-process reset hooks.
-    rmSync(homedir(), { recursive: true, force: true });
-    rmSync(options.cwd, { recursive: true, force: true });
+    // homedir() at import time see this isolated path. Ordinary test-isolation
+    // restarts clear all state; the live device lane can instead preserve the
+    // machine identity and owner channel to model a production process restart.
+    if (!options.preserveState) {
+      rmSync(homedir(), { recursive: true, force: true });
+      rmSync(options.cwd, { recursive: true, force: true });
+    }
     // The headless pair-code seam lives outside HOME and the extension refuses
     // to overwrite a pre-existing target (symlink-attack hardening), so a stale
     // file from an earlier generation would 500 every later `pair` command.
@@ -104,10 +108,12 @@ export class E2ePiHostRuntime {
 
     const sessionDir = join(homedir(), ".pi", "e2e-sessions");
     const sessionManager = SessionManager.create(options.cwd, sessionDir);
-    sessionManager.appendMessage({
-      role: "user",
-      content: options.seededTranscriptText,
-    } as never);
+    if (!options.preserveState) {
+      sessionManager.appendMessage({
+        role: "user",
+        content: options.seededTranscriptText,
+      } as never);
+    }
 
     const sdkRuntime = createExtensionRuntime();
     const eventBus = createEventBus();
