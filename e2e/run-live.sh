@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+COMPOSE_PROJECT="${E2E_COMPOSE_PROJECT_NAME:-outpost-pi-live-e2e-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-$$}-${RANDOM}}"
+RUN_STATE="$ROOT/e2e/.run-state/$COMPOSE_PROJECT"
+COMPOSE_FILE="$ROOT/e2e/docker-compose.test.yml"
+COMPOSE=(docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE")
+FLUTTER="${FLUTTER:-$ROOT/.tools/flutter/bin/flutter}"
+EMULATOR="${EMULATOR_BIN:-/opt/android-sdk/emulator/emulator}"
+ADB_BIN="${ADB_BIN:-/opt/android-sdk/platform-tools/adb}"
+ANDROID_SERIAL="${E2E_ANDROID_SERIAL:-emulator-5554}"
+EMULATOR_PORT=${ANDROID_SERIAL#emulator-}
+EMULATOR_PID=""
+TEST_PID=""
+GRANT_PID=""
+CAPTURED=0
+
+export BUILDX_CONFIG="${BUILDX_CONFIG:-$RUN_STATE/buildx}"
+export PUB_CACHE="${PUB_CACHE:-$ROOT/.pub-cache}"
+export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}"
+export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+mkdir -p "$BUILDX_CONFIG"
+chmod 700 "$RUN_STATE"
+
+# shellcheck source=lib/faults.sh
+source "$ROOT/e2e/lib/faults.sh"
+
+published_port() {
+  local address
+  address=$("${COMPOSE[@]}" port "$1" "$2")
+  printf '%s\n' "${address##*:}"
+}
+
+capture_diagnostics() {
+  local capture_status=0
+  if [[ "$CAPTURED" == 1 ]]; then return 0; fi
+  CAPTURED=1
+  if "$ADB_BIN" -s "$ANDROID_SERIAL" get-state >/dev/null 2>&1; then
+    capture_pull "$RUN_STATE" >"$RUN_STATE/capture-path.txt" \
+      2>"$RUN_STATE/capture-error.txt" || capture_status=$?
+    "$ADB_BIN" -s "$ANDROID_SERIAL" logcat -d -t 500 >"$RUN_STATE/android-logcat.tail" 2>&1 || true
+  else
+    capture_status=1
+  fi
+  "${COMPOSE[@]}" logs --no-color pi-host >"$RUN_STATE/pi-host.log" 2>&1 || true
+  "${COMPOSE[@]}" logs --no-color relay >"$RUN_STATE/relay.log" 2>&1 || true
+  return "$capture_status"
+}
+
+cleanup() {
+  local status=$?
+  trap - EXIT INT TERM
+  set +e
+  [[ -n "$TEST_PID" ]] && kill "$TEST_PID" >/dev/null 2>&1
+  [[ -n "$GRANT_PID" ]] && kill "$GRANT_PID" >/dev/null 2>&1
+  capture_diagnostics || true
+  app_airplane off >/dev/null 2>&1 || true
+  net_clear >/dev/null 2>&1 || true
+  if "$ADB_BIN" -s "$ANDROID_SERIAL" get-state >/dev/null 2>&1; then
+    "$ADB_BIN" -s "$ANDROID_SERIAL" emu kill >/dev/null 2>&1 || true
+  fi
+  [[ -n "$EMULATOR_PID" ]] && wait "$EMULATOR_PID" >/dev/null 2>&1
+  if [[ "${E2E_KEEP_STACK:-0}" != "1" ]]; then
+    "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
+  else
+    printf '%s\n' "live e2e stack retained: project=$COMPOSE_PROJECT"
+  fi
+  rm -rf "$RUN_STATE"
+  exit "$status"
+}
+trap cleanup EXIT INT TERM
+
+wait_for_device_value() {
+  local expected=$1
+  local timeout_seconds=$2
+  local deadline=$((SECONDS + timeout_seconds))
+  while (( SECONDS < deadline )); do
+    if [[ "$("$ADB_BIN" -s "$ANDROID_SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "$expected" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  printf 'emulator did not report sys.boot_completed=%s within %ss\n' "$expected" "$timeout_seconds" >&2
+  return 1
+}
+
+wait_for_marker() {
+  local marker=$1
+  local timeout_seconds=${2:-90}
+  local deadline=$((SECONDS + timeout_seconds))
+  while (( SECONDS < deadline )); do
+    if grep -Fq "OUTPOST_LIVE_FAULT_REQUEST $marker" "$FLUTTER_LOG" 2>/dev/null; then
+      return 0
+    fi
+    if [[ -n "$TEST_PID" ]] && ! kill -0 "$TEST_PID" 2>/dev/null; then
+      printf 'device test exited before fault request: %s\n' "$marker" >&2
+      return 1
+    fi
+    sleep 0.2
+  done
+  printf 'timed out waiting for device fault request: %s\n' "$marker" >&2
+  return 1
+}
+
+drive_faults() {
+  wait_for_marker 'net_fault down' 180 || return
+  net_fault down || return
+  printf '%s\n' '[live] applied net_fault down'
+
+  wait_for_marker net_clear || return
+  net_clear || return
+  printf '%s\n' '[live] applied net_clear'
+
+  wait_for_marker relay_pause || return
+  relay_pause || return
+  printf '%s\n' '[live] applied relay_pause'
+
+  wait_for_marker relay_resume || return
+  relay_resume || return
+  printf '%s\n' '[live] applied relay_resume'
+
+  wait_for_marker pi_restart || return
+  pi_restart || return
+  printf '%s\n' '[live] applied pi_restart'
+
+  wait_for_marker app_background || return
+  app_background || return
+  printf '%s\n' '[live] applied app_background'
+
+  wait_for_marker app_foreground || return
+  app_foreground || return
+  printf '%s\n' '[live] applied app_foreground'
+
+  wait_for_marker 'app_airplane on' || return
+  app_airplane on || return
+  printf '%s\n' '[live] applied app_airplane on'
+
+  wait_for_marker 'app_airplane off' || return
+  app_airplane off || return
+  printf '%s\n' '[live] applied app_airplane off'
+}
+
+cd "$ROOT/pi-extension"
+node_modules/.bin/tsc -p ../e2e/tsconfig.pi-host.json
+
+if [[ -n "${OUTPOST_PI_E2E_RELAY_IMAGE:-}" ]]; then
+  "${COMPOSE[@]}" build pi-host
+  "${COMPOSE[@]}" up -d --no-build --wait --wait-timeout 60
+else
+  "${COMPOSE[@]}" up -d --build --wait --wait-timeout 60
+fi
+
+TOXI_ADMIN_PORT=$(published_port toxiproxy 8474)
+TOXI_RELAY_PORT=$(published_port toxiproxy 8666)
+PI_HOST_PORT=$(published_port toxiproxy 8667)
+export E2E_COMPOSE_PROJECT="$COMPOSE_PROJECT"
+export E2E_COMPOSE_FILE="$COMPOSE_FILE"
+export E2E_TOXIPROXY_PORT="$TOXI_ADMIN_PORT"
+E2E_TOXIPROXY_CLI="$RUN_STATE/toxiproxy-cli"
+docker cp "$("${COMPOSE[@]}" ps -q toxiproxy):/toxiproxy-cli" \
+  "$E2E_TOXIPROXY_CLI"
+chmod 700 "$E2E_TOXIPROXY_CLI"
+export E2E_TOXIPROXY_CLI
+export E2E_PI_HOST_PORT="$PI_HOST_PORT"
+export E2E_ANDROID_SERIAL="$ANDROID_SERIAL"
+export ADB_BIN
+
+for proxy in app-relay pi-host; do
+  curl --silent --show-error -X DELETE \
+    "http://127.0.0.1:${TOXI_ADMIN_PORT}/proxies/$proxy" >/dev/null || true
+done
+curl --fail --silent --show-error -H 'content-type: application/json' \
+  -d '{"name":"app-relay","listen":"0.0.0.0:8666","upstream":"relay:3000","enabled":true}' \
+  "http://127.0.0.1:${TOXI_ADMIN_PORT}/proxies" >/dev/null
+curl --fail --silent --show-error -H 'content-type: application/json' \
+  -d '{"name":"pi-host","listen":"0.0.0.0:8667","upstream":"pi-host:4317","enabled":true}' \
+  "http://127.0.0.1:${TOXI_ADMIN_PORT}/proxies" >/dev/null
+
+if "$ADB_BIN" -s "$ANDROID_SERIAL" get-state >/dev/null 2>&1; then
+  printf 'refusing to reuse occupied Android serial %s\n' "$ANDROID_SERIAL" >&2
+  exit 2
+fi
+[[ "$EMULATOR_PORT" =~ ^[0-9]+$ ]] || { printf 'E2E_ANDROID_SERIAL must be emulator-<port>\n' >&2; exit 2; }
+
+EMULATOR_LOG="$RUN_STATE/emulator.log"
+sg kvm -c "exec '$EMULATOR' -avd outpost34 -port '$EMULATOR_PORT' -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back virtualscene -no-snapshot -memory 3072" \
+  >"$EMULATOR_LOG" 2>&1 &
+EMULATOR_PID=$!
+wait_for_device_value 1 180
+"$ADB_BIN" -s "$ANDROID_SERIAL" shell settings put global window_animation_scale 0
+"$ADB_BIN" -s "$ANDROID_SERIAL" shell settings put global transition_animation_scale 0
+"$ADB_BIN" -s "$ANDROID_SERIAL" shell settings put global animator_duration_scale 0
+
+for port in "$TOXI_ADMIN_PORT" "$TOXI_RELAY_PORT" "$PI_HOST_PORT"; do
+  "$ADB_BIN" -s "$ANDROID_SERIAL" reverse "tcp:$port" "tcp:$port"
+done
+
+cd "$ROOT/app"
+"$FLUTTER" build apk --debug --no-pub
+"$ADB_BIN" -s "$ANDROID_SERIAL" install -r \
+  "$ROOT/app/build/app/outputs/flutter-apk/app-debug.apk" >/dev/null
+
+FLUTTER_LOG="$RUN_STATE/flutter-live.log"
+: >"$FLUTTER_LOG"
+set +e
+timeout --signal=TERM 11m "$FLUTTER" test --no-pub \
+  integration_test/live_infra_smoke_test.dart \
+  -d "$ANDROID_SERIAL" --tags e2e \
+  --dart-define="E2E_PI_HOST_URL=http://127.0.0.1:${PI_HOST_PORT}" \
+  --dart-define="E2E_RELAY_URL=http://127.0.0.1:${TOXI_RELAY_PORT}" \
+  > >(tee "$FLUTTER_LOG") 2>&1 &
+TEST_PID=$!
+set -e
+
+grant_loop() {
+  while kill -0 "$TEST_PID" 2>/dev/null; do
+    "$ADB_BIN" -s "$ANDROID_SERIAL" shell pm grant \
+      dev.kevoun.outpostpi android.permission.CAMERA >/dev/null 2>&1 || true
+    if "$ADB_BIN" -s "$ANDROID_SERIAL" shell dumpsys package dev.kevoun.outpostpi \
+        | grep -q 'android.permission.CAMERA: granted=true'; then
+      return
+    fi
+    if "$ADB_BIN" -s "$ANDROID_SERIAL" shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; then
+      local bounds coords
+      bounds=$("$ADB_BIN" -s "$ANDROID_SERIAL" shell cat /sdcard/ui.xml 2>/dev/null \
+        | tr '>' '\n' | grep 'While using the app' \
+        | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1 || true)
+      if [[ -n "$bounds" ]]; then
+        coords=$(printf '%s' "$bounds" | grep -oE '[0-9]+,[0-9]+' | tr ',\n' '  ')
+        # shellcheck disable=SC2086
+        set -- $coords
+        if [[ $# -ge 4 ]]; then
+          "$ADB_BIN" -s "$ANDROID_SERIAL" shell input tap \
+            $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )) >/dev/null
+        fi
+      fi
+    fi
+    sleep 0.5
+  done
+}
+grant_loop &
+GRANT_PID=$!
+
+set +e
+drive_faults
+DRIVER_STATUS=$?
+if [[ "$DRIVER_STATUS" -ne 0 ]]; then
+  kill "$TEST_PID" >/dev/null 2>&1 || true
+fi
+wait "$TEST_PID"
+FLUTTER_STATUS=$?
+kill "$GRANT_PID" >/dev/null 2>&1 || true
+wait "$GRANT_PID" >/dev/null 2>&1 || true
+GRANT_PID=""
+TEST_PID=""
+set -e
+
+CAPTURE_STATUS=0
+capture_diagnostics || CAPTURE_STATUS=$?
+if [[ "$DRIVER_STATUS" -ne 0 ]]; then exit "$DRIVER_STATUS"; fi
+if [[ "$FLUTTER_STATUS" -ne 0 ]]; then
+  printf '%s\n' '===== flutter live tail =====' >&2
+  tail -120 "$FLUTTER_LOG" >&2 || true
+  printf '%s\n' '===== pi-host tail =====' >&2
+  tail -120 "$RUN_STATE/pi-host.log" >&2 || true
+  exit "$FLUTTER_STATUS"
+fi
+if [[ "$CAPTURE_STATUS" -ne 0 ]]; then
+  printf '%s\n' 'live device debug capture pull failed' >&2
+  exit "$CAPTURE_STATUS"
+fi
+
+printf '%s\n' 'live device e2e passed: pairing + network + relay + pi restart + lifecycle + airplane + capture'

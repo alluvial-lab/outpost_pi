@@ -1,4 +1,4 @@
-import { readFile, rm } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { E2ePiHostRuntime } from "./e2e_pi_host_runtime.js";
 
@@ -6,6 +6,8 @@ const port = integerEnv("E2E_PI_HOST_PORT", 4317);
 const relayUrl = requiredEnv("OUTPOST_PI_RELAY");
 const cwd = process.env.E2E_PI_CWD ?? "/tmp/outpost-pi-e2e-cwd";
 const seededTranscriptText = process.env.E2E_SEEDED_TRANSCRIPT ?? "e2e persisted transcript";
+const preserveStateMarker = "/tmp/outpost-pi-e2e-preserve-state";
+const preserveState = await consumePreserveStateMarker();
 
 // Boot line: printed synchronously at process start, BEFORE the awaited
 // runtime start. If a wedged run shows ready-banners up to generation N and
@@ -15,7 +17,12 @@ const seededTranscriptText = process.env.E2E_SEEDED_TRANSCRIPT ?? "e2e persisted
 // backlog-pairing-e2e-flaky-auth-handshake-timeout (Mode B forensics).
 process.stdout.write(`[e2e-pi-host] booting pid=${process.pid} node=${process.version}\n`);
 
-const runtime = await E2ePiHostRuntime.start({ relayUrl, cwd, seededTranscriptText });
+const runtime = await E2ePiHostRuntime.start({
+  relayUrl,
+  cwd,
+  seededTranscriptText,
+  preserveState,
+});
 let restarting = false;
 
 const server = createServer(async (request, response) => {
@@ -86,6 +93,9 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
       return;
     }
     restarting = true;
+    if (url.searchParams.get("preserve") === "1") {
+      await writeFile(preserveStateMarker, "1", { mode: 0o600 });
+    }
     json(response, 202, { restarting: true, generation: runtime.generation });
     setTimeout(() => process.exit(0), 25).unref();
     return;
@@ -111,6 +121,16 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 function json(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(body));
+}
+
+async function consumePreserveStateMarker(): Promise<boolean> {
+  try {
+    await readFile(preserveStateMarker);
+    await rm(preserveStateMarker, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function requiredEnv(name: string): string {
