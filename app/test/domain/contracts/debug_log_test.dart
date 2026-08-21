@@ -21,10 +21,12 @@ const Map<DebugTag, Set<String>> kAllowedKeys = {
   DebugTag.msgSend: {'id', 'blocked'},
   DebugTag.msgEcho: {'id'},
   DebugTag.msgFailed: {'id', 'code'},
+  DebugTag.sendQueue: {'id', 'phase', 'outcome', 'code'},
+  DebugTag.route: {'room', 'phase', 'sessionIdTail', 'messageCount'},
   DebugTag.sessionGate: {'messageType', 'reason', 'sessionIdTail'},
   DebugTag.sessionSync: {},
   DebugTag.connStatus: {'status', 'attempt', 'delayMs', 'peerTail', 'room'},
-  DebugTag.connChannelLost: {'stale', 'peerTail', 'room'},
+  DebugTag.connChannelLost: {'stale', 'cause', 'peerTail', 'room'},
   DebugTag.connHydrate: {'action', 'room', 'snapshotCount'},
   DebugTag.roomSnapshot: {'room', 'presenceCount', 'working'},
   DebugTag.workingConv: {'room', 'working', 'reason'},
@@ -60,6 +62,8 @@ DebugTag tagOf(DebugEvent event) {
     MsgSendEvent() => DebugTag.msgSend,
     MsgEchoEvent() => DebugTag.msgEcho,
     MsgFailedEvent() => DebugTag.msgFailed,
+    SendQueueEvent() => DebugTag.sendQueue,
+    RouteEvent() => DebugTag.route,
     SessionGateEvent() => DebugTag.sessionGate,
     SessionSyncEvent() => DebugTag.sessionSync,
     ConnStatusEvent() => DebugTag.connStatus,
@@ -107,6 +111,20 @@ void main() {
       MsgSendEvent(ts: now, id: huge, blocked: true),
       MsgEchoEvent(ts: now, id: huge),
       MsgFailedEvent(ts: now, id: huge, code: huge),
+      SendQueueEvent(
+        ts: now,
+        id: huge,
+        phase: SendQueuePhase.visibleFail,
+        outcome: SendQueueOutcome.failed,
+        code: huge,
+      ),
+      RouteEvent(
+        ts: now,
+        room: huge,
+        phase: RoutePhase.projectionReady,
+        sessionIdTail: huge,
+        messageCount: 3,
+      ),
       SessionGateEvent(
         ts: now,
         messageType: huge,
@@ -122,8 +140,20 @@ void main() {
         peerTail: huge,
         room: huge,
       ),
-      ConnChannelLostEvent(ts: now, peerTail: huge, room: huge, stale: true),
-      ConnChannelLostEvent(ts: now, peerTail: huge, room: huge, stale: false),
+      ConnChannelLostEvent(
+        ts: now,
+        peerTail: huge,
+        room: huge,
+        stale: true,
+        cause: ReconnectCause.channelDone,
+      ),
+      ConnChannelLostEvent(
+        ts: now,
+        peerTail: huge,
+        room: huge,
+        stale: false,
+        cause: ReconnectCause.channelError,
+      ),
       ConnHydrateEvent(ts: now, action: huge, room: huge, snapshotCount: 7),
       RoomSnapshotEvent(ts: now, room: huge, presenceCount: 4, working: true),
       WorkingConvEvent(ts: now, room: huge, working: false, reason: huge),
@@ -278,6 +308,43 @@ void main() {
     );
     expect(staleTrue.toJson()['stale'], isTrue);
     expect(staleFalse.toJson()['stale'], isFalse);
+    expect(staleTrue.toJson()['cause'], 'unknown');
+  });
+
+  test('new queue and route events serialize bounded diagnostic shapes', () {
+    final queue = SendQueueEvent(
+      ts: now,
+      id: 'msg-1',
+      phase: SendQueuePhase.visibleFail,
+      outcome: SendQueueOutcome.failed,
+      code: 'send_timeout',
+    ).toJson();
+    expect(
+      queue.keys,
+      unorderedEquals(<String>['tag', 'ts', 'id', 'phase', 'outcome', 'code']),
+    );
+    expect(queue['phase'], 'visible-fail');
+    expect(queue['outcome'], 'failed');
+
+    final route = RouteEvent(
+      ts: now,
+      room: 'main',
+      phase: RoutePhase.projectionEmpty,
+      sessionIdTail: 'session-123',
+      messageCount: 0,
+    ).toJson();
+    expect(
+      route.keys,
+      unorderedEquals(<String>[
+        'tag',
+        'ts',
+        'room',
+        'phase',
+        'sessionIdTail',
+        'messageCount',
+      ]),
+    );
+    expect(route['phase'], 'projection-empty');
   });
 
   test('MsgSendEvent serializes correlation metadata only', () {

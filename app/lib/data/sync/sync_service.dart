@@ -276,7 +276,17 @@ class SyncService extends Service {
     final nextRef = _resolveActiveRef(epk, room);
     final sameRoom = _activeEpk == epk && _activeRoomId == room;
     final sameRef = _activeRef == nextRef;
-    if (sameRoom && sameRef && _indexLoaded) return;
+    if (sameRoom && sameRef && _indexLoaded) {
+      _logDebug(
+        RouteEvent(
+          ts: DateTime.now(),
+          room: room,
+          phase: RoutePhase.entry,
+          sessionIdTail: _sessionIdTail(nextRef?.sessionId),
+        ),
+      );
+      return;
+    }
 
     final generation = ++_lifecycleGeneration;
     await _activateForGeneration(epk, room, nextRef, generation);
@@ -301,6 +311,14 @@ class SyncService extends Service {
     _activeEpk = epk;
     _activeRoomId = room;
     _activeRef = nextRef;
+    _logDebug(
+      RouteEvent(
+        ts: DateTime.now(),
+        room: room,
+        phase: RoutePhase.entry,
+        sessionIdTail: _sessionIdTail(nextRef?.sessionId),
+      ),
+    );
     if (previousRef != nextRef) _clearPersistenceDegradationForReplacement();
     // Capability is per-active-session, not process-global: a prior peer that
     // sent deterministic agent_message(ts) must not cause a later legacy
@@ -413,6 +431,9 @@ class SyncService extends Service {
         '${pendingSendTimeout.inSeconds}s, re-sent on reconnect)',
       );
       _logDebug(MsgSendEvent(ts: DateTime.now(), id: id, blocked: true));
+      _logDebug(
+        SendQueueEvent(ts: DateTime.now(), id: id, phase: SendQueuePhase.held),
+      );
       return;
     }
     // Half-open socket guard (story-app-half-open-socket-swallows-sends-
@@ -567,6 +588,14 @@ class SyncService extends Service {
         debugPrint('[msg-failed] id=$id code=$diagnosticCode');
         _logDebug(
           MsgFailedEvent(ts: DateTime.now(), id: id, code: diagnosticCode),
+        );
+        _logDebug(
+          SendQueueEvent(
+            ts: DateTime.now(),
+            id: id,
+            phase: SendQueuePhase.visibleFail,
+            code: diagnosticCode,
+          ),
         );
       }
     }
@@ -843,12 +872,29 @@ class SyncService extends Service {
         if (!_isCurrentLifecycle(generation, ref)) return;
         // Re-arm the send-timeout from now (the original ts is stale).
         _armSendTimeout(id, DateTime.now());
+        _logDebug(
+          SendQueueEvent(
+            ts: DateTime.now(),
+            id: id,
+            phase: SendQueuePhase.resend,
+            outcome: SendQueueOutcome.sent,
+          ),
+        );
         debugPrint('[msg-resend] id=$id (held-pending re-sent on reconnect)');
       } catch (err) {
         if (!_isCurrentLifecycle(generation, ref)) return;
         // Remove from in-flight so a later healthy reconnect can retry —
         // a failed re-send must NOT be permanently suppressed.
         _resentHeldPendingIds.remove(id);
+        _logDebug(
+          SendQueueEvent(
+            ts: DateTime.now(),
+            id: id,
+            phase: SendQueuePhase.resend,
+            outcome: SendQueueOutcome.failed,
+            code: 'send_error',
+          ),
+        );
         debugPrint('[msg-resend] id=$id failed');
       }
     }
@@ -1531,6 +1577,19 @@ class SyncService extends Service {
         events: log,
       );
       _setTranscriptSteering(projection.steering);
+      if (_isCurrentLifecycle(generation, ref)) {
+        _logDebug(
+          RouteEvent(
+            ts: DateTime.now(),
+            room: ref.roomId,
+            phase: projection.messages.isEmpty
+                ? RoutePhase.projectionEmpty
+                : RoutePhase.projectionReady,
+            sessionIdTail: _sessionIdTail(ref.sessionId),
+            messageCount: projection.messages.length,
+          ),
+        );
+      }
       if (_canPublishTurnProjection(generation, ref, projectionEpoch)) {
         _emitStreaming(projection.streaming);
         _setTurnView(projection.turn);

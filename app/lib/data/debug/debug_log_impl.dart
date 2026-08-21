@@ -58,6 +58,8 @@ class DebugLogImpl implements DebugLog {
   static const Set<DebugTag> kImmediateFlushTags = {
     DebugTag.msgSend,
     DebugTag.msgFailed,
+    DebugTag.sendQueue,
+    DebugTag.route,
     DebugTag.sessionGate,
     DebugTag.sessionSync,
     DebugTag.connStatus,

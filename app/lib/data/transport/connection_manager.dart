@@ -1357,12 +1357,17 @@ class ConnectionManager extends Service {
           _learnSessionFromPairOk(peer, msg);
         }
       },
-      onError: (_) => _onChannelLost(peer, ch),
-      onDone: () => _onChannelLost(peer, ch),
+      onError: (_) =>
+          _onChannelLost(peer, ch, cause: ReconnectCause.channelError),
+      onDone: () => _onChannelLost(peer, ch, cause: ReconnectCause.channelDone),
     );
   }
 
-  void _onChannelLost(PeerRecord peer, IChannel ch) {
+  void _onChannelLost(
+    PeerRecord peer,
+    IChannel ch, {
+    ReconnectCause cause = ReconnectCause.unknown,
+  }) {
     if (_status is! StatusOnline) return;
     final cur = (_status as StatusOnline).channel;
     if (!identical(cur, ch)) {
@@ -1376,6 +1381,7 @@ class ConnectionManager extends Service {
           peerTail: _peerTail(peer.remoteEpk),
           room: _activeRoomId,
           stale: true,
+          cause: cause,
         ),
       );
       return;
@@ -1386,6 +1392,7 @@ class ConnectionManager extends Service {
         peerTail: _peerTail(peer.remoteEpk),
         room: _activeRoomId,
         stale: false,
+        cause: cause,
       ),
     );
     _cancelPing();
@@ -1397,7 +1404,7 @@ class ConnectionManager extends Service {
   void debugSimulateChannelLost(IChannel ch) {
     final peer = _activePeer;
     if (peer == null) return;
-    _onChannelLost(peer, ch);
+    _onChannelLost(peer, ch, cause: ReconnectCause.simulated);
   }
 
   void _scheduleRetry(PeerRecord peer) {
@@ -1492,7 +1499,7 @@ class ConnectionManager extends Service {
         await ch.send(Ping(id: id));
       } catch (e) {
         _cancelPing();
-        _onChannelLost(peer, ch);
+        _onChannelLost(peer, ch, cause: ReconnectCause.pingSendFailure);
       }
     });
   }

@@ -59,6 +59,8 @@ enum DebugTag {
   msgSend,
   msgEcho,
   msgFailed,
+  sendQueue,
+  route,
   sessionGate,
   sessionSync,
   connStatus,
@@ -178,6 +180,67 @@ final class MsgSendEvent extends DebugEvent {
   };
 }
 
+/// Describe the held-send lifecycle without recording message content.
+enum SendQueuePhase { held, visibleFail, resend }
+
+/// Describe the outcome of a held-send retry.
+enum SendQueueOutcome { sent, failed }
+
+/// Record held, visible-failure, and reconnect-resend transitions by id.
+final class SendQueueEvent extends DebugEvent {
+  final String id;
+  final SendQueuePhase phase;
+  final SendQueueOutcome? outcome;
+  final String? code;
+
+  const SendQueueEvent({
+    required super.ts,
+    required this.id,
+    required this.phase,
+    this.outcome,
+    this.code,
+  }) : super(tag: DebugTag.sendQueue);
+
+  @override
+  Map<String, Object?> toJson() => {
+    'tag': tag.name,
+    'ts': ts.toUtc().toIso8601String(),
+    'id': _cap(id),
+    'phase': _sendQueuePhaseName(phase),
+    if (outcome != null) 'outcome': outcome!.name,
+    if (code != null) 'code': admitFailureCode(code!),
+  };
+}
+
+/// Record session-route entry and the post-hydrate projection state.
+enum RoutePhase { entry, projectionReady, projectionEmpty }
+
+/// Record content-free route/projection milestones for blank-chat triage.
+final class RouteEvent extends DebugEvent {
+  final String room;
+  final String? sessionIdTail;
+  final RoutePhase phase;
+  final int? messageCount;
+
+  const RouteEvent({
+    required super.ts,
+    required this.room,
+    required this.phase,
+    this.sessionIdTail,
+    this.messageCount,
+  }) : super(tag: DebugTag.route);
+
+  @override
+  Map<String, Object?> toJson() => {
+    'tag': tag.name,
+    'ts': ts.toUtc().toIso8601String(),
+    'room': _cap(room),
+    'phase': _routePhaseName(phase),
+    if (sessionIdTail != null) 'sessionIdTail': _cap(sessionIdTail!),
+    if (messageCount != null) 'messageCount': messageCount,
+  };
+}
+
 /// Echo of a sent user message (confirms delivery + disarms the send timeout).
 final class MsgEchoEvent extends DebugEvent {
   final String id;
@@ -282,16 +345,27 @@ final class ConnStatusEvent extends DebugEvent {
 /// Channel-lost transition — the duplicate-connection-takeover proof.
 /// `stale=true` (replaced channel's onDone safely ignored) vs `stale=false`
 /// (current channel lost → retry started).
+enum ReconnectCause {
+  unknown,
+  channelError,
+  channelDone,
+  pingSendFailure,
+  simulated,
+}
+
+/// Channel-lost transition with a closed cause attribution.
 final class ConnChannelLostEvent extends DebugEvent {
   final String? peerTail;
   final String? room;
   final bool stale;
+  final ReconnectCause cause;
 
   const ConnChannelLostEvent({
     required super.ts,
     this.peerTail,
     this.room,
     required this.stale,
+    this.cause = ReconnectCause.unknown,
   }) : super(tag: DebugTag.connChannelLost);
 
   @override
@@ -299,6 +373,7 @@ final class ConnChannelLostEvent extends DebugEvent {
     'tag': tag.name,
     'ts': ts.toUtc().toIso8601String(),
     'stale': stale,
+    'cause': cause.name,
     if (peerTail != null) 'peerTail': _cap(peerTail!),
     if (room != null) 'room': _cap(room!),
   };
@@ -435,6 +510,18 @@ const int kMaxFieldValueChars = 256;
 
 String _cap(String s) =>
     s.length <= kMaxFieldValueChars ? s : s.substring(0, kMaxFieldValueChars);
+
+String _sendQueuePhaseName(SendQueuePhase phase) => switch (phase) {
+  SendQueuePhase.held => 'held',
+  SendQueuePhase.visibleFail => 'visible-fail',
+  SendQueuePhase.resend => 'resend',
+};
+
+String _routePhaseName(RoutePhase phase) => switch (phase) {
+  RoutePhase.entry => 'entry',
+  RoutePhase.projectionReady => 'projection-ready',
+  RoutePhase.projectionEmpty => 'projection-empty',
+};
 
 /// Persistent, privacy-scrubbed debug ring log for retroactive diagnosis of
 /// intermittent mobile-session bugs.

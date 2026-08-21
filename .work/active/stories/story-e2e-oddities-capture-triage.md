@@ -1,7 +1,7 @@
 ---
 id: story-e2e-oddities-capture-triage
 kind: story
-stage: implementing
+stage: done
 tags: [app, testing]
 parent: feature-e2e-live-oddities-suite
 depends_on: []
@@ -40,9 +40,27 @@ detected anomalies (CI-able).
   (observability arc) — triage groups by it.
 
 ## Acceptance criteria
-- [ ] `debug_capture_triage.py debug/cad-11f1-b349-a5efddf14d8d.bin` reports
+- [x] `debug_capture_triage.py debug/cad-11f1-b349-a5efddf14d8d.bin` reports
       the swallow (msgSend blocked, no echo) and the churn stats (89 timeouts)
       the manual analysis found — encoded as the tool's regression test.
-- [ ] New tags present in the debug contract enum + implementation + unit
+- [x] New tags present in the debug contract enum + implementation + unit
       tests (ring stays content-free per the diagnostic-categories pattern).
-- [ ] `flutter analyze` + affected unit tests green.
+- [x] `flutter analyze` + affected unit tests green.
+
+## Implementation
+
+- Unit 1: added `scripts/debug_capture_triage.py` with deterministic summary and
+  interleaved timeline modes, send/echo correlation, blocked-send swallow and
+  channel-loss churn heuristics, lifecycle attribution grouping, and CI exit
+  status. Added the minimal checked-in regression slice at
+  `scripts/fixtures/debug_capture_triage/cad-11f1-b349-a5efddf14d8d.bin`.
+- Unit 2: added content-free `sendQueue` and `route` debug events, wired held,
+  visible-fail, resend outcome, route entry, and hydrate projection capture;
+  added closed `reconnectAttribution` causes to `connChannelLost`; expanded
+  routing and JSON-shape tests.
+- Unit 3: included `sendQueue` and `route` in the triage timeline and field
+  rendering.
+- Evidence: `flutter analyze` passed; `flutter test --exclude-tags e2e`
+  passed (`882` tests); `python3 scripts/debug_capture_triage.py --selftest`
+  passed with known swallow, `89 retryConnect/TimeoutException` failures, and
+  churn-cluster checks.
