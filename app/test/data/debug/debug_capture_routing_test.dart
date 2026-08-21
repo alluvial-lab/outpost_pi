@@ -248,7 +248,10 @@ _syncHarness({
   await _settle();
   await sync.activate(_peerEpk, 'main');
   await _settle();
-  log.events.clear();
+  final routeEvents = log.events.whereType<RouteEvent>().toList();
+  log.events
+    ..clear()
+    ..addAll(routeEvents);
   return (
     conn: conn,
     channel: channel,
@@ -756,6 +759,16 @@ void main() {
       final s = await _syncHarness(
         pendingSendTimeout: const Duration(seconds: 5),
       );
+      _assertEvent<RouteEvent>(
+        s.log.events,
+        DebugTag.route,
+        where: (event) => event.phase == RoutePhase.entry,
+      );
+      _assertEvent<RouteEvent>(
+        s.log.events,
+        DebugTag.route,
+        where: (event) => event.phase == RoutePhase.projectionEmpty,
+      );
       final longText = '${'x' * 90} trailing body that must not be persisted';
 
       await s.sync.sendMessage(longText);
@@ -808,6 +821,12 @@ void main() {
       );
       expect(failed.code, 'send_error');
       expect(failed.toJson().keys, isNot(contains('detail')));
+      _assertEvent<SendQueueEvent>(
+        s.log.events,
+        DebugTag.sendQueue,
+        where: (event) =>
+            event.id == failed.id && event.phase == SendQueuePhase.visibleFail,
+      );
 
       s.sync.requestSync();
       await _settle();
@@ -1035,6 +1054,12 @@ void main() {
       expect(blocked.id, startsWith('cli_'));
       // No preview field on the diagnostic event (redaction contract).
       expect(blocked.toJson(), isNot(contains('preview')));
+      _assertEvent<SendQueueEvent>(
+        s.log.events,
+        DebugTag.sendQueue,
+        where: (event) =>
+            event.id == blocked.id && event.phase == SendQueuePhase.held,
+      );
 
       s.conn.dispose();
       s.sync.dispose();
@@ -1287,6 +1312,26 @@ void main() {
         DebugTag.msgFailed,
         'send-error',
         (e) => e is MsgFailedEvent && e.code == 'send_error',
+      ),
+      (
+        DebugTag.sendQueue,
+        'held',
+        (e) => e is SendQueueEvent && e.phase == SendQueuePhase.held,
+      ),
+      (
+        DebugTag.sendQueue,
+        'visible-fail',
+        (e) => e is SendQueueEvent && e.phase == SendQueuePhase.visibleFail,
+      ),
+      (
+        DebugTag.route,
+        'entry',
+        (e) => e is RouteEvent && e.phase == RoutePhase.entry,
+      ),
+      (
+        DebugTag.route,
+        'projection-empty',
+        (e) => e is RouteEvent && e.phase == RoutePhase.projectionEmpty,
       ),
       (
         DebugTag.sessionGate,
