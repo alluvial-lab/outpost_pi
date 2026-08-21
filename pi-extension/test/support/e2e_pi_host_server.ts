@@ -80,7 +80,9 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
   if (request.method === "POST" && url.pathname === "/turn-control/defer-next") {
-    json(response, 200, runtime.deferNextTurn());
+    const body = await readJson(request);
+    const reply = typeof body.reply === "string" ? body.reply : undefined;
+    json(response, 200, runtime.deferNextTurn(reply));
     return;
   }
   if (request.method === "POST" && url.pathname === "/turn-control/resolve") {
