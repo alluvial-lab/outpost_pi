@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: tests
 created: 2026-08-15
-updated: 2026-08-16
+updated: 2026-08-20
 ---
 
 # Exercise the real mobile_scanner v7 QR boundary after the 5→7 major bump
@@ -77,3 +77,18 @@ one-shot pairing rule.
 
 ### Bounded inline review (2026-08-16)
 PASS — real-scanner smoke e2e-tagged out of the default suite, analyze + debug APK compile green; device execution remains operator UAT (honestly recorded, not claimed).
+
+### Emulator execution (2026-08-20 — supersedes "device UAT pending" for automation)
+
+First real execution happened on the LOCAL emulator (KVM unlocked on the VM;
+AVD `outpost34`, android-34 google_apis x86_64, `-camera-back virtualscene`,
+`-gpu swiftshader_indirect`). It immediately caught two harness bugs that
+compile+analyze could never see: an untyped `ChangeNotifierProvider` that
+registered the test subclass instead of `PairingViewModel` (ProviderNotFound
+at page build), and a 12s camera-start budget far below swiftshader cold-init
+reality. Also: `flutter test` reinstalls per run, clearing runtime grants —
+`scripts/emulator-scanner-smoke.sh` auto-grants CAMERA (dialog-tap fallback).
+Fixed in 6eb19fe1; **3 consecutive green runs** (`+2` each, ~11s).
+
+Release-UAT step 6 now has an automatable path; the real-phone tier remains
+reserved for true hardware-camera confirmation.
