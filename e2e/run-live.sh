@@ -64,6 +64,10 @@ cleanup() {
   [[ -n "$TEST_PID" ]] && kill "$TEST_PID" >/dev/null 2>&1
   [[ -n "$GRANT_PID" ]] && kill "$GRANT_PID" >/dev/null 2>&1
   capture_diagnostics || true
+  if [[ -n "${E2E_LIVE_ARTIFACT_DIR:-}" ]]; then
+    mkdir -p "$E2E_LIVE_ARTIFACT_DIR"
+    cp -a "$RUN_STATE/." "$E2E_LIVE_ARTIFACT_DIR/" >/dev/null 2>&1 || true
+  fi
   app_airplane off >/dev/null 2>&1 || true
   net_clear >/dev/null 2>&1 || true
   if "$ADB_BIN" -s "$ANDROID_SERIAL" get-state >/dev/null 2>&1; then
@@ -241,7 +245,7 @@ run_device_test() {
   FLUTTER_LOG="$RUN_STATE/flutter-live-${label}.log"
   : >"$FLUTTER_LOG"
   set +e
-  timeout --signal=TERM 11m "$FLUTTER" test --no-pub \
+  timeout --signal=TERM "${E2E_LIVE_TIMEOUT_SECONDS:-660}s" "$FLUTTER" test --no-pub \
     "$TEST_FILE" \
     -d "$ANDROID_SERIAL" --tags e2e --no-uninstall \
     --dart-define="E2E_PI_HOST_URL=http://127.0.0.1:${PI_HOST_PORT}" \
