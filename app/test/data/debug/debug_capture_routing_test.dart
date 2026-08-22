@@ -616,6 +616,7 @@ void main() {
         'main',
         false,
         sessionId: 'debug-session-0001',
+        turnId: null,
       );
       await _settle();
       final working = _assertEvent<WorkingConvEvent>(

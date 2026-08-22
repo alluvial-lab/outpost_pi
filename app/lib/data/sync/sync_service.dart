@@ -2151,7 +2151,7 @@ class SyncService extends Service {
     if (!_turnViewController.isClosed) _turnViewController.add(next);
   }
 
-  void _correctRoomWorking(bool working) {
+  void _correctRoomWorking(bool working, {String? turnId}) {
     final ref = _activeRef;
     if (ref == null) return;
     _conn.markRoomWorking(
@@ -2159,6 +2159,7 @@ class SyncService extends Service {
       ref.roomId,
       working,
       sessionId: ref.sessionId,
+      turnId: turnId,
     );
   }
 
@@ -2169,7 +2170,7 @@ class SyncService extends Service {
     String? replyTo,
   }) {
     final target = replyTo ?? _turnView.replyTo ?? turnId;
-    _correctRoomWorking(true);
+    _correctRoomWorking(true, turnId: target);
     _setTurnView(
       TranscriptTurnView(
         status: status,
