@@ -14,6 +14,7 @@ EMULATOR_PORT=${ANDROID_SERIAL#emulator-}
 TEST_SELECTOR="${1:-${E2E_LIVE_TEST_FILE:-integration_test/live_infra_smoke_test.dart}}"
 case "$TEST_SELECTOR" in
   state-shapes) TEST_FILE=integration_test/live_state_shapes_test.dart ;;
+  grid) TEST_FILE=integration_test/live_grid_test.dart ;;
   *) TEST_FILE="$TEST_SELECTOR" ;;
 esac
 case "$TEST_FILE" in
@@ -304,6 +305,10 @@ elif [[ "$TEST_FILE" == integration_test/live_failure_test.dart ]]; then
   run_device_test failure-main
   "$ADB_BIN" -s "$ANDROID_SERIAL" shell am force-stop dev.kevoun.outpostpi
   run_device_test blank-cold
+elif [[ "$TEST_FILE" == integration_test/live_grid_test.dart ]]; then
+  run_device_test grid-main
+  "$ADB_BIN" -s "$ANDROID_SERIAL" shell am force-stop dev.kevoun.outpostpi
+  run_device_test grid-cold
 else
   run_device_test
 fi

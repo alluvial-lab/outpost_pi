@@ -21,6 +21,7 @@ import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/qr_scanner.dart';
 import 'package:app/pairing/storage.dart';
+import 'package:app/protocol/protocol.dart';
 import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
 import 'package:app/ui/chat/chat_page.dart';
@@ -77,6 +78,7 @@ final class LiveDeviceHarness {
   final LiveHostClient host;
 
   GoRouter? _chatRouter;
+  IActionsRepository? _routeActions;
   SpeechService? _speech;
   PeerRecord? _peer;
 
@@ -335,7 +337,9 @@ final class LiveDeviceHarness {
   /// Mount a fresh production chat route bound to the persisted selection.
   Future<void> mountChat(WidgetTester tester) async {
     await unmountChat(tester);
+    final routeActions = _StaticActionsRepository();
     final speech = SpeechToTextService();
+    _routeActions = routeActions;
     _speech = speech;
     final router = GoRouter(
       initialLocation: '/chat',
@@ -358,7 +362,7 @@ final class LiveDeviceHarness {
               ),
               ChangeNotifierProvider(
                 create: (_) =>
-                    AttachmentViewModel(ImagePickerService(), actions),
+                    AttachmentViewModel(ImagePickerService(), routeActions),
               ),
             ],
             child: const ChatPage(showBack: false, initialOnline: true),
@@ -391,6 +395,8 @@ final class LiveDeviceHarness {
     await tester.pump();
     _chatRouter?.dispose();
     _chatRouter = null;
+    _routeActions?.dispose();
+    _routeActions = null;
     _speech?.dispose();
     _speech = null;
   }
@@ -873,6 +879,41 @@ Future<bool> liveRelayHealthReachable({
     return false;
   } finally {
     client.close(force: true);
+  }
+}
+
+final class _StaticActionsRepository extends IActionsRepository {
+  final StreamController<ActiveRoomMeta> _meta =
+      StreamController<ActiveRoomMeta>.broadcast();
+
+  @override
+  ActiveRoomMeta get activeRoomMeta => const ActiveRoomMeta();
+
+  @override
+  Stream<ActiveRoomMeta> get activeRoomMetaStream => _meta.stream;
+
+  @override
+  Future<ModelsCatalogue> listModels({bool forceRefresh = false}) async =>
+      const ModelsCatalogue(models: []);
+
+  @override
+  Future<void> compact() => throw const ActionFailure('not exercised');
+
+  @override
+  Future<void> newSession() => throw const ActionFailure('not exercised');
+
+  @override
+  Future<void> setModel(String provider, String modelId) =>
+      throw const ActionFailure('not exercised');
+
+  @override
+  Future<void> setThinking(ThinkingLevel level) =>
+      throw const ActionFailure('not exercised');
+
+  @override
+  void dispose() {
+    _meta.close();
+    super.dispose();
   }
 }
 
