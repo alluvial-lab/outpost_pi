@@ -1,7 +1,7 @@
 ---
 id: feature-e2e-chaos-expansion
 kind: feature
-stage: implementing
+stage: review
 tags: [app, relay, pi-extension, testing]
 parent: null
 depends_on: []
@@ -55,3 +55,33 @@ structure (grid/mesh/cadence), then skew drills.
 - Skew drills may bounce (kernel/faketime constraints in containers) —
   allowed to land partial with findings parked.
 - Nightly soaks on a fleet VM: schedule when idle; reports bounded.
+
+
+## Implementation summary (2026-08-22)
+
+All 7 children done across 4 sequential workers (device lane forces serial).
+One ENOSPC casualty mid-program (worker 2) — work recovered, verification
+completed by the follow-up worker; disk hygiene now owned by the nightly
+script (post-incident).
+
+| story | commit | verification |
+|---|---|---|
+| oracle-invariants | 2a6b3cd9 | 4 invariants clean in seeded soak; 11 unit tests |
+| fault-vocabulary | 1a13282c | latency/bandwidth/slow_close/relay_kill/compound demonstrated; determinism tests |
+| state-shapes | 0153ed6f | multi-session/re-pair/long-uptime shapes in soak |
+| fault-moment-grid | 41750c9a + 3608d61b | main 9/9 green; cold cells skip-linked green (post-correction run) |
+| mesh-lane | 1defbfd5 | 2nd pi-host; 3 mesh scenarios (1 linked skip) |
+| nightly-cadence | c1615baa | real 15-min manual run green; cron @02:30; bounded rotation; drift alerting |
+| clock-version-skew | d6e073e0 | ±2h clock skew held invariants; v0.4.0 relay drill passed 16 current pairing tests |
+
+**Program discoveries (the point of the exercise) — parked with evidence:**
+1. `backlog-app-cold-replay-duplicates-persisted-transcript` — fresh process
+   loses the replay seen-set; replays over persisted Hive rows (grid, caught
+   live by the exact-one assertion).
+2. `backlog-mesh-post-pair-roster-bootstrap-empty` (mesh lane).
+3. Known-open set for the nightly drift check: the above + swallow +
+   blank-chat (+ any the review confirms).
+
+**Open question flagged for review:** v0.4.0 relay passing all 16 current
+pairing tests vs AGENTS.md "hard cutover" claims for the paired wire —
+either doc drift or a missing enforcement surface; adjudicate in review.
