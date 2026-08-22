@@ -5,18 +5,23 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 COMPOSE_PROJECT="${E2E_COMPOSE_PROJECT_NAME:-outpost-pi-live-e2e-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-$$}-${RANDOM}}"
 RUN_STATE="$ROOT/e2e/.run-state/$COMPOSE_PROJECT"
 COMPOSE_FILE="$ROOT/e2e/docker-compose.test.yml"
-COMPOSE=(docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE")
+MESH_COMPOSE_FILE="$ROOT/e2e/docker-compose.mesh.yml"
 FLUTTER="${FLUTTER:-$ROOT/.tools/flutter/bin/flutter}"
 EMULATOR="${EMULATOR_BIN:-/opt/android-sdk/emulator/emulator}"
 ADB_BIN="${ADB_BIN:-/opt/android-sdk/platform-tools/adb}"
 ANDROID_SERIAL="${E2E_ANDROID_SERIAL:-emulator-5554}"
 EMULATOR_PORT=${ANDROID_SERIAL#emulator-}
 TEST_SELECTOR="${1:-${E2E_LIVE_TEST_FILE:-integration_test/live_infra_smoke_test.dart}}"
+MESH_LANE=0
 case "$TEST_SELECTOR" in
   state-shapes) TEST_FILE=integration_test/live_state_shapes_test.dart ;;
   grid) TEST_FILE=integration_test/live_grid_test.dart ;;
+  mesh) TEST_FILE=integration_test/live_mesh_test.dart; MESH_LANE=1 ;;
   *) TEST_FILE="$TEST_SELECTOR" ;;
 esac
+COMPOSE_FILES=(-f "$COMPOSE_FILE")
+if [[ "$MESH_LANE" == 1 ]]; then COMPOSE_FILES+=(-f "$MESH_COMPOSE_FILE"); fi
+COMPOSE=(docker compose -p "$COMPOSE_PROJECT" "${COMPOSE_FILES[@]}")
 case "$TEST_FILE" in
   integration_test/*.dart) ;;
   *) printf 'live test selector must be integration_test/*.dart\n' >&2; exit 2 ;;
@@ -58,6 +63,9 @@ capture_diagnostics() {
     capture_status=1
   fi
   "${COMPOSE[@]}" logs --no-color pi-host >"$RUN_STATE/pi-host.log" 2>&1 || true
+  if [[ "$MESH_LANE" == 1 ]]; then
+    "${COMPOSE[@]}" logs --no-color pi-host-b >"$RUN_STATE/pi-host-b.log" 2>&1 || true
+  fi
   "${COMPOSE[@]}" logs --no-color relay >"$RUN_STATE/relay.log" 2>&1 || true
   return "$capture_status"
 }
@@ -167,7 +175,11 @@ cd "$ROOT/pi-extension"
 node_modules/.bin/tsc -p ../e2e/tsconfig.pi-host.json
 
 if [[ -n "${OUTPOST_PI_E2E_RELAY_IMAGE:-}" ]]; then
-  "${COMPOSE[@]}" build pi-host
+  if [[ "$MESH_LANE" == 1 ]]; then
+    "${COMPOSE[@]}" build pi-host pi-host-b
+  else
+    "${COMPOSE[@]}" build pi-host
+  fi
   "${COMPOSE[@]}" up -d --no-build --wait --wait-timeout 60
 else
   "${COMPOSE[@]}" up -d --build --wait --wait-timeout 60
@@ -176,8 +188,12 @@ fi
 TOXI_ADMIN_PORT=$(published_port toxiproxy 8474)
 TOXI_RELAY_PORT=$(published_port toxiproxy 8666)
 PI_HOST_PORT=$(published_port toxiproxy 8667)
+PI_HOST_B_PORT=""
+if [[ "$MESH_LANE" == 1 ]]; then PI_HOST_B_PORT=$(published_port toxiproxy 8668); fi
 export E2E_COMPOSE_PROJECT="$COMPOSE_PROJECT"
 export E2E_COMPOSE_FILE="$COMPOSE_FILE"
+export E2E_COMPOSE_OVERRIDE_FILE=""
+if [[ "$MESH_LANE" == 1 ]]; then export E2E_COMPOSE_OVERRIDE_FILE="$MESH_COMPOSE_FILE"; fi
 export E2E_TOXIPROXY_PORT="$TOXI_ADMIN_PORT"
 E2E_TOXIPROXY_CLI="$RUN_STATE/toxiproxy-cli"
 docker cp "$("${COMPOSE[@]}" ps -q toxiproxy):/toxiproxy-cli" \
@@ -188,7 +204,9 @@ export E2E_PI_HOST_PORT="$PI_HOST_PORT"
 export E2E_ANDROID_SERIAL="$ANDROID_SERIAL"
 export ADB_BIN
 
-for proxy in app-relay pi-host; do
+PROXIES=(app-relay pi-host)
+if [[ "$MESH_LANE" == 1 ]]; then PROXIES+=(pi-host-b); fi
+for proxy in "${PROXIES[@]}"; do
   curl --silent --show-error -X DELETE \
     "http://127.0.0.1:${TOXI_ADMIN_PORT}/proxies/$proxy" >/dev/null || true
 done
@@ -198,6 +216,11 @@ curl --fail --silent --show-error -H 'content-type: application/json' \
 curl --fail --silent --show-error -H 'content-type: application/json' \
   -d '{"name":"pi-host","listen":"0.0.0.0:8667","upstream":"pi-host:4317","enabled":true}' \
   "http://127.0.0.1:${TOXI_ADMIN_PORT}/proxies" >/dev/null
+if [[ "$MESH_LANE" == 1 ]]; then
+  curl --fail --silent --show-error -H 'content-type: application/json' \
+    -d '{"name":"pi-host-b","listen":"0.0.0.0:8668","upstream":"pi-host-b:4318","enabled":true}' \
+    "http://127.0.0.1:${TOXI_ADMIN_PORT}/proxies" >/dev/null
+fi
 
 if "$ADB_BIN" -s "$ANDROID_SERIAL" get-state >/dev/null 2>&1; then
   printf 'refusing to reuse occupied Android serial %s\n' "$ANDROID_SERIAL" >&2
@@ -214,7 +237,9 @@ wait_for_device_value 1 180
 "$ADB_BIN" -s "$ANDROID_SERIAL" shell settings put global transition_animation_scale 0
 "$ADB_BIN" -s "$ANDROID_SERIAL" shell settings put global animator_duration_scale 0
 
-for port in "$TOXI_ADMIN_PORT" "$TOXI_RELAY_PORT" "$PI_HOST_PORT"; do
+REVERSE_PORTS=("$TOXI_ADMIN_PORT" "$TOXI_RELAY_PORT" "$PI_HOST_PORT")
+if [[ "$MESH_LANE" == 1 ]]; then REVERSE_PORTS+=("$PI_HOST_B_PORT"); fi
+for port in "${REVERSE_PORTS[@]}"; do
   "$ADB_BIN" -s "$ANDROID_SERIAL" reverse "tcp:$port" "tcp:$port"
 done
 
@@ -256,6 +281,9 @@ run_device_test() {
   local phase=${1:-} label=${1:-all}
   local -a phase_define=()
   [[ -z "$phase" ]] || phase_define+=(--dart-define="E2E_LIVE_PHASE=$phase")
+  if [[ "$MESH_LANE" == 1 ]]; then
+    phase_define+=(--dart-define="E2E_PI_HOST_B_URL=http://127.0.0.1:${PI_HOST_B_PORT}")
+  fi
   FLUTTER_LOG="$RUN_STATE/flutter-live-${label}.log"
   : >"$FLUTTER_LOG"
   set +e
@@ -291,6 +319,10 @@ run_device_test() {
     tail -120 "$FLUTTER_LOG" >&2 || true
     printf '%s\n' '===== pi-host tail =====' >&2
     "${COMPOSE[@]}" logs --no-color pi-host | tail -120 >&2 || true
+    if [[ "$MESH_LANE" == 1 ]]; then
+      printf '%s\n' '===== pi-host-b tail =====' >&2
+      "${COMPOSE[@]}" logs --no-color pi-host-b | tail -120 >&2 || true
+    fi
     return "$flutter_status"
   fi
 }

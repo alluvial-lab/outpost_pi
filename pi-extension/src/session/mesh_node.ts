@@ -360,6 +360,19 @@ export class MeshNode {
     return this.peer_;
   }
 
+  /** Send one test-support envelope below the known-open remote roster cache. */
+  sendEnvelopeForTest(input: {
+    toPc: string;
+    toRoom: string;
+    toAddress: string;
+    body: unknown;
+  }): boolean {
+    return this.brokerRemote?.sendEnvelopeForTest({
+      ...input,
+      fromAddress: this.address(),
+    }) ?? false;
+  }
+
   /** Fire-and-forget send. `to` may be a name, `<pc>:<name>`, or "broadcast". */
   async send(to: string | string[], body: unknown, re: string | null = null): Promise<void> {
     return this.peer_.send(to, body, re);

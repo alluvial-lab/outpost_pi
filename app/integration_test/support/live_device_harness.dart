@@ -8,12 +8,15 @@ import 'package:app/data/debug/debug_log_impl.dart';
 import 'package:app/data/images/image_picker_service.dart';
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/local/records/message_record.dart';
+import 'package:app/data/mesh/mesh_client.dart';
+import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/repositories/session_read_repository.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/peer_channel.dart';
+import 'package:app/data/transport/relay_config.dart';
 import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/data/voice/speech_service.dart';
 import 'package:app/domain/contracts/debug_log.dart';
@@ -43,6 +46,7 @@ import 'package:provider/provider.dart';
 import 'package:qr/qr.dart';
 
 const livePiHostUrl = String.fromEnvironment('E2E_PI_HOST_URL');
+const livePiHostBUrl = String.fromEnvironment('E2E_PI_HOST_B_URL');
 const liveRelayUrl = String.fromEnvironment('E2E_RELAY_URL');
 
 /// Own the real app-side services used by live device regression scenarios.
@@ -62,8 +66,11 @@ final class LiveDeviceHarness {
     required this.readRepository,
     required this.actions,
     required this.pairingViewModel,
+    required this.meshSync,
     required this.host,
-  }) : _ownerStore = ownerStore;
+    required LiveHostClient? secondaryHost,
+  }) : _ownerStore = ownerStore,
+       _secondaryHost = secondaryHost;
 
   final PairingStorage storage;
   final Preferences preferences;
@@ -75,7 +82,9 @@ final class LiveDeviceHarness {
   final SessionReadRepository readRepository;
   final ActionsRepository actions;
   final PairingViewModel pairingViewModel;
+  final MeshSyncService? meshSync;
   final LiveHostClient host;
+  final LiveHostClient? _secondaryHost;
 
   GoRouter? _chatRouter;
   IActionsRepository? _routeActions;
@@ -86,9 +95,19 @@ final class LiveDeviceHarness {
       _peer ?? (throw StateError('live harness is not paired'));
 
   /// Build production app services, optionally restoring the persisted pair.
-  static Future<LiveDeviceHarness> create({required bool restorePair}) async {
+  static Future<LiveDeviceHarness> create({
+    required bool restorePair,
+    bool enableMesh = false,
+  }) async {
     expect(livePiHostUrl, isNotEmpty, reason: 'runner must inject pi-host URL');
     expect(liveRelayUrl, isNotEmpty, reason: 'runner must inject relay URL');
+    if (enableMesh) {
+      expect(
+        livePiHostBUrl,
+        isNotEmpty,
+        reason: 'mesh runner must inject the second pi-host URL',
+      );
+    }
 
     await LocalBoxes.init();
     const secureStorage = FlutterSecureStorage();
@@ -142,6 +161,16 @@ final class LiveDeviceHarness {
     final sync = SyncService(connection, LocalBoxes(), debugLog: debugLog);
     final readRepository = SessionReadRepository(LocalBoxes());
     final actions = ActionsRepository(connection);
+    final meshSync = enableMesh
+        ? MeshSyncService(
+            MeshClient(
+              relayResolutionProvider: () => ConfiguredRelay(liveRelayUrl),
+            ),
+            ownerBridge,
+            storage,
+            debugLog: debugLog,
+          )
+        : null;
     final pairingViewModel = PairingViewModel(
       storage,
       (qr, ownerKey) => WsTransport.connect(
@@ -168,7 +197,11 @@ final class LiveDeviceHarness {
       readRepository: readRepository,
       actions: actions,
       pairingViewModel: pairingViewModel,
+      meshSync: meshSync,
       host: LiveHostClient(Uri.parse(livePiHostUrl)),
+      secondaryHost: enableMesh
+          ? LiveHostClient(Uri.parse(livePiHostBUrl))
+          : null,
     );
 
     if (restorePair) {
@@ -195,12 +228,34 @@ final class LiveDeviceHarness {
     return pairFromUri(tester, await issuePairCode(tester));
   }
 
+  /// Pair the same Owner to the independently identified second Pi host.
+  Future<PeerRecord> pairSecondary(WidgetTester tester) async {
+    final target = _secondaryHost;
+    if (target == null) throw StateError('second live Pi host is unavailable');
+    pairingViewModel.retry();
+    return pairFromUri(tester, await issuePairCode(tester, target: target));
+  }
+
+  /// Publish both paired Pis through the production signed mesh service.
+  Future<void> publishMeshMembership() async {
+    final service = meshSync;
+    if (service == null) throw StateError('mesh sync is not enabled');
+    final result = await service.publish();
+    if (result is! MeshPublishOk) {
+      throw StateError('mesh membership publish failed: ${result.runtimeType}');
+    }
+  }
+
   /// Issue a fresh production pair code and return its scanner URI.
-  Future<String> issuePairCode(WidgetTester tester) async {
-    await host.delete('/pair-code');
-    await host.post('/command', <String, Object>{'args': 'pair'});
+  Future<String> issuePairCode(
+    WidgetTester tester, {
+    LiveHostClient? target,
+  }) async {
+    final targetHost = target ?? host;
+    await targetHost.delete('/pair-code');
+    await targetHost.post('/command', <String, Object>{'args': 'pair'});
     final pairCode = await eventually<Map<String, dynamic>>(tester, () async {
-      final value = await host.tryGet('/pair-code');
+      final value = await targetHost.tryGet('/pair-code');
       return value?['uri'] is String ? value : null;
     }, description: 'production pair-code publication');
     return pairCode['uri'] as String;
@@ -760,6 +815,7 @@ final class LiveDeviceHarness {
   Future<void> close(WidgetTester tester) async {
     await unmountChat(tester);
     pairingViewModel.dispose();
+    meshSync?.dispose();
     actions.dispose();
     sync.dispose();
     readRepository.dispose();

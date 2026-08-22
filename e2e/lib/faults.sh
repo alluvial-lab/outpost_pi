@@ -15,7 +15,11 @@ _fault_require() {
 _fault_compose() {
   _fault_require E2E_COMPOSE_PROJECT || return
   _fault_require E2E_COMPOSE_FILE || return
-  docker compose -p "$E2E_COMPOSE_PROJECT" -f "$E2E_COMPOSE_FILE" "$@"
+  local -a files=(-f "$E2E_COMPOSE_FILE")
+  if [[ -n "${E2E_COMPOSE_OVERRIDE_FILE:-}" ]]; then
+    files+=(-f "$E2E_COMPOSE_OVERRIDE_FILE")
+  fi
+  docker compose -p "$E2E_COMPOSE_PROJECT" "${files[@]}" "$@"
 }
 
 _fault_adb() {

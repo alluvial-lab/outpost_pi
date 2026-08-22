@@ -25,6 +25,7 @@ export interface PiHostStatus {
   readonly sessionId: string;
   readonly roomId: string;
   readonly relayConnected: boolean;
+  readonly meshAddress: string | null;
   readonly sessionContextHasMessageActions: boolean;
 }
 
@@ -41,11 +42,23 @@ export interface PiHostTurnControlStatus {
 type ProductionModule = {
   default: ExtensionFactory;
   outpostPiTestHarness: {
+    connect(ctx: unknown): Promise<void>;
     state(): "idle" | "started" | "paired";
     /** The room this Pi actually registered with the relay; null while idle. */
     roomId(): string | null;
     /** The effective name used to derive that room. */
     name(): string | null;
+    meshAddress(): string | null;
+    meshBridgeActive(): boolean;
+    meshPeers(): Promise<string[]>;
+    meshTarget(pcPubkey: string, remoteAddress: string): string | null;
+    sendDirectMeshMessage(input: {
+      toPc: string;
+      toRoom: string;
+      toAddress: string;
+      body: unknown;
+    }): boolean;
+    refreshMeshMembership(): Promise<void>;
   };
   _getLockedNameForTest(): string | null;
   _resetCwdLockForTest(): void;
@@ -173,11 +186,14 @@ export class E2ePiHostRuntime {
         || typeof sessionContext.sendUserMessage === "function",
     );
     await runner.emit({ type: "session_start", reason: "startup" });
-    // The live app lane does not exercise the local UDS mesh. Relay-only
-    // startup avoids manufacturing a broker collision suffix in this narrow
-    // single-process adapter, keeping the production room derivation stable
-    // across preserving respawns.
-    await production._startRelayForTest(runner.createContext());
+    if (process.env.E2E_PI_MESH_ENABLED === "1") {
+      // The mesh lane deliberately uses the production connect path: local UDS
+      // broker, relay bridge, membership discovery, and owner channel all stay
+      // real. Other live lanes retain relay-only startup and its stable room.
+      await production.outpostPiTestHarness.connect(runner.createContext());
+    } else {
+      await production._startRelayForTest(runner.createContext());
+    }
     return instance;
   }
 
@@ -198,6 +214,7 @@ export class E2ePiHostRuntime {
       roomId: this.production.outpostPiTestHarness.roomId()
         ?? roomIdFor(this.cwd, defaultAgentName(this.cwd)),
       relayConnected: state !== "idle",
+      meshAddress: this.production.outpostPiTestHarness.meshAddress(),
       sessionContextHasMessageActions: this.sessionContextHasMessageActions,
     };
   }
@@ -211,6 +228,41 @@ export class E2ePiHostRuntime {
 
   eventsAfter(seq: number): readonly PiHostTuiEvent[] {
     return this.events.filter((event) => event.seq > seq);
+  }
+
+  /** Refresh signed membership and return the production broker's current roster. */
+  async refreshMeshMembership(): Promise<readonly string[]> {
+    await this.production.outpostPiTestHarness.refreshMeshMembership();
+    return this.production.outpostPiTestHarness.meshPeers();
+  }
+
+  /** Return broker-issued mesh identity and peers without composing addresses. */
+  async meshStatus(): Promise<{ address: string | null; bridgeActive: boolean; peers: readonly string[] }> {
+    return {
+      address: this.production.outpostPiTestHarness.meshAddress(),
+      bridgeActive: this.production.outpostPiTestHarness.meshBridgeActive(),
+      peers: await this.production.outpostPiTestHarness.meshPeers(),
+    };
+  }
+
+  /** Resolve a test route from signed membership and a broker-issued address. */
+  meshTarget(pcPubkey: string, remoteAddress: string): string | null {
+    return this.production.outpostPiTestHarness.meshTarget(pcPubkey, remoteAddress);
+  }
+
+  /** Send below the linked roster cache while retaining relay and ingress behavior. */
+  sendDirectMeshMessage(input: {
+    toPc: string;
+    toRoom: string;
+    toAddress: string;
+    message: string;
+  }): boolean {
+    return this.production.outpostPiTestHarness.sendDirectMeshMessage({
+      toPc: input.toPc,
+      toRoom: input.toRoom,
+      toAddress: input.toAddress,
+      body: { type: "e2e_mesh", message: input.message },
+    });
   }
 
   /** Arm the next SDK user-message action to settle only on explicit release. */
@@ -348,6 +400,7 @@ export class E2ePiHostRuntime {
       await this.runner.emitMessageEnd({ type: "message_end", message: assistant as never });
     }
     await this.runner.emit({ type: "agent_end", messages: [] });
+    await this.runner.emit({ type: "agent_settled" });
     this.turnControlPhase = "settled";
   }
 }

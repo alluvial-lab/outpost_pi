@@ -515,6 +515,34 @@ export class BrokerRemote implements RemoteRouter {
     this.pi.sendEnvelopeToPi(fromPc, toRoom, ackEnv);
   }
 
+  /**
+   * Send one test-support envelope through the authenticated Pi forwarder.
+   *
+   * This bypasses only the known-open remote-roster/room-cache lookup. The
+   * relay authorization, destination anti-spoof check, local broker injection,
+   * and extension mesh-ingress path remain production code.
+   */
+  sendEnvelopeForTest(input: {
+    toPc: string;
+    toRoom: string;
+    toAddress: string;
+    fromAddress: string;
+    body: unknown;
+  }): boolean {
+    if (this.detached) return false;
+    const canonicalToPc = Buffer.from(input.toPc, "base64").toString("base64");
+    const destinationLabel = this.siblingByPubkey.get(canonicalToPc);
+    if (!destinationLabel) return false;
+    const outgoing = envelope(
+      `${this.selfPcLabel}:${input.fromAddress}`,
+      `${destinationLabel}:${input.toAddress}`,
+      input.body,
+      null,
+    );
+    this.pi.sendEnvelopeToPi(canonicalToPc, input.toRoom, outgoing);
+    return true;
+  }
+
   // ── Internals ─────────────────────────────────────────────────────────────
 
   private _subscribeToRooms(pcPubkey: string): void {
