@@ -1,0 +1,14 @@
+services:
+  relay:
+    image: outpost-pi-relay:clock-skew
+    environment:
+      LD_PRELOAD: /usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1
+      FAKETIME: "+2h"
+      FAKETIME_DONT_FAKE_MONOTONIC: "1"
+
+  pi-host:
+    image: outpost-pi-pi-host:clock-skew
+    environment:
+      LD_PRELOAD: /usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1
+      FAKETIME: "-2h"
+      FAKETIME_DONT_FAKE_MONOTONIC: "1"
