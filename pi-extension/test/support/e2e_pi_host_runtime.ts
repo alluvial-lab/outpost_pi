@@ -75,6 +75,7 @@ export class E2ePiHostRuntime {
   private turnControlPhase: PiHostTurnControlStatus["phase"] = "idle";
   private stagedReply: string | null = null;
   private deferredTurnResolve: (() => void) | null = null;
+  private readonly sessions = new Map<string, SessionManager>();
 
   private constructor(
     private readonly cwd: string,
@@ -82,7 +83,9 @@ export class E2ePiHostRuntime {
     private readonly runner: ExtensionRunner,
     private readonly production: ProductionModule,
     private readonly sessionContextHasMessageActions: boolean,
-  ) {}
+  ) {
+    this.sessions.set(sessionManager.getSessionId(), sessionManager);
+  }
 
   static async start(options: {
     relayUrl: string;
@@ -235,6 +238,30 @@ export class E2ePiHostRuntime {
     return { phase: this.turnControlPhase };
   }
 
+  /** List session identities retained by this process-local live test host. */
+  sessionIds(): readonly string[] {
+    return [...this.sessions.keys()];
+  }
+
+  /** Model an external Pi `/resume` switch to a retained SDK session. */
+  async switchSession(sessionId: string): Promise<void> {
+    if (this.disposed) throw new Error("Pi host runtime is disposed");
+    const next = this.sessions.get(sessionId);
+    if (!next) throw new Error("unknown retained session");
+    if (next === this.sessionManager) return;
+
+    const before = await this.runner.emit({ type: "session_before_switch", reason: "resume" });
+    if (before?.cancel) throw new Error("session switch cancelled");
+    this.sessionManager = next;
+    (this.runner as unknown as { sessionManager: SessionManager }).sessionManager = next;
+    this.runner.bindCore(actions(
+      next,
+      this.record.bind(this),
+      (content) => this.handleSendUserMessage(content),
+    ), contextActions(this.cwd));
+    await this.runner.emit({ type: "session_start", reason: "resume" });
+  }
+
   /** Gracefully leave the mesh and return the assigned name for respawn. */
   async preparePreservingRestart(): Promise<string> {
     const assignedName = this.production.outpostPiTestHarness.name()
@@ -268,6 +295,7 @@ export class E2ePiHostRuntime {
     this.sessionManager = SessionManager.create(this.cwd, sessionDir, {
       parentSession: options?.parentSession,
     });
+    this.sessions.set(this.sessionManager.getSessionId(), this.sessionManager);
     // The narrow host keeps one SDK runner but rotates the actual
     // SessionManager. ExtensionRunner's runtime getter then exposes the fresh
     // session identity to session_start and the replacement context.

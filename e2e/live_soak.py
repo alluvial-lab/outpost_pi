@@ -57,6 +57,7 @@ FAULT_WEIGHTS = (
 )
 ACTION_WEIGHTS = (("send", 20), ("navigation", 9), ("cold_restart", 5))
 VOCABULARY_PROBE_DURATION_SECONDS = 90
+STATE_SHAPE_PROBE_DURATION_SECONDS = 300
 REQUIRED_FAULT_DEMOS = (
     ("latency", "net_fault latency"),
     ("bandwidth", "net_fault bandwidth"),
@@ -196,6 +197,14 @@ def build_schedule(seed: int, duration_seconds: int) -> tuple[ScheduleEvent, ...
             )
         )
         cursor = 80
+    if duration_seconds >= STATE_SHAPE_PROBE_DURATION_SECONDS:
+        events.extend(
+            (
+                ScheduleEvent(84, "state_shape", "multi_session_round_trip"),
+                ScheduleEvent(150, "state_shape", "long_uptime_replay"),
+            )
+        )
+        cursor = 170
     while cursor < duration_seconds:
         remaining_before_gap = duration_seconds - cursor
         if remaining_before_gap < MIN_HOLD_SECONDS:
@@ -372,6 +381,14 @@ Future<void> _runEvent(
     return;
   }}
   switch (event['name']) {{
+    case 'multi_session_round_trip':
+      await harness.exerciseMultiSessionShape(tester);
+    case 'long_uptime_replay':
+      await harness.exerciseLongUptimeShape(
+        tester,
+        ringEvents: 200,
+        requireRotation: false,
+      );
     case 'send':
       // Rebuild the route after background/airplane cycles so this user action
       // exercises the production cold projection path rather than depending
