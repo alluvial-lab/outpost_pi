@@ -720,6 +720,84 @@ void main() {
   );
 
   test(
+    'reconnect hydrate send before session identity is visible then re-sent',
+    () async {
+      final ch = _FakeChannel();
+      final storage = _FakeStorage();
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+        emitDebounce: Duration.zero,
+      );
+      final boxes = LocalBoxes();
+      final sync = SyncService(
+        conn,
+        boxes,
+        pendingSendTimeout: const Duration(milliseconds: 500),
+      );
+      final prefs = Preferences(_FakeSecureStorage());
+      await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+      await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+
+      conn.adopt(ch, _peer);
+      ch.pushControl(
+        const RoomAnnounced(peer: 'epk_chat', roomId: 'main', startedAt: 1),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final vm = ChatViewModel(
+        SessionReadRepository(boxes),
+        sync,
+        conn,
+        prefs,
+        storage,
+      );
+      await vm.initialize();
+      expect(sync.activeSessionRef, isNull);
+
+      await vm.sendMessage('typed in the reconnect identity window');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      var visible = (vm.state as ChatReady).messages.whereType<UserMsg>();
+      expect(visible, hasLength(1), reason: 'the send must never be absent');
+      expect(visible.single.status, UserMsgStatus.pending);
+      expect(ch.sent.whereType<UserMessage>(), isEmpty);
+
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      visible = (vm.state as ChatReady).messages.whereType<UserMsg>();
+      expect(visible.single.status, UserMsgStatus.failed);
+
+      ch.defaultSessionId = 'hydrated-session';
+      ch.pushControl(
+        const RoomsSnapshot(
+          peer: 'epk_chat',
+          rooms: [
+            RoomInfo(
+              roomId: 'main',
+              sessionId: 'hydrated-session',
+              startedAt: 2,
+            ),
+          ],
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      final resent = ch.sent.whereType<UserMessage>().single;
+      expect(resent.text, 'typed in the reconnect identity window');
+      expect(resent.sessionId, 'hydrated-session');
+      ch.push(UserInput(id: resent.id, text: resent.text));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      visible = (vm.state as ChatReady).messages.whereType<UserMsg>();
+      expect(visible, hasLength(1));
+      expect(visible.single.id, resent.id);
+      expect(visible.single.status, UserMsgStatus.confirmed);
+
+      vm.dispose();
+      sync.dispose();
+      conn.dispose();
+    },
+  );
+
+  test(
     'send confirmation survives route disposal and re-entry without duplication',
     () async {
       final ch = _FakeChannel();

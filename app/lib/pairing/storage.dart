@@ -24,6 +24,12 @@ const _kOwnerStateFingerprint = 'owner-state-fingerprint';
 /// open a chat offline and read history.
 class PersistedRoom {
   final String roomId;
+
+  /// Last canonical Pi SDK session known for this room.
+  ///
+  /// Restoring it lets a cold/reconnecting chat bind its session-scoped
+  /// transcript before the relay's fresh room snapshot arrives.
+  final String? sessionId;
   final String? name;
   final String? cwd;
   final int startedAt;
@@ -39,6 +45,7 @@ class PersistedRoom {
   const PersistedRoom({
     required this.roomId,
     required this.startedAt,
+    this.sessionId,
     this.name,
     this.cwd,
     this.localName,
@@ -47,6 +54,7 @@ class PersistedRoom {
 
   Map<String, dynamic> toJson() => {
     'room_id': roomId,
+    'session_id': sessionId,
     'name': name,
     'cwd': cwd,
     'started_at': startedAt,
@@ -56,6 +64,7 @@ class PersistedRoom {
 
   factory PersistedRoom.fromJson(Map<String, dynamic> j) => PersistedRoom(
     roomId: j['room_id'] as String,
+    sessionId: j['session_id'] as String?,
     name: j['name'] as String?,
     cwd: j['cwd'] as String?,
     startedAt: (j['started_at'] as num).toInt(),
@@ -64,6 +73,7 @@ class PersistedRoom {
   );
 
   PersistedRoom copyWith({
+    Object? sessionId = _unset,
     String? name,
     String? cwd,
     int? startedAt,
@@ -71,6 +81,9 @@ class PersistedRoom {
     Object? model = _unset,
   }) => PersistedRoom(
     roomId: roomId,
+    sessionId: identical(sessionId, _unset)
+        ? this.sessionId
+        : sessionId as String?,
     name: name ?? this.name,
     cwd: cwd ?? this.cwd,
     startedAt: startedAt ?? this.startedAt,

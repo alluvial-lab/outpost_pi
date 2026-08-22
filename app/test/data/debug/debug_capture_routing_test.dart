@@ -872,7 +872,7 @@ void main() {
     'SyncService disarms resumed-session echoes rejected by the transcript gate',
     () async {
       final s = await _syncHarness(
-        pendingSendTimeout: const Duration(milliseconds: 40),
+        pendingSendTimeout: const Duration(milliseconds: 500),
         emitDebounce: const Duration(milliseconds: 200),
       );
 
@@ -923,7 +923,7 @@ void main() {
         reason: 'gate-rejected echo still proves delivery and disarms timer',
       );
 
-      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
       await _settle();
       expect(
         s.log.events.whereType<MsgFailedEvent>().where(

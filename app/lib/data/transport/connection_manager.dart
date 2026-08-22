@@ -1109,6 +1109,7 @@ class ConnectionManager extends Service {
           .map(
             (c) => RoomInfo(
               roomId: c.roomId,
+              sessionId: c.sessionId,
               name: c.localName ?? c.name,
               cwd: c.cwd,
               startedAt: c.startedAt,
@@ -1195,6 +1196,7 @@ class ConnectionManager extends Service {
         .map(
           (room) => PersistedRoom(
             roomId: room.roomId,
+            sessionId: room.sessionId,
             name: room.name,
             cwd: room.cwd,
             startedAt: room.startedAt,

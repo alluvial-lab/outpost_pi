@@ -36,6 +36,7 @@ class _ControlledStorage extends PairingStorage {
 
   final List<PeerRecord> peers;
   final Map<String, Completer<List<PersistedRoom>>> blockedLoads = {};
+  final Map<String, List<PersistedRoom>> roomLoads = {};
   final List<(String, List<PersistedRoom>)> roomWrites = [];
   final List<PeerRecord> peerWrites = [];
   int roomFailuresRemaining = 0;
@@ -47,7 +48,7 @@ class _ControlledStorage extends PairingStorage {
   @override
   Future<List<PersistedRoom>> loadRooms(String epk) async {
     final blocker = blockedLoads.remove(epk);
-    return blocker == null ? const [] : blocker.future;
+    return blocker == null ? roomLoads[epk] ?? const [] : blocker.future;
   }
 
   @override
@@ -444,6 +445,36 @@ void main() {
     });
   });
 
+  group('ConnectionManager reconnect hydration', () {
+    test(
+      'restores the cached canonical session identity before relay hydrate',
+      () async {
+        final peer = _peer.copyWith(roomId: 'main');
+        final storage = _ControlledStorage([peer]);
+        storage.roomLoads[peer.remoteEpk] = [
+          PersistedRoom.fromJson(const {
+            'room_id': 'main',
+            'session_id': 'cached-session',
+            'started_at': 1,
+          }),
+        ];
+        final channel = _FakeChannel();
+        final conn = ConnectionManager(
+          factory: (_, _) async => channel,
+          storage: storage,
+          emitDebounce: Duration.zero,
+        );
+
+        await conn.boot(preferredEpk: peer.remoteEpk);
+
+        expect(conn.status, isA<StatusOnline>());
+        expect(conn.activeRoomId, 'main');
+        expect(conn.activeSessionId, 'cached-session');
+        conn.dispose();
+      },
+    );
+  });
+
   group('ConnectionManager room persistence ownership', () {
     test('coalesces one peer to the latest snapshot before writing', () async {
       final peer = _peer.copyWith(roomId: 'main');
@@ -469,7 +500,13 @@ void main() {
       channel.pushControl(
         const RoomsSnapshot(
           peer: 'epk_projection',
-          rooms: [RoomInfo(roomId: 'new-room', startedAt: 2)],
+          rooms: [
+            RoomInfo(
+              roomId: 'new-room',
+              sessionId: 'new-session',
+              startedAt: 2,
+            ),
+          ],
         ),
       );
       firstLoad.complete(const []);
@@ -480,6 +517,12 @@ void main() {
         'old-room',
         'new-room',
       ]);
+      expect(
+        storage.roomWrites.single.$2
+            .singleWhere((room) => room.roomId == 'new-room')
+            .sessionId,
+        'new-session',
+      );
       conn.dispose();
     });
 

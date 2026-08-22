@@ -53,6 +53,30 @@ final class _SystemPendingSendTimer implements PendingSendTimer {
   void cancel() => _timer.cancel();
 }
 
+final class _IdentityPendingSend {
+  _IdentityPendingSend({
+    required this.id,
+    required this.peerEpk,
+    required this.roomId,
+    required this.text,
+    required this.image,
+    required this.streamingBehavior,
+    required this.ts,
+  });
+
+  final String id;
+  final String? peerEpk;
+  final String roomId;
+  final String text;
+  final MessageImage? image;
+  final UserMessageStreamingBehavior? streamingBehavior;
+  final DateTime ts;
+  UserMsgStatus status = UserMsgStatus.pending;
+
+  UserMsg toMessage() =>
+      UserMsg(id: id, text: text, status: status, image: image);
+}
+
 /// Own the app-side transcript write pipeline and active-turn convergence.
 ///
 /// Serializes canonical event persistence, materializes disposable Hive
@@ -158,6 +182,14 @@ class SyncService extends Service {
   final PendingSendTimerFactory _pendingSendTimerFactory;
   final Map<String, PendingSendTimer> _pendingSendTimers = {};
 
+  // A user can submit after room hydration but before the canonical session id
+  // arrives. These rows remain in-memory and visible until they can migrate to
+  // the session-scoped transcript; their own timers prevent an endless spinner.
+  final Map<String, _IdentityPendingSend> _identityPendingSends = {};
+  final Map<String, PendingSendTimer> _identityPendingTimers = {};
+  final StreamController<List<ChatMessage>> _identityPendingController =
+      StreamController<List<ChatMessage>>.broadcast();
+
   /// Ids of held-pending messages already re-sent on reconnect this session
   /// (story-app-reattempt-held-pending-on-reconnect). Prevents the
   /// self-retrigger loop: the re-send's own `working:true` room_meta update
@@ -255,6 +287,14 @@ class SyncService extends Service {
   /// Return the fully canonical active session required for transcript writes.
   RemoteSessionRef? get activeSessionRef => _activeRef;
 
+  /// Return identity-blocked submissions visible for the active peer and room.
+  List<ChatMessage> get identityPendingMessages =>
+      List<ChatMessage>.unmodifiable(_visibleIdentityPendingMessages());
+
+  /// Emit identity-blocked submissions as they become pending, failed, or bound.
+  Stream<List<ChatMessage>> get identityPendingMessagesStream =>
+      _identityPendingController.stream;
+
   RemoteSessionRef? _resolveActiveRef(String epk, String roomId) {
     final activePeer = _conn.activePeer;
     if (activePeer == null || activePeer.remoteEpk != epk) return null;
@@ -333,7 +373,12 @@ class SyncService extends Service {
       if (!_isCurrentLifecycle(generation, nextRef)) return;
       await _materializeTranscriptProjectionForRef(nextRef, generation);
       if (!_isCurrentLifecycle(generation, nextRef)) return;
+      await _bindIdentityPendingSends(nextRef, generation);
+      if (!_isCurrentLifecycle(generation, nextRef)) return;
+      await _resendHeldPendingMessages(generation, nextRef);
+      if (!_isCurrentLifecycle(generation, nextRef)) return;
     }
+    _emitIdentityPendingMessages();
     _writeRuntime();
   }
 
@@ -374,8 +419,22 @@ class SyncService extends Service {
     final isSteer = streamingBehavior == UserMessageStreamingBehavior.steer;
     final sessionId = ref?.sessionId;
     if (ref == null || sessionId == null || sessionId.isEmpty) {
-      debugPrint('[msg-send] id=$id blocked: session identity unavailable');
+      _queueIdentityPendingSend(
+        _IdentityPendingSend(
+          id: id,
+          peerEpk: epk,
+          roomId: _activeRoomId,
+          text: text,
+          image: image,
+          streamingBehavior: streamingBehavior,
+          ts: now,
+        ),
+      );
+      debugPrint(
+        '[msg-send] id=$id blocked: session identity unavailable; held pending',
+      );
       _logDebug(MsgSendEvent(ts: now, id: id, blocked: true));
+      _logDebug(SendQueueEvent(ts: now, id: id, phase: SendQueuePhase.held));
       return;
     }
     // Compute whether this send will be held pending (never written to the
@@ -489,6 +548,101 @@ class SyncService extends Service {
         expectedGeneration: generation,
       );
     }
+  }
+
+  void _queueIdentityPendingSend(_IdentityPendingSend send) {
+    _identityPendingSends[send.id] = send;
+    _identityPendingTimers.remove(send.id)?.cancel();
+    _identityPendingTimers[send.id] = _pendingSendTimerFactory(
+      pendingSendTimeout,
+      () => _onIdentityPendingTimeout(send.id),
+    );
+    _emitIdentityPendingMessages();
+  }
+
+  void _onIdentityPendingTimeout(String id) {
+    final send = _identityPendingSends[id];
+    if (_disposed || send == null || send.status != UserMsgStatus.pending) {
+      return;
+    }
+    _identityPendingTimers.remove(id)?.cancel();
+    send.status = UserMsgStatus.failed;
+    _emitIdentityPendingMessages();
+    debugPrint('[msg-failed] id=$id code=send_timeout');
+    _logDebug(MsgFailedEvent(ts: DateTime.now(), id: id, code: 'send_timeout'));
+    _logDebug(
+      SendQueueEvent(
+        ts: DateTime.now(),
+        id: id,
+        phase: SendQueuePhase.visibleFail,
+        code: 'send_timeout',
+      ),
+    );
+  }
+
+  Iterable<ChatMessage> _visibleIdentityPendingMessages() sync* {
+    for (final send in _identityPendingSends.values) {
+      if (send.roomId != _activeRoomId) continue;
+      final activeEpk = _activeEpk;
+      if (send.peerEpk != null && send.peerEpk != activeEpk) continue;
+      yield send.toMessage();
+    }
+  }
+
+  void _emitIdentityPendingMessages() {
+    if (_identityPendingController.isClosed) return;
+    _identityPendingController.add(identityPendingMessages);
+  }
+
+  Future<void> _bindIdentityPendingSends(
+    RemoteSessionRef ref,
+    int generation,
+  ) async {
+    final matching = _identityPendingSends.values
+        .where(
+          (send) =>
+              send.roomId == ref.roomId &&
+              (send.peerEpk == null || send.peerEpk == ref.peerEpk),
+        )
+        .toList(growable: false);
+    if (matching.isEmpty) return;
+
+    final events = <TranscriptEvent>[];
+    for (final send in matching) {
+      events.add(
+        UserMessageSubmitted(
+          eventId: 'local:user_submitted:${send.id}',
+          sessionId: ref.sessionId,
+          ts: send.ts,
+          clientMessageId: send.id,
+          text: send.text,
+          image: send.image,
+          held: true,
+          awaitingPickup:
+              send.streamingBehavior == UserMessageStreamingBehavior.steer,
+        ),
+      );
+      if (send.status == UserMsgStatus.failed) {
+        events.add(
+          UserMessageFailed(
+            eventId: 'local:user_failed:${send.id}:identity_timeout',
+            sessionId: ref.sessionId,
+            ts: DateTime.now(),
+            clientMessageId: send.id,
+            code: 'send_timeout',
+            message:
+                'Message waited for the session to reconnect and was not yet confirmed.',
+          ),
+        );
+      }
+    }
+    await _appendTranscriptEvents(events);
+    if (!_isCurrentLifecycle(generation, ref)) return;
+    for (final send in matching) {
+      _identityPendingSends.remove(send.id);
+      _identityPendingTimers.remove(send.id)?.cancel();
+    }
+    _emitIdentityPendingMessages();
   }
 
   /// Arm (or re-arm) the no-echo backstop for a pending row, keyed by
@@ -610,7 +764,8 @@ class SyncService extends Service {
 
   /// Test seam — number of armed no-echo timers (asserts no leak on reset).
   @visibleForTesting
-  int get debugPendingSendTimerCount => _pendingSendTimers.length;
+  int get debugPendingSendTimerCount =>
+      _pendingSendTimers.length + _identityPendingTimers.length;
 
   @visibleForTesting
   TranscriptEventStore get debugTranscriptEventStore => _eventStore;
@@ -859,6 +1014,9 @@ class SyncService extends Service {
             id: id,
             sessionId: ref.sessionId,
             text: submitted.text,
+            streamingBehavior: submitted.awaitingPickup
+                ? UserMessageStreamingBehavior.steer
+                : null,
             images: submitted.image == null
                 ? null
                 : [
@@ -2259,6 +2417,10 @@ class SyncService extends Service {
     _flushTimer?.cancel();
     _syncDebounce?.cancel();
     _cancelAllSendTimers();
+    for (final timer in _identityPendingTimers.values) {
+      timer.cancel();
+    }
+    _identityPendingTimers.clear();
     _connSub?.cancel();
     _msgSub?.cancel();
     _roomsSub?.cancel();
@@ -2266,6 +2428,7 @@ class SyncService extends Service {
     _streamingController.close();
     _eventController.close();
     _turnViewController.close();
+    _identityPendingController.close();
     _queuedController.close();
     _steeringController.close();
   }

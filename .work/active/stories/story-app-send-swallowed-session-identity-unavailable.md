@@ -1,7 +1,7 @@
 ---
 id: story-app-send-swallowed-session-identity-unavailable
 kind: story
-stage: drafting
+stage: done
 tags: [app, bug]
 parent: null
 depends_on: []
@@ -47,3 +47,86 @@ Regression test derived from the capture sequence: reconnect → hydrate →
 send before session ref restores → assert the message is either delivered
 or visibly pending/failed — never absent. Chaos-harness scenario once
 `feature-e2e-live-oddities-suite` exists.
+
+## Root cause
+
+`ConnectionManager` persisted room/cwd metadata but omitted the room's
+canonical `session_id`. `_restoreCachedRooms()` therefore reconstructed a room
+that could reconnect and receive envelopes while `activeSessionId` remained
+null until a later room frame happened to carry identity. `SyncService`
+correctly refused to send without a canonical `RemoteSessionRef`, but its
+blocked branch returned before creating any optimistic projection, timeout, or
+retry state, turning that safety check into silent data loss.
+
+## Fix approach
+
+Persist and restore the optional room `session_id` so cold/reconnect hydration
+can rebuild `_activeRef` immediately. Independently retain identity-blocked
+submissions as visible in-memory pending rows, mark them visibly failed after
+the normal pending timeout, migrate them into the canonical transcript when
+identity arrives, and re-send them through the existing held-message path with
+the original client id.
+
+## Regression test
+
+- `app/test/data/transport/connection_manager_test.dart` restores a cached room
+  before relay hydration and requires `activeSessionId` to be available.
+- `app/test/ui/chat/chat_viewmodel_test.dart` reproduces online room hydration
+  without identity, sends immediately, requires pending then failed visibility,
+  restores identity, and requires re-send plus echo confirmation without a
+  duplicate row.
+
+## Failing reproduction
+
+Before the fix:
+
+```text
+ConnectionManager reconnect hydration restores the cached canonical session identity before relay hydrate
+Expected: 'cached-session'
+Actual: <null>
+
+reconnect hydrate send before session identity is visible then re-sent
+Expected: an object with length of <1>
+Actual: WhereTypeIterable<UserMsg>:[]
+the send must never be absent
+```
+
+Command: `flutter test test/data/transport/connection_manager_test.dart test/ui/chat/chat_viewmodel_test.dart --concurrency=2` (34 passed, 2 failed).
+
+## Implementation notes
+
+- **Execution capability:** `sol/high`, selected because the fix spans persisted
+  reconnect identity, transcript migration, UI projection, and lifecycle timers,
+  while remaining one focused app-side repair.
+- **Files changed:** `app/lib/pairing/storage.dart`,
+  `app/lib/data/transport/connection_manager.dart`,
+  `app/lib/data/sync/sync_service.dart`,
+  `app/lib/ui/chat/viewmodels/chat_viewmodel.dart`, regression/live tests, and
+  the nightly expected-findings inventory/oracle.
+- **New regression evidence:** the two tests in the Regression test section now
+  pass. The nightly oracle now treats a `sendQueue` held/visible-fail event as
+  proof that a blocked submission was surfaced rather than swallowed.
+- **Four-step confirmation:** targeted regression tests passed; `flutter
+  analyze` reported no issues; `flutter test --exclude-tags e2e
+  --concurrency=2` passed all 884 tests; `e2e/run-live.sh
+  integration_test/live_failure_test.dart` passed the reconnect immediate-send
+  scenario and the remaining enabled failure-lane scenarios with no swallow.
+- **Test integrity:** a pre-existing 40 ms timer assertion flaked under the full
+  two-worker suite, so its real-time window was widened while still waiting
+  beyond the configured deadline; the full suite then passed.
+- **Nightly manifest:** removed only
+  `story-app-send-swallowed-session-identity-unavailable`; all other known-open
+  findings remain.
+- **Adjacent issues:** `app-hydration-truncated-flag-not-surfaced` remains
+  parked and unchanged.
+
+## Bounded inline review
+
+**Verdict: PASS.** Reviewed the committed diff against the capture sequence,
+session-scoped persistence contract, lifecycle teardown rules, and regression
+assertions. Cached identity is backward-compatible and optional; identity-held
+rows are filtered to the active room, deduplicated against durable rows, fenced
+by lifecycle generation during migration, and their timers close on bind or
+dispose. Re-send preserves the original id and steering semantics. No material
+blockers or unrelated production changes remain. Per standalone-story policy,
+this was an inline self-review with no independent or cross-model reviewer.
