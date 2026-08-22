@@ -5,6 +5,8 @@ updated: 2026-08-22
 tags: [app, bug]
 ---
 
+Promoted to `story-fix-app-session-rotation-late-echo-sticks-working`.
+
 # Late echo after session rotation makes a completed room look working again
 
 The live state-shape lane reproduced a sticky working projection after an

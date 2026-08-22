@@ -1377,6 +1377,63 @@ void main() {
   });
 
   test(
+    'late duplicate user echo cannot reopen working after a newer idle snapshot',
+    () async {
+      final s = await setup();
+
+      s.ch.push(UserInput(id: 'turn-one', text: 'first turn'));
+      await _settle();
+      expect(s.conn.isRoomWorking(s.epk, 'main'), isTrue);
+
+      s.ch.pushControl(
+        RoomsSnapshot(
+          peer: s.epk,
+          rooms: [
+            RoomInfo(
+              roomId: 'main',
+              sessionId: s.sessionId,
+              startedAt: 1,
+              working: false,
+            ),
+          ],
+        ),
+      );
+      await _settle();
+      expect(s.conn.isRoomWorking(s.epk, 'main'), isFalse);
+
+      s.ch.push(UserInput(id: 'turn-one', text: 'first turn'));
+      await _settle();
+      expect(
+        s.conn.isRoomWorking(s.epk, 'main'),
+        isFalse,
+        reason: 'the duplicate belongs to the turn closed by the snapshot',
+      );
+
+      s.ch.push(UserInput(id: 'turn-two', text: 'next turn'));
+      await _settle();
+      expect(
+        s.conn.isRoomWorking(s.epk, 'main'),
+        isTrue,
+        reason: 'a distinct newer turn may open the working backstop',
+      );
+
+      s.ch.push(AgentDone(inReplyTo: 'turn-two'));
+      await _settle();
+      expect(s.conn.isRoomWorking(s.epk, 'main'), isFalse);
+      s.ch.push(UserInput(id: 'turn-two', text: 'next turn'));
+      await _settle();
+      expect(
+        s.conn.isRoomWorking(s.epk, 'main'),
+        isFalse,
+        reason: 'a local terminal correction also fences its completed turn',
+      );
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
     'late session_history after terminal false does not reopen working or cancel target',
     () async {
       final s = await setup();

@@ -6,14 +6,13 @@ import 'package:integration_test/integration_test.dart';
 
 import 'support/live_device_harness.dart';
 
-const _skipSessionRotationLateEchoWorking = true;
+const _skipSessionRotationLateEchoWorking = false;
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  // Flip this linked skip when
-  // backlog-app-session-rotation-late-echo-sticks-working is fixed. The
-  // working=false assertion remains intact in exerciseMultiSessionShape.
+  // Regression for late duplicate echoes after an authoritative idle update.
+  // The working=false assertion remains intact in exerciseMultiSessionShape.
   testWidgets(
     'multi-session A to B to A keeps projections and working isolated',
     (tester) async {

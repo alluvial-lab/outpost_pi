@@ -127,6 +127,15 @@ class ConnectionManager extends Service {
   // but not in `_liveRoomIds` are "offline" (last-seen state).
   final Map<String, List<RoomInfo>> _roomsByPeer = <String, List<RoomInfo>>{};
   final Map<String, Set<String>> _liveRoomIds = <String, Set<String>>{};
+
+  // A local turn records the room/session authority epoch at its first working
+  // correction. Every authoritative idle observation advances that epoch, so
+  // a duplicate correction from an older turn cannot reopen the room.
+  final Map<({String peer, String room, String session}), int>
+  _workingAuthorityEpochs = {};
+  final Map<({String peer, String room, String session}), Map<String, int>>
+  _workingTurnEpochs = {};
+
   final _roomsController =
       StreamController<Map<String, List<RoomInfo>>>.broadcast();
   bool _roomsRestored = false;
@@ -737,6 +746,9 @@ class ConnectionManager extends Service {
           working: working ?? preservedWorking,
         );
         final liveAlready = _liveRoomIds[key]?.contains(roomId) ?? false;
+        if (!next.working) {
+          _advanceWorkingAuthority(key, roomId, next.sessionId);
+        }
         final identicalEntry = existingIdx >= 0 && list[existingIdx] == next;
         if (identicalEntry && liveAlready) {
           // No-op announce — relay re-broadcast. Skip to keep the UI
@@ -767,9 +779,12 @@ class ConnectionManager extends Service {
         var clearedWorking = false;
         if (list != null) {
           final idx = list.indexWhere((r) => r.roomId == roomId);
-          if (idx >= 0 && list[idx].working) {
-            list[idx] = list[idx].copyWith(working: false);
-            clearedWorking = true;
+          if (idx >= 0) {
+            _advanceWorkingAuthority(key, roomId, list[idx].sessionId);
+            if (list[idx].working) {
+              list[idx] = list[idx].copyWith(working: false);
+              clearedWorking = true;
+            }
           }
         }
         if (_liveRoomIds[key]?.isEmpty ?? false) {
@@ -807,6 +822,9 @@ class ConnectionManager extends Service {
         // non-null sets it. This is what carries the relay's
         // turn_start/turn_end broadcast to the Home dot for EVERY room.
         final nextWorking = working ?? current.working;
+        if (working == false) {
+          _advanceWorkingAuthority(key, roomId, nextSessionId);
+        }
         if (current.sessionId == nextSessionId &&
             current.model == nextModel &&
             current.thinking == nextThinking &&
@@ -832,6 +850,9 @@ class ConnectionManager extends Service {
         for (final r in rooms) {
           final preservedName = byId[r.roomId]?.name ?? r.name;
           final preservedSessionId = r.sessionId ?? byId[r.roomId]?.sessionId;
+          if (!r.working) {
+            _advanceWorkingAuthority(key, r.roomId, preservedSessionId);
+          }
           final preservedModel = r.model ?? byId[r.roomId]?.model;
           // Plan/28 Wave D — same convention as model: keep the
           // previously-known thinking when the snapshot omits it.
@@ -999,13 +1020,15 @@ class ConnectionManager extends Service {
   /// App-side correction for the connected room's working projection.
   ///
   /// The relay remains the source for non-active rooms. This compatibility
-  /// backstop is deliberately narrowed to the active room and exact session so
-  /// a late local observation cannot mutate replacement-session metadata.
+  /// backstop is deliberately narrowed to the active room and exact session.
+  /// A working correction also carries its stable [turnId], allowing a newer
+  /// authoritative idle observation to fence duplicate echoes from that turn.
   void markRoomWorking(
     String epk,
     String roomId,
     bool working, {
     required String sessionId,
+    required String? turnId,
   }) {
     final active = _activePeer;
     if (active == null ||
@@ -1018,6 +1041,16 @@ class ConnectionManager extends Service {
     if (list == null) return;
     final idx = list.indexWhere((r) => r.roomId == roomId);
     if (idx < 0 || list[idx].sessionId != sessionId) return;
+    final authorityKey = _workingAuthorityKey(key, roomId, sessionId);
+    if (working) {
+      if (turnId == null || turnId.isEmpty) return;
+      final epoch = _workingAuthorityEpochs[authorityKey] ?? 0;
+      final observedEpoch = (_workingTurnEpochs[authorityKey] ??= {})
+          .putIfAbsent(turnId, () => epoch);
+      if (observedEpoch < epoch) return;
+    } else {
+      _advanceWorkingAuthority(key, roomId, sessionId);
+    }
     if (_status is! StatusOnline || !isRoomLive(epk, roomId)) {
       if (!working) {
         _logDebug(
@@ -1044,6 +1077,30 @@ class ConnectionManager extends Service {
     );
     _scheduleRoomsEmit();
     _scheduleRoomPersistence(key);
+  }
+
+  ({String peer, String room, String session}) _workingAuthorityKey(
+    String peer,
+    String room,
+    String session,
+  ) => (peer: peer, room: room, session: session);
+
+  void _advanceWorkingAuthority(String peer, String room, String? session) {
+    if (session == null || session.isEmpty) return;
+    final key = _workingAuthorityKey(peer, room, session);
+    _workingAuthorityEpochs[key] = (_workingAuthorityEpochs[key] ?? 0) + 1;
+    _workingAuthorityEpochs.removeWhere(
+      (candidate, _) =>
+          candidate.peer == peer &&
+          candidate.room == room &&
+          candidate.session != session,
+    );
+    _workingTurnEpochs.removeWhere(
+      (candidate, _) =>
+          candidate.peer == peer &&
+          candidate.room == room &&
+          candidate.session != session,
+    );
   }
 
   void _clearRoomWorking(String epk, String roomId) {

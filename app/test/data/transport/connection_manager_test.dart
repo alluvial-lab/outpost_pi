@@ -262,6 +262,7 @@ void main() {
           'main',
           true,
           sessionId: 'session-old',
+          turnId: 'old-turn',
         );
         expect(s.conn.isRoomWorking('epk_projection', 'main'), isFalse);
 
@@ -270,6 +271,7 @@ void main() {
           'main',
           true,
           sessionId: 'session-current',
+          turnId: 'current-turn',
         );
         expect(s.conn.isRoomWorking('epk_projection', 'main'), isTrue);
         expect(
