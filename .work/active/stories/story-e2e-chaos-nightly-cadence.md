@@ -20,3 +20,6 @@ Testing-integrity rules bind: discovered oddities parked with capture+triage evi
 
 ## Verification
 Device lane (e2e/run-live.sh semantics) green for whatever this story adds; unit tests where logic is pure; flutter analyze if Dart touched.
+
+## Disk hygiene (added 2026-08-22 after ENOSPC incident)
+Device-lane runs accumulate ~10-17G (app/build 4.4G, gradle build-cache growth, AVD userdata-qcow2 growth to 4.3G). The nightly script post-run: rm -rf app/build, clear ~/.gradle/caches/build-cache-1, wipe AVD userdata (disposable test state), verify df free-space floor (>10G) and alert below it.

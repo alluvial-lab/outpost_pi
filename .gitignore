@@ -124,3 +124,4 @@ pi-extension/test/.pi/
 # pi-extension/spike-session-before-switch.mjs for
 # story-fix-stale-ctx-messageapi-rearm-on-reload.)
 **/spike-*.mjs
+__pycache__/
