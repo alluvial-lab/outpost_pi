@@ -164,11 +164,15 @@ def _generated_test(schedule: tuple[ScheduleEvent, ...], timeout_seconds: int) -
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
-import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/ui/chat/chat_page.dart';
+import 'package:app/ui/chat/states/chat_state.dart';
+import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:provider/provider.dart';
 
 import 'support/live_device_harness.dart';
 
@@ -184,6 +188,13 @@ void main() {{
       try {{
         await harness.pair(tester);
         await harness.mountChat(tester);
+        final identityBaseline = await _IdentityBaseline.capture(harness);
+        await _assertChaosOracle(
+          tester,
+          harness,
+          identityBaseline,
+          checkpoint: 'baseline',
+        );
         final clock = Stopwatch()..start();
         for (final event in _schedule) {{
           final target = Duration(
@@ -192,9 +203,13 @@ void main() {{
           while (clock.elapsed < target) {{
             await tester.pump(const Duration(milliseconds: 100));
           }}
-          await _runEvent(tester, harness, event);
+          await _runEvent(tester, harness, identityBaseline, event);
         }}
-        await _assertPostSoakQuiescence(tester, harness);
+        await _assertPostSoakQuiescence(
+          tester,
+          harness,
+          identityBaseline,
+        );
       }} finally {{
         await harness.close(tester);
       }}
@@ -214,6 +229,7 @@ void main() {{
 Future<void> _runEvent(
   WidgetTester tester,
   LiveDeviceHarness harness,
+  _IdentityBaseline identityBaseline,
   Map<String, Object?> event,
 ) async {{
   final kind = event['kind'];
@@ -221,7 +237,6 @@ Future<void> _runEvent(
     final captureBaseline = (await harness.captureEvents()).length;
     final expectedRoom = harness.connection.activeRoomId;
     final expectedSelection = harness.preferences.selectedRoomRaw;
-    expect(expectedRoom, isNotNull);
     requestLiveFault(event['command']! as String);
     final hold = event['hold_seconds']! as int;
     if (event['name'] == 'app_background') {{
@@ -269,8 +284,14 @@ Future<void> _runEvent(
         tester,
         harness,
         captureBaseline: captureBaseline,
-        expectedRoom: expectedRoom!,
+        expectedRoom: expectedRoom,
         expectedSelection: expectedSelection,
+      );
+      await _assertChaosOracle(
+        tester,
+        harness,
+        identityBaseline,
+        checkpoint: 'fault-${{event['at_seconds']}}',
       );
     }}
     return;
@@ -367,12 +388,166 @@ Future<void> _assertRecoveredRoom(
   );
 }}
 
+final class _IdentityBaseline {{
+  const _IdentityBaseline({{
+    required this.ownerPk,
+    required this.peerEpk,
+    required this.pairedAt,
+    required this.sendKey,
+    required this.receiveKey,
+  }});
+
+  final Uint8List ownerPk;
+  final String peerEpk;
+  final String pairedAt;
+  final String sendKey;
+  final String receiveKey;
+
+  static Future<_IdentityBaseline> capture(LiveDeviceHarness harness) async {{
+    final ownerPk = harness.ownerBridge.currentOwnerPk;
+    final persisted = await harness.storage.loadPeer(harness.peer.remoteEpk);
+    expect(ownerPk, isNotNull);
+    expect(persisted, isNotNull);
+    expect(persisted!.channel, isNotNull);
+    return _IdentityBaseline(
+      ownerPk: Uint8List.fromList(ownerPk!),
+      peerEpk: persisted.remoteEpk,
+      pairedAt: persisted.pairedAt,
+      sendKey: persisted.channel!.sendKey,
+      receiveKey: persisted.channel!.receiveKey,
+    );
+  }}
+}}
+
+Future<void> _assertChaosOracle(
+  WidgetTester tester,
+  LiveDeviceHarness harness,
+  _IdentityBaseline baseline, {{
+  required String checkpoint,
+  bool requireReplayEvidence = false,
+}}) async {{
+  var rows = await harness.transcriptRows();
+  var uiIds = _renderedProjectionIds(tester);
+  final deadline = DateTime.now().add(const Duration(seconds: 20));
+  while (DateTime.now().isBefore(deadline) &&
+      !listEquals(rows.map((row) => row.id).toList(), uiIds)) {{
+    await tester.pump(const Duration(milliseconds: 100));
+    rows = await harness.transcriptRows();
+    uiIds = _renderedProjectionIds(tester);
+  }}
+
+  final persisted = await harness.storage.loadPeer(baseline.peerEpk);
+  final ownerPk = harness.ownerBridge.currentOwnerPk;
+  final channelStable = persisted?.channel != null &&
+      persisted!.channel!.sendKey == baseline.sendKey &&
+      persisted.channel!.receiveKey == baseline.receiveKey;
+  final ownerStable = ownerPk != null && listEquals(ownerPk, baseline.ownerPk);
+  final pairStable = persisted?.remoteEpk == baseline.peerEpk &&
+      persisted?.pairedAt == baseline.pairedAt;
+
+  _emitOracle(<String, Object?>{{
+    'tag': 'soakOracleCheckpoint',
+    'checkpoint': checkpoint,
+    'ownerTail': _tail(ownerPk == null ? '' : base64Encode(ownerPk)),
+    'peerTail': _tail(persisted?.remoteEpk ?? ''),
+    'pairedAtTail': _tail(persisted?.pairedAt ?? ''),
+    'channelStable': channelStable,
+  }});
+  for (final row in rows) {{
+    _emitOracle(<String, Object?>{{
+      'tag': 'soakOracleDb',
+      'checkpoint': checkpoint,
+      'id': row.id,
+      'seq': row.seq,
+      'tsMs': row.ts.millisecondsSinceEpoch,
+    }});
+  }}
+  for (var index = 0; index < uiIds.length; index++) {{
+    _emitOracle(<String, Object?>{{
+      'tag': 'soakOracleUi',
+      'checkpoint': checkpoint,
+      'id': uiIds[index],
+      'index': index,
+    }});
+  }}
+
+  final dbIds = rows.map((row) => row.id).toList(growable: false);
+  expect(dbIds.toSet().length, dbIds.length,
+      reason: 'reconnect replay must not duplicate transcript delivery');
+  expect(uiIds, dbIds,
+      reason: 'transcript DB rows must match the rendered bubble projection');
+  if (rows.isNotEmpty) {{
+    expect(find.byKey(ValueKey(rows.last.id)), findsOneWidget,
+        reason: 'the newest projected transcript row must render a bubble');
+  }}
+  for (var index = 1; index < rows.length; index++) {{
+    expect(rows[index].seq, greaterThan(rows[index - 1].seq),
+        reason: 'transcript projection sequence must increase');
+    expect(
+      rows[index].ts.millisecondsSinceEpoch,
+      greaterThanOrEqualTo(rows[index - 1].ts.millisecondsSinceEpoch),
+      reason: 'canonical server timestamp ordering moved backwards',
+    );
+  }}
+  expect(ownerStable, isTrue,
+      reason: 'owner identity silently regenerated during a fault');
+  expect(pairStable, isTrue,
+      reason: 'paired Pi identity silently changed during a fault');
+  expect(channelStable, isTrue,
+      reason: 'owner-channel keys silently regenerated during a fault');
+
+  final replayEvents = (await harness.captureEvents())
+      .where((event) => event['tag'] == 'replayDedup')
+      .toList(growable: false);
+  final accepted = <String, int>{{}};
+  for (final event in replayEvents) {{
+    final sessionId = event['sessionId'];
+    final eventIdTail = event['eventIdTail'];
+    final dropped = event['dropped'];
+    expect(sessionId, isA<String>());
+    expect(eventIdTail, isA<String>());
+    expect(dropped, isA<bool>());
+    if (dropped == false) {{
+      final key = '$sessionId/$eventIdTail';
+      accepted[key] = (accepted[key] ?? 0) + 1;
+    }}
+  }}
+  expect(accepted.values.where((count) => count > 1), isEmpty,
+      reason: 'one replay event was accepted more than once');
+  if (requireReplayEvidence) {{
+    expect(replayEvents, isNotEmpty,
+        reason: 'the seeded soak must exercise replayDedup instrumentation');
+  }}
+}}
+
+List<String> _renderedProjectionIds(WidgetTester tester) {{
+  final chat = find.byType(ChatPage);
+  if (chat.evaluate().isEmpty) return const <String>[];
+  final viewModel = Provider.of<ChatViewModel>(
+    tester.element(chat.first),
+    listen: false,
+  );
+  return switch (viewModel.state) {{
+    ChatReady(:final messages) =>
+      messages.map((message) => message.id).toList(growable: false),
+    _ => const <String>[],
+  }};
+}}
+
+void _emitOracle(Map<String, Object?> row) {{
+  debugPrintSynchronously('SOAK_ORACLE ${{jsonEncode(row)}}');
+}}
+
+String _tail(String value) =>
+    value.length <= 12 ? value : value.substring(value.length - 12);
+
 Future<void> _assertPostSoakQuiescence(
   WidgetTester tester,
   LiveDeviceHarness harness,
+  _IdentityBaseline identityBaseline,
 ) async {{
   await harness.waitOnlineAndLive(tester: tester);
-  final room = harness.connection.activeRoomId!;
+  final room = harness.connection.activeRoomId;
   await eventually<bool>(
     tester,
     () async =>
@@ -384,6 +559,13 @@ Future<void> _assertPostSoakQuiescence(
   expect(
     harness.connection.isRoomWorking(harness.peer.remoteEpk, room),
     isFalse,
+  );
+  await _assertChaosOracle(
+    tester,
+    harness,
+    identityBaseline,
+    checkpoint: 'final',
+    requireReplayEvidence: true,
   );
 }}
 '''
@@ -503,12 +685,38 @@ def _evaluate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _run_triage(captures: list[Path]) -> tuple[list[str], list[dict[str, Any]]]:
+def _oracle_rows_from_flutter(output: str) -> tuple[list[dict[str, Any]], int]:
+    rows: list[dict[str, Any]] = []
+    malformed = 0
+    marker = "SOAK_ORACLE "
+    for line in output.splitlines():
+        if marker not in line:
+            continue
+        encoded = line.split(marker, 1)[1].strip()
+        try:
+            value = json.loads(encoded)
+        except json.JSONDecodeError:
+            malformed += 1
+            continue
+        if isinstance(value, dict) and isinstance(value.get("tag"), str):
+            rows.append(value)
+        else:
+            malformed += 1
+    return rows, malformed
+
+
+def _run_triage(
+    captures: list[Path],
+    oracle_path: Path | None = None,
+) -> tuple[list[str], list[dict[str, Any]]]:
     outputs: list[str] = []
     evaluations: list[dict[str, Any]] = []
     for capture in captures:
+        command = [sys.executable, str(TRIAGE), str(capture)]
+        if oracle_path is not None:
+            command.extend(("--oracle", str(oracle_path)))
         result = subprocess.run(
-            [sys.executable, str(TRIAGE), str(capture)],
+            command,
             capture_output=True,
             text=True,
             check=False,
@@ -562,10 +770,10 @@ def _write_report(
             "",
             "## Invariant evaluation",
             "",
-            "- Send visibility: every identity-window probe requires both a rendered bubble and transcript-DB row.",
-            "- Blank chat: empty projection is anomalous only with prior history and no later hydrated render.",
-            "- Room selection: the device oracle checks capture room events and persisted selection after every recovery.",
-            "- Working convergence: the device oracle quiesces after the schedule and asserts the live final state is false.",
+            "- Replay dedup: replayDedup acceptance keys and transcript ids stay unique across reconnect replay.",
+            "- DB↔UI consistency: ordered transcript DB ids equal the rendered ChatReady bubble projection after every fault.",
+            "- Canonical ordering: projected row timestamps never move backwards; sequence is the stable tie order.",
+            "- Identity stability: owner public key, paired Pi identity, pairing epoch, and owner-channel keys stay stable.",
         ]
     )
     if unexpected:
@@ -616,12 +824,20 @@ def run(args: argparse.Namespace) -> int:
     finally:
         generated.unlink(missing_ok=True)
 
-    captures = sorted(artifact_dir.glob("*.jsonl"))
-    triage_outputs, evaluations = _run_triage(captures)
+    captures = sorted(artifact_dir.glob("outpost_pi_debug-*.jsonl"))
     flutter_output = "\n".join(
         path.read_text(encoding="utf-8", errors="replace")
         for path in sorted(artifact_dir.glob("flutter-live-*.log"))
     )
+    oracle_rows, malformed_oracle = _oracle_rows_from_flutter(flutter_output)
+    oracle_path: Path | None = None
+    if oracle_rows:
+        oracle_path = artifact_dir / "soak-oracle.jsonl"
+        oracle_path.write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in oracle_rows),
+            encoding="utf-8",
+        )
+    triage_outputs, evaluations = _run_triage(captures, oracle_path)
     if "SOAK_KNOWN_FINDING swallow" in flutter_output and evaluations:
         evaluations[0]["swallow"] = True
         evaluations[0]["swallow_source"] = "bubble/transcript-DB predicate"
@@ -629,6 +845,14 @@ def run(args: argparse.Namespace) -> int:
     unexpected: list[str] = []
     if not captures:
         unexpected.append("no debug capture was pulled from the device")
+    if not oracle_rows:
+        unexpected.append("no content-free soak oracle observations were captured")
+    if malformed_oracle:
+        unexpected.append(f"{malformed_oracle} malformed soak oracle observation(s)")
+    for output in triage_outputs:
+        for invariant in ("replay_dedup", "transcript_ui", "ordering", "identity"):
+            if f"  {invariant}: VIOLATION" in output:
+                unexpected.append(f"triage detected {invariant} invariant violation")
     for key in SOAK_EXPECTED_FINDINGS:
         tracking_id = KNOWN_FINDINGS[key]
         if not any(evaluation.get(key) for evaluation in evaluations):

@@ -10,6 +10,15 @@ live_soak = importlib.util.module_from_spec(_SPEC)
 sys.modules["live_soak"] = live_soak
 _SPEC.loader.exec_module(live_soak)
 
+_TRIAGE_SPEC = importlib.util.spec_from_file_location(
+    "debug_capture_triage",
+    Path(__file__).parents[1] / "scripts" / "debug_capture_triage.py",
+)
+assert _TRIAGE_SPEC and _TRIAGE_SPEC.loader
+triage = importlib.util.module_from_spec(_TRIAGE_SPEC)
+sys.modules["debug_capture_triage"] = triage
+_TRIAGE_SPEC.loader.exec_module(triage)
+
 
 class ScheduleTests(unittest.TestCase):
     def test_same_seed_produces_same_schedule(self) -> None:
@@ -49,6 +58,120 @@ class ScheduleTests(unittest.TestCase):
         for duration in (2, 3, 33, 34, 35):
             schedule = live_soak.build_schedule(7, duration)
             self.assertTrue(all(event.at_seconds < duration for event in schedule))
+
+    def test_generated_device_oracle_covers_all_four_invariants(self) -> None:
+        source = live_soak._generated_test(live_soak.build_schedule(7, 60), 360)
+        for evidence in (
+            "replayDedup",
+            "transcript DB rows must match the rendered bubble projection",
+            "canonical server timestamp ordering moved backwards",
+            "owner identity silently regenerated during a fault",
+        ):
+            self.assertIn(evidence, source)
+
+    def test_oracle_markers_are_parsed_without_flutter_prefixes(self) -> None:
+        rows, malformed = live_soak._oracle_rows_from_flutter(
+            'flutter: SOAK_ORACLE {"tag":"soakOracleCheckpoint","checkpoint":"final"}\n'
+            "flutter: SOAK_ORACLE not-json\n"
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(malformed, 1)
+
+
+class OracleLogicTests(unittest.TestCase):
+    def test_clean_replay_db_ui_ordering_and_identity_observations(self) -> None:
+        capture = (
+            {
+                "tag": "replayDedup",
+                "sessionId": "session-a",
+                "eventIdTail": "event-a",
+                "dropped": False,
+            },
+            {
+                "tag": "replayDedup",
+                "sessionId": "session-a",
+                "eventIdTail": "event-a",
+                "dropped": True,
+            },
+        )
+        oracle = self._checkpoint("baseline", ("a", "b"), (100, 101))
+        result = triage._chaos_oracle_violations(capture, oracle)
+        self.assertFalse(any(result.values()))
+
+    def test_each_oracle_invariant_reports_its_own_violation(self) -> None:
+        accepted_twice = (
+            {
+                "tag": "replayDedup",
+                "sessionId": "session-a",
+                "eventIdTail": "event-a",
+                "dropped": False,
+            },
+            {
+                "tag": "replayDedup",
+                "sessionId": "session-a",
+                "eventIdTail": "event-a",
+                "dropped": False,
+            },
+        )
+        oracle = list(self._checkpoint("baseline", ("a", "a"), (101, 100)))
+        oracle.append(
+            {
+                "tag": "soakOracleCheckpoint",
+                "checkpoint": "fault-1",
+                "ownerTail": "owner-b",
+                "peerTail": "peer-a",
+                "pairedAtTail": "pair-a",
+                "channelStable": False,
+            }
+        )
+        result = triage._chaos_oracle_violations(accepted_twice, oracle)
+        self.assertTrue(result["replay_dedup"])
+        self.assertTrue(result["transcript_ui"])
+        self.assertTrue(result["ordering"])
+        self.assertTrue(result["identity"])
+
+    @staticmethod
+    def _checkpoint(
+        checkpoint: str,
+        db_ids: tuple[str, str],
+        timestamps: tuple[int, int],
+    ) -> tuple[dict[str, object], ...]:
+        return (
+            {
+                "tag": "soakOracleCheckpoint",
+                "checkpoint": checkpoint,
+                "ownerTail": "owner-a",
+                "peerTail": "peer-a",
+                "pairedAtTail": "pair-a",
+                "channelStable": True,
+            },
+            {
+                "tag": "soakOracleDb",
+                "checkpoint": checkpoint,
+                "id": db_ids[0],
+                "seq": 0,
+                "tsMs": timestamps[0],
+            },
+            {
+                "tag": "soakOracleDb",
+                "checkpoint": checkpoint,
+                "id": db_ids[1],
+                "seq": 1,
+                "tsMs": timestamps[1],
+            },
+            {
+                "tag": "soakOracleUi",
+                "checkpoint": checkpoint,
+                "id": "a",
+                "index": 0,
+            },
+            {
+                "tag": "soakOracleUi",
+                "checkpoint": checkpoint,
+                "id": "b",
+                "index": 1,
+            },
+        )
 
 
 if __name__ == "__main__":
