@@ -1,7 +1,7 @@
 ---
 id: story-e2e-chaos-fault-moment-grid
 kind: story
-stage: implementing
+stage: done
 tags: [testing]
 parent: feature-e2e-chaos-expansion
 depends_on: story-e2e-chaos-fault-vocabulary
@@ -47,3 +47,15 @@ lands. Bug parked: backlog-app-cold-replay-duplicates-persisted-transcript
 (durable-dedup defect: fresh process loses the in-memory seen set; replayed
 event ids 787422973229/787422996687/787423001432 re-appended over persisted
 Hive rows).
+
+### Final verification completion (2026-08-22)
+
+- `e2e/run-live.sh grid` — green after recreating the intentionally wiped
+  Flutter package state: the main phase passed all 9 runnable cells and linked-
+  skipped the 3 known cold-open cells; the separate process-cold phase then
+  linked-skipped those same 3 cells and exited green (`All tests skipped`).
+- Capture and service evidence was retained locally under
+  `.work/session-notes/live-grid-final-20260822/`; the known cold replay bug's
+  assertions were not changed.
+- Device hygiene completed after the run: emulator stopped, `app/build`
+  removed, and 39G free remained (well above the 8G floor).
