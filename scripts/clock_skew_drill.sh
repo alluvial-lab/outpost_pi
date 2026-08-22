@@ -68,13 +68,14 @@ cat >"$REPORT" <<EOF
 - Authenticated relay connections: \`${authenticated}\`
 - Disconnects during the 30-second, first-heartbeat-crossing observation: \`${disconnected}\`
 - Pi-host health after heartbeat boundary: **PASS**
+- Mesh-TTL scope: authentication + one heartbeat exercised; TTL crossing untested
 - Result: **$([[ "$status" == 0 ]] && printf PASS || printf FAIL)**
 
 The drill exercises nonce authentication with a four-hour wall-clock difference
 between peers. Authentication is signature/nonce based rather than timestamp-TTL
-based, so skew is expected to succeed. Relay heartbeat and mesh-auth cache TTL use
-monotonic clocks; they remained healthy because the preload deliberately leaves
-monotonic time untouched. Wall-clock metadata (connection start and mesh update
+based, so skew is expected to succeed. The first relay heartbeat remained healthy
+because the preload deliberately leaves monotonic time untouched; the mesh-auth
+cache TTL was not crossed by this drill. Wall-clock metadata (connection start and mesh update
 timestamps) follows the skewed container clock without breaking routing.
 EOF
 

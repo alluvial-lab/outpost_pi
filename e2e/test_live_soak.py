@@ -133,11 +133,15 @@ class ScheduleTests(unittest.TestCase):
         source = live_soak._generated_test(live_soak.build_schedule(7, 60), 360)
         for evidence in (
             "replayDedup",
-            "transcript DB rows must match the rendered bubble projection",
+            "transcript DB rows must match the ChatReady ViewModel projection",
             "canonical server timestamp ordering moved backwards",
             "owner identity silently regenerated during a fault",
             "event['name'] == 'relay_kill'",
             "SOAK_KNOWN_FINDING session_rotation_working",
+            "harness.exerciseMultiSessionShape(",
+            "SOAK_STATE_SHAPE multi_session_round_trip exercised",
+            "_assertEveryMaintainedBubbleRenders(",
+            "_renderableProjectionIds(tester)",
             "harness.exerciseLongUptimeShape(",
         ):
             self.assertIn(evidence, source)
@@ -154,7 +158,36 @@ class ScheduleTests(unittest.TestCase):
         manifest = nightly.load_expected(
             Path(__file__).with_name("expected-soak-findings.txt")
         )
-        self.assertEqual(manifest, set(live_soak.KNOWN_FINDINGS.values()))
+        self.assertEqual(
+            manifest,
+            {
+                "story-app-send-swallowed-session-identity-unavailable",
+                "backlog-app-blank-chat-direct-open",
+                "backlog-app-reconnect-churn-timeout-lifecycle-failures",
+                "backlog-app-cold-replay-duplicates-persisted-transcript",
+                "backlog-app-session-rotation-late-echo-sticks-working",
+                "backlog-mesh-post-pair-roster-bootstrap-empty",
+            },
+        )
+        self.assertEqual(manifest, set(live_soak.KNOWN_FINDINGS))
+
+    def test_churn_clusters_reconcile_only_inside_recorded_fault_windows(self) -> None:
+        rows = [
+            {"tag": "connChannelLost", "ts": "2026-08-23T00:00:10Z"},
+            {"tag": "connChannelLost", "ts": "2026-08-23T00:00:15Z"},
+            {"tag": "connChannelLost", "ts": "2026-08-23T00:03:00Z"},
+            {"tag": "connChannelLost", "ts": "2026-08-23T00:03:05Z"},
+        ]
+        windows = (
+            (
+                live_soak.datetime.fromisoformat("2026-08-23T00:00:00+00:00"),
+                live_soak.datetime.fromisoformat("2026-08-23T00:01:00+00:00"),
+            ),
+        )
+        evaluation = live_soak._evaluate_rows(rows, windows)
+        self.assertEqual(evaluation["expected_churn_clusters"], 1)
+        self.assertEqual(evaluation["unexpected_churn_clusters"], 1)
+        self.assertTrue(evaluation["reconnect_churn"])
 
     def test_nightly_reconciliation_reports_new_and_missing_ids(self) -> None:
         new, missing = nightly.reconcile(
@@ -218,7 +251,7 @@ class OracleLogicTests(unittest.TestCase):
         )
         result = triage._chaos_oracle_violations(accepted_twice, oracle)
         self.assertTrue(result["replay_dedup"])
-        self.assertTrue(result["transcript_ui"])
+        self.assertTrue(result["transcript_projection"])
         self.assertTrue(result["ordering"])
         self.assertTrue(result["identity"])
 
@@ -252,13 +285,13 @@ class OracleLogicTests(unittest.TestCase):
                 "tsMs": timestamps[1],
             },
             {
-                "tag": "soakOracleUi",
+                "tag": "soakOracleProjection",
                 "checkpoint": checkpoint,
                 "id": "a",
                 "index": 0,
             },
             {
-                "tag": "soakOracleUi",
+                "tag": "soakOracleProjection",
                 "checkpoint": checkpoint,
                 "id": "b",
                 "index": 1,

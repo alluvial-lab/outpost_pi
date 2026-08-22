@@ -461,6 +461,7 @@ final class LiveDeviceHarness {
     WidgetTester tester, {
     required String prompt,
     required String reply,
+    bool assertRenderedWorkingConverged = true,
   }) async {
     await host.post('/turn-control/defer-next', <String, Object>{
       'reply': reply,
@@ -504,15 +505,17 @@ final class LiveDeviceHarness {
       () async => find.text(reply).evaluate().isNotEmpty ? true : null,
       description: 'assistant reply bubble',
     );
-    await eventually<bool>(
-      tester,
-      () async =>
-          find.text('working…').evaluate().isEmpty &&
-              find.text('streaming…').evaluate().isEmpty
-          ? true
-          : null,
-      description: 'rendered working convergence',
-    );
+    if (assertRenderedWorkingConverged) {
+      await eventually<bool>(
+        tester,
+        () async =>
+            find.text('working…').evaluate().isEmpty &&
+                find.text('streaming…').evaluate().isEmpty
+            ? true
+            : null,
+        description: 'rendered working convergence',
+      );
+    }
   }
 
   /// Wait until the owner channel and selected room are both authoritative.
@@ -563,8 +566,9 @@ final class LiveDeviceHarness {
 
   /// Exercise A→B→A switching with faults and verify projection isolation.
   Future<LiveSessionShapeResult> exerciseMultiSessionShape(
-    WidgetTester tester,
-  ) async {
+    WidgetTester tester, {
+    bool assertWorkingConverged = true,
+  }) async {
     await waitOnlineAndLive(tester: tester);
     final room = connection.activeRoomId;
     final selected = preferences.selectedRoomRaw;
@@ -590,7 +594,12 @@ final class LiveDeviceHarness {
       () async => find.text(promptA).evaluate().isEmpty ? true : null,
       description: 'session B excludes session A projection',
     );
-    await sendAndResolve(tester, prompt: promptB, reply: replyB);
+    await sendAndResolve(
+      tester,
+      prompt: promptB,
+      reply: replyB,
+      assertRenderedWorkingConverged: assertWorkingConverged,
+    );
 
     requestLiveFault('net_fault down');
     await eventually<bool>(
@@ -632,8 +641,15 @@ final class LiveDeviceHarness {
     expect(find.text(promptB), findsNothing);
     expect(connection.activeRoomId, room);
     expect(preferences.selectedRoomRaw, selected);
-    expect(connection.isRoomWorking(peer.remoteEpk, room), isFalse);
-    return LiveSessionShapeResult(sessionA: sessionA, sessionB: sessionB);
+    final workingConverged = !connection.isRoomWorking(peer.remoteEpk, room);
+    if (assertWorkingConverged) {
+      expect(workingConverged, isTrue);
+    }
+    return LiveSessionShapeResult(
+      sessionA: sessionA,
+      sessionB: sessionB,
+      workingConverged: workingConverged,
+    );
   }
 
   /// Exercise local unpair→re-pair while preserving identity and transcript.
@@ -832,10 +848,12 @@ final class LiveSessionShapeResult {
   const LiveSessionShapeResult({
     required this.sessionA,
     required this.sessionB,
+    required this.workingConverged,
   });
 
   final String sessionA;
   final String sessionB;
+  final bool workingConverged;
 }
 
 /// Minimal bounded HTTP client for the pi-host test-support adapter.

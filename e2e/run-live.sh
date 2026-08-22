@@ -32,6 +32,10 @@ EMULATOR_PID=""
 TEST_PID=""
 GRANT_PID=""
 CAPTURED=0
+DEVICE_OWNED=0
+STACK_STARTED=0
+LANE_LOCK_DIR="$ROOT/e2e/.run-state/locks"
+LANE_LOCK="$LANE_LOCK_DIR/${ANDROID_SERIAL}.lock"
 
 export BUILDX_CONFIG="${BUILDX_CONFIG:-$RUN_STATE/buildx}"
 export PUB_CACHE="${PUB_CACHE:-$ROOT/.pub-cache}"
@@ -39,8 +43,24 @@ export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}"
 export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
-mkdir -p "$BUILDX_CONFIG"
-chmod 700 "$RUN_STATE"
+mkdir -p "$BUILDX_CONFIG" "$LANE_LOCK_DIR"
+chmod 700 "$RUN_STATE" "$LANE_LOCK_DIR"
+[[ "$EMULATOR_PORT" =~ ^[0-9]+$ ]] || { printf 'E2E_ANDROID_SERIAL must be emulator-<port>\n' >&2; exit 2; }
+if [[ "${E2E_LANE_LOCK_HELD:-0}" != "1" ]]; then
+  exec {LANE_LOCK_FD}>"$LANE_LOCK"
+  if ! flock -n "$LANE_LOCK_FD"; then
+    printf 'Android serial lane %s is owned by another live run; refusing without touching it\n' "$ANDROID_SERIAL" >&2
+    rm -rf "$RUN_STATE"
+    exit 2
+  fi
+fi
+printf 'owner_pid=%s\nserial=%s\ncompose_project=%s\nemulator_pid=pending\n' \
+  "$$" "$ANDROID_SERIAL" "$COMPOSE_PROJECT" >"$RUN_STATE/lane-owner.txt"
+if "$ADB_BIN" -s "$ANDROID_SERIAL" get-state >/dev/null 2>&1; then
+  printf 'refusing occupied Android serial %s without touching its emulator\n' "$ANDROID_SERIAL" >&2
+  rm -rf "$RUN_STATE"
+  exit 2
+fi
 
 # shellcheck source=lib/faults.sh
 source "$ROOT/e2e/lib/faults.sh"
@@ -76,20 +96,26 @@ cleanup() {
   set +e
   [[ -n "$TEST_PID" ]] && kill "$TEST_PID" >/dev/null 2>&1
   [[ -n "$GRANT_PID" ]] && kill "$GRANT_PID" >/dev/null 2>&1
-  capture_diagnostics || true
+  if [[ "$DEVICE_OWNED" == 1 ]]; then capture_diagnostics || true; fi
   if [[ -n "${E2E_LIVE_ARTIFACT_DIR:-}" ]]; then
     mkdir -p "$E2E_LIVE_ARTIFACT_DIR"
     cp -a "$RUN_STATE/." "$E2E_LIVE_ARTIFACT_DIR/" >/dev/null 2>&1 || true
   fi
-  app_airplane off >/dev/null 2>&1 || true
-  net_clear >/dev/null 2>&1 || true
-  if "$ADB_BIN" -s "$ANDROID_SERIAL" get-state >/dev/null 2>&1; then
-    "$ADB_BIN" -s "$ANDROID_SERIAL" emu kill >/dev/null 2>&1 || true
+  if [[ "$DEVICE_OWNED" == 1 && -n "$EMULATOR_PID" ]] && kill -0 -- "-$EMULATOR_PID" >/dev/null 2>&1; then
+    app_airplane off >/dev/null 2>&1 || true
+    kill -- "-$EMULATOR_PID" >/dev/null 2>&1 || true
   fi
+  if [[ "$STACK_STARTED" == 1 ]]; then net_clear >/dev/null 2>&1 || true; fi
   [[ -n "$EMULATOR_PID" ]] && wait "$EMULATOR_PID" >/dev/null 2>&1
-  if [[ "${E2E_KEEP_STACK:-0}" != "1" ]]; then
+  if [[ "$DEVICE_OWNED" == 1 ]]; then
+    for _ in $(seq 1 30); do
+      "$ADB_BIN" -s "$ANDROID_SERIAL" get-state >/dev/null 2>&1 || break
+      sleep 1
+    done
+  fi
+  if [[ "$STACK_STARTED" == 1 && "${E2E_KEEP_STACK:-0}" != "1" ]]; then
     "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
-  else
+  elif [[ "$STACK_STARTED" == 1 ]]; then
     printf '%s\n' "live e2e stack retained: project=$COMPOSE_PROJECT"
   fi
   rm -rf "$RUN_STATE"
@@ -111,11 +137,24 @@ wait_for_device_value() {
   return 1
 }
 
+fault_window_event() {
+  local phase=$1 request=$2
+  printf '{"tag":"scheduledFaultWindow","ts":"%s","phase":"%s","request":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$phase" "$request" \
+    >>"$RUN_STATE/fault-windows.jsonl"
+}
+
 apply_fault_request() {
-  local request=$1 action class value state
+  local request=$1 action class value state window_phase="" one_shot=0
   local -a parts=()
   read -r -a parts <<<"$request"
   action=${parts[0]:-}
+  case "$request" in
+    net_fault\ *|net_compound\ *|relay_pause|app_background|"app_airplane on") window_phase=start ;;
+    net_clear|relay_resume|app_foreground|"app_airplane off") window_phase=end ;;
+    relay_kill|pi_restart) window_phase=start; one_shot=1 ;;
+  esac
+  [[ -z "$window_phase" ]] || fault_window_event "$window_phase" "$request"
   case "$action" in
     net_fault)
       (( ${#parts[@]} == 2 || ${#parts[@]} == 3 )) || return 2
@@ -148,6 +187,7 @@ apply_fault_request() {
       return 2
       ;;
   esac
+  if [[ "$one_shot" == 1 ]]; then fault_window_event end "$request"; fi
   printf '[live] applied %s\n' "$request" | tee -a "$RUN_STATE/faults-applied.log"
 }
 
@@ -184,6 +224,7 @@ if [[ -n "${OUTPOST_PI_E2E_RELAY_IMAGE:-}" ]]; then
 else
   "${COMPOSE[@]}" up -d --build --wait --wait-timeout 60
 fi
+STACK_STARTED=1
 
 TOXI_ADMIN_PORT=$(published_port toxiproxy 8474)
 TOXI_RELAY_PORT=$(published_port toxiproxy 8666)
@@ -222,16 +263,13 @@ if [[ "$MESH_LANE" == 1 ]]; then
     "http://127.0.0.1:${TOXI_ADMIN_PORT}/proxies" >/dev/null
 fi
 
-if "$ADB_BIN" -s "$ANDROID_SERIAL" get-state >/dev/null 2>&1; then
-  printf 'refusing to reuse occupied Android serial %s\n' "$ANDROID_SERIAL" >&2
-  exit 2
-fi
-[[ "$EMULATOR_PORT" =~ ^[0-9]+$ ]] || { printf 'E2E_ANDROID_SERIAL must be emulator-<port>\n' >&2; exit 2; }
-
 EMULATOR_LOG="$RUN_STATE/emulator.log"
-sg kvm -c "exec '$EMULATOR' -avd outpost34 -port '$EMULATOR_PORT' -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back virtualscene -no-snapshot -memory 3072" \
+setsid sg kvm -c "exec '$EMULATOR' -avd outpost34 -port '$EMULATOR_PORT' -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back virtualscene -no-snapshot -memory 3072" \
   >"$EMULATOR_LOG" 2>&1 &
 EMULATOR_PID=$!
+DEVICE_OWNED=1
+printf 'owner_pid=%s\nserial=%s\ncompose_project=%s\nemulator_pid=%s\n' \
+  "$$" "$ANDROID_SERIAL" "$COMPOSE_PROJECT" "$EMULATOR_PID" >"$RUN_STATE/lane-owner.txt"
 wait_for_device_value 1 180
 "$ADB_BIN" -s "$ANDROID_SERIAL" shell settings put global window_animation_scale 0
 "$ADB_BIN" -s "$ANDROID_SERIAL" shell settings put global transition_animation_scale 0

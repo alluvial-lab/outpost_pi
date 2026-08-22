@@ -235,7 +235,7 @@ def _chaos_oracle_violations(
     """Evaluate content-free soak observations at DB, UI, time, and identity boundaries."""
     result = {
         "replay_dedup": _replay_dedup_violations(capture_rows),
-        "transcript_ui": [],
+        "transcript_projection": [],
         "ordering": [],
         "identity": [],
     }
@@ -246,15 +246,15 @@ def _chaos_oracle_violations(
         if not isinstance(checkpoint, str) or tag not in {
             "soakOracleCheckpoint",
             "soakOracleDb",
-            "soakOracleUi",
+            "soakOracleProjection",
         }:
-            result["transcript_ui"].append("malformed soak oracle row")
+            result["transcript_projection"].append("malformed soak oracle row")
             continue
         bucket = checkpoints.setdefault(
             checkpoint,
             {"meta": [], "db": [], "ui": []},
         )
-        bucket[{"soakOracleCheckpoint": "meta", "soakOracleDb": "db", "soakOracleUi": "ui"}[tag]].append(row)
+        bucket[{"soakOracleCheckpoint": "meta", "soakOracleDb": "db", "soakOracleProjection": "ui"}[tag]].append(row)
 
     identity_baseline: tuple[str, str, str] | None = None
     for checkpoint, bucket in checkpoints.items():
@@ -286,12 +286,12 @@ def _chaos_oracle_violations(
         db_ids = [row.get("id") for row in db]
         ui_ids = [row.get("id") for row in ui]
         if not all(isinstance(value, str) and value for value in db_ids + ui_ids):
-            result["transcript_ui"].append(f"{checkpoint}: malformed message identity")
+            result["transcript_projection"].append(f"{checkpoint}: malformed message identity")
         elif len(db_ids) != len(set(db_ids)):
             result["replay_dedup"].append(f"{checkpoint}: duplicate transcript DB id")
         if db_ids != ui_ids:
-            result["transcript_ui"].append(
-                f"{checkpoint}: transcript DB ids differ from rendered projection ids"
+            result["transcript_projection"].append(
+                f"{checkpoint}: transcript DB ids differ from ViewModel projection ids"
             )
 
         previous_ts: int | None = None
@@ -525,7 +525,7 @@ def run_selftest() -> int:
             "tsMs": 100,
         },
         {
-            "tag": "soakOracleUi",
+            "tag": "soakOracleProjection",
             "checkpoint": "fault-1",
             "id": "message-a",
             "index": 0,
@@ -577,7 +577,9 @@ def run_selftest() -> int:
         "churn cluster": bool(churn),
         "clean chaos oracle observations": not any(clean_chaos.values()),
         "replay duplicate accepted is detected": bool(violated_chaos["replay_dedup"]),
-        "DB/UI mismatch is detected": bool(violated_chaos["transcript_ui"]),
+        "DB/ViewModel projection mismatch is detected": bool(
+            violated_chaos["transcript_projection"]
+        ),
         "canonical ordering reversal is detected": bool(violated_chaos["ordering"]),
         "identity instability is detected": bool(violated_chaos["identity"]),
     }
