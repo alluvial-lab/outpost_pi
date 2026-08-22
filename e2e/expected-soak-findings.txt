@@ -1,5 +1,4 @@
 # Tracking ids that must remain in the nightly known-open inventory until fixed.
-backlog-app-blank-chat-direct-open
 backlog-app-cold-replay-duplicates-persisted-transcript
 backlog-app-reconnect-churn-timeout-lifecycle-failures
 backlog-app-session-rotation-late-echo-sticks-working

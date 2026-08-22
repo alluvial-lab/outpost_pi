@@ -51,14 +51,12 @@ def _known_finding(fragment: str) -> str:
 
 
 FINDING_OBSERVATIONS = {
-    "blank_chat": _known_finding("blank-chat-direct-open"),
     "reconnect_churn": _known_finding("reconnect-churn-timeout"),
     "cold_dedup": _known_finding("cold-replay-duplicates"),
     "mesh_roster": _known_finding("mesh-post-pair-roster"),
     "session_rotation_working": _known_finding("session-rotation-late-echo"),
 }
-# Blank-chat targeting belongs to run-live.sh's force-stop lane, while cold
-# replay and mesh-roster findings belong to the grid and two-Pi lanes. Long
+# Cold replay and mesh-roster findings belong to the grid and two-Pi lanes. Long
 # soaks also carry the state-shape linked skip until its working bug is fixed.
 SOAK_EXPECTED_FINDINGS: frozenset[str] = frozenset()
 # The real multi-session exercise always runs in a full soak, but the linked

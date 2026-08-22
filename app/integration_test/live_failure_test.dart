@@ -13,7 +13,6 @@ import 'package:path_provider/path_provider.dart';
 import 'support/live_device_harness.dart';
 
 const _phase = String.fromEnvironment('E2E_LIVE_PHASE');
-const _skipBlankChatKnownBug = true;
 const _swallowPrompt = 'identity-window message must stay visible';
 const _offlinePrompt = 'offline message held for resend';
 const _beforeRestartPrompt = 'message before extension restart';
@@ -55,8 +54,6 @@ void main() {
   );
 
   /// Invariant 2: a direct cold chat route never hides persisted history.
-  // The fix story flips _skipBlankChatKnownBug; keep the phase gate and
-  // hydrate assertion intact for backlog-app-blank-chat-direct-open.
   testWidgets(
     'cold direct-open chat renders existing transcript history',
     (tester) async {
@@ -73,13 +70,16 @@ void main() {
               : null,
           description: 'persisted history on direct cold process route',
         );
-        expect(find.text(_beforeRestartPrompt), findsOneWidget);
-        expect(find.text(_beforeRestartReply), findsOneWidget);
+        // This invariant is non-blank visibility. Duplicate replay rows are a
+        // separate still-open finding and must not make the cold-open guard
+        // misclassify a populated chat as blank.
+        expect(find.text(_beforeRestartPrompt), findsWidgets);
+        expect(find.text(_beforeRestartReply), findsWidgets);
       } finally {
         await harness.close(tester);
       }
     },
-    skip: _phase != 'blank-cold' || _skipBlankChatKnownBug,
+    skip: _phase != 'blank-cold',
     timeout: const Timeout(Duration(minutes: 5)),
   );
 
