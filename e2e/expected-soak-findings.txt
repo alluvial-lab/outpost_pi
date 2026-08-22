@@ -1,3 +1,2 @@
 # Tracking ids that must remain in the nightly known-open inventory until fixed.
-backlog-app-reconnect-churn-timeout-lifecycle-failures
 backlog-mesh-post-pair-roster-bootstrap-empty
