@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/local/records/message_record.dart';
+import 'package:app/data/sync/session_history_replay.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
@@ -980,11 +981,14 @@ void main() {
       );
       const dupId = 'replay-dup-1';
       const dupTs = 5;
-      // The persisted eventId is serverReplayEventId(session, 'user_input',
-      // dupId, dupTs) — both events share it (same id + same ts). Compute
-      // its tail the same way SyncService._eventIdTail does so the test can
-      // match the persisted eventIdTail without hardcoding.
-      final dupEventId = 'server:${s.sessionId}:user_input:$dupId:$dupTs';
+      // Both facts share the SDK timestamp identity used across Pi process
+      // replacement. Compute the tail from the canonical helper so diagnostics
+      // stay aligned with replay admission.
+      final dupEventId = serverReplayUserEventId(
+        s.sessionId,
+        'user_input',
+        dupTs,
+      );
       final expectedTail = dupEventId.length <= 12
           ? dupEventId
           : dupEventId.substring(dupEventId.length - 12);

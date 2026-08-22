@@ -2096,17 +2096,13 @@ void main() {
     },
   );
 
-  // Regression for the workstation-user-message dupe (2026-07-08). A message
-  // typed in the Pi TUI used to produce TWO live user_input broadcasts: one
-  // from the input handler (id=local_<uuid>, no ts) and one from message_end
-  // (id=sync_<ts>, with ts). Different ids → different eventIds → two rows →
-  // duplicate user bubble. The extension fix removed the input-handler
-  // broadcast (message_end owns it) and aligned the message_end id with the
-  // turn projection's turnId. This test pins the app side: a single
-  // UserInput(ts) with a local_-prefixed id (the workstation case) commits
-  // one row, and a replay collapses.
+  // A preserving Pi restart rebuilds history from SDK messages after the
+  // extension's in-memory delivered-user reservation is gone. The same user
+  // message then keeps its SDK timestamp but falls back from the live app id to
+  // `sync_<ts>`. Durable admission must use the restart-stable timestamp
+  // identity, not the process-local reservation id.
   test(
-    'workstation user message: single UserInput(ts) + replay collapse to one row',
+    'cold Pi replay with rebuilt user id keeps the persisted prompt once',
     () async {
       final s = await setup();
       // The message_end-driven user_input for a workstation-typed message.
@@ -2125,7 +2121,8 @@ void main() {
       ).where((r) => r.role == MsgRole.user).length;
       expect(afterLive, 1, reason: 'single user_input commits one row');
 
-      // Replay the same message via session_history — must collapse.
+      // After the extension process restarts, SDK backfill no longer has the
+      // delivered-user reservation that carried the live app id.
       s.ch.push(
         SessionHistory(
           inReplyTo: 'sync1',
@@ -2133,7 +2130,7 @@ void main() {
           events: const [
             UserInputEvt(
               ts: liveTs,
-              id: 'local_workstation_turn',
+              id: 'sync_5000',
               text: 'restarted pi and loaded the apk',
             ),
           ],
@@ -2142,22 +2139,20 @@ void main() {
       );
       await _settle();
 
+      final userRows = messages(
+        s.epk,
+      ).where((record) => record.role == MsgRole.user).toList();
       final userConfirmedEvents =
           (await s.sync.debugTranscriptEventStore.readSession(
-                transcriptKeyFor(s.epk),
-              ))
-              .whereType<UserMessageConfirmed>()
-              .where((e) => e.clientMessageId == 'local_workstation_turn')
-              .toList();
+            transcriptKeyFor(s.epk),
+          )).whereType<UserMessageConfirmed>().toList();
       expect(
-        userConfirmedEvents.length,
-        1,
-        reason:
-            'A workstation user message (single UserInput(ts)) and its replay '
-            'must collapse to one event-store row. Previously the input handler '
-            'broadcast a second user_input with a different id (local_<uuid>) '
-            'and no ts, causing a duplicate user bubble on mobile.',
+        userConfirmedEvents,
+        hasLength(1),
+        reason: 'live and cold replay must share one durable event identity',
       );
+      expect(userRows, hasLength(1));
+      expect(userRows.single.id, 'local_workstation_turn');
       s.conn.dispose();
       s.sync.dispose();
     },

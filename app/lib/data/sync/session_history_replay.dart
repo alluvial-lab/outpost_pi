@@ -53,7 +53,7 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
   final ts = DateTime.fromMillisecondsSinceEpoch(event.ts);
   return switch (event) {
     UserInputEvt(:final id, :final text, :final image) => UserMessageConfirmed(
-      eventId: serverReplayEventId(sessionId, event.type, id, event.ts),
+      eventId: serverReplayUserEventId(sessionId, event.type, event.ts),
       sessionId: sessionId,
       ts: ts,
       clientMessageId: id,
@@ -129,6 +129,14 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
     ),
   };
 }
+
+/// Derive a user-event identity that survives extension process replacement.
+///
+/// Delivered-user reservations can preserve an app client id only while the Pi
+/// process remains alive. SDK backfill after restart falls back to `sync_<ts>`,
+/// so the SDK timestamp—not that process-local id—is the durable identity.
+String serverReplayUserEventId(String sessionId, String historyType, int ts) =>
+    serverReplayEventId(sessionId, historyType, 'sdk_$ts', ts);
 
 /// Derive a stable event identity shared by live and history-replay paths.
 String serverReplayEventId(

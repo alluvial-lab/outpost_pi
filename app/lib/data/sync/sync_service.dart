@@ -1261,10 +1261,9 @@ class SyncService extends Service {
         // duplicated-live-replay user-message follow-up.
         final messageType = typeOfServerMessage(msg);
         final userEventId = ts != null
-            ? serverReplayEventId(
+            ? serverReplayUserEventId(
                 _activeTranscriptSessionId(),
                 messageType,
-                id,
                 ts,
               )
             : 'server:user_confirmed:$id';
