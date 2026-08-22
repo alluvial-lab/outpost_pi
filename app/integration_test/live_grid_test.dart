@@ -13,7 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'support/live_device_harness.dart';
 
 const _phase = String.fromEnvironment('E2E_LIVE_PHASE');
-const _skipColdReplayDuplicates = true;
+const _skipColdReplayDuplicates = false;
 const _baselinePrompt = 'deterministic grid baseline prompt';
 const _baselineReply = 'deterministic grid baseline reply';
 
@@ -153,11 +153,8 @@ void main() {
     timeout: const Timeout(Duration(minutes: 10)),
   );
 
-  // Flip these linked skips when
-  // backlog-app-cold-replay-duplicates-persisted-transcript is fixed. Each
-  // cold cell keeps the exact-one transcript assertion in
-  // _mountAndAssertBaseline; a fresh process currently duplicates those rows
-  // before the lifecycle-specific assertion can pass.
+  // Regression cells for durable cold replay admission. Each cold cell keeps
+  // the exact-one transcript assertion in _mountAndAssertBaseline.
   testWidgets(
     'cold-open pi restart preserves one transcript projection',
     (tester) => _runColdCell(

@@ -49,7 +49,7 @@ void main() {
       final confirmed = event as UserMessageConfirmed;
       expect(
         confirmed.eventId,
-        serverReplayEventId(sessionId, 'user_input', 'client-1', ts),
+        serverReplayUserEventId(sessionId, 'user_input', ts),
       );
       expect(confirmed.sessionId, sessionId);
       expect(confirmed.ts, DateTime.fromMillisecondsSinceEpoch(ts));
@@ -206,7 +206,7 @@ void main() {
       expect(events[0].eventId, events[1].eventId);
       expect(
         events[0].eventId,
-        serverReplayEventId(sessionId, 'user_input', 'client-1', ts),
+        serverReplayUserEventId(sessionId, 'user_input', ts),
       );
     });
 

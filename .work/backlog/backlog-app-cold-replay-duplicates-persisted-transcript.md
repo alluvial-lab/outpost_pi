@@ -5,6 +5,8 @@ updated: 2026-08-22
 tags: [app, bug]
 ---
 
+Promoted to `story-fix-app-cold-replay-duplicates-persisted-transcript`.
+
 # Cold reconnect replay duplicates transcript rows already persisted in Hive
 
 The deterministic grid reproduced duplicate bubbles after an app force-stop
