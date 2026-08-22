@@ -165,6 +165,7 @@ async function writePairCodeFile(target: string, payload: string): Promise<void>
 export class PairingCoordinator {
   private cachedEd25519: Ed25519Keypair | null = null;
   private selfRevoke: SelfRevoke | null = null;
+  private verifiedSiblingsForTest: SiblingInfo[] = [];
   private listDevicesUi: PairingUiContext["ui"] | null = null;
 
   constructor(
@@ -184,10 +185,25 @@ export class PairingCoordinator {
   stopSelfRevoke(): void {
     this.selfRevoke?.stop();
     this.selfRevoke = null;
+    this.verifiedSiblingsForTest = [];
   }
 
   startSelfRevoke(relayUrl: string, keypair: Ed25519Keypair): void {
     this.ensureSelfRevoke(relayUrl, keypair);
+  }
+
+  /** Run one membership sweep for test adapters without changing production cadence. */
+  async refreshMembershipForTest(): Promise<void> {
+    await this.selfRevoke?.checkOnce();
+  }
+
+  /** Build a test route only from signed membership and a broker-issued remote address. */
+  meshTargetForTest(pcPubkey: string, remoteAddress: string): string | null {
+    const canonicalPubkey = Buffer.from(pcPubkey, "base64").toString("base64");
+    const sibling = this.verifiedSiblingsForTest.find(
+      (candidate) => candidate.pcPubkey === canonicalPubkey,
+    );
+    return sibling ? `${sibling.pcLabel}:${remoteAddress}` : null;
   }
 
   async startRelay(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
@@ -383,6 +399,7 @@ export class PairingCoordinator {
         }, undefined, "mesh-revoked");
       },
       onMembersChanged: (siblings) => {
+        this.verifiedSiblingsForTest = [...siblings];
         this.deps.setSiblings(siblings);
       },
       log: { info: () => {}, warn: () => {}, error: () => {} },

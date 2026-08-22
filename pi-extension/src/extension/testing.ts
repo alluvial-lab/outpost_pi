@@ -45,6 +45,23 @@ export interface OutpostPiTestHarness {
   roomId(): string | null;
   /** The effective broker-assigned name paired with [roomId]. */
   name(): string | null;
+  /** Return the broker-issued local mesh address, or null before mesh join. */
+  meshAddress(): string | null;
+  /** Report whether this process currently owns an attached cross-PC bridge. */
+  meshBridgeActive(): boolean;
+  /** Return the current broker-projected mesh peers without composing addresses. */
+  meshPeers(): Promise<string[]>;
+  /** Resolve a test route from verified membership plus a broker-issued address. */
+  meshTarget(pcPubkey: string, remoteAddress: string): string | null;
+  /** Send below the linked-open roster cache while retaining relay and ingress. */
+  sendDirectMeshMessage(input: {
+    toPc: string;
+    toRoom: string;
+    toAddress: string;
+    body: unknown;
+  }): boolean;
+  /** Force one signed membership refresh through the production self-revoke path. */
+  refreshMeshMembership(): Promise<void>;
   routeClientMessage(message: ClientMessage, ctx: Pick<ExtensionContext, "abort">): void;
 }
 

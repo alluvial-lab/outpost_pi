@@ -3131,6 +3131,22 @@ export const outpostPiTestHarness: OutpostPiTestHarness = createOutpostPiTestHar
     const cwd = _lastCtx?.cwd ?? _myRoomMeta?.cwd;
     return cwd ? _displayName(cwd) : null;
   },
+  meshAddress: () => _meshNode?.address() ?? null,
+  meshBridgeActive: () => _meshNode?.hasBridge() ?? false,
+  meshPeers: async () => {
+    if (!_meshNode) return [];
+    const reply = await _meshNode.request("broker", { type: "list_peers" }, 2000);
+    const body = reply.body as {
+      peers_detailed?: Array<{ pc?: string; address?: string }>;
+    } | null;
+    return (body?.peers_detailed ?? [])
+      .filter((peer) => typeof peer.pc === "string" && typeof peer.address === "string")
+      .map((peer) => peer.address!);
+  },
+  meshTarget: (pcPubkey, remoteAddress) =>
+    _pairingCoordinator.meshTargetForTest(pcPubkey, remoteAddress),
+  sendDirectMeshMessage: (input) => _meshNode?.sendEnvelopeForTest(input) ?? false,
+  refreshMeshMembership: () => _pairingCoordinator.refreshMembershipForTest(),
   routeClientMessage: (message, ctx) => routeClientMessageForTest(message, ctx),
 });
 

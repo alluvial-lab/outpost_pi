@@ -53,6 +53,42 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     json(response, 200, { events: runtime.eventsAfter(Number.isFinite(after) ? after : 0) });
     return;
   }
+  if (request.method === "GET" && url.pathname === "/mesh") {
+    json(response, 200, await runtime.meshStatus());
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/mesh/refresh") {
+    json(response, 200, { peers: await runtime.refreshMeshMembership() });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/mesh/target") {
+    const body = await readJson(request);
+    const pcPubkey = typeof body.pcPubkey === "string" ? body.pcPubkey : "";
+    const remoteAddress = typeof body.remoteAddress === "string" ? body.remoteAddress : "";
+    const target = pcPubkey && remoteAddress
+      ? runtime.meshTarget(pcPubkey, remoteAddress)
+      : null;
+    if (!target) {
+      json(response, 404, { error: "verified sibling target unavailable" });
+      return;
+    }
+    json(response, 200, { target });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/mesh/send-direct") {
+    const body = await readJson(request);
+    const toPc = typeof body.toPc === "string" ? body.toPc : "";
+    const toRoom = typeof body.toRoom === "string" ? body.toRoom : "";
+    const toAddress = typeof body.toAddress === "string" ? body.toAddress : "";
+    const message = typeof body.message === "string" ? body.message : "";
+    if (!toPc || !toRoom || !toAddress || !message) {
+      json(response, 400, { error: "toPc, toRoom, toAddress, and message are required" });
+      return;
+    }
+    const sent = runtime.sendDirectMeshMessage({ toPc, toRoom, toAddress, message });
+    json(response, sent ? 200 : 409, { sent });
+    return;
+  }
   if (request.method === "GET" && url.pathname === "/pair-code") {
     const path = requiredEnv("OUTPOST_PI_PAIR_CODE_FILE");
     const pairCode = JSON.parse(await readFile(path, "utf8")) as unknown;

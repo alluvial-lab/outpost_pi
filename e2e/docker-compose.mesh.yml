@@ -1,0 +1,32 @@
+services:
+  toxiproxy:
+    ports:
+      - "127.0.0.1::8668"
+
+  pi-host:
+    environment:
+      E2E_PI_MESH_ENABLED: "1"
+
+  pi-host-b:
+    extends:
+      file: docker-compose.test.yml
+      service: pi-host
+    environment:
+      HOME: /tmp/outpost-pi-e2e-home-b
+      OUTPOST_PI_RELAY: http://relay:3000
+      OUTPOST_PI_ALLOW_FILE_IDENTITY: "1"
+      OUTPOST_PI_PAIR_CODE_FILE: /tmp/outpost-pi-e2e-pair-code-b.json
+      E2E_PI_HOST_PORT: "4318"
+      E2E_PI_CWD: /tmp/outpost-pi-e2e-cwd-b
+      E2E_PI_MESH_ENABLED: "1"
+      E2E_SEEDED_TRANSCRIPT: e2e mesh B persisted transcript
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:4318/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 1s
+      timeout: 2s
+      retries: 45
+      start_period: 2s
