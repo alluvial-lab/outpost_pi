@@ -8,7 +8,7 @@ depends_on: [story-e2e-chaos-oracle-invariants, story-e2e-chaos-fault-vocabulary
 release_binding: null
 gate_origin: null
 created: 2026-08-21
-updated: 2026-08-22
+updated: 2026-08-23
 ---
 
 # Nightly seeded soak cadence
@@ -38,3 +38,13 @@ Device-lane runs accumulate ~10-17G (app/build 4.4G, gradle build-cache growth, 
 - Verification discovery: the first manual attempt exposed an async baseline check that inspected the bubble before materialization; it was fixed with a bounded pump. The second reached the pre-existing linked session-rotation working bug; the full soak now carries the same explicit skip-link as the dedicated state-shape lane rather than treating the known product defect as a novel runner failure. No new product oddity was found.
 - Simplification/discrepancies: one checked-in manifest is the expected-inventory source; known-open status and per-run observation are deliberately separate so out-of-lane mesh/grid bugs can remain flip-on-fix tracked without pretending a single-Pi process-live soak reproduced them. The inventory contains five rather than the four explicitly called out because `backlog-app-session-rotation-late-echo-sticks-working` is also currently open and already linked by the full-soak state shape.
 - Adjacent issues parked: none; every observed product issue was already parked with evidence.
+
+### Review closure
+
+- Replaced the five-id handwritten runtime inventory with direct loading from the canonical six-id `e2e/expected-soak-findings.txt` manifest, adding `backlog-app-reconnect-churn-timeout-lifecycle-failures`; the unit contract now asserts that real manifest's exact open set.
+- Host-timestamped scheduled fault windows now reconcile triage churn. The final 300-second seed `20260823` run recorded one three-loss churn cluster wholly inside scheduled fault/recovery windows, rendered it as `Anomalies: RECONCILED`, and exited 0 with no suspicious/unexpected findings; outside-window clusters remain fail-closed unexpected findings.
+- Narrowed the oracle to DB↔`ChatReady` ViewModel projection consistency and added widget traversal that materializes every renderable maintained bubble id and checks materialized newest-to-oldest order before restoring the newest view.
+- The full soak now executes the real `exerciseMultiSessionShape` A→B→A path. Evidence contains `SOAK_STATE_SHAPE multi_session_round_trip started` and `exercised`; the timing-dependent known-finding marker is emitted only from the real exercise's `workingConverged` observation.
+- Added per-serial `flock` ownership and recorded runner/emulator PIDs. A concurrent second runner exited 2 while the first remained alive and `emulator-5554` stayed `device` before/after; cleanup now terminates only the run-owned emulator process group. Nightly waits or alerts/skips without touching an occupied lane.
+- Nightly now has a 40-minute outer timeout, EXIT-trap hygiene, retained cron output, append/rotated `LATEST_ALERT.md`, and timestamped `LAST_STATUS`. The installed 02:30 cron entry now appends to `.work/session-notes/nightly-soak/cron.log`.
+- Verification evidence: `.work/session-notes/review-closure-soak-final-20260823/` (734 capture rows, 187 replay-dedup observations, 11 oracle checkpoints, six known-open ids, zero unexpected/suspicious findings); `python3 -m unittest e2e.test_live_soak` passed 15 tests; triage selftest and `flutter analyze` passed. Post-device hygiene left the emulator down, removed build/cache/AVD writable state, and restored 39 GiB free.

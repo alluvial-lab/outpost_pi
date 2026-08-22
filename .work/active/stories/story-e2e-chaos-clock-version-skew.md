@@ -8,7 +8,7 @@ depends_on: [story-e2e-chaos-fault-vocabulary]
 release_binding: null
 gate_origin: null
 created: 2026-08-21
-updated: 2026-08-22
+updated: 2026-08-23
 ---
 
 # Clock skew + version-skew drills
@@ -32,3 +32,9 @@ Device lane (e2e/run-live.sh semantics) green for whatever this story adds; unit
 - Precise hard-cutover limitation: the required previous tag (`v0.4.0`) postdates both relay-relevant hard cutovers (v0.1 auth domain separation and required `to_room`), while owner-channel v0.3 is app ↔ extension and relay-opaque. The repository has no pre-v0.1 unified release tag, so a previous-tag relay drill cannot honestly produce the clean mixed-version rejection side. Current↔v0.4 compatibility success is the correct observed result; auth-domain legacy rejection remains covered by relay negative tests. This limitation does not block the story because the clock dimension was fully exercised and the version dimension completed with bounded evidence.
 - Verification: both drill scripts exited 0; `python3 -m unittest e2e.test_live_soak` passed 14 tests; triage selftest passed; `bash -n` passed; merged Compose config validated; `git diff --check` passed. No Dart source changed, so Flutter analyze was not required. `shellcheck` is unavailable on the VM.
 - Simplification/discrepancies: one generic derived-image Dockerfile serves both glibc containers; production Dockerfiles remain dependency-free. Corrected this item's scalar `depends_on` to the substrate's required sequence shape. No new findings were parked.
+
+### Review closure
+
+- `scripts/version_skew_drill.sh` now records the resolved release-tag commit and registry manifest digest for every tagged Dockerfile base image. The report explicitly warns that rebuilding the tag-based Dockerfile is not reproducible if an upstream base tag drifts.
+- `scripts/clock_skew_drill.sh` now states the exercised boundary precisely: nonce authentication plus one first-heartbeat crossing; mesh-auth cache TTL crossing remains untested.
+- Verification: shell syntax and `git diff --check` passed; the base-digest resolution command returned registry digests for both `rust:1-slim-bookworm` and `debian:bookworm-slim`.

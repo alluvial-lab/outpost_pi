@@ -16,7 +16,7 @@ import random
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -28,20 +28,49 @@ DEFAULT_SEED = 20260821
 MIN_HOLD_SECONDS = 2
 MAX_HOLD_SECONDS = 60
 
-KNOWN_FINDINGS = {
-    "swallow": "story-app-send-swallowed-session-identity-unavailable",
-    "blank_chat": "backlog-app-blank-chat-direct-open",
-    "cold_dedup": "backlog-app-cold-replay-duplicates-persisted-transcript",
-    "mesh_roster": "backlog-mesh-post-pair-roster-bootstrap-empty",
-    "session_rotation_working": "backlog-app-session-rotation-late-echo-sticks-working",
+KNOWN_FINDINGS_MANIFEST = ROOT / "e2e" / "expected-soak-findings.txt"
+
+
+def _load_known_findings(path: Path = KNOWN_FINDINGS_MANIFEST) -> tuple[str, ...]:
+    """Load the canonical known-open inventory in manifest order."""
+    return tuple(
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+
+
+KNOWN_FINDINGS = _load_known_findings()
+
+
+def _known_finding(fragment: str) -> str:
+    matches = [tracking_id for tracking_id in KNOWN_FINDINGS if fragment in tracking_id]
+    if len(matches) != 1:
+        raise RuntimeError(f"known-finding fragment {fragment!r} matched {len(matches)} ids")
+    return matches[0]
+
+
+FINDING_OBSERVATIONS = {
+    "swallow": _known_finding("send-swallowed-session-identity"),
+    "blank_chat": _known_finding("blank-chat-direct-open"),
+    "reconnect_churn": _known_finding("reconnect-churn-timeout"),
+    "cold_dedup": _known_finding("cold-replay-duplicates"),
+    "mesh_roster": _known_finding("mesh-post-pair-roster"),
+    "session_rotation_working": _known_finding("session-rotation-late-echo"),
 }
 # The in-process soak deterministically targets the reconnect identity window.
 # Blank-chat targeting belongs to run-live.sh's force-stop lane, while cold
 # replay and mesh-roster findings belong to the grid and two-Pi lanes. Long
 # soaks also carry the state-shape linked skip until its working bug is fixed.
 SOAK_EXPECTED_FINDINGS = frozenset({"swallow"})
-SOAK_LONG_EXPECTED_FINDINGS = frozenset({"session_rotation_working"})
-SOAK_OUT_OF_LANE_FINDINGS = frozenset({"cold_dedup", "mesh_roster"})
+# The real multi-session exercise always runs in a full soak, but the linked
+# late-echo defect is timing-dependent; mark it only when the exercise observes it.
+SOAK_LONG_EXPECTED_FINDINGS: frozenset[str] = frozenset()
+SOAK_OUT_OF_LANE_FINDINGS = frozenset(
+    {"reconnect_churn", "cold_dedup", "mesh_roster"}
+)
+CHURN_CLUSTER_SECONDS = 60
+CHURN_RECOVERY_SECONDS = 60
 
 NET_FAULT_WEIGHTS = (
     ("timeout", 10),
@@ -254,10 +283,13 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:app/data/preferences/preferences.dart';
+import 'package:app/domain/session_state.dart';
 import 'package:app/ui/chat/chat_page.dart';
 import 'package:app/ui/chat/states/chat_state.dart';
 import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:provider/provider.dart';
@@ -388,10 +420,22 @@ Future<void> _runEvent(
   }}
   switch (event['name']) {{
     case 'multi_session_round_trip':
-      // Flip this linked skip when the late-echo working bug is fixed. The
-      // dedicated state-shape scenario retains the full convergence oracle.
       debugPrintSynchronously(
-        'SOAK_KNOWN_FINDING session_rotation_working',
+        'SOAK_STATE_SHAPE multi_session_round_trip started',
+      );
+      final result = await harness.exerciseMultiSessionShape(
+        tester,
+        assertWorkingConverged: false,
+      );
+      if (!result.workingConverged) {{
+        // The marker records the linked late-echo defect only after the real
+        // A→B→A product exercise reaches its working-state observation.
+        debugPrintSynchronously(
+          'SOAK_KNOWN_FINDING session_rotation_working',
+        );
+      }}
+      debugPrintSynchronously(
+        'SOAK_STATE_SHAPE multi_session_round_trip exercised',
       );
     case 'long_uptime_replay':
       await harness.exerciseLongUptimeShape(
@@ -529,13 +573,13 @@ Future<void> _assertChaosOracle(
   bool requireReplayEvidence = false,
 }}) async {{
   var rows = await harness.transcriptRows();
-  var uiIds = _renderedProjectionIds(tester);
+  var projectionIds = _viewModelProjectionIds(tester);
   final deadline = DateTime.now().add(const Duration(seconds: 20));
   while (DateTime.now().isBefore(deadline) &&
-      !listEquals(rows.map((row) => row.id).toList(), uiIds)) {{
+      !listEquals(rows.map((row) => row.id).toList(), projectionIds)) {{
     await tester.pump(const Duration(milliseconds: 100));
     rows = await harness.transcriptRows();
-    uiIds = _renderedProjectionIds(tester);
+    projectionIds = _viewModelProjectionIds(tester);
   }}
 
   final persisted = await harness.storage.loadPeer(baseline.peerEpk);
@@ -564,11 +608,11 @@ Future<void> _assertChaosOracle(
       'tsMs': row.ts.millisecondsSinceEpoch,
     }});
   }}
-  for (var index = 0; index < uiIds.length; index++) {{
+  for (var index = 0; index < projectionIds.length; index++) {{
     _emitOracle(<String, Object?>{{
-      'tag': 'soakOracleUi',
+      'tag': 'soakOracleProjection',
       'checkpoint': checkpoint,
-      'id': uiIds[index],
+      'id': projectionIds[index],
       'index': index,
     }});
   }}
@@ -576,18 +620,12 @@ Future<void> _assertChaosOracle(
   final dbIds = rows.map((row) => row.id).toList(growable: false);
   expect(dbIds.toSet().length, dbIds.length,
       reason: 'reconnect replay must not duplicate transcript delivery');
-  expect(uiIds, dbIds,
-      reason: 'transcript DB rows must match the rendered bubble projection');
-  if (rows.isNotEmpty) {{
-    final newestBubble = find.byKey(ValueKey(rows.last.id));
-    final renderDeadline = DateTime.now().add(const Duration(seconds: 20));
-    while (DateTime.now().isBefore(renderDeadline) &&
-        newestBubble.evaluate().isEmpty) {{
-      await tester.pump(const Duration(milliseconds: 100));
-    }}
-    expect(newestBubble, findsOneWidget,
-        reason: 'the newest projected transcript row must render a bubble');
-  }}
+  expect(projectionIds, dbIds,
+      reason: 'transcript DB rows must match the ChatReady ViewModel projection');
+  await _assertEveryMaintainedBubbleRenders(
+    tester,
+    await _waitForRenderableProjection(tester),
+  );
   for (var index = 1; index < rows.length; index++) {{
     expect(rows[index].seq, greaterThan(rows[index - 1].seq),
         reason: 'transcript projection sequence must increase');
@@ -628,7 +666,7 @@ Future<void> _assertChaosOracle(
   }}
 }}
 
-List<String> _renderedProjectionIds(WidgetTester tester) {{
+List<String> _viewModelProjectionIds(WidgetTester tester) {{
   final chat = find.byType(ChatPage);
   if (chat.evaluate().isEmpty) return const <String>[];
   final viewModel = Provider.of<ChatViewModel>(
@@ -640,6 +678,89 @@ List<String> _renderedProjectionIds(WidgetTester tester) {{
       messages.map((message) => message.id).toList(growable: false),
     _ => const <String>[],
   }};
+}}
+
+List<String> _renderableProjectionIds(WidgetTester tester) {{
+  final chat = find.byType(ChatPage);
+  if (chat.evaluate().isEmpty) return const <String>[];
+  final element = tester.element(chat.first);
+  final viewModel = Provider.of<ChatViewModel>(element, listen: false);
+  final hideToolCalls = Provider.of<Preferences>(element, listen: false).hideToolCalls;
+  return switch (viewModel.state) {{
+    ChatReady(:final messages) => messages
+        .where((message) => !hideToolCalls || message is! ToolEvent)
+        .map((message) => message.id)
+        .toList(growable: false),
+    _ => const <String>[],
+  }};
+}}
+
+Future<List<String>> _waitForRenderableProjection(WidgetTester tester) async {{
+  var ids = _renderableProjectionIds(tester);
+  final deadline = DateTime.now().add(const Duration(seconds: 20));
+  while (ids.isNotEmpty &&
+      find.byType(ListView).evaluate().isEmpty &&
+      DateTime.now().isBefore(deadline)) {{
+    await tester.pump(const Duration(milliseconds: 100));
+    ids = _renderableProjectionIds(tester);
+  }}
+  return ids;
+}}
+
+Future<void> _assertEveryMaintainedBubbleRenders(
+  WidgetTester tester,
+  List<String> expectedIds,
+) async {{
+  if (expectedIds.isEmpty) return;
+  final list = find.byType(ListView);
+  expect(list, findsOneWidget);
+  final scrollable = find
+      .descendant(
+        of: list,
+        matching: find.byType(Scrollable),
+      )
+      .first;
+  expect(scrollable, findsOneWidget);
+  final expectedNewestFirst = expectedIds.reversed.toList(growable: false);
+  final rendered = <String>{{}};
+  for (final id in expectedNewestFirst) {{
+    final bubble = find.byKey(ValueKey<String>(id));
+    await tester.scrollUntilVisible(
+      bubble,
+      240,
+      scrollable: scrollable,
+      maxScrolls: expectedIds.length * 4 + 4,
+    );
+    expect(bubble, findsOneWidget,
+        reason: 'every maintained transcript id must render as a bubble');
+    rendered.add(id);
+    final materialized = find
+        .descendant(
+          of: list,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is KeyedSubtree &&
+                widget.key is ValueKey<String> &&
+                expectedIds.contains((widget.key! as ValueKey<String>).value),
+          ),
+        )
+        .evaluate()
+        .map((element) => (element.widget.key! as ValueKey<String>).value)
+        .toList(growable: false);
+    expect(
+      materialized,
+      expectedNewestFirst.where(materialized.contains).toList(growable: false),
+      reason: 'materialized bubble widgets must retain newest-to-oldest list order',
+    );
+  }}
+  expect(rendered, expectedIds.toSet(),
+      reason: 'widget traversal must materialize every maintained bubble id');
+  await tester.scrollUntilVisible(
+    find.byKey(ValueKey<String>(expectedIds.last)),
+    -240,
+    scrollable: scrollable,
+    maxScrolls: expectedIds.length * 4 + 4,
+  );
 }}
 
 void _emitOracle(Map<String, Object?> row) {{
@@ -712,6 +833,98 @@ def _capture_rows(path: Path) -> tuple[list[dict[str, Any]], int]:
     return rows, malformed
 
 
+def _parse_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _load_fault_windows(path: Path) -> tuple[tuple[datetime, datetime], ...]:
+    """Load host-recorded scheduled fault windows, including recovery time."""
+    events, _ = _capture_rows(path)
+    active: list[datetime] = []
+    windows: list[tuple[datetime, datetime]] = []
+    for event in events:
+        timestamp = _parse_timestamp(event.get("ts"))
+        phase = event.get("phase")
+        if timestamp is None:
+            continue
+        if phase == "start":
+            active.append(timestamp)
+        elif phase == "end":
+            for started in active:
+                windows.append(
+                    (
+                        started - timedelta(seconds=2),
+                        timestamp + timedelta(seconds=CHURN_RECOVERY_SECONDS),
+                    )
+                )
+            active.clear()
+    for started in active:
+        windows.append(
+            (
+                started - timedelta(seconds=2),
+                started + timedelta(seconds=CHURN_RECOVERY_SECONDS),
+            )
+        )
+    return tuple(windows)
+
+
+def _churn_clusters(
+    rows: list[dict[str, Any]],
+) -> list[list[dict[str, Any]]]:
+    losses = sorted(
+        (
+            row
+            for row in rows
+            if row.get("tag") == "connChannelLost"
+            and _parse_timestamp(row.get("ts")) is not None
+        ),
+        key=lambda row: _parse_timestamp(row.get("ts")) or datetime.max.replace(tzinfo=timezone.utc),
+    )
+    clusters: list[list[dict[str, Any]]] = []
+    for row in losses:
+        timestamp = _parse_timestamp(row.get("ts"))
+        if not clusters:
+            clusters.append([row])
+            continue
+        previous = _parse_timestamp(clusters[-1][-1].get("ts"))
+        if previous is not None and timestamp is not None and (
+            timestamp - previous
+        ).total_seconds() <= CHURN_CLUSTER_SECONDS:
+            clusters[-1].append(row)
+        else:
+            clusters.append([row])
+    return [cluster for cluster in clusters if len(cluster) >= 2]
+
+
+def _reconcile_churn(
+    rows: list[dict[str, Any]],
+    fault_windows: tuple[tuple[datetime, datetime], ...],
+) -> tuple[int, int]:
+    """Partition anomalous churn clusters by scheduled fault/recovery windows."""
+    expected = 0
+    unexpected = 0
+    for cluster in _churn_clusters(rows):
+        timestamps = [
+            timestamp
+            for row in cluster
+            if (timestamp := _parse_timestamp(row.get("ts"))) is not None
+        ]
+        if timestamps and all(
+            any(start <= timestamp <= end for start, end in fault_windows)
+            for timestamp in timestamps
+        ):
+            expected += 1
+        else:
+            unexpected += 1
+    return expected, unexpected
+
+
 def _has_later_echo(rows: list[dict[str, Any]], message_id: str, sent_index: int) -> bool:
     return any(
         row.get("tag") == "msgEcho"
@@ -765,7 +978,10 @@ def _blank_chat_signature(rows: list[dict[str, Any]]) -> bool:
     return False
 
 
-def _evaluate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _evaluate_rows(
+    rows: list[dict[str, Any]],
+    fault_windows: tuple[tuple[datetime, datetime], ...] = (),
+) -> dict[str, Any]:
     swallow = False
     for index, row in enumerate(rows):
         if (
@@ -785,11 +1001,15 @@ def _evaluate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         or not row.get("cause")
         or row.get("cause") == "unknown"
     ]
+    expected_churn, unexpected_churn = _reconcile_churn(rows, fault_windows)
     return {
         "swallow": swallow,
         "blank_chat": blank_chat,
+        "reconnect_churn": unexpected_churn > 0,
         "lost_count": len(lost),
         "missing_causes": len(missing_causes),
+        "expected_churn_clusters": expected_churn,
+        "unexpected_churn_clusters": unexpected_churn,
     }
 
 
@@ -831,6 +1051,7 @@ def _fault_demonstrations(output: str) -> tuple[list[str], list[str]]:
 def _run_triage(
     captures: list[Path],
     oracle_path: Path | None = None,
+    fault_windows: tuple[tuple[datetime, datetime], ...] = (),
 ) -> tuple[list[str], list[dict[str, Any]]]:
     outputs: list[str] = []
     evaluations: list[dict[str, Any]] = []
@@ -849,7 +1070,7 @@ def _run_triage(
             output += "\n[triage stderr]\n" + result.stderr.strip()
         outputs.append(output)
         rows, malformed = _capture_rows(capture)
-        evaluation = _evaluate_rows(rows)
+        evaluation = _evaluate_rows(rows, fault_windows)
         evaluation.update({"capture": str(capture), "malformed": malformed, "exit": result.returncode})
         evaluations.append(evaluation)
     return outputs, evaluations
@@ -883,7 +1104,7 @@ def _write_report(
         "single-Pi, in-process schedule are expected to reproduce in this report.",
         "",
     ]
-    for key, tracking_id in KNOWN_FINDINGS.items():
+    for key, tracking_id in FINDING_OBSERVATIONS.items():
         observed = any(evaluation.get(key) for evaluation in evaluations)
         expectation = (
             "targeted"
@@ -906,7 +1127,8 @@ def _write_report(
             "## Invariant evaluation",
             "",
             "- Replay dedup: replayDedup acceptance keys and transcript ids stay unique across reconnect replay.",
-            "- DB↔UI consistency: ordered transcript DB ids equal the rendered ChatReady bubble projection after every fault.",
+            "- DB↔ViewModel projection: ordered transcript DB ids equal the ChatReady message projection after every fault.",
+            "- Rendered bubbles: widget traversal materializes every maintained message id and preserves order in each visible window.",
             "- Canonical ordering: projected row timestamps never move backwards; sequence is the stable tie order.",
             "- Identity stability: owner public key, paired Pi identity, pairing epoch, and owner-channel keys stay stable.",
         ]
@@ -927,6 +1149,8 @@ def _write_report(
     for evaluation in evaluations:
         lines.append(
             f"- `{evaluation['capture']}`: connChannelLost={evaluation['lost_count']}; "
+            f"expected scheduled-fault clusters={evaluation['expected_churn_clusters']}; "
+            f"outside-window clusters={evaluation['unexpected_churn_clusters']}; "
             f"missing/unknown causes={evaluation['missing_causes']}"
         )
     lines.extend(["", "## Schedule", "", "```json", schedule_fingerprint(schedule), "```", ""])
@@ -986,13 +1210,18 @@ def run(args: argparse.Namespace) -> int:
             "".join(json.dumps(row, sort_keys=True) + "\n" for row in oracle_rows),
             encoding="utf-8",
         )
-    triage_outputs, evaluations = _run_triage(captures, oracle_path)
+    fault_windows = _load_fault_windows(artifact_dir / "fault-windows.jsonl")
+    triage_outputs, evaluations = _run_triage(
+        captures,
+        oracle_path,
+        fault_windows,
+    )
     if "SOAK_KNOWN_FINDING swallow" in flutter_output and evaluations:
         evaluations[0]["swallow"] = True
         evaluations[0]["swallow_source"] = "bubble/transcript-DB predicate"
     if "SOAK_KNOWN_FINDING session_rotation_working" in flutter_output and evaluations:
         evaluations[0]["session_rotation_working"] = True
-        evaluations[0]["session_rotation_working_source"] = "linked state-shape skip"
+        evaluations[0]["session_rotation_working_source"] = "real multi-session exercise"
     suspicious: list[str] = []
     unexpected: list[str] = []
     if not captures:
@@ -1005,15 +1234,19 @@ def run(args: argparse.Namespace) -> int:
         unexpected.append(
             "scheduled fault demonstrations were not applied: " + ", ".join(missing_faults)
         )
+    if duration >= STATE_SHAPE_PROBE_DURATION_SECONDS and (
+        "SOAK_STATE_SHAPE multi_session_round_trip exercised" not in flutter_output
+    ):
+        unexpected.append("scheduled real multi-session exercise did not complete")
     for output in triage_outputs:
-        for invariant in ("replay_dedup", "transcript_ui", "ordering", "identity"):
+        for invariant in ("replay_dedup", "transcript_projection", "ordering", "identity"):
             if f"  {invariant}: VIOLATION" in output:
                 unexpected.append(f"triage detected {invariant} invariant violation")
     expected_findings = set(SOAK_EXPECTED_FINDINGS)
     if duration >= STATE_SHAPE_PROBE_DURATION_SECONDS:
         expected_findings.update(SOAK_LONG_EXPECTED_FINDINGS)
     for key in expected_findings:
-        tracking_id = KNOWN_FINDINGS[key]
+        tracking_id = FINDING_OBSERVATIONS[key]
         if not any(evaluation.get(key) for evaluation in evaluations):
             suspicious.append(f"expected finding absent: {tracking_id}")
     for evaluation in evaluations:
@@ -1021,6 +1254,46 @@ def run(args: argparse.Namespace) -> int:
             unexpected.append(
                 f"{evaluation['capture']} has {evaluation['missing_causes']} connChannelLost event(s) without an attributed cause"
             )
+        if evaluation["unexpected_churn_clusters"]:
+            unexpected.append(
+                f"{evaluation['capture']} has {evaluation['unexpected_churn_clusters']} churn cluster(s) outside every scheduled fault window"
+            )
+        if evaluation["exit"] > 1:
+            unexpected.append(
+                f"triage failed for {evaluation['capture']} with exit {evaluation['exit']}"
+            )
+        elif evaluation["exit"] == 1 and not (
+            evaluation["swallow"]
+            or evaluation["blank_chat"]
+            or evaluation["expected_churn_clusters"]
+            or evaluation["unexpected_churn_clusters"]
+        ):
+            unexpected.append(
+                f"triage reported an unreconciled anomaly for {evaluation['capture']}"
+            )
+    reconciled_outputs: list[str] = []
+    for output, evaluation in zip(triage_outputs, evaluations, strict=True):
+        oracle_violation = any(
+            f"  {name}: VIOLATION" in output
+            for name in ("replay_dedup", "transcript_projection", "ordering", "identity")
+        )
+        reconciled = (
+            evaluation["exit"] == 1
+            and not oracle_violation
+            and not evaluation["unexpected_churn_clusters"]
+            and (
+                evaluation["swallow"]
+                or evaluation["blank_chat"]
+                or evaluation["expected_churn_clusters"]
+            )
+        )
+        if reconciled:
+            output = output.replace(
+                "Anomalies: FOUND",
+                "Anomalies: RECONCILED (known-open or scheduled-fault churn)",
+            )
+        reconciled_outputs.append(output)
+    triage_outputs = reconciled_outputs
     if runner_status:
         unexpected.append(f"device lane failed with exit {runner_status}")
 
@@ -1039,13 +1312,13 @@ def run(args: argparse.Namespace) -> int:
     )
     observed_findings = sorted(
         tracking_id
-        for key, tracking_id in KNOWN_FINDINGS.items()
+        for key, tracking_id in FINDING_OBSERVATIONS.items()
         if any(evaluation.get(key) for evaluation in evaluations)
     )
     (artifact_dir / "findings.json").write_text(
         json.dumps(
             {
-                "known_open": sorted(KNOWN_FINDINGS.values()),
+                "known_open": sorted(KNOWN_FINDINGS),
                 "observed": observed_findings,
                 "suspicious": suspicious,
                 "unexpected": unexpected,

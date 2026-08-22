@@ -37,10 +37,11 @@ python3 e2e/live_soak.py --duration 600 --seed 20260821
 ```
 
 They require `/dev/kvm` access, the `outpost34` AVD, Android SDK emulator/adb
-under `/opt/android-sdk`, and the repository Flutter toolchain. These lanes are
-serial-only: do not run two live runners or soaks concurrently against the same
-AVD/Android serial. Override the default `emulator-5554` only with
-`E2E_ANDROID_SERIAL=emulator-<port>` and an otherwise unused serial.
+under `/opt/android-sdk`, and the repository Flutter toolchain. These lanes take
+an exclusive per-serial lock and record the run/emulator PID before startup. A
+second live runner fails without touching an occupied serial; override the
+default `emulator-5554` only with `E2E_ANDROID_SERIAL=emulator-<port>` and an
+otherwise unused serial.
 
 The `state-shapes` selector exercises multi-session projection isolation,
 mid-conversation re-pairing, and bounded capture-ring/replay uptime. Full soaks
@@ -64,22 +65,29 @@ useful when validating scheduler/oracle changes.
 The VM runs the bounded nightly entry point at 02:30 local time:
 
 ```cron
-30 2 * * * cd /home/agent/projects/outpost_pi && /home/agent/projects/outpost_pi/scripts/nightly_soak.sh >/dev/null 2>&1 # outpost-pi-nightly-soak
+30 2 * * * cd /home/agent/projects/outpost_pi && /home/agent/projects/outpost_pi/scripts/nightly_soak.sh >>/home/agent/projects/outpost_pi/.work/session-notes/nightly-soak/cron.log 2>&1 # outpost-pi-nightly-soak
 ```
 
 `scripts/nightly_soak.sh` chooses a fresh seed, runs 15 minutes by default,
 keeps the newest 14 run directories under
 `.work/session-notes/nightly-soak/`, and writes `summary.md` plus `ALERT.md`
-when the known-open inventory drifts or the soak fails. The canonical inventory
-is `e2e/expected-soak-findings.txt`; a known bug is reported without failing the
-soak, while either adding an unreviewed finding id or removing an expected id
-is drift. `E2E_NIGHTLY_SOAK_DURATION_SECONDS`, `E2E_NIGHTLY_SOAK_KEEP`, and
-`E2E_NIGHTLY_SOAK_REPORT_ROOT` override the operational defaults.
+when the known-open inventory drifts or the soak fails. The canonical six-id
+inventory is `e2e/expected-soak-findings.txt`; `live_soak.py` loads that manifest
+directly. A known bug is reported without failing the soak, while either adding
+an unreviewed finding id or removing an expected id is drift. Scheduled fault
+windows reconcile expected reconnect churn; a churn cluster outside all such
+windows is unexpected and fails the run. `E2E_NIGHTLY_SOAK_DURATION_SECONDS`,
+`E2E_NIGHTLY_SOAK_KEEP`, `E2E_NIGHTLY_SOAK_HARD_TIMEOUT_SECONDS`,
+`E2E_NIGHTLY_LANE_WAIT_SECONDS`, and `E2E_NIGHTLY_SOAK_REPORT_ROOT` override the
+operational defaults.
 
-Every nightly exit stops the emulator, removes `app/build` and the Gradle build
-cache, resets the disposable `outpost34` AVD writable userdata, and alerts when
-free space is not greater than 10 GiB. Do not run it concurrently with another
-live-device lane.
+The nightly wrapper has a 40-minute outer hard cap, waits for the exclusive
+Android lane or alerts and skips, and runs disk hygiene from its EXIT trap.
+Hygiene removes `app/build` and the Gradle build cache and resets the disposable
+`outpost34` AVD writable userdata only after the owned emulator is confirmed
+down; it never kills or resets a foreign occupied serial. Cron output is
+retained in `cron.log`. `LATEST_ALERT.md` keeps recent alert history across later
+successes, while `LAST_STATUS` records the timestamp and outcome of every run.
 
 The exploratory skew entry points are host/container-only and do not consume
 the Android device lane:
