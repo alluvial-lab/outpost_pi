@@ -5,6 +5,8 @@ updated: 2026-08-21
 tags: [app, bug]
 ---
 
+Promoted to `story-fix-app-blank-chat-direct-open`.
+
 # Blank chat when opening the app directly into an existing session chat
 
 Operator report (2026-08-21): pulling the app up directly into an existing

@@ -6,14 +6,17 @@ import 'dart:io';
 
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/local/records/message_record.dart';
+import 'package:app/data/local/transcript_event_store_hive.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/repositories/session_read_repository.dart';
 import 'package:app/data/sync/sync_events.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/domain/contracts/transcript_event_store.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/session_state.dart';
+import 'package:app/domain/transcript/transcript_event.dart';
 import 'package:app/domain/transcript/transcript_projection.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
@@ -712,6 +715,93 @@ void main() {
       );
       expect(sent.streamingBehavior, UserMessageStreamingBehavior.steer);
       expect(vm.cancelTargetId, equals(originalTarget));
+
+      vm.dispose();
+      sync.dispose();
+      conn.dispose();
+    },
+  );
+
+  test(
+    'cold direct-open binds cached identity and renders persisted history',
+    () async {
+      const sessionId = 'cold-direct-session';
+      final ch = _FakeChannel();
+      final storage = _FakeStorage();
+      storage._rooms[_peer.remoteEpk] = const [
+        PersistedRoom(roomId: 'main', sessionId: sessionId, startedAt: 1),
+      ];
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+        emitDebounce: Duration.zero,
+      );
+      final boxes = LocalBoxes();
+      final sync = SyncService(conn, boxes);
+      final ref = RemoteSessionRef(
+        peerEpk: _peer.remoteEpk,
+        roomId: 'main',
+        sessionId: sessionId,
+      );
+      await HiveTranscriptEventStore(boxes).appendAll(
+        const TranscriptSessionKey(
+          peerId: 'epk_chat',
+          roomId: 'main',
+          sessionId: sessionId,
+        ),
+        [
+          UserMessageConfirmed(
+            eventId: 'server:$sessionId:user_input:cold-user:1',
+            sessionId: sessionId,
+            ts: DateTime.fromMillisecondsSinceEpoch(1),
+            clientMessageId: 'cold-user',
+            text: 'persisted cold prompt',
+          ),
+          AssistantMessageCommitted(
+            eventId: 'server:$sessionId:assistant:cold-reply:2',
+            sessionId: sessionId,
+            ts: DateTime.fromMillisecondsSinceEpoch(2),
+            messageId: 'cold-reply',
+            replyTo: 'cold-user',
+            text: 'persisted cold reply',
+          ),
+        ],
+      );
+      final prefs = Preferences(_FakeSecureStorage());
+      await prefs.setSelectedPeerEpk(_peer.remoteEpk);
+      await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
+
+      await conn.boot(preferredEpk: _peer.remoteEpk);
+      final vm = ChatViewModel(
+        SessionReadRepository(boxes),
+        sync,
+        conn,
+        prefs,
+        storage,
+      );
+      await vm.initialize();
+      for (
+        var i = 0;
+        i < 100 && (vm.state as ChatReady).messages.length < 2;
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(sync.activeSessionRef, ref);
+      final ready = vm.state as ChatReady;
+      expect(ready.messages.map((message) => message.id), [
+        'cold-user',
+        'cold-reply',
+      ]);
+      expect(
+        ready.messages.whereType<UserMsg>().single.text,
+        'persisted cold prompt',
+      );
+      expect(
+        ready.messages.whereType<AssistantMsg>().single.text,
+        'persisted cold reply',
+      );
 
       vm.dispose();
       sync.dispose();

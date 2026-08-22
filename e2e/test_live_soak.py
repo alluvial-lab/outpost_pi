@@ -161,7 +161,6 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(
             manifest,
             {
-                "backlog-app-blank-chat-direct-open",
                 "backlog-app-reconnect-churn-timeout-lifecycle-failures",
                 "backlog-app-cold-replay-duplicates-persisted-transcript",
                 "backlog-app-session-rotation-late-echo-sticks-working",
