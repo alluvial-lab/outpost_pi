@@ -90,6 +90,21 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     json(response, 200, runtime.resolveDeferredTurn());
     return;
   }
+  if (request.method === "GET" && url.pathname === "/sessions") {
+    json(response, 200, { active: runtime.status().sessionId, sessions: runtime.sessionIds() });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/session/switch") {
+    const body = await readJson(request);
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+    if (!sessionId) {
+      json(response, 400, { error: "sessionId is required" });
+      return;
+    }
+    await runtime.switchSession(sessionId);
+    json(response, 200, { active: runtime.status().sessionId });
+    return;
+  }
   if (request.method === "POST" && url.pathname === "/__restart") {
     if (restarting) {
       json(response, 409, { error: "restart already requested" });

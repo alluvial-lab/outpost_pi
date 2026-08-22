@@ -71,6 +71,15 @@ class ScheduleTests(unittest.TestCase):
         }
         self.assertTrue(expected.issubset(commands))
 
+    def test_full_soak_schedules_bounded_state_shapes(self) -> None:
+        short = live_soak.build_schedule(20260822, 299)
+        full = live_soak.build_schedule(20260822, 300)
+        self.assertFalse(any(event.kind == "state_shape" for event in short))
+        self.assertEqual(
+            [event.name for event in full if event.kind == "state_shape"],
+            ["multi_session_round_trip", "long_uptime_replay"],
+        )
+
     def test_random_scheduler_can_pick_new_classes_and_compounds(self) -> None:
         events = [
             live_soak._fault_event(live_soak.random.Random(seed), 10, 100)
@@ -120,6 +129,8 @@ class ScheduleTests(unittest.TestCase):
             "canonical server timestamp ordering moved backwards",
             "owner identity silently regenerated during a fault",
             "event['name'] == 'relay_kill'",
+            "harness.exerciseMultiSessionShape(tester)",
+            "harness.exerciseLongUptimeShape(",
         ):
             self.assertIn(evidence, source)
 

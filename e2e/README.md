@@ -31,6 +31,7 @@ The live oddities lanes drive the production Android app on the headless
 ```bash
 e2e/run-live.sh integration_test/live_golden_test.dart
 e2e/run-live.sh integration_test/live_failure_test.dart
+e2e/run-live.sh state-shapes
 python3 e2e/live_soak.py --duration 600 --seed 20260821
 ```
 
@@ -39,6 +40,11 @@ under `/opt/android-sdk`, and the repository Flutter toolchain. These lanes are
 serial-only: do not run two live runners or soaks concurrently against the same
 AVD/Android serial. Override the default `emulator-5554` only with
 `E2E_ANDROID_SERIAL=emulator-<port>` and an otherwise unused serial.
+
+The `state-shapes` selector exercises multi-session projection isolation,
+mid-conversation re-pairing, and bounded capture-ring/replay uptime. Full soaks
+also schedule the multi-session and replay shapes; shorter soaks omit them to
+keep quick scheduler/fault checks bounded.
 
 The soak writes its schedule, capture triage, and invariant report below
 `.work/session-notes/` unless `--artifacts` is supplied. Exit `0` means the

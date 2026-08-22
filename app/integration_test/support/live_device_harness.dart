@@ -16,11 +16,11 @@ import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/data/voice/speech_service.dart';
+import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/qr_scanner.dart';
 import 'package:app/pairing/storage.dart';
-import 'package:app/protocol/protocol.dart';
 import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
 import 'package:app/ui/chat/chat_page.dart';
@@ -59,6 +59,7 @@ final class LiveDeviceHarness {
     required this.connection,
     required this.sync,
     required this.readRepository,
+    required this.actions,
     required this.pairingViewModel,
     required this.host,
   }) : _ownerStore = ownerStore;
@@ -71,11 +72,11 @@ final class LiveDeviceHarness {
   final ConnectionManager connection;
   final SyncService sync;
   final SessionReadRepository readRepository;
+  final ActionsRepository actions;
   final PairingViewModel pairingViewModel;
   final LiveHostClient host;
 
   GoRouter? _chatRouter;
-  IActionsRepository? _actions;
   SpeechService? _speech;
   PeerRecord? _peer;
 
@@ -138,6 +139,7 @@ final class LiveDeviceHarness {
     );
     final sync = SyncService(connection, LocalBoxes(), debugLog: debugLog);
     final readRepository = SessionReadRepository(LocalBoxes());
+    final actions = ActionsRepository(connection);
     final pairingViewModel = PairingViewModel(
       storage,
       (qr, ownerKey) => WsTransport.connect(
@@ -162,6 +164,7 @@ final class LiveDeviceHarness {
       connection: connection,
       sync: sync,
       readRepository: readRepository,
+      actions: actions,
       pairingViewModel: pairingViewModel,
       host: LiveHostClient(Uri.parse(livePiHostUrl)),
     );
@@ -187,12 +190,18 @@ final class LiveDeviceHarness {
 
   /// Pair through the production scanner widget and native QR decoder.
   Future<PeerRecord> pair(WidgetTester tester) async {
+    return pairFromUri(tester, await issuePairCode(tester));
+  }
+
+  /// Issue a fresh production pair code and return its scanner URI.
+  Future<String> issuePairCode(WidgetTester tester) async {
+    await host.delete('/pair-code');
     await host.post('/command', <String, Object>{'args': 'pair'});
     final pairCode = await eventually<Map<String, dynamic>>(tester, () async {
       final value = await host.tryGet('/pair-code');
       return value?['uri'] is String ? value : null;
     }, description: 'production pair-code publication');
-    return pairFromUri(tester, pairCode['uri'] as String);
+    return pairCode['uri'] as String;
   }
 
   /// Drive one QR URI through the native decoder and await visible pair state.
@@ -326,9 +335,7 @@ final class LiveDeviceHarness {
   /// Mount a fresh production chat route bound to the persisted selection.
   Future<void> mountChat(WidgetTester tester) async {
     await unmountChat(tester);
-    final actions = _StaticActionsRepository();
     final speech = SpeechToTextService();
-    _actions = actions;
     _speech = speech;
     final router = GoRouter(
       initialLocation: '/chat',
@@ -384,8 +391,6 @@ final class LiveDeviceHarness {
     await tester.pump();
     _chatRouter?.dispose();
     _chatRouter = null;
-    _actions?.dispose();
-    _actions = null;
     _speech?.dispose();
     _speech = null;
   }
@@ -481,12 +486,220 @@ final class LiveDeviceHarness {
     if (sessionId == null || sessionId.isEmpty) {
       throw StateError('active session identity is unavailable');
     }
+    return transcriptRowsFor(sessionId);
+  }
+
+  /// Read one retained session projection without changing the active route.
+  Future<List<MessageRecord>> transcriptRowsFor(String sessionId) {
     return readRepository.readMessages(
       RemoteSessionRef(
         peerEpk: peer.remoteEpk,
         roomId: peer.roomId ?? 'main',
         sessionId: sessionId,
       ),
+    );
+  }
+
+  /// Exercise A→B→A switching with faults and verify projection isolation.
+  Future<LiveSessionShapeResult> exerciseMultiSessionShape(
+    WidgetTester tester,
+  ) async {
+    await waitOnlineAndLive(tester: tester);
+    final room = connection.activeRoomId;
+    final selected = preferences.selectedRoomRaw;
+    final sessionA = connection.activeSessionId!;
+    const promptA = 'state-shape session A prompt';
+    const replyA = 'state-shape session A reply';
+    const promptB = 'state-shape session B prompt';
+    const replyB = 'state-shape session B reply';
+    await sendAndResolve(tester, prompt: promptA, reply: replyA);
+
+    requestLiveFault('net_fault bandwidth 64');
+    await tester.pump(const Duration(seconds: 1));
+    try {
+      await actions.newSession();
+    } finally {
+      requestLiveFault('net_clear');
+    }
+    final sessionB = await _waitForDifferentSession(tester, sessionA);
+    await unmountChat(tester);
+    await mountChat(tester);
+    await eventually<bool>(
+      tester,
+      () async => find.text(promptA).evaluate().isEmpty ? true : null,
+      description: 'session B excludes session A projection',
+    );
+    await sendAndResolve(tester, prompt: promptB, reply: replyB);
+
+    requestLiveFault('net_fault down');
+    await eventually<bool>(
+      tester,
+      () async => connection.status is! StatusOnline ? true : null,
+      description: 'A resume fault takes the owner channel offline',
+      timeout: const Duration(seconds: 45),
+    );
+    await host.post('/session/switch', <String, Object>{'sessionId': sessionA});
+    await connection.disconnect();
+    requestLiveFault('net_clear');
+    await connection.connectTo(peer);
+    await waitOnlineAndLive(tester: tester);
+    await eventually<bool>(
+      tester,
+      () async => connection.activeSessionId == sessionA ? true : null,
+      description: 'session A identity after faulted resume',
+    );
+    await unmountChat(tester);
+    await mountChat(tester);
+    await eventually<bool>(
+      tester,
+      () async => find.text(replyA).evaluate().isNotEmpty ? true : null,
+      description: 'session A projection after A→B→A',
+    );
+
+    final rowsA = await transcriptRowsFor(sessionA);
+    final rowsB = await transcriptRowsFor(sessionB);
+    expect(
+      rowsA.map((row) => row.text),
+      containsAll(<String>[promptA, replyA]),
+    );
+    expect(rowsA.any((row) => row.text == promptB), isFalse);
+    expect(
+      rowsB.map((row) => row.text),
+      containsAll(<String>[promptB, replyB]),
+    );
+    expect(rowsB.any((row) => row.text == promptA), isFalse);
+    expect(find.text(promptB), findsNothing);
+    expect(connection.activeRoomId, room);
+    expect(preferences.selectedRoomRaw, selected);
+    expect(connection.isRoomWorking(peer.remoteEpk, room), isFalse);
+    return LiveSessionShapeResult(sessionA: sessionA, sessionB: sessionB);
+  }
+
+  /// Exercise local unpair→re-pair while preserving identity and transcript.
+  Future<void> exerciseRePairShape(WidgetTester tester) async {
+    const beforePrompt = 'state-shape before re-pair';
+    const beforeReply = 'state-shape before re-pair reply';
+    const afterPrompt = 'state-shape after re-pair';
+    const afterReply = 'state-shape after re-pair reply';
+    await sendAndResolve(tester, prompt: beforePrompt, reply: beforeReply);
+    final oldPeer = peer;
+    final oldSession = connection.activeSessionId!;
+    final oldRows = await transcriptRowsFor(oldSession);
+    final oldIds = oldRows.map((row) => row.id).toList(growable: false);
+    final oldOwner = Uint8List.fromList(ownerBridge.currentOwnerPk!);
+    final oldChannel = oldPeer.channel!;
+
+    await unmountChat(tester);
+    await connection.disconnect();
+    connection.subscribeToPeers(const <String>[]);
+    await storage.deletePeer(oldPeer.remoteEpk);
+    await preferences.setSelectedPeerEpk(null);
+    pairingViewModel.retry();
+    final repaired = await pairFromUri(tester, await issuePairCode(tester));
+
+    expect(listEquals(ownerBridge.currentOwnerPk, oldOwner), isTrue);
+    expect(repaired.remoteEpk, oldPeer.remoteEpk);
+    expect(repaired.roomId, oldPeer.roomId);
+    expect(connection.activeSessionId, oldSession);
+    expect(repaired.channel, isNot(oldChannel));
+    expect(repaired.channel!.sendKey, isNot(oldChannel.sendKey));
+    await mountChat(tester);
+    await eventually<bool>(
+      tester,
+      () async => find.text(beforeReply).evaluate().isNotEmpty ? true : null,
+      description: 'pre-repair transcript after fresh owner channel',
+    );
+    expect(
+      (await transcriptRowsFor(oldSession)).map((row) => row.id),
+      containsAllInOrder(oldIds),
+    );
+    await sendAndResolve(tester, prompt: afterPrompt, reply: afterReply);
+    final texts = (await transcriptRows()).map((row) => row.text);
+    expect(
+      texts,
+      containsAll(<String>[beforePrompt, beforeReply, afterPrompt, afterReply]),
+    );
+  }
+
+  /// Force capture-ring rotation, reconnect replay, and bounded convergence.
+  Future<void> exerciseLongUptimeShape(
+    WidgetTester tester, {
+    int ringEvents = 5500,
+    bool requireRotation = true,
+  }) async {
+    expect(ringEvents, greaterThan(1));
+    const stage =
+        'bounded-long-uptime-capture-rotation-probe-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+    debugLog.log(
+      WsInEvent(
+        ts: DateTime.now(),
+        count: -1,
+        kind: 'state-shape',
+        stage: stage,
+      ),
+    );
+    for (var index = 0; index < ringEvents; index++) {
+      debugLog.log(
+        WsInEvent(
+          ts: DateTime.now(),
+          count: index,
+          kind: 'state-shape',
+          stage: stage,
+        ),
+      );
+    }
+    final exported = await debugLog.export();
+    expect(exported, isNotNull);
+    expect(utf8.encode(exported!).length, lessThanOrEqualTo(1 << 20));
+    final rotated = await captureEvents();
+    if (requireRotation) {
+      expect(
+        rotated.any((row) => row['tag'] == 'wsIn' && row['count'] == -1),
+        isFalse,
+        reason: 'oldest capture row must rotate out of the bounded ring',
+      );
+    }
+    expect(
+      rotated.any(
+        (row) => row['tag'] == 'wsIn' && row['count'] == ringEvents - 1,
+      ),
+      isTrue,
+    );
+
+    final before = await transcriptRows();
+    final beforeIds = before.map((row) => row.id).toList(growable: false);
+    final replayBaseline = rotated.length;
+    await connection.disconnect();
+    await connection.connectTo(peer);
+    await waitOnlineAndLive(tester: tester);
+    await eventually<bool>(tester, () async {
+      final ids = (await transcriptRows()).map((row) => row.id).toList();
+      return listEquals(ids, beforeIds) ? true : null;
+    }, description: 'stable transcript after long-uptime replay');
+    final replay = (await captureEvents())
+        .skip(replayBaseline)
+        .where((row) => row['tag'] == 'replayDedup');
+    expect(replay, isNotEmpty);
+    final afterIds = (await transcriptRows()).map((row) => row.id).toList();
+    expect(afterIds.toSet().length, afterIds.length);
+    expect(
+      connection.isRoomWorking(peer.remoteEpk, connection.activeRoomId),
+      isFalse,
+    );
+  }
+
+  Future<String> _waitForDifferentSession(
+    WidgetTester tester,
+    String previous,
+  ) async {
+    return eventually<String>(
+      tester,
+      () async {
+        final current = connection.activeSessionId;
+        return current != null && current != previous ? current : null;
+      },
+      description: 'fresh canonical session identity',
+      timeout: const Duration(seconds: 45),
     );
   }
 
@@ -541,6 +754,7 @@ final class LiveDeviceHarness {
   Future<void> close(WidgetTester tester) async {
     await unmountChat(tester);
     pairingViewModel.dispose();
+    actions.dispose();
     sync.dispose();
     readRepository.dispose();
     await connection.disconnect();
@@ -549,6 +763,17 @@ final class LiveDeviceHarness {
     await _ownerStore.dispose();
     debugLog.dispose();
   }
+}
+
+/// Session identities observed during the deterministic A→B→A shape.
+final class LiveSessionShapeResult {
+  const LiveSessionShapeResult({
+    required this.sessionA,
+    required this.sessionB,
+  });
+
+  final String sessionA;
+  final String sessionB;
 }
 
 /// Minimal bounded HTTP client for the pi-host test-support adapter.
@@ -648,41 +873,6 @@ Future<bool> liveRelayHealthReachable({
     return false;
   } finally {
     client.close(force: true);
-  }
-}
-
-final class _StaticActionsRepository extends IActionsRepository {
-  final StreamController<ActiveRoomMeta> _meta =
-      StreamController<ActiveRoomMeta>.broadcast();
-
-  @override
-  ActiveRoomMeta get activeRoomMeta => const ActiveRoomMeta();
-
-  @override
-  Stream<ActiveRoomMeta> get activeRoomMetaStream => _meta.stream;
-
-  @override
-  Future<ModelsCatalogue> listModels({bool forceRefresh = false}) async =>
-      const ModelsCatalogue(models: []);
-
-  @override
-  Future<void> compact() => throw const ActionFailure('not exercised');
-
-  @override
-  Future<void> newSession() => throw const ActionFailure('not exercised');
-
-  @override
-  Future<void> setModel(String provider, String modelId) =>
-      throw const ActionFailure('not exercised');
-
-  @override
-  Future<void> setThinking(ThinkingLevel level) =>
-      throw const ActionFailure('not exercised');
-
-  @override
-  void dispose() {
-    _meta.close();
-    super.dispose();
   }
 }
 

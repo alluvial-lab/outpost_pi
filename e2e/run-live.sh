@@ -11,7 +11,11 @@ EMULATOR="${EMULATOR_BIN:-/opt/android-sdk/emulator/emulator}"
 ADB_BIN="${ADB_BIN:-/opt/android-sdk/platform-tools/adb}"
 ANDROID_SERIAL="${E2E_ANDROID_SERIAL:-emulator-5554}"
 EMULATOR_PORT=${ANDROID_SERIAL#emulator-}
-TEST_FILE="${1:-${E2E_LIVE_TEST_FILE:-integration_test/live_infra_smoke_test.dart}}"
+TEST_SELECTOR="${1:-${E2E_LIVE_TEST_FILE:-integration_test/live_infra_smoke_test.dart}}"
+case "$TEST_SELECTOR" in
+  state-shapes) TEST_FILE=integration_test/live_state_shapes_test.dart ;;
+  *) TEST_FILE="$TEST_SELECTOR" ;;
+esac
 case "$TEST_FILE" in
   integration_test/*.dart) ;;
   *) printf 'live test selector must be integration_test/*.dart\n' >&2; exit 2 ;;
