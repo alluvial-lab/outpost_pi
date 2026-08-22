@@ -50,10 +50,48 @@ fault class to a representative pairing, hydration, staged-turn, QR-scan, or
 cold-open cell without running the unbounded Cartesian product. Its two phases
 force-stop the app before the cold-open cells.
 
-The soak writes its schedule, capture triage, and invariant report below
-`.work/session-notes/` unless `--artifacts` is supplied. Exit `0` means the
-runner and four-invariant oracle were clean. Exit `1` is an unexpected
-violation. Exit `3` means a linked expected finding was absent; that is
-**suspicious evidence, not success**, because the intended reproducer window
-may not have been exercised. A full scheduled soak remains 10 minutes; shorter
-seeded runs are useful when validating scheduler/oracle changes.
+The soak writes its schedule, capture triage, machine-readable findings
+inventory, and invariant report below `.work/session-notes/` unless
+`--artifacts` is supplied. Exit `0` means the runner and four-invariant oracle
+were clean. Exit `1` is an unexpected violation. Exit `3` means a linked,
+deterministically targeted finding was absent; that is **suspicious evidence,
+not success**, because the intended reproducer window may not have been
+exercised. A full interactive soak remains 10 minutes; shorter seeded runs are
+useful when validating scheduler/oracle changes.
+
+## Nightly cadence and skew drills
+
+The VM runs the bounded nightly entry point at 02:30 local time:
+
+```cron
+30 2 * * * cd /home/agent/projects/outpost_pi && /home/agent/projects/outpost_pi/scripts/nightly_soak.sh >/dev/null 2>&1 # outpost-pi-nightly-soak
+```
+
+`scripts/nightly_soak.sh` chooses a fresh seed, runs 15 minutes by default,
+keeps the newest 14 run directories under
+`.work/session-notes/nightly-soak/`, and writes `summary.md` plus `ALERT.md`
+when the known-open inventory drifts or the soak fails. The canonical inventory
+is `e2e/expected-soak-findings.txt`; a known bug is reported without failing the
+soak, while either adding an unreviewed finding id or removing an expected id
+is drift. `E2E_NIGHTLY_SOAK_DURATION_SECONDS`, `E2E_NIGHTLY_SOAK_KEEP`, and
+`E2E_NIGHTLY_SOAK_REPORT_ROOT` override the operational defaults.
+
+Every nightly exit stops the emulator, removes `app/build` and the Gradle build
+cache, resets the disposable `outpost34` AVD writable userdata, and alerts when
+free space is not greater than 10 GiB. Do not run it concurrently with another
+live-device lane.
+
+The exploratory skew entry points are host/container-only and do not consume
+the Android device lane:
+
+```bash
+scripts/clock_skew_drill.sh
+scripts/version_skew_drill.sh
+```
+
+The clock drill layers libfaketime onto the test relay and Pi-host images,
+keeps monotonic time real, and crosses the first heartbeat while the peers'
+wall clocks differ by four hours. The version drill builds the relay from the
+previous unified release tag and runs it against the current app and extension
+pairing suite. Both write bounded evidence below `.work/session-notes/` and
+tear down their Compose projects.

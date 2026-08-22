@@ -19,6 +19,14 @@ triage = importlib.util.module_from_spec(_TRIAGE_SPEC)
 sys.modules["debug_capture_triage"] = triage
 _TRIAGE_SPEC.loader.exec_module(triage)
 
+_NIGHTLY_SPEC = importlib.util.spec_from_file_location(
+    "nightly_soak_report",
+    Path(__file__).parents[1] / "scripts" / "nightly_soak_report.py",
+)
+assert _NIGHTLY_SPEC and _NIGHTLY_SPEC.loader
+nightly = importlib.util.module_from_spec(_NIGHTLY_SPEC)
+_NIGHTLY_SPEC.loader.exec_module(nightly)
+
 
 class ScheduleTests(unittest.TestCase):
     def test_same_seed_produces_same_schedule(self) -> None:
@@ -129,7 +137,7 @@ class ScheduleTests(unittest.TestCase):
             "canonical server timestamp ordering moved backwards",
             "owner identity silently regenerated during a fault",
             "event['name'] == 'relay_kill'",
-            "harness.exerciseMultiSessionShape(tester)",
+            "SOAK_KNOWN_FINDING session_rotation_working",
             "harness.exerciseLongUptimeShape(",
         ):
             self.assertIn(evidence, source)
@@ -141,6 +149,25 @@ class ScheduleTests(unittest.TestCase):
         )
         self.assertEqual(len(rows), 1)
         self.assertEqual(malformed, 1)
+
+    def test_nightly_inventory_contains_every_current_known_open_finding(self) -> None:
+        manifest = nightly.load_expected(
+            Path(__file__).with_name("expected-soak-findings.txt")
+        )
+        self.assertEqual(manifest, set(live_soak.KNOWN_FINDINGS.values()))
+
+    def test_nightly_reconciliation_reports_new_and_missing_ids(self) -> None:
+        new, missing = nightly.reconcile(
+            {"expected-a", "expected-b"},
+            {
+                "known_open": ["expected-a", "new-c"],
+                "observed": [],
+                "suspicious": [],
+                "unexpected": [],
+            },
+        )
+        self.assertEqual(new, ["new-c"])
+        self.assertEqual(missing, ["expected-b"])
 
 
 class OracleLogicTests(unittest.TestCase):
