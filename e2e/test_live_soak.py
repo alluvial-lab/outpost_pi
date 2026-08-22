@@ -55,9 +55,62 @@ class ScheduleTests(unittest.TestCase):
         self.assertTrue(overlapping_faults)
 
     def test_short_duration_boundary_never_uses_an_empty_randint_range(self) -> None:
-        for duration in (2, 3, 33, 34, 35):
+        for duration in (2, 3, 33, 34, 35, 89, 90, 91):
             schedule = live_soak.build_schedule(7, duration)
             self.assertTrue(all(event.at_seconds < duration for event in schedule))
+
+    def test_short_seeded_soak_schedules_every_new_fault_demonstration(self) -> None:
+        schedule = live_soak.build_schedule(20260822, 180)
+        commands = [event.command or "" for event in schedule]
+        expected = {
+            "net_fault latency 250",
+            "net_fault bandwidth 64",
+            "net_fault slow_close 750",
+            "net_compound latency=200 bandwidth=64",
+            "relay_kill",
+        }
+        self.assertTrue(expected.issubset(commands))
+
+    def test_random_scheduler_can_pick_new_classes_and_compounds(self) -> None:
+        events = [
+            live_soak._fault_event(live_soak.random.Random(seed), 10, 100)
+            for seed in range(500)
+        ]
+        names = {event.name for event in events}
+        expected = {
+            "net_latency",
+            "net_bandwidth",
+            "net_slow_close",
+            "net_compound",
+            "relay_kill",
+        }
+        self.assertTrue(expected.issubset(names))
+        for event in events:
+            if event.name == "net_compound":
+                specifications = event.command.split()[1:]
+                self.assertIn(len(specifications), (2, 3))
+                self.assertEqual(
+                    len(specifications),
+                    len({spec.split("=", 1)[0] for spec in specifications}),
+                )
+
+    def test_applied_fault_log_requires_each_demonstration(self) -> None:
+        output = "\n".join(
+            f"[live] applied {command}"
+            for command in (
+                "net_fault latency 250",
+                "net_fault bandwidth 64",
+                "net_fault slow_close 750",
+                "net_compound latency=200 bandwidth=64",
+                "relay_kill",
+            )
+        )
+        demonstrated, missing = live_soak._fault_demonstrations(output)
+        self.assertEqual(
+            set(demonstrated),
+            {label for label, _ in live_soak.REQUIRED_FAULT_DEMOS},
+        )
+        self.assertEqual(missing, [])
 
     def test_generated_device_oracle_covers_all_four_invariants(self) -> None:
         source = live_soak._generated_test(live_soak.build_schedule(7, 60), 360)
@@ -66,6 +119,7 @@ class ScheduleTests(unittest.TestCase):
             "transcript DB rows must match the rendered bubble projection",
             "canonical server timestamp ordering moved backwards",
             "owner identity silently regenerated during a fault",
+            "event['name'] == 'relay_kill'",
         ):
             self.assertIn(evidence, source)
 

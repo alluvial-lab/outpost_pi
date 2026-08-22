@@ -37,8 +37,10 @@ _toxi_cli() {
 
 # Remove every live-lane toxic and restore the app-relay proxy if it was down.
 net_clear() {
-  _toxi_cli toxic remove --toxicName live-timeout app-relay >/dev/null 2>&1 || true
-  _toxi_cli toxic remove --toxicName live-slicer app-relay >/dev/null 2>&1 || true
+  local toxic
+  for toxic in timeout slicer latency bandwidth slow-close; do
+    _toxi_cli toxic remove --toxicName "live-$toxic" app-relay >/dev/null 2>&1 || true
+  done
   if ! curl --fail --silent --show-error \
       "http://127.0.0.1:${E2E_TOXIPROXY_PORT}/proxies/app-relay" \
       | grep -q '"enabled":true'; then
@@ -46,30 +48,88 @@ net_clear() {
   fi
 }
 
-# Apply a timeout, slicer, or hard-down fault to the app-facing relay proxy.
-net_fault() {
+# Add one toxic without clearing existing toxics. Values are milliseconds except
+# for bandwidth, whose Toxiproxy unit is kilobytes per second.
+_net_apply() {
   local class=${1:-}
-  local ms=${2:-1500}
-  [[ "$ms" =~ ^[0-9]+$ ]] || { printf 'net_fault duration must be milliseconds\n' >&2; return 2; }
-  net_clear
+  local value=${2:-1500}
+  [[ "$value" =~ ^[0-9]+$ ]] || {
+    printf 'network fault value must be a positive integer\n' >&2
+    return 2
+  }
+  (( value > 0 )) || {
+    printf 'network fault value must be greater than zero\n' >&2
+    return 2
+  }
   case "$class" in
     timeout)
       _toxi_cli toxic add --toxicName live-timeout --type timeout \
-        --attribute "timeout=$ms" app-relay >/dev/null
+        --attribute "timeout=$value" app-relay >/dev/null
       ;;
     slicer)
       _toxi_cli toxic add --toxicName live-slicer --type slicer \
         --attribute average_size=1 --attribute size_variation=0 \
-        --attribute "delay=$((ms * 1000))" app-relay >/dev/null
+        --attribute "delay=$((value * 1000))" app-relay >/dev/null
+      ;;
+    latency)
+      _toxi_cli toxic add --toxicName live-latency --type latency \
+        --attribute "latency=$value" --attribute jitter=0 app-relay >/dev/null
+      ;;
+    bandwidth)
+      _toxi_cli toxic add --toxicName live-bandwidth --type bandwidth \
+        --attribute "rate=$value" app-relay >/dev/null
+      ;;
+    slow_close)
+      _toxi_cli toxic add --toxicName live-slow-close --type slow_close \
+        --attribute "delay=$value" app-relay >/dev/null
       ;;
     down)
       _toxi_cli toggle app-relay >/dev/null
       ;;
     *)
-      printf 'usage: net_fault <timeout|slicer|down> [ms]\n' >&2
+      printf 'unknown network fault class: %s\n' "$class" >&2
       return 2
       ;;
   esac
+}
+
+# Replace the active proxy fault with one timeout, slicer, degradation toxic, or
+# hard-down condition.
+net_fault() {
+  local class=${1:-}
+  local value=${2:-1500}
+  net_clear
+  _net_apply "$class" "$value"
+}
+
+# Apply two or more degradation toxics together. Each argument is class=value;
+# hard-down is excluded because it would make all accompanying toxics inert.
+net_compound() {
+  (( $# >= 2 )) || {
+    printf 'usage: net_compound <class=value> <class=value> [...]\n' >&2
+    return 2
+  }
+  local spec class value seen=' '
+  net_clear
+  for spec in "$@"; do
+    [[ "$spec" == *=* ]] || {
+      printf 'compound fault must use class=value: %s\n' "$spec" >&2
+      net_clear
+      return 2
+    }
+    class=${spec%%=*}
+    value=${spec#*=}
+    [[ "$class" != down && "$seen" != *" $class "* ]] || {
+      printf 'compound fault class is invalid or duplicated: %s\n' "$class" >&2
+      net_clear
+      return 2
+    }
+    seen+="$class "
+    if ! _net_apply "$class" "$value"; then
+      net_clear
+      return 2
+    fi
+  done
 }
 
 relay_pause() {
@@ -78,6 +138,13 @@ relay_pause() {
 
 relay_resume() {
   _fault_compose unpause relay >/dev/null
+}
+
+# Abruptly terminate and restart the same relay container. This preserves the
+# Compose network identity while exercising a kill edge rather than SIGSTOP.
+relay_kill() {
+  _fault_compose kill relay >/dev/null
+  _fault_compose start relay >/dev/null
 }
 
 # Preserve machine identity and owner-channel state: this models a production

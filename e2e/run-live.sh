@@ -99,22 +99,31 @@ wait_for_device_value() {
 }
 
 apply_fault_request() {
-  local request=$1 action class duration state extra
-  read -r action class duration extra <<<"$request"
+  local request=$1 action class value state
+  local -a parts=()
+  read -r -a parts <<<"$request"
+  action=${parts[0]:-}
   case "$action" in
     net_fault)
-      [[ "$class" == timeout || "$class" == slicer || "$class" == down ]] || return 2
-      [[ -z "${extra:-}" ]] || return 2
-      net_fault "$class" "${duration:-1500}"
+      (( ${#parts[@]} == 2 || ${#parts[@]} == 3 )) || return 2
+      class=${parts[1]}
+      [[ "$class" == timeout || "$class" == slicer || "$class" == down ||
+         "$class" == latency || "$class" == bandwidth || "$class" == slow_close ]] || return 2
+      value=${parts[2]:-1500}
+      net_fault "$class" "$value"
       ;;
-    net_clear|relay_pause|relay_resume|pi_restart|app_background|app_foreground)
-      [[ -z "${class:-}" ]] || return 2
+    net_compound)
+      (( ${#parts[@]} >= 3 )) || return 2
+      net_compound "${parts[@]:1}"
+      ;;
+    net_clear|relay_pause|relay_resume|relay_kill|pi_restart|app_background|app_foreground)
+      (( ${#parts[@]} == 1 )) || return 2
       "$action"
       ;;
     app_airplane)
-      state=$class
+      (( ${#parts[@]} == 2 )) || return 2
+      state=${parts[1]}
       [[ "$state" == on || "$state" == off ]] || return 2
-      [[ -z "${duration:-}" ]] || return 2
       app_airplane "$state"
       # adb reverse keeps emulator localhost reachable even in Android airplane
       # mode. Mirror the radio cut at the app-facing proxy so this lane observes
@@ -126,7 +135,7 @@ apply_fault_request() {
       return 2
       ;;
   esac
-  printf '[live] applied %s\n' "$request"
+  printf '[live] applied %s\n' "$request" | tee -a "$RUN_STATE/faults-applied.log"
 }
 
 drive_faults() {
