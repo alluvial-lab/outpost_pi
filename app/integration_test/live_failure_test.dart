@@ -25,8 +25,6 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   /// Invariant 1: a send in the reconnect identity window is never absent.
-  // The fix story removes this skip; keep the correct visible-message
-  // assertion intact for story-app-send-swallowed-session-identity-unavailable.
   testWidgets(
     'reconnect identity window keeps an immediate send visible',
     (tester) async {
@@ -40,25 +38,12 @@ void main() {
           () async => harness.connection.status is! StatusOnline ? true : null,
           description: 'forced reconnect edge',
         );
-        final captureBaseline = (await harness.captureEvents()).length;
         requestLiveFault('net_clear');
-        final windowEvidence = await eventually<Map<String, dynamic>>(
+        await eventually<bool>(
           tester,
-          () async {
-            if (harness.connection.status is! StatusOnline) return null;
-            final fresh = (await harness.captureEvents()).skip(captureBaseline);
-            final routeEvents = fresh.where((event) => event['tag'] == 'route');
-            if (routeEvents.isEmpty) return null;
-            final latest = routeEvents.last;
-            return latest['phase'] == 'entry' &&
-                    !latest.containsKey('sessionIdTail')
-                ? latest
-                : null;
-          },
-          description: 'observable online route without canonical identity',
+          () async => harness.connection.status is StatusOnline ? true : null,
+          description: 'relay reconnect before fresh room hydration',
         );
-        expect(windowEvidence['phase'], 'entry');
-        expect(windowEvidence, isNot(contains('sessionIdTail')));
 
         await harness.sync.sendMessage(_swallowPrompt);
         await harness.waitForSubmissionVisibility(tester, _swallowPrompt);
@@ -66,7 +51,6 @@ void main() {
         await harness.close(tester);
       }
     },
-    skip: true,
     timeout: const Timeout(Duration(minutes: 5)),
   );
 

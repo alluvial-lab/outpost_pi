@@ -161,7 +161,6 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(
             manifest,
             {
-                "story-app-send-swallowed-session-identity-unavailable",
                 "backlog-app-blank-chat-direct-open",
                 "backlog-app-reconnect-churn-timeout-lifecycle-failures",
                 "backlog-app-cold-replay-duplicates-persisted-transcript",
@@ -170,6 +169,20 @@ class ScheduleTests(unittest.TestCase):
             },
         )
         self.assertEqual(manifest, set(live_soak.KNOWN_FINDINGS))
+
+    def test_visible_identity_hold_is_not_classified_as_a_swallow(self) -> None:
+        visible = live_soak._evaluate_rows(
+            [
+                {"tag": "msgSend", "id": "m1", "blocked": True},
+                {"tag": "sendQueue", "id": "m1", "phase": "held"},
+            ]
+        )
+        absent = live_soak._evaluate_rows(
+            [{"tag": "msgSend", "id": "m2", "blocked": True}]
+        )
+
+        self.assertFalse(visible["swallow"])
+        self.assertTrue(absent["swallow"])
 
     def test_churn_clusters_reconcile_only_inside_recorded_fault_windows(self) -> None:
         rows = [

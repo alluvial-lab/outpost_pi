@@ -36,6 +36,7 @@ class ChatViewModel extends ViewModel<ChatState> {
   StreamSubscription<SteeringProjection>? _steeringSub;
   StreamSubscription<String?>? _queuedSub;
   StreamSubscription<SessionEvent>? _eventSub;
+  StreamSubscription<List<ChatMessage>>? _identityPendingSub;
   StreamSubscription<Map<String, List<RoomInfo>>>? _roomsSub;
   StreamSubscription<ConnectionStatus>? _statusSub;
 
@@ -52,6 +53,7 @@ class ChatViewModel extends ViewModel<ChatState> {
   String? _initializationFailure;
 
   List<ChatMessage> _messages = const [];
+  List<ChatMessage> _identityPendingMessages = const [];
   StreamingMessage? _streaming;
   TranscriptTurnView _transcriptTurn = TranscriptTurnView.idle;
   AppTurnProjection _turnProjection = AppTurnProjection.stale;
@@ -74,6 +76,10 @@ class ChatViewModel extends ViewModel<ChatState> {
     _steeringSub = _sync.steeringProjectionStream.listen(_onSteering);
     _queuedSub = _sync.queuedStream.listen(_onQueued);
     _eventSub = _sync.events.listen(_onEvent);
+    _identityPendingSub = _sync.identityPendingMessagesStream.listen((rows) {
+      _identityPendingMessages = rows;
+      _recompute();
+    });
     _roomsSub = _conn.roomsStream.listen((_) {
       unawaited(_handleRoomsChanged());
       _recompute();
@@ -266,6 +272,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     _transcriptTurn = _sync.turnView;
     _transcriptSteering = _sync.steeringProjection;
     _queuedText = _sync.queuedText;
+    _identityPendingMessages = _sync.identityPendingMessages;
     _updateTurnProjection();
 
     final ref = _sync.activeSessionRef;
@@ -463,7 +470,7 @@ class ChatViewModel extends ViewModel<ChatState> {
           : const ChatNoPeer();
     }
     return ChatReady(
-      messages: _messages,
+      messages: _messagesWithIdentityPending(),
       streaming: _visibleStreaming,
       status: statusProjection,
       pairingRevoked: _pairingRevoked,
@@ -471,6 +478,16 @@ class ChatViewModel extends ViewModel<ChatState> {
       queuedText: _queuedText,
       persistenceWarning: _persistenceWarning,
     );
+  }
+
+  List<ChatMessage> _messagesWithIdentityPending() {
+    if (_identityPendingMessages.isEmpty) return _messages;
+    final combined = List<ChatMessage>.of(_messages);
+    final ids = {for (final message in combined) message.id};
+    for (final message in _identityPendingMessages) {
+      if (ids.add(message.id)) combined.add(message);
+    }
+    return combined;
   }
 
   // --- Commands (writer = SyncService; lifecycle = ConnectionManager) ---
@@ -538,6 +555,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     _steeringSub?.cancel();
     _queuedSub?.cancel();
     _eventSub?.cancel();
+    _identityPendingSub?.cancel();
     _roomsSub?.cancel();
     _statusSub?.cancel();
     super.dispose();

@@ -51,18 +51,16 @@ def _known_finding(fragment: str) -> str:
 
 
 FINDING_OBSERVATIONS = {
-    "swallow": _known_finding("send-swallowed-session-identity"),
     "blank_chat": _known_finding("blank-chat-direct-open"),
     "reconnect_churn": _known_finding("reconnect-churn-timeout"),
     "cold_dedup": _known_finding("cold-replay-duplicates"),
     "mesh_roster": _known_finding("mesh-post-pair-roster"),
     "session_rotation_working": _known_finding("session-rotation-late-echo"),
 }
-# The in-process soak deterministically targets the reconnect identity window.
 # Blank-chat targeting belongs to run-live.sh's force-stop lane, while cold
 # replay and mesh-roster findings belong to the grid and two-Pi lanes. Long
 # soaks also carry the state-shape linked skip until its working bug is fixed.
-SOAK_EXPECTED_FINDINGS = frozenset({"swallow"})
+SOAK_EXPECTED_FINDINGS: frozenset[str] = frozenset()
 # The real multi-session exercise always runs in a full soak, but the linked
 # late-echo defect is timing-dependent; mark it only when the exercise observes it.
 SOAK_LONG_EXPECTED_FINDINGS: frozenset[str] = frozenset()
@@ -398,9 +396,7 @@ Future<void> _runEvent(
       await harness.waitOnlineAndLive(tester: tester);
       if (identityPrompt != null &&
           !await harness.submissionIsVisible(tester, identityPrompt)) {{
-        // This is a linked known finding, not a silent pass. The post-run
-        // oracle consumes the marker and reports the tracking id.
-        debugPrintSynchronously('SOAK_KNOWN_FINDING swallow');
+        fail('identity-window submission disappeared after reconnect');
       }}
       await _assertRecoveredRoom(
         tester,
@@ -933,6 +929,17 @@ def _has_later_echo(rows: list[dict[str, Any]], message_id: str, sent_index: int
     )
 
 
+def _has_later_visible_send_state(
+    rows: list[dict[str, Any]], message_id: str, sent_index: int
+) -> bool:
+    return any(
+        row.get("tag") == "sendQueue"
+        and row.get("id") == message_id
+        and row.get("phase") in {"held", "visible-fail"}
+        for row in rows[sent_index + 1 :]
+    )
+
+
 def _blank_chat_signature(rows: list[dict[str, Any]]) -> bool:
     for index, row in enumerate(rows):
         if row.get("tag") != "route" or row.get("phase") != "projection-empty":
@@ -989,6 +996,7 @@ def _evaluate_rows(
             and row.get("blocked") is True
             and isinstance(row.get("id"), str)
             and not _has_later_echo(rows, row["id"], index)
+            and not _has_later_visible_send_state(rows, row["id"], index)
         ):
             swallow = True
             break
@@ -1216,9 +1224,6 @@ def run(args: argparse.Namespace) -> int:
         oracle_path,
         fault_windows,
     )
-    if "SOAK_KNOWN_FINDING swallow" in flutter_output and evaluations:
-        evaluations[0]["swallow"] = True
-        evaluations[0]["swallow_source"] = "bubble/transcript-DB predicate"
     if "SOAK_KNOWN_FINDING session_rotation_working" in flutter_output and evaluations:
         evaluations[0]["session_rotation_working"] = True
         evaluations[0]["session_rotation_working_source"] = "real multi-session exercise"
@@ -1263,8 +1268,11 @@ def run(args: argparse.Namespace) -> int:
                 f"triage failed for {evaluation['capture']} with exit {evaluation['exit']}"
             )
         elif evaluation["exit"] == 1 and not (
-            evaluation["swallow"]
-            or evaluation["blank_chat"]
+            (evaluation["swallow"] and "swallow" in FINDING_OBSERVATIONS)
+            or (
+                evaluation["blank_chat"]
+                and "blank_chat" in FINDING_OBSERVATIONS
+            )
             or evaluation["expected_churn_clusters"]
             or evaluation["unexpected_churn_clusters"]
         ):
@@ -1282,8 +1290,14 @@ def run(args: argparse.Namespace) -> int:
             and not oracle_violation
             and not evaluation["unexpected_churn_clusters"]
             and (
-                evaluation["swallow"]
-                or evaluation["blank_chat"]
+                (
+                    evaluation["swallow"]
+                    and "swallow" in FINDING_OBSERVATIONS
+                )
+                or (
+                    evaluation["blank_chat"]
+                    and "blank_chat" in FINDING_OBSERVATIONS
+                )
                 or evaluation["expected_churn_clusters"]
             )
         )
