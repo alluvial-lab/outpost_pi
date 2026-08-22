@@ -37,15 +37,33 @@ KNOWN_FINDINGS = {
 # incidental blank-chat evidence is still reported, but absence is not suspicious.
 SOAK_EXPECTED_FINDINGS = frozenset({"swallow"})
 
-FAULT_CLASSES = ("timeout", "slicer", "down")
+NET_FAULT_WEIGHTS = (
+    ("timeout", 10),
+    ("slicer", 8),
+    ("down", 8),
+    ("latency", 14),
+    ("bandwidth", 12),
+    ("slow_close", 10),
+)
+COMPOUND_CLASSES = ("timeout", "slicer", "latency", "bandwidth", "slow_close")
 FAULT_WEIGHTS = (
-    ("net_fault", 22),
-    ("relay_pause", 12),
-    ("pi_restart", 12),
-    ("app_background", 10),
-    ("app_airplane", 10),
+    ("net_fault", 28),
+    ("net_compound", 10),
+    ("relay_pause", 8),
+    ("relay_kill", 8),
+    ("pi_restart", 10),
+    ("app_background", 8),
+    ("app_airplane", 8),
 )
 ACTION_WEIGHTS = (("send", 20), ("navigation", 9), ("cold_restart", 5))
+VOCABULARY_PROBE_DURATION_SECONDS = 90
+REQUIRED_FAULT_DEMOS = (
+    ("latency", "net_fault latency"),
+    ("bandwidth", "net_fault bandwidth"),
+    ("slow_close", "net_fault slow_close"),
+    ("compound", "net_compound "),
+    ("relay_kill", "relay_kill"),
+)
 
 
 @dataclass(frozen=True)
@@ -68,25 +86,50 @@ def _weighted_choice(rng: random.Random, weights: Iterable[tuple[str, int]]) -> 
     return rng.choices(names, weights=[weight for _, weight in weights], k=1)[0]
 
 
+def _fault_value(rng: random.Random, fault_class: str) -> int:
+    if fault_class == "latency":
+        return rng.randint(100, 1_200)
+    if fault_class == "bandwidth":
+        return rng.randint(16, 256)
+    if fault_class == "slow_close":
+        return rng.randint(250, 4_000)
+    return rng.randint(500, 8_000)
+
+
 def _fault_event(rng: random.Random, at: int, remaining: int) -> ScheduleEvent:
     name = _weighted_choice(rng, FAULT_WEIGHTS)
     hold = rng.randint(MIN_HOLD_SECONDS, min(MAX_HOLD_SECONDS, remaining))
     if name == "net_fault":
-        fault_class = rng.choice(FAULT_CLASSES)
-        # The toxic duration is intentionally shorter than the hold for most
-        # events: it exercises timeout/slicer behavior without making a whole
-        # schedule unrecoverable.
-        timeout_ms = rng.randint(500, 8_000)
+        fault_class = _weighted_choice(rng, NET_FAULT_WEIGHTS)
+        command = f"net_fault {fault_class}"
+        if fault_class != "down":
+            command += f" {_fault_value(rng, fault_class)}"
         return ScheduleEvent(
             at_seconds=at,
             kind="fault",
             name=f"net_{fault_class}",
             hold_seconds=hold,
-            command=f"net_fault {fault_class} {timeout_ms}",
+            command=command,
             clear_command="net_clear",
+        )
+    if name == "net_compound":
+        classes = rng.sample(COMPOUND_CLASSES, k=rng.randint(2, 3))
+        specifications = " ".join(
+            f"{fault_class}={_fault_value(rng, fault_class)}"
+            for fault_class in classes
+        )
+        return ScheduleEvent(
+            at,
+            "fault",
+            name,
+            hold,
+            f"net_compound {specifications}",
+            "net_clear",
         )
     if name == "relay_pause":
         return ScheduleEvent(at, "fault", name, hold, "relay_pause", "relay_resume")
+    if name == "relay_kill":
+        return ScheduleEvent(at, "fault", name, hold, "relay_kill", None)
     if name == "pi_restart":
         return ScheduleEvent(at, "fault", name, hold, "pi_restart", None)
     if name == "app_background":
@@ -123,6 +166,36 @@ def build_schedule(seed: int, duration_seconds: int) -> tuple[ScheduleEvent, ...
             )
         )
         cursor = 34
+    if duration_seconds >= VOCABULARY_PROBE_DURATION_SECONDS:
+        events.extend(
+            (
+                ScheduleEvent(
+                    36, "fault", "net_latency", 3, "net_fault latency 250", "net_clear"
+                ),
+                ScheduleEvent(
+                    43, "fault", "net_bandwidth", 3, "net_fault bandwidth 64", "net_clear"
+                ),
+                ScheduleEvent(
+                    50,
+                    "fault",
+                    "net_slow_close",
+                    3,
+                    "net_fault slow_close 750",
+                    "net_clear",
+                ),
+                ScheduleEvent(
+                    57,
+                    "fault",
+                    "net_compound",
+                    3,
+                    "net_compound latency=200 bandwidth=64",
+                    "net_clear",
+                ),
+                ScheduleEvent(64, "fault", "relay_kill", 8, "relay_kill", None),
+                ScheduleEvent(76, "action", "navigation"),
+            )
+        )
+        cursor = 80
     while cursor < duration_seconds:
         remaining_before_gap = duration_seconds - cursor
         if remaining_before_gap < MIN_HOLD_SECONDS:
@@ -255,13 +328,15 @@ Future<void> _runEvent(
     // used by the verified live infrastructure lane and avoids an unhandled
     // handshake exception racing the test teardown.
     if (clear is String &&
-        (event['name'] == 'net_down' || event['name'] == 'net_timeout' ||
-            event['name'] == 'net_slicer' || event['name'] == 'relay_pause')) {{
+        ((event['name']! as String).startsWith('net_') ||
+            event['name'] == 'relay_pause')) {{
       await harness.connection.disconnect();
     }}
     if (clear is String) requestLiveFault(clear);
     String? identityPrompt;
-    if (clear != null || event['name'] == 'pi_restart') {{
+    if (clear != null ||
+        event['name'] == 'pi_restart' ||
+        event['name'] == 'relay_kill') {{
       if (event['name'] == 'net_down') {{
         // Deliberately overlap reconnect and send, then require the same UI +
         // transcript-DB visibility predicate as the skipped regression test.
@@ -705,6 +780,21 @@ def _oracle_rows_from_flutter(output: str) -> tuple[list[dict[str, Any]], int]:
     return rows, malformed
 
 
+def _fault_demonstrations(output: str) -> tuple[list[str], list[str]]:
+    commands = [
+        line.split("[live] applied ", 1)[1].strip()
+        for line in output.splitlines()
+        if "[live] applied " in line
+    ]
+    demonstrated = [
+        label
+        for label, prefix in REQUIRED_FAULT_DEMOS
+        if any(command.startswith(prefix) for command in commands)
+    ]
+    missing = [label for label, _ in REQUIRED_FAULT_DEMOS if label not in demonstrated]
+    return demonstrated, missing
+
+
 def _run_triage(
     captures: list[Path],
     oracle_path: Path | None = None,
@@ -741,6 +831,7 @@ def _write_report(
     runner_status: int,
     triage_outputs: list[str],
     evaluations: list[dict[str, Any]],
+    demonstrated_faults: list[str],
     suspicious: list[str],
     unexpected: list[str],
 ) -> None:
@@ -782,6 +873,12 @@ def _write_report(
         lines.append("- No unexpected invariant violations.")
     if suspicious:
         lines.extend(f"- **SUSPICIOUS**: {item}" for item in suspicious)
+    lines.extend(["", "## Fault vocabulary evidence", ""])
+    for label, _ in REQUIRED_FAULT_DEMOS:
+        lines.append(
+            f"- `{label}`: "
+            f"**{'APPLIED' if label in demonstrated_faults else 'NOT OBSERVED'}**"
+        )
     lines.extend(["", "## Connection churn attribution", ""])
     for evaluation in evaluations:
         lines.append(
@@ -805,7 +902,10 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    artifact_dir = Path(args.artifacts or ROOT / ".work" / "session-notes" / f"live-soak-{stamp}-{seed}")
+    artifact_dir = Path(
+        args.artifacts
+        or ROOT / ".work" / "session-notes" / f"live-soak-{stamp}-{seed}"
+    ).resolve()
     artifact_dir.mkdir(parents=True, exist_ok=True)
     generated = ROOT / "app" / "integration_test" / f".live_soak_{os.getpid()}.dart"
     generated.write_text(_generated_test(schedule, duration + 300), encoding="utf-8")
@@ -830,6 +930,11 @@ def run(args: argparse.Namespace) -> int:
         for path in sorted(artifact_dir.glob("flutter-live-*.log"))
     )
     oracle_rows, malformed_oracle = _oracle_rows_from_flutter(flutter_output)
+    fault_output = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in sorted(artifact_dir.glob("faults-applied.log"))
+    )
+    demonstrated_faults, missing_faults = _fault_demonstrations(fault_output)
     oracle_path: Path | None = None
     if oracle_rows:
         oracle_path = artifact_dir / "soak-oracle.jsonl"
@@ -849,6 +954,10 @@ def run(args: argparse.Namespace) -> int:
         unexpected.append("no content-free soak oracle observations were captured")
     if malformed_oracle:
         unexpected.append(f"{malformed_oracle} malformed soak oracle observation(s)")
+    if duration >= VOCABULARY_PROBE_DURATION_SECONDS and missing_faults:
+        unexpected.append(
+            "scheduled fault demonstrations were not applied: " + ", ".join(missing_faults)
+        )
     for output in triage_outputs:
         for invariant in ("replay_dedup", "transcript_ui", "ordering", "identity"):
             if f"  {invariant}: VIOLATION" in output:
@@ -874,6 +983,7 @@ def run(args: argparse.Namespace) -> int:
         runner_status=runner_status,
         triage_outputs=triage_outputs,
         evaluations=evaluations,
+        demonstrated_faults=demonstrated_faults,
         suspicious=suspicious,
         unexpected=unexpected,
     )
