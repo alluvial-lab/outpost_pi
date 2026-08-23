@@ -452,6 +452,8 @@ final class WorkingConvEvent extends DebugEvent {
 /// Replay/backfill dedup (the duplication-bug surface).
 final class ReplayDedupEvent extends DebugEvent {
   final String sessionId;
+
+  /// Privacy-safe event-id digest; the wire key retains its legacy name.
   final String? eventIdTail;
   final bool dropped;
 

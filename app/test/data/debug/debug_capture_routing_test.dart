@@ -5,7 +5,6 @@ import 'dart:typed_data';
 
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/local/records/message_record.dart';
-import 'package:app/data/sync/session_history_replay.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
@@ -983,16 +982,7 @@ void main() {
       const dupId = 'replay-dup-1';
       const dupTs = 5;
       // Both facts share the SDK timestamp identity used across Pi process
-      // replacement. Compute the tail from the canonical helper so diagnostics
-      // stay aligned with replay admission.
-      final dupEventId = serverReplayUserEventId(
-        s.sessionId,
-        'user_input',
-        dupTs,
-      );
-      final expectedTail = dupEventId.length <= 12
-          ? dupEventId
-          : dupEventId.substring(dupEventId.length - 12);
+      // replacement, so durable admission derives one event id for both.
       final history = SessionHistory(
         sessionId: s.sessionId,
         inReplyTo: 'history-dup',
@@ -1009,10 +999,7 @@ void main() {
       s.channel.pushRaw(history);
       await _settle();
 
-      final dupEvents = s.log.events
-          .whereType<ReplayDedupEvent>()
-          .where((event) => event.eventIdTail == expectedTail)
-          .toList();
+      final dupEvents = s.log.events.whereType<ReplayDedupEvent>().toList();
       expect(
         dupEvents.length,
         2,
