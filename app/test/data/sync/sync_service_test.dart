@@ -722,6 +722,74 @@ void main() {
   });
 
   test(
+    'replay diagnostics distinguish different events with one server timestamp',
+    () async {
+      final debugLog = _RecordingDebugLog();
+      final s = await setup(debugLog: debugLog);
+
+      s.ch.pushRaw(
+        SessionHistory(
+          sessionId: s.sessionId,
+          inReplyTo: 'same-timestamp-replay',
+          sessionStartedAt: 1,
+          events: const [
+            UserInputEvt(ts: 787455597602, id: 'u1', text: 'hi'),
+            AgentMessageEvt(ts: 787455597602, inReplyTo: 'u1', text: 'done'),
+          ],
+          eos: true,
+        ),
+      );
+      await _settle();
+
+      final accepted = debugLog.events
+          .whereType<ReplayDedupEvent>()
+          .where((event) => !event.dropped)
+          .toList();
+      expect(accepted, hasLength(2));
+      expect(
+        accepted.map((event) => event.eventIdTail).toSet(),
+        hasLength(2),
+        reason: 'distinct event ids must not collide in the dedup oracle',
+      );
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test('interleaved history replays admit one durable event', () async {
+    final store = _MemoryTranscriptStore();
+    final debugLog = _RecordingDebugLog();
+    final s = await setup(transcriptEventStore: store, debugLog: debugLog);
+    final appendStarted = Completer<void>();
+    final appendGate = Completer<void>();
+    store.appendStarted = appendStarted;
+    store.appendGate = appendGate;
+    SessionHistory history(String requestId) => SessionHistory(
+      sessionId: s.sessionId,
+      inReplyTo: requestId,
+      sessionStartedAt: 1,
+      events: const [UserInputEvt(ts: 5, id: 'u1', text: 'once')],
+      eos: true,
+    );
+
+    final first = s.sync.debugApplyHistory(history('replay-a'));
+    await appendStarted.future;
+    final second = s.sync.debugApplyHistory(history('replay-b'));
+    appendGate.complete();
+    await Future.wait([first, second]);
+
+    expect(store.eventsFor(transcriptKeyFor(s.epk)), hasLength(1));
+    expect(
+      debugLog.events.whereType<ReplayDedupEvent>().map(
+        (event) => event.dropped,
+      ),
+      [false, true],
+    );
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
+  test(
     'user_message echo writes one MessageRecord + updates the index',
     () async {
       final s = await setup();

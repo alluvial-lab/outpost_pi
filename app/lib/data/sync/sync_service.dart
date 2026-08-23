@@ -31,6 +31,7 @@ import 'package:app/domain/transcript/transcript_event.dart';
 import 'package:app/domain/transcript/transcript_projection.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/protocol/uuid7.dart';
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 
 /// A cancellable scheduled callback used for pending-send expiry.
@@ -1654,7 +1655,7 @@ class SyncService extends Service {
   }
 
   static String _eventIdTail(String eventId) =>
-      eventId.length <= 12 ? eventId : eventId.substring(eventId.length - 12);
+      crypto.sha256.convert(utf8.encode(eventId)).toString().substring(0, 12);
 
   void _logDebug(DebugEvent event) => _debugLog?.log(event);
 
