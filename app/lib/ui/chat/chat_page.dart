@@ -405,6 +405,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         return _MessageList(
           messages: visible,
           streaming: streaming,
+          isReconnecting: state.status.transport is! ChatTransportOnline,
           onDecide: (id, decision) => vm.approveTool(id, decision),
         );
       }(),
@@ -644,57 +645,227 @@ class _ChatStatusIndicator extends StatelessWidget {
   }
 }
 
-class _MessageList extends StatelessWidget {
+class _MessageList extends StatefulWidget {
   final List<ChatMessage> messages;
   final StreamingMessage? streaming;
+  final bool isReconnecting;
   final void Function(String, ApproveDecision) onDecide;
 
   const _MessageList({
     required this.messages,
     required this.streaming,
+    required this.isReconnecting,
     required this.onDecide,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final itemCount = messages.length + (streaming != null ? 1 : 0);
+  State<_MessageList> createState() => _MessageListState();
+}
 
-    // `reverse: true` anchors the viewport to the bottom (offset 0 = newest)
-    // and keeps it there as content arrives — no manual scroll-to-bottom is
-    // needed. The previous animateTo-on-every-rebuild fought this and caused
-    // overlapping animations (flicker / runaway scroll) during streaming.
-    return ListView.separated(
-      reverse: true,
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-      itemCount: itemCount,
-      separatorBuilder: (context, idx) => const SizedBox(height: 14),
-      itemBuilder: (_, i) {
-        // Index 0 = bottom = newest. Stable keys are REQUIRED here: when the
-        // streaming bubble appears/disappears at index 0 every other item's
-        // index shifts by 1, and without keys Flutter re-matches elements by
-        // position — briefly painting the wrong message at a slot (the
-        // momentary C/B/A → B/C/A reorder). Keying by message id makes it
-        // match by identity instead.
-        if (streaming != null && i == 0) {
-          return KeyedSubtree(
-            key: const ValueKey('streaming'),
-            child: StreamingBubble(streaming!),
-          );
-        }
-        final msgIdx = messages.length - 1 - (i - (streaming != null ? 1 : 0));
-        final msg = messages[msgIdx];
-        return KeyedSubtree(
-          key: ValueKey(msg.id),
-          child: switch (msg) {
-            UserMsg() => UserBubble(msg),
-            AssistantMsg() => AssistantBubble(msg),
-            ToolEvent() => ToolRequestCard(tool: msg, onDecide: onDecide),
-            CompactionMsg() => CompactionBubble(msg),
-          },
+/// Keep transcript identity and the user's reading position stable across replay.
+///
+/// Bottom readers remain pinned to the newest row. Readers higher in history
+/// retain the first visible message and its pixel offset while canonical
+/// backfill inserts older rows. A bounded reconnect chip makes the update read
+/// as continuation rather than apparent reordering.
+class _MessageListState extends State<_MessageList> {
+  final _controller = ScrollController();
+  final _viewportKey = GlobalKey();
+  final Map<String, GlobalKey> _messageKeys = {};
+  Timer? _continuationTimer;
+  _ViewportAnchor? _pendingAnchor;
+  var _wasAtBottom = true;
+  var _awaitingReconnectHydration = false;
+  var _showContinuation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncMessageKeys();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MessageList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final transcriptChanged =
+        !_sameMessageIds(oldWidget.messages, widget.messages) ||
+        oldWidget.streaming != widget.streaming;
+    if (transcriptChanged) _captureAnchor();
+    _syncMessageKeys();
+
+    if (!oldWidget.isReconnecting && widget.isReconnecting) {
+      _continuationTimer?.cancel();
+      _awaitingReconnectHydration = true;
+      _showContinuation = false;
+    } else if (_awaitingReconnectHydration &&
+        !widget.isReconnecting &&
+        transcriptChanged) {
+      _awaitingReconnectHydration = false;
+      _showContinuation = true;
+      _continuationTimer?.cancel();
+      _continuationTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _showContinuation = false);
+      });
+    }
+
+    if (transcriptChanged) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _restoreAnchor());
+    }
+  }
+
+  void _syncMessageKeys() {
+    for (final message in widget.messages) {
+      _messageKeys.putIfAbsent(message.id, GlobalKey.new);
+    }
+  }
+
+  bool _sameMessageIds(List<ChatMessage> before, List<ChatMessage> after) {
+    if (before.length != after.length) return false;
+    for (var i = 0; i < before.length; i++) {
+      if (before[i].id != after[i].id) return false;
+    }
+    return true;
+  }
+
+  void _captureAnchor() {
+    if (!_controller.hasClients) return;
+    final position = _controller.position;
+    _wasAtBottom = position.pixels <= position.minScrollExtent + 2;
+    _pendingAnchor = null;
+    if (_wasAtBottom) return;
+
+    final viewport = _viewportKey.currentContext?.findRenderObject();
+    if (viewport is! RenderBox) return;
+    _ViewportAnchor? firstVisible;
+    for (final entry in _messageKeys.entries) {
+      final render = entry.value.currentContext?.findRenderObject();
+      if (render is! RenderBox || !render.attached) continue;
+      final top = render.localToGlobal(Offset.zero, ancestor: viewport).dy;
+      final bottom = top + render.size.height;
+      if (bottom <= 0 || top >= viewport.size.height) continue;
+      if (firstVisible == null || top < firstVisible.visualOffset) {
+        firstVisible = _ViewportAnchor(messageId: entry.key, visualOffset: top);
+      }
+    }
+    _pendingAnchor = firstVisible;
+  }
+
+  void _restoreAnchor() {
+    if (!mounted || !_controller.hasClients) return;
+    final position = _controller.position;
+    if (_wasAtBottom) {
+      _controller.jumpTo(position.minScrollExtent);
+    } else if (_pendingAnchor case _ViewportAnchor(
+      :final messageId,
+      :final visualOffset,
+    )) {
+      final viewport = _viewportKey.currentContext?.findRenderObject();
+      final render = _messageKeys[messageId]?.currentContext
+          ?.findRenderObject();
+      if (viewport is RenderBox && render is RenderBox && render.attached) {
+        final current = render
+            .localToGlobal(Offset.zero, ancestor: viewport)
+            .dy;
+        final target = (position.pixels + current - visualOffset).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
         );
-      },
+        _controller.jumpTo(target.toDouble());
+      }
+    }
+    _pendingAnchor = null;
+    final currentIds = {for (final message in widget.messages) message.id};
+    _messageKeys.removeWhere((id, _) => !currentIds.contains(id));
+  }
+
+  @override
+  void dispose() {
+    _continuationTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final messages = widget.messages;
+    final streaming = widget.streaming;
+    final itemCount = messages.length + (streaming != null ? 1 : 0);
+    final colors = context.colors;
+
+    return Stack(
+      children: [
+        ListView.separated(
+          key: _viewportKey,
+          controller: _controller,
+          reverse: true,
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+          itemCount: itemCount,
+          separatorBuilder: (_, _) => const SizedBox(height: 14),
+          itemBuilder: (_, i) {
+            if (streaming != null && i == 0) {
+              return SizedBox(
+                key: const ValueKey('streaming'),
+                child: StreamingBubble(streaming),
+              );
+            }
+            final msgIdx =
+                messages.length - 1 - (i - (streaming != null ? 1 : 0));
+            final msg = messages[msgIdx];
+            return SizedBox(
+              key: _messageKeys[msg.id],
+              child: switch (msg) {
+                UserMsg() => UserBubble(msg),
+                AssistantMsg() => AssistantBubble(msg),
+                ToolEvent() => ToolRequestCard(
+                  tool: msg,
+                  onDecide: widget.onDecide,
+                ),
+                CompactionMsg() => CompactionBubble(msg),
+              },
+            );
+          },
+        ),
+        if (_showContinuation)
+          Positioned(
+            top: 8,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Center(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.bg,
+                    border: Border.all(color: colors.border),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    child: Text(
+                      'Reconnected · transcript updated',
+                      style: TextStyle(
+                        fontFamily: kMonoFamily,
+                        fontSize: 12,
+                        color: colors.muted2,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
+}
+
+final class _ViewportAnchor {
+  const _ViewportAnchor({required this.messageId, required this.visualOffset});
+
+  final String messageId;
+  final double visualOffset;
 }
 
 class _EmptyState extends StatelessWidget {

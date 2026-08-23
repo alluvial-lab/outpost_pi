@@ -1,7 +1,7 @@
 ---
 id: story-fix-app-backfill-reflow-viewport
 kind: story
-stage: implementing
+stage: done
 tags: [app, ux, bug]
 parent: null
 depends_on: []
@@ -20,11 +20,14 @@ inserts after newer visible content (canonical DB order is correct —
 ordering oracle passes; the VISIBLE list jumps). No duplication (replay
 dedup clean) — this is presentation.
 
-## Root cause (to confirm)
-On hydration after reconnect, back-filled rows insert at canonical
-positions while the ListView viewport follows insertion rather than the
-user's anchor; combined with an interrupted turn resuming mid-list, the
-perceived order shuffles.
+## Root cause
+`_MessageList` was stateless and relied only on `ListView(reverse: true)`.
+That keeps offset zero pinned to the newest row, but it does not preserve a
+non-bottom reader's visible row and pixel offset when hydration inserts older
+children at canonical positions. The sliver relayout therefore moved the
+visible row even though stable message keys and database ordering were correct;
+there was also no reconnect/hydration cue to distinguish the movement from
+message reordering.
 
 ## Fix approach
 Viewport pinning on back-fill: preserve the user's scroll anchor across
@@ -42,3 +45,29 @@ visible jump. Fails-before.
 
 ## Verification notes
 Depends on A (fewer interruptions) but stands alone for the UX contract.
+
+## Implementation notes
+- **Execution capability:** Sol/high, selected for Flutter sliver geometry,
+  lifecycle-owned controller/timer work, and viewport behavior under async
+  hydration.
+- **Files changed:** `app/lib/ui/chat/chat_page.dart`,
+  `app/test/ui/chat/chat_page_appbar_test.dart`.
+- **Regression test:** `backfill preserves a non-bottom viewport anchor and
+  marks continuation` drives online -> retrying -> online -> delayed hydration.
+  Fails-before evidence: the first visible row moved from y=157 to y=230 (73px)
+  before the anchor implementation. It now verifies that older canonical
+  backfill preserves the first visible row within 1px, bottom-pinned hydration
+  stays at the newest row when a later turn arrives, and a four-second
+  `Reconnected · transcript updated` affordance survives the realistic
+  online-before-DB-update sequence.
+- **Confirmation:** targeted chat suite passed (118 tests); `flutter analyze`
+  reported no issues; full `flutter test --exclude-tags e2e --concurrency=2`
+  passed (913 tests). Device viewport validation is deferred to the
+  orchestrator soak.
+- **Bounded inline review:** PASS. The stateful list owns and disposes its
+  `ScrollController` and continuation timer, stable per-message keys remain
+  bounded to the current transcript, restoration runs only after transcript
+  changes, offset zero remains the bottom contract, and the affordance reuses
+  existing theme tokens at the 12sp operational floor. No protocol, ordering,
+  persistence, or ViewModel contract changed.
+- **Adjacent issues parked:** none.

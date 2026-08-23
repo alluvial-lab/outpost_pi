@@ -15,11 +15,13 @@ import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/voice/speech_service.dart';
+import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
 import 'package:app/ui/chat/chat_page.dart';
+import 'package:app/ui/chat/states/chat_state.dart';
 import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
 import 'package:app/ui/chat/voice/viewmodels/voice_input_viewmodel.dart';
 import 'package:flutter/material.dart';
@@ -63,6 +65,8 @@ class _CountingChatViewModel extends ChatViewModel {
   Future<void> refreshOnResume() async {
     resumeRefreshes += 1;
   }
+
+  void show(ChatReady ready) => emit(ready);
 }
 
 class _FakeSecureStorage implements FlutterSecureStorage {
@@ -100,6 +104,127 @@ void main() {
     await Hive.close();
     await dir.delete(recursive: true);
   });
+
+  testWidgets(
+    'backfill preserves a non-bottom viewport anchor and marks continuation',
+    (tester) async {
+      final conn = ConnectionManager(
+        factory: (_, _) async => _FakeChannel(),
+        storage: _FakeStorage(),
+      );
+      final boxes = LocalBoxes();
+      final sync = SyncService(conn, boxes);
+      final read = SessionReadRepository(boxes);
+      final prefs = Preferences(_FakeSecureStorage());
+      final actions = ActionsRepository(conn);
+      final vm = _CountingChatViewModel(
+        read,
+        sync,
+        conn,
+        prefs,
+        _FakeStorage(),
+      );
+      final voice = VoiceInputViewModel(_FakeSpeech());
+      final attach = AttachmentViewModel(_FakePicker(), actions);
+      final selection = SessionSelection();
+      const online = ChatStatusProjection(
+        transport: ChatTransportOnline(roomId: 'main'),
+        turn: AppTurnProjection.idle,
+        steering: NoSteering(),
+      );
+      const retrying = ChatStatusProjection(
+        transport: ChatTransportRetrying(
+          attempt: 0,
+          nextRetry: Duration(seconds: 1),
+        ),
+        turn: AppTurnProjection.stale,
+        steering: NoSteering(),
+      );
+      List<ChatMessage> transcript(int first, int last) => [
+        for (var i = first; i <= last; i++)
+          AssistantMsg(id: 'm$i', text: 'message $i\ncontinuation line $i'),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MultiProvider(
+            providers: [
+              ChangeNotifierProvider<ChatViewModel>.value(value: vm),
+              ChangeNotifierProvider<VoiceInputViewModel>.value(value: voice),
+              ChangeNotifierProvider<AttachmentViewModel>.value(value: attach),
+              ChangeNotifierProvider<Preferences>.value(value: prefs),
+              ChangeNotifierProvider<SessionSelection>.value(value: selection),
+            ],
+            child: const ChatPage(initialOnline: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      vm.show(ChatReady(messages: transcript(5, 34), status: online));
+      await tester.pump();
+
+      final scrollable = find.byType(Scrollable).first;
+      await tester.drag(scrollable, const Offset(0, 300));
+      await tester.pump();
+      expect(
+        tester.state<ScrollableState>(scrollable).position.pixels,
+        greaterThan(2),
+        reason: 'the anchor case must not exercise the bottom-pinned branch',
+      );
+      final viewport = tester.getRect(scrollable);
+      Finder? anchor;
+      var before = double.infinity;
+      for (var i = 5; i <= 34; i++) {
+        final candidate = find.text('message $i\ncontinuation line $i');
+        if (candidate.evaluate().isEmpty) continue;
+        final rect = tester.getRect(candidate);
+        if (rect.bottom > viewport.top &&
+            rect.top < viewport.bottom &&
+            rect.top < before) {
+          anchor = candidate;
+          before = rect.top;
+        }
+      }
+      expect(anchor, isNotNull);
+
+      vm.show(ChatReady(messages: transcript(5, 34), status: retrying));
+      await tester.pump();
+      vm.show(ChatReady(messages: transcript(5, 34), status: online));
+      await tester.pump();
+      vm.show(ChatReady(messages: transcript(0, 34), status: online));
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.getTopLeft(anchor!).dy, closeTo(before, 1));
+      expect(find.text('Reconnected · transcript updated'), findsOneWidget);
+
+      final position = tester.state<ScrollableState>(scrollable).position;
+      position.jumpTo(position.minScrollExtent);
+      await tester.pump();
+      vm.show(ChatReady(messages: transcript(0, 34), status: retrying));
+      await tester.pump();
+      vm.show(ChatReady(messages: transcript(0, 34), status: online));
+      await tester.pump();
+      vm.show(ChatReady(messages: transcript(0, 36), status: online));
+      await tester.pump();
+      await tester.pump();
+      expect(position.pixels, closeTo(position.minScrollExtent, 0.1));
+      expect(
+        find.text('message 36\ncontinuation line 36'),
+        findsOneWidget,
+        reason: 'later-turn hydration stays visible while bottom-pinned',
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      vm.dispose();
+      attach.dispose();
+      voice.dispose();
+      actions.dispose();
+      sync.dispose();
+      selection.dispose();
+      conn.dispose();
+    },
+  );
 
   testWidgets(
     'AppBar line 2 shows the device from initialDevice immediately — no '
