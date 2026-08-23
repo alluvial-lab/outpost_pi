@@ -1,7 +1,7 @@
 ---
 id: feature-fold-usability-pass
 kind: feature
-stage: review
+stage: done
 tags: [app, ux]
 parent: null
 depends_on: []
