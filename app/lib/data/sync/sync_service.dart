@@ -2040,7 +2040,7 @@ class SyncService extends Service {
       final seenEventIds = <String>{
         for (final event in existing) event.eventId,
       };
-      final result = await _eventStore.appendAll(key, replayEvents);
+      await _eventStore.appendAll(key, replayEvents);
       if (!_isCurrentLifecycle(generation, ref)) return;
       for (final event in replayEvents) {
         final dropped = !seenEventIds.add(event.eventId);
@@ -2053,26 +2053,27 @@ class SyncService extends Service {
           ),
         );
       }
-      if (result.appended > 0) {
-        final log = await _eventStore.readSession(key);
-        if (!_isCurrentLifecycle(generation, ref)) return;
-        final projection = deriveTranscriptProjection(
-          sessionId: key.sessionId,
-          events: log,
-        );
-        _setTranscriptSteering(projection.steering);
-        if (_canPublishTurnProjection(generation, ref, projectionEpoch)) {
-          _emitStreaming(projection.streaming);
-          _setTurnView(projection.turn);
-        }
-        await _rewriteMessageProjectionInWriteChain(
-          ref,
-          projection,
-          log,
-          generation,
-        );
-        if (!_isCurrentLifecycle(generation, ref)) return;
+      // The event log is canonical, while the message box is a disposable
+      // projection. Even an all-duplicate replay must rematerialize that box:
+      // churn can leave it empty although every replay id is already durable.
+      final log = await _eventStore.readSession(key);
+      if (!_isCurrentLifecycle(generation, ref)) return;
+      final projection = deriveTranscriptProjection(
+        sessionId: key.sessionId,
+        events: log,
+      );
+      _setTranscriptSteering(projection.steering);
+      if (_canPublishTurnProjection(generation, ref, projectionEpoch)) {
+        _emitStreaming(projection.streaming);
+        _setTurnView(projection.turn);
       }
+      await _rewriteMessageProjectionInWriteChain(
+        ref,
+        projection,
+        log,
+        generation,
+      );
+      if (!_isCurrentLifecycle(generation, ref)) return;
       await _acceptHistoryBoundaryInWriteChain(
         ref,
         history.sessionStartedAt,

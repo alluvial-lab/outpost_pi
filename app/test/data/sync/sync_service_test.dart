@@ -685,8 +685,7 @@ void main() {
       eos: true,
     );
 
-    s.ch.pushRaw(history('sync-before-reconnect'));
-    await _settle();
+    await s.sync.debugApplyHistory(history('sync-before-reconnect'));
     final afterFirstRows = [for (final m in messages(s.epk)) m.toJson()];
     final afterFirstIndex = index(s.epk);
     expect(afterFirstRows.map((m) => m['text']), ['hi', 'done', 'compacted']);
@@ -712,8 +711,7 @@ void main() {
       ),
     );
     await _settle();
-    reconnect.pushRaw(history('sync-after-reconnect'));
-    await _settle();
+    await s.sync.debugApplyHistory(history('sync-after-reconnect'));
 
     expect([for (final m in messages(s.epk)) m.toJson()], afterFirstRows);
     expect(index(s.epk), afterFirstIndex);
@@ -2392,6 +2390,35 @@ void main() {
       'older answer',
       'newer row',
     ]);
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
+  test('duplicate replay rebuilds a missing disposable projection', () async {
+    final s = await setup();
+    SessionHistory history(String requestId) => SessionHistory(
+      sessionId: s.sessionId,
+      inReplyTo: requestId,
+      sessionStartedAt: 1,
+      events: const [UserInputEvt(ts: 1, id: 'u1', text: 'restored')],
+      eos: true,
+    );
+
+    s.ch.pushRaw(history('initial-replay'));
+    await _settle();
+    expect(messages(s.epk).map((row) => row.text), ['restored']);
+
+    await LocalBoxes().openMsgsBox(refFor(s.epk)).clear();
+    expect(messages(s.epk), isEmpty, reason: 'projection is unbuilt');
+
+    s.ch.pushRaw(history('churn-replay'));
+    await _settle();
+
+    expect(
+      messages(s.epk).map((row) => row.text),
+      ['restored'],
+      reason: 'known durable events must rematerialize an empty projection',
+    );
     s.conn.dispose();
     s.sync.dispose();
   });
