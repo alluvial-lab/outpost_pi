@@ -616,18 +616,29 @@ class _InlineStopButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return GestureDetector(
-      key: const Key('input-bar-inline-stop'),
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: colors.error.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(19),
-          border: Border.all(color: colors.error.withValues(alpha: 0.55)),
+    return Semantics(
+      label: 'Stop response',
+      button: true,
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: const Key('input-bar-inline-stop'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox.square(
+          dimension: 48,
+          child: Center(
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: colors.error.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(19),
+                border: Border.all(color: colors.error.withValues(alpha: 0.55)),
+              ),
+              child: Icon(LucideIcons.square600, color: colors.error, size: 18),
+            ),
+          ),
         ),
-        child: Icon(LucideIcons.square600, color: colors.error, size: 18),
       ),
     );
   }
@@ -644,9 +655,8 @@ class _AttachButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 32,
-      height: 32,
+    return SizedBox.square(
+      dimension: 48,
       child: IconButton(
         key: const Key('input-bar-attach'),
         padding: EdgeInsets.zero,
@@ -697,20 +707,25 @@ class _AttachmentPreview extends StatelessWidget {
             Positioned(
               top: -4,
               right: 8,
-              child: GestureDetector(
-                key: const Key('attach-remove'),
-                onTap: onRemove,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.75),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: context.colors.border),
-                  ),
-                  padding: const EdgeInsets.all(3),
-                  child: Icon(
-                    LucideIcons.x,
-                    size: 13,
-                    color: context.colors.text,
+              child: Semantics(
+                label: 'Remove attached image',
+                button: true,
+                excludeSemantics: true,
+                child: GestureDetector(
+                  key: const Key('attach-remove'),
+                  onTap: onRemove,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.75),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: context.colors.border),
+                    ),
+                    padding: const EdgeInsets.all(3),
+                    child: Icon(
+                      LucideIcons.x,
+                      size: 13,
+                      color: context.colors.text,
+                    ),
                   ),
                 ),
               ),
@@ -822,9 +837,8 @@ class _QuickActionsButtonState extends State<_QuickActionsButton>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              width: 32,
-              height: 32,
+            SizedBox.square(
+              dimension: 48,
               child: IconButton(
                 key: const Key('input-bar-quick-actions'),
                 padding: EdgeInsets.zero,
@@ -920,17 +934,43 @@ class _ComposerActionButton extends StatelessWidget {
     // Hold-to-talk mic (decision #4): long-press records, slide cancels,
     // release transcribes. A plain tap surfaces the "hold to talk" hint.
     if (_mode == _ComposerMode.sendAudio && voiceEnabled) {
-      return GestureDetector(
-        onTap: disabled ? null : onVoiceTap,
-        onLongPressStart: disabled ? null : (_) => onVoiceLongPressStart(),
-        onLongPressMoveUpdate: disabled ? null : onVoiceLongPressMoveUpdate,
-        onLongPressEnd: disabled ? null : (_) => onVoiceLongPressEnd(),
-        child: _button(context),
+      return Semantics(
+        label: 'Record voice message',
+        button: true,
+        enabled: !disabled,
+        excludeSemantics: true,
+        child: GestureDetector(
+          key: const Key('input-bar-composer-action'),
+          behavior: HitTestBehavior.opaque,
+          onTap: disabled ? null : onVoiceTap,
+          onLongPressStart: disabled ? null : (_) => onVoiceLongPressStart(),
+          onLongPressMoveUpdate: disabled ? null : onVoiceLongPressMoveUpdate,
+          onLongPressEnd: disabled ? null : (_) => onVoiceLongPressEnd(),
+          child: _tapTarget(context),
+        ),
       );
     }
 
-    return GestureDetector(onTap: _resolveTap(), child: _button(context));
+    return Semantics(
+      label: switch (_mode) {
+        _ComposerMode.cancel => 'Stop response',
+        _ComposerMode.sendText => 'Send message',
+        _ComposerMode.sendAudio => 'Record voice message',
+      },
+      button: true,
+      enabled: _resolveTap() != null,
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: const Key('input-bar-composer-action'),
+        behavior: HitTestBehavior.opaque,
+        onTap: _resolveTap(),
+        child: _tapTarget(context),
+      ),
+    );
   }
+
+  Widget _tapTarget(BuildContext context) =>
+      SizedBox.square(dimension: 48, child: Center(child: _button(context)));
 
   Widget _button(BuildContext context) {
     final colors = context.colors;

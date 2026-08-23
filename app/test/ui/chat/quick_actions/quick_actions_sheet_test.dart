@@ -28,6 +28,7 @@ class _FakeRepo implements IActionsRepository {
   int newSessionCalls = 0;
   ThinkingLevel? thinking;
   WireModel? modelArg;
+  ModelsCatalogue catalogue = const ModelsCatalogue(models: [], current: null);
 
   /// When set, the matching action throws [ActionFailure] to exercise the
   /// failure path (error toast + sheet stays open).
@@ -74,7 +75,7 @@ class _FakeRepo implements IActionsRepository {
 
   @override
   Future<ModelsCatalogue> listModels({bool forceRefresh = false}) async {
-    return const ModelsCatalogue(models: [], current: null);
+    return catalogue;
   }
 
   @override
@@ -582,12 +583,65 @@ void main() {
     );
   });
 
-  testWidgets('thinking segment forwards level to repo', (tester) async {
+  testWidgets('thinking segments keep 48dp targets at fold cover width', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(234, 842);
+
     final s = await _openSheet(tester);
-    await tester.tap(find.byKey(const Key('qa-thinking-medium')));
+    final medium = find.byKey(const Key('qa-thinking-medium'));
+    final size = tester.getSize(medium);
+    expect(size.width, greaterThanOrEqualTo(48));
+    expect(size.height, greaterThanOrEqualTo(48));
+    expect(find.bySemanticsLabel('med thinking level'), findsOneWidget);
+
+    await tester.tap(medium);
     await tester.pumpAndSettle();
     expect(s.repo.thinking, ThinkingLevel.medium);
+    expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'model provider chips and compact badge expose a11y alternatives',
+    (tester) async {
+      final s = await _openSheet(tester);
+      s.repo.catalogue = const ModelsCatalogue(
+        models: [
+          WireModel(
+            id: 'sol',
+            provider: 'openai',
+            name: 'Sol',
+            reasoning: true,
+            contextWindow: 128000,
+          ),
+          WireModel(
+            id: 'k3',
+            provider: 'kimi',
+            name: 'K3',
+            reasoning: false,
+            contextWindow: 128000,
+          ),
+        ],
+      );
+
+      await tester.tap(find.byKey(const Key('qa-model-row')));
+      await tester.pumpAndSettle();
+
+      for (final key in const <String>[
+        'model-provider-all',
+        'model-provider-kimi',
+        'model-provider-openai',
+      ]) {
+        final size = tester.getSize(find.byKey(Key(key)));
+        expect(size.width, greaterThanOrEqualTo(48), reason: '$key width');
+        expect(size.height, greaterThanOrEqualTo(48), reason: '$key height');
+      }
+      expect(find.bySemanticsLabel('Reasoning-capable model'), findsOneWidget);
+    },
+  );
 
   test('QuickActionsState equality covers idle + busy', () {
     expect(const QuickActionsIdle(), const QuickActionsIdle());

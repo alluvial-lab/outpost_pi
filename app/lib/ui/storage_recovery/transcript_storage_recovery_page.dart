@@ -1,3 +1,4 @@
+import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 
@@ -101,69 +102,89 @@ class _TranscriptStorageRecoveryPageState
     return Scaffold(
       backgroundColor: colors.bg,
       body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Icon(Icons.lock_outline, size: 40, color: colors.error),
-                const SizedBox(height: 18),
-                Text(
-                  'Local transcripts unavailable',
-                  textAlign: TextAlign.center,
-                  style: context.typo.mono.copyWith(
-                    color: colors.text,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            key: const Key('storage-recovery-scroll-view'),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: ResponsiveCenter(
+                maxWidth: 460,
+                child: Padding(
+                  key: const Key('storage-recovery-responsive-content'),
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Icon(Icons.lock_outline, size: 40, color: colors.error),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Local transcripts unavailable',
+                        textAlign: TextAlign.center,
+                        style: context.typo.mono.copyWith(
+                          color: colors.text,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'The local encryption key is unavailable. Outpost-Pi will '
+                        'not open this ciphertext without it.',
+                        textAlign: TextAlign.center,
+                        style: context.typo.sansBody.copyWith(
+                          color: colors.muted2,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Discarding permanently removes transcripts stored on this '
+                        'device. After reconnect, some current Pi-session history '
+                        'may sync again, but older or local-only history may not '
+                        'return. Pairing is needed only if its separate credentials '
+                        'were also lost.',
+                        textAlign: TextAlign.center,
+                        style: context.typo.monoSmall.copyWith(
+                          color: colors.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      if (_error != null) ...[
+                        Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: context.typo.monoSmall.copyWith(
+                            color: colors.error,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      FilledButton(
+                        onPressed: _busy ? null : _retry,
+                        child: _busy
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Retry'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: _busy ? null : _confirmDiscard,
+                        child: Text(
+                          'Discard local transcripts',
+                          style: TextStyle(color: colors.error),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'The local encryption key is unavailable. Outpost-Pi will '
-                  'not open this ciphertext without it.',
-                  textAlign: TextAlign.center,
-                  style: context.typo.sansBody.copyWith(color: colors.muted2),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Discarding permanently removes transcripts stored on this '
-                  'device. After reconnect, some current Pi-session history '
-                  'may sync again, but older or local-only history may not '
-                  'return. Pairing is needed only if its separate credentials '
-                  'were also lost.',
-                  textAlign: TextAlign.center,
-                  style: context.typo.monoSmall.copyWith(color: colors.muted),
-                ),
-                const SizedBox(height: 20),
-                if (_error != null) ...[
-                  Text(
-                    _error!,
-                    textAlign: TextAlign.center,
-                    style: context.typo.monoSmall.copyWith(color: colors.error),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                FilledButton(
-                  onPressed: _busy ? null : _retry,
-                  child: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Retry'),
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: _busy ? null : _confirmDiscard,
-                  child: Text(
-                    'Discard local transcripts',
-                    style: TextStyle(color: colors.error),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

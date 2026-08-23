@@ -66,6 +66,37 @@ void main() {
     );
   }
 
+  testWidgets('compact composer controls keep 48dp effective targets', (
+    tester,
+  ) async {
+    await pumpBar(
+      tester,
+      disabled: false,
+      streaming: false,
+      onOpenQuickActions: () {},
+    );
+    await tester.pumpAndSettle();
+
+    for (final key in const <String>[
+      'input-bar-quick-actions',
+      'input-bar-attach',
+      'input-bar-composer-action',
+    ]) {
+      final size = tester.getSize(find.byKey(Key(key)));
+      expect(size.width, greaterThanOrEqualTo(48), reason: '$key width');
+      expect(size.height, greaterThanOrEqualTo(48), reason: '$key height');
+    }
+    expect(find.bySemanticsLabel('Record voice message'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'steer');
+    await tester.pumpAndSettle();
+    final actionSize = tester.getSize(
+      find.byKey(const Key('input-bar-composer-action')),
+    );
+    expect(actionSize, const Size(48, 48));
+    expect(find.bySemanticsLabel('Send message'), findsOneWidget);
+  });
+
   testWidgets('quick actions button is visible when input is empty', (
     tester,
   ) async {
@@ -160,11 +191,14 @@ void main() {
     await tester.enterText(find.byType(TextField), 'quick follow-up');
     await tester.pump();
     expect(find.byIcon(LucideIcons.send600), findsOneWidget);
+    final inlineStop = find.byKey(const Key('input-bar-inline-stop'));
     expect(
-      find.byKey(const Key('input-bar-inline-stop')),
+      inlineStop,
       findsOneWidget,
       reason: 'Stop remains reachable while the main action sends steering',
     );
+    expect(tester.getSize(inlineStop), const Size(48, 48));
+    expect(find.bySemanticsLabel('Stop response'), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pump();
     expect(sent, 'quick follow-up');

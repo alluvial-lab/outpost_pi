@@ -160,6 +160,11 @@ void main() {
       // Status dot uses initialOnline before the runtime resolves → shows
       // "online" immediately instead of flashing offline/reconnecting.
       expect(find.text('online'), findsOneWidget);
+      expect(tester.widget<Text>(find.text('online')).style?.fontSize, 12);
+      expect(
+        tester.widget<Text>(find.text('MacBook de Jacob')).style?.fontSize,
+        12,
+      );
 
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(234, 842);

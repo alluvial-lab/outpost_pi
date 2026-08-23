@@ -275,21 +275,38 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          border: Border.all(color: selected ? colors.accent : colors.border),
-          color: selected ? colors.accent.withValues(alpha: 0.12) : colors.bg,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: kMonoFamily,
-            fontSize: 11,
-            color: selected ? colors.accent : colors.muted,
+    return Semantics(
+      label: '$label model provider',
+      button: true,
+      selected: selected,
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: Key('model-provider-$label'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: selected ? colors.accent : colors.border,
+                ),
+                color: selected
+                    ? colors.accent.withValues(alpha: 0.12)
+                    : colors.bg,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: kMonoFamily,
+                  fontSize: 11,
+                  color: selected ? colors.accent : colors.muted,
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -344,7 +361,7 @@ class _ModelTile extends StatelessWidget {
                     _subtitle(model),
                     style: TextStyle(
                       fontFamily: kMonoFamily,
-                      fontSize: 10,
+                      fontSize: 12,
                       color: colors.muted,
                     ),
                   ),
@@ -373,18 +390,28 @@ class _Badge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: colors.accent.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: kMonoFamily,
-          fontSize: 9,
-          color: colors.accent,
+    return Tooltip(
+      message: 'Reasoning-capable model',
+      excludeFromSemantics: true,
+      child: Semantics(
+        label: 'Reasoning-capable model',
+        container: true,
+        child: ExcludeSemantics(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: colors.accent.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: kMonoFamily,
+                fontSize: 9,
+                color: colors.accent,
+              ),
+            ),
+          ),
         ),
       ),
     );
