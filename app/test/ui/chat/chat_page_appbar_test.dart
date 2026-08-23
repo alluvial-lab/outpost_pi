@@ -105,6 +105,8 @@ void main() {
     'AppBar line 2 shows the device from initialDevice immediately — no '
     'PeerRecord needed (plan/32g)',
     (tester) async {
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final conn = ConnectionManager(
         factory: (_, _) async => _FakeChannel(),
         storage: _FakeStorage(),
@@ -158,6 +160,28 @@ void main() {
       // Status dot uses initialOnline before the runtime resolves → shows
       // "online" immediately instead of flashing offline/reconnecting.
       expect(find.text('online'), findsOneWidget);
+
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(234, 842);
+      await tester.pump();
+      expect(find.byKey(const Key('chat-header-compact')), findsOneWidget);
+      expect(find.byKey(const Key('chat-status-compact')), findsOneWidget);
+      expect(
+        find.byKey(const Key('chat-status-priority-label')),
+        findsOneWidget,
+        reason: 'narrow headers show only the highest-priority status label',
+      );
+      expect(
+        tester.widget<Text>(find.text('My Project')).maxLines,
+        1,
+        reason: 'the compact room title must stay on one ellipsized line',
+      );
+      expect(
+        find.text('MacBook de Jacob'),
+        findsNothing,
+        reason: 'the compact header gives its second line to status',
+      );
+      expect(tester.takeException(), isNull);
 
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);

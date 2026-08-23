@@ -4,6 +4,7 @@ import 'package:app/data/preferences/preferences.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
+import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/chat/quick_actions/widgets/quick_actions_sheet.dart';
 import 'package:app/ui/chat/attachment/states/attachment_state.dart';
@@ -90,6 +91,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final vm = context.watch<ChatViewModel>();
     final state = vm.state;
+    final media = MediaQuery.of(context);
+    final compactComposer =
+        media.size.height - media.viewInsets.bottom <
+        kCompactComposerAvailableHeight;
 
     return Scaffold(
       backgroundColor: context.colors.bg,
@@ -112,7 +117,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 onRetry: vm.retryPersistenceSync,
               ),
             Expanded(child: _buildBody(context, state, vm)),
-            _buildInput(context, state, vm),
+            _buildInput(context, state, vm, compactHeight: compactComposer),
           ],
         ),
       ),
@@ -150,6 +155,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     // Home passed), NOT `initialTitle` (the room name) — so it shows the right
     // device from frame 1 and doesn't flip when the PeerRecord loads.
     final peerLabel = _peerDisplayName(peer, initialDevice);
+    final compact = MediaQuery.sizeOf(context).width < kCompactHeaderBreakpoint;
 
     return Container(
       height: 56,
@@ -170,12 +176,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           else
             const SizedBox(width: 16),
           Expanded(
+            key: Key(compact ? 'chat-header-compact' : 'chat-header-standard'),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   _truncate(roomName, 28),
+                  maxLines: 1,
                   style: TextStyle(
                     fontFamily: kMonoFamily,
                     fontSize: 13,
@@ -186,23 +194,26 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        _truncate(peerLabel, 24),
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: kMonoFamily,
-                          fontSize: 10,
-                          color: colors.muted,
+                if (compact)
+                  _ChatStatusIndicator(status: status, compact: true)
+                else
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _truncate(peerLabel, 24),
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: kMonoFamily,
+                            fontSize: 10,
+                            color: colors.muted,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    _ChatStatusIndicator(status: status),
-                  ],
-                ),
+                      const SizedBox(width: 6),
+                      _ChatStatusIndicator(status: status),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -381,7 +392,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     };
   }
 
-  Widget _buildInput(BuildContext context, ChatState state, ChatViewModel vm) {
+  Widget _buildInput(
+    BuildContext context,
+    ChatState state,
+    ChatViewModel vm, {
+    required bool compactHeight,
+  }) {
     final isReady = state is ChatReady;
     final isOffline = isReady && state.isOffline;
     final isRevoked = isReady && state.pairingRevoked;
@@ -399,33 +415,43 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final actionsEnabled =
         isReady && !isOffline && !isRevoked && !isPeerOffline;
 
-    return InputBar(
-      disabled: !isReady || isOffline || isRevoked || isPeerOffline,
-      streaming: isWorking,
-      onCancel: cancelId != null ? () => vm.cancel(cancelId) : null,
-      onOpenQuickActions: actionsEnabled
-          ? () => showQuickActionsSheet(context)
-          : null,
-      queuedText: isReady ? state.queuedText : null,
-      onSetQueued: vm.setQueuedMessage,
-      onClearQueued: vm.clearQueuedMessage,
-      // Plan/29 — hold-to-talk voice input. The VM is route-scoped (bound in
-      // app_router alongside ChatViewModel); InputBar listens to it directly,
-      // so a read() is enough here.
-      voice: context.read<VoiceInputViewModel>(),
-      onVoiceHint: (hint) => _handleVoiceHint(context, hint),
-      // Plan/30 — image attachments. takeImageForSend() reads + clears the
-      // attached image so the inline image rides along with the (optionally
-      // empty) caption. Attach-button gating by vision / already-attached is
-      // internal to InputBar; the host only gates by channel availability.
-      attachment: context.read<AttachmentViewModel>(),
-      onOpenAttach: actionsEnabled
-          ? () => _openAttach(context, context.read<AttachmentViewModel>())
-          : null,
-      onSend: (text) {
-        final image = context.read<AttachmentViewModel>().takeImageForSend();
-        vm.sendMessage(text, image: image);
-      },
+    return Align(
+      alignment: Alignment.center,
+      child: ConstrainedBox(
+        key: const Key('chat-composer-reading-column'),
+        constraints: const BoxConstraints(maxWidth: kChatReadingMeasure),
+        child: InputBar(
+          disabled: !isReady || isOffline || isRevoked || isPeerOffline,
+          streaming: isWorking,
+          compactHeight: compactHeight,
+          onCancel: cancelId != null ? () => vm.cancel(cancelId) : null,
+          onOpenQuickActions: actionsEnabled
+              ? () => showQuickActionsSheet(context)
+              : null,
+          queuedText: isReady ? state.queuedText : null,
+          onSetQueued: vm.setQueuedMessage,
+          onClearQueued: vm.clearQueuedMessage,
+          // Plan/29 — hold-to-talk voice input. The VM is route-scoped (bound in
+          // app_router alongside ChatViewModel); InputBar listens to it directly,
+          // so a read() is enough here.
+          voice: context.read<VoiceInputViewModel>(),
+          onVoiceHint: (hint) => _handleVoiceHint(context, hint),
+          // Plan/30 — image attachments. takeImageForSend() reads + clears the
+          // attached image so the inline image rides along with the (optionally
+          // empty) caption. Attach-button gating by vision / already-attached is
+          // internal to InputBar; the host only gates by channel availability.
+          attachment: context.read<AttachmentViewModel>(),
+          onOpenAttach: actionsEnabled
+              ? () => _openAttach(context, context.read<AttachmentViewModel>())
+              : null,
+          onSend: (text) {
+            final image = context
+                .read<AttachmentViewModel>()
+                .takeImageForSend();
+            vm.sendMessage(text, image: image);
+          },
+        ),
+      ),
     );
   }
 
@@ -528,9 +554,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
 /// Render transport health, agent phase, and steering as independent labels.
 class _ChatStatusIndicator extends StatelessWidget {
-  const _ChatStatusIndicator({required this.status});
+  const _ChatStatusIndicator({required this.status, this.compact = false});
 
   final ChatStatusProjection status;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -555,10 +582,20 @@ class _ChatStatusIndicator extends StatelessWidget {
 
     Text label(String text, Color color) => Text(
       text,
+      key: compact ? const Key('chat-status-priority-label') : null,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
       style: TextStyle(fontFamily: kMonoFamily, fontSize: 10, color: color),
     );
 
+    final (priorityLabel, priorityColor) = steeringLabel != null
+        ? (steeringLabel, colors.muted2)
+        : agentLabel != null
+        ? (agentLabel, agentColor)
+        : (transportLabel, transportColor);
+
     return Row(
+      key: compact ? const Key('chat-status-compact') : null,
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
@@ -570,14 +607,18 @@ class _ChatStatusIndicator extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 4),
-        label(transportLabel, transportColor),
-        if (agentLabel != null) ...[
-          const SizedBox(width: 6),
-          label(agentLabel, agentColor),
-        ],
-        if (steeringLabel != null) ...[
-          const SizedBox(width: 6),
-          label(steeringLabel, colors.muted2),
+        if (compact)
+          Flexible(child: label(priorityLabel, priorityColor))
+        else ...[
+          label(transportLabel, transportColor),
+          if (agentLabel != null) ...[
+            const SizedBox(width: 6),
+            label(agentLabel, agentColor),
+          ],
+          if (steeringLabel != null) ...[
+            const SizedBox(width: 6),
+            label(steeringLabel, colors.muted2),
+          ],
         ],
       ],
     );

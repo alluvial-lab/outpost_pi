@@ -1,5 +1,5 @@
-// Agent output (AssistantBubble) must use the FULL content width, not the old
-// 340px cap (user-reported: markdown reply not filling the horizontal space).
+// Agent output fills phone widths but keeps a readable centered measure on
+// wide single-pane windows.
 
 import 'package:app/domain/session_state.dart';
 import 'package:app/ui/chat/widgets/agent_markdown.dart';
@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('AssistantBubble wraps at the full available width (>340)', (
+  testWidgets('AssistantBubble caps wide prose at the reading measure', (
     tester,
   ) async {
     const longText =
@@ -19,7 +19,7 @@ void main() {
       const MaterialApp(
         home: Scaffold(
           body: SizedBox(
-            width: 600,
+            width: 797,
             child: AssistantBubble(AssistantMsg(id: 'a1', text: longText)),
           ),
         ),
@@ -27,13 +27,11 @@ void main() {
     );
     await tester.pump();
 
-    // Markdown rendered + spanning beyond the old 340px cap.
     expect(find.byType(AgentMarkdown), findsOneWidget);
-    final width = tester.getSize(find.byType(AgentMarkdown)).width;
     expect(
-      width,
-      greaterThan(340),
-      reason: 'agent markdown should fill beyond the old 340px cap',
+      tester.getSize(find.byKey(const Key('assistant-reading-column'))).width,
+      640,
+      reason: 'wide prose should use the shared 640dp reading measure',
     );
   });
 

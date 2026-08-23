@@ -1,4 +1,5 @@
 import 'package:app/domain/session_state.dart';
+import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/chat/widgets/agent_markdown.dart';
 import 'package:app/ui/chat/widgets/image_bubble.dart';
 import 'package:app/ui/core/themes/themes.dart';
@@ -194,13 +195,18 @@ class AssistantBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Plan/32b — agent output is rendered as Markdown (GFM + code blocks),
-    // spanning the FULL content width (the message list already pads 16px on
-    // each side) — unlike the user's right-aligned chat bubble, which stays
-    // capped. Selectable so prose/code can be copied.
-    return SizedBox(
-      width: double.infinity,
-      child: AgentMarkdown(message.text, selectable: true),
+    // Keep prose at a readable measure on wide single-pane windows. Fenced
+    // code still fills this column and scrolls horizontally in AgentMarkdown.
+    return Align(
+      alignment: Alignment.center,
+      child: ConstrainedBox(
+        key: const Key('assistant-reading-column'),
+        constraints: const BoxConstraints(maxWidth: kChatReadingMeasure),
+        child: SizedBox(
+          width: double.infinity,
+          child: AgentMarkdown(message.text, selectable: true),
+        ),
+      ),
     );
   }
 }

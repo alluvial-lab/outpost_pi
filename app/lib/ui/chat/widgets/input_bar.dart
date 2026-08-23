@@ -36,6 +36,10 @@ enum VoiceHint {
 class InputBar extends StatefulWidget {
   final bool disabled; // offline or no peer
   final bool streaming; // show cancel instead of send
+
+  /// Shed optional previews and vertical padding in keyboard-tight windows.
+  final bool compactHeight;
+
   final void Function(String text) onSend;
   final VoidCallback? onCancel;
   final VoidCallback? onOpenQuickActions;
@@ -77,6 +81,7 @@ class InputBar extends StatefulWidget {
     this.onOpenAttach,
     this.disabled = false,
     this.streaming = false,
+    this.compactHeight = false,
   });
 
   @override
@@ -303,6 +308,7 @@ class _InputBarState extends State<InputBar> {
 
   Widget _composer(BuildContext context) {
     final colors = context.colors;
+    final compactHeight = widget.compactHeight;
     final voiceState = widget.voice?.state;
     final attachState = widget.attachment?.state;
     final canInteract = !widget.disabled;
@@ -344,7 +350,14 @@ class _InputBarState extends State<InputBar> {
         widget.onCancel != null;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 22),
+      key: Key(
+        compactHeight
+            ? 'input-bar-compact-height'
+            : 'input-bar-standard-height',
+      ),
+      padding: compactHeight
+          ? const EdgeInsets.fromLTRB(14, 4, 14, 4)
+          : const EdgeInsets.fromLTRB(14, 10, 14, 22),
       decoration: BoxDecoration(
         color: colors.bg,
         border: Border(top: BorderSide(color: colors.border)),
@@ -355,12 +368,12 @@ class _InputBarState extends State<InputBar> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (hasImage)
+              if (hasImage && !compactHeight)
                 _AttachmentPreview(
                   image: attachState.image,
                   onRemove: widget.attachment!.removeImage,
                 ),
-              if (_queued != null && _queued!.isNotEmpty)
+              if (_queued != null && _queued!.isNotEmpty && !compactHeight)
                 _QueuedMessagePreview(
                   text: _queued!,
                   onTap: _editQueued,
@@ -393,7 +406,7 @@ class _InputBarState extends State<InputBar> {
                       // Enter inserts a newline; sending is via the composer
                       // button (hardware Enter sends — see _onComposerKey).
                       minLines: 1,
-                      maxLines: 6,
+                      maxLines: compactHeight ? 1 : 6,
                       keyboardType: TextInputType.multiline,
                       textInputAction: TextInputAction.newline,
                       style: TextStyle(
@@ -414,9 +427,9 @@ class _InputBarState extends State<InputBar> {
                           color: colors.muted,
                           fontFamily: kMonoFamily,
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
+                        contentPadding: EdgeInsets.symmetric(
                           horizontal: 14,
-                          vertical: 10,
+                          vertical: compactHeight ? 4 : 10,
                         ),
                         filled: true,
                         fillColor: colors.inputFill,
