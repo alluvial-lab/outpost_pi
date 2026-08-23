@@ -863,6 +863,27 @@ describe("BrokerRemote: relay-authoritative room discovery", () => {
     expect(fakePi.sent).toEqual([]);
   });
 
+  test("same membership publication reruns roster bootstrap after a dropped exchange", () => {
+    const fakePi = new FakePi();
+    const { broker } = makeFakeBroker();
+    const siblings = [{ pcLabel: "trab", pcPubkey: "K_B" }];
+    const br = new BrokerRemote({
+      broker, pi: fakePi as never,
+      selfPcLabel: "casa", selfPcPubkey: "K_A",
+      siblings,
+    });
+    announceRooms(fakePi, "K_B", ["room-b-live"]);
+    fakePi.sent.length = 0;
+
+    br.setSiblings(siblings);
+
+    expect(fakePi.sent.map((send) => (send.env.body as { type: string }).type)).toEqual([
+      "peers_request",
+      "peers_update",
+    ]);
+    expect(fakePi.sent.every((send) => send.toRoom === "room-b-live")).toBe(true);
+  });
+
   test("setSiblings sends peers_request only to newly-added siblings", () => {
     const fakePi = new FakePi();
     const { broker } = makeFakeBroker();

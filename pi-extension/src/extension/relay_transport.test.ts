@@ -216,6 +216,27 @@ describe("relay transport control frames", () => {
     transport.stop();
   });
 
+  test("publishes room controls to the attached cross-PC bridge", async () => {
+    const { transport, relays } = makeTransport();
+    await transport.start({ relayUrl: "ws://relay.test", keypair });
+    const relay = relays[0]!;
+    const piForward = new PiForwardClient(relay as unknown as RelayClient);
+    const rooms: unknown[] = [];
+    piForward.on("rooms", (frame) => rooms.push(frame));
+    const snapshot = {
+      type: "rooms",
+      peer: "remote-pc",
+      rooms: [{ room_id: "remote-room", working: false, started_at: 1 }],
+    } as const;
+
+    relay.emit("message", JSON.stringify(snapshot));
+    await flushDispatch();
+
+    expect(rooms).toEqual([snapshot]);
+    piForward.detach();
+    transport.stop();
+  });
+
   test("consumed pairing ingress is not republished to post-key channel fanout", async () => {
     const { transport, relays } = makeTransport();
     transport.onOuterMessage(async () => true);

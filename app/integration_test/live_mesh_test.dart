@@ -11,7 +11,6 @@ import 'package:integration_test/integration_test.dart';
 
 import 'support/live_device_harness.dart';
 
-const _skipPostPairRosterBootstrap = true;
 const _deliveryMarker = 'mesh lane cross-pi delivery';
 const _queuedMarker = 'mesh lane ingress during active run';
 const _isolationPrompt = 'mesh lane Pi B isolation prompt';
@@ -60,9 +59,6 @@ void main() {
     timeout: const Timeout(Duration(minutes: 10)),
   );
 
-  // Flip this linked skip when
-  // backlog-mesh-post-pair-roster-bootstrap-empty is fixed. The body retains
-  // the full signed-pairing and mutual remote-roster assertion.
   testWidgets(
     'post-pair signed membership bootstraps both remote rosters',
     (tester) async {
@@ -79,7 +75,6 @@ void main() {
         await harness.close(tester);
       }
     },
-    skip: _skipPostPairRosterBootstrap,
     timeout: const Timeout(Duration(minutes: 4)),
   );
 }
@@ -172,10 +167,8 @@ Future<void> _waitForMutualRemoteRoster(
       final bPeers = (b['peers'] as List?)?.whereType<String>().toList() ?? [];
       return aAddress is String &&
               bAddress is String &&
-              aPeers.length == 1 &&
-              bPeers.length == 1 &&
-              aPeers.single.endsWith(bAddress) &&
-              bPeers.single.endsWith(aAddress)
+              aPeers.any((peer) => peer.endsWith(':$bAddress')) &&
+              bPeers.any((peer) => peer.endsWith(':$aAddress'))
           ? true
           : null;
     },

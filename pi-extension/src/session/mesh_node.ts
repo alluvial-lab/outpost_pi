@@ -97,6 +97,9 @@ export class MeshNode {
   private piForward: PiForwardClient | null = null;
   private keypair: Ed25519Keypair | null = null;
   private bridgeParams: BridgeParams | null = null;
+  /** Latest verified membership publication. Null until SelfRevoke has
+   *  published, so bridge discovery remains authoritative during startup. */
+  private siblings: SiblingInfo[] | null = null;
   private reconnectWired = false;
   /** Self-managed relay reconnect (MCP path). The injected-relay path (Pi)
    *  owns its own reconnect upstream, so these stay idle there. */
@@ -264,6 +267,9 @@ export class MeshNode {
     }
     this.brokerRemote = bridge.brokerRemote;
     this.piForward = bridge.piForward;
+    if (this.siblings !== null) {
+      this.brokerRemote.setSiblings(this.siblings);
+    }
   }
 
   private _detachBridgeKeepingParams(): void {
@@ -340,7 +346,8 @@ export class MeshNode {
 
   /** Keep the cross-PC sibling set in sync (Pi SelfRevoke onMembersChanged). */
   setSiblings(siblings: SiblingInfo[]): void {
-    this.brokerRemote?.setSiblings(siblings);
+    this.siblings = [...siblings];
+    this.brokerRemote?.setSiblings(this.siblings);
   }
 
   /** Announce the local peer set to siblings (Pi broker peer_joined/left). */
