@@ -1,11 +1,9 @@
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const double foldDevicePixelRatio = 2.625;
@@ -38,31 +36,72 @@ const foldGeometries = <FoldGeometry>[
   FoldGeometry(350, 842, textScale: 1.3),
 ];
 
-Directory foldGoldenDirectory() {
+Directory _repositoryRoot() {
   final current = Directory.current;
-  final root = current.path.endsWith('${Platform.pathSeparator}app')
+  return current.path.endsWith('${Platform.pathSeparator}app')
       ? current.parent
       : current;
-  return Directory(
-    '${root.path}/.work/session-notes/fold-pass-20260823/goldens',
-  );
+}
+
+Directory foldGoldenDirectory() => Directory(
+  '${_repositoryRoot().path}/.work/session-notes/fold-pass-20260823/goldens',
+);
+
+/// Load the exact Space Mono faces used by production before any capture.
+///
+/// Goldens must never depend on google_fonts runtime fetching. A missing or
+/// invalid fixture fails setup rather than silently falling back to Flutter's
+/// rectangular test font.
+Future<void> loadFoldGoldenFonts() async {
+  const fixtures = <(String, String)>[
+    ('SpaceMono_regular', 'SpaceMono-Regular.ttf'),
+    ('SpaceMono_700', 'SpaceMono-Bold.ttf'),
+  ];
+  for (final (family, filename) in fixtures) {
+    final file = File(
+      '${_repositoryRoot().path}/app/test/fixtures/fonts/$filename',
+    );
+    if (!file.existsSync() || file.lengthSync() == 0) {
+      throw StateError('Missing golden font fixture: ${file.path}');
+    }
+    final bytes = file.readAsBytesSync();
+    final loader = FontLoader(family)
+      ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+    try {
+      await loader.load();
+    } on Object catch (error) {
+      throw StateError('Could not load golden font family $family: $error');
+    }
+  }
 }
 
 Widget foldCaptureApp({
   required FoldGeometry geometry,
+  required String captureId,
   required Widget home,
   double keyboardInset = 0,
+  Brightness brightness = Brightness.dark,
+  EdgeInsets safeAreaInsets = EdgeInsets.zero,
 }) {
+  final keyboardVisible = keyboardInset > 0;
   return RepaintBoundary(
     key: foldCaptureBoundaryKey,
     child: MaterialApp(
+      key: ValueKey<String>('fold-capture-app-$captureId'),
       debugShowCheckedModeBanner: false,
-      theme: buildDarkTheme(),
+      theme: brightness == Brightness.dark
+          ? buildDarkTheme()
+          : buildLightTheme(),
       home: MediaQuery(
         data: MediaQueryData(
           size: geometry.size,
           devicePixelRatio: foldDevicePixelRatio,
           textScaler: TextScaler.linear(geometry.textScale),
+          platformBrightness: brightness,
+          padding: safeAreaInsets.copyWith(
+            bottom: keyboardVisible ? 0 : safeAreaInsets.bottom,
+          ),
+          viewPadding: safeAreaInsets,
           viewInsets: EdgeInsets.only(bottom: keyboardInset),
         ),
         child: home,
@@ -98,7 +137,7 @@ Future<({File file, double variance})> writeFoldPng(
   // file write: the assert always passes, evidence lands on disk.
   await expectLater(
     find.byKey(foldCaptureBoundaryKey),
-    matchesGoldenFile('fold-saved/${surface}-${geometry.suffix}.png'),
+    matchesGoldenFile('fold-saved/$surface-${geometry.suffix}.png'),
   );
   if (!file.existsSync() || file.lengthSync() == 0) {
     throw StateError('golden save failed for $surface at ${geometry.suffix}');

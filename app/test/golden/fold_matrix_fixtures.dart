@@ -17,7 +17,6 @@ import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/entities/update_info.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
-import 'package:app/pairing/pair_request_flow.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/routing/adaptive.dart';
@@ -27,6 +26,7 @@ import 'package:app/ui/chat/quick_actions/viewmodels/quick_actions_viewmodel.dar
 import 'package:app/ui/chat/states/chat_state.dart';
 import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
 import 'package:app/ui/chat/voice/viewmodels/voice_input_viewmodel.dart';
+import 'package:app/ui/chat/widgets/detail_placeholder.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/home/home_page.dart';
 import 'package:app/ui/home/states/home_state.dart';
@@ -34,12 +34,12 @@ import 'package:app/ui/home/viewmodels/home_viewmodel.dart';
 import 'package:app/ui/onboarding/onboarding_page.dart';
 import 'package:app/ui/onboarding/states/onboarding_state.dart';
 import 'package:app/ui/onboarding/viewmodels/onboarding_viewmodel.dart';
+import 'package:app/ui/pairing/pairing_page.dart';
 import 'package:app/ui/pairing/states/pairing_state.dart';
 import 'package:app/ui/pairing/viewmodels/pairing_viewmodel.dart';
 import 'package:app/ui/storage_recovery/transcript_storage_recovery_page.dart';
 import 'package:app/ui/sync_required/sync_required_page.dart';
 import 'package:app/ui/update/viewmodels/update_banner_viewmodel.dart';
-import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:outpost_pi_identity/outpost_pi_identity.dart';
@@ -380,7 +380,7 @@ final class FoldPairingViewModel extends PairingViewModel {
     super.prefs,
     super.ownerBridge,
   ) {
-    emit(const PairingConnecting(sessionName: 'Studio MacBook Pro'));
+    emit(const PairingScanning());
   }
 }
 
@@ -544,6 +544,13 @@ final class FoldMatrixFixture {
 
   Widget homeSurface() => providers(child: const HomePage());
 
+  Widget noPeerSurface() {
+    home.emit(const HomeNoPeer());
+    return providers(child: const HomePage());
+  }
+
+  Widget pairingScanningSurface() => providers(child: const PairingPage());
+
   Widget chatSurface({bool showBack = true}) => providers(
     child: ChatPage(
       initialTitle: foldRoomsA.first.name,
@@ -553,7 +560,25 @@ final class FoldMatrixFixture {
     ),
   );
 
-  Widget shellSurface() => providers(child: const FoldProductionShellMirror());
+  Widget shellSurface({bool detailSelected = true}) {
+    if (detailSelected) {
+      selection.select(
+        const RemoteSessionRef(
+          peerEpk: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          roomId: 'outpost-app',
+          sessionId: 'session-app-20260823',
+        ),
+        foldRoomsA.first.name!,
+        foldPeerA.nickname!,
+        true,
+      );
+    } else {
+      selection.clear();
+    }
+    return providers(
+      child: FoldProductionShellMirror(detailSelected: detailSelected),
+    );
+  }
 
   Widget onboardingSurface(OnboardingStep step) {
     onboarding.show(step);
@@ -592,7 +617,9 @@ final class FoldMatrixFixture {
 /// The pane composition, fixed 360dp master, divider, and divider-facing
 /// `MediaQuery.removePadding` calls match `lib/routing/app_router.dart`.
 final class FoldProductionShellMirror extends StatelessWidget {
-  const FoldProductionShellMirror({super.key});
+  const FoldProductionShellMirror({super.key, required this.detailSelected});
+
+  final bool detailSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -612,12 +639,14 @@ final class FoldProductionShellMirror extends StatelessWidget {
           child: MediaQuery.removePadding(
             context: context,
             removeLeft: true,
-            child: ChatPage(
-              initialTitle: foldRoomsA.first.name,
-              initialDevice: foldPeerA.nickname,
-              initialOnline: true,
-              showBack: false,
-            ),
+            child: detailSelected
+                ? ChatPage(
+                    initialTitle: foldRoomsA.first.name,
+                    initialDevice: foldPeerA.nickname,
+                    initialOnline: true,
+                    showBack: false,
+                  )
+                : const DetailPlaceholder(),
           ),
         ),
       ],

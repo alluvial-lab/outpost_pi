@@ -102,6 +102,10 @@ dev_dependencies:
   # Test-only QR rasterization for the device-gated mobile_scanner boundary smoke.
   qr: ^3.0.2
 
+  # Test-only local byte client keeps google_fonts on bundled fixtures in
+  # golden tests; it never reaches the network.
+  http: ^1.6.0
+
   # Test-only: mock path_provider so the debug-log adapter tests use a real
   # temp dir instead of the Android/iOS plugin.
   path_provider_platform_interface: ^2.1.3
