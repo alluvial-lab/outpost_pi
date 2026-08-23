@@ -54,6 +54,13 @@ void main() {
       expect(find.text('All'), findsNothing);
       expect(find.text('Online'), findsNothing);
       expect(find.text('Offline'), findsNothing);
+      for (final filter in HomeFilter.values) {
+        final target = find.byKey(Key('home-filter-${filter.name}-target'));
+        final size = tester.getSize(target);
+        expect(size.width, greaterThanOrEqualTo(48));
+        expect(size.height, greaterThanOrEqualTo(48));
+      }
+      expect(find.bySemanticsLabel('Online filter, 1 session'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

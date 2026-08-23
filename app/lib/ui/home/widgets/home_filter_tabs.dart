@@ -95,52 +95,66 @@ class HomeFilterTabs extends StatelessWidget {
     return Expanded(
       child: Tooltip(
         message: label,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => onSelected(value),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            curve: Curves.easeOut,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: selected ? colors.accent : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (compact)
-                  Icon(
-                    icon,
-                    key: Key('home-filter-${value.name}-icon'),
-                    size: 14,
-                    color: selected ? colors.onAccent : colors.muted,
-                  )
-                else
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: kMonoFamily,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        color: selected ? colors.onAccent : colors.muted,
-                      ),
-                    ),
+        excludeFromSemantics: true,
+        child: Semantics(
+          label: '$label filter, $count ${count == 1 ? 'session' : 'sessions'}',
+          button: true,
+          selected: selected,
+          excludeSemantics: true,
+          child: GestureDetector(
+            key: Key('home-filter-${value.name}-target'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => onSelected(value),
+            child: SizedBox(
+              height: 48,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeOut,
+                  width: double.infinity,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: selected ? colors.accent : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                const SizedBox(width: 6),
-                Text(
-                  '$count',
-                  style: TextStyle(
-                    fontFamily: kMonoFamily,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: selected ? colors.onAccent : colors.muted2,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (compact)
+                        Icon(
+                          icon,
+                          key: Key('home-filter-${value.name}-icon'),
+                          size: 14,
+                          color: selected ? colors.onAccent : colors.muted,
+                        )
+                      else
+                        Flexible(
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: kMonoFamily,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: selected ? colors.onAccent : colors.muted,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$count',
+                        style: TextStyle(
+                          fontFamily: kMonoFamily,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: selected ? colors.onAccent : colors.muted2,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),

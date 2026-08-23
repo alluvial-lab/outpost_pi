@@ -205,7 +205,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontFamily: kMonoFamily,
-                            fontSize: 10,
+                            fontSize: 12,
                             color: colors.muted,
                           ),
                         ),
@@ -585,7 +585,7 @@ class _ChatStatusIndicator extends StatelessWidget {
       key: compact ? const Key('chat-status-priority-label') : null,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(fontFamily: kMonoFamily, fontSize: 10, color: color),
+      style: TextStyle(fontFamily: kMonoFamily, fontSize: 12, color: color),
     );
 
     final (priorityLabel, priorityColor) = steeringLabel != null
@@ -812,7 +812,7 @@ class _InfoRow extends StatelessWidget {
             label.toUpperCase(),
             style: TextStyle(
               fontFamily: kMonoFamily,
-              fontSize: 10,
+              fontSize: 12,
               color: colors.muted,
               letterSpacing: 0.4,
             ),

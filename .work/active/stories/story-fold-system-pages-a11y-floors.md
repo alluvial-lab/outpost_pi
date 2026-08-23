@@ -1,7 +1,7 @@
 ---
 id: story-fold-system-pages-a11y-floors
 kind: story
-stage: implementing
+stage: done
 tags: [app, ux, a11y]
 parent: feature-fold-usability-pass
 depends_on: ['story-fold-golden-harness-fidelity']
@@ -38,3 +38,12 @@ Widget tests: tap-target sizes >=48 for the listed controls (probe via
 hitTestable bounds at gesture position); no text style <12sp in the listed
 operational paths (lint-style test walking the trees); both system pages
 centered+capped at 842dp and scrollable at 797×411. Goldens.
+
+## Implementation notes
+- Execution capability: sol/high, selected by the caller for a cross-widget accessibility and responsive-layout slice.
+- Review weight: standard (project default); this child checkpoint has no independent review, and the caller deferred feature review to the orchestrator.
+- Files changed: sync-required and transcript-storage-recovery pages; chat composer/status, Home filters, quick-actions thinking segments, model-provider chips/badges; focused widget tests; fold golden overflow policy.
+- Tests added/updated: responsive-center, recovery scrolling, explicit 12sp floors, 48dp target geometry, gesture semantics, compact-badge accessible alternatives, and the full 144-image fold matrix with overflow failures.
+- Simplification: removed the final geometry overflow allowlist and its conditional handling; every matrix overflow now fails directly.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.

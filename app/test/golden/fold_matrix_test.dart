@@ -269,7 +269,6 @@ Future<void> _capture(
   await _pumpWithOverflowPolicy(
     geometry: geometry,
     surface: surface,
-    keyboardInset: keyboardInset,
     body: () async {
       await tester.pumpWidget(
         foldCaptureApp(
@@ -400,7 +399,6 @@ Future<void> _capturePasteSheet(
   await _pumpWithOverflowPolicy(
     geometry: geometry,
     surface: 'pair-paste-qr',
-    keyboardInset: 280,
     body: () async {
       await tester.pumpWidget(
         foldCaptureApp(
@@ -431,18 +429,10 @@ Future<void> _capturePasteSheet(
   expect(evidence.variance, greaterThan(1));
 }
 
-// Temporary, geometry-scoped exceptions for verified product bugs owned by
-// sibling stories. Those stories delete their entry when they fix the layout;
-// every other overflow is an immediate harness failure.
-const _temporaryOverflowAllowlist = <String, Set<String>>{
-  '234x842': <String>{'story-fold-system-pages-a11y-floors'},
-};
-
 Future<void> _pumpWithOverflowPolicy({
   required FoldGeometry geometry,
   required String surface,
   required Future<void> Function() body,
-  double keyboardInset = 0,
 }) async {
   final overflows = <FlutterErrorDetails>[];
   final original = FlutterError.onError;
@@ -459,23 +449,12 @@ Future<void> _pumpWithOverflowPolicy({
     FlutterError.onError = original;
   }
 
-  if (overflows.isEmpty) return;
-  final keyboardKey = '${geometry.suffix}+keyboard';
-  final allowlistStories = keyboardInset > 0
-      ? _temporaryOverflowAllowlist[keyboardKey] ??
-            _temporaryOverflowAllowlist[geometry.suffix]
-      : _temporaryOverflowAllowlist[geometry.suffix];
-  if (allowlistStories == null) {
+  if (overflows.isNotEmpty) {
     fail(
       'Overflow in $surface at ${geometry.suffix}: '
       '${overflows.first.exceptionAsString()}',
     );
   }
-  // ignore: avoid_print
-  print(
-    'TEMPORARY OVERFLOW $surface ${geometry.suffix} '
-    'tracked by ${allowlistStories.join(', ')}',
-  );
 }
 
 EdgeInsets _realisticSafeAreaInsets(FoldGeometry geometry) {

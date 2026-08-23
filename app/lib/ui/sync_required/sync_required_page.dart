@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:app/config/dependencies.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
+import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -62,103 +63,107 @@ class _SyncRequiredPageState extends State<SyncRequiredPage> {
     return Scaffold(
       backgroundColor: colors.bg,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 24),
-              Icon(
-                isIOS ? LucideIcons.cloudOff : LucideIcons.cloudUpload,
-                color: colors.accent,
-                size: 44,
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Sync required',
-                style: TextStyle(
-                  fontFamily: kMonoFamily,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: colors.text,
+        child: ResponsiveCenter(
+          maxWidth: 460,
+          child: Padding(
+            key: const Key('sync-required-responsive-content'),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 24),
+                Icon(
+                  isIOS ? LucideIcons.cloudOff : LucideIcons.cloudUpload,
+                  color: colors.accent,
+                  size: 44,
                 ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                why,
-                style: TextStyle(
-                  fontFamily: kMonoFamily,
-                  fontSize: 12,
-                  color: colors.muted2,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'To enable, on this device:',
-                style: TextStyle(
-                  fontFamily: kMonoFamily,
-                  fontSize: 11,
-                  color: colors.muted,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.4,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: requirements.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => _RequirementCard(
-                    index: i + 1,
-                    requirement: requirements[i],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (_checkError != null) ...[
+                const SizedBox(height: 20),
                 Text(
-                  _checkError!,
-                  textAlign: TextAlign.center,
+                  'Sync required',
                   style: TextStyle(
                     fontFamily: kMonoFamily,
-                    fontSize: 11,
-                    color: colors.error,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: colors.text,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  why,
+                  style: TextStyle(
+                    fontFamily: kMonoFamily,
+                    fontSize: 12,
+                    color: colors.muted2,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'To enable, on this device:',
+                  style: TextStyle(
+                    fontFamily: kMonoFamily,
+                    fontSize: 12,
+                    color: colors.muted,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: requirements.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (_, i) => _RequirementCard(
+                      index: i + 1,
+                      requirement: requirements[i],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
-              ],
-              FilledButton(
-                onPressed: _checking ? null : _recheck,
-                style: FilledButton.styleFrom(
-                  backgroundColor: colors.accent,
-                  foregroundColor: colors.onAccent,
-                  disabledBackgroundColor: colors.border,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(6)),
+                if (_checkError != null) ...[
+                  Text(
+                    _checkError!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: kMonoFamily,
+                      fontSize: 12,
+                      color: colors.error,
+                    ),
                   ),
+                  const SizedBox(height: 12),
+                ],
+                FilledButton(
+                  onPressed: _checking ? null : _recheck,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colors.accent,
+                    foregroundColor: colors.onAccent,
+                    disabledBackgroundColor: colors.border,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(6)),
+                    ),
+                  ),
+                  child: _checking
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            color: colors.onAccent,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          'Check again',
+                          style: TextStyle(
+                            fontFamily: kMonoFamily,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
-                child: _checking
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          color: colors.onAccent,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : Text(
-                        'Check again',
-                        style: TextStyle(
-                          fontFamily: kMonoFamily,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-              ),
-              const SizedBox(height: 32),
-            ],
+                const SizedBox(height: 32),
+              ],
+            ),
           ),
         ),
       ),
@@ -234,7 +239,7 @@ class _RequirementCard extends StatelessWidget {
               '$index',
               style: TextStyle(
                 fontFamily: kMonoFamily,
-                fontSize: 11,
+                fontSize: 12,
                 color: colors.accent,
                 fontWeight: FontWeight.w600,
               ),
@@ -259,7 +264,7 @@ class _RequirementCard extends StatelessWidget {
                   requirement.path,
                   style: TextStyle(
                     fontFamily: kMonoFamily,
-                    fontSize: 11,
+                    fontSize: 12,
                     color: colors.muted2,
                     height: 1.4,
                   ),
@@ -270,7 +275,7 @@ class _RequirementCard extends StatelessWidget {
                     requirement.note!,
                     style: TextStyle(
                       fontFamily: kMonoFamily,
-                      fontSize: 10.5,
+                      fontSize: 12,
                       color: colors.muted,
                       height: 1.4,
                       fontStyle: FontStyle.italic,

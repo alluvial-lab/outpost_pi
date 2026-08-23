@@ -622,19 +622,29 @@ class _ThinkingSegmented extends StatelessWidget {
         border: Border.all(color: context.colors.border),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Row(
-        children: [
-          for (final level in ThinkingLevel.values)
-            Expanded(
-              child: _SegButton(
-                key: Key('qa-thinking-${level.wire}'),
-                label: _labels[level]!,
-                selected: current == level,
-                disabled: disabled,
-                onTap: () => onPick(level),
-              ),
-            ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final columns =
+              constraints.maxWidth < 48 * ThinkingLevel.values.length
+              ? 3
+              : ThinkingLevel.values.length;
+          final itemWidth = constraints.maxWidth / columns;
+          return Wrap(
+            children: [
+              for (final level in ThinkingLevel.values)
+                SizedBox(
+                  width: itemWidth,
+                  child: _SegButton(
+                    key: Key('qa-thinking-${level.wire}'),
+                    label: _labels[level]!,
+                    selected: current == level,
+                    disabled: disabled,
+                    onTap: () => onPick(level),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -656,27 +666,41 @@ class _SegButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return GestureDetector(
-      onTap: disabled ? null : onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: selected
-              ? colors.accent.withValues(alpha: 0.15)
-              : Colors.transparent,
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontFamily: kMonoFamily,
-              fontSize: 11,
-              color: disabled
-                  ? colors.muted.withValues(alpha: 0.5)
-                  : selected
-                  ? colors.accent
-                  : colors.text,
+    return Semantics(
+      label: '$label thinking level',
+      button: true,
+      selected: selected,
+      enabled: !disabled,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: disabled ? null : onTap,
+        child: SizedBox(
+          height: 48,
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              width: double.infinity,
+              height: 32,
+              decoration: BoxDecoration(
+                color: selected
+                    ? colors.accent.withValues(alpha: 0.15)
+                    : Colors.transparent,
+              ),
+              child: Center(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: kMonoFamily,
+                    fontSize: 11,
+                    color: disabled
+                        ? colors.muted.withValues(alpha: 0.5)
+                        : selected
+                        ? colors.accent
+                        : colors.text,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
