@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:app/data/local/boxes.dart';
@@ -10,8 +11,13 @@ import 'package:app/ui/onboarding/onboarding_page.dart';
 import 'package:app/ui/onboarding/states/onboarding_state.dart';
 import 'package:app/ui/pairing/widgets/paste_qr_sheet.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 
 import 'fold_matrix_capture.dart';
@@ -24,8 +30,41 @@ const _typedPairingUri =
 
 void main() {
   late Directory hiveDirectory;
+  late MobileScannerPlatform originalScannerPlatform;
+  http.Client? originalFontClient;
+  late MockClient fixtureFontClient;
+  const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
 
   setUpAll(() async {
+    await loadFoldGoldenFonts();
+    final fontCacheDirectory = Directory(
+      '${Directory.current.path}/.dart_tool/fold_matrix_fonts',
+    )..createSync(recursive: true);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, (_) async {
+          return fontCacheDirectory.path;
+        });
+    originalFontClient = GoogleFonts.config.httpClient;
+    fixtureFontClient = MockClient((request) async {
+      final hash = request.url.pathSegments.last.replaceFirst('.ttf', '');
+      final filename = switch (hash) {
+        'd9e28ce88420fcbccb074f652afc16c1d496f7aca31311964c6a30bbdd71e4a0' =>
+          'SpaceMono-Regular.ttf',
+        '9bc9f9da68e4f847e99faab84b9202aa74430a0955675dcf949b79a65257c368' =>
+          'SpaceMono-Bold.ttf',
+        _ => throw StateError('Unexpected golden font request: $request'),
+      };
+      final bytes = File('test/fixtures/fonts/$filename').readAsBytesSync();
+      return http.Response.bytes(bytes, 200);
+    });
+    GoogleFonts.config.httpClient = fixtureFontClient;
+    await GoogleFonts.pendingFonts(<TextStyle>[
+      GoogleFonts.spaceMono(),
+      GoogleFonts.spaceMono(fontWeight: FontWeight.w700),
+    ]);
+    originalScannerPlatform = MobileScannerPlatform.instance;
+    MobileScannerPlatform.instance = FoldCameraPlatform();
+
     final goldenDirectory = foldGoldenDirectory();
     if (goldenDirectory.existsSync()) {
       goldenDirectory.deleteSync(recursive: true);
@@ -39,6 +78,12 @@ void main() {
   });
 
   tearDownAll(() async {
+    MobileScannerPlatform.instance = originalScannerPlatform;
+    await GoogleFonts.pendingFonts();
+    GoogleFonts.config.httpClient = originalFontClient;
+    fixtureFontClient.close();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, null);
     await Hive.close();
     if (hiveDirectory.existsSync()) hiveDirectory.deleteSync(recursive: true);
   });
@@ -55,8 +100,9 @@ void main() {
         await configureFoldView(tester, geometry);
         // ignore: avoid_print
         print('GEO ${geometry.suffix} fixture begin');
-        final fixture =
-            await tester.runAsync<FoldMatrixFixture>(FoldMatrixFixture.create);
+        final fixture = await tester.runAsync<FoldMatrixFixture>(
+          FoldMatrixFixture.create,
+        );
         if (fixture == null) {
           fail('fold matrix fixture failed to build under runAsync');
         }
@@ -74,6 +120,26 @@ void main() {
             geometry: geometry,
             surface: 'two-pane-shell',
             home: fixture.shellSurface(),
+          );
+          await _capture(
+            tester,
+            geometry: geometry,
+            surface: 'two-pane-detail-placeholder',
+            home: fixture.shellSurface(detailSelected: false),
+          );
+          await _capture(
+            tester,
+            geometry: geometry,
+            surface: 'two-pane-keyboard',
+            keyboardInset: 280,
+            home: fixture.shellSurface(),
+            afterPump: () async {
+              final field = find.byType(TextField);
+              if (field.evaluate().isNotEmpty) {
+                await tester.tap(field.first, warnIfMissed: false);
+                await tester.pump(const Duration(milliseconds: 120));
+              }
+            },
           );
           await _capture(
             tester,
@@ -109,6 +175,19 @@ void main() {
             home: fixture.onboardingSurface(OnboardingStep.pair),
             settleFor: const Duration(milliseconds: 360),
           );
+          await _capture(
+            tester,
+            geometry: geometry,
+            surface: 'pairing-scanning',
+            home: fixture.pairingScanningSurface(),
+            settleFor: const Duration(milliseconds: 360),
+            afterPump: () async {
+              expect(
+                find.byKey(const Key('fold-camera-placeholder')),
+                findsOneWidget,
+              );
+            },
+          );
           await _capturePasteSheet(tester, fixture, geometry);
           await _capture(
             tester,
@@ -116,11 +195,27 @@ void main() {
             surface: 'sync-required',
             home: fixture.syncRequiredSurface(),
           );
+          final safeAreaInsets = _realisticSafeAreaInsets(geometry);
           await _capture(
             tester,
             geometry: geometry,
-            surface: 'storage-recovery',
+            surface: 'storage-recovery-dark',
+            safeAreaInsets: safeAreaInsets,
             home: fixture.storageRecoverySurface(),
+          );
+          await _capture(
+            tester,
+            geometry: geometry,
+            surface: 'storage-recovery-light',
+            brightness: Brightness.light,
+            safeAreaInsets: safeAreaInsets,
+            home: fixture.storageRecoverySurface(),
+          );
+          await _capture(
+            tester,
+            geometry: geometry,
+            surface: 'home-no-peer',
+            home: fixture.noPeerSurface(),
           );
         } finally {
           await tester.pumpWidget(const SizedBox.shrink());
@@ -140,22 +235,33 @@ Future<void> _capture(
   required String surface,
   required Widget home,
   double keyboardInset = 0,
+  Brightness brightness = Brightness.dark,
+  EdgeInsets safeAreaInsets = EdgeInsets.zero,
   Duration settleFor = const Duration(milliseconds: 220),
   Future<void> Function()? afterPump,
 }) async {
   // ignore: avoid_print
   print('CAPTURE ${geometry.suffix} $surface begin');
-  await _allowOverflowEvidence(() async {
-    await tester.pumpWidget(
-      foldCaptureApp(
-        geometry: geometry,
-        keyboardInset: keyboardInset,
-        home: home,
-      ),
-    );
-    await tester.pump(settleFor);
-    await afterPump?.call();
-  });
+  await _pumpWithOverflowPolicy(
+    geometry: geometry,
+    surface: surface,
+    keyboardInset: keyboardInset,
+    body: () async {
+      await tester.pumpWidget(
+        foldCaptureApp(
+          geometry: geometry,
+          captureId: '$surface-${geometry.suffix}',
+          keyboardInset: keyboardInset,
+          brightness: brightness,
+          safeAreaInsets: safeAreaInsets,
+          home: home,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(settleFor);
+      await afterPump?.call();
+    },
+  );
 
   final evidence = await writeFoldPng(
     tester,
@@ -179,32 +285,44 @@ Future<void> _captureQuickActions(
   FoldMatrixFixture fixture,
   FoldGeometry geometry,
 ) async {
-  await _allowOverflowEvidence(() async {
-    await tester.pumpWidget(
-      foldCaptureApp(geometry: geometry, home: fixture.chatSurface()),
-    );
-    await tester.pump(const Duration(milliseconds: 180));
-    final context = tester.element(find.byType(ChatPage));
-    final messenger = ScaffoldMessenger.of(context);
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: context.colors.bg,
-      barrierColor: Colors.black.withValues(alpha: 0.6),
-      isScrollControlled: true,
-      showDragHandle: false,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => ChangeNotifierProvider<QuickActionsViewModel>(
-        create: (_) => buildFoldQuickActionsViewModel(),
-        child: QuickActionsSheetBody(
-          messenger: messenger,
-          onSessionReset: fixture.chat.clearActiveSession,
+  await _pumpWithOverflowPolicy(
+    geometry: geometry,
+    surface: 'chat-quick-actions',
+    body: () async {
+      await tester.pumpWidget(
+        foldCaptureApp(
+          geometry: geometry,
+          captureId: 'chat-quick-actions-${geometry.suffix}',
+          home: fixture.chatSurface(),
         ),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 360));
-  });
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 180));
+      final context = tester.element(find.byType(ChatPage));
+      final messenger = ScaffoldMessenger.of(context);
+      showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: context.colors.bg,
+        barrierColor: Colors.black.withValues(alpha: 0.6),
+        isScrollControlled: true,
+        showDragHandle: false,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (_) => ChangeNotifierProvider<QuickActionsViewModel>(
+          create: (_) => buildFoldQuickActionsViewModel(),
+          child: QuickActionsSheetBody(
+            messenger: messenger,
+            onSessionReset: fixture.chat.clearActiveSession,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 360));
+      expect(find.byType(QuickActionsSheetBody), findsOneWidget);
+      expect(find.byKey(const Key('attach-camera')), findsNothing);
+    },
+  );
   final evidence = await writeFoldPng(
     tester,
     surface: 'chat-quick-actions',
@@ -219,15 +337,27 @@ Future<void> _captureAttachSheet(
   FoldMatrixFixture fixture,
   FoldGeometry geometry,
 ) async {
-  await _allowOverflowEvidence(() async {
-    await tester.pumpWidget(
-      foldCaptureApp(geometry: geometry, home: fixture.chatSurface()),
-    );
-    await tester.pump(const Duration(milliseconds: 180));
-    final context = tester.element(find.byType(ChatPage));
-    showAttachSheet(context);
-    await tester.pump(const Duration(milliseconds: 360));
-  });
+  await _pumpWithOverflowPolicy(
+    geometry: geometry,
+    surface: 'chat-attach',
+    body: () async {
+      await tester.pumpWidget(
+        foldCaptureApp(
+          geometry: geometry,
+          captureId: 'chat-attach-${geometry.suffix}',
+          home: fixture.chatSurface(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 180));
+      final context = tester.element(find.byType(ChatPage));
+      showAttachSheet(context);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 360));
+      expect(find.byKey(const Key('attach-camera')), findsOneWidget);
+      expect(find.byType(QuickActionsSheetBody), findsNothing);
+    },
+  );
   final evidence = await writeFoldPng(
     tester,
     surface: 'chat-attach',
@@ -243,21 +373,31 @@ Future<void> _capturePasteSheet(
   FoldGeometry geometry,
 ) async {
   fixture.onboarding.show(OnboardingStep.pair);
-  await _allowOverflowEvidence(() async {
-    await tester.pumpWidget(
-      foldCaptureApp(
-        geometry: geometry,
-        keyboardInset: 280,
-        home: fixture.providers(child: const OnboardingPage()),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 360));
-    final context = tester.element(find.byType(OnboardingPage));
-    showPasteQrSheet(context, onSubmit: (_) {});
-    await tester.pump(const Duration(milliseconds: 360));
-    await tester.enterText(find.byType(TextField).last, _typedPairingUri);
-    await tester.pump(const Duration(milliseconds: 120));
-  });
+  await _pumpWithOverflowPolicy(
+    geometry: geometry,
+    surface: 'pair-paste-qr',
+    keyboardInset: 280,
+    body: () async {
+      await tester.pumpWidget(
+        foldCaptureApp(
+          geometry: geometry,
+          captureId: 'pair-paste-qr-${geometry.suffix}',
+          keyboardInset: 280,
+          home: fixture.providers(child: const OnboardingPage()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 360));
+      final context = tester.element(find.byType(OnboardingPage));
+      showPasteQrSheet(context, onSubmit: (_) {});
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 360));
+      await tester.enterText(find.byType(TextField).last, _typedPairingUri);
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(find.text('Paste pairing code'), findsOneWidget);
+      expect(find.byKey(const Key('attach-camera')), findsNothing);
+    },
+  );
   final evidence = await writeFoldPng(
     tester,
     surface: 'pair-paste-qr',
@@ -267,10 +407,34 @@ Future<void> _capturePasteSheet(
   expect(evidence.variance, greaterThan(1));
 }
 
-Future<void> _allowOverflowEvidence(Future<void> Function() body) async {
+// Temporary, geometry-scoped exceptions for verified product bugs owned by
+// sibling stories. Those stories delete their entry when they fix the layout;
+// every other overflow is an immediate harness failure.
+const _temporaryOverflowAllowlist = <String, Set<String>>{
+  '234x842': <String>{
+    'story-fold-home-sheets-adaptivity',
+    'story-fold-system-pages-a11y-floors',
+  },
+  '797x411': <String>{'story-fold-home-sheets-adaptivity'},
+  '797x411+keyboard': <String>{
+    'story-fold-chat-adaptivity',
+    'story-fold-home-sheets-adaptivity',
+  },
+};
+
+Future<void> _pumpWithOverflowPolicy({
+  required FoldGeometry geometry,
+  required String surface,
+  required Future<void> Function() body,
+  double keyboardInset = 0,
+}) async {
+  final overflows = <FlutterErrorDetails>[];
   final original = FlutterError.onError;
   FlutterError.onError = (details) {
-    if (details.exceptionAsString().contains('overflowed by')) return;
+    if (details.exceptionAsString().contains('overflowed by')) {
+      overflows.add(details);
+      return;
+    }
     original?.call(details);
   };
   try {
@@ -278,4 +442,68 @@ Future<void> _allowOverflowEvidence(Future<void> Function() body) async {
   } finally {
     FlutterError.onError = original;
   }
+
+  if (overflows.isEmpty) return;
+  final keyboardKey = '${geometry.suffix}+keyboard';
+  final allowlistStories = keyboardInset > 0
+      ? _temporaryOverflowAllowlist[keyboardKey] ??
+            _temporaryOverflowAllowlist[geometry.suffix]
+      : _temporaryOverflowAllowlist[geometry.suffix];
+  if (allowlistStories == null) {
+    fail(
+      'Overflow in $surface at ${geometry.suffix}: '
+      '${overflows.first.exceptionAsString()}',
+    );
+  }
+  // ignore: avoid_print
+  print(
+    'TEMPORARY OVERFLOW $surface ${geometry.suffix} '
+    'tracked by ${allowlistStories.join(', ')}',
+  );
+}
+
+EdgeInsets _realisticSafeAreaInsets(FoldGeometry geometry) {
+  if (geometry.width > geometry.height) {
+    return const EdgeInsets.fromLTRB(24, 0, 24, 16);
+  }
+  return const EdgeInsets.fromLTRB(0, 24, 0, 24);
+}
+
+final class FoldCameraPlatform extends MobileScannerPlatform {
+  final StreamController<BarcodeCapture?> _barcodes =
+      StreamController<BarcodeCapture?>.broadcast();
+
+  @override
+  Stream<BarcodeCapture?> get barcodesStream => _barcodes.stream;
+
+  @override
+  Stream<TorchState> get torchStateStream =>
+      Stream<TorchState>.value(TorchState.unavailable);
+
+  @override
+  Stream<double> get zoomScaleStateStream => Stream<double>.value(1);
+
+  @override
+  Future<MobileScannerViewAttributes> start(StartOptions startOptions) async {
+    return const MobileScannerViewAttributes(
+      cameraDirection: CameraFacing.back,
+      currentTorchMode: TorchState.unavailable,
+      size: Size(411, 797),
+      numberOfCameras: 1,
+    );
+  }
+
+  @override
+  Widget buildCameraView() {
+    return const ColoredBox(
+      key: Key('fold-camera-placeholder'),
+      color: Color(0xFF182019),
+    );
+  }
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  Future<void> dispose() async {}
 }
