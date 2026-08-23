@@ -1,0 +1,149 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:app/ui/core/themes/themes.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+const double foldDevicePixelRatio = 2.625;
+const Key foldCaptureBoundaryKey = Key('fold-capture-boundary');
+
+final class FoldGeometry {
+  const FoldGeometry(this.width, this.height, {this.textScale = 1.0});
+
+  final int width;
+  final int height;
+  final double textScale;
+
+  Size get size => Size(width.toDouble(), height.toDouble());
+
+  String get suffix =>
+      '$width'
+      'x$height'
+      '${textScale == 1.0 ? '' : '-fs1.3'}';
+}
+
+const foldGeometries = <FoldGeometry>[
+  FoldGeometry(411, 797),
+  FoldGeometry(797, 411),
+  FoldGeometry(701, 842),
+  FoldGeometry(842, 701),
+  FoldGeometry(350, 842),
+  FoldGeometry(467, 842),
+  FoldGeometry(234, 842),
+  FoldGeometry(701, 842, textScale: 1.3),
+  FoldGeometry(350, 842, textScale: 1.3),
+];
+
+Directory foldGoldenDirectory() {
+  final current = Directory.current;
+  final root = current.path.endsWith('${Platform.pathSeparator}app')
+      ? current.parent
+      : current;
+  return Directory(
+    '${root.path}/.work/session-notes/fold-pass-20260823/goldens',
+  );
+}
+
+Widget foldCaptureApp({
+  required FoldGeometry geometry,
+  required Widget home,
+  double keyboardInset = 0,
+}) {
+  return RepaintBoundary(
+    key: foldCaptureBoundaryKey,
+    child: MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: buildDarkTheme(),
+      home: MediaQuery(
+        data: MediaQueryData(
+          size: geometry.size,
+          devicePixelRatio: foldDevicePixelRatio,
+          textScaler: TextScaler.linear(geometry.textScale),
+          viewInsets: EdgeInsets.only(bottom: keyboardInset),
+        ),
+        child: home,
+      ),
+    ),
+  );
+}
+
+Future<void> configureFoldView(
+  WidgetTester tester,
+  FoldGeometry geometry,
+) async {
+  tester.view.devicePixelRatio = foldDevicePixelRatio;
+  tester.view.physicalSize = Size(
+    geometry.width * foldDevicePixelRatio,
+    geometry.height * foldDevicePixelRatio,
+  );
+  await tester.pump();
+}
+
+Future<({File file, double variance})> writeFoldPng(
+  WidgetTester tester, {
+  required String surface,
+  required FoldGeometry geometry,
+}) async {
+  final directory = foldGoldenDirectory()..createSync(recursive: true);
+  final file = File('${directory.path}/$surface-${geometry.suffix}.png');
+  goldenFileComparator = FoldSavingComparator(file);
+
+  // matchesGoldenFile rasterizes through the test binding's own pipeline
+  // (manual RepaintBoundary.toImage deadlocks under the fake clock in this
+  // environment). A saving comparator turns the golden comparison into a
+  // file write: the assert always passes, evidence lands on disk.
+  await expectLater(
+    find.byKey(foldCaptureBoundaryKey),
+    matchesGoldenFile('fold-saved/${surface}-${geometry.suffix}.png'),
+  );
+  if (!file.existsSync() || file.lengthSync() == 0) {
+    throw StateError('golden save failed for $surface at ${geometry.suffix}');
+  }
+  final bytes = file.readAsBytesSync();
+  return (file: file, variance: _sampleVariance(bytes));
+}
+
+class FoldSavingComparator extends GoldenFileComparator {
+  FoldSavingComparator(this.target);
+
+  final File target;
+
+  @override
+  Future<bool> compare(Uint8List imageBytes, Uri golden) async {
+    target.writeAsBytesSync(imageBytes, flush: true);
+    return true;
+  }
+
+  @override
+  Future<void> update(Uri golden, Uint8List imageBytes) async {
+    target.writeAsBytesSync(imageBytes, flush: true);
+  }
+
+  @override
+  Uri getTestUri(Uri key, int? version) => key;
+}
+
+double _sampleVariance(List<int> rgba) {
+  if (rgba.length < 4) return 0;
+  final pixels = rgba.length ~/ 4;
+  final stride = math.max(1, pixels ~/ 4096);
+  var count = 0;
+  var sum = 0.0;
+  var sumSquares = 0.0;
+  for (var pixel = 0; pixel < pixels; pixel += stride) {
+    final offset = pixel * 4;
+    final luminance =
+        rgba[offset] * 0.2126 +
+        rgba[offset + 1] * 0.7152 +
+        rgba[offset + 2] * 0.0722;
+    count++;
+    sum += luminance;
+    sumSquares += luminance * luminance;
+  }
+  final mean = sum / count;
+  return sumSquares / count - mean * mean;
+}
