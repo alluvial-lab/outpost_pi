@@ -257,9 +257,9 @@ export class BrokerRemote implements RemoteRouter {
 
   // ── Sibling management ────────────────────────────────────────────────────
 
-  /** Replace or extend the sibling set. Idempotent on identical input.
-   *  Removes any sibling missing from `next`; new siblings receive a room
-   *  subscription plus an authoritative one-shot room snapshot request. */
+  /** Replace the sibling set and restart its roster bootstrap.
+   *  Removes missing siblings, subscribes newly added ones, and re-announces
+   *  across known rooms so a publication repairs an earlier dropped exchange. */
   setSiblings(next: SiblingInfo[]): void {
     if (this.detached) return;
     const prevPubkeys = new Set(this.siblingByPubkey.keys());
@@ -277,13 +277,12 @@ export class BrokerRemote implements RemoteRouter {
       this.subscribedRooms.delete(pubkey);
       this.pendingRoomChecks.delete(pubkey);
     }
-    // New siblings must first be discovered from the relay; the resulting
-    // `rooms` snapshot fans `peers_request` out to every live room.
-    for (const [, pcPubkey] of this.siblingByLabel) {
-      if (prevPubkeys.has(pcPubkey)) continue;
-      this._subscribeToRooms(pcPubkey);
-      this._requestRooms(pcPubkey);
-    }
+    // Membership publication is also a convergence trigger. The bridge may
+    // have discovered this same sibling before its remote side was ready, so
+    // limiting bootstrap to newly-added pubkeys can preserve two empty rosters
+    // until the periodic reannounce. Known rooms get an immediate request +
+    // update; unknown rooms receive the normal subscribe + snapshot request.
+    this._bootstrapWithSiblings();
   }
 
   private _addSibling(s: SiblingInfo): void {

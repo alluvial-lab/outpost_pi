@@ -227,7 +227,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
       readonly queue: DispatchQueue;
       readonly lineBytes: number;
       line: string | null;
-      controlFrame: RelayControlFrame | null;
+      controlFrame: RelayServerControlFrame | null;
       accounted: boolean;
     };
 
@@ -335,7 +335,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
           if (work.queue === "control") {
             const frame = work.controlFrame;
             work.controlFrame = null;
-            if (frame) await dispatchRelayControlFrame(frame);
+            if (frame) await dispatchRelayControlFrame(next, frame);
           } else {
             const line = work.line;
             work.line = null;
@@ -585,9 +585,16 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     };
   }
 
-  async function dispatchRelayControlFrame(frame: RelayControlFrame): Promise<void> {
-    for (const handler of controlFrameHandlers) {
-      await handler(frame);
+  async function dispatchRelayControlFrame(
+    source: RelayClient,
+    frame: RelayServerControlFrame,
+  ): Promise<void> {
+    try {
+      for (const handler of controlFrameHandlers) {
+        await handler(frame);
+      }
+    } finally {
+      publishRelayIngress(source, { kind: "control", frame });
     }
   }
 
@@ -604,7 +611,8 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     }
     let consumed = false;
     if (decoded.kind === "control") {
-      await dispatchRelayControlFrame(decoded.frame);
+      await dispatchRelayControlFrame(source, decoded.frame);
+      return;
     } else if (decoded.kind === "outer") {
       // Owner attachment may require an async peers.json lookup. Complete it
       // before typed fanout so a newly created SecurePeerChannel receives the

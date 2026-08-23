@@ -234,6 +234,31 @@ describe("MeshNode relay reconnect policy", () => {
     expect(FakeRelayClient.instances.length).toBeGreaterThanOrEqual(1);
   });
 
+  test("membership published during bridge attachment bootstraps the completed bridge", async () => {
+    const meshNode = new MeshNode({ sockPath: "/tmp/membership-race.sock", name: "mesh-node" });
+    const relay = new FakeRelayClient("wss://example.invalid/relay", keypair);
+    const gate = deferred<void>();
+    let bridge: ReturnType<typeof makeTrackedBridge> | null = null;
+    attachCrossPcBridgeMock.mockImplementationOnce(async (opts: { broker: FakeBroker; relay: FakeRelayClient }) => {
+      await gate.promise;
+      bridge = makeTrackedBridge(opts.relay, opts.broker);
+      return bridge;
+    });
+
+    const attachPromise = meshNode.attachBridge({
+      relay: relay as never,
+      relayUrl: "https://example.invalid/relay",
+      keypair,
+    });
+    const siblings = [{ pcLabel: "sibling", pcPubkey: "K_SIBLING" }];
+
+    meshNode.setSiblings(siblings);
+    gate.resolve(undefined);
+    await attachPromise;
+
+    expect(bridge?.brokerRemote.setSiblings).toHaveBeenCalledWith(siblings);
+  });
+
   test("detachBridge invalidates an in-flight injected bridge and detaches stale listeners", async () => {
     const meshNode = new MeshNode({ sockPath: "/tmp/injected-mesh.sock", name: "mesh-node" });
     const broker = meshNode.localBroker() as unknown as FakeBroker;
