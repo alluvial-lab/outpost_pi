@@ -158,6 +158,9 @@ class ConnectionManager extends Service {
   // accidentally drops the retry chain.
   Timer? _watchdogTimer;
   CancelToken? _connectCancel;
+  Future<void>? _connectInFlight;
+  ({String peerEpk, String roomId})? _connectTarget;
+  int _connectGeneration = 0;
   StreamSubscription<ServerMessage>? _channelSub;
   StreamSubscription<ControlInbound>? _controlSub;
   bool _disposed = false;
@@ -473,7 +476,7 @@ class ConnectionManager extends Service {
   void adopt(IChannel channel, PeerRecord peer) {
     _cancelRetry();
     _cancelPing();
-    _connectCancel?.cancel();
+    _invalidateConnectSupervisor();
     _channelSub?.cancel();
     _channelSub = null;
     _controlSub?.cancel();
@@ -512,7 +515,7 @@ class ConnectionManager extends Service {
     _clearActiveRoomWorking();
     _cancelRetry();
     _cancelPing();
-    _connectCancel?.cancel();
+    _invalidateConnectSupervisor();
     _channelSub?.cancel();
     _channelSub = null;
     _controlSub?.cancel();
@@ -550,7 +553,7 @@ class ConnectionManager extends Service {
     // WebSocket channel and any in-flight connect attempt leak past disposal.
     // `_teardownActive` is async (awaits channel.close); dispose is sync, so we
     // mirror its cancellation paths and fire-and-forget the channel close.
-    _connectCancel?.cancel();
+    _invalidateConnectSupervisor();
     _channelSub?.cancel();
     _channelSub = null;
     _controlSub?.cancel();
@@ -569,7 +572,65 @@ class ConnectionManager extends Service {
 
   // ---------------------------------------------------------------------------
 
-  Future<void> _connect(PeerRecord peer) async {
+  Future<void> _connect(PeerRecord peer) {
+    final target = (
+      peerEpk: peer.remoteEpk,
+      roomId: _activePeer?.remoteEpk == peer.remoteEpk
+          ? _activeRoomId
+          : peer.roomId ?? 'main',
+    );
+    final currentStatus = _status;
+    if (currentStatus is StatusOnline &&
+        _activePeer?.remoteEpk == target.peerEpk &&
+        _activeRoomId == target.roomId) {
+      return Future<void>.value();
+    }
+
+    final inFlight = _connectInFlight;
+    if (inFlight != null && _connectTarget == target) return inFlight;
+
+    final generation = ++_connectGeneration;
+    _connectCancel?.cancel();
+    late final Future<void> operation;
+    operation = () async {
+      if (inFlight != null) await inFlight;
+      if (_disposed || generation != _connectGeneration) return;
+
+      final active = _status;
+      if (active is StatusOnline) {
+        _channelSub?.cancel();
+        _channelSub = null;
+        _controlSub?.cancel();
+        _controlSub = null;
+        await active.channel.close();
+        if (_disposed || generation != _connectGeneration) return;
+      }
+      await _performConnect(peer);
+    }();
+    _connectTarget = target;
+    _connectInFlight = operation;
+    void clearIfCurrent() {
+      if (identical(_connectInFlight, operation)) {
+        _connectInFlight = null;
+        _connectTarget = null;
+      }
+    }
+
+    unawaited(
+      operation.then<void>(
+        (_) => clearIfCurrent(),
+        onError: (Object _, StackTrace _) => clearIfCurrent(),
+      ),
+    );
+    return operation;
+  }
+
+  void _invalidateConnectSupervisor() {
+    _connectGeneration++;
+    _connectCancel?.cancel();
+  }
+
+  Future<void> _performConnect(PeerRecord peer) async {
     _cancelRetry();
     _cancelPing();
     _connectCancel?.cancel();

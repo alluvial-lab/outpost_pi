@@ -146,6 +146,41 @@ void main() {
       cm.dispose();
     });
 
+    test(
+      'concurrent connect requests for the same peer and room share one attempt',
+      () async {
+        final factoryStarted = Completer<void>();
+        final releaseFactory = Completer<void>();
+        var factoryCalls = 0;
+        final cm = ConnectionManager(
+          factory: (_, _) async {
+            factoryCalls++;
+            if (!factoryStarted.isCompleted) factoryStarted.complete();
+            await releaseFactory.future;
+            return _ControllableChannel();
+          },
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+        );
+
+        final first = cm.connectTo(_fakePeer());
+        await factoryStarted.future;
+        final second = cm.connectTo(_fakePeer());
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          factoryCalls,
+          1,
+          reason: 'one peer/room must have only one authenticating socket',
+        );
+
+        releaseFactory.complete();
+        await Future.wait([first, second]);
+        expect(cm.status, isA<StatusOnline>());
+        cm.dispose();
+      },
+    );
+
     test('factory failure → StatusRetrying with attempt=0', () async {
       final states = <ConnectionStatus>[];
       final cm = ConnectionManager(
