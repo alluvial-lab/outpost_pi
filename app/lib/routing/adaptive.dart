@@ -27,6 +27,9 @@ const double kCompactHeaderBreakpoint = 280.0;
 /// Remaining height below which the chat composer sheds optional chrome.
 const double kCompactComposerAvailableHeight = 280.0;
 
+/// Remaining height above which the compact composer restores standard chrome.
+const double kCompactComposerExitHeight = 360.0;
+
 /// Whether the window has tablet semantics in either orientation.
 ///
 /// Classify by `shortestSide` (`min(width, height)`), not width alone: a phone

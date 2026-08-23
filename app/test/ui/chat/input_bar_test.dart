@@ -342,8 +342,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byKey(const Key('input-bar-compact-height')), findsOneWidget);
-    expect(find.byKey(const Key('input-bar-standard-height')), findsNothing);
+    expect(find.byKey(const Key('input-bar-height')), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).maxLines, 1);
     expect(tester.takeException(), isNull);
   });
 }

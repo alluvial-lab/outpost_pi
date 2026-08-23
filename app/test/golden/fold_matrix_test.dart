@@ -189,6 +189,15 @@ void main() {
               final field = find.byType(TextField).first;
               await tester.tap(field, warnIfMissed: false);
               await tester.pump(const Duration(milliseconds: 120));
+              if (geometry.width == 797 && geometry.height == 411) {
+                expect(
+                  tester.widget<TextField>(field).maxLines,
+                  1,
+                  reason:
+                      'the settled landscape keyboard keeps compact composer '
+                      'chrome at the unchanged 280dp entry threshold',
+                );
+              }
             },
           );
           await _captureQuickActions(tester, fixture, geometry);
