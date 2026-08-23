@@ -158,16 +158,52 @@ class ScheduleTests(unittest.TestCase):
         manifest = nightly.load_expected(
             Path(__file__).with_name("expected-soak-findings.txt")
         )
-        self.assertEqual(
-            manifest,
-            {
-                "backlog-app-reconnect-churn-timeout-lifecycle-failures",
-                "backlog-app-cold-replay-duplicates-persisted-transcript",
-                "backlog-app-session-rotation-late-echo-sticks-working",
-                "backlog-mesh-post-pair-roster-bootstrap-empty",
-            },
-        )
+        # Current truth: every tracked finding has been fixed, so the expected
+        # inventory is empty. Update this assertion (and only with a deliberate
+        # manifest change) whenever a finding is newly opened or closed.
+        self.assertEqual(manifest, set())
         self.assertEqual(manifest, set(live_soak.KNOWN_FINDINGS))
+
+    def test_empty_known_findings_manifest_is_valid(self) -> None:
+        # With no known-open findings, observation keys resolve to None instead
+        # of crashing the import, and a firing observation shape is unexpected.
+        self.assertIsNone(live_soak._known_finding("no-such-open-finding"))
+        self.assertTrue(
+            all(tid is None for tid in live_soak.FINDING_OBSERVATIONS.values())
+        )
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "report.md"
+            live_soak._write_report(
+                report_path,
+                seed=1,
+                duration=300,
+                schedule=(),
+                runner_status=0,
+                triage_outputs=[],
+                evaluations=[
+                    {
+                        "capture": "c.jsonl",
+                        "swallow": False,
+                        "blank_chat": False,
+                        "reconnect_churn": True,
+                        "lost_count": 3,
+                        "missing_causes": 0,
+                        "expected_churn_clusters": 0,
+                        "unexpected_churn_clusters": 2,
+                        "exit": 0,
+                    }
+                ],
+                demonstrated_faults=[],
+                unexpected=[
+                    "c.jsonl has 2 churn cluster(s) outside every scheduled fault window"
+                ],
+                suspicious=[],
+            )
+            report = report_path.read_text()
+        self.assertIn("no known-open findings tracked", report)
+        self.assertIn("UNEXPECTED", report)
 
     def test_visible_identity_hold_is_not_classified_as_a_swallow(self) -> None:
         visible = live_soak._evaluate_rows(

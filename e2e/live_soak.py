@@ -43,14 +43,20 @@ def _load_known_findings(path: Path = KNOWN_FINDINGS_MANIFEST) -> tuple[str, ...
 KNOWN_FINDINGS = _load_known_findings()
 
 
-def _known_finding(fragment: str) -> str:
+def _known_finding(fragment: str) -> str | None:
+    """Resolve a manifest tracking id for an observation key.
+
+    Returns None when no known-open finding matches: observation keys outlive
+    the bugs they were named for, and an observed shape with no open tracking
+    id must surface as unexpected, not crash the soak at import.
+    """
     matches = [tracking_id for tracking_id in KNOWN_FINDINGS if fragment in tracking_id]
-    if len(matches) != 1:
+    if len(matches) > 1:
         raise RuntimeError(f"known-finding fragment {fragment!r} matched {len(matches)} ids")
-    return matches[0]
+    return matches[0] if matches else None
 
 
-FINDING_OBSERVATIONS = {
+FINDING_OBSERVATIONS: dict[str, str | None] = {
     "reconnect_churn": _known_finding("reconnect-churn-timeout"),
     "cold_dedup": _known_finding("cold-replay-duplicates"),
     "mesh_roster": _known_finding("mesh-post-pair-roster"),
@@ -1110,7 +1116,10 @@ def _write_report(
         "single-Pi, in-process schedule are expected to reproduce in this report.",
         "",
     ]
-    for key, tracking_id in FINDING_OBSERVATIONS.items():
+    tracked = {key: tid for key, tid in FINDING_OBSERVATIONS.items() if tid}
+    if not tracked:
+        lines.append("- None — no known-open findings tracked; every observation below is unexpected by definition.")
+    for key, tracking_id in tracked.items():
         observed = any(evaluation.get(key) for evaluation in evaluations)
         expectation = (
             "targeted"
@@ -1250,6 +1259,11 @@ def run(args: argparse.Namespace) -> int:
         expected_findings.update(SOAK_LONG_EXPECTED_FINDINGS)
     for key in expected_findings:
         tracking_id = FINDING_OBSERVATIONS[key]
+        if tracking_id is None:
+            raise RuntimeError(
+                f"observation key {key!r} is listed as expected but has no "
+                "known-open tracking id in the manifest"
+            )
         if not any(evaluation.get(key) for evaluation in evaluations):
             suspicious.append(f"expected finding absent: {tracking_id}")
     for evaluation in evaluations:
