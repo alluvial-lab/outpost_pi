@@ -1,7 +1,7 @@
 ---
 id: feature-fold-usability-pass
 kind: feature
-stage: implementing
+stage: review
 tags: [app, ux]
 parent: null
 depends_on: []
@@ -53,6 +53,21 @@ hit regions, no overflow at any matrix geometry — harness from story 1
 fails on overflow). Final: full golden matrix regenerated + `flutter
 analyze` + full unit suite green; APK bump 0.6.0+8 built for sideload.
 
+## Implementation summary
+
+| Story | Commit | Delivered |
+|---|---|---|
+| `story-fold-golden-harness-fidelity` | `8db840fa` | Production font fixtures, modal isolation, overflow failure policy, expanded states/themes/geometries. |
+| `story-fold-two-pane-policy` | `7bb4ce88` | Pane-budget split policy, divider contrast, keyboard-inset isolation. |
+| `story-fold-chat-adaptivity` | `8785a27e` | Compact-height composer/status and centered wide reading measure. |
+| `story-fold-home-sheets-adaptivity` | `24eff440` | Compact Home chrome, centered list, adaptive scrollable sheet frames. |
+| `story-fold-system-pages-a11y-floors` | `141e3f56` | Capped system pages, recovery scrolling, 48dp targets, semantics, and 12sp operational floors. |
+
+Integrated verification:
+- Full render matrix regenerated: 16 surfaces × 9 Pixel Fold geometries = 144 PNGs, with every overflow failing directly and no allowlist entries remaining.
+- `flutter analyze`: green, no issues.
+- `flutter test --exclude-tags e2e --concurrency=2`: green, 902 tests.
+
 ## Review record
 
-Filled at completion.
+Pending orchestrator review.
