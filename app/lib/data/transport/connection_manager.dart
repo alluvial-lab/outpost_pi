@@ -98,6 +98,10 @@ class CancelToken {
   void cancel() => _cancelled = true;
 }
 
+final class _ConnectSuperseded implements Exception {
+  const _ConnectSuperseded();
+}
+
 // ---------------------------------------------------------------------------
 // ConnectionManager
 // ---------------------------------------------------------------------------
@@ -183,6 +187,8 @@ class ConnectionManager extends Service {
   Timer? _presenceEmitTimer;
   Timer? _roomsEmitTimer;
   final Duration _emitDebounce;
+  final Duration _reconnectFallbackDelay;
+  bool _raceNextConnect = false;
 
   ConnectionManager({
     required ConnectionFactory factory,
@@ -190,11 +196,13 @@ class ConnectionManager extends Service {
     DebugLog? debugLog,
     Duration emitDebounce = const Duration(milliseconds: 50),
     Duration legacyRoomRetryDelay = const Duration(milliseconds: 250),
+    Duration reconnectFallbackDelay = const Duration(seconds: 3),
     this.pingInterval = const Duration(seconds: 25),
   }) : _factory = factory,
        _storage = storage,
        _debugLog = debugLog,
        _emitDebounce = emitDebounce,
+       _reconnectFallbackDelay = reconnectFallbackDelay,
        _legacyRoomRetryDelay = legacyRoomRetryDelay {
     _startWatchdog();
   }
@@ -628,6 +636,7 @@ class ConnectionManager extends Service {
   void _invalidateConnectSupervisor() {
     _connectGeneration++;
     _connectCancel?.cancel();
+    _raceNextConnect = false;
   }
 
   Future<void> _performConnect(PeerRecord peer) async {
@@ -661,7 +670,11 @@ class ConnectionManager extends Service {
     _emit(const StatusConnecting());
 
     try {
-      final ch = await _factory(peer, token);
+      final raceFallback = _raceNextConnect;
+      _raceNextConnect = false;
+      final ch = raceFallback
+          ? await _connectWithFreshFallback(peer, token)
+          : await _factory(peer, token);
       if (token.isCancelled) {
         await ch.close();
         return;
@@ -703,6 +716,83 @@ class ConnectionManager extends Service {
         );
         _scheduleRetry(peer);
       }
+    }
+  }
+
+  Future<IChannel> _connectWithFreshFallback(
+    PeerRecord peer,
+    CancelToken ownerToken,
+  ) async {
+    final winner = Completer<IChannel>();
+    final attemptTokens = <CancelToken>[];
+    Object? lastError;
+    StackTrace? lastStack;
+    var pending = 0;
+    var fallbackStarted = false;
+    Timer? fallbackTimer;
+    late final void Function() startFallback;
+
+    void startAttempt() {
+      final attemptToken = CancelToken();
+      attemptTokens.add(attemptToken);
+      pending++;
+      unawaited(
+        _factory(peer, attemptToken).then<void>(
+          (channel) async {
+            pending--;
+            if (ownerToken.isCancelled ||
+                attemptToken.isCancelled ||
+                winner.isCompleted) {
+              await _closeOwned(
+                channel,
+                peerTail: _peerTail(peer.remoteEpk),
+                room: _activeRoomId,
+              );
+              if (ownerToken.isCancelled && !winner.isCompleted) {
+                winner.completeError(const _ConnectSuperseded());
+              }
+              return;
+            }
+            winner.complete(channel);
+            fallbackTimer?.cancel();
+            for (final token in attemptTokens) {
+              if (!identical(token, attemptToken)) token.cancel();
+            }
+          },
+          onError: (Object error, StackTrace stack) {
+            pending--;
+            lastError = error;
+            lastStack = stack;
+            if (!fallbackStarted) {
+              fallbackTimer?.cancel();
+              startFallback();
+            } else if (pending == 0 && !winner.isCompleted) {
+              winner.completeError(lastError!, lastStack);
+            }
+          },
+        ),
+      );
+    }
+
+    startFallback = () {
+      if (fallbackStarted || ownerToken.isCancelled || winner.isCompleted) {
+        return;
+      }
+      fallbackStarted = true;
+      // The relay treats a newer same-device authentication as authoritative
+      // and closes the older socket. Once the hedge starts, it must therefore
+      // own the race; adopting a late primary would let the fallback kick the
+      // channel we just published as online.
+      if (attemptTokens.isNotEmpty) attemptTokens.first.cancel();
+      startAttempt();
+    };
+
+    startAttempt();
+    fallbackTimer = Timer(_reconnectFallbackDelay, startFallback);
+    try {
+      return await winner.future;
+    } finally {
+      fallbackTimer.cancel();
     }
   }
 
@@ -1517,6 +1607,11 @@ class ConnectionManager extends Service {
     );
     _cancelPing();
     _reachability.onTransportClosed();
+    // A channelDone edge can arrive while the platform socket is still
+    // unwinding. If the next fresh factory attempt inherits that slow path,
+    // race one additional fresh connection after a short grace period rather
+    // than spending the factory's full 10-second deadline on it.
+    _raceNextConnect = cause == ReconnectCause.channelDone;
     _scheduleRetry(peer);
   }
 
