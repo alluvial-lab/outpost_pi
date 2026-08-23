@@ -199,6 +199,31 @@ void main() {
       expect(find.text('Reconnected · transcript updated'), findsOneWidget);
 
       final position = tester.state<ScrollableState>(scrollable).position;
+      final offsetBeforeContinuedScroll = position.pixels;
+      for (var first = -1; first >= -5; first--) {
+        await tester.drag(scrollable, const Offset(0, 80));
+        await tester.pump();
+        vm.show(ChatReady(messages: transcript(first, 34), status: online));
+        await tester.pump();
+        await tester.pump();
+      }
+      expect(
+        position.pixels,
+        greaterThan(offsetBeforeContinuedScroll),
+        reason: 'user scroll must accumulate while backfill keeps inserting',
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey<String>('m0')),
+        120,
+        scrollable: scrollable,
+        maxScrolls: 20,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('m0')),
+        findsOneWidget,
+        reason: 'an older bubble remains reachable during continued inserts',
+      );
+
       position.jumpTo(position.minScrollExtent);
       await tester.pump();
       vm.show(ChatReady(messages: transcript(0, 34), status: retrying));
