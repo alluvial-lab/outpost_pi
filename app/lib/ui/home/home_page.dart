@@ -260,12 +260,13 @@ class HomePage extends StatelessWidget {
         ],
         Text(
           statusLabel,
+          key: const Key('home-relay-status-label'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontFamily: kMonoFamily,
             color: statusColor,
-            fontSize: compact ? 11 : 13,
+            fontSize: compact ? 12 : 13,
           ),
         ),
       ],

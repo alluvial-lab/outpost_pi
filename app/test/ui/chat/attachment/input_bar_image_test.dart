@@ -138,7 +138,10 @@ void main() {
       isNull,
     );
 
-    await tester.tap(find.byKey(const Key('attach-remove')));
+    final remove = find.byKey(const Key('attach-remove'));
+    expect(tester.getSize(remove), const Size(48, 48));
+    expect(remove.hitTestable(at: Alignment.center), findsOneWidget);
+    await tester.tapAt(tester.getCenter(remove));
     await tester.pump();
     expect(find.byKey(const Key('attach-preview')), findsNothing);
   });

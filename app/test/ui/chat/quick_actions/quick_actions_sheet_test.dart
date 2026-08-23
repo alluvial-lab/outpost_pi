@@ -206,6 +206,28 @@ void main() {
     }
   });
 
+  testWidgets('action descriptions and model metadata keep the 12sp floor', (
+    tester,
+  ) async {
+    await _openSheet(tester);
+
+    final metadata = <Finder>[
+      find.byKey(const Key('quick-action-description')),
+      find.byKey(const Key('quick-action-model-label')),
+    ];
+    for (final finder in metadata) {
+      expect(finder, findsWidgets);
+      for (final element in finder.evaluate()) {
+        final text = element.widget as Text;
+        expect(
+          text.style?.fontSize,
+          greaterThanOrEqualTo(12),
+          reason: '${text.data} operational metadata floor',
+        );
+      }
+    }
+  });
+
   testWidgets('Compact: tap sends and closes the sheet — no success toast', (
     tester,
   ) async {

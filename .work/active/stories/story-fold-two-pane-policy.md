@@ -57,3 +57,8 @@ detail viewInsets=280. Goldens regreen.
 
 Verification: adaptive/theme widget tests, full golden matrix, `flutter analyze`,
 and `flutter test --exclude-tags e2e --concurrency=2`.
+
+## Review closure (2026-08-23)
+
+- Moved keyboard isolation below the master branch Navigator so only the persistent Home surface receives stripped insets; master-owned modal routes retain the real keyboard inset. The 842×701 settings-modal test uses a 280dp inset and proves Home height stays stable while modal content receives 280dp bottom padding.
+- Added the 1dp divider to the pane budget. Width 680 now remains single-pane and 681 is the first split width, preserving the complete 320dp detail minimum.

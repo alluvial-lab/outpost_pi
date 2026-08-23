@@ -207,7 +207,8 @@ void main() {
         (599, false),
         (600, false),
         (679, false),
-        (680, true),
+        (680, false),
+        (681, true),
         (701, true),
         (842, true),
       ];
@@ -329,8 +330,8 @@ void main() {
     // it also insets the edge facing the divider — a phantom horizontal gutter.
     // The fix strips the divider-facing inset per pane via MediaQuery.removePadding.
     //
-    // Uses a tablet-class window that also meets the 680dp pane budget; a
-    // phone in landscape and a 600–679dp tablet window no longer reach here.
+    // Uses a tablet-class window that also meets the 681dp pane budget; a
+    // phone in landscape and a 600–680dp tablet window no longer reach here.
     const masterKey = Key('master-body');
     const detailKey = Key('detail-body');
     const screen = Size(1024, 768); // iPad landscape
@@ -338,7 +339,7 @@ void main() {
     const padRight = 30.0; // opposite-edge inset
     const padTop = 12.0;
     const padBottom = 21.0; // home indicator
-    const dividerW = 1.0;
+    const dividerW = kPaneDividerWidth;
 
     Widget pane(Key k) => Scaffold(
       body: SafeArea(child: SizedBox.expand(key: k)),
@@ -530,5 +531,85 @@ void main() {
       expect(withKeyboard.viewInsets.bottom, 0);
       expect(withoutKeyboard.viewInsets.bottom, 0);
     });
+
+    testWidgets(
+      'master settings modal keeps the real inset while Home stays isolated',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = screen;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        EdgeInsets? homeInsets;
+        EdgeInsets? settingsInsets;
+        const homeBodyKey = Key('isolated-home-body');
+        const settingsListKey = Key('settings-list-probe');
+        const settingsFieldKey = Key('settings-relay-field-probe');
+        late BuildContext homeContext;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                size: screen,
+                viewInsets: EdgeInsets.only(bottom: 280),
+              ),
+              child: Navigator(
+                onGenerateRoute: (_) => MaterialPageRoute<void>(
+                  builder: (_) => MasterPaneHomeSurface(
+                    isolateKeyboard: true,
+                    child: Builder(
+                      builder: (context) {
+                        homeContext = context;
+                        homeInsets = MediaQuery.viewInsetsOf(context);
+                        return Scaffold(
+                          body: SizedBox.expand(key: homeBodyKey),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final homeHeight = tester.getSize(find.byKey(homeBodyKey)).height;
+
+        showModalBottomSheet<void>(
+          context: homeContext,
+          isScrollControlled: true,
+          builder: (context) {
+            settingsInsets = MediaQuery.viewInsetsOf(context);
+            return FractionallySizedBox(
+              heightFactor: 0.92,
+              child: Scaffold(
+                body: ListView(
+                  key: settingsListKey,
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.viewInsetsOf(context).bottom,
+                  ),
+                  children: const <Widget>[TextField(key: settingsFieldKey)],
+                ),
+              ),
+            );
+          },
+        );
+        await tester.pumpAndSettle();
+
+        expect(homeInsets?.bottom, 0);
+        expect(
+          tester.getSize(find.byKey(homeBodyKey)).height,
+          homeHeight,
+          reason: 'the persistent Home list must not resize',
+        );
+        expect(settingsInsets?.bottom, 280);
+        final settingsList = tester.widget<ListView>(
+          find.byKey(settingsListKey),
+        );
+        expect((settingsList.padding! as EdgeInsets).bottom, 280);
+        expect(find.byKey(settingsFieldKey).hitTestable(), findsOneWidget);
+      },
+    );
   });
 }

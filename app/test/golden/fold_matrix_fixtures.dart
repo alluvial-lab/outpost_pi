@@ -614,8 +614,8 @@ final class FoldMatrixFixture {
 
 /// Mirror the production `navigatorContainerBuilder` without booting GoRouter.
 ///
-/// The pane composition, fixed 360dp master, divider, and divider-facing
-/// `MediaQuery.removePadding` calls match `lib/routing/app_router.dart`.
+/// The pane composition, fixed 360dp master, divider, Home-only keyboard
+/// isolation, and divider-facing padding match `lib/routing/app_router.dart`.
 final class FoldProductionShellMirror extends StatelessWidget {
   const FoldProductionShellMirror({super.key, required this.detailSelected});
 
@@ -626,16 +626,16 @@ final class FoldProductionShellMirror extends StatelessWidget {
     if (!canUseTwoPaneLayout(context)) return const HomePage();
     return Row(
       children: <Widget>[
-        SizedBox(
+        const SizedBox(
           width: kMasterPaneWidth,
-          child: MediaQuery(
-            data: masterPaneMediaQueryData(MediaQuery.of(context)),
-            child: const HomePage(),
+          child: MasterPaneHomeSurface(
+            isolateKeyboard: true,
+            child: HomePage(),
           ),
         ),
         VerticalDivider(
-          width: 1,
-          thickness: 1,
+          width: kPaneDividerWidth,
+          thickness: kPaneDividerWidth,
           color: context.colors.borderStrong,
         ),
         Expanded(

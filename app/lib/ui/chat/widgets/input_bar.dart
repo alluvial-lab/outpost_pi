@@ -585,9 +585,8 @@ class _QueuedMessagePreview extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 6),
-                SizedBox(
-                  width: 28,
-                  height: 28,
+                SizedBox.square(
+                  dimension: 48,
                   child: IconButton(
                     key: const Key('input-bar-clear-queued'),
                     tooltip: 'Clear queued message',
@@ -705,26 +704,32 @@ class _AttachmentPreview extends StatelessWidget {
               ),
             ),
             Positioned(
-              top: -4,
-              right: 8,
+              top: -18,
+              right: -14,
               child: Semantics(
                 label: 'Remove attached image',
                 button: true,
                 excludeSemantics: true,
                 child: GestureDetector(
                   key: const Key('attach-remove'),
+                  behavior: HitTestBehavior.opaque,
                   onTap: onRemove,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.75),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: context.colors.border),
-                    ),
-                    padding: const EdgeInsets.all(3),
-                    child: Icon(
-                      LucideIcons.x,
-                      size: 13,
-                      color: context.colors.text,
+                  child: SizedBox.square(
+                    dimension: 48,
+                    child: Center(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: context.colors.border),
+                        ),
+                        padding: const EdgeInsets.all(3),
+                        child: Icon(
+                          LucideIcons.x,
+                          size: 13,
+                          color: context.colors.text,
+                        ),
+                      ),
                     ),
                   ),
                 ),

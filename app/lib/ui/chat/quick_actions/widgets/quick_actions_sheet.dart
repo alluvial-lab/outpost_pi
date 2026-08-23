@@ -451,9 +451,10 @@ class _ActionTile extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
+                    key: const Key('quick-action-description'),
                     style: TextStyle(
                       fontFamily: kMonoFamily,
-                      fontSize: 11,
+                      fontSize: 12,
                       color: colors.muted,
                     ),
                   ),
@@ -508,9 +509,10 @@ class _ModelRow extends StatelessWidget {
                 children: [
                   Text(
                     'Model',
+                    key: const Key('quick-action-model-label'),
                     style: TextStyle(
                       fontFamily: kMonoFamily,
-                      fontSize: 11,
+                      fontSize: 12,
                       color: colors.muted,
                     ),
                   ),

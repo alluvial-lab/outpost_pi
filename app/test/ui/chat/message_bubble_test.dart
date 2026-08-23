@@ -35,6 +35,31 @@ void main() {
     );
   });
 
+  testWidgets('delivery status text keeps the 12sp operational floor', (
+    tester,
+  ) async {
+    for (final status in <UserMsgStatus>[
+      UserMsgStatus.pending,
+      UserMsgStatus.failed,
+    ]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: UserBubble(
+              UserMsg(id: 'u1', text: 'message', status: status),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final key = status == UserMsgStatus.pending
+          ? const Key('message-delivery-sending')
+          : const Key('message-delivery-failed');
+      final text = tester.widget<Text>(find.byKey(key));
+      expect(text.style?.fontSize, greaterThanOrEqualTo(12));
+    }
+  });
+
   testWidgets('AssistantBubble is selectable (copyable)', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

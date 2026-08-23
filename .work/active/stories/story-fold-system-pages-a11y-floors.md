@@ -47,3 +47,7 @@ centered+capped at 842dp and scrollable at 797×411. Goldens.
 - Simplification: removed the final geometry overflow allowlist and its conditional handling; every matrix overflow now fails directly.
 - Discrepancies from design: none.
 - Adjacent issues parked: none.
+
+## Review closure (2026-08-23)
+
+Completed the receiver-confirmed omissions: compact Home relay status, user-message delivery status, quick-action descriptions, and model metadata now meet the 12sp floor. Queued-clear and attachment-remove now provide 48×48 effective targets while preserving their compact visuals. Focused widget tests assert the text styles, probe each gesture center with `hitTestable`, and tap those exact positions.

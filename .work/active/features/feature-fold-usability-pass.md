@@ -70,4 +70,12 @@ Integrated verification:
 
 ## Review record
 
-Pending orchestrator review.
+Standard review closure (2026-08-23):
+
+- **B1:** the golden blank guard now decodes PNGs to raw RGBA before sampling luminance variance. A regression proves a uniform PNG is approximately zero while a real matrix golden is non-blank.
+- **B2:** the production theme now applies Space Mono to every Material text role and the Text/Outlined/Elevated/Filled button roles. The harness asserts representative display, headline, title, body, label, and control styles. Regenerated 842×701 storage-recovery and onboarding-relay PNGs were visually checked; control/input text renders as Space Mono without fallback blocks.
+- **B3:** the missed Home relay, delivery-state, and quick-action metadata text is now at least 12sp. Queued-clear and attachment-remove expose 48×48 hit-tested regions, with focused tests tapping the gesture centers.
+- **I1:** keyboard isolation moved below the master branch Navigator and now wraps only the persistent Home surface. A settings-modal regression at 842×701 with a 280dp inset proves Home stays stable while the modal receives and pads for the real inset.
+- **N1:** the 1dp divider is included in the pane budget, so split layout begins at 681dp and retains the full 320dp detail minimum.
+
+Closure verification: 144 regenerated PNGs, zero overflow allowlist; decode-aware blank regression green; `flutter analyze` green; final `flutter test --exclude-tags e2e --concurrency=2` green with 908 tests. The first full-suite attempt hit the known load-sensitive sync re-send timing miss; its focused rerun and the complete rerun passed without code or test weakening. Rebuilt debug APK `0.6.0+8`; `aapt2` verified package `dev.kevoun.outpostpi`, versionCode 8, versionName 0.6.0, compile/target SDK 36, and label `Outpost-Pi`.
