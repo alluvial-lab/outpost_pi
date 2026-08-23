@@ -2882,6 +2882,81 @@ void main() {
   );
 
   test(
+    'reconnect generation change cannot swallow a queued submission',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      addTearDown(() {
+        s.sync.dispose();
+        s.conn.dispose();
+      });
+
+      final readGate = Completer<void>();
+      final readStarted = Completer<void>();
+      store
+        ..readGate = readGate
+        ..readStarted = readStarted;
+
+      final occupyingSend = s.sync.sendMessage('occupy transcript write');
+      await readStarted.future.timeout(const Duration(seconds: 1));
+      final racedSend = s.sync.sendMessage('survive reconnect generation');
+
+      final retrying = s.conn.statusStream.firstWhere(
+        (status) => status is StatusRetrying,
+      );
+      await s.ch.loseConnection();
+      await retrying.timeout(const Duration(seconds: 1));
+      readGate.complete();
+      await Future.wait(<Future<void>>[occupyingSend, racedSend]);
+
+      await _waitUntil(
+        () =>
+            messages(
+              s.epk,
+            ).any((row) => row.text == 'survive reconnect generation') ||
+            s.sync.identityPendingMessages.any(
+              (row) =>
+                  row is UserMsg && row.text == 'survive reconnect generation',
+            ),
+        reason: 'the reconnect-raced submission to remain visible',
+      );
+
+      final reconnect = _FakeChannel()..defaultSessionId = s.sessionId;
+      s.conn.adopt(
+        reconnect,
+        PeerRecord(
+          remoteEpk: s.epk,
+          sessionName: 'Pi',
+          relayUrl: 'ws://localhost',
+          pairedAt: '2026-01-01T00:00:00Z',
+          roomId: 'main',
+        ),
+      );
+      reconnect.pushControl(
+        RoomsSnapshot(
+          peer: s.epk,
+          rooms: [
+            RoomInfo(roomId: 'main', sessionId: s.sessionId, startedAt: 2),
+          ],
+        ),
+      );
+
+      await _waitUntil(
+        () => reconnect.sent.whereType<UserMessage>().any(
+          (message) => message.text == 'survive reconnect generation',
+        ),
+        reason: 'the reconnect-raced submission to be re-sent',
+      );
+      expect(
+        messages(
+          s.epk,
+        ).where((row) => row.text == 'survive reconnect generation'),
+        hasLength(1),
+      );
+    },
+  );
+
+  test(
     'sendMessage append completion cannot mutate or send after channel replacement',
     () async {
       final store = _MemoryTranscriptStore();

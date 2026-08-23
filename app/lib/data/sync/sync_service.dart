@@ -58,6 +58,7 @@ final class _IdentityPendingSend {
     required this.id,
     required this.peerEpk,
     required this.roomId,
+    required this.sessionId,
     required this.text,
     required this.image,
     required this.streamingBehavior,
@@ -67,6 +68,7 @@ final class _IdentityPendingSend {
   final String id;
   final String? peerEpk;
   final String roomId;
+  final String? sessionId;
   final String text;
   final MessageImage? image;
   final UserMessageStreamingBehavior? streamingBehavior;
@@ -424,6 +426,7 @@ class SyncService extends Service {
           id: id,
           peerEpk: epk,
           roomId: _activeRoomId,
+          sessionId: null,
           text: text,
           image: image,
           streamingBehavior: streamingBehavior,
@@ -467,6 +470,14 @@ class SyncService extends Service {
       if (!_isCurrentLifecycle(generation, ref) ||
           !identical(_conn.channel, initialChannel) ||
           (!held && !_conn.isRoomLive(ref.peerEpk, ref.roomId))) {
+        _retainReconnectRacedSend(
+          ref: ref,
+          id: id,
+          text: text,
+          image: image,
+          streamingBehavior: streamingBehavior,
+          ts: now,
+        );
         return;
       }
       if (!isSteer) {
@@ -550,6 +561,46 @@ class SyncService extends Service {
     }
   }
 
+  void _retainReconnectRacedSend({
+    required RemoteSessionRef ref,
+    required String id,
+    required String text,
+    required MessageImage? image,
+    required UserMessageStreamingBehavior? streamingBehavior,
+    required DateTime ts,
+  }) {
+    final connectionPeer = _conn.activePeer;
+    if (_disposed ||
+        connectionPeer == null ||
+        connectionPeer.remoteEpk != ref.peerEpk ||
+        _conn.activeRoomId != ref.roomId ||
+        _activeEpk != ref.peerEpk ||
+        _activeRoomId != ref.roomId) {
+      return;
+    }
+    _queueIdentityPendingSend(
+      _IdentityPendingSend(
+        id: id,
+        peerEpk: ref.peerEpk,
+        roomId: ref.roomId,
+        sessionId: ref.sessionId,
+        text: text,
+        image: image,
+        streamingBehavior: streamingBehavior,
+        ts: ts,
+      ),
+    );
+    debugPrint('[msg-send] id=$id held: reconnect interrupted persistence');
+    _logDebug(MsgSendEvent(ts: DateTime.now(), id: id, blocked: true));
+    _logDebug(
+      SendQueueEvent(ts: DateTime.now(), id: id, phase: SendQueuePhase.held),
+    );
+    _scheduleLifecycleOperation(
+      LifecycleOperation.sessionRebind,
+      _handleRoomsChanged,
+    );
+  }
+
   void _queueIdentityPendingSend(_IdentityPendingSend send) {
     _identityPendingSends[send.id] = send;
     _identityPendingTimers.remove(send.id)?.cancel();
@@ -602,7 +653,8 @@ class SyncService extends Service {
         .where(
           (send) =>
               send.roomId == ref.roomId &&
-              (send.peerEpk == null || send.peerEpk == ref.peerEpk),
+              (send.peerEpk == null || send.peerEpk == ref.peerEpk) &&
+              (send.sessionId == null || send.sessionId == ref.sessionId),
         )
         .toList(growable: false);
     if (matching.isEmpty) return;
@@ -611,7 +663,9 @@ class SyncService extends Service {
     for (final send in matching) {
       events.add(
         UserMessageSubmitted(
-          eventId: 'local:user_submitted:${send.id}',
+          eventId: send.sessionId == null
+              ? 'local:user_submitted:${send.id}'
+              : 'local:user_reheld:${send.id}',
           sessionId: ref.sessionId,
           ts: send.ts,
           clientMessageId: send.id,
@@ -638,9 +692,18 @@ class SyncService extends Service {
     }
     await _appendTranscriptEvents(events);
     if (!_isCurrentLifecycle(generation, ref)) return;
+    // A reconnect can invalidate the original append after it reached the event
+    // store but before it rewrote the disposable message projection. Rebuild
+    // before removing the in-memory row so duplicate-safe recovery cannot make
+    // the accepted input disappear again.
+    await _materializeTranscriptProjectionForRef(ref, generation);
+    if (!_isCurrentLifecycle(generation, ref)) return;
     for (final send in matching) {
       _identityPendingSends.remove(send.id);
       _identityPendingTimers.remove(send.id)?.cancel();
+      if (send.status == UserMsgStatus.pending) {
+        _armSendTimeout(send.id, send.ts);
+      }
     }
     _emitIdentityPendingMessages();
   }
@@ -952,6 +1015,8 @@ class SyncService extends Service {
     }
 
     if (expectedRef != null) {
+      await _bindIdentityPendingSends(expectedRef, generation);
+      if (!_isCurrentLifecycle(generation, expectedRef)) return;
       await _resendHeldPendingMessages(generation, expectedRef);
       if (!_isCurrentLifecycle(generation, expectedRef)) return;
     }
