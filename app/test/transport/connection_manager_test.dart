@@ -486,6 +486,68 @@ void main() {
     );
 
     test(
+      'channelDone reconnect races a fresh fallback when the first attempt stalls',
+      () async {
+        final initial = _ControllableChannel();
+        final fallback = _ControllableChannel();
+        final latePrimary = _ControllableChannel();
+        final stalled = Completer<IChannel>();
+        final fallbackReady = Completer<IChannel>();
+        final reconnectStarted = Completer<void>();
+        var factoryCalls = 0;
+        final cm = ConnectionManager(
+          factory: (_, token) {
+            factoryCalls++;
+            return switch (factoryCalls) {
+              1 => Future<IChannel>.value(initial),
+              2 => () {
+                reconnectStarted.complete();
+                return stalled.future;
+              }(),
+              _ => fallbackReady.future,
+            };
+          },
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+          reconnectFallbackDelay: const Duration(milliseconds: 20),
+        );
+
+        await cm.connectTo(_fakePeer());
+        await initial.closeStream();
+        await reconnectStarted.future.timeout(const Duration(seconds: 2));
+        expect(
+          factoryCalls,
+          2,
+          reason: 'the first reconnect attempt should already be stalled',
+        );
+
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(
+          factoryCalls,
+          3,
+          reason: 'a fresh fallback must start without lowering the deadline',
+        );
+
+        stalled.complete(latePrimary);
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          cm.channel,
+          isNot(same(latePrimary)),
+          reason:
+              'once same-device fallback auth starts, a late primary cannot win',
+        );
+        expect(cm.status, isA<StatusConnecting>());
+
+        fallbackReady.complete(fallback);
+        await Future<void>.delayed(Duration.zero);
+        expect(cm.channel, same(fallback));
+        expect(cm.status, isA<StatusOnline>());
+
+        cm.dispose();
+      },
+    );
+
+    test(
       'first channel close before inbound emits the public retry attempt=0',
       () async {
         // Multiple controllable channels, each closes mid-flight before
