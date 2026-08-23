@@ -1192,6 +1192,11 @@ class ConnectionManager extends Service {
     if (list == null) return;
     final idx = list.indexWhere((r) => r.roomId == roomId);
     if (idx < 0 || list[idx].sessionId != sessionId) return;
+    // Offline/not-yet-hydrated is a distinct stale projection, not an
+    // authoritative idle observation. Repeated transcript/liveness ticks must
+    // neither overwrite cached room truth nor advance the session epoch; the
+    // reconnect snapshot owns that convergence.
+    if (_status is! StatusOnline || !isRoomLive(epk, roomId)) return;
     final authorityKey = _workingAuthorityKey(key, roomId, sessionId);
     if (working) {
       if (turnId == null || turnId.isEmpty) return;
@@ -1201,20 +1206,6 @@ class ConnectionManager extends Service {
       if (observedEpoch < epoch) return;
     } else {
       _advanceWorkingAuthority(key, roomId, sessionId);
-    }
-    if (_status is! StatusOnline || !isRoomLive(epk, roomId)) {
-      if (!working) {
-        _logDebug(
-          WorkingConvEvent(
-            ts: DateTime.now(),
-            room: roomId,
-            working: false,
-            reason: 'inactive_or_not_live',
-          ),
-        );
-        _clearRoomWorking(epk, roomId);
-      }
-      return;
     }
     if (list[idx].working == working) return;
     list[idx] = list[idx].copyWith(working: working);
@@ -1269,6 +1260,23 @@ class ConnectionManager extends Service {
     final active = _activePeer;
     if (active == null) return;
     _clearRoomWorking(active.remoteEpk, _activeRoomId);
+  }
+
+  void _logActiveRoomDisconnected() {
+    final active = _activePeer;
+    if (active == null) return;
+    final rooms = _roomsByPeer[toStandardB64(active.remoteEpk)];
+    if (rooms == null) return;
+    final idx = rooms.indexWhere((room) => room.roomId == _activeRoomId);
+    if (idx < 0 || !rooms[idx].working) return;
+    _logDebug(
+      WorkingConvEvent(
+        ts: DateTime.now(),
+        room: _activeRoomId,
+        working: false,
+        reason: 'inactive_or_not_live',
+      ),
+    );
   }
 
   void _learnSessionFromPairOk(PeerRecord peer, PairOk msg) {
@@ -1770,7 +1778,7 @@ class ConnectionManager extends Service {
       // channel look like proof that the Pi room is online before its first
       // authoritative rooms snapshot arrives.
       _liveRoomIds.clear();
-      _clearActiveRoomWorking();
+      _logActiveRoomDisconnected();
     }
     if (!_statusController.isClosed) _statusController.add(s);
     if (wasOnline != nowOnline && !_roomsController.isClosed) {
