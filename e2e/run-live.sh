@@ -137,6 +137,17 @@ wait_for_device_value() {
   return 1
 }
 
+assert_pinless_e2e_avd() {
+  # 2026-08-23: a planted PIN wedged every later headless device run because
+  # no operator can unlock the AVD. Verify the empty credential explicitly.
+  if "$ADB_BIN" -s "$ANDROID_SERIAL" shell locksettings verify >/dev/null 2>&1; then
+    return 0
+  fi
+  printf '%s\n' \
+    'secure keyguard detected: the e2e AVD must never have a PIN; wipe AVD userdata (~/.android/avd/outpost34.avd/userdata*) and retry' >&2
+  return 1
+}
+
 fault_window_event() {
   local phase=$1 request=$2
   printf '{"tag":"scheduledFaultWindow","ts":"%s","phase":"%s","request":"%s"}\n' \
@@ -271,6 +282,7 @@ DEVICE_OWNED=1
 printf 'owner_pid=%s\nserial=%s\ncompose_project=%s\nemulator_pid=%s\n' \
   "$$" "$ANDROID_SERIAL" "$COMPOSE_PROJECT" "$EMULATOR_PID" >"$RUN_STATE/lane-owner.txt"
 wait_for_device_value 1 180
+assert_pinless_e2e_avd
 "$ADB_BIN" -s "$ANDROID_SERIAL" shell settings put global window_animation_scale 0
 "$ADB_BIN" -s "$ANDROID_SERIAL" shell settings put global transition_animation_scale 0
 "$ADB_BIN" -s "$ANDROID_SERIAL" shell settings put global animator_duration_scale 0
