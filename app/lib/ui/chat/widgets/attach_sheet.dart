@@ -19,13 +19,10 @@ Future<AttachSource?> showAttachSheet(BuildContext context) {
   final selection = context.read<SessionSelection>();
   return showModalBottomSheet<AttachSource>(
     context: context,
-    backgroundColor: context.colors.bg,
+    backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.6),
     isScrollControlled: true,
     showDragHandle: false,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
     builder: (ctx) => DismissOnSessionChange(
       selection: selection,
       child: const _AttachSheetBody(),
@@ -38,35 +35,50 @@ class _AttachSheetBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: context.colors.border,
-                borderRadius: BorderRadius.circular(2),
+    final colors = context.colors;
+    final lowHeight = MediaQuery.sizeOf(context).height < 500;
+    return AdaptiveSheetFrame(
+      maxWidth: 460,
+      maxHeight: 320,
+      contentKey: const Key('attach-sheet-scroll'),
+      child: Material(
+        key: const Key('attach-adaptive-sheet'),
+        color: colors.bg,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: lowHeight
+              ? BorderRadius.circular(16)
+              : const BorderRadius.vertical(top: Radius.circular(16)),
+          side: BorderSide(color: colors.border),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: colors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            _AttachOption(
-              key: const Key('attach-camera'),
-              icon: LucideIcons.camera,
-              label: 'Camera',
-              onTap: () => Navigator.of(context).pop(AttachSource.camera),
-            ),
-            _AttachOption(
-              key: const Key('attach-gallery'),
-              icon: LucideIcons.image,
-              label: 'Photo Library',
-              onTap: () => Navigator.of(context).pop(AttachSource.gallery),
-            ),
-          ],
+              _AttachOption(
+                key: const Key('attach-camera'),
+                icon: LucideIcons.camera,
+                label: 'Camera',
+                onTap: () => Navigator.of(context).pop(AttachSource.camera),
+              ),
+              _AttachOption(
+                key: const Key('attach-gallery'),
+                icon: LucideIcons.image,
+                label: 'Photo Library',
+                onTap: () => Navigator.of(context).pop(AttachSource.gallery),
+              ),
+            ],
+          ),
         ),
       ),
     );

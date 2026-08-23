@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:flutter/widgets.dart';
 
@@ -12,6 +14,9 @@ const double kMinDetailWidth = 320.0;
 
 /// Maximum line length for chat prose and the composer in one-pane layouts.
 const double kChatReadingMeasure = 640.0;
+
+/// Maximum width for Home filters, section headers, and session rows.
+const double kHomeListMaxWidth = 560.0;
 
 /// Width below which chat and Home headers use their compact treatments.
 const double kCompactHeaderBreakpoint = 280.0;
@@ -58,6 +63,68 @@ MediaQueryData masterPaneMediaQueryData(MediaQueryData data) {
 
 /// Maximum single-column content width for onboarding and empty states.
 const double kMaxContentWidth = 460.0;
+
+/// Constrain modal-sheet width and height across phone and split windows.
+///
+/// Low-height windows center the sheet like a dialog. Scrollable sheets keep
+/// the keyboard inset in their scroll padding so their final action remains
+/// reachable instead of increasing the route beyond its height budget.
+class AdaptiveSheetFrame extends StatelessWidget {
+  const AdaptiveSheetFrame({
+    super.key,
+    required this.child,
+    required this.maxWidth,
+    this.maxHeight = 640,
+    this.scrollable = true,
+    this.includeKeyboardInset = false,
+    this.fillHeight = false,
+    this.contentKey,
+  });
+
+  final Widget child;
+  final double maxWidth;
+  final double maxHeight;
+  final bool scrollable;
+  final bool includeKeyboardInset;
+  final bool fillHeight;
+  final Key? contentKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final heightLimit = math.min(maxHeight, media.size.height * 0.88);
+    final lowHeight = media.size.height < 500;
+    final content = scrollable
+        ? SingleChildScrollView(
+            key: contentKey,
+            padding: EdgeInsets.only(
+              bottom: includeKeyboardInset ? media.viewInsets.bottom : 0,
+            ),
+            child: child,
+          )
+        : child;
+    final heightConstrained = fillHeight
+        ? SizedBox(height: heightLimit, child: content)
+        : ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: heightLimit),
+            child: content,
+          );
+
+    return SizedBox(
+      height: media.size.height,
+      child: SafeArea(
+        top: false,
+        child: Align(
+          alignment: lowHeight ? Alignment.center : Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: SizedBox(width: maxWidth, child: heightConstrained),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// Center and constrain [child] on wide screens while preserving phone layout.
 ///

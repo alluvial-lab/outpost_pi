@@ -1,3 +1,4 @@
+import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,14 +19,28 @@ Future<void> showPasteQrSheet(
 }) async {
   await showModalBottomSheet<void>(
     context: context,
-    backgroundColor: context.colors.bg,
+    backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (sheetCtx) {
-      return Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+      final colors = sheetCtx.colors;
+      final lowHeight = MediaQuery.sizeOf(sheetCtx).height < 500;
+      return AdaptiveSheetFrame(
+        maxWidth: 560,
+        maxHeight: 640,
+        includeKeyboardInset: true,
+        contentKey: const Key('paste-qr-sheet-scroll'),
+        child: Material(
+          key: const Key('paste-qr-adaptive-sheet'),
+          color: colors.bg,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: lowHeight
+                ? BorderRadius.circular(16)
+                : const BorderRadius.vertical(top: Radius.circular(16)),
+            side: BorderSide(color: colors.border),
+          ),
+          child: const _PasteQrSheetBody(),
         ),
-        child: const _PasteQrSheetBody(),
       ).withOnSubmit(onSubmit);
     },
   );
@@ -45,8 +60,7 @@ class _OnSubmitScope extends InheritedWidget {
   const _OnSubmitScope({required this.onSubmit, required super.child});
 
   static void Function(String raw) of(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<_OnSubmitScope>();
+    final scope = context.dependOnInheritedWidgetOfExactType<_OnSubmitScope>();
     assert(
       scope != null,
       '_PasteQrSheetBody must be wrapped in a _OnSubmitScope (use showPasteQrSheet).',
@@ -109,132 +123,131 @@ class _PasteQrSheetBodyState extends State<_PasteQrSheetBody> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              alignment: Alignment.center,
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colors.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.border,
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-            Text(
-              'Paste pairing code',
-              style: TextStyle(
-                fontFamily: kMonoFamily,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: colors.text,
-              ),
+          ),
+          Text(
+            'Paste pairing code',
+            style: TextStyle(
+              fontFamily: kMonoFamily,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: colors.text,
             ),
-            const SizedBox(height: 6),
-            Text(
-              "Can't scan the QR? Paste the text from your Mac terminal "
-              "below. It starts with outpostpi://pair?…",
-              style: TextStyle(
+          ),
+          const SizedBox(height: 6),
+          Text(
+            "Can't scan the QR? Paste the text from your Mac terminal "
+            "below. It starts with outpostpi://pair?…",
+            style: TextStyle(
+              fontFamily: kMonoFamily,
+              fontSize: 11,
+              color: colors.muted,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _controller,
+            minLines: 3,
+            maxLines: 6,
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
+            keyboardType: TextInputType.url,
+            style: TextStyle(
+              fontFamily: kMonoFamily,
+              fontSize: 12,
+              color: colors.text,
+            ),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'outpostpi://pair?t=…',
+              hintStyle: TextStyle(
                 fontFamily: kMonoFamily,
-                fontSize: 11,
                 color: colors.muted,
-                height: 1.4,
+              ),
+              filled: true,
+              fillColor: colors.surface,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: colors.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: colors.accent),
               ),
             ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _controller,
-              minLines: 3,
-              maxLines: 6,
-              autocorrect: false,
-              enableSuggestions: false,
-              textCapitalization: TextCapitalization.none,
-              keyboardType: TextInputType.url,
-              style: TextStyle(
-                fontFamily: kMonoFamily,
-                fontSize: 12,
-                color: colors.text,
-              ),
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: 'outpostpi://pair?t=…',
-                hintStyle:
-                    TextStyle(fontFamily: kMonoFamily, color: colors.muted),
-                filled: true,
-                fillColor: colors.surface,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: colors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: colors.accent),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pasteFromClipboard,
-                    icon: Icon(
-                      LucideIcons.clipboardPaste,
-                      size: 16,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _pasteFromClipboard,
+                  icon: Icon(
+                    LucideIcons.clipboardPaste,
+                    size: 16,
+                    color: colors.accent,
+                  ),
+                  label: Text(
+                    'Paste from clipboard',
+                    style: TextStyle(
+                      fontFamily: kMonoFamily,
+                      fontSize: 12,
                       color: colors.accent,
                     ),
-                    label: Text(
-                      'Paste from clipboard',
-                      style: TextStyle(
-                        fontFamily: kMonoFamily,
-                        fontSize: 12,
-                        color: colors.accent,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: colors.border),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(6)),
-                      ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: colors.border),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(6)),
                     ),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _canSubmit ? _submit : null,
-              style: FilledButton.styleFrom(
-                backgroundColor: colors.accent,
-                foregroundColor: colors.onAccent,
-                disabledBackgroundColor: colors.border,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(6)),
-                ),
               ),
-              child: const Text(
-                'Pair',
-                style: TextStyle(
-                  fontFamily: kMonoFamily,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: _canSubmit ? _submit : null,
+            style: FilledButton.styleFrom(
+              backgroundColor: colors.accent,
+              foregroundColor: colors.onAccent,
+              disabledBackgroundColor: colors.border,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(6)),
               ),
             ),
-          ],
-        ),
+            child: const Text(
+              'Pair',
+              style: TextStyle(
+                fontFamily: kMonoFamily,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

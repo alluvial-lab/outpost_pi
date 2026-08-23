@@ -1,5 +1,6 @@
 import 'package:app/data/actions/actions_repository.dart';
 import 'package:app/protocol/protocol.dart';
+import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/chat/quick_actions/viewmodels/quick_actions_viewmodel.dart';
 import 'package:flutter/material.dart';
@@ -16,13 +17,10 @@ Future<void> showModelPickerSheet(
 }) {
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: context.colors.bg,
+    backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.6),
     isScrollControlled: true,
     showDragHandle: false,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
     builder: (ctx) {
       return ChangeNotifierProvider<QuickActionsViewModel>.value(
         value: vm,
@@ -75,53 +73,59 @@ class _ModelPickerBodyState extends State<_ModelPickerBody> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final mq = MediaQuery.of(context);
-    final maxHeight = mq.size.height * 0.78;
-    return SafeArea(
-      top: false,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        child: Padding(
-          padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 10),
-              _DragHandle(),
-              const SizedBox(height: 8),
-              _Header(onRefresh: _refresh),
-              Divider(color: colors.border, height: 1, thickness: 1),
-              Flexible(
-                child: FutureBuilder<ModelsCatalogue>(
-                  future: _future,
-                  builder: (ctx, snap) {
-                    if (snap.connectionState != ConnectionState.done) {
-                      return const _LoadingState();
-                    }
-                    if (snap.hasError) {
-                      return _ErrorState(
-                        message: snap.error is ActionFailure
-                            ? (snap.error as ActionFailure).message
-                            : 'Failed to load models',
-                        onRetry: _refresh,
-                      );
-                    }
-                    final cat = snap.data!;
-                    if (cat.models.isEmpty) {
-                      return const _EmptyState();
-                    }
-                    return _ProviderTabs(
-                      catalogue: cat,
-                      selectedProvider: _providerFilter,
-                      onProviderTap: (p) =>
-                          setState(() => _providerFilter = p),
-                      onModelPick: _onPick,
+    final lowHeight = MediaQuery.sizeOf(context).height < 500;
+    return AdaptiveSheetFrame(
+      maxWidth: 640,
+      maxHeight: 640,
+      scrollable: false,
+      fillHeight: true,
+      child: Material(
+        key: const Key('model-picker-adaptive-sheet'),
+        color: colors.bg,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: lowHeight
+              ? BorderRadius.circular(16)
+              : const BorderRadius.vertical(top: Radius.circular(16)),
+          side: BorderSide(color: colors.border),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            _DragHandle(),
+            const SizedBox(height: 8),
+            _Header(onRefresh: _refresh),
+            Divider(color: colors.border, height: 1, thickness: 1),
+            Flexible(
+              child: FutureBuilder<ModelsCatalogue>(
+                future: _future,
+                builder: (ctx, snap) {
+                  if (snap.connectionState != ConnectionState.done) {
+                    return const _LoadingState();
+                  }
+                  if (snap.hasError) {
+                    return _ErrorState(
+                      message: snap.error is ActionFailure
+                          ? (snap.error as ActionFailure).message
+                          : 'Failed to load models',
+                      onRetry: _refresh,
                     );
-                  },
-                ),
+                  }
+                  final cat = snap.data!;
+                  if (cat.models.isEmpty) {
+                    return const _EmptyState();
+                  }
+                  return _ProviderTabs(
+                    catalogue: cat,
+                    selectedProvider: _providerFilter,
+                    onProviderTap: (p) => setState(() => _providerFilter = p),
+                    onModelPick: _onPick,
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -201,13 +205,12 @@ class _ProviderTabs extends StatelessWidget {
     final colors = context.colors;
     final providers = <String>{
       for (final m in catalogue.models) m.provider,
-    }.toList()
-      ..sort();
+    }.toList()..sort();
     final filtered = selectedProvider == null
         ? catalogue.models
         : catalogue.models
-            .where((m) => m.provider == selectedProvider)
-            .toList();
+              .where((m) => m.provider == selectedProvider)
+              .toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -243,7 +246,8 @@ class _ProviderTabs extends StatelessWidget {
                 Divider(color: colors.border, height: 1, thickness: 1),
             itemBuilder: (_, i) {
               final m = filtered[i];
-              final isCurrent = catalogue.current?.id == m.id &&
+              final isCurrent =
+                  catalogue.current?.id == m.id &&
                   catalogue.current?.provider == m.provider;
               return _ModelTile(
                 model: m,
@@ -276,9 +280,7 @@ class _Chip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          border: Border.all(
-            color: selected ? colors.accent : colors.border,
-          ),
+          border: Border.all(color: selected ? colors.accent : colors.border),
           color: selected ? colors.accent.withValues(alpha: 0.12) : colors.bg,
           borderRadius: BorderRadius.circular(4),
         ),

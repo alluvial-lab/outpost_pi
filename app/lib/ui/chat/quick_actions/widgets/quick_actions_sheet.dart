@@ -32,13 +32,10 @@ Future<void> showQuickActionsSheet(BuildContext context) {
   final selection = context.read<SessionSelection>();
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: context.colors.bg,
+    backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.6),
     isScrollControlled: true,
     showDragHandle: false,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
     builder: (ctx) {
       return DismissOnSessionChange(
         selection: selection,
@@ -132,11 +129,21 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
     final state = vm.state;
     final busyAction = state is QuickActionsBusy ? state.action : null;
 
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
+    final colors = context.colors;
+    final lowHeight = MediaQuery.sizeOf(context).height < 500;
+    return AdaptiveSheetFrame(
+      maxWidth: 640,
+      maxHeight: 640,
+      contentKey: const Key('quick-actions-sheet-scroll'),
+      child: Material(
+        key: const Key('quick-actions-adaptive-sheet'),
+        color: colors.bg,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: lowHeight
+              ? BorderRadius.circular(16)
+              : const BorderRadius.vertical(top: Radius.circular(16)),
+          side: BorderSide(color: colors.border),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

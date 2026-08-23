@@ -1,4 +1,5 @@
-import 'package:app/routing/adaptive.dart' show kMaxContentWidth;
+import 'package:app/routing/adaptive.dart'
+    show kCompactHeaderBreakpoint, kHomeListMaxWidth, kMaxContentWidth;
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/home/states/home_state.dart';
 import 'package:flutter/material.dart';
@@ -26,21 +27,56 @@ class HomeFilterTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
-      child: Container(
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: colors.border),
-        ),
-        padding: const EdgeInsets.all(3),
-        child: Row(
-          children: [
-            _segment(context, HomeFilter.all, 'All', counts.all),
-            _segment(context, HomeFilter.online, 'Online', counts.online),
-            _segment(context, HomeFilter.offline, 'Offline', counts.offline),
-          ],
+    final compact = MediaQuery.sizeOf(context).width < kCompactHeaderBreakpoint;
+    return Align(
+      alignment: Alignment.center,
+      child: ConstrainedBox(
+        key: const Key('home-filter-content'),
+        constraints: const BoxConstraints(maxWidth: kHomeListMaxWidth),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            compact ? 12 : 20,
+            8,
+            compact ? 12 : 20,
+            10,
+          ),
+          child: Container(
+            key: Key(compact ? 'home-filter-compact' : 'home-filter-standard'),
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: colors.border),
+            ),
+            padding: const EdgeInsets.all(3),
+            child: Row(
+              children: [
+                _segment(
+                  context,
+                  HomeFilter.all,
+                  'All',
+                  LucideIcons.list,
+                  counts.all,
+                  compact: compact,
+                ),
+                _segment(
+                  context,
+                  HomeFilter.online,
+                  'Online',
+                  LucideIcons.wifi,
+                  counts.online,
+                  compact: compact,
+                ),
+                _segment(
+                  context,
+                  HomeFilter.offline,
+                  'Offline',
+                  LucideIcons.wifiOff,
+                  counts.offline,
+                  compact: compact,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -50,49 +86,62 @@ class HomeFilterTabs extends StatelessWidget {
     BuildContext context,
     HomeFilter value,
     String label,
-    int count,
-  ) {
+    IconData icon,
+    int count, {
+    required bool compact,
+  }) {
     final colors = context.colors;
     final selected = filter == value;
     return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => onSelected(value),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? colors.accent : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+      child: Tooltip(
+        message: label,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onSelected(value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: selected ? colors.accent : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (compact)
+                  Icon(
+                    icon,
+                    key: Key('home-filter-${value.name}-icon'),
+                    size: 14,
+                    color: selected ? colors.onAccent : colors.muted,
+                  )
+                else
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: kMonoFamily,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: selected ? colors.onAccent : colors.muted,
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 6),
+                Text(
+                  '$count',
                   style: TextStyle(
                     fontFamily: kMonoFamily,
-                    fontSize: 12.5,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: selected ? colors.onAccent : colors.muted,
+                    color: selected ? colors.onAccent : colors.muted2,
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '$count',
-                style: TextStyle(
-                  fontFamily: kMonoFamily,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: selected ? colors.onAccent : colors.muted2,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

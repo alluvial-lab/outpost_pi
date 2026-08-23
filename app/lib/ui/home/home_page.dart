@@ -82,9 +82,11 @@ class HomePage extends StatelessWidget {
     HomeState state,
   ) {
     final colors = context.colors;
-    final subtitle = _subtitleFor(context, vm, state);
-    const maxExpanded = 124.0;
+    final compact = MediaQuery.sizeOf(context).width < kCompactHeaderBreakpoint;
+    final subtitle = _subtitleFor(context, vm, state, compact: compact);
+    final maxExpanded = compact ? 104.0 : 124.0;
     return SliverAppBar(
+      key: Key(compact ? 'home-header-compact' : 'home-header-standard'),
       backgroundColor: colors.bg,
       surfaceTintColor: colors.bg,
       elevation: 0,
@@ -122,8 +124,8 @@ class HomePage extends StatelessWidget {
               Container(color: colors.bg),
               // Large title block — fades OUT as we collapse.
               Positioned(
-                left: 20,
-                right: 20,
+                left: compact ? 12 : 20,
+                right: compact ? 64 : 20,
                 bottom: 8,
                 child: IgnorePointer(
                   ignoring: t < 0.05,
@@ -136,7 +138,7 @@ class HomePage extends StatelessWidget {
                         Text(
                           'outpost_pi',
                           style: brandTextStyle(
-                            fontSize: 32,
+                            fontSize: compact ? 22 : 32,
                             fontWeight: FontWeight.w700,
                             color: colors.text,
                             letterSpacing: -0.5,
@@ -201,7 +203,12 @@ class HomePage extends StatelessWidget {
   /// pubkey), so `isRelayConnected` is false but that doesn't mean
   /// the relay is down. Render a neutral "Awaiting pairing" instead
   /// of the alarming amber "Offline".
-  Widget _subtitleFor(BuildContext context, HomeViewModel vm, HomeState state) {
+  Widget _subtitleFor(
+    BuildContext context,
+    HomeViewModel vm,
+    HomeState state, {
+    required bool compact,
+  }) {
     final colors = context.colors;
     final connected = vm.isRelayConnected;
     final awaitingPairing = state is HomeNoPeer;
@@ -222,6 +229,7 @@ class HomePage extends StatelessWidget {
       statusColor = colors.warning;
     }
     return Row(
+      key: Key(compact ? 'home-relay-status-compact' : 'home-relay-status'),
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
@@ -229,31 +237,35 @@ class HomePage extends StatelessWidget {
           height: 7,
           decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor),
         ),
-        const SizedBox(width: 8),
-        Text(
-          'Relay',
-          style: TextStyle(
-            fontFamily: kMonoFamily,
-            color: colors.text,
-            fontSize: 13,
+        SizedBox(width: compact ? 6 : 8),
+        if (!compact) ...[
+          Text(
+            'Relay',
+            style: TextStyle(
+              fontFamily: kMonoFamily,
+              color: colors.text,
+              fontSize: 13,
+            ),
           ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          '·',
-          style: TextStyle(
-            fontFamily: kMonoFamily,
-            color: colors.muted,
-            fontSize: 13,
+          const SizedBox(width: 6),
+          Text(
+            '·',
+            style: TextStyle(
+              fontFamily: kMonoFamily,
+              color: colors.muted,
+              fontSize: 13,
+            ),
           ),
-        ),
-        const SizedBox(width: 6),
+          const SizedBox(width: 6),
+        ],
         Text(
           statusLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontFamily: kMonoFamily,
             color: statusColor,
-            fontSize: 13,
+            fontSize: compact ? 11 : 13,
           ),
         ),
       ],
@@ -282,10 +294,12 @@ class HomePage extends StatelessWidget {
     // Plan-38 Phase 3 — presence filter at the top of the list. Pure view:
     // tapping a tab only swaps `state.filter` → `vm.visibleItems` re-derives.
     final tabs = SliverToBoxAdapter(
-      child: HomeFilterTabs(
-        filter: state.filter,
-        counts: counts,
-        onSelected: vm.setFilter,
+      child: _centerListContent(
+        HomeFilterTabs(
+          filter: state.filter,
+          counts: counts,
+          onSelected: vm.setFilter,
+        ),
       ),
     );
 
@@ -313,10 +327,10 @@ class HomePage extends StatelessWidget {
     String? lastEpk;
     for (final it in visible) {
       if (it.peer.remoteEpk != lastEpk) {
-        children.add(PeerSectionHeader(peer: it.peer));
+        children.add(_centerListContent(PeerSectionHeader(peer: it.peer)));
         lastEpk = it.peer.remoteEpk;
       }
-      children.add(_buildItemRowAt(context, vm, state, it));
+      children.add(_centerListContent(_buildItemRowAt(context, vm, state, it)));
     }
     return SliverMainAxisGroup(
       slivers: [
@@ -331,6 +345,17 @@ class HomePage extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _centerListContent(Widget child) {
+    return Align(
+      alignment: Alignment.center,
+      child: ConstrainedBox(
+        key: const Key('home-list-content'),
+        constraints: const BoxConstraints(maxWidth: kHomeListMaxWidth),
+        child: SizedBox(width: double.infinity, child: child),
+      ),
     );
   }
 
