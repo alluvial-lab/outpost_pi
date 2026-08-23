@@ -369,6 +369,84 @@ void main() {
       s.conn.dispose();
     });
 
+    test(
+      'disconnect projects stale once without repeated idle corrections',
+      () async {
+        final log = _RecordingDebugLog();
+        final channel = _FakeChannel();
+        final conn = ConnectionManager(
+          factory: (_, _) async => _FakeChannel(),
+          storage: _FakeStorage(),
+          debugLog: log,
+          emitDebounce: Duration.zero,
+        );
+        conn.adopt(channel, _peer);
+        channel.pushControl(
+          const RoomAnnounced(
+            peer: 'epk_projection',
+            roomId: 'main',
+            sessionId: 'session-current',
+            startedAt: 1,
+            working: true,
+          ),
+        );
+        await _settle();
+
+        conn.debugSimulateChannelLost(channel);
+        for (var tick = 0; tick < 3; tick++) {
+          conn.markRoomWorking(
+            'epk_projection',
+            'main',
+            false,
+            sessionId: 'session-current',
+            turnId: null,
+          );
+        }
+
+        expect(
+          conn.roomTurnProjection('epk_projection', 'main').status,
+          AppTurnStatus.stale,
+          reason: 'disconnect/retry is distinct from authoritative idle',
+        );
+        expect(
+          conn.roomsFor('epk_projection').single.working,
+          isTrue,
+          reason: 'offline ticks must not overwrite cached snapshot truth',
+        );
+        expect(
+          log.events.whereType<WorkingConvEvent>().where(
+            (event) => event.reason == 'inactive_or_not_live',
+          ),
+          hasLength(1),
+          reason: 'the disconnect edge emits once; level ticks stay quiet',
+        );
+
+        final reconnect = _FakeChannel();
+        conn.adopt(reconnect, _peer);
+        reconnect.pushControl(
+          const RoomsSnapshot(
+            peer: 'epk_projection',
+            rooms: [
+              RoomInfo(
+                roomId: 'main',
+                sessionId: 'session-current',
+                startedAt: 2,
+                working: false,
+              ),
+            ],
+          ),
+        );
+        await _settle();
+
+        expect(
+          conn.roomTurnProjection('epk_projection', 'main').status,
+          AppTurnStatus.idle,
+        );
+        expect(conn.roomsFor('epk_projection').single.working, isFalse);
+        conn.dispose();
+      },
+    );
+
     test('reconnect hydration with working false projects idle', () async {
       final s = await _connected();
       s.channel.pushControl(
