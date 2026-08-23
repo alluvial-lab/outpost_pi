@@ -63,6 +63,8 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
+  bool? _compactComposer;
+
   String? get initialTitle => widget.initialTitle;
   String? get initialDevice => widget.initialDevice;
   bool get initialOnline => widget.initialOnline;
@@ -92,9 +94,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final vm = context.watch<ChatViewModel>();
     final state = vm.state;
     final media = MediaQuery.of(context);
-    final compactComposer =
-        media.size.height - media.viewInsets.bottom <
-        kCompactComposerAvailableHeight;
+    final compactComposer = _resolveCompactComposer(
+      media.size.height - media.viewInsets.bottom,
+    );
 
     return Scaffold(
       backgroundColor: context.colors.bg,
@@ -122,6 +124,23 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  /// Apply separate entry and exit bounds across animated keyboard insets.
+  bool _resolveCompactComposer(double availableHeight) {
+    final compact = _compactComposer;
+    if (compact == null) {
+      return _compactComposer =
+          availableHeight < kCompactComposerAvailableHeight;
+    }
+    if (compact) {
+      if (availableHeight > kCompactComposerExitHeight) {
+        _compactComposer = false;
+      }
+    } else if (availableHeight < kCompactComposerAvailableHeight) {
+      _compactComposer = true;
+    }
+    return _compactComposer!;
   }
 
   Widget _buildTopBar(BuildContext context, ChatState state) {

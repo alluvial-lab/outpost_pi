@@ -350,11 +350,7 @@ class _InputBarState extends State<InputBar> {
         widget.onCancel != null;
 
     return Container(
-      key: Key(
-        compactHeight
-            ? 'input-bar-compact-height'
-            : 'input-bar-standard-height',
-      ),
+      key: const Key('input-bar-height'),
       padding: compactHeight
           ? const EdgeInsets.fromLTRB(14, 4, 14, 4)
           : const EdgeInsets.fromLTRB(14, 10, 14, 22),
