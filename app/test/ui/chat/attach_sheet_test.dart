@@ -37,6 +37,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('attach-camera')), findsOneWidget);
     expect(find.byKey(const Key('attach-gallery')), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const Key('attach-adaptive-sheet'))).width,
+      460,
+      reason: 'wide attach sheets use the explicit compact action-sheet cap',
+    );
 
     // Switch session on the tablet master list → sheet must dismiss.
     selection.select(_ref('e2', 'r2', 'session-2'), 'Chat 2');

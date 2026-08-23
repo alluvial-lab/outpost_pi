@@ -13,14 +13,18 @@ void main() {
       WidgetTester tester, {
       HomeFilter filter = HomeFilter.online,
       ValueChanged<HomeFilter>? onSelected,
+      Size size = const Size(800, 600),
     }) {
       return tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(
-            body: HomeFilterTabs(
-              filter: filter,
-              counts: (all: 3, online: 1, offline: 2),
-              onSelected: onSelected ?? (_) {},
+          home: MediaQuery(
+            data: MediaQueryData(size: size),
+            child: Scaffold(
+              body: HomeFilterTabs(
+                filter: filter,
+                counts: (all: 3, online: 1, offline: 2),
+                onSelected: onSelected ?? (_) {},
+              ),
             ),
           ),
         ),
@@ -36,6 +40,21 @@ void main() {
       expect(find.text('3'), findsOneWidget);
       expect(find.text('1'), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
+    });
+
+    testWidgets('234dp width collapses labels to compact filter icons', (
+      tester,
+    ) async {
+      await pump(tester, size: const Size(234, 842));
+
+      expect(find.byKey(const Key('home-filter-compact')), findsOneWidget);
+      expect(find.byKey(const Key('home-filter-all-icon')), findsOneWidget);
+      expect(find.byKey(const Key('home-filter-online-icon')), findsOneWidget);
+      expect(find.byKey(const Key('home-filter-offline-icon')), findsOneWidget);
+      expect(find.text('All'), findsNothing);
+      expect(find.text('Online'), findsNothing);
+      expect(find.text('Offline'), findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('tapping a tab fires onSelected with that filter', (

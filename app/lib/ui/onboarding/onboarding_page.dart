@@ -55,6 +55,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
     return Scaffold(
       backgroundColor: context.colors.bg,
+      // Paste-QR owns keyboard avoidance inside its bounded scroll frame;
+      // keep the obscured onboarding route stable behind the modal.
+      resizeToAvoidBottomInset: false,
       // Plan/tablet — cap + centre the stepper on wide screens so the
       // phone-oriented column doesn't stretch edge-to-edge on iPad.
       body: SafeArea(

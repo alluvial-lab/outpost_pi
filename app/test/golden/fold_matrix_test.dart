@@ -114,6 +114,30 @@ void main() {
             geometry: geometry,
             surface: 'home',
             home: fixture.homeSurface(),
+            afterPump: () async {
+              if (geometry.width < 280) {
+                expect(
+                  find.byKey(const Key('home-header-compact')),
+                  findsOneWidget,
+                );
+                expect(
+                  find.byKey(const Key('home-filter-compact')),
+                  findsOneWidget,
+                );
+              }
+              if (geometry.width == 797) {
+                final listContent = find.byKey(const Key('home-list-content'));
+                expect(listContent, findsWidgets);
+                for (final element in listContent.evaluate()) {
+                  expect(
+                    tester
+                        .getSize(find.byElementPredicate((e) => e == element))
+                        .width,
+                    lessThanOrEqualTo(560),
+                  );
+                }
+              }
+            },
           );
           await _capture(
             tester,
@@ -411,12 +435,7 @@ Future<void> _capturePasteSheet(
 // sibling stories. Those stories delete their entry when they fix the layout;
 // every other overflow is an immediate harness failure.
 const _temporaryOverflowAllowlist = <String, Set<String>>{
-  '234x842': <String>{
-    'story-fold-home-sheets-adaptivity',
-    'story-fold-system-pages-a11y-floors',
-  },
-  '797x411': <String>{'story-fold-home-sheets-adaptivity'},
-  '797x411+keyboard': <String>{'story-fold-home-sheets-adaptivity'},
+  '234x842': <String>{'story-fold-system-pages-a11y-floors'},
 };
 
 Future<void> _pumpWithOverflowPolicy({
