@@ -623,18 +623,21 @@ final class FoldProductionShellMirror extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!isWideLayout(context)) return const HomePage();
+    if (!canUseTwoPaneLayout(context)) return const HomePage();
     return Row(
       children: <Widget>[
         SizedBox(
-          width: 360,
-          child: MediaQuery.removePadding(
-            context: context,
-            removeRight: true,
+          width: kMasterPaneWidth,
+          child: MediaQuery(
+            data: masterPaneMediaQueryData(MediaQuery.of(context)),
             child: const HomePage(),
           ),
         ),
-        VerticalDivider(width: 1, thickness: 1, color: context.colors.border),
+        VerticalDivider(
+          width: 1,
+          thickness: 1,
+          color: context.colors.borderStrong,
+        ),
         Expanded(
           child: MediaQuery.removePadding(
             context: context,

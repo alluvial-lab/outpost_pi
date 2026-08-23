@@ -348,7 +348,7 @@ class HomePage extends StatelessWidget {
     // layout (on phone the list is covered by the pushed chat, so a
     // persistent highlight would be meaningless).
     final isSelected =
-        isWideLayout(context) &&
+        canUseTwoPaneLayout(context) &&
         context.watch<SessionSelection>().matchesRef(
           _remoteSessionRef(it.peer, it.room),
         );
@@ -542,9 +542,9 @@ class HomePage extends StatelessWidget {
       device,
       online,
     );
-    // Phone: full-screen chat (root push → native back/swipe). Tablet:
-    // the detail pane reacts to the selection above — no nav needed.
-    if (!isWideLayout(context)) {
+    // Single-pane: full-screen chat (root push → native back/swipe).
+    // Two-pane: the detail reacts to the selection above — no nav needed.
+    if (!canUseTwoPaneLayout(context)) {
       context.push(
         '/chat',
         extra: {'title': title, 'device': device, 'online': online},

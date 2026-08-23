@@ -1,21 +1,51 @@
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:flutter/widgets.dart';
 
-/// Minimum logical shortest side that enables the two-pane tablet layout.
+/// Minimum logical shortest side that classifies a window as tablet-sized.
 const double kTabletBreakpoint = 600.0;
 
-/// Whether the window can use the two-pane tablet layout in either orientation.
+/// Fixed logical width reserved for the session-list master pane.
+const double kMasterPaneWidth = 360.0;
+
+/// Minimum usable logical width reserved for the chat detail pane.
+const double kMinDetailWidth = 320.0;
+
+/// Whether the window has tablet semantics in either orientation.
 ///
 /// Classify by `shortestSide` (`min(width, height)`), not width alone: a phone
 /// in landscape can be wide without being tablet-sized. The rotation-invariant
-/// threshold keeps phones (~360–430) single-pane and tablets (>=768) split.
+/// threshold keeps phones (~360–430) phone-class and tablets (>=600)
+/// tablet-class. [canUseTwoPaneLayout] separately applies the pane budget.
 ///
-/// iPad Split View and Slide Over also collapse naturally because `MediaQuery`
-/// measures the allocated window, not the physical device. Requiring both
-/// dimensions to meet the threshold deliberately treats a short landscape phone
-/// as a phone.
+/// `MediaQuery` measures the allocated window rather than the physical device.
+/// Requiring both dimensions to meet the threshold deliberately treats a short
+/// landscape phone as a phone.
 bool isWideLayout(BuildContext context) =>
     MediaQuery.sizeOf(context).shortestSide >= kTabletBreakpoint;
+
+/// Whether the current orientation can afford both master and detail panes.
+///
+/// Tablet classification remains rotation-invariant through [isWideLayout],
+/// while the active orientation must also budget a usable detail beside the
+/// fixed master. A tablet-sized 600–679dp window therefore stays single-pane.
+bool canUseTwoPaneLayout(BuildContext context) {
+  return isWideLayout(context) &&
+      MediaQuery.sizeOf(context).width >= kMasterPaneWidth + kMinDetailWidth;
+}
+
+/// Derive master-pane insets that ignore a detail-pane keyboard.
+///
+/// Removes the keyboard's bottom view inset, restores the stable bottom safe
+/// padding from [MediaQueryData.viewPadding], and strips only the edge facing
+/// the divider. Outer-edge and top safe areas remain intact.
+MediaQueryData masterPaneMediaQueryData(MediaQueryData data) {
+  final isolated = data
+      .removeViewInsets(removeBottom: true)
+      .removePadding(removeRight: true);
+  return isolated.copyWith(
+    padding: isolated.padding.copyWith(bottom: data.viewPadding.bottom),
+  );
+}
 
 /// Maximum single-column content width for onboarding and empty states.
 const double kMaxContentWidth = 460.0;

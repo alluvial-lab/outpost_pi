@@ -433,8 +433,8 @@ AppRouterOwner buildRouter(
       // Two branches, each with its own Navigator: branch 0 = Home
       // (master list), branch 1 = the chat detail. `navigatorContainerBuilder`
       // lays them out by available width:
-      //   • wide (≥ kTabletBreakpoint) → master + detail side by side
-      //   • narrow                     → only the active branch (phone)
+      //   • tablet + pane budget (≥680dp wide) → master + detail side by side
+      //   • otherwise                         → only the active branch
       //
       // On phone the detail branch is never activated — tapping a session
       // does a full-screen root `push('/chat')` instead (see Home._open),
@@ -449,28 +449,30 @@ AppRouterOwner buildRouter(
           // doesn't see a cramped 360 column next to a big empty
           // placeholder.
           final twoPane =
-              isWideLayout(ctx) && !ctx.watch<ShellLayout>().isZeroState;
+              canUseTwoPaneLayout(ctx) && !ctx.watch<ShellLayout>().isZeroState;
           if (!twoPane) {
             return children[navShell.currentIndex];
           }
-          // On a notched iPhone in landscape (width ≥ kTabletBreakpoint, so
-          // two-pane), each pane's own SafeArea reads the *full screen* insets
-          // and pads the edge facing the divider too — a phantom horizontal
-          // gutter beside the divider (which side depends on the notch
-          // orientation). Strip the divider-facing inset per pane so content
-          // reaches the divider; outer screen edges + top/bottom stay inset and
-          // the Scaffold backgrounds keep painting full-bleed.
+          // On a tablet with asymmetric landscape safe areas, each pane's own
+          // SafeArea reads the *full screen* insets and pads the edge facing the
+          // divider too — a phantom horizontal gutter beside the divider (which
+          // side depends on the camera housing). Strip the divider-facing inset
+          // per pane so content reaches the divider; outer screen edges +
+          // top/bottom stay inset and Scaffold backgrounds paint full-bleed.
           return Row(
             children: [
               SizedBox(
-                width: 360,
-                child: MediaQuery.removePadding(
-                  context: ctx,
-                  removeRight: true,
+                width: kMasterPaneWidth,
+                child: MediaQuery(
+                  data: masterPaneMediaQueryData(MediaQuery.of(ctx)),
                   child: children[0],
                 ),
               ),
-              VerticalDivider(width: 1, thickness: 1, color: ctx.colors.border),
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: ctx.colors.borderStrong,
+              ),
               Expanded(
                 child: MediaQuery.removePadding(
                   context: ctx,

@@ -1,7 +1,7 @@
 ---
 id: story-fold-two-pane-policy
 kind: story
-stage: implementing
+stage: done
 tags: [app, ux]
 parent: feature-fold-usability-pass
 depends_on: ['story-fold-golden-harness-fidelity']
@@ -39,3 +39,21 @@ Review findings 8, 9, 17. Files: `lib/routing/adaptive.dart`,
 Widget tests: split decision at 599/600/679/680/701/842dp widths; divider
 token contrast >= existing border usage; master pane height unchanged when
 detail viewInsets=280. Goldens regreen.
+
+## Implementation
+
+- Kept `isWideLayout` as the shortest-side tablet classifier and added the
+  orientation-specific `canUseTwoPaneLayout` pane budget: fixed 360dp master +
+  new 320dp minimum detail. The shell now splits at 680dp, preserving Fold
+  701/842 layouts while collapsing 600–679dp windows.
+- Added the contract-backed `borderStrong` semantic token (`#2A342C` dark,
+  `#C2CEC3` light) and used it for the 1dp pane divider; tests prove it improves
+  contrast over the ordinary hairline token in both themes.
+- Centralized master-pane MediaQuery derivation so detail keyboard viewInsets
+  are removed, stable bottom safe padding is restored, and divider-facing
+  padding alone is stripped. A 280dp detail keyboard no longer changes master
+  body height.
+- Updated the production-mirror golden shell and regenerated all 144 captures.
+
+Verification: adaptive/theme widget tests, full golden matrix, `flutter analyze`,
+and `flutter test --exclude-tags e2e --concurrency=2`.
