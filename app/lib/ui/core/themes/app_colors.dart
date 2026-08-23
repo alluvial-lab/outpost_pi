@@ -19,6 +19,7 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.bg,
     required this.surface,
     required this.border,
+    required this.borderStrong,
     required this.text,
     required this.muted,
     required this.muted2,
@@ -45,6 +46,9 @@ class AppColors extends ThemeExtension<AppColors> {
 
   /// Hairline borders / dividers. Was `kBorder`.
   final Color border;
+
+  /// Strong separators that need more contrast than a hairline border.
+  final Color borderStrong;
 
   /// Primary foreground text. Was `kText`.
   final Color text;
@@ -102,6 +106,7 @@ class AppColors extends ThemeExtension<AppColors> {
     bg: Color(0xFF0D1210),
     surface: Color(0xFF131A16),
     border: Color(0xFF1E2620),
+    borderStrong: Color(0xFF2A342C),
     text: Color(0xFFE4EFE8),
     muted: Color(0xFF89978D),
     muted2: Color(0xFFAAB6AD),
@@ -125,6 +130,7 @@ class AppColors extends ThemeExtension<AppColors> {
     bg: Color(0xFFF3F6F3),
     surface: Color(0xFFF8FAF8),
     border: Color(0xFFDFE6DF),
+    borderStrong: Color(0xFFC2CEC3),
     text: Color(0xFF182019),
     muted: Color(0xFF57635A),
     muted2: Color(0xFF3D4940),
@@ -148,6 +154,7 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? bg,
     Color? surface,
     Color? border,
+    Color? borderStrong,
     Color? text,
     Color? muted,
     Color? muted2,
@@ -169,6 +176,7 @@ class AppColors extends ThemeExtension<AppColors> {
       bg: bg ?? this.bg,
       surface: surface ?? this.surface,
       border: border ?? this.border,
+      borderStrong: borderStrong ?? this.borderStrong,
       text: text ?? this.text,
       muted: muted ?? this.muted,
       muted2: muted2 ?? this.muted2,
@@ -195,6 +203,7 @@ class AppColors extends ThemeExtension<AppColors> {
       bg: Color.lerp(bg, other.bg, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
       border: Color.lerp(border, other.border, t)!,
+      borderStrong: Color.lerp(borderStrong, other.borderStrong, t)!,
       text: Color.lerp(text, other.text, t)!,
       muted: Color.lerp(muted, other.muted, t)!,
       muted2: Color.lerp(muted2, other.muted2, t)!,

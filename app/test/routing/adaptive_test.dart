@@ -20,10 +20,10 @@ GoRouter _buildAdaptiveRouter() {
       StatefulShellRoute(
         builder: (ctx, st, navShell) => navShell,
         navigatorContainerBuilder: (ctx, navShell, children) {
-          if (!isWideLayout(ctx)) return children[navShell.currentIndex];
+          if (!canUseTwoPaneLayout(ctx)) return children[navShell.currentIndex];
           return Row(
             children: [
-              SizedBox(width: 360, child: children[0]),
+              SizedBox(width: kMasterPaneWidth, child: children[0]),
               Expanded(child: children[1]),
             ],
           );
@@ -183,10 +183,46 @@ void main() {
     });
   });
 
-  group('adaptive shell layout', () {
-    testWidgets('tablet (both sides >= 600) → master AND detail', (
+  group('two-pane pane budget', () {
+    Future<bool> splitAt(WidgetTester tester, double width) async {
+      late bool split;
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData(size: Size(width, 900)),
+          child: Builder(
+            builder: (context) {
+              split = canUseTwoPaneLayout(context);
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      return split;
+    }
+
+    testWidgets('splits only when master and minimum detail both fit', (
       tester,
     ) async {
+      const decisions = <(double, bool)>[
+        (599, false),
+        (600, false),
+        (679, false),
+        (680, true),
+        (701, true),
+        (842, true),
+      ];
+      for (final (width, expected) in decisions) {
+        expect(
+          await splitAt(tester, width),
+          expected,
+          reason: '$width dp pane-budget decision',
+        );
+      }
+    });
+  });
+
+  group('adaptive shell layout', () {
+    testWidgets('tablet with pane budget → master AND detail', (tester) async {
       await _pumpAt(tester, const Size(1024, 768)); // iPad landscape
       expect(find.text('MASTER'), findsOneWidget);
       expect(find.text('DETAIL'), findsOneWidget);
@@ -220,11 +256,12 @@ void main() {
             builder: (ctx, st, navShell) => navShell,
             navigatorContainerBuilder: (ctx, navShell, children) {
               final twoPane =
-                  isWideLayout(ctx) && !ctx.watch<ShellLayout>().isZeroState;
+                  canUseTwoPaneLayout(ctx) &&
+                  !ctx.watch<ShellLayout>().isZeroState;
               if (!twoPane) return children[navShell.currentIndex];
               return Row(
                 children: [
-                  SizedBox(width: 360, child: children[0]),
+                  SizedBox(width: kMasterPaneWidth, child: children[0]),
                   Expanded(child: children[1]),
                 ],
               );
@@ -292,8 +329,8 @@ void main() {
     // it also insets the edge facing the divider — a phantom horizontal gutter.
     // The fix strips the divider-facing inset per pane via MediaQuery.removePadding.
     //
-    // Uses a tablet-class window (both sides >= 600) since two-pane is now
-    // gated on shortestSide — a phone in landscape no longer reaches here.
+    // Uses a tablet-class window that also meets the 680dp pane budget; a
+    // phone in landscape and a 600–679dp tablet window no longer reach here.
     const masterKey = Key('master-body');
     const detailKey = Key('detail-body');
     const screen = Size(1024, 768); // iPad landscape
@@ -308,15 +345,14 @@ void main() {
     );
 
     Widget twoPaneRow({required bool withFix}) {
-      Widget left = SizedBox(width: 360, child: pane(masterKey));
+      Widget left = SizedBox(width: kMasterPaneWidth, child: pane(masterKey));
       Widget right = Expanded(child: pane(detailKey));
       if (withFix) {
         left = SizedBox(
-          width: 360,
+          width: kMasterPaneWidth,
           child: Builder(
-            builder: (ctx) => MediaQuery.removePadding(
-              context: ctx,
-              removeRight: true,
+            builder: (ctx) => MediaQuery(
+              data: masterPaneMediaQueryData(MediaQuery.of(ctx)),
               child: pane(masterKey),
             ),
           ),
@@ -356,6 +392,12 @@ void main() {
                 padRight,
                 padBottom,
               ),
+              viewPadding: EdgeInsets.fromLTRB(
+                padLeft,
+                padTop,
+                padRight,
+                padBottom,
+              ),
             ),
             child: twoPaneRow(withFix: withFix),
           ),
@@ -369,11 +411,14 @@ void main() {
     ) async {
       await pumpRow(tester, withFix: false);
       // Master (left pane) wrongly insets its right → stops short of the divider.
-      expect(tester.getRect(find.byKey(masterKey)).right, 360 - padRight);
+      expect(
+        tester.getRect(find.byKey(masterKey)).right,
+        kMasterPaneWidth - padRight,
+      );
       // Detail (right pane) wrongly insets its left → gap after the divider.
       expect(
         tester.getRect(find.byKey(detailKey)).left,
-        360 + dividerW + padLeft,
+        kMasterPaneWidth + dividerW + padLeft,
       );
     });
 
@@ -385,10 +430,14 @@ void main() {
         final detail = tester.getRect(find.byKey(detailKey));
 
         // Divider-facing edges now reach the divider (no phantom gutter).
-        expect(master.right, 360, reason: 'master fills up to the divider');
+        expect(
+          master.right,
+          kMasterPaneWidth,
+          reason: 'master fills up to the divider',
+        );
         expect(
           detail.left,
-          360 + dividerW,
+          kMasterPaneWidth + dividerW,
           reason: 'detail starts at the divider',
         );
 
@@ -409,5 +458,77 @@ void main() {
         }
       },
     );
+  });
+
+  group('two-pane keyboard isolation', () {
+    const screen = Size(842, 701);
+    const masterBodyKey = Key('keyboard-master-body');
+    const masterMediaKey = Key('keyboard-master-media');
+
+    Future<({double height, EdgeInsets viewInsets})> pumpWithKeyboard(
+      WidgetTester tester,
+      double keyboardInset,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = screen;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      EdgeInsets? masterViewInsets;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(
+              size: screen,
+              viewPadding: const EdgeInsets.only(bottom: 24),
+              padding: EdgeInsets.only(bottom: keyboardInset > 0 ? 0 : 24),
+              viewInsets: EdgeInsets.only(bottom: keyboardInset),
+            ),
+            child: Builder(
+              builder: (context) => Row(
+                children: [
+                  SizedBox(
+                    width: kMasterPaneWidth,
+                    child: MediaQuery(
+                      key: masterMediaKey,
+                      data: masterPaneMediaQueryData(MediaQuery.of(context)),
+                      child: Builder(
+                        builder: (masterContext) {
+                          masterViewInsets = MediaQuery.viewInsetsOf(
+                            masterContext,
+                          );
+                          return Scaffold(
+                            body: SafeArea(
+                              child: SizedBox.expand(key: masterBodyKey),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const VerticalDivider(width: 1),
+                  const Expanded(child: Scaffold(body: TextField())),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return (
+        height: tester.getSize(find.byKey(masterBodyKey)).height,
+        viewInsets: masterViewInsets!,
+      );
+    }
+
+    testWidgets('master height stays stable under a detail keyboard', (
+      tester,
+    ) async {
+      final withoutKeyboard = await pumpWithKeyboard(tester, 0);
+      final withKeyboard = await pumpWithKeyboard(tester, 280);
+
+      expect(withKeyboard.height, withoutKeyboard.height);
+      expect(withKeyboard.viewInsets.bottom, 0);
+      expect(withoutKeyboard.viewInsets.bottom, 0);
+    });
   });
 }
