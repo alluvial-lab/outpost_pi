@@ -673,8 +673,7 @@ class _MessageListState extends State<_MessageList> {
   final _viewportKey = GlobalKey();
   final Map<String, GlobalKey> _messageKeys = {};
   Timer? _continuationTimer;
-  _ViewportAnchor? _pendingAnchor;
-  var _wasAtBottom = true;
+  var _anchorRevision = 0;
   var _awaitingReconnectHydration = false;
   var _showContinuation = false;
 
@@ -690,7 +689,7 @@ class _MessageListState extends State<_MessageList> {
     final transcriptChanged =
         !_sameMessageIds(oldWidget.messages, widget.messages) ||
         oldWidget.streaming != widget.streaming;
-    if (transcriptChanged) _captureAnchor();
+    final anchor = transcriptChanged ? _captureAnchor() : null;
     _syncMessageKeys();
 
     if (!oldWidget.isReconnecting && widget.isReconnecting) {
@@ -709,7 +708,10 @@ class _MessageListState extends State<_MessageList> {
     }
 
     if (transcriptChanged) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _restoreAnchor());
+      final revision = ++_anchorRevision;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _restoreAnchor(revision, anchor),
+      );
     }
   }
 
@@ -727,15 +729,16 @@ class _MessageListState extends State<_MessageList> {
     return true;
   }
 
-  void _captureAnchor() {
-    if (!_controller.hasClients) return;
+  _PendingViewportRestore? _captureAnchor() {
+    if (!_controller.hasClients) return null;
     final position = _controller.position;
-    _wasAtBottom = position.pixels <= position.minScrollExtent + 2;
-    _pendingAnchor = null;
-    if (_wasAtBottom) return;
+    final wasAtBottom = position.pixels <= position.minScrollExtent + 2;
+    if (wasAtBottom) {
+      return const _PendingViewportRestore(wasAtBottom: true);
+    }
 
     final viewport = _viewportKey.currentContext?.findRenderObject();
-    if (viewport is! RenderBox) return;
+    if (viewport is! RenderBox) return null;
     _ViewportAnchor? firstVisible;
     for (final entry in _messageKeys.entries) {
       final render = entry.value.currentContext?.findRenderObject();
@@ -747,35 +750,41 @@ class _MessageListState extends State<_MessageList> {
         firstVisible = _ViewportAnchor(messageId: entry.key, visualOffset: top);
       }
     }
-    _pendingAnchor = firstVisible;
+    return _PendingViewportRestore(wasAtBottom: false, anchor: firstVisible);
   }
 
-  void _restoreAnchor() {
-    if (!mounted || !_controller.hasClients) return;
-    final position = _controller.position;
-    if (_wasAtBottom) {
-      _controller.jumpTo(position.minScrollExtent);
-    } else if (_pendingAnchor case _ViewportAnchor(
-      :final messageId,
-      :final visualOffset,
-    )) {
-      final viewport = _viewportKey.currentContext?.findRenderObject();
-      final render = _messageKeys[messageId]?.currentContext
-          ?.findRenderObject();
-      if (viewport is RenderBox && render is RenderBox && render.attached) {
-        final current = render
-            .localToGlobal(Offset.zero, ancestor: viewport)
-            .dy;
-        final target = (position.pixels + current - visualOffset).clamp(
-          position.minScrollExtent,
-          position.maxScrollExtent,
-        );
-        _controller.jumpTo(target.toDouble());
+  void _restoreAnchor(int revision, _PendingViewportRestore? restore) {
+    if (!mounted) return;
+    if (_controller.hasClients && revision == _anchorRevision) {
+      final position = _controller.position;
+      if (restore?.wasAtBottom ?? false) {
+        _controller.jumpTo(position.minScrollExtent);
+      } else if (restore?.anchor case _ViewportAnchor(
+        :final messageId,
+        :final visualOffset,
+      )) {
+        final viewport = _viewportKey.currentContext?.findRenderObject();
+        final render = _messageKeys[messageId]?.currentContext
+            ?.findRenderObject();
+        if (viewport is RenderBox && render is RenderBox && render.attached) {
+          final current = render
+              .localToGlobal(Offset.zero, ancestor: viewport)
+              .dy;
+          final target = (position.pixels + current - visualOffset).clamp(
+            position.minScrollExtent,
+            position.maxScrollExtent,
+          );
+          _controller.jumpTo(target.toDouble());
+        }
       }
     }
-    _pendingAnchor = null;
     final currentIds = {for (final message in widget.messages) message.id};
     _messageKeys.removeWhere((id, _) => !currentIds.contains(id));
+  }
+
+  bool _invalidateAnchorOnUserScroll(UserScrollNotification _) {
+    _anchorRevision += 1;
+    return false;
   }
 
   @override
@@ -794,36 +803,42 @@ class _MessageListState extends State<_MessageList> {
 
     return Stack(
       children: [
-        ListView.separated(
-          key: _viewportKey,
-          controller: _controller,
-          reverse: true,
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-          itemCount: itemCount,
-          separatorBuilder: (_, _) => const SizedBox(height: 14),
-          itemBuilder: (_, i) {
-            if (streaming != null && i == 0) {
-              return SizedBox(
-                key: const ValueKey('streaming'),
-                child: StreamingBubble(streaming),
-              );
-            }
-            final msgIdx =
-                messages.length - 1 - (i - (streaming != null ? 1 : 0));
-            final msg = messages[msgIdx];
-            return SizedBox(
-              key: _messageKeys[msg.id],
-              child: switch (msg) {
-                UserMsg() => UserBubble(msg),
-                AssistantMsg() => AssistantBubble(msg),
-                ToolEvent() => ToolRequestCard(
-                  tool: msg,
-                  onDecide: widget.onDecide,
+        NotificationListener<UserScrollNotification>(
+          onNotification: _invalidateAnchorOnUserScroll,
+          child: ListView.separated(
+            key: _viewportKey,
+            controller: _controller,
+            reverse: true,
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+            itemCount: itemCount,
+            separatorBuilder: (_, _) => const SizedBox(height: 14),
+            itemBuilder: (_, i) {
+              if (streaming != null && i == 0) {
+                return SizedBox(
+                  key: const ValueKey('streaming'),
+                  child: StreamingBubble(streaming),
+                );
+              }
+              final msgIdx =
+                  messages.length - 1 - (i - (streaming != null ? 1 : 0));
+              final msg = messages[msgIdx];
+              return KeyedSubtree(
+                key: ValueKey<String>(msg.id),
+                child: SizedBox(
+                  key: _messageKeys[msg.id],
+                  child: switch (msg) {
+                    UserMsg() => UserBubble(msg),
+                    AssistantMsg() => AssistantBubble(msg),
+                    ToolEvent() => ToolRequestCard(
+                      tool: msg,
+                      onDecide: widget.onDecide,
+                    ),
+                    CompactionMsg() => CompactionBubble(msg),
+                  },
                 ),
-                CompactionMsg() => CompactionBubble(msg),
-              },
-            );
-          },
+              );
+            },
+          ),
         ),
         if (_showContinuation)
           Positioned(
@@ -859,6 +874,13 @@ class _MessageListState extends State<_MessageList> {
       ],
     );
   }
+}
+
+final class _PendingViewportRestore {
+  const _PendingViewportRestore({required this.wasAtBottom, this.anchor});
+
+  final bool wasAtBottom;
+  final _ViewportAnchor? anchor;
 }
 
 final class _ViewportAnchor {

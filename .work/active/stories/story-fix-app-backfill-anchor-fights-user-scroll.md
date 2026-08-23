@@ -1,7 +1,7 @@
 ---
 id: story-fix-app-backfill-anchor-fights-user-scroll
 kind: story
-stage: implementing
+stage: done
 tags: [app, bug]
 parent: null
 depends_on: []
@@ -22,29 +22,53 @@ while faults keep inserting rows. Evidence:
 `.work/session-notes/live-soak-20260823T230319Z-20260828/` (frame #6 =
 generated line 447 = e2e/live_soak.py `_assertEveryMaintainedBubbleRenders`).
 
-## Root cause (to confirm)
-`chat_page.dart` c7503f62 anchoring: `_captureAnchor()` on transcript change
-+ post-frame `_restoreAnchor()`. During continuous backfill (fault windows),
-every insert captures the CURRENT first-visible, then restore logic applies a
-STALE anchor (captured before subsequent scrolls), repeatedly overriding the
-viewport — user/programmatic upward scroll never accumulates; older bubbles
-are unreachable while inserts continue. Passed 0.5.2 (no anchoring); regressed
-0.6.2.
+## Root cause
+`chat_page.dart` c7503f62 stored each row's geometry key as the list child's
+only key, replacing the prior `ValueKey(message.id)` contract. The soak oracle
+therefore could not locate even the baseline `sync_0` bubble: its captured log
+contains one DB/projection id and fails immediately in `dragUntilVisible` with
+`Bad state: No element`, before continuous fault insertion begins. Separately,
+the new post-frame restore used shared mutable anchor state with no revision or
+user-scroll invalidation, so a queued restore could still apply after a newer
+transcript update or user movement.
 
 ## Fix approach
-Anchor semantics per the original story: (a) at-bottom → stay pinned to
-newest; (b) scrolled up → the USER's current first-visible row stays stable
-across inserts (anchor refreshes to follow the user, never overrides them);
-(c) only a genuine hydration REBUILD (cold projection rebuild) may re-place
-the viewport, once. No post-frame restore that retroactively moves a
-viewport the user has since scrolled.
+Keep the public/stable `ValueKey(message.id)` on each list child and nest the
+private `GlobalKey` used for render geometry beneath it. Make every captured
+anchor an immutable restore request with a monotonic revision; only the newest
+request may restore, and any `UserScrollNotification` invalidates it. Bottom
+readers remain pinned, while a scrolled-up reader's newly captured first-visible
+row follows their movement across later inserts instead of an obsolete request
+moving them back.
 
 ## Regression test
-Widget test (fails-before): transcript streaming inserts while the test
-scrolls up N times → assert cumulative scroll offset is preserved (first-
-visible row id unchanged across the next insert) and an older-than-anchor
-bubble is reachable by scroll during continued inserts.
+`app/test/ui/chat/chat_page_appbar_test.dart` extends the original backfill
+widget test with five scroll-plus-insert cycles. It asserts that the user's
+scroll offset accumulates, then uses the production oracle's
+`ValueKey<String>(message.id)` lookup to reach an older-than-anchor bubble while
+inserts continue. Fails-before evidence: `scrollUntilVisible` threw the same
+`Bad state: No element` stack as the device soak; the preceding cumulative-
+offset assertion passed, disproving that the captured soak failed because
+inserts had already frozen scrolling.
 
 ## Verification
 300s live soak green (seeds 20260828 + one fresh) with the rendered-bubble
 oracle active — that oracle IS the contract here.
+
+## Implementation notes
+- **Execution capability:** Sol/high, selected for Flutter scroll geometry,
+  post-frame lifecycle ordering, and live-device regression verification.
+- **Files changed:** `app/lib/ui/chat/chat_page.dart` and
+  `app/test/ui/chat/chat_page_appbar_test.dart`.
+- **Four-step confirmation:** the extended widget test reproduced the device
+  exception before the fix and passes after it; the complete original chat-page
+  test file passes (2 tests); `flutter test --exclude-tags e2e --concurrency=2`
+  passes all 913 tests; `flutter analyze` reports no issues. The two required
+  device soaks are recorded by the worker after the harness hardening commit.
+- **Bounded inline review:** PASS. Stable list identity remains the message id;
+  the geometry `GlobalKey` remains unique and bounded by transcript pruning;
+  restore requests are immutable and revision-gated; real user scrolling
+  invalidates queued restores; bottom pinning and reconnect continuation timing
+  retain their original behavior. No ViewModel, persistence, protocol, or
+  ordering contract changed.
+- **Adjacent issues parked:** none.
