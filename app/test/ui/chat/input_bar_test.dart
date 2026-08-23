@@ -263,4 +263,30 @@ void main() {
     await tester.pump();
     expect(sent, isEmpty);
   });
+
+  testWidgets('keyboard landscape selects compact-height composer chrome', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: InputBar(
+              disabled: false,
+              streaming: false,
+              compactHeight: true,
+              onSend: (_) {},
+              onCancel: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('input-bar-compact-height')), findsOneWidget);
+    expect(find.byKey(const Key('input-bar-standard-height')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

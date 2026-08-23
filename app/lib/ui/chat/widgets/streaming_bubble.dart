@@ -1,4 +1,5 @@
 import 'package:app/domain/session_state.dart';
+import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/chat/widgets/agent_markdown.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
@@ -36,20 +37,25 @@ class _StreamingBubbleState extends State<StreamingBubble>
   @override
   Widget build(BuildContext context) {
     final hasText = widget.streaming.buffer.isNotEmpty;
-    // Full content width (matches AssistantBubble). Cursor lives on its OWN
-    // line directly below the response (never inline beside wrapped text,
-    // which made it float toward the middle). No text yet → just the cursor.
-    return SizedBox(
-      width: double.infinity,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Render partial markdown live (gpt_markdown tolerates incomplete
-          // syntax); not selectable while it's still changing.
-          if (hasText) AgentMarkdown(widget.streaming.buffer),
-          _BlinkingCursor(controller: _blink),
-        ],
+    // Match the completed assistant reading measure. Cursor lives on its own
+    // line so wrapped text never pushes it into the middle of the response.
+    return Align(
+      alignment: Alignment.center,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: kChatReadingMeasure),
+        child: SizedBox(
+          width: double.infinity,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Render partial markdown live (gpt_markdown tolerates incomplete
+              // syntax); not selectable while it's still changing.
+              if (hasText) AgentMarkdown(widget.streaming.buffer),
+              _BlinkingCursor(controller: _blink),
+            ],
+          ),
+        ),
       ),
     );
   }

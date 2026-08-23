@@ -416,10 +416,7 @@ const _temporaryOverflowAllowlist = <String, Set<String>>{
     'story-fold-system-pages-a11y-floors',
   },
   '797x411': <String>{'story-fold-home-sheets-adaptivity'},
-  '797x411+keyboard': <String>{
-    'story-fold-chat-adaptivity',
-    'story-fold-home-sheets-adaptivity',
-  },
+  '797x411+keyboard': <String>{'story-fold-home-sheets-adaptivity'},
 };
 
 Future<void> _pumpWithOverflowPolicy({

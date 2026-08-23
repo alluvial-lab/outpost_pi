@@ -10,6 +10,15 @@ const double kMasterPaneWidth = 360.0;
 /// Minimum usable logical width reserved for the chat detail pane.
 const double kMinDetailWidth = 320.0;
 
+/// Maximum line length for chat prose and the composer in one-pane layouts.
+const double kChatReadingMeasure = 640.0;
+
+/// Width below which chat and Home headers use their compact treatments.
+const double kCompactHeaderBreakpoint = 280.0;
+
+/// Remaining height below which the chat composer sheds optional chrome.
+const double kCompactComposerAvailableHeight = 280.0;
+
 /// Whether the window has tablet semantics in either orientation.
 ///
 /// Classify by `shortestSide` (`min(width, height)`), not width alone: a phone

@@ -1,7 +1,7 @@
 ---
 id: story-fold-chat-adaptivity
 kind: story
-stage: implementing
+stage: done
 tags: [app, ux]
 parent: feature-fold-usability-pass
 depends_on: ['story-fold-golden-harness-fidelity']
@@ -35,3 +35,24 @@ Review findings 6, 7 (chat), 10. Files: `lib/ui/chat/chat_page.dart`,
 Widget tests at 234/350/797dp widths and the 797×411+keyboard inset: zero
 overflow (story-1 harness now fails on overflow), composer compact-mode
 asserted, prose column width asserted <= 640 in wide single-pane. Goldens.
+
+## Implementation
+
+- Added shared 280dp compact-header and compact-composer thresholds plus a
+  640dp chat reading measure in `lib/routing/adaptive.dart`.
+- Collapsed the narrow chat header to a one-line room title and one prioritized
+  status label beside the transport dot.
+- Added keyboard-tight composer chrome: one-line input, reduced vertical
+  padding, and deferred attachment/queued previews while the keyboard leaves
+  less than 280dp available.
+- Centered assistant/streaming prose and the composer at a 640dp maximum while
+  preserving the 300dp user-bubble cap and horizontally scrollable code.
+- Deleted the `story-fold-chat-adaptivity` overflow exception for
+  `797x411+keyboard`; the full matrix now proves that geometry without an
+  allowlist escape.
+
+Verification (2026-08-23): targeted chat widget tests, `flutter analyze`, the
+full `flutter test --exclude-tags e2e --concurrency=2` suite, and the 144-image
+fold golden matrix all pass. The full suite's first concurrent run exposed an
+unrelated timing miss in `sync_service_test.dart`; its focused rerun and the
+subsequent full rerun passed without code or test weakening.
