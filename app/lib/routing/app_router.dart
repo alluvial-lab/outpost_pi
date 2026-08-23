@@ -433,7 +433,7 @@ AppRouterOwner buildRouter(
       // Two branches, each with its own Navigator: branch 0 = Home
       // (master list), branch 1 = the chat detail. `navigatorContainerBuilder`
       // lays them out by available width:
-      //   • tablet + pane budget (≥680dp wide) → master + detail side by side
+      //   • tablet + pane budget (≥681dp wide) → master + detail side by side
       //   • otherwise                         → only the active branch
       //
       // On phone the detail branch is never activated — tapping a session
@@ -461,16 +461,10 @@ AppRouterOwner buildRouter(
           // top/bottom stay inset and Scaffold backgrounds paint full-bleed.
           return Row(
             children: [
-              SizedBox(
-                width: kMasterPaneWidth,
-                child: MediaQuery(
-                  data: masterPaneMediaQueryData(MediaQuery.of(ctx)),
-                  child: children[0],
-                ),
-              ),
+              SizedBox(width: kMasterPaneWidth, child: children[0]),
               VerticalDivider(
-                width: 1,
-                thickness: 1,
+                width: kPaneDividerWidth,
+                thickness: kPaneDividerWidth,
                 color: ctx.colors.borderStrong,
               ),
               Expanded(
@@ -488,13 +482,21 @@ AppRouterOwner buildRouter(
             routes: [
               GoRoute(
                 path: '/home',
-                builder: (ctx, st) => MultiProvider(
-                  providers: [
-                    ViewmodelProvider<HomeViewModel>(),
-                    ViewmodelProvider<UpdateBannerViewModel>(),
-                  ],
-                  child: const HomePage(),
-                ),
+                builder: (ctx, st) {
+                  final isolateKeyboard =
+                      canUseTwoPaneLayout(ctx) &&
+                      !ctx.watch<ShellLayout>().isZeroState;
+                  return MultiProvider(
+                    providers: [
+                      ViewmodelProvider<HomeViewModel>(),
+                      ViewmodelProvider<UpdateBannerViewModel>(),
+                    ],
+                    child: MasterPaneHomeSurface(
+                      isolateKeyboard: isolateKeyboard,
+                      child: const HomePage(),
+                    ),
+                  );
+                },
               ),
             ],
           ),

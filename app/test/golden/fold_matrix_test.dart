@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:app/data/local/boxes.dart';
 import 'package:app/ui/chat/chat_page.dart';
@@ -115,6 +116,9 @@ void main() {
             surface: 'home',
             home: fixture.homeSurface(),
             afterPump: () async {
+              if (geometry.width == 411 && geometry.height == 797) {
+                _expectSpaceMonoMaterialRoles(tester);
+              }
               if (geometry.width < 280) {
                 expect(
                   find.byKey(const Key('home-header-compact')),
@@ -124,6 +128,10 @@ void main() {
                   find.byKey(const Key('home-filter-compact')),
                   findsOneWidget,
                 );
+                final relayStatus = tester.widget<Text>(
+                  find.byKey(const Key('home-relay-status-label')),
+                );
+                expect(relayStatus.style?.fontSize, greaterThanOrEqualTo(12));
               }
               if (geometry.width == 797) {
                 final listContent = find.byKey(const Key('home-list-content'));
@@ -251,6 +259,60 @@ void main() {
     skip: Platform.environment['CI'] == 'true',
     timeout: const Timeout(Duration(minutes: 20)),
   );
+
+  testWidgets(
+    'decoded PNG variance rejects a uniform image and accepts a real golden',
+    (tester) async {
+      final uniformPng = await tester.runAsync(_createUniformPng);
+      expect(uniformPng, isNotNull);
+      final uniformVariance = await tester.runAsync(
+        () => samplePngVariance(uniformPng!),
+      );
+      expect(uniformVariance, closeTo(0, 0.0001));
+
+      final realGolden = File('${foldGoldenDirectory().path}/home-411x797.png');
+      expect(realGolden.existsSync(), isTrue);
+      final realVariance = await tester.runAsync(
+        () => samplePngVariance(realGolden.readAsBytesSync()),
+      );
+      expect(realVariance, isNotNull);
+      expect(realVariance!, greaterThan(1));
+    },
+    skip: Platform.environment['CI'] == 'true',
+  );
+}
+
+Future<Uint8List> _createUniformPng() async {
+  final recorder = ui.PictureRecorder();
+  final canvas = ui.Canvas(recorder);
+  canvas.drawColor(const ui.Color(0xFF000000), ui.BlendMode.src);
+  final image = await recorder.endRecording().toImage(8, 8);
+  try {
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (data == null) throw StateError('Could not encode uniform PNG');
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  } finally {
+    image.dispose();
+  }
+}
+
+void _expectSpaceMonoMaterialRoles(WidgetTester tester) {
+  final theme = Theme.of(
+    tester.element(find.byKey(const Key('home-header-standard'))),
+  );
+  for (final style in <TextStyle?>[
+    theme.textTheme.displayLarge,
+    theme.textTheme.headlineMedium,
+    theme.textTheme.titleSmall,
+    theme.textTheme.bodyLarge,
+    theme.textTheme.labelLarge,
+    theme.textButtonTheme.style?.textStyle?.resolve(<WidgetState>{}),
+    theme.elevatedButtonTheme.style?.textStyle?.resolve(<WidgetState>{}),
+    theme.outlinedButtonTheme.style?.textStyle?.resolve(<WidgetState>{}),
+    theme.filledButtonTheme.style?.textStyle?.resolve(<WidgetState>{}),
+  ]) {
+    expect(style?.fontFamily, kMonoFamily);
+  }
 }
 
 Future<void> _capture(

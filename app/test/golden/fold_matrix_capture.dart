@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
@@ -143,7 +144,11 @@ Future<({File file, double variance})> writeFoldPng(
     throw StateError('golden save failed for $surface at ${geometry.suffix}');
   }
   final bytes = file.readAsBytesSync();
-  return (file: file, variance: _sampleVariance(bytes));
+  final variance = await tester.runAsync(() => samplePngVariance(bytes));
+  if (variance == null) {
+    throw StateError('golden variance decode failed for ${file.path}');
+  }
+  return (file: file, variance: variance);
 }
 
 class FoldSavingComparator extends GoldenFileComparator {
@@ -166,7 +171,28 @@ class FoldSavingComparator extends GoldenFileComparator {
   Uri getTestUri(Uri key, int? version) => key;
 }
 
-double _sampleVariance(List<int> rgba) {
+/// Decode a PNG and sample luminance variance from its RGBA pixels.
+Future<double> samplePngVariance(Uint8List pngBytes) async {
+  final codec = await ui.instantiateImageCodec(pngBytes);
+  try {
+    final frame = await codec.getNextFrame();
+    try {
+      final rgba = await frame.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      if (rgba == null) throw StateError('PNG did not decode to RGBA pixels');
+      return _sampleRgbaVariance(
+        rgba.buffer.asUint8List(rgba.offsetInBytes, rgba.lengthInBytes),
+      );
+    } finally {
+      frame.image.dispose();
+    }
+  } finally {
+    codec.dispose();
+  }
+}
+
+double _sampleRgbaVariance(List<int> rgba) {
   if (rgba.length < 4) return 0;
   final pixels = rgba.length ~/ 4;
   final stride = math.max(1, pixels ~/ 4096);

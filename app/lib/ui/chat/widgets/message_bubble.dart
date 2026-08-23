@@ -80,9 +80,10 @@ class UserBubble extends StatelessWidget {
                       const SizedBox(width: 6),
                       Text(
                         'sending…',
+                        key: const Key('message-delivery-sending'),
                         style: typo.sansBody.copyWith(
                           color: colors.muted,
-                          fontSize: 11,
+                          fontSize: 12,
                         ),
                       ),
                     ] else ...[
@@ -94,9 +95,10 @@ class UserBubble extends StatelessWidget {
                       const SizedBox(width: 4),
                       Text(
                         'not delivered',
+                        key: const Key('message-delivery-failed'),
                         style: typo.sansBody.copyWith(
                           color: colors.error,
-                          fontSize: 11,
+                          fontSize: 12,
                         ),
                       ),
                     ],

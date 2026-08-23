@@ -44,12 +44,39 @@ void main() {
     }
   });
 
-  test('display body and mono roles resolve to Space Mono', () {
+  test('all Material text and control roles resolve to Space Mono', () {
     expect(kMonoFamily, 'SpaceMono_regular');
     expect(kSansFamily, kMonoFamily);
     expect(AppTypography.dark.mono.fontFamily, kMonoFamily);
     expect(AppTypography.dark.sansBody.fontFamily, kMonoFamily);
     expect(brandTextStyle(fontSize: 24).fontFamily, startsWith('SpaceMono'));
+
+    for (final theme in <ThemeData>[buildDarkTheme(), buildLightTheme()]) {
+      for (final style in <TextStyle?>[
+        theme.textTheme.displayLarge,
+        theme.textTheme.displayMedium,
+        theme.textTheme.displaySmall,
+        theme.textTheme.headlineLarge,
+        theme.textTheme.headlineMedium,
+        theme.textTheme.headlineSmall,
+        theme.textTheme.titleLarge,
+        theme.textTheme.titleMedium,
+        theme.textTheme.titleSmall,
+        theme.textTheme.bodyLarge,
+        theme.textTheme.bodyMedium,
+        theme.textTheme.bodySmall,
+        theme.textTheme.labelLarge,
+        theme.textTheme.labelMedium,
+        theme.textTheme.labelSmall,
+        theme.textButtonTheme.style?.textStyle?.resolve(<WidgetState>{}),
+        theme.elevatedButtonTheme.style?.textStyle?.resolve(<WidgetState>{}),
+        theme.outlinedButtonTheme.style?.textStyle?.resolve(<WidgetState>{}),
+        theme.filledButtonTheme.style?.textStyle?.resolve(<WidgetState>{}),
+      ]) {
+        expect(style?.fontFamily, kMonoFamily);
+      }
+      expect(theme.inputDecorationTheme.hintStyle?.fontFamily, kMonoFamily);
+    }
   });
 }
 

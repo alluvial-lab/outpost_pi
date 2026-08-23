@@ -97,6 +97,29 @@ void main() {
     expect(find.bySemanticsLabel('Send message'), findsOneWidget);
   });
 
+  testWidgets('queued clear keeps a 48dp hit-tested target', (tester) async {
+    var clearCalls = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: InputBar(
+            queuedText: 'queued follow-up',
+            onClearQueued: () => clearCalls++,
+            onSend: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final clear = find.byKey(const Key('input-bar-clear-queued'));
+    expect(tester.getSize(clear), const Size(48, 48));
+    expect(clear.hitTestable(at: Alignment.center), findsOneWidget);
+    await tester.tapAt(tester.getCenter(clear));
+    await tester.pump();
+    expect(clearCalls, 1);
+  });
+
   testWidgets('quick actions button is visible when input is empty', (
     tester,
   ) async {

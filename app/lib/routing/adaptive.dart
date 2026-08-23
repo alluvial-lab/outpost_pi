@@ -12,6 +12,9 @@ const double kMasterPaneWidth = 360.0;
 /// Minimum usable logical width reserved for the chat detail pane.
 const double kMinDetailWidth = 320.0;
 
+/// Logical width consumed by the divider between master and detail panes.
+const double kPaneDividerWidth = 1.0;
+
 /// Maximum line length for chat prose and the composer in one-pane layouts.
 const double kChatReadingMeasure = 640.0;
 
@@ -41,10 +44,11 @@ bool isWideLayout(BuildContext context) =>
 ///
 /// Tablet classification remains rotation-invariant through [isWideLayout],
 /// while the active orientation must also budget a usable detail beside the
-/// fixed master. A tablet-sized 600–679dp window therefore stays single-pane.
+/// fixed master. A tablet-sized 600–680dp window therefore stays single-pane.
 bool canUseTwoPaneLayout(BuildContext context) {
   return isWideLayout(context) &&
-      MediaQuery.sizeOf(context).width >= kMasterPaneWidth + kMinDetailWidth;
+      MediaQuery.sizeOf(context).width >=
+          kMasterPaneWidth + kPaneDividerWidth + kMinDetailWidth;
 }
 
 /// Derive master-pane insets that ignore a detail-pane keyboard.
@@ -59,6 +63,31 @@ MediaQueryData masterPaneMediaQueryData(MediaQueryData data) {
   return isolated.copyWith(
     padding: isolated.padding.copyWith(bottom: data.viewPadding.bottom),
   );
+}
+
+/// Isolate only the persistent Home surface from a detail-pane keyboard.
+///
+/// This wrapper belongs below the master branch Navigator. Pushed routes and
+/// master-owned modal sheets therefore retain the real keyboard inset while
+/// Home's list stays at its stable height behind them.
+class MasterPaneHomeSurface extends StatelessWidget {
+  const MasterPaneHomeSurface({
+    super.key,
+    required this.isolateKeyboard,
+    required this.child,
+  });
+
+  final bool isolateKeyboard;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isolateKeyboard) return child;
+    return MediaQuery(
+      data: masterPaneMediaQueryData(MediaQuery.of(context)),
+      child: child,
+    );
+  }
 }
 
 /// Maximum single-column content width for onboarding and empty states.

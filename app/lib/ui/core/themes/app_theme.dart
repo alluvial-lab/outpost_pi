@@ -15,6 +15,16 @@ ThemeData _buildTheme({
   required AppColors colors,
   required AppTypography typo,
 }) {
+  final materialTextTheme = ThemeData(brightness: brightness).textTheme.apply(
+    fontFamily: kMonoFamily,
+    bodyColor: colors.text,
+    displayColor: colors.text,
+  );
+  final textTheme = materialTextTheme.copyWith(
+    bodyMedium: typo.sansBody,
+    bodySmall: typo.monoSmall,
+  );
+
   return ThemeData(
     brightness: brightness,
     scaffoldBackgroundColor: colors.bg,
@@ -44,7 +54,20 @@ ThemeData _buildTheme({
         letterSpacing: -0.2,
       ),
     ),
-    textTheme: TextTheme(bodyMedium: typo.sansBody, bodySmall: typo.monoSmall),
+    textTheme: textTheme,
+    primaryTextTheme: textTheme,
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(textStyle: textTheme.labelLarge),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(textStyle: textTheme.labelLarge),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(textStyle: textTheme.labelLarge),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(textStyle: textTheme.labelLarge),
+    ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: colors.inputFill,

@@ -58,3 +58,9 @@ errors (now failing loudly), new states present; existing unit suite green.
 
 Verification: `flutter test test/golden/fold_matrix_test.dart --concurrency=1`,
 `flutter analyze`, and `flutter test --exclude-tags e2e --concurrency=2`.
+
+## Review closure (2026-08-23)
+
+- Replaced encoded-byte variance sampling with `dart:ui` PNG decode to raw RGBA under `WidgetTester.runAsync`; uniform-image and real-golden regression checks now defend the non-blank assertion.
+- Applied Space Mono across the complete Material `TextTheme` and button control roles, with both theme and fold-harness role assertions.
+- Regenerated all 144 PNGs with zero overflow exceptions and visually confirmed the 842×701 storage-recovery dark/light and onboarding-relay captures no longer show fallback block glyphs in control or input text.
