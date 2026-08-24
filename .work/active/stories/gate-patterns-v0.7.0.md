@@ -1,7 +1,7 @@
 ---
 id: gate-patterns-v0.7.0
 kind: story
-stage: implementing
+stage: done
 tags: [patterns]
 parent: null
 depends_on: []
@@ -38,3 +38,6 @@ None.
 - `.agents/skills/patterns/edge-triggered-convergence.md`
 - `.agents/skills/patterns/SKILL.md` (updated index)
 - `.agents/rules/patterns.md` (generated hook-loaded digest)
+
+## Closure
+All 7 patterns landed with the gate commit (392e7faa); index + digest regenerated. No further work.
