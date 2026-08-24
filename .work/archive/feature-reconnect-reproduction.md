@@ -6,7 +6,7 @@ tags: [app, pi-extension, relay, bug, observability]
 parent: epic-targeting-and-session-lifecycle-contracts
 depends_on:
   - feature-cross-side-observability
-release_binding: null
+release_binding: v0.1.0
 gate_origin: null
 created: 2026-07-04
 updated: 2026-07-19

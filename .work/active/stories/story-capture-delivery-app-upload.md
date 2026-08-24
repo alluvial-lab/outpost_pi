@@ -5,7 +5,7 @@ stage: done
 tags: [app]
 parent: feature-debug-capture-delivery
 depends_on: ['story-capture-delivery-protocol-extension']
-release_binding: null
+release_binding: v0.7.0
 gate_origin: null
 created: 2026-08-24
 updated: 2026-08-26

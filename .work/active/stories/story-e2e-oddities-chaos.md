@@ -5,7 +5,7 @@ stage: done
 tags: [app, relay, pi-extension, testing]
 parent: feature-e2e-live-oddities-suite
 depends_on: [story-e2e-oddities-golden, story-e2e-oddities-failure, story-e2e-oddities-capture-triage]
-release_binding: null
+release_binding: v0.7.0
 gate_origin: null
 created: 2026-08-21
 updated: 2026-08-21

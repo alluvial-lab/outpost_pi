@@ -7,7 +7,7 @@ parent: feature-reconnect-reproduction
 depends_on:
   - story-verify-mobile-dup-and-reorder-reconnect-repro
   - story-fix-transport-active-room-reestablishment-on-reconnect
-release_binding: null
+release_binding: v0.7.0
 gate_origin: null
 created: 2026-07-06
 updated: 2026-07-07
