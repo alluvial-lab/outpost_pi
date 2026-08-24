@@ -42,6 +42,8 @@ findings, and the CI emulator job.
 
 ## Gate runs
 
+- **gate-tests** (2026-08-24) — 6 findings (High=5, Low=1; 5 coverage gaps, 1 low-value-test removal)
+
 (planned: security, tests, cruft, docs, patterns, refactor — then manual UAT)
 
 - **gate-security** (2026-08-24) — 2 findings (High=1, Medium=1; inline scanner, reduced isolation)
