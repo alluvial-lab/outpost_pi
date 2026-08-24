@@ -1,14 +1,14 @@
 ---
 id: gate-docs-architecture-room-meta-drift
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Architecture still claims TS and Dart room metadata drift
@@ -33,3 +33,7 @@ where the generated contract has converged it.
 Replace the drift assertion with the current generated-contract relationship and
 name any remaining adapter-only differences precisely, rather than describing
 TS/Dart room metadata as currently divergent.
+
+## Implementation
+
+Replaced the TS/Dart room-metadata drift claim with the shared generated fields and explicit adapter-only transport fields in `docs/ARCHITECTURE.md`.

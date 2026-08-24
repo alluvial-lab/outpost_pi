@@ -18,9 +18,9 @@ app/extension/relay, read `../.agents/skills/mobile-remote-coding/SKILL.md`.
 - Crypto: `package:cryptography` (X25519 / Ed25519 / HKDF-SHA256 / XChaCha20-Poly1305 — the owner-channel E2E stack in `lib/data/transport/secure_channel.dart`)
 - WebSocket: `web_socket_channel` or similar
 
-> Still-open decisions (final state management) live in
-> `../plan/00-decisions.md`. The stack above is the current direction based on the
-> inherited architecture; structural changes require a new plan.
+> Settled architectural decisions live in `../docs/DECISIONS.md`. The retired
+> `plan/` directory is available only through git history when historical context
+> is needed; structural changes must update the durable decision surface.
 
 ## Commands
 
@@ -41,8 +41,9 @@ export PUB_CACHE=~/projects/outpost_pi/.pub-cache
 
 - `dart format .` — formats (or `~/.tools/flutter/bin/cache/dart-sdk/bin/dart format .`)
 
-Note: `flutter analyze` in `app/` emits one known `deprecated_member_use` `info` at
-`lib/ui/chat/widgets/input_bar.dart:806` (`axisAlignment`; explanatory comment at line 802). Do not fail reviews because of it.
+Note: `flutter analyze` in `app/` emits one known `deprecated_member_use` `info` for
+the `axisAlignment` argument in `lib/ui/chat/widgets/input_bar.dart`; the source
+comment explains the Flutter pin. Do not fail reviews because of it.
 
 > For the complete APK build path on the dev VM (`dev-vm`) — JDK 21 toolchain
 > + Android SDK API 36, `--release --split-per-abi` build (~31 MB per ABI), and the

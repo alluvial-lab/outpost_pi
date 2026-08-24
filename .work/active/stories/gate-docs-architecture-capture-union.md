@@ -1,14 +1,14 @@
 ---
 id: gate-docs-architecture-capture-union
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Architecture wire-union lists omit the shipped capture-upload family
@@ -34,3 +34,7 @@ generated and shipped in the release bundle.
 Roll the union descriptions forward to include the capture-upload family and
 keep the statement that the generated registries/decoders derive from the same
 schema true for every listed variant.
+
+## Implementation
+
+Added capture-upload client/server variants to `docs/ARCHITECTURE.md`, removed the non-schema `model_select` listing, and retained the generated-schema provenance statement.

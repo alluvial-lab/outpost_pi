@@ -1,14 +1,14 @@
 ---
 id: gate-docs-spec-owner-multiplexer
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # SPEC describes the obsolete singleton owner channel
@@ -34,3 +34,7 @@ contradicts the current one-generation-per-owner decision.
 Rewrite this resolved ambiguity in place to describe the current per-owner
 multiplexer/channel registry, same-owner replacement behavior, and actual fanout
 owner, without retaining the obsolete singleton claim.
+
+## Implementation
+
+Rewrote the resolved ambiguity around `OwnerMultiplexer` per-owner channels, same-owner replacement, and extension-owned fanout in `docs/SPEC.md`.
