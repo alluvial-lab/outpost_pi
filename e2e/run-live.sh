@@ -17,6 +17,7 @@ case "$TEST_SELECTOR" in
   state-shapes) TEST_FILE=integration_test/live_state_shapes_test.dart ;;
   grid) TEST_FILE=integration_test/live_grid_test.dart ;;
   mesh) TEST_FILE=integration_test/live_mesh_test.dart; MESH_LANE=1 ;;
+  capture-delivery) TEST_FILE=integration_test/live_capture_delivery_test.dart ;;
   *) TEST_FILE="$TEST_SELECTOR" ;;
 esac
 COMPOSE_FILES=(-f "$COMPOSE_FILE")
@@ -393,6 +394,25 @@ elif [[ "$TEST_FILE" == integration_test/live_grid_test.dart ]]; then
   run_device_test grid-cold
 else
   run_device_test
+fi
+
+if [[ "$TEST_FILE" == integration_test/live_capture_delivery_test.dart ]]; then
+  CAPTURE_JSON="$RUN_STATE/delivered-capture.json"
+  CAPTURE_BIN="$RUN_STATE/delivered-capture.bin"
+  curl --fail --silent --show-error \
+    "http://127.0.0.1:${PI_HOST_PORT}/debug-capture/latest" >"$CAPTURE_JSON"
+  python3 - "$CAPTURE_JSON" "$CAPTURE_BIN" <<'PY'
+import base64
+import json
+import pathlib
+import sys
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert payload["cwd"].startswith("/tmp/outpost-pi-e2e-cwd")
+assert payload["path"].startswith("debug/app-capture-")
+pathlib.Path(sys.argv[2]).write_bytes(base64.b64decode(payload["content_base64"], validate=True))
+PY
+  python3 "$ROOT/scripts/debug_capture_triage.py" "$CAPTURE_BIN" \
+    >"$RUN_STATE/delivered-capture-triage.txt"
 fi
 
 CAPTURE_STATUS=0
