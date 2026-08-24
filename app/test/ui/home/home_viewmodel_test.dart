@@ -147,6 +147,18 @@ ConnectionManager _conn({_FakeStorage? storage}) {
   );
 }
 
+class _CountingHomeViewModel extends HomeViewModel {
+  _CountingHomeViewModel(super.storage, super.prefs, super.conn);
+
+  int notifyCalls = 0;
+
+  @override
+  void notifyListeners() {
+    notifyCalls++;
+    super.notifyListeners();
+  }
+}
+
 void main() {
   group('HomeViewModel', () {
     test(
@@ -169,7 +181,7 @@ void main() {
           emitDebounce: Duration.zero,
         );
         final prefs = Preferences(_FakeSecureStorage());
-        final vm = HomeViewModel(storage, prefs, conn);
+        final vm = _CountingHomeViewModel(storage, prefs, conn);
         await conn.connectTo(_peerA);
         await Future<void>.delayed(const Duration(milliseconds: 10));
 
@@ -179,6 +191,7 @@ void main() {
         );
         await Future<void>.delayed(const Duration(milliseconds: 10));
         expect(vm.isRoomWorking('epk_A', 'r1'), isFalse);
+        vm.notifyCalls = 0;
 
         // turn_start → relay broadcasts meta.working=true.
         ch.pushControl(
@@ -192,6 +205,7 @@ void main() {
         );
         await Future<void>.delayed(const Duration(milliseconds: 10));
         expect(vm.isRoomWorking('epk_A', 'r1'), isTrue);
+        expect(vm.notifyCalls, 1);
 
         // turn_end → meta.working=false → dot goes back off (this is the
         // case that previously stayed blue forever).
@@ -206,6 +220,19 @@ void main() {
         );
         await Future<void>.delayed(const Duration(milliseconds: 10));
         expect(vm.isRoomWorking('epk_A', 'r1'), isFalse);
+        expect(vm.notifyCalls, 2);
+
+        ch.pushControl(
+          const RoomMetaUpdated(
+            peer: 'epk_A',
+            roomId: 'r1',
+            working: false,
+            hasModel: false,
+            hasThinking: false,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(vm.notifyCalls, 2, reason: 'duplicate snapshot stays a no-op');
 
         vm.dispose();
         await conn.disconnect();

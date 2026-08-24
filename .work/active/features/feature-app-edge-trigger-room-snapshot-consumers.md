@@ -376,3 +376,33 @@ device storage latency.
    widget counters and anchor oracle against the same representative stream.
 3. Remove the benchmark scaffold's design-only skip, run before/after on the
    0/200/5,500-event stores, then run the bounded app test suite.
+
+## Implementation Results
+
+Both planned optimizations landed in dependency order.
+
+- **Opt 1 — semantic room edges / held replay:** metadata-only churn moved from
+  **339 full transcript reads to 0** for 0/200/5,500-event fixtures. The focused
+  fresh-live oracle performs exactly one liveness-gated read; session rotation
+  remains generation-fenced and held sends retain their original client id.
+  Against the encrypted-Hive baseline, this deletes about **7.04 s p50** (up to
+  **11.53 s** at the p95 read figure) from the 339-snapshot field workload.
+- **Opt 2 — Chat/Home fan-out:** same-session churn moved from **339 Chat binding
+  refreshes to 0**. The 339 genuine alternating working edges still produce
+  exactly **339/339 Chat/Home notifications and rebuild callbacks**; an equal
+  snapshot produces zero reads, bindings, notifications, rebuild callbacks, or
+  transcript-anchor callbacks. Session rotation binds Chat once and
+  `working:false` converges once to idle.
+- Isolated final host-side wall p50/p95 was **41/62 us** (0 events), **35/53 us**
+  (200), and **29/57 us** (5,500), versus **0.882/1.498 ms**,
+  **0.715/1.364 ms**, and **0.753/1.639 ms** before. These listener/fake-store
+  timings measure consumer fan-out, not encrypted storage latency.
+- The benchmark is enabled with explicit listener/subscription/controller
+  teardown and retains the room-only anchor scheduling oracle at zero.
+- Concurrent transcript-pipeline work landed first. The room-consumer changes
+  were rebased onto that reducer/store surface; no projection/reducer internals
+  were changed by this feature.
+
+Verification: `flutter analyze` is clean; targeted transport/sync/Chat/Home and
+benchmark tests pass; the full app suite passes with **937 tests** under
+`flutter test --exclude-tags e2e --concurrency=2`.

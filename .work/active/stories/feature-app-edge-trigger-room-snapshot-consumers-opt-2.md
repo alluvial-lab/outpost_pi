@@ -1,7 +1,7 @@
 ---
 id: feature-app-edge-trigger-room-snapshot-consumers-opt-2
 kind: story
-stage: implementing
+stage: done
 tags: [perf, app]
 parent: feature-app-edge-trigger-room-snapshot-consumers
 depends_on: [feature-app-edge-trigger-room-snapshot-consumers-opt-1]
@@ -63,6 +63,34 @@ snapshots produce zero notifications/builds and zero anchor callbacks.
 - [ ] Room-only churn produces zero post-frame anchor callbacks; transcript
       changes preserve the existing anchor oracle.
 - [ ] Relevant Chat/Home tests plus the bounded app suite pass.
+
+## Implementation
+
+- Execution capability: `sol/high`; edge-routed Chat binding and Home/Chat
+  presentation fan-out with semantic equality/no-op tests.
+- Review weight: not applicable — child-story checkpoint.
+- `ChatViewModel` now consumes the shared change stream, binds only for
+  fresh-live/session edges, and recomputes synchronously once for same-session
+  presentation changes. `HomeViewModel` applies only Home-visible changes from
+  the same canonical snapshot.
+- Same-session working/model churn performs **0 binding refreshes** (baseline
+  **339**) while preserving **339/339** Chat/Home notifications and rebuild
+  callbacks for 339 genuine alternating working edges. An equal/no-op snapshot
+  produces **0** reads, bindings, notifications, rebuild callbacks, and anchor
+  callbacks.
+- Final host-side 339-snapshot wall p50/p95: **41/62 us** (0 events), **35/53
+  us** (200), and **29/57 us** (5,500), versus the design baselines **0.882/1.498
+  ms**, **0.715/1.364 ms**, and **0.753/1.639 ms** respectively. Fake-list
+  traversal is not presented as encrypted-Hive latency.
+- Session rotation binds Chat exactly once; `working:false` notifies Chat/Home
+  exactly once and converges idle. The transcript-identity anchor oracle remains
+  **0** for room-only churn.
+- The sibling transcript-pipeline worker landed first. This story was rebased
+  onto those commits; no projection/reducer internals were modified.
+
+Verification: targeted Chat/Home/ConnectionManager/SyncService tests and the
+benchmark pass; `flutter analyze` is clean and the full bounded app suite passes
+with **937 tests** under `--exclude-tags e2e --concurrency=2`.
 
 ## Likely files
 

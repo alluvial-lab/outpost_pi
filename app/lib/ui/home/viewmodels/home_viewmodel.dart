@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/transport/room_snapshot_change.dart';
 import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
@@ -24,7 +25,7 @@ class HomeViewModel extends ViewModel<HomeState> {
   final Preferences _prefs;
   final ConnectionManager _conn;
   StreamSubscription<Map<String, PresenceState>>? _presenceSub;
-  StreamSubscription<Map<String, List<RoomInfo>>>? _roomsSub;
+  StreamSubscription<RoomSnapshotChange>? _roomChangesSub;
   StreamSubscription<ConnectionStatus>? _statusSub;
   bool _relayConnected = false;
   bool _disposed = false;
@@ -34,7 +35,7 @@ class HomeViewModel extends ViewModel<HomeState> {
     _relayConnected = _conn.status is StatusOnline;
     _load();
     _presenceSub = _conn.presenceStream.listen(_onPresence);
-    _roomsSub = _conn.roomsStream.listen(_onRooms);
+    _roomChangesSub = _conn.roomChangesStream.listen(_onRoomChange);
     _statusSub = _conn.statusStream.listen(_onStatus);
     // Settings (rename / revoke) and pairing flow both write through
     // PairingStorage; listening here keeps Home in sync without manual
@@ -93,6 +94,11 @@ class HomeViewModel extends ViewModel<HomeState> {
     final s = state;
     if (s is! HomeList) return;
     emit(s.copyWith(statusByEpk: snapshot));
+  }
+
+  void _onRoomChange(RoomSnapshotChange change) {
+    if (change.isNoop || !change.homePresentationChanged) return;
+    _onRooms(change.snapshot);
   }
 
   void _onRooms(Map<String, List<RoomInfo>> snapshot) {
@@ -220,7 +226,7 @@ class HomeViewModel extends ViewModel<HomeState> {
   void dispose() {
     _disposed = true;
     _presenceSub?.cancel();
-    _roomsSub?.cancel();
+    _roomChangesSub?.cancel();
     _statusSub?.cancel();
     _storage.removeListener(_onStorageChanged);
     super.dispose();

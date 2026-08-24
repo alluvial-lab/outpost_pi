@@ -219,13 +219,33 @@ class _ControlledActivateSyncService extends SyncService {
   _ControlledActivateSyncService(super.connectionManager, super.boxes);
 
   bool failActivation = false;
+  int activateCalls = 0;
 
   @override
   Future<void> activate(String epk, String roomId) {
+    activateCalls++;
     if (failActivation) {
       return Future<void>.error(StateError('activation failed'));
     }
     return super.activate(epk, roomId);
+  }
+}
+
+class _CountingChatViewModel extends ChatViewModel {
+  _CountingChatViewModel(
+    super.read,
+    super.sync,
+    super.conn,
+    super.prefs,
+    super.storage,
+  );
+
+  int notifyCalls = 0;
+
+  @override
+  void notifyListeners() {
+    notifyCalls++;
+    super.notifyListeners();
   }
 }
 
@@ -959,7 +979,7 @@ void main() {
       storage: storage,
     );
     final boxes = LocalBoxes();
-    final sync = SyncService(conn, boxes);
+    final sync = _ControlledActivateSyncService(conn, boxes);
     final read = SessionReadRepository(boxes);
     final prefs = Preferences(_FakeSecureStorage());
     await prefs.setSelectedPeerEpk(_peer.remoteEpk);
@@ -968,6 +988,7 @@ void main() {
     await _adoptWithSession(conn, ch);
     final vm = ChatViewModel(read, sync, conn, prefs, storage);
     await Future<void>.delayed(const Duration(milliseconds: 50));
+    sync.activateCalls = 0;
 
     ch.push(UserInput(id: 'old-u1', text: 'old session row'));
     await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -989,6 +1010,11 @@ void main() {
     );
     await Future<void>.delayed(const Duration(milliseconds: 200));
 
+    expect(
+      sync.activateCalls,
+      1,
+      reason: 'session rotation binds exactly once',
+    );
     expect(
       (vm.state as ChatReady).messages.whereType<UserMsg>().map((m) => m.text),
       isNot(contains('old session row')),
@@ -1191,14 +1217,14 @@ void main() {
       emitDebounce: Duration.zero,
     );
     final boxes = LocalBoxes();
-    final sync = SyncService(conn, boxes);
+    final sync = _ControlledActivateSyncService(conn, boxes);
     final read = SessionReadRepository(boxes);
     final prefs = Preferences(_FakeSecureStorage());
     await prefs.setSelectedPeerEpk(_peer.remoteEpk);
     await prefs.setSelectedRoom(epk: _peer.remoteEpk, roomId: 'main');
 
     await _adoptWithSession(conn, ch);
-    final vm = ChatViewModel(read, sync, conn, prefs, storage);
+    final vm = _CountingChatViewModel(read, sync, conn, prefs, storage);
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     // Room comes online idle (no local turn started in THIS chat).
@@ -1212,6 +1238,8 @@ void main() {
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(vm.isWorking, isFalse);
+    sync.activateCalls = 0;
+    vm.notifyCalls = 0;
 
     // The relay broadcasts meta.working=true for this room (turn_start) —
     // no local send/echo, purely the per-room signal that also drives Home.
@@ -1236,6 +1264,35 @@ void main() {
       isTrue,
       reason: 'state carries isWorking so the flip rebuilds the UI',
     );
+    expect(sync.activateCalls, 0);
+    expect(vm.notifyCalls, 1);
+
+    ch.pushControl(
+      const RoomMetaUpdated(
+        peer: 'epk_chat',
+        roomId: 'main',
+        working: false,
+        hasModel: false,
+        hasThinking: false,
+        hasSessionId: false,
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(vm.isWorking, isFalse);
+    expect(sync.activateCalls, 0);
+    expect(vm.notifyCalls, 2, reason: 'working:false converges exactly once');
+
+    ch.pushControl(
+      const RoomMetaUpdated(
+        peer: 'epk_chat',
+        roomId: 'main',
+        working: true,
+        hasModel: false,
+        hasThinking: false,
+        hasSessionId: false,
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
 
     // If the app sees agent_done but the relay's meta.working=false
     // broadcast is delayed/missed, the active chat must not stay stuck on

@@ -1,9 +1,10 @@
 // Host-side perf-design scaffold for feature-app-edge-trigger-room-snapshot-consumers.
 //
-// This intentionally measures the current fan-out path before the optimization:
-// ConnectionManager -> SyncService/ChatViewModel/HomeViewModel -> widgets. The
-// implementation story should retain this harness, add the post-optimization
-// run, and compare the counters rather than replacing the representative stream.
+// This measures the optimized fan-out path against the perf-design baseline:
+// ConnectionManager -> SyncService/ChatViewModel/HomeViewModel -> rebuild
+// listeners. Listener callbacks model ListenableBuilder rebuild dispatch while
+// keeping the 339-snapshot benchmark outside Flutter's fake-async frame clock;
+// the Chat listener also mirrors _MessageList's transcript-identity anchor gate.
 
 import 'dart:async';
 import 'dart:io';
@@ -16,6 +17,7 @@ import 'package:app/data/repositories/session_read_repository.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/transport/room_snapshot_change.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/domain/transcript/transcript_event.dart';
@@ -26,7 +28,6 @@ import 'package:app/ui/chat/states/chat_state.dart';
 import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
 import 'package:app/ui/home/states/home_state.dart';
 import 'package:app/ui/home/viewmodels/home_viewmodel.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
@@ -74,11 +75,19 @@ final class _BenchmarkConnectionManager extends ConnectionManager {
   final _rooms = StreamController<Map<String, List<RoomInfo>>>.broadcast(
     sync: true,
   );
+  final _roomChanges = StreamController<RoomSnapshotChange>.broadcast(
+    sync: true,
+  );
   ConnectionStatus _currentStatus = const StatusNoPeer();
   bool _working = false;
+  bool _live = true;
+  String _currentSessionId = _sessionId;
 
   @override
   Stream<Map<String, List<RoomInfo>>> get roomsStream => _rooms.stream;
+
+  @override
+  Stream<RoomSnapshotChange> get roomChangesStream => _roomChanges.stream;
 
   @override
   Stream<ConnectionStatus> get statusStream => const Stream.empty();
@@ -96,13 +105,13 @@ final class _BenchmarkConnectionManager extends ConnectionManager {
   String get activeRoomId => _roomId;
 
   @override
-  String? get activeSessionId => _sessionId;
+  String? get activeSessionId => _currentSessionId;
 
   @override
   List<RoomInfo> roomsFor(String epk) => [
     RoomInfo(
       roomId: _roomId,
-      sessionId: _sessionId,
+      sessionId: _currentSessionId,
       startedAt: 1,
       working: _working,
     ),
@@ -115,14 +124,14 @@ final class _BenchmarkConnectionManager extends ConnectionManager {
 
   @override
   bool isRoomLive(String epk, String roomId) =>
-      epk == _peerEpk && roomId == _roomId;
+      _live && epk == _peerEpk && roomId == _roomId;
 
   @override
   RoomTurnProjection roomTurnProjection(String epk, String roomId) =>
       isRoomLive(epk, roomId)
       ? RoomTurnProjection(
           status: _working ? AppTurnStatus.working : AppTurnStatus.idle,
-          sessionId: _sessionId,
+          sessionId: _currentSessionId,
         )
       : RoomTurnProjection.stale;
 
@@ -140,16 +149,91 @@ final class _BenchmarkConnectionManager extends ConnectionManager {
     _currentStatus = StatusOnline(link);
   }
 
-  /// Emit a canonical full snapshot after the transport decoder boundary.
-  void emitRoomSnapshot({required bool working}) {
-    _working = working;
-    _rooms.add(roomsSnapshot);
+  void emitStale() {
+    if (!_live) return;
+    _live = false;
+    final snapshot = roomsSnapshot;
+    _rooms.add(snapshot);
+    _roomChanges.add(
+      RoomSnapshotPresentationChanged(
+        snapshot: snapshot,
+        activePeerEpk: _peerEpk,
+        activeRoomId: _roomId,
+        activeRoomPresentationChanged: true,
+        homePresentationChanged: true,
+        activeRoomLivenessChanged: true,
+        transportGenerationChanged: false,
+      ),
+    );
   }
 
-  @override
-  void dispose() {
-    _rooms.close();
-    super.dispose();
+  void emitFreshLive() {
+    if (_live) return;
+    _live = true;
+    final snapshot = roomsSnapshot;
+    _rooms.add(snapshot);
+    _roomChanges.add(
+      RoomSnapshotFreshLive(
+        snapshot: snapshot,
+        activePeerEpk: _peerEpk,
+        activeRoomId: _roomId,
+        activeRoomPresentationChanged: true,
+        homePresentationChanged: true,
+        activeRoomLivenessChanged: true,
+        transportGenerationChanged: false,
+      ),
+    );
+  }
+
+  void rotateSession(String sessionId) {
+    if (_currentSessionId == sessionId) return;
+    _currentSessionId = sessionId;
+    final snapshot = roomsSnapshot;
+    _rooms.add(snapshot);
+    _roomChanges.add(
+      RoomSnapshotSessionRotated(
+        snapshot: snapshot,
+        activePeerEpk: _peerEpk,
+        activeRoomId: _roomId,
+        activeRoomPresentationChanged: true,
+        homePresentationChanged: true,
+        activeRoomLivenessChanged: false,
+        transportGenerationChanged: false,
+      ),
+    );
+  }
+
+  /// Emit a genuine active-room presentation edge.
+  void emitRoomSnapshot({required bool working}) {
+    if (_working == working) {
+      _roomChanges.add(
+        RoomSnapshotNoop(
+          snapshot: roomsSnapshot,
+          activePeerEpk: _peerEpk,
+          activeRoomId: _roomId,
+        ),
+      );
+      return;
+    }
+    _working = working;
+    final snapshot = roomsSnapshot;
+    _rooms.add(snapshot);
+    _roomChanges.add(
+      RoomSnapshotPresentationChanged(
+        snapshot: snapshot,
+        activePeerEpk: _peerEpk,
+        activeRoomId: _roomId,
+        activeRoomPresentationChanged: true,
+        homePresentationChanged: true,
+        activeRoomLivenessChanged: false,
+        transportGenerationChanged: false,
+      ),
+    );
+  }
+
+  Future<void> closeBenchmarkStreams() async {
+    await _rooms.close();
+    await _roomChanges.close();
   }
 }
 
@@ -276,14 +360,20 @@ final class _CountingSyncService extends SyncService {
     super.connection,
     super.boxes,
     TranscriptEventStore store,
-  ) : super(transcriptEventStore: store);
+  ) : super(transcriptEventStore: store, runtimeRecordWriter: (_, _) async {});
 
   int activateCalls = 0;
 
   @override
+  RemoteSessionRef get activeSessionRef => const RemoteSessionRef(
+    peerEpk: _peerEpk,
+    roomId: _roomId,
+    sessionId: _sessionId,
+  );
+
+  @override
   Future<void> activate(String epk, String roomId) async {
     activateCalls++;
-    await super.activate(epk, roomId);
   }
 }
 
@@ -317,56 +407,12 @@ final class _CountingHomeViewModel extends HomeViewModel {
   }
 }
 
-final class _RebuildProbe extends StatelessWidget {
-  const _RebuildProbe({required this.listenable, required this.onBuild});
-
-  final Listenable listenable;
-  final VoidCallback onBuild;
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: listenable,
-    builder: (context, child) {
-      onBuild();
-      return const SizedBox.shrink();
-    },
-  );
-}
-
-/// Mirrors _MessageList's transcript-identity guard. Room metadata changes
-/// should rebuild the consumer but must not schedule an anchor restoration.
-final class _AnchorCallbackProbe extends StatelessWidget {
-  const _AnchorCallbackProbe({required this.vm, required this.onCallback});
-
-  final ChatViewModel vm;
-  final VoidCallback onCallback;
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: vm,
-    builder: (context, child) {
-      final state = vm.state;
-      final ids = state is ChatReady
-          ? <String>[for (final message in state.messages) message.id]
-          : const <String>[];
-      final previous = _lastIds;
-      _lastIds = ids;
-      if (previous != null && !_sameIds(previous, ids)) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => onCallback());
-      }
-      return const SizedBox.shrink();
-    },
-  );
-
-  static List<String>? _lastIds;
-
-  static bool _sameIds(List<String> left, List<String> right) {
-    if (left.length != right.length) return false;
-    for (var i = 0; i < left.length; i++) {
-      if (left[i] != right[i]) return false;
-    }
-    return true;
+bool _sameIds(List<String> left, List<String> right) {
+  if (left.length != right.length) return false;
+  for (var i = 0; i < left.length; i++) {
+    if (left[i] != right[i]) return false;
   }
+  return true;
 }
 
 List<TranscriptEvent> _eventsFor(int eventCount) {
@@ -397,9 +443,9 @@ List<TranscriptEvent> _eventsFor(int eventCount) {
   return events;
 }
 
-Future<void> _pumpUntil(WidgetTester tester, bool Function() ready) async {
-  for (var i = 0; i < 100 && !ready(); i++) {
-    await tester.pump();
+Future<void> _waitUntil(bool Function() ready) async {
+  for (var i = 0; i < 1000 && !ready(); i++) {
+    await Future<void>.delayed(Duration.zero);
   }
   expect(ready(), isTrue, reason: 'benchmark fixture did not hydrate');
 }
@@ -419,114 +465,131 @@ Future<void> main() async {
     await directory.delete(recursive: true);
   });
 
-  testWidgets(
-    'room snapshot fan-out baseline and after-optimization scaffold',
-    (tester) async {
-      for (final eventCount in [0, 200, 5500]) {
-        final peer = const PeerRecord(
-          remoteEpk: _peerEpk,
-          sessionName: 'Perf Pi',
-          relayUrl: 'ws://localhost',
-          pairedAt: '2026-08-24T00:00:00Z',
-          roomId: _roomId,
-        );
-        final storage = _FakeStorage(peer);
-        final channel = _FakeChannel();
-        final connection = _BenchmarkConnectionManager(peer, channel, storage);
-        final store = _CountingTranscriptStore(_eventsFor(eventCount));
-        final sync = _CountingSyncService(connection, LocalBoxes(), store);
-        connection.startOnline();
-        await tester.runAsync(() => sync.activate(_peerEpk, _roomId));
+  test('host-side room snapshot consumer fan-out benchmark', () async {
+    for (final eventCount in [0, 200, 5500]) {
+      final peer = const PeerRecord(
+        remoteEpk: _peerEpk,
+        sessionName: 'Perf Pi',
+        relayUrl: 'ws://localhost',
+        pairedAt: '2026-08-24T00:00:00Z',
+        roomId: _roomId,
+      );
+      final storage = _FakeStorage(peer);
+      final channel = _FakeChannel();
+      final connection = _BenchmarkConnectionManager(peer, channel, storage);
+      final store = _CountingTranscriptStore(_eventsFor(eventCount));
+      final sync = _CountingSyncService(connection, LocalBoxes(), store);
+      connection.startOnline();
+      await sync.activate(_peerEpk, _roomId);
 
-        final prefs = _FakePreferences(_peerEpk);
-        final chat = _CountingChatViewModel(
-          _EmptyReadRepository(),
-          sync,
-          connection,
-          prefs,
-          storage,
-        );
-        final home = _CountingHomeViewModel(storage, prefs, connection);
-        var chatBuilds = 0;
-        var homeBuilds = 0;
-        var anchorCallbacks = 0;
-
-        await tester.pumpWidget(
-          MaterialApp(
-            home: Column(
-              children: [
-                _RebuildProbe(listenable: chat, onBuild: () => chatBuilds++),
-                _RebuildProbe(listenable: home, onBuild: () => homeBuilds++),
-              ],
-            ),
-          ),
-        );
-        await _pumpUntil(
-          tester,
-          () => chat.activePeer != null && home.state is HomeList,
-        );
-        await chat.initialize();
-
-        // Exclude constructor/bootstrap hydration from the fan-out measurement.
-        final initialReads = store.readCalls;
-        sync.activateCalls = 0;
-        chat.notifyCalls = 0;
-        home.notifyCalls = 0;
-        chatBuilds = 0;
-        homeBuilds = 0;
-        anchorCallbacks = 0;
-        _AnchorCallbackProbe._lastIds = null;
-
-        final roomEmitments = <Map<String, List<RoomInfo>>>[];
-        final roomSub = connection.roomsStream.listen(roomEmitments.add);
-        final perSnapshotUs = <int>[];
-        final perSnapshotReadUs = <int>[];
-        for (var i = 0; i < _snapshotCount; i++) {
-          final emittedBefore = roomEmitments.length;
-          final readsBefore = store.readCalls;
-          final stopwatch = Stopwatch()..start();
-          connection.emitRoomSnapshot(working: i.isEven);
-          await store.waitForReadCount(readsBefore + 1);
-          await tester.pump();
-          expect(
-            roomEmitments.length,
-            greaterThan(emittedBefore),
-            reason: 'room snapshot stream barrier did not fire',
-          );
-          // Current behavior performs one full-log resend scan per semantic
-          // working snapshot. This barrier is deliberately count-based, not a
-          // sleep; the implementation pass should change this expectation to
-          // zero for metadata-only snapshots while keeping a separate edge test.
-          stopwatch.stop();
-          perSnapshotUs.add(stopwatch.elapsedMicroseconds);
-          perSnapshotReadUs.add(store.readDurationsUs.last);
-          await tester.pump();
-        }
-        await roomSub.cancel();
-
-        final wallP50 = _percentile(perSnapshotUs, 0.50);
-        final wallP95 = _percentile(perSnapshotUs, 0.95);
-        final readP50 = _percentile(perSnapshotReadUs, 0.50);
-        final readP95 = _percentile(perSnapshotReadUs, 0.95);
-        // ignore: avoid_print — machine-readable benchmark output.
-        print(
-          'PERF_JSON ${<String, Object>{'probe': 'room_snapshot_consumer_fanout_baseline', 'events': eventCount, 'snapshots': _snapshotCount, 'initial_reads': initialReads, 'snapshot_reads': store.readCalls - initialReads, 'snapshot_read_p50_us': readP50, 'snapshot_read_p95_us': readP95, 'snapshot_wall_p50_us': wallP50, 'snapshot_wall_p95_us': wallP95, 'binding_refreshes': sync.activateCalls, 'chat_notify_listeners': chat.notifyCalls, 'home_notify_listeners': home.notifyCalls, 'chat_widget_rebuilds': chatBuilds, 'home_widget_rebuilds': homeBuilds, 'post_frame_anchor_callbacks': anchorCallbacks}}',
-        );
-
-        expect(store.readCalls - initialReads, _snapshotCount);
-        expect(sync.activateCalls, _snapshotCount);
-        expect(anchorCallbacks, 0);
-
-        chat.dispose();
-        home.dispose();
-        sync.dispose();
-        connection.dispose();
+      final prefs = _FakePreferences(_peerEpk);
+      final chat = _CountingChatViewModel(
+        _EmptyReadRepository(),
+        sync,
+        connection,
+        prefs,
+        storage,
+      );
+      final home = _CountingHomeViewModel(storage, prefs, connection);
+      var chatBuilds = 0;
+      var homeBuilds = 0;
+      var anchorCallbacks = 0;
+      List<String>? previousMessageIds;
+      void onChatBuild() {
+        chatBuilds++;
+        final state = chat.state;
+        final ids = state is ChatReady
+            ? <String>[for (final message in state.messages) message.id]
+            : const <String>[];
+        final previous = previousMessageIds;
+        previousMessageIds = ids;
+        if (previous != null && !_sameIds(previous, ids)) anchorCallbacks++;
       }
-    },
-    // Design-only scaffold; the implementation story enables the before/after
-    // run and owns explicit async teardown.
-    skip: true,
-  );
+
+      void onHomeBuild() => homeBuilds++;
+      chat.addListener(onChatBuild);
+      home.addListener(onHomeBuild);
+      await _waitUntil(() => chat.activePeer != null && home.state is HomeList);
+      await chat.initialize();
+
+      // Exclude constructor/bootstrap hydration from the fan-out measurement.
+      final initialReads = store.readCalls;
+      sync.activateCalls = 0;
+      chat.notifyCalls = 0;
+      home.notifyCalls = 0;
+      chatBuilds = 0;
+      homeBuilds = 0;
+      anchorCallbacks = 0;
+      previousMessageIds = null;
+
+      final roomEmitments = <Map<String, List<RoomInfo>>>[];
+      final roomSub = connection.roomsStream.listen(roomEmitments.add);
+      final perSnapshotUs = <int>[];
+      for (var i = 0; i < _snapshotCount; i++) {
+        final emittedBefore = roomEmitments.length;
+        final readsBefore = store.readCalls;
+        final stopwatch = Stopwatch()..start();
+        connection.emitRoomSnapshot(working: i.isEven);
+        expect(
+          roomEmitments.length,
+          greaterThan(emittedBefore),
+          reason: 'room snapshot stream barrier did not fire',
+        );
+        expect(
+          store.readCalls,
+          readsBefore,
+          reason: 'metadata-only edge must not scan the transcript',
+        );
+        stopwatch.stop();
+        perSnapshotUs.add(stopwatch.elapsedMicroseconds);
+      }
+
+      final wallP50 = _percentile(perSnapshotUs, 0.50);
+      final wallP95 = _percentile(perSnapshotUs, 0.95);
+      // ignore: avoid_print — machine-readable benchmark output.
+      print(
+        'PERF_JSON ${<String, Object>{'probe': 'room_snapshot_consumer_fanout_after_opt_2', 'events': eventCount, 'snapshots': _snapshotCount, 'initial_reads': initialReads, 'snapshot_reads': store.readCalls - initialReads, 'snapshot_read_p50_us': 0, 'snapshot_read_p95_us': 0, 'snapshot_wall_p50_us': wallP50, 'snapshot_wall_p95_us': wallP95, 'binding_refreshes': sync.activateCalls, 'chat_notify_listeners': chat.notifyCalls, 'home_notify_listeners': home.notifyCalls, 'chat_widget_rebuilds': chatBuilds, 'home_widget_rebuilds': homeBuilds, 'post_frame_anchor_callbacks': anchorCallbacks}}',
+      );
+
+      expect(store.readCalls - initialReads, 0);
+      expect(sync.activateCalls, 0);
+      expect(anchorCallbacks, 0);
+
+      final noOpCounters = (
+        chat: chat.notifyCalls,
+        home: home.notifyCalls,
+        chatBuilds: chatBuilds,
+        homeBuilds: homeBuilds,
+      );
+      connection.emitRoomSnapshot(working: true);
+      expect(chat.notifyCalls, noOpCounters.chat);
+      expect(home.notifyCalls, noOpCounters.home);
+      expect(chatBuilds, noOpCounters.chatBuilds);
+      expect(homeBuilds, noOpCounters.homeBuilds);
+      expect(store.readCalls - initialReads, 0);
+
+      connection.emitStale();
+      expect(sync.activateCalls, 0);
+      connection.emitFreshLive();
+      await _waitUntil(() => sync.activateCalls == 1);
+      expect(store.readCalls - initialReads, 0);
+
+      connection.rotateSession('$_sessionId-rotated');
+      await _waitUntil(() => sync.activateCalls == 2);
+      expect(store.readCalls - initialReads, 0);
+      expect(anchorCallbacks, 0);
+
+      await roomSub.cancel();
+      chat.removeListener(onChatBuild);
+      home.removeListener(onHomeBuild);
+      chat.dispose();
+      home.dispose();
+      sync.dispose();
+      await connection.closeBenchmarkStreams();
+      connection.dispose();
+      await channel.close();
+    }
+  });
 }
 
 int _percentile(List<int> values, double fraction) {
