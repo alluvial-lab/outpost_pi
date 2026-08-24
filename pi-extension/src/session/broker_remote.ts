@@ -1,10 +1,11 @@
 import type { Broker, RemoteInjectStatus, RemoteRouter, PeerInfo } from "./broker.js";
 import { type Envelope, envelope, uuidv7 } from "./envelope.js";
 import type { PiForwardClient } from "../transport/pi_forward_client.js";
-import type {
-  RelayControlFrameRoomAnnounced,
-  RelayControlFrameRoomEnded,
-  RelayControlFrameRooms,
+import {
+  RELAY_CONTROL_DISCRIMINATORS,
+  type RelayControlFrameRoomAnnounced,
+  type RelayControlFrameRoomEnded,
+  type RelayControlFrameRooms,
 } from "../protocol/generated/protocol.generated.js";
 
 /**
@@ -547,13 +548,19 @@ export class BrokerRemote implements RemoteRouter {
   private _subscribeToRooms(pcPubkey: string): void {
     if (this.detached || this.subscribedRooms.has(pcPubkey)) return;
     this.subscribedRooms.add(pcPubkey);
-    this.pi.sendRoomControl({ type: "subscribe_rooms", peers: [pcPubkey] });
+    this.pi.sendRoomControl({
+      type: RELAY_CONTROL_DISCRIMINATORS.subscribe_rooms,
+      peers: [pcPubkey],
+    });
   }
 
   private _requestRooms(pcPubkey: string): void {
     if (this.detached || this.pendingRoomChecks.has(pcPubkey)) return;
     this.pendingRoomChecks.add(pcPubkey);
-    this.pi.sendRoomControl({ type: "rooms_check", peers: [pcPubkey] });
+    this.pi.sendRoomControl({
+      type: RELAY_CONTROL_DISCRIMINATORS.rooms_check,
+      peers: [pcPubkey],
+    });
   }
 
   private _pickRoom(pcPubkey: string): string | undefined {
