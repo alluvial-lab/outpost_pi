@@ -172,6 +172,91 @@ void main() {
     },
   );
 
+  test(
+    '5500-row state-shapes flood retains newest row and rotates oldest',
+    () async {
+      const ringEvents = 5500;
+      const stage =
+          'bounded-long-uptime-capture-rotation-probe-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+      final timestamp = DateTime.utc(2026, 8, 24);
+      final log = newLog();
+
+      log.log(
+        WsInEvent(ts: timestamp, count: -1, kind: 'state-shape', stage: stage),
+      );
+      for (var index = 0; index < ringEvents; index++) {
+        log.log(
+          WsInEvent(
+            ts: timestamp,
+            count: index,
+            kind: 'state-shape',
+            stage: stage,
+          ),
+        );
+      }
+
+      final firstExport = await log.export();
+      expect(firstExport, isNotNull);
+
+      // Match the harness's immediate second capture while a live critical
+      // event starts another snapshot write after the force-flush completes.
+      final readStarted = Completer<void>();
+      final releaseRead = Completer<void>();
+      log.beforeExportReadForTesting = () {
+        readStarted.complete();
+        return releaseRead.future;
+      };
+      final snapshotReady = Completer<void>();
+      final releaseCommit = Completer<void>();
+      var snapshotCalls = 0;
+      log.beforeSnapshotCommitForTesting = () {
+        snapshotCalls += 1;
+        if (snapshotCalls == 2) {
+          snapshotReady.complete();
+          return releaseCommit.future;
+        }
+        return Future<void>.value();
+      };
+
+      final capture = log.export();
+      await readStarted.future;
+      log.log(
+        RoomSnapshotEvent(
+          ts: timestamp,
+          room: 'state-shapes-room',
+          presenceCount: 1,
+          working: false,
+        ),
+      );
+      await snapshotReady.future;
+      releaseRead.complete();
+
+      final exported = await capture;
+      final criticalFlush = log.pendingFlush;
+      releaseCommit.complete();
+      await criticalFlush;
+      expect(exported, isNotNull);
+      final rows = const LineSplitter()
+          .convert(exported!)
+          .map((line) => jsonDecode(line) as Map<String, dynamic>)
+          .toList(growable: false);
+      expect(
+        rows.any((row) => row['tag'] == 'wsIn' && row['count'] == -1),
+        isFalse,
+        reason: 'the oldest flood marker must rotate out',
+      );
+      expect(
+        rows.any(
+          (row) => row['tag'] == 'wsIn' && row['count'] == ringEvents - 1,
+        ),
+        isTrue,
+        reason: 'the newest admitted flood row must remain exportable',
+      );
+      log.dispose();
+      await log.pendingFlush;
+    },
+  );
+
   test('a huge untrusted string field cannot evict the window alone', () async {
     final log = DebugLogImpl.withMaxBytesForTest(
       debugEnabled: () => true,
