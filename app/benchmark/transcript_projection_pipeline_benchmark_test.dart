@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -335,12 +336,113 @@ void main() {
   test(
     'AFTER: append receipt drives delta materialization without a full read',
     () async {
-      throw UnimplementedError(
-        'Incremental append pipeline is not implemented yet.',
+      final directory = Directory.systemTemp.createTempSync(
+        'transcript_delta_pipeline_benchmark_',
       );
+      try {
+        await LocalBoxes.initForTest(
+          directory.path,
+          encryptionKey: List<int>.generate(32, (index) => index),
+        );
+        final store = _CountingTranscriptEventStore(
+          HiveTranscriptEventStore(LocalBoxes()),
+        );
+        final replayEvents = _syntheticTranscript(5500);
+        final replayReducer = TranscriptProjectionReducer.empty(
+          sessionId: _sessionId,
+        );
+        final replayWatch = Stopwatch()..start();
+        final replayReceipt = await store.appendAll(_key, replayEvents);
+        final replayUpdate = replayReducer.applyAll(
+          replayReceipt.accepted.map((entry) => entry.event),
+        );
+        replayWatch.stop();
+        expect(replayUpdate.projection.messages, hasLength(5500));
+        expect(replayUpdate.firstChangedMessageIndex, 0);
+        expect(store.readCalls, 0);
+
+        const singleKey = TranscriptSessionKey(
+          peerId: 'benchmark-peer',
+          roomId: 'main',
+          sessionId: 'benchmark-delta-single-1000',
+        );
+        final singleEvents = _syntheticTranscript(
+          1000,
+          sessionId: singleKey.sessionId,
+        );
+        final singleReducer = TranscriptProjectionReducer.empty(
+          sessionId: singleKey.sessionId,
+        );
+        var affectedRows = 0;
+        final singleWatch = Stopwatch()..start();
+        for (final event in singleEvents) {
+          final receipt = await store.appendAll(singleKey, <TranscriptEvent>[
+            event,
+          ]);
+          final update = singleReducer.applyAll(
+            receipt.accepted.map((entry) => entry.event),
+          );
+          final firstChanged = update.firstChangedMessageIndex;
+          if (firstChanged != null) {
+            affectedRows += update.projection.messages.length - firstChanged;
+          }
+        }
+        singleWatch.stop();
+        expect(store.readCalls, 0);
+        expect(affectedRows, 1000, reason: 'tail traffic changes one row');
+        _expectEquivalent(
+          singleReducer.projection,
+          deriveTranscriptProjection(
+            sessionId: singleKey.sessionId,
+            events: singleEvents,
+          ),
+        );
+
+        _report(
+          probe: 'transcript_receipt_delta_replay_5500_after',
+          eventCount: replayEvents.length,
+          samples: <int>[replayWatch.elapsedMicroseconds],
+        );
+        _report(
+          probe: 'transcript_receipt_delta_single_1000_after',
+          eventCount: singleEvents.length,
+          samples: <int>[singleWatch.elapsedMicroseconds],
+        );
+        expect(replayWatch.elapsedMilliseconds, lessThanOrEqualTo(250));
+        expect(singleWatch.elapsedMilliseconds, lessThanOrEqualTo(400));
+      } finally {
+        await Hive.close();
+        await directory.delete(recursive: true);
+      }
     },
-    skip: 'AFTER scaffold for opt-3; implementation enables it.',
   );
+}
+
+final class _CountingTranscriptEventStore implements TranscriptEventStore {
+  _CountingTranscriptEventStore(this._delegate);
+
+  final TranscriptEventStore _delegate;
+  int readCalls = 0;
+
+  @override
+  Future<AppendTranscriptEventsResult> appendAll(
+    TranscriptSessionKey key,
+    Iterable<TranscriptEvent> events,
+  ) => _delegate.appendAll(key, events);
+
+  @override
+  Future<void> clearSession(TranscriptSessionKey key) =>
+      _delegate.clearSession(key);
+
+  @override
+  Future<List<TranscriptEvent>> readSession(TranscriptSessionKey key) {
+    readCalls += 1;
+    return _delegate.readSession(key);
+  }
+
+  @override
+  Stream<List<TranscriptEvent>> watchSession(TranscriptSessionKey key) =>
+      _delegate.watchSession(key);
 }
 
 void _expectEquivalent(

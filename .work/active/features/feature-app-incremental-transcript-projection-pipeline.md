@@ -451,3 +451,14 @@ that end-to-end validation.
    append boundary and remove repeated sequence/I/O work.
 3. `feature-app-incremental-transcript-projection-pipeline-opt-3` — wire both
    contracts into SyncService and delete the old full-rebuild write chain.
+
+## Implementation results
+
+All three optimization checkpoints are complete on the host-side benchmark lane.
+
+- Canonical 5,500-event fold: **172.735 ms p50 / 182.784 ms p95 → 7.657 ms p50 / 15.424 ms p95** (target <=40/60 ms).
+- 1,000 one-at-a-time reducer applies: **1,336.309 ms prefix rebuild → 30.997 ms p50 / 37.033 ms p95** (target <=100 ms).
+- Encrypted Hive append: 5,500 batch **891.690 → 96.489 ms**; 1,000 batch **116.376 → 16.014 ms**; 1,000 one at a time **964.326 → 215.427 ms** (targets <=250/50/400 ms).
+- Receipt-driven pipeline: 5,500 replay **107.329 ms** and 1,000 persisted one at a time **258.114 ms** (targets <=250/400 ms).
+- Normal accepted append reads: **1 → 0**; monotonic tail materialization changes one row instead of comparing the full projection.
+- Correctness: every generated 200/1,000/5,500 prefix matched a clean canonical rebuild; all 36 projection/store tests, all 102 SyncService tests, and the committed-tree app suite (**934 passed, 1 skipped**) passed. Host-side execution did not claim the emulator/live soak lane.

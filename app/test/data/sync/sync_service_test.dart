@@ -154,6 +154,7 @@ class _MemoryTranscriptStore implements TranscriptEventStore {
   bool failNextAppend = false;
   bool failNextRead = false;
   int appendCalls = 0;
+  int readCalls = 0;
   int? failAppendCall;
   Completer<void>? appendGate;
   Completer<void>? appendStarted;
@@ -211,6 +212,7 @@ class _MemoryTranscriptStore implements TranscriptEventStore {
 
   @override
   Future<List<TranscriptEvent>> readSession(TranscriptSessionKey key) async {
+    readCalls += 1;
     final gate = readGate;
     if (gate != null) {
       readGate = null;
@@ -431,7 +433,13 @@ void main() {
       await legacyBox.put(0, {'legacy': true});
 
       s.ch.push(UserInput(id: 'old-u1', text: 'old session row'));
-      await _settle();
+      await _waitUntil(
+        () =>
+            messages(s.epk, oldSession).singleOrNull?.text ==
+                'old session row' &&
+            index(s.epk, oldSession)?.key == '${s.epk}:main:$oldSession',
+        reason: 'the old session row and index update to settle',
+      );
       expect(messages(s.epk, oldSession).map((row) => row.text), [
         'old session row',
       ]);
@@ -809,6 +817,29 @@ void main() {
       expect(m.first.text, 'hi');
       expect(m.first.pending, isFalse);
       expect(index(s.epk)?.status, SessionActivity.working);
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
+    'accepted tail append reads no log and writes one projection row',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      final initialReads = store.readCalls;
+      final box = LocalBoxes().openMsgsBox(refFor(s.epk));
+      var rowWrites = 0;
+      final subscription = box.watch().listen((_) => rowWrites++);
+
+      s.ch.push(UserInput(id: 'delta-u1', text: 'one row'));
+      await _settle();
+
+      expect(store.readCalls, initialReads);
+      expect(rowWrites, 1);
+      expect(messages(s.epk).single.text, 'one row');
+
+      await subscription.cancel();
       s.conn.dispose();
       s.sync.dispose();
     },
@@ -2919,6 +2950,10 @@ void main() {
       eos: true,
     );
 
+    s.ch.push(history);
+    await _settle();
+    expect(store.eventsFor(transcriptKeyFor(s.epk)), isNotEmpty);
+
     store.failNextRead = true;
     s.ch.push(history);
     await _settle();
@@ -2995,14 +3030,14 @@ void main() {
         s.conn.dispose();
       });
 
-      final readGate = Completer<void>();
-      final readStarted = Completer<void>();
+      final appendGate = Completer<void>();
+      final appendStarted = Completer<void>();
       store
-        ..readGate = readGate
-        ..readStarted = readStarted;
+        ..appendGate = appendGate
+        ..appendStarted = appendStarted;
 
       final occupyingSend = s.sync.sendMessage('occupy transcript write');
-      await readStarted.future.timeout(const Duration(seconds: 1));
+      await appendStarted.future.timeout(const Duration(seconds: 1));
       final racedSend = s.sync.sendMessage('survive reconnect generation');
 
       final retrying = s.conn.statusStream.firstWhere(
@@ -3010,7 +3045,7 @@ void main() {
       );
       await s.ch.loseConnection();
       await retrying.timeout(const Duration(seconds: 1));
-      readGate.complete();
+      appendGate.complete();
       await Future.wait(<Future<void>>[occupyingSend, racedSend]);
 
       await _waitUntil(
