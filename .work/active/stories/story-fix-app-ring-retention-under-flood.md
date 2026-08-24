@@ -60,3 +60,23 @@ The original device reproduction also failed at `live_device_harness.dart:740` w
 - **Lenses:** root-cause alignment, FIFO/cap preservation, async file-I/O ordering, failure containment, diagnostic privacy, regression-test integrity, performance, and lane hygiene.
 - **Findings:** no blockers, important findings, or nits. The sibling-temp write and same-directory rename remove only the observable truncate window; queue admission, eviction order, byte accounting, coalescing, export filtering, and the 1 MiB cap remain unchanged.
 - **Closure reason:** the deterministic regression passes, full app verification and the original live selector are green, the 5-minute seeded soak is green, and the benchmark remains within the requested O(1)-ish budget.
+
+## Closure appendix — warm-load chronology and stale temporary snapshots
+
+The follow-up review found two additional correctness gaps in the rewritten ring and closed them in the same campaign:
+
+- **I1 — warm-load chronology inversion:** `log()` now buffers admissions while the shared asynchronous load is in flight. File rows are appended first, then buffered live rows are merged in call order. Once loading completes, the steady-state path remains synchronous and O(1)-amortized; it does not await I/O per event.
+- **N1 — crash-orphaned temporary snapshots:** load completion sweeps sibling `outpost_pi_debug.jsonl.tmp.*` files unless the exact path is currently owned by an active in-process snapshot write. Cleanup is best-effort and cannot fail loading.
+
+### Regression evidence
+
+- I1 fails before the fix: a near-full warm file exports only `old-last`; the concurrent `new-event` is evicted because it was admitted before the older file rows.
+- N1 fails before the fix: a stale `outpost_pi_debug.jsonl.tmp.crashed-writer` remains after warm load (`Expected: false / Actual: true`).
+- After the fix, both deterministic tests pass. The debug-ring suite passes 22 tests.
+
+### Verification
+
+- Benchmark: 5,500 admissions in `43,958 us` (`7.99 us/event`), retaining the requested approximately-50ms flood budget; the critical burst used one coalesced snapshot write.
+- Full app suite: `flutter test --exclude-tags e2e --concurrency=2` passed 940 tests.
+- `flutter analyze` remains blocked only by two pre-existing `invalid_use_of_visible_for_testing_member` warnings in the unrelated `app/benchmark/transcript_projection_pipeline_benchmark_test.dart` worktree change.
+- No version bump and no push.

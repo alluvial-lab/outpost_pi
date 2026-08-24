@@ -120,6 +120,53 @@ void main() {
     log.dispose();
   });
 
+  test('warm-load admits a concurrent first event after prior rows', () async {
+    final path = '${tempDir.path}/outpost_pi_debug.jsonl';
+    final oldFirst = jsonEncode(
+      MsgEchoEvent(ts: DateTime.utc(2026, 7, 4), id: 'old-first').toJson(),
+    );
+    final oldLast = jsonEncode(
+      MsgEchoEvent(ts: DateTime.utc(2026, 7, 4), id: 'old-last').toJson(),
+    );
+    final newLine = jsonEncode(
+      MsgSendEvent(ts: DateTime.utc(2026, 7, 4), id: 'new-event').toJson(),
+    );
+    await File(path).writeAsString('$oldFirst\n$oldLast\n');
+
+    final loadRequested = Completer<void>();
+    final releaseLoad = Completer<void>();
+    provider.documentsPathRequested = loadRequested;
+    provider.documentsPathGate = releaseLoad.future;
+    final log = DebugLogImpl.withMaxBytesForTest(
+      debugEnabled: () => true,
+      maxBytes: utf8.encode('$oldLast\n$newLine\n').length,
+    );
+
+    log.log(MsgSendEvent(ts: DateTime.utc(2026, 7, 4), id: 'new-event'));
+    await loadRequested.future;
+    releaseLoad.complete();
+
+    final exported = await log.export();
+    expect(exported, isNotNull);
+    final rows = exported!.split('\n');
+    expect(rows.last, contains('new-event'));
+    expect(exported, contains('old-last'));
+    expect(exported, isNot(contains('old-first')));
+    log.dispose();
+  });
+
+  test('warm-load removes stale temporary snapshots', () async {
+    final path = '${tempDir.path}/outpost_pi_debug.jsonl';
+    final stalePath = '$path.tmp.crashed-writer';
+    await File(stalePath).writeAsString('stale snapshot');
+
+    final log = newLog();
+    await log.export();
+
+    expect(await File(stalePath).exists(), isFalse);
+    log.dispose();
+  });
+
   test(
     'legacy lines carrying forbidden keys are dropped at load and export',
     () async {
@@ -591,9 +638,16 @@ class _FakeSecureStorage implements FlutterSecureStorage {
 
 class _MockPathProvider extends PathProviderPlatform {
   String? appDocsDir;
+  Completer<void>? documentsPathRequested;
+  Future<void>? documentsPathGate;
 
   @override
-  Future<String?> getApplicationDocumentsPath() async => appDocsDir;
+  Future<String?> getApplicationDocumentsPath() async {
+    documentsPathRequested?.complete();
+    final gate = documentsPathGate;
+    if (gate != null) await gate;
+    return appDocsDir;
+  }
 
   @override
   Future<String?> getApplicationSupportPath() async => appDocsDir;

@@ -21,15 +21,17 @@ final class _DebugLine {
 ///
 /// A bounded in-memory ring (capped at [_maxBytes]) written to a jsonl file in
 /// `getApplicationDocumentsDirectory()`, so it survives reboot and logcat
-/// buffer rollover. Each line matches the extension's `audit.jsonl` shape so a
-/// single message id greps across all three sides.
+/// buffer rollover. During asynchronous warm loading, new admissions wait in a
+/// bounded side queue and merge after file rows to preserve chronology. Each
+/// line matches the extension's `audit.jsonl` shape so a single message id greps
+/// across all three sides.
 ///
 /// **Snapshot-write model.** The file is an atomic snapshot of the capped
 /// in-memory ring — every flush overwrites the file with the current capped
 /// `_ring` (NOT append-only). This keeps the on-disk retention bounded by the
 /// same cap as the in-memory ring; evicted lines never persist on disk. The
-/// in-memory `_ring` IS the source of truth for pending state — no separate
-/// `_pending` list that could diverge.
+/// in-memory `_ring` is the source of truth after warm loading; the bounded
+/// pre-load admission queue exists only to preserve file-before-live order.
 ///
 /// **Flush policy.** Critical events (the [kImmediateFlushTags] set — the
 /// crash-reconnect tail events) flush immediately; routine events debounce
@@ -57,6 +59,7 @@ final class _DebugLine {
 /// The logger must not break the app even on platform/quota/permission failure.
 class DebugLogImpl implements DebugLog {
   static int _nextWriterId = 0;
+  static final Set<String> _activeTempPaths = <String>{};
 
   /// Ring buffer capacity. 1 MiB covers ~48h of the expanded capture surface
   /// (state-transition lines, NOT per-token streaming) with headroom.
@@ -86,8 +89,11 @@ class DebugLogImpl implements DebugLog {
   /// makes oldest-line eviction constant-time; [_retainedBytes] avoids a full
   /// UTF-8 recount on every admission.
   final Queue<_DebugLine> _ring = Queue<_DebugLine>();
+  final Queue<_DebugLine> _pendingAdmissions = Queue<_DebugLine>();
   final int _writerId = _nextWriterId++;
   int _retainedBytes = 0;
+  int _pendingAdmissionBytes = 0;
+  bool _loaded = false;
 
   Timer? _flushTimer;
   bool _disposed = false;
@@ -153,10 +159,12 @@ class DebugLogImpl implements DebugLog {
   Future<void> _ensureLoaded() {
     // Concurrent callers share the same load future; _filePath is set only
     // after resolution, so a concurrent log()/flush() sees a consistent state.
+    if (_loaded) return Future<void>.value();
     if (_loadFuture != null) return _loadFuture!;
     _loadFuture = _doLoad().catchError((Object _) {
       _safeLog(_DebugLogFailure.load);
-      // Allow a retry on a later call if this load failed.
+      // Keep pre-load admissions buffered so a later call can retry without
+      // reversing their chronology against rows from the file.
       _loadFuture = null;
     });
     return _loadFuture!;
@@ -166,6 +174,7 @@ class DebugLogImpl implements DebugLog {
     final dir = await getApplicationDocumentsDirectory();
     _filePath = '${dir.path}/outpost_pi_debug.jsonl';
     final file = File(_filePath!);
+    final loadedLines = <String>[];
     if (await file.exists()) {
       final lines = await file.readAsLines();
       for (final line in lines) {
@@ -182,9 +191,23 @@ class DebugLogImpl implements DebugLog {
         } catch (_) {
           continue;
         }
-        _append(line);
+        loadedLines.add(line);
       }
     }
+
+    // File rows precede events admitted while the asynchronous load was in
+    // flight. Apply both sequences only after the file has been read so the
+    // first live event cannot become older than warm rows.
+    for (final line in loadedLines) {
+      _append(line);
+    }
+    while (_pendingAdmissions.isNotEmpty) {
+      final line = _pendingAdmissions.removeFirst();
+      _pendingAdmissionBytes -= line.byteLength;
+      _append(line.encoded);
+    }
+    _loaded = true;
+    await _sweepStaleTemps(_filePath!);
   }
 
   @override
@@ -196,7 +219,15 @@ class DebugLogImpl implements DebugLog {
       if (_disposed) return;
       if (!_debugEnabled()) return; // no-op when debug logging is OFF
       final line = jsonEncode(event.toJson());
-      _append(line); // cap-on-append: never overshoot between flushes
+      if (_loaded) {
+        _append(line); // cap-on-append: never overshoot between flushes
+      } else {
+        _appendPending(line);
+        // log() is synchronous, so buffer this admission while the shared load
+        // future establishes the file chronology. Steady-state logs take the
+        // branch above and never await or enqueue behind I/O.
+        unawaited(_ensureLoaded());
+      }
       if (kImmediateFlushTags.contains(event.tag)) {
         // Critical event: flush now so a crash doesn't lose the diagnostic tail.
         // ignore: discarded_futures
@@ -281,6 +312,8 @@ class DebugLogImpl implements DebugLog {
       try {
         _ring.clear();
         _retainedBytes = 0;
+        _pendingAdmissions.clear();
+        _pendingAdmissionBytes = 0;
         if (path != null) {
           final file = File(path);
           if (await file.exists()) {
@@ -390,16 +423,48 @@ class DebugLogImpl implements DebugLog {
 
   /// Replace the exported file without exposing its truncate/write window.
   Future<void> _writeSnapshotAtomically(String path, String snapshot) async {
-    final tempFile = File('$path.tmp.$_writerId');
+    final tempPath = '$path.tmp.$_writerId';
+    final tempFile = File(tempPath);
+    _activeTempPaths.add(tempPath);
     try {
       await tempFile.writeAsString(snapshot, flush: true);
       final commitBarrier = beforeSnapshotCommitForTesting;
       if (commitBarrier != null) await commitBarrier();
       await tempFile.rename(path);
     } finally {
+      _activeTempPaths.remove(tempPath);
       if (await tempFile.exists()) {
         await tempFile.delete();
       }
+    }
+  }
+
+  /// Remove crash-orphaned sibling snapshots without touching an active write.
+  Future<void> _sweepStaleTemps(String path) async {
+    final prefix = '$path.tmp.';
+    try {
+      await for (final entry in Directory(File(path).parent.path).list()) {
+        if (entry is! File || !entry.path.startsWith(prefix)) continue;
+        if (_activeTempPaths.contains(entry.path)) continue;
+        try {
+          await entry.delete();
+        } catch (_) {
+          // Cleanup is best-effort; a permissions race must not break loading.
+        }
+      }
+    } catch (_) {
+      // The canonical load path remains usable even if directory cleanup fails.
+    }
+  }
+
+  /// Buffer one line until warm loading has established file-before-live order.
+  void _appendPending(String encoded) {
+    final line = _DebugLine(encoded, utf8.encode(encoded).length + 1);
+    _pendingAdmissions.addLast(line);
+    _pendingAdmissionBytes += line.byteLength;
+    while (_pendingAdmissionBytes > _maxBytes &&
+        _pendingAdmissions.isNotEmpty) {
+      _pendingAdmissionBytes -= _pendingAdmissions.removeFirst().byteLength;
     }
   }
 
