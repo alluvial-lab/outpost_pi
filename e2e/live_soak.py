@@ -377,14 +377,31 @@ Future<void> _runEvent(
     }}
     if (clear is String) requestLiveFault(clear);
     String? identityPrompt;
+    var identityRecoveryTurnStaged = false;
     if (clear != null ||
         event['name'] == 'pi_restart' ||
         event['name'] == 'relay_kill') {{
       if (event['name'] == 'net_down') {{
         // Deliberately overlap reconnect and send, then require the same UI +
         // transcript-DB visibility predicate as the skipped regression test.
+        // The fake Pi SDK only emits a terminal agent lifecycle for an armed
+        // turn. Arm standalone recovery probes so their authoritative working
+        // metadata can converge false; preserve the seed's initial probe inside
+        // the already-pending staged turn.
         identityPrompt =
             'live soak identity-window probe ${{event['at_seconds']}}';
+        final turnControl = await harness.host.tryGet('/turn-control');
+        final turnPhase = turnControl?['phase'];
+        if (turnPhase != 'armed' && turnPhase != 'pending') {{
+          await harness.host.post(
+            '/turn-control/defer-next',
+            <String, Object>{{
+              'reply':
+                  'live soak identity-window reply ${{event['at_seconds']}}',
+            }},
+          );
+          identityRecoveryTurnStaged = true;
+        }}
         final reconnecting = harness.connection.connectTo(harness.peer);
         await harness.sync.sendMessage(identityPrompt);
         await reconnecting;
@@ -392,6 +409,26 @@ Future<void> _runEvent(
         await harness.connection.connectTo(harness.peer);
       }}
       await harness.waitOnlineAndLive(tester: tester);
+      if (identityRecoveryTurnStaged) {{
+        await eventually<Map<String, dynamic>>(tester, () async {{
+          final value = await harness.host.tryGet('/turn-control');
+          return value?['phase'] == 'pending' ? value : null;
+        }}, description: 'post-recovery identity turn pending');
+        await harness.host.post(
+          '/turn-control/resolve',
+          const <String, Object>{{}},
+        );
+        await eventually<bool>(
+          tester,
+          () async => harness.connection.isRoomWorking(
+            harness.peer.remoteEpk,
+            harness.connection.activeRoomId,
+          )
+              ? null
+              : true,
+          description: 'post-recovery identity turn settled',
+        );
+      }}
       if (identityPrompt != null &&
           !await harness.submissionIsVisible(tester, identityPrompt)) {{
         fail('identity-window submission disappeared after reconnect');

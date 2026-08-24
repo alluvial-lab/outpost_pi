@@ -129,6 +129,18 @@ class ScheduleTests(unittest.TestCase):
         )
         self.assertEqual(missing, [])
 
+    def test_generated_net_down_probe_has_a_terminal_turn_boundary(self) -> None:
+        source = live_soak._generated_test(
+            live_soak.build_schedule(2026082407, 300),
+            420,
+        )
+        for evidence in (
+            "/turn-control/defer-next",
+            "identityRecoveryTurnStaged",
+            "post-recovery identity turn settled",
+        ):
+            self.assertIn(evidence, source)
+
     def test_generated_device_oracle_covers_all_four_invariants(self) -> None:
         source = live_soak._generated_test(live_soak.build_schedule(7, 60), 360)
         for evidence in (
