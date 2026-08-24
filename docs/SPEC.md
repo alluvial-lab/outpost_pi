@@ -66,17 +66,17 @@ protocol codegen:
   `types.ts` is now a narrow re-export of these; `codec.ts` dispatches over
   the generated helpers.
 - **Dart** — `app/lib/protocol/generated/protocol.g.dart` (sealed classes +
-  `fromJson`). `protocol.dart` imports/exports it; a documented temporary
-  hand-maintained island `control_frames.dart` covers control frames not yet
-  in the schema IR.
+  `fromJson`) and `app/lib/protocol/generated/relay_frames.g.dart` (generated
+  relay control/presence/rooms DTOs). `control_frames.dart` is an app-domain
+  adapter over those generated relay DTOs, not a competing wire contract.
 - **Rust** — `relay/src/protocol/generated/` (serde structs for the relay
   outer envelope, cross-PC frames, and room metadata).
 - **Cockpit↔pi control RPC** — folded into the generated schema
   (`cockpit-control-rpc`), retiring the former private NUL-prefix string RPC.
 
 Treat the schema (`protocol/schema/`) as the source of truth; the generated
-artifacts are the cross-language contract test. A small hand-maintained
-island remains for control frames not yet migrated to the schema IR.
+artifacts are the cross-language contract test. Any genuinely hand-maintained
+wire island must document its durable reason for remaining outside the schema.
 
 ### Transports
 
@@ -173,10 +173,14 @@ foundation stays clean rather than baking in a guess.
 5. **Multi-session vs. 1:1 pairing.** The absorbed project's
    `plan/00-decisions.md` had a complex reverted-and-re-added history around
    "1 pairing = 1 session" vs. N sessions per pairing. Current code: the app
-   home page lists multiple peers/sessions; `_peerChannel` is a singleton in
-   the extension; broadcast happens at the relay. Resolved — the runtime
-   invariant is "1 active connection per `(peer, room)` at the extension,
-   broadcast-fanout at the relay." `docs/DECISIONS.md` records this.
+   home page lists multiple peers/sessions; the extension's `OwnerMultiplexer`
+   owns a channel registry keyed by Owner peer id. `attach` detaches and
+   replaces the existing channel for the same Owner before installing a fresh
+   one, and `OwnerMultiplexer.broadcast` fans out server messages across active
+   owner channels. The relay forwards envelopes but does not own this
+   owner-channel fanout. Resolved — the extension supports one active channel
+   per Owner peer, with same-owner replacement on reattach.
+   `docs/DECISIONS.md` records this.
 
 All five resolved ambiguities are locked in `docs/DECISIONS.md`. The open
 questions section above is retained for future ambiguities surfaced during

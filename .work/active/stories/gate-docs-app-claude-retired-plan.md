@@ -1,14 +1,14 @@
 ---
 id: gate-docs-app-claude-retired-plan
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # App guidance points agents at the retired plan/ directory
@@ -33,3 +33,7 @@ the stated source.
 Replace the retired-plan pointer with the current durable decision surface and
 retain only an explicit git-history recovery reference where historical context
 is actually needed.
+
+## Implementation
+
+Repointed app decisions to `docs/DECISIONS.md` and marked the retired `plan/` directory as git-history-only in `app/CLAUDE.md`.

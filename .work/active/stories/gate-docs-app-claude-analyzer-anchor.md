@@ -1,14 +1,14 @@
 ---
 id: gate-docs-app-claude-analyzer-anchor
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # App analyzer guidance points at the old input-bar line
@@ -32,3 +32,7 @@ code.
 ## Required edit
 Refresh the known analyzer-info location and explanatory-comment line to the
 current source, or describe the known info without a brittle line number.
+
+## Implementation
+
+Removed the brittle line anchors and documented the `axisAlignment` analyzer info in `app/CLAUDE.md` by source path.

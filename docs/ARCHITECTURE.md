@@ -97,8 +97,10 @@ Rust + axum. One binary, one port: WebSocket upgrade (`GET /`), health
 - `peers/registry.rs` — `PeerRegistry` (connected peers by pubkey/room).
 - `presence.rs` — `PresenceManager` (subscribe/notify, dedup
   offline→online transitions).
-- `rooms.rs` — `RoomManager`, `RoomMeta`, `RoomMetaPatch` (per-room metadata:
-  `thinking`, `working`, etc. — fields that drift between TS and Dart today).
+- `rooms.rs` — `RoomManager`, generated `RoomMeta`, `RoomMetaPatch` (per-room
+  metadata: schema-owned `model`, `thinking`, `session_id`, and `working` are
+  shared by the TS and Dart projections; stack adapters may wrap these values or
+  add transport fields such as `room_id`, `name`, `cwd`, and `started_at`).
 - `mesh/` — `store` (SQLite `mesh_versions` cartulary, LWW + monotonic
   version anti-rollback), `handler`, `types`, `verify`.
 - `auth/` — Ed25519 challenge-response (`challenge.rs`).
@@ -155,15 +157,17 @@ relay DTOs; they are not a second wire contract.
 optional `images` and `streaming_behavior`), `queued_message_set` /
 `queued_message_clear`, `approve_tool`, `cancel`, `ping`, `session_sync`, and
 typed actions `session_new` / `session_compact` / `model_set` /
-`thinking_set` / `list_models`.
+`thinking_set` / `list_models`, plus the capture-upload sequence
+`capture_upload_begin` / `capture_upload_chunk` / `capture_upload_end`.
 
 `ServerMessage` (pi → app) union: `pair_ok` / `pair_error`, `user_input`
-(echo), `queued_message_state`, `agent_chunk` / `agent_done` /
+(echo) / `user_message`, `queued_message_state`, `agent_chunk` / `agent_done` /
 `agent_message`, `tool_request` / `tool_result`, `error`, `cancelled`,
 `pong`, `bye`, `session_history` (replay of `SessionHistoryEvent`), plus
-`action_ok` / `action_error` / `models_list` / `model_select` /
-`compaction`. The generated type registries and decoders derive from the same
-schema as this union.
+`action_ok` / `action_error` / `models_list` /
+`compaction` and capture-upload replies `capture_upload_ack` /
+`capture_upload_error`. The generated type registries and decoders derive from
+the same schema as every listed variant.
 
 ### The generic envelope (mesh + cross-PC)
 
