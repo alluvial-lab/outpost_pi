@@ -37,6 +37,7 @@ import 'package:app/data/transport/connection_cancellation.dart';
 import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/data/transport/reachability_adapter.dart';
 import 'package:app/data/transport/relay_config.dart';
+import 'package:app/data/transport/room_snapshot_change.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/service.dart';
 import 'package:flutter/foundation.dart';
@@ -149,6 +150,28 @@ final class _ConnectSuperseded implements Exception {
   const _ConnectSuperseded();
 }
 
+final class _RoomEmissionState {
+  const _RoomEmissionState({
+    required this.snapshot,
+    required this.liveRoomIds,
+    required this.online,
+    required this.transportGeneration,
+    required this.activePeerEpk,
+    required this.activeRoomId,
+    required this.activeRoom,
+    required this.activeRoomLive,
+  });
+
+  final Map<String, List<RoomInfo>> snapshot;
+  final Map<String, Set<String>> liveRoomIds;
+  final bool online;
+  final int transportGeneration;
+  final String? activePeerEpk;
+  final String activeRoomId;
+  final RoomInfo? activeRoom;
+  final bool activeRoomLive;
+}
+
 // ---------------------------------------------------------------------------
 // ConnectionManager
 // ---------------------------------------------------------------------------
@@ -189,6 +212,10 @@ class ConnectionManager extends Service {
 
   final _roomsController =
       StreamController<Map<String, List<RoomInfo>>>.broadcast();
+  final _roomChangesController =
+      StreamController<RoomSnapshotChange>.broadcast();
+  _RoomEmissionState? _lastRoomEmission;
+  int _transportGeneration = 0;
   bool _roomsRestored = false;
   ConnectionStatus _status = const StatusNoPeer();
   PeerRecord? _activePeer;
@@ -328,6 +355,13 @@ class ConnectionManager extends Service {
   Stream<Map<String, List<RoomInfo>>> get roomsStream =>
       _roomsController.stream;
 
+  /// Emit semantic room transitions derived beside each canonical snapshot.
+  ///
+  /// Lifecycle consumers use this stream to bind or replay only on their
+  /// owning edge. [roomsStream] remains the full source-of-truth surface.
+  Stream<RoomSnapshotChange> get roomChangesStream =>
+      _roomChangesController.stream;
+
   /// Return an immutable snapshot of cached rooms keyed by standard-base64 EPK.
   Map<String, List<RoomInfo>> get roomsSnapshot => _roomsSnapshot();
 
@@ -369,9 +403,7 @@ class ConnectionManager extends Service {
     // model/thinking) recomputes for the NEW room. Switching cwd-rooms on the
     // same Mac doesn't change status/rooms otherwise, so without this the
     // sheet kept showing the previous chat's model.
-    if (!_roomsController.isClosed) {
-      _roomsController.add(_roomsSnapshot());
-    }
+    _emitRoomsSnapshot();
   }
 
   void _propagateActiveRoom(String roomId, IChannel link) {
@@ -622,6 +654,9 @@ class ConnectionManager extends Service {
     _presenceController.close();
     if (!_roomsController.isClosed) {
       _roomsController.close();
+    }
+    if (!_roomChangesController.isClosed) {
+      _roomChangesController.close();
     }
   }
 
@@ -1166,7 +1201,7 @@ class ConnectionManager extends Service {
     _roomsEmitTimer = Timer(_emitDebounce, () {
       _roomsEmitTimer = null;
       if (_roomsController.isClosed) return;
-      _roomsController.add(_roomsSnapshot());
+      _emitRoomsSnapshot();
     });
   }
 
@@ -1207,6 +1242,151 @@ class ConnectionManager extends Service {
     final byIdB = {for (final r in b) r.roomId: r};
     for (final r in a) {
       if (byIdB[r.roomId] != r) return false;
+    }
+    return true;
+  }
+
+  void _emitRoomsSnapshot() {
+    if (_roomsController.isClosed) return;
+    final snapshot = _roomsSnapshot();
+    final activePeerEpk = _activePeer == null
+        ? null
+        : toStandardB64(_activePeer!.remoteEpk);
+    RoomInfo? activeRoom;
+    if (activePeerEpk != null) {
+      for (final room in snapshot[activePeerEpk] ?? const <RoomInfo>[]) {
+        if (room.roomId == _activeRoomId) {
+          activeRoom = room;
+          break;
+        }
+      }
+    }
+    final online = _status is StatusOnline;
+    final activeRoomLive =
+        online &&
+        activePeerEpk != null &&
+        (_liveRoomIds[activePeerEpk]?.contains(_activeRoomId) ?? false);
+    final current = _RoomEmissionState(
+      snapshot: snapshot,
+      liveRoomIds: _liveRoomsSnapshot(),
+      online: online,
+      transportGeneration: _transportGeneration,
+      activePeerEpk: activePeerEpk,
+      activeRoomId: _activeRoomId,
+      activeRoom: activeRoom,
+      activeRoomLive: activeRoomLive,
+    );
+    final previous = _lastRoomEmission;
+    _lastRoomEmission = current;
+
+    final snapshotChanged =
+        previous == null || !_roomMapEquals(previous.snapshot, snapshot);
+    final liveChanged =
+        previous == null ||
+        !_liveRoomMapEquals(previous.liveRoomIds, current.liveRoomIds);
+    final onlineChanged = previous == null || previous.online != online;
+    final transportChanged =
+        previous == null ||
+        previous.transportGeneration != current.transportGeneration;
+    final activeIdentityChanged =
+        previous == null ||
+        previous.activePeerEpk != activePeerEpk ||
+        previous.activeRoomId != _activeRoomId;
+    final activeRoomChanged =
+        previous == null || previous.activeRoom != activeRoom;
+    final activeLivenessChanged =
+        previous == null || previous.activeRoomLive != activeRoomLive;
+    final activePresentationChanged =
+        activeIdentityChanged ||
+        activeRoomChanged ||
+        activeLivenessChanged ||
+        onlineChanged;
+    final homePresentationChanged =
+        snapshotChanged || liveChanged || onlineChanged;
+    final sessionRotated =
+        previous != null &&
+        !activeIdentityChanged &&
+        previous.activeRoom?.sessionId != activeRoom?.sessionId;
+    final freshLive =
+        activeRoomLive && (previous == null || !previous.activeRoomLive);
+
+    final RoomSnapshotChange change;
+    if (!activePresentationChanged &&
+        !homePresentationChanged &&
+        !transportChanged) {
+      change = RoomSnapshotNoop(
+        snapshot: snapshot,
+        activePeerEpk: activePeerEpk,
+        activeRoomId: _activeRoomId,
+      );
+    } else if (sessionRotated) {
+      change = RoomSnapshotSessionRotated(
+        snapshot: snapshot,
+        activePeerEpk: activePeerEpk,
+        activeRoomId: _activeRoomId,
+        activeRoomPresentationChanged: activePresentationChanged,
+        homePresentationChanged: homePresentationChanged,
+        activeRoomLivenessChanged: activeLivenessChanged,
+        transportGenerationChanged: transportChanged,
+      );
+    } else if (freshLive) {
+      change = RoomSnapshotFreshLive(
+        snapshot: snapshot,
+        activePeerEpk: activePeerEpk,
+        activeRoomId: _activeRoomId,
+        activeRoomPresentationChanged: activePresentationChanged,
+        homePresentationChanged: homePresentationChanged,
+        activeRoomLivenessChanged: activeLivenessChanged,
+        transportGenerationChanged: transportChanged,
+      );
+    } else {
+      change = RoomSnapshotPresentationChanged(
+        snapshot: snapshot,
+        activePeerEpk: activePeerEpk,
+        activeRoomId: _activeRoomId,
+        activeRoomPresentationChanged: activePresentationChanged,
+        homePresentationChanged: homePresentationChanged,
+        activeRoomLivenessChanged: activeLivenessChanged,
+        transportGenerationChanged: transportChanged,
+      );
+    }
+
+    _roomsController.add(snapshot);
+    if (!_roomChangesController.isClosed) {
+      _roomChangesController.add(change);
+    }
+  }
+
+  Map<String, Set<String>> _liveRoomsSnapshot() => Map.unmodifiable(
+    _liveRoomIds.map(
+      (peer, rooms) => MapEntry(peer, Set<String>.unmodifiable(rooms)),
+    ),
+  );
+
+  bool _roomMapEquals(
+    Map<String, List<RoomInfo>> left,
+    Map<String, List<RoomInfo>> right,
+  ) {
+    if (left.length != right.length) return false;
+    for (final entry in left.entries) {
+      final candidate = right[entry.key];
+      if (candidate == null || !_roomListEquals(entry.value, candidate)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _liveRoomMapEquals(
+    Map<String, Set<String>> left,
+    Map<String, Set<String>> right,
+  ) {
+    if (left.length != right.length) return false;
+    for (final entry in left.entries) {
+      final candidate = right[entry.key];
+      if (candidate == null || !_setEquals(entry.value, candidate)) {
+        return false;
+      }
     }
     return true;
   }
@@ -1425,9 +1605,7 @@ class ConnectionManager extends Service {
       // Note: nothing in _liveRoomIds yet — those rooms are "offline"
       // until the relay announces them again.
     }
-    if (!_roomsController.isClosed) {
-      _roomsController.add(_roomsSnapshot());
-    }
+    _emitRoomsSnapshot();
   }
 
   void _scheduleRoomPersistence(String peerKey) {
@@ -1537,9 +1715,7 @@ class ConnectionManager extends Service {
         .map((c) => c.roomId == roomId ? c.copyWith(localName: name) : c)
         .toList();
     await _storage.saveRooms(epk, updated);
-    if (!_roomsController.isClosed) {
-      _roomsController.add(_roomsSnapshot());
-    }
+    _emitRoomsSnapshot();
   }
 
   /// Plan-17 follow-up — delete a cached room locally. Only safe when
@@ -1554,9 +1730,7 @@ class ConnectionManager extends Service {
     final cached = await _storage.loadRooms(epk);
     final pruned = cached.where((c) => c.roomId != roomId).toList();
     await _storage.saveRooms(epk, pruned);
-    if (!_roomsController.isClosed) {
-      _roomsController.add(_roomsSnapshot());
-    }
+    _emitRoomsSnapshot();
   }
 
   /// Plan 17 fix — legacy migration hook for peers paired before
@@ -1836,9 +2010,7 @@ class ConnectionManager extends Service {
       ),
     );
     _clearRoomWorking(activeEpk, _activeRoomId);
-    if (!_roomsController.isClosed) {
-      _roomsController.add(_roomsSnapshot());
-    }
+    _emitRoomsSnapshot();
   }
 
   void _cancelRetry() {
@@ -1858,10 +2030,15 @@ class ConnectionManager extends Service {
     // `isRoomLive` gate). Re-emit the rooms snapshot so subscribers
     // (Home, Chat AppBar) re-evaluate dot color immediately, without
     // waiting for the relay's next push.
-    final wasOnline = _status is StatusOnline;
+    final previousStatus = _status;
+    final wasOnline = previousStatus is StatusOnline;
     final nowOnline = s is StatusOnline;
+    final transportReplaced =
+        previousStatus is StatusOnline &&
+        s is StatusOnline &&
+        !identical(previousStatus.channel, s.channel);
     _status = s;
-    if (wasOnline && !nowOnline) {
+    if ((wasOnline && !nowOnline) || transportReplaced) {
       // Room reachability belongs to the transport generation that observed
       // it. Retaining this set across reconnect would make the new relay
       // channel look like proof that the Pi room is online before its first
@@ -1869,9 +2046,13 @@ class ConnectionManager extends Service {
       _liveRoomIds.clear();
       _logActiveRoomDisconnected();
     }
+    if (nowOnline && (!wasOnline || transportReplaced)) {
+      _transportGeneration++;
+    }
     if (!_statusController.isClosed) _statusController.add(s);
-    if (wasOnline != nowOnline && !_roomsController.isClosed) {
-      _roomsController.add(_roomsSnapshot());
+    if ((wasOnline != nowOnline || transportReplaced) &&
+        !_roomsController.isClosed) {
+      _emitRoomsSnapshot();
     }
   }
 

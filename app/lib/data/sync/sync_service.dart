@@ -21,6 +21,7 @@ import 'package:app/data/sync/session_history_replay.dart';
 import 'package:app/data/sync/sync_events.dart';
 import 'package:app/data/sync/session_gate.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/transport/room_snapshot_change.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/service.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
@@ -95,7 +96,7 @@ class SyncService extends Service {
 
   StreamSubscription<ConnectionStatus>? _connSub;
   StreamSubscription<ServerMessage>? _msgSub;
-  StreamSubscription<Map<String, List<RoomInfo>>>? _roomsSub;
+  StreamSubscription<RoomSnapshotChange>? _roomChangesSub;
   StreamSubscription<Map<String, PresenceState>>? _presenceSub;
 
   // Active session being written (follows ConnectionManager). Persistence is
@@ -220,11 +221,18 @@ class SyncService extends Service {
        _pendingSendTimerFactory =
            pendingSendTimerFactory ?? _SystemPendingSendTimer.new {
     _connSub = _conn.statusStream.listen(_onStatus);
-    _roomsSub = _conn.roomsStream.listen((_) {
-      _writeRuntime();
+    _roomChangesSub = _conn.roomChangesStream.listen((change) {
+      if (change.isNoop) return;
+      final epk = _activeEpk;
+      if (epk != null &&
+          change.affectsRoom(epk, _activeRoomId) &&
+          change.activeRoomLivenessChanged) {
+        _writeRuntime();
+      }
+      if (!change.requiresBinding && !change.requiresHeldReplay) return;
       _scheduleLifecycleOperation(
         LifecycleOperation.sessionRebind,
-        _handleRoomsChanged,
+        () => _handleRoomsChanged(change),
       );
     });
     _presenceSub = _conn.presenceStream.listen((_) => _writeRuntime());
@@ -595,7 +603,7 @@ class SyncService extends Service {
     );
     _scheduleLifecycleOperation(
       LifecycleOperation.sessionRebind,
-      _handleRoomsChanged,
+      _recoverReconnectRacedSend,
     );
   }
 
@@ -988,11 +996,29 @@ class SyncService extends Service {
     if (_pendingSyncRequest) requestSync();
   }
 
-  Future<void> _handleRoomsChanged() async {
+  Future<void> _handleRoomsChanged(RoomSnapshotChange change) async {
     if (_disposed) return;
     final epk = _activeEpk;
     final room = _activeRoomId;
-    if (epk == null) return;
+    if (epk == null || !change.affectsRoom(epk, room)) return;
+    if (change is RoomSnapshotSessionRotated &&
+        _resolveActiveRef(epk, room) == _activeRef) {
+      // Chat may have won the same edge and completed activate(), which already
+      // performs the guarded held replay. Do not scan the new transcript twice.
+      return;
+    }
+    await _reconcileActiveRoom(replayHeld: change.requiresHeldReplay);
+  }
+
+  Future<void> _recoverReconnectRacedSend() async {
+    if (_disposed || _activeEpk == null) return;
+    await _reconcileActiveRoom(replayHeld: true);
+  }
+
+  Future<void> _reconcileActiveRoom({required bool replayHeld}) async {
+    final epk = _activeEpk;
+    final room = _activeRoomId;
+    if (_disposed || epk == null) return;
     var generation = _lifecycleGeneration;
     var expectedRef = _activeRef;
     final nextRef = _resolveActiveRef(epk, room);
@@ -1002,15 +1028,17 @@ class SyncService extends Service {
       _resentHeldPendingIds.clear();
       generation = ++_lifecycleGeneration;
       expectedRef = nextRef;
+      // Activation already binds identity-pending sends and performs one
+      // liveness-gated held replay. Do not repeat either pass below.
       await _activateForGeneration(epk, room, nextRef, generation);
       if (!_isCurrentLifecycle(generation, expectedRef)) return;
-    }
-
-    if (expectedRef != null) {
+    } else if (expectedRef != null) {
       await _bindIdentityPendingSends(expectedRef, generation);
       if (!_isCurrentLifecycle(generation, expectedRef)) return;
-      await _resendHeldPendingMessages(generation, expectedRef);
-      if (!_isCurrentLifecycle(generation, expectedRef)) return;
+      if (replayHeld) {
+        await _resendHeldPendingMessages(generation, expectedRef);
+        if (!_isCurrentLifecycle(generation, expectedRef)) return;
+      }
     }
     if (sessionChanged || _pendingSyncRequest) requestSync();
   }
@@ -2511,7 +2539,7 @@ class SyncService extends Service {
     _identityPendingTimers.clear();
     _connSub?.cancel();
     _msgSub?.cancel();
-    _roomsSub?.cancel();
+    _roomChangesSub?.cancel();
     _presenceSub?.cancel();
     _streamingController.close();
     _eventController.close();

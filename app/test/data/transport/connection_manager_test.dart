@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/relay_config.dart';
+import 'package:app/data/transport/room_snapshot_change.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
@@ -221,6 +222,106 @@ Future<({ConnectionManager conn, _FakeChannel channel})> _connected() async {
 Future<void> _settle() => Future<void>.delayed(const Duration(milliseconds: 5));
 
 void main() {
+  group('ConnectionManager semantic room changes', () {
+    test(
+      'classifies presentation, session, fresh-live, and duplicate edges',
+      () async {
+        final s = await _connected();
+        final changes = <RoomSnapshotChange>[];
+        final sub = s.conn.roomChangesStream.listen(changes.add);
+
+        final initialSession = s.conn.roomChangesStream.first;
+        s.channel.pushControl(
+          const RoomAnnounced(
+            peer: 'epk_projection',
+            roomId: 'main',
+            sessionId: 'session-a',
+            startedAt: 1,
+            working: false,
+          ),
+        );
+        expect(
+          await initialSession.timeout(const Duration(seconds: 1)),
+          isA<RoomSnapshotSessionRotated>(),
+        );
+
+        final workingEdge = s.conn.roomChangesStream.first;
+        s.channel.pushControl(
+          const RoomMetaUpdated(
+            peer: 'epk_projection',
+            roomId: 'main',
+            working: true,
+            hasModel: false,
+            hasThinking: false,
+            hasSessionId: false,
+          ),
+        );
+        final workingChange = await workingEdge.timeout(
+          const Duration(seconds: 1),
+        );
+        expect(workingChange, isA<RoomSnapshotPresentationChanged>());
+        expect(workingChange.activeRoomPresentationChanged, isTrue);
+
+        final countBeforeDuplicate = changes.length;
+        s.channel.pushControl(
+          const RoomMetaUpdated(
+            peer: 'epk_projection',
+            roomId: 'main',
+            working: true,
+            hasModel: false,
+            hasThinking: false,
+            hasSessionId: false,
+          ),
+        );
+        await _settle();
+        expect(changes, hasLength(countBeforeDuplicate));
+
+        final rotatedSession = s.conn.roomChangesStream.first;
+        s.channel.pushControl(
+          const RoomMetaUpdated(
+            peer: 'epk_projection',
+            roomId: 'main',
+            sessionId: 'session-b',
+            hasModel: false,
+            hasThinking: false,
+            hasSessionId: true,
+          ),
+        );
+        expect(
+          await rotatedSession.timeout(const Duration(seconds: 1)),
+          isA<RoomSnapshotSessionRotated>(),
+        );
+
+        await s.conn.disconnect();
+        final reconnect = _FakeChannel();
+        s.conn.adopt(reconnect, _peer);
+        final freshLive = s.conn.roomChangesStream.firstWhere(
+          (change) => change is RoomSnapshotFreshLive,
+        );
+        reconnect.pushControl(
+          const RoomsSnapshot(
+            peer: 'epk_projection',
+            rooms: [
+              RoomInfo(
+                roomId: 'main',
+                sessionId: 'session-b',
+                startedAt: 2,
+                working: false,
+              ),
+            ],
+          ),
+        );
+        final freshLiveChange = await freshLive.timeout(
+          const Duration(seconds: 1),
+        );
+        expect(freshLiveChange.requiresHeldReplay, isTrue);
+
+        await sub.cancel();
+        s.conn.dispose();
+      },
+    );
+  });
+
   group('ConnectionManager room turn projection', () {
     test('projects working only for a fresh live room', () async {
       final s = await _connected();

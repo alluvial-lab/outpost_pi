@@ -1,7 +1,7 @@
 ---
 id: feature-app-edge-trigger-room-snapshot-consumers-opt-1
 kind: story
-stage: implementing
+stage: done
 tags: [perf, app]
 parent: feature-app-edge-trigger-room-snapshot-consumers
 depends_on: []
@@ -58,6 +58,32 @@ rotation. Keep the working-false convergence and no-anchor oracles.
       and `working:false` tests pass.
 - [ ] Benchmark before/after output records the read-count movement and the
       real-Hive baseline remains cited separately from fake traversal timing.
+
+## Implementation
+
+Implemented a canonical `RoomSnapshotChange` stream beside `roomsStream` with
+value-based presentation, session-rotation, fresh-live, and no-op edges.
+`SyncService` now writes runtime only for active liveness edges and runs held
+replay only for fresh-live/session identity ownership; metadata-only room churn
+never enters the transcript store. Concurrent work on the transcript projection
+pipeline landed first; this implementation was rebased onto its accepted-event
+reducer without changing reducer/projection internals.
+
+Numbers:
+
+- Before (feature baseline, all 0/200/5,500-event fixtures): **339 transcript
+  reads / 339 snapshots**; real encrypted Hive at 5,500 events was **20.755 ms
+  p50 / 34.014 ms p95**, or about **7.04 s p50** across the field workload.
+- After opt-1: **0 metadata snapshot reads** at all three fixture sizes; the
+  focused fresh-live oracle performs **exactly 1** read. The intermediate
+  0-event fan-out run retained the expected **339 Chat binding attempts** until
+  opt-2, while reads moved 339 -> 0.
+- The enabled final benchmark cites the real-Hive baseline separately from its
+  fake traversal and asserts the zero-read/no-op contracts.
+
+Verification: semantic edge classification, held replay/session fencing, and
+runtime-write ownership tests pass; `flutter analyze` and the full bounded app
+suite are recorded on the parent after opt-2.
 
 ## Likely files
 
