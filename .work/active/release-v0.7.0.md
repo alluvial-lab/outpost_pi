@@ -47,6 +47,8 @@ findings, and the CI emulator job.
 (planned: security, tests, cruft, docs, patterns, refactor — then manual UAT)
 
 - **gate-security** (2026-08-24) — 2 findings (High=1, Medium=1; inline scanner, reduced isolation)
+- **gate-patterns** (2026-08-24) — 7 patterns
 - **gate-cruft** (2026-08-24) — 4 findings
 - Scanner isolation: reduced — no subagent tool is exposed in this host; the deep documentation drift brief ran inline read-only.
 - **gate-docs** (2026-08-24) — 21 findings
+- **gate-refactor** (2026-08-24) — 8 findings
