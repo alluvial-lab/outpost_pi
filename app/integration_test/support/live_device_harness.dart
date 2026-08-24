@@ -745,7 +745,18 @@ final class LiveDeviceHarness {
 
     final before = await transcriptRows();
     final beforeIds = before.map((row) => row.id).toList(growable: false);
-    final replayBaseline = rotated.length;
+    // Rotation-proof replay window: a fixed skip offset into a ring that is at
+    // capacity after the flood is wrong the moment reconnect gets FASTER (fewer
+    // lifecycle rows logged than rows rotated out — the 0.7 reconnect fixes
+    // tripped exactly that). Mark the window start instead and slice by marker.
+    debugLog.log(
+      WsInEvent(
+        ts: DateTime.now(),
+        count: -2,
+        kind: 'state-shape',
+        stage: stage,
+      ),
+    );
     await connection.disconnect();
     await connection.connectTo(peer);
     await waitOnlineAndLive(tester: tester);
@@ -753,8 +764,31 @@ final class LiveDeviceHarness {
       final ids = (await transcriptRows()).map((row) => row.id).toList();
       return listEquals(ids, beforeIds) ? true : null;
     }, description: 'stable transcript after long-uptime replay');
-    final replay = (await captureEvents())
-        .skip(replayBaseline)
+    final marked = await eventually<List<Map<String, dynamic>>>(
+      tester,
+      () async {
+        final rows = await captureEvents();
+        final markerIndex = rows.lastIndexWhere(
+          (row) => row['tag'] == 'wsIn' && row['count'] == -2,
+        );
+        if (markerIndex < 0) return null;
+        final replay = rows
+            .skip(markerIndex + 1)
+            .where((row) => row['tag'] == 'replayDedup');
+        return replay.isNotEmpty ? rows : null;
+      },
+      description: 'replay diagnostics after long-uptime reconnect',
+    );
+    final markerIndex = marked.lastIndexWhere(
+      (row) => row['tag'] == 'wsIn' && row['count'] == -2,
+    );
+    expect(
+      markerIndex,
+      greaterThanOrEqualTo(0),
+      reason: 'replay-window marker must survive in the bounded ring',
+    );
+    final replay = marked
+        .skip(markerIndex + 1)
         .where((row) => row['tag'] == 'replayDedup');
     expect(replay, isNotEmpty);
     final afterIds = (await transcriptRows()).map((row) => row.id).toList();
