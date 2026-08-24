@@ -9,6 +9,46 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ---
 
+## [Unreleased]
+
+No changes yet.
+
+## [v0.7.0] — 2026-08-24
+
+Repo-level release binding the shipped work after `v0.5.0`, including the
+component artifact sequence: relay `0.5.1`; app `0.5.1+6`, `0.5.2+7`,
+`0.6.0+8`, `0.6.1+9`, `0.6.2+10`, `0.6.3+11`, and `0.7.0+12`; and
+pi-extension `0.2.0`.
+
+### Features
+- **Debug capture delivery** — app `0.7.0+12` uploads bounded JSONL captures
+over the sealed owner channel; pi-extension `0.2.0` reassembles, validates, and
+atomically stores them with typed acknowledgements/errors and a delivered note.
+- **Fold and large-screen usability** — app `0.6.0+8` adds two-pane policy,
+adaptive chat/home/sheets, accessibility floors, and golden-render coverage.
+- **Upstream robustness harvest** — extension, app, relay, mesh, and Cockpit
+hardening landed from the August upstream sweep.
+
+### Fixes
+- **Reconnect and transcript resilience** — relay `0.5.1` and app `0.5.1+6`
+cover overlapping-owner auth and mobile reconnect/session fixes; app `0.5.2+7`
+fixes connection single-flight, replay admission, blank direct-open, and cold
+replay duplication.
+- **Follow-up mobile UX fixes** — app `0.6.1+9` fixes keyboard focus loss;
+`0.6.2+10` and `0.6.3+11` hedge stalled reconnects, converge offline working
+state, preserve backfill scroll position, follow user anchoring, and stabilize
+reconnect identity.
+- **Headless live-lane guard** — `e2e/run-live.sh` now rejects secure-keyguard
+AVDs before a device run and gives the userdata recovery path.
+
+### Internal
+- **Live oddities and chaos program** — golden/failure lanes, state-shape and
+fault-moment matrices, mesh and capture-delivery lanes, nightly cadence, and
+clock/version-skew drills are now documented and runnable.
+- **Verification** — the Android emulator CI lane, capture E2E coverage, and the
+v0.7.0 security/tests/cruft/docs/patterns/refactor gates are recorded in the
+release binding.
+
 ## [v0.5.0] — 2026-08-15
 
 Brand identity **v2.0 — Phosphor Beacon** lands across every surface, the repo goes **public**, and the dependency backlog is drained. Dark-native `#0D1210` / light `#F3F6F3`, accent `#74CC9C`/`#256E47` (AA-verified both modes), **Constellation III** mark, **Space Mono** everywhere; design-token contract in `.mockups/design-system/tokens.css`. **No wire-protocol changes.** Deploy: re-sideload app, reinstall cockpit, redeploy site + relay image (dep bumps only for relay). *(Substrate note: tag was cut before the release flow ran; this entry and the `.work/releases/v0.5.0/` record are a retroactive binding. Post-tag hotfixes — gradle wrapper committed for fresh clones/CI, VM-specific gradle tmpdir removed from the repo — land with the next release.)*
@@ -612,12 +652,12 @@ codebase review, the api-reference stack docs, and cross-component fixes.
 - Adversarial codebase review (multi-model): findings dedup/routing, mobile
   lifecycle, security/privacy, state/protocol.
 
-## [Unreleased] — PC mesh foundation
+## [Pre-v0.1.0] — PC mesh foundation (historical)
 
 This release consolidates the work that turned Remote Pi from "phone controls
 one Pi" into a **mesh of coding agents** running on multiple machines, with
 the phone acting purely as the initial authenticator. Covers plans 23, 24, 25,
-and 27 (see [`plan/`](plan/) directory for design history).
+and 27; the retired plan files remain available through git history.
 
 ### Added
 
@@ -913,8 +953,9 @@ Documented for context:
 Plans 01–22 covered bootstrap, AI orchestration, protocol MVP, pairing,
 rollback E2E (later reverted), revoke + multi-pairing, presence,
 chat-state recovery, onboarding, mirror cache, rooms, agent network, agent
-tools, setup wizard, and the site MVP. See [`plan/`](plan/) for the design
-history of each.
+tools, setup wizard, and the site MVP. Design history for these early plans
+remains available through git history.
 
-[Unreleased]: https://github.com/alluvial-lab/outpost_pi/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/alluvial-lab/outpost_pi/compare/v0.7.0...HEAD
+[v0.7.0]: https://github.com/alluvial-lab/outpost_pi/releases/tag/v0.7.0
 [v0.1.0]: https://github.com/alluvial-lab/outpost_pi/releases/tag/v0.1.0

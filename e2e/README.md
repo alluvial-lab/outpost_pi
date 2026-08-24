@@ -33,12 +33,18 @@ e2e/run-live.sh integration_test/live_golden_test.dart
 e2e/run-live.sh integration_test/live_failure_test.dart
 e2e/run-live.sh state-shapes
 e2e/run-live.sh grid
+e2e/run-live.sh mesh
+e2e/run-live.sh capture-delivery
 python3 e2e/live_soak.py --duration 600 --seed 20260821
 ```
 
 They require `/dev/kvm` access, the `outpost34` AVD, Android SDK emulator/adb
-under `/opt/android-sdk`, and the repository Flutter toolchain. These lanes take
-an exclusive per-serial lock and record the run/emulator PID before startup. A
+under `/opt/android-sdk`, and the repository Flutter toolchain. Before every
+device test, `run-live.sh` calls `assert_pinless_e2e_avd`; the AVD must have no
+secure keyguard or PIN because the headless lane cannot unlock it. If the guard
+reports a secure keyguard, wipe the AVD userdata
+(`~/.android/avd/outpost34.avd/userdata*`) and retry. These lanes take an
+exclusive per-serial lock and record the run/emulator PID before startup. A
 second live runner fails without touching an occupied serial; override the
 default `emulator-5554` only with `E2E_ANDROID_SERIAL=emulator-<port>` and an
 otherwise unused serial.

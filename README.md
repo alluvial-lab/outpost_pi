@@ -21,7 +21,7 @@
 
 | Platform | Status |
 |---|---|
-| Google Play (Android) | _Coming soon — sideload-only as of app-v0.3.x (post-rebrand applicationId)_ |
+| Google Play (Android) | _Coming soon — sideload-only until a store listing is available_ |
 | App Store (iOS) | _Unavailable until operator-owned Apple signing and listing are provisioned_ |
 | APK (sideload, Android) | [GitHub Releases](https://github.com/alluvial-lab/outpost_pi/releases) |
 

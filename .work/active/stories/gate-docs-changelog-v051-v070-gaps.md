@@ -1,14 +1,14 @@
 ---
 id: gate-docs-changelog-v051-v070-gaps
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Changelog stops at v0.5.0 while later artifacts shipped
@@ -36,3 +36,7 @@ Add current changelog entries covering the shipped `0.5.1` through `0.7.0`
 release sequence, including component artifact versions where the changelog uses
 that convention, and roll the active unreleased section forward so the file's
 latest state describes the current release.
+
+## Implementation
+
+Added the v0.7.0 current release entry with the relay/app/pi-extension artifact sequence and Features/Fixes/Internal summaries, and moved the old PC-mesh section to historical status in `CHANGELOG.md`.

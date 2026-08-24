@@ -9,9 +9,10 @@ browser, and remote-session controls.
 
 Cockpit is the desktop half of the Outpost-Pi remote-coding surface: the phone
 app pairs and drives sessions; Cockpit is the rich workstation view for the same
-Pi process. It talks to the extension over the Pi control RPC channel
-(`\x00outpost-pi-ctrl:` control frames + the generated `outpost_pi_control`
-schema), not over the relay.
+Pi process. It emits structured `outpost_pi_control` RPC envelopes as Pi custom events,
+not over the relay. The extension retains the NUL-prefixed
+`\x00outpost-pi-ctrl:` form only as a compatibility decoder; Cockpit does not
+emit that legacy form.
 
 ## Key surfaces
 
