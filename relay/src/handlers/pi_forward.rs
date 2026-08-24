@@ -401,6 +401,11 @@ pub(crate) async fn handle_pi_envelope(
     }
 }
 
+/// Convert a malformed `pi_envelope` at the raw ingress escape hatch.
+///
+/// This boundary reads only the optional inner envelope's string `id` and
+/// `from` fields so the sender can correlate a deterministic `bad_envelope`
+/// transport error; all other untyped frame content remains ignored.
 pub(crate) fn handle_malformed_pi_envelope(
     frame: &serde_json::Value,
     sender_room_id: &str,
