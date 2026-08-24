@@ -94,8 +94,35 @@ typedef ConnectionFactory =
 /// Let connection factories abandon work after their lifecycle is superseded.
 class CancelToken {
   bool _cancelled = false;
+  final List<void Function()> _cancellationListeners = [];
+
+  /// Whether cancellation has already been requested.
   bool get isCancelled => _cancelled;
-  void cancel() => _cancelled = true;
+
+  /// Run [listener] synchronously when this token is cancelled.
+  void addCancellationListener(void Function() listener) {
+    if (_cancelled) {
+      listener();
+      return;
+    }
+    _cancellationListeners.add(listener);
+  }
+
+  /// Stop retaining [listener] when the owning operation has settled.
+  void removeCancellationListener(void Function() listener) {
+    _cancellationListeners.remove(listener);
+  }
+
+  /// Cancel this token once and notify all current listeners.
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    final listeners = List<void Function()>.of(_cancellationListeners);
+    _cancellationListeners.clear();
+    for (final listener in listeners) {
+      listener();
+    }
+  }
 }
 
 final class _ConnectSuperseded implements Exception {
@@ -731,8 +758,10 @@ class ConnectionManager extends Service {
     var fallbackStarted = false;
     Timer? fallbackTimer;
     late final void Function() startFallback;
+    late final void Function() cancelOwnedAttempts;
 
     void startAttempt() {
+      if (ownerToken.isCancelled || winner.isCompleted) return;
       final attemptToken = CancelToken();
       attemptTokens.add(attemptToken);
       pending++;
@@ -787,12 +816,26 @@ class ConnectionManager extends Service {
       startAttempt();
     };
 
-    startAttempt();
-    fallbackTimer = Timer(_reconnectFallbackDelay, startFallback);
+    cancelOwnedAttempts = () {
+      fallbackTimer?.cancel();
+      for (final token in attemptTokens) {
+        token.cancel();
+      }
+      if (!winner.isCompleted) {
+        winner.completeError(const _ConnectSuperseded());
+      }
+    };
+
+    ownerToken.addCancellationListener(cancelOwnedAttempts);
     try {
+      startAttempt();
+      if (!ownerToken.isCancelled && !winner.isCompleted) {
+        fallbackTimer = Timer(_reconnectFallbackDelay, startFallback);
+      }
       return await winner.future;
     } finally {
-      fallbackTimer.cancel();
+      ownerToken.removeCancellationListener(cancelOwnedAttempts);
+      fallbackTimer?.cancel();
     }
   }
 
