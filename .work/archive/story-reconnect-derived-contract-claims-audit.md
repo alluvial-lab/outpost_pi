@@ -7,7 +7,7 @@ parent: epic-targeting-and-session-lifecycle-contracts
 depends_on:
   - idea-mobile-drop-slow-recovery
   - idea-mobile-outgoing-message-swallowed
-release_binding: null
+release_binding: v0.7.0
 gate_origin: null
 created: 2026-07-19
 updated: 2026-07-19

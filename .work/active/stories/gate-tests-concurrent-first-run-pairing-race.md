@@ -5,7 +5,7 @@ stage: done
 tags: [pi-extension, testing]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.7.0
 gate_origin: tests
 created: 2026-08-15
 updated: 2026-08-16

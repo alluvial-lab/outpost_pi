@@ -5,7 +5,7 @@ stage: done
 tags: [app, pi-extension, e2e]
 parent: feature-debug-capture-delivery
 depends_on: ['story-capture-delivery-app-upload']
-release_binding: null
+release_binding: v0.7.0
 gate_origin: null
 created: 2026-08-24
 updated: 2026-08-26
