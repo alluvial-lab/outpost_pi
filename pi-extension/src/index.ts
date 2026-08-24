@@ -576,10 +576,19 @@ export function _sendCaptureDeliveredNote(message: string): void {
   );
 }
 
-const _captureUploads = new CaptureUploadHandler({
-  cwd: _currentCwd,
-  note: _sendCaptureDeliveredNote,
-});
+let _captureUploads = createCaptureUploadHandler();
+
+function createCaptureUploadHandler(): CaptureUploadHandler {
+  return new CaptureUploadHandler({
+    cwd: _currentCwd,
+    note: _sendCaptureDeliveredNote,
+  });
+}
+
+function _replaceCaptureUploadHandler(): void {
+  _captureUploads.dispose();
+  _captureUploads = createCaptureUploadHandler();
+}
 
 /**
  * Adapt command contexts so post-await notifications are best-effort when the
@@ -1654,6 +1663,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
     },
     session: {
       bindApi: (boundPi) => {
+        _replaceCaptureUploadHandler();
         _pi = boundPi;
         _messageApi = boundPi;
         _sdkSessionProjection.bindApi(boundPi);
@@ -1716,6 +1726,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
       },
       prepareSessionShutdown: () => {
         _disposed = true;
+        _captureUploads.dispose();
       },
       closeMesh: async () => {
         if (_meshNode) {
