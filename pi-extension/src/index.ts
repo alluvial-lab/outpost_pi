@@ -283,7 +283,7 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
     }, undefined, "paired");
   },
   onOwnerChannelDetached: ({ peerId, channel }) => {
-    _captureUploads.detachChannel(peerId, channel);
+    _captureUploads?.detachChannel(peerId, channel);
   },
   onFanoutPresenceChanged: ({ peerShortId, state, sinceTs }) => {
     // Operational telemetry only — do NOT emit anything to the TUI or the
@@ -576,7 +576,7 @@ export function _sendCaptureDeliveredNote(message: string): void {
   );
 }
 
-let _captureUploads = createCaptureUploadHandler();
+let _captureUploads: CaptureUploadHandler | null = null;
 
 function createCaptureUploadHandler(): CaptureUploadHandler {
   return new CaptureUploadHandler({
@@ -586,8 +586,13 @@ function createCaptureUploadHandler(): CaptureUploadHandler {
 }
 
 function _replaceCaptureUploadHandler(): void {
-  _captureUploads.dispose();
+  _captureUploads?.dispose();
   _captureUploads = createCaptureUploadHandler();
+}
+
+function _disposeCaptureUploadHandler(): void {
+  _captureUploads?.dispose();
+  _captureUploads = null;
 }
 
 /**
@@ -992,7 +997,7 @@ function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): Promise<v
 
     const ownerIds = [..._owners.peerIds()];
     const drains = ownerIds.map((peerId) => _owners.detach(peerId, byeReason));
-    _captureUploads.detachAll();
+    _captureUploads?.detachAll();
 
     // Preserve turn convergence while the relay remains usable. This is the
     // last chance to publish working=false on session replacement/shutdown.
@@ -1151,7 +1156,7 @@ function _disconnectOwnerForRuntime(appPeerId?: string): void {
   const detachedOwnerId = appPeerId ?? _owners.peerIds().at(-1);
   const result = _owners.disconnectOwner(appPeerId);
   if (!result.disconnected) return;
-  if (detachedOwnerId) _captureUploads.detachOwner(detachedOwnerId);
+  if (detachedOwnerId) _captureUploads?.detachOwner(detachedOwnerId);
 
   _syncOwnerPresenceSubscription();
 
@@ -1726,7 +1731,7 @@ function createRuntimePorts(): OutpostPiRuntimePorts {
       },
       prepareSessionShutdown: () => {
         _disposed = true;
-        _captureUploads.dispose();
+        _disposeCaptureUploadHandler();
       },
       closeMesh: async () => {
         if (_meshNode) {
@@ -3155,7 +3160,18 @@ export function _routeClientMessageFrom(
         }));
         break;
       }
-      void _captureUploads.handle(ownerId, sender, msg).catch(() => {
+      const captureUploads = _captureUploads;
+      if (!captureUploads) {
+        sender.send(_withCurrentSession({
+          type: "capture_upload_error",
+          in_reply_to: msg.id,
+          upload_id: msg.upload_id,
+          code: "not_found",
+          message: "Capture upload runtime is not active.",
+        }));
+        break;
+      }
+      void captureUploads.handle(ownerId, sender, msg).catch(() => {
         sender.send(_withCurrentSession({
           type: "capture_upload_error",
           in_reply_to: msg.id,
@@ -3255,7 +3271,7 @@ function _resetSessionForNew(inReplyTo: string): void {
   // key is sessionId-scoped, so this is belt-and-suspenders, but clearing
   // avoids lingering promises from a replaced session.)
   _inflightUserDeliveries.clear();
-  _captureUploads.detachAll();
+  _captureUploads?.detachAll();
 }
 
 type ToolArgs = Record<string, unknown>;
