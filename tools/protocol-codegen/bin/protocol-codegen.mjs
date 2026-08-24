@@ -746,13 +746,11 @@ function emitDart(schema) {
     const limits = schema.captureUploadLimits;
     const chunk = Number(limits.maxChunkDecodedBytes);
     const total = Number(limits.maxTotalBytes);
-    const inflight = Number(limits.maxInflightPerSession);
-    if (![chunk, total, inflight].every((value) => Number.isInteger(value) && value > 0)) {
+    if (![chunk, total].every((value) => Number.isInteger(value) && value > 0)) {
       throw new Error('schema.captureUploadLimits values must be positive integers');
     }
     sections.push(`const int captureUploadMaxChunkBytes = ${chunk};`);
     sections.push(`const int captureUploadMaxTotalBytes = ${total};`);
-    sections.push(`const int captureUploadMaxInflight = ${inflight};`);
     sections.push('');
   }
   if (schema.includeAppPiSharedTypes === true) {

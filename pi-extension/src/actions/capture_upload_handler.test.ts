@@ -1,12 +1,16 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import type { ClientMessage, ServerMessage } from "../protocol/types.js";
 import {
   CAPTURE_UPLOAD_MAX_CHUNK_BYTES,
+  CAPTURE_UPLOAD_MAX_EVENTS,
   CAPTURE_UPLOAD_MAX_TOTAL_BYTES,
+  CAPTURE_UPLOAD_MIN_CHUNK_BYTES,
+  CAPTURE_UPLOAD_RETENTION_MAX_FILES_PER_DAY,
+  CAPTURE_UPLOAD_RETENTION_MAX_TOTAL_BYTES,
   CaptureUploadHandler,
 } from "./capture_upload_handler.js";
 
@@ -94,6 +98,12 @@ async function deliver(
   await handler.handle(OWNER_A, sender, wire.begin);
   for (const chunk of wire.chunks) await handler.handle(OWNER_A, sender, chunk);
   await handler.handle(OWNER_A, sender, wire.end);
+}
+
+function jsonCaptureOfSize(bytes: number): Buffer {
+  const prefix = '{"tag":"bulk","value":"';
+  const suffix = '"}\n';
+  return Buffer.from(`${prefix}${"x".repeat(bytes - Buffer.byteLength(prefix) - Buffer.byteLength(suffix))}${suffix}`);
 }
 
 describe("CaptureUploadHandler", () => {
@@ -220,28 +230,93 @@ describe("CaptureUploadHandler", () => {
     handler.dispose();
   });
 
-  test("writes many one-byte chunks into the declared preallocated total", async () => {
+  test("rejects undersized non-final chunks but accepts the exact floor plus a short final chunk", async () => {
     const f = await fixture();
-    const bytes = Buffer.from(`${JSON.stringify({ tag: "many", value: "x".repeat(16_384) })}\n`);
-    const wire = messages(bytes, "one-byte-chunks");
-    await f.handler.handle(OWNER_A, f.sender, wire.begin);
-    for (let sequence = 0; sequence < bytes.length; sequence++) {
-      await f.handler.handle(OWNER_A, f.sender, {
-        type: "capture_upload_chunk",
-        id: `byte-${sequence}`,
-        session_id: wire.begin.session_id,
-        upload_id: wire.begin.upload_id,
-        sequence,
-        payload: bytes.subarray(sequence, sequence + 1).toString("base64"),
-      });
-    }
-    await f.handler.handle(OWNER_A, f.sender, wire.end);
+    const bytes = Buffer.alloc(CAPTURE_UPLOAD_MIN_CHUNK_BYTES + 1, 0x20);
+    const rejected = messages(bytes, "undersized-non-final");
+    await f.handler.handle(OWNER_A, f.sender, rejected.begin);
+    await f.handler.handle(OWNER_A, f.sender, {
+      ...rejected.chunks[0]!,
+      payload: bytes.subarray(0, CAPTURE_UPLOAD_MIN_CHUNK_BYTES - 1).toString("base64"),
+    });
+    expect(f.sent.at(-1)).toMatchObject({ type: "capture_upload_error", code: "too_large" });
+    expect(f.handler.hasInflightUpload()).toBe(false);
 
+    const validBytes = Buffer.from(`${" ".repeat(CAPTURE_UPLOAD_MIN_CHUNK_BYTES)}{}\n`);
+    const valid = messages(validBytes, "minimum-plus-final");
+    await f.handler.handle(OWNER_A, f.sender, valid.begin);
+    await f.handler.handle(OWNER_A, f.sender, {
+      ...valid.chunks[0]!,
+      payload: validBytes.subarray(0, CAPTURE_UPLOAD_MIN_CHUNK_BYTES).toString("base64"),
+    });
+    await f.handler.handle(OWNER_A, f.sender, {
+      ...valid.chunks[0]!,
+      id: "chunk-final",
+      sequence: 1,
+      payload: validBytes.subarray(CAPTURE_UPLOAD_MIN_CHUNK_BYTES).toString("base64"),
+    });
+    await f.handler.handle(OWNER_A, f.sender, valid.end);
+    expect(f.sent.at(-1)).toMatchObject({ type: "capture_upload_ack", stage: "delivered" });
+    f.handler.dispose();
+  });
+
+  test("accepts the JSONL event ceiling and rejects the next event", async () => {
+    const f = await fixture();
+    const atLimit = Buffer.from('{"x":1}\n'.repeat(CAPTURE_UPLOAD_MAX_EVENTS));
+    await deliver(f.handler, f.sender, atLimit, "events-at-limit");
     expect(f.sent.at(-1)).toMatchObject({
       type: "capture_upload_ack",
       stage: "delivered",
-      bytes: bytes.length,
+      events: CAPTURE_UPLOAD_MAX_EVENTS,
     });
+
+    const overLimit = Buffer.from('{"x":1}\n'.repeat(CAPTURE_UPLOAD_MAX_EVENTS + 1));
+    await deliver(f.handler, f.sender, overLimit, "events-over-limit");
+    expect(f.sent.at(-1)).toMatchObject({ type: "capture_upload_error", code: "invalid_capture" });
+    f.handler.dispose();
+  });
+
+  test("prunes oldest repeated uploads to the cumulative byte quota and reports pruning", async () => {
+    let now = Date.parse("2026-08-24T00:00:00Z");
+    const f = await fixture({ now: () => now });
+    const bytes = jsonCaptureOfSize(CAPTURE_UPLOAD_MAX_TOTAL_BYTES);
+    for (let index = 0; index < 5; index++) {
+      await deliver(f.handler, f.sender, bytes, `byte-quota-${index}`);
+      now += 1_000;
+    }
+
+    const names = (await readdir(join(f.cwd, "debug"))).filter((name) => name.startsWith("app-capture-"));
+    const retainedBytes = (await Promise.all(names.map((name) => readFile(join(f.cwd, "debug", name)))))
+      .reduce((total, capture) => total + capture.length, 0);
+    expect(names).toHaveLength(4);
+    expect(retainedBytes).toBeLessThanOrEqual(CAPTURE_UPLOAD_RETENTION_MAX_TOTAL_BYTES);
+    expect(f.notes.at(-1)).toContain("pruned 1 older capture(s) to enforce retention");
+    f.handler.dispose();
+  });
+
+  test("caps captures per day without pruning matching symlinks or directories", async () => {
+    let now = Date.parse("2026-08-24T12:00:00Z");
+    const f = await fixture({ now: () => now });
+    const debug = join(f.cwd, "debug");
+    await mkdir(debug);
+    const target = join(f.cwd, "do-not-prune.txt");
+    await writeFile(target, "safe");
+    const symlinkName = "app-capture-2000-01-01T00-00-00-000Z-aaaaaaaaaaaa.bin";
+    const directoryName = "app-capture-2000-01-01T00-00-00-000Z-bbbbbbbbbbbb.bin";
+    await symlink(target, join(debug, symlinkName));
+    await mkdir(join(debug, directoryName));
+
+    for (let index = 0; index <= CAPTURE_UPLOAD_RETENTION_MAX_FILES_PER_DAY; index++) {
+      await deliver(f.handler, f.sender, Buffer.from(`{"index":${index}}\n`), `daily-quota-${index}`);
+      now += 1_000;
+    }
+
+    const entries = await readdir(debug, { withFileTypes: true });
+    expect(entries.filter((entry) => entry.isFile() && entry.name.startsWith("app-capture-")))
+      .toHaveLength(CAPTURE_UPLOAD_RETENTION_MAX_FILES_PER_DAY);
+    expect((await lstat(join(debug, symlinkName))).isSymbolicLink()).toBe(true);
+    expect((await lstat(join(debug, directoryName))).isDirectory()).toBe(true);
+    expect(await readFile(target, "utf8")).toBe("safe");
     f.handler.dispose();
   });
 

@@ -220,8 +220,8 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
   assert.match(output, /readonly code: ErrorCode;/);
   assert.match(output, /readonly models: Array<WireModel>;/);
 
-  assert.match(output, /export type ClientMessage =\n  \| PairRequest\n  \| UserMessage\n  \| QueuedMessageSet\n  \| QueuedMessageClear\n  \| ApproveTool\n  \| Cancel\n  \| Ping\n  \| SessionSync\n  \| SessionNew\n  \| SessionCompact\n  \| ModelSet\n  \| ThinkingSet\n  \| ListModels;/);
-  assert.match(output, /export type ServerMessage =\n  \| PairOk\n  \| PairError\n  \| UserInput\n  \| UserMessage\n  \| QueuedMessageState\n  \| AgentChunk\n  \| AgentDone\n  \| AgentMessage\n  \| Compaction\n  \| ToolRequest\n  \| ToolResult\n  \| ErrorMessage\n  \| Cancelled\n  \| Pong\n  \| Bye\n  \| SessionHistory\n  \| ActionOk\n  \| ActionError\n  \| ModelsList;/);
+  assert.match(output, /export type ClientMessage =\n  \| PairRequest\n  \| UserMessage\n  \| QueuedMessageSet\n  \| QueuedMessageClear\n  \| ApproveTool\n  \| Cancel\n  \| Ping\n  \| SessionSync\n  \| SessionNew\n  \| SessionCompact\n  \| ModelSet\n  \| ThinkingSet\n  \| ListModels\n  \| CaptureUploadBegin\n  \| CaptureUploadChunk\n  \| CaptureUploadEnd;/);
+  assert.match(output, /export type ServerMessage =\n  \| PairOk\n  \| PairError\n  \| UserInput\n  \| UserMessage\n  \| QueuedMessageState\n  \| AgentChunk\n  \| AgentDone\n  \| AgentMessage\n  \| Compaction\n  \| ToolRequest\n  \| ToolResult\n  \| ErrorMessage\n  \| Cancelled\n  \| Pong\n  \| Bye\n  \| SessionHistory\n  \| ActionOk\n  \| ActionError\n  \| ModelsList\n  \| CaptureUploadAck\n  \| CaptureUploadError;/);
   assert.doesNotMatch(output, /CLIENT_MESSAGE_DISCRIMINATORS/);
   assert.match(output, /export const SERVER_MESSAGE_TYPES = \[/);
   assert.match(output, /export const SERVER_MESSAGE_DISCRIMINATORS = \{[\s\S]*pair_ok: "pair_ok",[\s\S]*pair_error: "pair_error",[\s\S]*bye: "bye",/);
@@ -314,6 +314,8 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     "action_ok",
     "action_error",
     "models_list",
+    "capture_upload_ack",
+    "capture_upload_error",
   ]);
   assert.equal(generated.SERVER_MESSAGE_DISCRIMINATORS?.pair_ok, "pair_ok");
   assert.equal(generated.SERVER_MESSAGE_DISCRIMINATORS?.pair_error, "pair_error");
@@ -330,6 +332,9 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     "model_set",
     "thinking_set",
     "list_models",
+    "capture_upload_begin",
+    "capture_upload_chunk",
+    "capture_upload_end",
   ]);
   assert.deepEqual(generated.SESSION_SCOPED_SERVER_MESSAGE_TYPES, [
     "user_input",
@@ -347,6 +352,8 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     "action_ok",
     "action_error",
     "models_list",
+    "capture_upload_ack",
+    "capture_upload_error",
   ]);
   assert.deepEqual(generated.SESSION_HISTORY_EVENT_TYPES, ["user_input", "tool_request", "tool_result", "agent_message", "compaction"]);
 
@@ -367,6 +374,9 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     { type: "model_set", id: "c11", provider: "openai", model_id: "gpt" },
     { type: "thinking_set", id: "c12", level: "high" },
     { type: "list_models", id: "c13" },
+    { type: "capture_upload_begin", id: "c14", upload_id: "upload-1", device_label: "phone", total_bytes: 2, capture_kind: "debug_log_jsonl" },
+    { type: "capture_upload_chunk", id: "c15", upload_id: "upload-1", sequence: 0, payload: "e30K" },
+    { type: "capture_upload_end", id: "c16", upload_id: "upload-1", sha256: "0".repeat(64) },
   ];
   for (const fixture of clientFixtures) assert.equal(generated.isClientMessage?.(fixture), true, JSON.stringify(fixture));
 
@@ -399,6 +409,8 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     { type: "action_ok", in_reply_to: "action-1", action: "session_new" },
     { type: "action_error", in_reply_to: "action-2", action: "model_set", error: "no model" },
     { type: "models_list", in_reply_to: "models-1", models: [model], current: model },
+    { type: "capture_upload_ack", in_reply_to: "c14", upload_id: "upload-1", stage: "delivered", path: "debug/capture.bin", bytes: 2, events: 1 },
+    { type: "capture_upload_error", in_reply_to: "c14", upload_id: "upload-1", code: "too_large", message: "too large" },
   ];
   for (const fixture of serverFixtures) assert.equal(generated.isServerMessage?.(fixture), true, JSON.stringify(fixture));
 
