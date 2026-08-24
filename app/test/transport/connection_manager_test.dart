@@ -655,6 +655,62 @@ void main() {
     );
 
     test(
+      'superseding a stalled hedge settles before the next connection',
+      () async {
+        final initial = _ControllableChannel();
+        final primary = _ControllableChannel();
+        final fallback = _ControllableChannel();
+        final replacement = _ControllableChannel();
+        final primaryResult = Completer<IChannel>();
+        final fallbackResult = Completer<IChannel>();
+        final primaryStarted = Completer<void>();
+        final fallbackStarted = Completer<void>();
+        var calls = 0;
+        final cm = ConnectionManager(
+          factory: (_, _) {
+            calls++;
+            return switch (calls) {
+              1 => Future<IChannel>.value(initial),
+              2 => () {
+                primaryStarted.complete();
+                return primaryResult.future;
+              }(),
+              3 => () {
+                fallbackStarted.complete();
+                return fallbackResult.future;
+              }(),
+              _ => Future<IChannel>.value(replacement),
+            };
+          },
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+          reconnectFallbackDelay: const Duration(milliseconds: 10),
+        );
+
+        await cm.connectTo(_fakePeer());
+        await initial.closeStream();
+        await primaryStarted.future.timeout(const Duration(seconds: 2));
+        await fallbackStarted.future.timeout(const Duration(seconds: 1));
+
+        await cm.disconnect();
+        // Let the superseded connect operation clear its in-flight marker.
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await cm.connectTo(_fakePeer()).timeout(const Duration(seconds: 1));
+        expect(cm.channel, same(replacement));
+
+        // Factories are not required to observe CancelToken. Their late
+        // channels still belong to the cancelled hedge and must close once.
+        primaryResult.complete(primary);
+        fallbackResult.complete(fallback);
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(primary.closeCalls, 1);
+        expect(fallback.closeCalls, 1);
+
+        cm.dispose();
+      },
+    );
+
+    test(
       'first channel close before inbound emits the public retry attempt=0',
       () async {
         // Multiple controllable channels, each closes mid-flight before

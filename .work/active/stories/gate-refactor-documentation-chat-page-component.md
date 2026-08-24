@@ -1,14 +1,14 @@
 ---
 id: gate-refactor-documentation-chat-page-component
 kind: story
-stage: implementing
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: refactor
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Document the adaptive chat-page component contract
@@ -30,3 +30,9 @@ The exported `ChatPage` widget has four behavior-bearing constructor inputs (`in
 
 ## Fix
 Add concise `///` dartdoc on `ChatPage` describing its remote-session surface and the purpose of its pre-hydration and embedded-detail inputs without restating their Dart types.
+
+## Implementation
+
+Added current-state dartdoc for the remote-session surface, pre-hydration
+navigation hints, phone/tablet back behavior, compact composer thresholds, and
+transcript viewport-anchor preservation.

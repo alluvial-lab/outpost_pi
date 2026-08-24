@@ -23,31 +23,24 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
+/// Render the remote-session chat surface.
+///
+/// Navigation hints seed stable room, device, and online labels before
+/// asynchronous session hydration completes. [showBack] selects phone
+/// navigation semantics versus an embedded tablet detail pane. Header and
+/// composer treatments use adaptive thresholds, while transcript replay
+/// preserves the user's viewport anchor.
 class ChatPage extends StatefulWidget {
-  /// Plan/24-fix-title: optional title hint passed via `go_router`
-  /// `extra` from the Home tile. Used as the peer-label fallback in
-  /// the AppBar so the user sees the right name *immediately* on
-  /// navigation, instead of "—" / "Outpost-Pi" until the PeerRecord
-  /// is loaded by the ViewModel and the first `room_meta_updated`
-  /// arrives.
+  /// Seed the room label while the ViewModel hydrates the active session.
   final String? initialTitle;
 
-  /// Plan/32g — the paired-device (Mac) label Home already knows, passed via
-  /// `extra` / [SessionSelection]. Drives the AppBar's line 2 immediately so
-  /// it never flickers empty/room-title while the PeerRecord loads async.
-  /// When the PeerRecord arrives it resolves to the same string, so there's no
-  /// visible change.
+  /// Seed the paired-device label while the active peer is loading.
   final String? initialDevice;
 
-  /// Plan/32g — the live state of the tile Home tapped (its green dot). Seeds
-  /// the AppBar status dot so it doesn't flash "reconnecting" before the VM
-  /// reads the real runtime. Superseded by the live signal once it resolves
-  /// ([ChatViewModel.connectionResolved]).
+  /// Seed the projected online indicator until live connection state resolves.
   final bool initialOnline;
 
-  /// Plan/tablet — `false` when the chat is embedded as the tablet's
-  /// detail pane (no navigation stack to pop back to). Hides the back
-  /// arrow; defaults to `true` for the phone full-screen route.
+  /// Keep the back affordance for phone routes; hide it in an embedded detail pane.
   final bool showBack;
 
   const ChatPage({
@@ -126,7 +119,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  /// Apply separate entry and exit bounds across animated keyboard insets.
+  /// Resolve composer density from the height remaining after keyboard insets.
+  ///
+  /// Enters compact mode below [kCompactComposerAvailableHeight] and exits
+  /// above [kCompactComposerExitHeight], preventing animated insets from
+  /// repeatedly flipping the composer between layouts.
   bool _resolveCompactComposer(double availableHeight) {
     final compact = _compactComposer;
     if (compact == null) {

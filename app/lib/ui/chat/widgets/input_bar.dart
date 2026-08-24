@@ -11,18 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-// InputBar — bottom message composer.
-// - Disabled (grayed) when offline.
-// - During streaming, empty composer shows Stop; typed text sends steering.
-// - Plan/28 — quick actions (⚙) icon sits to the left of the attach
-//   button and is visible only while the field is empty (so it never
-//   competes with the send affordance).
-// - Plan/29 — when [voice] is provided, the mic becomes hold-to-talk:
-//   long-press starts recording (a WhatsApp-style RecordingStrip replaces
-//   the row), slide left past the threshold cancels, release transcribes
-//   and drops the text into the (empty) field for manual review/send. The
-//   recognizer never auto-sends.
-
 /// One-shot UI hint the composer asks the host page to surface (snackbar /
 /// settings deep-link). Keeps InputBar free of `BuildContext`-bound effects.
 enum VoiceHint {
@@ -33,9 +21,18 @@ enum VoiceHint {
   permissionDenied,
 }
 
+/// Render the chat composer for sends, queued follow-ups, and in-turn steering.
+///
+/// [compactHeight] removes optional previews, reduces vertical chrome, and
+/// limits the field to one line while keyboard space is tight. Optional voice
+/// and attachment controllers own their effects; callbacks keep host actions
+/// such as settings and camera/gallery navigation outside the widget.
 class InputBar extends StatefulWidget {
-  final bool disabled; // offline or no peer
-  final bool streaming; // show cancel instead of send
+  /// Disable editing when the active peer or transport is unavailable.
+  final bool disabled;
+
+  /// Use the cancel/steering actions while the Pi is processing a turn.
+  final bool streaming;
 
   /// Shed optional previews and vertical padding in keyboard-tight windows.
   final bool compactHeight;
@@ -50,20 +47,18 @@ class InputBar extends StatefulWidget {
   final void Function(String text)? onSetQueued;
   final VoidCallback? onClearQueued;
 
-  /// Plan/29 — voice-input ViewModel. When null the mic falls back to the
-  /// legacy [onStartAudio] tap (and existing tests pump InputBar without it).
+  /// Own voice recording and transcription when provided. Without it, the
+  /// mic falls back to the legacy [onStartAudio] tap.
   final VoiceInputViewModel? voice;
 
-  /// Plan/29 — surfaces a [VoiceHint] to the host page for a snackbar /
-  /// settings deep-link.
+  /// Surface a [VoiceHint] to the host page for a snackbar or settings link.
   final void Function(VoiceHint hint)? onVoiceHint;
 
-  /// Plan/30 — image-attachment ViewModel (preview state + model vision).
-  /// Null in tests / when attachments aren't wired.
+  /// Own image preview state and model-vision gating when provided.
   final AttachmentViewModel? attachment;
 
-  /// Plan/30 — open the Camera/Gallery sheet. Null disables the attach
-  /// button (offline/streaming); vision/has-image gating is internal.
+  /// Open the Camera/Gallery sheet. Null disables the attach button; vision
+  /// and already-attached gating remains internal.
   final VoidCallback? onOpenAttach;
 
   const InputBar({
