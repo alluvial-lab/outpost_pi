@@ -11,7 +11,13 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ## [Unreleased]
 
-No changes yet.
+### Known issues
+- **Reconnect hedge gaps** (found in v0.7.0 UAT field capture): the 3s
+  fallback does not cover handshake-complete/auth-stalled attempts
+  (~30s recovery), and a late fallback auth can supersede the adopted
+  channel relay-side (rapid 1–2s reconnect flashes). Working-state
+  convergence and data invariants unaffected. Fix scoped:
+  `story-fix-app-reconnect-hedge-auth-boundary-and-post-adoption-cancel`.
 
 ## [v0.7.0] — 2026-08-24
 

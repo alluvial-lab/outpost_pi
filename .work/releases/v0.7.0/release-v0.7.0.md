@@ -66,6 +66,16 @@ findings, and the CI emulator job.
 - **Publishing**: local tag only — `git push origin main v0.7.0` is the
   operator's manual step (140+ commits ride together)
 
+## Known issues at ship time
+
+- Reconnect hedge: auth-read stall uncovered (~30s recovery) + late
+  fallback supersede churn — found in UAT capture
+  `debug/app-capture-2026-08-24T08-58-48-427Z-dd9fe9d1c3c6`; shipped per
+  operator call with the fix scoped as
+  `story-fix-app-reconnect-hedge-auth-boundary-and-post-adoption-cancel`
+  (first item of the post-v0.7.0 queue; in the nightly known-open
+  inventory).
+
 ## Shipped items
 
 Bodies live on disk (retain-bodies) here and in `.work/archive/` for stubs.
