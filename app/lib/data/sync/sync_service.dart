@@ -11,7 +11,6 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/local/records/message_record.dart';
@@ -110,11 +109,10 @@ class SyncService extends Service {
   // Any incoming SessionHistory with a lower value is stale and rejected.
   int? _acceptedSessionStartedAtHighWater;
 
-  // In-memory dedupe + ordering for the active session's msgs box. Rebuilt on
-  // [activate]. Key = `<role>:<id>` so a user msg and the assistant reply that
-  // shares its id don't collide.
-  final Map<String, int> _idToSeq = {};
-  int _nextSeq = 0;
+  // Canonical incremental projection owned by one exact lifecycle generation.
+  TranscriptProjectionReducer? _transcriptReducer;
+  RemoteSessionRef? _transcriptReducerRef;
+  int? _transcriptReducerGeneration;
   bool _indexLoaded = false;
 
   // Serialise box mutations so concurrent async writes stay ordered.
@@ -368,13 +366,12 @@ class SyncService extends Service {
     // peer's AgentDone/ToolRequest fallback to be suppressed.
     _extensionSendsDeterministicAgentMessage = false;
     _indexLoaded = false;
-    _idToSeq.clear();
-    _nextSeq = 0;
+    _resetTranscriptReducer();
 
     if (nextRef != null) {
       await _loadIndex(nextRef, generation);
       if (!_isCurrentLifecycle(generation, nextRef)) return;
-      await _materializeTranscriptProjectionForRef(nextRef, generation);
+      await _rebuildTranscriptProjectionForRef(nextRef, generation);
       if (!_isCurrentLifecycle(generation, nextRef)) return;
       await _bindIdentityPendingSends(nextRef, generation);
       if (!_isCurrentLifecycle(generation, nextRef)) return;
@@ -697,7 +694,7 @@ class SyncService extends Service {
     // store but before it rewrote the disposable message projection. Rebuild
     // before removing the in-memory row so duplicate-safe recovery cannot make
     // the accepted input disappear again.
-    await _materializeTranscriptProjectionForRef(ref, generation);
+    await _rebuildTranscriptProjectionForRef(ref, generation);
     if (!_isCurrentLifecycle(generation, ref)) return;
     for (final send in matching) {
       _identityPendingSends.remove(send.id);
@@ -924,22 +921,14 @@ class SyncService extends Service {
       if (!_isCurrentLifecycle(generation, ref)) return;
       await box.clear();
       if (!_isCurrentLifecycle(generation, ref)) return;
-      _idToSeq.clear();
-      _nextSeq = 0;
       _indexLoaded = true;
       await _clearTranscriptEventsForRef(ref, generation);
       if (!_isCurrentLifecycle(generation, ref)) return;
-      await _rewriteMessageProjectionInWriteChain(
-        ref,
-        const TranscriptProjection(
-          messages: <ChatMessage>[],
-          messageTimestamps: <DateTime>[],
-          turn: TranscriptTurnView.idle,
-          steering: NoSteering(),
-        ),
-        const <TranscriptEvent>[],
-        generation,
+      _transcriptReducer = TranscriptProjectionReducer.empty(
+        sessionId: ref.sessionId,
       );
+      _transcriptReducerRef = ref;
+      _transcriptReducerGeneration = generation;
       if (!_isCurrentLifecycle(generation, ref)) return;
       // Session-clear is a `session_new` wipe boundary: a clear during an
       // active turn would otherwise leave the turn projection / streaming
@@ -971,6 +960,7 @@ class SyncService extends Service {
       );
     } else {
       _lifecycleGeneration++;
+      _resetTranscriptReducer();
       // Disconnect is terminal for the in-memory turn regardless of whether a
       // pending persistence operation eventually succeeds.
       _resetTurnState(clearPendingSendTimers: false);
@@ -1760,28 +1750,34 @@ class SyncService extends Service {
 
     await _enqueue(() async {
       if (!_isCurrentLifecycle(generation, ref)) return;
+      var reducer = _ownedTranscriptReducer(ref, generation);
+      if (reducer == null) {
+        reducer = await _loadTranscriptReducerInWriteChain(
+          ref,
+          generation,
+          projectionEpoch,
+        );
+        if (reducer == null) return;
+      }
       final result = await _eventStore.appendAll(key, batch);
       if (!_isCurrentLifecycle(generation, ref)) return;
       if (result.appended == 0) {
         _markPersistenceRecovered(ref);
         return;
       }
-      final log = await _eventStore.readSession(key);
-      if (!_isCurrentLifecycle(generation, ref)) return;
-      final projection = deriveTranscriptProjection(
-        sessionId: key.sessionId,
-        events: log,
+      final update = reducer.applyAll(
+        result.accepted.map((entry) => entry.event),
       );
-      _setTranscriptSteering(projection.steering);
-      if (!preserveTurnState &&
-          _canPublishTurnProjection(generation, ref, projectionEpoch)) {
-        _emitStreaming(projection.streaming);
-        _setTurnView(projection.turn);
-      }
-      await _rewriteMessageProjectionInWriteChain(
+      _publishTranscriptUpdate(
+        update,
+        generation,
         ref,
-        projection,
-        log,
+        projectionEpoch,
+        preserveTurnState: preserveTurnState,
+      );
+      await _applyTranscriptProjectionUpdateInWriteChain(
+        ref,
+        update,
         generation,
       );
       if (_isCurrentLifecycle(generation, ref)) {
@@ -1790,48 +1786,92 @@ class SyncService extends Service {
     });
   }
 
-  Future<void> _materializeTranscriptProjectionForRef(
+  Future<void> _rebuildTranscriptProjectionForRef(
     RemoteSessionRef ref,
     int generation,
   ) {
-    final key = _transcriptKeyForRef(ref);
     final projectionEpoch = _turnProjectionEpoch;
     return _enqueue(() async {
-      if (!_isCurrentLifecycle(generation, ref)) return;
-      final log = await _eventStore.readSession(key);
-      if (!_isCurrentLifecycle(generation, ref)) return;
-      final projection = deriveTranscriptProjection(
-        sessionId: key.sessionId,
-        events: log,
-      );
-      _setTranscriptSteering(projection.steering);
-      if (_isCurrentLifecycle(generation, ref)) {
-        _logDebug(
-          RouteEvent(
-            ts: DateTime.now(),
-            room: ref.roomId,
-            phase: projection.messages.isEmpty
-                ? RoutePhase.projectionEmpty
-                : RoutePhase.projectionReady,
-            sessionIdTail: _sessionIdTail(ref.sessionId),
-            messageCount: projection.messages.length,
-          ),
-        );
-      }
-      if (_canPublishTurnProjection(generation, ref, projectionEpoch)) {
-        _emitStreaming(projection.streaming);
-        _setTurnView(projection.turn);
-      }
-      await _rewriteMessageProjectionInWriteChain(
+      await _loadTranscriptReducerInWriteChain(
         ref,
-        projection,
-        log,
         generation,
+        projectionEpoch,
       );
-      if (_isCurrentLifecycle(generation, ref)) {
-        _markPersistenceRecovered(ref);
-      }
     });
+  }
+
+  Future<TranscriptProjectionReducer?> _loadTranscriptReducerInWriteChain(
+    RemoteSessionRef ref,
+    int generation,
+    int projectionEpoch,
+  ) async {
+    if (!_isCurrentLifecycle(generation, ref)) return null;
+    final log = await _eventStore.readSession(_transcriptKeyForRef(ref));
+    if (!_isCurrentLifecycle(generation, ref)) return null;
+    final reducer = TranscriptProjectionReducer.empty(sessionId: ref.sessionId);
+    reducer.applyAll(log);
+    if (!_isCurrentLifecycle(generation, ref)) return null;
+    final projection = reducer.projection;
+    final rebuild = TranscriptProjectionUpdate(
+      acceptedEvents: List<TranscriptEvent>.unmodifiable(log),
+      projection: projection,
+      firstChangedMessageIndex: 0,
+    );
+    _publishTranscriptUpdate(rebuild, generation, ref, projectionEpoch);
+    _logDebug(
+      RouteEvent(
+        ts: DateTime.now(),
+        room: ref.roomId,
+        phase: projection.messages.isEmpty
+            ? RoutePhase.projectionEmpty
+            : RoutePhase.projectionReady,
+        sessionIdTail: _sessionIdTail(ref.sessionId),
+        messageCount: projection.messages.length,
+      ),
+    );
+    await _applyTranscriptProjectionUpdateInWriteChain(
+      ref,
+      rebuild,
+      generation,
+    );
+    if (_isCurrentLifecycle(generation, ref)) {
+      _transcriptReducer = reducer;
+      _transcriptReducerRef = ref;
+      _transcriptReducerGeneration = generation;
+      _markPersistenceRecovered(ref);
+      return reducer;
+    }
+    return null;
+  }
+
+  void _publishTranscriptUpdate(
+    TranscriptProjectionUpdate update,
+    int generation,
+    RemoteSessionRef ref,
+    int projectionEpoch, {
+    bool preserveTurnState = false,
+  }) {
+    final projection = update.projection;
+    _setTranscriptSteering(projection.steering);
+    if (!preserveTurnState &&
+        _canPublishTurnProjection(generation, ref, projectionEpoch)) {
+      _emitStreaming(projection.streaming);
+      _setTurnView(projection.turn);
+    }
+  }
+
+  TranscriptProjectionReducer? _ownedTranscriptReducer(
+    RemoteSessionRef ref,
+    int generation,
+  ) =>
+      _transcriptReducerRef == ref && _transcriptReducerGeneration == generation
+      ? _transcriptReducer
+      : null;
+
+  void _resetTranscriptReducer() {
+    _transcriptReducer = null;
+    _transcriptReducerRef = null;
+    _transcriptReducerGeneration = null;
   }
 
   Future<void> _clearTranscriptEventsForRef(
@@ -1855,151 +1895,133 @@ class SyncService extends Service {
       key.roomId == ref.roomId &&
       key.sessionId == ref.sessionId;
 
-  Future<void> _rewriteMessageProjectionInWriteChain(
+  Future<void> _applyTranscriptProjectionUpdateInWriteChain(
     RemoteSessionRef ref,
-    TranscriptProjection projection,
-    List<TranscriptEvent> log,
+    TranscriptProjectionUpdate update,
     int generation,
   ) async {
-    if (!_isCurrentLifecycle(generation, ref)) return;
+    try {
+      await _applyTranscriptProjectionUpdateUnchecked(ref, update, generation);
+    } catch (_) {
+      if (_ownedTranscriptReducer(ref, generation) != null) {
+        _resetTranscriptReducer();
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _applyTranscriptProjectionUpdateUnchecked(
+    RemoteSessionRef ref,
+    TranscriptProjectionUpdate update,
+    int generation,
+  ) async {
+    final firstChanged = update.firstChangedMessageIndex;
+    if (firstChanged == null || !_isCurrentLifecycle(generation, ref)) return;
+    final projection = update.projection;
     final desired = <MessageRecord>[
-      for (var i = 0; i < projection.messages.length; i++)
-        _recordFromProjectedMessage(projection.messages[i], i, log),
+      for (
+        var index = firstChanged;
+        index < projection.messages.length;
+        index++
+      )
+        _recordFromProjectedMessage(
+          projection.messages[index],
+          projection.messageTimestamps[index],
+          index,
+        ),
     ];
     final box = await _boxes.msgsBox(ref);
     if (!_isCurrentLifecycle(generation, ref)) return;
-    for (final k in box.keys.toList()) {
-      if (!_isCurrentLifecycle(generation, ref)) return;
-      if ((k as num).toInt() >= desired.length) {
-        await box.delete(k);
-        if (!_isCurrentLifecycle(generation, ref)) return;
+
+    final removedOrChangedUserIds = <String>{};
+    final keysToDelete = <dynamic>[];
+    for (final key in box.keys.toList()) {
+      final sequence = (key as num).toInt();
+      if (sequence < firstChanged) continue;
+      final current = MessageRecord.fromJson(_coerce(box.get(key)));
+      if (current.role == MsgRole.user) {
+        removedOrChangedUserIds.add(current.id);
       }
+      if (sequence >= projection.messages.length) keysToDelete.add(key);
     }
-    for (var i = 0; i < desired.length; i++) {
-      final newJson = desired[i].toJson();
-      final curRaw = box.get(i);
-      final curJson = curRaw == null
+
+    final puts = <int, Map<String, dynamic>>{};
+    for (final record in desired) {
+      if (record.role == MsgRole.user) {
+        removedOrChangedUserIds.add(record.id);
+      }
+      final newJson = record.toJson();
+      final currentRaw = box.get(record.seq);
+      final currentJson = currentRaw == null
           ? null
-          : MessageRecord.fromJson(_coerce(curRaw)).toJson();
-      if (curJson == null || !_sameMessageRecordJson(curJson, newJson)) {
-        if (!_isCurrentLifecycle(generation, ref)) return;
-        await box.put(i, newJson);
-        if (!_isCurrentLifecycle(generation, ref)) return;
+          : MessageRecord.fromJson(_coerce(currentRaw)).toJson();
+      if (currentJson == null ||
+          !_sameMessageRecordJson(currentJson, newJson)) {
+        puts[record.seq] = newJson;
       }
     }
+
+    if (keysToDelete.isNotEmpty) await box.deleteAll(keysToDelete);
     if (!_isCurrentLifecycle(generation, ref)) return;
-    _idToSeq
-      ..clear()
-      ..addEntries([
-        for (var i = 0; i < desired.length; i++)
-          MapEntry(_key(desired[i].role, desired[i].id), i),
-      ]);
-    _nextSeq = desired.length;
+    if (puts.isNotEmpty) await box.putAll(puts);
+    if (!_isCurrentLifecycle(generation, ref)) return;
     _indexLoaded = true;
-    _reconcilePendingSendTimers(desired);
+    _reconcilePendingSendTimersForDelta(removedOrChangedUserIds, desired);
   }
 
   MessageRecord _recordFromProjectedMessage(
     ChatMessage message,
-    int seq,
-    List<TranscriptEvent> log,
-  ) {
-    final ts = _timestampForProjectedMessage(message, log) ?? DateTime.now();
-    return switch (message) {
-      UserMsg() => MessageRecord(
-        id: message.id,
-        seq: seq,
-        role: MsgRole.user,
-        text: message.text,
-        image: message.image,
+    DateTime timestamp,
+    int sequence,
+  ) => switch (message) {
+    UserMsg() => MessageRecord(
+      id: message.id,
+      seq: sequence,
+      role: MsgRole.user,
+      text: message.text,
+      image: message.image,
+      status: message.status,
+      ts: timestamp,
+    ),
+    AssistantMsg() => MessageRecord(
+      id: message.id,
+      seq: sequence,
+      role: MsgRole.assistant,
+      text: message.text,
+      ts: timestamp,
+    ),
+    ToolEvent() => MessageRecord(
+      id: message.id,
+      seq: sequence,
+      role: MsgRole.tool,
+      ts: timestamp,
+      tool: ToolEventData(
+        toolCallId: message.toolCallId,
+        tool: message.tool,
+        args: message.args,
         status: message.status,
-        ts: ts,
+        result: message.result,
+        error: message.error,
       ),
-      AssistantMsg() => MessageRecord(
-        id: message.id,
-        seq: seq,
-        role: MsgRole.assistant,
-        text: message.text,
-        ts: ts,
-      ),
-      ToolEvent() => MessageRecord(
-        id: message.id,
-        seq: seq,
-        role: MsgRole.tool,
-        ts: ts,
-        tool: ToolEventData(
-          toolCallId: message.toolCallId,
-          tool: message.tool,
-          args: message.args,
-          status: message.status,
-          result: message.result,
-          error: message.error,
-        ),
-      ),
-      CompactionMsg() => MessageRecord(
-        id: message.id,
-        seq: seq,
-        role: MsgRole.compaction,
-        text: message.summary,
-        tokensBefore: message.tokensBefore,
-        ts: ts,
-      ),
-    };
-  }
+    ),
+    CompactionMsg() => MessageRecord(
+      id: message.id,
+      seq: sequence,
+      role: MsgRole.compaction,
+      text: message.summary,
+      tokensBefore: message.tokensBefore,
+      ts: timestamp,
+    ),
+  };
 
-  DateTime? _timestampForProjectedMessage(
-    ChatMessage message,
-    List<TranscriptEvent> log,
+  void _reconcilePendingSendTimersForDelta(
+    Set<String> changedUserIds,
+    List<MessageRecord> desiredSuffix,
   ) {
-    DateTime? ts;
-    for (final event in log) {
-      switch ((message, event)) {
-        case (UserMsg(:final id), UserMessageConfirmed(:final clientMessageId))
-            when id == clientMessageId:
-          ts = event.ts;
-        case (UserMsg(:final id), UserMessageSubmitted(:final clientMessageId))
-            when id == clientMessageId && ts == null:
-          ts = event.ts;
-        case (UserMsg(:final id), UserMessageFailed(:final clientMessageId))
-            when id == clientMessageId:
-          ts = event.ts;
-        case (
-              AssistantMsg(:final id),
-              AssistantMessageCommitted(:final messageId),
-            )
-            when id == messageId:
-          ts = event.ts;
-        case (
-              ToolEvent(toolCallId: final messageToolCallId),
-              ToolRequested(toolCallId: final eventToolCallId),
-            )
-            when messageToolCallId == eventToolCallId && ts == null:
-          ts = event.ts;
-        case (
-              ToolEvent(toolCallId: final messageToolCallId),
-              ToolFinished(toolCallId: final eventToolCallId),
-            )
-            when messageToolCallId == eventToolCallId:
-          ts = event.ts;
-        case (CompactionMsg(:final id), CompactionRecorded())
-            when id == event.eventId:
-          ts = event.ts;
-        default:
-          break;
-      }
+    for (final id in changedUserIds) {
+      _pendingSendTimers.remove(id)?.cancel();
     }
-    return ts;
-  }
-
-  void _reconcilePendingSendTimers(List<MessageRecord> desired) {
-    final pendingIds = <String>{
-      for (final record in desired)
-        if (record.role == MsgRole.user && record.pending) record.id,
-    };
-    for (final id in _pendingSendTimers.keys.toList()) {
-      if (!pendingIds.contains(id)) _pendingSendTimers.remove(id)?.cancel();
-    }
-    for (final record in desired) {
+    for (final record in desiredSuffix) {
       if (record.role == MsgRole.user && record.pending) {
         _armSendTimeout(record.id, record.ts);
       }
@@ -2031,23 +2053,22 @@ class SyncService extends Service {
       // rejected before any store append observes it.
       if (_isStaleHistory(history.sessionStartedAt)) return;
 
-      // Track every eventId we have seen (pre-existing in the store PLUS each
-      // one as we walk this batch) so a duplicate WITHIN a single replay batch
-      // is reported as dropped, not just duplicates that pre-existed before
-      // appendAll. Set.add returns true when the element was newly added, so
-      // !add(...) == "already seen" == dropped. Without this, two identical
-      // eventIds in one SessionHistory would both log dropped:false even
-      // though appendAll skips the second — a false-negative exactly in the
-      // collision case the ring log exists to diagnose.
-      final existing = await _eventStore.readSession(key);
+      var reducer = _ownedTranscriptReducer(ref, generation);
+      if (reducer == null) {
+        reducer = await _loadTranscriptReducerInWriteChain(
+          ref,
+          generation,
+          projectionEpoch,
+        );
+        if (reducer == null) return;
+      }
+      final result = await _eventStore.appendAll(key, replayEvents);
       if (!_isCurrentLifecycle(generation, ref)) return;
-      final seenEventIds = <String>{
-        for (final event in existing) event.eventId,
+      final acceptedEventIds = <String>{
+        for (final entry in result.accepted) entry.event.eventId,
       };
-      await _eventStore.appendAll(key, replayEvents);
-      if (!_isCurrentLifecycle(generation, ref)) return;
       for (final event in replayEvents) {
-        final dropped = !seenEventIds.add(event.eventId);
+        final dropped = !acceptedEventIds.remove(event.eventId);
         _logDebug(
           ReplayDedupEvent(
             ts: DateTime.now(),
@@ -2057,26 +2078,28 @@ class SyncService extends Service {
           ),
         );
       }
-      // The event log is canonical, while the message box is a disposable
-      // projection. Even an all-duplicate replay must rematerialize that box:
-      // churn can leave it empty although every replay id is already durable.
-      final log = await _eventStore.readSession(key);
-      if (!_isCurrentLifecycle(generation, ref)) return;
-      final projection = deriveTranscriptProjection(
-        sessionId: key.sessionId,
-        events: log,
-      );
-      _setTranscriptSteering(projection.steering);
-      if (_canPublishTurnProjection(generation, ref, projectionEpoch)) {
-        _emitStreaming(projection.streaming);
-        _setTurnView(projection.turn);
+
+      if (result.appended == 0) {
+        // The event log is truth and the message box is disposable. An
+        // all-duplicate replay is the explicit recovery path for a missing or
+        // corrupt projection, so rebuild from the unchanged canonical log.
+        reducer = await _loadTranscriptReducerInWriteChain(
+          ref,
+          generation,
+          projectionEpoch,
+        );
+        if (reducer == null) return;
+      } else {
+        final update = reducer.applyAll(
+          result.accepted.map((entry) => entry.event),
+        );
+        _publishTranscriptUpdate(update, generation, ref, projectionEpoch);
+        await _applyTranscriptProjectionUpdateInWriteChain(
+          ref,
+          update,
+          generation,
+        );
       }
-      await _rewriteMessageProjectionInWriteChain(
-        ref,
-        projection,
-        log,
-        generation,
-      );
       if (!_isCurrentLifecycle(generation, ref)) return;
       await _acceptHistoryBoundaryInWriteChain(
         ref,
@@ -2134,8 +2157,6 @@ class SyncService extends Service {
   // Box write helpers (all serialised through _enqueue)
   // ---------------------------------------------------------------------------
 
-  String _key(MsgRole role, String id) => '${role.name}:$id';
-
   Future<void> _loadIndex(RemoteSessionRef ref, int generation) {
     return _enqueue(() async {
       if (!_isCurrentLifecycle(generation, ref)) return;
@@ -2150,14 +2171,9 @@ class SyncService extends Service {
           : null;
       _acceptedSessionStartedAtHighWater =
           indexRecord?.sessionStartedAt?.millisecondsSinceEpoch;
-      _idToSeq.clear();
-      _nextSeq = 0;
       for (final k in box.keys) {
         if (!_isCurrentLifecycle(generation, ref)) return;
-        final seq = (k as num).toInt();
         final r = MessageRecord.fromJson(_coerce(box.get(k)));
-        _idToSeq[_key(r.role, r.id)] = seq;
-        _nextSeq = math.max(_nextSeq, seq + 1);
         // Re-arm the no-echo backstop for any pending row this session owns, so
         // a bubble persisted across an app restart / quick session-switch fails
         // by its `ts` instead of spinning forever (already-stale → fires
@@ -2484,6 +2500,7 @@ class SyncService extends Service {
     if (_disposed) return;
     _disposed = true;
     _lifecycleGeneration++;
+    _resetTranscriptReducer();
     _resetTurnState(clearPendingSendTimers: true);
     _flushTimer?.cancel();
     _syncDebounce?.cancel();

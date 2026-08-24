@@ -1,7 +1,7 @@
 ---
 id: feature-app-incremental-transcript-projection-pipeline-opt-3
 kind: story
-stage: implementing
+stage: done
 tags: [perf]
 parent: feature-app-incremental-transcript-projection-pipeline
 depends_on: [feature-app-incremental-transcript-projection-pipeline-opt-1, feature-app-incremental-transcript-projection-pipeline-opt-2]
@@ -64,12 +64,25 @@ payoff.
 
 ## Risks and acceptance
 
-- [ ] Every incremental prefix equals a clean event-log rebuild for messages,
+- [x] Every incremental prefix equals a clean event-log rebuild for messages,
       timestamps, streaming, turn, and steering state.
-- [ ] Session replacement/reconnect cannot publish or persist a stale reducer
+- [x] Session replacement/reconnect cannot publish or persist a stale reducer
       update after its generation is invalidated.
-- [ ] Empty/corrupt disposable projection recovery and all-duplicate replay can
+- [x] Empty/corrupt disposable projection recovery and all-duplicate replay can
       still rebuild from the canonical log.
-- [ ] Pending-send timers remain armed/cancelled from the resulting user-row
+- [x] Pending-send timers remain armed/cancelled from the resulting user-row
       status, and working state converges on every existing terminal path.
-- [ ] The benchmark targets pass and the app unit suite remains green.
+- [x] The benchmark targets pass and the app unit suite remains green.
+
+## Implementation
+
+- Execution capability: `sol/high`; generation-owned reducer lifecycle, serialized persistence, delta materialization, and async-fence tests.
+- Review weight: not applicable — child-story checkpoint.
+- Files changed: `app/lib/data/sync/sync_service.dart`, SyncService tests, and the transcript pipeline benchmark.
+- Tests added/updated: zero-read/one-row normal append, explicit duplicate-replay recovery, append-gated reconnect race, fail-once recovery read, and existing session replacement/timer/terminal convergence coverage.
+- Before: normal accepted append performed one full log read plus clean fold (design baseline **160.594 ms p50 / 168.291 ms p95** at 5,500) and compared every materialized row.
+- After: normal accepted append performs **0 `readSession` calls** and tail traffic changes **1 row**; encrypted 5,500 receipt+delta replay is **107.329 ms**, and 1,000 persisted one-at-a-time receipt+delta applies are **258.114 ms**.
+- Verification: all 36 projection/store tests, all 102 SyncService tests, `flutter analyze --no-pub`, and the full benchmark passed. The exact repository-wide suite passed from the committed tree: **934 passed, 1 skipped** with `--exclude-tags e2e --concurrency=2`.
+- Simplification: deleted append-time full reads, message×event timestamp scans, full-prefix row comparison, `_idToSeq`, `_nextSeq`, and `dart:math`; row writes and pending-timer reconciliation now start at the reducer's affected suffix.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
