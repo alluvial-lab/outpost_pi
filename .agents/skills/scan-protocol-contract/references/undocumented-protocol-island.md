@@ -1,15 +1,17 @@
 # Rule: Undocumented Protocol Island
 
-> Hand-maintained wire types outside `protocol/generated/` must carry a documented reason they are not yet in the schema IR.
+> Genuine hand-maintained wire types outside `protocol/generated/` must carry a durable reason they remain outside the schema IR; generated projections and their adapters are not islands.
 
 ## Motivation
 
-Remote Pi generates wire types from a canonical schema. When a wire type lives in a handwritten
-file outside `generated/` (e.g. `app/lib/protocol/control_frames.dart`, `relay/src/protocol/frame.rs`),
-it is either (a) a *documented temporary island* — "not yet in the schema IR, will migrate" —
-or (b) an *undocumented drift* — someone hand-added a wire type and never reconciled it with the
-schema. (b) is a single-source-of-truth violation: the schema no longer describes the full wire.
-This rule catches (b) while exempting (a).
+Remote Pi generates wire types from a canonical schema. A generated projection may be wrapped by
+an adapter, such as `app/lib/protocol/control_frames.dart` over
+`app/lib/protocol/generated/relay_frames.g.dart`; that adapter is not a wire-shape island. A
+handwritten wire family outside `generated/` is instead either (a) a *genuine documented
+exception* with a durable reason it remains outside the schema or (b) an *undocumented drift* —
+someone hand-added a wire type and never reconciled it with the schema. (b) is a
+single-source-of-truth violation: the schema no longer describes the full wire. This rule catches
+(b) while retaining only the documented exception for (a).
 
 The principle is in [`.agents/rules/code-design.md`](../../../rules/code-design.md) → Generated or
 inferred contracts + Single source of truth.
@@ -22,22 +24,24 @@ types are not in the generated schema. The absence of a documented reason is the
 
 ## Before / After
 
-### From this codebase: the documented island (keep this — NOT a violation)
+### From this codebase: the generated relay projection and adapter (keep this — NOT a violation)
 
-**Current (correct) — `app/lib/protocol/protocol.dart:3-6` (the facade that documents the island):**
+**Current (correct) — `app/lib/protocol/generated/relay_frames.g.dart` plus
+`app/lib/protocol/control_frames.dart`:**
 ```dart
-// Public protocol facade. Generated DTOs live under generated/ and are
-// regenerated from the canonical schema; do not hand-edit generated files.
-//
-// Relay control/presence/rooms frames are not yet in the schema IR, so they
-// remain in the temporary hand-maintained island exported below.
+// generated/relay_frames.g.dart
+// GENERATED CODE - DO NOT MODIFY BY HAND.
+// Generated from protocol/schema/relay-{outer,control}.schema.json.
+
+// control_frames.dart
+sealed class ControlInbound {
+  static ControlInbound? fromWire(RelayServerControlFrameDto frame) => ...;
+}
 ```
-`control_frames.dart` (exported by `protocol.dart`) carries those hand-maintained types and
-expands on why: "These travel raw over the WS (no outer envelope) and are routed by the relay
-itself... They never enter the inner-message switch." The island is **documented** at the facade
-(`protocol.dart`) — a future agent knows why it exists and that migration is the intended end
-state. Do not flag documented islands. Note: the documenting comment lives in `protocol.dart`,
-not `control_frames.dart` itself; treat the facade + island file as a pair.
+The generated file owns the relay control/presence/rooms DTO union. `control_frames.dart`
+adapts those generated DTOs into app-domain models; it does not define a competing wire shape
+or qualify as a temporary hand-maintained island. Do not flag either the generated projection or
+this adapter under `undocumented-protocol-island`.
 
 ### Synthetic: violation (undocumented island)
 
@@ -62,8 +66,10 @@ class FancyNewFrame { ... }
 
 ## Exceptions
 
-- **Documented islands** — files with a comment stating the types are not yet in the schema IR
-  and why (the `protocol.dart` / `control_frames.dart` pattern). Do not flag.
+- **Generated projections and adapters** — `app/lib/protocol/generated/relay_frames.g.dart`
+  owns relay DTOs; `control_frames.dart` adapts them and is not an island.
+- **Genuine documented islands** — a hand-maintained wire family may be skipped only when a
+  durable comment explains why it remains outside the schema and what condition would move it.
 - **Re-export facades** — `relay/src/protocol/frame.rs` (`pub use generated::*`) is a facade, not
   an island; its types come from generated. Not a violation (covered by `handwritten-wire-dto`).
 - **Adapter/codec types** — a type that bridges wire and domain, not itself a wire frame, is not

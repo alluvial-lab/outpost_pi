@@ -203,8 +203,8 @@ The app may debounce or render transitions, but the extension must not leave dur
 
 Protocol families to recognize:
 
-- Client/app messages: `pair_request`, `user_message` (`images?`, `streaming_behavior?`), `queued_message_set`, `queued_message_clear`, `approve_tool`, `cancel`, `ping`, `session_sync`, `session_new`, `session_compact`, `model_set`, `thinking_set`, `list_models`. `approve_tool` is present in the type union but currently forward-compatible/ignored by the router. [remote-pi-protocol-types]{1} [remote-pi-index-lifecycle]{1}
-- Server/extension messages: `pair_ok`, `pair_error`, `user_input`, `user_message`, `queued_message_state`, `agent_chunk`, `agent_done`, `agent_message`, `compaction`, `tool_request`, `tool_result`, `error`, `cancelled`, `pong`, `bye`, `session_history`, `action_ok`, `action_error`, `models_list`. [remote-pi-protocol-types]{1}
+- Client/app messages: `pair_request`, `user_message` (`images?`, `streaming_behavior?`), `queued_message_set`, `queued_message_clear`, `approve_tool`, `cancel`, `ping`, `session_sync`, `session_new`, `session_compact`, `model_set`, `thinking_set`, `list_models`, and the capture-upload control sequence `capture_upload_begin`, `capture_upload_chunk`, `capture_upload_end`. `approve_tool` is present in the type union but currently forward-compatible/ignored by the router. Capture uploads are schema-owned and bounded by the generated limits: 8 KiB decoded per chunk (10,924 base64 characters), 2 MiB total, and one in-flight upload per session; `src/actions/capture_upload_handler.ts` consumes the generated union and `src/index.ts` dispatches the family. [remote-pi-protocol-types]{1} [remote-pi-index-lifecycle]{1}
+- Server/extension messages: `pair_ok`, `pair_error`, `user_input`, `user_message`, `queued_message_state`, `agent_chunk`, `agent_done`, `agent_message`, `compaction`, `tool_request`, `tool_result`, `error`, `cancelled`, `pong`, `bye`, `session_history`, `action_ok`, `action_error`, `models_list`, and the capture-upload replies `capture_upload_ack` / `capture_upload_error`. [remote-pi-protocol-types]{1}
 
 ## Anti-patterns
 
