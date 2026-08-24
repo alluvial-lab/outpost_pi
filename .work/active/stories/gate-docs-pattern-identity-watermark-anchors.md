@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-identity-watermark-anchors
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -27,9 +27,17 @@ pattern-skill-staleness
 
 ## Contradiction
 Those cited ranges now show peer reads/key declarations rather than the quoted
-monotonic channel reservations. The current app merge is around 515-583; the
-extension send/receive high-water operations are around 589-629.
+monotonic channel reservations. The current app merge is around 570-598; the
+extension send/receive high-water operations are at 589-600 and 613-630.
 
 ## Required edit
 Refresh all three channel-counter anchors and snippets to the current serialized,
-identity-checked implementations, preserving the pattern's monotonicity claim.
+identity-checked implementations.
+
+## Implementation
+
+Corrected `.agents/skills/patterns/identity-scoped-monotonic-high-watermarks.md`
+with current app serialization/key checks at
+`app/lib/pairing/storage.dart:570-598` and extension send/receive reservations
+at `pi-extension/src/pairing/storage.ts:589-600,613-630`. The finding was valid
+and corrected; no rejection was necessary.

@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-explicit-interleaving-anchor
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -26,8 +26,15 @@ pattern-skill-staleness
 ## Contradiction
 The cited line is the unrelated `reload` action in the host setup. The current
 explicit defer/release barrier is `deferNextTurn`/`resolveDeferredTurn` at lines
-268-285; the old anchor does not expose the barrier described by the pattern.
+269-287; the old anchor does not expose the barrier described by the pattern.
 
 ## Required edit
 Refresh the pattern anchor and quoted harness example to the current explicit
 started/release barrier.
+
+## Implementation
+
+Corrected `.agents/skills/patterns/explicit-async-interleaving-tests.md` to use
+the current `deferNextTurn`/`resolveDeferredTurn` arm/release barrier at
+`pi-extension/test/support/e2e_pi_host_runtime.ts:269-287`. The finding was
+valid and corrected; no rejection was necessary.

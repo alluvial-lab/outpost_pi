@@ -42,11 +42,30 @@ transport, and no stale emit.
 
 ### Deferred-turn settlement through the E2E pi-host
 
-**File:** `pi-extension/test/support/e2e_pi_host_runtime.ts:175` and
-`app/test/e2e/session_replacement_e2e_test.dart:123` — the harness defers
-replacement-turn settlement; the test asserts the original `cli_` id
-confirmation and timer disarm BEFORE resolving, then asserts exactly one
-transcript row without sleeping.
+**File:** `pi-extension/test/support/e2e_pi_host_runtime.ts:269-287` and
+`app/test/e2e/session_replacement_e2e_test.dart:123` — the harness exposes an
+explicit arm/release barrier:
+
+```ts
+deferNextTurn(reply?: string): PiHostTurnControlStatus {
+  this.stagedReply = reply ?? null;
+  this.turnControlPhase = "armed";
+  return this.turnControlStatus();
+}
+
+resolveDeferredTurn(): PiHostTurnControlStatus {
+  if (this.turnControlPhase !== "pending" || !this.deferredTurnResolve) {
+    throw new Error("no deferred turn is pending");
+  }
+  const resolve = this.deferredTurnResolve;
+  this.deferredTurnResolve = null;
+  resolve();
+  return this.turnControlStatus();
+}
+```
+
+The test asserts the original `cli_` id confirmation and timer disarm BEFORE
+resolving, then asserts exactly one transcript row without sleeping.
 
 ## Common violations
 
