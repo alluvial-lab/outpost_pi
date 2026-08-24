@@ -16,10 +16,11 @@ class UserBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Plan/24-fix-app-source-of-truth: render the lifecycle stage of
-    // the bubble. `pending` (sent over WS, Pi hasn't echoed yet) gets
-    // reduced opacity + a small spinner; `failed` (no echo in 15s) gets
-    // a red exclamation badge so the user knows to retry.
+    // Plan/24-fix-app-source-of-truth: render the lifecycle stage of the
+    // bubble. `pending` (held before transport or awaiting Pi confirmation)
+    // gets reduced opacity + a small spinner; `failed` (the configured
+    // pending-send backstop elapsed) gets a red exclamation badge so the user
+    // knows to retry.
     final isPending = message.status == UserMsgStatus.pending;
     final isFailed = message.status == UserMsgStatus.failed;
     // Plan/30 — when an image is attached the bubble becomes an ImageBubble

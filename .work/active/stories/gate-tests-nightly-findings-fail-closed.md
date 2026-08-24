@@ -1,7 +1,7 @@
 ---
 id: gate-tests-nightly-findings-fail-closed
 kind: story
-stage: implementing
+stage: done
 tags: [testing, workflow]
 parent: null
 depends_on: []
@@ -41,3 +41,15 @@ important-interface / test-oracle false-negative
 
 ## Test location (suggested)
 `e2e/test_live_soak.py`
+
+## Implementation
+
+- Centralized the nightly reporter's exit decision in `report_status`, so new
+  and missing inventory, runner failures, unexpected findings, and suspicious
+  absences all return nonzero; a clean report is the only zero result.
+- Added unit coverage for the clean case, every alert class, bounded summary
+  text/counts, and malformed or missing `findings.json` CLI inputs.
+
+## Verification
+
+- `python3 -m unittest e2e.test_live_soak` — 20 tests passed.

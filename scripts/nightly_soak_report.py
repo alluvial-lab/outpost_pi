@@ -38,6 +38,25 @@ def reconcile(expected: set[str], findings: dict[str, Any]) -> tuple[list[str], 
     return sorted(actual - expected), sorted(expected - actual)
 
 
+def report_status(
+    *,
+    findings: dict[str, Any],
+    new: list[str],
+    missing: list[str],
+    runner_status: int,
+) -> int:
+    """Return a nonzero status for every nightly alert or runner failure."""
+    return int(
+        bool(
+            new
+            or missing
+            or findings["unexpected"]
+            or findings["suspicious"]
+            or runner_status != 0
+        )
+    )
+
+
 def render_summary(
     *,
     findings: dict[str, Any],
@@ -106,7 +125,12 @@ def main() -> int:
         ),
         encoding="utf-8",
     )
-    return 1 if new or missing or args.runner_status != 0 else 0
+    return report_status(
+        findings=findings,
+        new=new,
+        missing=missing,
+        runner_status=args.runner_status,
+    )
 
 
 if __name__ == "__main__":

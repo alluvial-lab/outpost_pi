@@ -1,14 +1,14 @@
 ---
 id: gate-tests-backfill-anchor-interleavings
 kind: story
-stage: implementing
+stage: done
 tags: [testing, app]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: tests
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Exercise viewport-anchor revision fences before the queued restore runs
@@ -44,3 +44,13 @@ bug-regression / explicit async interleaving
 
 ## Test location (suggested)
 `app/test/ui/chat/chat_page_appbar_test.dart`
+
+## Implementation
+Extended the real chat viewport regression with a frame-held insert followed
+by a user drag, two transcript inserts before one frame, and exact
+`maxScrollExtent`/`minScrollExtent` boundary cases. Assertions stay on public
+pixel offsets and stable keyed message positions.
+
+Evidence: **pins-contract** — the revision and user-scroll fences already
+preserve the observable anchor; the new interleavings now exercise those
+contracts directly.

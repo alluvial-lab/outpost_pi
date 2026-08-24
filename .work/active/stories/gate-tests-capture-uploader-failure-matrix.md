@@ -1,14 +1,14 @@
 ---
 id: gate-tests-capture-uploader-failure-matrix
 kind: story
-stage: implementing
+stage: done
 tags: [testing, app]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: tests
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Cover capture-upload transport loss, deadlines, and malformed acknowledgements
@@ -45,3 +45,15 @@ important-interface / unavailable-dependency / interrupted-operation
 
 ## Test location (suggested)
 `app/test/data/debug/debug_capture_uploader_test.dart`
+
+## Implementation
+Expanded the controllable upload channel and covered mid-chunk `io_error`,
+`busy`, checksum rejection, channel done/error, send failure, deadline expiry,
+wrong-stage and wrong-sequence ACKs, missing delivered paths, and unrelated
+ACK correlation. A replacement-channel retry proves a fresh upload id, current
+session id, new begin frame, and chunk sequence zero with no abandoned end
+frame.
+
+Evidence: **pins-contract** — the uploader already surfaced the required typed
+failures and fresh-retry semantics; the new tests exercise and pin every
+previously uncovered branch.

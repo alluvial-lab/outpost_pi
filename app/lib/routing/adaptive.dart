@@ -68,6 +68,22 @@ MediaQueryData masterPaneMediaQueryData(MediaQueryData data) {
   );
 }
 
+/// Restore physical window insets for a route opened from an isolated pane.
+///
+/// Modal builders inherit the launching Home surface's stripped MediaQuery in
+/// the production shell. Reintroducing only the current platform view inset
+/// lets their fields avoid the keyboard without resizing persistent Home.
+MediaQueryData mediaQueryWithWindowViewInsets(BuildContext context) {
+  final media = MediaQuery.of(context);
+  final view = View.of(context);
+  return media.copyWith(
+    viewInsets: EdgeInsets.fromViewPadding(
+      view.viewInsets,
+      view.devicePixelRatio,
+    ),
+  );
+}
+
 /// Isolate only the persistent Home surface from a detail-pane keyboard.
 ///
 /// This wrapper belongs below the master branch Navigator. Pushed routes and

@@ -400,6 +400,12 @@ function _sendOwnerMessageToPeer(peerId: string, message: ServerMessage): void {
 
 const _pairingCoordinator = new PairingCoordinator({
   getState: () => _state,
+  currentUi: () => {
+    const ui = _currentUi();
+    return typeof ui?.custom === "function"
+      ? ui as Pick<ExtensionContext["ui"], "custom">
+      : undefined;
+  },
   startRelay: (ctx) => _startRelayViaTransport(ctx),
   isRelayConnected: () => _relayTransport.status() === "connected",
   roomId: () => _myRoomId,
@@ -514,6 +520,7 @@ type OutpostPiUi = {
   setStatus?: (k: string, v: string | undefined) => void;
   setTitle?: (t: string) => void;
   notify?: (msg: string, type?: "info" | "warning" | "error") => void;
+  custom?: ExtensionContext["ui"]["custom"];
 };
 
 type OutpostPiUiContext = { ui?: OutpostPiUi } | null | undefined;
@@ -1459,22 +1466,10 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     const m = event?.message as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
     if (!m) return;
     // Subagent-leak gate: while a `subagent` tool execution is open, the
-    // child session's `message_end` fires for the subagent's assistant
-    // messages. Suppress recording/broadcast for assistant messages so they
-    // neither reach the phone live (`agent_message`) nor replay later
-    // (`session_sync`/`session_history` feed the same transcript event log).
-    // Subagent-leak gate: while a `subagent` tool execution is open, the
-    // child session's `message_end` fires for the subagent's messages.
-    // Suppress recording/broadcast for BOTH `assistant` (the subagent's reply
-    // text → `agent_message` live + `assistant_committed` transcript) AND
-    // `user` (the dispatch prompt forwarded as a user message → `user_input`
-    // live + `user_confirmed` transcript — confirmed leaking by live capture
-    // 2026-07-07: the dispatch prompt rendered as a chat bubble). Neither
-    // should reach the phone live nor replay later (`session_sync`/
-    // `session_history` feed the same transcript event log). `toolResult`
-    // still passes through — it is the legitimate folded result the main
-    // agent consumes. See `story-extension-suppress-subagent-assistant-
-    // broadcast` (assistant) + the dispatch-prompt follow-up noted there.
+    // child session's `message_end` fires for its assistant and dispatch-prompt
+    // user messages. Suppress both from live/replayed transcripts; `toolResult`
+    // still passes through as the legitimate folded result consumed by the main
+    // agent. See `story-extension-suppress-subagent-assistant-broadcast`.
     const suppressForSubagent = (m.role === "assistant" || m.role === "user") && subagentGate.isActive();
     if (!suppressForSubagent && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")) {
       _appendLegacySdkMessageToTranscript(m as unknown as LegacyAgentMessage);

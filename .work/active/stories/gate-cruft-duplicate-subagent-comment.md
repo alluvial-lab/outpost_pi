@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-duplicate-subagent-comment
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -49,3 +49,14 @@ still pass through. No executable code change is required.
 ## Risk
 None to runtime behavior. The retained comment remains the single explanation of
 the existing suppression contract.
+
+## Implementation
+
+- Removed the superseded assistant-only paragraph and kept one concise comment
+  describing suppression of both assistant and dispatch-prompt user messages,
+  while documenting why `toolResult` still passes through.
+- Runtime code was unchanged.
+
+## Verification
+
+- Comment-only change; no additional runtime test was required.

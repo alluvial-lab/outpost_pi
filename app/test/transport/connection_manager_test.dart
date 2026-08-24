@@ -181,6 +181,54 @@ void main() {
       },
     );
 
+    test(
+      'a superseding peer waits for the cancelled factory channel to close',
+      () async {
+        const other = PeerRecord(
+          remoteEpk: 'epk_other',
+          sessionName: 'Other',
+          relayUrl: 'ws://localhost:8080',
+          pairedAt: '2026-01-02T00:00:00Z',
+        );
+        final firstStarted = Completer<void>();
+        final releaseFirst = Completer<IChannel>();
+        final secondStarted = Completer<void>();
+        final releaseSecond = Completer<IChannel>();
+        final losingChannel = _ControllableChannel();
+        final winningChannel = _ControllableChannel();
+        var secondStartedAfterClose = false;
+        final cm = ConnectionManager(
+          factory: (peer, _) {
+            if (peer.remoteEpk == _fakePeer().remoteEpk) {
+              firstStarted.complete();
+              return releaseFirst.future;
+            }
+            secondStartedAfterClose = losingChannel.closeCalls == 1;
+            secondStarted.complete();
+            return releaseSecond.future;
+          },
+          storage: _FakeStorage([_fakePeer(), other]),
+          emitDebounce: Duration.zero,
+        );
+
+        final first = cm.connectTo(_fakePeer());
+        await firstStarted.future;
+        final second = cm.connectTo(other);
+        await Future<void>.delayed(Duration.zero);
+        expect(secondStarted.isCompleted, isFalse);
+
+        releaseFirst.complete(losingChannel);
+        await secondStarted.future;
+        expect(losingChannel.closeCalls, 1);
+        expect(secondStartedAfterClose, isTrue);
+
+        releaseSecond.complete(winningChannel);
+        await Future.wait([first, second]);
+        expect(cm.channel, same(winningChannel));
+        cm.dispose();
+      },
+    );
+
     test('factory failure → StatusRetrying with attempt=0', () async {
       final states = <ConnectionStatus>[];
       final cm = ConnectionManager(
@@ -536,6 +584,11 @@ void main() {
           reason:
               'once same-device fallback auth starts, a late primary cannot win',
         );
+        expect(
+          latePrimary.closeCalls,
+          1,
+          reason: 'the authenticated primary loser must not leak its channel',
+        );
         expect(cm.status, isA<StatusConnecting>());
 
         fallbackReady.complete(fallback);
@@ -544,6 +597,60 @@ void main() {
         expect(cm.status, isA<StatusOnline>());
 
         cm.dispose();
+      },
+    );
+
+    test(
+      'dispose closes primary and fallback channels that finish after shutdown',
+      () async {
+        final initial = _ControllableChannel();
+        final primary = _ControllableChannel();
+        final fallback = _ControllableChannel();
+        final primaryResult = Completer<IChannel>();
+        final fallbackResult = Completer<IChannel>();
+        final primaryStarted = Completer<void>();
+        final fallbackStarted = Completer<void>();
+        var calls = 0;
+        final states = <ConnectionStatus>[];
+        final cm = ConnectionManager(
+          factory: (_, _) {
+            calls++;
+            return switch (calls) {
+              1 => Future<IChannel>.value(initial),
+              2 => () {
+                primaryStarted.complete();
+                return primaryResult.future;
+              }(),
+              _ => () {
+                fallbackStarted.complete();
+                return fallbackResult.future;
+              }(),
+            };
+          },
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+          reconnectFallbackDelay: const Duration(milliseconds: 10),
+        );
+        cm.statusStream.listen(states.add);
+
+        await cm.connectTo(_fakePeer());
+        await initial.closeStream();
+        await primaryStarted.future.timeout(const Duration(seconds: 2));
+        await fallbackStarted.future.timeout(const Duration(seconds: 1));
+        final onlineBeforeDispose = states.whereType<StatusOnline>().length;
+
+        cm.dispose();
+        primaryResult.complete(primary);
+        fallbackResult.complete(fallback);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(primary.closeCalls, 1);
+        expect(fallback.closeCalls, 1);
+        expect(
+          states.whereType<StatusOnline>(),
+          hasLength(onlineBeforeDispose),
+          reason: 'a disposed supervisor cannot publish a late winner',
+        );
       },
     );
 
@@ -1219,6 +1326,7 @@ class _ControllableChannel
   final _controlCtrl = StreamController<ControlInbound>.broadcast();
   final List<Map<String, dynamic>> sentControl = [];
   final List<String> activeRoomIds = [];
+  int closeCalls = 0;
 
   @override
   Stream<ServerMessage> get serverMessages => _ctrl.stream;
@@ -1228,6 +1336,7 @@ class _ControllableChannel
 
   @override
   Future<void> close() async {
+    closeCalls++;
     if (!_ctrl.isClosed) await _ctrl.close();
     if (!_controlCtrl.isClosed) await _controlCtrl.close();
   }

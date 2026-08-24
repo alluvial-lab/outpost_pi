@@ -1,14 +1,14 @@
 ---
 id: gate-cruft-stale-pending-status-comments
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: cruft
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Correct pre-reconnect semantics in pending-message comments
@@ -56,3 +56,12 @@ behavior and status enum unchanged.
 Documentation-only. Leaving the comments unchanged risks agents and maintainers
 reintroducing the old swallow-window assumptions or treating a held pending row as
 already delivered.
+
+## Implementation
+Corrected the domain and bubble comments: pending can be held before transport
+or await confirmation, and failure comes from the configured pending-send
+backstop rather than a fixed 15-second post-send timeout. Runtime behavior and
+the status enum are unchanged.
+
+Evidence: **documentation correction** — current comments now match the
+identity/connectivity hold and injected timeout contract.

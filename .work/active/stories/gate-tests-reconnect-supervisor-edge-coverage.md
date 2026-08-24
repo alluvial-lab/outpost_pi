@@ -1,14 +1,14 @@
 ---
 id: gate-tests-reconnect-supervisor-edge-coverage
 kind: story
-stage: implementing
+stage: done
 tags: [testing, app]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: tests
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Prove reconnect supersession closes every losing authenticated channel
@@ -45,3 +45,13 @@ bug-regression / async state-transition matrix
 
 ## Test location (suggested)
 `app/test/transport/connection_manager_test.dart`
+
+## Implementation
+Added close-counting, barrier-driven regressions for target supersession,
+late-primary fallback loss, and disposal while both reconnect attempts remain
+pending. The tests assert each losing channel closes exactly once and that no
+post-disposal attempt can publish `StatusOnline`.
+
+Evidence: **pins-contract** — all new cases pass against the existing reconnect
+supervisor behavior while directly observing the previously unasserted close
+boundary.
