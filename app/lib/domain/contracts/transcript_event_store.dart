@@ -17,17 +17,27 @@ final class TranscriptSessionKey {
   String get durableKey => '$peerId:$roomId:$sessionId';
 }
 
+/// Pair an accepted transcript event with its durable append sequence.
+final class SequencedTranscriptEvent {
+  const SequencedTranscriptEvent({required this.event, required this.sequence});
+
+  final TranscriptEvent event;
+  final int sequence;
+}
+
 /// Report how a deduplicating transcript append handled its input batch.
 final class AppendTranscriptEventsResult {
   const AppendTranscriptEventsResult({
     required this.received,
     required this.appended,
     required this.skipped,
+    required this.accepted,
   });
 
   final int received;
   final int appended;
   final int skipped;
+  final List<SequencedTranscriptEvent> accepted;
 }
 
 /// Persist and observe the canonical append-only transcript event stream.
@@ -40,6 +50,9 @@ abstract interface class TranscriptEventStore {
     TranscriptSessionKey key,
     Iterable<TranscriptEvent> events,
   );
+
+  /// Clear [key] as one reset boundary for append sequence ownership.
+  Future<void> clearSession(TranscriptSessionKey key);
 
   /// Read the current ordered event snapshot for [key].
   Future<List<TranscriptEvent>> readSession(TranscriptSessionKey key);

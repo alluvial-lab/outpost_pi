@@ -71,10 +71,15 @@ void main() {
         roomId: 'room:one',
         sessionId: 'sess-1',
       );
-      await store.appendAll(key, <TranscriptEvent>[
+      final accepted = await store.appendAll(key, <TranscriptEvent>[
         _submitted('event-1', 'sess-1', 'cli-1', 'first'),
         _submitted('event-2', 'sess-1', 'cli-2', 'second'),
       ]);
+      expect(accepted.accepted.map((entry) => entry.event.eventId), <String>[
+        'event-1',
+        'event-2',
+      ]);
+      expect(accepted.accepted.map((entry) => entry.sequence), <int>[0, 1]);
 
       final duplicate = await store.appendAll(key, <TranscriptEvent>[
         _submitted('event-1', 'sess-1', 'cli-1', 'changed'),
@@ -106,13 +111,15 @@ void main() {
           sessionId: 'sess-1',
         );
 
-        await store.appendAll(key, <TranscriptEvent>[
+        final first = await store.appendAll(key, <TranscriptEvent>[
           _submitted('event-1', 'sess-1', 'cli-1', 'one'),
           _submitted('event-2', 'sess-1', 'cli-2', 'two'),
         ]);
-        await store.appendAll(key, <TranscriptEvent>[
+        final second = await store.appendAll(key, <TranscriptEvent>[
           _submitted('event-3', 'sess-1', 'cli-3', 'three'),
         ]);
+        expect(first.accepted.map((entry) => entry.sequence), <int>[0, 1]);
+        expect(second.accepted.single.sequence, 2);
 
         final box = boxes.openTranscriptEventsBox(key);
         expect(
@@ -121,6 +128,71 @@ void main() {
             return json['seq'];
           }),
           <int>[0, 1, 2],
+        );
+      },
+    );
+
+    test(
+      'batch duplicate keeps the first event and clear resets sequence',
+      () async {
+        const key = TranscriptSessionKey(
+          peerId: 'peer',
+          roomId: 'room',
+          sessionId: 'sess-1',
+        );
+        final first = _submitted('event-1', 'sess-1', 'cli-1', 'first');
+        final result = await store.appendAll(key, <TranscriptEvent>[
+          first,
+          _submitted('event-1', 'sess-1', 'cli-1', 'changed'),
+          _submitted('event-2', 'sess-1', 'cli-2', 'second'),
+        ]);
+
+        expect(result.received, 3);
+        expect(result.appended, 2);
+        expect(result.skipped, 1);
+        expect(result.accepted.map((entry) => entry.sequence), <int>[0, 1]);
+        expect(
+          ((await store.readSession(key)).first as UserMessageSubmitted).text,
+          'first',
+        );
+
+        await store.clearSession(key);
+        final afterClear = await store.appendAll(key, <TranscriptEvent>[
+          _submitted('event-3', 'sess-1', 'cli-3', 'after clear'),
+        ]);
+        expect(afterClear.accepted.single.sequence, 0);
+        expect(
+          (await store.readSession(key)).map((event) => event.eventId),
+          <String>['event-3'],
+        );
+      },
+    );
+
+    test(
+      'reopen continues sequence allocation from append-only length',
+      () async {
+        const key = TranscriptSessionKey(
+          peerId: 'peer',
+          roomId: 'room',
+          sessionId: 'sess-1',
+        );
+        await store.appendAll(key, <TranscriptEvent>[
+          _submitted('event-1', 'sess-1', 'cli-1', 'one'),
+          _submitted('event-2', 'sess-1', 'cli-2', 'two'),
+        ]);
+        await Hive.close();
+        await LocalBoxes.initForTest(dir.path);
+        boxes = LocalBoxes();
+        store = HiveTranscriptEventStore(boxes);
+
+        final result = await store.appendAll(key, <TranscriptEvent>[
+          _submitted('event-3', 'sess-1', 'cli-3', 'three'),
+        ]);
+
+        expect(result.accepted.single.sequence, 2);
+        expect(
+          (await store.readSession(key)).map((event) => event.eventId),
+          <String>['event-1', 'event-2', 'event-3'],
         );
       },
     );

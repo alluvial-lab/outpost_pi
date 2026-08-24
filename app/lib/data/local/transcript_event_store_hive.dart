@@ -20,25 +20,43 @@ final class HiveTranscriptEventStore implements TranscriptEventStore {
     Iterable<TranscriptEvent> events,
   ) async {
     final batch = events.toList(growable: false);
-    final box = await _boxes.transcriptEventsBox(key);
-    var nextSeq = _maxSeq(box.values) + 1;
-    var appended = 0;
     for (final event in batch) {
       if (event.sessionId != key.sessionId) {
         throw StateError(
           'Transcript event ${event.eventId} belongs to session ${event.sessionId}, not ${key.sessionId}',
         );
       }
-      if (box.containsKey(event.eventId)) continue;
-      final record = TranscriptEventRecord.fromEvent(event, nextSeq++);
-      await box.put(event.eventId, record.toJson());
-      appended += 1;
     }
+
+    final box = await _boxes.transcriptEventsBox(key);
+    var nextSequence = box.length;
+    final batchIds = <String>{};
+    final records = <String, Map<String, Object?>>{};
+    final accepted = <SequencedTranscriptEvent>[];
+    for (final event in batch) {
+      if (!batchIds.add(event.eventId) || box.containsKey(event.eventId)) {
+        continue;
+      }
+      final sequence = nextSequence++;
+      records[event.eventId] = TranscriptEventRecord.fromEvent(
+        event,
+        sequence,
+      ).toJson();
+      accepted.add(SequencedTranscriptEvent(event: event, sequence: sequence));
+    }
+    if (records.isNotEmpty) await box.putAll(records);
     return AppendTranscriptEventsResult(
       received: batch.length,
-      appended: appended,
-      skipped: batch.length - appended,
+      appended: accepted.length,
+      skipped: batch.length - accepted.length,
+      accepted: List<SequencedTranscriptEvent>.unmodifiable(accepted),
     );
+  }
+
+  @override
+  Future<void> clearSession(TranscriptSessionKey key) async {
+    final box = await _boxes.transcriptEventsBox(key);
+    await box.clear();
   }
 
   @override
@@ -52,15 +70,6 @@ final class HiveTranscriptEventStore implements TranscriptEventStore {
     final box = await _boxes.transcriptEventsBox(key);
     yield _readBox(box.values, key.sessionId);
     yield* box.watch().map((_) => _readBox(box.values, key.sessionId));
-  }
-
-  int _maxSeq(Iterable<dynamic> values) {
-    var max = -1;
-    for (final value in values) {
-      final record = _recordFromBoxValue(value);
-      if (record != null && record.seq > max) max = record.seq;
-    }
-    return max;
   }
 
   List<TranscriptEvent> _readBox(Iterable<dynamic> values, String sessionId) {

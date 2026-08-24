@@ -1,7 +1,7 @@
 ---
 id: feature-app-incremental-transcript-projection-pipeline-opt-2
 kind: story
-stage: implementing
+stage: done
 tags: [perf]
 parent: feature-app-incremental-transcript-projection-pipeline
 depends_on: [feature-app-incremental-transcript-projection-pipeline-opt-1]
@@ -58,10 +58,23 @@ ownership and reset behavior cannot drift.
 
 ## Risks and acceptance
 
-- [ ] Existing persisted logs reopen in the same order without migration or
+- [x] Existing persisted logs reopen in the same order without migration or
       sequence reuse before a full clear.
-- [ ] Duplicate IDs already stored or repeated inside one batch retain the
+- [x] Duplicate IDs already stored or repeated inside one batch retain the
       first accepted event and report accurate received/appended/skipped data.
-- [ ] Store-owned clear resets sequence allocation and keeps lifecycle fencing
+- [x] Store-owned clear resets sequence allocation and keeps lifecycle fencing
       behavior covered by the existing blocked-open/wipe test.
-- [ ] Benchmarks meet the targets above; normal app tests remain green.
+- [x] Benchmarks meet the targets above; normal app tests remain green.
+
+## Implementation
+
+- Execution capability: `sol/high`; storage contract, Hive adapter, fakes, and real encrypted-Hive benchmark.
+- Review weight: not applicable — child-story checkpoint.
+- Files changed: transcript-store domain contract and Hive adapter, SyncService clear delegation, store/sync fakes, store tests, and benchmark scaffold.
+- Tests added: accepted receipt order/sequence, cross-batch allocation, batch-local duplicate-first-wins, clear reset, reopen continuation, and wrong-session rejection coverage.
+- Before: 5,500 batch **891.690 ms**; 1,000 batch **116.376 ms**; 1,000 one at a time **964.326 ms**.
+- After: 5,500 batch **96.489 ms**; 1,000 batch **16.014 ms**; 1,000 one at a time **215.427 ms**.
+- Verification: `flutter analyze --no-pub`, all 12 Hive store tests, all 101 SyncService tests, and the full transcript benchmark passed. The repository-wide suite is temporarily obstructed by concurrent uncommitted room-snapshot work outside this story's write set; focused owned surfaces are green.
+- Simplification: removed full-box `_maxSeq` decoding and per-event Hive awaits; clear/reset now belongs to the store contract.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.

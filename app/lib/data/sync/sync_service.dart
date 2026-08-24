@@ -1839,9 +1839,8 @@ class SyncService extends Service {
     int generation,
   ) async {
     final key = _transcriptKeyForRef(ref);
-    final box = await _boxes.transcriptEventsBox(key);
+    await _eventStore.clearSession(key);
     if (!_isCurrentLifecycle(generation, ref)) return;
-    await box.clear();
   }
 
   TranscriptSessionKey _transcriptKeyForRef(RemoteSessionRef ref) =>
