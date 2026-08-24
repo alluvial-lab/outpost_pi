@@ -19,7 +19,7 @@ Repo-level release binding the shipped work after `v0.5.0`, including the
 component artifact sequence: relay `0.5.1`; app `0.5.1+6`, `0.5.2+7`,
 `0.6.0+8`, `0.6.1+9`, `0.6.2+10`, `0.6.3+11`, and `0.7.0+12`; and
 pi-extension `0.2.0` (gate-fixed rebuilds: app
-`0.7.1+13`, pi-extension `0.2.1`).
+`0.7.1+13`/`0.7.2+14`, pi-extension `0.2.1`).
 
 ### Features
 - **Debug capture delivery** — app `0.7.0+12` uploads bounded JSONL captures
