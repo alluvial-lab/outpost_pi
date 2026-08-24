@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,6 +9,13 @@ import 'package:path_provider/path_provider.dart';
 
 /// Categorize scrubbed file-backed debug-log failures.
 enum _DebugLogFailure { load, log, export, clear, dispose, flush }
+
+final class _DebugLine {
+  const _DebugLine(this.encoded, this.byteLength);
+
+  final String encoded;
+  final int byteLength;
+}
 
 /// File-backed [DebugLog].
 ///
@@ -25,11 +33,13 @@ enum _DebugLogFailure { load, log, export, clear, dispose, flush }
 ///
 /// **Flush policy.** Critical events (the [kImmediateFlushTags] set — the
 /// crash-reconnect tail events) flush immediately; routine events debounce
-/// [_flushInterval]. Flushes are serialized via a [_flushFuture] chain so
-/// batches write in call order. Because [Service.dispose] returns `void`, the
-/// final flush is fire-and-forget. Critical events START a flush immediately
-/// on `log()` and usually survive normal teardown, but crash/process-kill
-/// durability is best-effort until a caller awaits a flush.
+/// [_flushInterval]. One dirty-latched flush drain serializes writes and
+/// coalesces overlapping requests: events admitted after a snapshot begins are
+/// covered by one trailing snapshot instead of one queued write per event.
+/// Because [Service.dispose] returns `void`, the final flush is fire-and-forget.
+/// Critical events START a flush immediately on `log()` and usually survive
+/// normal teardown, but crash/process-kill durability is best-effort until a
+/// caller awaits a flush.
 ///
 /// **Cap-on-append.** Truncation happens in [log] immediately after encoding,
 /// not only on flush — the in-memory ring never overshoots between flushes.
@@ -70,22 +80,28 @@ class DebugLogImpl implements DebugLog {
     DebugTag.roomSnapshot,
   };
 
-  /// Ring of jsonl lines (each already-encoded string). The single source of
-  /// truth for both in-memory state and pending flushes — no separate `_pending`
-  /// list, so the ring and the disk snapshot can't diverge.
-  final List<String> _ring = [];
+  /// FIFO of encoded jsonl lines and their retained byte ownership. The queue
+  /// makes oldest-line eviction constant-time; [_retainedBytes] avoids a full
+  /// UTF-8 recount on every admission.
+  final Queue<_DebugLine> _ring = Queue<_DebugLine>();
+  int _retainedBytes = 0;
 
   Timer? _flushTimer;
   bool _disposed = false;
+  bool _flushDirty = false;
   String? _filePath;
+
+  /// Active clear barrier. A flush requested while the file is being wiped
+  /// waits here, then snapshots events admitted after the clear linearized.
+  Future<void>? _clearFuture;
 
   /// Shared load future: concurrent callers (log/export/clear) await the SAME
   /// load, so a critical `log()` during the first load can't race a half-set
   /// `_filePath` (review Important — _ensureLoaded reentrancy).
   Future<void>? _loadFuture;
 
-  /// Serialized flushes: each flush awaits the previous, so batches write in
-  /// call order and never reorder (review Important — concurrent flushes).
+  /// The active coalesced flush drain. It remains active through any trailing
+  /// snapshot requested while an earlier snapshot write is in flight.
   Future<void>? _flushFuture;
 
   /// Returns whether debug logging is enabled. Injected (reads `Preferences`)
@@ -112,11 +128,16 @@ class DebugLogImpl implements DebugLog {
   @visibleForTesting
   Future<void>? get pendingFlush => _flushFuture;
 
-  /// Test seam: delay injected before each snapshot write, so tests can
-  /// deterministically hold a flush in-flight (proving clear() awaits it).
-  /// Null in production.
+  /// Test barrier invoked after each snapshot is captured but before its write.
+  /// Tests use explicit started/release completers to exercise interleavings.
   @visibleForTesting
-  Duration? flushDelayForTesting;
+  Future<void> Function()? beforeSnapshotWriteForTesting;
+
+  int _snapshotWriteCount = 0;
+
+  /// Test seam: number of completed snapshot writes by this logger instance.
+  @visibleForTesting
+  int get snapshotWriteCountForTesting => _snapshotWriteCount;
 
   Future<void> _ensureLoaded() {
     // Concurrent callers share the same load future; _filePath is set only
@@ -150,9 +171,8 @@ class DebugLogImpl implements DebugLog {
         } catch (_) {
           continue;
         }
-        _ring.add(line);
+        _append(line);
       }
-      _truncate();
     }
   }
 
@@ -165,8 +185,7 @@ class DebugLogImpl implements DebugLog {
       if (_disposed) return;
       if (!_debugEnabled()) return; // no-op when debug logging is OFF
       final line = jsonEncode(event.toJson());
-      _ring.add(line);
-      _truncate(); // cap-on-append: never overshoot between flushes
+      _append(line); // cap-on-append: never overshoot between flushes
       if (kImmediateFlushTags.contains(event.tag)) {
         // Critical event: flush now so a crash doesn't lose the diagnostic tail.
         // ignore: discarded_futures
@@ -227,20 +246,39 @@ class DebugLogImpl implements DebugLog {
       _flushTimer = null;
       await _ensureLoaded();
       final path = _filePath;
-      // Serialize against any in-flight flush: a stale snapshot write captured
-      // before clear() must complete (or be superseded) before we wipe, or it
-      // could resurrect the cleared logs by writing the old snapshot AFTER
-      // clear() emptied the file (review v2 Blocker).
-      final prev = _flushFuture;
-      if (prev != null) {
-        await prev.catchError((Object _, StackTrace _) {});
-      }
-      _ring.clear();
-      if (path != null) {
-        final file = File(path);
-        if (await file.exists()) {
-          await file.writeAsString('');
+      // Acquire the clear boundary only when neither a prior clear nor a flush
+      // drain is active. Re-check after every await because a log callback may
+      // have started a new drain before this continuation resumed.
+      while (true) {
+        final activeClear = _clearFuture;
+        if (activeClear != null) {
+          await activeClear.catchError((Object _, StackTrace _) {});
+          continue;
         }
+        final activeFlush = _flushFuture;
+        if (activeFlush != null) {
+          await activeFlush.catchError((Object _, StackTrace _) {});
+          continue;
+        }
+        break;
+      }
+
+      final clearCompleter = Completer<void>();
+      _clearFuture = clearCompleter.future;
+      try {
+        _ring.clear();
+        _retainedBytes = 0;
+        if (path != null) {
+          final file = File(path);
+          if (await file.exists()) {
+            await file.writeAsString('');
+          }
+        }
+      } finally {
+        if (identical(_clearFuture, clearCompleter.future)) {
+          _clearFuture = null;
+        }
+        clearCompleter.complete();
       }
     } catch (_) {
       _safeLog(_DebugLogFailure.clear);
@@ -277,54 +315,77 @@ class DebugLogImpl implements DebugLog {
     _flushNow();
   }
 
-  /// Serialize flushes: each awaits the previous so batches write in call
-  /// order and never reorder. Writes the capped `_ring` as an atomic snapshot
-  /// (overwrite), not append — so on-disk retention is bounded by [_maxBytes].
-  Future<void> _flushNow() async {
+  /// Start or join the coalesced flush drain.
+  ///
+  /// Every request marks the ring dirty. If a snapshot is already being
+  /// written, the active drain observes that dirty bit and writes one trailing
+  /// snapshot containing all events admitted during the in-flight write.
+  Future<void> _flushNow() {
     _flushTimer?.cancel();
     _flushTimer = null;
-    await _ensureLoaded();
-    final path = _filePath;
-    if (path == null) return;
-    // Chain onto any in-flight flush so writes are ordered.
-    final prev = _flushFuture ?? Future<void>.value();
-    final thisFlush = prev.then((_) async {
-      try {
-        final file = File(path);
-        // Snapshot the capped ring. If the ring is empty, leave any existing
-        // file (a clear() already wiped it); only write if there's content.
-        if (_ring.isEmpty) return;
-        final snapshot = '${_ring.join('\n')}\n';
-        // Test seam: hold the flush in-flight so tests can prove clear()
-        // awaits it. No-op in production.
-        final delay = flushDelayForTesting;
-        if (delay != null) await Future<void>.delayed(delay);
-        await file.writeAsString(snapshot, flush: true);
-      } catch (_) {
-        _safeLog(_DebugLogFailure.flush);
-      }
-    });
-    _flushFuture = thisFlush;
+    _flushDirty = true;
+
+    final active = _flushFuture;
+    if (active != null) return active;
+
+    final completer = Completer<void>();
+    _flushFuture = completer.future;
+    unawaited(_drainFlushes(completer));
+    return completer.future;
+  }
+
+  Future<void> _drainFlushes(Completer<void> completer) async {
     try {
-      await thisFlush;
+      await _ensureLoaded();
+      while (_flushDirty) {
+        // A post-clear event must not race the empty-file write. Waiting before
+        // clearing dirty lets every event admitted during the wait join the next
+        // snapshot rather than forcing a redundant trailing write.
+        final activeClear = _clearFuture;
+        if (activeClear != null) {
+          await activeClear.catchError((Object _, StackTrace _) {});
+          continue;
+        }
+
+        _flushDirty = false;
+        final path = _filePath;
+        if (path == null || _ring.isEmpty) continue;
+
+        final snapshot = '${_ring.map((line) => line.encoded).join('\n')}\n';
+        try {
+          final barrier = beforeSnapshotWriteForTesting;
+          if (barrier != null) await barrier();
+          await File(path).writeAsString(snapshot, flush: true);
+          _snapshotWriteCount += 1;
+        } catch (_) {
+          _safeLog(_DebugLogFailure.flush);
+        }
+      }
+    } catch (_) {
+      _flushDirty = false;
+      _safeLog(_DebugLogFailure.flush);
     } finally {
-      // Clear our future only if no later caller chained onto it.
-      if (identical(_flushFuture, thisFlush)) {
+      // The loop-exit check and future release share one async continuation,
+      // leaving no gap where a new dirty request can join a drain that has
+      // already decided to stop.
+      if (identical(_flushFuture, completer.future)) {
         _flushFuture = null;
       }
+      completer.complete();
     }
   }
 
-  /// Truncate oldest lines until under [_maxBytes], using UTF-8 byte length to
-  /// match what's written to disk (review Nit — byte accounting).
+  /// Admit one encoded line and evict oldest entries until the byte cap holds.
+  void _append(String encoded) {
+    final line = _DebugLine(encoded, utf8.encode(encoded).length + 1);
+    _ring.addLast(line);
+    _retainedBytes += line.byteLength;
+    _truncate();
+  }
+
   void _truncate() {
-    var size = _ring.fold<int>(
-      0,
-      (sum, line) => sum + utf8.encode(line).length + 1,
-    );
-    while (size > _maxBytes && _ring.isNotEmpty) {
-      final removed = _ring.removeAt(0);
-      size -= utf8.encode(removed).length + 1;
+    while (_retainedBytes > _maxBytes && _ring.isNotEmpty) {
+      _retainedBytes -= _ring.removeFirst().byteLength;
     }
   }
 

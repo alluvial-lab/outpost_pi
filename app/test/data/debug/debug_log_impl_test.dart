@@ -1,5 +1,5 @@
-import 'dart:convert';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:app/config/dependencies.dart';
@@ -157,16 +157,17 @@ void main() {
       }
       final exported = await log.export();
       expect(exported, isNotNull);
-      final totalBytes = exported!.length;
+      final content = exported!;
+      final totalBytes = utf8.encode('$content\n').length;
       expect(
         totalBytes,
-        lessThanOrEqualTo(300 + 50),
-        reason: 'ring must stay under cap (+slack for line joins)',
+        lessThanOrEqualTo(300),
+        reason: 'jsonl UTF-8 bytes, including newlines, must stay under cap',
       );
       // Oldest lines evicted; only the most recent survive.
-      final lines = exported.split('\n');
+      final lines = content.split('\n');
       expect(lines.last, contains('msg-49'));
-      expect(exported, isNot(contains('msg-0')));
+      expect(content, isNot(contains('msg-0')));
       log.dispose();
     },
   );
@@ -356,75 +357,103 @@ void main() {
     log.dispose();
   });
 
-  test('clear serializes with an in-flight flush (no log resurrection)', () async {
-    // The v2-blocker regression: a stale snapshot write completing AFTER
-    // clear() must not resurrect the wiped logs. clear() awaits the in-flight
-    // _flushFuture before wiping.
-    //
-    // Deterministic proof: log a critical event (starts an immediate flush),
-    // capture the in-flight flush future via the test seam, then call clear()
-    // and assert clear() does not complete until that flush has settled. If
-    // clear() did NOT await the flush, clear() would complete while the flush
-    // is still pending — and the stale snapshot could land after the wipe.
-    final path = '${tempDir.path}/outpost_pi_debug.jsonl';
-    final log = newLog();
-    // Hold the flush in-flight long enough to prove clear() awaits it.
-    log.flushDelayForTesting = const Duration(seconds: 5);
-    log.log(ConnChannelLostEvent(ts: DateTime.now(), stale: false));
-    // Yield enough microtasks for _flushNow to: await _ensureLoaded (async,
-    // resolves the path), then assign _flushFuture, then reach the delayed write.
-    await pumpEventQueue(times: 20);
-    final inFlight = log.pendingFlush;
-    expect(inFlight, isNotNull, reason: 'a critical event must start a flush');
-    // Start clear() WITHOUT awaiting — it should be blocked on the in-flight
-    // flush (if the fix is present).
-    final clearDone = Completer<void>();
-    // ignore: discarded_futures
-    log.clear().then((_) => clearDone.complete());
-    // Yield once so clear() can run up to its `await prev`.
-    await Future<void>.delayed(Duration.zero);
-    // The in-flight flush is still pending (held by flushDelayForTesting) —
-    // clear() must not have completed yet. If clear() did NOT await the flush,
-    // clearDone would be completed here.
-    expect(
-      clearDone.isCompleted,
-      isFalse,
-      reason: 'clear() must not complete before the in-flight flush settles',
-    );
-    // Now let the flush complete.
-    log.flushDelayForTesting = null;
-    await inFlight;
-    await clearDone.future;
-    // After both settle, the file must be empty (no resurrection).
-    final file = File(path);
-    if (await file.exists()) {
-      expect(await file.readAsString(), isEmpty);
-    }
-    expect(await log.export(), isNull);
-    log.dispose();
-  });
-
-  test('concurrent flushes write in call order (serialized)', () async {
-    final path = '${tempDir.path}/outpost_pi_debug.jsonl';
-    final log = newLog();
-    // Fire many critical logs back-to-back — each triggers an immediate flush.
-    for (var i = 0; i < 10; i++) {
-      log.log(
-        ConnStatusEvent(ts: DateTime.now(), status: 'retrying', attempt: i),
+  test(
+    'clear serializes with an in-flight flush (no log resurrection)',
+    () async {
+      // The v2-blocker regression: a stale snapshot write completing AFTER
+      // clear() must not resurrect the wiped logs. clear() awaits the in-flight
+      // _flushFuture before wiping.
+      //
+      // Deterministic proof: log a critical event (starts an immediate flush),
+      // capture the in-flight flush future via the test seam, then call clear()
+      // and assert clear() does not complete until that flush has settled. If
+      // clear() did NOT await the flush, clear() would complete while the flush
+      // is still pending — and the stale snapshot could land after the wipe.
+      final path = '${tempDir.path}/outpost_pi_debug.jsonl';
+      final log = newLog();
+      final writeStarted = Completer<void>();
+      final releaseWrite = Completer<void>();
+      log.beforeSnapshotWriteForTesting = () {
+        writeStarted.complete();
+        return releaseWrite.future;
+      };
+      log.log(ConnChannelLostEvent(ts: DateTime.now(), stale: false));
+      await writeStarted.future;
+      final inFlight = log.pendingFlush;
+      expect(
+        inFlight,
+        isNotNull,
+        reason: 'a critical event must start a flush',
       );
-    }
-    await log.export(); // drain the flush chain
-    final onDisk = await File(path).readAsString();
-    // The snapshot contains all 10 (under cap); order is call order (the
-    // snapshot is _ring.join, which is append order).
-    final lines = onDisk.trim().split('\n');
-    final attempts = lines
-        .map((l) => (jsonDecode(l) as Map<String, dynamic>)['attempt'] as int?)
-        .where((a) => a != null)
-        .toList();
-    expect(attempts, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    log.dispose();
-  });
+      // Start clear() WITHOUT awaiting — it should be blocked on the in-flight
+      // flush (if the fix is present).
+      final clearDone = Completer<void>();
+      // ignore: discarded_futures
+      log.clear().then((_) => clearDone.complete());
+      // Yield once so clear() can run up to its `await activeFlush`.
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        clearDone.isCompleted,
+        isFalse,
+        reason: 'clear() must not complete before the in-flight flush settles',
+      );
+      releaseWrite.complete();
+      await inFlight;
+      await clearDone.future;
+      // After both settle, the file must be empty (no resurrection).
+      final file = File(path);
+      if (await file.exists()) {
+        expect(await file.readAsString(), isEmpty);
+      }
+      expect(await log.export(), isNull);
+      log.dispose();
+    },
+  );
+
+  test(
+    'critical burst during an in-flight write coalesces to one trailing snapshot',
+    () async {
+      final path = '${tempDir.path}/outpost_pi_debug.jsonl';
+      final log = newLog();
+      final firstWriteStarted = Completer<void>();
+      final releaseFirstWrite = Completer<void>();
+      var barrierCalls = 0;
+      log.beforeSnapshotWriteForTesting = () {
+        barrierCalls += 1;
+        if (barrierCalls == 1) {
+          firstWriteStarted.complete();
+          return releaseFirstWrite.future;
+        }
+        return Future<void>.value();
+      };
+
+      log.log(
+        ConnStatusEvent(ts: DateTime.now(), status: 'retrying', attempt: 0),
+      );
+      await firstWriteStarted.future;
+      final drain = log.pendingFlush;
+      expect(drain, isNotNull);
+
+      // All 338 requests overlap the first captured snapshot. They must set one
+      // dirty latch, not append 338 full-file writes to a future chain.
+      for (var i = 1; i < 339; i++) {
+        log.log(
+          ConnStatusEvent(ts: DateTime.now(), status: 'retrying', attempt: i),
+        );
+      }
+      releaseFirstWrite.complete();
+      await drain;
+
+      expect(log.snapshotWriteCountForTesting, 2);
+      final lines = (await File(path).readAsLines())
+          .map((line) => jsonDecode(line) as Map<String, dynamic>)
+          .toList(growable: false);
+      expect(lines, hasLength(339));
+      expect(lines.last['attempt'], 338);
+      log.dispose();
+      await log.pendingFlush;
+    },
+  );
 }
 
 /// Mock path_provider so tests use a real temp dir (no Android/iOS plugin).
