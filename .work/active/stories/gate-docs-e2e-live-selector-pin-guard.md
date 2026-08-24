@@ -1,14 +1,14 @@
 ---
 id: gate-docs-e2e-live-selector-pin-guard
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # E2E README omits live selectors and the pinless-AVD guard
@@ -36,3 +36,7 @@ secure keyguard/PIN fails the headless lane.
 Update the live-lane command examples and prerequisites to list all four named
 selectors and document the pinless-AVD guard and its recovery action. Keep the
 selector and guard names synchronized with `e2e/run-live.sh`.
+
+## Implementation
+
+Added `mesh`, `capture-delivery`, and the `assert_pinless_e2e_avd` no-PIN recovery guidance to `e2e/README.md`.

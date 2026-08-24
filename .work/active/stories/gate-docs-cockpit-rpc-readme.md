@@ -1,14 +1,14 @@
 ---
 id: gate-docs-cockpit-rpc-readme
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Cockpit README presents the compatibility RPC as the active transport
@@ -32,3 +32,7 @@ compatibility decoder; Cockpit does not emit it.
 Describe Cockpit as emitting structured `outpost_pi_control` RPC envelopes and
 identify the NUL-prefix form only as extension compatibility, not as a paired
 active transport.
+
+## Implementation
+
+Updated `cockpit/README.md` to describe structured `outpost_pi_control` custom events and the NUL-prefixed form as extension-only compatibility.

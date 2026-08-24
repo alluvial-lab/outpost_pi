@@ -1,14 +1,14 @@
 ---
 id: gate-docs-readme-app-version
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Root README pins sideload status to the obsolete app-v0.3.x
@@ -31,3 +31,7 @@ release status look three product generations behind.
 ## Required edit
 Keep the accurate store-availability statement, but remove the obsolete version
 qualifier or replace it with the current release-neutral distribution wording.
+
+## Implementation
+
+Replaced the obsolete app-v0.3.x qualifier with release-neutral sideload/store wording in `README.md`.
