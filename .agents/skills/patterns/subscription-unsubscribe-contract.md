@@ -37,13 +37,15 @@ onReconnect(handler: ReconnectHandler): () => void {
 
 ### Example 2: mesh-node delegation to peer-level unsubscribe
 
-**File:** `pi-extension/src/session/mesh_node.ts:381`
+**File:** `pi-extension/src/session/mesh_node.ts:402-410`
 
 ```ts
+/** Subscribe to inbound envelopes. Returns an unsubscribe fn. */
 onMessage(handler: (env: Envelope) => void): () => void {
   return this.peer_.onMessage(handler);
 }
 
+/** Subscribe to post-failover reconnects. Returns an unsubscribe fn. */
 onReconnect(handler: () => void): () => void {
   return this.peer_.onReconnect(handler);
 }

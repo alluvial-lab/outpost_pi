@@ -98,20 +98,11 @@ bool current() =>
 
 final peers = await _storage.listPeers();
 if (!current()) return false;
-
-for (final m in blob.members) {
-  if (!current()) return false;
-  // Build the canonical survivor-aware `next` record.
-  if (prev == null || !_peerEqualsForMesh(prev, next)) {
-    await _storage.saveMeshPeerMetadata(next);
-    if (!current()) return false;
-  }
-}
-
-await _storage.deleteRooms(p.remoteEpk);
-if (!current()) return false;
-return current();
 ```
+
+The member and deletion loops at the same anchor repeat `current()` checks
+before each mutation and after every awaited save/delete, ending with
+`return current();`.
 
 ## Common violations
 

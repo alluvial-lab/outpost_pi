@@ -39,7 +39,7 @@ List<TranscriptEvent> sessionHistoryToTranscriptEvents({
 
 ### Example 2: Extension compatibility + legacy snapshot adapter
 
-**File:** `pi-extension/src/session/transcript_projection.ts:131`
+**File:** `pi-extension/src/session/transcript_projection.ts:145-236`
 
 ```ts
 export function mapLegacyAgentMessagesToTranscriptEvents(input: LegacyAdapterInput): TranscriptEvent[] {
@@ -47,7 +47,19 @@ export function mapLegacyAgentMessagesToTranscriptEvents(input: LegacyAdapterInp
   let lastUserId: string | null = null;
   for (const [messageIndex, message] of input.messages.entries()) {
     const ts = typeof message.timestamp === "number" ? message.timestamp : 0;
-    if (message.role === "user") {
+    if (message.role === "compaction" || message.role === "compactionSummary") {
+      const summary = message.role === "compactionSummary"
+        ? (typeof message.summary === "string" ? message.summary : "")
+        : (typeof message.content === "string" ? message.content : "");
+      events.push({
+        kind: "compaction_recorded",
+        eventId: deterministicTranscriptEventId(input.sessionId, "compaction_recorded", String(ts)),
+        sessionId: input.sessionId,
+        ts,
+        summary,
+        tokensBefore: typeof message.tokensBefore === "number" ? message.tokensBefore : 0,
+      });
+    } else if (message.role === "user") {
       const clientMessageId = `sync_${ts}`;
       lastUserId = clientMessageId;
       const images = imagesFromContent(message.content);
@@ -60,46 +72,11 @@ export function mapLegacyAgentMessagesToTranscriptEvents(input: LegacyAdapterInp
         text: stringifyContent(message.content),
         ...(images.length > 0 ? { images } : {}),
       });
-    } else if (message.role === "assistant") {
-      const content = Array.isArray(message.content) ? message.content : [];
-      const usage = message.usage
-        ? { input_tokens: message.usage.input ?? 0, output_tokens: message.usage.output ?? 0 }
-        : undefined;
-      for (const [blockIndex, raw] of content.entries()) {
-        if (!raw || typeof raw !== "object") continue;
-        const block = raw as { type?: string; text?: unknown; id?: unknown; name?: unknown; arguments?: unknown };
-        if (block.type === "text") {
-          const text = String(block.text ?? "");
-          if (!text) continue;
-          const messageId = `sync_${ts}:assistant:${blockIndex}`;
-          events.push({
-            kind: "assistant_committed",
-            eventId: deterministicTranscriptEventId(input.sessionId, "assistant_committed", messageId),
-            sessionId: input.sessionId,
-            ts,
-            messageId,
-            replyTo: lastUserId ?? `sync_${ts}`,
-            text,
-            ...(usage ? { usage } : {}),
-          });
-        } else if (block.type === "toolCall") {
-          const toolCallId = String(block.id ?? `sync_${ts}:tool:${blockIndex}`);
-          events.push({
-            kind: "tool_requested",
-            eventId: deterministicTranscriptEventId(input.sessionId, "tool_requested", toolCallId),
-            sessionId: input.sessionId,
-            ts,
-            toolCallId,
-            tool: String(block.name ?? ""),
-            args: isRecord(block.arguments) ? block.arguments : {},
-          });
-        }
-      }
-    }
-  }
-  return events;
-}
 ```
+
+The adapter continues with assistant/tool branches in the same function; each
+canonical event uses `deterministicTranscriptEventId` rather than a local
+sequence, so replay preserves stable identity.
 
 ### Example 3: Cockpit RPC `get_messages` hydrator
 

@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-subscription-anchor
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -25,9 +25,16 @@ pattern-skill-staleness
 
 ## Contradiction
 The cited line now belongs to the mesh send API. The current `onMessage` and
-`onReconnect` unsubscribe delegation begins at lines 402-411, so the example's
-line anchor no longer identifies the subscription contract.
+`onReconnect` unsubscribe delegation is at lines 402-410, so the example's line
+anchor no longer identifies the subscription contract.
 
 ## Required edit
 Refresh the mesh-node subscription anchor and snippet to the current
 `onMessage`/`onReconnect` delegation methods.
+
+## Implementation
+
+Corrected `.agents/skills/patterns/subscription-unsubscribe-contract.md` to
+anchor mesh-node `onMessage`/`onReconnect` delegation at
+`pi-extension/src/session/mesh_node.ts:402-410`. The finding was valid and
+corrected; no rejection was necessary.

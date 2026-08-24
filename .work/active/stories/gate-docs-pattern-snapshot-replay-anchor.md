@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-snapshot-replay-anchor
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -25,9 +25,17 @@ pattern-skill-staleness
 
 ## Contradiction
 Line 131 is now the end of a compaction-event switch. The documented
-`mapLegacyAgentMessagesToTranscriptEvents` adapter begins at line 144, so the
+`mapLegacyAgentMessagesToTranscriptEvents` adapter begins at line 145, so the
 pattern's named example does not resolve to the implementation it quotes.
 
 ## Required edit
 Move the extension mapper anchor and quoted example to the current function
 location, retaining the deterministic replay-event identity details.
+
+## Implementation
+
+Corrected `.agents/skills/patterns/snapshot-replay-event-mappers.md` to anchor
+`mapLegacyAgentMessagesToTranscriptEvents` at
+`pi-extension/src/session/transcript_projection.ts:145-236` and include the
+current compaction and user replay branches with deterministic event IDs. The
+finding was valid and corrected; no rejection was necessary.
