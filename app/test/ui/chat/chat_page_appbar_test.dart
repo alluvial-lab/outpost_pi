@@ -240,6 +240,75 @@ void main() {
         reason: 'later-turn hydration stays visible while bottom-pinned',
       );
 
+      // Hold update A at the build boundary so its post-frame anchor restore
+      // is queued but has not run. A real drag must invalidate that restore.
+      await tester.drag(scrollable, const Offset(0, 260));
+      await tester.pump();
+      expect(position.pixels, greaterThan(position.minScrollExtent + 2));
+      vm.show(ChatReady(messages: transcript(-1, 36), status: online));
+      await tester.pump(Duration.zero, EnginePhase.build);
+      await tester.drag(scrollable, const Offset(0, 120), touchSlopY: 0);
+      final userOffset = position.pixels;
+      await tester.pump();
+      expect(
+        position.pixels,
+        closeTo(userOffset, 0.1),
+        reason: 'the queued restore cannot fight a newer user gesture',
+      );
+
+      // Queue A and B before either post-frame restore runs. The revision fence
+      // must leave the viewport at B's latest captured anchor, not replay A.
+      final viewportBeforeBurst = tester.getRect(scrollable);
+      Finder? burstAnchor;
+      var burstAnchorTop = double.infinity;
+      for (var i = -1; i <= 36; i++) {
+        final candidate = find.text('message $i\ncontinuation line $i');
+        if (candidate.evaluate().isEmpty) continue;
+        final rect = tester.getRect(candidate);
+        if (rect.bottom > viewportBeforeBurst.top &&
+            rect.top < viewportBeforeBurst.bottom &&
+            rect.top < burstAnchorTop) {
+          burstAnchor = candidate;
+          burstAnchorTop = rect.top;
+        }
+      }
+      expect(burstAnchor, isNotNull);
+      vm.show(ChatReady(messages: transcript(-2, 36), status: online));
+      vm.show(ChatReady(messages: transcript(-4, 36), status: online));
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester.getTopLeft(burstAnchor!).dy,
+        closeTo(burstAnchorTop, 1),
+        reason: 'only the newest queued transcript restore may apply',
+      );
+
+      // Exercise the exact historical-edge boundary. The old first row stays
+      // at the same visual offset when a new oldest row extends maxScrollExtent.
+      for (var i = 0; i < 3; i++) {
+        position.jumpTo(position.maxScrollExtent);
+        await tester.pump();
+      }
+      final exactAnchor = find.byKey(const ValueKey<String>('m-4'));
+      expect(exactAnchor, findsOneWidget);
+      final exactTop = tester.getTopLeft(exactAnchor).dy;
+      expect(position.pixels, closeTo(position.maxScrollExtent, 0.1));
+      vm.show(ChatReady(messages: transcript(-5, 36), status: online));
+      await tester.pump();
+      await tester.pump();
+      expect(tester.getTopLeft(exactAnchor).dy, closeTo(exactTop, 1));
+
+      position.jumpTo(position.minScrollExtent);
+      await tester.pump();
+      vm.show(ChatReady(messages: transcript(-6, 36), status: online));
+      await tester.pump();
+      await tester.pump();
+      expect(
+        position.pixels,
+        closeTo(position.minScrollExtent, 0.1),
+        reason: 'the exact bottom boundary remains pinned',
+      );
+
       await tester.pumpWidget(const SizedBox());
       vm.dispose();
       attach.dispose();

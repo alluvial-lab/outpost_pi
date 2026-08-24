@@ -170,6 +170,46 @@ describe("PairingCoordinator.showPairQr", () => {
     expect(session.customMessages).toEqual([]);
   });
 
+  test("reacquires the live session UI after asynchronous pair-code publication", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outpost-pi-pair-dialog-session-"));
+    process.env["OUTPOST_PI_PAIR_CODE_FILE"] = join(directory, "pair-code.json");
+    const staleCustom = vi.fn(() => {
+      throw new Error("stale after session replacement or reload");
+    });
+    const freshCustom = vi.fn(async () => undefined);
+    const coordinator = new PairingCoordinator({
+      getState: () => "started",
+      currentUi: () => ({ custom: freshCustom, notify: vi.fn() } as never),
+      startRelay: async () => undefined,
+      isRelayConnected: () => true,
+      roomId: () => "room-under-test",
+      displayName: () => "Test Pi",
+      owners: {} as never,
+      ownerHas: () => false,
+      refreshPairingsCache: () => undefined,
+      joinLocalMesh: async () => undefined,
+      sendPiMessage: () => true,
+      setSiblings: () => undefined,
+    });
+    coordinator.recordCurrentKeypair({
+      publicKey: new Uint8Array(32),
+      secretKey: new Uint8Array(32),
+    });
+    const staleCtx = {
+      cwd: directory,
+      mode: "tui",
+      ui: { custom: staleCustom, notify: vi.fn() },
+    } as unknown as ExtensionContext;
+
+    try {
+      await coordinator.showPairQr(staleCtx);
+      expect(freshCustom).toHaveBeenCalledOnce();
+      expect(staleCustom).not.toHaveBeenCalled();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("narrow terminal still shows the copyable pairing URI when the QR won't fit", async () => {
     const session = new FakeSession();
     const sendPiMessage = vi.fn((message: CustomMessage) => {

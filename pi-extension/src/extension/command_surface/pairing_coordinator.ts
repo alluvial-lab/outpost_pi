@@ -92,6 +92,8 @@ function wrapForTui(text: string, width: number): string[] {
  */
 export interface PairingCoordinatorDeps {
   getState(): PairingCoordinatorState;
+  /** Resolve the live session UI after asynchronous pairing setup. */
+  currentUi?(): Pick<PairingUiContext["ui"], "custom"> | undefined;
   startRelay(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void>;
   isRelayConnected(): boolean;
   roomId(): string | null;
@@ -269,16 +271,29 @@ export class PairingCoordinator {
 
     if (ctx.mode !== "tui") return;
     const qrAscii = renderQRAscii(qrUri);
-    await ctx.ui.custom<void>((_tui, theme, _keybindings, done) => new PairingCodeDialog(
-      qrAscii,
-      qrUri,
-      expiresAt,
-      {
-        accent: (text) => theme.fg("accent", theme.bold(text)),
-        dim: (text) => theme.fg("dim", text),
-      },
-      done,
-    ));
+    // Relay/mesh setup and pair-code publication above can outlive the command
+    // session. Production supplies currentUi, so never fall back to a captured
+    // command capability when the current session has already shut down. The
+    // fallback only preserves isolated coordinator fixtures without a runtime.
+    const dialogUi = this.deps.currentUi?.()
+      ?? (this.deps.currentUi === undefined ? ctx.ui : undefined);
+    if (!dialogUi) return;
+    try {
+      await dialogUi.custom<void>((_tui, theme, _keybindings, done) => new PairingCodeDialog(
+        qrAscii,
+        qrUri,
+        expiresAt,
+        {
+          accent: (text) => theme.fg("accent", theme.bold(text)),
+          dim: (text) => theme.fg("dim", text),
+        },
+        done,
+      ));
+    } catch (error) {
+      // A successor can replace even the freshly resolved UI while the dialog
+      // is opening. Session replacement closes this command as a safe no-op.
+      if (!isStaleContextError(error)) throw error;
+    }
   }
 
   async listDevices(ctx: Pick<ExtensionContext, "ui">): Promise<void> {

@@ -461,47 +461,16 @@ class HomePage extends StatelessWidget {
     HomeViewModel vm,
     HomeItem it,
   ) async {
-    final controller = TextEditingController(text: it.room.name ?? '');
-    String? result;
-    try {
-      result = await showDialog<String?>(
-        context: context,
-        builder: (dCtx) {
-          final colors = dCtx.colors;
-          return AlertDialog(
-            backgroundColor: colors.bg,
-            title: Text('Rename session', style: TextStyle(color: colors.text)),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              style: TextStyle(color: colors.text, fontFamily: kMonoFamily),
-              decoration: InputDecoration(
-                hintText: it.room.cwd ?? 'Session',
-                hintStyle: TextStyle(color: colors.muted),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: colors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: colors.accent),
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dCtx).pop(null),
-                child: Text('Cancel', style: TextStyle(color: colors.muted)),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(dCtx).pop(controller.text.trim()),
-                child: Text('Save', style: TextStyle(color: colors.accent)),
-              ),
-            ],
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (dCtx) => MediaQuery(
+        data: mediaQueryWithWindowViewInsets(dCtx),
+        child: _RenameSessionDialog(
+          initialName: it.room.name ?? '',
+          hint: it.room.cwd ?? 'Session',
+        ),
+      ),
+    );
     if (result == null) return;
     await vm.renameRoom(it.peer.remoteEpk, it.room.roomId, result);
   }
@@ -515,24 +484,30 @@ class HomePage extends StatelessWidget {
       context: context,
       builder: (dCtx) {
         final colors = dCtx.colors;
-        return AlertDialog(
-          backgroundColor: colors.bg,
-          title: Text('Delete session?', style: TextStyle(color: colors.text)),
-          content: Text(
-            'Removes locally only. If the session comes back online on '
-            'the Pi, it reappears in the list.',
-            style: TextStyle(color: colors.muted, fontSize: 12),
+        return MediaQuery(
+          data: mediaQueryWithWindowViewInsets(dCtx),
+          child: AlertDialog(
+            backgroundColor: colors.bg,
+            title: Text(
+              'Delete session?',
+              style: TextStyle(color: colors.text),
+            ),
+            content: Text(
+              'Removes locally only. If the session comes back online on '
+              'the Pi, it reappears in the list.',
+              style: TextStyle(color: colors.muted, fontSize: 12),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dCtx).pop(false),
+                child: Text('Cancel', style: TextStyle(color: colors.muted)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dCtx).pop(true),
+                child: Text('Delete', style: TextStyle(color: colors.error)),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dCtx).pop(false),
-              child: Text('Cancel', style: TextStyle(color: colors.muted)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dCtx).pop(true),
-              child: Text('Delete', style: TextStyle(color: colors.error)),
-            ),
-          ],
         );
       },
     );
@@ -618,6 +593,62 @@ class HomePage extends StatelessWidget {
         : peer.sessionName.isNotEmpty
         ? peer.sessionName
         : peer.remoteEpk.substring(0, 8);
+  }
+}
+
+class _RenameSessionDialog extends StatefulWidget {
+  const _RenameSessionDialog({required this.initialName, required this.hint});
+
+  final String initialName;
+  final String hint;
+
+  @override
+  State<_RenameSessionDialog> createState() => _RenameSessionDialogState();
+}
+
+class _RenameSessionDialogState extends State<_RenameSessionDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialName,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return AlertDialog(
+      backgroundColor: colors.bg,
+      title: Text('Rename session', style: TextStyle(color: colors.text)),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        style: TextStyle(color: colors.text, fontFamily: kMonoFamily),
+        decoration: InputDecoration(
+          hintText: widget.hint,
+          hintStyle: TextStyle(color: colors.muted),
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: colors.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: colors.accent),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: Text('Cancel', style: TextStyle(color: colors.muted)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: Text('Save', style: TextStyle(color: colors.accent)),
+        ),
+      ],
+    );
   }
 }
 

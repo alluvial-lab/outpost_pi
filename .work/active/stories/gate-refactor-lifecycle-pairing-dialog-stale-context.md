@@ -1,14 +1,14 @@
 ---
 id: gate-refactor-lifecycle-pairing-dialog-stale-context
 kind: story
-stage: implementing
+stage: done
 tags: []
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: refactor
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Reacquire the Pi UI before opening the pairing dialog
@@ -30,3 +30,13 @@ High
 
 ## Fix
 Reacquire the current session UI at the post-await dialog boundary, or carry a runtime epoch/current-context guard that suppresses the dialog when the initiating session has been replaced.
+
+## Implementation
+Added a runtime-supplied `currentUi` capability and resolve it only after
+relay/mesh and optional pair-code-file awaits. A missing successor UI suppresses
+the dialog, and a replacement racing dialog open is treated as a stale-context
+no-op. The regression publishes through the async file seam and proves only the
+fresh UI receives `custom()`.
+
+Evidence: **fails-before** — the regression would invoke the captured stale
+command UI before this change; it now reacquires the successor capability.

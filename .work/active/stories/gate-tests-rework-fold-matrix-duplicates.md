@@ -1,7 +1,7 @@
 ---
 id: gate-tests-rework-fold-matrix-duplicates
 kind: story
-stage: implementing
+stage: done
 tags: [testing, refactor, app]
 parent: null
 depends_on: []
@@ -44,3 +44,20 @@ low-value-test-removal
 
 ## Test location (suggested)
 `app/test/golden/fold_matrix_test.dart`
+
+## Implementation
+
+- Before deleting captures, verified the gate evidence from the 144-PNG run:
+  SHA-256 grouping showed 15 redundant non-split captures — shell and detail
+  placeholder at `234`, `350`, `350@1.3`, `411`, `467`, and `797` widths, plus
+  keyboard at `234`, `350`, and `467`. These geometries fail the production
+  `canUseTwoPaneLayout` pane-budget predicate and collapse to Home.
+- The matrix now applies that production predicate, retains the three two-pane
+  surfaces only for `701x842`, `842x701`, and `701x842-fs1.3`, and asserts the
+  complete expected capture-key set (126 unique PNGs instead of 144).
+- Removed four file-existence assertions because `writeFoldPng` already fails
+  on missing or empty output; variance and surface-specific assertions remain.
+
+## Verification
+
+- `cd app && PATH=$PWD/../.tools/flutter/bin:$PATH flutter test test/golden/` — 2 tests passed.

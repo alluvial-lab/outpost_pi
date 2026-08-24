@@ -62,12 +62,6 @@ FINDING_OBSERVATIONS: dict[str, str | None] = {
     "mesh_roster": _known_finding("mesh-post-pair-roster"),
     "session_rotation_working": _known_finding("session-rotation-late-echo"),
 }
-# Cold replay and mesh-roster findings belong to the grid and two-Pi lanes. Long
-# soaks also carry the state-shape linked skip until its working bug is fixed.
-SOAK_EXPECTED_FINDINGS: frozenset[str] = frozenset()
-# The real multi-session exercise always runs in a full soak, but the linked
-# late-echo defect is timing-dependent; mark it only when the exercise observes it.
-SOAK_LONG_EXPECTED_FINDINGS: frozenset[str] = frozenset()
 SOAK_OUT_OF_LANE_FINDINGS = frozenset(
     {"reconnect_churn", "cold_dedup", "mesh_roster"}
 )
@@ -1122,13 +1116,7 @@ def _write_report(
     for key, tracking_id in tracked.items():
         observed = any(evaluation.get(key) for evaluation in evaluations)
         expectation = (
-            "targeted"
-            if key in SOAK_EXPECTED_FINDINGS
-            or (
-                duration >= STATE_SHAPE_PROBE_DURATION_SECONDS
-                and key in SOAK_LONG_EXPECTED_FINDINGS
-            )
-            else "out-of-lane"
+            "out-of-lane"
             if key in SOAK_OUT_OF_LANE_FINDINGS
             else "incidental"
         )
@@ -1254,18 +1242,6 @@ def run(args: argparse.Namespace) -> int:
         for invariant in ("replay_dedup", "transcript_projection", "ordering", "identity"):
             if f"  {invariant}: VIOLATION" in output:
                 unexpected.append(f"triage detected {invariant} invariant violation")
-    expected_findings = set(SOAK_EXPECTED_FINDINGS)
-    if duration >= STATE_SHAPE_PROBE_DURATION_SECONDS:
-        expected_findings.update(SOAK_LONG_EXPECTED_FINDINGS)
-    for key in expected_findings:
-        tracking_id = FINDING_OBSERVATIONS[key]
-        if tracking_id is None:
-            raise RuntimeError(
-                f"observation key {key!r} is listed as expected but has no "
-                "known-open tracking id in the manifest"
-            )
-        if not any(evaluation.get(key) for evaluation in evaluations):
-            suspicious.append(f"expected finding absent: {tracking_id}")
     for evaluation in evaluations:
         if evaluation["missing_causes"]:
             unexpected.append(

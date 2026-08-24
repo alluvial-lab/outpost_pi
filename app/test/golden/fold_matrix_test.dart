@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:app/data/local/boxes.dart';
+import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/chat/chat_page.dart';
 import 'package:app/ui/chat/quick_actions/viewmodels/quick_actions_viewmodel.dart';
 import 'package:app/ui/chat/quick_actions/widgets/quick_actions_sheet.dart';
@@ -23,6 +24,32 @@ import 'package:provider/provider.dart';
 
 import 'fold_matrix_capture.dart';
 import 'fold_matrix_fixtures.dart';
+
+const _baseMatrixSurfaces = <String>[
+  'home',
+  'chat',
+  'chat-keyboard',
+  'chat-quick-actions',
+  'chat-attach',
+  'onboarding-relay',
+  'onboarding-pair',
+  'pairing-scanning',
+  'pair-paste-qr',
+  'sync-required',
+  'storage-recovery-dark',
+  'storage-recovery-light',
+  'home-no-peer',
+];
+const _twoPaneMatrixSurfaces = <String>[
+  'two-pane-shell',
+  'two-pane-detail-placeholder',
+  'two-pane-keyboard',
+];
+const _expectedTwoPaneGeometrySuffixes = <String>{
+  '701x842',
+  '842x701',
+  '701x842-fs1.3',
+};
 
 const _typedPairingUri =
     'outpostpi://pair?t=AAAAAAAAAAAAAAAAAAAAAA&'
@@ -95,10 +122,15 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      final twoPaneGeometrySuffixes = <String>{};
       for (final geometry in foldGeometries) {
         // ignore: avoid_print
         print('GEO ${geometry.suffix} configure begin');
         await configureFoldView(tester, geometry);
+        final hasTwoPaneLayout = await _canUseTwoPaneLayout(tester, geometry);
+        if (hasTwoPaneLayout) {
+          twoPaneGeometrySuffixes.add(geometry.suffix);
+        }
         // ignore: avoid_print
         print('GEO ${geometry.suffix} fixture begin');
         final fixture = await tester.runAsync<FoldMatrixFixture>(
@@ -147,32 +179,34 @@ void main() {
               }
             },
           );
-          await _capture(
-            tester,
-            geometry: geometry,
-            surface: 'two-pane-shell',
-            home: fixture.shellSurface(),
-          );
-          await _capture(
-            tester,
-            geometry: geometry,
-            surface: 'two-pane-detail-placeholder',
-            home: fixture.shellSurface(detailSelected: false),
-          );
-          await _capture(
-            tester,
-            geometry: geometry,
-            surface: 'two-pane-keyboard',
-            keyboardInset: 280,
-            home: fixture.shellSurface(),
-            afterPump: () async {
-              final field = find.byType(TextField);
-              if (field.evaluate().isNotEmpty) {
-                await tester.tap(field.first, warnIfMissed: false);
-                await tester.pump(const Duration(milliseconds: 120));
-              }
-            },
-          );
+          if (hasTwoPaneLayout) {
+            await _capture(
+              tester,
+              geometry: geometry,
+              surface: 'two-pane-shell',
+              home: fixture.shellSurface(),
+            );
+            await _capture(
+              tester,
+              geometry: geometry,
+              surface: 'two-pane-detail-placeholder',
+              home: fixture.shellSurface(detailSelected: false),
+            );
+            await _capture(
+              tester,
+              geometry: geometry,
+              surface: 'two-pane-keyboard',
+              keyboardInset: 280,
+              home: fixture.shellSurface(),
+              afterPump: () async {
+                final field = find.byType(TextField);
+                if (field.evaluate().isNotEmpty) {
+                  await tester.tap(field.first, warnIfMissed: false);
+                  await tester.pump(const Duration(milliseconds: 120));
+                }
+              },
+            );
+          }
           await _capture(
             tester,
             geometry: geometry,
@@ -264,6 +298,27 @@ void main() {
           await fixture.dispose();
         }
       }
+
+      // This is the single matrix-level breakpoint assertion: collapsed Home
+      // geometries do not emit the three byte-identical two-pane captures.
+      expect(twoPaneGeometrySuffixes, _expectedTwoPaneGeometrySuffixes);
+      final expectedCaptureKeys = <String>{
+        for (final geometry in foldGeometries)
+          for (final surface in _baseMatrixSurfaces)
+            '$surface-${geometry.suffix}',
+        for (final suffix in _expectedTwoPaneGeometrySuffixes)
+          for (final surface in _twoPaneMatrixSurfaces) '$surface-$suffix',
+      };
+      final actualCaptureKeys = foldGoldenDirectory()
+          .listSync()
+          .whereType<File>()
+          .where((file) => file.path.endsWith('.png'))
+          .map((file) {
+            final name = file.uri.pathSegments.last;
+            return name.substring(0, name.length - '.png'.length);
+          })
+          .toSet();
+      expect(actualCaptureKeys, expectedCaptureKeys);
     },
     skip: Platform.environment['CI'] == 'true',
     timeout: const Timeout(Duration(minutes: 20)),
@@ -289,6 +344,25 @@ void main() {
     },
     skip: Platform.environment['CI'] == 'true',
   );
+}
+
+Future<bool> _canUseTwoPaneLayout(
+  WidgetTester tester,
+  FoldGeometry geometry,
+) async {
+  var canSplit = false;
+  await tester.pumpWidget(
+    MediaQuery(
+      data: MediaQueryData(size: geometry.size),
+      child: Builder(
+        builder: (context) {
+          canSplit = canUseTwoPaneLayout(context);
+          return const SizedBox();
+        },
+      ),
+    ),
+  );
+  return canSplit;
 }
 
 Future<Uint8List> _createUniformPng() async {
@@ -363,11 +437,6 @@ Future<void> _capture(
     geometry: geometry,
   );
   expect(
-    evidence.file.existsSync() && evidence.file.lengthSync() > 0,
-    isTrue,
-    reason: 'PNG must be written for $surface ${geometry.suffix}',
-  );
-  expect(
     evidence.variance,
     greaterThan(1),
     reason: 'render must be non-blank for $surface ${geometry.suffix}',
@@ -422,7 +491,6 @@ Future<void> _captureQuickActions(
     surface: 'chat-quick-actions',
     geometry: geometry,
   );
-  expect(evidence.file.existsSync() && evidence.file.lengthSync() > 0, isTrue);
   expect(evidence.variance, greaterThan(1));
 }
 
@@ -457,7 +525,6 @@ Future<void> _captureAttachSheet(
     surface: 'chat-attach',
     geometry: geometry,
   );
-  expect(evidence.file.existsSync() && evidence.file.lengthSync() > 0, isTrue);
   expect(evidence.variance, greaterThan(1));
 }
 
@@ -496,7 +563,6 @@ Future<void> _capturePasteSheet(
     surface: 'pair-paste-qr',
     geometry: geometry,
   );
-  expect(evidence.file.existsSync() && evidence.file.lengthSync() > 0, isTrue);
   expect(evidence.variance, greaterThan(1));
 }
 

@@ -250,6 +250,100 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(new, ["new-c"])
         self.assertEqual(missing, ["expected-b"])
 
+    def test_nightly_report_fails_closed_for_every_alert_class(self) -> None:
+        clean = {
+            "known_open": ["expected-a"],
+            "observed": [],
+            "suspicious": [],
+            "unexpected": [],
+        }
+        empty = {field: [] for field in clean}
+        cases = (
+            ("clean", clean, [], [], 0, 0),
+            ("new inventory", clean, ["new-c"], [], 0, 1),
+            ("missing expected", clean, [], ["expected-b"], 0, 1),
+            ("runner failure", clean, [], [], 1, 1),
+            ("empty findings with runner failure", empty, [], [], 1, 1),
+            (
+                "unexpected only",
+                {**clean, "unexpected": ["environment drift"]},
+                [],
+                [],
+                0,
+                1,
+            ),
+            (
+                "suspicious only",
+                {**clean, "suspicious": ["expected finding absent: id"]},
+                [],
+                [],
+                0,
+                1,
+            ),
+        )
+        for name, findings, new, missing, runner_status, expected in cases:
+            with self.subTest(name=name):
+                self.assertEqual(
+                    nightly.report_status(
+                        findings=findings,
+                        new=new,
+                        missing=missing,
+                        runner_status=runner_status,
+                    ),
+                    expected,
+                )
+
+    def test_nightly_summary_retains_bounded_alert_text(self) -> None:
+        summary = nightly.render_summary(
+            findings={
+                "known_open": [],
+                "observed": [],
+                "suspicious": ["expected finding absent: finding-a"],
+                "unexpected": ["environment drift"],
+            },
+            new=[],
+            missing=[],
+            runner_status=0,
+        )
+        self.assertIn("Unexpected invariant/environment findings: `1`", summary)
+        self.assertIn("Suspicious targeted absences: `1`", summary)
+        self.assertIn("- environment drift", summary)
+        self.assertIn("- expected finding absent: finding-a", summary)
+
+    def test_nightly_report_fails_closed_for_unreadable_findings(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            expected = root / "expected.txt"
+            expected.write_text("", encoding="utf-8")
+            summary = root / "summary.md"
+            cases = (
+                ("malformed", root / "malformed.json", "not-json"),
+                ("missing", root / "missing.json", None),
+            )
+            for name, findings, contents in cases:
+                with self.subTest(name=name):
+                    if contents is not None:
+                        findings.write_text(contents, encoding="utf-8")
+                    original_argv = sys.argv
+                    sys.argv = [
+                        "nightly_soak_report.py",
+                        "--expected",
+                        str(expected),
+                        "--findings",
+                        str(findings),
+                        "--summary",
+                        str(summary),
+                        "--runner-status",
+                        "0",
+                    ]
+                    try:
+                        self.assertEqual(nightly.main(), 2)
+                    finally:
+                        sys.argv = original_argv
+                    self.assertIn("Reconciliation failed", summary.read_text())
+
 
 class OracleLogicTests(unittest.TestCase):
     def test_clean_replay_db_ui_ordering_and_identity_observations(self) -> None:

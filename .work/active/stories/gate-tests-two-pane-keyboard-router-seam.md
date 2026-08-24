@@ -1,14 +1,14 @@
 ---
 id: gate-tests-two-pane-keyboard-router-seam
 kind: story
-stage: implementing
+stage: done
 tags: [testing, app]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: tests
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Drive keyboard ownership through the production two-pane router
@@ -43,3 +43,16 @@ e2e-seam / public UI interaction
 
 ## Test location (suggested)
 `app/test/routing/app_router_test.dart`
+
+## Implementation
+Added a production `buildRouter` widget seam at 842x701 with a selected detail
+session. It focuses/types in the real detail composer, applies a 280dp inset,
+asserts stable Home bounds/selection, then drives the Home long-press rename
+sheet/dialog and real pop path. The dialog now restores the physical window
+inset removed from persistent Home, and its controller is owned by the dialog
+route through reverse animation teardown.
+
+Evidence: **fails-before** — the production dialog inherited a zero bottom
+inset through the isolated master context; after the inset restoration it pads
+above 280dp while Home remains fixed. The test also exposed and fixed the
+controller being disposed before the dialog reverse transition completed.

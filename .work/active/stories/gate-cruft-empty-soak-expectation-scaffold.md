@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-empty-soak-expectation-scaffold
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -60,3 +60,15 @@ Current release behavior is unchanged because the manifest and both sets are
 empty. A future targeted finding would no longer get an absence warning until a
 new explicit expectation is added; that is an intentional fail-closed design
 choice, not a silent pass.
+
+## Implementation
+
+- Removed both permanently empty targeted-finding sets and the runtime loop
+  that could only iterate them.
+- Simplified report classification to retain manifest-backed observation
+  reporting for out-of-lane and incidental findings without the dead targeted
+  expectation branch.
+
+## Verification
+
+- `python3 -m unittest e2e.test_live_soak` — 20 tests passed.

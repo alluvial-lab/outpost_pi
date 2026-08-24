@@ -12,10 +12,11 @@ sealed class ChatMessage {
 }
 
 /// Plan/24-fix-app-source-of-truth: every UserMsg is tagged with the
-/// lifecycle stage of its rebroadcast. `pending` = sent over WS but Pi
-/// hasn't echoed it back yet; `confirmed` = Pi rebroadcast it (or it
-/// came from `session_history` / another device's echo); `failed` =
-/// 15s elapsed without echo, user can retry.
+/// lifecycle stage of its rebroadcast. `pending` = not yet confirmed and may
+/// still be held for identity/connectivity or awaiting Pi's echo; `confirmed`
+/// = Pi rebroadcast it (or it came from `session_history` / another device's
+/// echo); `failed` = the configured pending-send backstop elapsed, so the user
+/// can retry.
 ///
 /// Default is `confirmed` for back-compat — every persisted UserMsg
 /// from before this fix was effectively confirmed (the Pi wasn't

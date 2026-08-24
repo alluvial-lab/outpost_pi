@@ -2,19 +2,43 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:app/config/dependencies.dart';
+import 'package:app/data/actions/actions_repository.dart';
+import 'package:app/data/images/image_picker_service.dart';
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/mesh/mesh_client.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
+import 'package:app/data/repositories/session_read_repository.dart';
+import 'package:app/data/sync/sync_service.dart';
+import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/voice/speech_service.dart';
+import 'package:app/domain/contracts/dismissed_update_store.dart';
+import 'package:app/domain/contracts/repository.dart';
+import 'package:app/domain/contracts/update_checker.dart';
+import 'package:app/domain/contracts/url_opener.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/storage.dart';
+import 'package:app/protocol/protocol.dart';
+import 'package:app/routing/adaptive.dart';
 import 'package:app/routing/app_router.dart';
+import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
+import 'package:app/ui/chat/chat_page.dart';
+import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
+import 'package:app/ui/chat/voice/viewmodels/voice_input_viewmodel.dart';
+import 'package:app/ui/core/themes/themes.dart';
+import 'package:app/ui/home/home_page.dart';
+import 'package:app/ui/home/viewmodels/home_viewmodel.dart';
+import 'package:app/ui/home/widgets/session_tile.dart';
+import 'package:app/ui/update/viewmodels/update_banner_viewmodel.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:outpost_pi_identity/outpost_pi_identity.dart';
+import 'package:provider/provider.dart';
 
 const _peer = PeerRecord(
   remoteEpk: 'boot-peer',
@@ -28,6 +52,80 @@ final _replacementIdentity = OwnerIdentity(
   ownerPk: Uint8List.fromList(List<int>.filled(32, 1)),
   ownerSk: Uint8List.fromList(List<int>.filled(32, 1)),
 );
+
+class _RouterChannel implements IChannel, IControlLink, IActiveRoomTarget {
+  final messages = StreamController<ServerMessage>.broadcast();
+  final controls = StreamController<ControlInbound>.broadcast(sync: true);
+
+  @override
+  Stream<ServerMessage> get serverMessages => messages.stream;
+
+  @override
+  Stream<ControlInbound> get controlFrames => controls.stream;
+
+  @override
+  Future<void> send(ClientMessage message) async {}
+
+  @override
+  void sendControl(Map<String, dynamic> json) {}
+
+  @override
+  void setActiveRoom(String roomId) {}
+
+  @override
+  Future<void> close() async {
+    if (!messages.isClosed) await messages.close();
+    if (!controls.isClosed) await controls.close();
+  }
+}
+
+class _RouterActions extends Repository implements IActionsRepository {
+  final _meta = StreamController<ActiveRoomMeta>.broadcast();
+
+  @override
+  ActiveRoomMeta get activeRoomMeta =>
+      const ActiveRoomMeta(peerEpk: 'boot-peer', roomId: 'main');
+
+  @override
+  Stream<ActiveRoomMeta> get activeRoomMetaStream => _meta.stream;
+
+  @override
+  Future<ModelsCatalogue> listModels({bool forceRefresh = false}) async =>
+      const ModelsCatalogue(models: []);
+
+  @override
+  void dispose() {
+    _meta.close();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _RouterSpeech extends SpeechService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _RouterPicker implements IImagePickerService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _NoUpdateChecker implements UpdateChecker {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _NoDismissedUpdateStore implements DismissedUpdateStore {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _NoUrlOpener implements UrlOpener {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _TransitionSecureStorage implements FlutterSecureStorage {
   final Map<String, String> _values = {};
@@ -135,6 +233,14 @@ class _BootStorage extends PairingStorage {
   Future<void> savePeer(PeerRecord peer) async {}
 
   @override
+  Future<PeerRecord?> loadPeer(String epk) async {
+    for (final peer in _peers) {
+      if (peer.remoteEpk == epk) return peer;
+    }
+    return null;
+  }
+
+  @override
   Future<List<PersistedRoom>> loadRooms(String epk) async => const [];
 
   @override
@@ -145,10 +251,14 @@ class _BootPreferences extends Preferences {
   Object? loadError;
   Completer<void>? loadGate;
   String? selected;
+  String? selectedRoom;
   bool onboarded = true;
 
   @override
   String? get selectedPeerEpk => selected;
+
+  @override
+  String? get selectedRoomId => selectedRoom;
 
   @override
   bool get onboardingCompleted => onboarded;
@@ -164,6 +274,12 @@ class _BootPreferences extends Preferences {
   @override
   Future<void> setSelectedPeerEpk(String? value) async {
     selected = value;
+  }
+
+  @override
+  Future<void> setSelectedRoom({String? epk, String? roomId}) async {
+    selected = epk;
+    selectedRoom = roomId;
   }
 
   @override
@@ -729,6 +845,204 @@ void main() {
     },
   );
 
+  void registerTwoPaneRouterSeamTest() {
+    testWidgets(
+      'production two-pane router isolates detail keyboard but preserves master modal insets',
+      (tester) async {
+        const screen = Size(842, 701);
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = screen;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetViewInsets);
+
+        final directory = Directory.systemTemp.createTempSync(
+          'router_two_pane_keyboard_',
+        );
+        await tester.runAsync(() => LocalBoxes.initForTest(directory.path));
+        final storage = _BootStorage(peers: const [_peer]);
+        final prefs = _BootPreferences()
+          ..selected = _peer.remoteEpk
+          ..selectedRoom = 'main';
+        final identity = _BootIdentityBridge(storage);
+        final mesh = _BootMeshSync(identity, storage);
+        final channel = _RouterChannel();
+        final connection = ConnectionManager(
+          factory: (_, _) async => channel,
+          storage: storage,
+          emitDebounce: Duration.zero,
+        );
+        connection.adopt(channel, _peer);
+        channel.controls.add(
+          const RoomsSnapshot(
+            peer: 'boot-peer',
+            rooms: [
+              RoomInfo(
+                roomId: 'main',
+                sessionId: 'router-session',
+                name: 'Router session',
+                cwd: '/work/router',
+                startedAt: 1,
+              ),
+            ],
+          ),
+        );
+        expect(connection.roomsFor(_peer.remoteEpk), hasLength(1));
+
+        final boxes = LocalBoxes();
+        final read = SessionReadRepository(boxes);
+        final sync = SyncService(connection, boxes);
+        final actions = _RouterActions();
+        final selection = SessionSelection()
+          ..select(
+            const RemoteSessionRef(
+              peerEpk: 'boot-peer',
+              roomId: 'main',
+              sessionId: 'router-session',
+            ),
+            'Router session',
+            'Pi',
+            true,
+          );
+        final shellLayout = ShellLayout();
+
+        injector.addViewModel<HomeViewModel>(
+          () => HomeViewModel(storage, prefs, connection),
+        );
+        injector.addViewModel<UpdateBannerViewModel>(
+          () => UpdateBannerViewModel(
+            _NoUpdateChecker(),
+            _NoDismissedUpdateStore(),
+            _NoUrlOpener(),
+            currentVersion: '0.0.0',
+            enabled: false,
+          ),
+        );
+        injector.addViewModel<ChatViewModel>(
+          () => ChatViewModel(read, sync, connection, prefs, storage),
+        );
+        injector.addViewModel<VoiceInputViewModel>(
+          () => VoiceInputViewModel(_RouterSpeech()),
+        );
+        injector.addViewModel<AttachmentViewModel>(
+          () => AttachmentViewModel(_RouterPicker(), actions),
+        );
+        injector.commit();
+
+        final owner = buildRouter(storage, connection, prefs, identity, mesh);
+        Future<void> pumpRouterFrames([int count = 6]) async {
+          for (var i = 0; i < count; i++) {
+            await tester.pump(const Duration(milliseconds: 50));
+          }
+        }
+
+        try {
+          await tester.pumpWidget(
+            MultiProvider(
+              providers: [
+                ChangeNotifierProvider<Preferences>.value(value: prefs),
+                ChangeNotifierProvider<SessionSelection>.value(
+                  value: selection,
+                ),
+                ChangeNotifierProvider<ShellLayout>.value(value: shellLayout),
+              ],
+              child: MaterialApp.router(
+                theme: buildLightTheme(),
+                routerConfig: owner.router,
+              ),
+            ),
+          );
+          await pumpRouterFrames(10);
+
+          expect(find.byType(HomePage), findsOneWidget);
+          expect(find.byType(ChatPage), findsOneWidget);
+          final tile = tester.widget<SessionTile>(find.byType(SessionTile));
+          expect(tile.isSelected, isTrue);
+          final homeBefore = tester.getRect(find.byType(HomePage));
+          final selectionBefore = selection.current!.ref;
+
+          final detailComposer = find.descendant(
+            of: find.byType(ChatPage),
+            matching: find.byType(TextField),
+          );
+          expect(detailComposer, findsOneWidget);
+          await tester.tap(detailComposer);
+          await tester.enterText(detailComposer, 'router keyboard seam');
+          tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+          await pumpRouterFrames();
+
+          expect(tester.getRect(find.byType(HomePage)), homeBefore);
+          expect(selection.current!.ref, selectionBefore);
+          expect(
+            tester.widget<SessionTile>(find.byType(SessionTile)).isSelected,
+            isTrue,
+          );
+          expect(
+            tester.getBottomRight(detailComposer).dy,
+            lessThanOrEqualTo(screen.height - 280),
+            reason: 'the detail route receives and lays out above its keyboard',
+          );
+
+          await tester.longPress(find.byType(SessionTile));
+          await pumpRouterFrames();
+          await tester.tap(find.text('Rename session'));
+          await pumpRouterFrames();
+
+          final renameDialog = find.byType(AlertDialog);
+          final renameField = find.descendant(
+            of: renameDialog,
+            matching: find.byType(TextField),
+          );
+          expect(renameField.hitTestable(), findsOneWidget);
+          final dialogInsets = tester
+              .widgetList<AnimatedPadding>(
+                find.descendant(
+                  of: renameDialog,
+                  matching: find.byType(AnimatedPadding),
+                ),
+              )
+              .map(
+                (widget) => widget.padding.resolve(TextDirection.ltr).bottom,
+              );
+          expect(
+            dialogInsets.any((bottom) => bottom >= 280),
+            isTrue,
+            reason:
+                'the master-owned dialog pads above the root keyboard inset',
+          );
+          expect(tester.getRect(find.byType(HomePage)), homeBefore);
+          expect(selection.current!.ref, selectionBefore);
+
+          await tester.tap(
+            find.descendant(of: renameDialog, matching: find.text('Cancel')),
+          );
+          await pumpRouterFrames();
+          expect(find.byType(AlertDialog), findsNothing);
+          expect(selection.current!.ref, selectionBefore);
+        } finally {
+          await tester.pumpWidget(const SizedBox());
+          owner.dispose();
+          disposeDependencies();
+          actions.dispose();
+          sync.dispose();
+          read.dispose();
+          selection.dispose();
+          shellLayout.dispose();
+          await connection.disconnect();
+          connection.dispose();
+          identity.dispose();
+          mesh.dispose();
+          prefs.dispose();
+          await tester.runAsync(() async {
+            await Future<void>.delayed(Duration.zero);
+            await Hive.close();
+            await directory.delete(recursive: true);
+          });
+        }
+      },
+    );
+  }
+
   test(
     'router retains the real Owner marker and identity gate through each cleanup failure',
     () async {
@@ -830,4 +1144,6 @@ void main() {
       }
     },
   );
+
+  registerTwoPaneRouterSeamTest();
 }
