@@ -1,14 +1,14 @@
 ---
 id: gate-security-capture-upload-chunk-amplification
 kind: story
-stage: implementing
+stage: done
 tags: [security]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: security
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Bound capture-upload chunk and event-count amplification
@@ -52,3 +52,11 @@ the final chunk), reject impossible sequence counts before processing, and
 bound JSONL event validation work. Keep the app uploader compatible with the
 new invariant and add adversarial tests at the exact count boundaries plus a
 large-valid-capture test demonstrating bounded event-loop work.
+
+## Implementation
+- Execution capability: `sol/high` (caller-selected for an adversarial protocol boundary).
+- Added schema-owned 1 KiB minimum non-final chunk and 16,384-event JSONL ceilings. A short final chunk remains valid, preserving the generated app uploader's existing full-chunk behavior.
+- JSONL validation now scans incrementally and stops before parsing event 16,385, bounding synchronous `JSON.parse` amplification.
+- Regression tests reject the byte below the non-final floor, accept the exact floor plus a short final chunk, accept exactly 16,384 events, and reject 16,385.
+- Verification: capture-upload suite 15/15 pass; protocol schema/codegen suite 7/7 pass.
+- Adjacent issues parked: none.

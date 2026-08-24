@@ -66,9 +66,12 @@ export interface OutpostPiIrNestedRegistry {
 }
 
 export interface OutpostPiCaptureUploadLimits {
+  minChunkDecodedBytes: number;
   maxChunkDecodedBytes: number;
   maxTotalBytes: number;
-  maxInflightPerSession: number;
+  maxEvents: number;
+  retainedTotalBytes: number;
+  retainedFilesPerDay: number;
 }
 
 export interface OutpostPiIngressLimits {
@@ -859,17 +862,40 @@ export async function buildOutpostPiIr(manifest: OutpostPiManifest, options: Bui
   let captureUploadLimits: OutpostPiCaptureUploadLimits | undefined;
   if (clientFamily) {
     const clientSchema = await readDocument(clientFamily.schemaPath, cache);
-    const metadata = asObject(clientSchema["x-outpost-pi"], "appPiClient.x-outpost-pi");
-    const rawLimits = metadata.captureUploadLimits;
+    const rawMetadata = clientSchema["x-outpost-pi"];
+    const rawLimits = rawMetadata === undefined
+      ? undefined
+      : asObject(rawMetadata, "appPiClient.x-outpost-pi").captureUploadLimits;
     if (rawLimits !== undefined) {
       const limits = asObject(rawLimits, "appPiClient.x-outpost-pi.captureUploadLimits");
+      const minChunkDecodedBytes = Number(limits.minChunkDecodedBytes);
       const maxChunkDecodedBytes = Number(limits.maxChunkDecodedBytes);
       const maxTotalBytes = Number(limits.maxTotalBytes);
-      const maxInflightPerSession = Number(limits.maxInflightPerSession);
-      if (![maxChunkDecodedBytes, maxTotalBytes, maxInflightPerSession].every((value) => Number.isInteger(value) && value > 0)) {
+      const maxEvents = Number(limits.maxEvents);
+      const retainedTotalBytes = Number(limits.retainedTotalBytes);
+      const retainedFilesPerDay = Number(limits.retainedFilesPerDay);
+      const values = [
+        minChunkDecodedBytes,
+        maxChunkDecodedBytes,
+        maxTotalBytes,
+        maxEvents,
+        retainedTotalBytes,
+        retainedFilesPerDay,
+      ];
+      if (!values.every((value) => Number.isInteger(value) && value > 0)) {
         throw new ProtocolCodegenError("capture upload limits must be positive integers");
       }
-      captureUploadLimits = { maxChunkDecodedBytes, maxTotalBytes, maxInflightPerSession };
+      if (minChunkDecodedBytes > maxChunkDecodedBytes || maxChunkDecodedBytes > maxTotalBytes) {
+        throw new ProtocolCodegenError("capture upload chunk limits must be ordered");
+      }
+      captureUploadLimits = {
+        minChunkDecodedBytes,
+        maxChunkDecodedBytes,
+        maxTotalBytes,
+        maxEvents,
+        retainedTotalBytes,
+        retainedFilesPerDay,
+      };
     }
   }
   return {
@@ -1046,9 +1072,12 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     sections.push("");
   }
   if (ir.captureUploadLimits !== undefined) {
+    sections.push(`export const CAPTURE_UPLOAD_MIN_CHUNK_BYTES = ${ir.captureUploadLimits.minChunkDecodedBytes};`);
     sections.push(`export const CAPTURE_UPLOAD_MAX_CHUNK_BYTES = ${ir.captureUploadLimits.maxChunkDecodedBytes};`);
     sections.push(`export const CAPTURE_UPLOAD_MAX_TOTAL_BYTES = ${ir.captureUploadLimits.maxTotalBytes};`);
-    sections.push(`export const CAPTURE_UPLOAD_MAX_INFLIGHT = ${ir.captureUploadLimits.maxInflightPerSession};`);
+    sections.push(`export const CAPTURE_UPLOAD_MAX_EVENTS = ${ir.captureUploadLimits.maxEvents};`);
+    sections.push(`export const CAPTURE_UPLOAD_RETENTION_MAX_TOTAL_BYTES = ${ir.captureUploadLimits.retainedTotalBytes};`);
+    sections.push(`export const CAPTURE_UPLOAD_RETENTION_MAX_FILES_PER_DAY = ${ir.captureUploadLimits.retainedFilesPerDay};`);
     sections.push("");
   }
   if (ir.relayOuter !== undefined) {

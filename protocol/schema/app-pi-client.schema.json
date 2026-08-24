@@ -225,9 +225,12 @@
     "transport": "relay-jsonl",
     "discriminator": "type",
     "captureUploadLimits": {
+      "minChunkDecodedBytes": 1024,
       "maxChunkDecodedBytes": 8192,
       "maxTotalBytes": 2097152,
-      "maxInflightPerSession": 1
+      "maxEvents": 16384,
+      "retainedTotalBytes": 8388608,
+      "retainedFilesPerDay": 16
     },
     "typeNames": [
       "pair_request",

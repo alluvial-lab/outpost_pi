@@ -1,14 +1,14 @@
 ---
 id: gate-cruft-upload-single-slot-limit
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: cruft
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Remove the numeric max-inflight abstraction from the single-slot capture upload
@@ -55,3 +55,11 @@ limits, which are independently enforced and consumed.
 No current behavior changes. A future multi-upload design would need to reintroduce
 an explicit per-session capacity and state collection rather than reviving this
 unused numeric projection.
+
+## Implementation
+- Execution capability: `sol/high` (bundled with the shared capture-upload hardening boundary).
+- Replaced the numeric `0|1` comparison with the handler's explicit nullable-slot check.
+- Removed `maxInflightPerSession` from schema metadata, TypeScript IR/emission, Dart emission, the committed Dart IR fixture, and regenerated TS/Dart projections.
+- Updated codegen contract tests for the capture message family while preserving the single-upload admission regression test.
+- Verification: capture-upload suite 15/15 pass; protocol schema/codegen suite 7/7 pass; repository grep finds no remaining runtime/generated max-inflight symbol.
+- Adjacent issues parked: none.

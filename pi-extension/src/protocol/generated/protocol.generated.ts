@@ -99,9 +99,12 @@ export const RELAY_MAX_SESSION_ID_BYTES = 512;
 export const RELAY_MAX_MODEL_BYTES = 256;
 export const RELAY_MAX_THINKING_BYTES = 32;
 
+export const CAPTURE_UPLOAD_MIN_CHUNK_BYTES = 1024;
 export const CAPTURE_UPLOAD_MAX_CHUNK_BYTES = 8192;
 export const CAPTURE_UPLOAD_MAX_TOTAL_BYTES = 2097152;
-export const CAPTURE_UPLOAD_MAX_INFLIGHT = 1;
+export const CAPTURE_UPLOAD_MAX_EVENTS = 16384;
+export const CAPTURE_UPLOAD_RETENTION_MAX_TOTAL_BYTES = 8388608;
+export const CAPTURE_UPLOAD_RETENTION_MAX_FILES_PER_DAY = 16;
 
 export interface RelayOuterEnvelope {
   readonly peer: string;

@@ -4,7 +4,6 @@
 
 const int captureUploadMaxChunkBytes = 8192;
 const int captureUploadMaxTotalBytes = 2097152;
-const int captureUploadMaxInflight = 1;
 
 final class WireImage {
   const WireImage({required this.data, required this.mime});

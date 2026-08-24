@@ -1,14 +1,14 @@
 ---
 id: gate-security-capture-upload-disk-quota
 kind: story
-stage: implementing
+stage: done
 tags: [security]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: security
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Bound cumulative disk use for delivered debug captures
@@ -51,3 +51,11 @@ single serialized commit boundary, and fail closed or safely prune only
 handler-owned regular files. Add repeated-upload tests proving retained count
 and bytes stay bounded, including concurrent/finalizing and symlink/non-regular
 file cases.
+
+## Implementation
+- Execution capability: `sol/high` (caller-selected for security-sensitive filesystem work).
+- Added schema-owned 8 MiB cumulative and 16-files-per-day retention ceilings. Capture commits are process-serialized; after each atomic rename, oldest handler-owned regular captures are pruned by canonical filename timestamp.
+- Retention ignores matching symlinks and directories, removes the just-written file if post-write enforcement fails, and reports any pruning in the delivered Pi note.
+- Regression tests repeatedly deliver maximum-size and same-day captures, assert retained bytes/count remain bounded, and prove matching symlink/directory entries are untouched.
+- Verification: capture-upload suite 15/15 pass; protocol schema/codegen suite 7/7 pass.
+- Adjacent issues parked: none.
