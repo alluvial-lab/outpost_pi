@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app/data/actions/actions_repository.dart';
+import 'package:app/domain/contracts/debug_capture_upload.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/chat/quick_actions/states/quick_actions_state.dart';
 import 'package:app/ui/core/viewmodel/viewmodel.dart';
@@ -21,11 +22,13 @@ import 'package:app/ui/core/viewmodel/viewmodel.dart';
 /// failure — the next tap retries.
 class QuickActionsViewModel extends ViewModel<QuickActionsState> {
   final IActionsRepository _repo;
+  final DebugCaptureUploader? _captureUploader;
   final _errorController = StreamController<String>.broadcast();
   StreamSubscription<ActiveRoomMeta>? _metaSub;
   bool _disposed = false;
 
-  QuickActionsViewModel(this._repo) : super(const QuickActionsIdle()) {
+  QuickActionsViewModel(this._repo, [this._captureUploader])
+    : super(const QuickActionsIdle()) {
     // Plan/28 Wave D — seed from the repo's current snapshot before
     // anything is shown so the first build already has the right
     // highlight (instead of a flash of "null" while the stream
@@ -42,6 +45,7 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
   ThinkingLevel? get currentThinking => state.currentThinking;
   WireModel? get currentModel => state.currentModel;
   String? get currentModelName => state.currentModelName;
+  CaptureDeliveryState get captureDelivery => state.captureDelivery;
 
   /// Return a repository-owned session-reset command that can outlive the sheet.
   ///
@@ -63,6 +67,39 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
     await _runVoid(ActionName.sessionNew, _repo.newSession);
   }
 
+  /// Deliver a fresh snapshot of the debug ring; every retry starts at sequence zero.
+  Future<void> sendDebugLogs() async {
+    final uploader = _captureUploader;
+    if (uploader == null) {
+      _setCapture(
+        const CaptureDeliveryFailed('Debug capture delivery is unavailable.'),
+      );
+      return;
+    }
+    _setCapture(const CaptureDeliveryReading());
+    try {
+      final result = await uploader.uploadLatest(
+        onProgress: (progress) {
+          if (_disposed) return;
+          _setCapture(
+            progress.reading
+                ? const CaptureDeliveryReading()
+                : CaptureDeliverySending(progress.fraction.clamp(0, 1)),
+          );
+        },
+      );
+      _setCapture(CaptureDeliveryDelivered(result.path));
+    } on DebugCaptureUploadFailure catch (error) {
+      _setCapture(CaptureDeliveryFailed(error.message));
+    } catch (_) {
+      _setCapture(
+        const CaptureDeliveryFailed(
+          'Debug logs could not be delivered. Tap to retry.',
+        ),
+      );
+    }
+  }
+
   Future<void> setModel(WireModel model) async {
     // Optimistic highlight — flip the current model immediately so the
     // picker row reflects the tap before the round-trip resolves.
@@ -74,6 +111,7 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
         currentModel: model,
         currentModelName: model.name,
         currentThinking: state.currentThinking,
+        captureDelivery: state.captureDelivery,
       ),
     );
     try {
@@ -83,6 +121,7 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
           currentModel: model,
           currentModelName: model.name,
           currentThinking: state.currentThinking,
+          captureDelivery: state.captureDelivery,
         ),
       );
     } on ActionFailure catch (e) {
@@ -92,6 +131,7 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
           currentModel: previous,
           currentModelName: previousName,
           currentThinking: state.currentThinking,
+          captureDelivery: state.captureDelivery,
         ),
       );
       _reportErrorIfAlive(e.message);
@@ -107,6 +147,7 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
         currentThinking: level,
         currentModel: state.currentModel,
         currentModelName: state.currentModelName,
+        captureDelivery: state.captureDelivery,
       ),
     );
     try {
@@ -116,6 +157,7 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
           currentThinking: level,
           currentModel: state.currentModel,
           currentModelName: state.currentModelName,
+          captureDelivery: state.captureDelivery,
         ),
       );
     } on ActionFailure catch (e) {
@@ -124,6 +166,7 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
           currentThinking: previous,
           currentModel: state.currentModel,
           currentModelName: state.currentModelName,
+          captureDelivery: state.captureDelivery,
         ),
       );
       _reportErrorIfAlive(e.message);
@@ -146,6 +189,7 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
             currentModel: catalogue.current,
             currentModelName: catalogue.current?.name ?? state.currentModelName,
             currentThinking: state.currentThinking,
+            captureDelivery: state.captureDelivery,
           ),
         );
       }
@@ -188,12 +232,14 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
         currentThinking: nextThinking,
         currentModel: nextModel,
         currentModelName: nextModelName,
+        captureDelivery: cur.captureDelivery,
       );
     } else {
       next = QuickActionsIdle(
         currentThinking: nextThinking,
         currentModel: nextModel,
         currentModelName: nextModelName,
+        captureDelivery: state.captureDelivery,
       );
     }
     if (next == cur) return;
@@ -207,6 +253,7 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
         currentThinking: state.currentThinking,
         currentModel: state.currentModel,
         currentModelName: state.currentModelName,
+        captureDelivery: state.captureDelivery,
       ),
     );
     try {
@@ -216,6 +263,7 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
           currentThinking: state.currentThinking,
           currentModel: state.currentModel,
           currentModelName: state.currentModelName,
+          captureDelivery: state.captureDelivery,
         ),
       );
     } on ActionFailure catch (e) {
@@ -224,11 +272,37 @@ class QuickActionsViewModel extends ViewModel<QuickActionsState> {
           currentThinking: state.currentThinking,
           currentModel: state.currentModel,
           currentModelName: state.currentModelName,
+          captureDelivery: state.captureDelivery,
         ),
       );
       _reportErrorIfAlive(e.message);
       rethrow;
     }
+  }
+
+  void _setCapture(CaptureDeliveryState capture) {
+    if (_disposed) return;
+    final current = state;
+    if (current is QuickActionsBusy) {
+      emit(
+        QuickActionsBusy(
+          action: current.action,
+          currentThinking: current.currentThinking,
+          currentModel: current.currentModel,
+          currentModelName: current.currentModelName,
+          captureDelivery: capture,
+        ),
+      );
+      return;
+    }
+    emit(
+      QuickActionsIdle(
+        currentThinking: current.currentThinking,
+        currentModel: current.currentModel,
+        currentModelName: current.currentModelName,
+        captureDelivery: capture,
+      ),
+    );
   }
 
   void _reportErrorIfAlive(String message) {

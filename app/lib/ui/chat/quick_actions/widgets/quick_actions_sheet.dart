@@ -180,6 +180,17 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
               onTap: () => _onRestartPi(vm),
             ),
             const _Divider(),
+            _ActionTile(
+              key: const Key('qa-send-debug-logs'),
+              icon: LucideIcons.fileUp,
+              label: _captureLabel(vm.captureDelivery),
+              subtitle: _captureSubtitle(vm.captureDelivery),
+              busy:
+                  vm.captureDelivery is CaptureDeliveryReading ||
+                  vm.captureDelivery is CaptureDeliverySending,
+              onTap: () => vm.sendDebugLogs(),
+            ),
+            const _Divider(),
             _ModelRow(
               currentLabel: vm.currentModel?.name ?? vm.currentModelName,
               busy: busyAction == ActionName.modelSet,
@@ -341,6 +352,21 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
     );
     return result == true;
   }
+
+  String _captureLabel(CaptureDeliveryState state) => switch (state) {
+    CaptureDeliveryDelivered() => 'Debug logs delivered',
+    CaptureDeliveryFailed() => 'Retry debug logs',
+    _ => 'Send debug logs',
+  };
+
+  String _captureSubtitle(CaptureDeliveryState state) => switch (state) {
+    CaptureDeliveryIdle() => 'Deliver the latest capture to this Pi session.',
+    CaptureDeliveryReading() => 'Reading the latest capture…',
+    CaptureDeliverySending(:final progress) =>
+      'Sending… ${(progress * 100).round()}%',
+    CaptureDeliveryDelivered(:final path) => 'Delivered to $path',
+    CaptureDeliveryFailed(:final message) => '$message Tap to retry.',
+  };
 
   Future<void> _onThinking(
     QuickActionsViewModel vm,
