@@ -52,6 +52,9 @@ void main() {
         'model_set',
         'thinking_set',
         'list_models',
+        'capture_upload_begin',
+        'capture_upload_chunk',
+        'capture_upload_end',
       });
     });
 

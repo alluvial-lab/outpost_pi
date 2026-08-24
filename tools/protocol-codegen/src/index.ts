@@ -65,6 +65,12 @@ export interface OutpostPiIrNestedRegistry {
   variants: OutpostPiIrVariant[];
 }
 
+export interface OutpostPiCaptureUploadLimits {
+  maxChunkDecodedBytes: number;
+  maxTotalBytes: number;
+  maxInflightPerSession: number;
+}
+
 export interface OutpostPiIngressLimits {
   maxDecodedBytesDefault: number;
   maxFrameOverheadBytes: number;
@@ -93,6 +99,7 @@ export interface OutpostPiIr {
   profile: string;
   relayAuthDomainPrefix?: string;
   relayIngressLimits?: OutpostPiIngressLimits;
+  captureUploadLimits?: OutpostPiCaptureUploadLimits;
   relayOuter?: OutpostPiIrRelayOuter;
   sharedTypes: OutpostPiIrSharedType[];
   families: OutpostPiIrFamily[];
@@ -848,12 +855,30 @@ export async function buildOutpostPiIr(manifest: OutpostPiManifest, options: Bui
     });
   }
   const shared = await sharedTypesForProtocol(protocolRoot, cache, profile);
+  const clientFamily = families.find((family) => family.id === "appPiClient");
+  let captureUploadLimits: OutpostPiCaptureUploadLimits | undefined;
+  if (clientFamily) {
+    const clientSchema = await readDocument(clientFamily.schemaPath, cache);
+    const metadata = asObject(clientSchema["x-outpost-pi"], "appPiClient.x-outpost-pi");
+    const rawLimits = metadata.captureUploadLimits;
+    if (rawLimits !== undefined) {
+      const limits = asObject(rawLimits, "appPiClient.x-outpost-pi.captureUploadLimits");
+      const maxChunkDecodedBytes = Number(limits.maxChunkDecodedBytes);
+      const maxTotalBytes = Number(limits.maxTotalBytes);
+      const maxInflightPerSession = Number(limits.maxInflightPerSession);
+      if (![maxChunkDecodedBytes, maxTotalBytes, maxInflightPerSession].every((value) => Number.isInteger(value) && value > 0)) {
+        throw new ProtocolCodegenError("capture upload limits must be positive integers");
+      }
+      captureUploadLimits = { maxChunkDecodedBytes, maxTotalBytes, maxInflightPerSession };
+    }
+  }
   return {
     schemaVersion: manifest.schemaVersion ?? 1,
     source: manifest.source ?? "json-schema-2020-12",
     profile,
     relayAuthDomainPrefix: await relayAuthDomainPrefixForProtocol(families, cache),
     relayIngressLimits: await relayIngressLimitsForProtocol(protocolRoot, cache),
+    captureUploadLimits,
     relayOuter: await relayOuterForProtocol(protocolRoot, cache, profile),
     sharedTypes: shared.sharedTypes,
     families,
@@ -1018,6 +1043,12 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
     sections.push(`export const RELAY_MAX_SESSION_ID_BYTES = ${limits.metadataByteLimits.sessionId};`);
     sections.push(`export const RELAY_MAX_MODEL_BYTES = ${limits.metadataByteLimits.model};`);
     sections.push(`export const RELAY_MAX_THINKING_BYTES = ${limits.metadataByteLimits.thinking};`);
+    sections.push("");
+  }
+  if (ir.captureUploadLimits !== undefined) {
+    sections.push(`export const CAPTURE_UPLOAD_MAX_CHUNK_BYTES = ${ir.captureUploadLimits.maxChunkDecodedBytes};`);
+    sections.push(`export const CAPTURE_UPLOAD_MAX_TOTAL_BYTES = ${ir.captureUploadLimits.maxTotalBytes};`);
+    sections.push(`export const CAPTURE_UPLOAD_MAX_INFLIGHT = ${ir.captureUploadLimits.maxInflightPerSession};`);
     sections.push("");
   }
   if (ir.relayOuter !== undefined) {

@@ -1619,6 +1619,10 @@ class SyncService extends Service {
       case ActionOk():
       case ActionError():
       case ModelsList():
+      case CaptureUploadAck():
+      case CaptureUploadError():
+        // Capture control replies are consumed by DebugCaptureUploaderImpl and
+        // never projected into the chat transcript.
         break;
     }
   }

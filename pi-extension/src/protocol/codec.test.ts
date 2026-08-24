@@ -68,8 +68,8 @@ describe("generated registry schema parity", () => {
 describe("fixtures", () => {
   const files = readdirSync(fixtureDir).filter((f) => f.endsWith(".jsonl"));
 
-  test("36 fixture files present", () => {
-    expect(files).toHaveLength(36);
+  test("41 fixture files present", () => {
+    expect(files).toHaveLength(41);
   });
 
   for (const file of files) {

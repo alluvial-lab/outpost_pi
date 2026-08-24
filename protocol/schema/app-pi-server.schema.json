@@ -21,7 +21,9 @@
     { "$ref": "#/$defs/sessionHistory" },
     { "$ref": "#/$defs/actionOk" },
     { "$ref": "#/$defs/actionError" },
-    { "$ref": "#/$defs/modelsList" }
+    { "$ref": "#/$defs/modelsList" },
+    { "$ref": "#/$defs/captureUploadAck" },
+    { "$ref": "#/$defs/captureUploadError" }
   ],
   "$defs": {
     "harness": {
@@ -281,6 +283,37 @@
       "additionalProperties": false,
       "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     },
+    "captureUploadAck": {
+      "type": "object",
+      "required": ["type", "in_reply_to", "upload_id", "stage"],
+      "properties": {
+        "type": { "const": "capture_upload_ack" },
+        "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
+        "in_reply_to": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
+        "upload_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "stage": { "enum": ["begin", "chunk", "delivered"] },
+        "next_sequence": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "events": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false,
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+    },
+    "captureUploadError": {
+      "type": "object",
+      "required": ["type", "in_reply_to", "upload_id", "code", "message"],
+      "properties": {
+        "type": { "const": "capture_upload_error" },
+        "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
+        "in_reply_to": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
+        "upload_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "code": { "enum": ["too_large", "bad_sequence", "io_error", "checksum_mismatch", "invalid_capture", "busy", "not_found"] },
+        "message": { "type": "string", "minLength": 1, "maxLength": 256 }
+      },
+      "additionalProperties": false,
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+    },
     "sessionHistoryEvent": {
       "oneOf": [
         { "$ref": "#/$defs/historyUserInput" },
@@ -374,7 +407,9 @@
       "session_history",
       "action_ok",
       "action_error",
-      "models_list"
+      "models_list",
+      "capture_upload_ack",
+      "capture_upload_error"
     ],
     "sessionHistoryEventTypeNames": ["user_input", "tool_request", "tool_result", "agent_message", "compaction"]
   }

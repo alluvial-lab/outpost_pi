@@ -13,6 +13,8 @@ const _serverFixtureFiles = <String>{
   'bye.jsonl',
   'cancelled.jsonl',
   'compaction.jsonl',
+  'capture_upload_ack.jsonl',
+  'capture_upload_error.jsonl',
   'error.jsonl',
   'models_list.jsonl',
   'pair_error.jsonl',
@@ -29,6 +31,9 @@ const _serverFixtureFiles = <String>{
 const _clientOnlyFixtureFiles = <String>{
   'approve_tool.jsonl',
   'cancel.jsonl',
+  'capture_upload_begin.jsonl',
+  'capture_upload_chunk.jsonl',
+  'capture_upload_end.jsonl',
   'pair_request.jsonl',
   'ping.jsonl',
   'session_sync.jsonl',
