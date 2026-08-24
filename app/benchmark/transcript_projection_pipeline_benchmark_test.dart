@@ -258,19 +258,88 @@ void main() {
     },
   );
 
+  test('AFTER: accepted receipts use batched Hive persistence', () async {
+    final directory = Directory.systemTemp.createTempSync(
+      'transcript_receipt_benchmark_',
+    );
+    try {
+      await LocalBoxes.initForTest(
+        directory.path,
+        encryptionKey: List<int>.generate(32, (index) => index),
+      );
+      final store = HiveTranscriptEventStore(LocalBoxes());
+      final batch5500 = _syntheticTranscript(5500);
+      final batch5500Watch = Stopwatch()..start();
+      final batch5500Result = await store.appendAll(_key, batch5500);
+      batch5500Watch.stop();
+      expect(batch5500Result.accepted, hasLength(5500));
+      expect(batch5500Result.accepted.first.sequence, 0);
+      expect(batch5500Result.accepted.last.sequence, 5499);
+
+      const batchKey = TranscriptSessionKey(
+        peerId: 'benchmark-peer',
+        roomId: 'main',
+        sessionId: 'benchmark-receipt-batch-1000',
+      );
+      final batch1000 = _syntheticTranscript(
+        1000,
+        sessionId: batchKey.sessionId,
+      );
+      final batch1000Watch = Stopwatch()..start();
+      final batch1000Result = await store.appendAll(batchKey, batch1000);
+      batch1000Watch.stop();
+      expect(batch1000Result.accepted, hasLength(1000));
+
+      const singleKey = TranscriptSessionKey(
+        peerId: 'benchmark-peer',
+        roomId: 'main',
+        sessionId: 'benchmark-receipt-single-1000',
+      );
+      final single1000 = _syntheticTranscript(
+        1000,
+        sessionId: singleKey.sessionId,
+      );
+      final single1000Watch = Stopwatch()..start();
+      for (final event in single1000) {
+        final result = await store.appendAll(singleKey, <TranscriptEvent>[
+          event,
+        ]);
+        expect(result.accepted.single.event.eventId, event.eventId);
+      }
+      single1000Watch.stop();
+
+      _report(
+        probe: 'transcript_store_append_batch_5500_after',
+        eventCount: batch5500.length,
+        samples: <int>[batch5500Watch.elapsedMicroseconds],
+      );
+      _report(
+        probe: 'transcript_store_append_batch_1000_after',
+        eventCount: batch1000.length,
+        samples: <int>[batch1000Watch.elapsedMicroseconds],
+      );
+      _report(
+        probe: 'transcript_store_append_one_at_a_time_1000_after',
+        eventCount: single1000.length,
+        samples: <int>[single1000Watch.elapsedMicroseconds],
+      );
+      expect(batch5500Watch.elapsedMilliseconds, lessThanOrEqualTo(250));
+      expect(batch1000Watch.elapsedMilliseconds, lessThanOrEqualTo(50));
+      expect(single1000Watch.elapsedMilliseconds, lessThanOrEqualTo(400));
+    } finally {
+      await Hive.close();
+      await directory.delete(recursive: true);
+    }
+  });
+
   test(
     'AFTER: append receipt drives delta materialization without a full read',
     () async {
-      // Implementation checkpoint: use an instrumented TranscriptEventStore to
-      // assert zero append-path readSession calls, apply only accepted receipt
-      // entries, and compare every resulting projection with a clean rebuild.
-      // Target: one 5,500-event replay batch <=250 ms and a 1,000-event
-      // one-at-a-time persisted pipeline <=400 ms on the discovery host.
       throw UnimplementedError(
         'Incremental append pipeline is not implemented yet.',
       );
     },
-    skip: 'AFTER scaffold for opt-2/opt-3; implementation enables it.',
+    skip: 'AFTER scaffold for opt-3; implementation enables it.',
   );
 }
 

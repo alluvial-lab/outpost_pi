@@ -186,18 +186,27 @@ class _MemoryTranscriptStore implements TranscriptEventStore {
     final batch = events.toList(growable: false);
     final log = _events.putIfAbsent(key.durableKey, () => []);
     final ids = log.map((event) => event.eventId).toSet();
-    var appended = 0;
+    final accepted = <SequencedTranscriptEvent>[];
     for (final event in batch) {
       if (ids.add(event.eventId)) {
+        final sequence = log.length;
         log.add(event);
-        appended++;
+        accepted.add(
+          SequencedTranscriptEvent(event: event, sequence: sequence),
+        );
       }
     }
     return AppendTranscriptEventsResult(
       received: batch.length,
-      appended: appended,
-      skipped: batch.length - appended,
+      appended: accepted.length,
+      skipped: batch.length - accepted.length,
+      accepted: List<SequencedTranscriptEvent>.unmodifiable(accepted),
     );
+  }
+
+  @override
+  Future<void> clearSession(TranscriptSessionKey key) async {
+    _events.remove(key.durableKey);
   }
 
   @override

@@ -171,7 +171,11 @@ final class _CountingTranscriptStore implements TranscriptEventStore {
     received: events.length,
     appended: 0,
     skipped: events.length,
+    accepted: const <SequencedTranscriptEvent>[],
   );
+
+  @override
+  Future<void> clearSession(TranscriptSessionKey key) async {}
 
   @override
   Future<List<TranscriptEvent>> readSession(TranscriptSessionKey key) async {
