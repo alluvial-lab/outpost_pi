@@ -1,0 +1,532 @@
+// Host-side perf-design scaffold for feature-app-edge-trigger-room-snapshot-consumers.
+//
+// This intentionally measures the current fan-out path before the optimization:
+// ConnectionManager -> SyncService/ChatViewModel/HomeViewModel -> widgets. The
+// implementation story should retain this harness, add the post-optimization
+// run, and compare the counters rather than replacing the representative stream.
+
+import 'dart:async';
+import 'dart:io';
+
+import 'package:app/data/local/boxes.dart';
+import 'package:app/data/local/records/message_record.dart';
+import 'package:app/data/local/records/runtime_record.dart';
+import 'package:app/data/preferences/preferences.dart';
+import 'package:app/data/repositories/session_read_repository.dart';
+import 'package:app/data/sync/sync_service.dart';
+import 'package:app/data/transport/channel.dart';
+import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/domain/entities/remote_session_ref.dart';
+import 'package:app/domain/session_state.dart';
+import 'package:app/domain/transcript/transcript_event.dart';
+import 'package:app/domain/contracts/transcript_event_store.dart';
+import 'package:app/pairing/storage.dart';
+import 'package:app/protocol/protocol.dart';
+import 'package:app/ui/chat/states/chat_state.dart';
+import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
+import 'package:app/ui/home/states/home_state.dart';
+import 'package:app/ui/home/viewmodels/home_viewmodel.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
+
+const _peerEpk = 'perf-room-snapshot-peer';
+const _sessionId = 'perf-room-snapshot-session';
+const _roomId = 'main';
+const _snapshotCount = 339;
+
+final class _FakeChannel implements IChannel, IControlLink {
+  final _messages = StreamController<ServerMessage>.broadcast();
+  final _controls = StreamController<ControlInbound>.broadcast();
+
+  @override
+  Stream<ServerMessage> get serverMessages => _messages.stream;
+
+  @override
+  Future<void> send(ClientMessage msg) async {}
+
+  @override
+  Future<void> close() async {
+    await _messages.close();
+    await _controls.close();
+  }
+
+  @override
+  Stream<ControlInbound> get controlFrames => _controls.stream;
+
+  @override
+  void sendControl(Map<String, dynamic> json) {}
+
+  void pushServer(ServerMessage msg) => _messages.add(msg);
+
+  void pushControl(ControlInbound frame) {
+    _controls.add(frame);
+  }
+}
+
+final class _BenchmarkConnectionManager extends ConnectionManager {
+  _BenchmarkConnectionManager(this.peer, this.link, PairingStorage storage)
+    : super(factory: (_, _) async => link, storage: storage);
+
+  final PeerRecord peer;
+  final IChannel link;
+  final _rooms = StreamController<Map<String, List<RoomInfo>>>.broadcast(
+    sync: true,
+  );
+  ConnectionStatus _currentStatus = const StatusNoPeer();
+  bool _working = false;
+
+  @override
+  Stream<Map<String, List<RoomInfo>>> get roomsStream => _rooms.stream;
+
+  @override
+  Stream<ConnectionStatus> get statusStream => const Stream.empty();
+
+  @override
+  ConnectionStatus get status => _currentStatus;
+
+  @override
+  IChannel? get channel => link;
+
+  @override
+  PeerRecord? get activePeer => peer;
+
+  @override
+  String get activeRoomId => _roomId;
+
+  @override
+  String? get activeSessionId => _sessionId;
+
+  @override
+  List<RoomInfo> roomsFor(String epk) => [
+    RoomInfo(
+      roomId: _roomId,
+      sessionId: _sessionId,
+      startedAt: 1,
+      working: _working,
+    ),
+  ];
+
+  @override
+  Map<String, List<RoomInfo>> get roomsSnapshot => {
+    _peerEpk: roomsFor(_peerEpk),
+  };
+
+  @override
+  bool isRoomLive(String epk, String roomId) =>
+      epk == _peerEpk && roomId == _roomId;
+
+  @override
+  RoomTurnProjection roomTurnProjection(String epk, String roomId) =>
+      isRoomLive(epk, roomId)
+      ? RoomTurnProjection(
+          status: _working ? AppTurnStatus.working : AppTurnStatus.idle,
+          sessionId: _sessionId,
+        )
+      : RoomTurnProjection.stale;
+
+  @override
+  bool isRoomWorking(String epk, String roomId) =>
+      roomTurnProjection(epk, roomId).working;
+
+  @override
+  void switchRoom(String roomId) {}
+
+  @override
+  void subscribeToPeers(List<String> epks) {}
+
+  void startOnline() {
+    _currentStatus = StatusOnline(link);
+  }
+
+  /// Emit a canonical full snapshot after the transport decoder boundary.
+  void emitRoomSnapshot({required bool working}) {
+    _working = working;
+    _rooms.add(roomsSnapshot);
+  }
+
+  @override
+  void dispose() {
+    _rooms.close();
+    super.dispose();
+  }
+}
+
+/// Count full transcript reads while doing enough work to model a populated
+/// store. The real encrypted Hive read baseline remains in the discovery notes.
+final class _CountingTranscriptStore implements TranscriptEventStore {
+  _CountingTranscriptStore(this.events);
+
+  final List<TranscriptEvent> events;
+  final List<int> readDurationsUs = <int>[];
+  final List<Completer<void>> _readWaiters = <Completer<void>>[];
+  int readCalls = 0;
+
+  @override
+  Future<AppendTranscriptEventsResult> appendAll(
+    TranscriptSessionKey key,
+    Iterable<TranscriptEvent> events,
+  ) async => AppendTranscriptEventsResult(
+    received: events.length,
+    appended: 0,
+    skipped: events.length,
+  );
+
+  @override
+  Future<List<TranscriptEvent>> readSession(TranscriptSessionKey key) async {
+    final stopwatch = Stopwatch()..start();
+    // Force a full traversal before returning, so the benchmark cannot measure
+    // a list-reference shortcut in place of the diagnosed full-log scan.
+    var checksum = 0;
+    for (final event in events) {
+      checksum ^= event.eventId.length;
+    }
+    if (checksum == -1) throw StateError('unreachable benchmark guard');
+    final result = List<TranscriptEvent>.of(events, growable: false);
+    stopwatch.stop();
+    readCalls++;
+    readDurationsUs.add(stopwatch.elapsedMicroseconds);
+    final waiters = List<Completer<void>>.of(_readWaiters);
+    _readWaiters.clear();
+    for (final waiter in waiters) {
+      if (!waiter.isCompleted) waiter.complete();
+    }
+    return result;
+  }
+
+  @override
+  Stream<List<TranscriptEvent>> watchSession(TranscriptSessionKey key) =>
+      const Stream<List<TranscriptEvent>>.empty();
+
+  /// Wait for the next read completion without relying on elapsed time.
+  Future<void> waitForReadCount(int expected) {
+    if (readCalls >= expected) return Future<void>.value();
+    final waiter = Completer<void>();
+    _readWaiters.add(waiter);
+    return waiter.future;
+  }
+}
+
+final class _FakeSecureStorage implements FlutterSecureStorage {
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => key == 'prefs.selected_peer_epk' ? '$_peerEpk:$_roomId' : null;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _FakePreferences extends Preferences {
+  _FakePreferences(this.epk) : super(_FakeSecureStorage());
+
+  final String epk;
+
+  @override
+  String? get selectedPeerEpk => epk;
+
+  @override
+  String? get selectedRoomId => _roomId;
+}
+
+final class _FakeStorage extends PairingStorage {
+  _FakeStorage(this.peer);
+
+  final PeerRecord peer;
+
+  @override
+  Future<List<PeerRecord>> listPeers() async => [peer];
+
+  @override
+  Future<PeerRecord?> loadPeer(String epk) async =>
+      epk == peer.remoteEpk ? peer : null;
+
+  @override
+  Future<List<PersistedRoom>> loadRooms(String epk) async => const [];
+
+  @override
+  Future<void> saveRooms(String epk, List<PersistedRoom> rooms) async {}
+}
+
+final class _EmptyReadRepository extends SessionReadRepository {
+  _EmptyReadRepository() : super(LocalBoxes());
+
+  @override
+  Stream<List<MessageRecord>> watchMessages(RemoteSessionRef ref) =>
+      const Stream<List<MessageRecord>>.empty();
+
+  @override
+  Stream<RuntimeRecord> watchRuntime(String epk, String roomId) =>
+      const Stream<RuntimeRecord>.empty();
+}
+
+final class _CountingSyncService extends SyncService {
+  _CountingSyncService(
+    super.connection,
+    super.boxes,
+    TranscriptEventStore store,
+  ) : super(transcriptEventStore: store);
+
+  int activateCalls = 0;
+
+  @override
+  Future<void> activate(String epk, String roomId) async {
+    activateCalls++;
+    await super.activate(epk, roomId);
+  }
+}
+
+final class _CountingChatViewModel extends ChatViewModel {
+  _CountingChatViewModel(
+    super.read,
+    super.sync,
+    super.conn,
+    super.prefs,
+    super.storage,
+  );
+
+  int notifyCalls = 0;
+
+  @override
+  void notifyListeners() {
+    notifyCalls++;
+    super.notifyListeners();
+  }
+}
+
+final class _CountingHomeViewModel extends HomeViewModel {
+  _CountingHomeViewModel(super.storage, super.prefs, super.conn);
+
+  int notifyCalls = 0;
+
+  @override
+  void notifyListeners() {
+    notifyCalls++;
+    super.notifyListeners();
+  }
+}
+
+final class _RebuildProbe extends StatelessWidget {
+  const _RebuildProbe({required this.listenable, required this.onBuild});
+
+  final Listenable listenable;
+  final VoidCallback onBuild;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: listenable,
+    builder: (context, child) {
+      onBuild();
+      return const SizedBox.shrink();
+    },
+  );
+}
+
+/// Mirrors _MessageList's transcript-identity guard. Room metadata changes
+/// should rebuild the consumer but must not schedule an anchor restoration.
+final class _AnchorCallbackProbe extends StatelessWidget {
+  const _AnchorCallbackProbe({required this.vm, required this.onCallback});
+
+  final ChatViewModel vm;
+  final VoidCallback onCallback;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: vm,
+    builder: (context, child) {
+      final state = vm.state;
+      final ids = state is ChatReady
+          ? <String>[for (final message in state.messages) message.id]
+          : const <String>[];
+      final previous = _lastIds;
+      _lastIds = ids;
+      if (previous != null && !_sameIds(previous, ids)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => onCallback());
+      }
+      return const SizedBox.shrink();
+    },
+  );
+
+  static List<String>? _lastIds;
+
+  static bool _sameIds(List<String> left, List<String> right) {
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      if (left[i] != right[i]) return false;
+    }
+    return true;
+  }
+}
+
+List<TranscriptEvent> _eventsFor(int eventCount) {
+  final events = <TranscriptEvent>[];
+  final timestamp = DateTime.utc(2026, 8, 24);
+  for (var i = 0; i < eventCount ~/ 2; i++) {
+    final id = 'perf-$i';
+    events
+      ..add(
+        UserMessageSubmitted(
+          eventId: 'submitted:$id',
+          sessionId: _sessionId,
+          ts: timestamp.add(Duration(seconds: i)),
+          clientMessageId: id,
+          text: 'message $i',
+        ),
+      )
+      ..add(
+        UserMessageConfirmed(
+          eventId: 'confirmed:$id',
+          sessionId: _sessionId,
+          ts: timestamp.add(Duration(seconds: i, milliseconds: 1)),
+          clientMessageId: id,
+          text: 'message $i',
+        ),
+      );
+  }
+  return events;
+}
+
+Future<void> _pumpUntil(WidgetTester tester, bool Function() ready) async {
+  for (var i = 0; i < 100 && !ready(); i++) {
+    await tester.pump();
+  }
+  expect(ready(), isTrue, reason: 'benchmark fixture did not hydrate');
+}
+
+Future<void> main() async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory directory;
+  setUpAll(() async {
+    directory = Directory.systemTemp.createTempSync(
+      'outpost-room-snapshot-perf-',
+    );
+    await LocalBoxes.initForTest(directory.path);
+  });
+  tearDownAll(() async {
+    await Hive.close();
+    await directory.delete(recursive: true);
+  });
+
+  testWidgets(
+    'room snapshot fan-out baseline and after-optimization scaffold',
+    (tester) async {
+      for (final eventCount in [0, 200, 5500]) {
+        final peer = const PeerRecord(
+          remoteEpk: _peerEpk,
+          sessionName: 'Perf Pi',
+          relayUrl: 'ws://localhost',
+          pairedAt: '2026-08-24T00:00:00Z',
+          roomId: _roomId,
+        );
+        final storage = _FakeStorage(peer);
+        final channel = _FakeChannel();
+        final connection = _BenchmarkConnectionManager(peer, channel, storage);
+        final store = _CountingTranscriptStore(_eventsFor(eventCount));
+        final sync = _CountingSyncService(connection, LocalBoxes(), store);
+        connection.startOnline();
+        await tester.runAsync(() => sync.activate(_peerEpk, _roomId));
+
+        final prefs = _FakePreferences(_peerEpk);
+        final chat = _CountingChatViewModel(
+          _EmptyReadRepository(),
+          sync,
+          connection,
+          prefs,
+          storage,
+        );
+        final home = _CountingHomeViewModel(storage, prefs, connection);
+        var chatBuilds = 0;
+        var homeBuilds = 0;
+        var anchorCallbacks = 0;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Column(
+              children: [
+                _RebuildProbe(listenable: chat, onBuild: () => chatBuilds++),
+                _RebuildProbe(listenable: home, onBuild: () => homeBuilds++),
+              ],
+            ),
+          ),
+        );
+        await _pumpUntil(
+          tester,
+          () => chat.activePeer != null && home.state is HomeList,
+        );
+        await chat.initialize();
+
+        // Exclude constructor/bootstrap hydration from the fan-out measurement.
+        final initialReads = store.readCalls;
+        sync.activateCalls = 0;
+        chat.notifyCalls = 0;
+        home.notifyCalls = 0;
+        chatBuilds = 0;
+        homeBuilds = 0;
+        anchorCallbacks = 0;
+        _AnchorCallbackProbe._lastIds = null;
+
+        final roomEmitments = <Map<String, List<RoomInfo>>>[];
+        final roomSub = connection.roomsStream.listen(roomEmitments.add);
+        final perSnapshotUs = <int>[];
+        final perSnapshotReadUs = <int>[];
+        for (var i = 0; i < _snapshotCount; i++) {
+          final emittedBefore = roomEmitments.length;
+          final readsBefore = store.readCalls;
+          final stopwatch = Stopwatch()..start();
+          connection.emitRoomSnapshot(working: i.isEven);
+          await store.waitForReadCount(readsBefore + 1);
+          await tester.pump();
+          expect(
+            roomEmitments.length,
+            greaterThan(emittedBefore),
+            reason: 'room snapshot stream barrier did not fire',
+          );
+          // Current behavior performs one full-log resend scan per semantic
+          // working snapshot. This barrier is deliberately count-based, not a
+          // sleep; the implementation pass should change this expectation to
+          // zero for metadata-only snapshots while keeping a separate edge test.
+          stopwatch.stop();
+          perSnapshotUs.add(stopwatch.elapsedMicroseconds);
+          perSnapshotReadUs.add(store.readDurationsUs.last);
+          await tester.pump();
+        }
+        await roomSub.cancel();
+
+        final wallP50 = _percentile(perSnapshotUs, 0.50);
+        final wallP95 = _percentile(perSnapshotUs, 0.95);
+        final readP50 = _percentile(perSnapshotReadUs, 0.50);
+        final readP95 = _percentile(perSnapshotReadUs, 0.95);
+        // ignore: avoid_print — machine-readable benchmark output.
+        print(
+          'PERF_JSON ${<String, Object>{'probe': 'room_snapshot_consumer_fanout_baseline', 'events': eventCount, 'snapshots': _snapshotCount, 'initial_reads': initialReads, 'snapshot_reads': store.readCalls - initialReads, 'snapshot_read_p50_us': readP50, 'snapshot_read_p95_us': readP95, 'snapshot_wall_p50_us': wallP50, 'snapshot_wall_p95_us': wallP95, 'binding_refreshes': sync.activateCalls, 'chat_notify_listeners': chat.notifyCalls, 'home_notify_listeners': home.notifyCalls, 'chat_widget_rebuilds': chatBuilds, 'home_widget_rebuilds': homeBuilds, 'post_frame_anchor_callbacks': anchorCallbacks}}',
+        );
+
+        expect(store.readCalls - initialReads, _snapshotCount);
+        expect(sync.activateCalls, _snapshotCount);
+        expect(anchorCallbacks, 0);
+
+        chat.dispose();
+        home.dispose();
+        sync.dispose();
+        connection.dispose();
+      }
+    },
+    // Design-only scaffold; the implementation story enables the before/after
+    // run and owns explicit async teardown.
+    skip: true,
+  );
+}
+
+int _percentile(List<int> values, double fraction) {
+  final sorted = List<int>.of(values)..sort();
+  final index = ((sorted.length - 1) * fraction).round();
+  return sorted[index];
+}
