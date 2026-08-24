@@ -25,6 +25,8 @@ const expectedSessionScopedServerTypes = new Set([
   "action_ok",
   "action_error",
   "models_list",
+  "capture_upload_ack",
+  "capture_upload_error",
 ]);
 
 const expectedSessionScopedClientTypes = new Set([
@@ -39,6 +41,9 @@ const expectedSessionScopedClientTypes = new Set([
   "model_set",
   "thinking_set",
   "list_models",
+  "capture_upload_begin",
+  "capture_upload_chunk",
+  "capture_upload_end",
 ]);
 
 describe("session-scoped protocol registry", () => {

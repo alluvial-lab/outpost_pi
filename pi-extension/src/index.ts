@@ -112,6 +112,7 @@ import {
   type ActionCtx,
 } from "./actions/handlers.js";
 import { ensureModelRegistry } from "./actions/registry.js";
+import { CaptureUploadHandler } from "./actions/capture_upload_handler.js";
 import {
   ensureGlobalDirs,
   LOCAL_SESSION_NAME,
@@ -563,6 +564,17 @@ function _notify(msg: string, type: "info" | "warning" | "error" = "info", ctx?:
   }
 }
 
+const _captureUploads = new CaptureUploadHandler({
+  cwd: _currentCwd,
+  note: (message) => {
+    _sendPiMessage(
+      { customType: "outpost-pi:debug-capture-delivered", content: message, display: true },
+      { triggerTurn: false },
+      "debug-capture-delivered",
+    );
+  },
+});
+
 /**
  * Adapt command contexts so post-await notifications are best-effort when the
  * captured Pi UI belongs to a replaced session.
@@ -965,6 +977,7 @@ function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): Promise<v
 
     const ownerIds = [..._owners.peerIds()];
     const drains = ownerIds.map((peerId) => _owners.detach(peerId, byeReason));
+    _captureUploads.detach();
 
     // Preserve turn convergence while the relay remains usable. This is the
     // last chance to publish working=false on session replacement/shutdown.
@@ -1122,6 +1135,7 @@ function _disconnectOwnerForRuntime(appPeerId?: string): void {
   if (_state === "idle") return;
   const result = _owners.disconnectOwner(appPeerId);
   if (!result.disconnected) return;
+  _captureUploads.detach();
 
   _syncOwnerPresenceSubscription();
 
@@ -3109,6 +3123,19 @@ export function _routeClientMessageFrom(
     case "list_models":
       handleListModels(_sdkSessionProjection.freshActionCtx(), ensureModelRegistry(), sender, msg);
       break;
+    case "capture_upload_begin":
+    case "capture_upload_chunk":
+    case "capture_upload_end":
+      void _captureUploads.handle(sender, msg).catch(() => {
+        sender.send(_withCurrentSession({
+          type: "capture_upload_error",
+          in_reply_to: msg.id,
+          upload_id: msg.upload_id,
+          code: "io_error",
+          message: "Capture delivery failed unexpectedly.",
+        }));
+      });
+      break;
   }
 }
 
@@ -3198,6 +3225,7 @@ function _resetSessionForNew(inReplyTo: string): void {
   // key is sessionId-scoped, so this is belt-and-suspenders, but clearing
   // avoids lingering promises from a replaced session.)
   _inflightUserDeliveries.clear();
+  _captureUploads.detach();
 }
 
 type ToolArgs = Record<string, unknown>;

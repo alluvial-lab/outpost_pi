@@ -1061,7 +1061,7 @@ describe("contract fixtures: pair_*", () => {
   test("all expected fixture files present", () => {
     // Fixture set is append-only; assert the known set so a dropped/added fixture is caught.
     const files = readdirSync(fixtureDir).filter((f) => f.endsWith(".jsonl"));
-    expect(files).toHaveLength(36);
+    expect(files).toHaveLength(41);
   });
 });
 

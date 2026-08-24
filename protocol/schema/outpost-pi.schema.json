@@ -20,6 +20,11 @@
     "discriminator": "type",
     "profiles": ["compat", "canonical-session"],
     "transports": ["relay-jsonl", "pi-custom-event"],
-    "manifest": "./manifest.json"
+    "manifest": "./manifest.json",
+    "captureUploadFamily": {
+      "client": ["capture_upload_begin", "capture_upload_chunk", "capture_upload_end"],
+      "server": ["capture_upload_ack", "capture_upload_error"],
+      "limitsSource": "./app-pi-client.schema.json#/x-outpost-pi/captureUploadLimits"
+    }
   }
 }

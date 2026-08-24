@@ -1,0 +1,1 @@
+{"type":"capture_upload_ack","session_id":"session-1","in_reply_to":"capture-end-1","upload_id":"capture-1","stage":"delivered","path":"debug/app-capture-test.bin","bytes":16,"events":1}

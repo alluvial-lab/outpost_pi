@@ -99,6 +99,10 @@ export const RELAY_MAX_SESSION_ID_BYTES = 512;
 export const RELAY_MAX_MODEL_BYTES = 256;
 export const RELAY_MAX_THINKING_BYTES = 32;
 
+export const CAPTURE_UPLOAD_MAX_CHUNK_BYTES = 8192;
+export const CAPTURE_UPLOAD_MAX_TOTAL_BYTES = 2097152;
+export const CAPTURE_UPLOAD_MAX_INFLIGHT = 1;
+
 export interface RelayOuterEnvelope {
   readonly peer: string;
   readonly room: string;
@@ -139,6 +143,9 @@ export const CLIENT_MESSAGE_TYPES = [
   "model_set",
   "thinking_set",
   "list_models",
+  "capture_upload_begin",
+  "capture_upload_chunk",
+  "capture_upload_end",
 ] as const;
 export type ClientMessageType = (typeof CLIENT_MESSAGE_TYPES)[number];
 export const SESSION_SCOPED_CLIENT_MESSAGE_TYPES = [
@@ -153,6 +160,9 @@ export const SESSION_SCOPED_CLIENT_MESSAGE_TYPES = [
   "model_set",
   "thinking_set",
   "list_models",
+  "capture_upload_begin",
+  "capture_upload_chunk",
+  "capture_upload_end",
 ] as const;
 export const appPiClientTypes = CLIENT_MESSAGE_TYPES;
 export type AppPiClientType = ClientMessageType;
@@ -250,6 +260,33 @@ export interface ListModels {
   readonly session_id?: string;
 }
 
+export interface CaptureUploadBegin {
+  readonly type: "capture_upload_begin";
+  readonly id: string;
+  readonly session_id?: string;
+  readonly upload_id: string;
+  readonly device_label: string;
+  readonly total_bytes: number;
+  readonly capture_kind: "debug_log_jsonl";
+}
+
+export interface CaptureUploadChunk {
+  readonly type: "capture_upload_chunk";
+  readonly id: string;
+  readonly session_id?: string;
+  readonly upload_id: string;
+  readonly sequence: number;
+  readonly payload: string;
+}
+
+export interface CaptureUploadEnd {
+  readonly type: "capture_upload_end";
+  readonly id: string;
+  readonly session_id?: string;
+  readonly upload_id: string;
+  readonly sha256: string;
+}
+
 export type ClientMessage =
   | PairRequest
   | UserMessage
@@ -263,7 +300,10 @@ export type ClientMessage =
   | SessionCompact
   | ModelSet
   | ThinkingSet
-  | ListModels;
+  | ListModels
+  | CaptureUploadBegin
+  | CaptureUploadChunk
+  | CaptureUploadEnd;
 
 export const SERVER_MESSAGE_TYPES = [
   "pair_ok",
@@ -285,6 +325,8 @@ export const SERVER_MESSAGE_TYPES = [
   "action_ok",
   "action_error",
   "models_list",
+  "capture_upload_ack",
+  "capture_upload_error",
 ] as const;
 export const SERVER_MESSAGE_DISCRIMINATORS = {
   pair_ok: "pair_ok",
@@ -306,6 +348,8 @@ export const SERVER_MESSAGE_DISCRIMINATORS = {
   action_ok: "action_ok",
   action_error: "action_error",
   models_list: "models_list",
+  capture_upload_ack: "capture_upload_ack",
+  capture_upload_error: "capture_upload_error",
 } as const;
 export type ServerMessageType = (typeof SERVER_MESSAGE_TYPES)[number];
 export const SESSION_SCOPED_SERVER_MESSAGE_TYPES = [
@@ -324,6 +368,8 @@ export const SESSION_SCOPED_SERVER_MESSAGE_TYPES = [
   "action_ok",
   "action_error",
   "models_list",
+  "capture_upload_ack",
+  "capture_upload_error",
 ] as const;
 export const appPiServerTypes = SERVER_MESSAGE_TYPES;
 export type AppPiServerType = ServerMessageType;
@@ -478,6 +524,27 @@ export interface ModelsList {
   readonly current?: WireModel;
 }
 
+export interface CaptureUploadAck {
+  readonly type: "capture_upload_ack";
+  readonly session_id?: string;
+  readonly in_reply_to: string;
+  readonly upload_id: string;
+  readonly stage: "begin" | "chunk" | "delivered";
+  readonly next_sequence?: number;
+  readonly path?: string;
+  readonly bytes?: number;
+  readonly events?: number;
+}
+
+export interface CaptureUploadError {
+  readonly type: "capture_upload_error";
+  readonly session_id?: string;
+  readonly in_reply_to: string;
+  readonly upload_id: string;
+  readonly code: "too_large" | "bad_sequence" | "io_error" | "checksum_mismatch" | "invalid_capture" | "busy" | "not_found";
+  readonly message: string;
+}
+
 export type ServerMessage =
   | PairOk
   | PairError
@@ -497,7 +564,9 @@ export type ServerMessage =
   | SessionHistory
   | ActionOk
   | ActionError
-  | ModelsList;
+  | ModelsList
+  | CaptureUploadAck
+  | CaptureUploadError;
 
 export const relayControlTypes = [
   "hello",
@@ -936,6 +1005,18 @@ function isListModels(value: unknown): value is ListModels {
   return isObjectLike(value, ["type", "id", "session_id"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "list_models") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512))));
 }
 
+function isCaptureUploadBegin(value: unknown): value is CaptureUploadBegin {
+  return isObjectLike(value, ["type", "id", "session_id", "upload_id", "device_label", "total_bytes", "capture_kind"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "capture_upload_begin") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "upload_id") && (typeof record["upload_id"] === "string" && record["upload_id"].length >= 1 && record["upload_id"].length <= 128)) && (Object.hasOwn(record, "device_label") && (typeof record["device_label"] === "string" && record["device_label"].length >= 1 && record["device_label"].length <= 128)) && (Object.hasOwn(record, "total_bytes") && isIntegerAtLeast(record["total_bytes"], 1)) && (Object.hasOwn(record, "capture_kind") && record["capture_kind"] === "debug_log_jsonl")));
+}
+
+function isCaptureUploadChunk(value: unknown): value is CaptureUploadChunk {
+  return isObjectLike(value, ["type", "id", "session_id", "upload_id", "sequence", "payload"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "capture_upload_chunk") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "upload_id") && (typeof record["upload_id"] === "string" && record["upload_id"].length >= 1 && record["upload_id"].length <= 128)) && (Object.hasOwn(record, "sequence") && isIntegerAtLeast(record["sequence"], 0)) && (Object.hasOwn(record, "payload") && (typeof record["payload"] === "string" && record["payload"].length >= 1 && record["payload"].length <= 10924))));
+}
+
+function isCaptureUploadEnd(value: unknown): value is CaptureUploadEnd {
+  return isObjectLike(value, ["type", "id", "session_id", "upload_id", "sha256"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "capture_upload_end") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "upload_id") && (typeof record["upload_id"] === "string" && record["upload_id"].length >= 1 && record["upload_id"].length <= 128)) && (Object.hasOwn(record, "sha256") && (typeof record["sha256"] === "string" && record["sha256"].length >= 64 && record["sha256"].length <= 64))));
+}
+
 function isPairOk(value: unknown): value is PairOk {
   return isObjectLike(value, ["type", "in_reply_to", "session_name", "session_started_at", "session_id", "room_id", "harness", "hostname", "dh_pk", "dh_sig"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "pair_ok") && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "session_name") && (typeof record["session_name"] === "string" && record["session_name"].length >= 1)) && (Object.hasOwn(record, "session_started_at") && isIntegerAtLeast(record["session_started_at"], 0)) && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "room_id") && (typeof record["room_id"] === "string" && record["room_id"].length >= 1)) && (record["harness"] === undefined || isObjectLike(record["harness"], ["name", "version"], (record) => ((Object.hasOwn(record, "name") && (typeof record["name"] === "string" && record["name"].length >= 1)) && (Object.hasOwn(record, "version") && (typeof record["version"] === "string" && record["version"].length >= 1))))) && (record["hostname"] === undefined || (typeof record["hostname"] === "string" && record["hostname"].length >= 1)) && (record["dh_pk"] === undefined || (typeof record["dh_pk"] === "string" && record["dh_pk"].length >= 1)) && (record["dh_sig"] === undefined || (typeof record["dh_sig"] === "string" && record["dh_sig"].length >= 1))));
 }
@@ -1008,6 +1089,14 @@ function isModelsList(value: unknown): value is ModelsList {
   return isObjectLike(value, ["type", "session_id", "in_reply_to", "models", "current"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "models_list") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "models") && (Array.isArray(record["models"]) && record["models"].every((item) => isObjectLike(item, ["id", "name", "provider", "reasoning", "context_window", "vision"], (record) => ((Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "name") && (typeof record["name"] === "string" && record["name"].length >= 1)) && (Object.hasOwn(record, "provider") && (typeof record["provider"] === "string" && record["provider"].length >= 1)) && (Object.hasOwn(record, "reasoning") && typeof record["reasoning"] === "boolean") && (Object.hasOwn(record, "context_window") && isIntegerAtLeast(record["context_window"], 0)) && (record["vision"] === undefined || typeof record["vision"] === "boolean")))))) && (record["current"] === undefined || isObjectLike(record["current"], ["id", "name", "provider", "reasoning", "context_window", "vision"], (record) => ((Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "name") && (typeof record["name"] === "string" && record["name"].length >= 1)) && (Object.hasOwn(record, "provider") && (typeof record["provider"] === "string" && record["provider"].length >= 1)) && (Object.hasOwn(record, "reasoning") && typeof record["reasoning"] === "boolean") && (Object.hasOwn(record, "context_window") && isIntegerAtLeast(record["context_window"], 0)) && (record["vision"] === undefined || typeof record["vision"] === "boolean"))))));
 }
 
+function isCaptureUploadAck(value: unknown): value is CaptureUploadAck {
+  return isObjectLike(value, ["type", "session_id", "in_reply_to", "upload_id", "stage", "next_sequence", "path", "bytes", "events"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "capture_upload_ack") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "upload_id") && (typeof record["upload_id"] === "string" && record["upload_id"].length >= 1 && record["upload_id"].length <= 128)) && (Object.hasOwn(record, "stage") && (record["stage"] === "begin" || record["stage"] === "chunk" || record["stage"] === "delivered")) && (record["next_sequence"] === undefined || isIntegerAtLeast(record["next_sequence"], 0)) && (record["path"] === undefined || (typeof record["path"] === "string" && record["path"].length >= 1 && record["path"].length <= 512)) && (record["bytes"] === undefined || isIntegerAtLeast(record["bytes"], 0)) && (record["events"] === undefined || isIntegerAtLeast(record["events"], 0))));
+}
+
+function isCaptureUploadError(value: unknown): value is CaptureUploadError {
+  return isObjectLike(value, ["type", "session_id", "in_reply_to", "upload_id", "code", "message"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "capture_upload_error") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "upload_id") && (typeof record["upload_id"] === "string" && record["upload_id"].length >= 1 && record["upload_id"].length <= 128)) && (Object.hasOwn(record, "code") && (record["code"] === "too_large" || record["code"] === "bad_sequence" || record["code"] === "io_error" || record["code"] === "checksum_mismatch" || record["code"] === "invalid_capture" || record["code"] === "busy" || record["code"] === "not_found")) && (Object.hasOwn(record, "message") && (typeof record["message"] === "string" && record["message"].length >= 1 && record["message"].length <= 256))));
+}
+
 function isRelayControlFrameChallenge(value: unknown): value is RelayControlFrameChallenge {
   return isObjectLike(value, ["type", "nonce"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "challenge") && (Object.hasOwn(record, "nonce") && (typeof record["nonce"] === "string" && record["nonce"].length >= 1))));
 }
@@ -1077,6 +1166,9 @@ const CLIENT_MESSAGE_VALIDATORS: { readonly [K in ClientMessageType]: ProtocolVa
   "model_set": isModelSet,
   "thinking_set": isThinkingSet,
   "list_models": isListModels,
+  "capture_upload_begin": isCaptureUploadBegin,
+  "capture_upload_chunk": isCaptureUploadChunk,
+  "capture_upload_end": isCaptureUploadEnd,
 };
 
 export function isClientMessage(value: unknown): value is ClientMessage {
@@ -1106,6 +1198,8 @@ const SERVER_MESSAGE_VALIDATORS: { readonly [K in ServerMessageType]: ProtocolVa
   "action_ok": isActionOk,
   "action_error": isActionError,
   "models_list": isModelsList,
+  "capture_upload_ack": isCaptureUploadAck,
+  "capture_upload_error": isCaptureUploadError,
 };
 
 export function isServerMessage(value: unknown): value is ServerMessage {

@@ -15,7 +15,10 @@
     { "$ref": "#/$defs/sessionCompact" },
     { "$ref": "#/$defs/modelSet" },
     { "$ref": "#/$defs/thinkingSet" },
-    { "$ref": "#/$defs/listModels" }
+    { "$ref": "#/$defs/listModels" },
+    { "$ref": "#/$defs/captureUploadBegin" },
+    { "$ref": "#/$defs/captureUploadChunk" },
+    { "$ref": "#/$defs/captureUploadEnd" }
   ],
   "$defs": {
     "pairRequest": {
@@ -173,12 +176,59 @@
       },
       "additionalProperties": false,
       "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+    },
+    "captureUploadBegin": {
+      "type": "object",
+      "required": ["type", "id", "upload_id", "device_label", "total_bytes", "capture_kind"],
+      "properties": {
+        "type": { "const": "capture_upload_begin" },
+        "id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
+        "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
+        "upload_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "device_label": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "total_bytes": { "type": "integer", "minimum": 1, "maximum": 2097152 },
+        "capture_kind": { "const": "debug_log_jsonl" }
+      },
+      "additionalProperties": false,
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+    },
+    "captureUploadChunk": {
+      "type": "object",
+      "required": ["type", "id", "upload_id", "sequence", "payload"],
+      "properties": {
+        "type": { "const": "capture_upload_chunk" },
+        "id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
+        "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
+        "upload_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "payload": { "type": "string", "minLength": 1, "maxLength": 10924, "contentEncoding": "base64" }
+      },
+      "additionalProperties": false,
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
+    },
+    "captureUploadEnd": {
+      "type": "object",
+      "required": ["type", "id", "upload_id", "sha256"],
+      "properties": {
+        "type": { "const": "capture_upload_end" },
+        "id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
+        "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
+        "upload_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" }
+      },
+      "additionalProperties": false,
+      "x-outpost-pi": { "profileRequired": { "canonical-session": ["session_id"] } }
     }
   },
   "x-outpost-pi": {
     "family": "appPiClient",
     "transport": "relay-jsonl",
     "discriminator": "type",
+    "captureUploadLimits": {
+      "maxChunkDecodedBytes": 8192,
+      "maxTotalBytes": 2097152,
+      "maxInflightPerSession": 1
+    },
     "typeNames": [
       "pair_request",
       "user_message",
@@ -192,7 +242,10 @@
       "session_compact",
       "model_set",
       "thinking_set",
-      "list_models"
+      "list_models",
+      "capture_upload_begin",
+      "capture_upload_chunk",
+      "capture_upload_end"
     ]
   }
 }

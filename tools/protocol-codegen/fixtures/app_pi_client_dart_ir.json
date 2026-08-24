@@ -1,5 +1,10 @@
 {
   "includeAppPiSharedTypes": true,
+  "captureUploadLimits": {
+    "maxChunkDecodedBytes": 8192,
+    "maxTotalBytes": 2097152,
+    "maxInflightPerSession": 1
+  },
   "knownErrorCodes": [
     "tool_approval_required",
     "invalid_message",
@@ -349,6 +354,117 @@
             }
           ],
           "sessionScoped": true
+        },
+        {
+          "type": "capture_upload_begin",
+          "className": "CaptureUploadBegin",
+          "sessionScoped": true,
+          "fields": [
+            {
+              "name": "id",
+              "wireName": "id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "sessionId",
+              "wireName": "session_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "uploadId",
+              "wireName": "upload_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "deviceLabel",
+              "wireName": "device_label",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "totalBytes",
+              "wireName": "total_bytes",
+              "dartType": "int",
+              "required": true
+            },
+            {
+              "name": "captureKind",
+              "wireName": "capture_kind",
+              "dartType": "String",
+              "required": true
+            }
+          ]
+        },
+        {
+          "type": "capture_upload_chunk",
+          "className": "CaptureUploadChunk",
+          "sessionScoped": true,
+          "fields": [
+            {
+              "name": "id",
+              "wireName": "id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "sessionId",
+              "wireName": "session_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "uploadId",
+              "wireName": "upload_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "sequence",
+              "wireName": "sequence",
+              "dartType": "int",
+              "required": true
+            },
+            {
+              "name": "payload",
+              "wireName": "payload",
+              "dartType": "String",
+              "required": true
+            }
+          ]
+        },
+        {
+          "type": "capture_upload_end",
+          "className": "CaptureUploadEnd",
+          "sessionScoped": true,
+          "fields": [
+            {
+              "name": "id",
+              "wireName": "id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "sessionId",
+              "wireName": "session_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "uploadId",
+              "wireName": "upload_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "sha256",
+              "wireName": "sha256",
+              "dartType": "String",
+              "required": true
+            }
+          ]
         }
       ]
     },
@@ -1002,6 +1118,98 @@
             }
           ],
           "sessionScoped": true
+        },
+        {
+          "type": "capture_upload_ack",
+          "className": "CaptureUploadAck",
+          "sessionScoped": true,
+          "fields": [
+            {
+              "name": "sessionId",
+              "wireName": "session_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "inReplyTo",
+              "wireName": "in_reply_to",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "uploadId",
+              "wireName": "upload_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "stage",
+              "wireName": "stage",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "nextSequence",
+              "wireName": "next_sequence",
+              "dartType": "int",
+              "required": false
+            },
+            {
+              "name": "path",
+              "wireName": "path",
+              "dartType": "String",
+              "required": false
+            },
+            {
+              "name": "bytes",
+              "wireName": "bytes",
+              "dartType": "int",
+              "required": false
+            },
+            {
+              "name": "events",
+              "wireName": "events",
+              "dartType": "int",
+              "required": false
+            }
+          ]
+        },
+        {
+          "type": "capture_upload_error",
+          "className": "CaptureUploadError",
+          "sessionScoped": true,
+          "fields": [
+            {
+              "name": "sessionId",
+              "wireName": "session_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "inReplyTo",
+              "wireName": "in_reply_to",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "uploadId",
+              "wireName": "upload_id",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "code",
+              "wireName": "code",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "message",
+              "wireName": "message",
+              "dartType": "String",
+              "required": true
+            }
+          ]
         }
       ]
     },
