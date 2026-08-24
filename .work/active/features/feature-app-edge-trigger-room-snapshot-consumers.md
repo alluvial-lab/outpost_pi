@@ -406,3 +406,18 @@ Both planned optimizations landed in dependency order.
 Verification: `flutter analyze` is clean; targeted transport/sync/Chat/Home and
 benchmark tests pass; the full app suite passes with **937 tests** under
 `flutter test --exclude-tags e2e --concurrency=2`.
+
+## Review closure (2026-08-24)
+
+The required end-to-end validation is green but shows no measurable win for this
+optimization at the exercised scale. The 300-second soak emitted **18** room
+snapshots and ended with **11** transcript rows, far below the motivating
+339-snapshot/5,500-event case. On the same capture-timestamp method used for
+discovery, online→authoritative room snapshot moved from **13.807 ms p50 /
+184.485 ms p95** (n=8) to **16.365 ms p50 / 188.986 ms p95** (n=11); that is no
+improvement, not a speedup claim. The eliminated 339→0 full reads remain useful
+for long-lived rooms with large hydrated transcripts, where the removed work
+scales with both snapshot count and log size; this short low-volume soak cannot
+make that avoided I/O visible. The same run preserved replay, DB↔projection,
+rendering, ordering, and identity oracles. Closure verification also passed the
+clean analyzer and full non-e2e app suite (**940 passed**).

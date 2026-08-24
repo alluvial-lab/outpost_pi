@@ -4,9 +4,14 @@ import 'dart:io';
 
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/local/transcript_event_store_hive.dart';
+import 'package:app/data/sync/sync_service.dart';
+import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
+import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/transcript/transcript_event.dart';
 import 'package:app/domain/transcript/transcript_projection.dart';
+import 'package:app/pairing/storage.dart';
+import 'package:app/protocol/protocol.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 
@@ -334,7 +339,7 @@ void main() {
   });
 
   test(
-    'AFTER: append receipt drives delta materialization without a full read',
+    'AFTER: receipt pipeline reaches production Hive materialization boundary',
     () async {
       final directory = Directory.systemTemp.createTempSync(
         'transcript_delta_pipeline_benchmark_',
@@ -344,72 +349,64 @@ void main() {
           directory.path,
           encryptionKey: List<int>.generate(32, (index) => index),
         );
+        final boxes = LocalBoxes();
         final store = _CountingTranscriptEventStore(
-          HiveTranscriptEventStore(LocalBoxes()),
+          HiveTranscriptEventStore(boxes),
         );
-        final replayEvents = _syntheticTranscript(5500);
-        final replayReducer = TranscriptProjectionReducer.empty(
+
+        final replay = await _materializationHarness(
+          boxes: boxes,
+          store: store,
           sessionId: _sessionId,
         );
+        final replayEvents = _historyEvents(5500);
+        final replayReadsBefore = store.readCalls;
         final replayWatch = Stopwatch()..start();
-        final replayReceipt = await store.appendAll(_key, replayEvents);
-        final replayUpdate = replayReducer.applyAll(
-          replayReceipt.accepted.map((entry) => entry.event),
+        // ignore: invalid_use_of_visible_for_testing_member — benchmark seam.
+        await replay.sync.debugApplyHistory(
+          _history(sessionId: _sessionId, events: replayEvents),
         );
         replayWatch.stop();
-        expect(replayUpdate.projection.messages, hasLength(5500));
-        expect(replayUpdate.firstChangedMessageIndex, 0);
-        expect(store.readCalls, 0);
+        expect(replay.box, hasLength(5500));
+        expect(store.readCalls, replayReadsBefore);
+        replay.dispose();
 
-        const singleKey = TranscriptSessionKey(
-          peerId: 'benchmark-peer',
-          roomId: 'main',
-          sessionId: 'benchmark-delta-single-1000',
+        const singleSessionId = 'benchmark-delta-single-1000';
+        final single = await _materializationHarness(
+          boxes: boxes,
+          store: store,
+          sessionId: singleSessionId,
         );
-        final singleEvents = _syntheticTranscript(
-          1000,
-          sessionId: singleKey.sessionId,
-        );
-        final singleReducer = TranscriptProjectionReducer.empty(
-          sessionId: singleKey.sessionId,
-        );
-        var affectedRows = 0;
+        final singleEvents = _historyEvents(1000);
+        final singleReadsBefore = store.readCalls;
         final singleWatch = Stopwatch()..start();
-        for (final event in singleEvents) {
-          final receipt = await store.appendAll(singleKey, <TranscriptEvent>[
-            event,
-          ]);
-          final update = singleReducer.applyAll(
-            receipt.accepted.map((entry) => entry.event),
+        for (var index = 0; index < singleEvents.length; index += 1) {
+          // ignore: invalid_use_of_visible_for_testing_member — benchmark seam.
+          await single.sync.debugApplyHistory(
+            _history(
+              sessionId: singleSessionId,
+              events: <SessionHistoryEvent>[singleEvents[index]],
+              requestId: 'benchmark-single-$index',
+            ),
           );
-          final firstChanged = update.firstChangedMessageIndex;
-          if (firstChanged != null) {
-            affectedRows += update.projection.messages.length - firstChanged;
-          }
         }
         singleWatch.stop();
-        expect(store.readCalls, 0);
-        expect(affectedRows, 1000, reason: 'tail traffic changes one row');
-        _expectEquivalent(
-          singleReducer.projection,
-          deriveTranscriptProjection(
-            sessionId: singleKey.sessionId,
-            events: singleEvents,
-          ),
-        );
+        expect(single.box, hasLength(1000));
+        expect(store.readCalls, singleReadsBefore);
+        single.dispose();
 
         _report(
-          probe: 'transcript_receipt_delta_replay_5500_after',
+          probe: 'transcript_receipt_materialized_replay_5500_after',
           eventCount: replayEvents.length,
           samples: <int>[replayWatch.elapsedMicroseconds],
         );
         _report(
-          probe: 'transcript_receipt_delta_single_1000_after',
+          probe: 'transcript_receipt_materialized_single_1000_after',
           eventCount: singleEvents.length,
           samples: <int>[singleWatch.elapsedMicroseconds],
         );
-        expect(replayWatch.elapsedMilliseconds, lessThanOrEqualTo(250));
-        expect(singleWatch.elapsedMilliseconds, lessThanOrEqualTo(400));
+        expect(replayWatch.elapsedMilliseconds, lessThanOrEqualTo(1000));
+        expect(singleWatch.elapsedMilliseconds, lessThanOrEqualTo(1500));
       } finally {
         await Hive.close();
         await directory.delete(recursive: true);
@@ -417,6 +414,113 @@ void main() {
     },
   );
 }
+
+final class _PipelineConnectionManager extends ConnectionManager {
+  _PipelineConnectionManager(this.peer, this.sessionId)
+    : super(
+        factory: (_, _) async => throw UnsupportedError('benchmark is offline'),
+        storage: _BenchmarkStorage(),
+      );
+
+  final PeerRecord peer;
+  final String sessionId;
+
+  @override
+  PeerRecord? get activePeer => peer;
+
+  @override
+  String get activeRoomId => 'main';
+
+  @override
+  String? get activeSessionId => sessionId;
+
+  @override
+  bool isRoomLive(String epk, String roomId) =>
+      epk == peer.remoteEpk && roomId == 'main';
+}
+
+final class _BenchmarkStorage extends PairingStorage {}
+
+final class _MaterializationHarness {
+  const _MaterializationHarness({
+    required this.sync,
+    required this.connection,
+    required this.box,
+  });
+
+  final SyncService sync;
+  final ConnectionManager connection;
+  final Box<dynamic> box;
+
+  void dispose() {
+    sync.dispose();
+    connection.dispose();
+  }
+}
+
+Future<_MaterializationHarness> _materializationHarness({
+  required LocalBoxes boxes,
+  required TranscriptEventStore store,
+  required String sessionId,
+}) async {
+  final peer = PeerRecord(
+    remoteEpk: 'benchmark-peer-$sessionId',
+    sessionName: 'Benchmark Pi',
+    relayUrl: 'ws://localhost',
+    pairedAt: '2026-08-24T00:00:00Z',
+    roomId: 'main',
+  );
+  final connection = _PipelineConnectionManager(peer, sessionId);
+  final sync = SyncService(
+    connection,
+    boxes,
+    transcriptEventStore: store,
+    runtimeRecordWriter: (_, _) async {},
+  );
+  await sync.activate(peer.remoteEpk, 'main');
+  final ref = RemoteSessionRef(
+    peerEpk: peer.remoteEpk,
+    roomId: 'main',
+    sessionId: sessionId,
+  );
+  return _MaterializationHarness(
+    sync: sync,
+    connection: connection,
+    box: await boxes.msgsBox(ref),
+  );
+}
+
+SessionHistory _history({
+  required String sessionId,
+  required List<SessionHistoryEvent> events,
+  String requestId = 'benchmark-replay',
+}) => SessionHistory(
+  sessionId: sessionId,
+  inReplyTo: requestId,
+  sessionStartedAt: _baseTime.millisecondsSinceEpoch,
+  events: events,
+  eos: true,
+);
+
+List<SessionHistoryEvent> _historyEvents(
+  int eventCount,
+) => <SessionHistoryEvent>[
+  for (var index = 0; index < eventCount; index += 1)
+    if (index.isEven)
+      UserInputEvt(
+        ts: _baseTime.add(Duration(milliseconds: index)).millisecondsSinceEpoch,
+        id: 'user-${index ~/ 2}',
+        text: 'Synthetic user message ${index ~/ 2} for the soak workload.',
+      )
+    else
+      AgentMessageEvt(
+        ts: _baseTime.add(Duration(milliseconds: index)).millisecondsSinceEpoch,
+        inReplyTo: 'user-${index ~/ 2}',
+        messageId: 'assistant-${index ~/ 2}',
+        text:
+            'Synthetic assistant response ${index ~/ 2} for projection materialization.',
+      ),
+];
 
 final class _CountingTranscriptEventStore implements TranscriptEventStore {
   _CountingTranscriptEventStore(this._delegate);
