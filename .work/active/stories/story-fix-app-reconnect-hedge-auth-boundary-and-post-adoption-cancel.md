@@ -1,7 +1,7 @@
 ---
 id: story-fix-app-reconnect-hedge-auth-boundary-and-post-adoption-cancel
 kind: story
-stage: implementing
+stage: done
 tags: [app, bug]
 parent: null
 depends_on: []
@@ -56,3 +56,37 @@ relay log shows zero `superseded_existing=true` outside fault windows.
 Field re-check via operator capture (flap/recovery table like 08:52's).
 Routes to the next release (v0.7.0 already tagged; this is the first
 post-tag finding).
+
+## Implementation
+
+**Execution capability:** `sol/high`, selected for the timing-sensitive transport lifecycle and real-device verification surface. Direct implementation stayed within the app reconnect boundary; no independent reviewer was used because this is a standalone fix story.
+
+### Changes
+
+- `WsTransport.connect` now waits for a validated post-auth relay frame. It sends an empty, schema-valid `presence_check` as the ordered readiness probe, so an auth-handler stall remains inside the hedge window without consuming the later real hydration snapshot.
+- `CancelToken` now exposes awaitable cooperative teardown through a narrow `ConnectionCancellation` port. `WsTransport` retains that listener through factory handoff and detaches it on close.
+- Every retry in a transport-loss recovery chain remains hedged. Starting the fallback closes the primary first; selecting a winner cancels and awaits every loser close before completing the winner and publishing `StatusOnline`.
+- Production and live/E2E reconnect factories pass their attempt cancellation into `WsTransport`.
+- Removed this story from `e2e/expected-soak-findings.txt`; the manifest guard now expects an empty known-open inventory.
+
+### Regression evidence
+
+Both transport-level tests in `app/test/transport/connection_manager_test.dart` failed before the repair:
+
+- `auth-read stall stays hedged until a fallback authenticates` timed out waiting for the second authenticated socket because the primary was pronounced online immediately after sending auth.
+- `authenticated primary cancels fallback before a second relay auth` observed `StatusOnline` where `StatusConnecting` was required before the relay released the first authenticated response.
+
+After the repair, both pass. The loopback fake relay proves the stalled primary is replaced within the bounded hedge and that allowing the primary to authenticate before the fallback deadline leaves the relay auth count at exactly one.
+
+### Verification
+
+- `flutter analyze`: no issues.
+- `flutter test --exclude-tags e2e --concurrency=2`: green (`930` passed, `1` benchmark scaffold skipped).
+- `python3 -m unittest` soak inventory guards: green.
+- `e2e/run-live.sh state-shapes`: green (`3` tests).
+- `python3 e2e/live_soak.py --duration 300 --seed 2026082411`: green. All transcript/data/identity oracles were clean; three observed transport losses recovered in `0.80–3.70s`, churn had one scheduled-fault cluster and zero outside-window clusters, and the relay log contained zero `superseded_existing=true` events.
+- An earlier seed (`2026082407`) exposed an adjacent post-soak `working=false` quiescence timeout; parked as `idea-soak-post-quiescence-working-stuck`. The reconnect churn and data oracles in that run were otherwise clean.
+
+### Bounded inline review
+
+**Verdict: pass — no material blockers.** Reviewed the final diff for auth-read readiness, loser socket ownership, cancellation/dispose behavior from `cc66ccfa`, hydration dedup interaction, malformed readiness frames, and retry-chain convergence. The readiness completer accepts only validated control/data frames, the empty probe cannot suppress the subsequent peer hydration reply, and cancellation remains attached through the factory-to-manager handoff.

@@ -176,6 +176,7 @@ final class PairingStack {
           ed25519Key: ownerKey,
           deviceId: _deviceId,
           activeRoom: current.roomId ?? 'main',
+          cancellation: cancel,
         ).timeout(const Duration(seconds: 10));
         if (cancel.isCancelled) {
           await ws.close();

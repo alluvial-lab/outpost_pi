@@ -16,6 +16,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:app/data/transport/channel.dart';
+import 'package:app/data/transport/connection_cancellation.dart';
 import 'package:app/data/transport/relay_config.dart';
 import 'package:app/data/transport/relay_frame_decoder.dart';
 import 'package:app/domain/contracts/debug_log.dart';
@@ -59,8 +60,9 @@ const Duration _wsOverflowAuditSummaryInterval = Duration(seconds: 5);
 
 /// Carry peer envelopes and relay control frames over one authenticated WebSocket.
 ///
-/// [connect] completes only after challenge-response authentication; [close]
-/// owns the socket subscription, bounded peer queue, and control stream
+/// [connect] completes only after a validated post-auth relay frame proves
+/// challenge-response admission; [close] owns the socket subscription, bounded
+/// peer queue, and control stream
 /// lifecycle. Relay control frames bypass the data queue and therefore remain
 /// available while secure-channel persistence is blocked.
 class WsTransport
@@ -79,6 +81,8 @@ class WsTransport
   bool _queueOverflowAuditEmitted = false;
   bool _closed = false;
   Timer? _queueOverflowAuditTimer;
+  ConnectionCancellation? _connectCancellation;
+  ConnectionCancellationListener? _connectCancellationListener;
 
   WsTransport._(
     this._ws, {
@@ -95,15 +99,12 @@ class WsTransport
     );
   }
 
-  // Connect, authenticate with relay, and return a ready transport.
-  //
-  // [activeRoom] is the Pi-side destination room envelopes are routed to
-  // AND the room inbound envelopes are demuxed against from the very first
-  // post-auth frame. The relay may push envelopes immediately after auth,
-  // before the caller gets a chance to call `setActiveRoom` — so the room
-  // must be correct from construction, not defaulted to `'main'` and patched
-  // after (see `story-fix-transport-active-room-reestablishment-on-reconnect`
-  // for the room-mismatch-drop ring-log evidence that motivated this).
+  /// Connect, authenticate with the relay, and return a ready transport.
+  ///
+  /// [activeRoom] is the Pi-side destination room envelopes are routed to
+  /// and the room inbound envelopes are demuxed against from the first
+  /// post-auth frame. [cancellation] closes the socket before a superseded
+  /// attempt may continue through relay authentication.
   static Future<WsTransport> connect({
     required String relayUrl,
     required String peerPubkey, // base64 standard or url — destination peer
@@ -112,7 +113,11 @@ class WsTransport
     deviceId, // per-install id — relay closes prior same-device conns on reconnect
     String activeRoom = 'main',
     DebugLog? debugLog,
+    ConnectionCancellation? cancellation,
   }) async {
+    if (cancellation?.isCancelled ?? false) {
+      throw const WsTransportError('WS connect cancelled');
+    }
     // Plan-18 follow-up — set a WS-level pingInterval (RFC 6455
     // control frames). This keeps the TCP connection alive through
     // NAT / corporate proxies that aggressively close idle sockets,
@@ -146,7 +151,10 @@ class WsTransport
     );
 
     final challengeCompleter = Completer<String>();
+    final authenticatedFrameCompleter = Completer<void>();
     bool authDone = false;
+    bool cancelled = cancellation?.isCancelled ?? false;
+    bool handedOff = false;
 
     final sub = ws.stream.listen(
       (raw) {
@@ -188,6 +196,11 @@ class WsTransport
           raw: rawStr,
           activeRoom: transport._activeRoom,
         );
+        if (!authenticatedFrameCompleter.isCompleted &&
+            (decision.kind == WsInboundFrameKind.enqueue ||
+                decision.kind == WsInboundFrameKind.control)) {
+          authenticatedFrameCompleter.complete();
+        }
 
         switch (decision.kind) {
           case WsInboundFrameKind.enqueue:
@@ -288,6 +301,9 @@ class WsTransport
         if (!challengeCompleter.isCompleted) {
           challengeCompleter.completeError(e);
         }
+        if (authDone && !authenticatedFrameCompleter.isCompleted) {
+          authenticatedFrameCompleter.completeError(e);
+        }
         transport._queue.error(e);
         transport._flushQueueOverflowAudit();
         transport._signalTransportClosed();
@@ -301,6 +317,11 @@ class WsTransport
             const WsTransportError('WS closed during auth'),
           );
         }
+        if (authDone && !authenticatedFrameCompleter.isCompleted) {
+          authenticatedFrameCompleter.completeError(
+            const WsTransportError('WS closed before auth completion'),
+          );
+        }
         transport._queue.close();
         transport._flushQueueOverflowAudit();
         transport._signalTransportClosed();
@@ -310,12 +331,41 @@ class WsTransport
       },
     );
 
+    Future<void> cancelConnect() async {
+      cancelled = true;
+      if (!authDone && !challengeCompleter.isCompleted) {
+        challengeCompleter.completeError(
+          const WsTransportError('WS connect cancelled'),
+        );
+      }
+      if (authDone && !authenticatedFrameCompleter.isCompleted) {
+        authenticatedFrameCompleter.completeError(
+          const WsTransportError('WS connect cancelled'),
+        );
+      }
+      if (handedOff) {
+        await transport.close();
+        return;
+      }
+      await sub.cancel();
+      await ws.sink.close();
+    }
+
+    void throwIfCancelled() {
+      if (cancelled || (cancellation?.isCancelled ?? false)) {
+        throw const WsTransportError('WS connect cancelled');
+      }
+    }
+
+    cancellation?.addCancellationListener(cancelConnect);
     try {
+      throwIfCancelled();
       // 1. Hello (standard base64 — matches relay registry format).
       // Plan 17: app is a client (no cwd) and always announces itself
       // on the canonical 'main' room. Pi-side hellos include their own
       // room_id (one per cwd) AND room_meta; that's not our concern here.
       final pub = await ed25519Key.extractPublicKey();
+      throwIfCancelled();
       ws.sink.add(
         jsonEncode({
           'type': 'hello',
@@ -327,6 +377,7 @@ class WsTransport
 
       // 2. Challenge
       final challengeRaw = await challengeCompleter.future;
+      throwIfCancelled();
       final nonce = decodeRelayChallenge(challengeRaw);
 
       // 3. Auth — domain-separated signature over the relay nonce.
@@ -340,18 +391,34 @@ class WsTransport
         relayAuthSigningBytes(nonce),
         keyPair: ed25519Key,
       );
+      throwIfCancelled();
       ws.sink.add(
         jsonEncode({'type': 'auth', 'sig': base64.encode(sig.bytes)}),
       );
       authDone = true;
 
       transport._peerPubkey = _normalizeToStandard(peerPubkey);
+      // The relay has no standalone auth ACK. An ordered presence probe makes
+      // the first post-auth frame the readiness boundary, so reconnect hedges
+      // cover a socket that sent auth but whose relay handler is stalled.
+      // Empty is schema-valid and avoids consuming the real hydration reply:
+      // ConnectionManager's later peer list differs, so relay dedup still emits it.
+      ws.sink.add(jsonEncode(presenceCheckFrame(const [])));
+      await authenticatedFrameCompleter.future;
+      throwIfCancelled();
       transport._sub = sub;
+      transport._connectCancellation = cancellation;
+      transport._connectCancellationListener = cancelConnect;
+      handedOff = true;
       return transport;
     } catch (e) {
       await sub.cancel();
       await ws.sink.close();
       rethrow;
+    } finally {
+      if (!handedOff) {
+        cancellation?.removeCancellationListener(cancelConnect);
+      }
     }
   }
 
@@ -449,6 +516,13 @@ class WsTransport
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    final cancellation = _connectCancellation;
+    final listener = _connectCancellationListener;
+    _connectCancellation = null;
+    _connectCancellationListener = null;
+    if (cancellation != null && listener != null) {
+      cancellation.removeCancellationListener(listener);
+    }
     _queue.close();
     _flushQueueOverflowAudit();
     _signalTransportClosed();

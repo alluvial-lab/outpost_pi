@@ -158,16 +158,10 @@ class ScheduleTests(unittest.TestCase):
         manifest = nightly.load_expected(
             Path(__file__).with_name("expected-soak-findings.txt")
         )
-        # Current truth: one known-open finding (the post-v0.7.0 reconnect
-        # hedge gaps). Update this assertion (and only with a deliberate
+        # Current truth: every tracked finding has been fixed, so the expected
+        # inventory is empty. Update this assertion (and only with a deliberate
         # manifest change) whenever a finding is newly opened or closed.
-        self.assertEqual(
-            manifest,
-            {
-                "story-fix-app-reconnect-hedge-auth-boundary-"
-                "and-post-adoption-cancel"
-            },
-        )
+        self.assertEqual(manifest, set())
         self.assertEqual(manifest, set(live_soak.KNOWN_FINDINGS))
 
     def test_empty_known_findings_manifest_is_valid(self) -> None:
