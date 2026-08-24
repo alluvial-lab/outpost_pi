@@ -320,6 +320,33 @@ describe("CaptureUploadHandler", () => {
     f.handler.dispose();
   });
 
+  test("runtime disposal fences a finalization already waiting on disk commit", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "outpost-capture-dispose-finalizing-"));
+    roots.push(cwd);
+    const sent: ServerMessage[] = [];
+    const notes: string[] = [];
+    const sender = { send: (message: ServerMessage) => sent.push(message) };
+    const handler = new SlowCommitCaptureUploadHandler({
+      cwd: () => cwd,
+      note: (message) => notes.push(message),
+    });
+    const wire = messages(Buffer.from('{"tag":"shutdown"}\n'), "shutdown-finalizing");
+    await handler.handle(OWNER_A, sender, wire.begin);
+    await handler.handle(OWNER_A, sender, wire.chunks[0]!);
+
+    const sentBeforeEnd = sent.length;
+    const finalizing = handler.handle(OWNER_A, sender, wire.end);
+    await handler.commitStarted.promise;
+    handler.dispose();
+    handler.releaseCommit.resolve(undefined);
+    await finalizing;
+
+    expect(sent).toHaveLength(sentBeforeEnd);
+    expect(notes).toEqual([]);
+    expect((await readdir(join(cwd, "debug"))).filter((name) => name.startsWith("app-capture-")))
+      .toHaveLength(1);
+  });
+
   test("clears only the owning owner/channel and clears every upload on transport loss", async () => {
     const f = await fixture();
     const otherSender = { send: (_message: ServerMessage) => undefined };
