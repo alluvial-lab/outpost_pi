@@ -716,6 +716,10 @@ final class LiveDeviceHarness {
         stage: stage,
       ),
     );
+    final floodWatch = Stopwatch()..start();
+    debugPrintSynchronously(
+      'STATE_SHAPES_FLOOD_START ${DateTime.now().toUtc().toIso8601String()}',
+    );
     for (var index = 0; index < ringEvents; index++) {
       debugLog.log(
         WsInEvent(
@@ -726,6 +730,10 @@ final class LiveDeviceHarness {
         ),
       );
     }
+    floodWatch.stop();
+    debugPrintSynchronously(
+      'STATE_SHAPES_FLOOD_END ${DateTime.now().toUtc().toIso8601String()} elapsed_ms=${floodWatch.elapsedMilliseconds}',
+    );
     final exported = await debugLog.export();
     expect(exported, isNotNull);
     expect(utf8.encode(exported!).length, lessThanOrEqualTo(1 << 20));

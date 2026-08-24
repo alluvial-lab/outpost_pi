@@ -142,3 +142,51 @@ uses caching as a band-aid.
 
 <!-- Children emitted by perf-design discovery; epic-design decomposition
 follows if discovery reveals feature-scale arcs. -->
+
+## End-to-end validation
+
+Review closure reran the locked realistic lanes on 2026-08-24. The standalone
+`state-shapes` command was green: **176.180 s total command wall** including
+compose startup, two APK builds, emulator boot/install, tests, capture, and
+cleanup; Flutter's device-test phase was **34 s**. The comparable historical
+selector phase was about **47 s** before the ring work and about **31 s** in the
+recent post-work run, so the current 34-second result remains about **13 s /
+27.7% faster** than the pre-ring run while showing roughly 3 seconds of normal
+run-to-run spread. The newly printed 5,500-event flood phase took **99 ms** in
+the standalone selector.
+
+The 300-second soak (seed `2026082401`) was green in **5:04** device-test wall.
+Its capture contained 714 rows, 18 room snapshots, 10 hydration events, and 11
+final transcript rows; replay-dedup, DB↔ViewModel projection, rendered-bubble,
+canonical-ordering, and owner/channel-identity oracles all passed. Scheduled
+fault churn was reconciled with no outside-window cluster.
+
+The reconnect distributions use the exact discovery method: pair each
+`connStatus: connecting` with its next `connStatus: online`, then each online
+sample with the next `roomSnapshot` capture timestamp.
+
+| End-to-end interval | Discovery | Post-campaign 300 s soak | Observed movement |
+|---|---:|---:|---:|
+| Connecting→online | n=7, p50 **595.597 ms**, p95/max **680.222 ms** | n=10, p50 **685.333 ms**, p95/max **871.528 ms** | **+89.736 ms p50**; no measured improvement |
+| Online→authoritative room snapshot | n=8, p50 **13.807 ms**, p95/max **184.485 ms** | n=11, p50 **16.365 ms**, p95/max **188.986 ms** | **+2.558 ms p50**; no measured improvement |
+
+| Headline microbenchmark win | Measured end-to-end result | Honest conclusion |
+|---|---|---|
+| Debug-ring 5,500-event admission: **102.49x** | Comparable selector phase **~47 s → 34 s**; current 5,500-event flood **99 ms** | Visible end-to-end improvement in the ring-heavy state-shape lane. The full command wall is dominated by build/emulator setup, so only selector-phase walls are compared. |
+| Transcript pipeline: clean fold **22.6x**, 1,000 incremental prefixes **43.1x** | Connecting→online and online→snapshot p50s did not improve in the 11-row soak. The corrected materialization-boundary host probe is **238.706 ms** for 5,500 replay and **743.216 ms** for 1,000 one-at-a-time events; the old **107.329/258.114 ms** figures ended before materialization and are not used as pipeline claims. | No end-to-end effect demonstrated at this transcript size. The win matters during 5,500-event transcript flood/hydration or sustained append workloads, where projection and suffix materialization are material rather than hidden by network/fault timing. |
+| Room-snapshot fan-out: **339 → 0** full reads | The soak emitted only **18** snapshots over 11 rows, and online→snapshot p50 was slightly slower. | No end-to-end effect demonstrated at this scale. Avoided reads become material for long-lived rooms approaching the 339-snapshot/5,500-event workload; invisible here does not mean the removed repeated I/O is wasted. |
+
+### Review-closure verification
+
+- Corrected materialization-boundary benchmark: green; production
+  `SyncService.debugApplyHistory` path reaches suffix construction,
+  existing-row comparison, deletion, and encrypted `msgs.putAll` with no
+  append-time full transcript read.
+- `e2e/run-live.sh state-shapes`: green, 3/3 scenarios, 34-second device-test
+  phase, 99 ms flood, 176.180-second full command wall.
+- `python3 e2e/live_soak.py --duration 300 --seed 2026082401`: green, all soak
+  invariants passed.
+- App analyzer was clean and the full non-e2e suite passed **940 tests** after
+  the benchmark/harness changes. Device-lane cleanup left no emulator or live
+  compose stack, removed generated `app/build`, and preserved the retained
+  v0.7.2+14 APK byte-for-byte. No version bump was made.
