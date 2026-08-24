@@ -23,7 +23,7 @@ Do not turn every SDK error into a stale-capability result. Provider, validation
 
 ### Message rendering handles synchronous and asynchronous stale failures
 
-**File:** `pi-extension/src/session/sdk_session_projection.ts:678`
+**File:** `pi-extension/src/session/sdk_session_projection.ts:760-775`
 
 ```ts
 const api = this.messageApi;
@@ -46,7 +46,7 @@ try {
 
 ### Agent wake classifies stale delivery as recoverable
 
-**File:** `pi-extension/src/session/sdk_session_projection.ts:695`
+**File:** `pi-extension/src/session/sdk_session_projection.ts:777-795`
 
 ```ts
 try {
@@ -63,9 +63,17 @@ The caller can queue a recoverable handoff until a fresh session binding arrives
 
 ### Wrapped action APIs evict the stale action capability before rethrowing
 
-**File:** `pi-extension/src/session/sdk_session_projection.ts:906`
+**File:** `pi-extension/src/session/sdk_session_projection.ts:1057-1083`
 
 ```ts
+private forgetActionApi(api: FreshActionApi): void {
+  if (api === this.actionApi) this.actionApi = null;
+  if (api === this.messageApi) {
+    this.messageApi = null;
+    this.opts.outputs.onStaleMessageApi?.(api as AgentMessageApi);
+  }
+}
+
 setModel: async (model: SdkModelLike) => {
   if (typeof api.setModel !== "function") throw new Error("Pi model API unavailable for the current session");
   try {
