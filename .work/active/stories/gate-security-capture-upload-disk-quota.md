@@ -1,0 +1,53 @@
+---
+id: gate-security-capture-upload-disk-quota
+kind: story
+stage: implementing
+tags: [security]
+parent: null
+depends_on: []
+release_binding: v0.7.0
+gate_origin: security
+created: 2026-08-24
+updated: 2026-08-24
+---
+
+# Bound cumulative disk use for delivered debug captures
+
+## Severity
+High
+
+## Domain
+Input Validation & Injection / Data Protection
+
+## Finding
+The capture-upload boundary limits one in-memory upload to 2 MiB and one
+in-flight upload, but every successful upload is committed under a fresh
+filename with no retained-file count, cumulative-byte quota, replacement
+policy, or rate limit. An authenticated paired owner can therefore submit
+valid captures serially until the Pi user's filesystem is exhausted. This
+direct write path does not require an agent tool approval and can impair the
+repository, Pi session, and other processes owned by the user.
+
+## Location
+`pi-extension/src/actions/capture_upload_handler.ts:268-280`
+
+## Evidence
+```ts
+const filename = `app-capture-${iso}-${idTail}.bin`;
+// ...
+await rename(temp, destination);
+// ...
+return `debug/${filename}`;
+```
+
+The schema-owned ceilings cover only chunk bytes, per-upload total bytes, and
+concurrent uploads (`protocol/schema/app-pi-client.schema.json:228-230`); none
+bounds cumulative files or retained bytes.
+
+## Suggested fix scope
+Define a schema/config-owned retention policy for capture files (for example,
+one latest capture or a small count/byte budget per room), enforce it under a
+single serialized commit boundary, and fail closed or safely prune only
+handler-owned regular files. Add repeated-upload tests proving retained count
+and bytes stay bounded, including concurrent/finalizing and symlink/non-regular
+file cases.
