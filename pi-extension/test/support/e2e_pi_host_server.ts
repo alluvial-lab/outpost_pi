@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { E2ePiHostRuntime } from "./e2e_pi_host_runtime.js";
 
@@ -51,6 +51,25 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   if (request.method === "GET" && url.pathname === "/events") {
     const after = Number.parseInt(url.searchParams.get("after") ?? "0", 10);
     json(response, 200, { events: runtime.eventsAfter(Number.isFinite(after) ? after : 0) });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/debug-capture/latest") {
+    const debugDir = `${cwd}/debug`;
+    const files = (await readdir(debugDir))
+      .filter((name) => /^app-capture-[A-Za-z0-9._-]+\.bin$/.test(name))
+      .sort();
+    const name = files.at(-1);
+    if (!name) {
+      json(response, 404, { error: "capture_not_found" });
+      return;
+    }
+    const bytes = await readFile(`${debugDir}/${name}`);
+    json(response, 200, {
+      cwd,
+      path: `debug/${name}`,
+      bytes: bytes.length,
+      content_base64: bytes.toString("base64"),
+    });
     return;
   }
   if (request.method === "GET" && url.pathname === "/mesh") {
