@@ -47,3 +47,4 @@ findings, and the CI emulator job.
 (planned: security, tests, cruft, docs, patterns, refactor — then manual UAT)
 
 - **gate-security** (2026-08-24) — 2 findings (High=1, Medium=1; inline scanner, reduced isolation)
+- **gate-cruft** (2026-08-24) — 4 findings
