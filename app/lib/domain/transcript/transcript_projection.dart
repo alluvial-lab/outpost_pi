@@ -66,10 +66,6 @@ AppTurnProjection deriveChatTurnProjection({
     return AppTurnProjection.stale;
   }
 
-  // Fresh idle metadata is authoritative only for the exact session it
-  // describes. This clears stale transcript working state after a disconnected
-  // turn ended, without letting an older reconnect snapshot clobber a genuine
-  // mid-turn projection from a replacement session.
   if (room.status == AppTurnStatus.idle &&
       room.sessionId != null &&
       room.sessionId == transcript.sessionId) {
@@ -103,152 +99,200 @@ AppTurnProjection deriveChatTurnProjection({
   return AppTurnProjection.idle;
 }
 
-/// Materialize transcript messages, streaming state, and turn state together.
+/// Materialize transcript messages, their timestamps, and live turn state.
 final class TranscriptProjection {
   const TranscriptProjection({
     required this.messages,
+    required this.messageTimestamps,
     required this.turn,
     required this.steering,
     this.streaming,
   });
 
   final List<ChatMessage> messages;
+  final List<DateTime> messageTimestamps;
   final StreamingMessage? streaming;
   final TranscriptTurnView turn;
   final SteeringProjection steering;
 }
 
-/// Pure transcript projection and optimistic/authoritative reconcile reducer.
+/// Describe one accepted reducer application and its materialized delta.
+final class TranscriptProjectionUpdate {
+  const TranscriptProjectionUpdate({
+    required this.acceptedEvents,
+    required this.projection,
+    required this.firstChangedMessageIndex,
+  });
+
+  final List<TranscriptEvent> acceptedEvents;
+  final TranscriptProjection projection;
+  final int? firstChangedMessageIndex;
+}
+
+final class _ProjectedRow {
+  _ProjectedRow({
+    required this.message,
+    required this.sortTimestamp,
+    required this.timestamp,
+    required this.arrival,
+  });
+
+  ChatMessage message;
+  DateTime sortTimestamp;
+  DateTime timestamp;
+  final int arrival;
+}
+
+/// Incrementally reduce one session's append-only transcript event stream.
 ///
-/// The event log is append-only, but this materialized view is rebuildable.
-/// Server-authoritative events (`UserMessageConfirmed`, assistant/tool events,
-/// compaction) form the stable prefix. Local optimistic submissions that have no
-/// authoritative confirmation remain visible after that prefix. A failure marks
-/// the local message failed only while no later confirmation exists; late
-/// confirmation wins and suppresses the failure projection.
-TranscriptProjection deriveTranscriptProjection({
-  required String sessionId,
-  required Iterable<TranscriptEvent> events,
-}) {
-  final scoped = events.where((event) => event.sessionId == sessionId);
-  final seenEventIds = <String>{};
-  final ordered = <TranscriptEvent>[];
-  for (final event in scoped) {
-    if (seenEventIds.add(event.eventId)) ordered.add(event);
-  }
+/// Event identity, canonical ordering, optimistic reconciliation, and live turn
+/// state are owned here so clean recovery and accepted-event application use the
+/// same algorithm. Published message and timestamp lists are immutable.
+final class TranscriptProjectionReducer {
+  TranscriptProjectionReducer._(this._sessionId)
+    : _projection = TranscriptProjection(
+        messages: const <ChatMessage>[],
+        messageTimestamps: const <DateTime>[],
+        turn: TranscriptTurnView(
+          status: AppTurnStatus.idle,
+          sessionId: _sessionId,
+        ),
+        steering: const NoSteering(),
+      );
 
-  final acceptedUsers = <String, UserMessageConfirmed>{};
-  final pickedUpUsers = <String, UserMessageConfirmed>{};
-  final submittedUsers = <String, UserMessageSubmitted>{};
-  final failedUsers = <String, UserMessageFailed>{};
-  final authoritativeMessages = <ChatMessage>[];
-  final authoritativeIds = <String>{};
-  final messageTs = <String, int>{};
-  final messageArrival = <String, int>{};
-  var arrivalCounter = 0;
-  final assistantReplyTo = <String, String>{};
-  final toolIndexes = <String, int>{};
-  StreamingMessage? streaming;
-  String? activeReplyAnchor;
-  var turn = TranscriptTurnView.idle;
-  SteeringProjection steering = const NoSteering();
+  /// Create an empty reducer scoped to [sessionId].
+  factory TranscriptProjectionReducer.empty({required String sessionId}) =>
+      TranscriptProjectionReducer._(sessionId);
 
-  void appendAuthoritative(ChatMessage message, int ts) {
-    if (authoritativeIds.add(message.id)) {
-      authoritativeMessages.add(message);
-      messageTs[message.id] = ts;
-      messageArrival[message.id] = arrivalCounter++;
+  final String _sessionId;
+  final Set<String> _seenEventIds = <String>{};
+  final Map<String, UserMessageConfirmed> _acceptedUsers =
+      <String, UserMessageConfirmed>{};
+  final Map<String, UserMessageConfirmed> _pickedUpUsers =
+      <String, UserMessageConfirmed>{};
+  final Map<String, UserMessageSubmitted> _submittedUsers =
+      <String, UserMessageSubmitted>{};
+  final Map<String, UserMessageFailed> _failedUsers =
+      <String, UserMessageFailed>{};
+  final Set<String> _authoritativeIds = <String>{};
+  final Map<String, _ProjectedRow> _messageRows = <String, _ProjectedRow>{};
+  final Map<String, _ProjectedRow> _toolRows = <String, _ProjectedRow>{};
+  final List<_ProjectedRow> _authoritativeRows = <_ProjectedRow>[];
+  final Map<String, DateTime> _messageTimestamps = <String, DateTime>{};
+  final Map<String, String> _assistantReplyTo = <String, String>{};
+  final Map<String, _ProjectedRow> _firstAssistantRowByReplyTo =
+      <String, _ProjectedRow>{};
+
+  var _arrivalCounter = 0;
+  var _requiresReplyAnchoring = false;
+  StreamingMessage? _streaming;
+  String? _activeReplyAnchor;
+  var _turn = TranscriptTurnView.idle;
+  SteeringProjection _steering = const NoSteering();
+  late TranscriptProjection _projection;
+
+  /// Return the current immutable projection snapshot.
+  TranscriptProjection get projection => _projection;
+
+  /// Apply unseen events and return the first changed materialized row.
+  TranscriptProjectionUpdate applyAll(Iterable<TranscriptEvent> events) {
+    final accepted = <TranscriptEvent>[];
+    for (final event in events) {
+      if (event.sessionId != _sessionId || !_seenEventIds.add(event.eventId)) {
+        continue;
+      }
+      accepted.add(event);
+      _apply(event);
     }
-  }
 
-  void upsertTool(ToolEvent tool, int ts) {
-    final existingIndex = toolIndexes[tool.toolCallId];
-    final previousTs = messageTs[tool.toolCallId];
-    final requestTs = previousTs == null || ts < previousTs ? ts : previousTs;
-    if (existingIndex == null) {
-      toolIndexes[tool.toolCallId] = authoritativeMessages.length;
-      authoritativeMessages.add(tool);
-      authoritativeIds.add(tool.id);
-      messageTs[tool.id] = ts;
-      messageArrival[tool.id] = arrivalCounter++;
-      messageTs[tool.toolCallId] = requestTs;
-      return;
-    }
-    messageTs[tool.toolCallId] = requestTs;
-    final previous = authoritativeMessages[existingIndex];
-    if (previous is ToolEvent) {
-      authoritativeMessages[existingIndex] = ToolEvent(
-        id: previous.id,
-        toolCallId: previous.toolCallId,
-        tool: previous.tool.isNotEmpty ? previous.tool : tool.tool,
-        args: previous.args,
-        status: tool.status,
-        result: tool.result,
-        error: tool.error,
+    if (accepted.isEmpty) {
+      return TranscriptProjectionUpdate(
+        acceptedEvents: const <TranscriptEvent>[],
+        projection: _projection,
+        firstChangedMessageIndex: null,
       );
     }
+
+    final previous = _projection;
+    final next = _buildProjection();
+    _projection = next;
+    return TranscriptProjectionUpdate(
+      acceptedEvents: List<TranscriptEvent>.unmodifiable(accepted),
+      projection: next,
+      firstChangedMessageIndex: _firstChangedIndex(previous, next),
+    );
   }
 
-  for (final event in ordered) {
+  void _apply(TranscriptEvent event) {
     switch (event) {
       case UserMessageSubmitted():
-        submittedUsers[event.clientMessageId] = event;
+        _submittedUsers[event.clientMessageId] = event;
+        _messageTimestamps.putIfAbsent(event.clientMessageId, () => event.ts);
         if (event.awaitingPickup) {
-          steering = SteeringPending(
+          _steering = SteeringPending(
             clientMessageId: event.clientMessageId,
             text: event.text,
           );
         } else {
-          activeReplyAnchor = event.clientMessageId;
-          turn = TranscriptTurnView(
+          _activeReplyAnchor = event.clientMessageId;
+          _turn = TranscriptTurnView(
             status: AppTurnStatus.working,
             turnId: event.turnId ?? event.clientMessageId,
             replyTo: event.clientMessageId,
           );
         }
       case UserMessageConfirmed():
-        acceptedUsers[event.clientMessageId] = event;
+        _acceptedUsers[event.clientMessageId] = event;
+        _messageTimestamps[event.clientMessageId] = event.ts;
         if (!event.semanticPickup) {
-          steering = SteeringPending(
+          _steering = SteeringPending(
             clientMessageId: event.clientMessageId,
             text: event.text,
           );
           break;
         }
-        pickedUpUsers[event.clientMessageId] = event;
-        appendAuthoritative(
+        _pickedUpUsers[event.clientMessageId] = event;
+        _appendAuthoritative(
           UserMsg(
             id: event.clientMessageId,
             text: event.text,
             image: event.image,
           ),
-          event.ts.millisecondsSinceEpoch,
+          event.ts,
         );
-        if (steering case SteeringPending(
+        final userRow = _messageRows[event.clientMessageId];
+        final firstReply = _firstAssistantRowByReplyTo[event.clientMessageId];
+        if (userRow != null &&
+            firstReply != null &&
+            _compareRows(userRow, firstReply) > 0) {
+          _requiresReplyAnchoring = true;
+        }
+        if (_steering case SteeringPending(
           :final clientMessageId,
         ) when clientMessageId == event.clientMessageId) {
-          steering = const NoSteering();
+          _steering = const NoSteering();
         }
         if (event.streamingBehavior != UserMessageStreamingBehavior.steer) {
-          activeReplyAnchor = event.clientMessageId;
-          turn = TranscriptTurnView(
+          _activeReplyAnchor = event.clientMessageId;
+          _turn = TranscriptTurnView(
             status: AppTurnStatus.working,
             turnId: event.turnId ?? event.clientMessageId,
             replyTo: event.clientMessageId,
           );
         }
       case UserMessageFailed():
-        failedUsers[event.clientMessageId] = event;
-        final failedSubmission = submittedUsers[event.clientMessageId];
-        if (steering case SteeringPending(
+        _failedUsers[event.clientMessageId] = event;
+        _messageTimestamps[event.clientMessageId] = event.ts;
+        final failedSubmission = _submittedUsers[event.clientMessageId];
+        if (_steering case SteeringPending(
           :final clientMessageId,
         ) when clientMessageId == event.clientMessageId) {
-          steering = const NoSteering();
+          _steering = const NoSteering();
         }
-        if (!pickedUpUsers.containsKey(event.clientMessageId) &&
+        if (!_pickedUpUsers.containsKey(event.clientMessageId) &&
             failedSubmission?.awaitingPickup != true) {
-          activeReplyAnchor = null;
-          turn = TranscriptTurnView(
+          _activeReplyAnchor = null;
+          _turn = TranscriptTurnView(
             status: AppTurnStatus.error,
             turnId: event.turnId ?? event.clientMessageId,
             replyTo: event.clientMessageId,
@@ -256,52 +300,66 @@ TranscriptProjection deriveTranscriptProjection({
           );
         }
       case AssistantDeltaReceived():
-        activeReplyAnchor = event.replyTo;
-        streaming =
-            (streaming?.inReplyTo == event.replyTo
-                    ? streaming
+        _activeReplyAnchor = event.replyTo;
+        _streaming =
+            (_streaming?.inReplyTo == event.replyTo
+                    ? _streaming
                     : StreamingMessage(inReplyTo: event.replyTo))
                 ?.appendDelta(event.delta);
-        turn = TranscriptTurnView(
+        _turn = TranscriptTurnView(
           status: AppTurnStatus.streaming,
           turnId: event.turnId ?? event.replyTo,
           replyTo: event.replyTo,
         );
       case AssistantMessageCommitted():
-        activeReplyAnchor = event.replyTo;
-        assistantReplyTo[event.messageId] = event.replyTo;
-        appendAuthoritative(
+        _activeReplyAnchor = event.replyTo;
+        _assistantReplyTo[event.messageId] = event.replyTo;
+        _messageTimestamps[event.messageId] = event.ts;
+        _appendAuthoritative(
           AssistantMsg(id: event.messageId, text: event.text),
-          event.ts.millisecondsSinceEpoch,
+          event.ts,
         );
-        streaming = null;
-        turn = TranscriptTurnView.idle;
+        final assistantRow = _messageRows[event.messageId];
+        if (assistantRow != null) {
+          _firstAssistantRowByReplyTo.putIfAbsent(
+            event.replyTo,
+            () => assistantRow,
+          );
+          final userRow = _messageRows[event.replyTo];
+          if (userRow == null || _compareRows(userRow, assistantRow) > 0) {
+            _requiresReplyAnchoring = true;
+          }
+        }
+        _streaming = null;
+        _turn = TranscriptTurnView.idle;
       case AssistantDoneReceived():
-        activeReplyAnchor = null;
-        streaming = null;
-        turn = TranscriptTurnView.idle;
+        _activeReplyAnchor = null;
+        _streaming = null;
+        _turn = TranscriptTurnView.idle;
       case ToolRequested():
-        upsertTool(
+        _messageTimestamps.putIfAbsent(event.toolCallId, () => event.ts);
+        _upsertTool(
           ToolEvent(
             id: event.toolCallId,
             toolCallId: event.toolCallId,
             tool: event.tool,
             args: event.args,
           ),
-          event.ts.millisecondsSinceEpoch,
+          event.ts,
         );
         final replyAnchor =
-            turn.replyTo ?? streaming?.inReplyTo ?? activeReplyAnchor;
+            _turn.replyTo ?? _streaming?.inReplyTo ?? _activeReplyAnchor;
         if (replyAnchor != null) {
-          activeReplyAnchor = replyAnchor;
-          turn = TranscriptTurnView(
+          _activeReplyAnchor = replyAnchor;
+          _turn = TranscriptTurnView(
             status: AppTurnStatus.awaitingTool,
-            turnId: turn.turnId ?? event.turnId ?? replyAnchor,
+            turnId: _turn.turnId ?? event.turnId ?? replyAnchor,
             replyTo: replyAnchor,
           );
         }
       case ToolFinished():
-        upsertTool(
+        _messageTimestamps[event.toolCallId] = event.ts;
+        _upsertTool(
           ToolEvent(
             id: event.toolCallId,
             toolCallId: event.toolCallId,
@@ -313,85 +371,228 @@ TranscriptProjection deriveTranscriptProjection({
             result: event.result,
             error: event.error,
           ),
-          event.ts.millisecondsSinceEpoch,
+          event.ts,
         );
-        if (turn.status == AppTurnStatus.awaitingTool) {
-          turn = TranscriptTurnView(
+        if (_turn.status == AppTurnStatus.awaitingTool) {
+          _turn = TranscriptTurnView(
             status: AppTurnStatus.working,
-            turnId: turn.turnId,
-            replyTo: turn.replyTo,
+            turnId: _turn.turnId,
+            replyTo: _turn.replyTo,
           );
         }
       case CompactionRecorded():
-        activeReplyAnchor = null;
-        appendAuthoritative(
+        _activeReplyAnchor = null;
+        _messageTimestamps[event.eventId] = event.ts;
+        _appendAuthoritative(
           CompactionMsg(
             id: event.eventId,
             summary: event.summary,
             tokensBefore: event.tokensBefore,
           ),
-          event.ts.millisecondsSinceEpoch,
+          event.ts,
         );
-        streaming = null;
-        turn = TranscriptTurnView.idle;
+        _streaming = null;
+        _turn = TranscriptTurnView.idle;
     }
   }
 
-  // Lifecycle state reduces in arrival order above. Rendered authoritative
-  // bubbles use canonical server time with arrival as the stable tiebreaker.
-  // Phone-receipt-time deltas and local-time optimistic submissions never enter
-  // this list, so the ordering remains single-clock.
-  authoritativeMessages.sort((a, b) {
-    final byTs = (messageTs[a.id] ?? 0).compareTo(messageTs[b.id] ?? 0);
-    if (byTs != 0) return byTs;
-    return (messageArrival[a.id] ?? 0).compareTo(messageArrival[b.id] ?? 0);
-  });
+  void _appendAuthoritative(ChatMessage message, DateTime timestamp) {
+    if (!_authoritativeIds.add(message.id)) return;
+    final row = _ProjectedRow(
+      message: message,
+      sortTimestamp: timestamp,
+      timestamp: timestamp,
+      arrival: _arrivalCounter++,
+    );
+    _messageRows[message.id] = row;
+    _insertAuthoritative(row);
+  }
 
-  final localTail = <ChatMessage>[];
-  for (final submitted in submittedUsers.values) {
-    if (pickedUpUsers.containsKey(submitted.clientMessageId)) continue;
-    final failed = failedUsers[submitted.clientMessageId];
-    if (submitted.awaitingPickup && failed == null) continue;
-    if (acceptedUsers.containsKey(submitted.clientMessageId) &&
-        failed == null) {
-      continue;
+  void _upsertTool(ToolEvent tool, DateTime timestamp) {
+    final existing = _toolRows[tool.toolCallId];
+    if (existing == null) {
+      final row = _ProjectedRow(
+        message: tool,
+        sortTimestamp: timestamp,
+        timestamp: timestamp,
+        arrival: _arrivalCounter++,
+      );
+      _toolRows[tool.toolCallId] = row;
+      _authoritativeIds.add(tool.id);
+      _insertAuthoritative(row);
+      return;
     }
-    localTail.add(
-      UserMsg(
-        id: submitted.clientMessageId,
-        text: submitted.text,
-        status: failed == null ? UserMsgStatus.pending : UserMsgStatus.failed,
-        image: submitted.image,
+
+    final previous = existing.message as ToolEvent;
+    existing.message = ToolEvent(
+      id: previous.id,
+      toolCallId: previous.toolCallId,
+      tool: previous.tool.isNotEmpty ? previous.tool : tool.tool,
+      args: previous.args,
+      status: tool.status,
+      result: tool.result,
+      error: tool.error,
+    );
+    existing.timestamp = timestamp;
+    if (timestamp.millisecondsSinceEpoch <
+        existing.sortTimestamp.millisecondsSinceEpoch) {
+      _authoritativeRows.remove(existing);
+      existing.sortTimestamp = timestamp;
+      _insertAuthoritative(existing);
+    }
+  }
+
+  void _insertAuthoritative(_ProjectedRow row) {
+    var low = 0;
+    var high = _authoritativeRows.length;
+    while (low < high) {
+      final middle = (low + high) >> 1;
+      if (_compareRows(_authoritativeRows[middle], row) <= 0) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    _authoritativeRows.insert(low, row);
+  }
+
+  int _compareRows(_ProjectedRow a, _ProjectedRow b) {
+    final byTimestamp = a.sortTimestamp.millisecondsSinceEpoch.compareTo(
+      b.sortTimestamp.millisecondsSinceEpoch,
+    );
+    return byTimestamp != 0 ? byTimestamp : a.arrival.compareTo(b.arrival);
+  }
+
+  TranscriptProjection _buildProjection() {
+    final rows = <_ProjectedRow>[..._authoritativeRows];
+    for (final submitted in _submittedUsers.values) {
+      if (_pickedUpUsers.containsKey(submitted.clientMessageId)) continue;
+      final failed = _failedUsers[submitted.clientMessageId];
+      if (submitted.awaitingPickup && failed == null) continue;
+      if (_acceptedUsers.containsKey(submitted.clientMessageId) &&
+          failed == null) {
+        continue;
+      }
+      rows.add(
+        _ProjectedRow(
+          message: UserMsg(
+            id: submitted.clientMessageId,
+            text: submitted.text,
+            status: failed == null
+                ? UserMsgStatus.pending
+                : UserMsgStatus.failed,
+            image: submitted.image,
+          ),
+          sortTimestamp: submitted.ts,
+          timestamp:
+              _messageTimestamps[submitted.clientMessageId] ?? submitted.ts,
+          arrival: _arrivalCounter,
+        ),
+      );
+    }
+
+    final orderedRows = _requiresReplyAnchoring
+        ? _anchorLatePrompts(rows)
+        : rows;
+
+    final messages = <ChatMessage>[];
+    final timestamps = <DateTime>[];
+    for (final row in orderedRows) {
+      messages.add(row.message);
+      timestamps.add(_messageTimestamps[row.message.id] ?? row.timestamp);
+    }
+
+    return TranscriptProjection(
+      messages: List<ChatMessage>.unmodifiable(messages),
+      messageTimestamps: List<DateTime>.unmodifiable(timestamps),
+      streaming: _streaming,
+      turn: TranscriptTurnView(
+        status: _turn.status,
+        sessionId: _sessionId,
+        turnId: _turn.turnId,
+        replyTo: _turn.replyTo,
+        error: _turn.error,
       ),
+      steering: _steering,
     );
   }
 
-  final messages = [...authoritativeMessages, ...localTail];
-  // Preserve the stable reply relationship as a same-timestamp safety net: a
-  // prompt must precede assistant rows that name it.
-  for (final user in messages.whereType<UserMsg>().toList(growable: false)) {
-    final userIndex = messages.indexWhere((message) => message.id == user.id);
-    final responseIndex = messages.indexWhere(
-      (message) =>
-          message is AssistantMsg && assistantReplyTo[message.id] == user.id,
-    );
-    if (responseIndex >= 0 && userIndex > responseIndex) {
-      messages.removeAt(userIndex);
-      messages.insert(responseIndex, user);
+  List<_ProjectedRow> _anchorLatePrompts(List<_ProjectedRow> rows) {
+    final canonicalIndexByUser = <String, int>{};
+    final firstReplyIndexByUser = <String, int>{};
+    for (var index = 0; index < rows.length; index++) {
+      final message = rows[index].message;
+      if (message is UserMsg) {
+        canonicalIndexByUser.putIfAbsent(message.id, () => index);
+      } else if (message is AssistantMsg) {
+        final replyTo = _assistantReplyTo[message.id];
+        if (replyTo != null) {
+          firstReplyIndexByUser.putIfAbsent(replyTo, () => index);
+        }
+      }
     }
+
+    final lateUserByReplyIndex = <int, _ProjectedRow>{};
+    final lateUserIds = <String>{};
+    for (final entry in canonicalIndexByUser.entries) {
+      final replyIndex = firstReplyIndexByUser[entry.key];
+      if (replyIndex != null && entry.value > replyIndex) {
+        lateUserByReplyIndex[replyIndex] = rows[entry.value];
+        lateUserIds.add(entry.key);
+      }
+    }
+
+    final orderedRows = <_ProjectedRow>[];
+    for (var index = 0; index < rows.length; index++) {
+      final lateUser = lateUserByReplyIndex[index];
+      if (lateUser != null) orderedRows.add(lateUser);
+      final row = rows[index];
+      if (row.message is UserMsg && lateUserIds.contains(row.message.id)) {
+        continue;
+      }
+      orderedRows.add(row);
+    }
+    return orderedRows;
   }
 
-  final sessionTurn = TranscriptTurnView(
-    status: turn.status,
-    sessionId: sessionId,
-    turnId: turn.turnId,
-    replyTo: turn.replyTo,
-    error: turn.error,
-  );
-  return TranscriptProjection(
-    messages: List.unmodifiable(messages),
-    streaming: streaming,
-    turn: sessionTurn,
-    steering: steering,
-  );
+  int? _firstChangedIndex(
+    TranscriptProjection previous,
+    TranscriptProjection next,
+  ) {
+    final sharedLength = previous.messages.length < next.messages.length
+        ? previous.messages.length
+        : next.messages.length;
+    for (var index = 0; index < sharedLength; index++) {
+      if (!_sameMessage(previous.messages[index], next.messages[index]) ||
+          previous.messageTimestamps[index] != next.messageTimestamps[index]) {
+        return index;
+      }
+    }
+    return previous.messages.length == next.messages.length
+        ? null
+        : sharedLength;
+  }
+
+  bool _sameMessage(ChatMessage a, ChatMessage b) {
+    if (a is ToolEvent && b is ToolEvent) {
+      return a.id == b.id &&
+          a.toolCallId == b.toolCallId &&
+          a.tool == b.tool &&
+          a.args.toString() == b.args.toString() &&
+          a.status == b.status &&
+          a.result.toString() == b.result.toString() &&
+          a.error == b.error;
+    }
+    return a.runtimeType == b.runtimeType && a == b;
+  }
+}
+
+/// Rebuild a transcript projection by folding the canonical incremental reducer.
+TranscriptProjection deriveTranscriptProjection({
+  required String sessionId,
+  required Iterable<TranscriptEvent> events,
+}) {
+  final reducer = TranscriptProjectionReducer.empty(sessionId: sessionId);
+  reducer.applyAll(events);
+  return reducer.projection;
 }

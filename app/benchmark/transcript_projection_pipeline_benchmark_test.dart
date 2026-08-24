@@ -192,14 +192,70 @@ void main() {
   test(
     'AFTER: incremental reducer applies every prefix and matches rebuild',
     () {
-      // Implementation checkpoint: apply each of the 5,500 generated events to
-      // the incremental reducer, compare its projection with a clean canonical
-      // rebuild after every prefix, and report 1,000- and 5,500-event timings.
-      // Target: 1,000 one-at-a-time applies <=100 ms total and 5,500-event full
-      // materialization p50 <=40 ms / p95 <=60 ms on the discovery host.
-      throw UnimplementedError('Incremental reducer is not implemented yet.');
+      final cleanFoldSamples = _sampleMicros(
+        warmup: 2,
+        iterations: 12,
+        operation: () {
+          final projection = deriveTranscriptProjection(
+            sessionId: _sessionId,
+            events: _syntheticTranscript(5500),
+          );
+          expect(projection.messages, hasLength(5500));
+        },
+      );
+      _report(
+        probe: 'transcript_projection_clean_fold_after',
+        eventCount: 5500,
+        samples: cleanFoldSamples,
+      );
+
+      final incrementalEvents = _syntheticTranscript(1000);
+      final incrementalSamples = _sampleMicros(
+        warmup: 2,
+        iterations: 12,
+        operation: () {
+          final reducer = TranscriptProjectionReducer.empty(
+            sessionId: _sessionId,
+          );
+          for (final event in incrementalEvents) {
+            reducer.applyAll(<TranscriptEvent>[event]);
+          }
+          expect(reducer.projection.messages, hasLength(1000));
+        },
+      );
+      _report(
+        probe: 'transcript_projection_incremental_apply_after',
+        eventCount: incrementalEvents.length,
+        samples: incrementalSamples,
+      );
+
+      for (final eventCount in <int>[200, 1000, 5500]) {
+        final events = _syntheticTranscript(eventCount);
+        final reducer = TranscriptProjectionReducer.empty(
+          sessionId: _sessionId,
+        );
+        final prefix = <TranscriptEvent>[];
+        for (final event in events) {
+          prefix.add(event);
+          final update = reducer.applyAll(<TranscriptEvent>[event]);
+          final clean = deriveTranscriptProjection(
+            sessionId: _sessionId,
+            events: prefix,
+          );
+          _expectEquivalent(update.projection, clean);
+        }
+      }
+
+      expect(
+        _percentile(cleanFoldSamples..sort(), 0.50),
+        lessThanOrEqualTo(40000),
+      );
+      expect(_percentile(cleanFoldSamples, 0.95), lessThanOrEqualTo(60000));
+      expect(
+        _percentile(incrementalSamples..sort(), 0.50),
+        lessThanOrEqualTo(100000),
+      );
     },
-    skip: 'AFTER scaffold for opt-1; the implementation story enables it.',
   );
 
   test(
@@ -216,6 +272,21 @@ void main() {
     },
     skip: 'AFTER scaffold for opt-2/opt-3; implementation enables it.',
   );
+}
+
+void _expectEquivalent(
+  TranscriptProjection incremental,
+  TranscriptProjection clean,
+) {
+  expect(incremental.messages, clean.messages);
+  expect(incremental.messageTimestamps, clean.messageTimestamps);
+  expect(incremental.streaming, clean.streaming);
+  expect(incremental.turn.status, clean.turn.status);
+  expect(incremental.turn.sessionId, clean.turn.sessionId);
+  expect(incremental.turn.turnId, clean.turn.turnId);
+  expect(incremental.turn.replyTo, clean.turn.replyTo);
+  expect(incremental.turn.error, clean.turn.error);
+  expect(incremental.steering, clean.steering);
 }
 
 List<TranscriptEvent> _syntheticTranscript(
