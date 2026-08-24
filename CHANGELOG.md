@@ -29,6 +29,19 @@ adaptive chat/home/sheets, accessibility floors, and golden-render coverage.
 - **Upstream robustness harvest** — extension, app, relay, mesh, and Cockpit
 hardening landed from the August upstream sweep.
 
+### E2E and infrastructure
+- **Live chaos program** — oracle invariants (replay dedup, DB↔UI,
+  ordering, identity), fault vocabulary, state-shape and fault×moment grid
+  coverage, two-Pi mesh lane, clock/version-skew drills, and a nightly
+  soak with drift alerting and disk hygiene (cron @02:30).
+- **Release engineering** — v0.7.0 is the first fully gated release since
+  v0.4.0: six gates (security, tests, cruft, docs, patterns, refactor)
+  over the 132-commit bundle, 41 findings fixed in-release, 7 recurring
+  patterns codified. v0.5.0's post-hoc gate findings land here as routed.
+- **Device-lane hardening** — e2e runner fails fast on a secure-keyguard
+  AVD (the 2026-08-23 PIN incident), exclusive lane ownership, and
+  capture-triage tooling wired to the nightly report.
+
 ### Fixes
 - **Reconnect and transcript resilience** — relay `0.5.1` and app `0.5.1+6`
 cover overlapping-owner auth and mobile reconnect/session fixes; app `0.5.2+7`
