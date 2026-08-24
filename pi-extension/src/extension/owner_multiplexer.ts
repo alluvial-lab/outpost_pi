@@ -155,6 +155,7 @@ export interface OwnerMultiplexerDeps {
   makeUnknownPeerError(): UnknownPeerErrorMessage;
   onOwnerAttached(event: OwnerAttachedEvent): void;
   onOwnerPaired(event: OwnerPairedEvent): void;
+  onOwnerChannelDetached?(event: { peerId: string; channel: PeerChannel }): void;
   onFanoutPresenceChanged?(event: OwnerFanoutPresenceEvent): void;
 }
 
@@ -544,6 +545,7 @@ export class OwnerMultiplexer implements OwnerMultiplexerPort {
     if (channel.whenIdle) this.trackReattachDrain(peerId, channelSettled);
 
     try { channel.detach(); } catch { /* best-effort per owner channel */ }
+    try { this.deps.onOwnerChannelDetached?.({ peerId, channel }); } catch { /* best-effort owner cleanup */ }
 
     this.channels.delete(peerId);
     this.peerIdsByChannel.delete(channel);

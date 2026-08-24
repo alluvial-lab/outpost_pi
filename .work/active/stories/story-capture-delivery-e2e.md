@@ -8,7 +8,7 @@ depends_on: ['story-capture-delivery-app-upload']
 release_binding: null
 gate_origin: null
 created: 2026-08-24
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # Capture upload: live two-side e2e + triage compatibility
@@ -36,3 +36,14 @@ E2E_PI_CWD). Device lane; hygiene protocol.
   anomalies.
 - Verification: `e2e/run-live.sh capture-delivery` passed. Hygiene completed:
   `emulator-5554` down, `app/build` removed, 183 GiB free.
+
+## Review closure
+
+- Re-ran `e2e/run-live.sh capture-delivery` against the hardened source handler:
+  pairing, upload, committed-file evidence, TUI `tui_message`, and triage parsing
+  all passed.
+- Added focused extension evidence that the same visible delivery note is sent
+  with `triggerTurn: true`, so an idle agent is woken without weakening the live
+  TUI assertion.
+- Device-lane hygiene completed: no emulator remains attached, `app/build` was
+  removed, and 183 GiB is free.
