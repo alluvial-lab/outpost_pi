@@ -71,69 +71,46 @@ Future<void> _initializeRun(int generation) async {
 
 ### Sync activation fences each durable hydration phase
 
-**File:** `app/lib/data/sync/sync_service.dart:257-293`
+**File:** `app/lib/data/sync/sync_service.dart:338-385`
 
 ```dart
-final generation = ++_lifecycleGeneration;
-await _activateForGeneration(epk, room, nextRef, generation);
-
-await _loadIndex(nextRef, generation);
-if (!_isCurrentLifecycle(generation, nextRef)) return;
-await _materializeTranscriptProjectionForRef(nextRef, generation);
-if (!_isCurrentLifecycle(generation, nextRef)) return;
+if (nextRef != null) {
+  await _loadIndex(nextRef, generation);
+  if (!_isCurrentLifecycle(generation, nextRef)) return;
+  await _materializeTranscriptProjectionForRef(nextRef, generation);
+  if (!_isCurrentLifecycle(generation, nextRef)) return;
+  await _bindIdentityPendingSends(nextRef, generation);
+  if (!_isCurrentLifecycle(generation, nextRef)) return;
+  await _resendHeldPendingMessages(generation, nextRef);
+  if (!_isCurrentLifecycle(generation, nextRef)) return;
+}
+_emitIdentityPendingMessages();
+_writeRuntime();
 ```
 
 ### Mesh pull validates its mutation revision throughout cache replacement
 
-**File:** `app/lib/data/mesh/mesh_sync_service.dart:300-344`
+**File:** `app/lib/data/mesh/mesh_sync_service.dart:324-407`
 
 ```dart
-Future<bool> _replaceLocalCacheWith(
-  MeshBlob blob, {
-  required Uint8List expectedOwnerPk,
-  required int mutationRevision,
-  required bool allowPendingMutation,
-}) async {
-  bool current() =>
-      _isPullCurrent(mutationRevision, allowPendingMutation, expectedOwnerPk);
+bool current() =>
+    _isPullCurrent(mutationRevision, allowPendingMutation, expectedOwnerPk);
 
-  final peers = await _storage.listPeers();
+final peers = await _storage.listPeers();
+if (!current()) return false;
+
+for (final m in blob.members) {
   if (!current()) return false;
-  final existing = {for (final p in peers) p.remoteEpk: p};
-  final keep = <String>{};
-  for (final m in blob.members) {
+  // Build the canonical survivor-aware `next` record.
+  if (prev == null || !_peerEqualsForMesh(prev, next)) {
+    await _storage.saveMeshPeerMetadata(next);
     if (!current()) return false;
-    keep.add(m.remoteEpk);
-    final prev = existing[m.remoteEpk];
-    final next = PeerRecord(
-      remoteEpk: m.remoteEpk,
-      sessionName: prev?.sessionName ?? m.nickname ?? 'outpost_pi',
-      relayUrl: m.relayUrl,
-      pairedAt: m.pairedAt,
-      nickname: m.nickname,
-      roomId: prev?.roomId,
-      harness: prev?.harness,
-      // Owner-channel keys are device-local secret state. Mesh membership
-      // updates may change labels/relay metadata but must never carry them
-      // onto a newly hydrated peer or replace an existing channel.
-      channel: prev?.channel,
-    );
-    if (prev == null || !_peerEqualsForMesh(prev, next)) {
-      await _storage.saveMeshPeerMetadata(next);
-      if (!current()) return false;
-    }
   }
-  for (final p in existing.values) {
-    if (!current()) return false;
-    if (!keep.contains(p.remoteEpk)) {
-      await _storage.deletePeerSilent(p.remoteEpk);
-      if (!current()) return false;
-      await _storage.deleteRooms(p.remoteEpk);
-      if (!current()) return false;
-    }
-  }
-  return current();
 }
+
+await _storage.deleteRooms(p.remoteEpk);
+if (!current()) return false;
+return current();
 ```
 
 ## Common violations

@@ -9,28 +9,43 @@ Owner-channel sequence numbers and mesh versions are security state, not ordinar
 ## Examples
 
 ### Example 1: App channel counters merge only under matching directional keys
-**File**: `app/lib/pairing/storage.dart:480-507`
+**File**: `app/lib/pairing/storage.dart:570-598`
 ```dart
-final current = OwnerChannelState.fromJson(
-  jsonDecode(currentRaw) as Map<String, dynamic>,
-);
-if (current.sendKey != channel.sendKey ||
-    current.receiveKey != channel.receiveKey) {
-  throw StateError('owner-channel key changed during active connection');
-}
-final monotonic = channel.copyWith(
-  sendSequence: current.sendSequence > channel.sendSequence
-      ? current.sendSequence
-      : channel.sendSequence,
-  receiveSequence: current.receiveSequence > channel.receiveSequence
-      ? current.receiveSequence
-      : channel.receiveSequence,
-);
-await _store.write(key: channelKey, value: jsonEncode(monotonic.toJson()));
+Future<void> saveChannelState(
+  String remoteEpk,
+  OwnerChannelState channel,
+) => _serializePeerMutation(() async {
+  if (await _store.read(key: _peerKey(remoteEpk)) == null) {
+    throw StateError('cannot persist channel state for an unknown peer');
+  }
+  final channelKey = _channelKey(remoteEpk);
+  final currentRaw = await _store.read(key: channelKey);
+  if (currentRaw == null) {
+    throw StateError('cannot update missing owner-channel material');
+  }
+  final current = OwnerChannelState.fromJson(
+    jsonDecode(currentRaw) as Map<String, dynamic>,
+  );
+  if (current.sendKey != channel.sendKey ||
+      current.receiveKey != channel.receiveKey) {
+    throw StateError('owner-channel key changed during active connection');
+  }
+  final monotonic = channel.copyWith(
+    sendSequence: current.sendSequence > channel.sendSequence
+        ? current.sendSequence
+        : channel.sendSequence,
+    receiveSequence: current.receiveSequence > channel.receiveSequence
+        ? current.receiveSequence
+        : channel.receiveSequence,
+  );
+  await _store.write(key: channelKey, value: jsonEncode(monotonic.toJson()));
+});
 ```
+The actual method also rejects an unknown peer or missing channel before this
+serialized, identity-checked merge.
 
 ### Example 2: Extension send reservations are fenced by the expected channel generation
-**File**: `pi-extension/src/pairing/storage.ts:419-430`
+**File**: `pi-extension/src/pairing/storage.ts:589-600`
 ```ts
 reserveSendSeq(remoteEpk: string, expectedChannelKey: string): Promise<bigint | null> {
   return this.mutatePeers(async (peers) => {
@@ -48,7 +63,7 @@ reserveSendSeq(remoteEpk: string, expectedChannelKey: string): Promise<bigint | 
 ```
 
 ### Example 3: Extension receive acceptance is the result of a locked compare-and-advance
-**File**: `pi-extension/src/pairing/storage.ts:443-460`
+**File**: `pi-extension/src/pairing/storage.ts:613-630`
 ```ts
 return this.mutatePeers(async (peers) => {
   const peer = peers.find((candidate) => candidate.remote_epk === remoteEpk);
