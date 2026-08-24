@@ -51,13 +51,22 @@ finish() {
         hygiene_status=1
       else
         printf -- '- Emulator: down\n'
-        rm -rf "$ROOT/app/build" "$HOME/.gradle/caches/build-cache-1"
+        # A retained release/UAT artifact must never be eaten by routine disk
+        # hygiene (bitten 2026-08-24: the 08:30 run deleted the UAT APK under
+        # the operator's mid-scp). Honor the marker; only clear what builds
+        # regenerate.
+        if [ -e "$ROOT/.work/artifacts/APK-RETAIN" ]; then
+          printf -- '- `app/build`: **SKIPPED** — `.work/artifacts/APK-RETAIN` present (retained release artifact)\n'
+        else
+          rm -rf "$ROOT/app/build"
+        fi
+        rm -rf "$HOME/.gradle/caches/build-cache-1"
         # The AVD is reset only after this run held the exclusive lane and its
         # owned emulator is confirmed down; a foreign occupied serial is never reset.
         rm -rf "$AVD_DIR/data" "$AVD_DIR/snapshots"
         rm -f "$AVD_DIR"/userdata-qemu.img "$AVD_DIR"/userdata-qemu.img.qcow2 \
           "$AVD_DIR"/cache.img.qcow2 "$AVD_DIR"/encryptionkey.img.qcow2
-        printf -- '- Removed: `app/build`, Gradle build cache, and `%s` writable userdata\n' "$AVD_NAME"
+        printf -- '- Removed: `app/build` (unless retained), Gradle build cache, and `%s` writable userdata\n' "$AVD_NAME"
       fi
 
       free_bytes=$(df --output=avail -B1 "$ROOT" | tail -1 | tr -d ' ')
