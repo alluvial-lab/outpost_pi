@@ -3269,6 +3269,60 @@ void main() {
   });
 
   test(
+    'room metadata skips transcript reads while fresh-live replays once',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      final initialReads = store.readCalls;
+
+      for (var i = 0; i < 6; i++) {
+        s.ch.pushControl(
+          RoomMetaUpdated(
+            peer: s.epk,
+            roomId: 'main',
+            working: i.isEven,
+            hasModel: false,
+            hasThinking: false,
+            hasSessionId: false,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+      }
+      expect(store.readCalls, initialReads);
+
+      s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 1));
+      await _waitUntil(
+        () => !s.conn.isRoomLive(s.epk, 'main'),
+        reason: 'active room to become stale',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(store.readCalls, initialReads);
+
+      final replayStarted = Completer<void>();
+      store.readStarted = replayStarted;
+      store.readGate = Completer<void>()..complete();
+      s.ch.pushControl(
+        RoomAnnounced(
+          peer: s.epk,
+          roomId: 'main',
+          sessionId: s.sessionId,
+          startedAt: 2,
+          working: false,
+        ),
+      );
+      await replayStarted.future.timeout(const Duration(seconds: 1));
+      await _waitUntil(
+        () => store.readCalls == initialReads + 1,
+        reason: 'one fresh-live held replay read',
+      );
+      expect(store.readCalls, initialReads + 1);
+
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
     'runtime put is awaited in the queue and diagnosed on failure',
     () async {
       Completer<void>? putGate;
@@ -3291,16 +3345,7 @@ void main() {
 
       putGate = Completer<void>();
       putStarted = Completer<void>();
-      s.ch.pushControl(
-        RoomMetaUpdated(
-          peer: s.epk,
-          roomId: 'main',
-          working: true,
-          hasModel: false,
-          hasThinking: false,
-          hasSessionId: false,
-        ),
-      );
+      s.ch.pushControl(RoomEnded(peer: s.epk, roomId: 'main', sinceTs: 1));
       await putStarted.future.timeout(const Duration(seconds: 1));
 
       var sendCompleted = false;
@@ -3316,13 +3361,12 @@ void main() {
 
       failNextPut = true;
       s.ch.pushControl(
-        RoomMetaUpdated(
+        RoomAnnounced(
           peer: s.epk,
           roomId: 'main',
+          sessionId: s.sessionId,
+          startedAt: 2,
           working: false,
-          hasModel: false,
-          hasThinking: false,
-          hasSessionId: false,
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 100));
