@@ -37,14 +37,22 @@ widgets/pages when a semantic role exists — extend the palette instead.
 
 ### Example 2: Flutter resolves the pair at the theme builder
 
-**File:** `app/lib/ui/core/themes/app_colors.dart:17-151`, `app/lib/ui/core/themes/app_theme.dart:74-84`
+**File:** `app/lib/ui/core/themes/app_colors.dart:17-151`, `app/lib/ui/core/themes/app_theme.dart:97-107`
 
 ```dart
-final colors = brightness == Brightness.dark
-    ? AppColors.dark
-    : AppColors.light;
+/// Dark-native Phosphor Beacon theme.
+ThemeData buildDarkTheme() => _buildTheme(
+  brightness: Brightness.dark,
+  colors: AppColors.dark,
+  typo: AppTypography.dark,
+);
 
-return buildFrameworkTheme(colors);
+/// Light Phosphor Beacon theme.
+ThemeData buildLightTheme() => _buildTheme(
+  brightness: Brightness.light,
+  colors: AppColors.light,
+  typo: AppTypography.light,
+);
 ```
 
 ### Example 3: cockpit carries the same pair across theme, syntax, terminal

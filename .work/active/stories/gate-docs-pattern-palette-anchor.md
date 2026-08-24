@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-palette-anchor
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -26,9 +26,16 @@ pattern-skill-staleness
 ## Contradiction
 The cited range is now input-decoration styling, not brightness resolution. The
 current theme builder's `buildDarkTheme`/`buildLightTheme` pair and token wiring
-are below the cited range, so the pattern example sends readers to unrelated
-code after the release UI changes.
+are at lines 97-107, so the pattern example sends readers to unrelated code
+after the release UI changes.
 
 ## Required edit
 Refresh the Flutter theme-builder anchor and snippet to the current dark/light
 resolution and semantic-token wiring.
+
+## Implementation
+
+Corrected `.agents/skills/patterns/paired-brightness-semantic-palettes.md` to
+anchor the Flutter dark/light builders and semantic token wiring at
+`app/lib/ui/core/themes/app_theme.dart:97-107`. The finding was valid and
+corrected; no rejection was necessary.

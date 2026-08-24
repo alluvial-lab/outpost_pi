@@ -59,9 +59,10 @@ Future<void> _closeResources() async {
 
 ### Terminal session awaits its stream and child process before base close
 
-**File:** `cockpit/lib/app/cockpit/ui/session/terminal_session.dart:109-114`
+**File:** `cockpit/lib/app/cockpit/ui/session/terminal_session.dart:128-134`
 
 ```dart
+@override
 Future<void> close() async {
   await _sub?.cancel();
   _sub = null;

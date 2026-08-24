@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-pane-teardown-anchor
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -25,9 +25,16 @@ pattern-skill-staleness
 
 ## Contradiction
 The cited range is now the terminal clipboard-paste implementation. The
-resource-owning `close()` method moved to lines 128-133, so the documented
-teardown contract is not reachable at its stated anchor.
+resource-owning `close()` method is at lines 128-134, so the documented teardown
+contract is not reachable at its stated anchor.
 
 ## Required edit
 Refresh the terminal close anchor and snippet to the current awaited
 subscription/process teardown.
+
+## Implementation
+
+Corrected `.agents/skills/patterns/awaited-pane-teardown-contract.md` to anchor
+terminal subscription/process teardown at
+`cockpit/lib/app/cockpit/ui/session/terminal_session.dart:128-134`. The finding
+was valid and corrected; no rejection was necessary.
