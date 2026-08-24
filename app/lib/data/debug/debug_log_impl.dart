@@ -56,6 +56,8 @@ final class _DebugLine {
 /// failures emit a scrubbed `debugPrint('[debug-log] …')` and never rethrow.
 /// The logger must not break the app even on platform/quota/permission failure.
 class DebugLogImpl implements DebugLog {
+  static int _nextWriterId = 0;
+
   /// Ring buffer capacity. 1 MiB covers ~48h of the expanded capture surface
   /// (state-transition lines, NOT per-token streaming) with headroom.
   static const int _defaultMaxBytes = 1 << 20; // 1 MiB
@@ -84,6 +86,7 @@ class DebugLogImpl implements DebugLog {
   /// makes oldest-line eviction constant-time; [_retainedBytes] avoids a full
   /// UTF-8 recount on every admission.
   final Queue<_DebugLine> _ring = Queue<_DebugLine>();
+  final int _writerId = _nextWriterId++;
   int _retainedBytes = 0;
 
   Timer? _flushTimer;
@@ -132,6 +135,14 @@ class DebugLogImpl implements DebugLog {
   /// Tests use explicit started/release completers to exercise interleavings.
   @visibleForTesting
   Future<void> Function()? beforeSnapshotWriteForTesting;
+
+  /// Test barrier invoked after export's force-flush and before its file read.
+  @visibleForTesting
+  Future<void> Function()? beforeExportReadForTesting;
+
+  /// Test barrier invoked after the temp snapshot is durable but before commit.
+  @visibleForTesting
+  Future<void> Function()? beforeSnapshotCommitForTesting;
 
   int _snapshotWriteCount = 0;
 
@@ -207,6 +218,8 @@ class DebugLogImpl implements DebugLog {
       if (path == null) return null;
       final file = File(path);
       if (!await file.exists()) return null;
+      final readBarrier = beforeExportReadForTesting;
+      if (readBarrier != null) await readBarrier();
       // Read the FILE as source of truth, line-by-line, skipping corrupt lines
       // (review F2 — export-from-file). Recovers on-disk state even if the
       // in-memory ring diverged.
@@ -355,7 +368,7 @@ class DebugLogImpl implements DebugLog {
         try {
           final barrier = beforeSnapshotWriteForTesting;
           if (barrier != null) await barrier();
-          await File(path).writeAsString(snapshot, flush: true);
+          await _writeSnapshotAtomically(path, snapshot);
           _snapshotWriteCount += 1;
         } catch (_) {
           _safeLog(_DebugLogFailure.flush);
@@ -372,6 +385,21 @@ class DebugLogImpl implements DebugLog {
         _flushFuture = null;
       }
       completer.complete();
+    }
+  }
+
+  /// Replace the exported file without exposing its truncate/write window.
+  Future<void> _writeSnapshotAtomically(String path, String snapshot) async {
+    final tempFile = File('$path.tmp.$_writerId');
+    try {
+      await tempFile.writeAsString(snapshot, flush: true);
+      final commitBarrier = beforeSnapshotCommitForTesting;
+      if (commitBarrier != null) await commitBarrier();
+      await tempFile.rename(path);
+    } finally {
+      if (await tempFile.exists()) {
+        await tempFile.delete();
+      }
     }
   }
 
