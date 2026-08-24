@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-24
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # Capture upload: schema, codegen, extension handler, session note
@@ -38,3 +38,19 @@ emitted once. Run `corepack pnpm typecheck && test && build`.
   invalid capture, one-in-flight admission, and exactly-once note emission.
 - Verification: `corepack pnpm typecheck`, `corepack pnpm test`, and
   `corepack pnpm build` pass from `pi-extension/`.
+
+## Review closure
+
+- Hardened the debug-root boundary against symlink/non-directory entries and
+  verified the real debug directory remains under the room cwd realpath before
+  any write.
+- Kept the one-upload admission slot through async commit, fenced duplicate
+  finalization, and replaced retained chunk arrays with one schema-capped
+  preallocated buffer written in sequence.
+- Bound upload cleanup to the exact Owner/channel, with matching-owner detach,
+  channel loss, relay-wide loss, session replacement, stale GC, and unrelated
+  owner preservation covered.
+- Consumed the generated chunk, total, and in-flight ceilings; delivery notes
+  now use `triggerTurn: true` while remaining TUI-visible.
+- Review verification: extension typecheck, 1,022 passing tests (3 skipped),
+  and build all pass.

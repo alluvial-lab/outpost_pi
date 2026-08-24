@@ -371,6 +371,7 @@ const {
   _handleControl,
   _parseControlFrame,
   _setHotReloadingForTest,
+  _sendCaptureDeliveredNote,
   CTRL_PREFIX,
 } = await import("./index.js");
 const { runStandaloneOutpostPiCli } = await import("./extension/command_surface/standalone_cli.js");
@@ -514,6 +515,22 @@ function sentToPeerSince(index: number, peer: string): Array<{ peer: string; inn
 beforeEach(() => {
   testChannels.clear();
   decodedSentCache.clear();
+});
+
+test("capture delivery note remains TUI-visible and wakes an idle agent turn", () => {
+  const sendMessage = vi.fn();
+  _setPiForTest({ sendMessage, sendUserMessage: vi.fn() });
+
+  _sendCaptureDeliveredNote("Debug capture delivered: debug/capture.bin");
+
+  expect(sendMessage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      customType: "outpost-pi:debug-capture-delivered",
+      content: "Debug capture delivered: debug/capture.bin",
+      display: true,
+    }),
+    { triggerTurn: true },
+  );
 });
 
 describe("extension default export", () => {

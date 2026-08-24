@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -11,6 +11,27 @@ import {
 } from "./capture_upload_handler.js";
 
 const roots: string[] = [];
+const OWNER_A = "owner-a";
+
+class Deferred<T> {
+  readonly promise: Promise<T>;
+  resolve!: (value: T | PromiseLike<T>) => void;
+
+  constructor() {
+    this.promise = new Promise<T>((resolve) => { this.resolve = resolve; });
+  }
+}
+
+class SlowCommitCaptureUploadHandler extends CaptureUploadHandler {
+  readonly commitStarted = new Deferred<void>();
+  readonly releaseCommit = new Deferred<void>();
+
+  protected override async commit(bytes: Buffer, uploadId: string): Promise<string> {
+    this.commitStarted.resolve(undefined);
+    await this.releaseCommit.promise;
+    return super.commit(bytes, uploadId);
+  }
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -70,9 +91,9 @@ async function deliver(
   uploadId?: string,
 ) {
   const wire = messages(bytes, uploadId);
-  await handler.handle(sender, wire.begin);
-  for (const chunk of wire.chunks) await handler.handle(sender, chunk);
-  await handler.handle(sender, wire.end);
+  await handler.handle(OWNER_A, sender, wire.begin);
+  for (const chunk of wire.chunks) await handler.handle(OWNER_A, sender, chunk);
+  await handler.handle(OWNER_A, sender, wire.end);
 }
 
 describe("CaptureUploadHandler", () => {
@@ -101,7 +122,7 @@ describe("CaptureUploadHandler", () => {
 
   test("rejects declared and decoded oversize without retaining bytes", async () => {
     const f = await fixture();
-    await f.handler.handle(f.sender, {
+    await f.handler.handle(OWNER_A, f.sender, {
       type: "capture_upload_begin",
       id: "oversize",
       session_id: "session-1",
@@ -114,8 +135,8 @@ describe("CaptureUploadHandler", () => {
 
     const declared = Buffer.alloc(CAPTURE_UPLOAD_MAX_CHUNK_BYTES + 1, 1);
     const wire = messages(declared);
-    await f.handler.handle(f.sender, wire.begin);
-    await f.handler.handle(f.sender, {
+    await f.handler.handle(OWNER_A, f.sender, wire.begin);
+    await f.handler.handle(OWNER_A, f.sender, {
       ...wire.chunks[0]!,
       payload: declared.toString("base64"),
     });
@@ -127,8 +148,8 @@ describe("CaptureUploadHandler", () => {
   test("strict sequence failure aborts the upload", async () => {
     const f = await fixture();
     const wire = messages(Buffer.from('{"tag":"one"}\n'));
-    await f.handler.handle(f.sender, wire.begin);
-    await f.handler.handle(f.sender, { ...wire.chunks[0]!, sequence: 1 });
+    await f.handler.handle(OWNER_A, f.sender, wire.begin);
+    await f.handler.handle(OWNER_A, f.sender, { ...wire.chunks[0]!, sequence: 1 });
     expect(f.sent.at(-1)).toMatchObject({ type: "capture_upload_error", code: "bad_sequence" });
     expect(f.handler.hasInflightUpload()).toBe(false);
     f.handler.dispose();
@@ -138,9 +159,9 @@ describe("CaptureUploadHandler", () => {
     const f = await fixture();
     const bytes = Buffer.from('{"tag":"one"}\n');
     const wire = messages(bytes);
-    await f.handler.handle(f.sender, wire.begin);
-    await f.handler.handle(f.sender, wire.chunks[0]!);
-    await f.handler.handle(f.sender, { ...wire.end, sha256: "0".repeat(64) });
+    await f.handler.handle(OWNER_A, f.sender, wire.begin);
+    await f.handler.handle(OWNER_A, f.sender, wire.chunks[0]!);
+    await f.handler.handle(OWNER_A, f.sender, { ...wire.end, sha256: "0".repeat(64) });
     expect(f.sent.at(-1)).toMatchObject({ type: "capture_upload_error", code: "checksum_mismatch" });
     await expect(readdir(join(f.cwd, "debug"))).rejects.toThrow();
     f.handler.dispose();
@@ -159,18 +180,104 @@ describe("CaptureUploadHandler", () => {
     f.handler.dispose();
   });
 
+  test("rejects a symlinked debug root without writing through it", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "outpost-capture-symlink-cwd-"));
+    const outside = await mkdtemp(join(tmpdir(), "outpost-capture-symlink-outside-"));
+    roots.push(outside);
+    await mkdir(outside, { recursive: true });
+    await symlink(outside, join(cwd, "debug"), "dir");
+    const f = await fixture({ cwd });
+
+    await deliver(f.handler, f.sender, Buffer.from('{"tag":"blocked"}\n'));
+
+    expect(f.sent.at(-1)).toMatchObject({ type: "capture_upload_error", code: "io_error" });
+    expect(await readdir(outside)).toEqual([]);
+    expect(f.notes).toEqual([]);
+    f.handler.dispose();
+  });
+
+  test("holds admission until a slow async commit settles", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "outpost-capture-slow-commit-"));
+    roots.push(cwd);
+    const sent: ServerMessage[] = [];
+    const sender = { send: (message: ServerMessage) => sent.push(message) };
+    const handler = new SlowCommitCaptureUploadHandler({ cwd: () => cwd, note: () => undefined });
+    const first = messages(Buffer.from('{"tag":"one"}\n'), "first");
+    const second = messages(Buffer.from('{"tag":"two"}\n'), "second");
+    await handler.handle(OWNER_A, sender, first.begin);
+    await handler.handle(OWNER_A, sender, first.chunks[0]!);
+
+    const finalizing = handler.handle(OWNER_A, sender, first.end);
+    await handler.commitStarted.promise;
+    await handler.handle(OWNER_A, sender, second.begin);
+
+    expect(sent.at(-1)).toMatchObject({ type: "capture_upload_error", code: "busy" });
+    expect(handler.hasInflightUpload()).toBe(true);
+    handler.releaseCommit.resolve(undefined);
+    await finalizing;
+    expect(sent.at(-1)).toMatchObject({ type: "capture_upload_ack", stage: "delivered" });
+    expect(handler.hasInflightUpload()).toBe(false);
+    handler.dispose();
+  });
+
+  test("writes many one-byte chunks into the declared preallocated total", async () => {
+    const f = await fixture();
+    const bytes = Buffer.from(`${JSON.stringify({ tag: "many", value: "x".repeat(16_384) })}\n`);
+    const wire = messages(bytes, "one-byte-chunks");
+    await f.handler.handle(OWNER_A, f.sender, wire.begin);
+    for (let sequence = 0; sequence < bytes.length; sequence++) {
+      await f.handler.handle(OWNER_A, f.sender, {
+        type: "capture_upload_chunk",
+        id: `byte-${sequence}`,
+        session_id: wire.begin.session_id,
+        upload_id: wire.begin.upload_id,
+        sequence,
+        payload: bytes.subarray(sequence, sequence + 1).toString("base64"),
+      });
+    }
+    await f.handler.handle(OWNER_A, f.sender, wire.end);
+
+    expect(f.sent.at(-1)).toMatchObject({
+      type: "capture_upload_ack",
+      stage: "delivered",
+      bytes: bytes.length,
+    });
+    f.handler.dispose();
+  });
+
+  test("clears only the owning owner/channel and clears every upload on transport loss", async () => {
+    const f = await fixture();
+    const otherSender = { send: (_message: ServerMessage) => undefined };
+    const wire = messages(Buffer.from('{"tag":"one"}\n'));
+
+    await f.handler.handle(OWNER_A, f.sender, wire.begin);
+    f.handler.detachOwner("owner-b");
+    f.handler.detachChannel(OWNER_A, otherSender);
+    expect(f.handler.hasInflightUpload()).toBe(true);
+
+    f.handler.detachChannel(OWNER_A, f.sender);
+    expect(f.handler.hasInflightUpload()).toBe(false);
+    await f.handler.handle(OWNER_A, f.sender, wire.begin);
+    f.handler.detachOwner(OWNER_A);
+    expect(f.handler.hasInflightUpload()).toBe(false);
+    await f.handler.handle(OWNER_A, f.sender, wire.begin);
+    f.handler.detachAll();
+    expect(f.handler.hasInflightUpload()).toBe(false);
+    f.handler.dispose();
+  });
+
   test("timer GC and detach release an abandoned in-flight upload", async () => {
     let now = 1_000;
     const f = await fixture({ now: () => now, staleAfterMs: 500 });
     const wire = messages(Buffer.from('{"tag":"one"}\n'));
-    await f.handler.handle(f.sender, wire.begin);
+    await f.handler.handle(OWNER_A, f.sender, wire.begin);
     expect(f.handler.hasInflightUpload()).toBe(true);
     now += 500;
     f.handler.gc();
     expect(f.handler.hasInflightUpload()).toBe(false);
 
-    await f.handler.handle(f.sender, wire.begin);
-    f.handler.detach();
+    await f.handler.handle(OWNER_A, f.sender, wire.begin);
+    f.handler.detachAll();
     expect(f.handler.hasInflightUpload()).toBe(false);
     f.handler.dispose();
   });
@@ -187,8 +294,8 @@ describe("CaptureUploadHandler", () => {
     const f = await fixture();
     const one = messages(Buffer.from('{"tag":"one"}\n'), "one");
     const two = messages(Buffer.from('{"tag":"two"}\n'), "two");
-    await f.handler.handle(f.sender, one.begin);
-    await f.handler.handle(f.sender, two.begin);
+    await f.handler.handle(OWNER_A, f.sender, one.begin);
+    await f.handler.handle(OWNER_A, f.sender, two.begin);
     expect(f.sent.at(-1)).toMatchObject({ type: "capture_upload_error", code: "busy" });
     expect(f.handler.hasInflightUpload()).toBe(true);
     f.handler.dispose();

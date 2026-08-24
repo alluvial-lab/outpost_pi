@@ -282,6 +282,9 @@ const _owners: OwnerMultiplexer = new OwnerMultiplexer({
       display: false,
     }, undefined, "paired");
   },
+  onOwnerChannelDetached: ({ peerId, channel }) => {
+    _captureUploads.detachChannel(peerId, channel);
+  },
   onFanoutPresenceChanged: ({ peerShortId, state, sinceTs }) => {
     // Operational telemetry only — do NOT emit anything to the TUI or the
     // agent's message context. A prior version called `_sendPiMessage` (which
@@ -564,15 +567,18 @@ function _notify(msg: string, type: "info" | "warning" | "error" = "info", ctx?:
   }
 }
 
+/** Surface a delivered capture in the TUI and wake an otherwise idle agent turn. */
+export function _sendCaptureDeliveredNote(message: string): void {
+  _sendPiMessage(
+    { customType: "outpost-pi:debug-capture-delivered", content: message, display: true },
+    { triggerTurn: true },
+    "debug-capture-delivered",
+  );
+}
+
 const _captureUploads = new CaptureUploadHandler({
   cwd: _currentCwd,
-  note: (message) => {
-    _sendPiMessage(
-      { customType: "outpost-pi:debug-capture-delivered", content: message, display: true },
-      { triggerTurn: false },
-      "debug-capture-delivered",
-    );
-  },
+  note: _sendCaptureDeliveredNote,
 });
 
 /**
@@ -977,7 +983,7 @@ function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): Promise<v
 
     const ownerIds = [..._owners.peerIds()];
     const drains = ownerIds.map((peerId) => _owners.detach(peerId, byeReason));
-    _captureUploads.detach();
+    _captureUploads.detachAll();
 
     // Preserve turn convergence while the relay remains usable. This is the
     // last chance to publish working=false on session replacement/shutdown.
@@ -1133,9 +1139,10 @@ function _dispatchControlFrame(frame: ParsedControlFrame): void {
  */
 function _disconnectOwnerForRuntime(appPeerId?: string): void {
   if (_state === "idle") return;
+  const detachedOwnerId = appPeerId ?? _owners.peerIds().at(-1);
   const result = _owners.disconnectOwner(appPeerId);
   if (!result.disconnected) return;
-  _captureUploads.detach();
+  if (detachedOwnerId) _captureUploads.detachOwner(detachedOwnerId);
 
   _syncOwnerPresenceSubscription();
 
@@ -3125,8 +3132,19 @@ export function _routeClientMessageFrom(
       break;
     case "capture_upload_begin":
     case "capture_upload_chunk":
-    case "capture_upload_end":
-      void _captureUploads.handle(sender, msg).catch(() => {
+    case "capture_upload_end": {
+      const ownerId = _owners.entries().find((entry) => entry.channel === sender)?.peerId;
+      if (!ownerId) {
+        sender.send(_withCurrentSession({
+          type: "capture_upload_error",
+          in_reply_to: msg.id,
+          upload_id: msg.upload_id,
+          code: "not_found",
+          message: "Capture upload owner channel is not active.",
+        }));
+        break;
+      }
+      void _captureUploads.handle(ownerId, sender, msg).catch(() => {
         sender.send(_withCurrentSession({
           type: "capture_upload_error",
           in_reply_to: msg.id,
@@ -3136,6 +3154,7 @@ export function _routeClientMessageFrom(
         }));
       });
       break;
+    }
   }
 }
 
@@ -3225,7 +3244,7 @@ function _resetSessionForNew(inReplyTo: string): void {
   // key is sessionId-scoped, so this is belt-and-suspenders, but clearing
   // avoids lingering promises from a replaced session.)
   _inflightUserDeliveries.clear();
-  _captureUploads.detach();
+  _captureUploads.detachAll();
 }
 
 type ToolArgs = Record<string, unknown>;
