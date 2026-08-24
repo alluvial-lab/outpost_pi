@@ -20,6 +20,13 @@ Available patterns:
 - [cross-language-known-answer-fixture-triangulation.md](cross-language-known-answer-fixture-triangulation.md) — Generate one deterministic protocol fixture independently and require every language endpoint to reproduce it byte-for-byte.
 - [durable-transition-latches.md](durable-transition-latches.md) — Persist a pending latch before destructive cleanup, gate access while latched, resume at boot, and clear only after commit.
 - [explicit-async-interleaving-tests.md](explicit-async-interleaving-tests.md) — Test async ordering through explicit started/release barriers in fakes or harnesses, never elapsed time.
+- [failure-first-regression-tests.md](failure-first-regression-tests.md) — Start from the old failure boundary, assert the observable invariant, then verify repaired transitions.
+- [golden-render-saving-comparators.md](golden-render-saving-comparators.md) — Capture through `matchesGoldenFile` with a saving comparator, then reject missing or blank evidence.
+- [e2e-selector-harness-scenarios.md](e2e-selector-harness-scenarios.md) — Map checked-in live-test selectors in the runner and let each harness scenario own setup, assertions, phases, and teardown.
+- [generated-protocol-constant-consumption.md](generated-protocol-constant-consumption.md) — Consume generated protocol registries and limits at every language boundary instead of copying wire facts.
+- [owner-channel-scoped-resource-ownership.md](owner-channel-scoped-resource-ownership.md) — Bind retained resources to both owner identity and concrete channel, and tear down every matching index together.
+- [asymmetric-threshold-stabilization.md](asymmetric-threshold-stabilization.md) — Use separate entry/exit conditions or consecutive healthy probes to prevent noisy state flapping.
+- [edge-triggered-convergence.md](edge-triggered-convergence.md) — Notify, persist, or publish only when a validated semantic projection changes.
 - [command-surface-adapter-classes.md](command-surface-adapter-classes.md) — Keep command-surface logic in thin, dependency-injected adapter classes.
 - [typed-wire-decoders.md](typed-wire-decoders.md) — Parse/validate untrusted wire text through shared decode helpers before routing typed handlers.
 - [subscription-unsubscribe-contract.md](subscription-unsubscribe-contract.md) — Return unsubscribe closures for event handlers and keep callback registration/teardown explicit.
