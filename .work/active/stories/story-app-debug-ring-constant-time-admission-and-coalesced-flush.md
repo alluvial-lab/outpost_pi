@@ -1,7 +1,7 @@
 ---
 id: story-app-debug-ring-constant-time-admission-and-coalesced-flush
 kind: story
-stage: implementing
+stage: done
 tags: [perf, app]
 parent: epic-perf-optimization-campaign
 depends_on: []
@@ -48,11 +48,64 @@ part of the ring data structure itself.
 
 ## Acceptance criteria
 
-- [ ] A checked-in benchmark derived from the discovery workload covers 200 and
+- [x] A checked-in benchmark derived from the discovery workload covers 200 and
       5,500 `wsIn` events plus 339 critical events after a ~609 KiB prefill.
-- [ ] The 5,500-event enabled workload improves by at least 5x on the same VM,
+- [x] The 5,500-event enabled workload improves by at least 5x on the same VM,
       without weakening the byte cap or debug-enabled gate.
-- [ ] A burst of 339 critical events causes bounded/coalesced snapshot writes
+- [x] A burst of 339 critical events causes bounded/coalesced snapshot writes
       while the final on-disk snapshot contains the last event.
-- [ ] Existing crash-tail, clear-vs-flush, ordering, export, corruption, privacy,
+- [x] Existing crash-tail, clear-vs-flush, ordering, export, corruption, privacy,
       and lifecycle tests remain green.
+
+## Implementation
+
+- Replaced the shifting `List<String>` ring with a FIFO `Queue` of encoded lines
+  carrying their UTF-8-plus-newline byte ownership. Admission now encodes and
+  counts only the new row, and oldest-line eviction uses `removeFirst()` while
+  maintaining the retained total incrementally.
+- Replaced the per-request future chain with one dirty-latched flush drain. A
+  request that overlaps a captured/in-flight snapshot causes at most one
+  trailing snapshot; synchronous critical bursts collapse into one write.
+- Kept `clear()` on the same serialization boundary: it waits until the active
+  drain is stable, publishes a clear barrier during the empty-file write, and
+  lets post-clear admissions flush only after that barrier. Tests use explicit
+  started/release completers rather than elapsed-time sleeps.
+- Preserved the existing encoded debug-row shapes and forbidden-key handling;
+  `wsIn` and `replayDedup` triage fields are unchanged.
+
+### Benchmark
+
+Command (from `app/`):
+
+```text
+flutter test --no-pub test/perf/debug_log_benchmark_test.dart --reporter expanded
+```
+
+Same Linux VM and 5,500-event Dart-test timing pattern as discovery. The
+checked-in workload retains 609,390 bytes before the critical burst.
+
+| Probe | Before (discovery) | After | Change |
+|---|---:|---:|---:|
+| 200-event admission | 11,398 us | 6,253 us | 1.82x faster |
+| 5,500-event admission | 4,448,655 us (808.85 us/event) | 43,405 us (7.89 us/event) | **102.49x faster** |
+| 339 critical-event enqueue | 656,027 us | 2,148 us | 305.41x faster |
+| critical drain | 2,510,100 us across 339 writes | 7,317 us across 1 coalesced write | 343.05x faster |
+
+The final file was 649,112 bytes and its final row was the 339th
+`roomSnapshot` event (`presenceCount: 338`). The benchmark enforces the locked
+5x floor, the ~609 KiB prefill, no more than two overlapping writes, and final
+row durability.
+
+### Verification
+
+- Focused debug adapter + performance tests: 20 passed.
+- Full committed app analyzer surface: no issues (explicit paths excluded only
+  an unrelated concurrently-written, untracked benchmark).
+- Full committed app test surface: passed with `--exclude-tags e2e
+  --concurrency=2` (930 tests; benchmark included; same untracked benchmark
+  excluded).
+- `scripts/debug_capture_triage.py --selftest`: all 10 parser/oracle checks
+  passed. The discovery capture still parsed all 294 rows with zero malformed
+  rows, including 87 `wsIn` and 110 `replayDedup` rows; it reports its known
+  reconnect-churn anomaly by design.
+- Adjacent issues parked: none.
