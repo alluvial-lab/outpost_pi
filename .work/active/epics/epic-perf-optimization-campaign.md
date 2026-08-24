@@ -73,7 +73,9 @@ Discovery profiled five capped entry points on 2026-08-24 (Linux, 8 vCPU,
 1. **App transcript append/materialization.** The top bottleneck is repeated
    whole-log and whole-projection work. Pure projection p50 was 0.690 ms at 200
    events, 5.577 ms at 1,000, and **198.813 ms at 5,500** (p95 211.371 ms;
-   2,750 messages). Rebuilding every prefix through 1,000 one-at-a-time appends
+   5,500 projected messages; the discovery harness's derived message-count
+   label undercounted its alternating user/assistant fixture). Rebuilding every
+   prefix through 1,000 one-at-a-time appends
    took **1,330.628 ms**. The real encrypted Hive store batch-appended 5,500 in
    859.471 ms and read the full log in 20.755 ms p50 / 34.014 ms p95.
 2. **App per-frame debug ring.** The top bottleneck is `_truncate`'s full-ring
