@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 
 import 'package:app/config/utils/injector.dart';
 import 'package:app/data/actions/actions_repository.dart';
+import 'package:app/data/debug/debug_capture_uploader.dart';
 import 'package:app/data/debug/debug_log_impl.dart';
 import 'package:app/data/mesh/mesh_client.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
@@ -23,6 +24,7 @@ import 'package:app/data/update/secure_dismissed_update_store.dart';
 import 'package:app/data/update/update_checker_impl.dart';
 import 'package:app/data/update/url_launcher_opener.dart';
 import 'package:app/data/voice/speech_service.dart';
+import 'package:app/domain/contracts/debug_capture_upload.dart';
 import 'package:app/domain/contracts/debug_log.dart';
 import 'package:app/domain/contracts/dismissed_update_store.dart';
 import 'package:app/domain/contracts/transcript_event_store.dart';
@@ -164,6 +166,12 @@ Future<void> setupDependencies() async {
   _injector.addRepository<IActionsRepository>(
     () => ActionsRepository(_injector.get<ConnectionManager>()),
   );
+  _injector.addOther<DebugCaptureUploader>(
+    () => DebugCaptureUploaderImpl(
+      _injector.get<DebugLog>(),
+      _injector.get<ConnectionManager>(),
+    ),
+  );
 
   // ViewModels
   _injector.addViewModel<ChatViewModel>(
@@ -202,7 +210,10 @@ Future<void> setupDependencies() async {
   );
   _injector.addViewModel<OnboardingViewModel>(OnboardingViewModel.new);
   _injector.addViewModel<QuickActionsViewModel>(
-    () => QuickActionsViewModel(_injector.get<IActionsRepository>()),
+    () => QuickActionsViewModel(
+      _injector.get<IActionsRepository>(),
+      _injector.get<DebugCaptureUploader>(),
+    ),
   );
   // Plan 29 — voice input. New instance per chat mount; reuses the shared
   // SpeechService singleton (which it stops/cancels but never disposes).

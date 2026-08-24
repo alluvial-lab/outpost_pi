@@ -13,6 +13,7 @@ import 'package:app/data/local/boxes.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/domain/contracts/debug_capture_upload.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/chat/quick_actions/states/quick_actions_state.dart';
@@ -82,6 +83,33 @@ class _FakeRepo implements IActionsRepository {
   void dispose() {}
 }
 
+class _FakeCaptureUploader implements DebugCaptureUploader {
+  int calls = 0;
+  bool failOnce = false;
+
+  @override
+  Future<DebugCaptureUploadResult> uploadLatest({
+    void Function(DebugCaptureUploadProgress progress)? onProgress,
+  }) async {
+    calls++;
+    onProgress?.call(const DebugCaptureUploadProgress.reading());
+    onProgress?.call(
+      const DebugCaptureUploadProgress.sending(bytesSent: 50, totalBytes: 100),
+    );
+    if (failOnce && calls == 1) {
+      throw const DebugCaptureUploadFailure(
+        'io_error',
+        'Pi could not write the capture.',
+      );
+    }
+    return const DebugCaptureUploadResult(
+      path: 'debug/app-capture-widget.bin',
+      bytes: 100,
+      events: 2,
+    );
+  }
+}
+
 class _LifecycleChannel implements IChannel, IControlLink {
   final _messages = StreamController<ServerMessage>.broadcast();
   final _controls = StreamController<ControlInbound>.broadcast();
@@ -148,6 +176,7 @@ Future<({_FakeRepo repo, List<int> resetCalls})> _openSheet(
   bool failCompact = false,
   bool failNewSession = false,
   Completer<void>? newSessionCompletion,
+  DebugCaptureUploader? captureUploader,
 }) async {
   final repo = _FakeRepo()
     ..failCompact = failCompact
@@ -168,7 +197,7 @@ Future<({_FakeRepo repo, List<int> resetCalls})> _openSheet(
                 // (otherwise the Column overflows the half-height default).
                 isScrollControlled: true,
                 builder: (_) => ChangeNotifierProvider<QuickActionsViewModel>(
-                  create: (_) => QuickActionsViewModel(repo),
+                  create: (_) => QuickActionsViewModel(repo, captureUploader),
                   child: QuickActionsSheetBody(
                     messenger: messenger,
                     onSessionReset: () async => resetCalls.add(1),
@@ -254,6 +283,43 @@ void main() {
     expect(find.byKey(const Key('qa-compact')), findsOneWidget);
     expect(find.text('compact boom'), findsOneWidget);
     expect(find.text('Context compacted'), findsNothing);
+  });
+
+  testWidgets('Debug logs: progress resolves to the acknowledged Pi path', (
+    tester,
+  ) async {
+    final uploader = _FakeCaptureUploader();
+    await _openSheet(tester, captureUploader: uploader);
+
+    await tester.tap(find.byKey(const Key('qa-send-debug-logs')));
+    await tester.pumpAndSettle();
+
+    expect(uploader.calls, 1);
+    expect(find.text('Debug logs delivered'), findsOneWidget);
+    expect(
+      find.text('Delivered to debug/app-capture-widget.bin'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Debug logs: failure stays in-sheet and retry restarts', (
+    tester,
+  ) async {
+    final uploader = _FakeCaptureUploader()..failOnce = true;
+    await _openSheet(tester, captureUploader: uploader);
+
+    await tester.tap(find.byKey(const Key('qa-send-debug-logs')));
+    await tester.pumpAndSettle();
+    expect(find.text('Retry debug logs'), findsOneWidget);
+    expect(
+      find.textContaining('Pi could not write the capture.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('qa-send-debug-logs')));
+    await tester.pumpAndSettle();
+    expect(uploader.calls, 2);
+    expect(find.text('Debug logs delivered'), findsOneWidget);
   });
 
   testWidgets('New session: confirm fires, resets chat, closes (no toast)', (
@@ -615,6 +681,8 @@ void main() {
 
     final s = await _openSheet(tester);
     final medium = find.byKey(const Key('qa-thinking-medium'));
+    await tester.ensureVisible(medium);
+    await tester.pumpAndSettle();
     final size = tester.getSize(medium);
     expect(size.width, greaterThanOrEqualTo(48));
     expect(size.height, greaterThanOrEqualTo(48));
