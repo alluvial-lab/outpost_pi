@@ -1,7 +1,7 @@
 ---
 id: feature-debug-capture-delivery
 kind: feature
-stage: implementing
+stage: done
 tags: [app, pi-extension, ux]
 parent: null
 depends_on: []
@@ -64,6 +64,25 @@ unaffected (quick-actions sheet gains one row — regenerate). Ship: app
 0.7.0+12 APK + extension dist refresh (full agent restart via
 scripts/refresh-dist.sh semantics).
 
-## Review record
+## Review record (2026-08-24)
 
-Filled at completion.
+**Standard weight, one independent fresh-context pass** (gpt-5.6-sol).
+Verdict: Request changes → **closed done** after receiver-confirmed closure
+in 28d56bfe (standard policy, no second pass).
+
+- **Blockers (3/3 fixed+verified):** symlinked `debug/` escaped lexical
+  containment (now lstat-rejected + realpath-verified); in-flight slot
+  released before async commit + per-chunk Buffer retention (now held
+  through commit, single preallocated declared-total buffer); delivery
+  note sent `triggerTurn:false` so an idle orchestrator never woke (now
+  true — the feature's core promise).
+- **Important (2):** upload cleanup was global-not-owned and leaked on
+  relay-wide loss (now owner+channel-scoped, fresh begin after reconnect
+  succeeds); schema `maxInFlight`/cap constants generated but not consumed
+  (now imported both sides).
+- **Rejected (6):** upload-id traversal, checksum/atomicity, e2e stub,
+  triage cosmetic, golden regressions, relay/plaintext/cockpit drift —
+  all upheld on inspection.
+- Post-fix: 1022 extension + 918 app tests, live capture-delivery e2e
+  green end-to-end, goldens unchanged.
+- Shipped: app 0.7.0+12, pi-extension 0.2.0.
