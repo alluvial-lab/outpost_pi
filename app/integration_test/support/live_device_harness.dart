@@ -139,6 +139,7 @@ final class LiveDeviceHarness {
         deviceId: 'live-oddities-device',
         activeRoom: current.roomId ?? 'main',
         debugLog: debugLog,
+        cancellation: cancel,
       ).timeout(const Duration(seconds: 15));
       if (cancel.isCancelled) {
         await transport.close();

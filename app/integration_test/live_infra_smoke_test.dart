@@ -75,6 +75,7 @@ void main() {
           deviceId: deviceId,
           activeRoom: current.roomId ?? 'main',
           debugLog: debugLog,
+          cancellation: cancel,
         ).timeout(const Duration(seconds: 15));
         if (cancel.isCancelled) {
           await transport.close();

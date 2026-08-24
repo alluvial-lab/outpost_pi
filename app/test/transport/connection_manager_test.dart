@@ -1,15 +1,20 @@
 // ConnectionManager state transition tests.
-// Uses a fake ConnectionFactory so no real WS or transport is involved.
+// Most tests inject channels directly; hedge regressions use a loopback relay
+// to assert the authenticated-socket boundary.
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/data/transport/peer_channel.dart';
+import 'package:app/data/transport/ws_transport.dart';
 import 'package:app/pairing/pair_request_flow.dart';
 import 'package:app/pairing/storage.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // ---------------------------------------------------------------------------
@@ -597,6 +602,112 @@ void main() {
         expect(cm.status, isA<StatusOnline>());
 
         cm.dispose();
+      },
+    );
+
+    test(
+      'auth-read stall stays hedged until a fallback authenticates',
+      () async {
+        final relay = await _FakeAuthRelay.start(autoCompleteFromAuth: 2);
+        addTearDown(relay.close);
+        final ownerKey = await Ed25519().newKeyPair();
+        final initial = _ControllableChannel();
+        var calls = 0;
+        final stopwatch = Stopwatch()..start();
+        final cm = ConnectionManager(
+          factory: (_, token) async {
+            calls++;
+            if (calls == 1) return initial;
+            final transport = await WsTransport.connect(
+              relayUrl: relay.url,
+              peerPubkey: 'cGVlcg==',
+              ed25519Key: ownerKey,
+              deviceId: 'hedge-auth-stall',
+              cancellation: token,
+            );
+            if (token.isCancelled) {
+              await transport.close();
+              throw StateError('cancelled reconnect attempt');
+            }
+            return PlainPeerChannel(transport: transport);
+          },
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+          reconnectFallbackDelay: const Duration(milliseconds: 80),
+        );
+        addTearDown(cm.dispose);
+
+        await cm.connectTo(_fakePeer());
+        await initial.closeStream();
+        await relay.waitForAuthCount(2).timeout(const Duration(seconds: 2));
+        await cm.statusStream
+            .where((status) => status is StatusOnline)
+            .first
+            .timeout(const Duration(seconds: 2));
+
+        expect(relay.authCount, 2);
+        expect(cm.status, isA<StatusOnline>());
+        expect(
+          stopwatch.elapsed,
+          lessThan(const Duration(seconds: 4)),
+          reason: 'the 3-second production hedge must beat full auth deadlines',
+        );
+      },
+    );
+
+    test(
+      'authenticated primary cancels fallback before a second relay auth',
+      () async {
+        final relay = await _FakeAuthRelay.start();
+        addTearDown(relay.close);
+        final ownerKey = await Ed25519().newKeyPair();
+        final initial = _ControllableChannel();
+        var calls = 0;
+        final cm = ConnectionManager(
+          factory: (_, token) async {
+            calls++;
+            if (calls == 1) return initial;
+            final transport = await WsTransport.connect(
+              relayUrl: relay.url,
+              peerPubkey: 'cGVlcg==',
+              ed25519Key: ownerKey,
+              deviceId: 'hedge-primary-wins',
+              cancellation: token,
+            );
+            if (token.isCancelled) {
+              await transport.close();
+              throw StateError('cancelled reconnect attempt');
+            }
+            return PlainPeerChannel(transport: transport);
+          },
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+          reconnectFallbackDelay: const Duration(milliseconds: 120),
+        );
+        addTearDown(cm.dispose);
+
+        await cm.connectTo(_fakePeer());
+        await initial.closeStream();
+        await relay.waitForAuthCount(1).timeout(const Duration(seconds: 2));
+        expect(
+          cm.status,
+          isA<StatusConnecting>(),
+          reason: 'auth send alone is not an authenticated channel adoption',
+        );
+
+        relay.completeAuth(1);
+        await cm.statusStream
+            .where((status) => status is StatusOnline)
+            .first
+            .timeout(const Duration(seconds: 1));
+        await Future<void>.delayed(const Duration(milliseconds: 180));
+
+        expect(
+          relay.authCount,
+          1,
+          reason: 'the cancelled fallback must never reach relay auth',
+        );
+        expect(cm.status, isA<StatusOnline>());
       },
     );
 
@@ -1420,6 +1531,78 @@ class _ControllableChannel
 
   void pushControl(ControlInbound c) {
     if (!_controlCtrl.isClosed) _controlCtrl.add(c);
+  }
+}
+
+class _FakeAuthRelay {
+  _FakeAuthRelay._(this._server, this._autoCompleteFromAuth);
+
+  final HttpServer _server;
+  final int? _autoCompleteFromAuth;
+  final List<WebSocket> _sockets = [];
+  final Map<int, Completer<void>> _authReleases = {};
+  final StreamController<int> _authCounts = StreamController<int>.broadcast();
+  int authCount = 0;
+
+  String get url => 'ws://${_server.address.host}:${_server.port}';
+
+  static Future<_FakeAuthRelay> start({int? autoCompleteFromAuth}) async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final relay = _FakeAuthRelay._(server, autoCompleteFromAuth);
+    server.listen((request) async {
+      final socket = await WebSocketTransformer.upgrade(request);
+      relay._sockets.add(socket);
+      unawaited(relay._serve(socket));
+    });
+    return relay;
+  }
+
+  Future<void> _serve(WebSocket socket) async {
+    final frames = StreamIterator<dynamic>(socket);
+    try {
+      if (!await frames.moveNext()) return;
+      socket.add(
+        jsonEncode({'type': 'challenge', 'nonce': base64Encode(Uint8List(32))}),
+      );
+      if (!await frames.moveNext()) return;
+      final auth = jsonDecode(frames.current as String) as Map<String, dynamic>;
+      if (auth['type'] != 'auth') return;
+      final index = ++authCount;
+      _authCounts.add(authCount);
+      final release = _authReleases.putIfAbsent(index, Completer<void>.new);
+      if (_autoCompleteFromAuth != null && index >= _autoCompleteFromAuth) {
+        release.complete();
+      }
+      await release.future;
+      if (socket.readyState != WebSocket.open) return;
+      socket.add(jsonEncode({'type': 'presence', 'states': <Object>[]}));
+      await socket.done;
+    } on Object {
+      // Socket cancellation is the behavior under test for losing attempts.
+    } finally {
+      await frames.cancel();
+    }
+  }
+
+  Future<void> waitForAuthCount(int expected) async {
+    if (authCount >= expected) return;
+    await _authCounts.stream.firstWhere((count) => count >= expected);
+  }
+
+  void completeAuth(int index) {
+    final release = _authReleases.putIfAbsent(index, Completer<void>.new);
+    if (!release.isCompleted) release.complete();
+  }
+
+  Future<void> close() async {
+    for (final release in _authReleases.values) {
+      if (!release.isCompleted) release.complete();
+    }
+    for (final socket in _sockets) {
+      await socket.close();
+    }
+    await _authCounts.close();
+    await _server.close(force: true);
   }
 }
 

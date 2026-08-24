@@ -317,6 +317,7 @@ Future<IChannel> _productionConnectionFactory(
         deviceId: await _injector.get<DeviceId>().get(),
         activeRoom: channelPeer.roomId ?? 'main',
         debugLog: _injector.get<DebugLog>(),
+        cancellation: cancel,
       ).timeout(
         wsConnectTimeout,
         onTimeout: () => throw TimeoutException(
