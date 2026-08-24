@@ -933,6 +933,7 @@ class SyncService extends Service {
         ref,
         const TranscriptProjection(
           messages: <ChatMessage>[],
+          messageTimestamps: <DateTime>[],
           turn: TranscriptTurnView.idle,
           steering: NoSteering(),
         ),

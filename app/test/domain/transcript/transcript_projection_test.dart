@@ -652,6 +652,82 @@ void main() {
     expect(projection.turn.sessionId, session);
   });
 
+  test('incremental reducer stays equivalent across every event variant', () {
+    final events = <TranscriptEvent>[
+      submitted('cli_1', 'hello'),
+      AssistantDeltaReceived(
+        eventId: 'server:delta:1',
+        sessionId: session,
+        ts: base.add(const Duration(milliseconds: 10)),
+        replyTo: 'cli_1',
+        delta: 'working',
+      ),
+      ToolRequested(
+        eventId: 'server:tool:req:t1',
+        sessionId: session,
+        ts: base.add(const Duration(milliseconds: 20)),
+        toolCallId: 't1',
+        tool: 'Bash',
+        args: const {'command': 'pwd'},
+      ),
+      ToolFinished(
+        eventId: 'server:tool:done:t1',
+        sessionId: session,
+        ts: base.add(const Duration(milliseconds: 30)),
+        toolCallId: 't1',
+        result: 'ok',
+      ),
+      AssistantMessageCommitted(
+        eventId: 'server:assistant:a1',
+        sessionId: session,
+        ts: base.add(const Duration(milliseconds: 40)),
+        messageId: 'a1',
+        replyTo: 'cli_1',
+        text: 'done',
+      ),
+      confirmed('cli_1', 'hello'),
+      failed('cli_1', 'late ignored failure'),
+      AssistantDoneReceived(
+        eventId: 'server:done:cli_1',
+        sessionId: session,
+        ts: base.add(const Duration(milliseconds: 50)),
+        replyTo: 'cli_1',
+      ),
+      CompactionRecorded(
+        eventId: 'server:compaction:1',
+        sessionId: session,
+        ts: base.add(const Duration(milliseconds: 60)),
+        summary: 'summary',
+      ),
+    ];
+    final reducer = TranscriptProjectionReducer.empty(sessionId: session);
+    final prefix = <TranscriptEvent>[];
+
+    for (final event in events) {
+      prefix.add(event);
+      final update = reducer.applyAll(<TranscriptEvent>[event]);
+      _expectProjectionEquivalent(
+        update.projection,
+        deriveTranscriptProjection(sessionId: session, events: prefix),
+      );
+      expect(update.acceptedEvents, <TranscriptEvent>[event]);
+    }
+
+    final duplicate = reducer.applyAll(<TranscriptEvent>[events.first]);
+    expect(duplicate.acceptedEvents, isEmpty);
+    expect(duplicate.firstChangedMessageIndex, isNull);
+    expect(
+      () => reducer.projection.messages.add(
+        const AssistantMsg(id: 'mutate', text: 'not allowed'),
+      ),
+      throwsUnsupportedError,
+    );
+    expect(
+      () => reducer.projection.messageTimestamps.add(base),
+      throwsUnsupportedError,
+    );
+  });
+
   group('shared transcript projection fixtures', () {
     test(
       'optimistic send, authoritative echo, tool, done, and replay converge',
@@ -711,6 +787,21 @@ void main() {
       },
     );
   });
+}
+
+void _expectProjectionEquivalent(
+  TranscriptProjection incremental,
+  TranscriptProjection clean,
+) {
+  expect(incremental.messages, clean.messages);
+  expect(incremental.messageTimestamps, clean.messageTimestamps);
+  expect(incremental.streaming, clean.streaming);
+  expect(incremental.turn.status, clean.turn.status);
+  expect(incremental.turn.sessionId, clean.turn.sessionId);
+  expect(incremental.turn.turnId, clean.turn.turnId);
+  expect(incremental.turn.replyTo, clean.turn.replyTo);
+  expect(incremental.turn.error, clean.turn.error);
+  expect(incremental.steering, clean.steering);
 }
 
 final class _TranscriptFixture {

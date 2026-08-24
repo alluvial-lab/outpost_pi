@@ -1,7 +1,7 @@
 ---
 id: feature-app-incremental-transcript-projection-pipeline-opt-1
 kind: story
-stage: implementing
+stage: done
 tags: [perf]
 parent: feature-app-incremental-transcript-projection-pipeline
 depends_on: []
@@ -58,11 +58,24 @@ can patch only the affected materialized suffix.
 
 ## Risks and acceptance
 
-- [ ] Incremental output equals a clean `deriveTranscriptProjection` rebuild
+- [x] Incremental output equals a clean `deriveTranscriptProjection` rebuild
       after every prefix of the 200-, 1,000-, and 5,500-event fixtures.
-- [ ] Deterministic replay dedupe, canonical server-time ordering, stable
+- [x] Deterministic replay dedupe, canonical server-time ordering, stable
       arrival ties, reply anchoring, optimistic tails, tool replacement,
       streaming, steering, and turn convergence remain unchanged.
-- [ ] The benchmark reaches the targets above without weakening correctness
+- [x] The benchmark reaches the targets above without weakening correctness
       assertions or timing the oracle as reducer work.
-- [ ] Existing transcript projection tests pass.
+- [x] Existing transcript projection tests pass.
+
+## Implementation
+
+- Execution capability: `sol/high`; one cohesive domain reducer and benchmark seam.
+- Review weight: not applicable — child-story checkpoint.
+- Files changed: `app/lib/domain/transcript/transcript_projection.dart`, projection tests, benchmark scaffold, and the empty SyncService projection constructor required by the richer contract.
+- Tests added: incremental/clean-fold equivalence across every event variant, dedupe, immutable publication, timestamps, and every generated benchmark prefix at 200/1,000/5,500 events.
+- Before: 5,500 alternating clean projection **172.735 ms p50 / 182.784 ms p95**; 1,000 prefix rebuilds **1,336.309 ms p50**.
+- After: 5,500 clean fold **7.657 ms p50 / 15.424 ms p95**; 1,000 one-at-a-time incremental applies **30.997 ms p50 / 37.033 ms p95**. Projection equivalence passed at every generated prefix.
+- Verification: `flutter analyze --no-pub` and focused projection tests passed. The first full-suite run had one unrelated load-sensitive one-second timeout in `runtime put is awaited in the queue and diagnosed on failure`; its immediate isolated rerun passed.
+- Simplification: removed the separate full-fold implementation and quadratic reply-anchor searches; `deriveTranscriptProjection` now folds the canonical reducer.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
