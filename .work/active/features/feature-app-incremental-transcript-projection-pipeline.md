@@ -1,7 +1,7 @@
 ---
 id: feature-app-incremental-transcript-projection-pipeline
 kind: feature
-stage: implementing
+stage: done
 tags: [perf, app]
 parent: epic-perf-optimization-campaign
 depends_on: []
@@ -468,3 +468,12 @@ All three optimization checkpoints are complete on the host-side benchmark lane.
 - The benchmark now drives the real `SyncService` history-receipt path against encrypted Hive through completed `msgs` materialization and asserts that the timed append performs no additional full transcript read. This closes the receiver-confirmed partial-boundary finding without copying production materialization logic into the benchmark.
 - End-to-end validation did **not** demonstrate a reconnect/hydration improvement at the soak's small transcript scale: the green 300-second post-campaign soak held only 11 final transcript rows, while connecting→online moved from **595.597 ms p50** (n=7) to **685.333 ms p50** (n=10), and online→room snapshot moved from **13.807 ms p50** (n=8) to **16.365 ms p50** (n=11). The 22.6x clean-fold and 43.1x incremental-prefix wins therefore remain validated algorithmic capacity for 5,500-event flood/hydration workloads, not a claimed improvement for this low-volume reconnect sample.
 - Closure verification reran the corrected benchmark, the live `state-shapes` selector, a green 300-second soak, clean analyzer, and the full non-e2e app suite (**940 passed**); the epic records the comparable end-to-end table. Device-lane teardown removed `app/build` and left the retained v0.7.2+14 APK byte-identical.
+
+## Review record (2026-08-24)
+Standard fresh-context pass over the campaign. Verdict: Request changes →
+closed done (f4e382f5, a3ab4fba): pipeline benchmark corrected to the
+production materialization boundary (5,500-event replay 238.7ms real
+boundary; the earlier 107.3ms claim stopped before materialization);
+no incremental/canonical divergence found (rejected finding); reducer
+ownership generation-fenced. End-to-end: no soak-scale delta (11 rows);
+wins are flood/hydration-scale by design — recorded in the epic.

@@ -1,7 +1,7 @@
 ---
 id: feature-app-edge-trigger-room-snapshot-consumers
 kind: feature
-stage: implementing
+stage: done
 tags: [perf, app]
 parent: epic-perf-optimization-campaign
 depends_on: []
@@ -421,3 +421,11 @@ scales with both snapshot count and log size; this short low-volume soak cannot
 make that avoided I/O visible. The same run preserved replay, DB↔projection,
 rendering, ordering, and identity oracles. Closure verification also passed the
 clean analyzer and full non-e2e app suite (**940 passed**).
+
+## Review record (2026-08-24)
+Standard fresh-context pass over the campaign. Verdict: Request changes →
+closed done (f4e382f5): end-to-end validation recorded (no soak-scale
+delta at 18 snapshots/11 rows; 339-read elimination matters at
+long-lived-session scale — honest record in the epic). Edge-triggering
+verified as semantic-change dispatch, NOT a cache (rejected finding);
+convergence on genuine edges covered by existing oracles.
