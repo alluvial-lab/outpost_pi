@@ -56,10 +56,11 @@ use crate::protocol::generated::control::RoomMetaUpdateFrame;   // single source
 - **Re-export facades** — files whose types are `pub use generated::...` / `export { ... } from
   "./generated/..."` are the correct pattern; never flag. The signal that distinguishes a facade
   from a violation: the file does not re-declare fields, only re-exports or composes.
-- **Documented temporary islands** — `app/lib/protocol/control_frames.dart` is hand-maintained
-  *with a documented reason* ("Relay control/presence/rooms frames are not yet in the schema IR").
-  This is exempted under `undocumented-protocol-island`, not here — but if it IS documented, do
-  not flag here either.
+- **Generated projections and adapters** — `app/lib/protocol/generated/relay_frames.g.dart`
+  owns relay control/presence/rooms DTOs; `app/lib/protocol/control_frames.dart` adapts those
+  generated values and does not duplicate a wire DTO. Do not flag this generated-boundary pattern.
+- **Genuine documented temporary islands** — a hand-maintained wire family with a durable reason
+  for remaining outside the schema is exempted under `undocumented-protocol-island`, not here.
 - **Adapter/codec types** — a type that bridges wire and domain (e.g. a domain entity that
   *contains* a wire field but is not itself a wire frame) is not a duplicate; the scanner verifies
   the handwritten type is claiming to *be* a wire frame, not just consuming one.

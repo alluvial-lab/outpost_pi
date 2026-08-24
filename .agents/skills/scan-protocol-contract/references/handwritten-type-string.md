@@ -62,12 +62,11 @@ literal before flagging, and MUST cite the real exported name — not an invente
 ### IMPORTANT: this rule is language-conditional, not blanket
 
 The `relayControlTypes` registry exists ONLY in the pi-extension TS generated file. The Dart
-generated file (`app/lib/protocol/generated/protocol.g.dart`) does NOT contain
-`peer_online`/`presence_check`/`room_meta_update` — those relay control frames are a documented
-temporary island in Dart (see `undocumented-protocol-island`). So a `"peer_online"` literal in
-`app/lib/protocol/control_frames.dart` is NOT a `handwritten-type-string` violation in Dart —
-it is a documented-island exception. Only flag a literal when the SAME subproject's generated
-registry actually contains it.
+relay control/presence/rooms DTOs are generated in
+`app/lib/protocol/generated/relay_frames.g.dart`; `app/lib/protocol/control_frames.dart` adapts
+those typed variants rather than defining a wire-shape island. A raw discriminator literal in
+that adapter should therefore be checked against the generated relay registry. Only flag a
+literal when the SAME subproject's generated registry actually contains it.
 
 ## Exceptions
 

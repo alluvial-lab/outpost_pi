@@ -37,33 +37,23 @@ pub enum RelayInboundFrame {
 Handlers `match` on `RelayInboundFrame::Control(c) => ...` and the compiler verifies
 exhaustiveness — a new variant added to the schema surfaces as a non-exhaustive match error.
 
-### From this codebase: violation (handwritten re-enumeration)
+### From this codebase: generated relay DTO adapter (not a violation)
 
-**Before — `app/lib/protocol/control_frames.dart:18-92` (re-enumeration inside the documented island):**
+**Current — `app/lib/protocol/control_frames.dart` over
+`app/lib/protocol/generated/relay_frames.g.dart`:**
 ```dart
-static ControlInbound? tryFromJson(Map<String, dynamic> j) {
-  return switch (j['type']) {
-    'peer_online' => PeerOnline(peer: j['peer'] as String),    // re-listed literals
-    'peer_offline' => PeerOffline(...),
-    'presence' => PresenceSnapshot(...),
-    _ => null,                                                  // silently drops unknown
-  };
-}
+static ControlInbound? fromWire(RelayServerControlFrameDto frame) => switch (frame) {
+  RelayPeerOnlineFrameDto(:final peer) => PeerOnline(peer: peer),
+  RelayPeerOfflineFrameDto(:final peer, :final sinceTs) =>
+    PeerOffline(peer: peer, sinceTs: sinceTs),
+  RelayPresenceFrameDto(:final states) => PresenceSnapshot(states: ...),
+  _ => null,
+};
 ```
-A new control frame type added to the schema would fall through to `_ => null` with no compile
-error. **This is inside a documented temporary island** (documented at `protocol.dart:4`: "Relay
-control/presence/rooms frames are not yet in the schema IR"). Per the cross-rule delineation in
-`SKILL.md`, a documented island suppresses `discriminator-reenumerated` and `handwritten-type-string`
-for its literals/switch — the re-enumeration is a symptom of the not-yet-migrated island, and the
-fix is migration (behavior-changing), which routes through story design as its own work. Emit
-nothing here; track migration via `undocumented-protocol-island` only if the island loses its
-documentation.
-
-**After (via schema migration):**
-```dart
-// generated: sealed class ControlInbound with variants; tryFromJson derives cases
-final c = ControlInbound.fromJson(j);   // exhaustive; new type is a compile-time addition
-```
+The generated sealed DTO union owns the wire discriminator and decoding; this switch adapts
+already-typed variants into app-domain models. It does not re-enumerate string literals and is
+not a `discriminator-reenumerated` finding. A genuinely handwritten switch over raw discriminator
+strings remains a finding unless it is a documented temporary island.
 
 ## Exceptions
 
@@ -73,9 +63,9 @@ final c = ControlInbound.fromJson(j);   // exhaustive; new type is a compile-tim
   unrecognized types to tolerate schema evolution *may* legitimately re-list known types, but
   should derive the known set from the registry. Mark medium; needs analysis.
 - **Test code** — skip test files.
-- **Documented islands** — if the re-enumeration is in a documented temporary island, the
-  *island* is the finding (under `undocumented-protocol-island` if undocumented), not the
-  re-enumeration per se; avoid double-flagging.
+- **Genuine documented islands** — if a raw-string re-enumeration is inside a genuine documented
+  temporary island, do not double-flag it; the island's provenance is the owning concern. This
+  exception does not apply to generated relay DTO adapters.
 
 ## Scope
 

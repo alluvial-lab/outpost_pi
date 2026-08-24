@@ -1,14 +1,14 @@
 ---
 id: gate-docs-protocol-island-scan-rule
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Protocol scan rule still treats generated Dart relay frames as an island
@@ -35,3 +35,7 @@ the undocumented wire-shape island described by this scan rule.
 Update the scan rule and reference example to the current generated relay-frame
 boundary, remove the obsolete documented-island exception for these frames, and
 retain only genuinely hand-maintained protocol islands.
+
+## Implementation
+
+Reframed the scan rule and protocol references around generated relay DTOs plus the `control_frames.dart` adapter, retaining exceptions only for genuine documented islands.

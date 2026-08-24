@@ -178,7 +178,7 @@ This app pins `go_router ^17.5.0`; check the local generated lock/API before cop
 
 Remote Pi app transport rules:
 
-- `WsTransport` uses `IOWebSocketChannel.connect(..., pingInterval: 20s)` for app↔relay TCP liveness; do not confuse this with protocol-level app↔Pi ping/pong. [web-socket-channel-io]{1} [remote-pi-app-transport-state]{1}
+- `WsTransport` uses `IOWebSocketChannel.connect(..., pingInterval: 45s)` for app↔relay TCP liveness; do not confuse this with protocol-level app↔Pi ping/pong. [web-socket-channel-io]{1} [remote-pi-app-transport-state]{1}
 - `ConnectionManager` is the app-side owner of connection status, retry/backoff, presence, rooms, and liveness snapshots. [remote-pi-app-transport-state]{1}
 - Presence and room streams emit full snapshots; consumers should treat each emission as canonical, not as a partial patch. [remote-pi-app-transport-state]{1}
 - On reconnect, `ConnectionManager` replays presence + room subscriptions and sends check frames; new state must hydrate from relay snapshots, not from sticky UI booleans. [remote-pi-app-transport-state]{1}

@@ -1,14 +1,14 @@
 ---
 id: gate-docs-pi-capture-protocol-list
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: docs
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Pi extension skill protocol lists omit capture-upload messages
@@ -34,3 +34,7 @@ omit the shipped `capture_upload_begin` / `capture_upload_chunk` /
 Extend the protocol-family lists and nearby handler/source references with the
 capture-upload family, including its control-family semantics and generated
 limits, so the skill describes the current extension surface.
+
+## Implementation
+
+Documented the capture-upload control sequence, handler wiring, generated 8 KiB/2 MiB/one-in-flight limits, and typed replies in `.agents/skills/pi-extension-typescript/SKILL.md`.
