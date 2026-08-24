@@ -1,14 +1,14 @@
 ---
 id: gate-refactor-documentation-debug-log-service
 kind: story
-stage: implementing
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
 release_binding: v0.7.0
 gate_origin: refactor
 created: 2026-08-24
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Attach the debug-log service contract to its public implementation
@@ -30,3 +30,10 @@ The detailed `File-backed DebugLog` dartdoc is attached to the private `_DebugLo
 
 ## Fix
 Move or duplicate the intent-bearing dartdoc so it directly precedes `DebugLogImpl`, leaving only enum-specific documentation on `_DebugLogFailure`.
+
+## Implementation
+- Execution capability: `sol/high` (caller-selected; documentation-only contract attachment).
+- Moved the complete file-backed snapshot, flush, cap, export, and never-throws contract directly onto public `DebugLogImpl`.
+- Added a narrow enum-specific dartdoc to `_DebugLogFailure`; runtime behavior is unchanged.
+- Verification: Dart formatter reports the file already formatted (0 changes).
+- Adjacent issues parked: none.
