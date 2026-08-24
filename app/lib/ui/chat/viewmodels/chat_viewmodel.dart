@@ -7,6 +7,7 @@ import 'package:app/data/repositories/session_read_repository.dart';
 import 'package:app/data/sync/sync_events.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/connection_manager.dart';
+import 'package:app/data/transport/room_snapshot_change.dart';
 import 'package:app/domain/entities/remote_session_ref.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/domain/transcript/transcript_projection.dart';
@@ -37,7 +38,7 @@ class ChatViewModel extends ViewModel<ChatState> {
   StreamSubscription<String?>? _queuedSub;
   StreamSubscription<SessionEvent>? _eventSub;
   StreamSubscription<List<ChatMessage>>? _identityPendingSub;
-  StreamSubscription<Map<String, List<RoomInfo>>>? _roomsSub;
+  StreamSubscription<RoomSnapshotChange>? _roomChangesSub;
   StreamSubscription<ConnectionStatus>? _statusSub;
 
   PeerRecord? _activePeer;
@@ -80,10 +81,7 @@ class ChatViewModel extends ViewModel<ChatState> {
       _identityPendingMessages = rows;
       _recompute();
     });
-    _roomsSub = _conn.roomsStream.listen((_) {
-      unawaited(_handleRoomsChanged());
-      _recompute();
-    });
+    _roomChangesSub = _conn.roomChangesStream.listen(_onRoomChange);
     _statusSub = _conn.statusStream.listen(_onStatus);
     // Provider factories are synchronous. initialize owns and projects every
     // failure, so this detached constructor launch cannot leak an error.
@@ -300,16 +298,37 @@ class ChatViewModel extends ViewModel<ChatState> {
     _recompute();
   }
 
-  Future<void> _handleRoomsChanged() async {
+  void _onRoomChange(RoomSnapshotChange change) {
+    final peer = _activePeer;
+    if (_disposed ||
+        peer == null ||
+        change.isNoop ||
+        !change.affectsRoom(peer.remoteEpk, _activeRoomId) ||
+        !change.activeRoomPresentationChanged) {
+      return;
+    }
+    if (_conn.isRoomLive(peer.remoteEpk, _activeRoomId)) {
+      _peerOfflineReason = null;
+    }
+    if (change.requiresBinding) {
+      unawaited(_handleRoomsChanged(change));
+      return;
+    }
+    _recompute();
+  }
+
+  Future<void> _handleRoomsChanged(RoomSnapshotChange change) async {
     final generation = _generation;
-    if (!_isCurrentRun(generation) || _activePeer == null) return;
+    final peer = _activePeer;
+    if (!_isCurrentRun(generation) ||
+        peer == null ||
+        !change.affectsRoom(peer.remoteEpk, _activeRoomId)) {
+      return;
+    }
     try {
+      // The serialized binding owns the one coherent recompute after its
+      // generation and session guards pass.
       await _serializeSessionBinding(generation);
-      final peer = _activePeer;
-      if (peer != null && _conn.isRoomLive(peer.remoteEpk, _activeRoomId)) {
-        _peerOfflineReason = null;
-        _recompute();
-      }
     } on Object {
       await _projectInitializationFailure(generation);
     }
@@ -556,7 +575,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     _queuedSub?.cancel();
     _eventSub?.cancel();
     _identityPendingSub?.cancel();
-    _roomsSub?.cancel();
+    _roomChangesSub?.cancel();
     _statusSub?.cancel();
     super.dispose();
   }
