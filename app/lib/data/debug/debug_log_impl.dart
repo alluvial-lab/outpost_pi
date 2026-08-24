@@ -6,6 +6,9 @@ import 'package:app/domain/contracts/debug_log.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// Categorize scrubbed file-backed debug-log failures.
+enum _DebugLogFailure { load, log, export, clear, dispose, flush }
+
 /// File-backed [DebugLog].
 ///
 /// A bounded in-memory ring (capped at [_maxBytes]) written to a jsonl file in
@@ -42,8 +45,6 @@ import 'package:path_provider/path_provider.dart';
 /// callback and `jsonEncode`); the flush timer callback catches internally;
 /// failures emit a scrubbed `debugPrint('[debug-log] …')` and never rethrow.
 /// The logger must not break the app even on platform/quota/permission failure.
-enum _DebugLogFailure { load, log, export, clear, dispose, flush }
-
 class DebugLogImpl implements DebugLog {
   /// Ring buffer capacity. 1 MiB covers ~48h of the expanded capture surface
   /// (state-transition lines, NOT per-token streaming) with headroom.
