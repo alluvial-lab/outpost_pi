@@ -76,18 +76,28 @@ pub const MESH_AUTH_CACHE_CAPACITY: usize = 1_024;
 pub const MESH_AUTH_CACHE_TTL: Duration = Duration::from_secs(60);
 ```
 
-**File:** `relay/src/handlers/pi_forward.rs:146-154`
+**File:** `relay/src/handlers/pi_forward.rs:165-195`
 
 ```rust
-inner.entries.retain(|_, entry| entry.cached_at.elapsed() < MESH_AUTH_CACHE_TTL);
+inner.entries.retain(|_, entry| self.is_fresh(entry));
 if inner.entries.len() >= MESH_AUTH_CACHE_CAPACITY
     && !inner.entries.contains_key(pi_pk)
+    && let Some(oldest) = inner
+        .entries
+        .iter()
+        .min_by_key(|(_, entry)| entry.cached_at)
+        .map(|(key, _)| key.clone())
 {
-    // evict the oldest entry before inserting
+    inner.entries.remove(&oldest);
+}
+
+fn is_fresh(&self, entry: &CacheEntry) -> bool {
+    self.now().duration_since(entry.cached_at) < MESH_AUTH_CACHE_TTL
 }
 ```
 
-The cache enforces both freshness and a named capacity from the same policy module.
+The cache enforces freshness and named capacity from the same policy module,
+then inserts the current membership with a fresh timestamp.
 
 ## Common violations
 
