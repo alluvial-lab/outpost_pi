@@ -65,5 +65,78 @@ Performance work regularly deletes code (redundant projections,
 per-frame allocations, double serialization). Each emitted item records
 what it can delete, not just what it can speed up.
 
+## Discovery summary
+
+Discovery profiled five capped entry points on 2026-08-24 (Linux, 8 vCPU,
+16 GiB; Dart 3.12.2, Node 24.18/24.19, Rust 1.94):
+
+1. **App transcript append/materialization.** The top bottleneck is repeated
+   whole-log and whole-projection work. Pure projection p50 was 0.690 ms at 200
+   events, 5.577 ms at 1,000, and **198.813 ms at 5,500** (p95 211.371 ms;
+   2,750 messages). Rebuilding every prefix through 1,000 one-at-a-time appends
+   took **1,330.628 ms**. The real encrypted Hive store batch-appended 5,500 in
+   859.471 ms and read the full log in 20.755 ms p50 / 34.014 ms p95.
+2. **App per-frame debug ring.** The top bottleneck is `_truncate`'s full-ring
+   byte recount plus one full snapshot write queued per critical event. Logging
+   5,500 enabled `wsIn` events took **4,448.655 ms (808.85 us/event)** versus
+   0.171 us/event disabled and retained 609,377 bytes. After that prefill, 339
+   immediate-flush room snapshots took 656.027 ms to enqueue and 2,510.100 ms
+   to drain the redundant snapshot-write chain.
+3. **App room/chat snapshot fan-out.** The partial soak observed 10 room
+   snapshots in 159 seconds; the motivating capture had 339/11h. A bound live
+   room unconditionally reaches a full transcript read for held-send replay,
+   measured at **20.755 ms p50** for 5,500 events, even when no held send exists;
+   ChatViewModel also performs duplicate binding/recompute work. The transcript
+   anchor callback itself is gated by transcript/streaming change and was not
+   the room-only bottleneck.
+4. **Extension owner ingress/replay.** A 360-byte bounded outer ingress plus
+   client-message validation measured **2.315 us p50 / 2.490 us p95** (about
+   431,911 envelopes/s). The actual e2e Pi-host V8 profile covered 342.709 s and
+   was **99.28% idle**; project source accounted for 203 of 1,043,699 self
+   samples (about 50.8 ms sampled CPU). The two-entry replacement replay queue
+   did not activate, so drain latency remains explicitly unbaselined; no
+   extension bottleneck item was emitted.
+5. **Relay forward/auth.** Release-mode loopback outer forwarding measured p99
+   **0.1459 ms** for one pair/10,000 frames and **0.3456 ms** for four concurrent
+   pairs/20,000 frames (26,857 frames/s). Auth handshake through the first
+   authenticated control reply was **2.212 ms p99** (n=150); isolated Ed25519
+   verify was 29.591 us p50 and typed outer decode 531 ns p50. No relay item was
+   justified.
+
+Emitted bottleneck items:
+
+- `story-app-debug-ring-constant-time-admission-and-coalesced-flush`
+  (`story`, `implementing`) — algorithmic/data-model + I/O/serialization.
+- `feature-app-incremental-transcript-projection-pipeline`
+  (`feature`, `drafting`, `[perf]`) — algorithmic/data-model, then I/O boundary.
+- `feature-app-edge-trigger-room-snapshot-consumers`
+  (`feature`, `drafting`, `[perf]`) — algorithmic/data-model + I/O/UI fan-out.
+
+Success-metric baselines from the realistic lane and isolated probes:
+
+- Reconnect connecting→online: n=7, p50 **595.597 ms**, p95/max 680.222 ms.
+- Online→authoritative room snapshot: n=8, p50 **13.807 ms**, p95/max
+  184.485 ms; online→first route event p50 3.031 ms.
+- Initial captured pre-auth frame→first room snapshot: **1,928.121 ms**;
+  →first projection materialization: **1,960.060 ms**. The harness exposes no
+  process-launch→Flutter-first-frame timestamp, so these are the nearest cold
+  bootstrap baselines rather than a claim about first rendered frame.
+- Transcript projection, debug-ring, extension ingress, relay forward p99, and
+  auth baselines are the figures above.
+- The requested 180-second soak reached 159 seconds before the existing
+  timeout-fault recovery lane failed in `StatusNoPeer` with no session. It still
+  captured 294 rows and green replay/projection/order/identity oracles through
+  its completed checkpoints; treat its latency data as a partial baseline, not
+  a green acceptance run.
+
+Skipped high-value probes: Dart DevTools exists but the device integration lane
+exposes no stable VM-service URI for headless CPU/allocation attachment; coarse
+process RSS and Stopwatch probes were used instead. `perf` is not installed and
+`perf_event_paranoid=3`, so Rust hardware-counter/cache/branch evidence was
+unavailable; the relay was not CPU-bound at the measured throughput/p99. The
+crate has no Criterion or `[[bench]]` target, so discovery used a temporary
+release-mode batch harness. Each proposed fix records code it can delete; none
+uses caching as a band-aid.
+
 <!-- Children emitted by perf-design discovery; epic-design decomposition
 follows if discovery reveals feature-scale arcs. -->
