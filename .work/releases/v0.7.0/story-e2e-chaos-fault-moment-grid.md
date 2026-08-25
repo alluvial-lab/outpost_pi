@@ -4,7 +4,7 @@ kind: story
 stage: done
 tags: [testing]
 parent: feature-e2e-chaos-expansion
-depends_on: story-e2e-chaos-fault-vocabulary
+depends_on: [story-e2e-chaos-fault-vocabulary]
 release_binding: v0.7.0
 gate_origin: null
 created: 2026-08-21
