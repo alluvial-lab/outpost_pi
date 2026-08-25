@@ -1022,7 +1022,7 @@ void main() {
         } finally {
           await tester.pumpWidget(const SizedBox());
           owner.dispose();
-          disposeDependencies();
+          await disposeDependencies();
           actions.dispose();
           sync.dispose();
           read.dispose();

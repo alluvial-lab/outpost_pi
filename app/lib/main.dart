@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app/config/dependencies.dart';
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/local/transcript_storage_key.dart';
@@ -162,7 +164,7 @@ class _OutpostPiAppState extends State<OutpostPiApp>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _routerOwner.dispose();
-    disposeDependencies();
+    unawaited(disposeDependencies());
     super.dispose();
   }
 

@@ -559,3 +559,12 @@ abstract interface class DebugLog implements Service {
   /// state is separate from the captured data).
   Future<void> clear();
 }
+
+/// Add an awaited teardown boundary to a composition-owned [DebugLog].
+abstract interface class DrainableDebugLog implements DebugLog {
+  /// Stop new admissions and await the final coalesced file-write drain.
+  ///
+  /// Completes only after any active/trailing snapshot and temporary-file
+  /// cleanup have settled. Safe to call repeatedly.
+  Future<void> close();
+}

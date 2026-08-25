@@ -38,10 +38,9 @@ final class _DebugLine {
 /// [_flushInterval]. One dirty-latched flush drain serializes writes and
 /// coalesces overlapping requests: events admitted after a snapshot begins are
 /// covered by one trailing snapshot instead of one queued write per event.
-/// Because [Service.dispose] returns `void`, the final flush is fire-and-forget.
-/// Critical events START a flush immediately on `log()` and usually survive
-/// normal teardown, but crash/process-kill durability is best-effort until a
-/// caller awaits a flush.
+/// [close] stops admissions and awaits that complete drain, including temporary
+/// snapshot cleanup. [dispose] is the synchronous [Service] compatibility
+/// wrapper and starts the same idempotent close operation.
 ///
 /// **Cap-on-append.** Truncation happens in [log] immediately after encoding,
 /// not only on flush — the in-memory ring never overshoots between flushes.
@@ -57,7 +56,7 @@ final class _DebugLine {
 /// callback and `jsonEncode`); the flush timer callback catches internally;
 /// failures emit a scrubbed `debugPrint('[debug-log] …')` and never rethrow.
 /// The logger must not break the app even on platform/quota/permission failure.
-class DebugLogImpl implements DebugLog {
+class DebugLogImpl implements DrainableDebugLog {
   static int _nextWriterId = 0;
   static final Set<String> _activeTempPaths = <String>{};
 
@@ -112,6 +111,9 @@ class DebugLogImpl implements DebugLog {
   /// The active coalesced flush drain. It remains active through any trailing
   /// snapshot requested while an earlier snapshot write is in flight.
   Future<void>? _flushFuture;
+
+  /// Shared awaited teardown boundary for composition and dispose callers.
+  Future<void>? _closeFuture;
 
   /// Returns whether debug logging is enabled. Injected (reads `Preferences`)
   /// so the hot path does no I/O. When false, [log] is a no-op.
@@ -332,20 +334,34 @@ class DebugLogImpl implements DebugLog {
   }
 
   @override
-  void dispose() {
+  Future<void> close() {
+    final active = _closeFuture;
+    if (active != null) return active;
+    final completer = Completer<void>();
+    _closeFuture = completer.future;
+    unawaited(_closeAndDrain(completer));
+    return completer.future;
+  }
+
+  Future<void> _closeAndDrain(Completer<void> completer) async {
     try {
       _disposed = true;
       _flushTimer?.cancel();
       _flushTimer = null;
-      // Best-effort final flush. `Service.dispose()` returns `void`, so the
-      // flush is fire-and-forget — the OS gives the process a moment to finish
-      // on normal teardown. Critical events already flushed immediately on
-      // `log()`; routine events logged right before teardown may not finish.
-      // ignore: discarded_futures
-      _flushNow();
+      await _flushNow();
     } catch (_) {
       _safeLog(_DebugLogFailure.dispose);
+    } finally {
+      completer.complete();
     }
+  }
+
+  @override
+  void dispose() {
+    // Service disposal is synchronous; composition calls and awaits [close]
+    // before releasing the injector. This wrapper remains safe for legacy
+    // direct owners and joins the same idempotent drain.
+    unawaited(close());
   }
 
   void _scheduleDebouncedFlush() {

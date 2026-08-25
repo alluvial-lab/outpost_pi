@@ -68,8 +68,9 @@ Future<void> setupDependencies() async {
   await prefs.load();
   _injector.addInstance<Preferences>(prefs);
 
-  // Debug ring log — addService is required so disposeDependencies() flushes
-  // pending lines through DebugLogImpl.dispose(). Capture is gated by the
+  // Debug ring log — addService binds synchronous compatibility disposal;
+  // disposeDependencies() first awaits DebugLog.close() so its write drain
+  // cannot outlive the composition owner. Capture is gated by the
   // persisted app-global Preferences.debugLogging toggle; export/clear remain
   // available while capture is off.
   _injector.addService<DebugLog>(
@@ -381,8 +382,25 @@ class _CancelledError implements Exception {
   const _CancelledError();
 }
 
-/// Dispose every injector-owned service and repository during app shutdown.
-void disposeDependencies() => _injector.dispose();
+/// Drain diagnostics, then dispose every injector-owned binding.
+///
+/// The debug logger remains injector-owned until its final snapshot and
+/// temporary-file cleanup settle, preventing a replacement composition from
+/// racing the previous writer.
+Future<void> disposeDependencies() async {
+  try {
+    final debugLog = _injector.get<DebugLog>();
+    if (debugLog is DrainableDebugLog) {
+      await debugLog.close();
+    } else {
+      debugLog.dispose();
+    }
+  } on Object {
+    // A partially initialized composition may not have registered the logger.
+  } finally {
+    _injector.dispose();
+  }
+}
 
 /// Bridge auto_injector and Provider with a route-owned ViewModel instance.
 ///
