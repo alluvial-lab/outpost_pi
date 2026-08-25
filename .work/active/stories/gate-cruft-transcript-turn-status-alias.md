@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-transcript-turn-status-alias
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -46,3 +46,10 @@ Delete the transitional alias and update the remaining test references to `AppTu
 
 ## Risk
 None to runtime behavior or persisted/wire contracts. The only required follow-up is mechanical test-symbol replacement.
+
+## Implementation
+- Proof: repository grep found the app alias declaration plus six app test references and no production caller; similarly named Pi-extension and Cockpit types are independent declarations.
+- Removal: deleted `TranscriptTurnStatus` and mechanically changed the six transcript-projection assertions to canonical `AppTurnStatus` values.
+- Verification: `flutter test test/domain/transcript/transcript_projection_test.dart` passed (24 tests). The release-wide app analyze and full non-E2E suite are recorded in the gate-fix completion report.
+- Execution capability: sol/high; direct-read cleanup with compiler/test evidence.
+- Adjacent issues parked: none.

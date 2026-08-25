@@ -253,7 +253,7 @@ void main() {
       const UserMsg(id: 'server_old', text: 'older'),
       const UserMsg(id: 'cli_1', text: 'hello', status: UserMsgStatus.pending),
     ]);
-    expect(projection.turn.status, TranscriptTurnStatus.working);
+    expect(projection.turn.status, AppTurnStatus.working);
   });
 
   test(
@@ -419,7 +419,7 @@ void main() {
       expect(projection.messages, [
         const UserMsg(id: 'cli_1', text: 'hello', status: UserMsgStatus.failed),
       ]);
-      expect(projection.turn.status, TranscriptTurnStatus.error);
+      expect(projection.turn.status, AppTurnStatus.error);
     },
   );
 
@@ -466,7 +466,7 @@ void main() {
       );
 
       expect(projection.streaming, isNull);
-      expect(projection.turn.status, TranscriptTurnStatus.awaitingTool);
+      expect(projection.turn.status, AppTurnStatus.awaitingTool);
       expect(status.canCancel, isTrue);
       expect(status.turn.cancelTargetId, 'primary');
     },
@@ -537,7 +537,7 @@ void main() {
       streaming.streaming,
       const StreamingMessage(inReplyTo: 'cli_1', buffer: 'hello'),
     );
-    expect(streaming.turn.status, TranscriptTurnStatus.streaming);
+    expect(streaming.turn.status, AppTurnStatus.streaming);
 
     final committed = deriveTranscriptProjection(
       sessionId: session,
@@ -571,7 +571,7 @@ void main() {
 
     expect(committed.streaming, isNull);
     expect(committed.messages, [const AssistantMsg(id: 'a1', text: 'hello')]);
-    expect(committed.turn.status, TranscriptTurnStatus.idle);
+    expect(committed.turn.status, AppTurnStatus.idle);
   });
 
   test('assistant done clears streaming and converges idle', () {
@@ -595,7 +595,7 @@ void main() {
     );
 
     expect(projection.streaming, isNull);
-    expect(projection.turn.status, TranscriptTurnStatus.idle);
+    expect(projection.turn.status, AppTurnStatus.idle);
   });
 
   test('compaction projects a system row', () {
