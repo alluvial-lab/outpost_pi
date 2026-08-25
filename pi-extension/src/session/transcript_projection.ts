@@ -9,7 +9,6 @@ export type SdkTranscriptMessage = {
   summary?: string;
   timestamp?: number;
   toolCallId?: string;
-  toolName?: string;
   isError?: boolean;
   usage?: { input?: number; output?: number };
   tokensBefore?: number;
