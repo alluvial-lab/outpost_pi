@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-ws-transport-post-rollback-comment
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -39,3 +39,10 @@ Replace the historical `plain JSON post-rollback, see plan 06` wording with the 
 
 ## Risk
 None to behavior. This is a documentation-only correction; the relay remains opaque to `ct`.
+
+## Implementation
+- Proof: `PROTOCOL.md` defines post-pairing `outer.ct` as an opaque owner-channel E2E sealed frame, and the app transport passes `ct` through without interpreting plaintext; grep found the rollback-era phrase only in this header.
+- Removal: replaced the plaintext/plan-era claim with the current opaque, base64-encoded owner-channel frame description.
+- Verification: `flutter analyze lib/data/transport/ws_transport.dart` passed with no issues. The release-wide app analyze and full non-E2E suite are recorded in the gate-fix completion report.
+- Execution capability: sol/high; direct-read documentation cleanup verified against the canonical protocol.
+- Adjacent issues parked: none.

@@ -9,8 +9,8 @@
 //      Outbound `subscribe_presence` / `presence_check` go raw too.
 //
 // `peer` is standard base64 of the destination's Ed25519 pubkey (matches
-// the relay registry, populated from the peer's hello). `ct` is base64 of
-// the inner-envelope bytes (plain JSON post-rollback, see plan 06).
+// the relay registry, populated from the peer's hello). `ct` carries opaque,
+// base64-encoded owner-channel frame bytes.
 
 import 'dart:async';
 import 'dart:convert';
