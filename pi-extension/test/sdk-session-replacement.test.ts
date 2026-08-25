@@ -440,10 +440,54 @@ describe("SDK session replacement harness", () => {
     expect(forkHistory.session_id).toBe(forkSessionId);
     expect(forkHistory.events).toEqual(parentBeforeFork.events);
 
+    harness.routeCurrent(withCurrentSession(harness, {
+      type: "user_message",
+      id: "fork-user",
+      text: "fork-only prompt",
+    } as Omit<ClientMessage, "session_id">));
+    await harness.waitForDelivery((delivery) =>
+      delivery.method === "sendUserMessage" &&
+      JSON.stringify(delivery.content).includes("fork-only prompt"),
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    harness.currentSession.sessionManager.appendMessage({
+      role: "user",
+      content: "fork-only prompt",
+      timestamp: 300,
+    } as never);
+    await harness.currentRunner.emit({
+      type: "message_end",
+      message: { role: "user", content: "fork-only prompt", timestamp: 300 },
+    } as never);
+    const divergedForkHistory = await syncHistory(harness, "fork-after-divergence");
+    expect(divergedForkHistory.events.at(-1)).toMatchObject({
+      type: "user_input",
+      id: "fork-user",
+      text: "fork-only prompt",
+    });
+
     await harness.resumeSession(parentSessionFile);
+    harness.currentSession.sessionManager.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "parent answer after fork" }],
+      timestamp: 400,
+    } as never);
+    await harness.currentRunner.emit({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "parent answer after fork" }],
+        timestamp: 400,
+      },
+    } as never);
     const parentAfterReopen = await syncHistory(harness, "parent-after-reopen");
     expect(parentAfterReopen.session_id).toBe(parentSessionId);
-    expect(parentAfterReopen.events).toEqual(parentBeforeFork.events);
+    expect(parentAfterReopen.events.slice(0, parentBeforeFork.events.length)).toEqual(parentBeforeFork.events);
+    expect(parentAfterReopen.events.at(-1)).toMatchObject({
+      type: "agent_message",
+      in_reply_to: "parent-user",
+      text: "parent answer after fork",
+    });
   });
 
   test("file-backed mixed-era history retains SDK fallback prefix and durable-authoritative suffix", async () => {
