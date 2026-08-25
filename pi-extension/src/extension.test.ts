@@ -40,6 +40,11 @@ type TestChannelState = {
 const peerAliasToIdentity = new Map<string, { wire: string; sk: Uint8Array }>();
 const peerWireToAlias = new Map<string, string>();
 const testChannels = new Map<string, TestChannelState>();
+const durableTranscriptEntries: Array<{ customType: string; data: unknown }> = [];
+
+function appendDurableEntry(customType: string, data: unknown): void {
+  durableTranscriptEntries.push({ customType, data });
+}
 
 function testPeerIdentity(aliasOrWire: string): { wire: string; sk: Uint8Array } {
   const knownAlias = peerAliasToIdentity.get(aliasOrWire);
@@ -372,6 +377,7 @@ const {
   _parseControlFrame,
   _setHotReloadingForTest,
   _sendCaptureDeliveredNote,
+  _deliverMeshMessageToAgentForTest,
   CTRL_PREFIX,
 } = await import("./index.js");
 const { runStandaloneOutpostPiCli } = await import("./extension/command_surface/standalone_cli.js");
@@ -391,6 +397,7 @@ function makeMockPi(): { pi: ExtensionAPI; registeredCommands: string[] } {
     registerFlag: () => undefined, getFlag: () => undefined,
     registerMessageRenderer: () => undefined,
     sendMessage: () => undefined, sendUserMessage: () => undefined,
+    appendEntry: appendDurableEntry,
   } as unknown as ExtensionAPI;
   return { pi, registeredCommands };
 }
@@ -418,6 +425,7 @@ function captureHandler(commandName: string): CmdHandler {
     registerFlag: () => undefined, getFlag: () => undefined,
     registerMessageRenderer: () => undefined,
     sendMessage: () => undefined, sendUserMessage: () => undefined,
+    appendEntry: appendDurableEntry,
   } as unknown as ExtensionAPI;
   (extension as ExtensionFactory)(pi);
   if (!captured) throw new Error(`command "${commandName}" not registered`);
@@ -515,6 +523,7 @@ function sentToPeerSince(index: number, peer: string): Array<{ peer: string; inn
 beforeEach(() => {
   testChannels.clear();
   decodedSentCache.clear();
+  durableTranscriptEntries.length = 0;
 });
 
 test("capture delivery note remains TUI-visible and wakes an idle agent turn", () => {
@@ -1288,6 +1297,7 @@ function captureEventHandler(eventName: string): EventHandler {
     registerFlag: () => undefined, getFlag: () => undefined,
     registerMessageRenderer: () => undefined,
     sendMessage: () => undefined, sendUserMessage: () => undefined,
+    appendEntry: appendDurableEntry,
   } as unknown as ExtensionAPI;
   (extension as ExtensionFactory)(pi);
   if (!captured) throw new Error(`event "${eventName}" handler not registered`);
@@ -1768,13 +1778,40 @@ describe("multi-channel broadcast (W2D)", () => {
       .map((c) => c[0] as string).map(decodeSentCt);
     const echoes = sent.filter((d) => d.inner.type === "user_message");
     expect(echoes).toHaveLength(2);
-    // id must be the sender's verbatim — Pi must not re-generate.
+    const durableUser = durableTranscriptEntries
+      .map((entry) => entry.data as Record<string, unknown>)
+      .find((event) => event["kind"] === "user_confirmed" && event["clientMessageId"] === "msg-123");
+    expect(durableUser).toMatchObject({ ts: expect.any(Number) });
+    // id and the producer-owned timestamp must be identical for every owner.
     for (const e of echoes) {
-      expect(e.inner).toMatchObject({ type: "user_message", id: "msg-123", text: "oi" });
+      expect(e.inner).toMatchObject({
+        type: "user_message",
+        id: "msg-123",
+        text: "oi",
+        ts: durableUser?.["ts"],
+      });
     }
     // Both owners received the echo (sender included).
     const recipients = new Set(echoes.map((d) => d.peer));
     expect(recipients).toEqual(new Set(["ownerA__1234567890", "ownerB__abcdefghij"]));
+
+    const duplicateBefore = relayRef.current!.send.mock.calls.length;
+    relayRef.current!.emit("message", JSON.stringify({
+      peer: "ownerA__1234567890",
+      ct: Buffer.from(JSON.stringify({
+        type: "user_message", id: "msg-123", session_id: sessionId, text: "oi",
+      })).toString("base64"),
+    }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const duplicateEchoes = relayRef.current!.send.mock.calls.slice(duplicateBefore)
+      .map((call) => call[0] as string)
+      .map(decodeSentCt)
+      .filter((frame) => frame.inner.type === "user_message");
+    expect(duplicateEchoes).toHaveLength(2);
+    expect(duplicateEchoes.every((frame) => frame.inner["ts"] === durableUser?.["ts"])).toBe(true);
+    expect(durableTranscriptEntries.filter(
+      (entry) => (entry.data as { clientMessageId?: string }).clientMessageId === "msg-123",
+    )).toHaveLength(1);
   });
 
   test("queued_message_set broadcasts queued state to every owner", async () => {
@@ -2125,11 +2162,21 @@ describe("multi-channel broadcast (W2D)", () => {
         id: "msg-steer",
         text: "refine this",
         streaming_behavior: "steer",
+        ts: expect.any(Number),
+      });
+      const durableSteer = durableTranscriptEntries
+        .map((entry) => entry.data as Record<string, unknown>)
+        .find((event) => event["kind"] === "user_confirmed" && event["clientMessageId"] === "msg-steer");
+      expect(durableSteer).toMatchObject({
+        kind: "user_confirmed",
+        clientMessageId: "msg-steer",
+        text: "refine this",
+        streamingBehavior: "steer",
+        ts: echo?.inner["ts"],
       });
 
-      // Delivery acceptance above is intentionally early and has no SDK
-      // timestamp. The later message_end broadcast is the stable semantic
-      // pickup anchor consumed by the app transcript projection.
+      // The delivery hook owns the timestamp. The later message_end echo must
+      // reuse it rather than replacing it with the SDK persistence clock.
       const pickupBefore = relayRef.current!.send.mock.calls.length;
       const onMessageEnd = captureEventHandler("message_end");
       onMessageEnd({
@@ -2144,7 +2191,7 @@ describe("multi-channel broadcast (W2D)", () => {
         type: "user_input",
         id: "msg-steer",
         text: "refine this",
-        ts: 1_700_000_005_000,
+        ts: echo?.inner["ts"],
       });
     },
   );
@@ -2253,6 +2300,7 @@ describe("multi-channel broadcast (W2D)", () => {
           sessionManager: { getSessionId: () => "fresh-sdk-session-after-new" },
           sendUserMessage: freshSendUserMessage,
           sendMessage: freshSendMessage,
+          appendEntry: appendDurableEntry,
         });
         return { cancelled: false };
       }),
@@ -2329,6 +2377,7 @@ describe("multi-channel broadcast (W2D)", () => {
           sessionManager: { getSessionId: () => "fresh-sdk-session-turn-order" },
           sendUserMessage: freshSendUserMessage,
           sendMessage: vi.fn(async () => undefined),
+          appendEntry: appendDurableEntry,
         });
         return { cancelled: false };
       }),
@@ -2368,15 +2417,7 @@ describe("multi-channel broadcast (W2D)", () => {
       await flushSecureOutbound();
 
       const beforeSettlement = sentToPeerSince(sendsBefore, peer).map((sent) => sent.inner);
-      expect(beforeSettlement).toContainEqual(expect.objectContaining({
-        type: "user_input",
-        id: "cli_replacement_turn_order",
-        text: "hello before replacement turn settlement",
-        ts: 1_700_001_500_000,
-      }));
-      expect(beforeSettlement.some((message) =>
-        message.type === "user_input" && String(message["id"]).startsWith("sync_")
-      )).toBe(false);
+      expect(beforeSettlement.some((message) => message.type === "user_input")).toBe(false);
       expect(beforeSettlement.some((message) => message.type === "user_message")).toBe(false);
       expect(debugLog.byTag("wake_outcome")).toHaveLength(0);
       expect(debugLog.byTag("msg_delivered")).toHaveLength(0);
@@ -3335,7 +3376,18 @@ describe("user_input mirroring", () => {
     });
     const done = sent.find((d) => d.inner.type === "agent_done");
     expect(done?.peer).toBe(peer);
-    expect(done?.inner).toMatchObject({ type: "agent_done", in_reply_to: turnId });
+    expect(done?.inner).toMatchObject({
+      type: "agent_done",
+      in_reply_to: turnId,
+      ts: expect.any(Number),
+    });
+    const doneEvent = _getTranscriptEventsForTest().find(
+      (event) => event.kind === "assistant_done" && event.replyTo === turnId,
+    );
+    expect(done?.inner.ts).toBe(doneEvent?.ts);
+    expect(durableTranscriptEntries.map((entry) => entry.data)).toContainEqual(
+      expect.objectContaining({ kind: "assistant_done", replyTo: turnId, ts: done?.inner.ts }),
+    );
     const history = sent.find((d) => d.inner.type === "session_history");
     expect(history?.peer).toBe(peer);
     expect(history?.inner).toMatchObject({ type: "session_history", in_reply_to: turnId });
@@ -3763,6 +3815,41 @@ describe("tool visibility", () => {
     expect(results[0]!.inner.ts).toBe(resultEvent?.ts);
     expect(requestEvent?.ts).toBeGreaterThan(1_000_000_000_000);
     expect(resultEvent?.ts).toBeGreaterThan(1_000_000_000_000);
+    expect(durableTranscriptEntries.map((entry) => entry.data)).toEqual([
+      expect.objectContaining({ kind: "tool_requested", toolCallId: "tc_2" }),
+      expect.objectContaining({ kind: "tool_finished", toolCallId: "tc_2" }),
+    ]);
+  });
+
+  test("admitted agent-network cards persist distinct request/result facts before broadcast", async () => {
+    await _pairForTest("peer-mesh-card");
+    const sendsBefore = relayRef.current!.send.mock.calls.length;
+
+    _deliverMeshMessageToAgentForTest({
+      id: "mesh-envelope-1",
+      from: "/repo@reviewer",
+      re: null,
+      body: "review complete",
+    });
+    await flushSecureOutbound();
+
+    const native = durableTranscriptEntries.map((entry) => entry.data as Record<string, unknown>);
+    expect(native).toEqual([
+      expect.objectContaining({
+        kind: "tool_requested",
+        toolCallId: "mesh_mesh-envelope-1",
+        tool: "agent-network",
+      }),
+      expect.objectContaining({
+        kind: "tool_finished",
+        toolCallId: "mesh_mesh-envelope-1",
+      }),
+    ]);
+    const live = sentToPeerSince(sendsBefore, "peer-mesh-card")
+      .filter((frame) => frame.inner.type === "tool_request" || frame.inner.type === "tool_result");
+    expect(live.map((frame) => frame.inner.type)).toEqual(["tool_request", "tool_result"]);
+    expect(live.map((frame) => frame.inner["tool_call_id"]))
+      .toEqual(["mesh_mesh-envelope-1", "mesh_mesh-envelope-1"]);
   });
 
   test("tool_result stringifies content-array/object (no [object Object]) and == re-sync", async () => {

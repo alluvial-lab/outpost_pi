@@ -449,6 +449,11 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     return this.transcriptLog.recordedTsFor(eventId);
   }
 
+  /** Report whether the current SDK lifecycle has a durable transcript writer. */
+  hasTranscriptPersistence(): boolean {
+    return this.transcriptLog.hasPersistence();
+  }
+
   /** Transitional compatibility wrapper for legacy SDK re-derivation; F4 removes it. */
   appendTranscriptEvent(event: TranscriptEvent): void {
     this.appendFallbackTranscriptEvent(event);
@@ -528,16 +533,25 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
       const images = imagesFromContent(message.content);
       const matched = this.consumeDeliveredUserEvent(text, images);
       const clientMessageId = matched?.clientMessageId ?? `sync_${ts}`;
+      const producerTs = matched
+        ? this.recordedTranscriptTs(matched.eventId)
+        : undefined;
+      const canonicalTs = producerTs ?? ts;
       this.appendUserConfirmedTranscriptEvent({
         sessionId,
-        ts,
+        ts: canonicalTs,
         clientMessageId,
         text,
         ...(images.length > 0 ? { images } : {}),
         ...(matched ? { eventId: matched.eventId } : {}),
       });
+      // If SDK persistence wins an unusual async race with app-delivery
+      // confirmation, keep this fallback for replay but do not publish its SDK
+      // timestamp. The delivery hook will upgrade the same event id durably and
+      // publish the sole authoritative echo.
+      if (matched && producerTs === undefined && this.hasTranscriptPersistence()) return;
       // Identity source (a) — user-message follow-up: broadcast a live
-      // `user_input` echo carrying the stable SDK `ts` so the app's live
+      // `user_input` echo carrying the canonical producer `ts` so the app's live
       // commit path derives the SAME deterministic eventId as session_history
       // replay (which emits user_input with this ts). Mirrors the assistant
       // agent_message broadcast. See story-mobile-assistant-message-
@@ -555,7 +569,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
         type: SERVER_MESSAGE_DISCRIMINATORS.user_input,
         id: clientMessageId,
         text,
-        ts,
+        ts: canonicalTs,
         ...(images.length > 0 ? { images } : {}),
       }));
       return;

@@ -41,6 +41,21 @@ describe("TranscriptEventLog durable aggregate", () => {
     expect(log.recordedTsFor("same")).toBe(10);
   });
 
+  test("a durable hook fact upgrades an earlier SDK fallback with the same identity", () => {
+    const log = new TranscriptEventLog();
+    const append = vi.fn();
+    log.bindPersistence({ append });
+    expect(log.appendFallback(user("same", 10, "sdk timestamp"))).toBe(true);
+
+    const hookOwned = user("same", 20, "hook timestamp");
+    expect(log.record(hookOwned)).toEqual({ status: "recorded" });
+    expect(append).toHaveBeenCalledWith(hookOwned);
+    expect(log.entries()).toEqual([hookOwned]);
+    expect(log.recordedTsFor("same")).toBe(20);
+    expect(log.record(hookOwned)).toEqual({ status: "duplicate" });
+    expect(append).toHaveBeenCalledTimes(1);
+  });
+
   test("reports unavailable and failed persistence without installing authority", () => {
     const log = new TranscriptEventLog();
     const event = user("event-1", 10);

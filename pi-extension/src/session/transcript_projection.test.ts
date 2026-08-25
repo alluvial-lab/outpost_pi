@@ -200,6 +200,50 @@ describe("transcript session_history projection", () => {
       .toEqual(["tc_1", "tc_2"]);
   });
 
+  test("reopens native tool pairs with live-equivalent replay and mixed-era fallback", () => {
+    const legacyRequest: SdkTranscriptContextEntry = {
+      type: "message",
+      message: {
+        role: "assistant",
+        timestamp: 100,
+        content: [{ type: "toolCall", id: "legacy-call", name: "bash", arguments: { command: "pwd" } }],
+      },
+    };
+    const request: TranscriptEvent = {
+      kind: "tool_requested",
+      eventId: "mesh-request",
+      sessionId,
+      ts: 200,
+      toolCallId: "mesh_envelope-1",
+      tool: "agent-network",
+      args: { from: "/repo@peer", message: "hello" },
+    };
+    const finish: TranscriptEvent = {
+      kind: "tool_finished",
+      eventId: "mesh-finish",
+      sessionId,
+      ts: 201,
+      toolCallId: "mesh_envelope-1",
+      result: { from: "/repo@peer", message: "hello" },
+    };
+
+    const reopened = mapSdkContextEntriesToTranscriptEvents({
+      sessionId,
+      entries: [legacyRequest, durableEntry(request), durableEntry(finish)],
+    });
+    expect(reopened.map((event) => [event.kind, "toolCallId" in event ? event.toolCallId : null]))
+      .toEqual([
+        ["tool_requested", "legacy-call"],
+        ["tool_requested", "mesh_envelope-1"],
+        ["tool_finished", "mesh_envelope-1"],
+      ]);
+    expect(projectSessionHistory({ sessionId, events: reopened, limit: 10 }).events).toEqual([
+      { ts: 100, type: "tool_request", tool_call_id: "legacy-call", tool: "bash", args: { command: "pwd" } },
+      { ts: 200, type: "tool_request", tool_call_id: "mesh_envelope-1", tool: "agent-network", args: { from: "/repo@peer", message: "hello" } },
+      { ts: 201, type: "tool_result", tool_call_id: "mesh_envelope-1", result: { from: "/repo@peer", message: "hello" } },
+    ]);
+  });
+
   test("matches repeated equal-content app users FIFO and preserves unmatched SDK history", () => {
     const appUser = (id: string, ts: number): TranscriptEvent => ({
       kind: "user_confirmed",
@@ -283,6 +327,40 @@ describe("transcript session_history projection", () => {
 
     expect(mapped.filter((event) => event.kind === "user_confirmed").map((event) => event.clientMessageId))
       .toEqual(["sync_100", "app-client-later"]);
+  });
+
+  test("reopens durable steering behavior alongside pre-upgrade SDK user fallback", () => {
+    const steer: TranscriptEvent = {
+      kind: "user_confirmed",
+      eventId: "durable-steer",
+      sessionId,
+      ts: 201,
+      clientMessageId: "steer-client",
+      text: "refine the active turn",
+      streamingBehavior: "steer",
+    };
+    const reopened = mapSdkContextEntriesToTranscriptEvents({
+      sessionId,
+      entries: [
+        { type: "message", message: { role: "user", content: "before upgrade", timestamp: 100 } },
+        durableEntry(steer),
+      ],
+    });
+
+    expect(reopened).toEqual([
+      expect.objectContaining({ kind: "user_confirmed", clientMessageId: "sync_100" }),
+      steer,
+    ]);
+    expect(projectSessionHistory({ sessionId, events: reopened, limit: 10 }).events).toEqual([
+      { ts: 100, type: "user_input", id: "sync_100", text: "before upgrade" },
+      {
+        ts: 201,
+        type: "user_input",
+        id: "steer-client",
+        text: "refine the active turn",
+        streaming_behavior: "steer",
+      },
+    ]);
   });
 
   test("maps raw compaction timestamps and ignores duplicate durable identities", () => {

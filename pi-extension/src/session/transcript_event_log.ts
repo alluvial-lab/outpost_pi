@@ -23,6 +23,7 @@ export type TranscriptRecordResult =
 export class TranscriptEventLog {
   private readonly events: TranscriptEvent[] = [];
   private readonly byEventId = new Map<string, TranscriptEvent>();
+  private readonly fallbackEventIds = new Set<string>();
   private persistence: TranscriptEventPersistence | null = null;
 
   bindPersistence(persistence: TranscriptEventPersistence): void {
@@ -35,7 +36,9 @@ export class TranscriptEventLog {
   }
 
   record(event: TranscriptEvent): TranscriptRecordResult {
-    if (this.byEventId.has(event.eventId)) return { status: "duplicate" };
+    const existing = this.byEventId.get(event.eventId);
+    const upgradesFallback = existing !== undefined && this.fallbackEventIds.has(event.eventId);
+    if (existing && !upgradesFallback) return { status: "duplicate" };
     const persistence = this.persistence;
     if (!persistence) return { status: "unavailable" };
     try {
@@ -46,12 +49,15 @@ export class TranscriptEventLog {
     } catch {
       return { status: "failed" };
     }
-    this.install(event);
+    if (upgradesFallback) this.replaceFallback(event);
+    else this.install(event);
     return { status: "recorded" };
   }
 
   appendFallback(event: TranscriptEvent): boolean {
-    return this.install(event);
+    const installed = this.install(event);
+    if (installed) this.fallbackEventIds.add(event.eventId);
+    return installed;
   }
 
   hydrate(events: readonly TranscriptEvent[]): number {
@@ -66,6 +72,11 @@ export class TranscriptEventLog {
     return this.byEventId.get(eventId)?.ts;
   }
 
+  /** Report whether live producers can currently cross the durable session boundary. */
+  hasPersistence(): boolean {
+    return this.persistence !== null;
+  }
+
   replace(events: readonly TranscriptEvent[]): void {
     this.clear();
     this.hydrate(events);
@@ -74,6 +85,7 @@ export class TranscriptEventLog {
   clear(): void {
     this.events.length = 0;
     this.byEventId.clear();
+    this.fallbackEventIds.clear();
   }
 
   forSession(sessionId: string): readonly TranscriptEvent[] {
@@ -99,5 +111,13 @@ export class TranscriptEventLog {
     this.byEventId.set(event.eventId, event);
     this.events.push(event);
     return true;
+  }
+
+  private replaceFallback(event: TranscriptEvent): void {
+    const index = this.events.findIndex((candidate) => candidate.eventId === event.eventId);
+    if (index < 0) throw new Error("fallback transcript index is inconsistent");
+    this.events[index] = event;
+    this.byEventId.set(event.eventId, event);
+    this.fallbackEventIds.delete(event.eventId);
   }
 }

@@ -56,6 +56,7 @@ import type {
 import type { RelayControlFrame } from "./protocol/generated/protocol.generated.js";
 import type { DecodedRelayIngress } from "./protocol/relay_ingress.js";
 import type { TranscriptEvent } from "./session/transcript_event.js";
+import type { TranscriptRecordResult } from "./session/transcript_event_log.js";
 import {
   deterministicTranscriptEventId,
   stringifyToolResult,
@@ -775,6 +776,14 @@ function _appendTranscriptEvent(event: TranscriptEvent): void {
   _sdkSessionProjection.appendTranscriptEvent(event);
 }
 
+function _recordDurableTranscriptEvent(event: TranscriptEvent): TranscriptRecordResult {
+  return _sdkSessionProjection.recordDurableTranscriptEvent(event);
+}
+
+function _isAuthoritativeTranscriptRecord(result: TranscriptRecordResult): boolean {
+  return result.status === "recorded" || result.status === "duplicate";
+}
+
 function _rememberDeliveredUserEvent(
   text: string,
   images: readonly { data: string; mime: string }[] | undefined,
@@ -822,6 +831,9 @@ export function _getTurnProjectionForTest(): TurnProjection {
 /** Test-only: override the bound AgentSession so a spy can capture the
  *  content handed to `sendUserMessage` (plan/30 multimodal ingest). */
 export function _setPiForTest(pi: unknown): void {
+  if (pi && typeof pi === "object" && !("appendEntry" in pi)) {
+    Object.defineProperty(pi, "appendEntry", { value: () => undefined, configurable: true });
+  }
   _pi = pi as typeof _pi;
   _messageApi = _isAgentMessageApi(pi) ? pi : null;
   _sdkSessionProjection.clearApiBindings();
@@ -1405,17 +1417,19 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     subagentGate.enter(event.toolName);
     const sessionId = _currentRemoteSessionId();
     const args = _enrichToolArgs(event.toolName, event.args);
-    const ts = Date.now();
-    _appendTranscriptEvent({
+    const eventId = deterministicTranscriptEventId(sessionId, "tool_requested", event.toolCallId);
+    const producedAt = Date.now();
+    const recorded = _recordDurableTranscriptEvent({
       kind: "tool_requested",
-      eventId: deterministicTranscriptEventId(sessionId, "tool_requested", event.toolCallId),
+      eventId,
       sessionId,
-      ts,
+      ts: producedAt,
       toolCallId: event.toolCallId,
       tool: event.toolName,
       args,
     });
-    if (_owners.activeCount() === 0) return;
+    if (!_isAuthoritativeTranscriptRecord(recorded) || _owners.activeCount() === 0) return;
+    const ts = _sdkSessionProjection.recordedTranscriptTs(eventId) ?? producedAt;
     _owners.broadcast(_withCurrentSession({
       type: "tool_request",
       tool_call_id: event.toolCallId,
@@ -1430,25 +1444,27 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // Stringify through the transcript projection helper so live == re-sync.
     const text = stringifyToolResult(event.result);
     const sessionId = _currentRemoteSessionId();
-    const ts = Date.now();
-    _appendTranscriptEvent(event.isError
+    const eventId = deterministicTranscriptEventId(sessionId, "tool_finished", event.toolCallId);
+    const producedAt = Date.now();
+    const recorded = _recordDurableTranscriptEvent(event.isError
       ? {
           kind: "tool_finished",
-          eventId: deterministicTranscriptEventId(sessionId, "tool_finished", event.toolCallId),
+          eventId,
           sessionId,
-          ts,
+          ts: producedAt,
           toolCallId: event.toolCallId,
           error: text,
         }
       : {
           kind: "tool_finished",
-          eventId: deterministicTranscriptEventId(sessionId, "tool_finished", event.toolCallId),
+          eventId,
           sessionId,
-          ts,
+          ts: producedAt,
           toolCallId: event.toolCallId,
           result: text,
         });
-    if (_owners.activeCount() === 0) return;
+    if (!_isAuthoritativeTranscriptRecord(recorded) || _owners.activeCount() === 0) return;
+    const ts = _sdkSessionProjection.recordedTranscriptTs(eventId) ?? producedAt;
     const msg: ServerMessage = event.isError
       ? _withCurrentSession({ type: "tool_result", tool_call_id: event.toolCallId, error: text, ts })
       : _withCurrentSession({ type: "tool_result", tool_call_id: event.toolCallId, result: text, ts });
@@ -1516,16 +1532,19 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     const finishedTurnId = before.replyTo ?? before.activeTurnId;
     if (finishedTurnId === null) return;
     const sessionId = _currentRemoteSessionId();
-    _appendTranscriptEvent({
+    const eventId = deterministicTranscriptEventId(sessionId, "assistant_done", finishedTurnId);
+    const producedAt = Date.now();
+    const recorded = _recordDurableTranscriptEvent({
       kind: "assistant_done",
-      eventId: deterministicTranscriptEventId(sessionId, "assistant_done", finishedTurnId),
+      eventId,
       sessionId,
-      ts: Date.now(),
+      ts: producedAt,
       replyTo: finishedTurnId,
     });
     _applyTurnAndPublish({ type: "agent_done" });
-    if (_owners.activeCount() > 0) {
-      _owners.broadcast(_withCurrentSession({ type: "agent_done", in_reply_to: finishedTurnId }));
+    if (_isAuthoritativeTranscriptRecord(recorded) && _owners.activeCount() > 0) {
+      const ts = _sdkSessionProjection.recordedTranscriptTs(eventId) ?? producedAt;
+      _owners.broadcast(_withCurrentSession({ type: "agent_done", in_reply_to: finishedTurnId, ts }));
     }
     _maybeSendLateAttachSessionSync();
     _maybeDrainQueuedMessage();
@@ -2221,15 +2240,55 @@ function _deliverMeshMessageToAgent(
   }
 
   const toolCallId = `mesh_${env.id}`;
-  _owners.broadcast(_withCurrentSession({
-    type: "tool_request",
-    tool_call_id: toolCallId,
+  const sessionId = _currentRemoteSessionId();
+  const args = env.re
+    ? { from: env.from, re: env.re, message: bodyText }
+    : { from: env.from, message: bodyText };
+  const requestEventId = deterministicTranscriptEventId(sessionId, "tool_requested", toolCallId);
+  const requestTs = _sdkSessionProjection.recordedTranscriptTs(requestEventId) ?? Date.now();
+  const requestRecorded = _recordDurableTranscriptEvent({
+    kind: "tool_requested",
+    eventId: requestEventId,
+    sessionId,
+    ts: requestTs,
+    toolCallId,
     tool: "agent-network",
-    args: env.re
-      ? { from: env.from, re: env.re, message: bodyText }
-      : { from: env.from, message: bodyText },
-  }));
-  _owners.broadcast(_withCurrentSession({ type: "tool_result", tool_call_id: toolCallId, result: { from: env.from, message: bodyText } }));
+    args,
+  });
+  const finishEventId = deterministicTranscriptEventId(sessionId, "tool_finished", toolCallId);
+  const finishTs = _sdkSessionProjection.recordedTranscriptTs(finishEventId) ?? Date.now();
+  const finishRecorded = _recordDurableTranscriptEvent({
+    kind: "tool_finished",
+    eventId: finishEventId,
+    sessionId,
+    ts: finishTs,
+    toolCallId,
+    result: { from: env.from, message: bodyText },
+  });
+  if (_isAuthoritativeTranscriptRecord(requestRecorded)) {
+    _owners.broadcast(_withCurrentSession({
+      type: "tool_request",
+      tool_call_id: toolCallId,
+      tool: "agent-network",
+      args,
+      ts: requestTs,
+    }));
+  }
+  if (_isAuthoritativeTranscriptRecord(finishRecorded)) {
+    _owners.broadcast(_withCurrentSession({
+      type: "tool_result",
+      tool_call_id: toolCallId,
+      result: { from: env.from, message: bodyText },
+      ts: finishTs,
+    }));
+  }
+}
+
+/** Test-only seam for producer-connected native mesh transcript coverage. */
+export function _deliverMeshMessageToAgentForTest(
+  env: { id: string; from: string; re: string | null; body: unknown },
+): void {
+  _deliverMeshMessageToAgent(env);
 }
 
 async function _cmdJoin(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
@@ -2385,12 +2444,15 @@ async function _attemptUserDelivery(prepared: PreparedUserDelivery): Promise<Wak
   // re-invoking the agent. Covers sequential duplicates (reconnect flush,
   // relay fan-out, app re-send) that arrive after the first attempt succeeded.
   if (_sdkSessionProjection.wasUserMessageDelivered(attemptSessionId, prepared.msg.id)) {
+    const eventId = deterministicTranscriptEventId(attemptSessionId, "user_confirmed", prepared.msg.id);
+    const ts = _sdkSessionProjection.recordedTranscriptTs(eventId);
     const echo: ServerMessage = _withCurrentSession({
       type: "user_message",
       id: prepared.msg.id,
       text: prepared.msg.text,
       ...(prepared.msg.images && prepared.msg.images.length > 0 ? { images: prepared.msg.images } : {}),
       ...(prepared.shouldSteer ? { streaming_behavior: "steer" as const } : {}),
+      ...(ts !== undefined ? { ts } : {}),
     });
     _owners.broadcast(echo);
     _deliveryDebugLog.log({
@@ -2494,27 +2556,33 @@ function _confirmUserDelivery(
   eventId: string,
 ): void {
   const sessionId = attemptSessionId;
-  _appendUserConfirmedTranscriptEvent({
+  const producedAt = Date.now();
+  const recorded = _recordDurableTranscriptEvent({
+    kind: "user_confirmed",
+    eventId,
     sessionId,
-    ts: Date.now(),
+    ts: producedAt,
     clientMessageId: msg.id,
     text: msg.text,
     ...(msg.images && msg.images.length > 0 ? { images: msg.images } : {}),
     ...(shouldSteer ? { streamingBehavior: "steer" as const } : {}),
-    eventId,
   });
   // Record the clientMessageId for the ingress idempotency guard
   // (story-extension-user-message-ingress-idempotency) so a later duplicate
   // frame is suppressed before _wakeAgent.
   _sdkSessionProjection.recordDeliveredUserMessageId(sessionId, msg.id);
-  const echo: ServerMessage = _withCurrentSession({
-    type: "user_message",
-    id: msg.id,
-    text: msg.text,
-    ...(msg.images && msg.images.length > 0 ? { images: msg.images } : {}),
-    ...(shouldSteer ? { streaming_behavior: "steer" as const } : {}),
-  });
-  _owners.broadcast(echo);
+  if (_isAuthoritativeTranscriptRecord(recorded)) {
+    const ts = _sdkSessionProjection.recordedTranscriptTs(eventId) ?? producedAt;
+    const echo: ServerMessage = _withCurrentSession({
+      type: "user_message",
+      id: msg.id,
+      text: msg.text,
+      ...(msg.images && msg.images.length > 0 ? { images: msg.images } : {}),
+      ...(shouldSteer ? { streaming_behavior: "steer" as const } : {}),
+      ts,
+    });
+    _owners.broadcast(echo);
+  }
 }
 
 function _enqueuePendingDelivery(prepared: PreparedUserDelivery, enqueuedAt = Date.now()): void {
