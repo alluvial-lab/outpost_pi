@@ -86,36 +86,43 @@ if (!committedViaAgentMessage) {
 
 ### User messages — `pi.on("input")` broadcast (fixed 2026-07-08)
 
-A message typed in the Pi TUI fired **two** `user_input` broadcasts:
-`pi.on("input")` (id=`turnId`=`local_<uuid>`, no `ts`) and `message_end`
-(id=`sync_<ts>`, with `ts`). Different ids → different eventIds → two
-rows.
+A message typed in the Pi TUI is owned by the durable SDK-message recorder at
+`message_end`; the earlier `pi.on("input")` hook only seeds turn state. The
+recorder persists the canonical `user_confirmed` fact before broadcasting its
+`user_input` projection, so live and replay paths share the same identity.
 
-**File:** `pi-extension/src/index.ts` (`pi.on("input")` handler)
+**File:** `pi-extension/src/index.ts:1500-1511` (`message_end` handler)
 
 ```ts
-// WRONG — the input handler mirrors workstation-typed input live, but
-// message_end (milliseconds later, before agent streaming) also
-// broadcasts user_input with a different id.
-_owners.broadcast({ type: "user_input", id: turnId, text: event.text });
-
-// RIGHT — remove the broadcast; message_end owns it. The input handler
-// still seeds the turn projection (so agent_chunk.in_reply_to resolves)
-// but does NOT broadcast user_input.
-_applyTurnAndPublish({ type: "local_input", turnId, replyTo: turnId, source: "local" });
-// no broadcast here — message_end's appendLegacySdkMessageToTranscript does it
+if (!suppressForSubagent && (m.role === "user" || m.role === "assistant")) {
+  _recordSdkMessageTranscriptEvents(m as unknown as SdkTranscriptMessage);
+}
 ```
 
-### The early delivery-time echo (deliberately tolerated)
+**File:** `pi-extension/src/index.ts:1280-1300` (`pi.on("input")` handler)
 
-The `_deliverUserMessage` path (phone-originated) broadcasts a `user_message`
-ack at delivery time, **before** `message_end`. It does not carry `ts`, so
-it commits under `'server:user_confirmed:$id'` while the `message_end`
-echo commits under the deterministic id. This is tolerated because the
-projection dedupes user rows by `ChatMessage.id` (the `clientMessageId`),
-so the two event-store rows collapse to one visible bubble. A future
-cleanup could suppress the early echo's commit when `ts` is expected,
-mirroring the `AgentDone` skip.
+```ts
+_applyTurnAndPublish({ type: "local_input", turnId, replyTo: turnId, source: "local" });
+// no user_input broadcast here; message_end owns durable identity
+```
+
+The app's fallback rule is era-aware: legacy extensions may commit a random-id
+fallback when no deterministic `agent_message(ts)` capability is known. Once a
+session has latched that capability, a missing live frame suppresses the random
+fallback so durable replay remains the sole identity source.
+
+**File:** `app/lib/data/sync/sync_service.dart:1243-1253`
+
+```dart
+final deterministicExpectedButDropped =
+    !committedViaAgentMessage &&
+    _extensionSendsDeterministicAgentMessage;
+if (buffered.isNotEmpty &&
+    !committedViaAgentMessage &&
+    !deterministicExpectedButDropped) {
+  terminalEvents.add(/* legacy random-id fallback */);
+}
+```
 
 ## The audit checklist (run this when touching transcript identity)
 

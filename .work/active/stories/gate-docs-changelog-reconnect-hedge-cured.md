@@ -1,7 +1,7 @@
 ---
 id: gate-docs-changelog-reconnect-hedge-cured
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,6 @@ Commit `c1969a45` shipped the auth-read hedge and atomic loser-close fix in this
 
 ## Required edit
 Remove this cured issue from `[Unreleased]` and record it under the `v0.8.0` `Fixed` section. Do not leave a live known-issue claim or a future-looking fix-scope note.
+
+## Implementation
+- Moved the cured reconnect-hedge claim from `[Unreleased]` to the `v0.8.0` `Fixed` section in `CHANGELOG.md`.

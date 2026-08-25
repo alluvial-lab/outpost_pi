@@ -11,13 +11,12 @@ For the canonical protocol specification, see [PROTOCOL.md](PROTOCOL.md).
 
 ## [Unreleased]
 
-### Known issues
-- **Reconnect hedge gaps** (found in v0.7.0 UAT field capture): the 3s
-  fallback does not cover handshake-complete/auth-stalled attempts
-  (~30s recovery), and a late fallback auth can supersede the adopted
-  channel relay-side (rapid 1–2s reconnect flashes). Working-state
-  convergence and data invariants unaffected. Fix scoped:
-  `story-fix-app-reconnect-hedge-auth-boundary-and-post-adoption-cancel`.
+## [v0.8.0] — 2026-08-25
+
+### Fixed
+- **Reconnect hedge auth stalls** — the app now covers handshake-complete,
+  auth-stalled attempts and closes/awaits superseded attempts before adopting a
+  replacement channel, so a late fallback auth cannot replace the active one.
 
 ## [v0.7.0] — 2026-08-24
 
@@ -976,6 +975,7 @@ chat-state recovery, onboarding, mirror cache, rooms, agent network, agent
 tools, setup wizard, and the site MVP. Design history for these early plans
 remains available through git history.
 
-[Unreleased]: https://github.com/alluvial-lab/outpost_pi/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/alluvial-lab/outpost_pi/compare/v0.8.0...HEAD
+[v0.8.0]: https://github.com/alluvial-lab/outpost_pi/releases/tag/v0.8.0
 [v0.7.0]: https://github.com/alluvial-lab/outpost_pi/releases/tag/v0.7.0
 [v0.1.0]: https://github.com/alluvial-lab/outpost_pi/releases/tag/v0.1.0

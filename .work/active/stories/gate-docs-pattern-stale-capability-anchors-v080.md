@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-stale-capability-anchors-v080
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,6 @@ The durable transcript-entry capability and reconciliation changes shifted the c
 
 ## Required edit
 Refresh all stale-capability anchors and snippets to the current `sendPiMessage`, `wakeAgent`, `forgetActionApi`/wrapped action, and `_safeUi` implementations. Retain identity-checked eviction for the new transcript-entry capability where applicable.
+
+## Implementation
+- Refreshed stale-capability anchors and retained transcript-entry identity-checked eviction in `.agents/skills/patterns/stale-capability-eviction.md`.

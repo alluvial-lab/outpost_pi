@@ -9,7 +9,7 @@ A frame-count limit alone permits a few huge messages to retain excessive memory
 ## Examples
 
 ### Example 1: App WebSocket inbound FIFO uses dual admission limits
-**File**: `app/lib/data/transport/ws_transport.dart:572-584`
+**File**: `app/lib/data/transport/ws_transport.dart:678-692`
 ```dart
 bool add(Uint8List msg) {
   if (_closed) return false;

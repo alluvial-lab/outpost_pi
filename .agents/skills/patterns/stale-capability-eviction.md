@@ -23,7 +23,7 @@ Do not turn every SDK error into a stale-capability result. Provider, validation
 
 ### Message rendering handles synchronous and asynchronous stale failures
 
-**File:** `pi-extension/src/session/sdk_session_projection.ts:760-775`
+**File:** `pi-extension/src/session/sdk_session_projection.ts:670-684`
 
 ```ts
 const api = this.messageApi;
@@ -46,7 +46,7 @@ try {
 
 ### Agent wake classifies stale delivery as recoverable
 
-**File:** `pi-extension/src/session/sdk_session_projection.ts:777-795`
+**File:** `pi-extension/src/session/sdk_session_projection.ts:687-713`
 
 ```ts
 try {
@@ -63,11 +63,12 @@ The caller can queue a recoverable handoff until a fresh session binding arrives
 
 ### Wrapped action APIs evict the stale action capability before rethrowing
 
-**File:** `pi-extension/src/session/sdk_session_projection.ts:1057-1083`
+**File:** `pi-extension/src/session/sdk_session_projection.ts:1000-1034`
 
 ```ts
 private forgetActionApi(api: FreshActionApi): void {
   if (api === this.actionApi) this.actionApi = null;
+  if (api === this.transcriptEntryApi) this.clearTranscriptPersistence();
   if (api === this.messageApi) {
     this.messageApi = null;
     this.opts.outputs.onStaleMessageApi?.(api as AgentMessageApi);
@@ -89,7 +90,7 @@ The same wrapper applies the rule to `setThinkingLevel`, preserving the action c
 
 ### Guarded context access removes only stale candidate slots
 
-**File:** `pi-extension/src/index.ts:530`
+**File:** `pi-extension/src/index.ts:540-551`
 
 ```ts
 try {

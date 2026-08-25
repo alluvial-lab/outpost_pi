@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-asymmetric-threshold-anchor-v080
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,6 @@ The cited range now begins at the `connectTo` call after the probe. The five-pro
 
 ## Required edit
 Refresh the live-runner example anchor and quoted snippet to `live_infra_smoke_test.dart:218-228`.
+
+## Implementation
+- Refreshed the live-runner stabilization anchor in `.agents/skills/patterns/asymmetric-threshold-stabilization.md`.

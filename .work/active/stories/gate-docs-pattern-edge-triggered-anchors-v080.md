@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-edge-triggered-anchors-v080
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -30,3 +30,6 @@ The v0.8 room snapshot/hedge additions moved the working edge check to `connecti
 
 ## Required edit
 Refresh both anchors and snippets to the current room-working equality check and extension `publishTurnProjection` implementation. Preserve the edge-triggered rule, but point readers at code that currently implements it.
+
+## Implementation
+- Updated room and extension edge-trigger anchors and snippets in `.agents/skills/patterns/edge-triggered-convergence.md`.

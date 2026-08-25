@@ -31,7 +31,6 @@ TIMELINE_TAGS = {
 }
 SWALLOW_ID = "cli_01a01fd3-a3a7-760a-9c9e-ecf9676240fd"
 SWALLOW_TRACKING_ID = "story-app-send-swallowed-session-identity-unavailable"
-BLANK_CHAT_TRACKING_ID = "backlog-app-blank-chat-direct-open"
 FIXTURE = (
     Path(__file__).resolve().parent
     / "fixtures"
@@ -385,8 +384,7 @@ def summarize(
     lines.append("Blank-chat signature:")
     if blank_chat:
         lines.append(
-            f"  BLANK CHAT signature: {len(blank_chat)} projection-empty route(s) "
-            f"[{BLANK_CHAT_TRACKING_ID}]"
+            f"  BLANK CHAT signature: {len(blank_chat)} projection-empty route(s)"
         )
     else:
         lines.append("  BLANK CHAT signature: none")
@@ -468,7 +466,7 @@ def timeline(
                 fields.append(f"{key}={_safe(row[key])}")
         marker = " [SWALLOW]" if row.get("id") in swallow_ids else ""
         if id(row) in blank_chat_rows:
-            marker += f" [BLANK CHAT: {BLANK_CHAT_TRACKING_ID}]"
+            marker += " [BLANK CHAT]"
         lines.append(f"{_fmt_ts(row)} {tag}{marker}" + (" " + " ".join(fields) if fields else ""))
     chaos = _chaos_oracle_violations(capture.rows, oracle_rows)
     chaos_count = sum(len(violations) for violations in chaos.values())

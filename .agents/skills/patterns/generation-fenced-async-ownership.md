@@ -71,13 +71,13 @@ Future<void> _initializeRun(int generation) async {
 
 ### Sync activation fences each durable hydration phase
 
-**File:** `app/lib/data/sync/sync_service.dart:338-385`
+**File:** `app/lib/data/sync/sync_service.dart:363-413`
 
 ```dart
 if (nextRef != null) {
   await _loadIndex(nextRef, generation);
   if (!_isCurrentLifecycle(generation, nextRef)) return;
-  await _materializeTranscriptProjectionForRef(nextRef, generation);
+  await _rebuildTranscriptProjectionForRef(nextRef, generation);
   if (!_isCurrentLifecycle(generation, nextRef)) return;
   await _bindIdentityPendingSends(nextRef, generation);
   if (!_isCurrentLifecycle(generation, nextRef)) return;

@@ -1,7 +1,7 @@
 ---
 id: gate-docs-triage-archived-blank-chat-id
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -30,3 +30,6 @@ readme-staleness
 
 ## Required edit
 Remove the archived tracking id from current triage output. Keep the generic blank-chat signature, or point it only at a current active item when one exists; never emit a groomed/archived id as live ownership.
+
+## Implementation
+- Removed the archived blank-chat tracking id from summary and timeline output in `scripts/debug_capture_triage.py`.

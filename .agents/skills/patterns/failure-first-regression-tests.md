@@ -46,7 +46,7 @@ The test observes the in-flight boundary before releasing it, proving that a sec
 
 ### Example 2: Close the authoritative turn, then inject its late duplicate
 
-**File:** `app/test/data/sync/sync_service_test.dart:1448-1485`
+**File:** `app/test/data/sync/sync_service_test.dart:1745-1775`
 
 ```dart
 s.ch.push(UserInput(id: 'turn-one', text: 'first turn'));
@@ -82,7 +82,7 @@ The stale echo is injected only after the test establishes the authoritative idl
 
 ### Example 3: Preserve a send through the missing-session window
 
-**File:** `app/test/ui/chat/chat_viewmodel_test.dart:828-865`
+**File:** `app/test/ui/chat/chat_viewmodel_test.dart:833-875`
 
 ```dart
 await vm.sendMessage('typed in the reconnect identity window');

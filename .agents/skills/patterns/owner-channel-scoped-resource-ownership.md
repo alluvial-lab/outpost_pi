@@ -68,10 +68,14 @@ The owner id selects the logical channel while the concrete handle selects the c
 
 ### Example 3: Connection loss acts only on the active channel instance
 
-**File:** `app/lib/data/transport/connection_manager.dart:1584-1623`
+**File:** `app/lib/data/transport/connection_manager.dart:1872-1906`
 
 ```dart
-void _onChannelLost(PeerRecord peer, IChannel ch, {ReconnectCause cause = ReconnectCause.unknown}) {
+void _onChannelLost(
+  PeerRecord peer,
+  IChannel ch, {
+  ReconnectCause cause = ReconnectCause.unknown,
+}) {
   if (_status is! StatusOnline) return;
   final cur = (_status as StatusOnline).channel;
   if (!identical(cur, ch)) {
@@ -80,6 +84,7 @@ void _onChannelLost(PeerRecord peer, IChannel ch, {ReconnectCause cause = Reconn
   }
   _cancelPing();
   _reachability.onTransportClosed();
+  _raceNextConnect = cause != ReconnectCause.simulated;
   _scheduleRetry(peer);
 }
 ```

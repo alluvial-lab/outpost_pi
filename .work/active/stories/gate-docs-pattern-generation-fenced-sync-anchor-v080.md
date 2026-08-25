@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-generation-fenced-sync-anchor-v080
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,6 @@ The incremental transcript reducer and hydration-window changes shifted `_activa
 
 ## Required edit
 Refresh the sync activation anchor and snippet to the current `_activateForGeneration` and its post-await lifecycle checks. Keep the chat and mesh examples unchanged only if their cited ranges still match.
+
+## Implementation
+- Updated the sync activation anchor and method names to the current generation-fenced sequence in `.agents/skills/patterns/generation-fenced-async-ownership.md`.
