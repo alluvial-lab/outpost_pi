@@ -34,14 +34,8 @@ void main() {
   DebugLogImpl newLog({bool debug = true}) =>
       DebugLogImpl(debugEnabled: () => debug);
 
-  /// Dispose is fire-and-forget (Service.dispose returns void); wait for its
-  /// flush to land before reading the file. pumpEventQueue drains the timer +
-  /// the async file write.
-  Future<void> disposeAndDrain(DebugLogImpl log) async {
-    log.dispose();
-    await pumpEventQueue(times: 10);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-  }
+  /// Close through the logger's awaited composition boundary.
+  Future<void> disposeAndDrain(DebugLogImpl log) => log.close();
 
   test('log is a no-op when debugEnabled returns false', () async {
     final log = newLog(debug: false);
@@ -372,12 +366,58 @@ void main() {
       log.log(
         ReplayDedupEvent(ts: DateTime.now(), sessionId: 's1', dropped: true),
       );
-      disposeDependencies();
-      await pumpEventQueue(times: 10);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await disposeDependencies();
 
       final onDisk = await File(path).readAsString();
       expect(onDisk, contains('replayDedup'));
+    },
+  );
+
+  test(
+    'close waits for snapshot commit and rejects trailing admissions',
+    () async {
+      final path = '${tempDir.path}/outpost_pi_debug.jsonl';
+      final log = newLog();
+      final writeStarted = Completer<void>();
+      final releaseWrite = Completer<void>();
+      log.beforeSnapshotWriteForTesting = () {
+        writeStarted.complete();
+        return releaseWrite.future;
+      };
+      log.log(
+        ReplayDedupEvent(
+          ts: DateTime.now(),
+          sessionId: 'before-close',
+          dropped: true,
+        ),
+      );
+
+      var closeSettled = false;
+      final closing = log.close().whenComplete(() => closeSettled = true);
+      await writeStarted.future;
+      log.log(
+        ReplayDedupEvent(
+          ts: DateTime.now(),
+          sessionId: 'after-close',
+          dropped: true,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(closeSettled, isFalse);
+
+      releaseWrite.complete();
+      await closing;
+
+      final onDisk = await File(path).readAsString();
+      expect(onDisk, contains('before-close'));
+      expect(onDisk, isNot(contains('after-close')));
+      expect(log.pendingFlush, isNull);
+      expect(
+        await Directory(
+          tempDir.path,
+        ).list().where((entry) => entry.path.contains('.tmp.')).isEmpty,
+        isTrue,
+      );
     },
   );
 
