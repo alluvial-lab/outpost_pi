@@ -1,7 +1,7 @@
 ---
 id: epic-durable-transcript-ownership
 kind: epic
-stage: review
+stage: done
 tags: [pi-extension, app, bug]
 parent: null
 depends_on: []
@@ -133,13 +133,38 @@ carefully, per the epic's own note).
 ## Drain record (2026-08-25)
 
 All 4 features implemented in dependency order in one session:
-- F1 durable-event-log (aa6b52bb, ad030bc8, 40732a78) — codec/log/binding/reopen
+- F1 durable-event-log (design 0b5092a0; impl aa6b52bb, ad030bc8, 40732a78) — codec/log/binding/reopen
 - F2 timestamp-ownership (c144511b, d836116e, 5b87996f) — zero authoritative
   phone-clock paths remain
-- F3 durable-native-events (5b94ddae, bc67b3f7, 28dd4a6f) — tool/mesh/
+- F3 durable-native-events (design b320ab72; impl 5b94ddae, bc67b3f7, 28dd4a6f; completion 2468d43e) — tool/mesh/
   compaction/steering durable; sweep enumeration absorbed
-- F4 retire-rederivation (60da50b1) — general path deleted; bounded
+- F4 retire-rederivation (design c060c9ec; impl 60da50b1; completion b68cbb34) — general path deleted; bounded
   mixed-era fallback retained; two-source contract at
   transcript_projection.ts:244
 Extension suite 1079-1082 green throughout; app 944; protocol regenerated
 (error.ts). Epic advances to review.
+
+
+## Review record (2026-08-25)
+
+**Thorough weight** — independent fresh-context pass, then a confirmation
+pass, then a final surgical fix. Closed done.
+
+- **Blockers (3 found → fixed → confirmed):** fork rehoming defeated by
+  global event-id index (session-scoped identity, 0b998e74; + the
+  confirmation pass caught the last-user recomputation leak it introduced,
+  5e5c6687); era-blind FIFO claim matching (nearest-fact binding, 0b998e74);
+  errors as third transcript authority (durable error events + history
+  replay + shared app mapper, 7112464f).
+- **Important (3):** stale _messageBuffer reference docs (7112464f);
+  __proto__ clone hazard (0b998e74); non-atomic mesh pairs (0b998e74).
+- **Nits (2):** drain-record inventory completed above; F2 evidence
+  planned-vs-executed marked (7112464f).
+- **Rejected (4):** delete-all-fallback, Rust/Cockpit regen, global append
+  mutex, soak obsolescence — all upheld.
+- Confirmation pass verified all five closures with file:line evidence
+  and targeted suites (282-283 ext / 122 app / 7 codegen).
+- Final state: 1088 extension tests, 946 app tests, protocol regenerated,
+  946/1088 suites green. The divergence class the epic named (2026-08-03)
+  is closed: zero authoritative phone-clock paths, session_history =
+  exactly what rendered live (incl. errors), single transcript authority.
