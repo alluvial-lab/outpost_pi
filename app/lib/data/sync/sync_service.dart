@@ -44,6 +44,23 @@ abstract interface class PendingSendTimer {
 typedef PendingSendTimerFactory =
     PendingSendTimer Function(Duration delay, void Function() callback);
 
+final class _HistoryHydrationWindow {
+  _HistoryHydrationWindow({
+    required this.ref,
+    required this.generation,
+    required this.projectionEpoch,
+    required this.liveTurnObservationEpoch,
+  });
+
+  final RemoteSessionRef ref;
+  final int generation;
+  final int projectionEpoch;
+  final int liveTurnObservationEpoch;
+  int pendingAdmissions = 0;
+  bool failed = false;
+  TranscriptProjection? finalProjection;
+}
+
 final class _SystemPendingSendTimer implements PendingSendTimer {
   _SystemPendingSendTimer(Duration delay, void Function() callback)
     : _timer = Timer(delay, callback);
@@ -122,7 +139,9 @@ class SyncService extends Service {
   bool _disposed = false;
   int _lifecycleGeneration = 0;
   int _turnProjectionEpoch = 0;
+  int _liveTurnObservationEpoch = 0;
   RemoteSessionRef? _persistenceDegradedRef;
+  _HistoryHydrationWindow? _historyHydrationWindow;
 
   // Streaming — in-memory only (#7).
   final StringBuffer _chunkBuffer = StringBuffer();
@@ -375,6 +394,7 @@ class SyncService extends Service {
     _extensionSendsDeterministicAgentMessage = false;
     _indexLoaded = false;
     _resetTranscriptReducer();
+    _historyHydrationWindow = null;
 
     if (nextRef != null) {
       await _loadIndex(nextRef, generation);
@@ -1831,8 +1851,9 @@ class SyncService extends Service {
   Future<TranscriptProjectionReducer?> _loadTranscriptReducerInWriteChain(
     RemoteSessionRef ref,
     int generation,
-    int projectionEpoch,
-  ) async {
+    int projectionEpoch, {
+    bool publishProjection = true,
+  }) async {
     if (!_isCurrentLifecycle(generation, ref)) return null;
     final log = await _eventStore.readSession(_transcriptKeyForRef(ref));
     if (!_isCurrentLifecycle(generation, ref)) return null;
@@ -1845,7 +1866,9 @@ class SyncService extends Service {
       projection: projection,
       firstChangedMessageIndex: 0,
     );
-    _publishTranscriptUpdate(rebuild, generation, ref, projectionEpoch);
+    if (publishProjection) {
+      _publishTranscriptUpdate(rebuild, generation, ref, projectionEpoch);
+    }
     _logDebug(
       RouteEvent(
         ts: DateTime.now(),
@@ -1879,7 +1902,22 @@ class SyncService extends Service {
     int projectionEpoch, {
     bool preserveTurnState = false,
   }) {
-    final projection = update.projection;
+    _publishTranscriptProjection(
+      update.projection,
+      generation,
+      ref,
+      projectionEpoch,
+      preserveTurnState: preserveTurnState,
+    );
+  }
+
+  void _publishTranscriptProjection(
+    TranscriptProjection projection,
+    int generation,
+    RemoteSessionRef ref,
+    int projectionEpoch, {
+    bool preserveTurnState = false,
+  }) {
     _setTranscriptSteering(projection.steering);
     if (!preserveTurnState &&
         _canPublishTurnProjection(generation, ref, projectionEpoch)) {
@@ -2069,75 +2107,133 @@ class SyncService extends Service {
       history: history,
       sessionId: key.sessionId,
     );
+    final hydration = _admitHistoryHydration(ref, generation, projectionEpoch);
 
     await _enqueue(() async {
-      if (!_isCurrentLifecycle(generation, ref) ||
-          !_sameTranscriptKey(key, ref)) {
-        return;
-      }
-      if (history.sessionId != key.sessionId) return;
-      // Re-check inside the serialized write boundary: two replay batches can
-      // race in from reconnect/status streams, and a stale boundary must be
-      // rejected before any store append observes it.
-      if (_isStaleHistory(history.sessionStartedAt)) return;
+      try {
+        if (!_isCurrentLifecycle(generation, ref) ||
+            !_sameTranscriptKey(key, ref)) {
+          return;
+        }
+        if (history.sessionId != key.sessionId) return;
+        // Re-check inside the serialized write boundary: two replay batches can
+        // race in from reconnect/status streams, and a stale boundary must be
+        // rejected before any store append observes it.
+        if (_isStaleHistory(history.sessionStartedAt)) return;
 
-      var reducer = _ownedTranscriptReducer(ref, generation);
-      if (reducer == null) {
-        reducer = await _loadTranscriptReducerInWriteChain(
-          ref,
-          generation,
-          projectionEpoch,
-        );
-        if (reducer == null) return;
-      }
-      final result = await _eventStore.appendAll(key, replayEvents);
-      if (!_isCurrentLifecycle(generation, ref)) return;
-      final acceptedEventIds = <String>{
-        for (final entry in result.accepted) entry.event.eventId,
-      };
-      for (final event in replayEvents) {
-        final dropped = !acceptedEventIds.remove(event.eventId);
-        _logDebug(
-          ReplayDedupEvent(
-            ts: DateTime.now(),
-            sessionId: key.sessionId,
-            eventIdTail: _eventIdTail(event.eventId),
-            dropped: dropped,
-          ),
-        );
-      }
+        var reducer = _ownedTranscriptReducer(ref, generation);
+        if (reducer == null) {
+          reducer = await _loadTranscriptReducerInWriteChain(
+            ref,
+            generation,
+            projectionEpoch,
+            publishProjection: false,
+          );
+          if (reducer == null) return;
+          hydration.finalProjection = reducer.projection;
+        }
+        final result = await _eventStore.appendAll(key, replayEvents);
+        if (!_isCurrentLifecycle(generation, ref)) return;
+        final acceptedEventIds = <String>{
+          for (final entry in result.accepted) entry.event.eventId,
+        };
+        for (final event in replayEvents) {
+          final dropped = !acceptedEventIds.remove(event.eventId);
+          _logDebug(
+            ReplayDedupEvent(
+              ts: DateTime.now(),
+              sessionId: key.sessionId,
+              eventIdTail: _eventIdTail(event.eventId),
+              dropped: dropped,
+            ),
+          );
+        }
 
-      if (result.appended == 0) {
-        // The event log is truth and the message box is disposable. An
-        // all-duplicate replay is the explicit recovery path for a missing or
-        // corrupt projection, so rebuild from the unchanged canonical log.
-        reducer = await _loadTranscriptReducerInWriteChain(
+        if (result.appended == 0) {
+          // The event log is truth and the message box is disposable. An
+          // all-duplicate replay is the explicit recovery path for a missing or
+          // corrupt projection, so rebuild from the unchanged canonical log.
+          reducer = await _loadTranscriptReducerInWriteChain(
+            ref,
+            generation,
+            projectionEpoch,
+            publishProjection: false,
+          );
+          if (reducer == null) return;
+          hydration.finalProjection = reducer.projection;
+        } else {
+          final update = reducer.applyAll(
+            result.accepted.map((entry) => entry.event),
+          );
+          hydration.finalProjection = update.projection;
+          await _applyTranscriptProjectionUpdateInWriteChain(
+            ref,
+            update,
+            generation,
+          );
+        }
+        if (!_isCurrentLifecycle(generation, ref)) return;
+        await _acceptHistoryBoundaryInWriteChain(
           ref,
-          generation,
-          projectionEpoch,
-        );
-        if (reducer == null) return;
-      } else {
-        final update = reducer.applyAll(
-          result.accepted.map((entry) => entry.event),
-        );
-        _publishTranscriptUpdate(update, generation, ref, projectionEpoch);
-        await _applyTranscriptProjectionUpdateInWriteChain(
-          ref,
-          update,
+          history.sessionStartedAt,
           generation,
         );
-      }
-      if (!_isCurrentLifecycle(generation, ref)) return;
-      await _acceptHistoryBoundaryInWriteChain(
-        ref,
-        history.sessionStartedAt,
-        generation,
-      );
-      if (_isCurrentLifecycle(generation, ref)) {
-        _markPersistenceRecovered(ref);
+        if (_isCurrentLifecycle(generation, ref)) {
+          _markPersistenceRecovered(ref);
+        }
+      } catch (_) {
+        hydration.failed = true;
+        if (_ownedTranscriptReducer(ref, generation) != null) {
+          _resetTranscriptReducer();
+        }
+        rethrow;
+      } finally {
+        _finishHistoryHydration(hydration);
       }
     });
+  }
+
+  _HistoryHydrationWindow _admitHistoryHydration(
+    RemoteSessionRef ref,
+    int generation,
+    int projectionEpoch,
+  ) {
+    var hydration = _historyHydrationWindow;
+    if (hydration == null ||
+        hydration.ref != ref ||
+        hydration.generation != generation ||
+        hydration.projectionEpoch != projectionEpoch) {
+      hydration = _HistoryHydrationWindow(
+        ref: ref,
+        generation: generation,
+        projectionEpoch: projectionEpoch,
+        liveTurnObservationEpoch: _liveTurnObservationEpoch,
+      );
+      _historyHydrationWindow = hydration;
+    }
+    hydration.pendingAdmissions += 1;
+    return hydration;
+  }
+
+  void _finishHistoryHydration(_HistoryHydrationWindow hydration) {
+    hydration.pendingAdmissions -= 1;
+    if (hydration.pendingAdmissions > 0 ||
+        !identical(_historyHydrationWindow, hydration)) {
+      return;
+    }
+    _historyHydrationWindow = null;
+    final projection = hydration.finalProjection;
+    if (hydration.failed ||
+        projection == null ||
+        hydration.liveTurnObservationEpoch != _liveTurnObservationEpoch) {
+      return;
+    }
+    _publishTranscriptProjection(
+      projection,
+      hydration.generation,
+      hydration.ref,
+      hydration.projectionEpoch,
+    );
   }
 
   bool _isStaleHistory(int sessionStartedAt) =>
@@ -2284,6 +2380,7 @@ class SyncService extends Service {
     String? turnId,
     String? replyTo,
   }) {
+    _liveTurnObservationEpoch += 1;
     final target = replyTo ?? _turnView.replyTo ?? turnId;
     _correctRoomWorking(true, turnId: target);
     _setTurnView(
