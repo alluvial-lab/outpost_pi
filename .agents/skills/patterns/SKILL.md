@@ -13,6 +13,10 @@ This skill contains detailed pattern documentation for this project.
 See individual pattern files for full details with code examples.
 
 Available patterns:
+- [durable-first-visibility-gating.md](durable-first-visibility-gating.md) — Append canonical transcript facts before publishing replayable live visibility, and gate on recorded or duplicate authority.
+- [session-scoped-derived-identity.md](session-scoped-derived-identity.md) — Include canonical session identity in transcript reads, writes, dedupe indexes, and derived reply links.
+- [era-aware-authority-fallback-binding.md](era-aware-authority-fallback-binding.md) — Prefer durable facts, then bind only unmatched legacy facts by stable collision keys for mixed-era compatibility.
+- [canonical-projection-equivalence-oracle.md](canonical-projection-equivalence-oracle.md) — Compare optimized or migrated projections with an independent canonical oracle over prefixes, duplicates, and reopen cases.
 - [content-free-diagnostic-categories.md](content-free-diagnostic-categories.md) — Project boundary failures to closed reason codes and bounded metadata before logging; never persist raw payloads or arbitrary error text.
 - [frame-byte-bounded-admission.md](frame-byte-bounded-admission.md) — Check count and retained-byte budgets before enqueueing burst-controlled work, then release both counters on every exit path.
 - [identity-scoped-monotonic-high-watermarks.md](identity-scoped-monotonic-high-watermarks.md) — Advance security watermarks only under their matching owner/key generation and never permit stale or lower values to win.
