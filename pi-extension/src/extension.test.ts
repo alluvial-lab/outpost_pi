@@ -1487,27 +1487,22 @@ describe("multi-channel broadcast (W2D)", () => {
     await _pairForTest(peer);
     const sessionId = currentSessionIdFromSends();
     const onCompact = captureEventHandler("session_compact");
-    const compactionTs = 1_700_000_003_000;
+    const compactionTs = Date.parse("2026-07-18T00:00:00Z");
 
     relayRef.current!.emit("message", JSON.stringify({ type: "peer_offline", peer, since_ts: 1 }));
     await new Promise<void>((resolve) => setImmediate(resolve));
     const sendsBeforeCompaction = relayRef.current!.send.mock.calls.length;
-    const now = vi.spyOn(Date, "now").mockReturnValue(compactionTs);
-    try {
-      onCompact({
-        type: "session_compact",
-        compactionEntry: {
-          type: "compaction",
-          summary: "buffered compact",
-          tokensBefore: 321,
-          firstKeptEntryId: "entry-buffered",
-          timestamp: "2026-07-18T00:00:00Z",
-        },
-        fromExtension: false,
-      });
-    } finally {
-      now.mockRestore();
-    }
+    onCompact({
+      type: "session_compact",
+      compactionEntry: {
+        type: "compaction",
+        summary: "buffered compact",
+        tokensBefore: 321,
+        firstKeptEntryId: "entry-buffered",
+        timestamp: "2026-07-18T00:00:00Z",
+      },
+      fromExtension: false,
+    });
     expect(sentToPeerSince(sendsBeforeCompaction, peer)).toEqual([]);
 
     relayRef.current!.emit("message", JSON.stringify({ type: "peer_online", peer }));
@@ -3103,8 +3098,21 @@ describe("multi-channel broadcast (W2D)", () => {
       .map((c) => c[0] as string).map(decodeSentCt);
     const compaction = sent.find((d) => d.inner.type === "compaction");
     expect(compaction?.inner).toMatchObject({
-      type: "compaction", summary: "compacted 10 turns", tokens_before: 12345,
+      type: "compaction",
+      summary: "compacted 10 turns",
+      tokens_before: 12345,
+      ts: Date.parse("2026-05-31T00:00:00Z"),
     });
+    const durableCompaction = durableTranscriptEntries
+      .map((entry) => entry.data as Record<string, unknown>)
+      .find((event) => event["kind"] === "compaction_recorded");
+    expect(durableCompaction).toMatchObject({
+      kind: "compaction_recorded",
+      summary: "compacted 10 turns",
+      tokensBefore: 12345,
+      ts: Date.parse("2026-05-31T00:00:00Z"),
+    });
+    expect(compaction?.inner["ts"]).toBe(durableCompaction?.["ts"]);
 
     // (3) working=false via room_meta_update and the reducer-owned projection.
     const ctrls = relayRef.current!.sendControl.mock.calls.slice(ctrlBefore)
@@ -3118,6 +3126,36 @@ describe("multi-channel broadcast (W2D)", () => {
     expect(events.some((event) =>
       event.kind === "compaction_recorded" && event.summary === "compacted 10 turns" && event.tokensBefore === 12345,
     )).toBe(true);
+  });
+
+  test("compaction persistence failure suppresses the marker but still converges working false", async () => {
+    await _pairForTest("owner-compaction-failure");
+    const onBeforeCompact = captureEventHandler("session_before_compact");
+    const onCompact = captureEventHandler("session_compact");
+    _setPiForTest({
+      sendMessage: vi.fn(),
+      sendUserMessage: vi.fn(),
+      appendEntry: () => { throw new Error("disk unavailable"); },
+    });
+    onBeforeCompact({ type: "session_before_compact" });
+    expect(_getTurnProjectionForTest().working).toBe(true);
+    const sendsBefore = relayRef.current!.send.mock.calls.length;
+
+    onCompact({
+      type: "session_compact",
+      compactionEntry: {
+        type: "compaction",
+        summary: "cannot persist",
+        tokensBefore: 99,
+        timestamp: "2026-05-31T00:00:01Z",
+      },
+      fromExtension: false,
+    });
+    await flushSecureOutbound();
+
+    expect(sentToPeerSince(sendsBefore, "owner-compaction-failure")
+      .some((frame) => frame.inner.type === "compaction")).toBe(false);
+    expectTurnProjectionConvergedIdle();
   });
 
   test("provider error (assistant stopReason:error) → forwards `error` to owners (was silent)", async () => {

@@ -388,6 +388,40 @@ describe("transcript session_history projection", () => {
     ]);
   });
 
+  test("reopens one durable compaction over its matching raw SDK fallback", () => {
+    const ts = Date.parse("2026-08-25T00:00:00.000Z");
+    const durable: TranscriptEvent = {
+      kind: "compaction_recorded",
+      eventId: deterministicTranscriptEventId(sessionId, "compaction_recorded", String(ts)),
+      sessionId,
+      ts,
+      summary: "same compacted interval",
+      tokensBefore: 1200,
+    };
+    const reopened = mapSdkContextEntriesToTranscriptEvents({
+      sessionId,
+      entries: [
+        {
+          type: "compaction",
+          summary: "same compacted interval",
+          tokensBefore: 1200,
+          timestamp: "2026-08-25T00:00:00.000Z",
+        },
+        durableEntry(durable),
+      ],
+    });
+
+    expect(reopened).toEqual([durable]);
+    expect(projectSessionHistory({ sessionId, events: reopened, limit: 10 }).events).toEqual([
+      {
+        ts,
+        type: "compaction",
+        summary: "same compacted interval",
+        tokens_before: 1200,
+      },
+    ]);
+  });
+
   test("tool result stringification is shared by live and replay paths", () => {
     expect(stringifyToolResult({ content: [{ type: "text", text: "ping failed" }], details: {} }))
       .toBe("ping failed");
