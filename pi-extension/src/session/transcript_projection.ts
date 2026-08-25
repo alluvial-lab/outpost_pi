@@ -62,6 +62,7 @@ export function transcriptEventsToSessionHistory(
   const seenToolFinishes = new Set<string>();
   const seenAssistantMessages = new Set<string>();
   const seenCompactions = new Set<string>();
+  const seenErrors = new Set<string>();
   const finishedToolIds = new Set(events
     .filter((event): event is Extract<TranscriptEvent, { kind: "tool_finished" }> =>
       event.kind === "tool_finished")
@@ -137,10 +138,21 @@ export function transcriptEventsToSessionHistory(
         });
         break;
       }
+      case "provider_error": {
+        if (seenErrors.has(event.eventId)) break;
+        seenErrors.add(event.eventId);
+        out.push({
+          ts: event.ts,
+          type: "error",
+          ...(event.replyTo ? { in_reply_to: event.replyTo } : {}),
+          code: event.code,
+          message: event.message,
+        });
+        break;
+      }
       case "user_failed":
       case "assistant_delta":
       case "assistant_done":
-      case "provider_error":
         break;
     }
   }

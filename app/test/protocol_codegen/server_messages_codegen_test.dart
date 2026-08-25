@@ -134,6 +134,7 @@ void main() {
         'tool_result': generated.ToolResultEvt,
         'agent_message': generated.AgentMessageEvt,
         'compaction': generated.CompactionEvt,
+        'error': generated.ErrorEvt,
       };
 
       expect(cases.keys.toSet(), generated.generatedSessionHistoryEventTypes);
@@ -260,6 +261,15 @@ Map<String, dynamic> _historyPayloadOfType(String type) {
       'type': 'compaction',
       'summary': 'Dropped stale tool logs.',
       'tokens_before': 12000,
+    };
+  }
+  if (type == 'error') {
+    return {
+      'ts': 1716234611000,
+      'type': 'error',
+      'in_reply_to': 'turn-1',
+      'code': 'provider_error',
+      'message': 'Provider failed.',
     };
   }
   throw StateError('No session_history fixture payload for type $type');

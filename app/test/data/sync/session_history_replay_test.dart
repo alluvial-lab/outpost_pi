@@ -161,6 +161,36 @@ void main() {
       expect(compaction.tokensBefore, 12345);
     });
 
+    test('replays durable provider and internal errors as diagnostics', () {
+      final events = sessionHistoryToTranscriptEvents(
+        history: history(
+          inReplyTo: 'sync-errors',
+          events: const [
+            ErrorEvt(
+              ts: ts,
+              inReplyTo: 'turn-1',
+              code: 'provider_error',
+              message: 'provider failed',
+            ),
+            ErrorEvt(
+              ts: ts + 1,
+              inReplyTo: 'cancel-1',
+              code: 'internal_error',
+              message: 'abort failed',
+            ),
+          ],
+        ),
+        sessionId: sessionId,
+      );
+
+      expect(events.map((event) => (event as AssistantMessageCommitted).text), [
+        '⚠ provider_error: provider failed',
+        '⚠ internal_error: abort failed',
+      ]);
+      expect(events.map((event) => event.eventId).toSet(), hasLength(2));
+      expect(events.first.ts, DateTime.fromMillisecondsSinceEpoch(ts));
+    });
+
     test('ignores request id when deriving deterministic replay ids', () {
       const replayEvents = [
         UserInputEvt(ts: ts, id: 'client-1', text: 'hello'),

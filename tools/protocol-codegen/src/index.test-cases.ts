@@ -208,7 +208,7 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
   assert.match(output, /export type PairErrorCode = "token_expired" \| "token_consumed" \| "token_unknown" \| "bad_dh_sig" \| "internal_error";/);
   assert.match(output, /export type KnownErrorCode = "tool_approval_required"[\s\S]*"session_mismatch" \| "delivery_pending";/);
   assert.match(output, /export type ErrorCode = KnownErrorCode \| \(string & \{\}\);/);
-  assert.match(output, /export type SessionHistoryEvent =\n  \| HistoryUserInput\n  \| HistoryToolRequest\n  \| HistoryToolResult\n  \| HistoryAgentMessage\n  \| HistoryCompaction;/);
+  assert.match(output, /export type SessionHistoryEvent =\n  \| HistoryUserInput\n  \| HistoryToolRequest\n  \| HistoryToolResult\n  \| HistoryAgentMessage\n  \| HistoryCompaction\n  \| HistoryError;/);
 
   assert.match(output, /export interface PairOk \{[\s\S]*readonly session_id\?: string;[\s\S]*readonly room_id: string;[\s\S]*\}/);
   assert.match(output, /readonly images\?: Array<WireImage>;/);
@@ -355,7 +355,7 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     "capture_upload_ack",
     "capture_upload_error",
   ]);
-  assert.deepEqual(generated.SESSION_HISTORY_EVENT_TYPES, ["user_input", "tool_request", "tool_result", "agent_message", "compaction"]);
+  assert.deepEqual(generated.SESSION_HISTORY_EVENT_TYPES, ["user_input", "tool_request", "tool_result", "agent_message", "compaction", "error"]);
 
   const image = { data: "base64", mime: "image/jpeg" };
   const usage = { input_tokens: 1, output_tokens: 2 };
@@ -386,6 +386,7 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     { ts: 3, type: "tool_result", tool_call_id: "tool-1", result: ["ok"] },
     { ts: 4, type: "agent_message", in_reply_to: "h1", text: "done", usage },
     { ts: 5, type: "compaction", summary: "short", tokens_before: 100 },
+    { ts: 6, type: "error", in_reply_to: "h1", code: "provider_error", message: "provider failed" },
   ];
   for (const event of historyEvents) assert.equal(generated.isSessionHistoryEvent?.(event), true, JSON.stringify(event));
 

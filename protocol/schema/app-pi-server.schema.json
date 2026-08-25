@@ -321,7 +321,8 @@
         { "$ref": "#/$defs/historyToolRequest" },
         { "$ref": "#/$defs/historyToolResult" },
         { "$ref": "#/$defs/historyAgentMessage" },
-        { "$ref": "#/$defs/historyCompaction" }
+        { "$ref": "#/$defs/historyCompaction" },
+        { "$ref": "#/$defs/historyError" }
       ]
     },
     "historyUserInput": {
@@ -383,6 +384,18 @@
         "tokens_before": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
+    },
+    "historyError": {
+      "type": "object",
+      "required": ["ts", "type", "code", "message"],
+      "properties": {
+        "ts": { "type": "integer", "minimum": 0 },
+        "type": { "const": "error" },
+        "in_reply_to": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
+        "code": { "$ref": "./defs/app-pi-common.schema.json#/$defs/errorCode" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
     }
   },
   "x-outpost-pi": {
@@ -412,6 +425,6 @@
       "capture_upload_ack",
       "capture_upload_error"
     ],
-    "sessionHistoryEventTypeNames": ["user_input", "tool_request", "tool_result", "agent_message", "compaction"]
+    "sessionHistoryEventTypeNames": ["user_input", "tool_request", "tool_result", "agent_message", "compaction", "error"]
   }
 }

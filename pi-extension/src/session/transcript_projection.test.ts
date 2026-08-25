@@ -114,6 +114,52 @@ describe("transcript session_history projection", () => {
     expect(projection.events[0]).toMatchObject({ type: "user_input", id: "u1", text: "hello" });
   });
 
+  test("replays provider/internal errors and reconstructs their live history after reopen", () => {
+    const errors: TranscriptEvent[] = [
+      {
+        kind: "provider_error",
+        eventId: deterministicTranscriptEventId(sessionId, "provider_error", "turn-1"),
+        sessionId,
+        ts: 20,
+        replyTo: "turn-1",
+        code: "provider_error",
+        message: "provider failed",
+      },
+      {
+        kind: "provider_error",
+        eventId: deterministicTranscriptEventId(sessionId, "provider_error", "cancel-1"),
+        sessionId,
+        ts: 21,
+        replyTo: "cancel-1",
+        code: "internal_error",
+        message: "abort failed",
+      },
+    ];
+    const live = projectSessionHistory({ sessionId, events: errors, limit: 10 });
+    const reopened = reconcileTranscriptContextEntries({
+      sessionId,
+      entries: errors.map((event) => durableEntry(event)),
+    });
+
+    expect(live.events).toEqual([
+      {
+        ts: 20,
+        type: "error",
+        in_reply_to: "turn-1",
+        code: "provider_error",
+        message: "provider failed",
+      },
+      {
+        ts: 21,
+        type: "error",
+        in_reply_to: "cancel-1",
+        code: "internal_error",
+        message: "abort failed",
+      },
+    ]);
+    expect(projectSessionHistory({ sessionId, events: reopened, limit: 10 })).toEqual(live);
+  });
+
   test("pre-durable SDK messages remain a mixed-era history fallback", () => {
     const transcriptEvents = reconcileTranscriptContextEntries({
       sessionId,

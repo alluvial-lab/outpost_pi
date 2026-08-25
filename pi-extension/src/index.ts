@@ -623,13 +623,7 @@ function _forgetStaleMessageApi(api: AgentMessageApi): void {
 }
 
 function _sessionUnavailable(sender: PlainPeerChannel, inReplyTo: string, detail = "Pi session is replacing or not bound yet"): void {
-  sender.send(_withCurrentSession({
-    type: "error",
-    code: "internal_error",
-    in_reply_to: inReplyTo,
-    message: detail,
-    ts: Date.now(),
-  }));
+  _sendRenderableTranscriptError(sender, "internal_error", detail, inReplyTo);
 }
 
 function _sendPiMessage(
@@ -778,6 +772,48 @@ function _recordDurableTranscriptEvent(event: TranscriptEvent): TranscriptRecord
 
 function _isAuthoritativeTranscriptRecord(result: TranscriptRecordResult): boolean {
   return result.status === "recorded" || result.status === "duplicate";
+}
+
+/** Persist one renderable diagnostic before sending its live projection.
+ *
+ * A missing durable writer falls back to a ts-less compatibility frame so an
+ * older/mid-replacement session still renders live without claiming durable
+ * replay authority.
+ */
+function _sendRenderableTranscriptError(
+  sender: PlainPeerChannel | null,
+  code: "provider_error" | "internal_error",
+  message: string,
+  inReplyTo?: string,
+): void {
+  const sessionId = _currentRemoteSessionId();
+  const producedAt = Date.now();
+  const eventId = deterministicTranscriptEventId(
+    sessionId,
+    "provider_error",
+    inReplyTo ?? String(producedAt),
+  );
+  const recorded = _recordDurableTranscriptEvent({
+    kind: "provider_error",
+    eventId,
+    sessionId,
+    ts: producedAt,
+    ...(inReplyTo ? { replyTo: inReplyTo } : {}),
+    code,
+    message,
+  });
+  const authoritative = _isAuthoritativeTranscriptRecord(recorded);
+  const error = _withCurrentSession({
+    type: "error" as const,
+    ...(inReplyTo ? { in_reply_to: inReplyTo } : {}),
+    code,
+    message,
+    ...(authoritative
+      ? { ts: _sdkSessionProjection.recordedTranscriptTs(eventId) ?? producedAt }
+      : {}),
+  });
+  if (sender) sender.send(error);
+  else _owners.broadcast(error);
 }
 
 function _compactionTimestamp(value: unknown, fallback: number): number {
@@ -1485,25 +1521,8 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
         ? m.errorMessage
         : "Provider error";
       const replyTo = _activeReplyTarget();
-      const sessionId = _currentRemoteSessionId();
-      const producedAt = Date.now();
-      const eventId = deterministicTranscriptEventId(sessionId, "provider_error", replyTo ?? String(producedAt));
-      const recorded = _recordDurableTranscriptEvent({
-        kind: "provider_error",
-        eventId,
-        sessionId,
-        ts: producedAt,
-        ...(replyTo ? { replyTo } : {}),
-        code: "provider_error",
-        message,
-      });
       _applyTurnAndPublish({ type: "provider_error", turnId: replyTo });
-      if (!_isAuthoritativeTranscriptRecord(recorded) || _owners.activeCount() === 0) return;
-      const ts = _sdkSessionProjection.recordedTranscriptTs(eventId) ?? producedAt;
-      const errMsg: ServerMessage = _withCurrentSession(replyTo
-        ? { type: "error", in_reply_to: replyTo, code: "provider_error", message, ts }
-        : { type: "error", code: "provider_error", message, ts });
-      _owners.broadcast(errMsg);
+      _sendRenderableTranscriptError(null, "provider_error", message, replyTo ?? undefined);
     }
   });
 
@@ -2397,15 +2416,12 @@ export function _setPendingDeliveryAbsoluteDeadlineForTest(ms: number): () => vo
 }
 
 function _sendDeliveryError(sender: PlainPeerChannel | null, inReplyTo: string, detail: string): void {
-  const error: ServerMessage = _withCurrentSession({
-    type: "error",
-    code: "internal_error",
-    in_reply_to: inReplyTo,
-    message: `Agent rejected incoming message: ${detail}`,
-    ts: Date.now(),
-  });
-  if (sender) sender.send(error);
-  else _owners.broadcast(error);
+  _sendRenderableTranscriptError(
+    sender,
+    "internal_error",
+    `Agent rejected incoming message: ${detail}`,
+    inReplyTo,
+  );
 }
 
 function _sendDeliveryPending(sender: PlainPeerChannel | null, inReplyTo: string): void {
@@ -3077,25 +3093,23 @@ export function _routeClientMessageFrom(
     try {
       const aborted = _abortCurrentTurn(ctx);
       if (!aborted) {
-        sender.send(_withCurrentSession({
-          type: "error",
-          code: "internal_error",
-          in_reply_to: msg.id,
-          message: "No active Pi context to abort",
-          ts: Date.now(),
-        }));
+        _sendRenderableTranscriptError(
+          sender,
+          "internal_error",
+          "No active Pi context to abort",
+          msg.id,
+        );
         return;
       }
       _applyTurnAndPublish({ type: "cancelled", turnId: msg.target_id });
       sender.send(_withCurrentSession({ type: "cancelled", in_reply_to: msg.id, target_id: msg.target_id }));
     } catch (err) {
-      sender.send(_withCurrentSession({
-        type: "error",
-        code: "internal_error",
-        in_reply_to: msg.id,
-        message: `Abort failed: ${String(err)}`,
-        ts: Date.now(),
-      }));
+      _sendRenderableTranscriptError(
+        sender,
+        "internal_error",
+        `Abort failed: ${String(err)}`,
+        msg.id,
+      );
     }
     return;
   }
@@ -3222,7 +3236,25 @@ export function _routeClientMessageFrom(
       break;
     }
     case "list_models":
-      handleListModels(_sdkSessionProjection.freshActionCtx(), ensureModelRegistry(), sender, msg);
+      handleListModels(
+        _sdkSessionProjection.freshActionCtx(),
+        ensureModelRegistry(),
+        {
+          send: (reply) => {
+            if (reply.type === "error" && reply.code === "internal_error") {
+              _sendRenderableTranscriptError(
+                sender,
+                "internal_error",
+                reply.message,
+                reply.in_reply_to,
+              );
+              return;
+            }
+            sender.send(reply);
+          },
+        },
+        msg,
+      );
       break;
     case "capture_upload_begin":
     case "capture_upload_chunk":

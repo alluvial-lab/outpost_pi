@@ -1372,6 +1372,36 @@
               "required": false
             }
           ]
+        },
+        {
+          "type": "error",
+          "className": "ErrorEvt",
+          "fields": [
+            {
+              "name": "ts",
+              "wireName": "ts",
+              "dartType": "int",
+              "required": true
+            },
+            {
+              "name": "inReplyTo",
+              "wireName": "in_reply_to",
+              "dartType": "String",
+              "required": false
+            },
+            {
+              "name": "code",
+              "wireName": "code",
+              "dartType": "String",
+              "required": true
+            },
+            {
+              "name": "message",
+              "wireName": "message",
+              "dartType": "String",
+              "required": true
+            }
+          ]
         }
       ]
     }
