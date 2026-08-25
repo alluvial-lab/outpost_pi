@@ -276,42 +276,39 @@ void main() {
     },
   );
 
-  test(
-    'server busy is surfaced before any chunk is sent',
-    () async {
-      final busy = _UploadChannel(
-        onSend: (channel, message) {
-          if (message is CaptureUploadBegin) {
-            channel.respondError(message, 'busy');
-          } else {
-            channel.respondSuccess(message);
-          }
-        },
-      );
-      final online = await _online(withChannel: busy);
-      addTearDown(() async {
-        await online.connection.disconnect();
-        online.connection.dispose();
-      });
-      final uploader = DebugCaptureUploaderImpl(
-        _FakeDebugLog('{"tag":"capture"}'),
-        online.connection,
-      );
+  test('server busy is surfaced before any chunk is sent', () async {
+    final busy = _UploadChannel(
+      onSend: (channel, message) {
+        if (message is CaptureUploadBegin) {
+          channel.respondError(message, 'busy');
+        } else {
+          channel.respondSuccess(message);
+        }
+      },
+    );
+    final online = await _online(withChannel: busy);
+    addTearDown(() async {
+      await online.connection.disconnect();
+      online.connection.dispose();
+    });
+    final uploader = DebugCaptureUploaderImpl(
+      _FakeDebugLog('{"tag":"capture"}'),
+      online.connection,
+    );
 
-      await expectLater(
-        uploader.uploadLatest(),
-        throwsA(
-          isA<DebugCaptureUploadFailure>().having(
-            (failure) => failure.code,
-            'code',
-            'busy',
-          ),
+    await expectLater(
+      uploader.uploadLatest(),
+      throwsA(
+        isA<DebugCaptureUploadFailure>().having(
+          (failure) => failure.code,
+          'code',
+          'busy',
         ),
-      );
-      expect(busy.sent, hasLength(1));
-      expect(busy.sent.single, isA<CaptureUploadBegin>());
-    },
-  );
+      ),
+    );
+    expect(busy.sent, hasLength(1));
+    expect(busy.sent.single, isA<CaptureUploadBegin>());
+  });
 
   test(
     'checksum rejection preserves the server code and never delivers',
