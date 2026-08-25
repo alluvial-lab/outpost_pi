@@ -949,6 +949,186 @@ void main() {
   );
 
   test(
+    'live done during hydration terminalizes once without a stale settle',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      final appendStarted = Completer<void>();
+      final appendGate = Completer<void>();
+      store
+        ..appendStarted = appendStarted
+        ..appendGate = appendGate;
+      final streamingEmissions = <StreamingMessage?>[];
+      final workingEmissions = <bool>[];
+      final sub = s.sync.streamingStream.listen(streamingEmissions.add);
+      final workingSub = s.sync.workingStream.listen(workingEmissions.add);
+
+      final hydration = s.sync.debugApplyHistory(
+        SessionHistory(
+          sessionId: s.sessionId,
+          inReplyTo: 'hydrate-before-done',
+          sessionStartedAt: 1,
+          events: const [
+            UserInputEvt(ts: 1, id: 'done-u1', text: 'hydrated prompt'),
+          ],
+          eos: true,
+        ),
+      );
+      await appendStarted.future;
+      s.ch.pushRaw(
+        AgentChunk(
+          sessionId: s.sessionId,
+          inReplyTo: 'live-done',
+          delta: 'live partial',
+        ),
+      );
+      s.ch.pushRaw(
+        AgentDone(sessionId: s.sessionId, inReplyTo: 'live-done', ts: 10),
+      );
+      await _settle();
+      appendGate.complete();
+      await hydration;
+      await _settle();
+
+      expect(
+        streamingEmissions.whereType<StreamingMessage>(),
+        isEmpty,
+        reason: 'the terminal frame suppresses queued live streaming work',
+      );
+      expect(workingEmissions, [true, false]);
+      expect(s.sync.streaming, isNull);
+      expect(s.sync.isWorking, isFalse);
+
+      await workingSub.cancel();
+      await sub.cancel();
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test(
+    'live error during hydration wins without stale working publication',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      final appendStarted = Completer<void>();
+      final appendGate = Completer<void>();
+      store
+        ..appendStarted = appendStarted
+        ..appendGate = appendGate;
+      final streamingEmissions = <StreamingMessage?>[];
+      final workingEmissions = <bool>[];
+      final sub = s.sync.streamingStream.listen(streamingEmissions.add);
+      final workingSub = s.sync.workingStream.listen(workingEmissions.add);
+
+      final hydration = s.sync.debugApplyHistory(
+        SessionHistory(
+          sessionId: s.sessionId,
+          inReplyTo: 'hydrate-before-error',
+          sessionStartedAt: 1,
+          events: const [
+            UserInputEvt(ts: 1, id: 'error-u1', text: 'hydrated prompt'),
+          ],
+          eos: true,
+        ),
+      );
+      await appendStarted.future;
+      s.ch.pushRaw(
+        AgentChunk(
+          sessionId: s.sessionId,
+          inReplyTo: 'live-error',
+          delta: 'live partial',
+        ),
+      );
+      s.ch.pushRaw(
+        ErrorMessage(
+          sessionId: s.sessionId,
+          inReplyTo: 'live-error',
+          code: 'provider_error',
+          message: 'terminal live error',
+          ts: 11,
+        ),
+      );
+      await _settle();
+      appendGate.complete();
+      await hydration;
+      await _settle();
+
+      expect(
+        streamingEmissions.whereType<StreamingMessage>(),
+        isEmpty,
+        reason: 'the terminal error suppresses queued live streaming work',
+      );
+      expect(workingEmissions, [true, false]);
+      expect(s.sync.streaming, isNull);
+      expect(s.sync.isWorking, isFalse);
+      expect(s.sync.turnProjection.status, AppTurnStatus.idle);
+
+      await workingSub.cancel();
+      await sub.cancel();
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
+  test('failed or disposed hydration never publishes a stale projection', () async {
+    final failedStore = _MemoryTranscriptStore()..failNextAppend = true;
+    final failed = await setup(transcriptEventStore: failedStore);
+    final failedEmissions = <StreamingMessage?>[];
+    final failedSub = failed.sync.streamingStream.listen(failedEmissions.add);
+    final history = SessionHistory(
+      sessionId: failed.sessionId,
+      inReplyTo: 'hydrate-failure',
+      sessionStartedAt: 1,
+      events: const [
+        UserInputEvt(ts: 1, id: 'failed-hydration', text: 'must not publish'),
+      ],
+      eos: true,
+    );
+
+    await expectLater(failed.sync.debugApplyHistory(history), throwsStateError);
+    await _settle();
+    expect(failedEmissions, isEmpty);
+    expect(messages(failed.epk), isEmpty);
+    await failedSub.cancel();
+    failed.conn.dispose();
+    failed.sync.dispose();
+
+    final disposedStore = _MemoryTranscriptStore();
+    final disposed = await setup(transcriptEventStore: disposedStore);
+    final appendStarted = Completer<void>();
+    final appendGate = Completer<void>();
+    disposedStore
+      ..appendStarted = appendStarted
+      ..appendGate = appendGate;
+    final disposedEmissions = <StreamingMessage?>[];
+    final disposedSub = disposed.sync.streamingStream.listen(
+      disposedEmissions.add,
+    );
+    final pending = disposed.sync.debugApplyHistory(
+      SessionHistory(
+        sessionId: disposed.sessionId,
+        inReplyTo: 'hydrate-dispose',
+        sessionStartedAt: 1,
+        events: const [
+          UserInputEvt(ts: 1, id: 'disposed-hydration', text: 'must not publish'),
+        ],
+        eos: true,
+      ),
+    );
+    await appendStarted.future;
+    disposed.sync.dispose();
+    appendGate.complete();
+    await pending;
+    await _settle();
+
+    expect(disposedEmissions, isEmpty);
+    expect(messages(disposed.epk), isEmpty);
+    await disposedSub.cancel();
+    disposed.conn.dispose();
+  });
+
+  test(
     'user_message echo writes one MessageRecord + updates the index',
     () async {
       final s = await setup();
