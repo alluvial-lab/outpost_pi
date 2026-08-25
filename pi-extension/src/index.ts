@@ -785,6 +785,12 @@ function _isAuthoritativeTranscriptRecord(result: TranscriptRecordResult): boole
   return result.status === "recorded" || result.status === "duplicate";
 }
 
+function _compactionTimestamp(value: unknown, fallback: number): number {
+  if (typeof value !== "string") return fallback;
+  const parsed = Date.parse(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 function _rememberDeliveredUserEvent(
   text: string,
   images: readonly { data: string; mime: string }[] | undefined,
@@ -1596,15 +1602,19 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     _applyTurnAndPublish({ type: "compaction_start", turnId: `compact_${randomUUID()}` });
   });
   ownerPi.on("session_compact", (event) => {
-    const entry = event?.compactionEntry as { summary?: unknown; tokensBefore?: unknown } | undefined;
+    const entry = event?.compactionEntry as {
+      summary?: unknown;
+      tokensBefore?: unknown;
+      timestamp?: unknown;
+    } | undefined;
     const summary = typeof entry?.summary === "string" ? entry.summary : "";
     const tokensBefore = typeof entry?.tokensBefore === "number" ? entry.tokensBefore : 0;
-    const ts = Date.now();
-    // (2) Persist in history: the CompactionEntry never reaches message_end
-    // (only user/assistant/toolResult), so append a transcript event that the
-    // session_history projection turns into a `compaction` event.
+    const ts = _compactionTimestamp(entry?.timestamp, Date.now());
+    // (2) The CompactionEntry never reaches message_end. Its SDK timestamp is
+    // also the mixed-era raw-entry identity, so the durable fact can suppress
+    // that fallback exactly after reopen.
     const sessionId = _currentRemoteSessionId();
-    _appendTranscriptEvent({
+    const recorded = _recordDurableTranscriptEvent({
       kind: "compaction_recorded",
       eventId: deterministicTranscriptEventId(sessionId, "compaction_recorded", String(ts)),
       sessionId,
@@ -1612,9 +1622,11 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
       summary,
       tokensBefore,
     });
-    // (1) Live result to every connected owner.
-    _owners.broadcast(_withCurrentSession({ type: "compaction", summary, tokens_before: tokensBefore, ts }));
-    // (3) Working ends.
+    // (1) A transcript marker becomes live only after durable authority exists.
+    if (_isAuthoritativeTranscriptRecord(recorded)) {
+      _owners.broadcast(_withCurrentSession({ type: "compaction", summary, tokens_before: tokensBefore, ts }));
+    }
+    // (3) Working ends independently of transcript persistence.
     _applyTurnAndPublish({ type: "compaction_done" });
     _applyTurnAndPublish({ type: "turn_end" });
     _publishWorking(false);
