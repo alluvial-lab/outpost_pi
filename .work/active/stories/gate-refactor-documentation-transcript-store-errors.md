@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-transcript-store-errors
 kind: story
-stage: implementing
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
@@ -33,3 +33,6 @@ Sync callers cannot distinguish recoverable persistence degradation from a contr
 
 ## Fix
 Add dartdoc to the interface describing append validation, storage failure propagation, and corrupt-read behavior; let the Hive override inherit or refine that contract.
+
+## Implementation
+- Documented session validation, propagated storage failures, and corrupt-read exceptions on `TranscriptEventStore` in `app/lib/domain/contracts/transcript_event_store.dart`.

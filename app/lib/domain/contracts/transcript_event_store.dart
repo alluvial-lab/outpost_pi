@@ -46,17 +46,35 @@ final class AppendTranscriptEventsResult {
 /// ordered snapshot suitable for rebuilding a projection.
 abstract interface class TranscriptEventStore {
   /// Append [events] for [key], reporting appended and duplicate entries.
+  ///
+  /// Implementations validate that every event belongs to [key]'s canonical
+  /// session before writing. Storage failures propagate to the caller rather
+  /// than being converted into an apparently successful empty result.
+  ///
+  /// Throws [StateError] when an event targets another session, and propagates
+  /// adapter/storage failures.
   Future<AppendTranscriptEventsResult> appendAll(
     TranscriptSessionKey key,
     Iterable<TranscriptEvent> events,
   );
 
   /// Clear [key] as one reset boundary for append sequence ownership.
+  ///
+  /// Underlying storage failures propagate to the caller.
   Future<void> clearSession(TranscriptSessionKey key);
 
   /// Read the current ordered event snapshot for [key].
+  ///
+  /// A corrupt or unsupported stored record is a durable-state failure, not an
+  /// absent session: implementations surface [FormatException] for malformed
+  /// records and [StateError] for records stored under the wrong session.
+  /// Underlying storage failures also propagate.
   Future<List<TranscriptEvent>> readSession(TranscriptSessionKey key);
 
   /// Watch complete ordered snapshots for [key] after each persisted change.
+  ///
+  /// The initial read and later snapshots retain the same validation and
+  /// failure contract; decode or storage failures are surfaced as stream
+  /// errors rather than silently omitted.
   Stream<List<TranscriptEvent>> watchSession(TranscriptSessionKey key);
 }
