@@ -62,7 +62,7 @@ internal_error: Agent rejected incoming message: This extension ctx is stale aft
 ## Implementation notes
 
 - Files changed: `/home/agent/forks/remote_pi/pi-extension/src/index.ts`.
-- Patch branch: `fix/stale-context-reconnect` pushed to `KevounC/remote_pi` at `f4a3743`.
+- Patch branch: `fix/stale-context-reconnect` pushed to `KevounC/remote_pi` at `faa2c89`.
 - Implemented stale-safe helpers for `ctx.ui` access, notifications, cwd fallback, and late
   `pi.sendMessage()` calls; cleared captured contexts during `session_shutdown`; routed reconnect
   and known-peer message handling through the freshest `session_start` context where possible.
@@ -75,7 +75,7 @@ internal_error: Agent rejected incoming message: This extension ctx is stale aft
 - Manual smoke: after a live session resume, remote-pi reported `Mesh name: SNC` and `Relay connected`
   without the previous app-facing `internal_error`.
 - Post-review private-carry follow-up: mobile messages were accepted and persisted but did not render
-  visibly in the workstation Pi TUI. Fixed on the same private branch at `83d1fa5` by sending idle
+  visibly in the workstation Pi TUI. Fixed on the same private branch at `f24a12f` by sending idle
   app-originated messages as normal `sendUserMessage(content)` calls and reserving `deliverAs: "steer"`
   for active/working turns; verification passed again.
 - Discrepancies from design: source-fix was implemented directly after investigation instead of a
@@ -97,7 +97,7 @@ internal_error: Agent rejected incoming message: This extension ctx is stale aft
 **Important**: none
 **Nits**: Consider adding an exact stale-`ctx.ui` regression test before an upstream PR; acceptable to carry privately with the current full-suite pass and live smoke.
 
-**Notes**: Substrate story review plus targeted standard code review of `/home/agent/forks/remote_pi` branch `fix/stale-context-reconnect`, commit `f4a3743`, file `pi-extension/src/index.ts`. Checked stale UI resolution (`_safeUi`/`_currentUi`/`_refreshFooter`), notify/send wrappers (`_notify`, `_sendPiMessage`, `_wakeAgent`, mesh message delivery), `session_shutdown` context clearing and reused-instance `session_start` rearm, reconnect routing through `_lastEventCtx`, and cancel behavior in `_abortCurrentTurn`. Ordinary abort errors still surface; stale-context aborts are skipped. Verification record is green: `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build` (572 passed, 3 skipped), with positive live reload/resume smoke. Parent remains active because sibling stories are still drafting.
+**Notes**: Substrate story review plus targeted standard code review of `/home/agent/forks/remote_pi` branch `fix/stale-context-reconnect`, commit `faa2c89`, file `pi-extension/src/index.ts`. Checked stale UI resolution (`_safeUi`/`_currentUi`/`_refreshFooter`), notify/send wrappers (`_notify`, `_sendPiMessage`, `_wakeAgent`, mesh message delivery), `session_shutdown` context clearing and reused-instance `session_start` rearm, reconnect routing through `_lastEventCtx`, and cancel behavior in `_abortCurrentTurn`. Ordinary abort errors still surface; stale-context aborts are skipped. Verification record is green: `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build` (572 passed, 3 skipped), with positive live reload/resume smoke. Parent remains active because sibling stories are still drafting.
 
 ## Post-review follow-up review (2026-06-27)
 
@@ -107,4 +107,4 @@ internal_error: Agent rejected incoming message: This extension ctx is stale aft
 **Important**: none
 **Nits**: none
 
-**Notes**: Reviewed private branch follow-up commit `83d1fa5` plus root note commit `f514f3a5`. The idle path now calls `sendUserMessage(content)` without a delivery mode, matching Pi's documented non-streaming behavior that normal user messages are sent immediately and rendered like typed prompts. Active/busy paths still pass `{ deliverAs: "steer" }` when the app explicitly requests steering or `room_meta.working` indicates an active turn, preserving stale-context active steering behavior. The echo contract remains unchanged except that idle echoes omit `streaming_behavior`, while steered echoes retain it. Verification record is green (`corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`, 572 passed/3 skipped) and live smoke confirmed `Mobile test` rendered in the workstation Pi TUI after reload.
+**Notes**: Reviewed private branch follow-up commit `f24a12f` plus root note commit `f514f3a5`. The idle path now calls `sendUserMessage(content)` without a delivery mode, matching Pi's documented non-streaming behavior that normal user messages are sent immediately and rendered like typed prompts. Active/busy paths still pass `{ deliverAs: "steer" }` when the app explicitly requests steering or `room_meta.working` indicates an active turn, preserving stale-context active steering behavior. The echo contract remains unchanged except that idle echoes omit `streaming_behavior`, while steered echoes retain it. Verification record is green (`corepack pnpm typecheck && corepack pnpm test && corepack pnpm build`, 572 passed/3 skipped) and live smoke confirmed `Mobile test` rendered in the workstation Pi TUI after reload.

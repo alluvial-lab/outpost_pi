@@ -85,7 +85,7 @@ Restore `SyncService` direct `_upsert`/`_applyHistory` writes and leave the even
 
 Approved (2026-06-30) with HIGH-risk convergence verification. Independently
 re-ran: whole-app `flutter analyze` → only known `axisAlignment` info; full
-`flutter test` → 597/597 (incl. sync_service 56/56). Commit `657bf3c` scoped to
+`flutter test` → 597/597 (incl. sync_service 56/56). Commit `1983d75` scoped to
 app only (sync_service.dart refactor + message_record + boxes + sync_service_test
 + pubspec.lock transitive update + story .md); no cross-subproject collision.
 

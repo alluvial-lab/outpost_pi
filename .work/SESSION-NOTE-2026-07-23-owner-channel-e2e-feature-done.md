@@ -8,7 +8,7 @@ Transient handoff note. Per `.agents/rules/agent-discipline.md` this lives in
 Picked up the previous session's headline (`implement-orchestrator
 feature-owner-message-e2e-authentication`, "with thorough review") and ran it
 to completion: **the feature and all 5 child stories are `done`** (30 local
-commits on `main` since `b60d051`, nothing pushed). The app↔Pi owner channel
+commits on `main` since `f4f1111`, nothing pushed). The app↔Pi owner channel
 is now E2E-encrypted + authenticated end to end: signed ephemeral X25519 in
 the pair handshake, `token_id` + `pair_mac` (the raw pair token NEVER crosses
 the wire), HKDF directional keys, XChaCha20-Poly1305 sealed frames with
@@ -25,7 +25,7 @@ wire entry and `docs/release-uat.md`-adjacent deploy notes are already in place.
 
 ### Implementation (3 waves, 5 stories → done)
 
-1. **Schema wave** (Terra/high, `9a9a1e7`): `dh_pk`/`dh_sig` landed
+1. **Schema wave** (Terra/high, `ee277d8`): `dh_pk`/`dh_sig` landed
    schema-optional/behavior-required (orchestrator decision — keeps every
    consumer compiling at the wave boundary; handlers fail closed),
    `bad_dh_sig` error code, TS+Dart regen, deterministic KAT generator +
@@ -34,13 +34,13 @@ wire entry and `docs/release-uat.md`-adjacent deploy notes are already in place.
    design flaw — `seq` was AEAD AAD but never transmitted, so replay
    protection was unimplementable across dropped frames. Orchestrator
    corrected the design in place to `0x01 || seqLE64 || nonce24 || ct` and
-   regenerated the KAT (`d9b0d15`); both wave-2 workers implemented to it.
-3. **Crypto waves** (Sol/high ×2 parallel, `af502dc` ext + `08ff447` app):
+   regenerated the KAT (`cac93ae`); both wave-2 workers implemented to it.
+3. **Crypto waves** (Sol/high ×2 parallel, `d916c58` ext + `e7c1635` app):
    `secure_channel.ts` / `secure_channel.dart`, key+seq persistence
    (`peers.json` 0600 verified; FlutterSecureStorage), signed handshake in
    `owner_multiplexer` / `pair_request_flow` (generated DTO killed the
    handwritten pair_request map), `SecurePeerChannel` adapters.
-4. **E2E + docs wave** (`ab2fd46`, `58d32cd`): 5 new docker e2e cases
+4. **E2E + docs wave** (`55a73b0`, `a0e86c0`): 5 new docker e2e cases
    (13/13 green), PROTOCOL.md/AGENTS.md/SPEC.md rolled forward + 2
    orchestrator drift fixes (`pi-extension/CLAUDE.md`, `relay/CLAUDE.md`).
 
@@ -77,7 +77,7 @@ Headline fixes beyond the original design:
 ## Final state
 
 - `feature-owner-message-e2e-authentication` + 5 stories: **done**
-  (`647ac6d`). Feature body carries the full implementation + 9-pass review
+  (`f976708`). Feature body carries the full implementation + 9-pass review
   record.
 - Verification (orchestrator-run): extension tsc + 928 vitest + build; app
   analyze + 814 unit tests; protocol checks; docker e2e **14/14 + 20

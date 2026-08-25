@@ -142,6 +142,6 @@ it does not receive a second implementation patch.
 
 Closed as structurally subsumed by
 `feature-mobile-tui-parity-chat-resilience-status-projection`. Commit
-`27f8558` replaced the flattened priority status with independent typed
+`71a3937` replaced the flattened priority status with independent typed
 transport, existing turn, and steering projections; the transport × turn table
 and awaiting-tool cancellation regression are green.

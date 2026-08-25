@@ -125,4 +125,4 @@ Verification: `python3 -m json.tool` passed for `protocol/package.json`, `protoc
 **Important**: none
 **Nits**: none
 
-**Notes**: Fast-lane story review. Verified commit `6d90a31`, the changed schema/package files, parent feature design decisions, and JSON validity with `python3 -m json.tool` across `protocol/package.json`, `protocol/schema/*.json`, and `protocol/schema/defs/*.json`. Runtime consumers remain unchanged as designed.
+**Notes**: Fast-lane story review. Verified commit `45decc5`, the changed schema/package files, parent feature design decisions, and JSON validity with `python3 -m json.tool` across `protocol/package.json`, `protocol/schema/*.json`, and `protocol/schema/defs/*.json`. Runtime consumers remain unchanged as designed.

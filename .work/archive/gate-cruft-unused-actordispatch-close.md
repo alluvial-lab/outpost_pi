@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-unused-actordispatch-close
 status: superseded
-superseded_by: backlog-cruft-removal-batch (groom merge bd3b3a7, 2026-07-22)
+superseded_by: backlog-cruft-removal-batch (groom merge d4d514e, 2026-07-22)
 kind: story
 stage: drafting
 tags: [cleanup]

@@ -138,7 +138,7 @@ after the follow-on pi-extension dependency merges.
   `prefer_initializing_formals` cockpit lint on the rewritten `main`. The
   command value constructors were routed through one private initializing
   constructor, verified with cockpit analyze/tests, and committed as
-  `93a50627` before #3 was recreated again.
+  `4cd6a6af` before #3 was recreated again.
 - #3's unrelated app test failure was rerun once under the approved red-analysis
   rule; the rerun passed, and every exact-head check was green before merge.
 - #28 was initially classified as a safe patch, but fresh relevant CI proved it

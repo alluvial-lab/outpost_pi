@@ -83,8 +83,8 @@ first live confirmation of the predicted sequence.
 
 The Skills process (pid 1134073) started Jul 9 07:00 — *after* the `dist/`
 rebuild (Jul 8 15:24) — so it HAS the tolerance-layer code
-(`story-stale-ctx-recoverable-delivery-tolerance`, committed `eab7315` +
-`1c96a37`). The console line shows `recoverable wake failure (not delivered
+(`story-stale-ctx-recoverable-delivery-tolerance`, committed `cadf2ff` +
+`8a8c058`). The console line shows `recoverable wake failure (not delivered
 to this pi): agent session not bound yet` — which is the recoverable path
 that the tolerance layer was supposed to convert from silent-drop to
 `delivery_pending`. But the phone scarred `send_timeout` with no

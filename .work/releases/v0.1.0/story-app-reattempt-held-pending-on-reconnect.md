@@ -18,7 +18,7 @@ follow_up_of: story-app-half-open-socket-swallows-sends-arrives-late
 > ## STATUS: REVIVED — prerequisite met (2026-07-13)
 >
 > The blocker (Pi-side agent-invocation idempotency) was shipped in
-> `story-extension-user-message-ingress-idempotency` (commit `89b709b`).
+> `story-extension-user-message-ingress-idempotency` (commit `dca14b7`).
 > The Pi now dedupes `user_message` frames by `(session_id, msg.id)` via an
 > in-flight coordinator in `_attemptUserDelivery` — a re-sent message that
 > already landed is re-echoed without re-waking the agent. Re-sending is
@@ -43,7 +43,7 @@ follow_up_of: story-app-half-open-socket-swallows-sends-arrives-late
 ## Brief (original premise — still valid, but blocked on Pi-side idempotency)
 
 Direct follow-up to `story-app-half-open-socket-swallows-sends-arrives-late`
-(option 1, shipped `6d64556`). Option 1 gates `sendMessage` on room liveness:
+(option 1, shipped `8a0d43c`). Option 1 gates `sendMessage` on room liveness:
 when the room is offline, the message is held pending (optimistic row + armed
 timeout, NOT written to the channel). The option-1 comment said this "re-attempts
 on the next healthy connection" — but the re-attempt was never implemented.

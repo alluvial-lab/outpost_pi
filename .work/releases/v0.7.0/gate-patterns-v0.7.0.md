@@ -40,4 +40,4 @@ None.
 - `.agents/rules/patterns.md` (generated hook-loaded digest)
 
 ## Closure
-All 7 patterns landed with the gate commit (392e7faa); index + digest regenerated. No further work.
+All 7 patterns landed with the gate commit (83ab0794); index + digest regenerated. No further work.

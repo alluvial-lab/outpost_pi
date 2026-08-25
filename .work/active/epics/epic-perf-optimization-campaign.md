@@ -195,18 +195,18 @@ sample with the next `roomSnapshot` capture timestamp.
 ## Campaign close (2026-08-24)
 
 Standard review over the full arc; blockers (benchmark boundary +
-end-to-end method) closed in f4e382f5/a3ab4fba. Consolidated results
+end-to-end method) closed in d347143c/6a940e43. Consolidated results
 (discovery baseline → landed):
 
 | Work | Baseline | Result | End-to-end |
 |---|---|---|---|
 | Debug ring admission+flush | 809µs/event; 3.2s critical flushes | 7.99µs/event (102×); 339→1 writes | selector 47s→34s; flood phase 99ms |
 | Projection pipeline fold/incremental | 173ms / 1,336ms | 7.7ms / 31ms (22×/43×) | no soak-scale delta; flood/hydration scale |
-| Materialization-boundary pipeline (true) | — | 238.7ms @5,500 replay | (corrected boundary, f4e382f5) |
+| Materialization-boundary pipeline (true) | — | 238.7ms @5,500 replay | (corrected boundary, d347143c) |
 | Snapshot fan-out reads | 339 reads ≈7.04s p50/339 snaps | 0 reads; 29-41µs/snapshot | no 18-snapshot-scale delta; long-session scale |
 | Reconnect hedge (sibling fix) | ~30s stalls; supersede churn | 0.8-3.7s recoveries; zero supersede | soak-verified |
 
-Also landed: ring retention regression fix (34543ad0, atomic rename),
-warm-load chronology + tmp sweep (a3ab4fba), hedge fix c1969a45.
+Also landed: ring retention regression fix (068f2e29, atomic rename),
+warm-load chronology + tmp sweep (6a940e43), hedge fix b7a452f1.
 Baselines for the next round: connect→online p50 685ms; online→snapshot
 p50 16.4ms. Cleared by measurement: extension ingress, relay forward/auth.

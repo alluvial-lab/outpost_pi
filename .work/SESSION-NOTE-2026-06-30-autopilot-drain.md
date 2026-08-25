@@ -58,7 +58,7 @@ into the repo. Verified working toolchain on this fresh sandbox:
   look red; `cargo clippy --all-targets` rebuild clears it.)
 - **node codegen** (`tools/protocol-codegen`): works (node v24.18.0).
 
-**Durable docs updated** (commits `36accbf`, `2b904a9`/`4d393be`): the working
+**Durable docs updated** (commits `6c239f4`, `2b904a9`/`1c35d70`): the working
 incantations are recorded in `cockpit/CLAUDE.md`, `app/CLAUDE.md`,
 `pi-extension/CLAUDE.md`, and the `flutter-mobile`, `flutter-desktop-cockpit`,
 `pi-extension-typescript` `.agents/skills/*/SKILL.md` references.
@@ -70,13 +70,13 @@ to colliding pairs (relay `outer.rs`, app `sync_service_test.dart`).
 
 | Story | Implement commit | Outcome |
 |---|---|---|
-| dart-codegen step-2 | `cd283ba` | stale `protocol.g.dart` regenerated; regen diff empty |
-| identity-model step-4 | `41da53b` | missing-room fail-closed; relay `session_id` removed; opaque-ct test (NOTE: hand-edited generated `outer.rs` — legitimized by rust-codegen below) |
-| cockpit settings-split step-3 | `b2e3979` | 8 fake-gateway tests (load/save/check/disposal) |
-| pi-extension composition-root step-3 | `30ec471` | `createLegacyIndexPorts` wired into `index.ts` |
-| transcript-projection-derive step-3 | `7dc99eb` | 3 fixes (steer replyTo, tool args, buffer clear); 37→40 tests |
-| rust-codegen step-2 | `e4ec27e` | `emitRustOuter()` schema-derived; moved identity-model's hand-edit into generator; regen diff empty |
-| wire-discriminator step-3 | `98a88a6` | removed legacy no-room bypass; 4 regression tests; 40 tests |
+| dart-codegen step-2 | `7d818d4` | stale `protocol.g.dart` regenerated; regen diff empty |
+| identity-model step-4 | `69d26dc` | missing-room fail-closed; relay `session_id` removed; opaque-ct test (NOTE: hand-edited generated `outer.rs` — legitimized by rust-codegen below) |
+| cockpit settings-split step-3 | `d5daeaf` | 8 fake-gateway tests (load/save/check/disposal) |
+| pi-extension composition-root step-3 | `af212e9` | `createLegacyIndexPorts` wired into `index.ts` |
+| transcript-projection-derive step-3 | `c201f15` | 3 fixes (steer replyTo, tool args, buffer clear); 37→40 tests |
+| rust-codegen step-2 | `cc62dab` | `emitRustOuter()` schema-derived; moved identity-model's hand-edit into generator; regen diff empty |
+| wire-discriminator step-3 | `2195c2a` | removed legacy no-room bypass; 4 regression tests; 40 tests |
 
 ## Review pass — fresh-context `gpt-5.5` (cross-model advisory)
 
@@ -84,13 +84,13 @@ to colliding pairs (relay `outer.rs`, app `sync_service_test.dart`).
 
 | Story | Review commit | Verdict |
 |---|---|---|
-| dart-codegen step-2 | `88b3cda` | ✅ Approve → done |
-| identity-model step-4 | `5901c0c` | ✅ Approve → done (regen-diff empty confirms generated contract intact post-both-stories) |
-| cockpit settings-split step-3 | `facee68` | ✅ Approve → done |
-| pi-extension composition-root step-3 | `ef506df` | ✅ Approve → done |
-| rust-codegen step-2 | `26ed1b9` | ✅ Approve → done (generator truly schema-derived, not hardcoded+bolted) |
-| wire-discriminator step-3 | `2fbcd9f` | ✅ Approve → done |
-| transcript-projection-derive step-3 | `59f55d1` | ↩️ Request changes (2nd bounce) |
+| dart-codegen step-2 | `c7709b0` | ✅ Approve → done |
+| identity-model step-4 | `6c7747b` | ✅ Approve → done (regen-diff empty confirms generated contract intact post-both-stories) |
+| cockpit settings-split step-3 | `1425740` | ✅ Approve → done |
+| pi-extension composition-root step-3 | `91f4f94` | ✅ Approve → done |
+| rust-codegen step-2 | `b94554c` | ✅ Approve → done (generator truly schema-derived, not hardcoded+bolted) |
+| wire-discriminator step-3 | `523f9b5` | ✅ Approve → done |
+| transcript-projection-derive step-3 | `18e9d94` | ↩️ Request changes (2nd bounce) |
 
 ### The one outstanding bounce (transcript-projection-derive-step-3, 2nd)
 
@@ -100,13 +100,13 @@ the projection buffer — left `_working`/`_workingReplyTo`/`_streaming` stale.
 Working-state convergence violation (Remote Pi's highest-risk invariant) at the
 `session_new` wipe boundary.
 
-**Re-fixed inline** (commit `1d7965d`): `clearActiveSession()` now calls the
+**Re-fixed inline** (commit `c4ef734`): `clearActiveSession()` now calls the
 existing `_resetTurnState()` to converge working state false. Added regression
 test `clearActiveSession resets the in-memory turn state — working/streaming
 converge false on a mid-turn session wipe (plan/32)`. Verification: analyze
 clean (only known axisAlignment info); sync_service_test.dart All tests
 passed! (41 = 40 + new regression). Second review (subagent `957158c6`)
-returned **Approve** (`2e1d8bd`) — story now `done`.
+returned **Approve** (`96fc4c6`) — story now `done`.
 
 ## Resume instructions (full autopilot queue drain)
 

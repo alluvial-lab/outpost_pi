@@ -8,7 +8,7 @@ tags: [deps, pi-extension, relay, app]
 # Deferred dependency migrations (evidence recorded during the 2026-08-15 drain)
 
 Dependabot majors closed as incompatible during the post-flip drain, with the
-failing evidence + bounded ignore rules landed (commit 61cec4e). Each line
+failing evidence + bounded ignore rules landed (commit 27b4627). Each line
 needs a real code migration before the ignore rule comes off:
 
 1. **pi-coding-agent SDK 0.80.7–0.84.x** (pi-extension; PRs #77 #89 #96–#100) —

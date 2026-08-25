@@ -83,7 +83,7 @@ Restore direct `TranscriptMessage` mapping and `_entries` population. App/pi-ext
 
 Approved (2026-06-30). Independently re-ran: **cockpit tests 230 passed (up from 228
 — the agent's new transcript-projection tests)**; `flutter analyze` clean. Commit
-`0ddc86b` scoped to cockpit only (transcript_event + agent_session + rpc_data_mapper
+`63defea` scoped to cockpit only (transcript_event + agent_session + rpc_data_mapper
 + test); collision guard held.
 
 Hydration seam verified: `CockpitTranscriptEventLog` accepts both live RPC transcript

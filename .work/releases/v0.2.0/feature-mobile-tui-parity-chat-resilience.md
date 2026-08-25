@@ -556,8 +556,8 @@ advancing the feature from `stage: review`.
 
 Corrective commits:
 
-- `a125609` — material 1 reply-anchor recovery.
-- `b81eaf3` — materials 2–3 steering rejection/cancellation convergence.
+- `5f94426` — material 1 reply-anchor recovery.
+- `0e79a2e` — materials 2–3 steering rejection/cancellation convergence.
 
 Verification from `app/`:
 

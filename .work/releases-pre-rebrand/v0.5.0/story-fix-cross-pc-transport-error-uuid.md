@@ -42,4 +42,4 @@ Relay-synthesized cross-PC `transport_error` envelopes currently use a 32-charac
 **Important**: none
 **Nits**: none
 
-**Notes**: Fresh-context review of commit `69943ad`; correctness, tests, security/privacy, design alignment, UUID parser compatibility, and foundation-doc drift lenses checked. Verification evidence from implementation notes accepted; tests were not re-run.
+**Notes**: Fresh-context review of commit `24ad2b6`; correctness, tests, security/privacy, design alignment, UUID parser compatibility, and foundation-doc drift lenses checked. Verification evidence from implementation notes accepted; tests were not re-run.

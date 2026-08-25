@@ -63,11 +63,11 @@ control-only relay fanout; or `room_id` in the out-of-band `mesh_versions`
 member). Routing through `refactor-design` (it is the sender half of the
 already-`[refactor]`-tagged `relay-opaque-targeting` feature) before implementing.
 
-**This does not block extension-0.6.0:** commit `13701ee` already made the
+**This does not block extension-0.6.0:** commit `e2beaa6` already made the
 sender emit `to_room` (with a temporary `"main"` value), so wire-compatibility
 with relay-0.2.0 is satisfied — the field is present and the relay accepts it.
 The `"main"` default is pre-existing breakage (cross-PC delivery to a real room
-non-functional since `13701ee`), not a regression the 18 done items introduce.
+non-functional since `e2beaa6`), not a regression the 18 done items introduce.
 None of the 18 touch the `to_room` sender path.
 
 ### Excluded archived stubs (2)
@@ -106,7 +106,7 @@ Excluded deliberately; documented here so the gather is auditable.
   rest deferred to backlog (3 high pre-existing not bundle-introduced + 22
   medium/low). Disposition of the elevated highs:
   - `gate-refactor-protocol-pi-forward-crosspc-dtos` (high → **resolved**): the `to_room`
-    commit (`13701ee`, this bundle) hand-edited the `PiEnvelopeFrame`/`PiEnvelopeInFrame`
+    commit (`e2beaa6`, this bundle) hand-edited the `PiEnvelopeFrame`/`PiEnvelopeInFrame`
     mirror instead of consuming the generated `CrossPcFramePiEnvelope*` types.
     Replaced the handwritten interfaces with the generated types; typecheck +
     76 transport/broker tests green.
@@ -156,7 +156,7 @@ Excluded deliberately; documented here so the gather is auditable.
 ## Wire-change deployment note
 
 Carried from relay-0.2.0: the `to_room` field is now required on cross-PC
-`pi_envelope` frames. The extension-0.6.0 sender (per commit `13701ee`, already
+`pi_envelope` frames. The extension-0.6.0 sender (per commit `e2beaa6`, already
 in tree before this release) emits `to_room` with a temporary `"main"` value —
 so the wire shape is compatible with relay-0.2.0 (field present, relay accepts
 it). The remaining sender-side work — targeting the sibling's *actual* room
@@ -193,28 +193,28 @@ path>` recovers any body; under retain-bodies they also remain in
 
 | id | title | kind | git ref |
 |----|-------|------|---------|
-| epic-bold-split-pi-extension-index | pi-extension/src/index.ts is four modules pretending to be one file | epic | fc9541c |
-| epic-bold-generated-protocol-ts-codegen | Generated protocol — TypeScript codegen target | feature | 7ffe82c |
-| epic-bold-reachability-contract-pi-adapter | Reachability — pi-extension relay + mesh adapter | feature | a227eaa |
-| epic-bold-split-pi-extension-index-cli-daemon-pairing-module | Split pi-extension index — CLI / daemon / pairing module | feature | defbd09 |
-| epic-bold-split-pi-extension-index-composition-root | Split pi-extension index — composition root | feature | 1c03e76 |
-| epic-bold-split-pi-extension-index-owner-multiplexer-module | Split pi-extension index — owner multiplexer module | feature | 7394dd4 |
-| epic-bold-split-pi-extension-index-relay-transport-module | Split pi-extension index — relay transport module | feature | ebac18e |
-| epic-bold-split-pi-extension-index-sdk-session-projection-module | Split pi-extension index — SDK session projection module | feature | fc9541c |
-| epic-bold-turn-state-machine-algebraic-state | Turn — algebraic state set | feature | b4d8539 |
-| epic-bold-generated-protocol-cockpit-control-rpc-step-2 | Step 2: Parse schema control envelopes in pi-extension input path | story | 7a94ca1 |
-| epic-bold-reachability-contract-pi-adapter-step-1 | Step 1: Add pi-extension reachability contract projection module | story | 9ad3558 |
-| epic-bold-reachability-contract-pi-adapter-step-2 | Step 2: Consume shared backoff in extension relay reconnect | story | 11007b5 |
-| epic-bold-reachability-contract-pi-adapter-step-3 | Step 3: Consume shared backoff in MeshNode relay reconnect | story | 84402d8 |
-| epic-bold-reachability-contract-pi-adapter-step-4 | Step 4: Consume shared liveness timings in RelayClient | story | a227eaa |
-| epic-bold-reachability-contract-state-machine-step-2 | Step 2: Add the TypeScript Reachability projection module | story | 6f06bd0 |
-| epic-bold-transcript-event-log-hydration-replay-step-3 | Step 3: Make session_history replay-compatible | story | c0751a2 |
-| epic-bold-transcript-event-log-projection-derive-step-4 | Step 4: Make session history a projection from transcript events | story | 6df733d |
-| epic-bold-transcript-event-log-store-step-3 | Step 3: Replace _messageBuffer with TranscriptEventLog | story | 46af73f |
-| gate-cruft-unused-command-surface-legacy-deps | Remove unused command-surface legacy deps seam | story | 5f7d388 |
-| gate-refactor-protocol-pi-forward-crosspc-dtos | Pi forward client redeclares generated cross-PC frame DTOs | story | c390b55 |
-| gate-tests-session-start-model-thinking-actions | Add stale-context model/thinking tests for session_start replacements | story | c390b55 |
-| gate-patterns-extension-0.6.0 | Patterns extracted for extension-0.6.0 | story | c390b55 |
+| epic-bold-split-pi-extension-index | pi-extension/src/index.ts is four modules pretending to be one file | epic | 9b86fc0 |
+| epic-bold-generated-protocol-ts-codegen | Generated protocol — TypeScript codegen target | feature | f301784 |
+| epic-bold-reachability-contract-pi-adapter | Reachability — pi-extension relay + mesh adapter | feature | d4fb48f |
+| epic-bold-split-pi-extension-index-cli-daemon-pairing-module | Split pi-extension index — CLI / daemon / pairing module | feature | 0f24f80 |
+| epic-bold-split-pi-extension-index-composition-root | Split pi-extension index — composition root | feature | 0614849 |
+| epic-bold-split-pi-extension-index-owner-multiplexer-module | Split pi-extension index — owner multiplexer module | feature | 8961b73 |
+| epic-bold-split-pi-extension-index-relay-transport-module | Split pi-extension index — relay transport module | feature | 2c2785e |
+| epic-bold-split-pi-extension-index-sdk-session-projection-module | Split pi-extension index — SDK session projection module | feature | 9b86fc0 |
+| epic-bold-turn-state-machine-algebraic-state | Turn — algebraic state set | feature | 3f9ef91 |
+| epic-bold-generated-protocol-cockpit-control-rpc-step-2 | Step 2: Parse schema control envelopes in pi-extension input path | story | dfb49d8 |
+| epic-bold-reachability-contract-pi-adapter-step-1 | Step 1: Add pi-extension reachability contract projection module | story | 6d607b7 |
+| epic-bold-reachability-contract-pi-adapter-step-2 | Step 2: Consume shared backoff in extension relay reconnect | story | ae7c6f7 |
+| epic-bold-reachability-contract-pi-adapter-step-3 | Step 3: Consume shared backoff in MeshNode relay reconnect | story | ba838d5 |
+| epic-bold-reachability-contract-pi-adapter-step-4 | Step 4: Consume shared liveness timings in RelayClient | story | d4fb48f |
+| epic-bold-reachability-contract-state-machine-step-2 | Step 2: Add the TypeScript Reachability projection module | story | 5ba567a |
+| epic-bold-transcript-event-log-hydration-replay-step-3 | Step 3: Make session_history replay-compatible | story | 5d9518e |
+| epic-bold-transcript-event-log-projection-derive-step-4 | Step 4: Make session history a projection from transcript events | story | c45a814 |
+| epic-bold-transcript-event-log-store-step-3 | Step 3: Replace _messageBuffer with TranscriptEventLog | story | fba368f |
+| gate-cruft-unused-command-surface-legacy-deps | Remove unused command-surface legacy deps seam | story | 1be7c5d |
+| gate-refactor-protocol-pi-forward-crosspc-dtos | Pi forward client redeclares generated cross-PC frame DTOs | story | b6b7b91 |
+| gate-tests-session-start-model-thinking-actions | Add stale-context model/thinking tests for session_start replacements | story | b6b7b91 |
+| gate-patterns-extension-0.6.0 | Patterns extracted for extension-0.6.0 | story | b6b7b91 |
 
 ## Release metadata
 

@@ -38,7 +38,7 @@ onRevoke: async (ownerEpk: string): Promise<void> => {
 };
 ```
 
-Reuse `OwnerMultiplexerPort.detach`; do not add another helper or a nested `void` observer. Preserve the fresh injected capability posture from `ea074e0` and do not capture a command UI context across the await.
+Reuse `OwnerMultiplexerPort.detach`; do not add another helper or a nested `void` observer. Preserve the fresh injected capability posture from `14c1966` and do not capture a command UI context across the await.
 
 ## Acceptance evidence
 - With `owners.detach` held by a deferred barrier, `SelfRevoke.checkOnce()` and the local revoke notice remain pending until release.

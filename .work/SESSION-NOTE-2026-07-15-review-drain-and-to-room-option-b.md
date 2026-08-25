@@ -30,7 +30,7 @@ Nothing is pushed — 226 commits ahead of `origin/main`, all local on `main`.
 pointing to a feature). Per the agile-workflow review principles, child stories
 never enter review — green verification advances them directly to `done`. The
 real review unit is the **feature**. Batch-normalized all 34 `review → done`
-(commit `788670c`) after confirming each carried genuine verification evidence
+(commit `b4a4186`) after confirming each carried genuine verification evidence
 (flutter analyze/test green, cargo test/clippy, dart format, PT-scan clean).
 This collapsed the backlog from 34 stories + 14 features down to 14 features.
 
@@ -41,16 +41,16 @@ thinking high), grouped by surface/risk. 4 commits:
 
 | Commit | Features | Findings |
 |---|---|---|
-| `84b7b65` | 4 EN-first (app/site/relay/prose) | 3 fixed: tautological site JSDoc, relay `parse_hello` doc, missed `cockpit.desktop` PT |
-| `313457a` | 3 external-surfaces | 1 fixed: docs pointed at removed `/outpost-pi config` |
-| `542f215` | 1 EN-first pi-extension | 3 fixed: residual ASCII PT (`Fase`/`nome`/`reescrito`), `RemoteState` JSDoc, contract re-scope |
-| `3e550b5` | 5 EN-first cockpit | 1 Nit fixed (`flutter_pty`→`kyroon_pty`); 1 Important **rejected** (diff-range confounding) |
+| `f47876e` | 4 EN-first (app/site/relay/prose) | 3 fixed: tautological site JSDoc, relay `parse_hello` doc, missed `cockpit.desktop` PT |
+| `bbcfd23` | 3 external-surfaces | 1 fixed: docs pointed at removed `/outpost-pi config` |
+| `771d817` | 1 EN-first pi-extension | 3 fixed: residual ASCII PT (`Fase`/`nome`/`reescrito`), `RemoteState` JSDoc, contract re-scope |
+| `7e55047` | 5 EN-first cockpit | 1 Nit fixed (`flutter_pty`→`kyroon_pty`); 1 Important **rejected** (diff-range confounding) |
 
 The rejected finding: the reviewer flagged `update_checker_impl.dart`'s
 `manifestUrl` nullable change as contradicting cockpit-data's comments-only
 contract. Verified via per-commit attribution that the behavior change came
-from retire-rp-s3 commit `387c34c` (already reviewed/done), not the cockpit-data
-EN-first feature. The integrated diff range `c346e28..HEAD` conflated sibling
+from retire-rp-s3 commit `f90a74e` (already reviewed/done), not the cockpit-data
+EN-first feature. The integrated diff range `376fa38..HEAD` conflated sibling
 features. **Lesson: when a reviewer flags "not comments-only" at epic scope,
 check per-commit attribution before accepting — the diff range spans sibling
 features.**
@@ -60,12 +60,12 @@ features.**
 The epic-level reviews earned their keep — both caught cross-feature integration
 gaps invisible at feature scope:
 
-- `epic-rebrand-external-surfaces` (`1b977b6`): caught a **Blocker** — the
+- `epic-rebrand-external-surfaces` (`f9f1adb`): caught a **Blocker** — the
   onboarding docs claimed the wizard's "Use the relay?" step connects the relay,
   but after no-default-relay the extension refuses without an explicit
   `set-relay` URL. Fixed across the tutorial + both READMEs. Plus an Important:
   `site/CLAUDE.md` referenced a deleted `push-docker.sh`.
-- `epic-rebrand-to-outpost-pi-en-first` (`34df1c4`): caught 10 residual `Fase`
+- `epic-rebrand-to-outpost-pi-en-first` (`87dcd4e`): caught 10 residual `Fase`
   remnants in app code (the app feature's accented-only scan missed ASCII PT —
   same gap the pi-extension feature had), a SKILL.md typo (`Split`→`Skip`),
   missing `documentation-conventions` in the AGENTS.md reference list, and
@@ -107,14 +107,14 @@ described Option A; it needed updating to Option B before implementation.
 
 ### What I did
 
-1. **Updated the story to Option B** (`84d7710`): rewrote the design section,
+1. **Updated the story to Option B** (`3e3459c`): rewrote the design section,
    acceptance criteria, and implementation notes to the relay-authoritative
    shape. Key difference from Option A: no new wire field on `PeersUpdateBody`
    (relay is the single room truth); `BrokerRemote` maintains a `siblingRooms`
    cache from relay push events, not from a peer-announced field. Extension-only
    change (no relay/schema/app edit). Advanced `drafting → implementing`.
 
-2. **Implemented** (`5fe7072`) across 3 files:
+2. **Implemented** (`b466eab`) across 3 files:
    - `pi_forward_client.ts`: threads `to_room` on the `envelope` event (Site 2
      ACK); emits validated `rooms`/`room_announced`/`room_ended` control events;
      exposes `sendRoomControl` for `subscribe_rooms`/`rooms_check`.
@@ -126,7 +126,7 @@ described Option A; it needed updating to Option B before implementation.
    - `broker_remote.test.ts`: 41 tests (updated `"main"` assertions + new
      cold-cache/ACK/room-event/bootstrap/convergence tests).
 
-3. **Reviewed** (`8033672`): standalone-story bounded inline review (parent
+3. **Reviewed** (`b41c9c2`): standalone-story bounded inline review (parent
    epic shipped in v0.6.0). All lenses pass: no `"main"` literal,
    `PeersUpdateBody` unchanged, lifecycle clean, cold-cache safe (no fabricated
    room), ACK threads `to_room`, anti-spoof intact, subscribe idempotent.

@@ -126,7 +126,7 @@ committed generated files match generator output (no hand-edits). Relay
 `cargo fmt --check` clean; `cargo clippy -- -D warnings` clean; `cargo test`
 136 passed / 0 failed (81 lib + 3 integ + 13 mesh + 8 pi_forward + 10 presence +
 2 protocol_parity + 19 rooms; +5 new frame-decode boundary tests). Commit
-`2c9dbd3` scoped to protocol/frame.rs + generated/{frame,mod}.rs (via generator)
+`f2dca3d` scoped to protocol/frame.rs + generated/{frame,mod}.rs (via generator)
 + handlers/peer.rs (dispatch consumer) + generator + story .md.
 
 Single decode/classification boundary verified: `decode_relay_frame()` returns

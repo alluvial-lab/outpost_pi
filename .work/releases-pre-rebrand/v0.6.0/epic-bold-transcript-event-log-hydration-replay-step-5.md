@@ -91,7 +91,7 @@ Remove the new replay fixtures/tests only if the replay implementation is rolled
 
 Approved (2026-06-30). Independently re-ran all three subprojects: **pi-ext 672
 passed (up from 671)**; **app 612 passed (up from 610)**; **cockpit 231 passed (up
-from 230)**; pi-ext typecheck clean. Commit `41dd808` scoped to app + pi-ext + cockpit
+from 230)**; pi-ext typecheck clean. Commit `666dee8` scoped to app + pi-ext + cockpit
 test files + shared contract fixture; collision guard held.
 
 Regression coverage verified: shared contract fixture

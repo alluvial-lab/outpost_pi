@@ -82,7 +82,7 @@ Restore the `senderRoom == null` unconditional enqueue branch. Do not replace it
 **Findings**: none above nit level.
 
 **Verification run (orchestrator)**:
-- `git show --stat 8efd13e` — only `app/lib/data/transport/ws_transport.dart` + `app/test/data/transport/ws_transport_demux_test.dart` + this story file changed; no collision with other app agents (connection_manager.dart / protocol.g.dart untouched).
+- `git show --stat 642e464` — only `app/lib/data/transport/ws_transport.dart` + `app/test/data/transport/ws_transport_demux_test.dart` + this story file changed; no collision with other app agents (connection_manager.dart / protocol.g.dart untouched).
 - Confirmed legacy no-room bypass comment/route removed; `demuxPostAuthInboundFrame` pure helper + `WsInboundFrameKind`/`WsInboundFrameDecision` types present; all 5 outcomes (`enqueue`, `dropMissingRoom`, `dropRoomMismatch`, `control`, `dropMalformed`) reachable.
 - `cd app && flutter test test/data/transport/ws_transport_demux_test.dart` (PUB_CACHE set) — 5/5 pass.
 - `cd app && flutter analyze` — only the known-unrelated `axisAlignment` deprecation info at `lib/ui/chat/widgets/input_bar.dart:802` (documented; not a failure).

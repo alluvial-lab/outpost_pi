@@ -81,7 +81,7 @@ consecutive pi-ext agent to do so) — reported the full-suite "4 failed" as
 "matching the confirmed known false-alarm group (`after a clean reset`,
 `name-assigned`, `rename:<name>`, same-name cwd-lock), so they were not chased."
 
-Commit `1c03e76` scoped to pi-ext only (testing.ts + index.ts + extension.test.ts).
+Commit `0614849` scoped to pi-ext only (testing.ts + index.ts + extension.test.ts).
 Harness verified: `RemotePiTestHarness` + `createRemotePiTestHarness` added;
 legacy `_connectForTest`/`_stopForTest`/`_getState`/`routeClientMessage` aliased
 through the harness (names preserved, not deleted); `probeListPeers` kept as

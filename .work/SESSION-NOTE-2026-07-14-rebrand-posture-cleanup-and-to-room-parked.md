@@ -61,7 +61,7 @@ the `rooms_check` listener) and a generated-schema touch if B needs a
    durable docs (`AGENTS.md`, `agent-discipline.md`, `DECISIONS.md`,
    `VISION.md`, `CHANGELOG.md`), renamed GitHub URLs → `KevounC/outpost_pi`,
    converted `push-docker.sh` → `build-docker.sh` (project-local, no Docker
-   Hub), updated author → KevounC. Commit `4697fc2`.
+   Hub), updated author → KevounC. Commit `1c8cad8`.
 4. **Operator caught a fabrication.** I'd cited the rebrand epic as authority
    that `jacobmoura.work` hostnames were "explicitly deferred" — I'd pulled
    two lines from a grep and narrated scope-justification around them without
@@ -72,14 +72,14 @@ the `rooms_check` listener) and a generated-schema touch if B needs a
 5. **Scoped `epic-rebrand-external-surfaces`.** The class-4 follow-up the
    first rebrand epic named but never created. Three features: no-default-relay
    (remove community relay, onboarding UX change), hostname-migration
-   (`jacobmoura.work` → `kevoun.com`), retire-rp-s3. Commit `5ce4bf5`.
+   (`jacobmoura.work` → `kevoun.com`), retire-rp-s3. Commit `ef6b42f`.
 6. **Autopilot ran the epic.** Dispatched 3 feature-design + 9 implementation
    workers in parallel waves. All shipped to `stage: review`.
 7. **Phase 8 cross-model review (gpt-5.6-sol) caught a real bug.** My
-   `672f40c` feature-stage roll-up accidentally reverted the extension
+   `b3a9484` feature-stage roll-up accidentally reverted the extension
    unconfigured-relay work (the in-flight worker had left the working tree
    reverted; my `git add` swept it). Fixed by committing the correct
-   working-tree state (`64f3057`). Plus 5 blocking findings (residual
+   working-tree state (`76132db`). Plus 5 blocking findings (residual
    hostnames, site-docs prose, foundation-doc drift, untested update-checker)
    — all fixed inline or filed as 3 follow-up stories, now at `review`.
 8. **Operator asked about MIT compliance + how much code is from upstream.**
@@ -91,12 +91,12 @@ the `rooms_check` listener) and a generated-schema touch if B needs a
 9. **Scoped `epic-rebrand-to-outpost-pi-en-first`** (PT→EN + native doc
    frameworks). Operator chose: keep current attribution posture (no per-file
    headers), adopt native doc framework per language + gap-fill every public
-   API, defer structure to epic-design. Commit `ccb4663`.
+   API, defer structure to epic-design. Commit `d3e6289`.
 10. **Doc-convention port.** Operator pointed at `projects/SNC/platform` —
     they'd already established a mature inline-documentation convention. I
     ported it (`.agents/skills/documentation-conventions/SKILL.md` +
     `scan-documentation` gate) adapting the three-tier intent model to four
-    languages. Commit `d605662`.
+    languages. Commit `765bbf5`.
 
 ## Two epics in flight
 
@@ -122,7 +122,7 @@ the `rooms_check` listener) and a generated-schema touch if B needs a
   the concept isn't in the context.
 - **Phase 8 cross-model review earned its keep.** The revert bug (B1) was
   invisible from inside the run — the working tree held the correct state,
-  only committed HEAD was wrong. A fresh-context `git diff a529b63..HEAD`
+  only committed HEAD was wrong. A fresh-context `git diff 55ae8a0..HEAD`
   caught what I couldn't see. This is why the completion gate must be a
   different context.
 - **Parallel-feature seams leak.** The 7 residual `jacobmoura.work` refs

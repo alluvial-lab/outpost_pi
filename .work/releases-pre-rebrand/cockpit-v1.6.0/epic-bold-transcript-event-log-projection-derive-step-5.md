@@ -86,8 +86,8 @@ Restore `TmTool` mutation and direct `_entries` folding. App/pi-extension event 
 
 Approved (2026-06-30). Independently re-ran `flutter test
 test/data/rpc_data_mapper_transcript_projection_test.dart` → 3/3; whole-cockpit
-`flutter analyze` 0 issues. Commit `aaafa59` (agent self-amended `f5993ad`→
-`aaafa59`; diff is 4 lines in the story .md only — code intact) scoped to owned
+`flutter analyze` 0 issues. Commit `a7252ca` (agent self-amended `f5993ad`→
+`a7252ca`; diff is 4 lines in the story .md only — code intact) scoped to owned
 files; collision guard held — did NOT touch cockpit_viewmodel.dart/
 workspace_projection.dart/pane_item.dart (owned by parallel
 workspace-document-step-6). Shared projection reducer (history + live) and

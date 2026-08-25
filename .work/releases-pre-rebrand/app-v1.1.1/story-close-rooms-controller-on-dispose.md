@@ -8,7 +8,7 @@ depends_on: [feature-adversarial-codebase-review]
 release_binding: app-v1.1.1
 gate_origin: null
 archived_atop: unbound
-archived_ref: 3dba904
+archived_ref: 26a6831
 created: 2026-06-28
 updated: 2026-06-28
 ---
@@ -41,5 +41,5 @@ Verdict: Approve
 Findings: none.
 
 Verification:
-- Reviewed commit `9049e05` diff against acceptance criteria.
+- Reviewed commit `8c1c17f` diff against acceptance criteria.
 - Ran `cd app && /opt/flutter/bin/flutter test --concurrency=1 test/transport/connection_manager_test.dart test/data/sync/sync_service_test.dart test/main_lifecycle_test.dart` (pass).

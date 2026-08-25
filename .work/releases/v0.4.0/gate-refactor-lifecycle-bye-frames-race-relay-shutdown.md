@@ -30,7 +30,7 @@ Make teardown awaitable, detach each owner with the bye reason, await returned w
 - Replace broadcast-plus-`detachAll` with one `detach(peerId, byeReason)` per snapshotted owner. Await all returned drains with `Promise.allSettled` before `_relayTransport.stop`; one failed drain cannot block global teardown.
 - Coalesce overlapping stop requests behind one in-flight promise.
 - Keep `SecurePeerChannel.whenIdle()` relay-independent: local sequence persistence, synchronous WebSocket enqueue, accepted ingress, and audit drain only—never a relay ACK, future relay frame, or close.
-- Preserve the `8b987c8` working-state convergence before relay close.
+- Preserve the `b5fa094` working-state convergence before relay close.
 
 ## Acceptance evidence
 - A deterministic persistence barrier proves relay close does not occur until the protected bye has drained.

@@ -132,7 +132,7 @@ Revert the added convergence tests and any minimal app projection correction. Do
 
 Approved (2026-06-30). Independently re-ran: **pi-ext 718 passed (up from 715 — +3
 convergence tests)**; **app 614 passed (up from 612 — +2 hydration tests)**; pi-ext
-typecheck clean. Commit `54bf75f` scoped to pi-ext + app test files; collision guard held.
+typecheck clean. Commit `5072f8f` scoped to pi-ext + app test files; collision guard held.
 
 Convergence coverage verified: pi-ext `turn_state.test.ts` reducer matrix asserts
 `working:false`/`activeTurnId:null`/`cancelTargetId:null`/target-collection across

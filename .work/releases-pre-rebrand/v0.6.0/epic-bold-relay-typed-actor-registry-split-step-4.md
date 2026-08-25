@@ -84,7 +84,7 @@ Inline publisher methods back into `PeerRegistry` while retaining extracted stat
 Approved (2026-06-30). Independently re-ran: relay `cargo fmt --check` clean;
 `cargo clippy -- -D warnings` clean; `cargo test` 158 passed / 0 failed (103 lib +
 3 integ + 13 mesh + 8 pi_forward + 10 presence + 2 parity + 19 rooms; pure
-refactor — existing tests prove byte-compat). Commit `1eb287d` scoped to
+refactor — existing tests prove byte-compat). Commit `a3838ed` scoped to
 peers/registry_event_publisher.rs (new) + registry.rs (shrunk ~120 lines) + rooms.rs
 + mod + story .md; relay-only, no generated files.
 

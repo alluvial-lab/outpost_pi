@@ -147,4 +147,4 @@ Verification: `python3 -m json.tool protocol/schema/reachability.json` passed.
 **Important**: none
 **Nits**: none
 
-**Notes**: Re-review after bounce. Verified commit `ddaefda`, confirmed the artifact now lives under `protocol/schema/` with no remaining `.orchestration/contracts/reachability` references, and re-ran `python3 -m json.tool protocol/schema/reachability.json`. The JSON still contains the five required states, `[1, 2, 5, 10, 30]` backoff, 25s/25s/20s/70s heartbeat/liveness timings, and Online→Degraded / Degraded→Online transitions. Fast-lane story advance to `done`.
+**Notes**: Re-review after bounce. Verified commit `bbfc397`, confirmed the artifact now lives under `protocol/schema/` with no remaining `.orchestration/contracts/reachability` references, and re-ran `python3 -m json.tool protocol/schema/reachability.json`. The JSON still contains the five required states, `[1, 2, 5, 10, 30]` backoff, 25s/25s/20s/70s heartbeat/liveness timings, and Online→Degraded / Degraded→Online transitions. Fast-lane story advance to `done`.

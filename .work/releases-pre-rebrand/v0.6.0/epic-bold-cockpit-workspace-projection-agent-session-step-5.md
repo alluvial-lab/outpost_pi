@@ -98,7 +98,7 @@ Restore legacy getters and UI branches (`AgentStatus.streaming`, `isStreaming`, 
 
 Approved (2026-06-30). Independently re-ran: whole-cockpit `flutter analyze` →
 No issues found; full `flutter test` → 222/222 (incl. new
-agent_transcript_projection_test.dart). Commit `3c3698e` scoped to cockpit only
+agent_transcript_projection_test.dart). Commit `513f1e6` scoped to cockpit only
 (UI widgets + agent_session + agent_entry + agent_snapshot + tests + story .md);
 no cross-subproject collision.
 

@@ -151,7 +151,7 @@ mutation while leaving the adapter file unused.
 **Findings**: none above nit level. The 2026-06-29 bounce blocker (retry-storm via factory-success resetting `retryAttempt`) is resolved.
 
 **Verification run (orchestrator)**:
-- `git show --stat 38ab178` — only owned files: `app/lib/data/transport/{connection_manager,reachability_adapter}.dart` + their tests + this story; no collision with other app agents (ws_transport.dart / protocol.g.dart untouched).
+- `git show --stat c34dac9` — only owned files: `app/lib/data/transport/{connection_manager,reachability_adapter}.dart` + their tests + this story; no collision with other app agents (ws_transport.dart / protocol.g.dart untouched).
 - Bounce-fix confirmed in code: `onConnectSucceeded()` renamed `onRelayConnectionEstablished()`; the `_retryAttempt = 0` line was REMOVED from it (now only clears `_missedPings`/`_connectInFlight`). `retryAttempt` resets only in `onAppFrameObserved()` (real inbound traffic), `onStopRequested()`, and the stop/reset path — NOT on factory/adopt success. Both call sites in `connection_manager.dart` (factory success + adopt) updated. Doc comment states the invariant.
 - Regression test `relay reconnect successes without inbound traffic keep advancing the backoff ladder` asserts attempts `0→1→2` with delays `1s→2s→5s` across three consecutive relay-reconnect-successes-without-inbound-traffic — directly closes the retry-storm vector from the bounce.
 - `cd app && flutter test test/transport/reachability_adapter_test.dart test/transport/connection_manager_test.dart` (PUB_CACHE set) — 48/48 pass.

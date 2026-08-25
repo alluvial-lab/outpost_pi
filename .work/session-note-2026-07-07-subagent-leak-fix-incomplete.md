@@ -16,7 +16,7 @@ remaining ungated broadcast path.
    hypothesis: `cross_room=false` everywhere → the session flip is the 7ADky
    Pi's own rotation, NOT a sibling overwrite. Review passed (fast-lane).
 
-2. **Fork-posture docs** (commit `0b3b6e3`) — rewrote `AGENTS.md` +
+2. **Fork-posture docs** (commit `644512e`) — rewrote `AGENTS.md` +
    `.agents/rules/agent-discipline.md` to hard-fork / fork-local-default
    reality (rebrand to Outpost-Pi pending in `epic-rebrand-to-outpost-pi`).
 
@@ -49,7 +49,7 @@ Full chain in `story-mobile-cross-session-history-leak.md`:
 **Story**: `story-extension-suppress-subagent-assistant-broadcast`
 (stage: review, but **DO NOT advance to done** — the live repro still leaks).
 
-### Fix shipped (commit `397583b`, dist rebuilt, pi restarted)
+### Fix shipped (commit `1cb8cf0`, dist rebuilt, pi restarted)
 
 - New pure module `pi-extension/src/session/subagent_gate.ts`:
   `SubagentGate` depth counter (floor-at-0, nesting-safe), keyed on
@@ -58,7 +58,7 @@ Full chain in `story-mobile-cross-session-history-leak.md`:
   `suppressForSubagent` flag gates `message_end` (both the
   `_appendLegacySdkMessageToTranscript` call AND the failed-turn
   `provider_error` forwarding).
-- **Second fix** (commit `397583b`): added
+- **Second fix** (commit `1cb8cf0`): added
   `if (subagentGate.isActive()) return;` to `message_update` (the streaming
   `agent_chunk` path), which the first fix missed.
 
@@ -123,12 +123,12 @@ Concrete plan:
 ## Other open items (parked, lower priority)
 
 - **Reorder-fix deploy** (HIGHEST severity, deferred): the 77% inbound drop
-  rate (8640 room-mismatch / 2534 enqueue). Fix `80b04e5` in source
+  rate (8640 room-mismatch / 2534 enqueue). Fix `ca555be` in source
   (`story-fix-transport-active-room-reestablishment-on-reconnect`,
   stage:review), NOT deployed. This silently discards most agent output and
   is the primary driver of the degraded chat experience. Deploy =
   rebuild+sideload the app. Elevated-urgency evidence on the story
-  (commit `9291ccd`).
+  (commit `f8891ef`).
 - **Bug 1** (`story-mobile-send-timeout-relay-room-main-mismatch`): the
   relay-drop mechanism was discredited by re-inspection (directionality
   backwards; zero phone-originated drops). Still needs the actual failure
@@ -147,7 +147,7 @@ Concrete plan:
 - **The investigation story**: `.work/active/stories/story-mobile-cross-session-history-leak.md`
   (stage: drafting, has the full mechanism trace, SDK findings, and the
   resolved/ruled-out hypotheses).
-- **`dist/` is rebuilt** with the two-gate fix (commit `397583b`) but the
+- **`dist/` is rebuilt** with the two-gate fix (commit `1cb8cf0`) but the
   leak persists — so the next instrumentation must be added on top.
 - **Throwaway debug logs** (safe to delete): `~/.pi/remote/debug-leakfix.jsonl`,
   `~/.pi/remote/debug-firings.jsonl`, `~/.pi/remote/debug-message-end.jsonl`.

@@ -185,7 +185,7 @@ which defaults to `'main'` and is only patched by the (not-yet-deployed)
 fix not being live — most agent output is silently discarded, which is the
 primary driver of the degraded chat experience.
 
-**Action**: rebuild + sideload the app with this fix (`80b04e5`, in source,
+**Action**: rebuild + sideload the app with this fix (`ca555be`, in source,
 `stage: review`) and confirm the `room-mismatch` drops fall to zero in a
 fresh ring log. This is the deploy step the fix has been waiting on; the live
 evidence elevates its priority over the still-open subagent-content leak

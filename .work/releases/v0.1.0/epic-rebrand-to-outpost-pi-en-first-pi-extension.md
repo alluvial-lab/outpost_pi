@@ -330,12 +330,12 @@ Result/discriminated-union API; record any exception in the story body.
 
 Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
 orchestrator). One balanced pass over the integrated feature diff
-(`c346e28..HEAD -- pi-extension/src/`).
+(`376fa38..HEAD -- pi-extension/src/`).
 
 ### Findings (adjudicated)
 - **Important — incomplete translation: residual ASCII Portuguese.** The feature's verification used an accented-character scan only, which missed ASCII PT in comments and test descriptions: `Fase` (broker.ts, broker_remote.test.ts, e2e.test.ts), `<nome>` address-format placeholders (broker.ts, local_config.ts, peer.ts, mesh_node.ts, broker_remote.test.ts, local_config.test.ts), `reescrito` (local_config.ts). Translated all to `Phase`/`<name>`/`rewritten` and re-ran a broad ASCII PT-word scan (clean). **Fixed.**
 - **Important — `RemoteState` undocumented.** The exported `RemoteState` type (`index.ts:153`) was listed for Always-tier gap-fill but had no JSDoc. Added meaningful JSDoc describing the `idle`/`started` relay runtime lifecycle contract. **Fixed.**
-- **Important — feature contract under-scoped a production literal change.** `pairing_coordinator.ts:410` changed a user-visible notification literal (`Use mais chars.` → `Use more characters.`) in commit `727a93a` (a Phase 8 review-fixup), but the feature body claimed comments/JSDoc-only with no literal change. The translation itself is correct; the contract description was inaccurate. **Re-scoped:** this feature's translation slice includes the one observable copy change in `pairing_coordinator.ts` (the `mais` → `more` fix), as an exception to the comments-only boundary. All other owned changes remain comments/JSDoc-only.
+- **Important — feature contract under-scoped a production literal change.** `pairing_coordinator.ts:410` changed a user-visible notification literal (`Use mais chars.` → `Use more characters.`) in commit `27d3fd0` (a Phase 8 review-fixup), but the feature body claimed comments/JSDoc-only with no literal change. The translation itself is correct; the contract description was inaccurate. **Re-scoped:** this feature's translation slice includes the one observable copy change in `pairing_coordinator.ts` (the `mais` → `more` fix), as an exception to the comments-only boundary. All other owned changes remain comments/JSDoc-only.
 - No other findings; wire-stable values unchanged (`index.ts:168,170`, `protocol.generated.ts:87`).
 
 ### Verification of fixes

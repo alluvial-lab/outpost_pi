@@ -23,7 +23,7 @@ while faults keep inserting rows. Evidence:
 generated line 447 = e2e/live_soak.py `_assertEveryMaintainedBubbleRenders`).
 
 ## Root cause
-`chat_page.dart` c7503f62 stored each row's geometry key as the list child's
+`chat_page.dart` 8df47e90 stored each row's geometry key as the list child's
 only key, replacing the prior `ValueKey(message.id)` contract. The soak oracle
 therefore could not locate even the baseline `sync_0` bubble: its captured log
 contains one DB/projection id and fails immediately in `dragUntilVisible` with

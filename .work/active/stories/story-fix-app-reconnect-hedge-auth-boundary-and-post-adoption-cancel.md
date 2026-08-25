@@ -16,7 +16,7 @@ updated: 2026-08-24
 ## Symptom
 Operator UAT capture `app-capture-2026-08-24T08-58-48-427Z-dd9fe9d1c3c6`
 (0.7.2+14, 08:52-08:58Z) + relay `relay.log.2026-08-24`. Two visible flake
-shapes, both traced to the 0.7.0 3s fallback hedge (c9d08a7f):
+shapes, both traced to the 0.7.0 3s fallback hedge (9c324c84):
 
 1. **~30s reconnect stalls** (08:53:44→08:54:14, 08:55:39→08:56:07): three
    sequential full-deadline attempts; NO early fallback adoption. The
@@ -29,7 +29,7 @@ shapes, both traced to the 0.7.0 3s fallback hedge (c9d08a7f):
    the relay closes the live socket (`duplicate auth; closed prior`),
    the app reads channelDone → reconnect → re-arm → loop.
 
-Working-state convergence held throughout (0 flaps — 7b993cf5 works);
+Working-state convergence held throughout (0 flaps — 42b1047a works);
 data oracles clean; 5 of 7 drops healed in 1-2s.
 
 ## Root cause
@@ -89,4 +89,4 @@ After the repair, both pass. The loopback fake relay proves the stalled primary 
 
 ### Bounded inline review
 
-**Verdict: pass — no material blockers.** Reviewed the final diff for auth-read readiness, loser socket ownership, cancellation/dispose behavior from `cc66ccfa`, hydration dedup interaction, malformed readiness frames, and retry-chain convergence. The readiness completer accepts only validated control/data frames, the empty probe cannot suppress the subsequent peer hydration reply, and cancellation remains attached through the factory-to-manager handoff.
+**Verdict: pass — no material blockers.** Reviewed the final diff for auth-read readiness, loser socket ownership, cancellation/dispose behavior from `246a56bf`, hydration dedup interaction, malformed readiness frames, and retry-chain convergence. The readiness completer accepts only validated control/data frames, the empty probe cannot suppress the subsequent peer hydration reply, and cancellation remains attached through the factory-to-manager handoff.

@@ -53,7 +53,7 @@ in this fork.
 
 Filed now because the SNC sandbox hardening effort surfaced it, but **do not implement during the
 current remote-pi refactor** — this fork is mid-refactor (stewardship/private-carry/patchbay
-direction per `ab87e28`); landing a send-site gate now would create merge churn. Pick up after the
+direction per `7fa4920`); landing a send-site gate now would create merge churn. Pick up after the
 refactor settles. Track here so it's not lost.
 
 ## Related

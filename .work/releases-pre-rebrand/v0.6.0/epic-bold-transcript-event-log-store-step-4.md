@@ -82,7 +82,7 @@ Switch read/write paths back to peer+room keys. Because old projection boxes wer
 ## Review
 
 Approved (2026-06-30). Independently re-ran: **app tests 597 passed (baseline
-maintained)**; pi-ext `corepack pnpm typecheck` clean. Commit `d2668f1` scoped to
+maintained)**; pi-ext `corepack pnpm typecheck` clean. Commit `511a2d8` scoped to
 app + the one pi-ext file (`remote_session.ts`); collision guard held.
 
 Re-key verified: transcript truth uses `TranscriptSessionKey(peerId, roomId, sessionId)`

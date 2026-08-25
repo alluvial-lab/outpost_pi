@@ -99,17 +99,17 @@ Bodies live on disk (retain-bodies) and in git history — `git show <git ref>:<
 
 | id | title | kind | archived_atop | git ref |
 |----|-------|------|---------------|---------|
-| epic-bold-canonical-session-app-attribution-hydration | Canonical session — app attribution & hydration fail-closed | feature | — | 44b0925 |
-| epic-bold-reachability-contract-app-adapter | Reachability — app ConnectionManager adapter | feature | — | 44b0925 |
-| epic-bold-reachability-contract-app-adapter-step-1 | Step 1: Add the app reachability adapter runtime | story | — | 44b0925 |
-| epic-bold-reachability-contract-app-adapter-step-2 | Step 2: Refactor ConnectionManager to consume the adapter | story | — | 44b0925 |
-| epic-bold-reachability-contract-app-adapter-step-3 | Step 3: Lock adapter behavior with transport + domain tests | story | — | 44b0925 |
-| epic-bold-reachability-contract-state-machine-step-3 | Step 3: Add the Dart Reachability projection module | story | — | 44b0925 |
-| epic-bold-transcript-event-log-hydration-replay-step-1 | Step 1: Add deterministic app `SessionHistory` replay adapter | story | — | 44b0925 |
-| epic-bold-transcript-event-log-hydration-replay-step-2 | Step 2: Replace `_applyHistory` destructive reconcile with append/dedupe replay | story | — | 44b0925 |
-| epic-bold-transcript-event-log-projection-derive-step-2 | Step 2: Prove the app reconcile projection with deterministic tests | story | — | 44b0925 |
-| epic-bold-transcript-event-log-projection-derive-step-3 | Step 3: Route `SyncService` live writes through the projection seam | story | — | 44b0925 |
-| epic-bold-transcript-event-log-store-step-1 | Step 1: Add the app Hive `TranscriptEvent` store adapter | story | — | 44b0925 |
-| epic-bold-transcript-event-log-store-step-2 | Step 2: Make app projections rebuildable outputs of the event store | story | — | 44b0925 |
-| gate-refactor-lifecycle-dispose-leaks-active-channel | ConnectionManager.dispose leaves the active transport/connect attempt unclosed | story | — | 44b0925 |
-| gate-security-relay-auth-signing-oracle | Relay auth signs attacker-controlled challenges with the owner key | story | — | 44b0925 |
+| epic-bold-canonical-session-app-attribution-hydration | Canonical session — app attribution & hydration fail-closed | feature | — | da5078e |
+| epic-bold-reachability-contract-app-adapter | Reachability — app ConnectionManager adapter | feature | — | da5078e |
+| epic-bold-reachability-contract-app-adapter-step-1 | Step 1: Add the app reachability adapter runtime | story | — | da5078e |
+| epic-bold-reachability-contract-app-adapter-step-2 | Step 2: Refactor ConnectionManager to consume the adapter | story | — | da5078e |
+| epic-bold-reachability-contract-app-adapter-step-3 | Step 3: Lock adapter behavior with transport + domain tests | story | — | da5078e |
+| epic-bold-reachability-contract-state-machine-step-3 | Step 3: Add the Dart Reachability projection module | story | — | da5078e |
+| epic-bold-transcript-event-log-hydration-replay-step-1 | Step 1: Add deterministic app `SessionHistory` replay adapter | story | — | da5078e |
+| epic-bold-transcript-event-log-hydration-replay-step-2 | Step 2: Replace `_applyHistory` destructive reconcile with append/dedupe replay | story | — | da5078e |
+| epic-bold-transcript-event-log-projection-derive-step-2 | Step 2: Prove the app reconcile projection with deterministic tests | story | — | da5078e |
+| epic-bold-transcript-event-log-projection-derive-step-3 | Step 3: Route `SyncService` live writes through the projection seam | story | — | da5078e |
+| epic-bold-transcript-event-log-store-step-1 | Step 1: Add the app Hive `TranscriptEvent` store adapter | story | — | da5078e |
+| epic-bold-transcript-event-log-store-step-2 | Step 2: Make app projections rebuildable outputs of the event store | story | — | da5078e |
+| gate-refactor-lifecycle-dispose-leaks-active-channel | ConnectionManager.dispose leaves the active transport/connect attempt unclosed | story | — | da5078e |
+| gate-security-relay-auth-signing-oracle | Relay auth signs attacker-controlled challenges with the owner key | story | — | da5078e |

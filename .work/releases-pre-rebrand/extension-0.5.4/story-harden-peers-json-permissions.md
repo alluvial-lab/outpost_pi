@@ -39,4 +39,4 @@ Verification from `pi-extension/`:
 **Important**: none
 **Nits**: none
 
-**Notes**: Fresh-context review of commit `3c9d2e3`; correctness, tests, security/privacy, design alignment, and foundation-doc drift lenses checked. Verification evidence from implementation notes accepted; tests were not re-run.
+**Notes**: Fresh-context review of commit `562685a`; correctness, tests, security/privacy, design alignment, and foundation-doc drift lenses checked. Verification evidence from implementation notes accepted; tests were not re-run.

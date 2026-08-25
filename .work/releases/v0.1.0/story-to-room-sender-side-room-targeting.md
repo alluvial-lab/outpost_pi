@@ -22,7 +22,7 @@ The relay half of the `to_room` wire change shipped in relay-0.2.0
 `bad_envelope`, and `pi_envelope_in` echoes `to_room`.
 
 The **sender half was left as a temporary `"main"` default** (commit
-`13701ee`, `broker_remote.ts:357,466,531`). This is broken: each Pi's
+`e2beaa6`, `broker_remote.ts:357,466,531`). This is broken: each Pi's
 MeshNode joins `roomIdFor(cwd, sessionName)` — a real 12-char id, NOT
 `"main"` — so a `to_room: "main"` envelope reaches no live sibling room and
 the relay returns `transport_error: offline`. Cross-PC mesh delivery is

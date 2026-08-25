@@ -116,7 +116,7 @@ Inline the actor state back into `handle_peer` and remove `connection_actor.rs`.
 Approved (2026-06-30). Independently re-ran: relay `cargo fmt --check` clean;
 `cargo clippy -- -D warnings` clean; `cargo test` 137 passed / 0 failed (82 lib
 + 3 integ + 13 mesh + 8 pi_forward + 10 presence + 2 parity + 19 rooms). Commit
-`a31d19b` scoped to relay only (connection_actor.rs + peer.rs + mod.rs + the
+`c0a6011` scoped to relay only (connection_actor.rs + peer.rs + mod.rs + the
 control.rs import-path update `peer::connection_actor`→`handlers::connection_actor`
 — legitimate wiring, not a collision with the done control-handlers work); no
 generated files touched.

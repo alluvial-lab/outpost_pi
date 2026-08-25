@@ -95,7 +95,7 @@ supervisor.sock`), not behavior assertion failures from this refactor." The
 orchestrator's independent vitest run confirms 0 failures. The enhanced briefing
 is reliably working.
 
-Commit `aa3bba9` scoped to pi-ext only (new daemon_commands + cron_commands +
+Commit `839a067` scoped to pi-ext only (new daemon_commands + cron_commands +
 service_commands + supervisor_restart + index.ts shrunk ~620 lines + story .md);
 collision guard held. Command extraction verified: `DaemonCommands`/`CronCommands`/
 `ServiceCommands`/`restartSupervisorCommand` extracted as thin UI/CLI orchestration

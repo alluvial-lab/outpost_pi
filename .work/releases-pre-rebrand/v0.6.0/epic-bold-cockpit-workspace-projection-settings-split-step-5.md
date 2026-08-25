@@ -107,7 +107,7 @@ Move the schedule panel and cron dialogs/helpers back into `settings_page.dart`,
 **Findings**: none above nit level.
 
 **Verification run (orchestrator)**:
-- `git show --stat b0bdaff` — only owned files: `schedule_settings_panel.dart` (new), `cron_editor_dialog.dart`/`cron_formatting.dart`/`cron_log_dialog.dart` (new), `settings_category_panel.dart` (new), `settings_page.dart`, + 2 tests. No collision with workspace-document agent.
+- `git show --stat b49f5cc` — only owned files: `schedule_settings_panel.dart` (new), `cron_editor_dialog.dart`/`cron_formatting.dart`/`cron_log_dialog.dart` (new), `settings_category_panel.dart` (new), `settings_page.dart`, + 2 tests. No collision with workspace-document agent.
 - Confirmed `ScheduleSettingsPanel` + `SettingsCategoryPanel` (the one category→panel switch) extracted; `settings_page.dart` is a pure route shell (0 panel/tile/dialog classes — `grep -c` confirms).
 - `cd cockpit && flutter test test/settings/schedule_settings_panel_test.dart test/settings/settings_route_shell_test.dart test/settings/daemon_settings_panel_test.dart` (PUB_CACHE, offline) — 22/22 pass (schedule panel lifecycle incl. cron log dialog mounted-guard-after-unmount; route shell purity; daemon regression).
 - `flutter analyze` — No issues found.

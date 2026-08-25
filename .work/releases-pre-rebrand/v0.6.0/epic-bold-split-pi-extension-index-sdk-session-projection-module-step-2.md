@@ -105,7 +105,7 @@ environment-flake false-alarm signature (`after a clean reset`, `name-assigned`,
 `rename:<name>`, same-name `#2`) — a clean orchestrator re-run shows 0 failures.
 
 ### Saga note (this was the 2nd attempt)
-The 1st attempt (`ed74036`, reverted) was undone by an ORCHESTRATOR-SIDE error:
+The 1st attempt (`7b31ac2`, reverted) was undone by an ORCHESTRATOR-SIDE error:
 the orchestrator had committed a wrong test-fixture alignment (transient dirty-tree
 observation) on the prior relay-transport-step-5, and that agent copied the wrong
 listener-count values into its new tests. The agent's actual code migration was
@@ -113,7 +113,7 @@ CORRECT. This re-dispatch was briefed that the original invariant fixtures are
 correct (do not touch `toBe(1)`/`toBe(2)` listener-count assertions) and that the
 migration was sound — only the reconnect-preservation test needed fixing.
 
-### Verification of this attempt (commit `de2086f`)
+### Verification of this attempt (commit `243a64e`)
 - `SdkSessionProjection` class created with private `issuer`/`sessionStartedAt`/
   `messageBuffer` — no longer `index.ts` globals.
 - Relay reconnect preserves session_id/sessionStartedAt/history (not cleared in

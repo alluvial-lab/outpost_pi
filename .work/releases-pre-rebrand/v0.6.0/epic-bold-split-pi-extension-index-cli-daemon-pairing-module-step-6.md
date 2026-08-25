@@ -120,7 +120,7 @@ consecutive pi-ext agent to do so) — reported e2e.test.ts "28 failed... matchi
 the known mesh/UDS false-alarm group. I did not chase it." The orchestrator's
 independent vitest run confirms 0 failures.
 
-Commit `defbd09` scoped to pi-ext only (standalone_cli.ts new 296 lines + testing.ts
+Commit `0f24f80` scoped to pi-ext only (standalone_cli.ts new 296 lines + testing.ts
 harness + index.ts shrunk ~300 lines + tests + story .md); collision guard held.
 CLI bootstrap verified: `runStandaloneRemotePiCli` + `isDirectRun` +
 `createStandaloneCliDeps` extracted to standalone_cli.ts; `index.ts` bootstraps

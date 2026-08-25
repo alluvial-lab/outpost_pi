@@ -8,7 +8,7 @@ depends_on: []
 release_binding: app-v1.1.1
 gate_origin: null
 archived_atop: cockpit-v1.5.1
-git_ref: 03adf85
+git_ref: 49b5acd
 created: 2026-06-28
 updated: 2026-06-28
 ---

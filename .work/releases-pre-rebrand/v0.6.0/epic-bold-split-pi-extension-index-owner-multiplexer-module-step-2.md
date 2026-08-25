@@ -128,7 +128,7 @@ cleared; baseline is zero failures. The implementer likely hit a transient/flaky
 run (parallel-agent working-tree interference or mid-write state) and
 mis-attributed real failures to the env. No actual regression.
 
-Commit `9b81352` scoped to owner_multiplexer.ts + index.ts + extension.test.ts +
+Commit `3a70062` scoped to owner_multiplexer.ts + index.ts + extension.test.ts +
 story .md; collision guard held (sole pi-ext writer). HIGH-risk invariants
 verified directly in code + tests:
 - **Idempotent reattach**: existing channel for same owner detached before

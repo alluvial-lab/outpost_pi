@@ -127,7 +127,7 @@ Restore `_buildAgent`, `_restoreSession`, `_sessionToJson`, `onPreferenceChanged
 
 Approved (2026-06-30). Independently re-ran: whole-cockpit `flutter analyze` →
 No issues found; full `flutter test` → 221/221 (incl. 3 new layout/projection
-tests). Commit `b920637` scoped to cockpit only (agent_session +
+tests). Commit `05c9c19` scoped to cockpit only (agent_session +
 cockpit_viewmodel + workspace_projection + test + story .md); no cross-subproject
 collision.
 

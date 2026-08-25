@@ -424,7 +424,7 @@ clean analyzer and full non-e2e app suite (**940 passed**).
 
 ## Review record (2026-08-24)
 Standard fresh-context pass over the campaign. Verdict: Request changes →
-closed done (f4e382f5): end-to-end validation recorded (no soak-scale
+closed done (d347143c): end-to-end validation recorded (no soak-scale
 delta at 18 snapshots/11 rows; 339-read elimination matters at
 long-lived-session scale — honest record in the epic). Edge-triggering
 verified as semantic-change dispatch, NOT a cache (rejected finding);

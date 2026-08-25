@@ -57,11 +57,11 @@ analyze` + full unit suite green; APK bump 0.6.0+8 built for sideload.
 
 | Story | Commit | Delivered |
 |---|---|---|
-| `story-fold-golden-harness-fidelity` | `8db840fa` | Production font fixtures, modal isolation, overflow failure policy, expanded states/themes/geometries. |
-| `story-fold-two-pane-policy` | `7bb4ce88` | Pane-budget split policy, divider contrast, keyboard-inset isolation. |
-| `story-fold-chat-adaptivity` | `8785a27e` | Compact-height composer/status and centered wide reading measure. |
-| `story-fold-home-sheets-adaptivity` | `24eff440` | Compact Home chrome, centered list, adaptive scrollable sheet frames. |
-| `story-fold-system-pages-a11y-floors` | `141e3f56` | Capped system pages, recovery scrolling, 48dp targets, semantics, and 12sp operational floors. |
+| `story-fold-golden-harness-fidelity` | `151bc415` | Production font fixtures, modal isolation, overflow failure policy, expanded states/themes/geometries. |
+| `story-fold-two-pane-policy` | `acbcd958` | Pane-budget split policy, divider contrast, keyboard-inset isolation. |
+| `story-fold-chat-adaptivity` | `ef363e04` | Compact-height composer/status and centered wide reading measure. |
+| `story-fold-home-sheets-adaptivity` | `2440ccae` | Compact Home chrome, centered list, adaptive scrollable sheet frames. |
+| `story-fold-system-pages-a11y-floors` | `b8263343` | Capped system pages, recovery scrolling, 48dp targets, semantics, and 12sp operational floors. |
 
 Integrated verification:
 - Full render matrix regenerated: 16 surfaces × 9 Pixel Fold geometries = 144 PNGs, with every overflow failing directly and no allowlist entries remaining.

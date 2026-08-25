@@ -39,7 +39,7 @@ The "design the reconnect children" pickup was triaged and found to be an
 ENVIRONMENT GATE, not a design gate. Disposition of the 5 drafting items:
 
 - `story-mobile-stuck-message-after-new-session-replacement` → reconciled to
-  DONE (07ccf7f): landed + live-verified via
+  DONE (02f5fb3): landed + live-verified via
   `feature-replacement-session-wake-confirmation`.
 - `idea-mobile-drop-slow-recovery`, `idea-mobile-outgoing-message-swallowed`
   — deliberately parked live-repro (feature body: "leave at drafting; do not

@@ -105,7 +105,7 @@ empty, short, exactly-8, normal-UUID, non-ASCII-long, and non-ASCII-short.
 
 The live container now runs the file sink — the "out of scope" deploy step
 above is complete. Rebuilt `remote-pi-relay:0.2.2` from current `relay/` source
-(commit `155fbe0` + `f009448` supersession log + `e5f6bce` room_meta
+(commit `c4543f6` + `25eaee7` supersession log + `9080cd5` room_meta
 `cross_room` log, all of which landed after the prior `0.2.0` image was built)
 and restarted with `REMOTEPI_RELAY_LOG_DIR=/data/logs` + `RUST_LOG=info,relay=debug`.
 Verified at runtime: the file `relay.log.<date>` is created, startup emits

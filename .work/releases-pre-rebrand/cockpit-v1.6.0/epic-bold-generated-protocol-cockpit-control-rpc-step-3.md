@@ -80,7 +80,7 @@ coverage changed.
 
 Approved (2026-06-30). Independently re-ran: **cockpit tests 228 passed (up from 226
 — the agent's new schema-envelope serialization + mapper tests)**; `flutter analyze`
-clean. Commit `6649528` scoped to cockpit only (pi_rpc_process + rpc_event_mapper +
+clean. Commit `89fac2c` scoped to cockpit only (pi_rpc_process + rpc_event_mapper +
 rpc_event + docs + tests); collision guard held (app/pi-ext disjoint).
 
 Schema-envelope emission verified: `PiRpcProcess.sendControl` now writes a `prompt`

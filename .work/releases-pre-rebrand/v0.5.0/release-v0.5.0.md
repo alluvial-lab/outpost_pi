@@ -73,8 +73,8 @@ Bodies live on disk (`retain-bodies`). Active done items moved to
 | story-implement-extension-queued-message-protocol | Extension queued-message protocol | story | — | HEAD |
 | story-fix-late-attach-turn-stream-sync | Late-attach turn stream sync | story | — | HEAD |
 | story-fix-security-doc-drift | Security doc drift | story | — | HEAD |
-| story-guard-stale-session-history-after-new | Guard stale session history after new | story | unbound | 3dba904 |
-| story-add-mobile-resume-hydration | Mobile resume hydration | story | unbound | 3dba904 |
+| story-guard-stale-session-history-after-new | Guard stale session history after new | story | unbound | 26a6831 |
+| story-add-mobile-resume-hydration | Mobile resume hydration | story | unbound | 26a6831 |
 
 ## Notes
 

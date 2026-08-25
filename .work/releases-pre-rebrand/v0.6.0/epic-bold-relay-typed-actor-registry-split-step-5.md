@@ -77,7 +77,7 @@ Approved (2026-06-30) with HIGH-risk final-composition verification. Independent
 re-ran: relay `cargo fmt --check` clean; `cargo clippy -- -D warnings` clean;
 `cargo test` 158 passed / 0 failed (no regression — existing routing/duplicate/
 stale-unregister/presence/room-lifecycle/metadata/cross-PC tests prove the facade
-composition is correct). Commit `4b597f2` scoped to peers/registry.rs (facade) +
+composition is correct). Commit `048fc55` scoped to peers/registry.rs (facade) +
 handlers/{connection_actor,control,pi_forward} (narrow-surface migration) + story
 .md; relay-only, no generated files.
 

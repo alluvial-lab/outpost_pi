@@ -109,5 +109,5 @@ populates transcript events. `session_sync` wire shape + projection behavior pre
 (limit/truncation, image replay, compaction replay, tool result stringification,
 late-attach sync, reconnect preservation, session-replacement reset — 24 transcript/
 session_sync tests pass). Old-session events do not replay into current session.
-Commit `46af73f` scoped to pi-ext only (extension.test.ts +50 + index.ts +
+Commit `fba368f` scoped to pi-ext only (extension.test.ts +50 + index.ts +
 sdk_session_projection.ts); collision guard held.

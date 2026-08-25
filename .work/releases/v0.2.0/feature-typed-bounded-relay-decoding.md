@@ -534,11 +534,11 @@ verification commands from each subproject root.
 
 All five standard-review findings are resolved:
 
-1. **App WS-in routing regression** — `1b8bcc2` updates the debug relay probe to send the now-required canonical 32-byte challenge nonce, restoring the post-auth WS-in routing test.
-2. **Padding-aware decoded-size estimation** — `caf17aa` subtracts standard base64 padding from the relay's opaque decoded-size estimate and locks exact 4 MiB plus non-divisible boundary behavior with regression tests.
-3. **Decode-once typed extension fanout** — `7cfef81` makes `relay_transport.ts` the sole raw-message decoder for runtime-owned relay connections. The same `DecodedRelayIngress` object fans out to the owner ingress callback and a typed subscription hub consumed by every `PlainPeerChannel` and `PiForwardClient`; those listeners no longer parse JSON or decode base64. Directly-owned standalone mesh relays retain one shared fallback decoder regardless of listener count. A regression test attaches owner, two peer channels, and cross-PC forwarding while asserting the relay still has exactly one raw `message` listener.
-4. **Unknown-type log amplification** — `563c4d8` replaces attacker-controlled type logging with content-free categories/byte counts and caps invalid-frame diagnostics per authenticated connection.
-5. **Generated relay ingress contracts** — `e5da080` makes schema/codegen own the ingress constants and generated TypeScript/Dart/Rust projections, including directional post-auth DTO validation; endpoint transports consume those generated contracts rather than handwritten mirrors.
+1. **App WS-in routing regression** — `d7f790e` updates the debug relay probe to send the now-required canonical 32-byte challenge nonce, restoring the post-auth WS-in routing test.
+2. **Padding-aware decoded-size estimation** — `0b2f047` subtracts standard base64 padding from the relay's opaque decoded-size estimate and locks exact 4 MiB plus non-divisible boundary behavior with regression tests.
+3. **Decode-once typed extension fanout** — `6c5c99c` makes `relay_transport.ts` the sole raw-message decoder for runtime-owned relay connections. The same `DecodedRelayIngress` object fans out to the owner ingress callback and a typed subscription hub consumed by every `PlainPeerChannel` and `PiForwardClient`; those listeners no longer parse JSON or decode base64. Directly-owned standalone mesh relays retain one shared fallback decoder regardless of listener count. A regression test attaches owner, two peer channels, and cross-PC forwarding while asserting the relay still has exactly one raw `message` listener.
+4. **Unknown-type log amplification** — `c3a2135` replaces attacker-controlled type logging with content-free categories/byte counts and caps invalid-frame diagnostics per authenticated connection.
+5. **Generated relay ingress contracts** — `802d7bd` makes schema/codegen own the ingress constants and generated TypeScript/Dart/Rust projections, including directional post-auth DTO validation; endpoint transports consume those generated contracts rather than handwritten mirrors.
 
 Verification after the final Finding 3 fix:
 
@@ -557,7 +557,7 @@ schema-generated predicates; `peer_channel.ts` retains a handwritten
 `OuterEnvelope` mirror; and the cross-stack references (`PROTOCOL.md`,
 `docs/ARCHITECTURE.md`, `.agents/skills/{pi-extension-typescript,flutter-mobile}/SKILL.md`)
 were not all updated to current-state. The feature was reopened to `review`
-(commit `894a027`) and a focused worker attempted the generated-validation
+(commit `9ac6027`) and a focused worker attempted the generated-validation
 completion twice; both attempts hit the turn limit mid-refactor with
 non-compiling/incomplete codegen-regeneration state (the schema `compat` profile
 for room-optional inbound outer envelopes is genuinely intricate). The partial

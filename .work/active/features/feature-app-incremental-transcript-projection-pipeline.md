@@ -471,7 +471,7 @@ All three optimization checkpoints are complete on the host-side benchmark lane.
 
 ## Review record (2026-08-24)
 Standard fresh-context pass over the campaign. Verdict: Request changes →
-closed done (f4e382f5, a3ab4fba): pipeline benchmark corrected to the
+closed done (d347143c, 6a940e43): pipeline benchmark corrected to the
 production materialization boundary (5,500-event replay 238.7ms real
 boundary; the earlier 107.3ms claim stopped before materialization);
 no incremental/canonical divergence found (rejected finding); reducer

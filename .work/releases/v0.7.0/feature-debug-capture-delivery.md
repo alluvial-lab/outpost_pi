@@ -68,7 +68,7 @@ scripts/refresh-dist.sh semantics).
 
 **Standard weight, one independent fresh-context pass** (gpt-5.6-sol).
 Verdict: Request changes → **closed done** after receiver-confirmed closure
-in 28d56bfe (standard policy, no second pass).
+in 0b811b64 (standard policy, no second pass).
 
 - **Blockers (3/3 fixed+verified):** symlinked `debug/` escaped lexical
   containment (now lstat-rejected + realpath-verified); in-flight slot

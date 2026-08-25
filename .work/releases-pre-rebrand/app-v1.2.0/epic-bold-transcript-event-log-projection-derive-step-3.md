@@ -108,7 +108,7 @@ Revert `SyncService` to direct `_upsert` / `_applyHistory` mutation. Projection 
 
 **Verification run**:
 - `cd /home/agent/forks/remote_pi/app && HOME=/tmp/pi-dart-home /tmp/flutter-writable/bin/flutter analyze` exited 1 with only the known-unrelated `axisAlignment` deprecation info at `lib/ui/chat/widgets/input_bar.dart:802`.
-- `cd /home/agent/forks/remote_pi/app && HOME=/tmp/pi-dart-home /tmp/flutter-writable/bin/flutter test test/data/sync/sync_service_test.dart` exited 1: 29 tests passed, 7 failed. The three new efb2fea7 coverage tests ran and passed, so the prior bounce's missing-coverage blocker is addressed, but the required file-level regression suite is still red.
+- `cd /home/agent/forks/remote_pi/app && HOME=/tmp/pi-dart-home /tmp/flutter-writable/bin/flutter test test/data/sync/sync_service_test.dart` exited 1: 29 tests passed, 7 failed. The three new e27da772 coverage tests ran and passed, so the prior bounce's missing-coverage blocker is addressed, but the required file-level regression suite is still red.
 
 ## Implementation notes (rework 2026-06-30)
 - Files changed: `app/lib/data/sync/sync_service.dart`, `app/test/data/sync/sync_service_test.dart`.
@@ -133,7 +133,7 @@ Revert `SyncService` to direct `_upsert` / `_applyHistory` mutation. Projection 
 - `app/lib/data/sync/sync_service.dart:435`: `clearActiveSession()` now clears the Hive rows and the in-memory transcript event buffer, but it still does not clear the active in-memory turn state (`_working`, `_workingReplyTo`, and any streaming cursor). A session clear is the `session_new` wipe boundary, so a clear during an active turn can leave the chat/Home state stuck working with a stale cancel target until some later replay/status edge happens to correct it. Call the existing turn-reset/working-clear path as part of `clearActiveSession()` and add a regression asserting `isWorking == false`, `workingReplyTo == null`, and `streaming == null` after clear.
 
 **Verification run**:
-- Inspected commit `7dc99eb`: the three prior bounce blockers are resolved in current source: steer submit/echo use `preserveTurnState` and preserve active `workingReplyTo`; live/history tool args use `_objectMap` for `null`, `Map<dynamic, dynamic>` with string keys, and fail-fast invalid shapes; `clearActiveSession()` calls `_clearTranscriptEventBuffer()` to clear `_transcriptEvents` and `_transcriptEventIds`.
+- Inspected commit `c201f15`: the three prior bounce blockers are resolved in current source: steer submit/echo use `preserveTurnState` and preserve active `workingReplyTo`; live/history tool args use `_objectMap` for `null`, `Map<dynamic, dynamic>` with string keys, and fail-fast invalid shapes; `clearActiveSession()` calls `_clearTranscriptEventBuffer()` to clear `_transcriptEvents` and `_transcriptEventIds`.
 - `cd /home/agent/projects/remote_pi/app && export PUB_CACHE=/home/agent/projects/remote_pi/.pub-cache && /home/agent/projects/remote_pi/.tools/flutter/bin/flutter pub get` completed successfully.
 - `cd /home/agent/projects/remote_pi/app && export PUB_CACHE=/home/agent/projects/remote_pi/.pub-cache && /home/agent/projects/remote_pi/.tools/flutter/bin/flutter analyze` exited 1 with only the known-unrelated `axisAlignment` deprecation info at `lib/ui/chat/widgets/input_bar.dart:802`.
 - `cd /home/agent/projects/remote_pi/app && export PUB_CACHE=/home/agent/projects/remote_pi/.pub-cache && /home/agent/projects/remote_pi/.tools/flutter/bin/flutter test test/data/sync/sync_service_test.dart` passed: 40 tests passed.

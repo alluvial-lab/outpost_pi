@@ -390,7 +390,7 @@ behavior, architecture, or protocol.
 
 Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
 orchestrator). One balanced pass over the integrated feature diff
-(`c346e28..HEAD -- cockpit/lib/app/cockpit/domain/ cockpit/test/domain/`).
+(`376fa38..HEAD -- cockpit/lib/app/cockpit/domain/ cockpit/test/domain/`).
 
 ### Findings (adjudicated)
 - **Nit — stale PTY package name in dartdoc** (`cockpit/lib/app/cockpit/domain/contracts/terminal_gateway.dart:3`): the translated dartdoc named `flutter_pty`, but the actual adapter imports and the pubspec dependency is `kyroon_pty`. Corrected to `kyroon_pty`. **Fixed.**

@@ -120,6 +120,6 @@ explicitly permits), `PiForwardClient` (sendEnvelopeToPi/queued-inbound), and
 tracks bridge epoch, passes `isCurrent` to `attachBridge`, invalidates on detach/stop/
 reconnect, detaches stale continuations after shutdown. Epoch teardown: `clearStaleContexts()`
 advances before relay/mesh teardown. New regression tests (detached no-ops +
-late-attach-after-shutdown) pass. Commit `fc9541c` scoped to pi-ext only (relay_transport
+late-attach-after-shutdown) pass. Commit `9b86fc0` scoped to pi-ext only (relay_transport
 + ports + peer_channel/pi_forward_client/broker_remote detached guards + tests); collision
 guard held. **sdk-session-projection arc complete (5/5).**

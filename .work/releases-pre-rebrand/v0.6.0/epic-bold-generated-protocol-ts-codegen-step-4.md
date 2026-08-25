@@ -144,6 +144,6 @@ through `decodeClient` in PlainPeerChannel/OwnerMultiplexer/pairing coordinator 
 routing. Compatibility preserved (validators accept both session-tagged + non-session-
 tagged action replies/model lists; echoes `session_id` when present). Schema source
 corrected for optional `session_id` on action_ok/action_error/models_list, regenerated
-(no hand-edits). Commit `0f2d304` scoped to tools/ + pi-ext only (types.ts + codec.ts +
+(no hand-edits). Commit `51fc341` scoped to tools/ + pi-ext only (types.ts + codec.ts +
 generated + handlers + pairing_coordinator + owner_multiplexer + tests); collision
 guard held. **The atomic runtime swap succeeded cleanly.**

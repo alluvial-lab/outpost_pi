@@ -262,10 +262,10 @@ All four child stories landed and verified; the feature is review-ready.
 
 | Unit | Story | Commit | Outcome |
 |---|---|---|---|
-| 1 — extension broadcasts tool `ts` | `…-extension-broadcast-tool-ts` | `0a048de` | optional `ts` on LIVE `toolRequest`/`toolResult` schema + dart IR fixture; extension broadcasts the history `Date.now()` on owner-channel tool frames; TS+Dart regenerated; Rust untouched (app-pi excluded by design) |
-| 2 — app consumes tool `ts` | `…-app-consume-tool-ts` | `a51fd5f` | `ToolRequested`/`ToolFinished` use the wire `ts` with `DateTime.now()` fallback, mirroring the existing user/assistant/compaction pattern |
-| 3 — projection render sort | `…-projection-render-sort` | `455dce8` | `deriveTranscriptProjection` sorts the authoritative bubbles by canonical server `ts` (arrival-index tiebreak) AFTER the unchanged arrival-order lifecycle pass; tool bubbles take the earliest request/result `ts` |
-| 4 — ts-provenance audit | `…-ts-provenance-audit` | `c9c9495` | confirmed user/assistant/compaction already thread server `ts`; **found + fixed** an `AgentDone` fallback leak (phone→server `ts`); error-diagnostic documented as a wire-has-no-`ts` compat exception |
+| 1 — extension broadcasts tool `ts` | `…-extension-broadcast-tool-ts` | `30c8092` | optional `ts` on LIVE `toolRequest`/`toolResult` schema + dart IR fixture; extension broadcasts the history `Date.now()` on owner-channel tool frames; TS+Dart regenerated; Rust untouched (app-pi excluded by design) |
+| 2 — app consumes tool `ts` | `…-app-consume-tool-ts` | `d246039` | `ToolRequested`/`ToolFinished` use the wire `ts` with `DateTime.now()` fallback, mirroring the existing user/assistant/compaction pattern |
+| 3 — projection render sort | `…-projection-render-sort` | `9b3693e` | `deriveTranscriptProjection` sorts the authoritative bubbles by canonical server `ts` (arrival-index tiebreak) AFTER the unchanged arrival-order lifecycle pass; tool bubbles take the earliest request/result `ts` |
+| 4 — ts-provenance audit | `…-ts-provenance-audit` | `7ce9e08` | confirmed user/assistant/compaction already thread server `ts`; **found + fixed** an `AgentDone` fallback leak (phone→server `ts`); error-diagnostic documented as a wire-has-no-`ts` compat exception |
 
 Key as-built notes:
 
@@ -277,7 +277,7 @@ Key as-built notes:
   cleanup); the orchestrator derived the command by reproducing a byte-identical file.
 - A **pre-existing** hot-reload restart-sweep `ENOENT` race makes the full
   extension suite exit nonzero on HEAD too (all 962 tests pass); parked as
-  `backlog-extension-hot-reload-restart-sweep-enoent-race` (`ac8c4c5`), not
+  `backlog-extension-hot-reload-restart-sweep-enoent-race` (`5fa6d19`), not
   folded into any item.
 
 ## Integrated verification

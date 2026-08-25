@@ -88,4 +88,4 @@ Verification:
 **Important**: none
 **Nits**: none
 
-**Notes**: Fast-lane story review with direct commit/file verification (`d9eb442`). Confirmed `pi-extension/src/extension/ports.ts` defines the runtime epoch plus relay, owner, SDK-session, command-surface, and aggregate runtime port boundaries; `extension/types.ts` provides the neutral `RelayConnectivity` type; the new files are side-effect-free and not imported by runtime code. Ran `corepack pnpm typecheck` from `pi-extension/` successfully. Item advanced to `done`.
+**Notes**: Fast-lane story review with direct commit/file verification (`99b6584`). Confirmed `pi-extension/src/extension/ports.ts` defines the runtime epoch plus relay, owner, SDK-session, command-surface, and aggregate runtime port boundaries; `extension/types.ts` provides the neutral `RelayConnectivity` type; the new files are side-effect-free and not imported by runtime code. Ran `corepack pnpm typecheck` from `pi-extension/` successfully. Item advanced to `done`.

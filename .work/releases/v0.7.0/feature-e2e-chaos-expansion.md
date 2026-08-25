@@ -66,13 +66,13 @@ script (post-incident).
 
 | story | commit | verification |
 |---|---|---|
-| oracle-invariants | 2a6b3cd9 | 4 invariants clean in seeded soak; 11 unit tests |
-| fault-vocabulary | 1a13282c | latency/bandwidth/slow_close/relay_kill/compound demonstrated; determinism tests |
-| state-shapes | 0153ed6f | multi-session/re-pair/long-uptime shapes in soak |
-| fault-moment-grid | 41750c9a + 3608d61b | main 9/9 green; cold cells skip-linked green (post-correction run) |
-| mesh-lane | 1defbfd5 | 2nd pi-host; 3 mesh scenarios (1 linked skip) |
-| nightly-cadence | c1615baa | real 15-min manual run green; cron @02:30; bounded rotation; drift alerting |
-| clock-version-skew | d6e073e0 | ±2h clock skew held invariants; v0.4.0 relay drill passed 16 current pairing tests |
+| oracle-invariants | 8020a33c | 4 invariants clean in seeded soak; 11 unit tests |
+| fault-vocabulary | ca7e4a72 | latency/bandwidth/slow_close/relay_kill/compound demonstrated; determinism tests |
+| state-shapes | 76a8f1e6 | multi-session/re-pair/long-uptime shapes in soak |
+| fault-moment-grid | 3e89147e + 52cf059a | main 9/9 green; cold cells skip-linked green (post-correction run) |
+| mesh-lane | 737787ab | 2nd pi-host; 3 mesh scenarios (1 linked skip) |
+| nightly-cadence | c5a63889 | real 15-min manual run green; cron @02:30; bounded rotation; drift alerting |
+| clock-version-skew | eeb68e12 | ±2h clock skew held invariants; v0.4.0 relay drill passed 16 current pairing tests |
 
 **Program discoveries (the point of the exercise) — parked with evidence:**
 1. `backlog-app-cold-replay-duplicates-persisted-transcript` — fresh process
@@ -91,7 +91,7 @@ either doc drift or a missing enforcement surface; adjudicate in review.
 
 **Standard weight, one independent pass** — fresh-context cross-model
 reviewer (gpt-5.6-sol). Verdict: Request changes → **closed done** after
-receiver-confirmed blocker fixes in e6e65e6c (standard policy, no second
+receiver-confirmed blocker fixes in 48863c19 (standard policy, no second
 pass).
 
 - **Blockers (4/4 confirmed, fixed + verified):** (1) nightly known-open

@@ -29,8 +29,8 @@ impossible to trigger from mobile mid-session. The feature goal: let the agent
 (`pi --continue`), cleanly disconnects/reconnects the relay, and loads the new
 `dist/` — without leaving the mobile operator stranded.
 
-A first cut was built inline under operational pressure (commits `81f2df0`,
-`150bab0`) and then put through an adversarial cross-model review
+A first cut was built inline under operational pressure (commits `9b3f229`,
+`df2cdde`) and then put through an adversarial cross-model review
 (`openai-codex/gpt-5.6-sol`). The review found **4 blockers** that require
 rework before this is safe to use. This feature captures the redesign.
 
@@ -136,7 +136,7 @@ enforce `0700`/`0600`.
 - `scripts/hot-reload.sh` — toggle manager (needs scoping per B2, M2)
 - `pi-extension/src/index.ts` — `_maybeRestartForExtensionReload()` + sentinel
   paths (needs agent_settled per B1, lifecycle fence per M1)
-- The inline commits (`81f2df0`, `150bab0`) are NOT reverted — they're a flawed
+- The inline commits (`9b3f229`, `df2cdde`) are NOT reverted — they're a flawed
   first cut that the redesign will replace or substantially rewrite. Keeping them
   lets a resumed session see the current state. The toggle defaults to OFF, so the
   broken behavior is inert until explicitly enabled.
@@ -409,8 +409,8 @@ back at `drafting` (their design depends on the revised approach).
 ## Implementation summary (2026-07-31)
 
 Both child stories implemented and verified:
-- `story-hot-reload-agent-settled-hook-and-wrapper` (done, `e678ac3`): runtime identity, PID-scoped arming, agent_settled handler with quiescing gate + ctx.isIdle() recheck, exclusive O_EXCL claim, graceful SIGTERM + marker, wrapper handshake.
-- `story-hot-reload-lifecycle-fence` (done, `eee809a`): _disposed guard at multiple checkpoints, secure filesystem validation (lstat owner+mode+symlink rejection), stale identity sweep, off-cleanup glob.
+- `story-hot-reload-agent-settled-hook-and-wrapper` (done, `232bc4e`): runtime identity, PID-scoped arming, agent_settled handler with quiescing gate + ctx.isIdle() recheck, exclusive O_EXCL claim, graceful SIGTERM + marker, wrapper handshake.
+- `story-hot-reload-lifecycle-fence` (done, `6402774`): _disposed guard at multiple checkpoints, secure filesystem validation (lstat owner+mode+symlink rejection), stale identity sweep, off-cleanup glob.
 
 ### Verification
 - 962 tests passed, 3 skipped (7 new tests for the v2 hot-reload mechanism)
@@ -430,7 +430,7 @@ Both child stories implemented and verified:
 
 **Pass 1 verdict**: Request changes — 4 blockers found.
 
-**Blockers fixed (commit ec2908c)**:
+**Blockers fixed (commit 86a53ec)**:
 - B1: quiescing gate delivery_pending → delivery_error (recoverable) — no false replay promise
 - B2: marker PID-scoped (.restart-marker-<PID>) + wrapper validates child PID
 - B3: /outpost-pi hot-reload off globs all PID-scoped state via readdirSync

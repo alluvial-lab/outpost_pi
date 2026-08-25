@@ -95,7 +95,7 @@ Restore handwritten DTO definitions in `relay/src/mesh/types.rs` and keep the ex
 
 Approved (2026-06-30). Independently re-ran: relay `cargo fmt --check` clean;
 `cargo clippy -- -D warnings` clean; `cargo test` 131 passed / 0 failed. Commit
-`187fac7` scoped to mesh/handler.rs + mesh/types.rs + mesh/mod.rs + mesh_test.rs
+`5393b99` scoped to mesh/handler.rs + mesh/types.rs + mesh/mod.rs + mesh_test.rs
 + story .md; NO generated files touched (boundary refactor consuming existing
 generated DTOs — regen N/A, confirmed). HTTP-compatibility invariants verified:
 body cap, Owner sig verification, URL hash match, monotonic-version rejection,

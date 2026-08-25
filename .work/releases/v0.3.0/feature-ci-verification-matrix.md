@@ -34,7 +34,7 @@ checks (AGENTS.md "Common commands"):
 Plus dependency-audit automation: Dependabot (or Renovate) config covering
 pnpm/cargo/pub ecosystems, and an audit job (`pnpm audit`, `cargo audit` or
 `cargo-deny`) with a documented severity threshold. Dependabot alerts already
-fire on the repo (see commit `a049b09`) but nothing gates on them.
+fire on the repo (see commit `7d5b30d`) but nothing gates on them.
 
 ## Simplification opportunity
 
@@ -64,7 +64,7 @@ Advisor review 2026-07-23, recommendation #1. Broadens parked backlog item
   shouldn't block unrelated work. Weekly cron + pushes that touch lockfiles.
   Fail threshold: high/critical.
 - **Dependabot over Renovate**: alerts already fire on this repo (commit
-  `a049b09` fixed transitive advisories), GitHub-native, zero extra
+  `7d5b30d` fixed transitive advisories), GitHub-native, zero extra
   infrastructure. Renovate's power isn't needed for a single-operator repo.
 - **Flutter version stays per-workflow `env`** (`3.41.7`): centralizing via
   composite action would couple release workflows to ci internals. Drift

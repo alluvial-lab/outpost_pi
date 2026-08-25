@@ -15,7 +15,7 @@ updated: 2026-08-16
 
 Four upstream robustness fixes verified present-and-broken in our tree.
 
-## 1. Keyring operation timeouts — upstream `a60526ec`
+## 1. Keyring operation timeouts — upstream `4fd5f368`
 
 `pi-extension/src/pairing/storage.ts:75-81`: `NapiKeyringBackend` awaits
 `getPassword()`/`setPassword()` directly; on headless/libsecret systems a
@@ -23,7 +23,7 @@ hung native call hangs pairing forever. Upstream wraps operations with a
 timeout at their `storage.ts:95-122`. Port the bounded wrapper for
 read/write/delete across all backends.
 
-## 2. Non-fatal keyring load + no destructive mint — upstream `074c5c5f`
+## 2. Non-fatal keyring load + no destructive mint — upstream `784ff2c8`
 
 Ours statically imports `AsyncEntry` (`storage.ts:5`) — under Bun the native
 binding load can throw and take the extension down; upstream lazy-loads at
@@ -32,13 +32,13 @@ over existing pairings (`:420-421`); ours can mint a file identity at
 `storage.ts:270-293` without consulting `peers.json`. Port both, adapted to
 Outpost-Pi names/env, KEEPING our O_EXCL mint path and peer-store locking.
 
-## 3. File-first identity precedence — upstream `f6a92d86` (identity half)
+## 3. File-first identity precedence — upstream `7b11859a` (identity half)
 
 Ours can generate a new keyring key at `storage.ts:255-257` before checking
 the file at `:270`; upstream checks the file identity first (`:220-230`).
 (Dedupe half not needed — our `runtime_coordinator.ts:37-82` is stronger.)
 
-## 4. Print-mode relay auto-start guard — upstream `964c9005`
+## 4. Print-mode relay auto-start guard — upstream `63e13278`
 
 `pi -p`/`--print` hangs on the auto-started relay socket; upstream guards
 `process.argv` at their `index.ts:2103-2107`. Ours auto-starts from session

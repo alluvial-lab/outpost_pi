@@ -28,8 +28,8 @@ app's explicit 10-second WebSocket connect/auth deadline in
 `app/lib/config/dependencies.dart` surfacing through
 `ConnectionManager._connect` as `retryConnect`. Heartbeat mismatch is falsified:
 the deployed app interval had already been raised from 20 seconds to 45 seconds
-in `3075edfb`, looser than the relay's 25-second ping, and the relay's first tick
-waits one full 25-second interval (`a04a4405`). Several captured channels drop
+in `b5fca15a`, looser than the relay's 25-second ping, and the relay's first tick
+waits one full 25-second interval (`319cc783`). Several captured channels drop
 less than 25 seconds after recent inbound frames, so neither heartbeat can have
 expired; 46 unattributed channel-loss rows precede the reconnect failures.
 
@@ -49,7 +49,7 @@ and scheduled duplicate-device takeover churn, including
 ## Fix approach
 
 Do not change keepalive math speculatively. The required observability hardening
-already landed in `1a43ac80` after this ring was captured:
+already landed in `89068e41` after this ring was captured:
 `ConnChannelLostEvent.cause` now records the closed category `channelError`,
 `channelDone`, `pingSendFailure`, or `simulated`, and the triage tool groups the
 cause. A fresh capture can therefore attribute the initiating drop rather than
@@ -71,9 +71,9 @@ contract tests additionally require the closed `cause` field on
 
 ## Failing-before / passing-after evidence
 
-- Before `1a43ac80`, all 46 source-ring `connChannelLost` rows lacked `cause`, so
+- Before `89068e41`, all 46 source-ring `connChannelLost` rows lacked `cause`, so
   the initiating disconnect was unclassifiable.
-- After `1a43ac80`, `app/test/domain/contracts/debug_log_test.dart` requires the
+- After `89068e41`, `app/test/domain/contracts/debug_log_test.dart` requires the
   cause field and `scripts/debug_capture_triage.py` reports cause distributions;
   its self-test deterministically confirms the 89 connect-timeout attribution.
 - No real-time sleeps or wall-clock-sensitive timing assertion was added.

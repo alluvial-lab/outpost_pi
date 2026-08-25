@@ -123,7 +123,7 @@ orchestrator's independent re-run consistently shows 0 failures. The enhanced
 briefing (re-run if first run flakes) did not fully eliminate the mis-attribution;
 the pattern remains filed as `.work/backlog/backlog-piext-agents-false-uds-failure-claims.md`.
 
-Commit `abba2f8` scoped to pi-ext only (owner_multiplexer.ts + index.ts +
+Commit `2d371bf` scoped to pi-ext only (owner_multiplexer.ts + index.ts +
 extension.test.ts + story .md); collision guard held. HIGH-risk ingress invariants
 verified: `handleOuterLine` owns outer-decode/active-short-circuit/pair-request/
 reconnect-attach/first-inner-routing/unknown_peer-error; `handlePairRequest`

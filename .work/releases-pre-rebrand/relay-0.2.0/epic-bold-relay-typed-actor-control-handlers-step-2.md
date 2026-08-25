@@ -108,4 +108,4 @@ Restore `parse_hello`/`verify_auth` plus the current raw hello `room_meta` extra
 **Important**: none
 **Nits**: none
 
-**Notes**: Fast-lane story review. Implementation commit `acbc040` removes the post-auth raw `hello_text` reparse in `relay/src/handlers/peer.rs`, returns `AuthenticatedPeer`/`RoomMeta` from typed hello bootstrap parsing, and adds auth tests for explicit metadata plus `main`/`working:false` defaults. Verification run from `relay/`: `cargo fmt --check && cargo clippy -- -D warnings && cargo test` passed.
+**Notes**: Fast-lane story review. Implementation commit `cbf64ea` removes the post-auth raw `hello_text` reparse in `relay/src/handlers/peer.rs`, returns `AuthenticatedPeer`/`RoomMeta` from typed hello bootstrap parsing, and adds auth tests for explicit metadata plus `main`/`working:false` defaults. Verification run from `relay/`: `cargo fmt --check && cargo clippy -- -D warnings && cargo test` passed.

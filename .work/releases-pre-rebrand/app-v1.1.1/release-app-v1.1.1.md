@@ -42,14 +42,14 @@ active done items moved to `.work/releases/app-v1.1.1/`.
 
 | id | title | kind | archived_atop | git ref |
 |----|-------|------|---------------|---------|
-| story-fix-mobile-message-send-failures-visible | Mobile message send failures visible | story | unbound | 3dba904 |
-| story-preserve-pending-send-backstop-on-disconnect | Preserve pending-send backstop on disconnect | story | unbound | 3dba904 |
-| story-fix-mobile-working-convergence-on-disconnect | Mobile working convergence on disconnect | story | unbound | 3dba904 |
-| story-make-pending-backstop-disconnect-test-deterministic | Make pending-backstop disconnect test deterministic | story | unbound | 3dba904 |
-| story-fix-room-switch-snapshot-adoption | Room switch snapshot adoption | story | unbound | 3dba904 |
-| story-remote-pi-android-build-smoke | Android build smoke | story | unbound | 3dba904 |
-| story-guard-history-clear-without-prior-start | Guard history clear without prior start | story | unbound | 3dba904 |
-| story-close-rooms-controller-on-dispose | Close rooms controller on dispose | story | unbound | 3dba904 |
+| story-fix-mobile-message-send-failures-visible | Mobile message send failures visible | story | unbound | 26a6831 |
+| story-preserve-pending-send-backstop-on-disconnect | Preserve pending-send backstop on disconnect | story | unbound | 26a6831 |
+| story-fix-mobile-working-convergence-on-disconnect | Mobile working convergence on disconnect | story | unbound | 26a6831 |
+| story-make-pending-backstop-disconnect-test-deterministic | Make pending-backstop disconnect test deterministic | story | unbound | 26a6831 |
+| story-fix-room-switch-snapshot-adoption | Room switch snapshot adoption | story | unbound | 26a6831 |
+| story-remote-pi-android-build-smoke | Android build smoke | story | unbound | 26a6831 |
+| story-guard-history-clear-without-prior-start | Guard history clear without prior start | story | unbound | 26a6831 |
+| story-close-rooms-controller-on-dispose | Close rooms controller on dispose | story | unbound | 26a6831 |
 
 ## Notes
 

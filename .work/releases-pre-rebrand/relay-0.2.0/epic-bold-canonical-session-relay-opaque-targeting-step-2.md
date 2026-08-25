@@ -79,4 +79,4 @@ Restore `forward_to_peer` and the old `pi_forward` call. This cleanly reopens fa
 **Important**: none
 **Nits**: none
 
-**Notes**: Fast-lane story review. Inspected implementation commit `f6ed43c`; `pi_forward` now forwards via explicit `to_room`, `forward_to_peer` is removed, `pi_envelope_in` carries `to_room`, and tests prove two rooms for one peer only deliver to the addressed room while preserving the inner envelope verbatim. Relay code does not parse inner `ct`/`body.session_id`. Verification run from `relay/`: `cargo fmt --check && cargo clippy -- -D warnings && cargo test`.
+**Notes**: Fast-lane story review. Inspected implementation commit `67aa0a1`; `pi_forward` now forwards via explicit `to_room`, `forward_to_peer` is removed, `pi_envelope_in` carries `to_room`, and tests prove two rooms for one peer only deliver to the addressed room while preserving the inner envelope verbatim. Relay code does not parse inner `ct`/`body.session_id`. Verification run from `relay/`: `cargo fmt --check && cargo clippy -- -D warnings && cargo test`.

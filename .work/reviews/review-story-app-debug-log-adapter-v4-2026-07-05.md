@@ -2,7 +2,7 @@
 
 ## 1. Verdict
 
-ACCEPTED. Commit 788d298 actually applies the clear-vs-flush serialization this time, and the rewritten regression test has teeth: when I temporarily removed the await block from `clear()`, the targeted test failed by observing log resurrection. The focused test passes with the fix restored, the full app test suite is green at 640 tests, and `flutter analyze` reports only the known pre-existing `axisAlignment` deprecation info.
+ACCEPTED. Commit f7793b0 actually applies the clear-vs-flush serialization this time, and the rewritten regression test has teeth: when I temporarily removed the await block from `clear()`, the targeted test failed by observing log resurrection. The focused test passes with the fix restored, the full app test suite is green at 640 tests, and `flutter analyze` reports only the known pre-existing `axisAlignment` deprecation info.
 
 ## 2. Fix verification
 

@@ -70,5 +70,5 @@ path).
 - First full app test attempt exposed two unrelated timing flakes (`debug_log_impl_test` and `sync_service_test`); both passed in a focused rerun, and the subsequent full 683-test run passed.
 - Discrepancy from design: the Dart barrel keeps the analyzer-preferred anonymous `library;` directive rather than a named library; all package/file references use `outpost_pi_identity`.
 - Unit 8 ownership preserved: this implementation did not edit the Android `BLOB_KEY` or iOS Keychain service. Concurrent Unit 8 work changed those values in the shared working tree while this story was running.
-- Shared-tree note: another concurrent process committed the shared Unit 6 + Unit 8 working tree as `3538f0b` while this implementation was in progress. This agent did not run `git commit`, per operator instruction; the only remaining uncommitted Unit 6 change is this updated story record.
+- Shared-tree note: another concurrent process committed the shared Unit 6 + Unit 8 working tree as `88f2807` while this implementation was in progress. This agent did not run `git commit`, per operator instruction; the only remaining uncommitted Unit 6 change is this updated story record.
 - Adjacent issues parked: none.

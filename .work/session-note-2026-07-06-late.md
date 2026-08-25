@@ -2,20 +2,20 @@
 
 ## Landed this session (all reviewed, all green: app 668/668, ext 754/754)
 
-1. **Reorder fix** (`80b04e5`) — `story-fix-transport-active-room-reestablishment-on-reconnect`
+1. **Reorder fix** (`ca555be`) — `story-fix-transport-active-room-reestablishment-on-reconnect`
    (stage: review, APPROVED ×2). `WsTransport` constructed with correct `activeRoom` from
    `connect()`; `adopt()` mirrors `_connect`. Inbound demux race eliminated.
 
-2. **Dup amplification** (`96dc568`) — `story-mobile-assistant-message-duplicated-live-replay`
+2. **Dup amplification** (`4be50e7`) — `story-mobile-assistant-message-duplicated-live-replay`
    decision 2. `ToolRequest` re-flush synchronous buffer clear.
 
-3. **Identity source (a) assistant** (`0765313` + `865fc65`) — same story, decision 1.
+3. **Identity source (a) assistant** (`78bad9c` + `e359e39`) — same story, decision 1.
    Extension `message_end` broadcasts live `agent_message` with stable `(ts, message_id)`;
-   app derives deterministic eventId matching replay. **Multi-block collision fix** (`865fc65`)
+   app derives deterministic eventId matching replay. **Multi-block collision fix** (`e359e39`)
    addressed a REJECT from deep review: use `messageId ?? inReplyTo` as stable key so
    multi-block messages don't collide. Second-pass review: APPROVE.
 
-4. **Identity source (a) user-message** (`76ceed3`) — same story, user-message follow-up.
+4. **Identity source (a) user-message** (`784227e`) — same story, user-message follow-up.
    Extension `message_end` (user branch) broadcasts live `user_input` with `ts`; app `UserInput`
    handler derives deterministic eventId. Event-store convergence (projection already deduped
    by `ChatMessage.id`). Codegen interface-collision bug found+fixed (Client+Server
@@ -29,7 +29,7 @@
 - CONFIRMED via relay logs: phone's outbound envelopes carry `room=main` while app believes
   `7ADky`. Relay can't find a Pi in `main` → drops → 20s `send_timeout` → "not delivered".
 - This is the SEND-side twin of the reorder bug (inbound demux). Same root: `WsTransport._activeRoom`
-  stuck at `'main'`. The reorder fix (`80b04e5`) addresses it but **is not deployed** (source
+  stuck at `'main'`. The reorder fix (`ca555be`) addresses it but **is not deployed** (source
   commits only; phone runs old APK). Plus `peer.roomId ?? 'main'` fallback still sends to `main`
   when PeerRecord has no room.
 - The workstation's `[remote-pi] fanout-presence: Pi rejected message: agent session not bound yet`

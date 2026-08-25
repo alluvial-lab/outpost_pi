@@ -15,7 +15,7 @@ updated: 2026-08-24
 
 ## Symptom
 
-`e2e/run-live.sh state-shapes` failed in `live_device_harness.dart` after a 5,500-event `wsIn` flood: the oldest marker rotated out as expected, but the immediately captured export did not contain the newest row (`count == 5499`). The failure began after commit `668cbcee`, which introduced constant-time ring admission and coalesced flushing.
+`e2e/run-live.sh state-shapes` failed in `live_device_harness.dart` after a 5,500-event `wsIn` flood: the oldest marker rotated out as expected, but the immediately captured export did not contain the newest row (`count == 5499`). The failure began after commit `08132863`, which introduced constant-time ring admission and coalesced flushing.
 
 ## Root cause
 

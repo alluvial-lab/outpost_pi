@@ -110,7 +110,7 @@ false-alarm group (`after a clean reset`, `name-assigned`, `rename:<name>`,
 `leader election`, `supervisor.sock`)". The orchestrator's independent vitest run
 confirms 0 failures.
 
-Commit `9dd6107` scoped to pi-ext only (composition_root.ts + ports.ts +
+Commit `e4464c5` scoped to pi-ext only (composition_root.ts + ports.ts +
 legacy_ports.ts + index.ts + tests); collision guard held. Lifecycle-ordering
 verified: `registerLifecycleHooks` extracted; `session_start` binds fresh session
 context via SdkSessionProjectionPort + rearms via CommandSurfacePort.ensureStarted;

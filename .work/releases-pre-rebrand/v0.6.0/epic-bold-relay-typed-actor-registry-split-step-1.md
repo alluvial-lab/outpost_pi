@@ -87,7 +87,7 @@ Inline `ConnectionRegistry` back into `PeerRegistry` and restore the tuple `Conn
 Approved (2026-06-30). Independently re-ran: relay `cargo fmt --check` clean;
 `cargo clippy -- -D warnings` clean; `cargo test` 148 passed / 0 failed (pure
 refactor — existing registry/presence/rooms/integration/cross-PC coverage is
-the proof). Commit `a75b0f6` scoped to peers/connections.rs (new) + peers/mod.rs
+the proof). Commit `dc0d52b` scoped to peers/connections.rs (new) + peers/mod.rs
 + peers/registry.rs + story .md; relay-only, no generated files.
 
 `ConnectionRegistry` + `ConnectionEntry` extracted to connections.rs (next_conn

@@ -47,7 +47,7 @@ The production runtime is unchanged (test-only accessor).
 `bash e2e/run-pairing.sh` on the VM → `+12 -4` (same room-swap + timeout). So it is a real bug, not CI-env-specific.
 
 ## Regression source
-The done-work commits that were local Jul 27 → pushed Aug 12 (56c5701 onward). Suspects (pairing/room-adjacent):
+The done-work commits that were local Jul 27 → pushed Aug 12 (0e37c8b onward). Suspects (pairing/room-adjacent):
 - canonical-transcript-ordering (app sync_service + projection, extension broadcast)
 - pair_request_flow typed decoder (app)
 - to_room sender-side room targeting (extension) / room-keying by (cwd, name)

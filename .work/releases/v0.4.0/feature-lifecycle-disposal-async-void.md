@@ -71,7 +71,7 @@ tests (`scan-lifecycle` rule library + existing turn-state/projection suites).
 - **Owner ingress uses the transport-owned async dispatch boundary**: retain the current implicit return from the `onOuterMessage` callback. `RelayTransport` awaits that promise inside its generation-fenced FIFO and observes handler rejection before continuing. Do not add a second fire-and-forget observer in `index.ts`.
 - **Self-revoke awaits channel teardown**: make `onRevoke` async and await `owners.detach(ownerEpk, "session_replaced")` before publishing the local revoke notice. `SelfRevoke` already accepts and awaits async callbacks.
 - **The app injector owns `OwnerIdentityBridge` disposal**: extend `CustomInjector.addInstance` with an optional typed `onDispose` callback and register the bridge with `bridge.dispose()`. Keep `disposeDependencies()` as the single composition-root teardown rather than adding a one-off manual lookup there.
-- **Existing lifecycle fixes are preserved**: build on the stale-capability handling from `ea074e0` and keep the `working=false` convergence from `8b987c8` ordered before the final relay close.
+- **Existing lifecycle fixes are preserved**: build on the stale-capability handling from `14c1966` and keep the `working=false` convergence from `b5fa094` ordered before the final relay close.
 
 ## Architectural choice
 Use owned promises at each existing lifecycle boundary rather than adding a new teardown coordinator. `_goIdle`, relay auth, relay ingress, self-revoke, and the app injector already have clear owners; the fix is to make their completion and cleanup contracts explicit and propagate them to callers.
@@ -113,7 +113,7 @@ export interface ControlCommandsDeps {
 - This is the trickiest unit. Stop owner ingress and the self-revoke poller first, snapshot current owner ids, and call `_owners.detach(peerId, byeReason)` once per owner. `detach` already queues the protected bye before detaching its listener and returns `whenIdle()` work.
 - Await the snapshot's drains with `Promise.allSettled` before `_relayTransport.stop(byeReason)`. Remove the separate `_owners.broadcast(bye)` plus `_owners.detachAll()` sequence so each owner gets one bye through the drain-aware path.
 - Coalesce overlapping `_goIdle` calls behind one in-flight promise so control shutdown and `session_shutdown` cannot race two teardown sequences.
-- Preserve turn convergence before final relay close. The `8b987c8` composition-root contract remains: `resetTurnSnapshot()` and any `working=false` publish occur while the relay is usable.
+- Preserve turn convergence before final relay close. The `b5fa094` composition-root contract remains: `resetTurnSnapshot()` and any `working=false` publish occur while the relay is usable.
 - Await `ports.relay.stop()` in `disposeRuntimePorts`; await `stopRelay` from `/outpost-pi stop`, Cockpit relay off/toggle, and rename relay cycling. Update port fakes rather than weakening the async signature.
 - Do not add relay-response waiting to `whenIdle`: outbound `relay.send` is the terminal transport action and is synchronous from the drain's perspective.
 
@@ -199,7 +199,7 @@ onRevoke: async (ownerEpk: string): Promise<void> => {
 
 **Implementation notes**:
 - Reuse the existing async `OwnerMultiplexerPort.detach` contract established by Unit 1. Do not add a second detach helper or a nested `void` observer.
-- Preserve the stale-UI/capability behavior from `ea074e0`; this callback uses injected current capabilities and must not retain a command context across the await.
+- Preserve the stale-UI/capability behavior from `14c1966`; this callback uses injected current capabilities and must not retain a command context across the await.
 
 **Acceptance criteria**:
 - [ ] `SelfRevoke.checkOnce()` does not settle or publish its revoke notice until a deferred `owners.detach` settles.

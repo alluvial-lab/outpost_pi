@@ -87,7 +87,7 @@ Inline `WorkspaceProjection` methods back into `CockpitViewModel`, restore `_ses
 Fast-lane approved (2026-06-30). Independently re-ran `flutter test
 test/ui/workspace_projection_test.dart test/ui/cockpit_viewmodel_workspace_commands_test.dart`
 → 8/8; whole-cockpit `flutter analyze` 0 issues (both cockpit Wave-5 agents
-integrate cleanly). Commit `3366c45` scoped to owned files; collision guard held
+integrate cleanly). Commit `1eb74fe` scoped to owned files; collision guard held
 — did NOT touch agent_session.dart/transcript entities/rpc_data_mapper (owned
 by the parallel transcript-projection-derive-step-5). Lifecycle ownership
 (watcher/debounce disposal) verified in WorkspaceProjection.

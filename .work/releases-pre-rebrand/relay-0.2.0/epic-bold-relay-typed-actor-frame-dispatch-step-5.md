@@ -103,7 +103,7 @@ Reintroduce the raw string match in `handle_peer` while keeping the actor shell 
 Approved (2026-06-30) with HIGH-risk final-switch-over verification. Independently
 re-ran: relay `cargo fmt --check` clean; `cargo clippy -- -D warnings` clean;
 `cargo test` 148 passed / 0 failed (93 lib + 3 integ + 13 mesh + 8 pi_forward +
-10 presence + 2 parity + 19 rooms; +4 new coverage tests). Commit `4494197` scoped
+10 presence + 2 parity + 19 rooms; +4 new coverage tests). Commit `0e6375c` scoped
 to connection_actor.rs + story .md; relay-only, no generated/control.rs touched
 (collision guard held — the exhaustive per-variant match already lived in
 control.rs from the done control-handlers epic; this step correctly focused on

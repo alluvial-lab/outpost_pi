@@ -72,14 +72,14 @@ Disable the app gate via one internal seam, then revert the protocol fields and 
 **Verdict**: Request changes
 
 **Blockers**:
-- no code change: implementation commit `ee7aad2c` only changed this story file (+7/-1, stage and notes). Step 3 is not a no-code/doc-only story: its design calls for app fail-fast gating, `WsTransport` clean-room no-room drop behavior, and SyncService regression coverage.
+- no code change: implementation commit `059888b0` only changed this story file (+7/-1, stage and notes). Step 3 is not a no-code/doc-only story: its design calls for app fail-fast gating, `WsTransport` clean-room no-room drop behavior, and SyncService regression coverage.
 - `app/lib/data/transport/ws_transport.dart:100` / `app/lib/data/transport/ws_transport.dart:101`: the legacy no-room bypass remains (`Legacy Pis without room route unconditionally`; only `senderRoom != null && senderRoom != transport._activeRoom` is dropped). This violates the step's implementation note to remove `WsTransport`'s legacy no-room unconditional route so no-room envelopes cannot bypass session attribution.
-- Acceptance criteria literal check: (1) foreign/missing `session_history` rows: partially present in existing `sync_service_test.dart`, but not landed by `ee7aad2c`; (2) missing `session_id` history drop: present in existing test, but not landed by `ee7aad2c`; (3) foreign chunks/done/tool/queued/error/compaction: only foreign chunk integration coverage was found, with generic `SessionGate` unit coverage, not literal coverage for all listed mutation surfaces; (4) same-session reconnect replay: existing same-session chunk stream coverage was found, but no step-specific reconnect-history verification landed; (5) targeted Flutter test: not passing in this environment.
+- Acceptance criteria literal check: (1) foreign/missing `session_history` rows: partially present in existing `sync_service_test.dart`, but not landed by `059888b0`; (2) missing `session_id` history drop: present in existing test, but not landed by `059888b0`; (3) foreign chunks/done/tool/queued/error/compaction: only foreign chunk integration coverage was found, with generic `SessionGate` unit coverage, not literal coverage for all listed mutation surfaces; (4) same-session reconnect replay: existing same-session chunk stream coverage was found, but no step-specific reconnect-history verification landed; (5) targeted Flutter test: not passing in this environment.
 
 **Verification run**:
-- `cd /home/agent/forks/remote_pi && git show --stat --patch --decorate --find-renames ee7aad2c` — confirmed only `.work/active/stories/epic-bold-canonical-session-wire-discriminator-step-3.md` changed.
-- Inspected `ee7aad2c:app/lib/data/sync/sync_service.dart` and `ee7aad2c:app/lib/data/sync/session_gate.dart` — prior code has a top-of-`_onServerMessage` `SessionGate`, so part of the target existed before this stride.
-- Inspected `ee7aad2c:app/lib/data/transport/ws_transport.dart` — legacy no-room envelopes are still accepted unconditionally.
+- `cd /home/agent/forks/remote_pi && git show --stat --patch --decorate --find-renames 059888b0` — confirmed only `.work/active/stories/epic-bold-canonical-session-wire-discriminator-step-3.md` changed.
+- Inspected `059888b0:app/lib/data/sync/sync_service.dart` and `059888b0:app/lib/data/sync/session_gate.dart` — prior code has a top-of-`_onServerMessage` `SessionGate`, so part of the target existed before this stride.
+- Inspected `059888b0:app/lib/data/transport/ws_transport.dart` — legacy no-room envelopes are still accepted unconditionally.
 - `cd /home/agent/forks/remote_pi/app && flutter test test/data/sync/sync_service_test.dart` — failed before tests ran because Flutter attempted to write `/opt/flutter/bin/cache/engine.stamp.tmp.*` and `/opt/flutter/bin/cache/engine.realm` on a read-only filesystem.
 
 ## Implementation notes (rework 2026-06-30)
@@ -108,7 +108,7 @@ Disable the app gate via one internal seam, then revert the protocol fields and 
 **Nits**: none.
 
 **Notes**:
-- Reviewed rework commit `98a88a6`. The legacy no-room unconditional route is removed from `app/lib/data/transport/ws_transport.dart`: missing/empty `room` envelopes now log `DROPPED (missing-room)` and return before queuing payload bytes, while explicit room mismatches still drop.
+- Reviewed rework commit `2195c2a`. The legacy no-room unconditional route is removed from `app/lib/data/transport/ws_transport.dart`: missing/empty `room` envelopes now log `DROPPED (missing-room)` and return before queuing payload bytes, while explicit room mismatches still drop.
 - Verified `SyncService._onServerMessage` still applies `SessionGate` before session mutation cases, and the rework tests cover foreign `session_history`, missing-`session_id` history, foreign chunk/done/assistant/tool request/tool result/queued/error/compaction frames, and same-session reconnect history replay idempotency.
 - Exact targeted suite count is 40 passing tests, not 41. The sibling transcript tests coexist; the count difference comes from refactoring/splitting the prior combined history test rather than adding four net-new tests.
 - No existing app test asserting legacy no-room routing was found (`Legacy Pis without room` / missing-room transport grep only found work-item prose, not test assertions), so there was no deleted legacy-routing test to flag.

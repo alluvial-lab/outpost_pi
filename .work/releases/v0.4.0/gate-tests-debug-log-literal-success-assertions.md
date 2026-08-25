@@ -15,8 +15,8 @@ updated: 2026-08-11
 
 ## Source
 gate-tests scan for v0.3.0 (2026-07-24). Critical-priority test-integrity
-finding, but **ambient** (git blame attributes to pre-bundle commits 01dad29f
-and 4a84df72) → parked to backlog per the ambient-findings rule.
+finding, but **ambient** (git blame attributes to pre-bundle commits 8c39e96f
+and d941567a) → parked to backlog per the ambient-findings rule.
 
 ## Evidence
 `app/test/data/debug/debug_log_impl_test.dart:250-260` and `:332-336` end with

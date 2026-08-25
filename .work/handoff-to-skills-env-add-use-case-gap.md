@@ -1,7 +1,7 @@
 # Handoff to skills/ session — `REMOTE_PI_DEBUG_LOG` use-case gap in `feature-pi-sandbox-env-add-config`
 
 **To:** the `skills/` repo session implementing `feature-pi-sandbox-env-add-config`.
-**From:** Remote Pi fork session, 2026-07-09 (commit 94d9a38).
+**From:** Remote Pi fork session, 2026-07-09 (commit 37f1462).
 **Purpose:** describe exactly what Remote Pi needs from env-var passthrough, and why `envAdd` as currently scoped does not cover it — so the design pass can decide whether to extend scope or document the limitation.
 
 ---
@@ -96,5 +96,5 @@ inject the var into **bash-tool subprocesses** but NOT into pi's own
 ## Provenance
 
 Full analysis: `remote_pi/.work/session-note-2026-07-09-outbound-delivery-gap-scope-and-debug-env.md`
-(commit 94d9a38). Downstream consumer: `/home/agent/projects/remote_pi/pi-extension`
+(commit 37f1462). Downstream consumer: `/home/agent/projects/remote_pi/pi-extension`
 (delivery debug log at `src/session/delivery_debug_log.ts`).

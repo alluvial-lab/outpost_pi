@@ -83,7 +83,7 @@ Restore `RoomMeta` to connection entries and move `rooms_of`/`update_room_meta` 
 Approved (2026-06-30) with HIGH-risk convergence verification. Independently
 re-ran: relay `cargo fmt --check` clean; `cargo clippy -- -D warnings` clean;
 `cargo test` 152 passed / 0 failed (97 lib + 3 integ + 13 mesh + 8 pi_forward +
-10 presence + 2 parity + 19 rooms; +4 new room-state tests). Commit `4c1abd1`
+10 presence + 2 parity + 19 rooms; +4 new room-state tests). Commit `687854e`
 scoped to peers/rooms.rs (new RoomStateStore) + connections.rs + registry.rs +
 mod.rs + story .md; relay-only, no generated files.
 

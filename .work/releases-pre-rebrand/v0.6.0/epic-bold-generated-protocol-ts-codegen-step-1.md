@@ -82,7 +82,7 @@ all three generated-contract invariants:
 2. **No hand-edits**: regen-diff vs committed `protocol.generated.ts` EMPTY ✓
 3. **pi-ext typecheck + suite**: clean; **670 passed | 3 skipped | 0 failed (44 files)** ✓
 
-Commit `913a66b` scoped to tools/ + pi-ext only (generator `index.ts` +548 +
+Commit `2097d2b` scoped to tools/ + pi-ext only (generator `index.ts` +548 +
 `index.test.ts` +153 + `bin` wiring + generated `protocol.generated.ts` 666 lines +
 story .md); collision guard held. Runtime imports unchanged (handwritten
 `types.ts` remains de-facto source; generated spike sits beside it).

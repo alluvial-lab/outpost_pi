@@ -95,7 +95,7 @@ per-file translation plan and the CHANGELOG-historical-entry exclusion rule. -->
 
 Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
 orchestrator). One balanced pass over the integrated feature diff
-(`c346e28..HEAD -- branding/ docs/ cockpit/linux/`).
+(`376fa38..HEAD -- branding/ docs/ cockpit/linux/`).
 
 ### Findings (adjudicated)
 - **Important — missed ASCII-only Portuguese in Linux packaging** (`cockpit/linux/cockpit.desktop:5`): `Comment=Cliente desktop do Outpost-Pi — GUI multi-pane sobre o motor do Pi` was missed because the feature's verification used an accented-character scan only, which cannot catch ASCII PT. Translated to `Comment=Outpost-Pi desktop client — multi-pane GUI over the Pi engine`. **Fixed.** Sibling `metainfo.xml` and `make_config.yaml` were already English.

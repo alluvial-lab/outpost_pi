@@ -117,7 +117,7 @@ noted "known sandbox"). Clean orchestrator re-run: 0 failures, 671 passed (count
 — generated type refinement, no new tests). The 66-failure spike was the harness close
 timeout cascading, NOT a real regression.
 
-Commit `d8de4b9` scoped to tools/ + pi-ext only (generator `index.ts` + generated
+Commit `c90790e` scoped to tools/ + pi-ext only (generator `index.ts` + generated
 `protocol.generated.ts` ±310 + `index.test.ts`); collision guard held. Runtime imports
 unchanged (`types.ts` remains handwritten facade). Generated unions + shared value types
 (`WireImage`/`Usage`/`WireModel`/`ThinkingLevel`/`StreamingBehavior`/`ByeReason`/

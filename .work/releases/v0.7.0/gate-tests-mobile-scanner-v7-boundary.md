@@ -88,7 +88,7 @@ registered the test subclass instead of `PairingViewModel` (ProviderNotFound
 at page build), and a 12s camera-start budget far below swiftshader cold-init
 reality. Also: `flutter test` reinstalls per run, clearing runtime grants —
 `scripts/emulator-scanner-smoke.sh` auto-grants CAMERA (dialog-tap fallback).
-Fixed in 6eb19fe1; **3 consecutive green runs** (`+2` each, ~11s).
+Fixed in 6c969c40; **3 consecutive green runs** (`+2` each, ~11s).
 
 Release-UAT step 6 now has an automatable path; the real-phone tier remains
 reserved for true hardware-camera confirmation.

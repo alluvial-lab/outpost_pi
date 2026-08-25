@@ -482,7 +482,7 @@ cross-PC frame DTOs now consume generated types, stale-context test coverage
 for `session_start` replacements).
 
 **Wire-compatible with relay-0.2.0.** The sender emits `to_room` on cross-PC
-`pi_envelope` frames (commit `13701ee`, carried from the relay-0.2.0 paired
+`pi_envelope` frames (commit `e2beaa6`, carried from the relay-0.2.0 paired
 deploy); the remaining sender-side room-targeting work is deferred to design
 (see release notes — does not change the wire contract).
 

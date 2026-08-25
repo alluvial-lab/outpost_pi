@@ -19,7 +19,7 @@ updated: 2026-08-25
 
 ## Root cause
 
-Commit `a8af36b6` correctly gave each pairing attempt cancellation ownership, but its timeout and catch paths await `_closeAttempt` before emitting `PairingError`. `WsTransport` teardown can remain pending while the relay is paused, so resource settlement became part of the operator-visible failure latency and defeated the pairing deadline.
+Commit `c7bd772e` correctly gave each pairing attempt cancellation ownership, but its timeout and catch paths await `_closeAttempt` before emitting `PairingError`. `WsTransport` teardown can remain pending while the relay is paused, so resource settlement became part of the operator-visible failure latency and defeated the pairing deadline.
 
 ## Fix approach
 
@@ -51,4 +51,4 @@ No adjacent issues were bundled or parked.
 
 ### Bounded inline review
 
-**Verdict: pass — no material blockers.** Reviewed the focused diff against the reported paused-relay interleaving, generation fencing, retry/dispose behavior, and `a8af36b6`'s cancellation ownership. Cancellation is requested before failure publication; the attempt remains closed against late transport attachment; both cancellation settlement and explicit close are watchdog-bounded without cancelling their underlying cleanup futures. The regression test asserts the vulnerable intermediate state and eventual cleanup rather than weakening the deadline.
+**Verdict: pass — no material blockers.** Reviewed the focused diff against the reported paused-relay interleaving, generation fencing, retry/dispose behavior, and `c7bd772e`'s cancellation ownership. Cancellation is requested before failure publication; the attempt remains closed against late transport attachment; both cancellation settlement and explicit close are watchdog-bounded without cancelling their underlying cleanup futures. The regression test asserts the vulnerable intermediate state and eventual cleanup rather than weakening the deadline.

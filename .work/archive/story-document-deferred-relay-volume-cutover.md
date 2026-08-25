@@ -1,7 +1,7 @@
 ---
 id: story-document-deferred-relay-volume-cutover
 status: superseded
-superseded_by: "commit d04b7e7 (ops: relocate checkout remote_pi -> outpost_pi)"
+superseded_by: "commit f1ee8ef (ops: relocate checkout remote_pi -> outpost_pi)"
 kind: story
 stage: implementing
 tags: [rebrand, relay, docs, workflow]

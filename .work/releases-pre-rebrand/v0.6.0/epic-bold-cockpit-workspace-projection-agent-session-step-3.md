@@ -114,7 +114,7 @@ Inline the process controller back into `AgentSession`, restore direct `_status`
 
 Approved (2026-06-30) with HIGH-risk verification — core lifecycle extraction.
 Independently re-ran: whole-cockpit `flutter analyze` → No issues found; full
-`flutter test` → 218/218 (incl. new terminal-convergence tests). Commit `6eb803f`
+`flutter test` → 218/218 (incl. new terminal-convergence tests). Commit `de121bb`
 scoped to cockpit only (new agent_session_signal.dart + agent_process_controller.dart
 + refactored agent_session.dart + tests + story .md); no cross-subproject
 collision.

@@ -90,7 +90,7 @@ Approved (2026-06-30). Independently re-ran: `corepack pnpm typecheck` clean;
 `corepack pnpm build` clean; **full pi-ext suite 652 passed | 3 skipped | 0 failed
 (44 files)** — fully green (up from 651 — the agent's new reconnect-replay tests).
 
-Commit `e66765a` scoped to pi-ext only (relay_transport.ts sendRoomMeta +
+Commit `746bad2` scoped to pi-ext only (relay_transport.ts sendRoomMeta +
 extension.test.ts +42 reconnect coverage + story .md); collision guard held.
 Centralization verified: no direct `room_meta_update` sends remain in index.ts
 (grep count 0); all route through `RelayTransportPort.sendRoomMeta()`. Best-effort

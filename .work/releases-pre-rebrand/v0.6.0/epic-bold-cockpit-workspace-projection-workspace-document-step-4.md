@@ -90,7 +90,7 @@ Reintroduce `_trees` and `_focused`, restore `_restoreProject`, `_restoreSession
 **Findings**: none above nit level.
 
 **Verification run (orchestrator)**:
-- `git show --stat 7201976` — only owned files: `cockpit_viewmodel.dart`, `workspace_document.dart`, `cockpit_viewmodel_workspace_document_test.dart` + story. No collision with settings-split agents.
+- `git show --stat 6c21e21` — only owned files: `cockpit_viewmodel.dart`, `workspace_document.dart`, `cockpit_viewmodel_workspace_document_test.dart` + story. No collision with settings-split agents.
 - Confirmed `_trees`/`_focused` replaced by single `_documents: Map<String, WorkspaceDocument>`; `tree(projectId)`/`focusedPaneId(projectId)` delegate to it; `_setDocument` runs `ensureFocusValid()`; `WorkspaceDocument` has `fromPersistedJson`/`ensureFocusValid`/`filterTabs`.
 - `cd cockpit && flutter test test/ui/cockpit_viewmodel_workspace_document_test.dart` (PUB_CACHE, offline) — 3/3 pass (round-trip load/save/expose; invalid-focus clamping; unrestorable-tab drop + live placeholder insertion).
 - `flutter analyze` (whole cockpit, tree fully clean now) — **No issues found\!** (the earlier transient `_focused`/`_trees` errors were this agent's own in-progress refactor, now resolved).

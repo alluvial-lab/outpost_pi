@@ -281,7 +281,7 @@ constraint; one feature worker carries them sequentially. No new stories.
 One balanced fresh-context cross-model pass (`openai-codex/gpt-5.6-sol` vs host
 `umans/umans-glm-5.2`). Verdict REQUEST CHANGES with 3 proposed blockers
 (0 important, 0 nits) — all in the async/lifecycle defect class. All three
-receiver-confirmed against code and fixed in `f9c416d`:
+receiver-confirmed against code and fixed in `a5246e1`:
 
 1. **Watermark race** — ACCEPTED, fixed. Overlapping pulls could apply v6
    after v7 advanced the floor; a late A pull during A→B transition could

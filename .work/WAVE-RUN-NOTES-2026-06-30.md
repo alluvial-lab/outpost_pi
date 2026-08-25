@@ -164,12 +164,12 @@ were given this env-ceiling briefing explicitly.
 
 | Story | Commit | Verdict |
 |---|---|---|
-| wire-discriminator-step-4 | 8bad735 | ✅ done (land-mode; regen/test lock genuine) |
-| app-attribution-hydration-step-2 | 8efd13e | ✅ done (5 demux outcomes, 5/5 tests) |
-| relay-typed-actor-control-handlers-step-4 | 1f8544c | ✅ done (120 relay tests, fmt/clippy green) |
-| reachability-contract-app-adapter-step-2 (BOUNCED) | 38ab178 | ✅ done (bounce fixed: `onRelayConnectionEstablished` preserves retryAttempt; 0→1→2 ladder regression) |
-| reachability-contract-pi-adapter-step-3 | 84402d8 | ✅ done (1,2,5,10,30s ladder+cap test) |
-| cockpit-workspace-projection-settings-split-step-4 | 89658c5 | ✅ done (DaemonSettingsPanel extracted; 7/7 tests) |
+| wire-discriminator-step-4 | c48e58b | ✅ done (land-mode; regen/test lock genuine) |
+| app-attribution-hydration-step-2 | 642e464 | ✅ done (5 demux outcomes, 5/5 tests) |
+| relay-typed-actor-control-handlers-step-4 | 7fbfa4f | ✅ done (120 relay tests, fmt/clippy green) |
+| reachability-contract-app-adapter-step-2 (BOUNCED) | c34dac9 | ✅ done (bounce fixed: `onRelayConnectionEstablished` preserves retryAttempt; 0→1→2 ladder regression) |
+| reachability-contract-pi-adapter-step-3 | ba838d5 | ✅ done (1,2,5,10,30s ladder+cap test) |
+| cockpit-workspace-projection-settings-split-step-4 | d273a8f | ✅ done (DaemonSettingsPanel extracted; 7/7 tests) |
 
 Reviews: fast-lane (story + green verification → orchestrator independently
 re-ran tests + read code + confirmed ownership; review skill authorizes fast-lane
@@ -221,13 +221,13 @@ signal and ignore analyze errors confined to other agents' in-flight files.
 
 | Story | Commit | Verdict |
 |---|---|---|
-| canonical-session-relay-opaque-targeting-step-4 | 62eaef2 | ✅ done (9 pi_forward tests: session_id opacity + room-targeted; stale comments removed) |
-| reachability-contract-pi-adapter-step-4 | a227eaa | ✅ done (liveness constants from contract; 14/14 tests) |
-| turn-state-machine-projection-consumers-step-2 | f890c8c | ✅ done (HIGH-risk convergence core: 55/55 tests, all terminal causes → idle; ChatViewModel single projection, no OR logic) |
-| cockpit-workspace-projection-settings-split-step-5 | b0bdaff | ✅ done (ScheduleSettingsPanel + SettingsCategoryPanel; settings_page pure route shell; 22/22 tests; analyze clean) |
+| canonical-session-relay-opaque-targeting-step-4 | 95725bc | ✅ done (9 pi_forward tests: session_id opacity + room-targeted; stale comments removed) |
+| reachability-contract-pi-adapter-step-4 | d4fb48f | ✅ done (liveness constants from contract; 14/14 tests) |
+| turn-state-machine-projection-consumers-step-2 | 6fda7e7 | ✅ done (HIGH-risk convergence core: 55/55 tests, all terminal causes → idle; ChatViewModel single projection, no OR logic) |
+| cockpit-workspace-projection-settings-split-step-5 | b49f5cc | ✅ done (ScheduleSettingsPanel + SettingsCategoryPanel; settings_page pure route shell; 22/22 tests; analyze clean) |
 
 Plus env-ceiling triage on **turn-state-machine-algebraic-state-step-3** (commit
-`b4d8539` implement + `21bc551` review-approve): the implement agent (cc53b26d)
+`3f9ef91` implement + `e6cbcb7` review-approve): the implement agent (cc53b26d)
 refused to commit because full `extension.test.ts` wasn't green. Orchestrator
 triaged via stash differential (clean HEAD = 37 fail/106 pass; with agent's
 changes = 37 fail/110 pass → +4 passing, 0 broken) and committed on the agent's
@@ -236,9 +236,9 @@ code defect. Agent's own signals green: 16 turn_state + 6 story-filtered
 extension convergence tests + typecheck.
 
 Also done this wave's tail (Wave 2 stragglers that completed during W3):
-- generated-protocol-dart-codegen-step-3 (`4ba0339`) ✅ done — regen-diff EMPTY
+- generated-protocol-dart-codegen-step-3 (`54138fa`) ✅ done — regen-diff EMPTY
   verified by orchestrator (generated-contract invariant holds); 15/15 codegen tests.
-- cockpit-workspace-projection-workspace-document-step-4 (`7201976`) ✅ done —
+- cockpit-workspace-projection-workspace-document-step-4 (`6c21e21`) ✅ done —
   `_trees`/`_focused`→`_documents`; 3/3 tests; whole-cockpit analyze clean.
 
 **Session tally after W3: 64 done / 72 implementing / 0 review.**

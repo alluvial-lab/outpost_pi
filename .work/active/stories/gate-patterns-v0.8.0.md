@@ -48,4 +48,4 @@ None.
 - Scanner isolation: inline source-read-only audit because the scanner subagent tool was unavailable.
 
 ## Closure
-All 4 patterns landed with the gate commit (68251acb); index + digest regenerated. No further work.
+All 4 patterns landed with the gate commit (43368fdd); index + digest regenerated. No further work.

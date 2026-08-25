@@ -373,23 +373,23 @@ the full design context):
   schema-optional/behavior-required (orchestrator decision: keeps every
   consumer compiling at the wave boundary; handlers fail closed). KAT
   generator + vector committed. Green: protocol checks, extension tsc+884
-  tests, app codegen tests + analyze. Commit `9a9a1e7`.
+  tests, app codegen tests + analyze. Commit `ee277d8`.
 - **Wave-2 design correction**: the extension worker caught a wire-contract
   flaw before writing code — the original frame format made `seq` AEAD AAD
   without transmitting it, leaving the replay high-water unimplementable
   across dropped frames. Orchestrator corrected the design in place to
   `0x01 || seqLE64(8B) || nonce24 || ct` (seq clear-header + AAD) and
-  regenerated the KAT (commit `d9b0d15`); both wave-2 workers implemented to
+  regenerated the KAT (commit `cac93ae`); both wave-2 workers implemented to
   the corrected contract.
 - Wave 2 (parallel, disjoint write sets): `…-extension-secure-channel`
-  (Sol/high, commit `af502dc`) and `…-app-secure-channel` (Sol/high, commit
-  `08ff447`). Both reproduce the corrected KAT byte-for-byte. Green:
+  (Sol/high, commit `d916c58`) and `…-app-secure-channel` (Sol/high, commit
+  `e7c1635`). Both reproduce the corrected KAT byte-for-byte. Green:
   extension tsc + 897 tests + build; app analyze + 799 unit tests.
-- Wave 3 (parallel): `…-e2e-protected-channel` (Sol/high, commit `ab2fd46`)
+- Wave 3 (parallel): `…-e2e-protected-channel` (Sol/high, commit `55a73b0`)
   — 5 new e2e cases, full docker stack 13/13 green with redaction canaries,
   existing 8 cases untouched; and `…-docs-deploy-rollforward`
-  (Terra/medium, commits `58d32cd` + orchestrator drift follow-ups
-  `6f19f64`/`7cf17ce` for stale no-E2E assertions in `pi-extension/CLAUDE.md`
+  (Terra/medium, commits `a0e86c0` + orchestrator drift follow-ups
+  `137d4d0`/`f7bee52` for stale no-E2E assertions in `pi-extension/CLAUDE.md`
   and `relay/CLAUDE.md`).
 
 **Effective review_weight**: `thorough` (explicit caller override) —
@@ -414,56 +414,56 @@ by the orchestrator against repository context.
 - **Pass 1** (3 blockers confirmed, 2 important accepted): (B1) raw bearer
   token in `pair_request` let a malicious relay race a pairing under its own
   Owner key → redesigned to `token_id` + `pair_mac` (HMAC keyed by the raw
-  token; raw token never crosses the wire; contract commit `9eab8f6`,
-  extension `7dd5834`, app+e2e `58f1459` incl. adversarial
+  token; raw token never crosses the wire; contract commit `b59fc82`,
+  extension `6f4792f`, app+e2e `5fb2d2b` incl. adversarial
   relay-substitution e2e). (B2) extension exposed frames before send-seq was
   durable → serialized persist-then-send. (B3) "5 failures → re-pair
   required" unenforced → REDESIGNED to detach + automatic same-key
   reattachment (strict quarantine rejected as one-shot relay DoS; docs
-  aligned `f59367f`). (I1) baseline `plaintext_post_key` false positive →
+  aligned `00c1c27`). (I1) baseline `plaintext_post_key` false positive →
   consumed-boolean propagated (hypothesis (b) confirmed). (I2) app accepted
   low-order X25519 → all-zero shared-secret rejection + vectors.
 - **Pass 2** (2 blockers confirmed, 2 important): (B4) stale app channel
-  could overwrite re-paired keys → storage-owned mutation queue (`5306f2c`).
+  could overwrite re-paired keys → storage-owned mutation queue (`6e52cd8`).
   (B5) unbounded audit growth under hostile ingress → counted buckets,
-  capped queues, 256 KiB rotation (`bc236a1`). (I3) actionable
+  capped queues, 256 KiB rotation (`1da7cc2`). (I3) actionable
   `token_expired`/`token_consumed` unreachable → restored for valid
   proof-holders, `token_unknown` stays non-oracular. (I4) `relay/CLAUDE.md`
-  intro contradiction → fixed inline (`2e113a6`).
+  intro contradiction → fixed inline (`353ecfe`).
 - **Pass 3** (1 blocker confirmed, 1 parked, 1 important fixed): (B6) stale
   FULL-RECORD `savePeer` writes could restore superseded keys / recreate
   deleted peers → pairing-privileged key-replacement write, metadata writes
-  key-preserving (`c445313`). (I5) token-lookup timing distinction →
-  fixed-width constant-time locator + dummy verify (`7068183`). Parked:
+  key-preserving (`f3ee944`). (I5) token-lookup timing distinction →
+  fixed-width constant-time locator + dummy verify (`0dceba9`). Parked:
   relay dispatch FIFO backpressure (initially misjudged pre-existing).
 - **Pass 4** (2 blockers confirmed): (B7) the pass-3 FIFO park was WRONG —
   blame showed `dispatchTail` was feature-introduced → unparked and fixed:
-  256-frame/8 MiB data cap, drop-new + coalesced audit (`377c55d`). (B8)
+  256-frame/8 MiB data cap, drop-new + coalesced audit (`5582380`). (B8)
   mesh conflict-restore could undo a concurrent revocation → revision
-  predicate moved inside the serialized storage op (`fc1750f`).
+  predicate moved inside the serialized storage op (`2307120`).
 - **Pass 5** (2 blockers confirmed, 1 important fixed): (B9) cap-exempt
   control frames + stale reconnect generations re-opened unbounded
   retention → per-class control caps + generation disposal. (B10)
   SecurePeerChannel outbound persistence FIFO unbounded → 512-frame/16 MiB
-  cap, overflow → audit + detach (`32eac07`). (I6) stale libsodium guidance
-  in `app/CLAUDE.md` → `package:cryptography` canonical (`2331f2b`).
+  cap, overflow → audit + detach (`fbd3899`). (I6) stale libsodium guidance
+  in `app/CLAUDE.md` → `package:cryptography` canonical (`d70fa47`).
 - **Pass 6** (2 blockers confirmed, 1 parked): (B11) overflow-detach +
   immediate reattach could duplicate/regress outbound seq → per-peer drain
-  gates + max-merged seq persistence (`c7bed0a`). (B12) app-side unbounded
+  gates + max-merged seq persistence (`cd331c7`). (B12) app-side unbounded
   `_sendTail`/`_MsgQueue` → symmetric caps + control bypass + close-signal
-  preemption (`c6f7619`). Parked: dead-generation single-frame retention
+  preemption (`f1a58ea`). Parked: dead-generation single-frame retention
   (`.work/backlog/backlog-relay-transport-stale-generation-active-dispatch.md`).
 - **Pass 7** (1 blocker confirmed): (B13) multi-process seq state incoherent
   across room processes sharing `peers.json` (documented multi-room
   topology; hot per-frame writes made a cold race hot; durable high-water
   regression could reopen the replay window) → machine-wide lockfile +
-  reserve-before-seal + locked recv max-merge (`0cc2d2d`).
+  reserve-before-seal + locked recv max-merge (`d9620b4`).
 - **Pass 8** (2 blockers confirmed): (B14) recv gated on LOCAL high-water →
   relay replays dispatched in multi-room → authoritative locked
   compare-and-advance (`accepted`/`replay`/`stale_generation`, key-generation
   keyed). (B15) stale-lock reclaim ABA → owner-token release fencing +
   exclusive reclaim marker + post-rename verification with restore
-  (`95603ad`).
+  (`eb17bd6`).
 - **Pass 9** (verdict: ready): all pass-8 fixes confirmed with evidence; no
   material current-cycle blockers. One compound hardening finding parked:
   `.work/backlog/backlog-peers-lock-restore-collision-safety.md`.

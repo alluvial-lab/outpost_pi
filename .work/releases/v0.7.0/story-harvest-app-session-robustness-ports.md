@@ -15,7 +15,7 @@ updated: 2026-08-16
 
 Two small upstream fixes verified in our tree.
 
-## 1. Same-peer reconnect must not clobber room selection — upstream `c7105191`
+## 1. Same-peer reconnect must not clobber room selection — upstream `0ce134f0`
 
 `app/lib/data/transport/connection_manager.dart:575-586`: the connect path
 unconditionally resets `_activePeer`, clears `_activeRoomExplicitlySet`, and
@@ -28,7 +28,7 @@ flag and current room. Note our explicit-selection latch
 (`:138-141`, set in `switchRoom` `:288-299`, honored at `:1253-1260`) is the
 mechanism to protect — the reset at `:576` defeats it.
 
-## 2. iOS onboarding must not hard-gate on the ubiquity token — upstream `535a5a0e`
+## 2. iOS onboarding must not hard-gate on the ubiquity token — upstream `72d6d277`
 
 `app/lib/pairing/owner_identity_bridge.dart:83-85`: `boot()` returns
 `SyncUnavailableResult()` whenever `_store.isSyncAvailable()` is false. On an

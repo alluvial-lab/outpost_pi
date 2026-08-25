@@ -31,7 +31,7 @@ Historical evidence:
 
 The explicit fault-recovery path first calls `ConnectionManager.disconnect`,
 which intentionally publishes `StatusNoPeer`, and then reconnects. Before
-`c1969a45`, the reconnect hedge stopped at the WebSocket-handshake boundary and
+`b7a452f1`, the reconnect hedge stopped at the WebSocket-handshake boundary and
 covered only the first retry. A socket that had sent relay auth but stalled
 waiting for the first authenticated frame could therefore consume successive
 full deadlines. The selected peer and room were not lost; the reconnect simply
@@ -41,7 +41,7 @@ intentional no-peer projection and `session=null` visible at timeout.
 
 ## Fix approach
 
-The minimal production repair already landed in `c1969a45` while resolving the
+The minimal production repair already landed in `b7a452f1` while resolving the
 same reconnect lifecycle defect: `WsTransport.connect` now keeps the connect
 operation open until a validated post-auth relay frame arrives, cancellation
 closes superseded sockets, fallback adoption waits for loser teardown, and
@@ -72,7 +72,7 @@ live-device evidence, and the full Flutter verification surface.
 
 **Files changed:** this story consumes
 `idea-soak-compound-recovery-no-peer`; production code and its focused tests
-were already present in `c1969a45`.
+were already present in `b7a452f1`.
 
 ### Four-step confirmation
 
@@ -93,7 +93,7 @@ were already present in `c1969a45`.
 
 **Verdict: pass — no material blockers.** The historical status trace was
 checked against the soak's explicit disconnect/reconnect sequence and the
-`c1969a45` auth-read/cancellation diff. The root cause is recovery latency and
+`b7a452f1` auth-read/cancellation diff. The root cause is recovery latency and
 socket ownership, not peer-selection loss. Existing loopback tests cover the
 failure boundary, and the requested live seed provides end-to-end confirmation;
 adding a second production change after a green reproduction would be

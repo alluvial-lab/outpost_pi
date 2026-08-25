@@ -251,7 +251,7 @@ full test suite green (763 passed, 3 pre-existing skipped, 48 files).
 
 ## Status (2026-07-07 end of prior session) — reported STILL LEAKING; reopened for static trace + regression test
 
-The two-gate fix (message_update + message_end) is shipped (commit `397583b`),
+The two-gate fix (message_update + message_end) is shipped (commit `1cb8cf0`),
 dist rebuilt, pi restarted, gate confirmed active in dist. But a live repro
 STILL showed "subagent probe ok" in mobile chat. The debug capture (removed)
 proved both gated handlers fire with `gate=true` and correctly suppress — so
@@ -395,7 +395,7 @@ must be captured before trusting either fix. Do not advance this story to
 ### Next step
 
 Do not ship more inline fixes. Capture-first: restart pi with
-`REMOTE_PI_DEBUG_SEND=1` (sink instrumentation from `9a15503`), dispatch a
+`REMOTE_PI_DEBUG_SEND=1` (sink instrumentation from `e40042f`), dispatch a
 subagent, and read `/tmp/remote-pi-debug-send.jsonl` — log every outbound
 frame's type + `gateActive` state + which module instance is publishing. That
 settles both the leak story's "why does it work" and the wipe story's root

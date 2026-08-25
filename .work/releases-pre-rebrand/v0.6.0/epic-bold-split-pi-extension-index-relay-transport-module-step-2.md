@@ -120,7 +120,7 @@ Approved (2026-06-30) with HIGH-risk reconnect-migration verification. Independe
 re-ran: `corepack pnpm typecheck` clean; `corepack pnpm build` clean; **full pi-ext
 suite 651 passed | 3 skipped | 0 failed (44 files)** — fully green.
 
-Commit `40802b6` scoped to pi-ext only (relay_transport.ts +81 + index.ts ±354 +
+Commit `d215ce1` scoped to pi-ext only (relay_transport.ts +81 + index.ts ±354 +
 story .md); collision guard held. Migration verified: `index.ts` no longer owns any
 of the 5 relay globals (`_relay`/`_relayUrl`/`_reconnectTimer`/`_reconnectAttempt`/
 `_lastRelayStatus` — grep count 0); they moved into `relay_transport.ts`. Reconnect

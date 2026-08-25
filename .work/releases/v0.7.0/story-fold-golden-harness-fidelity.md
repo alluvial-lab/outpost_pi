@@ -34,7 +34,7 @@ Review findings 1-5 (2026-08-23 vision pass). Files: `app/test/golden/`.
   bare chat), storage-recovery in both themes with realistic safe-area
   insets.
 - Keep the saving-comparator matchesGoldenFile pattern (manual toImage
-  deadlocks under the fake clock — see df70870c).
+  deadlocks under the fake clock — see 30cf7b4d).
 
 ## Verification
 Matrix regenerates all surfaces × geometries with real fonts, zero overflow

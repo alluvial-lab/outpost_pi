@@ -13,7 +13,7 @@ updated: 2026-08-16
 
 # Working-state reconciliation: authoritative idle beats stale transcript.working
 
-Upstream `12ef2956` (clear new-session state + reconcile stale working state
+Upstream `963c7fe4` (clear new-session state + reconcile stale working state
 from room metadata). The session-reset half is already covered by our
 `sync_service.dart:667-700` reset block. The remaining gap: on room change we
 only rebind/sync (`sync_service.dart:752-777`), and an idle room still lets

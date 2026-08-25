@@ -58,7 +58,7 @@ Archived stub (1), late-bound 2026-07-27 per operator decision:
 
 - Readiness GREEN: 9/9 bound items done (6 original + 3 gate findings).
 - Changelog cockpit-v0.3.0 entry committed; local tag `cockpit-v0.3.0` cut
-  on 530cf7b (operator pushes).
+  on 62d2b9f (operator pushes).
 - **UAT: PASS with note (operator, 2026-07-27): the operator does not use
   cockpit.** Evidence accepted in lieu of a live cockpit smoke: 267-test
   suite incl. new deterministic lifecycle/interleaving tests, gate

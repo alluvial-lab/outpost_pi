@@ -114,7 +114,7 @@ Move `dispatch_outer` back into the socket loop and call the previous `parse_lin
 Approved (2026-06-30). Independently re-ran: relay `cargo fmt --check` clean;
 `cargo clippy -- -D warnings` clean; `cargo test` 140 passed / 0 failed (85 lib +
 3 integ + 13 mesh + 8 pi_forward + 10 presence + 2 parity + 19 rooms; +3 new
-dispatch_outer tests). Commit `5231213` scoped to connection_actor.rs + outer.rs
+dispatch_outer tests). Commit `fb5d509` scoped to connection_actor.rs + outer.rs
 (tiny `to_json_string()` adapter — no second handwritten struct) + story .md;
 relay-only, no generated files touched (regen N/A).
 

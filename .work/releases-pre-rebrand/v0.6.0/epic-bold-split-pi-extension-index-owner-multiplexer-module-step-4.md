@@ -114,7 +114,7 @@ NOT be a simple flake but something about the subagent's execution environment
 (stale cache, working-tree state, or a genuinely different runtime context than
 the orchestrator's). Worth deeper investigation.
 
-Commit `cfd8b8c` scoped to pi-ext only (owner_multiplexer.ts + index.ts +
+Commit `d8f7ab7` scoped to pi-ext only (owner_multiplexer.ts + index.ts +
 extension.test.ts + story .md); collision guard held. HIGH-risk invariants
 verified: `OwnerMultiplexerSnapshot` + projection APIs moved; footer/status
 consume `snapshot()` (no `_sessionName`/`_sessionPeerCount`/`_hasGlobalPairings`

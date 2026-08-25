@@ -117,7 +117,7 @@ Independently re-ran: regen `--check` pass; determinism double-run byte-identica
 committed generated files match generator output (no hand-edits). Relay
 `cargo fmt --check` clean; `cargo clippy -- -D warnings` clean; `cargo test`
 132 passed / 0 failed (78 lib + 3 integ + 13 mesh + 9 pi_forward + 10 presence +
-19 rooms; +6 new merge-patch/registry tests). Commit `7d6e8ff` reconciled the two
+19 rooms; +6 new merge-patch/registry tests). Commit `5e232dd` reconciled the two
 `RoomMetaPatch` sources (generated/control.rs + generated/room.rs) via the
 generator — `ControlHandlers::room_meta_update` now consumes the generated
 `RoomMetaUpdateFrame`; `peer.rs` only decodes typed control frames + dispatches.

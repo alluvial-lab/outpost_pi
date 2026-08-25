@@ -155,4 +155,4 @@ Revert the relay/cross-PC schema and fixtures. No runtime code consumes these sc
 **Important**: none
 **Nits**: none
 
-**Notes**: Fast-lane substrate review. Inspected commit `775a9c0`, schemas, and fixtures. Verified JSON parse for all `protocol/**/*.json`/`.jsonl` and ran `corepack pnpm --dir protocol --config.store-dir=/tmp/remote-pi-pnpm-store check`, which validated the relay and cross-PC fixtures as part of all 5 schema families. Relay runtime code was unchanged.
+**Notes**: Fast-lane substrate review. Inspected commit `c23585d`, schemas, and fixtures. Verified JSON parse for all `protocol/**/*.json`/`.jsonl` and ran `corepack pnpm --dir protocol --config.store-dir=/tmp/remote-pi-pnpm-store check`, which validated the relay and cross-PC fixtures as part of all 5 schema families. Relay runtime code was unchanged.

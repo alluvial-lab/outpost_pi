@@ -63,7 +63,7 @@ workingConv rows per offline window == 1.
   `flutter test --exclude-tags e2e --concurrency=2` passed (912 tests). Device
   signature confirmation is deferred to the orchestrator soak.
 - **Bounded inline review:** PASS. Offline corrections now return before epoch
-  mutation, so 2311bd7d's late-echo fence remains owned by fresh authoritative
+  mutation, so 5c2c4ccb's late-echo fence remains owned by fresh authoritative
   idle snapshots. Explicit disconnect/dispose still clear state, room-end and
   snapshot paths still converge idle, and reconnecting UI derives from the
   existing status + stale projection rather than a second state enum.

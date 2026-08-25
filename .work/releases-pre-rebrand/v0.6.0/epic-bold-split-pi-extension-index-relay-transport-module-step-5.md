@@ -94,27 +94,27 @@ wiring-only revert.
 
 ## Review correction (2026-06-30, later)
 
-The orchestrator's test-fixture alignment in the original review commit `b95d828`
-(reverted in `ea94508`) was WRONG. It was based on a transient false observation
+The orchestrator's test-fixture alignment in the original review commit `ef436db`
+(reverted in `6b5b1d0`) was WRONG. It was based on a transient false observation
 during debugging (uncommitted working-tree state showed listener-count=2; the
 committed code consistently produces count=1 — the cross-PC bridge does NOT
 attach a PiForwardClient message-listener on connect in the committed state).
 The ORIGINAL test fixtures (`toBe(1)` post-connect, `toBe(2)` post-pair, etc.)
 were correct all along. Reverted the alignment; suite green at 655/658.
 
-Net: the agent's idempotent `attachCrossPcBridge` fix (commit `ebac18e`) stands
+Net: the agent's idempotent `attachCrossPcBridge` fix (commit `2c2785e`) stands
 correct — it eliminated the duplicate-listener bug. The orchestrator's fixture
 alignment was the error, now corrected. Story remains `done`.
 
 ## Final stage advance (2026-06-30)
 
-Advanced to `done`. This story was implemented correctly in commit `ebac18e` (idempotent
+Advanced to `done`. This story was implemented correctly in commit `2c2785e` (idempotent
 `attachCrossPcBridge` fixing the triple-attach duplicate-listener bug). The saga:
-1st/2nd attempts (`a3fde43`/`fecaa66`) were reverted for misclassifying real owner-
+1st/2nd attempts (`b36d9db`/`7a3b980`) were reverted for misclassifying real owner-
 ingress regressions as false-alarms; the orchestrator's independent vitest re-run
-caught them. The 3rd attempt (`ebac18e`) fixed the real root cause (triple
+caught them. The 3rd attempt (`2c2785e`) fixed the real root cause (triple
 `attachCrossPcBridge`) via idempotent dedupe. An orchestrator-side fixture-alignment
-error (commit `b95d828`, reverted in `ea94508`/`5c5ae0b`) transiently broke the suite
+error (commit `ef436db`, reverted in `6b5b1d0`/`480f842`) transiently broke the suite
 but was corrected — the original listener-count fixtures were correct. Final state:
 pi-ext suite green (718 passed), the idempotent bridge fix stands. Story complete —
 loose `review` stage from the revert chain now resolved.

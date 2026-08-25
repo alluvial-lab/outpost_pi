@@ -103,7 +103,7 @@ Read the reducer directly and confirmed each load-bearing invariant:
 
 Test coverage directly maps to every acceptance criterion (foreign bypass,
 idempotent identical replay/no-churn, omitted older rows, pending+echo, late
-confirm, compaction replay, convergence). Commit `4d294c4` scoped to owned
+confirm, compaction replay, convergence). Commit `a0fb12f` scoped to owned
 app files; no collision with parallel Wave-5 bundles (correctly left others'
 unstaged). Deferred scope (no explicit done/error/cancel `SessionHistoryEvent`
 variants) is a legitimate event-model limitation, clearly recorded.

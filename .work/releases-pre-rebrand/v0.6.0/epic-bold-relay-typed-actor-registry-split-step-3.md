@@ -86,7 +86,7 @@ Approved (2026-06-30). Independently re-ran: relay `cargo fmt --check` clean;
 `cargo clippy -- -D warnings` clean; `cargo test` 158 passed / 0 failed (103 lib
 incl. 5 new PresenceState unit tests + 1 registry multi-room offline test + 3
 integ + 13 mesh + 8 pi_forward + 10 presence + 2 parity + 19 rooms). Commit
-`3ea9426` scoped to peers/presence_state.rs (new) + registry + connections + rooms
+`70d3dcf` scoped to peers/presence_state.rs (new) + registry + connections + rooms
 + mod + story .md; relay-only, no generated files.
 
 Presence-transition extraction verified: `PresenceState` + `PresenceTransition`

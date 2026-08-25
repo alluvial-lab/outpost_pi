@@ -170,26 +170,26 @@ fresh context) → fix → re-review until ACCEPTED → fast-lane advance. The c
 ## Commit graph (this session)
 
 ```
-060c0cc review: story-fix-resumed-session-echo-gate-rejection → done
-8f95bfd implement(app): story-fix-resumed-session-echo-gate-rejection — gate-tolerant echo disarm
-f1b5cbf review: story-extension-suspend-fanout-on-peer-offline → done
-e5d0cb0 implement(pi-extension): story-extension-suspend-fanout-on-peer-offline
-16aa5b2 verify: story-verify-resumed-session-echo-gate-rejection → done (RACE CONFIRMED)
-ae98b96 scope: feature-reconnect-reproduction — split code-actionable vs live-repro items
-496d725 scope: story-verify-resumed-session-echo-gate-rejection
-a74ed4f scope: story-extension-suspend-fanout-on-peer-offline
-181860b review: story-relay-duplicate-auth-supersession-log → done
-f009448 implement(relay): story-relay-duplicate-auth-supersession-log
-00c349b review: story-session-replacement-harness → done
-a06fd86 implement(pi-extension): story-session-replacement-harness
-77c13e9 session note: observability Units 3/4/6 done, Unit 7 in flight (prior)
-8aea760 review: story-add-transport-frame-observability → done
-c3885c4 implement(app): story-add-transport-frame-observability
-65ebd95 spike(pi-extension): Unit 7 ExtensionRunner headless feasibility
-910cc85 scope: story-add-transport-frame-observability collapsed
-6b5998e review: story-app-debug-toggle-ui + story-app-capture-routing → done
-25ee0ef review: story-app-debug-toggle-ui + story-app-capture-routing (ACCEPTED)
-457dc04 implement(app): story-app-capture-routing
-6a9a64d implement(app): story-app-debug-toggle-ui
-8b8a095 (prior session note)
+2a53be8 review: story-fix-resumed-session-echo-gate-rejection → done
+f0b2596 implement(app): story-fix-resumed-session-echo-gate-rejection — gate-tolerant echo disarm
+8b07fb3 review: story-extension-suspend-fanout-on-peer-offline → done
+7d2ec5f implement(pi-extension): story-extension-suspend-fanout-on-peer-offline
+ab6e3dc verify: story-verify-resumed-session-echo-gate-rejection → done (RACE CONFIRMED)
+c1be968 scope: feature-reconnect-reproduction — split code-actionable vs live-repro items
+bbaa1ce scope: story-verify-resumed-session-echo-gate-rejection
+ef11074 scope: story-extension-suspend-fanout-on-peer-offline
+9422105 review: story-relay-duplicate-auth-supersession-log → done
+25eaee7 implement(relay): story-relay-duplicate-auth-supersession-log
+2d63c80 review: story-session-replacement-harness → done
+1b58739 implement(pi-extension): story-session-replacement-harness
+9038d49 session note: observability Units 3/4/6 done, Unit 7 in flight (prior)
+d566f30 review: story-add-transport-frame-observability → done
+f838058 implement(app): story-add-transport-frame-observability
+4b8e0d4 spike(pi-extension): Unit 7 ExtensionRunner headless feasibility
+2514b6c scope: story-add-transport-frame-observability collapsed
+b428c5f review: story-app-debug-toggle-ui + story-app-capture-routing → done
+b4c5a86 review: story-app-debug-toggle-ui + story-app-capture-routing (ACCEPTED)
+d7bc84a implement(app): story-app-capture-routing
+8a65bcc implement(app): story-app-debug-toggle-ui
+0020dd3 (prior session note)
 ```

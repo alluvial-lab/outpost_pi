@@ -30,7 +30,7 @@ completed and consistently got **642 passed | 3 skipped | 0 failed (43 files)**
 + `extension.test.ts` **147/147** + `corepack pnpm typecheck` clean. The
 sandbox UDS ceiling was LIFTED earlier in the 2026-06-30 session (see
 `.work/SESSION-NOTE-2026-06-30-waves-2-4.md`) and all pre-existing test debt was
-cleared (commit `9aa2c42`). The baseline is ZERO failures. The agents' claimed
+cleared (commit `7284754`). The baseline is ZERO failures. The agents' claimed
 failures do not exist.
 
 ## Why this matters
@@ -86,8 +86,8 @@ The enhanced false-failure briefing has a dangerous failure mode it was NOT
 designed to catch: an agent can use "this is the known false-alarm pattern" as
 **cover to dismiss a REAL regression**.
 
-**Concrete instance**: `relay-transport-module-step-5` (commit `a3fde43`, reverted
-in `f3d9bc0`). The agent ADDED two tests asserting the core owner-ingress
+**Concrete instance**: `relay-transport-module-step-5` (commit `b36d9db`, reverted
+in `06152d8`). The agent ADDED two tests asserting the core owner-ingress
 invariant (`known peer reconnect: first non-pair message attaches and routes
 exactly once`, `relay reconnect detaches owners and lets a known peer reattach`),
 those tests FAILED with a real duplicate-listener bug (handler registered by BOTH
@@ -117,7 +117,7 @@ independent re-run is the load-bearing safety net, not the agent's self-classifi
 
 ## 2026-06-30 update #2 — runtime instrumentation beat agent static-analysis (2nd revert)
 
-The SECOND step-5 attempt (`fecaa66`, also reverted in `d75a7fe`) ALSO failed the 2
+The SECOND step-5 attempt (`7a3b980`, also reverted in `c7fc589`) ALSO failed the 2
 owner-ingress tests AND ALSO misclassified them as false-alarms. Worse, both agents
 **guessed the root cause wrong**: they theorized `onOuterMessage` eager-registration
 was the duplicate-listener source. The second agent even "fixed" that (removed the
@@ -159,13 +159,13 @@ fallible, and orchestrator errors can compound with agent misclassification:
 2. Orchestrator then aligned test fixtures to counts observed DURING debugging —
    but those counts (2/3) were from a TRANSIENT uncommitted working-tree state.
    The committed code consistently produces 1/2. The orchestrator's "alignment"
-   (commit `b95d828`) was WRONG — it broke the (originally-correct) tests.
-   Reverted in `ea94508`/`5c5ae0b`.
-3. sdk-session-projection-step-2 agent (commit `ed74036`) COPIED the orchestrator's
+   (commit `ef436db`) was WRONG — it broke the (originally-correct) tests.
+   Reverted in `6b5b1d0`/`480f842`.
+3. sdk-session-projection-step-2 agent (commit `7b31ac2`) COPIED the orchestrator's
    bad aligned fixtures into its own new tests, so its suite showed failures.
    The agent misclassified THOSE (real, fixture-induced) failures as false-alarms
    AND listed "listener-count" in its dismissal — the exact trap from step-5.
-   Orchestrator reverted `ed74036`, then discovered (via checkout tests) the
+   Orchestrator reverted `7b31ac2`, then discovered (via checkout tests) the
    agent's actual code migration was CORRECT — the failures were entirely from
    the orchestrator's bad fixtures, not the agent's work. The agent was wrongly
    penalized.

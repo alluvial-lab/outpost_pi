@@ -146,7 +146,7 @@ failures was a false alarm — orchestrator's independent re-run shows 147/147 o
 `extension.test.ts` and 642/645 full suite, 0 failures. The implementer likely
 hit a transient/flaky run and mis-attributed. No actual regression.
 
-Commit `5a508e6` scoped to mesh_node.ts/test + story .md; collision guard held
+Commit `8384fc8` scoped to mesh_node.ts/test + story .md; collision guard held
 (did NOT touch index.ts or extension.test.ts). Late-attach convergence verified:
 bridge lifecycle epoch + terminal `closed` guard; stale continuations after
 detachBridge()/close() detach returned BrokerRemote/PiForwardClient instead of

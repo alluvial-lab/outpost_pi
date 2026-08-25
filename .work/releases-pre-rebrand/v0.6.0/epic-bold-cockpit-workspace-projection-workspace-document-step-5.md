@@ -90,7 +90,7 @@ Restore the direct ViewModel mutation bodies from before this step and keep the 
 **Findings**: none above nit level.
 
 **Verification run (orchestrator)**:
-- `git show --stat 85a84eb` — only owned files: `workspace_document_commands.dart` (new), `cockpit_viewmodel.dart`, `cockpit_viewmodel_workspace_commands_test.dart` (new) + story. No collision with other cockpit agents.
+- `git show --stat 7a9137b` — only owned files: `workspace_document_commands.dart` (new), `cockpit_viewmodel.dart`, `cockpit_viewmodel_workspace_commands_test.dart` (new) + story. No collision with other cockpit agents.
 - Confirmed `WorkspaceDocumentCommands` is a pure-function class (`focusPane`, `selectTab`, `resizeSplit`, `appendTab`, `replaceTab`, `replaceActiveTab`, `fillEmpty`, `splitPane`, `moveTabToIndex`) returning `WorkspaceCommandResult{document, disposeTabIds}` — pure document transforms, no VM side-effects. `CockpitViewModel` mutation methods route through `_applyWorkspaceCommand` (gets `_activeDocument`, runs command, `_setDocument(result.document)`, disposes `result.disposeTabIds`, clears focused notification, notifies).
 - `cd cockpit && flutter test test/ui/cockpit_viewmodel_workspace_commands_test.dart test/ui/cockpit_viewmodel_workspace_document_test.dart` (PUB_CACHE, offline) — 8/8 pass (command routing incl. openFile preview replacement; step-4 regression green).
 - `flutter analyze` — No issues found.

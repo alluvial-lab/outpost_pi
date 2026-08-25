@@ -98,7 +98,7 @@ Approved (2026-06-30). Independently re-ran: `corepack pnpm typecheck` clean;
 **full pi-ext suite 651 passed | 3 skipped | 0 failed (44 files)** — fully green
 (shell step, no behavior change; suite confirms no regression).
 
-Commit `581c349` scoped to pi-ext only (relay_transport.ts new 207 lines + ports.ts
+Commit `7b41e28` scoped to pi-ext only (relay_transport.ts new 207 lines + ports.ts
 + story .md); collision guard held. Adapter verified: `createRelayTransportPort()`
 implements `RelayTransportPort` contract; private relay/URL/keypair/room-meta/
 reconnect-timer/attempt/status/outer-message/bridge fields owned by the adapter

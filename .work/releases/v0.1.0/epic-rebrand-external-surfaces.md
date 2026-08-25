@@ -25,7 +25,7 @@ this epic. External identity moves separately."* This is that follow-up epic.
 Two changes since then collapse the scope:
 
 1. **The GitHub repo is now `KevounC/outpost_pi`** and the fork network is
-   removed — that slice of class 4 landed in commit `4697fc2` (alongside the
+   removed — that slice of class 4 landed in commit `1c8cad8` (alongside the
    posture-vocabulary cleanup). The `jacobaraujo7` GitHub user and
    `jacobmoura7` Docker Hub namespace references are gone from product
    source.

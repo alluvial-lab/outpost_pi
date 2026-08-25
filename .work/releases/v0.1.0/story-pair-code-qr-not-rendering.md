@@ -58,7 +58,7 @@ attached — which does not match the real SDK behavior. That false-green hid
 the regression. The pre-split `bindSessionContext` used the additive
 `bindCapabilities` (only rebinds when the value actually carries the message
 API), so a realistic ctx was a no-op and the `pi`-armed binding survived.
-Commit `23277c9` ("…sdk-session-projection-module-step-3") introduced
+Commit `e057ab2` ("…sdk-session-projection-module-step-3") introduced
 `replaceSessionCapabilities` for `bindSessionContext`, regressing it.
 
 ### Lifecycle grounding (why additive is correct across all paths)

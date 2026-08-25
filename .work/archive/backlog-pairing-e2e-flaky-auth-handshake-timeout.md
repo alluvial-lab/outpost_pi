@@ -32,7 +32,7 @@ for the winner-mid-write window) + `_startRelayViaTransport` single-flight
 (one relay connection). A root-level single-flight was tried first and
 REVERTED: it coupled the harness to the possibly-hung background root and
 turned a benign hang into a full pi-host wedge (Mode C scare, reverted in
-65b790e). Fingerprints after fix: one relay auth + one identity per generation.
+f43101f). Fingerprints after fix: one relay auth + one identity per generation.
 
 ### Mode B (pi-host wedge at generation ~10-11) — docker restart-policy BACKOFF
 `/__restart` exits the process; `restart: unless-stopped` had docker restart

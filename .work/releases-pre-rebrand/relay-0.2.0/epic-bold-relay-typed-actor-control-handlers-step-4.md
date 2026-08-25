@@ -111,6 +111,6 @@ Move presence/rooms branches back into `handle_peer` while keeping the shared `S
 **Findings**: none above nit level.
 
 **Verification run (orchestrator)**:
-- `git show --stat 1f8544c` — only owned files: `relay/src/handlers/{control,connection_actor,peer}.rs` + this story; no stray files, no overlap with wire-discriminator's pi_forward/registry.
+- `git show --stat 7fbfa4f` — only owned files: `relay/src/handlers/{control,connection_actor,peer}.rs` + this story; no stray files, no overlap with wire-discriminator's pi_forward/registry.
 - `cd relay && cargo fmt --check` clean; `cargo clippy -- -D warnings` clean; `cargo test` — all binaries green (68+3+13+7+10+19 = 120 tests pass), incl. new control-handler coverage (malformed peer-list fail-closed, presence backfill, presence/rooms dedup+metrics) and moved limiter/cost unit coverage on the connection actor.
 - Acceptance criteria satisfied per story (typed control handlers; presence/rooms/metrics behavior intact; public wire shapes preserved).
