@@ -84,6 +84,13 @@ function bindFileBackedTranscriptWriter(sessionManager: SessionManager): SdkSess
   return projection;
 }
 
+function recordDurable(
+  writer: SdkSessionProjection,
+  event: TranscriptEvent,
+): void {
+  expect(writer.recordDurableTranscriptEvent(event)).toEqual({ status: "recorded" });
+}
+
 function withCurrentSession(harness: SdkSessionReplacementHarness, msg: Omit<ClientMessage, "session_id">): ClientMessage {
   return { ...msg, session_id: harness.currentRemoteSessionId() } as ClientMessage;
 }
@@ -488,6 +495,321 @@ describe("SDK session replacement harness", () => {
       in_reply_to: "parent-user",
       text: "parent answer after fork",
     });
+  });
+
+  test("deep file-backed forks reopen every branch with copied identities and local divergence", async () => {
+    const cwd = makeTempCwd();
+    const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-deep-fork-transcript-"));
+    cleanupPaths.push(sessionDir);
+    const parent = SessionManager.create(cwd, sessionDir);
+    const parentWriter = bindFileBackedTranscriptWriter(parent);
+    const parentId = parent.getSessionId();
+    recordDurable(parentWriter, {
+      kind: "user_confirmed",
+      eventId: "deep-shared-parent",
+      sessionId: parentId,
+      ts: 100,
+      clientMessageId: "parent-user",
+      text: "parent only",
+    });
+    parent.appendMessage({ role: "assistant", content: [], timestamp: 101 } as never);
+    const parentFile = parent.getSessionFile();
+    const parentLeaf = parent.getEntries().at(-1)?.id;
+    if (!parentFile || !parentLeaf) throw new Error("Expected persisted parent branch");
+
+    const harness = await makeHarnessForSession(cwd, parent);
+    await harness.forkSession(parentLeaf);
+    const forkA = harness.currentSession.sessionManager;
+    const forkAId = harness.currentRemoteSessionId();
+    const forkAWriter = bindFileBackedTranscriptWriter(forkA);
+    recordDurable(forkAWriter, {
+      kind: "user_confirmed",
+      eventId: "deep-fork-a-local",
+      sessionId: forkAId,
+      ts: 200,
+      clientMessageId: "fork-a-user",
+      text: "fork A only",
+    });
+    forkA.appendMessage({ role: "assistant", content: [], timestamp: 201 } as never);
+    const forkAFile = forkA.getSessionFile();
+    const forkALeaf = forkA.getEntries().at(-1)?.id;
+    if (!forkAFile || !forkALeaf) throw new Error("Expected persisted fork A branch");
+
+    await harness.forkSession(forkALeaf);
+    const forkB = harness.currentSession.sessionManager;
+    const forkBId = harness.currentRemoteSessionId();
+    const forkBWriter = bindFileBackedTranscriptWriter(forkB);
+    recordDurable(forkBWriter, {
+      kind: "user_confirmed",
+      eventId: "deep-fork-b-local",
+      sessionId: forkBId,
+      ts: 300,
+      clientMessageId: "fork-b-user",
+      text: "fork B only",
+    });
+    forkB.appendMessage({ role: "assistant", content: [], timestamp: 301 } as never);
+    const forkBFile = forkB.getSessionFile();
+    if (!forkBFile) throw new Error("Expected persisted fork B branch");
+
+    const branches = [
+      { file: parentFile, expectedId: parentId, ids: ["parent-user"] },
+      { file: forkAFile, expectedId: forkAId, ids: ["parent-user", "fork-a-user"] },
+      { file: forkBFile, expectedId: forkBId, ids: ["parent-user", "fork-a-user", "fork-b-user"] },
+    ];
+    for (const [index, branch] of branches.entries()) {
+      await harness.resumeSession(branch.file);
+      const history = await syncHistory(harness, `deep-fork-reopen-${index}`);
+      expect(history.session_id).toBe(branch.expectedId);
+      expect(history.events.map((event) => event.type === "user_input" ? event.id : null))
+        .toEqual(branch.ids);
+      expect(new Set(history.events.map((event) => JSON.stringify(event))).size)
+        .toBe(history.events.length);
+    }
+  });
+
+  test("multiple real compactions reopen only the active durable branch exactly once", async () => {
+    const cwd = makeTempCwd();
+    const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-compaction-heavy-transcript-"));
+    cleanupPaths.push(sessionDir);
+    const persisted = SessionManager.create(cwd, sessionDir);
+    const writer = bindFileBackedTranscriptWriter(persisted);
+    const sessionId = persisted.getSessionId();
+
+    recordDurable(writer, {
+      kind: "user_confirmed",
+      eventId: "cut-before-first",
+      sessionId,
+      ts: 10,
+      clientMessageId: "cut-user",
+      text: "cut before first compaction",
+    });
+    const firstMarker = persisted.appendMessage({
+      role: "user", content: "first active marker", timestamp: 20,
+    } as never);
+    recordDurable(writer, {
+      kind: "user_confirmed",
+      eventId: "between-compactions",
+      sessionId,
+      ts: 21,
+      clientMessageId: "between-user",
+      text: "first active marker",
+    });
+    const firstCompactionId = persisted.appendCompaction("first compact", firstMarker, 1_000);
+    const firstCompaction = persisted.getEntry(firstCompactionId);
+    if (!firstCompaction || firstCompaction.type !== "compaction") {
+      throw new Error("Expected first compaction entry");
+    }
+    recordDurable(writer, {
+      kind: "compaction_recorded",
+      eventId: "durable-compact-one",
+      sessionId,
+      ts: Date.parse(firstCompaction.timestamp),
+      summary: "first compact",
+      tokensBefore: 1_000,
+    });
+
+    const secondMarker = persisted.appendMessage({
+      role: "user", content: "surviving active prompt", timestamp: 40,
+    } as never);
+    recordDurable(writer, {
+      kind: "user_confirmed",
+      eventId: "active-user",
+      sessionId,
+      ts: 41,
+      clientMessageId: "active-user",
+      text: "surviving active prompt",
+    });
+    recordDurable(writer, {
+      kind: "tool_requested",
+      eventId: "active-tool-request",
+      sessionId,
+      ts: 42,
+      toolCallId: "active-tool",
+      tool: "read",
+      args: { path: "/tmp/active" },
+    });
+    recordDurable(writer, {
+      kind: "tool_finished",
+      eventId: "active-tool-result",
+      sessionId,
+      ts: 43,
+      toolCallId: "active-tool",
+      result: "active output",
+    });
+    const secondCompactionId = persisted.appendCompaction("second compact", secondMarker, 500);
+    const secondCompaction = persisted.getEntry(secondCompactionId);
+    if (!secondCompaction || secondCompaction.type !== "compaction") {
+      throw new Error("Expected second compaction entry");
+    }
+    const secondCompactionTs = Date.parse(secondCompaction.timestamp);
+    recordDurable(writer, {
+      kind: "compaction_recorded",
+      eventId: "durable-compact-two",
+      sessionId,
+      ts: secondCompactionTs,
+      summary: "second compact",
+      tokensBefore: 500,
+    });
+    recordDurable(writer, {
+      kind: "assistant_committed",
+      eventId: "active-assistant",
+      sessionId,
+      ts: 51,
+      messageId: "active-answer",
+      replyTo: "active-user",
+      text: "surviving answer",
+    });
+    recordDurable(writer, {
+      kind: "provider_error",
+      eventId: "active-error",
+      sessionId,
+      ts: 52,
+      replyTo: "active-user",
+      code: "provider_failed",
+      message: "surviving terminal error",
+    });
+    // SessionManager intentionally delays creating a file until the first
+    // assistant message. An empty SDK message flushes the real JSONL without
+    // adding a fallback transcript fact.
+    persisted.appendMessage({ role: "assistant", content: [], timestamp: 53 } as never);
+
+    const sessionFile = persisted.getSessionFile();
+    if (!sessionFile) throw new Error("Expected persisted compacted session");
+    const reopened = SessionManager.open(sessionFile, sessionDir, cwd);
+    const harness = await makeHarnessForSession(cwd, reopened);
+    const history = await syncHistory(harness, "compaction-heavy-reopen");
+
+    expect(history.events).toEqual([
+      { ts: 41, type: "user_input", id: "active-user", text: "surviving active prompt" },
+      { ts: 42, type: "tool_request", tool_call_id: "active-tool", tool: "read", args: { path: "/tmp/active" } },
+      { ts: 43, type: "tool_result", tool_call_id: "active-tool", result: "active output" },
+      { ts: secondCompactionTs, type: "compaction", summary: "second compact", tokens_before: 500 },
+      { ts: 51, type: "agent_message", in_reply_to: "active-user", text: "surviving answer", message_id: "active-answer" },
+      { ts: 52, type: "error", in_reply_to: "active-user", code: "provider_failed", message: "surviving terminal error" },
+    ]);
+    expect(JSON.stringify(history.events)).not.toContain("cut before first");
+    expect(JSON.stringify(history.events)).not.toContain("first compact");
+  });
+
+  test("gated real-file producers reopen byte-equivalent to live history", async () => {
+    const cwd = makeTempCwd();
+    const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-producer-interleave-"));
+    cleanupPaths.push(sessionDir);
+    const persisted = SessionManager.create(cwd, sessionDir);
+    const harness = await makeHarnessForSession(cwd, persisted);
+    const sessionId = harness.currentRemoteSessionId();
+
+    persisted.appendMessage({ role: "user", content: "interleaved prompt", timestamp: 100 } as never);
+    await harness.currentRunner.emit({
+      type: "message_end",
+      message: { role: "user", content: "interleaved prompt", timestamp: 100 },
+    } as never);
+
+    const makeGate = () => {
+      let start!: () => void;
+      let release!: () => void;
+      const started = new Promise<void>((resolve) => { start = resolve; });
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      return { started, released, start, release };
+    };
+    const assistantGate = makeGate();
+    const toolStartGate = makeGate();
+    const toolEndGate = makeGate();
+    const meshGate = makeGate();
+    const compactGate = makeGate();
+    const runGated = async (gate: ReturnType<typeof makeGate>, producer: () => Promise<void> | void) => {
+      gate.start();
+      await gate.released;
+      await producer();
+    };
+
+    const producers = [
+      runGated(assistantGate, async () => {
+        persisted.appendMessage({
+          role: "assistant",
+          content: [{ type: "text", text: "interleaved answer" }],
+          timestamp: 200,
+        } as never);
+        await harness.currentRunner.emit({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "interleaved answer" }],
+            timestamp: 200,
+          },
+        } as never);
+      }),
+      runGated(toolStartGate, () => harness.currentRunner.emit({
+        type: "tool_execution_start",
+        toolCallId: "interleaved-tool",
+        toolName: "read",
+        args: { path: "/tmp/interleaved" },
+      } as never)),
+      runGated(toolEndGate, () => harness.currentRunner.emit({
+        type: "tool_execution_end",
+        toolCallId: "interleaved-tool",
+        toolName: "read",
+        result: "interleaved result",
+        isError: false,
+      } as never)),
+      runGated(meshGate, () => harness.currentModule._deliverMeshMessageToAgentForTest({
+        id: "interleaved-mesh",
+        from: "/repo@peer",
+        re: null,
+        body: "mesh result",
+      })),
+      runGated(compactGate, async () => {
+        await harness.currentRunner.emit({
+          type: "session_compact",
+          compactionEntry: {
+            type: "compaction",
+            summary: "interleaved compact",
+            tokensBefore: 321,
+            firstKeptEntryId: persisted.getLeafId(),
+            timestamp: "1970-01-01T00:00:00.300Z",
+          },
+          fromExtension: false,
+        } as never);
+      }),
+    ];
+    await Promise.all([
+      assistantGate.started,
+      toolStartGate.started,
+      toolEndGate.started,
+      meshGate.started,
+      compactGate.started,
+    ]);
+    toolStartGate.release();
+    await producers[1];
+    meshGate.release();
+    await producers[3];
+    assistantGate.release();
+    await producers[0];
+    toolEndGate.release();
+    await producers[2];
+    compactGate.release();
+    await producers[4];
+    await Promise.all(producers);
+
+    const live = await syncHistory(harness, "producer-live");
+    const sessionFile = persisted.getSessionFile();
+    if (!sessionFile) throw new Error("Expected real producer session file");
+    const reopenedManager = SessionManager.open(sessionFile, sessionDir, cwd);
+    await harness.dispose();
+    const reopenedHarness = await makeHarnessForSession(cwd, reopenedManager);
+    expect(reopenedHarness.currentRemoteSessionId()).toBe(sessionId);
+    const reopened = await syncHistory(reopenedHarness, "producer-reopened");
+
+    expect(JSON.stringify(reopened.events)).toBe(JSON.stringify(live.events));
+    expect(reopened.events.map((event) => event.type)).toEqual([
+      "user_input",
+      "tool_request",
+      "tool_request",
+      "tool_result",
+      "agent_message",
+      "tool_result",
+      "compaction",
+    ]);
   });
 
   test("file-backed mixed-era history retains SDK fallback prefix and durable-authoritative suffix", async () => {

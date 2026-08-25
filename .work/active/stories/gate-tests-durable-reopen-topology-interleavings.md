@@ -1,7 +1,7 @@
 ---
 id: gate-tests-durable-reopen-topology-interleavings
 kind: story
-stage: implementing
+stage: done
 tags: [testing, pi-extension]
 parent: null
 depends_on: []
@@ -44,3 +44,28 @@ bug-regression / e2e-seam / concurrent durable-file boundary
 
 ## Test location (suggested)
 `pi-extension/test/sdk-session-replacement.test.ts`
+
+## Implementation
+
+Added three production-boundary tests over real `SessionManager` JSONL files:
+
+- a parent → fork A → fork B topology that diverges each branch, resumes every
+  file, and proves copied durable identities are rehomed exactly once without
+  leaking child facts into ancestors;
+- two compactions around durable user/tool/compaction/assistant/error facts,
+  using the SDK compaction timestamps, then reopening to prove only the latest
+  active branch survives and the SDK/durable compaction pair collapses once;
+- explicit started/release gates for actual `message_end`, tool start/end,
+  agent-network mesh-card, and `session_compact` producers. The selected
+  interleaving is appended through the production SDK context, synchronized
+  live, reopened from disk, and compared as byte-identical event JSON (the
+  request reply id is intentionally outside the event comparison).
+
+No product defect was found. Early red runs identified two fixture mistakes,
+not product behavior: `SessionManager` does not create its JSONL until an
+assistant message flushes it, and compaction fallback authority collides on the
+real SDK compaction timestamp. The final tests model both production rules.
+
+Verification:
+
+- `corepack pnpm exec vitest run test/sdk-session-replacement.test.ts` (12 passed)
