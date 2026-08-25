@@ -472,3 +472,4 @@ real-file reopen coverage. Legacy re-derivation retained as fallback for F4.
   while the current durable event remains authoritative exactly once.
 - JSON cloning defines own properties explicitly, preserving a valid
   `__proto__` tool-args key across encode/decode without prototype mutation.
+- Last-user recomputation is session-scoped, preventing fork-only user identity from attributing a resumed parent's assistant.

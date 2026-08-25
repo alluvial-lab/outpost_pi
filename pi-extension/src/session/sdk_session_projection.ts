@@ -1100,7 +1100,8 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   }
 
   private recomputeLastTranscriptUserId(): void {
-    const lastUser = [...this.transcriptLog.entries()].reverse().find((event) =>
+    const currentSessionEvents = this.transcriptLog.forSession(this.currentRemoteSessionId());
+    const lastUser = [...currentSessionEvents].reverse().find((event) =>
       event.kind === "user_confirmed" || event.kind === "user_submitted"
     );
     this.lastTranscriptUserId = lastUser?.clientMessageId ?? null;
