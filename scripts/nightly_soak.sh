@@ -51,15 +51,11 @@ finish() {
         hygiene_status=1
       else
         printf -- '- Emulator: down\n'
-        # A retained release/UAT artifact must never be eaten by routine disk
-        # hygiene (bitten 2026-08-24: the 08:30 run deleted the UAT APK under
-        # the operator's mid-scp). Honor the marker; only clear what builds
-        # regenerate.
-        if [ -e "$ROOT/.work/artifacts/APK-RETAIN" ]; then
-          printf -- '- `app/build`: **SKIPPED** — `.work/artifacts/APK-RETAIN` present (retained release artifact)\n'
-        else
-          rm -rf "$ROOT/app/build"
-        fi
+        # Release APKs are distributed via GitHub Releases (never retained in
+        # the tree — the .work/artifacts experiment caused two 190MB blobs in
+        # git history, stripped 2026-08-25). Only build-regenerable state is
+        # cleaned here.
+        rm -rf "$ROOT/app/build"
         rm -rf "$HOME/.gradle/caches/build-cache-1"
         # The AVD is reset only after this run held the exclusive lane and its
         # owned emulator is confirmed down; a foreign occupied serial is never reset.
