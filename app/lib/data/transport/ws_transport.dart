@@ -104,7 +104,16 @@ class WsTransport
   /// [activeRoom] is the Pi-side destination room envelopes are routed to
   /// and the room inbound envelopes are demuxed against from the first
   /// post-auth frame. [cancellation] closes the socket before a superseded
-  /// attempt may continue through relay authentication.
+  /// attempt may continue through relay authentication. A failed attempt owns
+  /// and settles its stream subscription and socket before completing with an
+  /// error; a returned transport owns those resources until [close].
+  ///
+  /// Throws [WsTransportError] when cancellation or socket closure interrupts
+  /// the authentication/readiness boundary. Malformed or oversized challenge
+  /// frames surface the relay decoder's [RelayFrameDecodeException]; signing,
+  /// socket, and other relay-boundary failures propagate their original error.
+  /// Cleanup failures are awaited and propagated after all cleanup actions have
+  /// been attempted.
   static Future<WsTransport> connect({
     required String relayUrl,
     required String peerPubkey, // base64 standard or url — destination peer

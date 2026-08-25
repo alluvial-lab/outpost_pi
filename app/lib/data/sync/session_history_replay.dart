@@ -17,6 +17,8 @@ import 'package:app/protocol/protocol.dart'
 /// Event ids are derived only from stable server facts in each history event.
 /// The outer `SessionHistory.inReplyTo` request id is deliberately ignored so
 /// reconnects and repeated sync requests append/dedupe the same event ids.
+///
+/// Throws [ArgumentError] when the canonical session identity is empty.
 List<TranscriptEvent> sessionHistoryToTranscriptEvents({
   required SessionHistory history,
   required String sessionId,
@@ -39,6 +41,8 @@ List<TranscriptEvent> sessionHistoryToTranscriptEvents({
 ///
 /// Requires a non-empty canonical [sessionId] and derives deterministic IDs so
 /// repeated history replays deduplicate against live delivery.
+///
+/// Throws [ArgumentError] when the canonical session identity is empty.
 TranscriptEvent sessionHistoryEventToTranscriptEvent(
   SessionHistoryEvent event, {
   required String sessionId,

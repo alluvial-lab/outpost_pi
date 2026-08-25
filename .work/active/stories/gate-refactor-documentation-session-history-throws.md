@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-session-history-throws
 kind: story
-stage: implementing
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
@@ -33,3 +33,6 @@ Callers can treat replay as total and fail to route an identity-boundary violati
 
 ## Fix
 Add explicit `Throws [ArgumentError]` contract notes to both public replay functions and state the canonical-session precondition once without restating their signatures.
+
+## Implementation
+- Added `[ArgumentError]` dartdoc to both session-history replay mappers in `app/lib/data/sync/session_history_replay.dart`.

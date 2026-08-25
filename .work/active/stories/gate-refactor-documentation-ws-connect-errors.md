@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-ws-connect-errors
 kind: story
-stage: implementing
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
@@ -33,3 +33,6 @@ Connection owners cannot derive which failures are retryable or what teardown ha
 
 ## Fix
 Add dartdoc error-contract notes for cancellation and boundary failures, including the resource-ownership guarantee once lifecycle teardown is corrected.
+
+## Implementation
+- Documented cancellation, relay decode/auth/socket, cleanup, and resource-ownership outcomes on `WsTransport.connect` in `app/lib/data/transport/ws_transport.dart`.
