@@ -1,14 +1,14 @@
 ---
 id: story-canonical-transcript-timestamp-ownership-ownership-foundation
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, bug]
-parent: feature-canonical-transcript-timestamp-ownership
+parent: epic-durable-transcript-ownership-durable-event-log
 depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-25
 ---
 
 # Timestamp-ownership foundation (extension owns the canonical ts)
@@ -18,7 +18,10 @@ Make the execution/delivery hook the single canonical `ts` owner per event so
 live broadcast == history == durable replay. Q1 decision = B; governing
 principle: the extension is the sole authoritative `ts` owner.
 
-## Change
+## Original implementation seed (moved to F1/F2)
+
+The following implementation sketch is retained as spike input; this story does
+not implement it separately.
 
 - `pi-extension/src/session/transcript_event_log.ts` — add a recorded-`ts`
   lookup (e.g. `recordedTsFor(eventId)`) over the existing append-only,
@@ -41,14 +44,14 @@ cannot be made to agree durably, fall back to: the app re-syncs from
 `session_history` on reconnect (canonical by then), so the render sort tolerates
 a transient live≠durable pre-reconnect — document + accept that residual.
 
-## Acceptance
+## Spike acceptance
 
-- [ ] For tool-request, tool-result, and app-origin user-confirmed, the LIVE
-  broadcast `ts` EQUALS the history/replay `ts` (producer-connected extension
-  test, NOT an injected value).
-- [ ] `TranscriptEventLog` exposes the recorded-`ts` lookup; no second
-  `Date.now()` per logical event.
-- [ ] Durability outcome documented (agreement achieved OR the accepted residual).
+- [x] Trace the real SDK hook/persistence ordering and document the current
+  live/in-memory/durable timestamp divergence.
+- [x] Verify a supported durable extension-state API and compaction-aware reopen
+  surface, or document the unavoidable fallback residual.
+- [x] Hand the feasible implementation shape to F1/F2 without modifying code in
+  the spike.
 
 ## Ordering
 
@@ -235,3 +238,15 @@ carries each authoritative per-tool event with `S`; restart backfill explicitly
 prefers that durable Outpost record. Therefore the app-visible invariant has no
 residual: live broadcast, in-process `session_history`, and post-restart
 `session_history` all use the hook-owned canonical timestamp.
+
+## Completion (durability spike)
+
+Completed as a read-only feasibility spike and absorbed into
+`epic-durable-transcript-ownership-durable-event-log`. The installed SDK proves
+the required chain: public `ExtensionAPI.appendEntry` persists plain custom
+entries through `SessionManager.appendCustomEntry`, those entries remain outside
+LLM context, and the active compaction-aware branch is recoverable through
+`buildContextEntries()`. The ordering correction—assistant `message_end` before
+per-tool execution—makes custom entries mandatory for canonical execution time.
+No implementation belongs to this story; the F1 child checkpoints now own the
+codec/log contract, fresh SDK binding, and file-backed reconciliation work.

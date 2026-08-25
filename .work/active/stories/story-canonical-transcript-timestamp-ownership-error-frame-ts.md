@@ -4,11 +4,11 @@ kind: story
 stage: implementing
 tags: [pi-extension, app, bug]
 parent: feature-canonical-transcript-timestamp-ownership
-depends_on: [story-canonical-transcript-timestamp-ownership-ownership-foundation]
+depends_on: [epic-durable-transcript-ownership-durable-event-log]
 release_binding: null
 gate_origin: null
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-25
 ---
 
 # Error-frame ts (schema + extension + app + codegen)
@@ -47,5 +47,5 @@ time on an authoritative bubble.
 
 ## Ordering
 
-`depends_on: [story-canonical-transcript-timestamp-ownership-ownership-foundation]`
-(parallel with B); unblocks D.
+`depends_on: [epic-durable-transcript-ownership-durable-event-log]`
+(needs F1's durable ownership foundation; parallel with B); unblocks D.
