@@ -85,6 +85,9 @@ export function transcriptEventsToSessionHistory(
           id: event.clientMessageId,
           text: event.text,
           ...(event.images && event.images.length > 0 ? { images: event.images } : {}),
+          ...(event.kind === "user_confirmed" && event.streamingBehavior
+            ? { streaming_behavior: event.streamingBehavior }
+            : {}),
         });
         break;
       }

@@ -2132,6 +2132,7 @@ describe("multi-channel broadcast (W2D)", () => {
       _setPiForTest({
         sendUserMessage,
         sendMessage: () => undefined,
+        appendEntry: appendDurableEntry,
       });
       const sendsBefore = relayRef.current!.send.mock.calls.length;
 
