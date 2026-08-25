@@ -4,6 +4,7 @@ import 'package:app/protocol/protocol.dart'
     show
         AgentMessageEvt,
         CompactionEvt,
+        ErrorEvt,
         SessionHistory,
         SessionHistoryEvent,
         ToolRequestEvt,
@@ -127,7 +128,35 @@ TranscriptEvent sessionHistoryEventToTranscriptEvent(
       summary: summary,
       tokensBefore: tokensBefore,
     ),
+    ErrorEvt(:final inReplyTo, :final code, :final message) =>
+      errorDiagnosticToTranscriptEvent(
+        sessionId: sessionId,
+        ts: event.ts,
+        inReplyTo: inReplyTo,
+        code: code,
+        message: message,
+      ),
   };
+}
+
+/// Map one durable error fact to the diagnostic row shared by live and replay.
+AssistantMessageCommitted errorDiagnosticToTranscriptEvent({
+  required String sessionId,
+  required int ts,
+  required String? inReplyTo,
+  required String code,
+  required String message,
+}) {
+  final replyTo = inReplyTo ?? 'error';
+  final stableKey = '$replyTo:$code';
+  return AssistantMessageCommitted(
+    eventId: serverReplayEventId(sessionId, 'error', stableKey, ts),
+    sessionId: sessionId,
+    ts: DateTime.fromMillisecondsSinceEpoch(ts),
+    messageId: serverReplayMessageId(sessionId, 'error', stableKey, ts),
+    replyTo: replyTo,
+    text: '⚠ $code: $message',
+  );
 }
 
 /// Derive a user-event identity that survives extension process replacement.

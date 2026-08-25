@@ -221,9 +221,10 @@ export async function handleSessionNew(
   onReplaced?: (freshCtx: ActionCtx) => void,
 ): Promise<boolean> {
   // Returns true only when a fresh session was actually created. index.ts
-  // keys the Pi-side reset (clear _messageBuffer, restamp _sessionStartedAt,
-  // fan out an empty session_history) off this signal — a `cancelled`/errored
-  // new-session must NOT reset, so we return runAsync's success boolean.
+  // keys the Pi-side reset (clear the durable transcript projection, restamp
+  // _sessionStartedAt, fan out an empty session_history) off this signal — a
+  // `cancelled`/errored new-session must NOT reset, so we return runAsync's
+  // success boolean.
   return runAsync(sender, msg, "session_new", async () => {
     // newSession marks the caller's captured ctx (index.ts's `_lastCtx`) STALE
     // — reusing it later throws "stale after session replacement" (the
@@ -312,7 +313,6 @@ export function handleListModels(
       in_reply_to: msg.id,
       code: "internal_error",
       message: e instanceof Error ? e.message : String(e),
-      ts: Date.now(),
     }));
   }
 }

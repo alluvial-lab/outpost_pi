@@ -266,10 +266,31 @@ F2 is complete on top of F1's durable transcript foundation.
   59-file suite (1079 passed, 3 skipped), and build; Flutter analyze and full
   non-e2e suite (944 passed) all green on the host-only environment.
 
-## Verification (at implement time)
+## Verification (planned vs executed)
 
-`flutter test --exclude-tags e2e` (app domain/data/chat + the 3
-`streaming`-convergence guards), extension `check:protocol`/`typecheck`/`test`,
-cross-component `e2e/run-pairing.sh`, and a final cross-model review that
-walks the (updated) enumeration table to confirm zero remaining authoritative
-phone-`ts` paths.
+Executed on the host during implementation: extension `check:protocol`,
+`typecheck`, full Vitest suite, and build; app `flutter analyze` and the full
+non-e2e Flutter suite (including the three streaming-convergence sentinels).
+
+Planned but not executed in the F2 implementation stride: cross-component
+`e2e/run-pairing.sh` (requires the pairing integration environment) and the
+feature-local final cross-model review. The later thorough cross-model review
+of the complete `epic-durable-transcript-ownership` did execute and found the
+error-replay closure gap recorded below.
+
+## Review closure (B3 / I1 / N2)
+
+- B3: renderable provider/internal diagnostics now cross the existing durable
+  v1 transcript boundary before timestamped live delivery, project into
+  `session_history` as generated `error` events, and hydrate through the app's
+  shared live/replay mapper. Ts-less mixed-era frames retain the legacy live
+  fallback. Extension and app regressions cover recording, replay, reopen
+  equivalence, live rendering, hydration, and mixed-era behavior.
+- I1: the durable Pi-extension reference and `session_new` handler comment now
+  describe v1 transcript entries/projection reset rather than the retired
+  `_messageBuffer`/synthetic-compaction model.
+- N2: this section now distinguishes executed host evidence from the planned
+  pairing E2E and notes the epic-level cross-model review that actually ran.
+- Protocol regeneration scope: `app-pi-server.schema.json`, generated
+  TypeScript, the Dart generator fixture, and generated Dart. Relay/Rust are
+  unchanged because `session_history` is app↔Pi owner-channel payload.

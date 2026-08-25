@@ -99,10 +99,10 @@ Hooks actually used across the extension include: [remote-pi-index-lifecycle]{1}
 - `input` — mirrors terminal/RPC input; `CTRL_PREFIX` control messages are swallowed before they become LLM turns.
 - `model_select` / `thinking_level_select` — cache current model/thinking and publish `room_meta_update`.
 - `message_update`, `tool_execution_start`, `tool_execution_end` — stream assistant/tool telemetry to attached owners.
-- `message_end` — persistence hook for ordinary user/assistant/toolResult entries in `_messageBuffer`.
+- `message_end` — records current user and assistant-text facts as durable `outpost-pi.transcript-event.v1` custom entries before broadcasting their transcript projections; execution hooks remain the sole tool transcript producers.
 - `agent_end` — finalizes `agent_done`.
 - `turn_start` / `turn_end` — publish `room_meta.working`.
-- `session_before_compact` / `session_compact` — bracket compact working-state and add synthetic history marker.
+- `session_before_compact` / `session_compact` — bracket compact working-state and record the durable `compaction_recorded` transcript entry before live visibility.
 - `session_start` / `session_shutdown` — capture the freshest session-bound context and tear down stale outgoing instance. These are registered in `pi-extension/src/extension/composition_root.ts` via `registerLifecycleHooks(pi, ports, ...)`, not directly in `src/index.ts`; `index.ts` is the composition entrypoint that wires the `OutpostPiRuntimePorts` seam and invokes `registerLifecycleHooks`.
 - `session_shutdown` — tear down stale outgoing instance.
 
@@ -165,7 +165,7 @@ Rules:
 - publish `working: true` on `turn_start` and compaction-start paths;
 - publish `working: false` on `turn_end`, compaction completion, abort/error cleanup, and session teardown/reconnect hydration where applicable;
 - remember that `compact()` does not run a normal turn, so compaction needs manual `working` brackets;
-- remember that `session_compact` does not flow through `message_end`; push a synthetic `role: "compaction"` marker into `_messageBuffer` so `session_sync` can replay it;
+- remember that `session_compact` does not flow through `message_end`; record a durable `compaction_recorded` v1 transcript entry so `session_sync` and process reopen replay the same marker;
 - in daemon/RPC mode, `session_new` can acknowledge, reset the mirror, and exit with `EXIT_DAEMON_FRESH_SESSION` (`42`) so the supervisor respawns a fresh Pi session; do not accidentally turn this into an in-process session switch without preserving the daemon contract; [remote-pi-index-lifecycle]{1} [remote-pi-rpc-child]{1}
 - cache the latest room meta so reconnect hello carries current state;
 - test dropped/replayed update scenarios and app hydration behavior before assuming the UI will self-correct.
@@ -210,7 +210,7 @@ Protocol families to recognize:
 
 - Holding a module-level `ctx`/`ctx.ui` forever and using it after `/new`, `/resume`, or reload.
 - Reusing `_lastCtx` after `newSession` when `_lastEventCtx` or `withSession` is available.
-- Using `message_end` as a compaction signal; compaction has its own hooks and needs synthetic history replay.
+- Using `message_end` as a compaction signal; compaction has its own hooks and must cross the durable v1 transcript boundary before live visibility.
 - Treating relay connection success as proof of current room/session state without sending fresh room meta.
 - Publishing `working: true` without guaranteed false paths for turn end, errors, aborts, compaction, and shutdown.
 - Persisting `ws://` or `wss://` as user config when the canonical user-facing relay setting is HTTP(S).

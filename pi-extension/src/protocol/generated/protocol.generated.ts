@@ -77,12 +77,21 @@ export interface HistoryCompaction {
   readonly tokens_before: number;
 }
 
+export interface HistoryError {
+  readonly ts: number;
+  readonly type: "error";
+  readonly in_reply_to?: string;
+  readonly code: ErrorCode;
+  readonly message: string;
+}
+
 export type SessionHistoryEvent =
   | HistoryUserInput
   | HistoryToolRequest
   | HistoryToolResult
   | HistoryAgentMessage
-  | HistoryCompaction;
+  | HistoryCompaction
+  | HistoryError;
 
 export const RELAY_AUTH_DOMAIN_PREFIX = "outpost-pi-relay-auth-v1\n";
 
@@ -900,6 +909,7 @@ export const SESSION_HISTORY_EVENT_TYPES = [
   "tool_result",
   "agent_message",
   "compaction",
+  "error",
 ] as const;
 export type SessionHistoryEventType = (typeof SESSION_HISTORY_EVENT_TYPES)[number];
 
@@ -955,6 +965,10 @@ function isHistoryAgentMessage(value: unknown): value is HistoryAgentMessage {
 
 function isHistoryCompaction(value: unknown): value is HistoryCompaction {
   return isObjectLike(value, ["ts", "type", "summary", "tokens_before"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "compaction") && (Object.hasOwn(record, "summary") && typeof record["summary"] === "string") && (Object.hasOwn(record, "tokens_before") && isIntegerAtLeast(record["tokens_before"], 0))));
+}
+
+function isHistoryError(value: unknown): value is HistoryError {
+  return isObjectLike(value, ["ts", "type", "in_reply_to", "code", "message"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "error") && (record["in_reply_to"] === undefined || (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "code") && (typeof record["code"] === "string" && record["code"].length >= 1)) && (Object.hasOwn(record, "message") && typeof record["message"] === "string")));
 }
 
 function isPairRequest(value: unknown): value is PairRequest {
@@ -1078,7 +1092,7 @@ function isBye(value: unknown): value is Bye {
 }
 
 function isSessionHistory(value: unknown): value is SessionHistory {
-  return isObjectLike(value, ["type", "session_id", "in_reply_to", "session_started_at", "events", "eos", "truncated"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "session_history") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "session_started_at") && isIntegerAtLeast(record["session_started_at"], 0)) && (Object.hasOwn(record, "events") && (Array.isArray(record["events"]) && record["events"].every((item) => (isObjectLike(item, ["ts", "type", "id", "text", "images"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "user_input") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["images"] === undefined || (Array.isArray(record["images"]) && record["images"].every((item) => isObjectLike(item, ["data", "mime"], (record) => ((Object.hasOwn(record, "data") && (typeof record["data"] === "string" && record["data"].length >= 1)) && (Object.hasOwn(record, "mime") && (typeof record["mime"] === "string" && record["mime"].length >= 1))))))))) || isObjectLike(item, ["ts", "type", "tool_call_id", "tool", "args"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "tool_request") && (Object.hasOwn(record, "tool_call_id") && (typeof record["tool_call_id"] === "string" && record["tool_call_id"].length >= 1)) && (Object.hasOwn(record, "tool") && (typeof record["tool"] === "string" && record["tool"].length >= 1)) && (Object.hasOwn(record, "args") && true))) || isObjectLike(item, ["ts", "type", "tool_call_id", "result", "error"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "tool_result") && (Object.hasOwn(record, "tool_call_id") && (typeof record["tool_call_id"] === "string" && record["tool_call_id"].length >= 1)) && (record["result"] === undefined || true) && (record["error"] === undefined || typeof record["error"] === "string"))) || isObjectLike(item, ["ts", "type", "in_reply_to", "text", "message_id", "usage"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "agent_message") && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["message_id"] === undefined || typeof record["message_id"] === "string") && (record["usage"] === undefined || isObjectLike(record["usage"], ["input_tokens", "output_tokens"], (record) => ((Object.hasOwn(record, "input_tokens") && isIntegerAtLeast(record["input_tokens"], 0)) && (Object.hasOwn(record, "output_tokens") && isIntegerAtLeast(record["output_tokens"], 0))))))) || isObjectLike(item, ["ts", "type", "summary", "tokens_before"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "compaction") && (Object.hasOwn(record, "summary") && typeof record["summary"] === "string") && (Object.hasOwn(record, "tokens_before") && isIntegerAtLeast(record["tokens_before"], 0)))))))) && (Object.hasOwn(record, "eos") && typeof record["eos"] === "boolean") && (Object.hasOwn(record, "truncated") && typeof record["truncated"] === "boolean")));
+  return isObjectLike(value, ["type", "session_id", "in_reply_to", "session_started_at", "events", "eos", "truncated"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "session_history") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "session_started_at") && isIntegerAtLeast(record["session_started_at"], 0)) && (Object.hasOwn(record, "events") && (Array.isArray(record["events"]) && record["events"].every((item) => (isObjectLike(item, ["ts", "type", "id", "text", "images"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "user_input") && (Object.hasOwn(record, "id") && (typeof record["id"] === "string" && record["id"].length >= 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["images"] === undefined || (Array.isArray(record["images"]) && record["images"].every((item) => isObjectLike(item, ["data", "mime"], (record) => ((Object.hasOwn(record, "data") && (typeof record["data"] === "string" && record["data"].length >= 1)) && (Object.hasOwn(record, "mime") && (typeof record["mime"] === "string" && record["mime"].length >= 1))))))))) || isObjectLike(item, ["ts", "type", "tool_call_id", "tool", "args"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "tool_request") && (Object.hasOwn(record, "tool_call_id") && (typeof record["tool_call_id"] === "string" && record["tool_call_id"].length >= 1)) && (Object.hasOwn(record, "tool") && (typeof record["tool"] === "string" && record["tool"].length >= 1)) && (Object.hasOwn(record, "args") && true))) || isObjectLike(item, ["ts", "type", "tool_call_id", "result", "error"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "tool_result") && (Object.hasOwn(record, "tool_call_id") && (typeof record["tool_call_id"] === "string" && record["tool_call_id"].length >= 1)) && (record["result"] === undefined || true) && (record["error"] === undefined || typeof record["error"] === "string"))) || isObjectLike(item, ["ts", "type", "in_reply_to", "text", "message_id", "usage"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "agent_message") && (Object.hasOwn(record, "in_reply_to") && (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "text") && typeof record["text"] === "string") && (record["message_id"] === undefined || typeof record["message_id"] === "string") && (record["usage"] === undefined || isObjectLike(record["usage"], ["input_tokens", "output_tokens"], (record) => ((Object.hasOwn(record, "input_tokens") && isIntegerAtLeast(record["input_tokens"], 0)) && (Object.hasOwn(record, "output_tokens") && isIntegerAtLeast(record["output_tokens"], 0))))))) || isObjectLike(item, ["ts", "type", "summary", "tokens_before"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "compaction") && (Object.hasOwn(record, "summary") && typeof record["summary"] === "string") && (Object.hasOwn(record, "tokens_before") && isIntegerAtLeast(record["tokens_before"], 0)))) || isObjectLike(item, ["ts", "type", "in_reply_to", "code", "message"], (record) => ((Object.hasOwn(record, "ts") && isIntegerAtLeast(record["ts"], 0)) && (Object.hasOwn(record, "type") && record["type"] === "error") && (record["in_reply_to"] === undefined || (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "code") && (typeof record["code"] === "string" && record["code"].length >= 1)) && (Object.hasOwn(record, "message") && typeof record["message"] === "string"))))))) && (Object.hasOwn(record, "eos") && typeof record["eos"] === "boolean") && (Object.hasOwn(record, "truncated") && typeof record["truncated"] === "boolean")));
 }
 
 function isActionOk(value: unknown): value is ActionOk {
@@ -1147,6 +1161,7 @@ const SESSION_HISTORY_EVENT_VALIDATORS: { readonly [K in SessionHistoryEventType
   "tool_result": isHistoryToolResult,
   "agent_message": isHistoryAgentMessage,
   "compaction": isHistoryCompaction,
+  "error": isHistoryError,
 };
 
 export function isSessionHistoryEvent(value: unknown): value is SessionHistoryEvent {

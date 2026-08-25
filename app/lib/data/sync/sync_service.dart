@@ -1623,28 +1623,48 @@ class SyncService extends Service {
             requestReplayOnFailure: true,
           );
         }
-        if (rejectsPendingSteering) break;
+        if (rejectsPendingSteering && ts == null) break;
         _discardStreamingState();
         _setTurnIdle();
-        _runDetachedTranscriptWrite(
-          () => _appendTranscriptEvents(<TranscriptEvent>[
-            AssistantMessageCommitted(
-              eventId: 'server:error_message:${uuid7()}',
-              sessionId: _activeTranscriptSessionId(),
-              ts: diagnosticTs,
-              messageId: 'err_${uuid7()}',
-              replyTo: inReplyTo ?? 'error',
-              text: '⚠ $code: $message',
+        if (ts != null) {
+          // Durable-era live errors use the same mapper and stable identity as
+          // session_history. The frame supplies the in-flight row; history is
+          // authoritative on hydration and repeated sync deduplicates it.
+          _runDetachedTranscriptWrite(
+            () => _appendTranscriptEvent(
+              errorDiagnosticToTranscriptEvent(
+                sessionId: _activeTranscriptSessionId(),
+                ts: ts,
+                inReplyTo: inReplyTo,
+                code: code,
+                message: message,
+              ),
             ),
-            AssistantDoneReceived(
-              eventId: 'server:error_done:${uuid7()}',
-              sessionId: _activeTranscriptSessionId(),
-              ts: diagnosticTs,
-              replyTo: inReplyTo ?? 'error',
-            ),
-          ]),
-          expectedRef: expectedRef,
-        );
+            expectedRef: expectedRef,
+          );
+        } else {
+          // A ts-less frame is a pre-durable extension. Preserve the legacy
+          // phone-clock path because no authoritative history fact can arrive.
+          _runDetachedTranscriptWrite(
+            () => _appendTranscriptEvents(<TranscriptEvent>[
+              AssistantMessageCommitted(
+                eventId: 'server:error_message:${uuid7()}',
+                sessionId: _activeTranscriptSessionId(),
+                ts: diagnosticTs,
+                messageId: 'err_${uuid7()}',
+                replyTo: inReplyTo ?? 'error',
+                text: '⚠ $code: $message',
+              ),
+              AssistantDoneReceived(
+                eventId: 'server:error_done:${uuid7()}',
+                sessionId: _activeTranscriptSessionId(),
+                ts: diagnosticTs,
+                replyTo: inReplyTo ?? 'error',
+              ),
+            ]),
+            expectedRef: expectedRef,
+          );
+        }
 
       case Compaction(:final summary, :final tokensBefore, :final ts):
         _setTurnIdle();

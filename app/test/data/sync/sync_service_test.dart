@@ -9,6 +9,7 @@ import 'package:app/data/local/records/message_record.dart';
 import 'package:app/data/local/records/runtime_record.dart';
 import 'package:app/data/local/records/session_index_record.dart';
 import 'package:app/data/repositories/session_read_repository.dart';
+import 'package:app/data/sync/session_history_replay.dart';
 import 'package:app/data/sync/sync_events.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/epk_encoding.dart';
@@ -1467,6 +1468,23 @@ void main() {
       ),
     );
     await _settle();
+    s.ch.push(
+      SessionHistory(
+        sessionId: s.sessionId,
+        inReplyTo: 'sync-error-dedup',
+        sessionStartedAt: 1000,
+        events: const [
+          ErrorEvt(
+            ts: canonicalTs,
+            inReplyTo: 'canonical-error',
+            code: 'provider_error',
+            message: 'server timed',
+          ),
+        ],
+        eos: true,
+      ),
+    );
+    await _settle();
 
     final fallbackBefore = DateTime.now();
     s.ch.push(
@@ -1492,8 +1510,54 @@ void main() {
       (event) => event.text.contains('legacy timed'),
     );
     expect(canonical.ts, DateTime.fromMillisecondsSinceEpoch(canonicalTs));
+    expect(
+      canonical.eventId,
+      serverReplayEventId(
+        s.sessionId,
+        'error',
+        'canonical-error:provider_error',
+        canonicalTs,
+      ),
+    );
     expect(legacy.ts.isBefore(fallbackBefore), isFalse);
     expect(legacy.ts.isAfter(fallbackAfter), isFalse);
+
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
+  test('session history hydrates durable error diagnostics', () async {
+    final store = _MemoryTranscriptStore();
+    final s = await setup(transcriptEventStore: store);
+    const historyTs = 1_700_000_001_500;
+
+    s.ch.push(
+      SessionHistory(
+        sessionId: s.sessionId,
+        inReplyTo: 'sync-error-hydration',
+        sessionStartedAt: 1000,
+        events: const [
+          ErrorEvt(
+            ts: historyTs,
+            inReplyTo: 'cancel-1',
+            code: 'internal_error',
+            message: 'No active Pi context to abort',
+          ),
+        ],
+        eos: true,
+      ),
+    );
+    await _settle();
+
+    expect(
+      messages(s.epk).where((row) => row.role == MsgRole.assistant).single.text,
+      '⚠ internal_error: No active Pi context to abort',
+    );
+    final diagnostic = store
+        .eventsFor(transcriptKeyFor(s.epk))
+        .whereType<AssistantMessageCommitted>()
+        .single;
+    expect(diagnostic.ts, DateTime.fromMillisecondsSinceEpoch(historyTs));
 
     s.conn.dispose();
     s.sync.dispose();

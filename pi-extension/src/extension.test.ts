@@ -3185,6 +3185,22 @@ describe("multi-channel broadcast (W2D)", () => {
       .map((entry) => entry.data as Record<string, unknown>)
       .find((event) => event["kind"] === "provider_error");
     expect(err?.inner["ts"]).toBe(durableError?.["ts"]);
+
+    const sessionId = currentSessionIdFromSends();
+    const historyStart = relayRef.current!.send.mock.calls.length;
+    outpostPiTestHarness.routeClientMessage(
+      { type: "session_sync", id: "sync-provider-error", session_id: sessionId },
+      { abort: () => undefined },
+    );
+    await flushSecureOutbound();
+    const history = sentToPeerSince(historyStart, "ownerA__1234567890")
+      .find((frame) => frame.inner.type === "session_history");
+    expect(history?.inner["events"]).toContainEqual({
+      type: "error",
+      code: "provider_error",
+      message: "Provider finish_reason: error",
+      ts: err?.inner["ts"],
+    });
   });
 
   test("normal assistant turn (stopReason:stop) → no error forwarded", async () => {
@@ -4358,8 +4374,33 @@ describe("routeClientMessage cancel handling", () => {
       type: "error",
       in_reply_to: "cancel-nonreal",
       code: "internal_error",
+      ts: expect.any(Number),
     });
     expect(cancelled).toHaveLength(0);
+    expect(durableTranscriptEntries.map((entry) => entry.data)).toContainEqual(
+      expect.objectContaining({
+        kind: "provider_error",
+        replyTo: "cancel-nonreal",
+        code: "internal_error",
+        ts: errors[0]!.inner["ts"],
+      }),
+    );
+
+    const historyStart = relayRef.current!.send.mock.calls.length;
+    outpostPiTestHarness.routeClientMessage(
+      { type: "session_sync", id: "sync-cancel-error", session_id: sessionId },
+      { abort: () => undefined },
+    );
+    await flushSecureOutbound();
+    const history = sentToPeerSince(historyStart, "owner-cancel-2")
+      .find((frame) => frame.inner.type === "session_history");
+    expect(history?.inner["events"]).toContainEqual({
+      type: "error",
+      in_reply_to: "cancel-nonreal",
+      code: "internal_error",
+      message: "No active Pi context to abort",
+      ts: errors[0]!.inner["ts"],
+    });
   });
 
   test("abort throw sends error, and the router still handles a later ping", async () => {

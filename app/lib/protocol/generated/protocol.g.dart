@@ -1550,6 +1550,7 @@ const Set<String> generatedSessionHistoryEventTypes = {
   'tool_result',
   'agent_message',
   'compaction',
+  'error',
 };
 
 sealed class SessionHistoryEvent {
@@ -1565,6 +1566,7 @@ sealed class SessionHistoryEvent {
       'tool_result' => ToolResultEvt.fromJson(json),
       'agent_message' => AgentMessageEvt.fromJson(json),
       'compaction' => CompactionEvt.fromJson(json),
+      'error' => ErrorEvt.fromJson(json),
       final unknown => throw UnsupportedTypeException(unknown ?? ''),
     };
   }
@@ -1719,6 +1721,36 @@ final class CompactionEvt extends SessionHistoryEvent {
       };
 }
 
+final class ErrorEvt extends SessionHistoryEvent {
+  const ErrorEvt({required this.ts, this.inReplyTo, required this.code, required this.message});
+
+  @override
+  String get type => 'error';
+
+  @override
+  final int ts;
+  final String? inReplyTo;
+  final String code;
+  final String message;
+
+  factory ErrorEvt.fromJson(Map<String, dynamic> json) => ErrorEvt(
+        ts: (json['ts'] as num).toInt(),
+        inReplyTo: json['in_reply_to'] as String?,
+        code: json['code'] as String,
+        message: json['message'] as String,
+      );
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'ts': ts,
+        if (inReplyTo case final inReplyTo?)
+          'in_reply_to': inReplyTo,
+        'code': code,
+        'message': message,
+      };
+}
+
 typedef GeneratedSessionHistoryEventJsonDecoder<T> = T Function(Map<String, dynamic> json);
 
 final class GeneratedSessionHistoryEventDecoders<T> {
@@ -1728,6 +1760,7 @@ final class GeneratedSessionHistoryEventDecoders<T> {
     required this.toolResultEvt,
     required this.agentMessageEvt,
     required this.compactionEvt,
+    required this.errorEvt,
   });
 
   final GeneratedSessionHistoryEventJsonDecoder<T> userInputEvt;
@@ -1735,6 +1768,7 @@ final class GeneratedSessionHistoryEventDecoders<T> {
   final GeneratedSessionHistoryEventJsonDecoder<T> toolResultEvt;
   final GeneratedSessionHistoryEventJsonDecoder<T> agentMessageEvt;
   final GeneratedSessionHistoryEventJsonDecoder<T> compactionEvt;
+  final GeneratedSessionHistoryEventJsonDecoder<T> errorEvt;
 }
 
 T decodeGeneratedSessionHistoryEvent<T>(
@@ -1748,6 +1782,7 @@ T decodeGeneratedSessionHistoryEvent<T>(
     'tool_result' => decoders.toolResultEvt(json),
     'agent_message' => decoders.agentMessageEvt(json),
     'compaction' => decoders.compactionEvt(json),
+    'error' => decoders.errorEvt(json),
     final unknown => throw UnsupportedTypeException(unknown ?? ''),
   };
 }
