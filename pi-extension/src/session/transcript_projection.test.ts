@@ -308,6 +308,20 @@ describe("transcript session_history projection", () => {
     ]);
   });
 
+  test("does not replay an orphaned agent-network request as a permanently running card", () => {
+    const orphan: TranscriptEvent = {
+      kind: "tool_requested",
+      eventId: "orphan-mesh-request",
+      sessionId,
+      ts: 200,
+      toolCallId: "mesh_orphan",
+      tool: "agent-network",
+      args: { from: "/repo@peer", message: "hello" },
+    };
+
+    expect(projectSessionHistory({ sessionId, events: [orphan], limit: 10 }).events).toEqual([]);
+  });
+
   test("matches repeated equal-content app users FIFO and preserves unmatched SDK history", () => {
     const appUser = (id: string, ts: number): TranscriptEvent => ({
       kind: "user_confirmed",
@@ -332,6 +346,46 @@ describe("transcript session_history projection", () => {
       ["app-2", 21],
       ["sync_30", 30],
     ]);
+  });
+
+  test.each([
+    ["plain legacy prefix", []],
+    ["compaction-kept legacy prefix", [{
+      type: "compaction" as const,
+      summary: "kept legacy prefix",
+      tokensBefore: 50,
+      timestamp: new Date(15).toISOString(),
+    }]],
+  ])("binds equal-content durable user claims to the current era after a %s", (_label, prefixBoundary) => {
+    const current: TranscriptEvent = {
+      kind: "user_confirmed",
+      eventId: "durable-current-repeat",
+      sessionId,
+      ts: 21,
+      clientMessageId: "app-current-repeat",
+      text: "repeat",
+    };
+    const reopened = reconcileTranscriptContextEntries({
+      sessionId,
+      entries: [
+        { type: "message", message: { role: "user", content: "repeat", timestamp: 10 } },
+        ...prefixBoundary,
+        { type: "message", message: { role: "user", content: "repeat", timestamp: 20 } },
+        durableEntry(current),
+      ],
+    });
+    const users = reopened.filter((event) => event.kind === "user_confirmed");
+
+    expect(users.map((event) => [event.clientMessageId, event.ts])).toEqual([
+      ["sync_10", 10],
+      ["app-current-repeat", 21],
+    ]);
+    const history = projectSessionHistory({ sessionId, events: reopened, limit: 10 }).events;
+    expect(history.filter((event) => event.type === "user_input" && event.text === "repeat"))
+      .toEqual([
+        { ts: 10, type: "user_input", id: "sync_10", text: "repeat" },
+        { ts: 21, type: "user_input", id: "app-current-repeat", text: "repeat" },
+      ]);
   });
 
   test("corrupt and unsupported custom entries cannot suppress SDK fallback", () => {
@@ -425,6 +479,31 @@ describe("transcript session_history projection", () => {
         streaming_behavior: "steer",
       },
     ]);
+  });
+
+  test("fork rehoming keeps durable compaction authority over the copied raw entry", () => {
+    const ts = Date.parse("2026-08-25T00:00:00.000Z");
+    const copied: TranscriptEvent = {
+      kind: "compaction_recorded",
+      eventId: deterministicTranscriptEventId("parent-session", "compaction_recorded", String(ts)),
+      sessionId: "parent-session",
+      ts,
+      summary: "durable summary",
+      tokensBefore: 1200,
+    };
+
+    expect(reconcileTranscriptContextEntries({
+      sessionId: "fork-session",
+      entries: [
+        {
+          type: "compaction",
+          summary: "SDK summary",
+          tokensBefore: 1200,
+          timestamp: "2026-08-25T00:00:00.000Z",
+        },
+        durableEntry(copied),
+      ],
+    })).toEqual([{ ...copied, sessionId: "fork-session" }]);
   });
 
   test("maps raw compaction timestamps and ignores duplicate durable identities", () => {

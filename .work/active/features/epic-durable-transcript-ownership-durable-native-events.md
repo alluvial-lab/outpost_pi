@@ -8,7 +8,7 @@ depends_on: [epic-durable-transcript-ownership-durable-event-log]
 release_binding: null
 gate_origin: null
 created: 2026-08-25
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # F3 — Durable-ize Outpost-Pi-specific transcript events
@@ -217,3 +217,13 @@ recordDurableTranscriptEvent(event: TranscriptEvent): TranscriptRecordResult;
   responsibilities.
 - Final verification from `pi-extension/`: `corepack pnpm typecheck`, all 59
   Vitest files (1082 passed, 3 skipped), and `corepack pnpm build` passed.
+
+## Epic review closure (2026-08-26)
+
+- Mesh card persistence is now a guarded pair: the request must persist before
+  result recording begins, neither live frame broadcasts until the pair is
+  terminal, and a one-shot result append failure is compensated by a durable
+  terminal error. An unpaired persisted agent-network request is omitted from
+  replay, so a persistent writer failure cannot resurrect a running card.
+- Producer-connected coverage injects a second-append failure and proves the
+  durable and live request/result pair both converge terminal.

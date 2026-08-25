@@ -8,7 +8,7 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-25
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # F1 — Durable transcript event log (foundation)
@@ -459,3 +459,16 @@ All 3 child stories done (aa6b52bb, ad030bc8, 40732a78). 1076 tests green.
 Durable transcript ownership is live: v1 codec, lifecycle-fresh appendEntry
 binding, two-pass compaction-aware reconciliation with FIFO/fork matching,
 real-file reopen coverage. Legacy re-derivation retained as fallback for F4.
+
+## Epic review closure (2026-08-26)
+
+- Fork hydration now keys in-memory identity by `(sessionId, eventId)`, so copied
+  durable facts remain independently addressable in parent and fork. Rehomed
+  assistant and compaction facts also suppress their fork-local SDK fallbacks by
+  semantic identity. A real `AgentSessionRuntime.fork`/switch/reopen test proves
+  complete parent and fork user/assistant/tool histories in one process.
+- Equal-content durable user claims bind to the nearest preceding SDK user fact,
+  preserving identical legacy prefixes (including a compaction-kept variant)
+  while the current durable event remains authoritative exactly once.
+- JSON cloning defines own properties explicitly, preserving a valid
+  `__proto__` tool-args key across encode/decode without prototype mutation.
