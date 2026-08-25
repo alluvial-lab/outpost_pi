@@ -2,19 +2,6 @@ import 'package:app/domain/session_state.dart';
 import 'package:app/domain/transcript/transcript_event.dart';
 import 'package:app/protocol/protocol.dart' show UserMessageStreamingBehavior;
 
-/// Backward-compatible aliases for the transcript seam. The canonical variant
-/// set is [AppTurnStatus]; keep this wrapper so older tests/callers do not
-/// grow a second enum.
-abstract final class TranscriptTurnStatus {
-  static const idle = AppTurnStatus.idle;
-  static const working = AppTurnStatus.working;
-  static const awaitingTool = AppTurnStatus.awaitingTool;
-  static const streaming = AppTurnStatus.streaming;
-  static const done = AppTurnStatus.done;
-  static const error = AppTurnStatus.error;
-  static const stale = AppTurnStatus.stale;
-}
-
 /// Represent the transcript-derived state of the current conversation turn.
 final class TranscriptTurnView {
   const TranscriptTurnView({
