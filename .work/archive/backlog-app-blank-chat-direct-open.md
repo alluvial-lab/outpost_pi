@@ -1,4 +1,5 @@
 ---
+status: groom-done
 id: backlog-app-blank-chat-direct-open
 created: 2026-08-21
 updated: 2026-08-21

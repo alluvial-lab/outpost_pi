@@ -1,4 +1,6 @@
 ---
+status: folded
+folded_into: feature-fresh-session-shutdown-and-recoverable-delivery
 id: backlog-new-session-teardown-session-shutdown
 created: 2026-08-11
 updated: 2026-08-11

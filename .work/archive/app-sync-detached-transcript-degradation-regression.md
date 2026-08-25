@@ -1,4 +1,5 @@
 ---
+status: groom-done
 id: app-sync-detached-transcript-degradation-regression
 created: 2026-07-24
 updated: 2026-07-24

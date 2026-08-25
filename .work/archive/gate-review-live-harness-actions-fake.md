@@ -1,4 +1,5 @@
 ---
+status: groom-done
 id: gate-review-live-harness-actions-fake
 created: 2026-08-21
 updated: 2026-08-21
