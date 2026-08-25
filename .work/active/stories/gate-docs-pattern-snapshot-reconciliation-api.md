@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-snapshot-reconciliation-api
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,6 @@ The v0.8 durable-transcript reconciliation removed the exported `mapLegacyAgentM
 
 ## Required edit
 Replace the deleted example with the private pre-durable fallback plus the public `reconcileTranscriptContextEntries` boundary. State that fallback mapping is restricted to unmatched mixed-era SDK facts and validated durable entries own matching transcript facts.
+
+## Implementation
+- Replaced the deleted mapper example with the private fallback and durable-first reconciliation boundary in `.agents/skills/patterns/snapshot-replay-event-mappers.md`.

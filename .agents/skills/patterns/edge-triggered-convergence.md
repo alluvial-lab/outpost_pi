@@ -36,7 +36,7 @@ Every stateful screen gets the same edge-triggered notification boundary.
 
 ### Example 2: Room working projection persists only on a changed value
 
-**File:** `app/lib/data/transport/connection_manager.dart:1208-1225`
+**File:** `app/lib/data/transport/connection_manager.dart:1499-1510`
 
 ```dart
 if (list[idx].working == working) return;
@@ -57,7 +57,7 @@ The expensive log, stream emission, and persistence are downstream of the edge c
 
 ### Example 3: Extension working metadata publishes only on a transition
 
-**File:** `pi-extension/src/session/sdk_session_projection.ts:950-954`
+**File:** `pi-extension/src/session/sdk_session_projection.ts:862-865`
 
 ```ts
 private publishTurnProjection(before: TurnProjection, after: TurnProjection): void {

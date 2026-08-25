@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-failure-first-anchors-v080
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -30,3 +30,6 @@ The durable transcript/error additions moved the late-duplicate regression to `s
 
 ## Required edit
 Refresh the two stale test anchors and snippets to the current late-echo and reconnect-identity-window tests. Leave the unchanged concurrent-connect example anchored only if its current range still matches.
+
+## Implementation
+- Refreshed late-echo and reconnect-identity-window anchors in `.agents/skills/patterns/failure-first-regression-tests.md`.

@@ -39,44 +39,31 @@ List<TranscriptEvent> sessionHistoryToTranscriptEvents({
 
 ### Example 2: Extension compatibility + legacy snapshot adapter
 
-**File:** `pi-extension/src/session/transcript_projection.ts:145-236`
+**File:** `pi-extension/src/session/transcript_projection.ts:163-236,266-319`
 
 ```ts
-export function mapLegacyAgentMessagesToTranscriptEvents(input: LegacyAdapterInput): TranscriptEvent[] {
-  const events: TranscriptEvent[] = [];
-  let lastUserId: string | null = null;
-  for (const [messageIndex, message] of input.messages.entries()) {
-    const ts = typeof message.timestamp === "number" ? message.timestamp : 0;
-    if (message.role === "compaction" || message.role === "compactionSummary") {
-      const summary = message.role === "compactionSummary"
-        ? (typeof message.summary === "string" ? message.summary : "")
-        : (typeof message.content === "string" ? message.content : "");
-      events.push({
-        kind: "compaction_recorded",
-        eventId: deterministicTranscriptEventId(input.sessionId, "compaction_recorded", String(ts)),
-        sessionId: input.sessionId,
-        ts,
-        summary,
-        tokensBefore: typeof message.tokensBefore === "number" ? message.tokensBefore : 0,
-      });
-    } else if (message.role === "user") {
-      const clientMessageId = `sync_${ts}`;
-      lastUserId = clientMessageId;
-      const images = imagesFromContent(message.content);
-      events.push({
-        kind: "user_confirmed",
-        eventId: deterministicTranscriptEventId(input.sessionId, "user_confirmed", clientMessageId),
-        sessionId: input.sessionId,
-        ts,
-        clientMessageId,
-        text: stringifyContent(message.content),
-        ...(images.length > 0 ? { images } : {}),
-      });
+// Private: only reconciliation may turn unmatched mixed-era SDK messages
+// into fallback transcript events.
+function mapPreDurableSdkMessagesToTranscriptEvents(input: PreDurableAdapterInput): TranscriptEvent[] {
+  // ... derive deterministic user, assistant, tool, and compaction facts
+}
+
+export function reconcileTranscriptContextEntries(input: {
+  sessionId: string;
+  entries: readonly SdkTranscriptContextEntry[];
+}): TranscriptEvent[] {
+  const decodedByIndex = new Map<number, TranscriptEvent>();
+  // Valid durable entries are indexed first and own matching transcript facts.
+  // The private fallback is consulted only for unmatched mixed-era entries.
+  const fallbackByIndex = indexPreDurableContextEvents(input.sessionId, input.entries);
+  // ... emit durable entries, then only unclaimed fallback events
+}
 ```
 
-The adapter continues with assistant/tool branches in the same function; each
-canonical event uses `deterministicTranscriptEventId` rather than a local
-sequence, so replay preserves stable identity.
+The deleted `mapLegacyAgentMessagesToTranscriptEvents` export is not a current
+API. Fallback mapping is restricted to unmatched mixed-era SDK facts, while
+validated durable entries own matching transcript facts at the public
+`reconcileTranscriptContextEntries` boundary.
 
 ### Example 3: Cockpit RPC `get_messages` hydrator
 

@@ -62,7 +62,7 @@ The policy names three missed app pongs as the degradation threshold; one real i
 
 ### Example 3: The live runner requires consecutive healthy probes before reconnecting
 
-**File:** `app/integration_test/live_infra_smoke_test.dart:229-244`
+**File:** `app/integration_test/live_infra_smoke_test.dart:218-228`
 
 ```dart
 var consecutiveHealthyProbes = 0;

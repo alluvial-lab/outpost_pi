@@ -1,7 +1,7 @@
 ---
 id: gate-docs-e2e-readme-empty-soak-inventory
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -30,3 +30,6 @@ The canonical manifest is now empty, and the runner no longer populates `suspici
 
 ## Required edit
 Describe the current empty known-open inventory and current failure behavior: unexpected observations fail the run, while the manifest remains the source of truth if a new finding is deliberately opened. Remove the claim that a linked absence currently produces exit `3`.
+
+## Implementation
+- Rewrote the soak README inventory and exit semantics to match the empty manifest and fail-on-unexpected behavior.

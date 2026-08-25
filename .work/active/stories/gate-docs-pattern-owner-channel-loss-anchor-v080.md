@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-owner-channel-loss-anchor-v080
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,6 @@ The reconnect-hedge changes moved `_onChannelLost` to lines 1847-1891 and added 
 
 ## Required edit
 Refresh the anchor and snippet to the current `_onChannelLost` implementation, including the identity check and hedge scheduling behavior, while preserving the owner/channel-scoped resource rule.
+
+## Implementation
+- Updated the active-channel identity and hedge teardown example in `.agents/skills/patterns/owner-channel-scoped-resource-ownership.md`.

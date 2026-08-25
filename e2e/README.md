@@ -60,11 +60,11 @@ force-stop the app before the cold-open cells.
 The soak writes its schedule, capture triage, machine-readable findings
 inventory, and invariant report below `.work/session-notes/` unless
 `--artifacts` is supplied. Exit `0` means the runner and four-invariant oracle
-were clean. Exit `1` is an unexpected violation. Exit `3` means a linked,
-deterministically targeted finding was absent; that is **suspicious evidence,
-not success**, because the intended reproducer window may not have been
-exercised. A full interactive soak remains 10 minutes; shorter seeded runs are
-useful when validating scheduler/oracle changes.
+were clean. Exit `1` is an unexpected violation. The current known-open
+inventory is empty, so an observed finding has no matching open exception and
+fails the soak. There is no current linked-absence exit path. A full interactive
+soak remains 10 minutes; shorter seeded runs are useful when validating
+scheduler/oracle changes.
 
 ## Nightly cadence and skew drills
 
@@ -77,12 +77,14 @@ The VM runs the bounded nightly entry point at 02:30 local time:
 `scripts/nightly_soak.sh` chooses a fresh seed, runs 15 minutes by default,
 keeps the newest 14 run directories under
 `.work/session-notes/nightly-soak/`, and writes `summary.md` plus `ALERT.md`
-when the known-open inventory drifts or the soak fails. The canonical six-id
-inventory is `e2e/expected-soak-findings.txt`; `live_soak.py` loads that manifest
-directly. A known bug is reported without failing the soak, while either adding
-an unreviewed finding id or removing an expected id is drift. Scheduled fault
-windows reconcile expected reconnect churn; a churn cluster outside all such
-windows is unexpected and fails the run. `E2E_NIGHTLY_SOAK_DURATION_SECONDS`,
+when the known-open inventory drifts or the soak fails. The canonical
+known-open inventory is `e2e/expected-soak-findings.txt`; `live_soak.py` loads
+that manifest directly. It is currently empty. If a new finding is
+deliberately opened, add its tracking id to the manifest; observations without
+a matching known-open id are unexpected and fail the run. Removing or adding
+ids is otherwise inventory drift. Scheduled fault windows reconcile expected
+reconnect churn; a churn cluster outside all such windows is unexpected and
+fails the run. `E2E_NIGHTLY_SOAK_DURATION_SECONDS`,
 `E2E_NIGHTLY_SOAK_KEEP`, `E2E_NIGHTLY_SOAK_HARD_TIMEOUT_SECONDS`,
 `E2E_NIGHTLY_LANE_WAIT_SECONDS`, and `E2E_NIGHTLY_SOAK_REPORT_ROOT` override the
 operational defaults.

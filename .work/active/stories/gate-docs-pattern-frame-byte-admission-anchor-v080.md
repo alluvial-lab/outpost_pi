@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-frame-byte-admission-anchor-v080
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -28,3 +28,6 @@ The v0.8 transport changes moved `WsInboundMessageQueue.add` to lines 646-658. T
 
 ## Required edit
 Refresh the pattern anchor and snippet to the current `WsInboundMessageQueue.add` implementation at `ws_transport.dart:646-658`.
+
+## Implementation
+- Updated the frame/byte admission pattern to the current `WsInboundMessageQueue.add` anchor in `.agents/skills/patterns/frame-byte-bounded-admission.md`.

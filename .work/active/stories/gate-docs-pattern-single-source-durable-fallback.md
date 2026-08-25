@@ -1,7 +1,7 @@
 ---
 id: gate-docs-pattern-single-source-durable-fallback
 kind: story
-stage: implementing
+stage: done
 tags: [documentation]
 parent: null
 depends_on: []
@@ -30,3 +30,6 @@ pattern-skill-staleness
 
 ## Required edit
 Rename the producer to the durable SDK-message recorder and document both fallback cases: legacy extensions may use the random-id fallback, while sessions known to emit deterministic `agent_message(ts)` suppress it when the live frame is absent so replay remains the sole identity source.
+
+## Implementation
+- Replaced the deleted recorder reference and documented legacy versus deterministic fallback behavior in `.agents/skills/patterns/single-source-live-identity.md`.
