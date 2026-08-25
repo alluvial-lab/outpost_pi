@@ -1,7 +1,7 @@
 ---
 id: epic-durable-transcript-ownership-durable-native-events
 kind: feature
-stage: implementing
+stage: done
 tags: [pi-extension]
 parent: epic-durable-transcript-ownership
 depends_on: [epic-durable-transcript-ownership-durable-event-log]
@@ -108,9 +108,9 @@ _sdkSessionProjection.recordDurableTranscriptEvent(event);
 - Do not suppress the SDK mesh handoff when transcript persistence fails.
 
 **Acceptance criteria**:
-- [ ] Request and result each write one v1 custom entry before live broadcast.
-- [ ] Reopen projects the same request/result pair.
-- [ ] Mixed SDK/durable tool history retains pre-upgrade fallback and lets the
+- [x] Request and result each write one v1 custom entry before live broadcast.
+- [x] Reopen projects the same request/result pair.
+- [x] Mixed SDK/durable tool history retains pre-upgrade fallback and lets the
       durable collision win.
 
 ### Unit 2: Durable compaction marker
@@ -131,10 +131,10 @@ function compactionTimestamp(entry: { timestamp?: unknown }, fallback: number): 
 - Always execute `compaction_done`, `turn_end`, and `working:false` convergence.
 
 **Acceptance criteria**:
-- [ ] Reopen preserves summary, token count, timestamp, and replay frame.
-- [ ] Matching raw + durable compaction entries project once; unmatched
+- [x] Reopen preserves summary, token count, timestamp, and replay frame.
+- [x] Matching raw + durable compaction entries project once; unmatched
       pre-upgrade raw entries remain.
-- [ ] Persistence failure cannot strand working state.
+- [x] Persistence failure cannot strand working state.
 
 ### Unit 3: Durable steering event and replay equivalence
 **Files**: `pi-extension/src/session/sdk_session_projection.ts`,
@@ -144,29 +144,21 @@ function compactionTimestamp(entry: { timestamp?: unknown }, fallback: number): 
 **Story**: `epic-durable-transcript-ownership-durable-native-events-steering`
 
 ```ts
-recordUserConfirmedTranscriptEvent(input: {
-  sessionId: string;
-  ts: number;
-  clientMessageId: string;
-  text: string;
-  images?: WireImage[];
-  streamingBehavior?: "steer";
-  eventId?: string;
-}): TranscriptRecordResult;
+recordDurableTranscriptEvent(event: TranscriptEvent): TranscriptRecordResult;
 ```
 
 **Implementation notes**:
-- `_confirmUserDelivery` selects durable recording only for `shouldSteer`; the
-  ordinary branch stays on its F2-owned compatibility path.
-- Update `lastTranscriptUserId` only when the durable event is recorded or was
-  already authoritative.
+- Concurrent F2 migrated the shared `_confirmUserDelivery` producer to the
+  generic durable recorder for all accepted app input. F3 adds no competing
+  steering-only persistence path; it verifies that the existing event carries
+  `streamingBehavior: "steer"` through v1 and reopen.
 - History projection carries `streaming_behavior` from durable confirmed users;
   legacy SDK users omit it naturally.
 
 **Acceptance criteria**:
-- [ ] Accepted steering writes v1 and reopens with stable identity and behavior.
-- [ ] Live and replay projections both say `streaming_behavior: "steer"`.
-- [ ] A pre-upgrade SDK user plus a later durable steer both replay correctly.
+- [x] Accepted steering writes v1 and reopens with stable identity and behavior.
+- [x] Live and replay projections both say `streaming_behavior: "steer"`.
+- [x] A pre-upgrade SDK user plus a later durable steer both replay correctly.
 
 ## Implementation Order
 
@@ -208,3 +200,20 @@ recordUserConfirmedTranscriptEvent(input: {
   invalid/missing value falls back to hook time; reopen still keeps the durable
   fact, but cannot semantically dedupe a malformed raw entry. Corrupt raw input
   remains a compatibility edge, not a reason to reject a valid durable event.
+
+## Completion summary
+
+- Native tool execution requests/results now cross F1's v1 durable boundary
+  before owner visibility. Mesh `agent-network` cards are separate durable
+  request/result facts; ordinary tools retain SDK fallback for mixed-era data.
+- Compaction markers use the valid SDK entry timestamp as durable identity,
+  reopen once over matching raw fallback, and converge working idle even when
+  persistence fails.
+- Steering is stored as durable `user_confirmed` with
+  `streamingBehavior: "steer"`; history replay now preserves
+  `streaming_behavior: "steer"` alongside stable text/id/timestamp.
+- Concurrent F2 shared producer work was incorporated at its landed commits;
+  F3's three child checkpoints are done without duplicating timestamp/schema/app
+  responsibilities.
+- Final verification from `pi-extension/`: `corepack pnpm typecheck`, all 59
+  Vitest files (1082 passed, 3 skipped), and `corepack pnpm build` passed.
