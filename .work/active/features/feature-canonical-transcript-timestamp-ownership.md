@@ -1,7 +1,7 @@
 ---
 id: feature-canonical-transcript-timestamp-ownership
 kind: feature
-stage: implementing
+stage: done
 tags: [app, pi-extension, bug]
 parent: epic-durable-transcript-ownership
 depends_on: [epic-durable-transcript-ownership-durable-event-log]
@@ -238,6 +238,33 @@ Close the app-side residuals now that every producer carries server `ts`.
 
 The projection render sort (done in the prior feature; correct once this
 feature closes the invariant). The store. Unrelated code.
+
+## Implementation summary
+
+F2 is complete on top of F1's durable transcript foundation.
+
+- **Producer ownership:** tool execution request/results, app user confirmations
+  and duplicate echoes, `agent_done`, provider diagnostics, and authoritative
+  agent-network cards now persist hook-lifecycle timestamps through
+  `outpost-pi.transcript-event.v1` before publishing the same value live.
+  Transitional SDK fallback facts can be durably upgraded without allowing an
+  SDK timestamp to preempt the producer clock.
+- **Error contract:** `error.ts` is an optional non-negative canonical schema
+  field projected into generated TypeScript/Dart. Renderable provider/internal
+  errors carry it; control-only errors remain non-transcript signals.
+- **App consumption:** every current authoritative producer consumes wire time.
+  Buffered tool narration shares `requestTs`; agent-done/error terminal facts
+  share their producer timestamp; correlated failures consume error time.
+  Phone time remains only as explicit compatibility fallback for ts-less
+  pre-durable frames, with mixed-era tests.
+- **Evidence:** producer-connected extension tests cover durable custom entries,
+  live/history equality, duplicate delivery, rare SDK-before-delivery ordering,
+  and mesh cards. App tests cover canonical and mixed-era tool/error behavior.
+  The systematic provenance table now records zero authoritative phone-clock
+  residuals.
+- **Verification:** protocol generation check; pi-extension typecheck, full
+  59-file suite (1079 passed, 3 skipped), and build; Flutter analyze and full
+  non-e2e suite (944 passed) all green on the host-only environment.
 
 ## Verification (at implement time)
 
