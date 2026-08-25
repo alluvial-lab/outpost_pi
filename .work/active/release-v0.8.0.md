@@ -65,3 +65,4 @@ relay 0.5.1 unchanged.
 - **gate-security** (2026-08-25) — 1 findings (Critical=0, High=0, Medium=1, Low=0; inline audit with reduced isolation by operator instruction)
 - **gate-cruft** (2026-08-25) — 6 findings (High=6; inline scan, reduced isolation because no scanner subagent was available)
 - **gate-docs** (2026-08-25) — 12 findings (inline source-read-only audit; scanner tool unavailable): 1 changelog, 2 operational/readme surfaces, 9 pattern-skill anchors/contracts.
+- **gate-refactor** (2026-08-25) — 10 findings (High=9, Medium=1) from 4 libraries: boundaries (0), documentation (6), lifecycle (2), protocol-contract (2); inline scanner, reduced isolation because no scanner subagent was available.
