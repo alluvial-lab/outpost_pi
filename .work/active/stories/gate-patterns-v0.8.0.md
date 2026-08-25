@@ -46,3 +46,6 @@ None.
 - Genuine new patterns: 4, each verified with at least 3 real occurrences and file:line examples.
 - Inconsistencies with existing patterns: 0.
 - Scanner isolation: inline source-read-only audit because the scanner subagent tool was unavailable.
+
+## Closure
+All 4 patterns landed with the gate commit (68251acb); index + digest regenerated. No further work.
