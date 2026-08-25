@@ -5,6 +5,8 @@ updated: 2026-08-25
 tags: [app, bug, ux]
 ---
 
+Promoted to `story-fix-app-fold-vertical-screen`.
+
 # Pixel Fold: app doesn't use full vertical screen at regular phone width
 
 Operator report (2026-08-25, Pixel Fold, 0.7.x-0.8.x builds): in regular

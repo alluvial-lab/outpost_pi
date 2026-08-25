@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:app/domain/entities/remote_session_ref.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 /// Minimum logical shortest side that classifies a window as tablet-sized.
@@ -107,6 +109,46 @@ class MasterPaneHomeSurface extends StatelessWidget {
       child: child,
     );
   }
+}
+
+/// Explicitly dismiss the detail IME when a split shell collapses to one pane.
+///
+/// Flutter moves focus away when the detail branch leaves the rendered shell,
+/// but that focus transition does not send `TextInput.hide`. Pixel Fold's
+/// WindowManager can consequently retain the old IME inset across the posture
+/// resize. This boundary owns the split-to-single transition and requests the
+/// missing platform convergence while an IME inset is active.
+class PaneCollapseImeDismissal extends StatefulWidget {
+  const PaneCollapseImeDismissal({
+    super.key,
+    required this.twoPane,
+    required this.child,
+  });
+
+  final bool twoPane;
+  final Widget child;
+
+  @override
+  State<PaneCollapseImeDismissal> createState() =>
+      _PaneCollapseImeDismissalState();
+}
+
+class _PaneCollapseImeDismissalState extends State<PaneCollapseImeDismissal> {
+  @override
+  void didUpdateWidget(PaneCollapseImeDismissal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.twoPane || widget.twoPane) return;
+    if (View.of(context).viewInsets.bottom <= 0) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.twoPane) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+      unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// Maximum single-column content width for onboarding and empty states.

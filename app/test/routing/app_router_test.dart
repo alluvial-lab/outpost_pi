@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:app/config/dependencies.dart';
 import 'package:app/data/actions/actions_repository.dart';
@@ -34,6 +33,7 @@ import 'package:app/ui/home/viewmodels/home_viewmodel.dart';
 import 'package:app/ui/home/widgets/session_tile.dart';
 import 'package:app/ui/update/viewmodels/update_banner_viewmodel.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
@@ -855,6 +855,20 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetViewInsets);
+        final textInputCalls = <MethodCall>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.textInput,
+          (call) async {
+            textInputCalls.add(call);
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.textInput,
+            null,
+          ),
+        );
 
         final directory = Directory.systemTemp.createTempSync(
           'router_two_pane_keyboard_',
@@ -983,6 +997,33 @@ void main() {
             reason: 'the detail route receives and lays out above its keyboard',
           );
 
+          textInputCalls.clear();
+          tester.view.physicalSize = const Size(411, 797);
+          await pumpRouterFrames();
+          expect(
+            textInputCalls.map((call) => call.method),
+            contains('TextInput.hide'),
+            reason:
+                'collapsing the focused detail pane must explicitly dismiss '
+                'the IME instead of relying on Pixel Fold WindowManager to '
+                'clear its inset',
+          );
+          for (final inset in <double>[200, 80, 0]) {
+            tester.view.viewInsets = FakeViewPadding(bottom: inset);
+            await pumpRouterFrames();
+            expect(
+              MediaQuery.viewInsetsOf(
+                tester.element(find.byType(HomePage)),
+              ).bottom,
+              inset,
+            );
+          }
+          expect(tester.getSize(find.byType(HomePage)), const Size(411, 797));
+
+          tester.view.physicalSize = screen;
+          tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+          await pumpRouterFrames();
+
           await tester.longPress(find.byType(SessionTile));
           await pumpRouterFrames();
           await tester.tap(find.text('Rename session'));
@@ -1010,6 +1051,20 @@ void main() {
             reason:
                 'the master-owned dialog pads above the root keyboard inset',
           );
+          expect(tester.getRect(find.byType(HomePage)), homeBefore);
+          expect(selection.current!.ref, selectionBefore);
+
+          for (final inset in <double>[200, 80, 0]) {
+            tester.view.viewInsets = FakeViewPadding(bottom: inset);
+            await pumpRouterFrames();
+            expect(
+              MediaQuery.viewInsetsOf(tester.element(renameDialog)).bottom,
+              inset,
+              reason:
+                  'the routed master dialog must receive every closing IME '
+                  'inset instead of pinning the value present at route open',
+            );
+          }
           expect(tester.getRect(find.byType(HomePage)), homeBefore);
           expect(selection.current!.ref, selectionBefore);
 

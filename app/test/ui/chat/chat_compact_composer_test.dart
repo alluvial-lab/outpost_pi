@@ -217,6 +217,52 @@ void main() {
     },
   );
 
+  testWidgets(
+    'folded keyboard cycle restores the full chat height without a residual inset',
+    (tester) async {
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(411, 797);
+      final harness = _ChatHarness.create();
+
+      await tester.pumpWidget(harness.build());
+      await tester.pump();
+
+      final chat = find.byType(ChatPage);
+      final composer = find.byKey(const Key('input-bar-height'));
+      final field = find.byType(TextField);
+      final initialComposerHeight = tester.getSize(composer).height;
+
+      await tester.tap(field);
+      await tester.pump();
+      for (final inset in <double>[80, 160, 240, 280, 240, 160, 80, 0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: inset);
+        await tester.pump();
+        expect(
+          MediaQuery.viewInsetsOf(tester.element(chat)).bottom,
+          inset,
+          reason: 'the chat route must receive every animated IME inset',
+        );
+        expect(
+          tester.getBottomLeft(composer).dy,
+          797 - inset,
+          reason: 'the Scaffold viewport must track the current IME inset',
+        );
+      }
+
+      expect(MediaQuery.viewInsetsOf(tester.element(chat)).bottom, 0);
+      expect(tester.getSize(chat), const Size(411, 797));
+      expect(tester.getBottomLeft(composer).dy, 797);
+      expect(tester.getSize(composer).height, initialComposerHeight);
+      expect(tester.widget<TextField>(field).maxLines, 6);
+
+      await tester.pumpWidget(const SizedBox());
+      harness.dispose();
+    },
+  );
+
   testWidgets('focused editable identity survives legitimate compact flips', (
     tester,
   ) async {

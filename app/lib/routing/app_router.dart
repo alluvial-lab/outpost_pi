@@ -450,32 +450,29 @@ AppRouterOwner buildRouter(
           // placeholder.
           final twoPane =
               canUseTwoPaneLayout(ctx) && !ctx.watch<ShellLayout>().isZeroState;
-          if (!twoPane) {
-            return children[navShell.currentIndex];
-          }
-          // On a tablet with asymmetric landscape safe areas, each pane's own
-          // SafeArea reads the *full screen* insets and pads the edge facing the
-          // divider too — a phantom horizontal gutter beside the divider (which
-          // side depends on the camera housing). Strip the divider-facing inset
-          // per pane so content reaches the divider; outer screen edges +
-          // top/bottom stay inset and Scaffold backgrounds paint full-bleed.
-          return Row(
-            children: [
-              SizedBox(width: kMasterPaneWidth, child: children[0]),
-              VerticalDivider(
-                width: kPaneDividerWidth,
-                thickness: kPaneDividerWidth,
-                color: ctx.colors.borderStrong,
-              ),
-              Expanded(
-                child: MediaQuery.removePadding(
-                  context: ctx,
-                  removeLeft: true,
-                  child: children[1],
-                ),
-              ),
-            ],
-          );
+          final content = !twoPane
+              ? children[navShell.currentIndex]
+              // On a tablet with asymmetric landscape safe areas, each pane's
+              // own SafeArea reads the *full screen* insets and pads the edge
+              // facing the divider too. Strip only those divider-facing insets.
+              : Row(
+                  children: [
+                    SizedBox(width: kMasterPaneWidth, child: children[0]),
+                    VerticalDivider(
+                      width: kPaneDividerWidth,
+                      thickness: kPaneDividerWidth,
+                      color: ctx.colors.borderStrong,
+                    ),
+                    Expanded(
+                      child: MediaQuery.removePadding(
+                        context: ctx,
+                        removeLeft: true,
+                        child: children[1],
+                      ),
+                    ),
+                  ],
+                );
+          return PaneCollapseImeDismissal(twoPane: twoPane, child: content);
         },
         branches: [
           StatefulShellBranch(
