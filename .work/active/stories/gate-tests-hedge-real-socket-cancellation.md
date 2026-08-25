@@ -1,7 +1,7 @@
 ---
 id: gate-tests-hedge-real-socket-cancellation
 kind: story
-stage: implementing
+stage: done
 tags: [testing, app, bug]
 parent: null
 depends_on: []
@@ -43,3 +43,33 @@ bug-regression / real transport cancellation seam
 
 ## Test location (suggested)
 `app/test/transport/connection_manager_test.dart`
+
+## Implementation
+
+Added a real-loopback `ConnectionManager` + production `WsTransport` boundary
+test. The relay fake now services sockets continuously while auth readiness is
+held, records each auth and peer-observed EOF, and can release attempts
+independently. The test stalls the primary through auth, lets the hedge timer
+fire, and proves the exact wire order:
+
+```text
+auth primary → primary EOF → auth fallback → StatusOnline
+```
+
+It then releases the cancelled primary handler and proves there is still only
+one online publication and no third/later authentication that can supersede
+the adopted channel. This is stronger than the old timer-only test: a real
+losing socket exists, reaches server-observed EOF, and only then may the
+fallback authenticate and publish. The adjacent controllable-channel tests
+continue to cover cancellation after the factory/handed-off boundary and
+disposal of late-finishing channels.
+
+No product defect was found. Early red runs revealed that the original fake's
+`StreamIterator` intentionally stopped reading while auth was held, so it could
+not observe peer EOF; the fake was corrected to a continuously serviced socket
+state machine rather than weakening the assertion.
+
+Verification:
+
+- `flutter test test/transport/connection_manager_test.dart --name 'real socket loser|auth-read stall' --concurrency=2` (2 passed)
+- `flutter test test/transport/connection_manager_test.dart --plain-name 'real socket loser reaches EOF before winner publishes online' --concurrency=2` (passed)
