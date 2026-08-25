@@ -1,7 +1,7 @@
 ---
 id: story-canonical-transcript-ordering-systematic-ts-provenance-sweep
 kind: story
-stage: drafting
+stage: done
 tags: [app, pi-extension, bug]
 parent: feature-canonical-transcript-ordering
 depends_on: []
@@ -211,3 +211,25 @@ and tool-result restart backfill (`tool_execution_end` versus SDK
 `message_end`). A revised design must name the durable SDK timestamp owner for
 early/late hooks rather than relying only on first-writer-wins process-local
 dedupe.
+
+## Completion note — absorbed into durable transcript ownership (2026-08-25)
+
+The enumeration is complete and its findings are now routed into the durable
+transcript epic rather than remaining a second implementation item:
+
+- F3 `epic-durable-transcript-ownership-durable-native-events` covers every
+  native-event discovery: authoritative mesh request/result cards, distinct
+  execution-hook tool request/result facts, compaction markers, and steering
+  provenance. Its feature body records the per-kind durable migration, reopen
+  behavior, and mixed-era fallback.
+- F2 `feature-canonical-transcript-timestamp-ownership` retains the non-native
+  residuals: ordinary user-confirmation/tool timestamp ownership, missing
+  producer `ts` on echoes/agent_done/errors, schema and app consumption, plus
+  live timestamp equality for the now-durable mesh cards.
+- F1 already landed the v1 codec, persistence-before-visibility event log, SDK
+  append binding, and durable-first mixed-era reconciliation on which both
+  migrations depend.
+
+This story closes as the ground-truth enumeration/design input. It does not
+claim the F2 implementation is already complete; those residuals remain tracked
+by F2's implementing child stories.
