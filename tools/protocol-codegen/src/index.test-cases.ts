@@ -30,6 +30,7 @@ interface GeneratedProtocolModule {
   readonly SESSION_SCOPED_CLIENT_MESSAGE_TYPES?: readonly string[];
   readonly SESSION_SCOPED_SERVER_MESSAGE_TYPES?: readonly string[];
   readonly SESSION_HISTORY_EVENT_TYPES?: readonly string[];
+  readonly SESSION_HISTORY_EVENT_DISCRIMINATORS?: Readonly<Record<string, string>>;
   isClientMessage?(value: unknown): boolean;
   isServerMessage?(value: unknown): boolean;
   isSessionHistoryEvent?(value: unknown): boolean;
@@ -231,6 +232,7 @@ test("Outpost-Pi schema emits generated app/Pi unions and shared value types", a
   assert.match(output, /"compaction",\n  "tool_request",/);
   assert.match(output, /"action_ok",\n  "action_error",\n  "models_list",/);
   assert.match(output, /export const SESSION_HISTORY_EVENT_TYPES = \[/);
+  assert.match(output, /export const SESSION_HISTORY_EVENT_DISCRIMINATORS = \{/);
   assert.match(output, /export function isServerMessage\(value: unknown\): value is ServerMessage/);
   assert.doesNotMatch(output, /isStringWithMinLength|isFiniteNumberAtLeast/);
   assert.doesNotMatch(output, /ServerMessagePairOk|ClientMessageUserMessage/);
@@ -356,6 +358,14 @@ test("Outpost-Pi generated validators accept current app/Pi variants and reject 
     "capture_upload_error",
   ]);
   assert.deepEqual(generated.SESSION_HISTORY_EVENT_TYPES, ["user_input", "tool_request", "tool_result", "agent_message", "compaction", "error"]);
+  assert.deepEqual(generated.SESSION_HISTORY_EVENT_DISCRIMINATORS, {
+    user_input: "user_input",
+    tool_request: "tool_request",
+    tool_result: "tool_result",
+    agent_message: "agent_message",
+    compaction: "compaction",
+    error: "error",
+  });
 
   const image = { data: "base64", mime: "image/jpeg" };
   const usage = { input_tokens: 1, output_tokens: 2 };

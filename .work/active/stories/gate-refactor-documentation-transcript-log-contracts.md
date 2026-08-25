@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-transcript-log-contracts
 kind: story
-stage: implementing
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
@@ -33,3 +33,6 @@ Consumers must infer persistence-before-visibility, hydration, replacement, iden
 
 ## Fix
 Add intent-bearing JSDoc to the public methods, with explicit outcome semantics for `record()` and lifecycle ownership for persistence binding/unbinding; avoid signature restatement.
+
+## Implementation
+- Added intent and lifecycle contracts for all public `TranscriptEventLog` methods in `pi-extension/src/session/transcript_event_log.ts`.

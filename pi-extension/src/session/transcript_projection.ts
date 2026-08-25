@@ -1,4 +1,5 @@
 import type { SessionHistoryEvent, Usage, WireImage } from "../protocol/types.js";
+import { SESSION_HISTORY_EVENT_DISCRIMINATORS } from "../protocol/generated/protocol.generated.js";
 import { decodeDurableTranscriptEntry } from "./durable_transcript_event.js";
 import type { TranscriptEvent } from "./transcript_event.js";
 
@@ -75,7 +76,7 @@ export function transcriptEventsToSessionHistory(
         seenUserIds.add(event.clientMessageId);
         out.push({
           ts: event.ts,
-          type: "user_input",
+          type: SESSION_HISTORY_EVENT_DISCRIMINATORS.user_input,
           id: event.clientMessageId,
           text: event.text,
           ...(event.images && event.images.length > 0 ? { images: event.images } : {}),
@@ -97,7 +98,7 @@ export function transcriptEventsToSessionHistory(
         // story-mobile-assistant-message-duplicated-live-replay decision 1.
         out.push({
           ts: event.ts,
-          type: "agent_message",
+          type: SESSION_HISTORY_EVENT_DISCRIMINATORS.agent_message,
           in_reply_to: event.replyTo,
           text: event.text,
           message_id: event.messageId,
@@ -111,7 +112,7 @@ export function transcriptEventsToSessionHistory(
         seenToolRequests.add(event.toolCallId);
         out.push({
           ts: event.ts,
-          type: "tool_request",
+          type: SESSION_HISTORY_EVENT_DISCRIMINATORS.tool_request,
           tool_call_id: event.toolCallId,
           tool: event.tool,
           args: event.args,
@@ -122,8 +123,8 @@ export function transcriptEventsToSessionHistory(
         if (seenToolFinishes.has(event.toolCallId)) break;
         seenToolFinishes.add(event.toolCallId);
         out.push(event.error !== undefined
-          ? { ts: event.ts, type: "tool_result", tool_call_id: event.toolCallId, error: event.error }
-          : { ts: event.ts, type: "tool_result", tool_call_id: event.toolCallId, result: event.result });
+          ? { ts: event.ts, type: SESSION_HISTORY_EVENT_DISCRIMINATORS.tool_result, tool_call_id: event.toolCallId, error: event.error }
+          : { ts: event.ts, type: SESSION_HISTORY_EVENT_DISCRIMINATORS.tool_result, tool_call_id: event.toolCallId, result: event.result });
         break;
       }
       case "compaction_recorded": {
@@ -131,7 +132,7 @@ export function transcriptEventsToSessionHistory(
         seenCompactions.add(event.eventId);
         out.push({
           ts: event.ts,
-          type: "compaction",
+          type: SESSION_HISTORY_EVENT_DISCRIMINATORS.compaction,
           summary: event.summary,
           tokens_before: event.tokensBefore ?? 0,
         });
@@ -142,7 +143,7 @@ export function transcriptEventsToSessionHistory(
         seenErrors.add(event.eventId);
         out.push({
           ts: event.ts,
-          type: "error",
+          type: SESSION_HISTORY_EVENT_DISCRIMINATORS.error,
           ...(event.replyTo ? { in_reply_to: event.replyTo } : {}),
           code: event.code,
           message: event.message,

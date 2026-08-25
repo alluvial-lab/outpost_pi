@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-sdk-transcript-contracts
 kind: story
-stage: implementing
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
@@ -33,3 +33,6 @@ Composition-root callers can misinterpret `duplicate` versus failure or substitu
 
 ## Fix
 Document persistence-before-visibility, each result status, identity scope, and the meaning of an absent recorded timestamp.
+
+## Implementation
+- Added service-contract JSDoc for durability outcomes and session/event timestamp identity in `pi-extension/src/session/sdk_session_projection.ts`.

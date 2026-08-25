@@ -58,6 +58,7 @@ export interface OutpostPiIrSharedType {
 
 export interface OutpostPiIrNestedRegistry {
   constName: string;
+  discriminatorsName?: string;
   typeName: string;
   unionName: string;
   predicateName: string;
@@ -720,6 +721,7 @@ async function appPiServerSharedTypes(
     });
     nestedRegistries.push({
       constName: "SESSION_HISTORY_EVENT_TYPES",
+      discriminatorsName: "SESSION_HISTORY_EVENT_DISCRIMINATORS",
       typeName: "SessionHistoryEventType",
       unionName: "SessionHistoryEvent",
       predicateName: "isSessionHistoryEvent",
@@ -1162,6 +1164,9 @@ export function renderTypeScriptProtocol(ir: OutpostPiIr): string {
 
   for (const registry of ir.nestedRegistries) {
     sections.push(...emitRegistryConst(registry.constName, registry.variants));
+    if (registry.discriminatorsName) {
+      sections.push(...emitDiscriminatorRegistry(registry.discriminatorsName, registry.variants));
+    }
     sections.push(`export type ${registry.typeName} = (typeof ${registry.constName})[number];`);
     sections.push("");
   }
