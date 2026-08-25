@@ -28,7 +28,7 @@ _fileWatchers[id] = _fileReader.watch(viewer.path).listen((_) {
 }, onError: (_) {});
 ```
 
-The listener installs an error handler that discards every file-watch failure. The handler predates the release bundle (`3366c453`), so this is an ambient finding rather than release-blocking work.
+The listener installs an error handler that discards every file-watch failure. The handler predates the release bundle (`1eb74fe5`), so this is an ambient finding rather than release-blocking work.
 
 ## Removal
 Replace the empty error handler with a deliberate, observable error path appropriate for file-watch failures, or omit it so the stream's normal error behavior is retained. Preserve the current reload/debounce lifecycle.

@@ -49,4 +49,4 @@ Verification from `relay/`:
 **Important**: none
 **Nits**: none
 
-**Notes**: Fresh-context review of commit `e953026`; correctness, tests, security/privacy, bounded fanout/rate-limit behavior, design alignment, and foundation-doc drift lenses checked. Verification evidence from implementation notes accepted; tests were not re-run.
+**Notes**: Fresh-context review of commit `9e2cd7d`; correctness, tests, security/privacy, bounded fanout/rate-limit behavior, design alignment, and foundation-doc drift lenses checked. Verification evidence from implementation notes accepted; tests were not re-run.

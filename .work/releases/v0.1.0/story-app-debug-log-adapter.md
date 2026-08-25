@@ -29,7 +29,7 @@ Four adversarial review passes:
 - v3 (NEEDS FIXES): caught that the v2 fix commit CLAIMED to fix clear() but
   the edit never applied — clear() still didn't await _flushFuture; the
   regression test passed for trivial timing reasons.
-- v4 (ACCEPTED): independently verified the actual fix landed (788d298),
+- v4 (ACCEPTED): independently verified the actual fix landed (f7793b0),
   confirmed the rewritten regression test has teeth (revert experiment: test
   FAILS without the fix, PASSES with it), full suite 640 passed, analyze clean.
 

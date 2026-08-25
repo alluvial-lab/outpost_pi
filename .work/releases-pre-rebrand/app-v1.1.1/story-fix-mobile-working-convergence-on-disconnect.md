@@ -8,7 +8,7 @@ depends_on: [feature-adversarial-codebase-review]
 release_binding: app-v1.1.1
 gate_origin: null
 archived_atop: unbound
-archived_ref: 3dba904
+archived_ref: 26a6831
 created: 2026-06-28
 updated: 2026-06-28
 ---
@@ -41,6 +41,6 @@ Findings:
 - Important: `app/lib/data/sync/sync_service.dart:147` / `app/lib/data/sync/sync_service.dart:441` route every non-online status transition through `_resetTurnState()`, which cancels pending send timers at `app/lib/data/sync/sync_service.dart:156`. That clears the stale working/cancel state as intended, but it also leaves an optimistic pending user row without the no-echo backstop if the relay drops before an echo arrives. Filed follow-up `story-preserve-pending-send-backstop-on-disconnect`.
 
 Verification:
-- Reviewed commit `f8304f5` diff against acceptance criteria.
+- Reviewed commit `17ce18b` diff against acceptance criteria.
 - Ran `cd app && /opt/flutter/bin/flutter test --concurrency=1 test/transport/connection_manager_test.dart test/data/sync/sync_service_test.dart test/main_lifecycle_test.dart` (pass).
 

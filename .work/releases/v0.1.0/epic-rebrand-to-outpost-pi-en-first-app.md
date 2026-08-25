@@ -449,7 +449,7 @@ weakened for this prose-only change.
 
 Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
 orchestrator). One balanced pass over the integrated feature diff
-(`c346e28..HEAD -- app/`).
+(`376fa38..HEAD -- app/`).
 
 ### Findings
 - None. Translation complete; changes are documentation-only except the five

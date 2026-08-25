@@ -104,5 +104,5 @@ app-replacement assumptions). Identical transcript facts replay stable
 `session_history.events` across different `session_sync` request ids. Session rotation
 + transcript-log reset is the correctness boundary (empty broadcast is only an
 attached-owner compatibility notification, not a destructive delete). 20
-session_history/replay tests pass. Commit `c0751a2` scoped to pi-ext only
+session_history/replay tests pass. Commit `5d9518e` scoped to pi-ext only
 (extension.test.ts +67 + index.ts); collision guard held.

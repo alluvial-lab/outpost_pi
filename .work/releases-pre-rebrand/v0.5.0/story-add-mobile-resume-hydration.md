@@ -8,7 +8,7 @@ depends_on: [feature-adversarial-codebase-review, story-fix-mobile-working-conve
 release_binding: v0.5.0
 gate_origin: null
 archived_atop: unbound
-archived_ref: 3dba904
+archived_ref: 26a6831
 created: 2026-06-28
 updated: 2026-06-28
 ---
@@ -58,6 +58,6 @@ Verdict: Approve
 Findings: none.
 
 Verification:
-- Reviewed commit `7325228` diff against acceptance criteria.
+- Reviewed commit `a21b0b6` diff against acceptance criteria.
 - Confirmed resume invokes online hydration + session sync, retry/offline uses existing reconnect/boot paths, and pause/inactive/hidden/detached only stop mesh polling without awaiting network work.
 - Ran `cd app && /opt/flutter/bin/flutter test --concurrency=1 test/transport/connection_manager_test.dart test/data/sync/sync_service_test.dart test/main_lifecycle_test.dart` (pass).

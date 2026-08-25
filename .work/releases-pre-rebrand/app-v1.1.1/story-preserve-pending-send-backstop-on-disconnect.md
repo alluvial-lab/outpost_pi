@@ -8,7 +8,7 @@ depends_on: [story-fix-mobile-working-convergence-on-disconnect]
 release_binding: app-v1.1.1
 gate_origin: null
 archived_atop: unbound
-archived_ref: 3dba904
+archived_ref: 26a6831
 created: 2026-06-28
 updated: 2026-06-28
 ---
@@ -38,4 +38,4 @@ Review of `story-fix-mobile-working-convergence-on-disconnect` found that the no
 - `story-make-pending-backstop-disconnect-test-deterministic` — `app/test/data/sync/sync_service_test.dart:393` waits for the backstop with repeated real-time `_settle()` sleeps. The test is behavior-asserting and passes, but the timer boundary should be deterministic for this lifecycle regression.
 **Nits**: none
 
-**Notes**: Reviewed commit `3a91f78` and combined state with `5fe399c`. `_resetTurnState(clearPendingSendTimers: false)` preserves pending backstops on non-online transitions while clearing chat-local state, and `activate(...)` still clears timers on session switch. Ran `cd app && /opt/flutter/bin/flutter test --concurrency=1 test/data/sync/sync_service_test.dart` (pass).
+**Notes**: Reviewed commit `49fa0bc` and combined state with `0481342`. `_resetTurnState(clearPendingSendTimers: false)` preserves pending backstops on non-online transitions while clearing chat-local state, and `activate(...)` still clears timers on session switch. Ran `cd app && /opt/flutter/bin/flutter test --concurrency=1 test/data/sync/sync_service_test.dart` (pass).

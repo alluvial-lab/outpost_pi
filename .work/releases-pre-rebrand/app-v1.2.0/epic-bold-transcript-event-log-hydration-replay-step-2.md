@@ -102,7 +102,7 @@ Restore `_applyHistory` to `_convertHistory` + diffed row reconcile. The event s
 
 Approved (2026-06-30). Independently re-ran: **app tests 610 passed (up from 608
 — the agent's 7 new replay tests)**; `flutter analyze` clean except the known-unrelated
-`axisAlignment` deprecation. Commit `c567ab3` scoped to app only (sync_service +
+`axisAlignment` deprecation. Commit `ed2d643` scoped to app only (sync_service +
 tests); collision guard held.
 
 Replay behavior verified: `_applyHistory` → `_replayHistory` — appends/dedupes events

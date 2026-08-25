@@ -22,7 +22,7 @@ from keyboard mode.
    (Android inset leakage after IME close, or our master-pane
    `removePadding`/inset isolation from the fold pass interfering), the
    app stays in a shrunken layout while no keyboard is visible.
-2. **Master-pane viewInsets isolation** (7bb4ce88 + gate-fix 12c835d9):
+2. **Master-pane viewInsets isolation** (acbcd958 + gate-fix a9b15458):
    the fold pass strips keyboard insets from the master pane and re-supplies
    them to master-owned modals — a bug there could pin a stale inset.
 3. **The grid/mesh battery's windowed emulator** rendered 1080x2400 folded

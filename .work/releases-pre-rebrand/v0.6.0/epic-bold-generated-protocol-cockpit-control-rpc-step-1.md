@@ -88,7 +88,7 @@ runtime codepaths outside Cockpit are touched by this step.
 
 Approved (2026-06-30). Independently re-ran: whole-cockpit `flutter analyze` →
 No issues found; full `flutter test` → 226/226 (incl. new rpc_event_mapper_test).
-Commit `7aae1f2` scoped to cockpit only (rpc_event_mapper + pi_rpc_process +
+Commit `dff88b5` scoped to cockpit only (rpc_event_mapper + pi_rpc_process +
 rpc_process_gateway + pi_command + rpc_event + the UI consumers that call
 sendControl + story .md); no cross-subproject collision.
 

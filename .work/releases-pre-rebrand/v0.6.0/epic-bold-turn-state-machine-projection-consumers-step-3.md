@@ -109,7 +109,7 @@ Approved (2026-06-30) with deeper verification — cross-cutting HIGH-risk story
 Independently re-ran: relay `cargo fmt --check` clean, `cargo clippy -- -D
 warnings` clean, `cargo test` 124 passed / 0 failed (70 lib + 3 integ + 13 mesh +
 9 pi_forward + 10 presence + 19 rooms; +2 new registry snapshot tests); app
-`flutter test test/transport/` 64 passed / 0 failed. Commit `a6608a4` scoped to
+`flutter test test/transport/` 64 passed / 0 failed. Commit `6c51800` scoped to
 relay rooms.rs/registry.rs + new app test file + story .md; no collision-guard
 violations (did not touch connection_manager_test.dart / reachability_adapter /
 sync_service / control.rs).

@@ -28,7 +28,7 @@ standalone spec.
 The initial KAT carried `seqLE64` only as AEAD associated data, so
 `open(key, frame, lastSeq)` could not recover an arbitrary authenticated
 sequence or survive a dropped frame. The orchestrator resolved the discovery
-in commit `d9b0d15` by correcting the authoritative wire format and KAT to
+in commit `cac93ae` by correcting the authoritative wire format and KAT to
 `0x01 || seqLE64 || nonce24 || ciphertext`, with the clear sequence also bound
 as AEAD associated data. The implementation now parses and rejects replay from
 that corrected header before AEAD verification and reproduces the regenerated

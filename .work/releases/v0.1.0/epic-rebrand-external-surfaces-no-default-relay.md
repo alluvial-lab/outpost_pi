@@ -380,7 +380,7 @@ String get relayUrlOverride => _prefs.relayUrl ?? '';
 
 Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
 orchestrator). One balanced pass over the integrated feature diff
-(`c346e28..HEAD`), focused on removing the hardcoded default relay URL.
+(`376fa38..HEAD`), focused on removing the hardcoded default relay URL.
 
 ### Findings (adjudicated)
 - **Important — docs direct users to a removed command and claim a default exists.** `pi-extension/README.md:173` instructed `/outpost-pi config` (removed command) and promised an `env / config / default` result; `site/src/app/docs/page.tsx:428` repeated the removed command. The implementation registers `/outpost-pi status` (`pi-extension/src/index.ts:1743`) and explicitly tests that `/outpost-pi config` is absent (`pi-extension/src/extension.test.ts:363`). Replaced both command examples with `/outpost-pi status` and described the actual `unconfigured` / `off` / `on` states + the `set-relay` recovery action. **Fixed.**

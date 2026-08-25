@@ -18,7 +18,7 @@ follow_up_of: story-app-half-open-socket-swallows-sends-arrives-late
 > `send_timeout`) was disproven by an implementation attempt on 2026-07-13.
 >
 > **TL;DR.** This was option 2 of the half-open socket fix (option 1 shipped
-> `6d64556`). The design pass found Plan-18's rationale is obsolete (good —
+> `8a0d43c`). The design pass found Plan-18's rationale is obsolete (good —
 > see finding below), so teardown *looked* safe. But the implementation
 > attempt broke a deliberate, tested recovery semantic: `send_timeout` is a
 > **soft, recoverable** failure by design, and tearing down the socket severs
@@ -43,7 +43,7 @@ follow_up_of: story-app-half-open-socket-swallows-sends-arrives-late
 >
 > - **Plan-18's rationale is obsolete.** `room_already_open` is gone from
 >   relay source; same-device supersession (`story-relay-close-same-device-
->   duplicate-auth`, v0.1.0, `5741775`) actively closes the prior conn on
+>   duplicate-auth`, v0.1.0, `9f6682c`) actively closes the prior conn on
 >   re-auth. Plan-18 (2026-05-22) was correct when written; the relay change
 >   that obsoleted it landed 2026-07-10. A future story could re-evaluate
 >   whether 3-missed-pong should now tear down the WS too (re-coupling
@@ -66,7 +66,7 @@ follow_up_of: story-app-half-open-socket-swallows-sends-arrives-late
 ## Brief (original premise — since challenged)
 
 Direct follow-up to `story-app-half-open-socket-swallows-sends-arrives-late`
-(option 1, shipped `6d64556`). Option 1 gates `sendMessage` on room liveness
+(option 1, shipped `8a0d43c`). Option 1 gates `sendMessage` on room liveness
 (`_conn.isRoomLive`) so a send into a socket the app has *proven* unreachable
 (3 missed pongs → `_markActiveRoomOffline`) is held pending instead of
 vanishing into a dead send buffer. But option 1 leaves a **window**: the
@@ -99,7 +99,7 @@ reconnect hit `room_already_open`.
    real once — `git log -S` shows it in relay history at `0956a74`/`3737c11` —
    but it has since been removed.)
 2. The relay now **actively closes the prior same-device conn on re-auth**
-   (`story-relay-close-same-device-duplicate-auth`, shipped v0.1.0, `5741775`,
+   (`story-relay-close-same-device-duplicate-auth`, shipped v0.1.0, `9f6682c`,
    2026-07-10). `ConnectionRegistry::insert()` drops the old conn's `tx`
    (`connections.rs:84-95`), so the old `handle_peer` loop's `rx.recv()`
    returns `None` → the old socket tears down immediately. That story's brief
@@ -107,7 +107,7 @@ reconnect hit `room_already_open`.
    the reconnect itself" — the exact half-open-TCP problem Plan-18 worked
    around.
 3. Timeline: Plan-18 landed **2026-05-22** (`7767421`); supersession landed
-   **2026-07-10** (`5741775`). Plan-18 was correct when written; the relay
+   **2026-07-10** (`9f6682c`). Plan-18 was correct when written; the relay
    change that made it unnecessary shipped 7 weeks later.
 
 So the `room_already_open` failure mode Plan-18 defended against no longer
@@ -120,7 +120,7 @@ promising follow-up (re-evaluate the Plan-18 decoupling itself).
 The implementation attempt (code reverted; only this analysis committed)
 uncovered the real conflict. The transcript-event-log epic
 (`epic-bold-transcript-event-log-hydration-replay-step-2`, app-v1.2.0,
-`c567ab3`) explicitly built and tested a **late-confirmation** path: a
+`ed2d643`) explicitly built and tested a **late-confirmation** path: a
 message that hit `send_timeout` can still be **confirmed** by a later
 `SessionHistory` replay (or `UserInput` echo), flipping the row from
 `failed` → `confirmed`. The rationale (from that story, line 78): "Pending

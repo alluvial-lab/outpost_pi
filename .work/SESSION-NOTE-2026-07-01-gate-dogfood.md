@@ -25,7 +25,7 @@ two real correctness/security fixes the gates surfaced.
 | app-v1.2.0 | 14 | 2 high (signing-oracle + dispose-leak) | pushed ✓ |
 | relay-0.2.0 | 32 | 5 critical (to_room routing) | **local, NOT pushed** |
 
-Push: `git push origin main relay-0.2.0` (tag points at `93eff11`).
+Push: `git push origin main relay-0.2.0` (tag points at `07e6eed`).
 
 ### The headline fix: `to_room` cross-PC routing (relay-0.2.0)
 
@@ -33,7 +33,7 @@ The tests gate caught that `relay-opaque-targeting-step-1` was **approved claimi
 `to_room` parsing + `bad_envelope`, but `handle_pi_envelope` only checked `to_pc`
 and `PiEnvelopeFrame` had no `to_room` field — the feature was never implemented.
 Implemented across: schema → codegen (Rust + TS) → relay handler → pi-extension
-sender → PROTOCOL.md → 11 tests. Commit `13701ee`.
+sender → PROTOCOL.md → 11 tests. Commit `e2beaa6`.
 
 ### Two wire changes requiring PAIRED deployment
 

@@ -294,7 +294,7 @@ source audit and one site build gate.
 
 Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
 orchestrator). One balanced pass over the integrated feature diff
-(`c346e28..HEAD -- site/`).
+(`376fa38..HEAD -- site/`).
 
 ### Findings (adjudicated)
 - **Important — tautological JSDoc on icon primitives** (`site/src/components/landing/icons.tsx`): 23 single-line `/** Render the X icon. */` comments sat above zero-prop, equivalently named icon components — obvious-description padding, not intent docs. Per the documentation-conventions Skip tier, removed. **Fixed.**

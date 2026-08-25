@@ -32,7 +32,7 @@ directionality is **backwards**:
   So the phone's send either never reached the relay (app transport never
   flushed) or reached it and was forwarded but the Pi didn't echo.
 
-Revised the story: the reorder fix (`80b04e5`) is still defensible on its own
+Revised the story: the reorder fix (`ca555be`) is still defensible on its own
 merits (latent inbound-demux fix) but is **not** the confirmed cause of this
 send_timeout. Re-opened: what actually consumed the 14:42:47 send for 20s?
 Needs the extension's debug log or a decoded ring-log WS-send event at the
@@ -40,7 +40,7 @@ repro instant to distinguish app-transport-stuck vs Pi-didn't-echo.
 
 ## Bug 2 (cross-session leak) — relay is structurally innocent; NEW structural fact
 
-Confirmed the `fa02dce` AMBIGUOUS finding: `room_meta_update` keys
+Confirmed the `a497ee8` AMBIGUOUS finding: `room_meta_update` keys
 `apply_patch` by `(peer_id, room_id)` and drops unknown pairs — a sibling
 cannot mutate room `7ADky`'s entry via its own room id. BUT the live log
 surfaced a structural fact the prior traces missed:

@@ -28,7 +28,7 @@ fails-before reproduction is
 ## Root cause
 
 This was a live-soak harness false positive, not an app room-snapshot edge lost
-by `c6800577`. The second seeded `net_down` event sent an identity-window prompt
+by `fcd2a8d0`. The second seeded `net_down` event sent an identity-window prompt
 while no deferred fake-SDK turn was armed. `E2ePiHostRuntime` records an
 unarmed user message but intentionally emits no `agent_start`/`agent_end`/
 `agent_settled` lifecycle for it. The production extension therefore published

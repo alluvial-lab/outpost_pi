@@ -455,7 +455,7 @@ weaken the fallback in F1.
 - **Verification:** final targeted codec/projection/replacement run passed 108 tests; pi-extension typecheck, full 59-file suite (1076 passed, 3 skipped), and build passed.
 
 ## Completion (2026-08-25)
-All 3 child stories done (aa6b52bb, ad030bc8, 40732a78). 1076 tests green.
+All 3 child stories done (832a9acb, 0e2df7b7, 8cb42ec7). 1076 tests green.
 Durable transcript ownership is live: v1 codec, lifecycle-fresh appendEntry
 binding, two-pass compaction-aware reconciliation with FIFO/fork matching,
 real-file reopen coverage. Legacy re-derivation retained as fallback for F4.

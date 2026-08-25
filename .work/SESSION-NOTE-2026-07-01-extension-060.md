@@ -12,7 +12,7 @@ pipeline, plus recovered from a mid-session scope over-reach.
 ### extension-0.6.0 — SHIPPED (local tag, NOT pushed)
 
 - **22 items** shipped (18 done pi-extension bold-refactor items + 4 gate
-  findings resolved/tracked). Tag `extension-0.6.0` → `7219527`.
+  findings resolved/tracked). Tag `extension-0.6.0` → `cdd67a1`.
 - **Bundle**: monolithic `src/index.ts` split into `src/extension/*` modules
   (command_surface, composition_root, owner_multiplexer, relay_transport,
   sdk_session_projection); generated TS protocol codegen replaces handwritten
@@ -27,7 +27,7 @@ pipeline, plus recovered from a mid-session scope over-reach.
   not bundle-introduced (provenance grounded to MVP-era commits / reachability-
   only diffs). Disposition rationale recorded in release summary.
 - **Suite green**: 718 passed / 3 skipped.
-- **Tag**: `extension-0.6.0` → `e5cc188` (final, after drift fixes).
+- **Tag**: `extension-0.6.0` → `c16858c` (final, after drift fixes).
 
 ### Push: `git push origin main extension-0.6.0` (operator action)
 
@@ -67,7 +67,7 @@ the full analysis. Three viable bootstrap solutions (none free):
 ### Does NOT block anything
 
 The `"main"` default is pre-existing breakage (cross-PC delivery to a real
-room non-functional since `13701ee`), not a regression any release introduced.
+room non-functional since `e2beaa6`), not a regression any release introduced.
 Wire shape is already relay-0.2.0-compatible (sender emits `to_room`; value
 is wrong but field is present).
 

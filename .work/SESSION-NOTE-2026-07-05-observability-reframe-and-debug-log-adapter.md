@@ -53,7 +53,7 @@ pointers.
 ### Dangling pi-extension fixes committed
 
 Prior session left `resolveRemoteSessionId` stale-ctx guard + `compactionSummary`
-transcript mapping uncommitted. Committed as `12b42d9`.
+transcript mapping uncommitted. Committed as `4b7daa8`.
 
 ### Debug-log adapter — `story-app-debug-log-adapter` (stage: DONE)
 
@@ -81,12 +81,12 @@ Each round caught a real issue the prior missed:
   nits, privacy gap.
 - **v2 (NEEDS FIXES, re-review):** confirmed v1 fixes landed; caught a NEW
   blocker (clear-vs-flush race introduced by the snapshot-write restructure).
-- **v3 (NEEDS FIXES):** caught that the v2 fix commit (4a84df7) CLAIMED to fix
+- **v3 (NEEDS FIXES):** caught that the v2 fix commit (d941567) CLAIMED to fix
   `clear()` but the edit never applied — and the regression test passed for
   trivial timing reasons. **This is the catch that mattered:** it would have
   shipped a false sense of security (a "fix" that wasn't there, validated by
   a test that didn't test).
-- **v4 (ACCEPTED):** independently verified the actual fix (788d298), proved
+- **v4 (ACCEPTED):** independently verified the actual fix (f7793b0), proved
   the rewritten regression test has teeth (revert experiment: test FAILS
   without the fix, PASSES with it), nothing regressed.
 
@@ -138,18 +138,18 @@ teeth (a revert experiment is the proof).
 ## Commit graph (this session)
 
 ```
-4531d75 review: story-app-debug-log-adapter → done (Approve, fast-lane advance)
-08108ab review: story-app-debug-log-adapter (ACCEPTED after 4 adversarial passes), stage→review
-788d298 fix(app/debug-log): actually apply clear()-vs-flush serialization + deterministic regression test
-4a84df7 fix(app/debug-log): address review NEEDS FIXES — snapshot-write, clear race, registry exhaustiveness
-01dad29 implement: story-app-debug-log-adapter (typed DebugEvent registry + file adapter + lifecycle)
-019564a feature-design v2 fixes: duplicate-conn takeover proof + DI contract + line-number corrections
-0b657a3 feature-design revision: debug-gated app-global ring log + expanded capture
-613b0a6 feature-design: feature-cross-side-observability (7 units, stage→implementing)
-8270f6c work: track pre-existing resilience stories and backlog ideas (2026-07-03)
-12b42d9 pi-extension: guard stale-ctx in resolveRemoteSessionId + map compactionSummary
-155fbe0 relay: retroactive file logging + cross-side correlation; reframe epic to observability-first
-9a0b3a8 (prior session) scope: epic-targeting-and-session-lifecycle-contracts
+b942302 review: story-app-debug-log-adapter → done (Approve, fast-lane advance)
+141de9a review: story-app-debug-log-adapter (ACCEPTED after 4 adversarial passes), stage→review
+f7793b0 fix(app/debug-log): actually apply clear()-vs-flush serialization + deterministic regression test
+d941567 fix(app/debug-log): address review NEEDS FIXES — snapshot-write, clear race, registry exhaustiveness
+8c39e96 implement: story-app-debug-log-adapter (typed DebugEvent registry + file adapter + lifecycle)
+92e20cf feature-design v2 fixes: duplicate-conn takeover proof + DI contract + line-number corrections
+da516cb feature-design revision: debug-gated app-global ring log + expanded capture
+69c6abc feature-design: feature-cross-side-observability (7 units, stage→implementing)
+856fb86 work: track pre-existing resilience stories and backlog ideas (2026-07-03)
+4b7daa8 pi-extension: guard stale-ctx in resolveRemoteSessionId + map compactionSummary
+c4543f6 relay: retroactive file logging + cross-side correlation; reframe epic to observability-first
+a2726b5 (prior session) scope: epic-targeting-and-session-lifecycle-contracts
 ```
 
 Working tree clean. All reviews committed. Ready to pause for context reset.

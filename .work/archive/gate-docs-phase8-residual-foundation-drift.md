@@ -18,7 +18,7 @@ foundation-doc drift, routes to the `gate-docs` release gate's drift detection.
 
 1. `.agents/skills/formal-rigor-stack/SKILL.md:60` still claims relay mailboxes
    are unbounded; `feature-relay-resource-bounds` made them 16-frame bounded
-   with drop-newest + saturation metrics (commit a86378b).
+   with drop-newest + saturation metrics (commit f7db96a).
 2. `AGENTS.md` still describes sender-side `to_room` targeting as deferred to
    design (see `story-to-room-sender-side-room-targeting`), but current
    room-targeted behavior has advanced under the session-lifecycle work —

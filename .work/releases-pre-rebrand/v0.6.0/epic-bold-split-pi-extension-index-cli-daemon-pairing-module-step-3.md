@@ -100,7 +100,7 @@ run, parallel-agent working-tree interference, or stale vitest cache) and
 mis-attribute it to the env. No actual regression. (Pattern filed as a backlog
 item for investigation — it could mask a real regression someday.)
 
-Commit `395baa5` scoped to pi-ext only (command_surface + local_mesh_commands +
+Commit `d734840` scoped to pi-ext only (command_surface + local_mesh_commands +
 control_commands + probe_list_peers + index.ts shrink + story .md); collision
 guard held. Lifecycle invariants verified: `LocalMeshCommands` owns root/setup/
 join/stop/peers + cwd-lock; `ControlCommands` owns relay:*/rename:* with bridge

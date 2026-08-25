@@ -25,7 +25,7 @@ in `src/extension.test.ts` (~line 4729) fails on `acquireCwdLock` on this dev
 VM sandbox. Root cause is environmental, not code: `~/.pi/remote/locks/` is
 mounted **read-only** (`EROFS`) in this sandbox, so the UDS `server.listen()`
 bind always fails and stale `.sock` files from prior runs cannot be cleaned.
-Verified: the failure reproduces identically on the baseline commit `c585b45`
+Verified: the failure reproduces identically on the baseline commit `415056d`
 (before this story's changes) and via a direct `acquireCwdLock(...)` probe
 independent of the test. It is unrelated to message delivery or the
 coordinator. Run-to-run variance in *how many* mesh-acquisition tests trip
@@ -140,7 +140,7 @@ parent API remains active
    factory overwrites it before the parent's `session_start` can matter. Mocks
    passed; live failed. Reverted.
 2. **Cancel-and-re-drive via `session_before_switch`** (the "Fork-local
-   redesign" in prior revisions). **Disproven by spike (commit `d554f13`):**
+   redesign" in prior revisions). **Disproven by spike (commit `f1bcbcb`):**
    `ExtensionRunner.emit()` (`runner.js:522`) builds the handler ctx via
    `createContext()` (the plain `ExtensionContext`), **not**
    `createCommandContext()`. The event ctx has **no** `newSession`/`fork`/
@@ -305,7 +305,7 @@ loader/runtime**:
 
 ## Spike artifact (committed, to be removed)
 
-Commit `d554f13` shipped a **logging-only** `session_before_switch` +
+Commit `f1bcbcb` shipped a **logging-only** `session_before_switch` +
 `session_before_fork` handler in `pi-extension/src/index.ts` (+
 `_spikeLogSessionBeforeSwitch` helper) and a throwaway script
 `pi-extension/spike-session-before-switch.mjs` (gitignored). The spike

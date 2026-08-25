@@ -37,4 +37,4 @@ Relay `MeshAuthCache::members_of()` authorizes cross-PC forwarding by parsing st
 **Important**: none
 **Nits**: none
 
-**Notes**: Fresh-context review of commit `8dc8bf3`; correctness, tests, security/privacy, mesh signature re-verification, design alignment, and foundation-doc drift lenses checked. Verification evidence from implementation notes accepted; tests were not re-run.
+**Notes**: Fresh-context review of commit `5a84c7e`; correctness, tests, security/privacy, mesh signature re-verification, design alignment, and foundation-doc drift lenses checked. Verification evidence from implementation notes accepted; tests were not re-run.

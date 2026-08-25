@@ -20,7 +20,7 @@ Every story, feature, and epic in the bold-refactor campaign is `done`. The 6
 - 29 features done (`.work/active/features/`)
 - 136 stories done (`.work/active/stories/`)
 
-## Test baselines — ALL FULLY GREEN at HEAD (`cb58ed2`)
+## Test baselines — ALL FULLY GREEN at HEAD (`8c0d751`)
 - **pi-ext: 718 passed | 3 skipped (44 files)**; typecheck clean.
   (Started at 648 with 25 failing → cleared debt, +70 tests added alongside refactors.)
 - **app: 614 passed** (started ~597, +17).
@@ -85,7 +85,7 @@ instrument the runtime call paths — don't trust the agent's static theory.**
 The orchestrator committed a WRONG test-fixture alignment based on a transient
 dirty-tree observation (committed `toBe(2)`/`toBe(3)` when correct was
 `toBe(1)`/`toBe(2)`). This broke the suite AND misled the next agent into copying
-the wrong values + misclassifying. Reverted (`ea94508`/`5c5ae0b`). **Before changing
+the wrong values + misclassifying. Reverted (`6b5b1d0`/`480f842`). **Before changing
 test expectations, verify observed counts against a CLEAN `git checkout` of HEAD
 (run the test 5× for consistency), not a dirty debug tree.**
 

@@ -27,7 +27,7 @@ because much of it is already done:
   `dropMalformed` (malformed/decode-failure) — are captured as `WsInEvent`s
   with privacy-safe fields (`bytes`, `kind`, `stage`, `senderRoom`,
   `controlType`, `error`; NO payloads). Debug-gated, with routing tests.
-  Shipped in `story-app-capture-routing` (commit 457dc04).
+  Shipped in `story-app-capture-routing` (commit d7bc84a).
 - **Relay malformed handling**: `handle_malformed_pi_envelope` sends a
   `bad_envelope` transport_error back to the sender (already visible), and
   the relay file-logging story (`story-relay-retroactive-file-logging`)

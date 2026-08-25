@@ -40,5 +40,5 @@ dialog would make the paste path reliable without a restart.
 
 Diagnosed during the 2026-07-30 pairing incident chain
 (`.work/session-notes/2026-07-30-drain-and-pairing-incident.md`). The narrow-terminal
-URI-display fix (`8603635`) and the paste-tolerance fix (`5ff8f2e`) shipped, but
+URI-display fix (`8652dcf`) and the paste-tolerance fix (`0761c91`) shipped, but
 neither eliminates the visual-transcription step.

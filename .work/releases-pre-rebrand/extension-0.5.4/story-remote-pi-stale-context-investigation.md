@@ -92,7 +92,7 @@ Known source areas to inspect in `/home/agent/forks/remote_pi/pi-extension/src/i
   notifications, `_onPeerDisconnect()` notifications, late `_pi.sendMessage()`/`sendUserMessage()`
   error paths, `_lastCtx` cwd access, and cancel/abort fallback contexts.
 - Patch prepared and pushed in `/home/agent/forks/remote_pi` branch
-  `fix/stale-context-reconnect` at `f4a3743`.
+  `fix/stale-context-reconnect` at `faa2c89`.
 - Verification: `corepack pnpm typecheck && corepack pnpm test && corepack pnpm build` passed in
   `/home/agent/forks/remote_pi/pi-extension` (572 passed, 3 skipped).
 - Adjacent issues parked: none.
@@ -114,4 +114,4 @@ Known source areas to inspect in `/home/agent/forks/remote_pi/pi-extension/src/i
 **Important**: none
 **Nits**: none
 
-**Notes**: Substrate story review with targeted code cross-check against `/home/agent/forks/remote_pi` commit `f4a3743`. The item coherently records the best-known idle/resume trigger, the stale `_lastCtx`/`ctx.ui` failure path (`_refreshFooter` → `_attachOwner` → relay `onMsg`), secondary notification/send/cancel candidates, and the handoff into the source-fix story. No additional failure class needed a separate item.
+**Notes**: Substrate story review with targeted code cross-check against `/home/agent/forks/remote_pi` commit `faa2c89`. The item coherently records the best-known idle/resume trigger, the stale `_lastCtx`/`ctx.ui` failure path (`_refreshFooter` → `_attachOwner` → relay `onMsg`), secondary notification/send/cancel candidates, and the handoff into the source-fix story. No additional failure class needed a separate item.

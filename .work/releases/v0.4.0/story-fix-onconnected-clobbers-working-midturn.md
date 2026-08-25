@@ -14,7 +14,7 @@ updated: 2026-08-11
 # `onConnected` publishes unconditional `working=false`, clobbering a genuine mid-turn state
 
 ## Symptom
-The `c86bfb3` fix (publish `working=false` on session_start + a new `onConnected`
+The `d1117f7` fix (publish `working=false` on session_start + a new `onConnected`
 relay-reconnect callback) over-corrected: `onConnected` hardcodes
 `_sdkSessionProjection.publishWorking(false)` on every relay (re)connect. If the
 relay drops and reconnects while pi is genuinely working (a transient network

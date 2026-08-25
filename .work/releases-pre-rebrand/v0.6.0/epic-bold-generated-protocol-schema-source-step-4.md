@@ -157,4 +157,4 @@ Revert `cockpit-control.schema.json` and cockpit fixtures. Runtime behavior rema
 **Important**: none
 **Nits**: none
 
-**Notes**: Fast-lane substrate review. Inspected commit `5d8522d`, cockpit-control schema, and fixtures. Verified JSON parse for all protocol JSON/JSONL and ran `corepack pnpm --dir protocol --config.store-dir=/tmp/remote-pi-pnpm-store check`, which validated the cockpit fixture family. Confirmed changed files are schema/fixture/work item only; no `pi-extension` or `cockpit` runtime code changed.
+**Notes**: Fast-lane substrate review. Inspected commit `b991630`, cockpit-control schema, and fixtures. Verified JSON parse for all protocol JSON/JSONL and ran `corepack pnpm --dir protocol --config.store-dir=/tmp/remote-pi-pnpm-store check`, which validated the cockpit fixture family. Confirmed changed files are schema/fixture/work item only; no `pi-extension` or `cockpit` runtime code changed.

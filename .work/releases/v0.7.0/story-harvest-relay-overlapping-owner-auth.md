@@ -13,7 +13,7 @@ updated: 2026-08-16
 
 # Overlapping-owner mesh authorization is order-dependent (first match wins)
 
-Upstream `614f4e36`: when a Pi participates in meshes owned by MORE than one
+Upstream `e7aed39b`: when a Pi participates in meshes owned by MORE than one
 Owner, authorization must consider the UNION of every matching owner, not the
 first row SQLite yields. Our `relay/src/handlers/pi_forward.rs:226-255`
 iterates stored owner envelopes and returns on the first match — whether an
@@ -41,7 +41,7 @@ upstream sha in the commit message.
 
 ## Implementation
 
-- Ported upstream `614f4e36` as union authorization in
+- Ported upstream `e7aed39b` as union authorization in
   `relay/src/handlers/pi_forward.rs`: a cold scan now collects every verified
   Owner mesh containing the source Pi and authorizes against their combined
   members instead of returning the first SQLite match.

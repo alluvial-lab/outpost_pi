@@ -80,7 +80,7 @@ Restore `OuterEnvelope` default-room parsing and `forward_to_peer` usage. This r
 **Blockers**:
 - `relay/src/protocol/generated/outer.rs:16` and `relay/src/protocol/outer.rs:65`: missing outer `room` still defaults to `"main"`, and the unit test asserts that behavior. This violates the fail-closed/temporary-compatibility-seam criterion and can still route a missing-room envelope to an active room.
 - `relay/src/rooms.rs:17`, `relay/src/auth/challenge.rs:34`, and `relay/src/peers/registry.rs:302`: the relay still owns and mutates `session_id` as room metadata. It may not route by it, but the acceptance criterion literally says the relay has no `SessionId`/`session_id` domain field.
-- `relay/tests/integration.rs:16`: commit `4ad5f2e0` updates the integration route test to send an explicit room, but its `ct` is only `"aGVsbG8="`. It proves room rewrite and generic `ct` preservation, not an integration boundary carrying a `session_id` inside opaque app↔Pi payload unchanged/uninspected.
+- `relay/tests/integration.rs:16`: commit `9a7263d1` updates the integration route test to send an explicit room, but its `ct` is only `"aGVsbG8="`. It proves room rewrite and generic `ct` preservation, not an integration boundary carrying a `session_id` inside opaque app↔Pi payload unchanged/uninspected.
 
 **Acceptance criteria**:
 - FAIL — Relay has no `SessionId`/`session_id` domain field, registry key, database column, or routing branch: `RoomMeta.session_id` and patch handling remain in relay source.
@@ -90,7 +90,7 @@ Restore `OuterEnvelope` default-room parsing and `forward_to_peer` usage. This r
 - PASS — `cargo fmt --check` and targeted relay tests pass: full relay verification passed.
 
 **Verification run**:
-- `cd /home/agent/forks/remote_pi && git show --stat --patch 4ad5f2e0 && git log --oneline -5` — inspected commit `4ad5f2e0` and adjacent history.
+- `cd /home/agent/forks/remote_pi && git show --stat --patch 9a7263d1 && git log --oneline -5` — inspected commit `9a7263d1` and adjacent history.
 - `cd /home/agent/forks/remote_pi/relay && cargo fmt --check && cargo clippy -- -D warnings && cargo test` — passed; full suite: 63 lib tests, 3 integration tests, 13 mesh tests, 6 pi-forward tests, 10 presence tests, 19 rooms tests, and doc-tests all green.
 
 ## Implementation notes (rework 2026-06-30)
@@ -113,7 +113,7 @@ Restore `OuterEnvelope` default-room parsing and `forward_to_peer` usage. This r
 **Nits**: None.
 
 **Notes**:
-- Reviewed rework commit `41da53b` and generator follow-up `e4ec27e`; the current tree resolves the prior three bounce blockers.
+- Reviewed rework commit `69d26dc` and generator follow-up `cc62dab`; the current tree resolves the prior three bounce blockers.
 - Missing outer `room` now fails closed: generated `OuterEnvelope` has required `room` and `#[serde(deny_unknown_fields)]`; `parse_line` rejects missing room and unknown outer fields.
 - Relay `session_id`/`SessionId` domain ownership is gone from `relay/src/rooms.rs`, `relay/src/auth/challenge.rs`, and `relay/src/peers/registry.rs`; remaining `session_id` occurrences are opaque test payload fixtures.
 - `relay/tests/integration.rs` now forwards a base64 `ct` containing `{"session_id":"opaque-session","text":"hello"}` and asserts the relay rewrites only outer peer/room while preserving `ct` unchanged.

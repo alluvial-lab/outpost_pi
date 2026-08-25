@@ -77,7 +77,7 @@ Restore `forward_to_peer` use and client omission of `to_room`, knowingly re-ope
 **Findings**: none above nit level.
 
 **Verification run (orchestrator)**:
-- `git show --stat 8bad735` — only `relay/tests/pi_forward_test.rs` + this story file changed; no stray files.
+- `git show --stat c48e58b` — only `relay/tests/pi_forward_test.rs` + this story file changed; no stray files.
 - Confirmed `forward_to_room` already present in `relay/src/peers/registry.rs:372` and `relay/src/handlers/pi_forward.rs:190` (from prior identity-model/relay-opaque-targeting commits), so this step's remaining job was the regression-test lock — legit land-mode.
 - `cd relay && cargo test --test pi_forward_test` — 7/7 pass, incl. new `missing_to_room_returns_transport_error_bad_envelope` (live-relay integration test asserting `bad_envelope` transport error + envelope correlation; opaque `session_id` carried in body unchanged and uninspected).
 - Acceptance criteria all satisfied: missing `to_room`→`bad_envelope`; targeted two-room delivery; `session_id` opaque/uninspected; control broadcasts preserved; fmt/clippy/test green.

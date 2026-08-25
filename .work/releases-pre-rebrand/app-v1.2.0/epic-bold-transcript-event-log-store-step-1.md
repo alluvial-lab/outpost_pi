@@ -103,7 +103,7 @@ error - lib/config/dependencies.dart:64:27 - 'TranscriptEventStore' doesn't conf
 
 Fix by either making the store port/adapter conform to the repository lifecycle contract (including `dispose()` if registered as a repository) or registering it via the appropriate injector path for non-Repository singletons (for example `addOther`) while preserving DI access for `SyncService`.
 
-**Verification**: Implementation commit `cd7f85e` inspected. `flutter analyze && flutter test` from `app/` could not start because `/opt/flutter/bin/cache` is read-only (`engine.stamp.tmp` / `engine.realm`). A narrower direct analyzer command was run with `HOME=/tmp/pi-dart-home` and found the blocker above before tests could be meaningfully run. Append-only adapter semantics looked structurally correct (event-id key dedupe, monotonic `seq`, per-session box key, sessionId mismatch guard), but the app currently does not analyze with this DI registration.
+**Verification**: Implementation commit `c44a3bd` inspected. `flutter analyze && flutter test` from `app/` could not start because `/opt/flutter/bin/cache` is read-only (`engine.stamp.tmp` / `engine.realm`). A narrower direct analyzer command was run with `HOME=/tmp/pi-dart-home` and found the blocker above before tests could be meaningfully run. Append-only adapter semantics looked structurally correct (event-id key dedupe, monotonic `seq`, per-session box key, sessionId mismatch guard), but the app currently does not analyze with this DI registration.
 
 ## Implementation notes (bounce re-fix)
 - Files changed: `app/lib/config/dependencies.dart`.
@@ -132,7 +132,7 @@ Fix by either making the store port/adapter conform to the repository lifecycle 
 **Verdict**: Request changes
 
 **Blockers**:
-- `app/test/data/local/transcript_event_store_hive_test.dart:31` / `app/test/data/local/transcript_event_store_hive_test.dart:91`: the targeted test file added in commit `94ccdb54` does not pass. The cases using peer ids with `/` and `=` fail before exercising the store invariants because `LocalBoxes.transcriptEventsBoxName` produces Hive file names containing `/` (`transcript_events_peer/one=__...` and `transcript_events_peer/id=__...`), causing `PathNotFoundException`. This violates the targeted-store-tests acceptance criterion and leaves the peer-key filename-safety invariant unverified/failing.
+- `app/test/data/local/transcript_event_store_hive_test.dart:31` / `app/test/data/local/transcript_event_store_hive_test.dart:91`: the targeted test file added in commit `c672cc2b` does not pass. The cases using peer ids with `/` and `=` fail before exercising the store invariants because `LocalBoxes.transcriptEventsBoxName` produces Hive file names containing `/` (`transcript_events_peer/one=__...` and `transcript_events_peer/id=__...`), causing `PathNotFoundException`. This violates the targeted-store-tests acceptance criterion and leaves the peer-key filename-safety invariant unverified/failing.
 
 **Verification run**:
 - `cd /home/agent/forks/remote_pi/app && HOME=/tmp/pi-dart-home /tmp/flutter-writable/bin/flutter analyze` → exit 1 with only the known-unrelated `axisAlignment` deprecation info at `lib/ui/chat/widgets/input_bar.dart:802`.
@@ -162,4 +162,4 @@ records require matching `sessionId`; `appendAll` idempotent on `eventId`;
 `LocalBoxes.init` behavior intact; DI registration via `addOther` (the bound
 violation fix). The prior session's env blocker (`/opt/flutter/bin/cache`
 read-only) prevented verification then — now cleared. Final implementation
-commit `94ccdb5` (+ prior `8615cb0` re-fix + `73a1c11`).
+commit `c672cc2` (+ prior `77ee61a` re-fix + `c1b7e7f`).

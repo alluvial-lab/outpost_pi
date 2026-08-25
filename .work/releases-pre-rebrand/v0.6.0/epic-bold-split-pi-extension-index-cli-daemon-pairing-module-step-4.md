@@ -101,7 +101,7 @@ remaining "failure" as the known false-alarm signature rather than chasing it.
 The orchestrator's independent vitest run confirms 0 failures. The enhanced
 briefing is now reliably working.
 
-Commit `3e1eccf` scoped to pi-ext only (pairing_coordinator.ts new 589 lines +
+Commit `b4e9da8` scoped to pi-ext only (pairing_coordinator.ts new 589 lines +
 pairing_commands + relay_commands + index.ts shrunk ~500 lines + test + story
 .md); collision guard held. Lifecycle-ownership verified: `PairingCoordinator`
 owns cachedEd25519/stopAutoListener/selfRevoke as private fields + their teardown;

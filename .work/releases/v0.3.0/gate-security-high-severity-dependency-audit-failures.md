@@ -43,5 +43,5 @@ latent defect in the first pass: pnpm 11 ignores package.json
 hit a config-mismatch purge — corrected by moving all overrides into
 pnpm-workspace.yaml (matching the lockfile exactly) and fixing the
 pre-existing site `allowBuilds` placeholder that blocked unrs-resolver's
-postinstall (follow-up commit 20c39a8). Frozen installs, site lint+build,
+postinstall (follow-up commit 009346b). Frozen installs, site lint+build,
 extension typecheck+build all green. Approved -> done.

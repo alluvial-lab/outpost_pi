@@ -33,7 +33,7 @@ integration tests (Phosphor Beacon visual smoke, pairing e2e against relay
 - New job (extend `ci.yml` or a new `app-integration.yml` — prefer ci.yml
   beside the existing `app (analyze + test)` job; trigger on app/ paths).
 - **Convention: every action ref SHA-pinned** (per
-  `gate-security-release-workflow-action-pinning`, dbf46b84) — follow the
+  `gate-security-release-workflow-action-pinning`, 016859bf) — follow the
   comment style from ci.yml; resolve via `git ls-remote`.
 - Steps: Java 17 + pinned flutter-action with the repo's FLUTTER_VERSION →
   `sdkmanager "emulator" "system-images;android-34;google_apis;x86_64"`

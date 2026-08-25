@@ -1,17 +1,17 @@
 ---
 id: backlog-piext-extension-test-19-failures
 status: superseded
-superseded_by: commit 9aa2c42
+superseded_by: commit 7284754
 created: 2026-06-30
 updated: 2026-06-30
 resolved: 2026-06-30
-resolution_commit: 9aa2c42
+resolution_commit: 7284754
 tags: [test-debt, pi-extension, bug, pre-existing, resolved]
 ---
 
 # pi-extension extension.test.ts: 19 pre-existing failures (relay-mock-not-fired)
 
-## Status: RESOLVED (2026-06-30, commit 9aa2c42)
+## Status: RESOLVED (2026-06-30, commit 7284754)
 
 Cleared alongside a related 6-failure drift in `codec.test.ts` (same
 canonical-session attribution family). Full pi-ext suite now green:

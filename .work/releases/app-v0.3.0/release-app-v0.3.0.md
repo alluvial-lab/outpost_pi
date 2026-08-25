@@ -81,7 +81,7 @@ fixed inline).
   hydration; (2) 2026-07-27 re-pair over 5G via Tailscale subnet route,
   backlog-race survival, seamless 5G→WiFi transition with zero re-pair.
 - Changelog app-v0.3.0 entry committed; local tag `app-v0.3.0` cut on
-  46a888c (operator pushes).
+  b0ae447 (operator pushes).
 - Post-release notes: the 2026-07-26 owner-transition wipe on the phone was
   traced to a reinstall restore-race (fresh install → identity generated
   before Block Store restore landed → later restore arrived as an identity

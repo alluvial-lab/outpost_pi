@@ -87,7 +87,7 @@ keeping the feature behavior intact.
 Fast-lane approved (2026-06-30). Independently re-ran `flutter test
 test/domain/reachability_test.dart test/transport/reachability_adapter_test.dart
 test/transport/connection_manager_test.dart` → 52/52; `flutter analyze` clean in
-owned files (only known `axisAlignment` info). Commit `d6adcbb` scoped to test
+owned files (only known `axisAlignment` info). Commit `51df380` scoped to test
 files + story .md; collision guard held — did NOT touch connection_manager.dart
 (owned by parallel projection-consumers-step-3). Bounce invariant re-verified:
 `onRelayConnectionEstablished()` preserved (untouched in connection_manager.dart);

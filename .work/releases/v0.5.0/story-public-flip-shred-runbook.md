@@ -42,7 +42,7 @@ history. NOT a wholesale .work purge.
    - operator email → DECISION PENDING (see below)
 3. **Optional truncation (DECISION):** drop the 231 pre-fork inherited
    upstream commits behind a single baseline commit ("Import from remote_pi
-   at 02b2c92, MIT — see LICENSE/NOTICE") so public history = our 1,616-commit
+   at d6be6a4, MIT — see LICENSE/NOTICE") so public history = our 1,616-commit
    arc only. Our own pre-rebrand commits that mention remote_pi/remotepi stay
    (honest rebrand history, license-clean, low-value to redact).
 4. **Pre-flip content edits (worktree, pre-rewrite commit):** public-facing
@@ -71,7 +71,7 @@ operator's firewall; GitHub caches age out on their own. Story complete.
 
 1. Commit email `kevoun.creates@proton.me`: **KEEP** (intentional public identity).
 2. Truncate pre-fork upstream commits: **YES** — graft recipe: after the
-   path/replace pass, `newroot=$(git commit-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 -m "Import from remote_pi at 02b2c92 (MIT) — see LICENSE/NOTICE")`,
+   path/replace pass, `newroot=$(git commit-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 -m "Import from remote_pi at d6be6a4 (MIT) — see LICENSE/NOTICE")`,
    `git replace --graft <first-post-fork-commit> $newroot`, re-run
    filter-repo to bake. Public history = our ~1,616-commit arc only.
 3. Session-notes: **gitignored going forward + path-dropped whole** from

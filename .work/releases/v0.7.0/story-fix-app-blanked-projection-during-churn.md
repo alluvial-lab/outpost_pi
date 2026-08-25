@@ -16,7 +16,7 @@ updated: 2026-08-23
 ## Symptom
 
 Operator report (2026-08-23): blank-chat flakes persist on 0.5.1 (the
-direct-cold-open variant was fixed in `b3cb6422`; this is a different
+direct-cold-open variant was fixed in `d7984df4`; this is a different
 window). Capture `debug/ef5-…c9cc1cea9d20.bin`: in churn windows the
 replay admission drops 60–330 replayed events with **0–1 accepted** (e.g.
 05:14:18–05:21:00, 12:49:33–12:54:52, 13:14:25–13:16:27), while `route`

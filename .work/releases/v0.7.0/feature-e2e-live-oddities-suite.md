@@ -137,11 +137,11 @@ golden+failure sol, chaos luna); orchestrator roll-up.
 
 | story | commit | verification |
 |---|---|---|
-| capture-triage | 1a43ac80 | analyze + unit tests + triage selftest reproducing the capture-swallow analysis |
-| harness-infra | 55dbefaf | run-live.sh end-to-end on real emulator (QR pair via analyzeImage, all 6 fault primitives, capture pull) |
-| golden | 0bc3d1bf | 3 golden device tests × 2 consecutive green runs |
-| failure | 3771a3dc | 3 green + 2 skip-linked (tracking ids cited) × 2 runs |
-| chaos | fc0819ef | scheduler determinism unit tests + 10-min soak: zero unexpected violations, 5 attributed losses, honesty exit-3 on absent expected finding |
+| capture-triage | 89068e41 | analyze + unit tests + triage selftest reproducing the capture-swallow analysis |
+| harness-infra | f147831a | run-live.sh end-to-end on real emulator (QR pair via analyzeImage, all 6 fault primitives, capture pull) |
+| golden | 457b25f7 | 3 golden device tests × 2 consecutive green runs |
+| failure | 63c9b251 | 3 green + 2 skip-linked (tracking ids cited) × 2 runs |
+| chaos | 556533d2 | scheduler determinism unit tests + 10-min soak: zero unexpected violations, 5 attributed losses, honesty exit-3 on absent expected finding |
 
 QR-config deviation resolved: canonical QR omits relay URL; the lane injects
 the reversed localhost URL via production Preferences (no seam). Soak report:
@@ -153,7 +153,7 @@ the reversed localhost URL via production Preferences (no seam). Soak report:
 reviewer (gpt-5.6-sol). Verdict: Request changes → **closed done** after
 receiver-confirmed blocker fixes (standard policy: no second pass).
 
-- **Blockers (3/3 confirmed, fixed + verified in c7616056):** (1) swallow
+- **Blockers (3/3 confirmed, fixed + verified in 0606f794):** (1) swallow
   regression now requires capture evidence of the identity window before
   sending — no vacuous pass; visibility = bubble + transcript row. (2)
   blank-chat scenario is a real force-stop cold open; triage predicate
@@ -161,7 +161,7 @@ receiver-confirmed blocker fixes (standard policy: no second pass).
   (3) soak enforces all four invariants incl. fault-during-turn overlap,
   room-selection recovery checks, quiescent working convergence, and the
   identity-window visibility predicate; scheduler short-duration guard.
-- **Important (2):** randint crash folded into c7616056; static
+- **Important (2):** randint crash folded into 0606f794; static
   ActionsRepository fake parked → `gate-review-live-harness-actions-fake`.
 - **Nits:** README entry points folded; skip-reason surfacing + `_safe`
   capping left as optional polish.

@@ -119,4 +119,4 @@ Inline `Duration::from_secs(25)` in `handlers/peer.rs` again and delete `relay/s
 **Important**: none
 **Nits**: none
 
-**Notes**: Fast-lane substrate review. Inspected commit `8c255aa`; relay heartbeat now imports `RELAY_WS_PING_INTERVAL` and keeps the first tick/repeat interval at 25s. Relay only consumes the WS ping constant and does not infer degraded/session/offline-queue state. Verification run from `relay/`: `cargo fmt --check && cargo clippy -- -D warnings && cargo test` passed.
+**Notes**: Fast-lane substrate review. Inspected commit `17e644a`; relay heartbeat now imports `RELAY_WS_PING_INTERVAL` and keeps the first tick/repeat interval at 25s. Relay only consumes the WS ping constant and does not infer degraded/session/offline-queue state. Verification run from `relay/`: `cargo fmt --check && cargo clippy -- -D warnings && cargo test` passed.

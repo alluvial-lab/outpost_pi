@@ -7,7 +7,7 @@ tags: [cockpit, bug]
 
 # Cockpit: migrate Hive → atomic JSON stores (Windows crash classes)
 
-Upstream `bbfaa417`: replaced Hive with atomic JSON stores to fix Windows
+Upstream `0802539b`: replaced Hive with atomic JSON stores to fix Windows
 crash classes (locked boxes, OneDrive-location corruption, dirty-shutdown
 damage). Ours still opens Hive synchronously at `cockpit/lib/main.dart:42-51`
 with Hive repositories throughout, so the corruption classes remain

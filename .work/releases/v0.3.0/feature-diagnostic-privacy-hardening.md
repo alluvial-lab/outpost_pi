@@ -324,30 +324,30 @@ the design maps onto them; only the mobile story's scope is widened
 All five child stories implemented by one feature worker (Terra/high), each
 verified and committed; feature advanced to `review`.
 
-- `gate-security-mobile-failure-detail-logged` (done, `1480ecc` + follow-up
-  `97d8b84`): `kAdmissibleFailureCodes`/`admitFailureCode` landed in
+- `gate-security-mobile-failure-detail-logged` (done, `eb27a78` + follow-up
+  `f6facc9`): `kAdmissibleFailureCodes`/`admitFailureCode` landed in
   `debug_log.dart`; `MsgFailedEvent.detail`, `SessionSyncEvent.err`,
   `_failPendingSend.debugDetail`, and `_shortReason` all deleted; registry
   forbidden keys extended; wire→diagnostic canary proves user-visible
   `UserMessageFailed.message` retained while console/ring stay content-free.
   Orchestrator wave inspection caught the sibling `[session-sync] ... $err`
   console leak in the same function — fixed content-free in the follow-up.
-- `gate-security-rpcunknown-retains-wire-discriminator` (done, `8798c41`):
+- `gate-security-rpcunknown-retains-wire-discriminator` (done, `cc4e907`):
   4 arbitrary interpolations → fixed `'<unknown-*>'` categories; mapper canary.
-- `gate-security-lsp-stderr-logged` (done, `9e5302c`): counted content-free
+- `gate-security-lsp-stderr-logged` (done, `e6d3a48`): counted content-free
   stderr (first-occurrence line), stream-error category, exit code +
   `stderrLines=N`; real-subprocess canary.
 - `gate-security-formatter-reload-diagnostics-path-disclosure` (done,
-  `46e2e1a`): `fileViewerReloadFailureDiagnostic` (class only, `@visibleForTesting`);
+  `8d7c3f4`): `fileViewerReloadFailureDiagnostic` (class only, `@visibleForTesting`);
   path-bearing-exception canary.
-- `gate-security-cockpit-temp-workspace-trace` (done, `e777716`): `_mark`,
+- `gate-security-cockpit-temp-workspace-trace` (done, `0c2fff2`): `_mark`,
   call sites, and unused `dart:io` import deleted.
 
 ### Integrated verification (orchestrator, post-wave)
 
 - `app`: `flutter analyze` clean; `flutter test` 816 passed, only the 6 known
   pairing-endpoint e2e environment failures (unchanged baseline).
-- `cockpit`: `flutter analyze` clean (after `73a3fe8` fixed the pre-existing
+- `cockpit`: `flutter analyze` clean (after `6d28a4a` fixed the pre-existing
   `unnecessary_underscores` lint at `pi_rpc_process.dart:470` that had blocked
   the worker's transition); `flutter test` 261/261 passed.
 
@@ -357,7 +357,7 @@ One balanced fresh-context cross-model pass (`openai-codex/gpt-5.6-sol` vs host
 `umans/umans-glm-5.2`). Verdict REQUEST CHANGES with 2 proposed blockers + 2
 important, 0 nits. Adjudication:
 
-### Material — fixed + verified this cycle (`82ddbb9`)
+### Material — fixed + verified this cycle (`df5e6c2`)
 
 1. **Pre-upgrade sensitive ring entries remain exportable** — ACCEPTED
    material, fixed. `_doLoad()`/`export()` in `debug_log_impl.dart` retained

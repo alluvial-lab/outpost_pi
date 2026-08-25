@@ -97,7 +97,7 @@ Approved (2026-06-30). Independently verified: **parity check passes in clean st
 tests). typecheck clean. Generated-contract: deterministic, no hand-edits (no
 generated source changed this step).
 
-Commit `7ffe82c` scoped to pi-ext only (package.json scripts + codec.test.ts parity
+Commit `f301784` scoped to pi-ext only (package.json scripts + codec.test.ts parity
 tests + generator `--check` mode). Package scripts work from both root
 (`corepack pnpm --dir pi-extension check:protocol`) and subproject
 (`corepack pnpm check:protocol`). `codec.test.ts` derives client/server type sets

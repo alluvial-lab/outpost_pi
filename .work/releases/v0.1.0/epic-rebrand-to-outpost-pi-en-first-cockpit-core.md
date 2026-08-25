@@ -511,11 +511,11 @@ work changes no APIs or persistence/wire shape.
 
 Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
 orchestrator). One balanced pass over the integrated feature diff
-(`c346e28..HEAD -- cockpit/lib/app/cockpit/core/`).
+(`376fa38..HEAD -- cockpit/lib/app/cockpit/core/`).
 
 ### Findings (adjudicated)
 - **Nit — stale implementation note** (`.work/active/stories/epic-rebrand-to-outpost-pi-en-first-cockpit-core-ui-generated-file.md:98-102`): the note claimed four PT dartdoc lines remain in the generated map, but `file_icon_map.g.dart:17,1389,3517,4450` are English. Corrected the story note. **Fixed (story body only; no source change).**
-- No other findings; PT sweeps clean, no behavior/contract change, intended literal translations bounded at `lsp_server_pool.dart:111,275`, `ephemeral_pi_rpc.dart:49,135`, `cockpit_theme.dart:33`. The fallback URL change at `update_viewmodel.dart:49` belongs to mechanical-rebrand commit `3a7d01a`, not this feature.
+- No other findings; PT sweeps clean, no behavior/contract change, intended literal translations bounded at `lsp_server_pool.dart:111,275`, `ephemeral_pi_rpc.dart:49,135`, `cockpit_theme.dart:33`. The fallback URL change at `update_viewmodel.dart:49` belongs to mechanical-rebrand commit `fd10433`, not this feature.
 
 ### Verdict
 Approve. Advanced `review → done`.

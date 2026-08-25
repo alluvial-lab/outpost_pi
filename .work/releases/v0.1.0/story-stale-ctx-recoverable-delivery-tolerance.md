@@ -31,7 +31,7 @@ session replacement window OR a genuinely-stale ctx), the old behavior was:
 operator's "stuck in my mobile chat" symptom). This story replaces that silent
 drop with a transient `delivery_pending` signal + a bounded replay queue.
 
-## What shipped (commits `eab7315` + `1c96a37`)
+## What shipped (commits `cadf2ff` + `8a8c058`)
 
 - **`delivery_pending` wire signal** (new `knownErrorCode` in
   `protocol/schema/defs/app-pi-common.schema.json`; TS + Dart bindings

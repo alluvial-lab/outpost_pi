@@ -8,7 +8,7 @@ depends_on: []
 release_binding: v0.6.0
 gate_origin: null
 archived_atop: unbound
-archived_ref: 3dba904
+archived_ref: 26a6831
 status: superseded
 resolved_by: story-fix-mobile-message-send-failures-visible
 created: 2026-06-28

@@ -98,7 +98,7 @@ Restore `_messageBuffer` as the direct `session_history` input and leave app/coc
 **Findings**: none above nit level.
 
 **Verification run (orchestrator)**:
-- `git show --stat 6df733d` — only owned files: `index.ts` (sole writer this wave), `transcript_projection.ts`, `transcript_projection.test.ts`, `extension.test.ts` (transcript-history sections). No collision with other pi-ext agents.
+- `git show --stat c45a814` — only owned files: `index.ts` (sole writer this wave), `transcript_projection.ts`, `transcript_projection.test.ts`, `extension.test.ts` (transcript-history sections). No collision with other pi-ext agents.
 - Confirmed `_messageBuffer` removed from production state → replaced by `_transcriptEvents: TranscriptEvent[]`; `_buildSessionHistoryMessage` now projects via `projectSessionHistory({sessionId, events, limit})`; `_mapAgentMessagesToEvents` reduced to a legacy adapter shim (`mapLegacyAgentMessagesToTranscriptEvents`); outgoing wire shape preserved (`session_started_at` from `_remoteSession.startedAt`).
 - **Env-aware verification (sandbox blocks UDS bind → EPERM, so full extension.test.ts is not a green signal):**
   - `corepack pnpm typecheck` — clean.

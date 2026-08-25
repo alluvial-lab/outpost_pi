@@ -2,7 +2,7 @@
 
 **UPDATE 2026-06-29 (later):** The cockpit env blocker described below is now
 **RESOLVED**, via a different mechanism than first tried. The Flutter SDK and pub
-cache were relocated into the repo (commits `4db720e` + `67f9138`): Flutter at
+cache were relocated into the repo (commits `ab186ec` + `41d4ea0`): Flutter at
 `~/projects/remote_pi/.tools/flutter`, pub cache at `~/projects/remote_pi/.pub-cache`
 (gitignored). The `/tmp` shims (`/tmp/flutter-writable`, `/tmp/pi-pub-cache`,
 `/tmp/pi-dart-home`) are no longer used.
@@ -54,32 +54,32 @@ block; bounce → `review`→`implementing` + `## Review bounce` block; commit m
 ### Verdicts
 
 **Approved → done (3):**
-- `relay-typed-actor-control-handlers-step-3` (`f38f244`) — `SubscriptionIndex`
+- `relay-typed-actor-control-handlers-step-3` (`f7e4f36`) — `SubscriptionIndex`
   dedup; relay fmt/clippy/test green.
-- `canonical-session-relay-opaque-targeting-step-3` (`6af2865`) — opaque
+- `canonical-session-relay-opaque-targeting-step-3` (`78754be`) — opaque
   `to_room`/`session_id` forwarding; relay full suite green.
-- `cockpit-workspace-projection-workspace-document-step-3` (`4b315f5`) — typed
+- `cockpit-workspace-projection-workspace-document-step-3` (`a57a123`) — typed
   command transforms, real-state tests. ⚠️ Flutter verification NOT actually
   run — see env block below. Weakest of the three approvals.
 
 **Bounced → implementing (8):**
-- `canonical-session-identity-model-step-4` (`21448e1`) — relay still owns
+- `canonical-session-identity-model-step-4` (`6119f1d`) — relay still owns
   `session_id` room metadata; missing-room defaults to `main` (fail-closed AC).
-- `transcript-event-log-store-step-1` (`a60767c`) — **reproduced locally**:
+- `transcript-event-log-store-step-1` (`33e2f44`) — **reproduced locally**:
   `PathNotFoundException` at `app/lib/data/local/boxes.dart:69` for peer ids with
   `/` (Hive path-safety bug). Dedup/isolation tests can't run. Real fail-fast
   boundary violation.
-- `canonical-session-wire-discriminator-step-3` (`1f78e17`) — **phantom
+- `canonical-session-wire-discriminator-step-3` (`88b27ba`) — **phantom
   implement**: only the story file changed, no code.
-- `cockpit-settings-split-step-3` (`1dc89eb`) — test is import/instantiation
+- `cockpit-settings-split-step-3` (`5e66ebb`) — test is import/instantiation
   only; AC requires fake-VM/gateway coverage.
-- `generated-protocol-dart-codegen-step-2` (`5115cb5`) — regenerated
+- `generated-protocol-dart-codegen-step-2` (`dfb6c44`) — regenerated
   `protocol.g.dart` ≠ committed file.
-- `generated-protocol-rust-codegen-step-2` (`e8bed24`) — changes missing-room
+- `generated-protocol-rust-codegen-step-2` (`5e4273c`) — changes missing-room
   behavior (reject→default `main`); not a pure `[refactor]`.
-- `split-pi-extension-index-composition-root-step-3` (`a1201e5`) — `legacy_ports.ts`
+- `split-pi-extension-index-composition-root-step-3` (`c21f64f`) — `legacy_ports.ts`
   defines adapters but `index.ts` never wires them.
-- `transcript-event-log-projection-derive-step-3` (`5e259a8`) — prior bounce
+- `transcript-event-log-projection-derive-step-3` (`49e4572`) — prior bounce
   addressed, but 7 sync-service failures remain (stale projection resurrects
   cleared rows).
 
@@ -130,10 +130,10 @@ shadcn/modular/native plugins) and was already resolved in a prior session.
 ## Resume instructions
 
 When dev env is resolved, the immediate next moves:
-1. Re-verify `cockpit-workspace-projection-workspace-document-step-3` (`4b315f5`)
+1. Re-verify `cockpit-workspace-projection-workspace-document-step-3` (`a57a123`)
    with real `flutter analyze` + `flutter test`. If it passes, keep it `done`;
    if not, bounce it back. It currently rests on static-only approval.
-2. Re-verify `cockpit-settings-split-step-3` (`1dc89eb`) AC: does any existing
+2. Re-verify `cockpit-settings-split-step-3` (`5e66ebb`) AC: does any existing
    test cover fake-VM/gateway load/save/disposal, or is the bounce correct that
    only import/instantiation coverage was added?
 3. Resume autopilot draining of the 92 `implementing` stories — but prioritize

@@ -24,19 +24,19 @@ every evaluation:
 Candidate subsystems, ranked by daily-use value (each needs a scoped
 evaluation before any design; costs are upstream-relative):
 
-1. **Terminal state persistence + profiles** (`a94b304e` scrollback/cwd
-   restore via OSC 7; `bfc60257`/`8de67f27` profile discovery + default
+1. **Terminal state persistence + profiles** (`545d0d20` scrollback/cwd
+   restore via OSC 7; `de3b140a`/`89899af4` profile discovery + default
    selector) — direct daily value for long agent sessions; M.
-2. **Task runner** (`3792ba6d` et al., tasks.json JSONC + PTY + watch) —
+2. **Task runner** (`01101eea` et al., tasks.json JSONC + PTY + watch) —
    build/dev executor with live output tabs; self-contained, M-L.
-3. **Git/source-control layer** (`1263f2a8` sync/pull/push/merge-to-parent
-   + diff viewer; worktrees `03ed6965`; realms `6e4f5b82`; multi-root
-   `6ea98bcf`) — large; we currently have little of it; L, staged.
-4. **Editor depth** (`bfa2f23e` LSP semantic highlight + goto-def;
-   `843b51f4` SCM gutter; `02ff99f8` Cmd+F in-viewer) — M each, on our
+3. **Git/source-control layer** (`5da763ec` sync/pull/push/merge-to-parent
+   + diff viewer; worktrees `ac6b0c94`; realms `fc51e0ef`; multi-root
+   `b1c3c5fe`) — large; we currently have little of it; L, staged.
+4. **Editor depth** (`3ce7322b` LSP semantic highlight + goto-def;
+   `51d9a42c` SCM gutter; `91694884` Cmd+F in-viewer) — M each, on our
    editor surfaces.
 5. **Self-update infrastructure** (Sparkle/WinSparkle + frequency settings
-   `4218eaf1`; bootstrapper `191f80dd`) — matters for public artifact
+   `482239fe`; bootstrapper `fddec92c`) — matters for public artifact
    distribution; we already have macOS self-update (see
    `cockpit-macos-self-update-changelog-consistency`); evaluate Windows
    updater only; M.
@@ -45,5 +45,5 @@ Explicitly not adopted (do not re-evaluate without new cause): i18n/slang,
 multi-theme system, navigator webview, DB panels, Copilot, sounds, commit-
 message harness integration.
 
-Upstream reference: `upstream/main` @ 8fa8df8b (2026-08-15 sweep; full
+Upstream reference: `upstream/main` @ 1816bfaa (2026-08-15 sweep; full
 dispositions in `feature-upstream-remote-pi-harvest`).

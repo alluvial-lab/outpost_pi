@@ -121,7 +121,7 @@ determinism double-run byte-identical; committed `generated/room.rs` matches
 fresh generator output exactly (no hand-edits). Relay: `cargo fmt --check`
 clean; `cargo clippy -- -D warnings` clean; `cargo test` 126 passed / 0 failed
 (72 lib + 3 integ + 13 mesh + 9 pi_forward + 10 presence + 19 rooms; +2 new
-room-snapshot tests). Commit `54ca60b` scoped to generated/room.rs + rooms.rs +
+room-snapshot tests). Commit `0135fa4` scoped to generated/room.rs + rooms.rs +
 generator + story .md; collision guard held (did NOT touch control.rs /
 connection_actor / auth). `rooms.rs` re-exports generated room types and owns
 only RoomManager + the is_empty() helper — registry/peer-handler consumers go

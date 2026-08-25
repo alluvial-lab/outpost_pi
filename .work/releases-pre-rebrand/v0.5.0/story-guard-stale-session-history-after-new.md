@@ -8,7 +8,7 @@ depends_on: [feature-adversarial-codebase-review]
 release_binding: v0.5.0
 gate_origin: null
 archived_atop: unbound
-archived_ref: 3dba904
+archived_ref: 26a6831
 created: 2026-06-28
 updated: 2026-06-28
 ---
@@ -41,5 +41,5 @@ Findings:
 - Important: `app/lib/data/sync/sync_service.dart:393` only bumps the stale-history boundary when `_activeSessionStartedAt` is already non-null, and `_applyHistory()` only rejects older history when that boundary exists at `app/lib/data/sync/sync_service.dart:681`. A New Session issued before the first accepted/persisted `session_started_at` can still be repopulated by a late stale `SessionHistory`. Filed follow-up `story-guard-history-clear-without-prior-start`.
 
 Verification:
-- Reviewed commit `63b1a26` diff against acceptance criteria.
+- Reviewed commit `e2c33e5` diff against acceptance criteria.
 - Ran `cd app && /opt/flutter/bin/flutter test --concurrency=1 test/transport/connection_manager_test.dart test/data/sync/sync_service_test.dart test/main_lifecycle_test.dart` (pass).

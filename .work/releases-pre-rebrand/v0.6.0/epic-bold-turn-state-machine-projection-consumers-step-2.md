@@ -128,7 +128,7 @@ Restore the existing `_working` / `_workingReplyTo` stream and `ChatViewModel` O
 **Findings**: none above nit level.
 
 **Verification run (orchestrator)**:
-- `git show --stat f890c8c` — exactly the 7 owned files (session_state.dart, transcript_projection.dart, sync_service.dart, connection_manager.dart, chat_viewmodel.dart + 2 tests). No collision (ws_transport/protocol.g.dart/reachability_adapter untouched).
+- `git show --stat 6fda7e7` — exactly the 7 owned files (session_state.dart, transcript_projection.dart, sync_service.dart, connection_manager.dart, chat_viewmodel.dart + 2 tests). No collision (ws_transport/protocol.g.dart/reachability_adapter untouched).
 - `cd app && flutter test test/data/sync/sync_service_test.dart test/data/transport/connection_manager_test.dart` (PUB_CACHE set) — **55/55 pass**, incl. full `turn projection convergence` group: agent_done, provider error, cancel/abort, send timeout, compaction, session switch, connection loss/reconnect, dispose → ALL project idle.
 - `flutter analyze` — only the known-unrelated `axisAlignment` info; tree fully clean (all in-flight agents committed).
 - Convergence core verified: `ChatViewModel.isWorking`→`_turnProjection.working` (single projection, NO more `roomWorking || _working || _streaming \!= null` OR logic); `cancelTargetId`→`_turnProjection.cancelTargetId`; `AppTurnProjection`/`AppTurnStatus` in pure domain `session_state.dart`; `deriveChatTurnProjection` extends the existing `transcript_projection.dart` seam.

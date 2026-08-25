@@ -102,7 +102,7 @@ NOTE: the implementer CORRECTLY identified the false-failure pattern (7th
 consecutive pi-ext agent to do so) — reported the targeted-suite "4 failed" as
 "matching the known false-alarm mesh/cwd-lock/name-assigned/rename group."
 
-Commit `ffa0711` scoped to pi-ext only (relay_transport.ts + ports.ts +
+Commit `ae9fa75` scoped to pi-ext only (relay_transport.ts + ports.ts +
 extension.test.ts +71 + story .md); collision guard held (mesh_node.ts/
 session/bridge.ts/transport/pi_forward_client.ts untouched — injected-relay
 ownership contract preserved). Lifecycle verified: `_attachBridgeIfReady` reduced

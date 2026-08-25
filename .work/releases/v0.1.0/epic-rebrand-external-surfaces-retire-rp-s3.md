@@ -41,7 +41,7 @@ update available."
 - `app/lib/data/update/update_checker_impl.dart` —
   `defaultManifestUrl = 'https://rp-s3.jacobmoura.work/downloads/app/latest.json'`
 - `rp-s3/docker-compose.yml` — `image: jacobmoura7/rp-s3:latest` (missed in
-  commit `4697fc2`) + `rp-s3.jacobmoura.work` URL comment + `/Users/flutterando/...` host paths
+  commit `1c8cad8`) + `rp-s3.jacobmoura.work` URL comment + `/Users/flutterando/...` host paths
 - `rp-s3/README.md`, `rp-s3/build-docker.sh` — update docs to "not currently deployed"
 - `cockpit/packaging/README.md` — appcast URLs
   (`rp-s3.jacobmoura.work/.../appcast-{macos,windows}.xml`)
@@ -314,7 +314,7 @@ necessary corrections within their owned scope.
 
 Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
 orchestrator). One balanced pass over the integrated feature diff
-(`c346e28..HEAD`), focused on rp-s3 retirement (update-checker noop, site
+(`376fa38..HEAD`), focused on rp-s3 retirement (update-checker noop, site
 manifest fallback, dormant-server docs).
 
 ### Findings

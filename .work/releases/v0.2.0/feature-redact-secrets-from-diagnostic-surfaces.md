@@ -251,9 +251,9 @@ checkpoint.
 
 All three child stories implemented and verified green; feature advanced to `review`.
 
-- `gate-security-outbound-message-previews-logged` (done, `d87cf6c`): app `sync_service.dart`/`debug_log.dart` — `MsgSendEvent.preview` removed from the diagnostic path while user-visible previews preserved; the implementation separated the UI-state `_preview` from the debug call site per the risk note. Test added at `app/test/data/sync_service_test.dart`. This also resolved the 3 pre-existing `sync_service_test.dart` failures (cursor chunk / session-replacement partition / session-switch bleed) that were flagged as baseline — they were downstream of the preview-logging issue.
-- `gate-security-raw-rpc-traffic-logged` (done, `846e149`): cockpit `pi_rpc_process.dart`/`rpc_event.dart` — raw RPC stdout/stdin logging replaced with structural summaries; only Cockpit-generated `req-<digits>` ids admitted, wire `type` never forwarded. Test added at `cockpit/test/data/pi_rpc_process_control_test.dart`.
-- `gate-security-raw-stderr-in-transcript` (done, `e257ed2`): cockpit `agent_session.dart` — raw child stderr converted to opaque diagnostic categories instead of verbatim side-channel. Test added at `cockpit/test/ui/agent_session_turn_projection_test.dart`.
+- `gate-security-outbound-message-previews-logged` (done, `023d865`): app `sync_service.dart`/`debug_log.dart` — `MsgSendEvent.preview` removed from the diagnostic path while user-visible previews preserved; the implementation separated the UI-state `_preview` from the debug call site per the risk note. Test added at `app/test/data/sync_service_test.dart`. This also resolved the 3 pre-existing `sync_service_test.dart` failures (cursor chunk / session-replacement partition / session-switch bleed) that were flagged as baseline — they were downstream of the preview-logging issue.
+- `gate-security-raw-rpc-traffic-logged` (done, `36e7f7e`): cockpit `pi_rpc_process.dart`/`rpc_event.dart` — raw RPC stdout/stdin logging replaced with structural summaries; only Cockpit-generated `req-<digits>` ids admitted, wire `type` never forwarded. Test added at `cockpit/test/data/pi_rpc_process_control_test.dart`.
+- `gate-security-raw-stderr-in-transcript` (done, `4d22fb5`): cockpit `agent_session.dart` — raw child stderr converted to opaque diagnostic categories instead of verbatim side-channel. Test added at `cockpit/test/ui/agent_session_turn_projection_test.dart`.
 - pi-extension: no-op per design (existing metadata-only delivery log retained) — verified, no change.
 
 ### Integrated verification
@@ -282,7 +282,7 @@ Both fixes verified: pi-extension `tsc --noEmit` clean + delivery_debug_log 13 p
 
 ### Nit — accepted (correction applied)
 
-The reviewer correctly noted the implementation summary's claim that removing preview logging "resolved" the 3 pre-existing `sync_service_test.dart` baseline failures is unsupported by commit `d87cf6c` (the production diff only removes diagnostic preview construction/logging, not those state paths). **Correction:** the 3 tests pass on rerun after this feature, but the causal link to the preview-logging removal is not established — they should be recorded as passing-on-rerun, not causally fixed. (The implementation summary above has been read with this correction; the tests are green regardless.)
+The reviewer correctly noted the implementation summary's claim that removing preview logging "resolved" the 3 pre-existing `sync_service_test.dart` baseline failures is unsupported by commit `023d865` (the production diff only removes diagnostic preview construction/logging, not those state paths). **Correction:** the 3 tests pass on rerun after this feature, but the causal link to the preview-logging removal is not established — they should be recorded as passing-on-rerun, not causally fixed. (The implementation summary above has been read with this correction; the tests are green regardless.)
 
 ### Verification (post-fix)
 

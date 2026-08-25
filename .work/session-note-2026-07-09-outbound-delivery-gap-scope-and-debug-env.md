@@ -49,7 +49,7 @@ Code-confirmed mechanism:
   rehydrates presence + rooms, not `session_sync`. So dropped turns need manual
   refresh to recover.
 
-### 2. Scoped `feature-outbound-buffer-on-peer-offline` (commit d17b99c)
+### 2. Scoped `feature-outbound-buffer-on-peer-offline` (commit bb08d91)
 
 - **2a (shipped to active, drafting)** — bounded per-peer outbound buffer on
   `OwnerMultiplexer`: buffer while `markPeerOffline`, flush on `markPeerOnline`.
@@ -192,7 +192,7 @@ invest implementation time expecting it to turn on the delivery log.**
   is wanted now, the unblocking move is to locate and edit the dev-VM/code-server
   outer-bwrap launch config (bounded reads only — no root-wide greps).
 - **Restarting session** for pi + model upgrades. The scoped feature + parked
-  backlog items are committed (d17b99c) and survive the restart. No in-flight
+  backlog items are committed (bb08d91) and survive the restart. No in-flight
   uncommitted edits.
 
 ## References

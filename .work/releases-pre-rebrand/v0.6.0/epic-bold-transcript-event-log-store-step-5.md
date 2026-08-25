@@ -83,7 +83,7 @@ Remove the new tests/fixtures only if the event-store implementation is also rol
 Approved (2026-06-30). Independently re-ran: **app tests 600 passed (up from 597 —
 the agent's new store/replay + sync regressions)**; pi-ext `corepack pnpm typecheck`
 clean; **full pi-ext suite 666 passed | 3 skipped | 0 failed (44 files)** — fully green
-(up from 665 — the agent's new mirrored transcript-event fixture). Commit `1b26423`
+(up from 665 — the agent's new mirrored transcript-event fixture). Commit `00c45ea`
 scoped to app + pi-ext only; collision guard held.
 
 Regression coverage verified: app event-store (append idempotence, stable order,

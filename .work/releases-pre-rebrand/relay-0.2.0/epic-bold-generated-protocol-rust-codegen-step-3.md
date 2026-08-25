@@ -114,7 +114,7 @@ the canonical regen-check from `protocol/`:
 
 Relay verification: `cargo fmt --check` clean; `cargo clippy -- -D warnings` clean;
 `cargo test` 122 passed / 0 failed (68 lib + 3 integ + 13 mesh + 9 pi_forward + 10
-presence + 19 rooms). Commit `c485dca` scoped to owned files (generated/control.rs,
+presence + 19 rooms). Commit `3b161e7` scoped to owned files (generated/control.rs,
 auth/challenge.rs, handlers/{control,peer}.rs, generator). Acceptance criteria
 verified: generated types own the auth/control serde boundary; `pi_envelope` kept
 on the cross-PC path; `MAX_CONTROL_FRAME_PEERS=64` ceiling preserved; malformed/

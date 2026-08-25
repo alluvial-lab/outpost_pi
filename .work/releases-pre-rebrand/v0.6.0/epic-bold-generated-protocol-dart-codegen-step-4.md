@@ -96,7 +96,7 @@ Revert `protocol.dart`, `codec.dart`, generated outputs, and protocol tests to t
 **Findings**: none above nit level.
 
 **Verification run (orchestrator)**:
-- `git show --stat 5e24b69` — generator (`tools/protocol-codegen/bin/protocol-codegen.mjs` + IR fixture), regenerated `protocol.g.dart`, `protocol.dart` (now facade), `control_frames.dart` (control-frame island), `protocol_test.dart` + story. No stray files.
+- `git show --stat d35ec25` — generator (`tools/protocol-codegen/bin/protocol-codegen.mjs` + IR fixture), regenerated `protocol.g.dart`, `protocol.dart` (now facade), `control_frames.dart` (control-frame island), `protocol_test.dart` + story. No stray files.
 - **REGEN + DETERMINISM CHECK**: regenerated `protocol.g.dart` from the committed generator/IR → diff vs committed = **EMPTY** (no hand-edits). Regenerated twice → two outputs identical (deterministic). Generated-contract invariant holds.
 - `protocol.dart` is now a **20-line facade** (`export 'generated/protocol.g.dart'; export 'control_frames.dart';`) — down from 1313 lines. Hand mirror retired; control frames split to `control_frames.dart` as the documented hand-maintained island.
 - `cd app && flutter test test/protocol_test.dart test/protocol_codegen/` (PUB_CACHE set) — 55/55 pass (server fixtures parse; client/control allowlist; generated union narrows + round-trips; exhaustive switch; determinism golden).

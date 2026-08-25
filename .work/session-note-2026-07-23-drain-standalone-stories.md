@@ -43,19 +43,19 @@ One worker (`openai-codex/gpt-5.6-terra`, thinking `high`; mid-complexity app/
 refactor per routing tier), 3 standalone stories, shared `app/lib/data`
 context, zero write-set conflicts:
 
-1. `gate-refactor-lifecycle-legacy-migration-source-boxes` — done (`8bb4927`).
+1. `gate-refactor-lifecycle-legacy-migration-source-boxes` — done (`ae1e9ec`).
    `try`/`finally` + `await source.close()` on every non-deletion exit in both
    legacy source loops of `transcript_storage_migration.dart`; new test
    assertion proves a malformed source is closed before abort.
-2. `gate-tests-remove-placeholder-widget-test` — done (`8214f86`). Deleted
+2. `gate-tests-remove-placeholder-widget-test` — done (`fc25a58`). Deleted
    tautological `app/test/widget_test.dart`.
 3. `gate-refactor-protocol-contract-sync-agent-message-literal` — done after
    ONE orchestrator-fault bounce: first brief wrongly excluded
    `session_history_replay.dart` from write scope; worker correctly recorded a
    discovery rather than forcing scope. Re-dispatched with corrected scope →
-   `a84cd8f`: single `agentMessageWireType` const beside the replay identity
+   `a35d2cc`: single `agentMessageWireType` const beside the replay identity
    helpers, 4 call sites substituted, drift-guard test binds it to generated
-   `AgentMessage.type`. (Bounce record commit `a7fca9a`.)
+   `AgentMessage.type`. (Bounce record commit `d8454b9`.)
 
 ## Verification
 
@@ -68,7 +68,7 @@ pairing-endpoint environment (pre-existing, documented across prior sessions).
 `standard` weight (default, no override). All three are standalone stories →
 bounded inline review by orchestrator, no independent reviewer (per policy).
 Diffs inspected, approved, transitioned `review → done` with one commit each
-(`6b98e12`, `177aeb2`, `b08b6c1`).
+(`0b3937a`, `8b5923d`, `6de6bd9`).
 
 ## Remaining executable next steps (priority order)
 

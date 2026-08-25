@@ -271,7 +271,7 @@ return no matches; generated files are not edited regardless of that scan.
 
 Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
 orchestrator). One balanced pass over the integrated feature diff
-(`c346e28..HEAD -- relay/src/`).
+(`376fa38..HEAD -- relay/src/`).
 
 ### Findings (adjudicated)
 - **Important — duplicated summary + incomplete `# Errors` in `parse_hello`** (`relay/src/auth/challenge.rs`): the doc comment had two summary lines (a leftover from translation) and the `# Errors` section omitted `AuthError::Json`, which propagates from `parse_hello_bootstrap`. Collapsed to one summary and added the `AuthError::Json` (malformed JSON) variant. **Fixed.**

@@ -100,5 +100,5 @@ from index.ts (grep count 0) — now projection-owned reducer-backed snapshot.
 Working:false convergence preserved for all 7 required paths (success, provider
 error, cancel/abort, compaction, session replacement/shutdown, relay reconnect,
 late-attach recovery) — 33 convergence-related extension tests pass (2× consistent).
-Commit `fbed734` scoped to pi-ext only (sdk_session_projection.ts +110 +
+Commit `da852a0` scoped to pi-ext only (sdk_session_projection.ts +110 +
 index.ts -62); collision guard held.

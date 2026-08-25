@@ -2,7 +2,7 @@
 
 **SUPERSEDED 2026-07-25: v0.3.0 SHIPPED.** Drain completed (29/29), gates
 re-run on the drain delta (9 new bound blockers, all fixed same-day),
-UAT passed (operator ack), tag `v0.3.0` cut on `fedf37f` (operator pushes),
+UAT passed (operator ack), tag `v0.3.0` cut on `9f92762` (operator pushes),
 release collapsed retain-bodies to `.work/releases/v0.3.0/`. Remaining:
 component releases `app-v0.3.0` (3 active + 2 stubs), `cockpit-v0.3.0`
 (4 active + 1 stub — includes the pair-code seam fix), `relay-0.3.0`
@@ -171,7 +171,7 @@ merge-absorbed, 3 duplicates — 2 fold targets shipped in extension-0.2.0,
 ---
 
 **Update 2026-07-27 (component releases COMPLETE):** app-v0.3.0 (tag
-46a888c) and cockpit-v0.3.0 (tag 530cf7b) shipped, collapsed
+b0ae447) and cockpit-v0.3.0 (tag 62d2b9f) shipped, collapsed
 retain-bodies. relay-0.3.0 SKIPPED as empty: of the 5 expected stubs, 4
 are stamped retired husks (gather skips) and 1 was already bound to
 v0.1.0; no relay code changed this cycle. 3 unfinished cruft items moved

@@ -44,7 +44,7 @@ armed for next repro."**
   `/reload` fixes it.** This is the bug the operator hit.
 
 - **Transport room-mismatch** (`story-mobile-send-timeout-relay-room-main-
-  mismatch`, `stage: drafting`, fix `80b04e5` in source — **now deployed** in
+  mismatch`, `stage: drafting`, fix `ca555be` in source — **now deployed** in
   the fresh APK): app's `WsTransport._activeRoom` stuck on the wrong relay
   room. `room-mismatch` drops in the ring log. **Recovery signature: `/reload`
   does NOT fix it** (app-side state). Distinct from stale-ctx.
@@ -100,7 +100,7 @@ mesh routing, NOT the phone→Pi delivery path. This story closed that gap.
 Sideloaded via `adb push` + `adb shell pm install` (the `-O` flag and direct
 `adb install` failed with `splice EINVAL`; `pm install` of the pushed file
 worked). Deploys: `delivery_pending` tolerance + transport room-main fix
-(`80b04e5`) + phone ring log.
+(`ca555be`) + phone ring log.
 
 ## Current live state (for resuming)
 
@@ -155,15 +155,15 @@ extension log will show `session_lifecycle { reason }` precursor +
 - `story-fix-stale-ctx-wrapactionctx-crash` — `stage: review`
 - `story-mobile-chat-blank-on-pair-after-pre-pair-work` — `stage: review`
 
-## Key commits (HEAD = `70031e4`)
+## Key commits (HEAD = `50a251e`)
 
-- `70031e4` observability: bound all three logs against unbounded disk growth
-- `835fce4` work: advance feature-cross-side-observability to done
-- `dece98f` work: advance story-extension-delivery-path-ring-log to done
-- `25968d6` implement: address review findings for story-extension-delivery-path-ring-log
-- `1a36fbd` implement: story-extension-delivery-path-ring-log (missing third leg)
-- `d9d5b03` work: scope story-extension-delivery-path-ring-log (missing third leg)
-- `d46f435` relay: deploy file-sink observability (0.2.2) + advance story to done
+- `50a251e` observability: bound all three logs against unbounded disk growth
+- `e247db8` work: advance feature-cross-side-observability to done
+- `855cd74` work: advance story-extension-delivery-path-ring-log to done
+- `5338ec0` implement: address review findings for story-extension-delivery-path-ring-log
+- `3b21804` implement: story-extension-delivery-path-ring-log (missing third leg)
+- `2dae3fa` work: scope story-extension-delivery-path-ring-log (missing third leg)
+- `9908ff0` relay: deploy file-sink observability (0.2.2) + advance story to done
 
 ## Agent-reflection note (for honesty)
 

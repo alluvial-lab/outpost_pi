@@ -10,7 +10,7 @@ gate_origin: null
 created: 2026-07-06
 updated: 2026-07-06
 archived_atop: v0.6.0
-git_ref: e5f6bce
+git_ref: 9080cd5
 ---
 
 # Log `room_meta_update` accept/drop (with cross-room flag) at INFO

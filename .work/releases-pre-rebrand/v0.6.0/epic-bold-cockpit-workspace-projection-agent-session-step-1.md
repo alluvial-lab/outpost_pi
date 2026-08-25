@@ -134,7 +134,7 @@ Delete `agent_session_projection.dart` and revert `AgentSession` / `RpcDataMappe
 
 Approved (2026-06-30). Independently re-ran: whole-cockpit `flutter analyze` →
 No issues found; full `flutter test` → 210/210 (incl. 7 new projection tests).
-Commit `0e920a0` scoped to cockpit only (new agent_session_projection.dart +
+Commit `c435bcb` scoped to cockpit only (new agent_session_projection.dart +
 agent_session compat getters + 2 test files + story .md); no cross-subproject
 collision. Ports & adapters verified: `agent_session_projection.dart` imports
 ONLY domain entities (no UI/Hive/process/Flutter widget APIs). Reused (not

@@ -114,7 +114,7 @@ Restore `AgentStatus.streaming`, `_pendingSend`, and `_turnStartedAt` as direct 
 ## Review
 
 Approved (2026-06-30). Independently re-ran: whole-cockpit `flutter analyze` →
-No issues found; whole-cockpit `flutter test` → 203/203. Commit `374b430` scoped
+No issues found; whole-cockpit `flutter test` → 203/203. Commit `386c3a6` scoped
 to cockpit only (no cross-subproject collision). The UI-file expansion
 (agent_composer/agent_edit_dialog/pane_view) is a legitimate projection-consumer
 migration, documented. Core invariant verified: `AgentTurnProjection` + single

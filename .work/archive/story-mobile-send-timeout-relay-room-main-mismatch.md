@@ -67,7 +67,7 @@ found:
 
 ### What this means for the fix
 
-- The reorder fix (`80b04e5`) is still defensible on its own merits
+- The reorder fix (`ca555be`) is still defensible on its own merits
   (`_activeRoom` defaulting to `'main'` is a real latent bug for the
   inbound demux and for correctly targeting the Pi's cwd-room), but it is
   **not** the confirmed cause of this send_timeout — the relay logs do not
@@ -93,7 +93,7 @@ transport stuck at `'main'` sends envelopes the relay can't route.
 
 ### Why the fix didn't help this repro
 
-The reorder fix (`80b04e5`) constructs `WsTransport` with
+The reorder fix (`ca555be`) constructs `WsTransport` with
 `peer.roomId ?? 'main'` at `connect()` time. BUT:
 
 1. **The fix is not deployed.** These are source commits; the phone is
@@ -126,7 +126,7 @@ injected (session not bound). The operator sees both.
 
 1. **Do NOT assume the reorder fix resolves this send_timeout.** The relay
    logs do not show the phone→Pi `room=main` drops the original story
-   claimed. Deploying `80b04e5` is still worthwhile (latent inbound-demux
+   claimed. Deploying `ca555be` is still worthwhile (latent inbound-demux
    fix) but must not be credited with fixing this bug without a live repro
    confirming the symptom is gone.
 2. **Re-confirm the failure path** before fixing: capture the extension's
@@ -151,7 +151,7 @@ injected (session not bound). The operator sees both.
       proves `WsTransport._activeRoom` was stuck at `'main'` in production.
       `send()` stamps `room: _activeRoom` (`ws_transport.dart:312`) — the
       SAME field the inbound demux compares against (`ws_transport.dart:388`).
-      So the outbound send was routing to `'main'` too. The fix `80b04e5`
+      So the outbound send was routing to `'main'` too. The fix `ca555be`
       (construct `WsTransport` with the correct room from frame 1) covers
       BOTH directions. The "zero phone-originated relay drops" for the
       14:42 repro is consistent with that specific instance being
@@ -160,7 +160,7 @@ injected (session not bound). The operator sees both.
       bug is the dominant, confirmed, high-frequency cause the fix
       addresses. If `send_timeout` persists after deploy, investigate
       half-open TCP next.
-- [x] **FIX IN SOURCE** (`80b04e5`, `stage: review`): constructs
+- [x] **FIX IN SOURCE** (`ca555be`, `stage: review`): constructs
       `WsTransport` with `activeRoom: peer.roomId ?? 'main'` at connect
       (`dependencies.dart:276,321`), eliminating the default-`'main'`
       race for both send and inbound demux.

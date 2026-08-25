@@ -105,7 +105,7 @@ Remove the new parity tests and handoff note changes. Runtime generated protocol
 Fast-lane approved (2026-06-30). Independently re-ran `flutter test
 test/protocol_codegen/` → 15/15 pass; `flutter analyze` clean in owned files
 (only the known unrelated `axisAlignment` info at input_bar.dart:802). Commit
-`d7443fe` scoped to parity tests + feature/story .md — no collision with the
+`c6ffe47` scoped to parity tests + feature/story .md — no collision with the
 parallel app-attribution-hydration-step-4 (transcript_event.dart left
 correctly unstaged). Key acceptance criterion — the feasibility verdict (Dart
 custom generator feasible, no hand-maintained mirror fallback) — documented in

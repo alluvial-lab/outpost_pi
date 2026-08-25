@@ -92,5 +92,5 @@ command strings before dispatch; `CTRL_PREFIX` kept as explicit compat decoder; 
 structured + legacy frames route through the same `_dispatchControlFrame`/`_handleControl`
 path. Tests prove legacy + structured control input dispatches relay-state, structured
 rename parses to the same command path, unknown/malformed JSON falls through as normal
-input. Invariant listener-count tests untouched and passing. Commit `7a94ca1` scoped to
+input. Invariant listener-count tests untouched and passing. Commit `dfb49d8` scoped to
 pi-ext only (extension.test.ts +46); collision guard held.

@@ -116,15 +116,15 @@ assertion. The dead-branch discovery (Unit 4) and the `runtimeType`-vs-
 ## Commit graph (this session)
 
 ```
-8aea760 review: story-add-transport-frame-observability → done (APPROVE, fast-lane)
-c3885c4 implement(app): story-add-transport-frame-observability — peer-channel frame-drop observability (Unit 6)
-65ebd95 spike(pi-extension): Unit 7 ExtensionRunner headless feasibility — PARTIALLY FEASIBLE
-910cc85 scope: story-add-transport-frame-observability collapsed to peer-channel delta (Unit 6)
-6b5998e review: story-app-debug-toggle-ui + story-app-capture-routing → done (fast-lane)
-25ee0ef review: story-app-debug-toggle-ui + story-app-capture-routing (ACCEPTED), stage→review
-457dc04 implement(app): story-app-capture-routing — emit diagnostic events at capture surface (Unit 4)
-6a9a64d implement(app): story-app-debug-toggle-ui — debug toggle + export/clear UI (Unit 3)
-8b8a095 (prior session note)
+d566f30 review: story-add-transport-frame-observability → done (APPROVE, fast-lane)
+f838058 implement(app): story-add-transport-frame-observability — peer-channel frame-drop observability (Unit 6)
+4b8e0d4 spike(pi-extension): Unit 7 ExtensionRunner headless feasibility — PARTIALLY FEASIBLE
+2514b6c scope: story-add-transport-frame-observability collapsed to peer-channel delta (Unit 6)
+b428c5f review: story-app-debug-toggle-ui + story-app-capture-routing → done (fast-lane)
+b4c5a86 review: story-app-debug-toggle-ui + story-app-capture-routing (ACCEPTED), stage→review
+d7bc84a implement(app): story-app-capture-routing — emit diagnostic events at capture surface (Unit 4)
+8a65bcc implement(app): story-app-debug-toggle-ui — debug toggle + export/clear UI (Unit 3)
+0020dd3 (prior session note)
 ```
 
 Working tree clean except the in-flight Unit 7 harness edits (when the subagent

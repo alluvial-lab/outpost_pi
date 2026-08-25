@@ -83,7 +83,7 @@ Fast-lane approved (2026-06-30). Independently re-ran: app
 `flutter test test/domain/transcript/` → 13/13 (incl. 2 new shared-fixture
 convergence tests); cockpit `flutter test test/data/rpc_data_mapper_transcript_projection_test.dart`
 → 5/5 (#5's 3 original tests preserved + #6's 2 new shared-fixture tests — clean
-merge, no clobbering). Commit `43c268d` scoped to a new shared fixture
+merge, no clobbering). Commit `50dcb69` scoped to a new shared fixture
 (`transcript_projection_fixtures.json`, content-only — verified no secrets/paths)
 + app/cockpit test files + story .md; pi-ext deferral held (did NOT touch
 extension.test.ts / mesh_node.test.ts, owned by the concurrent late-attach

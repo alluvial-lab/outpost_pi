@@ -117,7 +117,7 @@ re-ran: regen `--check` pass; determinism double-run byte-identical; committed
 generated files match generator output (no hand-edits). Relay `cargo fmt --check`
 clean; `cargo clippy -- -D warnings` clean; `cargo test` 131 passed / 0 failed
 (76 lib + 3 integ + 13 mesh + 8 pi_forward + 10 presence + 2 protocol_parity +
-19 rooms). Commit `f70ad5b` scoped to generated cross_pc.rs/mesh.rs + pi_forward.rs
+19 rooms). Commit `e5dd121` scoped to generated cross_pc.rs/mesh.rs + pi_forward.rs
 + mesh/types.rs + registry.rs + generator + parity test/fixtures + story .md.
 
 Opacity preserved (the story's key risk): `AgentEnvelope.body` is

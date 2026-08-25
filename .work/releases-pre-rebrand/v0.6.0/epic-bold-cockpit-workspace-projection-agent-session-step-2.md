@@ -121,7 +121,7 @@ Restore `TranscriptMessage` / `TmTool` mutation and the direct `_entries` / `_op
 
 Approved (2026-06-30). Independently re-ran: whole-cockpit `flutter analyze` →
 No issues found; full `flutter test` → 216/216 (incl. 6 new tests). Commit
-`677d999` scoped to cockpit only (agent_session + rpc_data_mapper + the
+`c06b0b8` scoped to cockpit only (agent_session + rpc_data_mapper + the
 rpc_process_gateway contract + pi_rpc_process so getMessages returns events +
 tests + story .md); no cross-subproject collision. The two extra adapter/
 contract files are legitimate (getMessages now returns transcript events).

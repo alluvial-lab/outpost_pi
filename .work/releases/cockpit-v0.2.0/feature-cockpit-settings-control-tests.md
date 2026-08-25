@@ -358,7 +358,7 @@ One balanced fresh-context cross-model pass (`openai-codex/gpt-5.6-sol` vs host 
 - Preferences: real Appearance/Notification panels drive `SettingsController` + recording `SettingsStore`; assertions cover trimmed persistence + controller state (not importability/trivia).
 - Control matrix: all four relay actions have literal independent wire expectations + enum-completeness enforcement (wrong mapping or uncovered new action fails).
 - Daemon creation: drives the real dialog + validation through `FilePicker.platform`, verifies the exact trimmed ViewModel call once; ViewModel mocked only at the intended panel boundary.
-- Scope: commits e33e521, ae9703a, 7d71ad5 changed only test + `.work` files — no `cockpit/lib/` production changes.
+- Scope: commits c9504ec, 730d273, 5e8b4d5 changed only test + `.work` files — no `cockpit/lib/` production changes.
 - No test weakening, tautological assertions, stale fixtures, or hidden production fixes.
 - Count progression coherent: 253 → 255 (preferences +2) → 256 (serialization +1) → 257 (daemon +1). 256 was the baseline before the daemon story, not before the whole feature (matches the implementation record).
 

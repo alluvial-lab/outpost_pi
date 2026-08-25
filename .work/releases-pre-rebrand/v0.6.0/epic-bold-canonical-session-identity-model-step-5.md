@@ -80,7 +80,7 @@ Keep old boxes untouched; restore app reads/writes to `(epk, roomId)` keys and r
 
 Approved (2026-06-30) with deeper verification — HIGH-risk persistence re-key.
 Independently re-ran: full app `flutter test` → 596/596; `flutter analyze` clean
-in owned files (only known `axisAlignment` info). Commit `fcb4baf` scoped to the
+in owned files (only known `axisAlignment` info). Commit `beeee0d` scoped to the
 re-key layer (boxes.dart, remote_session_ref.dart, SessionSelection/routing,
 UI consumers, tests); collision guard held — did NOT rewrite sync_service
 reducer / connection_manager / reachability_adapter (aligned with existing

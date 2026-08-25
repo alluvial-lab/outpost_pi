@@ -107,7 +107,7 @@ pattern instead of chasing it. The orchestrator's independent vitest run shows
 regardless, the targeted signals were all green and the agent correctly did not
 attribute the failures to its own change.)
 
-Commit `7394dd4` scoped to pi-ext only (testing.ts + owner_multiplexer.test.ts +
+Commit `8961b73` scoped to pi-ext only (testing.ts + owner_multiplexer.test.ts +
 index.ts + story .md); collision guard held. Acceptance criteria verified:
 `OwnerMultiplexerTestHarness` + `ownerHarness` aliases delegate the 4 test exports
 (existing imports still work); 5 focused unit tests (fake channels, no full

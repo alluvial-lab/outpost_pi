@@ -27,7 +27,7 @@ down cleanly under load — draining in-flight delivery, releasing rooms and
 locks deterministically — and any message the owner sends across the
 boundary must be resend-recoverable, never lost. Evidence anchors: the
 2026-08-23 restart-wrapper incident (marker + /quit with no wrapper) and
-the swallow-fix lineage (16da0f4d) both touch this boundary.
+the swallow-fix lineage (6d1cbad6) both touch this boundary.
 
 ## Source items (absorbed — full bodies in git history + archive)
 

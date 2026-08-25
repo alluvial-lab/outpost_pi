@@ -8,7 +8,7 @@ depends_on: [story-guard-stale-session-history-after-new]
 release_binding: app-v1.1.1
 gate_origin: null
 archived_atop: unbound
-archived_ref: 3dba904
+archived_ref: 26a6831
 created: 2026-06-28
 updated: 2026-06-28
 ---

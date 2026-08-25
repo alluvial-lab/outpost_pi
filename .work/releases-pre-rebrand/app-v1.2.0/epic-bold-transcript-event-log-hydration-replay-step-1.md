@@ -90,7 +90,7 @@ Remove the adapter/tests. Existing `_convertHistory` row conversion remains unti
 Approved (2026-06-30). Independently re-ran: **app tests 608 passed (up from 600
 — the agent's 8 new replay tests)**; `flutter analyze` clean except the known-unrelated
 `axisAlignment` deprecation at `lib/ui/chat/widgets/input_bar.dart:802`. Commit
-`0e8aa04` scoped to app only (session_history_replay.dart +148 + sync_service +
+`7654e8e` scoped to app only (session_history_replay.dart +148 + sync_service +
 transcript_event + tests); collision guard held (pi-ext agent was disjoint).
 
 Adapter verified: pure data/sync→domain adapter (0 Hive/UI/ViewModel imports —

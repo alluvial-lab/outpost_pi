@@ -122,7 +122,7 @@ Restore the `serde_json::Value` signature on `handle_pi_envelope` and the raw `f
 Approved (2026-06-30). Independently re-ran: relay `cargo fmt --check` clean;
 `cargo clippy -- -D warnings` clean; `cargo test` 144 passed / 0 failed (89 lib +
 3 integ + 13 mesh + 8 pi_forward + 10 presence + 2 parity + 19 rooms). Commit
-`0589f70` scoped to connection_actor.rs + pi_forward.rs + story .md; relay-only,
+`83e7122` scoped to connection_actor.rs + pi_forward.rs + story .md; relay-only,
 no generated files touched (regen N/A).
 
 Typed dispatch verified: `handle_pi_envelope` consumes generated `PiEnvelopeFrame`

@@ -13,7 +13,7 @@ updated: 2026-08-16
 
 # Queue Pi-to-Pi mesh messages between agent runs
 
-Upstream `56a73d9d` (queue mesh messages while busy): when a mesh message
+Upstream `2473ef2f` (queue mesh messages while busy): when a mesh message
 arrives mid-run, ours drops it if `_pi` is absent and otherwise fires
 `triggerTurn:true` immediately (`pi-extension/src/index.ts:2148-2178`) —
 mid-turn delivery can wedge or lose the message. The owner-channel

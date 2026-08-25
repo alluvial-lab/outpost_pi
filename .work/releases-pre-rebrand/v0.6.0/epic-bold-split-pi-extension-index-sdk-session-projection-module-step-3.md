@@ -112,6 +112,6 @@ action API or return explicit sender-scoped unavailable errors (never stale `_pi
 session_new recaptures command/event/message/action API + remote session id through
 one replacement binding path; `_pi` deliberately dropped as stale fallback;
 session_shutdown teardown — app user_message after shutdown does not call stale pi.
-Existing listener-count invariant tests untouched and passing. Commit `23277c9`
+Existing listener-count invariant tests untouched and passing. Commit `e057ab2`
 scoped to pi-ext only (index.ts + extension.test.ts + sdk_session_projection guards);
 collision guard held.

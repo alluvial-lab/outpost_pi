@@ -122,11 +122,11 @@ single-decode typed fanout. The local `OuterEnvelope` mirror in
 
 Commits:
 
-- `040746e` — generated strict/compat outer predicates, cross-PC predicate,
+- `8a28ef1` — generated strict/compat outer predicates, cross-PC predicate,
   array cardinality validation, regenerated TypeScript, and codegen tests.
-- `7075b07` — live extension consumption, handwritten guard/mirror removal,
+- `c476bb9` — live extension consumption, handwritten guard/mirror removal,
   and ingress regressions.
-- `677369f` — current-state protocol, architecture, and stack references.
+- `671fb70` — current-state protocol, architecture, and stack references.
 
 ### Verification
 

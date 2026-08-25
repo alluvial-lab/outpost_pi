@@ -120,7 +120,7 @@ failures, 672 passed (count held — generated registry/validator refinement, no
 runtime tests). This 66-failure spike is a reproducible agent-environment artifact,
 NOT a real regression — the orchestrator's clean re-run is the reliable gate.
 
-Commit `1a4c69a` scoped to tools/ + pi-ext only (generator `index.test.ts` +161 +
+Commit `f80d7f6` scoped to tools/ + pi-ext only (generator `index.test.ts` +161 +
 generated `protocol.generated.ts` +269); collision guard held. Runtime imports
 unchanged. Generated registries + compatibility validators emitted via the generator.
 Generator tests 5/5 passed.

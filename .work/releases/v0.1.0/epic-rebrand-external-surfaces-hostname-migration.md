@@ -322,7 +322,7 @@ mockup fallback is not applicable.
 
 Reviewer: `openai-codex/gpt-5.6-sol` (different model class from the umans
 orchestrator). One balanced pass over the integrated feature diff
-(`c346e28..HEAD`), focused on hostname/URL migration + branding SVG redraw.
+(`376fa38..HEAD`), focused on hostname/URL migration + branding SVG redraw.
 
 ### Findings
 - None. Hostname migration is coherent: owned URLs use `outpost-pi.kevoun.com`,
