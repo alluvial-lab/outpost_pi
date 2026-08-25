@@ -656,6 +656,69 @@ void main() {
     );
 
     test(
+      'real socket loser reaches EOF before winner publishes online',
+      () async {
+        final ordering = <String>[];
+        final relay = await _FakeAuthRelay.start(
+          autoCompleteFromAuth: 2,
+          ordering: ordering,
+        );
+        addTearDown(relay.close);
+        final ownerKey = await Ed25519().newKeyPair();
+        final initial = _ControllableChannel();
+        var calls = 0;
+        final cm = ConnectionManager(
+          factory: (_, token) async {
+            calls++;
+            if (calls == 1) return initial;
+            final transport = await WsTransport.connect(
+              relayUrl: relay.url,
+              peerPubkey: 'cGVlcg==',
+              ed25519Key: ownerKey,
+              deviceId: 'hedge-real-socket-order',
+              cancellation: token,
+            );
+            return PlainPeerChannel(transport: transport);
+          },
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+          reconnectFallbackDelay: const Duration(milliseconds: 20),
+        );
+        addTearDown(cm.dispose);
+        await cm.connectTo(_fakePeer());
+        ordering.clear();
+        final statusSub = cm.statusStream.listen((status) {
+          if (status is StatusOnline) ordering.add('online');
+        });
+        addTearDown(statusSub.cancel);
+        await initial.closeStream();
+        await relay.waitForAuthCount(2).timeout(const Duration(seconds: 2));
+        expect(cm.status, isA<StatusConnecting>());
+        expect(ordering, containsAllInOrder(['auth:1', 'auth:2']));
+
+        await cm.statusStream
+            .where((status) => status is StatusOnline)
+            .first
+            .timeout(const Duration(seconds: 2));
+        await relay.waitForSocketClose(1).timeout(const Duration(seconds: 2));
+        expect(ordering.indexOf('close:1'), greaterThan(ordering.indexOf('auth:1')));
+        expect(ordering.indexOf('close:1'), lessThan(ordering.indexOf('auth:2')));
+        expect(ordering.indexOf('auth:2'), lessThan(ordering.indexOf('online')));
+        expect(cm.status, isA<StatusOnline>());
+
+        // Releasing the cancelled primary handler cannot authenticate or
+        // publish a second winner after the real socket has reached EOF.
+        relay.completeAuth(1);
+        await Future<void>.delayed(Duration.zero);
+        expect(relay.authCount, 2);
+        expect(
+          ordering.where((event) => event == 'online'),
+          hasLength(1),
+        );
+      },
+    );
+
+    test(
       'fallback adoption survives primary cancellation cleanup failure',
       () async {
         final initial = _ControllableChannel();
@@ -1577,20 +1640,25 @@ class _ControllableChannel
 }
 
 class _FakeAuthRelay {
-  _FakeAuthRelay._(this._server, this._autoCompleteFromAuth);
+  _FakeAuthRelay._(this._server, this._autoCompleteFromAuth, this._ordering);
 
   final HttpServer _server;
   final int? _autoCompleteFromAuth;
+  final List<String>? _ordering;
   final List<WebSocket> _sockets = [];
   final Map<int, Completer<void>> _authReleases = {};
+  final Map<int, Completer<void>> _socketCloses = {};
   final StreamController<int> _authCounts = StreamController<int>.broadcast();
   int authCount = 0;
 
   String get url => 'ws://${_server.address.host}:${_server.port}';
 
-  static Future<_FakeAuthRelay> start({int? autoCompleteFromAuth}) async {
+  static Future<_FakeAuthRelay> start({
+    int? autoCompleteFromAuth,
+    List<String>? ordering,
+  }) async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final relay = _FakeAuthRelay._(server, autoCompleteFromAuth);
+    final relay = _FakeAuthRelay._(server, autoCompleteFromAuth, ordering);
     server.listen((request) async {
       final socket = await WebSocketTransformer.upgrade(request);
       relay._sockets.add(socket);
@@ -1600,29 +1668,61 @@ class _FakeAuthRelay {
   }
 
   Future<void> _serve(WebSocket socket) async {
-    final frames = StreamIterator<dynamic>(socket);
+    final done = Completer<void>();
+    var stage = 0;
+    int? authenticatedIndex;
+    late final StreamSubscription<dynamic> subscription;
+    subscription = socket.listen(
+      (raw) {
+        if (stage == 0) {
+          stage = 1;
+          socket.add(
+            jsonEncode({
+              'type': 'challenge',
+              'nonce': base64Encode(Uint8List(32)),
+            }),
+          );
+          return;
+        }
+        if (stage != 1) return;
+        final auth = jsonDecode(raw as String) as Map<String, dynamic>;
+        if (auth['type'] != 'auth') return;
+        stage = 2;
+        final index = ++authCount;
+        authenticatedIndex = index;
+        _ordering?.add('auth:$index');
+        _authCounts.add(authCount);
+        _socketCloses.putIfAbsent(index, Completer<void>.new);
+        final release = _authReleases.putIfAbsent(index, Completer<void>.new);
+        if (_autoCompleteFromAuth != null && index >= _autoCompleteFromAuth) {
+          release.complete();
+        }
+        unawaited(
+          release.future.then((_) {
+            if (socket.readyState == WebSocket.open) {
+              socket.add(jsonEncode({'type': 'presence', 'states': <Object>[]}));
+            }
+          }),
+        );
+      },
+      onError: (_) {
+        if (!done.isCompleted) done.complete();
+      },
+      onDone: () {
+        final index = authenticatedIndex;
+        if (index != null) {
+          _ordering?.add('close:$index');
+          final closed = _socketCloses.putIfAbsent(index, Completer<void>.new);
+          if (!closed.isCompleted) closed.complete();
+        }
+        if (!done.isCompleted) done.complete();
+      },
+      cancelOnError: true,
+    );
     try {
-      if (!await frames.moveNext()) return;
-      socket.add(
-        jsonEncode({'type': 'challenge', 'nonce': base64Encode(Uint8List(32))}),
-      );
-      if (!await frames.moveNext()) return;
-      final auth = jsonDecode(frames.current as String) as Map<String, dynamic>;
-      if (auth['type'] != 'auth') return;
-      final index = ++authCount;
-      _authCounts.add(authCount);
-      final release = _authReleases.putIfAbsent(index, Completer<void>.new);
-      if (_autoCompleteFromAuth != null && index >= _autoCompleteFromAuth) {
-        release.complete();
-      }
-      await release.future;
-      if (socket.readyState != WebSocket.open) return;
-      socket.add(jsonEncode({'type': 'presence', 'states': <Object>[]}));
-      await socket.done;
-    } on Object {
-      // Socket cancellation is the behavior under test for losing attempts.
+      await done.future;
     } finally {
-      await frames.cancel();
+      await subscription.cancel();
     }
   }
 
@@ -1635,6 +1735,9 @@ class _FakeAuthRelay {
     final release = _authReleases.putIfAbsent(index, Completer<void>.new);
     if (!release.isCompleted) release.complete();
   }
+
+  Future<void> waitForSocketClose(int index) =>
+      _socketCloses.putIfAbsent(index, Completer<void>.new).future;
 
   Future<void> close() async {
     for (final release in _authReleases.values) {
