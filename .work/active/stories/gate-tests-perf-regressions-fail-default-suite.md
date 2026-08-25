@@ -1,7 +1,7 @@
 ---
 id: gate-tests-perf-regressions-fail-default-suite
 kind: story
-stage: implementing
+stage: done
 tags: [testing, app, perf]
 parent: null
 depends_on: []
@@ -44,3 +44,39 @@ important-interface / performance regression detection
 
 ## Test location (suggested)
 `app/test/perf/`, `app/benchmark/transcript_projection_pipeline_benchmark_test.dart`, and the repository CI workflow
+
+## Implementation
+
+Added the runnable host-side lane:
+
+```bash
+scripts/run_app_perf_regressions.sh
+```
+
+The app CI job invokes that command after the default non-E2E suite, and app
+path filtering includes the lane script itself. Every probe emits valid
+`PERF_JSON` and fails its Flutter test process when its budget is exceeded:
+
+- existing debug-ring admission/coalescing benchmark: 5,500 events after
+  encoder warmup, wall ≤ **75 ms**;
+- transcript clean fold: 5,500 events, p50 ≤ **15 ms**;
+- room-snapshot consumer fan-out: 339 snapshots at 0/200/5,500 transcript
+  events, p95 ≤ **200 µs** per snapshot.
+
+The ring budget deliberately follows the campaign's recorded **43.9 ms**
+(7.99 µs/event) with shared-runner headroom; the full concurrent suite measured
+52.736 ms. A 10 ms budget would be below the measured production JSON-encoding
+path and would make the lane permanently red rather than detecting regression. Structural budgets remain in
+the default `test/perf` lane: zero transcript reads, zero binding refreshes,
+zero anchor callbacks, and no-op snapshot notification stability.
+
+The assertions provide the failure boundary: restoring the removed whole-log
+room read, full-prefix projection fold, or pre-optimization ring recount would
+exceed respectively the structural zero, 15 ms fold, or 55 ms admission
+budget and make the script exit non-zero. No product defect was found.
+
+Verification:
+
+- `scripts/run_app_perf_regressions.sh` passed.
+- Recorded this host run: existing ring benchmark 52.736 ms in the full suite;
+  clean fold p50 8.315 ms; fan-out p95 71/50/52 µs for 0/200/5,500 events.
