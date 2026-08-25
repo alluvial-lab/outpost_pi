@@ -773,10 +773,6 @@ function _withCurrentSession<T extends object>(msg: T): T & { session_id: string
   return _sdkSessionProjection.currentSessionMessage(msg);
 }
 
-function _appendTranscriptEvent(event: TranscriptEvent): void {
-  _sdkSessionProjection.appendTranscriptEvent(event);
-}
-
 function _recordDurableTranscriptEvent(event: TranscriptEvent): TranscriptRecordResult {
   return _sdkSessionProjection.recordDurableTranscriptEvent(event);
 }
@@ -798,18 +794,6 @@ function _rememberDeliveredUserEvent(
   eventId: string,
 ): () => void {
   return _sdkSessionProjection.rememberDeliveredUserEvent(text, images, clientMessageId, eventId);
-}
-
-function _appendUserConfirmedTranscriptEvent(input: {
-  sessionId: string;
-  ts: number;
-  clientMessageId: string;
-  text: string;
-  images?: Extract<TranscriptEvent, { kind: "user_confirmed" }>["images"];
-  streamingBehavior?: Extract<TranscriptEvent, { kind: "user_confirmed" }>["streamingBehavior"];
-  eventId?: string;
-}): void {
-  _sdkSessionProjection.appendUserConfirmedTranscriptEvent(input);
 }
 
 function _appendLegacySdkMessageToTranscript(message: LegacyAgentMessage): void {
