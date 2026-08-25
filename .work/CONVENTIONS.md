@@ -121,6 +121,16 @@ split items across component releases.
 
 ### Release config
 
+- `release_slicing: two-lane (fix/feature)` — operator policy (2026-08-25):
+  work items stay unbound; each `release-deploy` binds selectively.
+  Fix lane (bugs/regressions in shipped surfaces) → patch cuts `v0.8.x`,
+  cut whenever needed. Feature lane (parked queue) → minor cuts `v0.9.0+`,
+  cut when a coherent batch is done. App `+versionCode` is a dev counter
+  that increments freely on trunk; the release tag is chosen at cut time
+  from the bind set. Every cut runs the rc flow (`v<ver>-rc.<n>` draft
+  prerelease → operator UAT → publish promotes fat + slim-arm64 artifacts);
+  publishing is always operator-gated per release, trunk is never blocked
+  on a prior release's UAT.
 - `release_mapping: tag-based` — git tags mark releases; push is external
   (operator runs from their machine). `release-deploy` creates the tag locally;
   the operator pushes.
