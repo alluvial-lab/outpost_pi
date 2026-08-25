@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-room-snapshot-benchmark-scaffolding
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -45,3 +45,10 @@ Delete the unused channel pusher methods and the read-timing/waiter machinery, i
 
 ## Risk
 None to production code or benchmark coverage. The live benchmark continues to measure the no-read invariant and its existing lifecycle/session assertions.
+
+## Implementation
+- Proof: file-local grep found both channel pushers only at their declarations and found the timing list, waiter list, and `waitForReadCount` only within their self-contained completion scaffold. `readCalls` remains asserted throughout the benchmark.
+- Removal: deleted the unused channel pushers and read-duration/waiter machinery, including stopwatch collection and waiter completion; retained `readCalls`, the defensive full traversal, and zero-read assertions.
+- Verification: `flutter test test/perf/room_snapshot_consumers_benchmark_test.dart` passed and emitted all three benchmark cases with `snapshot_reads: 0`. The release-wide app analyze and full non-E2E suite are recorded in the gate-fix completion report.
+- Execution capability: sol/high; direct-read cleanup with grep and benchmark evidence.
+- Adjacent issues parked: none.

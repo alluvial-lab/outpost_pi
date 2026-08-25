@@ -58,12 +58,6 @@ final class _FakeChannel implements IChannel, IControlLink {
 
   @override
   void sendControl(Map<String, dynamic> json) {}
-
-  void pushServer(ServerMessage msg) => _messages.add(msg);
-
-  void pushControl(ControlInbound frame) {
-    _controls.add(frame);
-  }
 }
 
 final class _BenchmarkConnectionManager extends ConnectionManager {
@@ -243,8 +237,6 @@ final class _CountingTranscriptStore implements TranscriptEventStore {
   _CountingTranscriptStore(this.events);
 
   final List<TranscriptEvent> events;
-  final List<int> readDurationsUs = <int>[];
-  final List<Completer<void>> _readWaiters = <Completer<void>>[];
   int readCalls = 0;
 
   @override
@@ -263,7 +255,6 @@ final class _CountingTranscriptStore implements TranscriptEventStore {
 
   @override
   Future<List<TranscriptEvent>> readSession(TranscriptSessionKey key) async {
-    final stopwatch = Stopwatch()..start();
     // Force a full traversal before returning, so the benchmark cannot measure
     // a list-reference shortcut in place of the diagnosed full-log scan.
     var checksum = 0;
@@ -271,29 +262,13 @@ final class _CountingTranscriptStore implements TranscriptEventStore {
       checksum ^= event.eventId.length;
     }
     if (checksum == -1) throw StateError('unreachable benchmark guard');
-    final result = List<TranscriptEvent>.of(events, growable: false);
-    stopwatch.stop();
     readCalls++;
-    readDurationsUs.add(stopwatch.elapsedMicroseconds);
-    final waiters = List<Completer<void>>.of(_readWaiters);
-    _readWaiters.clear();
-    for (final waiter in waiters) {
-      if (!waiter.isCompleted) waiter.complete();
-    }
-    return result;
+    return List<TranscriptEvent>.of(events, growable: false);
   }
 
   @override
   Stream<List<TranscriptEvent>> watchSession(TranscriptSessionKey key) =>
       const Stream<List<TranscriptEvent>>.empty();
-
-  /// Wait for the next read completion without relying on elapsed time.
-  Future<void> waitForReadCount(int expected) {
-    if (readCalls >= expected) return Future<void>.value();
-    final waiter = Completer<void>();
-    _readWaiters.add(waiter);
-    return waiter.future;
-  }
 }
 
 final class _FakeSecureStorage implements FlutterSecureStorage {
