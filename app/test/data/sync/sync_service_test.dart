@@ -1633,78 +1633,81 @@ void main() {
     },
   );
 
-  test('error diagnostics consume canonical ts and retain mixed-era fallback', () async {
-    final store = _MemoryTranscriptStore();
-    final s = await setup(transcriptEventStore: store);
-    const canonicalTs = 1_700_000_001_234;
+  test(
+    'error diagnostics consume canonical ts and retain mixed-era fallback',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      const canonicalTs = 1_700_000_001_234;
 
-    s.ch.push(
-      ErrorMessage(
-        sessionId: s.sessionId,
-        inReplyTo: 'canonical-error',
-        code: 'provider_error',
-        message: 'server timed',
-        ts: canonicalTs,
-      ),
-    );
-    await _settle();
-    s.ch.push(
-      SessionHistory(
-        sessionId: s.sessionId,
-        inReplyTo: 'sync-error-dedup',
-        sessionStartedAt: 1000,
-        events: const [
-          ErrorEvt(
-            ts: canonicalTs,
-            inReplyTo: 'canonical-error',
-            code: 'provider_error',
-            message: 'server timed',
-          ),
-        ],
-        eos: true,
-      ),
-    );
-    await _settle();
+      s.ch.push(
+        ErrorMessage(
+          sessionId: s.sessionId,
+          inReplyTo: 'canonical-error',
+          code: 'provider_error',
+          message: 'server timed',
+          ts: canonicalTs,
+        ),
+      );
+      await _settle();
+      s.ch.push(
+        SessionHistory(
+          sessionId: s.sessionId,
+          inReplyTo: 'sync-error-dedup',
+          sessionStartedAt: 1000,
+          events: const [
+            ErrorEvt(
+              ts: canonicalTs,
+              inReplyTo: 'canonical-error',
+              code: 'provider_error',
+              message: 'server timed',
+            ),
+          ],
+          eos: true,
+        ),
+      );
+      await _settle();
 
-    final fallbackBefore = DateTime.now();
-    s.ch.push(
-      ErrorMessage(
-        sessionId: s.sessionId,
-        inReplyTo: 'legacy-error',
-        code: 'internal_error',
-        message: 'legacy timed',
-      ),
-    );
-    await _settle();
-    final fallbackAfter = DateTime.now();
+      final fallbackBefore = DateTime.now();
+      s.ch.push(
+        ErrorMessage(
+          sessionId: s.sessionId,
+          inReplyTo: 'legacy-error',
+          code: 'internal_error',
+          message: 'legacy timed',
+        ),
+      );
+      await _settle();
+      final fallbackAfter = DateTime.now();
 
-    final diagnostics = store
-        .eventsFor(transcriptKeyFor(s.epk))
-        .whereType<AssistantMessageCommitted>()
-        .where((event) => event.text.startsWith('⚠'))
-        .toList();
-    final canonical = diagnostics.singleWhere(
-      (event) => event.text.contains('server timed'),
-    );
-    final legacy = diagnostics.singleWhere(
-      (event) => event.text.contains('legacy timed'),
-    );
-    expect(canonical.ts, DateTime.fromMillisecondsSinceEpoch(canonicalTs));
-    expect(
-      canonical.eventId,
-      serverReplayEventId(
-        s.sessionId,
-        'error',
-        'canonical-error:provider_error',
-        canonicalTs,
-      ),
-    );
-    expect(legacy.ts.isBefore(fallbackBefore), isFalse);
-    expect(legacy.ts.isAfter(fallbackAfter), isFalse);
+      final diagnostics = store
+          .eventsFor(transcriptKeyFor(s.epk))
+          .whereType<AssistantMessageCommitted>()
+          .where((event) => event.text.startsWith('⚠'))
+          .toList();
+      final canonical = diagnostics.singleWhere(
+        (event) => event.text.contains('server timed'),
+      );
+      final legacy = diagnostics.singleWhere(
+        (event) => event.text.contains('legacy timed'),
+      );
+      expect(canonical.ts, DateTime.fromMillisecondsSinceEpoch(canonicalTs));
+      expect(
+        canonical.eventId,
+        serverReplayEventId(
+          s.sessionId,
+          'error',
+          'canonical-error:provider_error',
+          canonicalTs,
+        ),
+      );
+      expect(legacy.ts.isBefore(fallbackBefore), isFalse);
+      expect(legacy.ts.isAfter(fallbackAfter), isFalse);
 
-    s.conn.dispose();
-    s.sync.dispose();
-  });
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
 
   test('session history hydrates durable error diagnostics', () async {
     final store = _MemoryTranscriptStore();
@@ -2273,9 +2276,9 @@ void main() {
       final narration = events
           .whereType<AssistantMessageCommitted>()
           .singleWhere((event) => event.text == 'shared text');
-      final request = events
-          .whereType<ToolRequested>()
-          .singleWhere((event) => event.toolCallId == 'tc1');
+      final request = events.whereType<ToolRequested>().singleWhere(
+        (event) => event.toolCallId == 'tc1',
+      );
       expect(narration.ts, DateTime.fromMillisecondsSinceEpoch(requestTs));
       expect(request.ts, narration.ts);
       s.conn.dispose();
