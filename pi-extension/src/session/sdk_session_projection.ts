@@ -968,8 +968,10 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   private replaceSessionCapabilities(value: unknown): void {
     this.messageApi = isAgentMessageApi(value) ? value : null;
     this.actionApi = isFreshActionApi(value) ? value : null;
+    // ReplacedSessionContext carries message actions but not appendEntry. The
+    // preceding session_start owns the fresh factory writer; only replace it
+    // when this context actually supplies a newer durable capability.
     if (isTranscriptEntryApi(value)) this.bindTranscriptPersistence(value);
-    else this.clearTranscriptPersistence();
   }
 
   private bindTranscriptPersistence(api: TranscriptEntryApi): void {

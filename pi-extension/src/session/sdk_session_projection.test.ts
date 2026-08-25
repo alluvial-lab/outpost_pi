@@ -152,6 +152,29 @@ describe("SdkSessionProjection durable transcript binding", () => {
     expect(projection.getTranscriptEventsForTest()).toEqual([]);
   });
 
+  test("withSession message rebind preserves the fresh session_start transcript writer", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    const freshFactory = makePi();
+    projection.bindApi(freshFactory);
+    projection.bindSessionContext({
+      ...makeSessionStartCtx(),
+      sessionManager: { getSessionId: () => "session-2" },
+    });
+
+    // Pi's ReplacedSessionContext carries send methods but not appendEntry.
+    // The fresh factory API remains the current session's durable writer.
+    projection.bindReplacementContext({
+      sendMessage: vi.fn(),
+      sendUserMessage: vi.fn(),
+      sessionManager: { getSessionId: () => "session-2" },
+    } as never);
+
+    const event = { ...durableUser("after-with-session"), sessionId: "session-2" };
+    expect(projection.hasTranscriptPersistence()).toBe(true);
+    expect(projection.recordDurableTranscriptEvent(event)).toEqual({ status: "recorded" });
+    expect(freshFactory.appendEntry).toHaveBeenCalledWith(TRANSCRIPT_EVENT_CUSTOM_TYPE, event);
+  });
+
   test("a stale writer is evicted and a fresh replacement records successfully", () => {
     const projection = new SdkSessionProjection({ outputs: makeOutputs() });
     const stale = makePi();
