@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-extension-plaintext-envelope-comment
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -42,3 +42,10 @@ Rewrite the header to describe the current pair flow and sealed owner-channel fr
 
 ## Risk
 None to behavior. Test fixtures may continue to construct explicit plaintext compatibility inputs where their individual cases require them; only the contradictory header prose is removed.
+
+## Implementation
+- Proof: the integration test imports and uses `sealSecureFrame`/`openSecureFrame`, while `PROTOCOL.md` defines post-pairing `outer.ct` as a versioned sealed owner-channel frame; grep found the plan-era plaintext formula only in this header.
+- Removal: rewrote the header around current startup, owner-pairing, sealed-traffic, and reconnect behavior, deleting the Noise/plan/plaintext archaeology.
+- Verification: `corepack pnpm typecheck` passed. The release-wide extension test/build suite is recorded in the gate-fix completion report.
+- Execution capability: sol/high; direct-read documentation cleanup verified against test imports and the canonical protocol.
+- Adjacent issues parked: none.
