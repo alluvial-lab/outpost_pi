@@ -271,8 +271,37 @@ def _dart_schedule(schedule: tuple[ScheduleEvent, ...]) -> str:
     return json.dumps([event.as_json() for event in schedule], separators=(",", ":"))
 
 
+def _terminal_boundary_helper_source() -> str:
+    """Return the generated net-down turn boundary used by the live soak."""
+    return r'''Future<void> _runNetDownRecoveryBoundary({
+  required Future<String?> Function() readTurnPhase,
+  required Future<void> Function() deferTurn,
+  required Future<void> Function() reconnect,
+  required Future<void> Function() sendIdentity,
+  required Future<void> Function() waitOnline,
+  required Future<void> Function() waitPending,
+  required Future<void> Function() resolveTurn,
+  required Future<void> Function() waitIdle,
+}) async {
+  final turnPhase = await readTurnPhase();
+  final staged = turnPhase != 'armed' && turnPhase != 'pending';
+  if (staged) {
+    await deferTurn();
+  }
+  final reconnecting = reconnect();
+  await sendIdentity();
+  await reconnecting;
+  await waitOnline();
+  if (!staged) return;
+  await waitPending();
+  await resolveTurn();
+  await waitIdle();
+}'''
+
+
 def _generated_test(schedule: tuple[ScheduleEvent, ...], timeout_seconds: int) -> str:
     encoded = _dart_schedule(schedule)
+    terminal_boundary_helper = _terminal_boundary_helper_source()
     return f'''@Tags(['e2e'])
 library;
 
@@ -293,6 +322,8 @@ import 'package:provider/provider.dart';
 import 'support/live_device_harness.dart';
 
 const _schedule = <Map<String, Object?>>{encoded};
+
+{terminal_boundary_helper}
 
 void main() {{
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -377,57 +408,57 @@ Future<void> _runEvent(
     }}
     if (clear is String) requestLiveFault(clear);
     String? identityPrompt;
-    var identityRecoveryTurnStaged = false;
     if (clear != null ||
         event['name'] == 'pi_restart' ||
         event['name'] == 'relay_kill') {{
       if (event['name'] == 'net_down') {{
         // Deliberately overlap reconnect and send, then require the same UI +
         // transcript-DB visibility predicate as the skipped regression test.
-        // The fake Pi SDK only emits a terminal agent lifecycle for an armed
-        // turn. Arm standalone recovery probes so their authoritative working
-        // metadata can converge false; preserve the seed's initial probe inside
-        // the already-pending staged turn.
+        // The helper arms only a standalone recovery probe. An already armed
+        // or pending seed turn remains owned by the seed's resolve_turn event.
         identityPrompt =
             'live soak identity-window probe ${{event['at_seconds']}}';
-        final turnControl = await harness.host.tryGet('/turn-control');
-        final turnPhase = turnControl?['phase'];
-        if (turnPhase != 'armed' && turnPhase != 'pending') {{
-          await harness.host.post(
+        await _runNetDownRecoveryBoundary(
+          readTurnPhase: () async {{
+            final value = await harness.host.tryGet('/turn-control');
+            return value?['phase'] as String?;
+          }},
+          deferTurn: () => harness.host.post(
             '/turn-control/defer-next',
             <String, Object>{{
               'reply':
                   'live soak identity-window reply ${{event['at_seconds']}}',
             }},
-          );
-          identityRecoveryTurnStaged = true;
-        }}
-        final reconnecting = harness.connection.connectTo(harness.peer);
-        await harness.sync.sendMessage(identityPrompt);
-        await reconnecting;
+          ),
+          reconnect: () => harness.connection.connectTo(harness.peer),
+          sendIdentity: () => harness.sync.sendMessage(identityPrompt!),
+          waitOnline: () => harness.waitOnlineAndLive(tester: tester),
+          waitPending: () async {{
+            await eventually<Map<String, dynamic>>(tester, () async {{
+              final value = await harness.host.tryGet('/turn-control');
+              return value?['phase'] == 'pending' ? value : null;
+            }}, description: 'post-recovery identity turn pending');
+          }},
+          resolveTurn: () => harness.host.post(
+            '/turn-control/resolve',
+            const <String, Object>{{}},
+          ),
+          waitIdle: () async {{
+            await eventually<bool>(
+              tester,
+              () async => harness.connection.isRoomWorking(
+                harness.peer.remoteEpk,
+                harness.connection.activeRoomId,
+              )
+                  ? null
+                  : true,
+              description: 'post-recovery identity turn settled',
+            );
+          }},
+        );
       }} else {{
         await harness.connection.connectTo(harness.peer);
-      }}
-      await harness.waitOnlineAndLive(tester: tester);
-      if (identityRecoveryTurnStaged) {{
-        await eventually<Map<String, dynamic>>(tester, () async {{
-          final value = await harness.host.tryGet('/turn-control');
-          return value?['phase'] == 'pending' ? value : null;
-        }}, description: 'post-recovery identity turn pending');
-        await harness.host.post(
-          '/turn-control/resolve',
-          const <String, Object>{{}},
-        );
-        await eventually<bool>(
-          tester,
-          () async => harness.connection.isRoomWorking(
-            harness.peer.remoteEpk,
-            harness.connection.activeRoomId,
-          )
-              ? null
-              : true,
-          description: 'post-recovery identity turn settled',
-        );
+        await harness.waitOnlineAndLive(tester: tester);
       }}
       if (identityPrompt != null &&
           !await harness.submissionIsVisible(tester, identityPrompt)) {{
