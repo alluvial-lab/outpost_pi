@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:app/domain/session_state.dart';
 import 'package:app/domain/transcript/transcript_event.dart';
@@ -652,6 +653,46 @@ void main() {
     expect(projection.turn.sessionId, session);
   });
 
+  test(
+    'result-before-request retains terminal tool outcome and request metadata',
+    () {
+      final projection = deriveTranscriptProjection(
+        sessionId: session,
+        events: [
+          ToolFinished(
+            eventId: 'server:tool:done:early',
+            sessionId: session,
+            ts: base.add(const Duration(milliseconds: 20)),
+            toolCallId: 'early',
+            result: 'completed before request replay',
+          ),
+          ToolRequested(
+            eventId: 'server:tool:req:early',
+            sessionId: session,
+            ts: base.add(const Duration(milliseconds: 10)),
+            toolCallId: 'early',
+            tool: 'Read',
+            args: const {'path': '/tmp/input'},
+          ),
+        ],
+      );
+
+      expect(projection.messages, hasLength(1));
+      expect(
+        projection.messages.single,
+        isA<ToolEvent>()
+            .having((tool) => tool.tool, 'tool', 'Read')
+            .having((tool) => tool.args, 'args', const {'path': '/tmp/input'})
+            .having((tool) => tool.status, 'status', ToolEventStatus.completed)
+            .having(
+              (tool) => tool.result,
+              'result',
+              'completed before request replay',
+            ),
+      );
+    },
+  );
+
   test('incremental reducer stays equivalent across every event variant', () {
     final events = <TranscriptEvent>[
       submitted('cli_1', 'hello'),
@@ -728,6 +769,32 @@ void main() {
     );
   });
 
+  test(
+    'seeded adversarial histories match clean folds for every partition',
+    () {
+      for (final seed in <int>[7, 42, 8080]) {
+        final events = _adversarialHistory(
+          seed: seed,
+          sessionId: session,
+          base: base,
+        );
+        final irregular = _irregularPartitions(events.length, seed);
+        for (final partitions in <List<int>>[
+          <int>[events.length],
+          List<int>.filled(events.length, 1),
+          irregular,
+        ]) {
+          _expectPartitionedProjectionEquivalent(
+            events: events,
+            partitions: partitions,
+            sessionId: session,
+            seed: seed,
+          );
+        }
+      }
+    },
+  );
+
   group('shared transcript projection fixtures', () {
     test(
       'optimistic send, authoritative echo, tool, done, and replay converge',
@@ -787,6 +854,233 @@ void main() {
       },
     );
   });
+}
+
+List<TranscriptEvent> _adversarialHistory({
+  required int seed,
+  required String sessionId,
+  required DateTime base,
+}) {
+  final offsets = List<int>.generate(24, (index) => index)
+    ..shuffle(Random(seed));
+  DateTime ts(int index) => base.add(Duration(milliseconds: offsets[index]));
+
+  final primary = UserMessageConfirmed(
+    eventId: 'server:user:primary:$seed',
+    sessionId: sessionId,
+    ts: ts(7),
+    clientMessageId: 'primary-$seed',
+    text: 'primary prompt $seed',
+  );
+  final duplicateMessageId = UserMessageConfirmed(
+    eventId: 'server:user:primary-duplicate:$seed',
+    sessionId: sessionId,
+    ts: ts(8),
+    clientMessageId: 'primary-$seed',
+    text: 'duplicate must not replace authority',
+  );
+  final resultBeforeRequest = ToolFinished(
+    eventId: 'server:tool:done:$seed',
+    sessionId: sessionId,
+    ts: ts(10),
+    toolCallId: 'tool-$seed',
+    result: 'ok-$seed',
+  );
+
+  return <TranscriptEvent>[
+    UserMessageSubmitted(
+      eventId: 'local:primary:$seed',
+      sessionId: sessionId,
+      ts: ts(15),
+      clientMessageId: 'primary-$seed',
+      text: 'primary prompt $seed',
+    ),
+    AssistantMessageCommitted(
+      eventId: 'server:assistant:early:$seed',
+      sessionId: sessionId,
+      ts: ts(1),
+      messageId: 'assistant-early-$seed',
+      replyTo: 'primary-$seed',
+      text: 'early reply',
+    ),
+    resultBeforeRequest,
+    ToolRequested(
+      eventId: 'server:tool:req:$seed',
+      sessionId: sessionId,
+      ts: ts(2),
+      toolCallId: 'tool-$seed',
+      tool: 'Bash',
+      args: <String, Object?>{'command': 'seed-$seed'},
+    ),
+    primary,
+    primary,
+    duplicateMessageId,
+    AssistantMessageCommitted(
+      eventId: 'server:assistant:repeat:$seed',
+      sessionId: sessionId,
+      ts: ts(0),
+      messageId: 'assistant-repeat-$seed',
+      replyTo: 'primary-$seed',
+      text: 'another reply to the same prompt',
+    ),
+    UserMessageSubmitted(
+      eventId: 'local:steer:$seed',
+      sessionId: sessionId,
+      ts: ts(11),
+      clientMessageId: 'steer-$seed',
+      text: 'steer $seed',
+      awaitingPickup: true,
+    ),
+    UserMessageConfirmed(
+      eventId: 'server:steer-accepted:$seed',
+      sessionId: sessionId,
+      ts: ts(9),
+      clientMessageId: 'steer-$seed',
+      text: 'steer $seed',
+      streamingBehavior: UserMessageStreamingBehavior.steer,
+      semanticPickup: false,
+    ),
+    AssistantDeltaReceived(
+      eventId: 'server:delta:$seed',
+      sessionId: sessionId,
+      ts: ts(4),
+      replyTo: 'primary-$seed',
+      delta: 'partial-$seed',
+    ),
+    UserMessageSubmitted(
+      eventId: 'local:failed:$seed',
+      sessionId: sessionId,
+      ts: ts(13),
+      clientMessageId: 'failed-$seed',
+      text: 'failure candidate',
+    ),
+    UserMessageFailed(
+      eventId: 'local:failed-terminal:$seed',
+      sessionId: sessionId,
+      ts: ts(12),
+      clientMessageId: 'failed-$seed',
+      code: 'send_timeout',
+      message: 'timeout-$seed',
+    ),
+    CompactionRecorded(
+      eventId: 'server:compaction:first:$seed',
+      sessionId: sessionId,
+      ts: ts(6),
+      summary: 'first compaction $seed',
+      tokensBefore: 1000 + seed,
+    ),
+    UserMessageConfirmed(
+      eventId: 'server:steer-pickup:$seed',
+      sessionId: sessionId,
+      ts: ts(5),
+      clientMessageId: 'steer-$seed',
+      text: 'steer $seed',
+    ),
+    AssistantDoneReceived(
+      eventId: 'server:done:$seed',
+      sessionId: sessionId,
+      ts: ts(3),
+      replyTo: 'steer-$seed',
+    ),
+    CompactionRecorded(
+      eventId: 'server:compaction:second:$seed',
+      sessionId: sessionId,
+      ts: ts(14),
+      summary: 'second compaction $seed',
+    ),
+    UserMessageConfirmed(
+      eventId: 'foreign:user:$seed',
+      sessionId: 'foreign-$sessionId',
+      ts: ts(16),
+      clientMessageId: 'foreign-$seed',
+      text: 'must be ignored',
+    ),
+    resultBeforeRequest,
+  ];
+}
+
+List<int> _irregularPartitions(int length, int seed) {
+  final random = Random(seed ^ 0x5eed);
+  final partitions = <int>[];
+  var remaining = length;
+  while (remaining > 0) {
+    final size = 1 + random.nextInt(min(remaining, 5));
+    partitions.add(size);
+    remaining -= size;
+  }
+  return partitions;
+}
+
+void _expectPartitionedProjectionEquivalent({
+  required List<TranscriptEvent> events,
+  required List<int> partitions,
+  required String sessionId,
+  required int seed,
+}) {
+  final reducer = TranscriptProjectionReducer.empty(sessionId: sessionId);
+  final prefix = <TranscriptEvent>[];
+  var cursor = 0;
+  for (final size in partitions) {
+    final previous = reducer.projection;
+    final batch = events.sublist(cursor, cursor + size);
+    prefix.addAll(batch);
+    final update = reducer.applyAll(batch);
+    final clean = deriveTranscriptProjection(
+      sessionId: sessionId,
+      events: prefix,
+    );
+    final expectedFirstChanged = _firstChangedProjectionIndex(previous, clean);
+    expect(
+      update.firstChangedMessageIndex,
+      expectedFirstChanged,
+      reason: 'seed=$seed partitions=$partitions prefix=${prefix.length}',
+    );
+    _expectProjectionEquivalent(update.projection, clean);
+    if (expectedFirstChanged != null) {
+      expect(
+        update.projection.messages.skip(expectedFirstChanged),
+        clean.messages.skip(expectedFirstChanged),
+        reason: 'materialized suffix drift: seed=$seed prefix=${prefix.length}',
+      );
+      expect(
+        update.projection.messageTimestamps.skip(expectedFirstChanged),
+        clean.messageTimestamps.skip(expectedFirstChanged),
+        reason: 'timestamp suffix drift: seed=$seed prefix=${prefix.length}',
+      );
+    }
+    cursor += size;
+  }
+  expect(cursor, events.length);
+}
+
+int? _firstChangedProjectionIndex(
+  TranscriptProjection previous,
+  TranscriptProjection next,
+) {
+  final shared = min(previous.messages.length, next.messages.length);
+  for (var index = 0; index < shared; index += 1) {
+    if (!_sameProjectedMessage(
+          previous.messages[index],
+          next.messages[index],
+        ) ||
+        previous.messageTimestamps[index] != next.messageTimestamps[index]) {
+      return index;
+    }
+  }
+  return previous.messages.length == next.messages.length ? null : shared;
+}
+
+bool _sameProjectedMessage(ChatMessage left, ChatMessage right) {
+  if (left is ToolEvent && right is ToolEvent) {
+    return left.id == right.id &&
+        left.toolCallId == right.toolCallId &&
+        left.tool == right.tool &&
+        left.args.toString() == right.args.toString() &&
+        left.status == right.status &&
+        left.result.toString() == right.result.toString() &&
+        left.error == right.error;
+  }
+  return left == right;
 }
 
 void _expectProjectionEquivalent(
