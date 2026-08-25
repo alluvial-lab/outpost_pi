@@ -1,7 +1,7 @@
 ---
 id: story-canonical-transcript-timestamp-ownership-error-frame-ts
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension, app, bug]
 parent: feature-canonical-transcript-timestamp-ownership
 depends_on: [epic-durable-transcript-ownership-durable-event-log]
@@ -38,6 +38,19 @@ time on an authoritative bubble.
 - `app/lib/data/sync/sync_service.dart` — error diagnostic consumes wire `ts`
   with the `DateTime.now()` fallback for old extensions.
 
+## F1 reconciliation (2026-08-25)
+
+- Provider diagnostics now use F1's generic durable event recorder rather than
+  the pre-F1 in-memory append/lookup sketch. The hook's one timestamp is stored
+  in `outpost-pi.transcript-event.v1` and reused on the wire.
+- Renderable `internal_error` frames are timestamped at their actual producer;
+  convergence-only `unknown_peer`, `session_mismatch`, and `delivery_pending`
+  frames remain control signals and intentionally do not become transcript
+  facts.
+- The Dart consumer keeps the optional-field fallback so mixed sessions from
+  pre-durable extensions still render correctly; both diagnostic and terminal
+  events share one derived timestamp.
+
 ## Acceptance
 
 - [ ] Optional `ts` on error frames; regenerated TS + Dart; `check:protocol`
@@ -49,3 +62,19 @@ time on an authoritative bubble.
 
 `depends_on: [epic-durable-transcript-ownership-durable-event-log]`
 (needs F1's durable ownership foundation; parallel with B); unblocks D.
+
+## Implementation
+
+- Execution capability: `sol/high`.
+- Added optional non-negative `error.ts` to the canonical schema and Dart IR,
+  then regenerated the TypeScript and Dart protocol projections (Rust remains
+  intentionally unchanged).
+- Persisted provider errors through F1 before broadcasting their canonical
+  producer timestamp; stamped renderable internal-error producers, including
+  list-model, delivery, unavailable-session, and abort failures.
+- Updated `SyncService` to consume `ErrorMessage.ts` once for the warning bubble
+  and terminal event while retaining phone-time fallback for old frames.
+- Added producer-connected provider provenance and app mixed-era error tests.
+- Verification: protocol generation check, pi-extension typecheck/full 59-file
+  suite (1079 passed, 3 skipped)/build, Flutter analyze, and the full 944-test
+  non-e2e app suite all passed.

@@ -195,7 +195,8 @@
         "session_id": { "$ref": "./defs/app-pi-common.schema.json#/$defs/sessionId" },
         "in_reply_to": { "$ref": "./defs/app-pi-common.schema.json#/$defs/messageId" },
         "code": { "$ref": "./defs/app-pi-common.schema.json#/$defs/errorCode" },
-        "message": { "type": "string" }
+        "message": { "type": "string" },
+        "ts": { "type": "integer", "minimum": 0, "description": "Canonical server timestamp for a renderable transcript diagnostic. Optional for compatibility with pre-durable extensions." }
       },
       "additionalProperties": false,
       "x-outpost-pi": { "knownCodesRef": "./defs/app-pi-common.schema.json#/$defs/knownErrorCode", "profileRequired": { "canonical-session": ["session_id"] } }

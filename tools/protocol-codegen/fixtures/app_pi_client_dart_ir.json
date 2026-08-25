@@ -898,6 +898,12 @@
               "wireName": "message",
               "dartType": "String",
               "required": true
+            },
+            {
+              "name": "ts",
+              "wireName": "ts",
+              "dartType": "int",
+              "required": false
             }
           ],
           "sessionScoped": true
