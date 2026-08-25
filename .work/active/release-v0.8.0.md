@@ -59,3 +59,4 @@ relay 0.5.1 unchanged.
 
 ## Gate runs
 (planned: security, tests, cruft, docs, patterns, refactor — then manual UAT)
+- **gate-security** (2026-08-25) — 1 findings (Critical=0, High=0, Medium=1, Low=0; inline audit with reduced isolation by operator instruction)
