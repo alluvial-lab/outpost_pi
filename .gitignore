@@ -125,3 +125,4 @@ pi-extension/test/.pi/
 # story-fix-stale-ctx-messageapi-rearm-on-reload.)
 **/spike-*.mjs
 __pycache__/
+.work/artifacts/
