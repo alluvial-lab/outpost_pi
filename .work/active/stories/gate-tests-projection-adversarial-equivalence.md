@@ -1,7 +1,7 @@
 ---
 id: gate-tests-projection-adversarial-equivalence
 kind: story
-stage: implementing
+stage: done
 tags: [testing, app, perf]
 parent: null
 depends_on: []
@@ -45,3 +45,27 @@ complex-unit / equivalence partitions / state-transition ordering
 
 ## Test location (suggested)
 `app/test/domain/transcript/transcript_projection_test.dart` and `app/test/data/sync/sync_service_test.dart`
+
+## Implementation
+
+Added deterministic adversarial histories for seeds `7`, `42`, and `8080`.
+Each history covers shuffled canonical timestamps, late confirmations,
+duplicate event and message identities, tool results before requests, repeated
+reply targets, steering acceptance/pickup, streaming, terminal errors, repeated
+compaction facts, and foreign-session input. Each seed is applied as one batch,
+one event at a time, and seeded irregular batches. Every partition boundary
+compares messages, timestamps, streaming, turn, steering, the reported first
+changed row, and the affected materialized suffix against a clean fold; failure
+reasons print the seed and partition.
+
+The pins-contract test exposed a real defect before the production change:
+`result-before-request retains terminal tool outcome and request metadata`
+failed because the later request replaced the completed result with `pending`
+and retained empty tool args. The minimal reducer fix now merges late request
+metadata into an already-terminal tool row while preserving its outcome.
+
+Verification:
+
+- Fails-before evidence: focused test reported `args: {}` (and the old reducer
+  would also replace the terminal status) for the result-before-request case.
+- `flutter test test/domain/transcript/transcript_projection_test.dart --concurrency=2` (26 passed)

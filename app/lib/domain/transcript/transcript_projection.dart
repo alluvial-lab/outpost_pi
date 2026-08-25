@@ -411,14 +411,17 @@ final class TranscriptProjectionReducer {
     }
 
     final previous = existing.message as ToolEvent;
+    final preservesTerminalOutcome =
+        tool.status == ToolEventStatus.pending &&
+        previous.status != ToolEventStatus.pending;
     existing.message = ToolEvent(
       id: previous.id,
       toolCallId: previous.toolCallId,
       tool: previous.tool.isNotEmpty ? previous.tool : tool.tool,
-      args: previous.args,
-      status: tool.status,
-      result: tool.result,
-      error: tool.error,
+      args: previous.tool.isNotEmpty ? previous.args : tool.args,
+      status: preservesTerminalOutcome ? previous.status : tool.status,
+      result: preservesTerminalOutcome ? previous.result : tool.result,
+      error: preservesTerminalOutcome ? previous.error : tool.error,
     );
     existing.timestamp = timestamp;
     if (timestamp.millisecondsSinceEpoch <
