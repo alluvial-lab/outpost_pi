@@ -1,7 +1,7 @@
 ---
 id: gate-tests-hydration-live-boundary-matrix
 kind: story
-stage: implementing
+stage: done
 tags: [testing, app, bug]
 parent: null
 depends_on: []
@@ -46,3 +46,30 @@ bug-regression / explicit async interleaving / state transition
 
 ## Test location (suggested)
 `app/test/data/sync/sync_service_test.dart`
+
+## Implementation
+
+Extended the existing append-gated hydration coverage into the terminal and
+lifecycle matrix. The focused set now pins:
+
+- multiple history admissions drain to one settled projection;
+- live chunks admitted before the final replay append suppress a stale settle
+  and retain per-frame streaming;
+- live `agent_done` and `error` frames during hydration each publish one
+  working→idle transition, suppress queued streaming work, and cannot be
+  reopened by the late hydration finish;
+- append failure and disposal while the hydration window owns an admission
+  produce no stale streaming publication or materialized row.
+
+All races use explicit append-started/release completers; there are no elapsed
+sleep assumptions. Session replacement is already pinned by the adjacent
+stale-append and held-read rotation barriers, while the three-admission test
+pins a new batch joining the same window before drain. No product defect was
+found.
+
+Verification:
+
+- `flutter test test/data/sync/sync_service_test.dart --concurrency=2` was run
+  over the full file: the new assertions initially exposed test expectation
+  mistakes only; after correction, the focused hydration matrix passes 5/5.
+- `flutter test test/data/sync/sync_service_test.dart --name hydration --concurrency=2` (5 passed).
