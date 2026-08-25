@@ -1,5 +1,7 @@
 import importlib.util
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -129,17 +131,75 @@ class ScheduleTests(unittest.TestCase):
         )
         self.assertEqual(missing, [])
 
-    def test_generated_net_down_probe_has_a_terminal_turn_boundary(self) -> None:
-        source = live_soak._generated_test(
+    def test_generated_net_down_probe_enforces_terminal_turn_boundary(self) -> None:
+        helper = live_soak._terminal_boundary_helper_source()
+        generated = live_soak._generated_test(
             live_soak.build_schedule(2026082407, 300),
             420,
         )
-        for evidence in (
-            "/turn-control/defer-next",
-            "identityRecoveryTurnStaged",
-            "post-recovery identity turn settled",
-        ):
-            self.assertIn(evidence, source)
+        self.assertIn(helper, generated)
+
+        dart_program = f"""import 'dart:async';
+
+{helper}
+
+Future<List<String>> exercise(String phase) async {{
+  final calls = <String>[];
+  final reconnectDone = Completer<void>();
+  await _runNetDownRecoveryBoundary(
+    readTurnPhase: () async {{ calls.add('read'); return phase; }},
+    deferTurn: () async {{ calls.add('defer'); }},
+    reconnect: () {{ calls.add('reconnect'); return reconnectDone.future; }},
+    sendIdentity: () async {{ calls.add('send'); reconnectDone.complete(); }},
+    waitOnline: () async {{ calls.add('online'); }},
+    waitPending: () async {{ calls.add('pending'); }},
+    resolveTurn: () async {{ calls.add('resolve'); }},
+    waitIdle: () async {{ calls.add('idle'); }},
+  );
+  return calls;
+}}
+
+Future<void> main() async {{
+  final idle = await exercise('idle');
+  final pending = await exercise('pending');
+  const expectedIdle = <String>[
+    'read', 'defer', 'reconnect', 'send', 'online', 'pending', 'resolve', 'idle'
+  ];
+  const expectedPending = <String>['read', 'reconnect', 'send', 'online'];
+  if (idle.join(',') != expectedIdle.join(',')) {{
+    throw StateError('idle ordering: $idle');
+  }}
+  if (pending.join(',') != expectedPending.join(',')) {{
+    throw StateError('pending ordering: $pending');
+  }}
+}}
+"""
+        dart = (
+            Path(__file__).parents[1]
+            / ".tools"
+            / "flutter"
+            / "bin"
+            / "cache"
+            / "dart-sdk"
+            / "bin"
+            / "dart"
+        )
+        self.assertTrue(dart.is_file(), f"Dart SDK missing at {dart}")
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "terminal_boundary_fixture.dart"
+            fixture.write_text(dart_program)
+            completed = subprocess.run(
+                [str(dart), str(fixture)],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"generated handler failed:\n{completed.stdout}\n{completed.stderr}",
+        )
 
     def test_generated_device_oracle_covers_all_four_invariants(self) -> None:
         source = live_soak._generated_test(live_soak.build_schedule(7, 60), 360)

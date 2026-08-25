@@ -1,7 +1,7 @@
 ---
 id: gate-tests-soak-terminal-boundary-behavior
 kind: story
-stage: implementing
+stage: done
 tags: [testing, app, bug]
 parent: null
 depends_on: []
@@ -42,3 +42,28 @@ bug-regression / generated-harness behavioral seam
 
 ## Test location (suggested)
 `e2e/test_live_soak.py` plus a service-level fake for the generated recovery handler
+
+## Implementation
+
+Replaced the three-substring assertion with an executable boundary fixture.
+The generated soak now embeds one callback-driven
+`_runNetDownRecoveryBoundary` helper and routes the real net-down handler
+through it. The helper owns the conditional arm, reconnect/send overlap,
+online wait, pending wait, resolve, and authoritative-idle wait in one ordered
+operation.
+
+The Python unit extracts that exact generated Dart helper, compiles and runs it
+with a service-level fake, and asserts exact call order/cardinality for both
+host phases:
+
+- idle: `read → defer → reconnect → send → online → pending → resolve → idle`;
+- already pending: `read → reconnect → send → online`, with no defer, pending
+  wait, early resolve, or idle wait.
+
+Because the executable helper is also asserted to be the helper embedded in the
+full generated soak source, template drift cannot leave the behavioral fixture
+testing a detached copy. No product defect was found.
+
+Verification:
+
+- `python3 -m unittest e2e.test_live_soak` (21 passed; includes generated Dart compile/run smoke)
