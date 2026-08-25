@@ -801,6 +801,7 @@ class SyncService extends Service {
     required String message,
     RemoteSessionRef? expectedRef,
     int? expectedGeneration,
+    DateTime? eventTs,
   }) async {
     final generation = expectedGeneration ?? _lifecycleGeneration;
     if (!_isCurrentLifecycle(generation, expectedRef)) return;
@@ -812,7 +813,7 @@ class SyncService extends Service {
         UserMessageFailed(
           eventId: 'local:user_failed:$id:$code',
           sessionId: expectedRef?.sessionId ?? _activeTranscriptSessionId(),
-          ts: DateTime.now(),
+          ts: eventTs ?? DateTime.now(),
           clientMessageId: id,
           code: code,
           message: message,
@@ -1262,7 +1263,7 @@ class SyncService extends Service {
           AssistantDoneReceived(
             eventId: 'server:assistant_done:$inReplyTo:${uuid7()}',
             sessionId: _activeTranscriptSessionId(),
-            ts: DateTime.now(),
+            ts: assistantTs,
             replyTo: inReplyTo,
           ),
         );
@@ -1414,6 +1415,9 @@ class SyncService extends Service {
         }
 
       case ToolRequest(:final toolCallId, :final tool, :final args, :final ts):
+        final requestTs = ts != null
+            ? DateTime.fromMillisecondsSinceEpoch(ts)
+            : DateTime.now();
         // Sequential ordering: close the current text segment as its own row
         // BEFORE the tool, so "narration → command → narration" renders in
         // order instead of all text landing after the commands.
@@ -1451,7 +1455,7 @@ class SyncService extends Service {
               AssistantMessageCommitted(
                 eventId: 'server:assistant_committed:$toolCallId:${uuid7()}',
                 sessionId: _activeTranscriptSessionId(),
-                ts: DateTime.now(),
+                ts: requestTs,
                 messageId: 'agent_${uuid7()}',
                 replyTo: flushInReplyTo,
                 text: buffered,
@@ -1463,9 +1467,7 @@ class SyncService extends Service {
           ToolRequested(
             eventId: 'server:tool_requested:$toolCallId',
             sessionId: _activeTranscriptSessionId(),
-            ts: ts != null
-                ? DateTime.fromMillisecondsSinceEpoch(ts)
-                : DateTime.now(),
+            ts: requestTs,
             toolCallId: toolCallId,
             tool: tool,
             args: _objectMap(args),
@@ -1599,6 +1601,9 @@ class SyncService extends Service {
         if (code == 'session_mismatch') {
           break;
         }
+        final diagnosticTs = ts != null
+            ? DateTime.fromMillisecondsSinceEpoch(ts)
+            : DateTime.now();
         final pendingId = inReplyTo;
         final rejectsPendingSteering =
             pendingId != null && _pendingSteeringId == pendingId;
@@ -1612,6 +1617,7 @@ class SyncService extends Service {
               code: code,
               message: message,
               expectedRef: expectedRef,
+              eventTs: diagnosticTs,
             ),
             expectedRef: expectedRef,
             requestReplayOnFailure: true,
@@ -1620,9 +1626,6 @@ class SyncService extends Service {
         if (rejectsPendingSteering) break;
         _discardStreamingState();
         _setTurnIdle();
-        final diagnosticTs = ts != null
-            ? DateTime.fromMillisecondsSinceEpoch(ts)
-            : DateTime.now();
         _runDetachedTranscriptWrite(
           () => _appendTranscriptEvents(<TranscriptEvent>[
             AssistantMessageCommitted(
