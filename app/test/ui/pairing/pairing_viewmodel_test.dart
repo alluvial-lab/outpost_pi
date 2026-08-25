@@ -222,7 +222,7 @@ PairingTransportFactory _factoryReplyingWith(
   void Function()? onRequest,
   void Function(_MemTransport transport)? onTransport,
 }) {
-  return (qr, deviceEd25519) async {
+  return (qr, deviceEd25519, _) async {
     final q1 = _Q();
     final q2 = _Q();
     final iTrans = _MemTransport(send: q1, recv: q2);
@@ -310,7 +310,8 @@ void main() {
       final bridge = await _bootedBridge(storage);
       final vm = PairingViewModel(
         storage,
-        (qr, key) async => throw Exception('should not be called'),
+        (qr, key, cancellation) async =>
+            throw Exception('should not be called'),
         _SpyConn(),
         _PrefsForTest(),
         bridge,
@@ -324,7 +325,8 @@ void main() {
       final bridge = await _bootedBridge(storage);
       final vm = PairingViewModel(
         storage,
-        (qr, key) async => throw Exception('should not be called'),
+        (qr, key, cancellation) async =>
+            throw Exception('should not be called'),
         _SpyConn(),
         _PrefsForTest(),
         bridge,
@@ -341,16 +343,15 @@ void main() {
         final bridge = await _bootedBridge(storage);
         final vm = PairingViewModel(
           storage,
-          (qr, key) async => throw Exception('should not be called'),
+          (qr, key, cancellation) async =>
+              throw Exception('should not be called'),
           _SpyConn(),
           _PrefsForTest(),
           bridge,
         );
         // Looks like a pairing code (outpostpi://) but has a bad token —
         // must surface an error rather than silently swallowing it.
-        await vm.onQrScanned(
-          'outpostpi://pair?t=BADTOKEN&epk=AAAA&n=test',
-        );
+        await vm.onQrScanned('outpostpi://pair?t=BADTOKEN&epk=AAAA&n=test');
         expect(vm.state, isA<PairingError>());
         final error = vm.state as PairingError;
         expect(error.canRetry, isTrue);
@@ -368,7 +369,7 @@ void main() {
         var transportCalls = 0;
         final vm = PairingViewModel(
           storage,
-          (qr, key) async {
+          (qr, key, cancellation) async {
             transportCalls++;
             throw StateError('transport must not be opened');
           },
@@ -458,7 +459,7 @@ void main() {
         final bridge = await _bootedBridge(storage);
         final vm = PairingViewModel(
           storage,
-          (qr, key) async => throw Exception('socket exception'),
+          (qr, key, cancellation) async => throw Exception('socket exception'),
           _SpyConn(),
           _PrefsForTest(),
           bridge,
@@ -485,7 +486,7 @@ void main() {
         final factoryCalled = Completer<void>();
         final vm = PairingViewModel(
           storage,
-          (qr, key) async {
+          (qr, key, cancellation) async {
             factoryCalled.complete();
             return transport;
           },
@@ -506,6 +507,55 @@ void main() {
         conn.dispose();
       },
     );
+
+    test('transport readiness timeout awaits cancellation cleanup', () async {
+      final storage = _FakeStorage();
+      final bridge = await _bootedBridge(storage);
+      final conn = _SpyConn();
+      final cleanupStarted = Completer<void>();
+      final releaseCleanup = Completer<void>();
+      final factoryResult = Completer<PeerTransport>();
+      var cleanupFinished = false;
+      final vm = PairingViewModel(
+        storage,
+        (qr, key, cancellation) {
+          cancellation.addCancellationListener(() async {
+            cleanupStarted.complete();
+            await releaseCleanup.future;
+            cleanupFinished = true;
+            factoryResult.completeError(StateError('connect cancelled'));
+          });
+          return factoryResult.future;
+        },
+        conn,
+        _PrefsForTest(),
+        bridge,
+        transportConnectTimeout: Duration.zero,
+      );
+
+      var pairingSettled = false;
+      final pairing = vm
+          .onQrScanned(_qrUri)
+          .whenComplete(() => pairingSettled = true);
+      await cleanupStarted.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        pairingSettled,
+        isFalse,
+        reason: 'timeout completion must wait for socket cleanup',
+      );
+
+      releaseCleanup.complete();
+      await pairing;
+
+      expect(cleanupFinished, isTrue);
+      expect(vm.state, isA<PairingError>());
+      expect((vm.state as PairingError).message, contains('Timed out'));
+      expect(conn.adoptedChannel, isNull);
+
+      vm.dispose();
+      conn.dispose();
+    });
 
     test(
       'a stale pairing completion cannot adopt a channel or emit paired',
@@ -558,8 +608,10 @@ void main() {
         var factoryCalls = 0;
         final vm = PairingViewModel(
           storage,
-          (qr, key) async {
-            if (factoryCalls++ == 0) return firstFactory(qr, key);
+          (qr, key, cancellation) async {
+            if (factoryCalls++ == 0) {
+              return firstFactory(qr, key, cancellation);
+            }
             secondFactoryStarted.complete();
             return secondTransport;
           },

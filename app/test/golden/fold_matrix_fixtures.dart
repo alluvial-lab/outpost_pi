@@ -498,7 +498,7 @@ final class FoldMatrixFixture {
     );
     final pairing = FoldPairingViewModel(
       storage,
-      (_, _) async => throw StateError('unused golden pairing transport'),
+      (_, _, _) async => throw StateError('unused golden pairing transport'),
       connection,
       preferences,
       ownerBridge,

@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 import 'package:app/data/debug/debug_log_impl.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/channel.dart';
+import 'package:app/data/transport/connection_cancellation.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/data/transport/ws_transport.dart';
@@ -97,13 +98,18 @@ void main() {
       );
       final pairingViewModel = PairingViewModel(
         pairingStorage,
-        (QrPairPayload qr, SimpleKeyPair ownerKey) => WsTransport.connect(
+        (
+          QrPairPayload qr,
+          SimpleKeyPair ownerKey,
+          ConnectionCancellation cancellation,
+        ) => WsTransport.connect(
           relayUrl: _relayUrl,
           peerPubkey: qr.epk,
           ed25519Key: ownerKey,
           deviceId: deviceId,
           activeRoom: qr.roomId ?? 'main',
           debugLog: debugLog,
+          cancellation: cancellation,
         ),
         connection,
         preferences,

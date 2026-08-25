@@ -239,7 +239,8 @@ final class _ScannerPairingViewModel extends PairingViewModel {
   _ScannerPairingViewModel()
     : super(
         _NoopPairingStorage(),
-        (qr, key) async => throw StateError('transport is not under test'),
+        (qr, key, cancellation) async =>
+            throw StateError('transport is not under test'),
         ConnectionManager(
           factory: (_, _) async =>
               throw StateError('connection is not under test'),
