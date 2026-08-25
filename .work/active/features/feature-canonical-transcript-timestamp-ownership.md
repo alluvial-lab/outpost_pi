@@ -4,7 +4,7 @@ kind: feature
 stage: implementing
 tags: [app, pi-extension, bug]
 parent: epic-durable-transcript-ownership
-depends_on: []
+depends_on: [epic-durable-transcript-ownership-durable-event-log]
 release_binding: null
 gate_origin: null
 created: 2026-08-03
@@ -13,6 +13,8 @@ updated: 2026-08-03
 
 # Canonical transcript timestamp ownership (close the single-clock invariant)
 
+> **Re-finalized 2026-08-25 under the epic decomposition: this feature IS F2 (timestamp payoff). F1 (durable foundation) is now the sibling `epic-durable-transcript-ownership-durable-event-log`, which absorbs the ownership-foundation story (spike). This feature's remaining three stories (extension-producer-ts, app-consume-cleanup, error-frame-ts) implement on top of F1.
+>
 > **Rescoped 2026-08-03 under `epic-durable-transcript-ownership`.** The
 > durable-ownership architecture (custom-entry persistence) is now owned by
 > that epic. This feature is the **seed for the epic's F1 (durable foundation)
