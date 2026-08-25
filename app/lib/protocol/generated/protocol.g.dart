@@ -1150,7 +1150,7 @@ final class ToolResult extends ServerMessage {
 }
 
 final class ErrorMessage extends ServerMessage {
-  const ErrorMessage({this.sessionId = '', this.inReplyTo, required this.code, required this.message});
+  const ErrorMessage({this.sessionId = '', this.inReplyTo, required this.code, required this.message, this.ts});
 
   @override
   String get type => 'error';
@@ -1159,12 +1159,14 @@ final class ErrorMessage extends ServerMessage {
   final String? inReplyTo;
   final String code;
   final String message;
+  final int? ts;
 
   factory ErrorMessage.fromJson(Map<String, dynamic> json) => ErrorMessage(
         sessionId: _sessionIdFromJson(json),
         inReplyTo: json['in_reply_to'] as String?,
         code: json['code'] as String,
         message: json['message'] as String,
+        ts: (json['ts'] as num?)?.toInt(),
       );
 
   @override
@@ -1175,6 +1177,8 @@ final class ErrorMessage extends ServerMessage {
           'in_reply_to': inReplyTo,
         'code': code,
         'message': message,
+        if (ts case final ts?)
+          'ts': ts,
       };
 }
 

@@ -1572,7 +1572,12 @@ class SyncService extends Service {
           expectedRef: expectedRef,
         );
 
-      case ErrorMessage(:final inReplyTo, :final code, :final message):
+      case ErrorMessage(
+        :final inReplyTo,
+        :final code,
+        :final message,
+        :final ts,
+      ):
         if (code == 'delivery_pending') {
           _handleDeliveryPending(inReplyTo);
           break;
@@ -1615,12 +1620,15 @@ class SyncService extends Service {
         if (rejectsPendingSteering) break;
         _discardStreamingState();
         _setTurnIdle();
+        final diagnosticTs = ts != null
+            ? DateTime.fromMillisecondsSinceEpoch(ts)
+            : DateTime.now();
         _runDetachedTranscriptWrite(
           () => _appendTranscriptEvents(<TranscriptEvent>[
             AssistantMessageCommitted(
               eventId: 'server:error_message:${uuid7()}',
               sessionId: _activeTranscriptSessionId(),
-              ts: DateTime.now(),
+              ts: diagnosticTs,
               messageId: 'err_${uuid7()}',
               replyTo: inReplyTo ?? 'error',
               text: '⚠ $code: $message',
@@ -1628,7 +1636,7 @@ class SyncService extends Service {
             AssistantDoneReceived(
               eventId: 'server:error_done:${uuid7()}',
               sessionId: _activeTranscriptSessionId(),
-              ts: DateTime.now(),
+              ts: diagnosticTs,
               replyTo: inReplyTo ?? 'error',
             ),
           ]),

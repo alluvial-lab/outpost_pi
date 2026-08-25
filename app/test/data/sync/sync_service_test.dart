@@ -124,6 +124,7 @@ class _FakeChannel implements IChannel, IControlLink {
         inReplyTo: m.inReplyTo,
         code: m.code,
         message: m.message,
+        ts: m.ts,
       ),
       Cancelled(:final sessionId) when sessionId.isEmpty => Cancelled(
         sessionId: sid,
@@ -1443,6 +1444,53 @@ void main() {
       s.sync.dispose();
     },
   );
+
+  test('error diagnostics consume canonical ts and retain mixed-era fallback', () async {
+    final store = _MemoryTranscriptStore();
+    final s = await setup(transcriptEventStore: store);
+    const canonicalTs = 1_700_000_001_234;
+
+    s.ch.push(
+      ErrorMessage(
+        sessionId: s.sessionId,
+        inReplyTo: 'canonical-error',
+        code: 'provider_error',
+        message: 'server timed',
+        ts: canonicalTs,
+      ),
+    );
+    await _settle();
+
+    final fallbackBefore = DateTime.now();
+    s.ch.push(
+      ErrorMessage(
+        sessionId: s.sessionId,
+        inReplyTo: 'legacy-error',
+        code: 'internal_error',
+        message: 'legacy timed',
+      ),
+    );
+    await _settle();
+    final fallbackAfter = DateTime.now();
+
+    final diagnostics = store
+        .eventsFor(transcriptKeyFor(s.epk))
+        .whereType<AssistantMessageCommitted>()
+        .where((event) => event.text.startsWith('⚠'))
+        .toList();
+    final canonical = diagnostics.singleWhere(
+      (event) => event.text.contains('server timed'),
+    );
+    final legacy = diagnostics.singleWhere(
+      (event) => event.text.contains('legacy timed'),
+    );
+    expect(canonical.ts, DateTime.fromMillisecondsSinceEpoch(canonicalTs));
+    expect(legacy.ts.isBefore(fallbackBefore), isFalse);
+    expect(legacy.ts.isAfter(fallbackAfter), isFalse);
+
+    s.conn.dispose();
+    s.sync.dispose();
+  });
 
   test('cancel sends a Cancel frame for the active turn target', () async {
     final s = await setup();

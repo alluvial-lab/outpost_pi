@@ -475,6 +475,7 @@ export interface ErrorMessage {
   readonly in_reply_to?: string;
   readonly code: ErrorCode;
   readonly message: string;
+  readonly ts?: number;
 }
 
 export interface Cancelled {
@@ -1061,7 +1062,7 @@ function isToolResult(value: unknown): value is ToolResult {
 }
 
 function isErrorMessage(value: unknown): value is ErrorMessage {
-  return isObjectLike(value, ["type", "session_id", "in_reply_to", "code", "message"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "error") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (record["in_reply_to"] === undefined || (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "code") && (typeof record["code"] === "string" && record["code"].length >= 1)) && (Object.hasOwn(record, "message") && typeof record["message"] === "string")));
+  return isObjectLike(value, ["type", "session_id", "in_reply_to", "code", "message", "ts"], (record) => ((Object.hasOwn(record, "type") && record["type"] === "error") && (record["session_id"] === undefined || (typeof record["session_id"] === "string" && record["session_id"].length >= 1 && record["session_id"].length <= 512)) && (record["in_reply_to"] === undefined || (typeof record["in_reply_to"] === "string" && record["in_reply_to"].length >= 1)) && (Object.hasOwn(record, "code") && (typeof record["code"] === "string" && record["code"].length >= 1)) && (Object.hasOwn(record, "message") && typeof record["message"] === "string") && (record["ts"] === undefined || isIntegerAtLeast(record["ts"], 0))));
 }
 
 function isCancelled(value: unknown): value is Cancelled {

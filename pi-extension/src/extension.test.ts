@@ -3138,8 +3138,15 @@ describe("multi-channel broadcast (W2D)", () => {
       .map((c) => c[0] as string).map(decodeSentCt);
     const err = sent.find((d) => d.inner.type === "error");
     expect(err?.inner).toMatchObject({
-      type: "error", code: "provider_error", message: "Provider finish_reason: error",
+      type: "error",
+      code: "provider_error",
+      message: "Provider finish_reason: error",
+      ts: expect.any(Number),
     });
+    const durableError = durableTranscriptEntries
+      .map((entry) => entry.data as Record<string, unknown>)
+      .find((event) => event["kind"] === "provider_error");
+    expect(err?.inner["ts"]).toBe(durableError?.["ts"]);
   });
 
   test("normal assistant turn (stopReason:stop) → no error forwarded", async () => {

@@ -312,6 +312,7 @@ export function handleListModels(
       in_reply_to: msg.id,
       code: "internal_error",
       message: e instanceof Error ? e.message : String(e),
+      ts: Date.now(),
     }));
   }
 }

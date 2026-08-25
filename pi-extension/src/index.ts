@@ -629,6 +629,7 @@ function _sessionUnavailable(sender: PlainPeerChannel, inReplyTo: string, detail
     code: "internal_error",
     in_reply_to: inReplyTo,
     message: detail,
+    ts: Date.now(),
   }));
 }
 
@@ -1502,21 +1503,23 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
         : "Provider error";
       const replyTo = _activeReplyTarget();
       const sessionId = _currentRemoteSessionId();
-      const ts = Date.now();
-      _appendTranscriptEvent({
+      const producedAt = Date.now();
+      const eventId = deterministicTranscriptEventId(sessionId, "provider_error", replyTo ?? String(producedAt));
+      const recorded = _recordDurableTranscriptEvent({
         kind: "provider_error",
-        eventId: deterministicTranscriptEventId(sessionId, "provider_error", replyTo ?? String(ts)),
+        eventId,
         sessionId,
-        ts,
+        ts: producedAt,
         ...(replyTo ? { replyTo } : {}),
         code: "provider_error",
         message,
       });
       _applyTurnAndPublish({ type: "provider_error", turnId: replyTo });
-      if (_owners.activeCount() === 0) return;
+      if (!_isAuthoritativeTranscriptRecord(recorded) || _owners.activeCount() === 0) return;
+      const ts = _sdkSessionProjection.recordedTranscriptTs(eventId) ?? producedAt;
       const errMsg: ServerMessage = _withCurrentSession(replyTo
-        ? { type: "error", in_reply_to: replyTo, code: "provider_error", message }
-        : { type: "error", code: "provider_error", message });
+        ? { type: "error", in_reply_to: replyTo, code: "provider_error", message, ts }
+        : { type: "error", code: "provider_error", message, ts });
       _owners.broadcast(errMsg);
     }
   });
@@ -2390,6 +2393,7 @@ function _sendDeliveryError(sender: PlainPeerChannel | null, inReplyTo: string, 
     code: "internal_error",
     in_reply_to: inReplyTo,
     message: `Agent rejected incoming message: ${detail}`,
+    ts: Date.now(),
   });
   if (sender) sender.send(error);
   else _owners.broadcast(error);
@@ -3069,6 +3073,7 @@ export function _routeClientMessageFrom(
           code: "internal_error",
           in_reply_to: msg.id,
           message: "No active Pi context to abort",
+          ts: Date.now(),
         }));
         return;
       }
@@ -3080,6 +3085,7 @@ export function _routeClientMessageFrom(
         code: "internal_error",
         in_reply_to: msg.id,
         message: `Abort failed: ${String(err)}`,
+        ts: Date.now(),
       }));
     }
     return;
