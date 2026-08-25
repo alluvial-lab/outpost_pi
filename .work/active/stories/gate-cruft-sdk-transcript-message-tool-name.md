@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-sdk-transcript-message-tool-name
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -44,3 +44,10 @@ Remove `toolName?: string` from `SdkTranscriptMessage`. Keep the runtime boundar
 
 ## Risk
 None to runtime behavior or wire/persistence contracts. The type is internal to the extension and has no verified external consumers.
+
+## Implementation
+- Proof: repository grep found `SdkTranscriptMessage.toolName` only at its declaration; other `toolName` occurrences belong to Pi SDK execution-hook events and do not consume this type property. Reconciliation reads `toolCallId`, while assistant tool names come from content-block `name`.
+- Removal: deleted the type-only optional `toolName` property from `SdkTranscriptMessage`; runtime parsing and SDK values remain unchanged.
+- Verification: `corepack pnpm typecheck` and the transcript projection/session projection suites passed (82 tests). The release-wide extension test/build suite is recorded in the gate-fix completion report.
+- Execution capability: sol/high; direct-read cleanup with grep and compiler evidence.
+- Adjacent issues parked: none.
