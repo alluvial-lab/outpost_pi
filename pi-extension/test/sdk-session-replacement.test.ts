@@ -361,6 +361,91 @@ describe("SDK session replacement harness", () => {
     expect(history.events.filter((event) => event.type === "tool_request")).toHaveLength(2);
   });
 
+  test("file-backed fork and parent both reopen complete transcripts with copied durable identities", async () => {
+    const cwd = makeTempCwd();
+    const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-fork-transcript-"));
+    cleanupPaths.push(sessionDir);
+    const persisted = SessionManager.create(cwd, sessionDir);
+    const writer = bindFileBackedTranscriptWriter(persisted);
+    const parentSessionId = persisted.getSessionId();
+
+    persisted.appendMessage({ role: "user", content: "parent prompt", timestamp: 100 } as never);
+    expect(writer.recordDurableTranscriptEvent({
+      kind: "user_confirmed",
+      eventId: "copied-user-event",
+      sessionId: parentSessionId,
+      ts: 101,
+      clientMessageId: "parent-user",
+      text: "parent prompt",
+    })).toEqual({ status: "recorded" });
+    persisted.appendMessage({
+      role: "assistant",
+      content: [
+        { type: "text", text: "parent answer" },
+        { type: "toolCall", id: "parent-tool", name: "read", arguments: { path: "/tmp/a" } },
+      ],
+      timestamp: 200,
+    } as never);
+    expect(writer.recordDurableTranscriptEvent({
+      kind: "assistant_committed",
+      eventId: `server:${parentSessionId}:assistant_committed:sync_200:assistant:0`,
+      sessionId: parentSessionId,
+      ts: 200,
+      messageId: "sync_200:assistant:0",
+      replyTo: "parent-user",
+      text: "parent answer",
+    })).toEqual({ status: "recorded" });
+    expect(writer.recordDurableTranscriptEvent({
+      kind: "tool_requested",
+      eventId: "copied-tool-request",
+      sessionId: parentSessionId,
+      ts: 210,
+      toolCallId: "parent-tool",
+      tool: "read",
+      args: { path: "/tmp/a" },
+    })).toEqual({ status: "recorded" });
+    persisted.appendMessage({
+      role: "toolResult",
+      toolCallId: "parent-tool",
+      content: [{ type: "text", text: "tool output" }],
+      timestamp: 220,
+    } as never);
+    expect(writer.recordDurableTranscriptEvent({
+      kind: "tool_finished",
+      eventId: "copied-tool-finish",
+      sessionId: parentSessionId,
+      ts: 221,
+      toolCallId: "parent-tool",
+      result: "tool output",
+    })).toEqual({ status: "recorded" });
+
+    const parentSessionFile = persisted.getSessionFile();
+    const forkLeafId = persisted.getEntries().at(-1)?.id;
+    if (!parentSessionFile || !forkLeafId) throw new Error("Expected persisted parent branch");
+
+    const harness = await makeHarnessForSession(cwd, persisted);
+    const parentBeforeFork = await syncHistory(harness, "parent-before-fork");
+    expect(parentBeforeFork.session_id).toBe(parentSessionId);
+    expect(parentBeforeFork.events).toEqual([
+      { ts: 101, type: "user_input", id: "parent-user", text: "parent prompt" },
+      expect.objectContaining({ ts: 200, type: "agent_message", text: "parent answer" }),
+      { ts: 210, type: "tool_request", tool_call_id: "parent-tool", tool: "read", args: { path: "/tmp/a" } },
+      { ts: 221, type: "tool_result", tool_call_id: "parent-tool", result: "tool output" },
+    ]);
+
+    await harness.forkSession(forkLeafId);
+    const forkSessionId = harness.currentRemoteSessionId();
+    expect(forkSessionId).not.toBe(parentSessionId);
+    const forkHistory = await syncHistory(harness, "fork-after-reopen");
+    expect(forkHistory.session_id).toBe(forkSessionId);
+    expect(forkHistory.events).toEqual(parentBeforeFork.events);
+
+    await harness.resumeSession(parentSessionFile);
+    const parentAfterReopen = await syncHistory(harness, "parent-after-reopen");
+    expect(parentAfterReopen.session_id).toBe(parentSessionId);
+    expect(parentAfterReopen.events).toEqual(parentBeforeFork.events);
+  });
+
   test("file-backed mixed-era history retains SDK fallback prefix and durable-authoritative suffix", async () => {
     const cwd = makeTempCwd();
     const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-mixed-transcript-"));

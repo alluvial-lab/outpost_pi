@@ -107,6 +107,20 @@ describe("durable transcript event v1 codec", () => {
     expect(decodeDurableTranscriptEntry(candidate)).toEqual({ status: "invalid" });
   });
 
+  test("round-trips an own __proto__ tool-args key without changing object semantics", () => {
+    const args = JSON.parse('{"__proto__":{"polluted":true},"path":"/tmp/a"}') as Record<string, unknown>;
+    const event = { ...events[2], eventId: "tool-proto", args } as TranscriptEvent;
+
+    const decoded = decodeDurableTranscriptEntry(entry(encodeDurableTranscriptEventV1(event)));
+
+    expect(decoded).toEqual({ status: "decoded", event });
+    expect(decoded.status).toBe("decoded");
+    if (decoded.status !== "decoded" || decoded.event.kind !== "tool_requested") return;
+    expect(Object.hasOwn(decoded.event.args, "__proto__")).toBe(true);
+    expect(decoded.event.args["__proto__"]).toEqual({ polluted: true });
+    expect((Object.prototype as Record<string, unknown>)["polluted"]).toBeUndefined();
+  });
+
   test("classifies unrelated and unsupported custom entries without parsing them as v1", () => {
     expect(decodeDurableTranscriptEntry(entry(events[0], "another-extension.state")))
       .toEqual({ status: "not_transcript" });

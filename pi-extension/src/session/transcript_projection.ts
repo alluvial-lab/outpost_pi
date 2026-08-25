@@ -62,6 +62,10 @@ export function transcriptEventsToSessionHistory(
   const seenToolFinishes = new Set<string>();
   const seenAssistantMessages = new Set<string>();
   const seenCompactions = new Set<string>();
+  const finishedToolIds = new Set(events
+    .filter((event): event is Extract<TranscriptEvent, { kind: "tool_finished" }> =>
+      event.kind === "tool_finished")
+    .map((event) => event.toolCallId));
 
   for (const event of events) {
     switch (event.kind) {
@@ -102,6 +106,7 @@ export function transcriptEventsToSessionHistory(
         break;
       }
       case "tool_requested": {
+        if (event.tool === "agent-network" && !finishedToolIds.has(event.toolCallId)) break;
         if (seenToolRequests.has(event.toolCallId)) break;
         seenToolRequests.add(event.toolCallId);
         out.push({
@@ -254,8 +259,8 @@ export function reconcileTranscriptContextEntries(input: {
   const decodedByIndex = new Map<number, TranscriptEvent>();
   const durableEventIds = new Set<string>();
   const durableToolFacts = new Set<string>();
-  const durableUserClaims = new Map<string, TranscriptEvent[]>();
-  const durableUserClaimIds = new Set<string>();
+  const durableAssistantMessageIds = new Set<string>();
+  const durableCompactionTimestamps = new Set<number>();
 
   for (const [index, entry] of input.entries.entries()) {
     const decoded = decodeDurableTranscriptEntry(entry);
@@ -265,17 +270,15 @@ export function reconcileTranscriptContextEntries(input: {
     durableEventIds.add(event.eventId);
     if (event.kind === "tool_requested" || event.kind === "tool_finished") {
       durableToolFacts.add(toolCollisionKey(event));
-    } else if ((event.kind === "user_submitted" || event.kind === "user_confirmed")
-      && !durableUserClaimIds.has(event.clientMessageId)) {
-      durableUserClaimIds.add(event.clientMessageId);
-      const signature = transcriptUserContentSignature(event.text, event.images);
-      const claims = durableUserClaims.get(signature) ?? [];
-      claims.push(event);
-      durableUserClaims.set(signature, claims);
+    } else if (event.kind === "assistant_committed") {
+      durableAssistantMessageIds.add(event.messageId);
+    } else if (event.kind === "compaction_recorded") {
+      durableCompactionTimestamps.add(event.ts);
     }
   }
 
   const fallbackByIndex = indexPreDurableContextEvents(input.sessionId, input.entries);
+  const claimedFallbackUserIndexes = bindDurableUserClaims(decodedByIndex, fallbackByIndex);
   const output: TranscriptEvent[] = [];
   for (const [index, entry] of input.entries.entries()) {
     const durable = decodedByIndex.get(index);
@@ -286,7 +289,14 @@ export function reconcileTranscriptContextEntries(input: {
 
     if (entry.type === "message") {
       for (const event of fallbackByIndex.get(index) ?? []) {
-        if (!isClaimedByDurable(event, durableEventIds, durableToolFacts, durableUserClaims)) {
+        if (!isClaimedByDurable(
+          event,
+          index,
+          durableEventIds,
+          durableToolFacts,
+          durableAssistantMessageIds,
+          claimedFallbackUserIndexes,
+        )) {
           output.push(event);
         }
       }
@@ -305,7 +315,7 @@ export function reconcileTranscriptContextEntries(input: {
         summary: typeof record["summary"] === "string" ? record["summary"] : "",
         tokensBefore: typeof record["tokensBefore"] === "number" ? record["tokensBefore"] : 0,
       };
-      if (!durableEventIds.has(event.eventId)) output.push(event);
+      if (!durableCompactionTimestamps.has(event.ts)) output.push(event);
     }
   }
   return output;
@@ -354,23 +364,50 @@ function projectedEventCount(message: SdkTranscriptMessage): number {
   return count;
 }
 
+function bindDurableUserClaims(
+  durableByIndex: ReadonlyMap<number, TranscriptEvent>,
+  fallbackByIndex: ReadonlyMap<number, TranscriptEvent[]>,
+): ReadonlySet<number> {
+  const claimedFallbackIndexes = new Set<number>();
+  const claimedClientMessageIds = new Set<string>();
+  for (const [durableIndex, durable] of durableByIndex) {
+    if (durable.kind !== "user_submitted" && durable.kind !== "user_confirmed") continue;
+    if (claimedClientMessageIds.has(durable.clientMessageId)) continue;
+    claimedClientMessageIds.add(durable.clientMessageId);
+    const signature = transcriptUserContentSignature(durable.text, durable.images);
+    for (let index = durableIndex - 1; index >= 0; index--) {
+      if (claimedFallbackIndexes.has(index)) continue;
+      const fallback = fallbackByIndex.get(index)?.find((event) =>
+        (event.kind === "user_submitted" || event.kind === "user_confirmed")
+        && transcriptUserContentSignature(event.text, event.images) === signature
+      );
+      if (!fallback) continue;
+      // A durable user entry is appended after its SDK message. Binding it to
+      // the nearest preceding equal-content fallback preserves an older legacy
+      // prefix instead of consuming claims FIFO across migration eras.
+      claimedFallbackIndexes.add(index);
+      break;
+    }
+  }
+  return claimedFallbackIndexes;
+}
+
 function isClaimedByDurable(
   event: TranscriptEvent,
+  fallbackIndex: number,
   durableEventIds: ReadonlySet<string>,
   durableToolFacts: ReadonlySet<string>,
-  durableUserClaims: Map<string, TranscriptEvent[]>,
+  durableAssistantMessageIds: ReadonlySet<string>,
+  claimedFallbackUserIndexes: ReadonlySet<number>,
 ): boolean {
   if (event.kind === "tool_requested" || event.kind === "tool_finished") {
     return durableToolFacts.has(toolCollisionKey(event));
   }
   if (event.kind === "user_submitted" || event.kind === "user_confirmed") {
-    const signature = transcriptUserContentSignature(event.text, event.images);
-    const claims = durableUserClaims.get(signature);
-    if (claims && claims.length > 0) {
-      claims.shift();
-      if (claims.length === 0) durableUserClaims.delete(signature);
-      return true;
-    }
+    return claimedFallbackUserIndexes.has(fallbackIndex);
+  }
+  if (event.kind === "assistant_committed") {
+    return durableAssistantMessageIds.has(event.messageId);
   }
   return durableEventIds.has(event.eventId);
 }
@@ -434,8 +471,9 @@ function dedupeTranscriptEvents(events: readonly TranscriptEvent[]): TranscriptE
   const seen = new Set<string>();
   const out: TranscriptEvent[] = [];
   for (const event of events) {
-    if (seen.has(event.eventId)) continue;
-    seen.add(event.eventId);
+    const identity = JSON.stringify([event.sessionId, event.eventId]);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
     out.push(event);
   }
   return out;

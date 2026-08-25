@@ -134,7 +134,7 @@ describe("SdkSessionProjection durable transcript binding", () => {
     expect(pi.appendEntry).toHaveBeenCalledOnce();
     expect(pi.appendEntry).toHaveBeenCalledWith(TRANSCRIPT_EVENT_CUSTOM_TYPE, event);
     expect(projection.getTranscriptEventsForTest()).toEqual([event]);
-    expect(projection.recordedTranscriptTs(event.eventId)).toBe(event.ts);
+    expect(projection.recordedTranscriptTs(event.eventId, event.sessionId)).toBe(event.ts);
     expect(projection.recordDurableTranscriptEvent({ ...event, ts: 9_999 })).toEqual({ status: "duplicate" });
     expect(pi.appendEntry).toHaveBeenCalledOnce();
   });

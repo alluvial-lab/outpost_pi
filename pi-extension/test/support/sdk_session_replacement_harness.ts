@@ -274,6 +274,10 @@ export class SdkSessionReplacementHarness {
     await this.host.switchSession(sessionFile, { withSession: async () => undefined });
   }
 
+  async forkSession(entryId: string): Promise<void> {
+    await this.host.fork(entryId, { position: "at", withSession: async () => undefined });
+  }
+
   async dispose(): Promise<void> {
     for (const session of [this.currentSession]) {
       session.indexModule._resetPendingDeliveryQueueForTest();
@@ -453,7 +457,9 @@ export class SdkSessionReplacementHarness {
         this.newSessionCalls.push({ sessionLabel: label, hasWithSession: typeof options?.withSession === "function" });
         return this.host ? this.host.newSession(options) : { cancelled: false };
       },
-      fork: async () => ({ cancelled: false }),
+      fork: async (entryId, options) => this.host
+        ? this.host.fork(entryId, options)
+        : { cancelled: false },
       navigateTree: async () => ({ cancelled: false }),
       switchSession: notUsed,
       reload: async () => runner.invalidate(),

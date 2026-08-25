@@ -433,8 +433,8 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     return this.transcriptLog.record(event);
   }
 
-  recordedTranscriptTs(eventId: string): number | undefined {
-    return this.transcriptLog.recordedTsFor(eventId);
+  recordedTranscriptTs(eventId: string, sessionId = this.currentRemoteSessionId()): number | undefined {
+    return this.transcriptLog.recordedTsFor(sessionId, eventId);
   }
 
   /** Report whether the current SDK lifecycle has a durable transcript writer. */

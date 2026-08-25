@@ -162,7 +162,12 @@ function cloneJsonValue(value: unknown): JsonValue {
   if (Array.isArray(value)) return value.map(cloneJsonValue);
   const clone: JsonRecord = {};
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    clone[key] = cloneJsonValue(child);
+    Object.defineProperty(clone, key, {
+      value: cloneJsonValue(child),
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return clone;
 }

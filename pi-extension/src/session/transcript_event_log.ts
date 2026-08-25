@@ -22,7 +22,7 @@ export type TranscriptRecordResult =
  */
 export class TranscriptEventLog {
   private readonly events: TranscriptEvent[] = [];
-  private readonly byEventId = new Map<string, TranscriptEvent>();
+  private readonly byIdentity = new Map<string, TranscriptEvent>();
   private persistence: TranscriptEventPersistence | null = null;
 
   bindPersistence(persistence: TranscriptEventPersistence): void {
@@ -35,7 +35,7 @@ export class TranscriptEventLog {
   }
 
   record(event: TranscriptEvent): TranscriptRecordResult {
-    if (this.byEventId.has(event.eventId)) return { status: "duplicate" };
+    if (this.byIdentity.has(eventIdentity(event))) return { status: "duplicate" };
     const persistence = this.persistence;
     if (!persistence) return { status: "unavailable" };
     try {
@@ -58,8 +58,8 @@ export class TranscriptEventLog {
     return appended;
   }
 
-  recordedTsFor(eventId: string): number | undefined {
-    return this.byEventId.get(eventId)?.ts;
+  recordedTsFor(sessionId: string, eventId: string): number | undefined {
+    return this.byIdentity.get(eventIdentity({ sessionId, eventId }))?.ts;
   }
 
   /** Report whether live producers can currently cross the durable session boundary. */
@@ -74,7 +74,7 @@ export class TranscriptEventLog {
 
   clear(): void {
     this.events.length = 0;
-    this.byEventId.clear();
+    this.byIdentity.clear();
   }
 
   forSession(sessionId: string): readonly TranscriptEvent[] {
@@ -86,9 +86,14 @@ export class TranscriptEventLog {
   }
 
   private install(event: TranscriptEvent): boolean {
-    if (this.byEventId.has(event.eventId)) return false;
-    this.byEventId.set(event.eventId, event);
+    const identity = eventIdentity(event);
+    if (this.byIdentity.has(identity)) return false;
+    this.byIdentity.set(identity, event);
     this.events.push(event);
     return true;
   }
+}
+
+function eventIdentity(event: Pick<TranscriptEvent, "sessionId" | "eventId">): string {
+  return JSON.stringify([event.sessionId, event.eventId]);
 }

@@ -19,14 +19,14 @@ describe("TranscriptEventLog durable aggregate", () => {
     const event = user("event-1", 10);
     const append = vi.fn(() => {
       expect(log.entries()).toEqual([]);
-      expect(log.recordedTsFor(event.eventId)).toBeUndefined();
+      expect(log.recordedTsFor(event.sessionId, event.eventId)).toBeUndefined();
     });
     log.bindPersistence({ append });
 
     expect(log.record(event)).toEqual({ status: "recorded" });
     expect(append).toHaveBeenCalledWith(event);
     expect(log.entries()).toEqual([event]);
-    expect(log.recordedTsFor(event.eventId)).toBe(10);
+    expect(log.recordedTsFor(event.sessionId, event.eventId)).toBe(10);
   });
 
   test("deduplicates before persistence and preserves the first event and timestamp", () => {
@@ -38,7 +38,7 @@ describe("TranscriptEventLog durable aggregate", () => {
     expect(log.record(user("same", 20, "second"))).toEqual({ status: "duplicate" });
     expect(append).toHaveBeenCalledTimes(1);
     expect(log.entries()).toEqual([user("same", 10, "first")]);
-    expect(log.recordedTsFor("same")).toBe(10);
+    expect(log.recordedTsFor("session-1", "same")).toBe(10);
   });
 
   test("reports unavailable and failed persistence without installing authority", () => {
@@ -50,7 +50,7 @@ describe("TranscriptEventLog durable aggregate", () => {
     log.bindPersistence(failing);
     expect(log.record(event)).toEqual({ status: "failed" });
     expect(log.entries()).toEqual([]);
-    expect(log.recordedTsFor(event.eventId)).toBeUndefined();
+    expect(log.recordedTsFor(event.sessionId, event.eventId)).toBeUndefined();
   });
 
   test("invalid runtime events fail before persistence", () => {
@@ -74,8 +74,20 @@ describe("TranscriptEventLog durable aggregate", () => {
       { ...user("other-session", 3), sessionId: "session-2" },
     ])).toBe(2);
     expect(append).not.toHaveBeenCalled();
-    expect(log.recordedTsFor("hydrated")).toBe(2);
+    expect(log.recordedTsFor("session-1", "hydrated")).toBe(2);
     expect(log.forSession("session-1").map((event) => event.eventId)).toEqual(["hydrated"]);
+  });
+
+  test("event identity is scoped to its owning session", () => {
+    const log = new TranscriptEventLog();
+    const parent = user("copied-event", 10);
+    const fork = { ...parent, sessionId: "session-2" };
+
+    expect(log.hydrate([parent, fork])).toBe(2);
+    expect(log.forSession("session-1")).toEqual([parent]);
+    expect(log.forSession("session-2")).toEqual([fork]);
+    expect(log.recordedTsFor("session-1", "copied-event")).toBe(10);
+    expect(log.recordedTsFor("session-2", "copied-event")).toBe(10);
   });
 
   test("unbind can be conditional and a fresh binding restores recording", () => {
@@ -98,11 +110,11 @@ describe("TranscriptEventLog durable aggregate", () => {
     log.replace([user("new", 2), user("new", 3)]);
 
     expect(log.entries()).toEqual([user("new", 2)]);
-    expect(log.recordedTsFor("old")).toBeUndefined();
-    expect(log.recordedTsFor("new")).toBe(2);
+    expect(log.recordedTsFor("session-1", "old")).toBeUndefined();
+    expect(log.recordedTsFor("session-1", "new")).toBe(2);
 
     log.clear();
     expect(log.entries()).toEqual([]);
-    expect(log.recordedTsFor("new")).toBeUndefined();
+    expect(log.recordedTsFor("session-1", "new")).toBeUndefined();
   });
 });

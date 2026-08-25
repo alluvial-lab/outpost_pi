@@ -2247,33 +2247,53 @@ function _deliverMeshMessageToAgent(
     tool: "agent-network",
     args,
   });
+  if (!_isAuthoritativeTranscriptRecord(requestRecorded)) return;
+
   const finishEventId = deterministicTranscriptEventId(sessionId, "tool_finished", toolCallId);
   const finishTs = _sdkSessionProjection.recordedTranscriptTs(finishEventId) ?? Date.now();
-  const finishRecorded = _recordDurableTranscriptEvent({
+  const finishResult = { from: env.from, message: bodyText };
+  let finishRecorded = _recordDurableTranscriptEvent({
     kind: "tool_finished",
     eventId: finishEventId,
     sessionId,
     ts: finishTs,
     toolCallId,
-    result: { from: env.from, message: bodyText },
+    result: finishResult,
   });
-  if (_isAuthoritativeTranscriptRecord(requestRecorded)) {
-    _owners.broadcast(_withCurrentSession({
-      type: "tool_request",
-      tool_call_id: toolCallId,
-      tool: "agent-network",
-      args,
-      ts: requestTs,
-    }));
-  }
-  if (_isAuthoritativeTranscriptRecord(finishRecorded)) {
-    _owners.broadcast(_withCurrentSession({
-      type: "tool_result",
-      tool_call_id: toolCallId,
-      result: { from: env.from, message: bodyText },
+  let finishError: string | undefined;
+  if (!_isAuthoritativeTranscriptRecord(finishRecorded)) {
+    finishError = "mesh transcript result persistence failed";
+    finishRecorded = _recordDurableTranscriptEvent({
+      kind: "tool_finished",
+      eventId: finishEventId,
+      sessionId,
       ts: finishTs,
-    }));
+      toolCallId,
+      error: finishError,
+    });
   }
+  if (!_isAuthoritativeTranscriptRecord(finishRecorded)) return;
+
+  _owners.broadcast(_withCurrentSession({
+    type: "tool_request",
+    tool_call_id: toolCallId,
+    tool: "agent-network",
+    args,
+    ts: requestTs,
+  }));
+  _owners.broadcast(_withCurrentSession(finishError
+    ? {
+        type: "tool_result",
+        tool_call_id: toolCallId,
+        error: finishError,
+        ts: finishTs,
+      }
+    : {
+        type: "tool_result",
+        tool_call_id: toolCallId,
+        result: finishResult,
+        ts: finishTs,
+      }));
 }
 
 /** Test-only seam for producer-connected native mesh transcript coverage. */

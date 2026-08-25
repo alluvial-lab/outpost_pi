@@ -3897,6 +3897,50 @@ describe("tool visibility", () => {
       .toEqual(["mesh_mesh-envelope-1", "mesh_mesh-envelope-1"]);
   });
 
+  test("mesh card result persistence failure records and broadcasts a terminal pair", async () => {
+    await _pairForTest("peer-mesh-partial-failure");
+    let appendAttempts = 0;
+    _setPiForTest({
+      sendMessage: vi.fn(),
+      sendUserMessage: vi.fn(),
+      appendEntry: (customType: string, data: unknown) => {
+        appendAttempts += 1;
+        if (appendAttempts === 2) throw new Error("injected second append failure");
+        appendDurableEntry(customType, data);
+      },
+    });
+    const sendsBefore = relayRef.current!.send.mock.calls.length;
+
+    await _deliverMeshMessageToAgentForTest({
+      id: "mesh-envelope-partial",
+      from: "/repo@reviewer",
+      re: null,
+      body: "review complete",
+    });
+    await flushSecureOutbound();
+
+    expect(appendAttempts).toBe(3);
+    const native = durableTranscriptEntries.map((entry) => entry.data as Record<string, unknown>);
+    expect(native).toEqual([
+      expect.objectContaining({
+        kind: "tool_requested",
+        toolCallId: "mesh_mesh-envelope-partial",
+      }),
+      expect.objectContaining({
+        kind: "tool_finished",
+        toolCallId: "mesh_mesh-envelope-partial",
+        error: "mesh transcript result persistence failed",
+      }),
+    ]);
+    const live = sentToPeerSince(sendsBefore, "peer-mesh-partial-failure")
+      .filter((frame) => frame.inner.type === "tool_request" || frame.inner.type === "tool_result");
+    expect(live.map((frame) => frame.inner.type)).toEqual(["tool_request", "tool_result"]);
+    expect(live[1]?.inner).toMatchObject({
+      tool_call_id: "mesh_mesh-envelope-partial",
+      error: "mesh transcript result persistence failed",
+    });
+  });
+
   test("tool_result stringifies content-array/object (no [object Object]) and == re-sync", async () => {
     await _pairForTest("peer-tr");
     const onToolEnd = captureEventHandler("tool_execution_end");
