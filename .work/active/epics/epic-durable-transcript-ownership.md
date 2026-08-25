@@ -1,7 +1,7 @@
 ---
 id: epic-durable-transcript-ownership
 kind: epic
-stage: drafting
+stage: implementing
 tags: [pi-extension, app, bug]
 parent: null
 depends_on: []
@@ -112,3 +112,19 @@ this epic retires.
 declared `depends_on` (F1 first; F2/F3 depend on it; F4 last), then feature-level
 design + implement. The durable foundation (F1) is the riskiest, most novel unit
 — design it first and most carefully.
+
+
+## Decomposition (2026-08-25, epic-design reconciliation)
+
+Pre-existing seed (`feature-canonical-transcript-timestamp-ownership`) split
+per the sketch: its Unit A became F1; the seed IS F2. One child added (F3);
+F4 closes the arc. Spike story absorbed by F1.
+
+### Child features
+- `epic-durable-transcript-ownership-durable-event-log` (F1) — durable event log foundation — depends on: []
+- `feature-canonical-transcript-timestamp-ownership` (F2) — close the single-clock timestamp invariant — depends on: [F1]
+- `epic-durable-transcript-ownership-durable-native-events` (F3) — durable-ize native events — depends on: [F1]
+- `epic-durable-transcript-ownership-retire-rederivation` (F4) — retire re-derivation + two-source contract — depends on: [F1, F2, F3]
+
+F2/F3 parallelize after F1. F1 is the riskiest unit (design it first and most
+carefully, per the epic's own note).
