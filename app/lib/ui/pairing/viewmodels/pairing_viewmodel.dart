@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:app/data/preferences/preferences.dart';
+import 'package:app/data/transport/connection_cancellation.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/data/transport/relay_config.dart';
@@ -23,6 +24,7 @@ typedef PairingTransportFactory =
     Future<pair_flow.PeerTransport> Function(
       QrPairPayload qr,
       SimpleKeyPair deviceEd25519,
+      ConnectionCancellation cancellation,
     );
 
 /// Drive QR pairing and expose scanning, connection, success, and error state.
@@ -38,6 +40,7 @@ class PairingViewModel extends ViewModel<PairingState> {
   final Preferences _prefs;
   final OwnerIdentityBridge _ownerBridge;
   final DebugLog? _debugLog;
+  final Duration _transportConnectTimeout;
   _PairingAttempt? _activeAttempt;
   int _generation = 0;
   bool _disposed = false;
@@ -49,7 +52,9 @@ class PairingViewModel extends ViewModel<PairingState> {
     this._prefs,
     this._ownerBridge, {
     DebugLog? debugLog,
+    Duration transportConnectTimeout = const Duration(seconds: 30),
   }) : _debugLog = debugLog,
+       _transportConnectTimeout = transportConnectTimeout,
        super(const PairingScanning());
 
   // ---------------------------------------------------------------------------
@@ -68,13 +73,14 @@ class PairingViewModel extends ViewModel<PairingState> {
       // the outpostpi scheme or pair? query) but failed to parse deserves
       // explicit feedback — otherwise the paste sheet closes and the user
       // sees no indication their code was rejected.
-      final looksIntentional = rawUri.contains('outpostpi://') ||
-          rawUri.contains('pair?');
+      final looksIntentional =
+          rawUri.contains('outpostpi://') || rawUri.contains('pair?');
       if (looksIntentional) {
         _emitIfCurrent(
           generation,
           const PairingError(
-            message: 'That pairing code could not be read. Make sure it '
+            message:
+                'That pairing code could not be read. Make sure it '
                 'starts with outpostpi://pair? and was copied whole.',
             canRetry: true,
           ),
@@ -112,13 +118,25 @@ class PairingViewModel extends ViewModel<PairingState> {
       final ownerKey = await _ownerBridge.requireKeyPair();
       if (!_isCurrent(generation)) return;
 
-      final transport = await _transportFactory(qr, ownerKey);
-      if (!_isCurrent(generation)) {
-        await transport.close();
+      attempt = _PairingAttempt();
+      _activeAttempt = attempt;
+      final transport =
+          await _transportFactory(qr, ownerKey, attempt.cancellation).timeout(
+            _transportConnectTimeout,
+            onTimeout: () async {
+              await _closeAttempt(attempt);
+              throw const pair_flow.PairingError(
+                code: 'pair_timeout',
+                message:
+                    'Timed out — make sure /outpost-pi is running on your Mac',
+              );
+            },
+          );
+      if (!await attempt.attachTransport(transport) ||
+          !_isCurrent(generation)) {
+        await _closeAttempt(attempt);
         return;
       }
-      attempt = _PairingAttempt(transport);
-      _activeAttempt = attempt;
 
       final result = await pair_flow
           .performPairing(
@@ -282,12 +300,24 @@ class PairingViewModel extends ViewModel<PairingState> {
 /// A stale completion closes this captured object, never the ViewModel's
 /// mutable active-attempt reference, which may belong to a later QR scan.
 final class _PairingAttempt {
-  _PairingAttempt(this._transport);
-
-  final pair_flow.PeerTransport _transport;
+  final CancelToken cancellation = CancelToken();
+  pair_flow.PeerTransport? _transport;
   SecurePeerChannel? _channel;
   bool _closed = false;
   bool _released = false;
+
+  Future<bool> attachTransport(pair_flow.PeerTransport transport) async {
+    if (_closed) {
+      try {
+        await transport.close();
+      } on Object {
+        // A stale factory result has no remaining owner to report through.
+      }
+      return false;
+    }
+    _transport = transport;
+    return true;
+  }
 
   void attachChannel(SecurePeerChannel channel) {
     if (_closed) {
@@ -305,11 +335,21 @@ final class _PairingAttempt {
   Future<void> close() async {
     if (_closed || _released) return;
     _closed = true;
+    try {
+      await cancellation.cancelAndWait();
+    } on Object {
+      // The cancellation listener owns its total resource cleanup; a reported
+      // cleanup failure must not skip closing a transport already handed back.
+    }
     final channel = _channel;
-    if (channel != null) {
-      await channel.close();
-    } else {
-      await _transport.close();
+    try {
+      if (channel != null) {
+        await channel.close();
+      } else {
+        await _transport?.close();
+      }
+    } on Object {
+      // Pairing teardown is best-effort and must remain safe from dispose().
     }
   }
 }

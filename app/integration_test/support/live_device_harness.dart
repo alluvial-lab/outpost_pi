@@ -174,13 +174,14 @@ final class LiveDeviceHarness {
         : null;
     final pairingViewModel = PairingViewModel(
       storage,
-      (qr, ownerKey) => WsTransport.connect(
+      (qr, ownerKey, cancellation) => WsTransport.connect(
         relayUrl: liveRelayUrl,
         peerPubkey: qr.epk,
         ed25519Key: ownerKey,
         deviceId: 'live-oddities-device',
         activeRoom: qr.roomId ?? 'main',
         debugLog: debugLog,
+        cancellation: cancellation,
       ).timeout(const Duration(seconds: 15)),
       connection,
       preferences,

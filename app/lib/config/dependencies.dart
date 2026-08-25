@@ -14,6 +14,7 @@ import 'package:app/data/repositories/home_read_repository.dart';
 import 'package:app/data/repositories/session_read_repository.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/data/transport/channel.dart'; // IChannel
+import 'package:app/data/transport/connection_cancellation.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/peer_channel.dart';
 import 'package:app/data/identity/device_id.dart';
@@ -346,6 +347,7 @@ Future<IChannel> _productionConnectionFactory(
 Future<PeerTransport> _productionPairingTransportFactory(
   QrPairPayload qr,
   SimpleKeyPair deviceEd25519,
+  ConnectionCancellation cancellation,
 ) async {
   // Plan 14: pairing connects via the GLOBAL relay URL (Preferences),
   // not whatever was embedded in the QR. Mismatch between qr.relayUrl
@@ -369,6 +371,7 @@ Future<PeerTransport> _productionPairingTransportFactory(
     deviceId: await _injector.get<DeviceId>().get(),
     activeRoom: qr.roomId ?? 'main',
     debugLog: _injector.get<DebugLog>(),
+    cancellation: cancellation,
   );
 }
 
