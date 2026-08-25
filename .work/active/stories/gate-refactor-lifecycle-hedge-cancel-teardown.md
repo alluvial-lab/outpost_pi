@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-lifecycle-hedge-cancel-teardown
 kind: story
-stage: implementing
+stage: done
 tags: []
 parent: null
 depends_on: []
@@ -33,3 +33,10 @@ A losing same-device socket can remain authenticated, later supersede the intend
 
 ## Fix
 Make subscription and socket teardown independently total (settle both even if either fails), normalize cleanup failures after every owned resource has closed, and ensure loser-cleanup failure cannot prevent winner adoption or terminal error completion.
+
+## Implementation
+
+- WebSocket connect cancellation, connect failure, and live transport closure now settle every owned cleanup action before reporting the first cleanup failure, so subscription cancellation cannot skip socket/control-stream closure.
+- Reconnect hedge cancellation contains and records loser cleanup failures before continuing fallback startup or winner adoption.
+- Regression coverage injects both a failing subscription cleanup followed by socket closure and a failing primary hedge cancellation followed by successful fallback adoption.
+- Verified with `flutter test test/data/transport/ws_transport_queue_test.dart test/transport/connection_manager_test.dart --concurrency=2`.

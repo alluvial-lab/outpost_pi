@@ -59,6 +59,23 @@ void main() {
     expect(queue.pendingFrames, 1);
   });
 
+  test(
+    'cleanup closes the socket after subscription cancellation fails',
+    () async {
+      var socketClosed = false;
+
+      await expectLater(
+        settleWsCleanupForTesting([
+          () async => throw StateError('subscription cleanup failed'),
+          () async => socketClosed = true,
+        ]),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(socketClosed, isTrue);
+    },
+  );
+
   test('transport close preempts and releases buffered data', () async {
     final queue = WsInboundMessageQueue(maxFrames: 2, maxBytes: 8);
     expect(queue.add(Uint8List.fromList(<int>[1, 2, 3])), isTrue);

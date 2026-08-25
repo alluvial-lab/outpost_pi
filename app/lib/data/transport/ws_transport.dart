@@ -331,6 +331,10 @@ class WsTransport
       },
     );
 
+    Future<void>? connectCleanup;
+    Future<void> closeConnectResources() => connectCleanup ??=
+        settleWsCleanupForTesting([() => sub.cancel(), () => ws.sink.close()]);
+
     Future<void> cancelConnect() async {
       cancelled = true;
       if (!authDone && !challengeCompleter.isCompleted) {
@@ -347,8 +351,7 @@ class WsTransport
         await transport.close();
         return;
       }
-      await sub.cancel();
-      await ws.sink.close();
+      await closeConnectResources();
     }
 
     void throwIfCancelled() {
@@ -412,8 +415,7 @@ class WsTransport
       handedOff = true;
       return transport;
     } catch (e) {
-      await sub.cancel();
-      await ws.sink.close();
+      await closeConnectResources();
       rethrow;
     } finally {
       if (!handedOff) {
@@ -526,9 +528,36 @@ class WsTransport
     _queue.close();
     _flushQueueOverflowAudit();
     _signalTransportClosed();
-    await _sub?.cancel();
-    await _ws.sink.close();
-    if (!_controlController.isClosed) await _controlController.close();
+    await settleWsCleanupForTesting([
+      () => _sub?.cancel(),
+      () => _ws.sink.close(),
+      () => _controlController.isClosed
+          ? Future<void>.value()
+          : _controlController.close(),
+    ]);
+  }
+}
+
+/// Settle every WebSocket cleanup action before reporting the first failure.
+///
+/// This is public only so lifecycle regression tests can inject a failing
+/// subscription cancellation and prove that later socket closure still runs.
+@visibleForTesting
+Future<void> settleWsCleanupForTesting(
+  Iterable<FutureOr<void> Function()> actions,
+) async {
+  Object? firstError;
+  StackTrace? firstStack;
+  for (final action in actions) {
+    try {
+      await action();
+    } on Object catch (error, stack) {
+      firstError ??= error;
+      firstStack ??= stack;
+    }
+  }
+  if (firstError != null) {
+    Error.throwWithStackTrace(firstError, firstStack!);
   }
 }
 
