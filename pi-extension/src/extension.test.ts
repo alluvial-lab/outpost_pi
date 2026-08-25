@@ -3659,32 +3659,6 @@ describe("tool visibility", () => {
     await stop("", makeMockCtx());
   });
 
-  test("tool_execution_start → tool_request emitted via channel", async () => {
-    await _pairForTest("peer-tool");
-    const sendsBefore = relayRef.current!.send.mock.calls.length;
-
-    const onToolStart = captureEventHandler("tool_execution_start");
-    onToolStart({
-      type: "tool_execution_start",
-      toolCallId: "tc_1",
-      toolName: "bash",
-      args: { command: "ls" },
-    });
-    await flushSecureOutbound();
-
-    const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
-    const requests = sent.map(decodeSentCt).filter((d) => d.inner.type === "tool_request");
-    expect(requests).toHaveLength(1);
-    expect(requests[0]!.peer).toBe("peer-tool");
-    expect(requests[0]!.inner).toMatchObject({
-      type: "tool_request",
-      tool_call_id: "tc_1",
-      tool: "bash",
-      args: { command: "ls" },
-      ts: expect.any(Number),
-    });
-  });
-
   test("tool_request and tool_result remain decodable without optional ts", () => {
     expect(decodeServer(JSON.stringify({
       type: "tool_request",
@@ -3831,55 +3805,6 @@ describe("tool visibility", () => {
 
     // Relay was never instantiated in idle state (no start happened)
     expect(relayRef.current).toBeNull();
-  });
-
-  test("start → end pair emits tool_request then tool_result (no gate)", async () => {
-    await _pairForTest("peer-pair");
-
-    const onToolStart = captureEventHandler("tool_execution_start");
-    const onToolEnd = captureEventHandler("tool_execution_end");
-
-    onToolStart({
-      type: "tool_execution_start",
-      toolCallId: "tc_2",
-      toolName: "Read",
-      args: { file_path: "/tmp/x" },
-    });
-    onToolEnd({
-      type: "tool_execution_end",
-      toolCallId: "tc_2",
-      toolName: "Read",
-      result: { content: "hello" },
-      isError: false,
-    });
-    await flushSecureOutbound();
-
-    const sent = relayRef.current!.send.mock.calls.map((c) => c[0] as string).map(decodeSentCt);
-    const requests = sent.filter((d) => d.inner.type === "tool_request");
-    const results = sent.filter((d) => d.inner.type === "tool_result");
-    expect(requests).toHaveLength(1);
-    expect(results).toHaveLength(1);
-    expect(results[0]!.inner).toMatchObject({
-      type: "tool_result",
-      tool_call_id: "tc_2",
-      ts: expect.any(Number),
-    });
-
-    const transcriptEvents = _getTranscriptEventsForTest();
-    const requestEvent = transcriptEvents.find(
-      (event) => event.kind === "tool_requested" && event.toolCallId === "tc_2",
-    );
-    const resultEvent = transcriptEvents.find(
-      (event) => event.kind === "tool_finished" && event.toolCallId === "tc_2",
-    );
-    expect(requests[0]!.inner.ts).toBe(requestEvent?.ts);
-    expect(results[0]!.inner.ts).toBe(resultEvent?.ts);
-    expect(requestEvent?.ts).toBeGreaterThan(1_000_000_000_000);
-    expect(resultEvent?.ts).toBeGreaterThan(1_000_000_000_000);
-    expect(durableTranscriptEntries.map((entry) => entry.data)).toEqual([
-      expect.objectContaining({ kind: "tool_requested", toolCallId: "tc_2" }),
-      expect.objectContaining({ kind: "tool_finished", toolCallId: "tc_2" }),
-    ]);
   });
 
   test("admitted agent-network cards persist distinct request/result facts before broadcast", async () => {
@@ -6661,16 +6586,14 @@ describe("cumulative transcript event log", () => {
     expect(userTexts).toEqual(["from app", "from term 1", "from term 2"]);
   });
 
-  test("execution hooks, not SDK tool messages, own tool_request + tool_result events", async () => {
+  test("execution hooks persist and route the sole ordered tool pair with stable timestamps", async () => {
     await _pairForTest("peer-tools");
     const onMsgEnd = captureEventHandler("message_end");
     const onToolStart = captureEventHandler("tool_execution_start");
     const onToolEnd = captureEventHandler("tool_execution_end");
     const ts = 1_700_200_000_000;
 
-    // user prompt
     onMsgEnd({ type: "message_end", message: { role: "user", content: "do bash", timestamp: ts } });
-    // assistant message that contains a tool call block
     onMsgEnd({
       type: "message_end",
       message: {
@@ -6682,6 +6605,8 @@ describe("cumulative transcript event log", () => {
         timestamp: ts + 100,
       },
     });
+
+    const sendsBeforeTool = relayRef.current!.send.mock.calls.length;
     onToolStart({
       type: "tool_execution_start",
       toolCallId: "tc_1",
@@ -6708,25 +6633,51 @@ describe("cumulative transcript event log", () => {
         timestamp: ts + 200,
       },
     });
+    await flushSecureOutbound();
 
+    const durableToolEvents = durableTranscriptEntries
+      .map((entry) => entry.data as Record<string, unknown>)
+      .filter((event) => event["toolCallId"] === "tc_1");
+    expect(durableToolEvents.map((event) => event["kind"]))
+      .toEqual(["tool_requested", "tool_finished"]);
+
+    const liveToolFrames = sentToPeerSince(sendsBeforeTool, "peer-tools")
+      .filter((frame) => frame.inner.type === "tool_request" || frame.inner.type === "tool_result");
+    expect(liveToolFrames.map((frame) => frame.inner.type))
+      .toEqual(["tool_request", "tool_result"]);
+    expect(liveToolFrames[0]!.inner).toMatchObject({
+      type: "tool_request",
+      tool_call_id: "tc_1",
+      tool: "bash",
+      args: { command: "ls" },
+      ts: durableToolEvents[0]!["ts"],
+    });
+    expect(liveToolFrames[1]!.inner).toMatchObject({
+      type: "tool_result",
+      tool_call_id: "tc_1",
+      ts: durableToolEvents[1]!["ts"],
+    });
+    expect(durableToolEvents[0]!["ts"]).toEqual(expect.any(Number));
+    expect(durableToolEvents[1]!["ts"]).toEqual(expect.any(Number));
     expect(_getTranscriptEventsForTest()).toHaveLength(4);
 
     _setSessionStartedAtForTest(ts);
-    const sendsBefore = relayRef.current!.send.mock.calls.length;
+    const sendsBeforeHistory = relayRef.current!.send.mock.calls.length;
     outpostPiTestHarness.routeClientMessage(
       { type: "session_sync", id: "t-1", session_id: currentSessionIdFromSends() },
       { abort: () => undefined },
     );
     await flushSecureOutbound();
 
-    const sent = relayRef.current!.send.mock.calls.slice(sendsBefore).map((c) => c[0] as string);
+    const sent = relayRef.current!.send.mock.calls.slice(sendsBeforeHistory).map((c) => c[0] as string);
     const events = (
       sent.map(decodeSentCt).find((d) => d.inner.type === "session_history")!.inner["events"]
-    ) as Array<{ type: string; tool_call_id?: string }>;
-    const types = events.map((e) => e.type);
-    expect(types).toEqual(["user_input", "agent_message", "tool_request", "tool_result"]);
-    expect(events[2]!.tool_call_id).toBe("tc_1");
-    expect(events[3]!.tool_call_id).toBe("tc_1");
+    ) as Array<{ type: string; tool_call_id?: string; ts: number }>;
+    expect(events.map((event) => event.type))
+      .toEqual(["user_input", "agent_message", "tool_request", "tool_result"]);
+    expect(events.slice(2).map((event) => event.tool_call_id)).toEqual(["tc_1", "tc_1"]);
+    expect(events.slice(2).map((event) => event.ts))
+      .toEqual(durableToolEvents.map((event) => event["ts"]));
   });
 
   test("_cmdStart preserves transcript events across stop/start cycle (Pi session outlives relay)", async () => {
