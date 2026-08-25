@@ -446,3 +446,10 @@ collision index and a real multi-tool reopen test. If the installed SDK's
 file-backed behavior differs from the spike, the fallback remains the current
 SDK projection and F2/F3 stay blocked from producer migration; do not delete or
 weaken the fallback in F1.
+
+## Implementation summary
+
+- **Durable now:** canonical transcript events have a strict versioned custom-entry codec; `TranscriptEventLog.record` persists synchronously through the lifecycle-fresh public SDK `appendEntry` capability before installing in-memory authority; reopen reads the active compaction-aware entry branch and prefers validated durable user/tool facts with stable identities and execution timestamps.
+- **Still fallback:** all pre-upgrade SDK-only history and existing F1-era `message_end`, tool, compaction, mesh, and error producers continue through the explicitly named lossy SDK-message fallback. F2/F3 migrate those producers deliberately, and F4 retires re-derivation only after durable coverage is complete.
+- **Invariants held:** SDK messages are neither mutated nor replaced and remain authoritative for LLM context; plain custom entries remain excluded from `buildSessionContext`; extension entries are authoritative only for matching transcript facts; invalid, future-version, and partial writes cannot suppress valid SDK fallback; first-writer event identity, FIFO repeated-user cardinality, fork rehoming, active-branch compaction, and fail-closed append ownership are covered by focused and file-backed tests.
+- **Verification:** final targeted codec/projection/replacement run passed 108 tests; pi-extension typecheck, full 59-file suite (1076 passed, 3 skipped), and build passed.

@@ -335,7 +335,7 @@ export class SdkSessionReplacementHarness {
       {} as never,
     );
     runner.bindCore(
-      this.makeActions(label),
+      this.makeActions(label, options.sessionManager),
       this.makeContextActions(label, options.cwd),
     );
     this.bindCommandActions(runner, label);
@@ -402,7 +402,7 @@ export class SdkSessionReplacementHarness {
     } as unknown as Extension;
   }
 
-  private makeActions(label: string): ExtensionActions {
+  private makeActions(label: string, sessionManager: SessionManager): ExtensionActions {
     return {
       sendMessage: vi.fn((content: unknown) => {
         this.deliveries.push({ sessionLabel: label, method: "sendMessage", content });
@@ -410,7 +410,9 @@ export class SdkSessionReplacementHarness {
       sendUserMessage: vi.fn((content: unknown) => {
         this.deliveries.push({ sessionLabel: label, method: "sendUserMessage", content });
       }),
-      appendEntry: vi.fn(),
+      appendEntry: vi.fn((customType: string, data?: unknown) => {
+        sessionManager.appendCustomEntry(customType, data);
+      }),
       setSessionName: vi.fn(),
       getSessionName: vi.fn(() => undefined),
       setLabel: vi.fn(),

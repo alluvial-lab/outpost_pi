@@ -1,4 +1,5 @@
 import type { SessionHistoryEvent, Usage, WireImage } from "../protocol/types.js";
+import { decodeDurableTranscriptEntry } from "./durable_transcript_event.js";
 import type { TranscriptEvent } from "./transcript_event.js";
 
 /** Describe the permissive SDK history shape accepted only at the legacy-to-canonical transcript boundary. */
@@ -30,6 +31,14 @@ type LegacyAdapterInput = {
   sessionId: string;
   messages: readonly LegacyAgentMessage[];
 };
+
+/** Describe active SDK context entries consumed at the transcript backfill boundary. */
+export type SdkTranscriptContextEntry =
+  | { type: "message"; message: LegacyAgentMessage }
+  | { type: "compaction"; summary: string; tokensBefore: number; timestamp: string }
+  | { type: "custom"; customType: string; data?: unknown }
+  | { type: string };
+
 
 /** Append a canonical event unless its stable event id is already present. */
 export function appendTranscriptEvent(
@@ -234,6 +243,147 @@ export function mapLegacyAgentMessagesToTranscriptEvents(input: LegacyAdapterInp
     }
   }
   return events;
+}
+
+/**
+ * Reconcile the SDK's active context branch into canonical transcript events.
+ *
+ * Valid durable entries are indexed before legacy messages are mapped so a
+ * later execution-time custom entry can suppress an earlier SDK projection.
+ * The SDK entry order still determines where each surviving event is replayed.
+ */
+export function mapSdkContextEntriesToTranscriptEvents(input: {
+  sessionId: string;
+  entries: readonly SdkTranscriptContextEntry[];
+}): TranscriptEvent[] {
+  const decodedByIndex = new Map<number, TranscriptEvent>();
+  const durableEventIds = new Set<string>();
+  const durableToolFacts = new Set<string>();
+  const durableUserClaims = new Map<string, TranscriptEvent[]>();
+  const durableUserClaimIds = new Set<string>();
+
+  for (const [index, entry] of input.entries.entries()) {
+    const decoded = decodeDurableTranscriptEntry(entry);
+    if (decoded.status !== "decoded" || durableEventIds.has(decoded.event.eventId)) continue;
+    const event = { ...decoded.event, sessionId: input.sessionId } as TranscriptEvent;
+    decodedByIndex.set(index, event);
+    durableEventIds.add(event.eventId);
+    if (event.kind === "tool_requested" || event.kind === "tool_finished") {
+      durableToolFacts.add(toolCollisionKey(event));
+    } else if ((event.kind === "user_submitted" || event.kind === "user_confirmed")
+      && !durableUserClaimIds.has(event.clientMessageId)) {
+      durableUserClaimIds.add(event.clientMessageId);
+      const signature = transcriptUserContentSignature(event.text, event.images);
+      const claims = durableUserClaims.get(signature) ?? [];
+      claims.push(event);
+      durableUserClaims.set(signature, claims);
+    }
+  }
+
+  const legacyByIndex = indexLegacyContextEvents(input.sessionId, input.entries);
+  const output: TranscriptEvent[] = [];
+  for (const [index, entry] of input.entries.entries()) {
+    const durable = decodedByIndex.get(index);
+    if (durable) {
+      output.push(durable);
+      continue;
+    }
+
+    if (entry.type === "message") {
+      for (const event of legacyByIndex.get(index) ?? []) {
+        if (!isClaimedByDurable(event, durableEventIds, durableToolFacts, durableUserClaims)) {
+          output.push(event);
+        }
+      }
+      continue;
+    }
+
+    if (entry.type === "compaction" && isRecord(entry)) {
+      const record = entry as Record<string, unknown>;
+      const timestamp = typeof record["timestamp"] === "string" ? Date.parse(record["timestamp"]) : Number.NaN;
+      const ts = Number.isFinite(timestamp) ? timestamp : 0;
+      const event: TranscriptEvent = {
+        kind: "compaction_recorded",
+        eventId: deterministicTranscriptEventId(input.sessionId, "compaction_recorded", String(ts)),
+        sessionId: input.sessionId,
+        ts,
+        summary: typeof record["summary"] === "string" ? record["summary"] : "",
+        tokensBefore: typeof record["tokensBefore"] === "number" ? record["tokensBefore"] : 0,
+      };
+      if (!durableEventIds.has(event.eventId)) output.push(event);
+    }
+  }
+  return output;
+}
+
+/** Produce the content key used for one-for-one app-user reconciliation. */
+export function transcriptUserContentSignature(
+  text: string,
+  images: readonly { data: string; mime: string }[] | undefined,
+): string {
+  return JSON.stringify({ text, images: images ?? [] });
+}
+
+function indexLegacyContextEvents(
+  sessionId: string,
+  entries: readonly SdkTranscriptContextEntry[],
+): Map<number, TranscriptEvent[]> {
+  const messages: LegacyAgentMessage[] = [];
+  const sources: number[] = [];
+  for (const [index, entry] of entries.entries()) {
+    if (entry.type !== "message" || !("message" in entry)) continue;
+    messages.push(entry.message);
+    sources.push(index);
+  }
+  const mapped = mapLegacyAgentMessagesToTranscriptEvents({ sessionId, messages });
+  const bySource = new Map<number, TranscriptEvent[]>();
+  let cursor = 0;
+  for (const [messageIndex, message] of messages.entries()) {
+    const count = projectedEventCount(message);
+    bySource.set(sources[messageIndex]!, mapped.slice(cursor, cursor + count));
+    cursor += count;
+  }
+  return bySource;
+}
+
+function projectedEventCount(message: LegacyAgentMessage): number {
+  if (message.role === "user" || message.role === "toolResult"
+    || message.role === "compaction" || message.role === "compactionSummary") return 1;
+  if (message.role !== "assistant" || !Array.isArray(message.content)) return 0;
+  let count = 0;
+  for (const raw of message.content) {
+    if (!raw || typeof raw !== "object") continue;
+    const block = raw as { type?: string; text?: unknown };
+    if (block.type === "toolCall" || (block.type === "text" && String(block.text ?? "") !== "")) count++;
+  }
+  return count;
+}
+
+function isClaimedByDurable(
+  event: TranscriptEvent,
+  durableEventIds: ReadonlySet<string>,
+  durableToolFacts: ReadonlySet<string>,
+  durableUserClaims: Map<string, TranscriptEvent[]>,
+): boolean {
+  if (event.kind === "tool_requested" || event.kind === "tool_finished") {
+    return durableToolFacts.has(toolCollisionKey(event));
+  }
+  if (event.kind === "user_submitted" || event.kind === "user_confirmed") {
+    const signature = transcriptUserContentSignature(event.text, event.images);
+    const claims = durableUserClaims.get(signature);
+    if (claims && claims.length > 0) {
+      claims.shift();
+      if (claims.length === 0) durableUserClaims.delete(signature);
+      return true;
+    }
+  }
+  return durableEventIds.has(event.eventId);
+}
+
+function toolCollisionKey(
+  event: Extract<TranscriptEvent, { kind: "tool_requested" | "tool_finished" }>,
+): string {
+  return `${event.kind}\u0000${event.toolCallId}`;
 }
 
 /** Extract text content from a legacy SDK content value, ignoring non-text blocks. */

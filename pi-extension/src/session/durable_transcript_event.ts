@@ -26,19 +26,23 @@ export function encodeDurableTranscriptEventV1(event: TranscriptEvent): JsonValu
 
 /** Decode a custom SDK entry at the durable transcript boundary. */
 export function decodeDurableTranscriptEntry(entry: unknown): DurableTranscriptEventDecode {
-  if (!isRecord(entry) || typeof entry["customType"] !== "string") {
-    return { status: "not_transcript" };
+  try {
+    if (!isRecord(entry) || typeof entry["customType"] !== "string") {
+      return { status: "not_transcript" };
+    }
+    const customType = entry["customType"];
+    if (customType !== TRANSCRIPT_EVENT_CUSTOM_TYPE) {
+      return customType.startsWith(TRANSCRIPT_EVENT_CUSTOM_TYPE_PREFIX)
+        ? { status: "unsupported_version" }
+        : { status: "not_transcript" };
+    }
+    if (entry["type"] !== "custom") return { status: "invalid" };
+    const data = entry["data"];
+    if (!isTranscriptEvent(data)) return { status: "invalid" };
+    return { status: "decoded", event: cloneJsonValue(data) as unknown as TranscriptEvent };
+  } catch {
+    return { status: "invalid" };
   }
-  const customType = entry["customType"];
-  if (customType !== TRANSCRIPT_EVENT_CUSTOM_TYPE) {
-    return customType.startsWith(TRANSCRIPT_EVENT_CUSTOM_TYPE_PREFIX)
-      ? { status: "unsupported_version" }
-      : { status: "not_transcript" };
-  }
-  if (entry["type"] !== "custom") return { status: "invalid" };
-  const data = entry["data"];
-  if (!isTranscriptEvent(data)) return { status: "invalid" };
-  return { status: "decoded", event: cloneJsonValue(data) as unknown as TranscriptEvent };
 }
 
 function isTranscriptEvent(value: unknown): value is TranscriptEvent {
@@ -100,7 +104,7 @@ function isTranscriptEvent(value: unknown): value is TranscriptEvent {
 }
 
 function hasCommonFields(value: unknown): value is Record<string, unknown> & Pick<TranscriptEvent, "kind" | "eventId" | "sessionId" | "ts"> {
-  if (!isRecord(value)) return false;
+  if (!isRecord(value) || Object.values(value).some((child) => child === undefined)) return false;
   if (!isNonEmptyString(value["kind"]) || !isNonEmptyString(value["eventId"]) || !isNonEmptyString(value["sessionId"])) {
     return false;
   }

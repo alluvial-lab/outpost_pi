@@ -1,7 +1,7 @@
 ---
 id: epic-durable-transcript-ownership-durable-event-log-backfill-reopen
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension]
 parent: epic-durable-transcript-ownership-durable-event-log
 depends_on: [epic-durable-transcript-ownership-durable-event-log-sdk-binding]
@@ -41,3 +41,16 @@ v1 entries.
 ## Ordering
 
 Requires the SDK durability binding.
+
+## Implementation
+
+- Execution capability: `sol/high` — two-pass semantic reconciliation, mixed-version migration, and real SDK JSONL reopen behavior used the caller-selected high-capability path.
+- Review weight: not applicable — child story checkpoint.
+- Replaced transcript backfill with one `buildContextEntries()` active-branch read and a pure two-pass mapper: valid v1 entries are decoded/re-homed first, then only matching SDK transcript projections are suppressed in entry order.
+- Added semantic tool collision matching, cardinality-preserving FIFO user matching for repeated equal prompts, event-id matching for ordinary facts, raw compaction mapping, and invalid/unsupported-entry fallback behavior.
+- Extended the fake SDK harness so `appendEntry` delegates to its real `SessionManager`; file-backed tests cover reopen identity/timestamp equivalence, two tool calls, corrupt v1, unknown version, and an actually truncated final JSONL line.
+- Hardened the codec against explicit `undefined` optional properties and accessor failures found while exercising corrupt-entry reconciliation.
+- Tests: 108 focused codec/projection/replacement cases passed; pi-extension typecheck, full 59-file suite (1076 passed, 3 skipped), and build passed.
+- Simplification: restart backfill now maps the active context-entry stream once and hydrates the aggregate; `buildSessionContext()` remains only in the explicit legacy adapter/test surfaces.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.

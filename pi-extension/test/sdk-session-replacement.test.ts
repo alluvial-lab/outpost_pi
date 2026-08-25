@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
@@ -9,6 +9,9 @@ import {
   type Delivery,
 } from "./support/sdk_session_replacement_harness.js";
 import type { ClientMessage, ServerMessage } from "../src/protocol/types.js";
+import { TRANSCRIPT_EVENT_CUSTOM_TYPE } from "../src/session/durable_transcript_event.js";
+import { SdkSessionProjection } from "../src/session/sdk_session_projection.js";
+import type { TranscriptEvent } from "../src/session/transcript_event.js";
 
 const STALE_CTX = /stale after session replacement or reload/;
 
@@ -34,6 +37,51 @@ async function makeHarness(cwd = makeTempCwd()): Promise<SdkSessionReplacementHa
   const harness = await SdkSessionReplacementHarness.create({ cwd });
   harnesses.push(harness);
   return harness;
+}
+
+async function makeHarnessForSession(
+  cwd: string,
+  sessionManager: SessionManager,
+): Promise<SdkSessionReplacementHarness> {
+  const harness = await SdkSessionReplacementHarness.create({ cwd, sessionManager });
+  harnesses.push(harness);
+  return harness;
+}
+
+async function syncHistory(
+  harness: SdkSessionReplacementHarness,
+  requestId: string,
+): Promise<Extract<ServerMessage, { type: "session_history" }>> {
+  const channel = new TestPeerChannel();
+  harness.routeCurrent(withCurrentSession(harness, {
+    type: "session_sync",
+    id: requestId,
+  } as Omit<ClientMessage, "session_id">), channel);
+  return await channel.waitForMessage((msg) =>
+    msg.type === "session_history" && msg.in_reply_to === requestId,
+  ) as Extract<ServerMessage, { type: "session_history" }>;
+}
+
+function bindFileBackedTranscriptWriter(sessionManager: SessionManager): SdkSessionProjection {
+  const projection = new SdkSessionProjection({
+    outputs: {
+      broadcast: () => undefined,
+      sendTo: () => undefined,
+      publishRoomMeta: () => undefined,
+      activeOwnerIds: () => [],
+      lateAttachTargets: () => [],
+      handleClientMessage: () => undefined,
+    },
+  });
+  projection.setSessionIdForTest(sessionManager.getSessionId());
+  projection.bindApi({
+    sendMessage: () => undefined,
+    sendUserMessage: () => undefined,
+    appendEntry: (customType: string, data?: unknown) => {
+      sessionManager.appendCustomEntry(customType, data);
+    },
+  } as never);
+  return projection;
 }
 
 function withCurrentSession(harness: SdkSessionReplacementHarness, msg: Omit<ClientMessage, "session_id">): ClientMessage {
@@ -180,7 +228,7 @@ describe("SDK session replacement harness", () => {
     expect(thirdSessionId).not.toBe(secondSessionId);
   });
 
-  test("resume-style session_start backfills history from SessionManager.buildSessionContext", async () => {
+  test("resume-style session_start backfills history from SessionManager.buildContextEntries", async () => {
     const cwd = makeTempCwd();
     const harness = await makeHarness(cwd);
     const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-session-harness-sessions-"));
@@ -216,5 +264,126 @@ describe("SDK session replacement harness", () => {
     expect(history.events.map((event) => event.type)).toEqual(["user_input", "agent_message"]);
     expect(history.events[0]).toMatchObject({ text: "hello before pairing" });
     expect(history.events[1]).toMatchObject({ text: "hello from persisted history" });
+  });
+
+  test("file-backed durable identities and execution timestamps survive reopen", async () => {
+    const cwd = makeTempCwd();
+    const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-durable-transcript-"));
+    cleanupPaths.push(sessionDir);
+    const persisted = SessionManager.create(cwd, sessionDir);
+    const writer = bindFileBackedTranscriptWriter(persisted);
+    const sessionId = persisted.getSessionId();
+
+    persisted.appendMessage({ role: "user", content: "repeat", timestamp: 100 } as never);
+    const durableUser: TranscriptEvent = {
+      kind: "user_confirmed",
+      eventId: "durable-user-event",
+      sessionId,
+      ts: 101,
+      clientMessageId: "app-user-1",
+      text: "repeat",
+    };
+    expect(writer.recordDurableTranscriptEvent(durableUser)).toEqual({ status: "recorded" });
+
+    persisted.appendMessage({
+      role: "assistant",
+      timestamp: 200,
+      content: [
+        { type: "text", text: "using two tools" },
+        { type: "toolCall", id: "call-a", name: "read", arguments: { path: "a" } },
+        { type: "toolCall", id: "call-b", name: "read", arguments: { path: "b" } },
+      ],
+    } as never);
+    const requests: TranscriptEvent[] = [
+      {
+        kind: "tool_requested",
+        eventId: "durable-call-a",
+        sessionId,
+        ts: 250,
+        toolCallId: "call-a",
+        tool: "read",
+        args: { path: "a" },
+      },
+      {
+        kind: "tool_requested",
+        eventId: "durable-call-b",
+        sessionId,
+        ts: 260,
+        toolCallId: "call-b",
+        tool: "read",
+        args: { path: "b" },
+      },
+    ];
+    for (const event of requests) {
+      expect(writer.recordDurableTranscriptEvent(event)).toEqual({ status: "recorded" });
+    }
+
+    persisted.appendMessage({
+      role: "toolResult",
+      toolCallId: "call-a",
+      content: [{ type: "text", text: "sdk result" }],
+      isError: false,
+      timestamp: 300,
+    } as never);
+    const finish: TranscriptEvent = {
+      kind: "tool_finished",
+      eventId: "durable-finish-a",
+      sessionId,
+      ts: 350,
+      toolCallId: "call-a",
+      result: "durable result",
+    };
+    expect(writer.recordDurableTranscriptEvent(finish)).toEqual({ status: "recorded" });
+
+    const sessionFile = persisted.getSessionFile();
+    if (!sessionFile) throw new Error("Expected persisted session file");
+    const reopened = SessionManager.open(sessionFile, sessionDir, cwd);
+    const harness = await makeHarnessForSession(cwd, reopened);
+    const history = await syncHistory(harness, "durable-reopen");
+
+    expect(history.events).toEqual([
+      expect.objectContaining({ type: "user_input", id: "app-user-1", ts: 101, text: "repeat" }),
+      expect.objectContaining({ type: "agent_message", ts: 200, text: "using two tools" }),
+      expect.objectContaining({ type: "tool_request", tool_call_id: "call-a", ts: 250 }),
+      expect.objectContaining({ type: "tool_request", tool_call_id: "call-b", ts: 260 }),
+      expect.objectContaining({ type: "tool_result", tool_call_id: "call-a", ts: 350, result: "durable result" }),
+    ]);
+    expect(history.events.filter((event) => event.type === "tool_request")).toHaveLength(2);
+  });
+
+  test("corrupt, unknown-version, and truncated final custom entries preserve valid-prefix fallback", async () => {
+    const cwd = makeTempCwd();
+    const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-corrupt-transcript-"));
+    cleanupPaths.push(sessionDir);
+    const persisted = SessionManager.create(cwd, sessionDir);
+    persisted.appendMessage({ role: "user", content: "valid prefix", timestamp: 10 } as never);
+    persisted.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "still readable" }],
+      timestamp: 20,
+    } as never);
+    const candidate = {
+      kind: "user_confirmed",
+      eventId: "candidate",
+      sessionId: persisted.getSessionId(),
+      ts: 30,
+      clientMessageId: "candidate-client",
+      text: "valid prefix",
+    };
+    persisted.appendCustomEntry(TRANSCRIPT_EVENT_CUSTOM_TYPE, { ...candidate, ts: -1 });
+    persisted.appendCustomEntry("outpost-pi.transcript-event.v2", candidate);
+
+    const sessionFile = persisted.getSessionFile();
+    if (!sessionFile) throw new Error("Expected persisted session file");
+    appendFileSync(sessionFile, '{"type":"custom","customType":"outpost-pi.transcript-event.v1","data":');
+
+    const reopened = SessionManager.open(sessionFile, sessionDir, cwd);
+    const harness = await makeHarnessForSession(cwd, reopened);
+    const history = await syncHistory(harness, "corrupt-reopen");
+
+    expect(history.events).toEqual([
+      expect.objectContaining({ type: "user_input", text: "valid prefix", ts: 10 }),
+      expect.objectContaining({ type: "agent_message", text: "still readable", ts: 20 }),
+    ]);
   });
 });

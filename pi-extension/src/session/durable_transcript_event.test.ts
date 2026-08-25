@@ -96,6 +96,7 @@ describe("durable transcript event v1 codec", () => {
     ["empty optional turn id", entry({ ...events[0], turnId: "" })],
     ["wrong arm field", entry({ ...events[0], toolCallId: "call-1" })],
     ["unexpected property", entry({ ...events[0], surprise: true })],
+    ["explicit undefined optional field", entry({ ...events[0], images: undefined })],
     ["invalid image", entry({ ...events[0], images: [{ data: "x", mime: "image/png", extra: true }] })],
     ["invalid usage", entry({ ...events[1], usage: { input_tokens: -1, output_tokens: 2 } })],
     ["non-json nested number", entry({ ...events[2], args: { value: Number.POSITIVE_INFINITY } })],
