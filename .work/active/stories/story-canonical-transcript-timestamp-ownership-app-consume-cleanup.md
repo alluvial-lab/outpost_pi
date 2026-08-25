@@ -5,7 +5,7 @@ stage: done
 tags: [app, bug]
 parent: feature-canonical-transcript-timestamp-ownership
 depends_on: [story-canonical-transcript-timestamp-ownership-extension-producer-ts, story-canonical-transcript-timestamp-ownership-error-frame-ts]
-release_binding: null
+release_binding: v0.8.0
 gate_origin: null
 created: 2026-08-03
 updated: 2026-08-03

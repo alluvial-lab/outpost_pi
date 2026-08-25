@@ -5,7 +5,7 @@ stage: done
 tags: [pi-extension]
 parent: epic-durable-transcript-ownership-durable-event-log
 depends_on: [epic-durable-transcript-ownership-durable-event-log-codec-and-log]
-release_binding: null
+release_binding: v0.8.0
 gate_origin: null
 created: 2026-08-25
 updated: 2026-08-25

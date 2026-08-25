@@ -5,7 +5,7 @@ stage: done
 tags: [pi-extension, refactor]
 parent: epic-durable-transcript-ownership-retire-rederivation
 depends_on: []
-release_binding: null
+release_binding: v0.8.0
 gate_origin: null
 created: 2026-08-25
 updated: 2026-08-25
