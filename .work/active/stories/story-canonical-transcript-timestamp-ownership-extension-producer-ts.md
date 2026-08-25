@@ -4,11 +4,11 @@ kind: story
 stage: implementing
 tags: [pi-extension, bug]
 parent: feature-canonical-transcript-timestamp-ownership
-depends_on: [story-canonical-transcript-timestamp-ownership-ownership-foundation]
+depends_on: [epic-durable-transcript-ownership-durable-event-log]
 release_binding: null
 gate_origin: null
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-25
 ---
 
 # Extension producer-ts coverage (agent_done, user_message echoes, mesh cards)
@@ -36,5 +36,6 @@ mesh cards are authoritative).
 
 ## Ordering
 
-`depends_on: [story-canonical-transcript-timestamp-ownership-ownership-foundation]`
-(needs the recorded-ts lookup + single-owner model). Parallel with C; unblocks D.
+`depends_on: [epic-durable-transcript-ownership-durable-event-log]`
+(needs F1's durable codec/log, recorded-ts lookup, and single-owner model).
+Parallel with C; unblocks D.
