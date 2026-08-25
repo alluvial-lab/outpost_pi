@@ -1,7 +1,7 @@
 ---
 id: epic-durable-transcript-ownership
 kind: epic
-stage: implementing
+stage: review
 tags: [pi-extension, app, bug]
 parent: null
 depends_on: []
@@ -128,3 +128,18 @@ F4 closes the arc. Spike story absorbed by F1.
 
 F2/F3 parallelize after F1. F1 is the riskiest unit (design it first and most
 carefully, per the epic's own note).
+
+
+## Drain record (2026-08-25)
+
+All 4 features implemented in dependency order in one session:
+- F1 durable-event-log (aa6b52bb, ad030bc8, 40732a78) — codec/log/binding/reopen
+- F2 timestamp-ownership (c144511b, d836116e, 5b87996f) — zero authoritative
+  phone-clock paths remain
+- F3 durable-native-events (5b94ddae, bc67b3f7, 28dd4a6f) — tool/mesh/
+  compaction/steering durable; sweep enumeration absorbed
+- F4 retire-rederivation (60da50b1) — general path deleted; bounded
+  mixed-era fallback retained; two-source contract at
+  transcript_projection.ts:244
+Extension suite 1079-1082 green throughout; app 944; protocol regenerated
+(error.ts). Epic advances to review.
