@@ -11,8 +11,16 @@ import type { ActionCtx, ActionPi, SdkModelLike } from "../actions/handlers.js";
 import type { DeliveryDebugLog } from "./delivery_debug_log.js";
 import { idTail } from "./delivery_debug_log.js";
 import { RemoteSessionIssuer, type RemoteSessionId } from "./remote_session.js";
+import {
+  TRANSCRIPT_EVENT_CUSTOM_TYPE,
+  encodeDurableTranscriptEventV1,
+} from "./durable_transcript_event.js";
 import type { TranscriptEvent } from "./transcript_event.js";
-import { TranscriptEventLog } from "./transcript_event_log.js";
+import {
+  TranscriptEventLog,
+  type TranscriptEventPersistence,
+  type TranscriptRecordResult,
+} from "./transcript_event_log.js";
 import {
   initialTurnSnapshot,
   projectTurn,
@@ -37,6 +45,9 @@ export type AgentMessageApi = {
   sendMessage: (...args: Parameters<ExtensionAPI["sendMessage"]>) => void | Promise<void>;
   sendUserMessage: (...args: Parameters<ExtensionAPI["sendUserMessage"]>) => void | Promise<void>;
 };
+
+/** Narrow the public SDK capability that appends a custom entry to the current session. */
+export type TranscriptEntryApi = Pick<ExtensionAPI, "appendEntry">;
 
 /** Represent the optional action and message capabilities captured from a fresh SDK session context. */
 export type FreshActionApi = Partial<AgentMessageApi> & Partial<ActionPi> & Partial<ActionCtx>;
@@ -134,6 +145,12 @@ export function isAgentMessageApi(value: unknown): value is AgentMessageApi {
     typeof candidate.sendUserMessage === "function";
 }
 
+/** Narrow an unknown SDK surface to the custom-entry capability independently of message delivery. */
+export function isTranscriptEntryApi(value: unknown): value is TranscriptEntryApi {
+  if (!value || typeof value !== "object") return false;
+  return typeof (value as Partial<TranscriptEntryApi>).appendEntry === "function";
+}
+
 function isFreshActionApi(value: unknown): value is FreshActionApi {
   if (!value || typeof value !== "object") return false;
   const candidate = value as FreshActionApi;
@@ -177,6 +194,8 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   private eventCtx: ExtensionContext | null = null;
   private messageApi: AgentMessageApi | null = null;
   private actionApi: FreshActionApi | null = null;
+  private transcriptEntryApi: TranscriptEntryApi | null = null;
+  private transcriptPersistence: TranscriptEventPersistence | null = null;
   private turn: TurnSnapshot = initialTurnSnapshot();
   private roomId: string | null = null;
   private readonly meshIngressLimits: MeshIngressLimits;
@@ -335,11 +354,11 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
         if (existing) {
           // Preserve the app's real clientMessageId + eventId; the synthetic
           // sync_ event is dropped in favor of the live one already in the log.
-          this.transcriptLog.append({ ...event, clientMessageId: existing.clientMessageId, eventId: existing.eventId });
+          this.transcriptLog.appendFallback({ ...event, clientMessageId: existing.clientMessageId, eventId: existing.eventId });
           continue;
         }
       }
-      this.transcriptLog.append(event);
+      this.transcriptLog.appendFallback(event);
     }
     this.recomputeLastTranscriptUserId();
   }
@@ -389,6 +408,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   clearApiBindings(): void {
     this.messageApi = null;
     this.actionApi = null;
+    this.clearTranscriptPersistence();
   }
 
   clearStaleContexts(): void {
@@ -397,6 +417,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.eventCtx = null;
     this.messageApi = null;
     this.actionApi = null;
+    this.clearTranscriptPersistence();
     this.agentRunActive = false;
     this.meshFlushScheduled = false;
     this.clearPendingMeshMessages();
@@ -452,8 +473,21 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     return this.sessionStartedAt;
   }
 
+  recordDurableTranscriptEvent(event: TranscriptEvent): TranscriptRecordResult {
+    return this.transcriptLog.record(event);
+  }
+
+  appendFallbackTranscriptEvent(event: TranscriptEvent): boolean {
+    return this.transcriptLog.appendFallback(event);
+  }
+
+  recordedTranscriptTs(eventId: string): number | undefined {
+    return this.transcriptLog.recordedTsFor(eventId);
+  }
+
+  /** Transitional compatibility wrapper for legacy SDK re-derivation; F4 removes it. */
   appendTranscriptEvent(event: TranscriptEvent): void {
-    this.transcriptLog.append(event);
+    this.appendFallbackTranscriptEvent(event);
   }
 
   appendUserConfirmedTranscriptEvent(input: {
@@ -946,6 +980,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
       this.opts.outputs.onStaleMessageApi?.(value as AgentMessageApi);
     }
     if (value === this.actionApi) this.actionApi = null;
+    if (value === this.transcriptEntryApi) this.clearTranscriptPersistence();
   }
 
   private publishTurnProjection(before: TurnProjection, after: TurnProjection): void {
@@ -1035,17 +1070,49 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   private bindCapabilities(value: unknown): void {
     if (isAgentMessageApi(value)) this.messageApi = value;
     if (isFreshActionApi(value)) this.actionApi = value;
+    if (isTranscriptEntryApi(value)) this.bindTranscriptPersistence(value);
   }
 
   private replaceSessionCapabilities(value: unknown): void {
     this.messageApi = isAgentMessageApi(value) ? value : null;
     this.actionApi = isFreshActionApi(value) ? value : null;
+    if (isTranscriptEntryApi(value)) this.bindTranscriptPersistence(value);
+    else this.clearTranscriptPersistence();
+  }
+
+  private bindTranscriptPersistence(api: TranscriptEntryApi): void {
+    const persistence: TranscriptEventPersistence = {
+      append: (event) => {
+        try {
+          api.appendEntry(TRANSCRIPT_EVENT_CUSTOM_TYPE, encodeDurableTranscriptEventV1(event));
+        } catch (error) {
+          if (isStaleContextError(error) && api === this.transcriptEntryApi) {
+            this.transcriptEntryApi = null;
+            this.transcriptPersistence = null;
+            this.transcriptLog.unbindPersistence(persistence);
+          }
+          throw error;
+        }
+      },
+    };
+    this.transcriptEntryApi = api;
+    this.transcriptPersistence = persistence;
+    this.transcriptLog.bindPersistence(persistence);
+  }
+
+  private clearTranscriptPersistence(): void {
+    const persistence = this.transcriptPersistence;
+    this.transcriptEntryApi = null;
+    this.transcriptPersistence = null;
+    if (persistence) this.transcriptLog.unbindPersistence(persistence);
+    else this.transcriptLog.unbindPersistence();
   }
 
   private forget(api: AgentMessageApi): void {
     if (api !== this.messageApi) return;
     this.messageApi = null;
     if (api === this.actionApi) this.actionApi = null;
+    if ((api as unknown) === this.transcriptEntryApi) this.clearTranscriptPersistence();
     this.opts.outputs.onStaleMessageApi?.(api);
     this.opts.outputs.deliveryDebugLog?.log({
       tag: "message_api_null",
@@ -1056,6 +1123,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
 
   private forgetActionApi(api: FreshActionApi): void {
     if (api === this.actionApi) this.actionApi = null;
+    if (api === this.transcriptEntryApi) this.clearTranscriptPersistence();
     if (api === this.messageApi) {
       this.messageApi = null;
       this.opts.outputs.onStaleMessageApi?.(api as AgentMessageApi);

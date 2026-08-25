@@ -1,5 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
-import { SdkSessionProjection, isAgentMessageApi } from "./sdk_session_projection.js";
+import {
+  SdkSessionProjection,
+  isAgentMessageApi,
+  isTranscriptEntryApi,
+} from "./sdk_session_projection.js";
+import { TRANSCRIPT_EVENT_CUSTOM_TYPE } from "./durable_transcript_event.js";
+import type { TranscriptEvent } from "./transcript_event.js";
 import type { LegacyAgentMessage } from "./transcript_projection.js";
 import { FakeDeliveryDebugLog } from "./delivery_debug_log.test.js";
 
@@ -35,6 +41,18 @@ function makePi() {
   return {
     sendMessage: vi.fn(),
     sendUserMessage: vi.fn(),
+    appendEntry: vi.fn(),
+  };
+}
+
+function durableUser(eventId = "durable-user-1"): TranscriptEvent {
+  return {
+    kind: "user_confirmed",
+    eventId,
+    sessionId: "session-1",
+    ts: 1_234,
+    clientMessageId: "client-1",
+    text: "persist me",
   };
 }
 
@@ -93,6 +111,93 @@ describe("SdkSessionProjection messageApi binding across session_start", () => {
     const fresh = makePi();
     projection.bindSessionContext(fresh as never);
     expect(projection.messageApiBinding()).toBe(fresh);
+  });
+});
+
+describe("SdkSessionProjection durable transcript binding", () => {
+  test("narrows appendEntry separately from message delivery capabilities", () => {
+    expect(isTranscriptEntryApi({ appendEntry: vi.fn() })).toBe(true);
+    expect(isTranscriptEntryApi({ sendMessage: vi.fn(), sendUserMessage: vi.fn() })).toBe(false);
+    expect(isAgentMessageApi({ appendEntry: vi.fn() })).toBe(false);
+  });
+
+  test("writes one exact v1 entry before exposing the event in memory", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    const pi = makePi();
+    const event = durableUser();
+    pi.appendEntry.mockImplementation(() => {
+      expect(projection.getTranscriptEventsForTest()).toEqual([]);
+    });
+    projection.bindApi(pi);
+
+    expect(projection.recordDurableTranscriptEvent(event)).toEqual({ status: "recorded" });
+    expect(pi.appendEntry).toHaveBeenCalledOnce();
+    expect(pi.appendEntry).toHaveBeenCalledWith(TRANSCRIPT_EVENT_CUSTOM_TYPE, event);
+    expect(projection.getTranscriptEventsForTest()).toEqual([event]);
+    expect(projection.recordedTranscriptTs(event.eventId)).toBe(event.ts);
+    expect(projection.recordDurableTranscriptEvent({ ...event, ts: 9_999 })).toEqual({ status: "duplicate" });
+    expect(pi.appendEntry).toHaveBeenCalledOnce();
+  });
+
+  test("missing and throwing append capabilities do not create in-memory authority", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    const event = durableUser();
+    projection.bindApi({ sendMessage: vi.fn(), sendUserMessage: vi.fn() } as never);
+    expect(projection.recordDurableTranscriptEvent(event)).toEqual({ status: "unavailable" });
+
+    const throwing = makePi();
+    throwing.appendEntry.mockImplementation(() => { throw new Error("disk unavailable"); });
+    projection.bindApi(throwing);
+    expect(projection.recordDurableTranscriptEvent(event)).toEqual({ status: "failed" });
+    expect(projection.getTranscriptEventsForTest()).toEqual([]);
+  });
+
+  test("a stale writer is evicted and a fresh replacement records successfully", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    const stale = makePi();
+    stale.appendEntry.mockImplementation(() => {
+      throw new Error("This extension ctx is stale after session replacement or reload");
+    });
+    projection.bindApi(stale);
+
+    expect(projection.recordDurableTranscriptEvent(durableUser("stale-event"))).toEqual({ status: "failed" });
+    expect(projection.recordDurableTranscriptEvent(durableUser("still-stale"))).toEqual({ status: "unavailable" });
+    expect(stale.appendEntry).toHaveBeenCalledOnce();
+
+    const fresh = makePi();
+    projection.bindReplacementContext({
+      ...fresh,
+      sessionManager: { getSessionId: () => "session-2" },
+    } as never);
+    const event = { ...durableUser("fresh-event"), sessionId: "session-2" };
+    expect(projection.recordDurableTranscriptEvent(event)).toEqual({ status: "recorded" });
+    expect(fresh.appendEntry).toHaveBeenCalledWith(TRANSCRIPT_EVENT_CUSTOM_TYPE, event);
+  });
+
+  test("shutdown clears only the stale writer and a later bind restores it", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    const first = makePi();
+    projection.bindApi(first);
+    projection.clearStaleContexts();
+    expect(projection.recordDurableTranscriptEvent(durableUser("after-shutdown")))
+      .toEqual({ status: "unavailable" });
+
+    const fresh = makePi();
+    projection.bindApi(fresh);
+    expect(projection.recordDurableTranscriptEvent(durableUser("after-rebind")))
+      .toEqual({ status: "recorded" });
+    expect(first.appendEntry).not.toHaveBeenCalled();
+    expect(fresh.appendEntry).toHaveBeenCalledOnce();
+  });
+
+  test("the compatibility append path remains explicitly non-durable", () => {
+    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+    const pi = makePi();
+    projection.bindApi(pi);
+    projection.appendTranscriptEvent(durableUser("fallback-event"));
+
+    expect(pi.appendEntry).not.toHaveBeenCalled();
+    expect(projection.getTranscriptEventsForTest()).toEqual([durableUser("fallback-event")]);
   });
 });
 

@@ -1,7 +1,7 @@
 ---
 id: epic-durable-transcript-ownership-durable-event-log-sdk-binding
 kind: story
-stage: implementing
+stage: done
 tags: [pi-extension]
 parent: epic-durable-transcript-ownership-durable-event-log
 depends_on: [epic-durable-transcript-ownership-durable-event-log-codec-and-log]
@@ -37,3 +37,15 @@ path as an explicit fallback until F4.
 ## Ordering
 
 Requires the codec/log contract.
+
+## Implementation
+
+- Execution capability: `sol/high` — lifecycle-fresh SDK capability ownership and fail-closed persistence used the caller-selected high-capability path.
+- Review weight: not applicable — child story checkpoint.
+- Added a distinct `TranscriptEntryApi` guard and a lifecycle-bound persistence adapter that calls public `appendEntry` with the exact v1 discriminator and encoded event.
+- Added durable record/timestamp methods while preserving existing producers on the explicitly named fallback path and compatibility wrapper for later F4 retirement.
+- Missing/throwing writers fail closed; stale throws evict only the matching writer, shutdown/replacement clears it, and fresh binding restores durable recording.
+- Tests: 61 focused projection tests passed; pi-extension typecheck, full 59-file suite (1067 passed, 3 skipped), and build passed.
+- Simplification: transcript persistence binding is owned alongside existing message/action capabilities rather than duplicated at producer call sites.
+- Discrepancies from design: none.
+- Adjacent issues parked: none.
