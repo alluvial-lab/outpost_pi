@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-documentation-durable-encoder-throws
 kind: story
-stage: implementing
+stage: done
 tags: [refactor]
 parent: null
 depends_on: []
@@ -33,3 +33,6 @@ Callers cannot tell from the public API that validation failure is synchronous a
 
 ## Fix
 Add a meaningful `@throws` clause describing the rejected event conditions and boundary semantics without restating the parameter type.
+
+## Implementation
+- Documented synchronous validation and JSON-boundary failures on `encodeDurableTranscriptEventV1` in `pi-extension/src/session/durable_transcript_event.ts`.

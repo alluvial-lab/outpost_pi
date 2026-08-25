@@ -911,6 +911,14 @@ export const SESSION_HISTORY_EVENT_TYPES = [
   "compaction",
   "error",
 ] as const;
+export const SESSION_HISTORY_EVENT_DISCRIMINATORS = {
+  user_input: "user_input",
+  tool_request: "tool_request",
+  tool_result: "tool_result",
+  agent_message: "agent_message",
+  compaction: "compaction",
+  error: "error",
+} as const;
 export type SessionHistoryEventType = (typeof SESSION_HISTORY_EVENT_TYPES)[number];
 
 type ProtocolRecord = Record<string, unknown>;

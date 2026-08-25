@@ -25,15 +25,31 @@ export class TranscriptEventLog {
   private readonly byIdentity = new Map<string, TranscriptEvent>();
   private persistence: TranscriptEventPersistence | null = null;
 
+  /** Bind the current session writer used to make new events durable. */
   bindPersistence(persistence: TranscriptEventPersistence): void {
     this.persistence = persistence;
   }
 
+  /**
+   * Unbind the current writer without clearing the hydrated transcript.
+   *
+   * When a writer is supplied, an obsolete lifecycle owner is ignored unless
+   * it is still the bound writer; this prevents an old session callback from
+   * disabling a replacement writer.
+   */
   unbindPersistence(persistence?: TranscriptEventPersistence): void {
     if (persistence !== undefined && persistence !== this.persistence) return;
     this.persistence = null;
   }
 
+  /**
+   * Append one event after validation and persistence, then expose it in memory.
+   *
+   * Returns `duplicate` for an existing session/event identity, `unavailable`
+   * when no writer is bound, and `failed` when validation or persistence
+   * rejects the event. Only `recorded` and `duplicate` establish durable
+   * authority for live visibility.
+   */
   record(event: TranscriptEvent): TranscriptRecordResult {
     if (this.byIdentity.has(eventIdentity(event))) return { status: "duplicate" };
     const persistence = this.persistence;
@@ -50,6 +66,7 @@ export class TranscriptEventLog {
     return { status: "recorded" };
   }
 
+  /** Install a validated durable snapshot without writing it back to storage. */
   hydrate(events: readonly TranscriptEvent[]): number {
     let appended = 0;
     for (const event of events) {
@@ -58,6 +75,7 @@ export class TranscriptEventLog {
     return appended;
   }
 
+  /** Return the timestamp for a known session/event identity, or `undefined` when absent. */
   recordedTsFor(sessionId: string, eventId: string): number | undefined {
     return this.byIdentity.get(eventIdentity({ sessionId, eventId }))?.ts;
   }
@@ -67,20 +85,24 @@ export class TranscriptEventLog {
     return this.persistence !== null;
   }
 
+  /** Replace the in-memory aggregate with a hydrated snapshot, without persistence writes. */
   replace(events: readonly TranscriptEvent[]): void {
     this.clear();
     this.hydrate(events);
   }
 
+  /** Clear the in-memory aggregate while leaving the bound persistence adapter untouched. */
   clear(): void {
     this.events.length = 0;
     this.byIdentity.clear();
   }
 
+  /** Return the current session-scoped event view in insertion order. */
   forSession(sessionId: string): readonly TranscriptEvent[] {
     return this.events.filter((event) => event.sessionId === sessionId);
   }
 
+  /** Return a detached snapshot of all hydrated and newly recorded events. */
   entries(): readonly TranscriptEvent[] {
     return [...this.events];
   }

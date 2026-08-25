@@ -1,7 +1,18 @@
 import type { JsonValue } from "../protocol/generated/protocol.generated.js";
 import type { TranscriptEvent } from "./transcript_event.js";
 
-/** SDK custom-entry discriminator for the first durable canonical transcript format. */
+/**
+ * Keep the SDK session custom-entry envelope extension-local.
+ *
+ * This is a persistence adapter format, not app↔Pi wire data: the shared
+ * `TranscriptEvent` union remains the semantic authority, while this module is
+ * the sole JSON codec and validator at the SDK custom-entry boundary. Keeping
+ * the SDK storage envelope out of protocol codegen prevents a private session
+ * file shape from becoming a cross-component wire contract. Move it into the
+ * schema/codegen pipeline if another component must read or write these custom
+ * entries, or if the persisted format becomes shared across implementations;
+ * add an explicit v2 migration before changing the v1 shape.
+ */
 export const TRANSCRIPT_EVENT_CUSTOM_TYPE = "outpost-pi.transcript-event.v1" as const;
 
 /** Prefix used to distinguish unsupported durable transcript versions from unrelated custom entries. */
@@ -18,7 +29,14 @@ type JsonRecord = { [key: string]: JsonValue };
 
 const COMMON_KEYS = ["kind", "eventId", "sessionId", "ts", "turnId"] as const;
 
-/** Validate and clone a canonical event into the JSON-safe v1 payload written to the SDK session. */
+/**
+ * Validate and clone a canonical event into the JSON-safe v1 payload written to the SDK session.
+ *
+ * @throws Error when the event is invalid or contains a value that cannot cross
+ * the JSON persistence boundary, such as a non-finite number, unsupported
+ * value, or cyclic structure. Validation is synchronous and runs before the
+ * event can become durable or visible.
+ */
 export function encodeDurableTranscriptEventV1(event: TranscriptEvent): JsonValue {
   if (!isTranscriptEvent(event)) throw new Error("invalid durable transcript event");
   return cloneJsonValue(event);

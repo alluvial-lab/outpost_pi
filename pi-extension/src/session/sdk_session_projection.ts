@@ -429,10 +429,26 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     return this.sessionStartedAt;
   }
 
+  /**
+   * Record a canonical transcript event before publishing its live projection.
+   *
+   * Persistence is attempted before the event enters the authoritative
+   * in-memory log. The result is `recorded` after a successful append,
+   * `duplicate` for an existing `(sessionId, eventId)`, `unavailable` when the
+   * current SDK session has no writer, or `failed` when validation or append
+   * fails; only the first two outcomes authorize visibility.
+   */
   recordDurableTranscriptEvent(event: TranscriptEvent): TranscriptRecordResult {
     return this.transcriptLog.record(event);
   }
 
+  /**
+   * Look up the canonical timestamp owned by a recorded transcript event.
+   *
+   * The identity lookup is scoped to `(sessionId, eventId)`; an omitted session
+   * uses the current SDK session. `undefined` means no matching durable or
+   * hydrated event is known yet, not that the event has timestamp zero.
+   */
   recordedTranscriptTs(eventId: string, sessionId = this.currentRemoteSessionId()): number | undefined {
     return this.transcriptLog.recordedTsFor(sessionId, eventId);
   }

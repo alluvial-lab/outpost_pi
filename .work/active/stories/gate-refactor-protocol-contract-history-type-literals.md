@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-history-type-literals
 kind: story
-stage: implementing
+stage: done
 tags: []
 parent: null
 depends_on: []
@@ -33,3 +33,6 @@ A schema rename or history-family change can leave the durable replay mapper com
 
 ## Fix
 Generate or consume named session-history discriminator constants from `protocol.generated.ts` and build every projected history event from that canonical registry.
+
+## Implementation
+- Generated `SESSION_HISTORY_EVENT_DISCRIMINATORS` and replaced all six replay projection literals with the canonical registry in `pi-extension/src/session/transcript_projection.ts`.

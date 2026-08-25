@@ -1,7 +1,7 @@
 ---
 id: gate-refactor-protocol-contract-transcript-v1-island
 kind: story
-stage: implementing
+stage: done
 tags: []
 parent: null
 depends_on: []
@@ -33,3 +33,6 @@ Persisted SDK session entries must survive extension upgrades, but their shape c
 
 ## Fix
 Either move the persisted v1 contract into the canonical schema/codegen pipeline or document beside the codec why it must remain extension-local, its exact authority boundary, and the condition that would trigger migration.
+
+## Implementation
+- Documented the extension-local SDK persistence exception, authority boundary, and schema-migration trigger beside the v1 codec in `pi-extension/src/session/durable_transcript_event.ts`.
