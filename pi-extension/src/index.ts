@@ -50,7 +50,6 @@ import {
 import type {
   ClientMessage,
   ServerMessage,
-  SessionHistoryEvent,
   ThinkingLevel,
 } from "./protocol/types.js";
 import type { RelayControlFrame } from "./protocol/generated/protocol.generated.js";
@@ -60,7 +59,7 @@ import type { TranscriptRecordResult } from "./session/transcript_event_log.js";
 import {
   deterministicTranscriptEventId,
   stringifyToolResult,
-  type LegacyAgentMessage,
+  type SdkTranscriptMessage,
 } from "./session/transcript_projection.js";
 import { RelayClient, RoomAlreadyOpenError } from "./transport/relay_client.js";
 import { appendOwnerChannelAudit, type PeerChannel, type PlainPeerChannel } from "./transport/peer_channel.js";
@@ -717,9 +716,9 @@ export async function _startRelayForTest(ctx: unknown): Promise<void> {
   await _cmdStart(ctx as Parameters<typeof _cmdStart>[0]);
 }
 
-// Legacy test adapter: accepts old SDK-message fixtures but stores transcript events.
+// Test adapter: routes pre-durable SDK-message fixtures through the production reconciler.
 export function _setMessageBufferForTest(msgs: unknown[]): void {
-  _sdkSessionProjection.setLegacyMessageBufferForTest(msgs);
+  _sdkSessionProjection.setPreDurableSdkMessagesForTest(msgs);
 }
 
 /** Test-only: swap the delivery debug log for a fake, so a test can assert
@@ -796,8 +795,8 @@ function _rememberDeliveredUserEvent(
   return _sdkSessionProjection.rememberDeliveredUserEvent(text, images, clientMessageId, eventId);
 }
 
-function _appendLegacySdkMessageToTranscript(message: LegacyAgentMessage): void {
-  _sdkSessionProjection.appendLegacySdkMessageToTranscript(message);
+function _recordSdkMessageTranscriptEvents(message: SdkTranscriptMessage): void {
+  _sdkSessionProjection.recordSdkMessageTranscriptEvents(message);
 }
 
 function _captureRemoteSession(ctx: unknown): string {
@@ -1344,8 +1343,8 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     _applyTurnAndPublish({ type: "local_input", turnId, replyTo: turnId, source: "local" });
     // Do NOT broadcast a `user_input` frame here. The SDK fires `message_end`
     // for the user prompt milliseconds later (before `runLoop`/agent streaming —
-    // `pi-agent-core/dist/agent-loop.js:48-54`), and `appendLegacySdkMessageToTranscript`
-    // broadcasts a `user_input` with the stable SDK `ts` + `id = clientMessageId`
+    // `pi-agent-core/dist/agent-loop.js:48-54`), and the durable transcript
+    // recorder broadcasts a `user_input` with the stable SDK `ts` + `id = clientMessageId`
     // from there. This earlier broadcast used a different `id` (`turnId` =
     // `local_<uuid>`) and no `ts`, so the app committed it under
     // `'server:user_confirmed:$turnId'` — a SECOND row that didn't collapse
@@ -1462,24 +1461,18 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     _owners.broadcast(msg);
   });
 
-  // Cumulative transcript event log is fed via `message_end`, which fires once
-  // per persisted message (user, assistant, toolResult) — same hook the SDK uses
-  // to persist to sessionManager (see agent-session.js:298-309). Appending typed
-  // transcript events here accumulates the whole session over time, so
-  // session_sync can replay every turn — including turns initiated from the Pi
-  // terminal (source:"interactive") or RPC. Previous impl overwrote on
-  // `agent_end` and lost everything but the last turn (see diagnostics 14, 15).
+  // Current user and assistant text facts cross the durable transcript boundary
+  // from `message_end`, including turns initiated from the Pi terminal or RPC.
+  // Tool-call blocks and toolResult messages stay LLM-context-only here: the
+  // execution hooks above are their sole transcript producers.
   ownerPi.on("message_end", (event) => {
     const m = event?.message as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
     if (!m) return;
-    // Subagent-leak gate: while a `subagent` tool execution is open, the
-    // child session's `message_end` fires for its assistant and dispatch-prompt
-    // user messages. Suppress both from live/replayed transcripts; `toolResult`
-    // still passes through as the legitimate folded result consumed by the main
-    // agent. See `story-extension-suppress-subagent-assistant-broadcast`.
+    // Subagent-leak gate: while a `subagent` tool execution is open, the child
+    // session's user/assistant message_end events are not owner transcript facts.
     const suppressForSubagent = (m.role === "assistant" || m.role === "user") && subagentGate.isActive();
-    if (!suppressForSubagent && (m.role === "user" || m.role === "assistant" || m.role === "toolResult")) {
-      _appendLegacySdkMessageToTranscript(m as unknown as LegacyAgentMessage);
+    if (!suppressForSubagent && (m.role === "user" || m.role === "assistant")) {
+      _recordSdkMessageTranscriptEvents(m as unknown as SdkTranscriptMessage);
     }
     // Forward a failed turn to connected owners. Without this the app just
     // hangs with no response when the provider errors (e.g. the TUI's
@@ -3483,15 +3476,6 @@ function _stringArg(args: ToolArgs, keys: string[]): string {
     if (typeof value === "string") return value;
   }
   return "";
-}
-
-/** Legacy adapter retained for tests and compatibility probes. The history
- * projection itself lives behind SdkSessionProjection, so SDK-message mapping
- * rules live in `session/transcript_projection.ts` instead of this runtime module. */
-export function _mapAgentMessagesToEvents(
-  messages: LegacyAgentMessage[],
-): SessionHistoryEvent[] {
-  return _sdkSessionProjection.mapAgentMessagesToEvents(messages);
 }
 
 // ── Standalone CLI ────────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ import {
 } from "./sdk_session_projection.js";
 import { TRANSCRIPT_EVENT_CUSTOM_TYPE } from "./durable_transcript_event.js";
 import type { TranscriptEvent } from "./transcript_event.js";
-import type { LegacyAgentMessage, SdkTranscriptContextEntry } from "./transcript_projection.js";
+import type { SdkTranscriptMessage, SdkTranscriptContextEntry } from "./transcript_projection.js";
 import { FakeDeliveryDebugLog } from "./delivery_debug_log.test.js";
 
 /**
@@ -190,14 +190,54 @@ describe("SdkSessionProjection durable transcript binding", () => {
     expect(fresh.appendEntry).toHaveBeenCalledOnce();
   });
 
-  test("the compatibility append path remains explicitly non-durable", () => {
-    const projection = new SdkSessionProjection({ outputs: makeOutputs() });
+  test("current SDK user and assistant facts become durable while tool facts stay execution-owned", () => {
+    const outputs = makeOutputs();
+    const projection = new SdkSessionProjection({ outputs });
     const pi = makePi();
     projection.bindApi(pi);
-    projection.appendTranscriptEvent(durableUser("fallback-event"));
+    projection.bindSessionContext({
+      ...makeSessionStartCtx(),
+      sessionManager: {
+        getSessionId: () => "session-1",
+        buildContextEntries: () => [],
+      },
+    });
 
-    expect(pi.appendEntry).not.toHaveBeenCalled();
-    expect(projection.getTranscriptEventsForTest()).toEqual([durableUser("fallback-event")]);
+    projection.recordSdkMessageTranscriptEvents({
+      role: "user",
+      content: "persisted prompt",
+      timestamp: 1_000,
+    });
+    projection.recordSdkMessageTranscriptEvents({
+      role: "assistant",
+      content: [
+        { type: "text", text: "persisted reply" },
+        { type: "toolCall", id: "call-owned-by-hook", name: "read", arguments: { path: "a" } },
+      ],
+      timestamp: 1_001,
+    });
+    projection.recordSdkMessageTranscriptEvents({
+      role: "toolResult",
+      toolCallId: "call-owned-by-hook",
+      content: "hook result",
+      timestamp: 1_002,
+    });
+
+    expect(pi.appendEntry).toHaveBeenCalledTimes(2);
+    expect(pi.appendEntry.mock.calls.map((call) => (call[1] as TranscriptEvent).kind))
+      .toEqual(["user_confirmed", "assistant_committed"]);
+    expect(projection.getTranscriptEventsForTest().map((event) => event.kind))
+      .toEqual(["user_confirmed", "assistant_committed"]);
+    expect(outputs.broadcast).toHaveBeenCalledWith(expect.objectContaining({
+      type: "user_input",
+      id: "sync_1000",
+      ts: 1_000,
+    }));
+    expect(outputs.broadcast).toHaveBeenCalledWith(expect.objectContaining({
+      type: "agent_message",
+      message_id: "sync_1001:assistant:0",
+      ts: 1_001,
+    }));
   });
 });
 
@@ -560,7 +600,7 @@ describe("SdkSessionProjection resume backfill", () => {
 
   function makeResumedCtx(
     sessionId: string,
-    messages: LegacyAgentMessage[],
+    messages: SdkTranscriptMessage[],
     extraEntries: SdkTranscriptContextEntry[] = [],
   ): ResumableCtx {
     return {
@@ -575,7 +615,7 @@ describe("SdkSessionProjection resume backfill", () => {
     };
   }
 
-  const persistedHistory: LegacyAgentMessage[] = [
+  const persistedHistory: SdkTranscriptMessage[] = [
     { role: "user", content: "hello from the earlier session", timestamp: 1_000 },
     { role: "assistant", content: [{ type: "text", text: "hi back" }], timestamp: 1_001 },
     {
@@ -655,12 +695,14 @@ describe("SdkSessionProjection resume backfill", () => {
     projection.bindSessionContext(makeResumedCtx("live-session", []));
 
     // App delivered a user message live (same content as a persisted one).
-    projection.appendUserConfirmedTranscriptEvent({
+    expect(projection.recordDurableTranscriptEvent({
+      kind: "user_confirmed",
+      eventId: "live-app-event",
       sessionId: "live-session",
       ts: 5_000,
       clientMessageId: "app-msg-1",
       text: "hello from the earlier session",
-    });
+    })).toEqual({ status: "recorded" });
 
     // Reload-style session_start re-runs the backfill over the live log, with
     // the same persisted user prompt present.
@@ -775,9 +817,35 @@ describe("SdkSessionProjection delivered-user reservations", () => {
       .filter((message) => message?.type === "user_input");
   }
 
+  function bindDurableSession(projection: SdkSessionProjection): void {
+    projection.bindApi(makePi());
+    projection.bindSessionContext({
+      ...makeSessionStartCtx(),
+      sessionManager: { getSessionId: () => "session-1", buildContextEntries: () => [] },
+    });
+  }
+
+  function recordDeliveredUser(
+    projection: SdkSessionProjection,
+    eventId: string,
+    clientMessageId: string,
+    text: string,
+    ts: number,
+  ): void {
+    expect(projection.recordDurableTranscriptEvent({
+      kind: "user_confirmed",
+      eventId,
+      sessionId: "session-1",
+      ts,
+      clientMessageId,
+      text,
+    })).toEqual({ status: "recorded" });
+  }
+
   test("cancelling one equal-content reservation removes only that entry", () => {
     const outputs = makeOutputs();
     const projection = new SdkSessionProjection({ outputs });
+    bindDurableSession(projection);
     const cancelFirst = projection.rememberDeliveredUserEvent(
       "same prompt",
       undefined,
@@ -785,9 +853,10 @@ describe("SdkSessionProjection delivered-user reservations", () => {
       "event-first",
     );
     projection.rememberDeliveredUserEvent("same prompt", undefined, "cli_second", "event-second");
+    recordDeliveredUser(projection, "event-second", "cli_second", "same prompt", 6_000);
 
     cancelFirst();
-    projection.appendLegacySdkMessageToTranscript({
+    projection.recordSdkMessageTranscriptEvents({
       role: "user",
       content: "same prompt",
       timestamp: 6_000,
@@ -804,13 +873,15 @@ describe("SdkSessionProjection delivered-user reservations", () => {
   test("cancelling after consumption is a no-op for a later equal-content reservation", () => {
     const outputs = makeOutputs();
     const projection = new SdkSessionProjection({ outputs });
+    bindDurableSession(projection);
     const cancelConsumed = projection.rememberDeliveredUserEvent(
       "repeated prompt",
       undefined,
       "cli_consumed",
       "event-consumed",
     );
-    projection.appendLegacySdkMessageToTranscript({
+    recordDeliveredUser(projection, "event-consumed", "cli_consumed", "repeated prompt", 7_000);
+    projection.recordSdkMessageTranscriptEvents({
       role: "user",
       content: "repeated prompt",
       timestamp: 7_000,
@@ -821,9 +892,10 @@ describe("SdkSessionProjection delivered-user reservations", () => {
       "cli_later",
       "event-later",
     );
+    recordDeliveredUser(projection, "event-later", "cli_later", "repeated prompt", 7_001);
 
     cancelConsumed();
-    projection.appendLegacySdkMessageToTranscript({
+    projection.recordSdkMessageTranscriptEvents({
       role: "user",
       content: "repeated prompt",
       timestamp: 7_001,
@@ -838,11 +910,14 @@ describe("SdkSessionProjection delivered-user reservations", () => {
   test("equal-content sibling reservations retain FIFO order", () => {
     const outputs = makeOutputs();
     const projection = new SdkSessionProjection({ outputs });
+    bindDurableSession(projection);
     projection.rememberDeliveredUserEvent("fifo prompt", undefined, "cli_fifo_1", "event-fifo-1");
     projection.rememberDeliveredUserEvent("fifo prompt", undefined, "cli_fifo_2", "event-fifo-2");
+    recordDeliveredUser(projection, "event-fifo-1", "cli_fifo_1", "fifo prompt", 8_000);
+    recordDeliveredUser(projection, "event-fifo-2", "cli_fifo_2", "fifo prompt", 8_001);
 
-    projection.appendLegacySdkMessageToTranscript({ role: "user", content: "fifo prompt", timestamp: 8_000 });
-    projection.appendLegacySdkMessageToTranscript({ role: "user", content: "fifo prompt", timestamp: 8_001 });
+    projection.recordSdkMessageTranscriptEvents({ role: "user", content: "fifo prompt", timestamp: 8_000 });
+    projection.recordSdkMessageTranscriptEvents({ role: "user", content: "fifo prompt", timestamp: 8_001 });
 
     expect(liveUserInputs(outputs).map((message) => message.id)).toEqual(["cli_fifo_1", "cli_fifo_2"]);
     expect(projection.getTranscriptEventsForTest().map((event) => event.eventId)).toEqual([
@@ -854,10 +929,11 @@ describe("SdkSessionProjection delivered-user reservations", () => {
   test("session reset clears every unconsumed reservation", () => {
     const outputs = makeOutputs();
     const projection = new SdkSessionProjection({ outputs });
+    bindDurableSession(projection);
     projection.rememberDeliveredUserEvent("old prompt", undefined, "cli_old", "event-old");
 
     projection.resetSessionForNew("new-session-request");
-    projection.appendLegacySdkMessageToTranscript({
+    projection.recordSdkMessageTranscriptEvents({
       role: "user",
       content: "old prompt",
       timestamp: 9_000,
@@ -871,7 +947,7 @@ describe("SdkSessionProjection delivered-user reservations", () => {
 
 // Regression for `story-mobile-assistant-message-duplicated-live-replay`
 // decision 1 (identity source (a)). The extension's `message_end`-driven
-// `appendLegacySdkMessageToTranscript` must broadcast a live `agent_message`
+// `recordSdkMessageTranscriptEvents` must broadcast a live `agent_message`
 // carrying the stable (ts, message_id) so the app's live commit path derives
 // the SAME deterministic identity as session_history replay.
 describe("SdkSessionProjection live assistant identity (decision 1)", () => {
@@ -887,20 +963,20 @@ describe("SdkSessionProjection live assistant identity (decision 1)", () => {
     };
   }
 
-  test("appendLegacySdkMessageToTranscript broadcasts a live agent_message with stable ts + message_id", () => {
+  test("recordSdkMessageTranscriptEvents broadcasts a live agent_message with stable ts + message_id", () => {
     const outputs = makeOutputs();
     const projection = new SdkSessionProjection({ outputs });
     projection.bindApi(makePi());
     projection.bindSessionContext(makeCtx("session-identity-1"));
 
     // First, a user message so lastTranscriptUserId is set (replyTo target).
-    projection.appendLegacySdkMessageToTranscript({
+    projection.recordSdkMessageTranscriptEvents({
       role: "user",
       content: "hello",
       timestamp: 1_000,
     });
     // Then an assistant message with one text block at ts 1_001.
-    projection.appendLegacySdkMessageToTranscript({
+    projection.recordSdkMessageTranscriptEvents({
       role: "assistant",
       content: [{ type: "text", text: "hi back" }],
       timestamp: 1_001,
@@ -928,14 +1004,14 @@ describe("SdkSessionProjection live assistant identity (decision 1)", () => {
     expect(replayAgent?.message_id).toBe("sync_1001:assistant:0");
   });
 
-  test("appendLegacySdkMessageToTranscript broadcasts a live user_input with stable ts (user-message follow-up)", () => {
+  test("recordSdkMessageTranscriptEvents broadcasts a live user_input with stable ts", () => {
     const outputs = makeOutputs();
     const projection = new SdkSessionProjection({ outputs });
     projection.bindApi(makePi());
     projection.bindSessionContext(makeCtx("session-identity-2"));
 
     // A user message at ts 5_000.
-    projection.appendLegacySdkMessageToTranscript({
+    projection.recordSdkMessageTranscriptEvents({
       role: "user",
       content: "hello from phone",
       timestamp: 5_000,

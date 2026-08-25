@@ -3,7 +3,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { ClientMessage, ServerMessage, ThinkingLevel, SessionHistoryEvent } from "../protocol/types.js";
+import type { ClientMessage, ServerMessage, ThinkingLevel } from "../protocol/types.js";
 import { SERVER_MESSAGE_DISCRIMINATORS } from "../protocol/generated/protocol.generated.js";
 import type { PeerChannel } from "../transport/peer_channel.js";
 import type { MeshIngressAdmission, SdkSessionProjectionPort, WakeAgentResult } from "../extension/ports.js";
@@ -33,13 +33,11 @@ import {
 import {
   deterministicTranscriptEventId,
   imagesFromContent,
-  mapLegacyAgentMessagesToTranscriptEvents,
-  mapSdkContextEntriesToTranscriptEvents,
+  reconcileTranscriptContextEntries,
   projectSessionHistory,
   stringifyContent,
-  stringifyToolResult,
   transcriptUserContentSignature,
-  type LegacyAgentMessage,
+  type SdkTranscriptMessage,
   type SdkTranscriptContextEntry,
 } from "./transcript_projection.js";
 
@@ -164,12 +162,6 @@ function isFreshActionApi(value: unknown): value is FreshActionApi {
 function isStaleContextError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return message.includes("stale after session replacement or reload");
-}
-
-function recordArgs(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }
 
 /** Project fresh SDK lifecycle events into remote session, transcript, and turn state while rejecting stale capabilities. */
@@ -312,7 +304,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     }
     if (entries.length === 0) return;
     const sessionId = this.issuer.current() ?? this.currentRemoteSessionId(ctx);
-    const mapped = mapSdkContextEntriesToTranscriptEvents({ sessionId, entries });
+    const mapped = reconcileTranscriptContextEntries({ sessionId, entries });
 
     // Preserve live app identity across an in-process reload when the SDK-only
     // fallback synthesizes sync_<ts>. Durable app entries already carry their
@@ -441,10 +433,6 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     return this.transcriptLog.record(event);
   }
 
-  appendFallbackTranscriptEvent(event: TranscriptEvent): boolean {
-    return this.transcriptLog.appendFallback(event);
-  }
-
   recordedTranscriptTs(eventId: string): number | undefined {
     return this.transcriptLog.recordedTsFor(eventId);
   }
@@ -452,35 +440,6 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   /** Report whether the current SDK lifecycle has a durable transcript writer. */
   hasTranscriptPersistence(): boolean {
     return this.transcriptLog.hasPersistence();
-  }
-
-  /** Transitional compatibility wrapper for legacy SDK re-derivation; F4 removes it. */
-  appendTranscriptEvent(event: TranscriptEvent): void {
-    this.appendFallbackTranscriptEvent(event);
-  }
-
-  appendUserConfirmedTranscriptEvent(input: {
-    sessionId: string;
-    ts: number;
-    clientMessageId: string;
-    text: string;
-    images?: Extract<TranscriptEvent, { kind: "user_confirmed" }>["images"];
-    streamingBehavior?: Extract<TranscriptEvent, { kind: "user_confirmed" }>["streamingBehavior"];
-    eventId?: string;
-  }): void {
-    const eventId = input.eventId
-      ?? deterministicTranscriptEventId(input.sessionId, "user_confirmed", input.clientMessageId);
-    this.appendTranscriptEvent({
-      kind: "user_confirmed",
-      eventId,
-      sessionId: input.sessionId,
-      ts: input.ts,
-      clientMessageId: input.clientMessageId,
-      text: input.text,
-      ...(input.images && input.images.length > 0 ? { images: [...input.images] } : {}),
-      ...(input.streamingBehavior ? { streamingBehavior: input.streamingBehavior } : {}),
-    });
-    this.lastTranscriptUserId = input.clientMessageId;
   }
 
   /**
@@ -525,139 +484,87 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     (this.deliveredUserMessageIds.get(sessionId) ?? this.deliveredUserMessageIds.set(sessionId, new Set<string>()).get(sessionId)!).add(clientMessageId);
   }
 
-  appendLegacySdkMessageToTranscript(message: LegacyAgentMessage): void {
+  /** Record current SDK message facts durably before broadcasting transcript visibility. */
+  recordSdkMessageTranscriptEvents(message: SdkTranscriptMessage): void {
     const sessionId = this.currentRemoteSessionId();
     const ts = typeof message.timestamp === "number" ? message.timestamp : Date.now();
     if (message.role === "user") {
       const text = stringifyContent(message.content);
       const images = imagesFromContent(message.content);
       const matched = this.consumeDeliveredUserEvent(text, images);
+      const producerTs = matched ? this.recordedTranscriptTs(matched.eventId) : undefined;
+
+      // App delivery owns its timestamp. If message_end wins the race, consume
+      // the reservation but wait for the delivery hook to record and publish.
+      if (matched && producerTs === undefined && this.hasTranscriptPersistence()) return;
+
       const clientMessageId = matched?.clientMessageId ?? `sync_${ts}`;
-      const producerTs = matched
-        ? this.recordedTranscriptTs(matched.eventId)
-        : undefined;
       const canonicalTs = producerTs ?? ts;
-      this.appendUserConfirmedTranscriptEvent({
+      const eventId = matched?.eventId
+        ?? deterministicTranscriptEventId(sessionId, "user_confirmed", clientMessageId);
+      const recorded = this.transcriptLog.record({
+        kind: "user_confirmed",
+        eventId,
         sessionId,
         ts: canonicalTs,
         clientMessageId,
         text,
         ...(images.length > 0 ? { images } : {}),
-        ...(matched ? { eventId: matched.eventId } : {}),
       });
-      // If SDK persistence wins an unusual async race with app-delivery
-      // confirmation, keep this fallback for replay but do not publish its SDK
-      // timestamp. The delivery hook will upgrade the same event id durably and
-      // publish the sole authoritative echo.
-      if (matched && producerTs === undefined && this.hasTranscriptPersistence()) return;
-      // Identity source (a) — user-message follow-up: broadcast a live
-      // `user_input` echo carrying the canonical producer `ts` so the app's live
-      // commit path derives the SAME deterministic eventId as session_history
-      // replay (which emits user_input with this ts). Mirrors the assistant
-      // agent_message broadcast. See story-mobile-assistant-message-
-      // duplicated-live-replay user-message follow-up.
-      //
-      // The `id` here is the transcript `clientMessageId` (sync_<ts> for
-      // workstation-typed, the app's cli_/local_ id for phone-originated).
-      // This differs from the `agent_chunk` in_reply_to (the turn projection's
-      // turnId), but that is a reply-threading concern, not a duplication
-      // concern — the dupe was caused by the input handler's SEPARATE
-      // user_input broadcast (now removed), not by this id. The app's
-      // UserInput handler keys the row by this id and derives the eventId
-      // from (sessionId, id, ts), so a single broadcast commits one row.
+      if (recorded.status !== "recorded" && recorded.status !== "duplicate") return;
+      this.lastTranscriptUserId = clientMessageId;
       this.opts.outputs.broadcast(this.currentSessionMessage({
         type: SERVER_MESSAGE_DISCRIMINATORS.user_input,
         id: clientMessageId,
         text,
-        ts: canonicalTs,
+        ts: this.recordedTranscriptTs(eventId) ?? canonicalTs,
         ...(images.length > 0 ? { images } : {}),
       }));
       return;
     }
 
-    if (message.role === "assistant") {
-      const content = Array.isArray(message.content) ? message.content : [];
-      const usage = message.usage
-        ? { input_tokens: message.usage.input ?? 0, output_tokens: message.usage.output ?? 0 }
-        : undefined;
-      for (const [blockIndex, raw] of content.entries()) {
-        if (!raw || typeof raw !== "object") continue;
-        const block = raw as { type?: string; text?: unknown; id?: unknown; name?: unknown; arguments?: unknown };
-        if (block.type === "text") {
-          const text = String(block.text ?? "");
-          if (!text) continue;
-          const messageId = `sync_${ts}:assistant:${blockIndex}`;
-          this.appendTranscriptEvent({
-            kind: "assistant_committed",
-            eventId: deterministicTranscriptEventId(sessionId, "assistant_committed", messageId),
-            sessionId,
-            ts,
-            messageId,
-            replyTo: this.lastTranscriptUserId ?? `sync_${ts}`,
-            text,
-            ...(usage ? { usage } : {}),
-          });
-          // Identity-source (a): broadcast a live `agent_message` per text
-          // block carrying the stable (ts, message_id) so the app's live
-          // commit path derives the SAME deterministic eventId as
-          // session_history replay (which emits one agent_message per block
-          // from these same transcript events). This makes `message_end` the
-          // single source of live assistant identity — the app commits from
-          // this frame, not from the streamed buffer at agent_done. See
-          // story-mobile-assistant-message-duplicated-live-replay decision 1.
-          this.opts.outputs.broadcast(this.currentSessionMessage({
-            type: SERVER_MESSAGE_DISCRIMINATORS.agent_message,
-            in_reply_to: this.lastTranscriptUserId ?? `sync_${ts}`,
-            text,
-            ts,
-            message_id: messageId,
-            ...(usage ? { usage } : {}),
-          }));
-        } else if (block.type === "toolCall") {
-          const toolCallId = String(block.id ?? `sync_${ts}:tool:${blockIndex}`);
-          this.appendTranscriptEvent({
-            kind: "tool_requested",
-            eventId: deterministicTranscriptEventId(sessionId, "tool_requested", toolCallId),
-            sessionId,
-            ts,
-            toolCallId,
-            tool: String(block.name ?? ""),
-            args: recordArgs(block.arguments),
-          });
-        }
-      }
-      return;
-    }
-
-    if (message.role === "toolResult") {
-      const toolCallId = String(message.toolCallId ?? `sync_${ts}:tool-result`);
-      const text = stringifyToolResult(message.content);
-      this.appendTranscriptEvent(message.isError
-        ? {
-            kind: "tool_finished",
-            eventId: deterministicTranscriptEventId(sessionId, "tool_finished", toolCallId),
-            sessionId,
-            ts,
-            toolCallId,
-            error: text,
-          }
-        : {
-            kind: "tool_finished",
-            eventId: deterministicTranscriptEventId(sessionId, "tool_finished", toolCallId),
-            sessionId,
-            ts,
-            toolCallId,
-            result: text,
-          });
+    if (message.role !== "assistant") return;
+    const content = Array.isArray(message.content) ? message.content : [];
+    const usage = message.usage
+      ? { input_tokens: message.usage.input ?? 0, output_tokens: message.usage.output ?? 0 }
+      : undefined;
+    for (const [blockIndex, raw] of content.entries()) {
+      if (!raw || typeof raw !== "object") continue;
+      const block = raw as { type?: string; text?: unknown };
+      if (block.type !== "text") continue;
+      const text = String(block.text ?? "");
+      if (!text) continue;
+      const messageId = `sync_${ts}:assistant:${blockIndex}`;
+      const replyTo = this.lastTranscriptUserId ?? `sync_${ts}`;
+      const eventId = deterministicTranscriptEventId(sessionId, "assistant_committed", messageId);
+      const recorded = this.transcriptLog.record({
+        kind: "assistant_committed",
+        eventId,
+        sessionId,
+        ts,
+        messageId,
+        replyTo,
+        text,
+        ...(usage ? { usage } : {}),
+      });
+      if (recorded.status !== "recorded" && recorded.status !== "duplicate") continue;
+      this.opts.outputs.broadcast(this.currentSessionMessage({
+        type: SERVER_MESSAGE_DISCRIMINATORS.agent_message,
+        in_reply_to: replyTo,
+        text,
+        ts: this.recordedTranscriptTs(eventId) ?? ts,
+        message_id: messageId,
+        ...(usage ? { usage } : {}),
+      }));
     }
   }
 
-  setLegacyMessageBufferForTest(msgs: unknown[]): void {
+  setPreDurableSdkMessagesForTest(msgs: unknown[]): void {
     this.clearTranscriptOnly();
     const sessionId = this.currentRemoteSessionId();
-    this.transcriptLog.replace(mapLegacyAgentMessagesToTranscriptEvents({
+    this.transcriptLog.replace(reconcileTranscriptContextEntries({
       sessionId,
-      messages: msgs as LegacyAgentMessage[],
+      entries: (msgs as SdkTranscriptMessage[]).map((message) => ({ type: "message", message })),
     }));
     this.recomputeLastTranscriptUserId();
   }
@@ -718,15 +625,6 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     this.clearTranscriptOnly();
     this.sessionStartedAt = Date.now();
     this.opts.outputs.broadcast(this.emptySessionHistoryMessage(inReplyTo));
-  }
-
-  mapAgentMessagesToEvents(messages: LegacyAgentMessage[]): SessionHistoryEvent[] {
-    const sessionId = this.currentRemoteSessionId();
-    return projectSessionHistory({
-      sessionId,
-      events: mapLegacyAgentMessagesToTranscriptEvents({ sessionId, messages }),
-      limit: Number.MAX_SAFE_INTEGER,
-    }).events;
   }
 
   /** Mark the start of an SDK run so mesh ingress waits for the settled boundary. */

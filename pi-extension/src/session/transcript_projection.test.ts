@@ -6,8 +6,7 @@ import {
 } from "./durable_transcript_event.js";
 import {
   deterministicTranscriptEventId,
-  mapLegacyAgentMessagesToTranscriptEvents,
-  mapSdkContextEntriesToTranscriptEvents,
+  reconcileTranscriptContextEntries,
   projectSessionHistory,
   stringifyToolResult,
   type SdkTranscriptContextEntry,
@@ -115,13 +114,13 @@ describe("transcript session_history projection", () => {
     expect(projection.events[0]).toMatchObject({ type: "user_input", id: "u1", text: "hello" });
   });
 
-  test("legacy SDK-message adapter produces transcript events before history projection", () => {
-    const transcriptEvents = mapLegacyAgentMessagesToTranscriptEvents({
+  test("pre-durable SDK messages remain a mixed-era history fallback", () => {
+    const transcriptEvents = reconcileTranscriptContextEntries({
       sessionId,
-      messages: [
-        { role: "user", content: [{ type: "image", data: "QUJD", mimeType: "image/jpeg" }, { type: "text", text: "describe" }], timestamp: 100 },
-        { role: "assistant", content: [{ type: "text", text: "running" }, { type: "toolCall", id: "tc_1", name: "bash", arguments: { command: "ls" } }], timestamp: 200, usage: { input: 7, output: 3 } },
-        { role: "toolResult", toolCallId: "tc_1", isError: false, content: [{ type: "text", text: "file" }], timestamp: 300 },
+      entries: [
+        { type: "message", message: { role: "user", content: [{ type: "image", data: "QUJD", mimeType: "image/jpeg" }, { type: "text", text: "describe" }], timestamp: 100 } },
+        { type: "message", message: { role: "assistant", content: [{ type: "text", text: "running" }, { type: "toolCall", id: "tc_1", name: "bash", arguments: { command: "ls" } }], timestamp: 200, usage: { input: 7, output: 3 } } },
+        { type: "message", message: { role: "toolResult", toolCallId: "tc_1", isError: false, content: [{ type: "text", text: "file" }], timestamp: 300 } },
       ],
     });
 
@@ -139,6 +138,71 @@ describe("transcript session_history projection", () => {
       expect.objectContaining({ type: "tool_request", tool_call_id: "tc_1", tool: "bash", args: { command: "ls" } }),
       expect.objectContaining({ type: "tool_result", tool_call_id: "tc_1", result: "file" }),
     ]);
+  });
+
+  test("durable-era reconciliation is extension-entry authoritative and replay-equivalent", () => {
+    const durableEvents: TranscriptEvent[] = [
+      user("app-user", "inspect", 101),
+      {
+        kind: "assistant_committed",
+        eventId: deterministicTranscriptEventId(
+          sessionId,
+          "assistant_committed",
+          "sync_200:assistant:0",
+        ),
+        sessionId,
+        ts: 200,
+        messageId: "sync_200:assistant:0",
+        replyTo: "app-user",
+        text: "checking durable state",
+        usage: { input_tokens: 7, output_tokens: 3 },
+      },
+      {
+        kind: "tool_requested",
+        eventId: "durable-request",
+        sessionId,
+        ts: 250,
+        toolCallId: "call-1",
+        tool: "read",
+        args: { path: "durable" },
+      },
+      {
+        kind: "tool_finished",
+        eventId: "durable-finish",
+        sessionId,
+        ts: 350,
+        toolCallId: "call-1",
+        result: "durable result",
+      },
+    ];
+    const entries: SdkTranscriptContextEntry[] = [
+      { type: "message", message: { role: "user", content: "inspect", timestamp: 100 } },
+      durableEntry(durableEvents[0]!),
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          timestamp: 200,
+          usage: { input: 99, output: 99 },
+          content: [
+            { type: "text", text: "competing SDK text" },
+            { type: "toolCall", id: "call-1", name: "read", arguments: { path: "sdk" } },
+          ],
+        },
+      },
+      durableEntry(durableEvents[1]!),
+      durableEntry(durableEvents[2]!),
+      {
+        type: "message",
+        message: { role: "toolResult", toolCallId: "call-1", content: "sdk result", timestamp: 300 },
+      },
+      durableEntry(durableEvents[3]!),
+    ];
+
+    const reopened = reconcileTranscriptContextEntries({ sessionId, entries });
+    expect(reopened).toEqual(durableEvents);
+    expect(projectSessionHistory({ sessionId, events: reopened, limit: 10 }))
+      .toEqual(projectSessionHistory({ sessionId, events: durableEvents, limit: 10 }));
   });
 
   test("durable tool execution timestamps win while SDK assistant text remains", () => {
@@ -188,7 +252,7 @@ describe("transcript session_history projection", () => {
       durableEntry(durableFinish),
     ];
 
-    const mapped = mapSdkContextEntriesToTranscriptEvents({ sessionId, entries });
+    const mapped = reconcileTranscriptContextEntries({ sessionId, entries });
     expect(mapped.map((event) => [event.kind, event.ts])).toEqual([
       ["user_confirmed", 100],
       ["assistant_committed", 200],
@@ -227,7 +291,7 @@ describe("transcript session_history projection", () => {
       result: { from: "/repo@peer", message: "hello" },
     };
 
-    const reopened = mapSdkContextEntriesToTranscriptEvents({
+    const reopened = reconcileTranscriptContextEntries({
       sessionId,
       entries: [legacyRequest, durableEntry(request), durableEntry(finish)],
     });
@@ -261,7 +325,7 @@ describe("transcript session_history projection", () => {
       { type: "message", message: { role: "user", content: "repeat", timestamp: 30 } },
     ];
 
-    const users = mapSdkContextEntriesToTranscriptEvents({ sessionId, entries })
+    const users = reconcileTranscriptContextEntries({ sessionId, entries })
       .filter((event) => event.kind === "user_confirmed");
     expect(users.map((event) => [event.clientMessageId, event.ts])).toEqual([
       ["app-1", 11],
@@ -295,13 +359,13 @@ describe("transcript session_history projection", () => {
       { type: "custom", customType: "other-extension.state", data: candidate },
     ];
 
-    expect(mapSdkContextEntriesToTranscriptEvents({ sessionId, entries }))
+    expect(reconcileTranscriptContextEntries({ sessionId, entries }))
       .toEqual([expect.objectContaining({ kind: "tool_requested", toolCallId: "tc_bad", ts: 100 })]);
   });
 
   test("rehomes forked durable events to the current session while preserving identity", () => {
     const copied = { ...user("copied-client", "from parent", 50), sessionId: "parent-session" };
-    expect(mapSdkContextEntriesToTranscriptEvents({
+    expect(reconcileTranscriptContextEntries({
       sessionId: "fork-session",
       entries: [durableEntry(copied)],
     })).toEqual([{ ...copied, sessionId: "fork-session" }]);
@@ -316,7 +380,7 @@ describe("transcript session_history projection", () => {
       clientMessageId: "app-client-later",
       text: "after upgrade",
     };
-    const mapped = mapSdkContextEntriesToTranscriptEvents({
+    const mapped = reconcileTranscriptContextEntries({
       sessionId,
       entries: [
         { type: "message", message: { role: "user", content: "before upgrade", timestamp: 100 } },
@@ -339,7 +403,7 @@ describe("transcript session_history projection", () => {
       text: "refine the active turn",
       streamingBehavior: "steer",
     };
-    const reopened = mapSdkContextEntriesToTranscriptEvents({
+    const reopened = reconcileTranscriptContextEntries({
       sessionId,
       entries: [
         { type: "message", message: { role: "user", content: "before upgrade", timestamp: 100 } },
@@ -371,7 +435,7 @@ describe("transcript session_history projection", () => {
       ts: 500,
       summary: "durable",
     };
-    const mapped = mapSdkContextEntriesToTranscriptEvents({
+    const mapped = reconcileTranscriptContextEntries({
       sessionId,
       entries: [
         { type: "compaction", summary: "raw", tokensBefore: 12, timestamp: "2026-08-25T00:00:00.000Z" },
@@ -398,7 +462,7 @@ describe("transcript session_history projection", () => {
       summary: "same compacted interval",
       tokensBefore: 1200,
     };
-    const reopened = mapSdkContextEntriesToTranscriptEvents({
+    const reopened = reconcileTranscriptContextEntries({
       sessionId,
       entries: [
         {

@@ -2,8 +2,8 @@ import type { SessionHistoryEvent, Usage, WireImage } from "../protocol/types.js
 import { decodeDurableTranscriptEntry } from "./durable_transcript_event.js";
 import type { TranscriptEvent } from "./transcript_event.js";
 
-/** Describe the permissive SDK history shape accepted only at the legacy-to-canonical transcript boundary. */
-export type LegacyAgentMessage = {
+/** Describe the permissive SDK message shape accepted at live and pre-durable reconciliation boundaries. */
+export type SdkTranscriptMessage = {
   role: "user" | "assistant" | "toolResult" | "compaction" | "compactionSummary" | string;
   content?: unknown;
   summary?: string;
@@ -27,27 +27,17 @@ type ProjectSessionHistoryInput = {
   limit: number;
 };
 
-type LegacyAdapterInput = {
+type PreDurableAdapterInput = {
   sessionId: string;
-  messages: readonly LegacyAgentMessage[];
+  messages: readonly SdkTranscriptMessage[];
 };
 
 /** Describe active SDK context entries consumed at the transcript backfill boundary. */
 export type SdkTranscriptContextEntry =
-  | { type: "message"; message: LegacyAgentMessage }
+  | { type: "message"; message: SdkTranscriptMessage }
   | { type: "compaction"; summary: string; tokensBefore: number; timestamp: string }
   | { type: "custom"; customType: string; data?: unknown }
   | { type: string };
-
-
-/** Append a canonical event unless its stable event id is already present. */
-export function appendTranscriptEvent(
-  events: readonly TranscriptEvent[],
-  event: TranscriptEvent,
-): TranscriptEvent[] {
-  if (events.some((candidate) => candidate.eventId === event.eventId)) return [...events];
-  return [...events, event];
-}
 
 /** Project one session's canonical events to a bounded, deduplicated wire history. */
 export function projectSessionHistory(input: ProjectSessionHistoryInput): SessionHistoryProjection {
@@ -153,8 +143,8 @@ export function transcriptEventsToSessionHistory(
   return out;
 }
 
-/** Convert permissive persisted SDK messages into canonical replay events for one remote session. */
-export function mapLegacyAgentMessagesToTranscriptEvents(input: LegacyAdapterInput): TranscriptEvent[] {
+/** Convert pre-durable SDK messages into fallback transcript events inside reconciliation only. */
+function mapPreDurableSdkMessagesToTranscriptEvents(input: PreDurableAdapterInput): TranscriptEvent[] {
   const events: TranscriptEvent[] = [];
   let lastUserId: string | null = null;
   for (const [messageIndex, message] of input.messages.entries()) {
@@ -249,13 +239,15 @@ export function mapLegacyAgentMessagesToTranscriptEvents(input: LegacyAdapterInp
 }
 
 /**
- * Reconcile the SDK's active context branch into canonical transcript events.
+ * Reconcile the SDK's active context branch into the extension-owned transcript.
  *
- * Valid durable entries are indexed before legacy messages are mapped so a
- * later execution-time custom entry can suppress an earlier SDK projection.
- * The SDK entry order still determines where each surviving event is replayed.
+ * SDK messages remain authoritative for LLM context; extension entries are authoritative for transcript.
+ * Valid durable entries are indexed before pre-durable SDK messages are mapped,
+ * so a later custom entry suppresses a competing fallback fact. SDK projection
+ * is consulted only for unmatched facts in mixed-era sessions; invalid or
+ * unsupported custom entries cannot claim transcript authority.
  */
-export function mapSdkContextEntriesToTranscriptEvents(input: {
+export function reconcileTranscriptContextEntries(input: {
   sessionId: string;
   entries: readonly SdkTranscriptContextEntry[];
 }): TranscriptEvent[] {
@@ -283,7 +275,7 @@ export function mapSdkContextEntriesToTranscriptEvents(input: {
     }
   }
 
-  const legacyByIndex = indexLegacyContextEvents(input.sessionId, input.entries);
+  const fallbackByIndex = indexPreDurableContextEvents(input.sessionId, input.entries);
   const output: TranscriptEvent[] = [];
   for (const [index, entry] of input.entries.entries()) {
     const durable = decodedByIndex.get(index);
@@ -293,7 +285,7 @@ export function mapSdkContextEntriesToTranscriptEvents(input: {
     }
 
     if (entry.type === "message") {
-      for (const event of legacyByIndex.get(index) ?? []) {
+      for (const event of fallbackByIndex.get(index) ?? []) {
         if (!isClaimedByDurable(event, durableEventIds, durableToolFacts, durableUserClaims)) {
           output.push(event);
         }
@@ -327,18 +319,18 @@ export function transcriptUserContentSignature(
   return JSON.stringify({ text, images: images ?? [] });
 }
 
-function indexLegacyContextEvents(
+function indexPreDurableContextEvents(
   sessionId: string,
   entries: readonly SdkTranscriptContextEntry[],
 ): Map<number, TranscriptEvent[]> {
-  const messages: LegacyAgentMessage[] = [];
+  const messages: SdkTranscriptMessage[] = [];
   const sources: number[] = [];
   for (const [index, entry] of entries.entries()) {
     if (entry.type !== "message" || !("message" in entry)) continue;
     messages.push(entry.message);
     sources.push(index);
   }
-  const mapped = mapLegacyAgentMessagesToTranscriptEvents({ sessionId, messages });
+  const mapped = mapPreDurableSdkMessagesToTranscriptEvents({ sessionId, messages });
   const bySource = new Map<number, TranscriptEvent[]>();
   let cursor = 0;
   for (const [messageIndex, message] of messages.entries()) {
@@ -349,7 +341,7 @@ function indexLegacyContextEvents(
   return bySource;
 }
 
-function projectedEventCount(message: LegacyAgentMessage): number {
+function projectedEventCount(message: SdkTranscriptMessage): number {
   if (message.role === "user" || message.role === "toolResult"
     || message.role === "compaction" || message.role === "compactionSummary") return 1;
   if (message.role !== "assistant" || !Array.isArray(message.content)) return 0;
