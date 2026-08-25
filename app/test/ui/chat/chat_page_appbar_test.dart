@@ -321,6 +321,74 @@ void main() {
   );
 
   testWidgets(
+    'completed hydration materializes the whole assistant bubble without streaming chrome',
+    (tester) async {
+      final conn = ConnectionManager(
+        factory: (_, _) async => _FakeChannel(),
+        storage: _FakeStorage(),
+      );
+      final boxes = LocalBoxes();
+      final sync = SyncService(conn, boxes);
+      final prefs = Preferences(_FakeSecureStorage());
+      final actions = ActionsRepository(conn);
+      final vm = _CountingChatViewModel(
+        SessionReadRepository(boxes),
+        sync,
+        conn,
+        prefs,
+        _FakeStorage(),
+      );
+      final voice = VoiceInputViewModel(_FakeSpeech());
+      final attach = AttachmentViewModel(_FakePicker(), actions);
+      final selection = SessionSelection();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MultiProvider(
+            providers: [
+              ChangeNotifierProvider<ChatViewModel>.value(value: vm),
+              ChangeNotifierProvider<VoiceInputViewModel>.value(value: voice),
+              ChangeNotifierProvider<AttachmentViewModel>.value(value: attach),
+              ChangeNotifierProvider<Preferences>.value(value: prefs),
+              ChangeNotifierProvider<SessionSelection>.value(value: selection),
+            ],
+            child: const ChatPage(initialOnline: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey('streaming')), findsNothing);
+
+      vm.show(
+        const ChatReady(
+          messages: [
+            UserMsg(id: 'hydrated-u1', text: 'replayed prompt'),
+            AssistantMsg(id: 'hydrated-a1', text: 'complete replay'),
+          ],
+          status: ChatStatusProjection(
+            transport: ChatTransportOnline(roomId: 'main'),
+            turn: AppTurnProjection.idle,
+            steering: NoSteering(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('complete replay'), findsOneWidget);
+      expect(find.byKey(const ValueKey('streaming')), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      vm.dispose();
+      attach.dispose();
+      voice.dispose();
+      actions.dispose();
+      sync.dispose();
+      selection.dispose();
+      conn.dispose();
+    },
+  );
+
+  testWidgets(
     'AppBar line 2 shows the device from initialDevice immediately — no '
     'PeerRecord needed (plan/32g)',
     (tester) async {

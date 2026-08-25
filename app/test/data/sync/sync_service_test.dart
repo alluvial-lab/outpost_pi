@@ -804,6 +804,146 @@ void main() {
     s.sync.dispose();
   });
 
+  test('multi-batch history hydration emits one settled projection', () async {
+    final store = _MemoryTranscriptStore();
+    final s = await setup(transcriptEventStore: store);
+    final appendStarted = Completer<void>();
+    final appendGate = Completer<void>();
+    store.appendStarted = appendStarted;
+    store.appendGate = appendGate;
+    final streamingEmissions = <StreamingMessage?>[];
+    final sub = s.sync.streamingStream.listen(streamingEmissions.add);
+
+    SessionHistory history(
+      String requestId,
+      List<SessionHistoryEvent> events,
+    ) => SessionHistory(
+      sessionId: s.sessionId,
+      inReplyTo: requestId,
+      sessionStartedAt: 1,
+      events: events,
+      eos: true,
+    );
+
+    final first = s.sync.debugApplyHistory(
+      history('hydrate-1', const [
+        UserInputEvt(ts: 1, id: 'hydrated-u1', text: 'replayed prompt'),
+      ]),
+    );
+    await appendStarted.future;
+    final second = s.sync.debugApplyHistory(
+      history('hydrate-2', const [
+        AgentMessageEvt(
+          ts: 2,
+          inReplyTo: 'hydrated-u1',
+          text: 'complete replay',
+        ),
+      ]),
+    );
+    final third = s.sync.debugApplyHistory(
+      history('hydrate-3', const [
+        CompactionEvt(ts: 3, summary: 'summary', tokensBefore: 1000),
+      ]),
+    );
+    appendGate.complete();
+    await Future.wait([first, second, third]);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      streamingEmissions,
+      [isNull],
+      reason: 'the hydration window publishes only its final projection',
+    );
+    expect(messages(s.epk).map((row) => row.text), [
+      'replayed prompt',
+      'complete replay',
+      'summary',
+    ]);
+    expect(s.sync.streaming, isNull);
+    expect(s.sync.isWorking, isFalse);
+
+    await sub.cancel();
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
+  test(
+    'live deltas queued immediately after hydration still stream per frame',
+    () async {
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
+      final appendStarted = Completer<void>();
+      final appendGate = Completer<void>();
+      store.appendStarted = appendStarted;
+      store.appendGate = appendGate;
+      final streamingEmissions = <StreamingMessage?>[];
+      final sub = s.sync.streamingStream.listen(streamingEmissions.add);
+
+      final hydration = s.sync.debugApplyHistory(
+        SessionHistory(
+          sessionId: s.sessionId,
+          inReplyTo: 'hydrate-before-live',
+          sessionStartedAt: 1,
+          events: const [
+            UserInputEvt(ts: 1, id: 'live-u1', text: 'prompt'),
+            AgentMessageEvt(
+              ts: 2,
+              inReplyTo: 'live-u1',
+              text: 'older complete reply',
+            ),
+          ],
+          eos: true,
+        ),
+      );
+      await appendStarted.future;
+      s.ch.pushRaw(
+        AgentChunk(
+          sessionId: s.sessionId,
+          inReplyTo: 'live-u2',
+          delta: 'live one',
+        ),
+      );
+      s.ch.pushRaw(
+        AgentChunk(
+          sessionId: s.sessionId,
+          inReplyTo: 'live-u2',
+          delta: ' live two',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      appendGate.complete();
+      await hydration;
+      await _waitUntil(
+        () => s.sync.streaming?.buffer == 'live one live two',
+        reason: 'both live deltas to publish after hydration',
+      );
+
+      expect(
+        streamingEmissions.where((emission) => emission == null),
+        isEmpty,
+        reason:
+            'a newer live observation supersedes the stale hydration settle',
+      );
+      expect(
+        streamingEmissions.whereType<StreamingMessage>().map(
+          (message) => message.buffer,
+        ),
+        ['live one', 'live one live two'],
+      );
+      expect(s.sync.isWorking, isTrue);
+      expect(s.sync.workingReplyTo, 'live-u2');
+      expect(
+        s.conn.isRoomWorking(s.epk, 'main'),
+        isTrue,
+        reason: 'the live turn remains authoritative after hydration settles',
+      );
+
+      await sub.cancel();
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
   test(
     'user_message echo writes one MessageRecord + updates the index',
     () async {
