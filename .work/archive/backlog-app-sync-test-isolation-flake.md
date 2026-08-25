@@ -1,4 +1,6 @@
 ---
+status: duplicate
+duplicate_of: idea-app-sync-service-suite-flakes
 id: backlog-app-sync-test-isolation-flake
 created: 2026-08-16
 updated: 2026-08-16
