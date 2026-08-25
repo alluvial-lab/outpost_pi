@@ -5,7 +5,7 @@ stage: done
 tags: [perf, app]
 parent: feature-app-edge-trigger-room-snapshot-consumers
 depends_on: [feature-app-edge-trigger-room-snapshot-consumers-opt-1]
-release_binding: null
+release_binding: v0.8.0
 gate_origin: perf-design
 created: 2026-08-24
 updated: 2026-08-24

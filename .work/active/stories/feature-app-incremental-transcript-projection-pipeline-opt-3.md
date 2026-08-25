@@ -5,7 +5,7 @@ stage: done
 tags: [perf]
 parent: feature-app-incremental-transcript-projection-pipeline
 depends_on: [feature-app-incremental-transcript-projection-pipeline-opt-1, feature-app-incremental-transcript-projection-pipeline-opt-2]
-release_binding: null
+release_binding: v0.8.0
 gate_origin: null
 created: 2026-08-24
 updated: 2026-08-24

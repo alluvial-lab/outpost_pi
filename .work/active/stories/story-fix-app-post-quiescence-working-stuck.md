@@ -5,7 +5,7 @@ stage: done
 tags: [app, bug]
 parent: null
 depends_on: []
-release_binding: null
+release_binding: v0.8.0
 gate_origin: null
 created: 2026-08-24
 updated: 2026-08-24
