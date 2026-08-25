@@ -508,54 +508,56 @@ void main() {
       },
     );
 
-    test('transport readiness timeout awaits cancellation cleanup', () async {
-      final storage = _FakeStorage();
-      final bridge = await _bootedBridge(storage);
-      final conn = _SpyConn();
-      final cleanupStarted = Completer<void>();
-      final releaseCleanup = Completer<void>();
-      final factoryResult = Completer<PeerTransport>();
-      var cleanupFinished = false;
-      final vm = PairingViewModel(
-        storage,
-        (qr, key, cancellation) {
-          cancellation.addCancellationListener(() async {
-            cleanupStarted.complete();
-            await releaseCleanup.future;
-            cleanupFinished = true;
-            factoryResult.completeError(StateError('connect cancelled'));
-          });
-          return factoryResult.future;
-        },
-        conn,
-        _PrefsForTest(),
-        bridge,
-        transportConnectTimeout: Duration.zero,
-      );
+    test(
+      'transport readiness timeout surfaces before cancellation cleanup settles',
+      () async {
+        final storage = _FakeStorage();
+        final bridge = await _bootedBridge(storage);
+        final conn = _SpyConn();
+        final cleanupStarted = Completer<void>();
+        final releaseCleanup = Completer<void>();
+        final factoryResult = Completer<PeerTransport>();
+        final cleanupFinished = Completer<void>();
+        final vm = PairingViewModel(
+          storage,
+          (qr, key, cancellation) {
+            cancellation.addCancellationListener(() async {
+              cleanupStarted.complete();
+              await releaseCleanup.future;
+              cleanupFinished.complete();
+              factoryResult.completeError(StateError('connect cancelled'));
+            });
+            return factoryResult.future;
+          },
+          conn,
+          _PrefsForTest(),
+          bridge,
+          transportConnectTimeout: Duration.zero,
+        );
 
-      var pairingSettled = false;
-      final pairing = vm
-          .onQrScanned(_qrUri)
-          .whenComplete(() => pairingSettled = true);
-      await cleanupStarted.future;
-      await Future<void>.delayed(Duration.zero);
-      expect(
-        pairingSettled,
-        isFalse,
-        reason: 'timeout completion must wait for socket cleanup',
-      );
+        final pairing = vm.onQrScanned(_qrUri);
+        await cleanupStarted.future;
+        await Future<void>.delayed(Duration.zero);
+        try {
+          expect(
+            vm.state,
+            isA<PairingError>(),
+            reason: 'the operator-visible deadline must not await teardown',
+          );
+          expect((vm.state as PairingError).message, contains('Timed out'));
+          expect(cleanupFinished.isCompleted, isFalse);
+          expect(conn.adoptedChannel, isNull);
+        } finally {
+          releaseCleanup.complete();
+          await cleanupFinished.future;
+          await pairing;
+          vm.dispose();
+          conn.dispose();
+        }
 
-      releaseCleanup.complete();
-      await pairing;
-
-      expect(cleanupFinished, isTrue);
-      expect(vm.state, isA<PairingError>());
-      expect((vm.state as PairingError).message, contains('Timed out'));
-      expect(conn.adoptedChannel, isNull);
-
-      vm.dispose();
-      conn.dispose();
-    });
+        expect(cleanupFinished.isCompleted, isTrue);
+      },
+    );
 
     test(
       'a stale pairing completion cannot adopt a channel or emit paired',

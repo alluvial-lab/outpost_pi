@@ -30,7 +30,9 @@ typedef PairingTransportFactory =
 /// Drive QR pairing and expose scanning, connection, success, and error state.
 ///
 /// Owns each transient transport until it becomes a [SecurePeerChannel]
-/// adopted by [ConnectionManager], closing it after a failed pairing attempt.
+/// adopted by [ConnectionManager]. A failed attempt cancels transport work
+/// before publishing its error, while bounded cleanup continues independently
+/// of the operator-visible state.
 class PairingViewModel extends ViewModel<PairingState> {
   final PairingStorage _storage;
   final PairingTransportFactory _transportFactory;
@@ -123,14 +125,11 @@ class PairingViewModel extends ViewModel<PairingState> {
       final transport =
           await _transportFactory(qr, ownerKey, attempt.cancellation).timeout(
             _transportConnectTimeout,
-            onTimeout: () async {
-              await _closeAttempt(attempt);
-              throw const pair_flow.PairingError(
-                code: 'pair_timeout',
-                message:
-                    'Timed out — make sure /outpost-pi is running on your Mac',
-              );
-            },
+            onTimeout: () => throw const pair_flow.PairingError(
+              code: 'pair_timeout',
+              message:
+                  'Timed out — make sure /outpost-pi is running on your Mac',
+            ),
           );
       if (!await attempt.attachTransport(transport) ||
           !_isCurrent(generation)) {
@@ -188,7 +187,7 @@ class PairingViewModel extends ViewModel<PairingState> {
         PairingPaired(peer: result.peer, hostnameHint: result.hostnameHint),
       );
     } on RelayNotConfiguredException {
-      await _closeAttempt(attempt);
+      _closeAttemptInBackground(attempt);
       _emitIfCurrent(
         generation,
         const PairingError(
@@ -197,13 +196,13 @@ class PairingViewModel extends ViewModel<PairingState> {
         ),
       );
     } on pair_flow.PairingError catch (e) {
-      await _closeAttempt(attempt);
+      _closeAttemptInBackground(attempt);
       _emitIfCurrent(
         generation,
         PairingError(message: _friendlyError(e), canRetry: true),
       );
     } catch (e) {
-      await _closeAttempt(attempt);
+      _closeAttemptInBackground(attempt);
       _emitIfCurrent(
         generation,
         PairingError(message: e.toString(), canRetry: true),
@@ -259,6 +258,12 @@ class PairingViewModel extends ViewModel<PairingState> {
     await attempt.close();
   }
 
+  void _closeAttemptInBackground(_PairingAttempt? attempt) {
+    if (attempt == null) return;
+    if (identical(_activeAttempt, attempt)) _activeAttempt = null;
+    unawaited(attempt.close());
+  }
+
   void _releaseAttempt(_PairingAttempt attempt) {
     if (identical(_activeAttempt, attempt)) _activeAttempt = null;
     attempt.release();
@@ -300,6 +305,8 @@ class PairingViewModel extends ViewModel<PairingState> {
 /// A stale completion closes this captured object, never the ViewModel's
 /// mutable active-attempt reference, which may belong to a later QR scan.
 final class _PairingAttempt {
+  static const _cleanupWatchdog = Duration(seconds: 5);
+
   final CancelToken cancellation = CancelToken();
   pair_flow.PeerTransport? _transport;
   SecurePeerChannel? _channel;
@@ -309,9 +316,10 @@ final class _PairingAttempt {
   Future<bool> attachTransport(pair_flow.PeerTransport transport) async {
     if (_closed) {
       try {
-        await transport.close();
+        await transport.close().timeout(_cleanupWatchdog);
       } on Object {
         // A stale factory result has no remaining owner to report through.
+        // Future.timeout leaves the underlying close owned and still running.
       }
       return false;
     }
@@ -336,20 +344,18 @@ final class _PairingAttempt {
     if (_closed || _released) return;
     _closed = true;
     try {
-      await cancellation.cancelAndWait();
+      await cancellation.cancelAndWait().timeout(_cleanupWatchdog);
     } on Object {
-      // The cancellation listener owns its total resource cleanup; a reported
-      // cleanup failure must not skip closing a transport already handed back.
+      // Cancellation is delivered synchronously before cancelAndWait awaits.
+      // A timeout bounds this owner without cancelling the underlying cleanup.
     }
     final channel = _channel;
     try {
-      if (channel != null) {
-        await channel.close();
-      } else {
-        await _transport?.close();
-      }
+      final close = channel?.close() ?? _transport?.close();
+      if (close != null) await close.timeout(_cleanupWatchdog);
     } on Object {
-      // Pairing teardown is best-effort and must remain safe from dispose().
+      // Pairing teardown is best-effort, bounded, and safe from dispose().
+      // Future.timeout leaves the underlying close owned and still running.
     }
   }
 }
