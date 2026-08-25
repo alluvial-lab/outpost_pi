@@ -266,7 +266,7 @@ describe("SDK session replacement harness", () => {
     expect(history.events[1]).toMatchObject({ text: "hello from persisted history" });
   });
 
-  test("file-backed durable identities and execution timestamps survive reopen", async () => {
+  test("file-backed durable-authoritative history is identical after reopen", async () => {
     const cwd = makeTempCwd();
     const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-durable-transcript-"));
     cleanupPaths.push(sessionDir);
@@ -294,6 +294,16 @@ describe("SDK session replacement harness", () => {
         { type: "toolCall", id: "call-b", name: "read", arguments: { path: "b" } },
       ],
     } as never);
+    const durableAssistant: TranscriptEvent = {
+      kind: "assistant_committed",
+      eventId: `server:${sessionId}:assistant_committed:sync_200:assistant:0`,
+      sessionId,
+      ts: 200,
+      messageId: "sync_200:assistant:0",
+      replyTo: "app-user-1",
+      text: "using two tools",
+    };
+    expect(writer.recordDurableTranscriptEvent(durableAssistant)).toEqual({ status: "recorded" });
     const requests: TranscriptEvent[] = [
       {
         kind: "tool_requested",
@@ -349,6 +359,58 @@ describe("SDK session replacement harness", () => {
       expect.objectContaining({ type: "tool_result", tool_call_id: "call-a", ts: 350, result: "durable result" }),
     ]);
     expect(history.events.filter((event) => event.type === "tool_request")).toHaveLength(2);
+  });
+
+  test("file-backed mixed-era history retains SDK fallback prefix and durable-authoritative suffix", async () => {
+    const cwd = makeTempCwd();
+    const sessionDir = mkdtempSync(join(tmpdir(), "outpost-pi-mixed-transcript-"));
+    cleanupPaths.push(sessionDir);
+    const persisted = SessionManager.create(cwd, sessionDir);
+    const writer = bindFileBackedTranscriptWriter(persisted);
+    const sessionId = persisted.getSessionId();
+
+    persisted.appendMessage({ role: "user", content: "before upgrade", timestamp: 10 } as never);
+    persisted.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "legacy reply" }],
+      timestamp: 20,
+    } as never);
+    persisted.appendMessage({ role: "user", content: "after upgrade", timestamp: 30 } as never);
+    expect(writer.recordDurableTranscriptEvent({
+      kind: "user_confirmed",
+      eventId: "durable-mixed-user",
+      sessionId,
+      ts: 31,
+      clientMessageId: "app-after-upgrade",
+      text: "after upgrade",
+    })).toEqual({ status: "recorded" });
+    persisted.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "durable reply" }],
+      timestamp: 40,
+    } as never);
+    expect(writer.recordDurableTranscriptEvent({
+      kind: "assistant_committed",
+      eventId: `server:${sessionId}:assistant_committed:sync_40:assistant:0`,
+      sessionId,
+      ts: 40,
+      messageId: "sync_40:assistant:0",
+      replyTo: "app-after-upgrade",
+      text: "durable reply",
+    })).toEqual({ status: "recorded" });
+
+    const sessionFile = persisted.getSessionFile();
+    if (!sessionFile) throw new Error("Expected persisted session file");
+    const reopened = SessionManager.open(sessionFile, sessionDir, cwd);
+    const harness = await makeHarnessForSession(cwd, reopened);
+    const history = await syncHistory(harness, "mixed-era-reopen");
+
+    expect(history.events).toEqual([
+      { ts: 10, type: "user_input", id: "sync_10", text: "before upgrade" },
+      expect.objectContaining({ ts: 20, type: "agent_message", text: "legacy reply" }),
+      { ts: 31, type: "user_input", id: "app-after-upgrade", text: "after upgrade" },
+      expect.objectContaining({ ts: 40, type: "agent_message", text: "durable reply" }),
+    ]);
   });
 
   test("corrupt, unknown-version, and truncated final custom entries preserve valid-prefix fallback", async () => {

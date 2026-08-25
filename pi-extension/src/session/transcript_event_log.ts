@@ -18,12 +18,11 @@ export type TranscriptRecordResult =
  *
  * Durable recording fails closed: an event enters the authoritative in-memory
  * projection only after the injected session writer returns successfully.
- * Hydration and the explicitly named legacy fallback never write again.
+ * Hydration installs the reconciled active branch without writing it again.
  */
 export class TranscriptEventLog {
   private readonly events: TranscriptEvent[] = [];
   private readonly byEventId = new Map<string, TranscriptEvent>();
-  private readonly fallbackEventIds = new Set<string>();
   private persistence: TranscriptEventPersistence | null = null;
 
   bindPersistence(persistence: TranscriptEventPersistence): void {
@@ -36,9 +35,7 @@ export class TranscriptEventLog {
   }
 
   record(event: TranscriptEvent): TranscriptRecordResult {
-    const existing = this.byEventId.get(event.eventId);
-    const upgradesFallback = existing !== undefined && this.fallbackEventIds.has(event.eventId);
-    if (existing && !upgradesFallback) return { status: "duplicate" };
+    if (this.byEventId.has(event.eventId)) return { status: "duplicate" };
     const persistence = this.persistence;
     if (!persistence) return { status: "unavailable" };
     try {
@@ -49,15 +46,8 @@ export class TranscriptEventLog {
     } catch {
       return { status: "failed" };
     }
-    if (upgradesFallback) this.replaceFallback(event);
-    else this.install(event);
+    this.install(event);
     return { status: "recorded" };
-  }
-
-  appendFallback(event: TranscriptEvent): boolean {
-    const installed = this.install(event);
-    if (installed) this.fallbackEventIds.add(event.eventId);
-    return installed;
   }
 
   hydrate(events: readonly TranscriptEvent[]): number {
@@ -85,7 +75,6 @@ export class TranscriptEventLog {
   clear(): void {
     this.events.length = 0;
     this.byEventId.clear();
-    this.fallbackEventIds.clear();
   }
 
   forSession(sessionId: string): readonly TranscriptEvent[] {
@@ -96,28 +85,10 @@ export class TranscriptEventLog {
     return [...this.events];
   }
 
-  /** Transitional alias for F1-era producers; F4 removes legacy re-derivation. */
-  append(event: TranscriptEvent): boolean {
-    return this.appendFallback(event);
-  }
-
-  /** Transitional alias for existing hydration callers. */
-  appendAll(events: readonly TranscriptEvent[]): number {
-    return this.hydrate(events);
-  }
-
   private install(event: TranscriptEvent): boolean {
     if (this.byEventId.has(event.eventId)) return false;
     this.byEventId.set(event.eventId, event);
     this.events.push(event);
     return true;
-  }
-
-  private replaceFallback(event: TranscriptEvent): void {
-    const index = this.events.findIndex((candidate) => candidate.eventId === event.eventId);
-    if (index < 0) throw new Error("fallback transcript index is inconsistent");
-    this.events[index] = event;
-    this.byEventId.set(event.eventId, event);
-    this.fallbackEventIds.delete(event.eventId);
   }
 }

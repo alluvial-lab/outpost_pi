@@ -41,21 +41,6 @@ describe("TranscriptEventLog durable aggregate", () => {
     expect(log.recordedTsFor("same")).toBe(10);
   });
 
-  test("a durable hook fact upgrades an earlier SDK fallback with the same identity", () => {
-    const log = new TranscriptEventLog();
-    const append = vi.fn();
-    log.bindPersistence({ append });
-    expect(log.appendFallback(user("same", 10, "sdk timestamp"))).toBe(true);
-
-    const hookOwned = user("same", 20, "hook timestamp");
-    expect(log.record(hookOwned)).toEqual({ status: "recorded" });
-    expect(append).toHaveBeenCalledWith(hookOwned);
-    expect(log.entries()).toEqual([hookOwned]);
-    expect(log.recordedTsFor("same")).toBe(20);
-    expect(log.record(hookOwned)).toEqual({ status: "duplicate" });
-    expect(append).toHaveBeenCalledTimes(1);
-  });
-
   test("reports unavailable and failed persistence without installing authority", () => {
     const log = new TranscriptEventLog();
     const event = user("event-1", 10);
@@ -78,21 +63,19 @@ describe("TranscriptEventLog durable aggregate", () => {
     expect(log.entries()).toEqual([]);
   });
 
-  test("fallback and hydrate install first-writer-wins events without persisting", () => {
+  test("hydrate installs reconciled first-writer-wins events without persisting", () => {
     const log = new TranscriptEventLog();
     const append = vi.fn();
     log.bindPersistence({ append });
 
-    expect(log.appendFallback(user("fallback", 1))).toBe(true);
     expect(log.hydrate([
-      user("fallback", 99),
       user("hydrated", 2),
+      user("hydrated", 99),
       { ...user("other-session", 3), sessionId: "session-2" },
     ])).toBe(2);
     expect(append).not.toHaveBeenCalled();
-    expect(log.recordedTsFor("fallback")).toBe(1);
     expect(log.recordedTsFor("hydrated")).toBe(2);
-    expect(log.forSession("session-1").map((event) => event.eventId)).toEqual(["fallback", "hydrated"]);
+    expect(log.forSession("session-1").map((event) => event.eventId)).toEqual(["hydrated"]);
   });
 
   test("unbind can be conditional and a fresh binding restores recording", () => {

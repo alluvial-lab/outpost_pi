@@ -347,7 +347,6 @@ const {
   outpostPiTestHarness,
   _onPeerDisconnect,
   _routeClientMessageFrom,
-  _mapAgentMessagesToEvents,
   _setMessageBufferForTest,
   _setTranscriptEventsForTest,
   _setSessionStartedAtForTest,
@@ -3946,15 +3945,6 @@ describe("tool visibility", () => {
     expect(err?.inner.ts).toBe(liveErrEvent?.ts);
     expect(obj?.inner.ts).toBe(liveObjEvent?.ts);
 
-    // live == re-sync: the history mapper yields identical text for the same tool.
-    const histOk = _mapAgentMessagesToEvents([
-      { role: "toolResult", toolCallId: "tc_ok", content: [{ type: "text", text: "file contents" }], timestamp: 1 },
-    ])[0] as { result?: string };
-    const histErr = _mapAgentMessagesToEvents([
-      { role: "toolResult", toolCallId: "tc_err", isError: true, content: [{ type: "text", text: "command failed: boom" }], timestamp: 1 },
-    ])[0] as { error?: string };
-    expect(histOk.result).toBe(ok?.inner.result);
-    expect(histErr.error).toBe(err?.inner.error);
   });
 
   test("tool_result unwraps the live { content:[…], details } wrapper (== re-sync)", async () => {
@@ -3978,11 +3968,6 @@ describe("tool visibility", () => {
     expect(w?.inner.error).toBe("ping: cannot resolve host");
     expect(JSON.stringify(sent)).not.toContain("\"content\"");
 
-    // live == re-sync: history (m.content = bare content-array) gives same text.
-    const hist = _mapAgentMessagesToEvents([
-      { role: "toolResult", toolCallId: "tc_w", isError: true, content: [{ type: "text", text: "ping: cannot resolve host" }], timestamp: 1 },
-    ])[0] as { error?: string };
-    expect(hist.error).toBe(w?.inner.error);
   });
 });
 
@@ -4804,85 +4789,6 @@ describe("session sync", () => {
     expect(h.inner["truncated"]).toBe(true);
 
     delete process.env["OUTPOST_PI_SYNC_LIMIT"];
-  });
-
-  test("mapping: assistant with TextContent + ToolCall → 2 events", () => {
-    const ts = 1_700_000_000_000;
-    const events = _mapAgentMessagesToEvents([
-      { role: "user", content: "do this", timestamp: ts },
-      {
-        role: "assistant",
-        content: [
-          { type: "text", text: "running bash" },
-          { type: "toolCall", id: "tc_1", name: "bash", arguments: { command: "ls" } },
-        ],
-        timestamp: ts + 100,
-        usage: { input: 50, output: 12 },
-      },
-    ]);
-
-    // user_input + agent_message + tool_request
-    expect(events).toHaveLength(3);
-    expect(events[0]).toMatchObject({ ts, type: "user_input", text: "do this" });
-    expect(events[1]).toMatchObject({
-      ts: ts + 100,
-      type: "agent_message",
-      text: "running bash",
-      usage: { input_tokens: 50, output_tokens: 12 },
-    });
-    expect(events[2]).toMatchObject({
-      ts: ts + 100,
-      type: "tool_request",
-      tool_call_id: "tc_1",
-      tool: "bash",
-      args: { command: "ls" },
-    });
-    // agent_message in_reply_to should point at the prior user_input id
-    expect((events[1] as { in_reply_to: string }).in_reply_to).toBe(`sync_${ts}`);
-  });
-
-  test("mapping (plan/30 re-sync): user [image, text] → user_input keeps images", () => {
-    const ts = 1_700_000_000_000;
-    const events = _mapAgentMessagesToEvents([
-      {
-        role: "user",
-        content: [
-          { type: "image", data: "QUJD", mimeType: "image/jpeg" },
-          { type: "text", text: "what is this?" },
-        ],
-        timestamp: ts,
-      },
-    ]);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      ts,
-      type: "user_input",
-      text: "what is this?",
-      images: [{ data: "QUJD", mime: "image/jpeg" }],
-    });
-  });
-
-  test("mapping: text-only user message → no `images` key (path unchanged)", () => {
-    const events = _mapAgentMessagesToEvents([
-      { role: "user", content: "just text", timestamp: 1 },
-    ]);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ type: "user_input", text: "just text" });
-    expect(events[0]).not.toHaveProperty("images");
-  });
-
-  test("mapping (plan/32): compaction marker → compaction event (history re-sync)", () => {
-    const events = _mapAgentMessagesToEvents([
-      { role: "user", content: "hi", timestamp: 1 },
-      { role: "compaction", content: "summarised 10 turns", timestamp: 1700, tokensBefore: 12345 },
-    ]);
-    expect(events).toHaveLength(2);
-    expect(events[1]).toMatchObject({
-      ts: 1700,
-      type: "compaction",
-      summary: "summarised 10 turns",
-      tokens_before: 12345,
-    });
   });
 
   test("pair_ok carries session_started_at = _sessionStartedAt", async () => {
@@ -6670,9 +6576,11 @@ describe("cumulative transcript event log", () => {
     expect(userTexts).toEqual(["from app", "from term 1", "from term 2"]);
   });
 
-  test("toolCall + toolResult in same turn → tool_request + tool_result events", async () => {
+  test("execution hooks, not SDK tool messages, own tool_request + tool_result events", async () => {
     await _pairForTest("peer-tools");
     const onMsgEnd = captureEventHandler("message_end");
+    const onToolStart = captureEventHandler("tool_execution_start");
+    const onToolEnd = captureEventHandler("tool_execution_end");
     const ts = 1_700_200_000_000;
 
     // user prompt
@@ -6689,7 +6597,21 @@ describe("cumulative transcript event log", () => {
         timestamp: ts + 100,
       },
     });
-    // tool result message
+    onToolStart({
+      type: "tool_execution_start",
+      toolCallId: "tc_1",
+      toolName: "bash",
+      args: { command: "ls" },
+    });
+    onToolEnd({
+      type: "tool_execution_end",
+      toolCallId: "tc_1",
+      toolName: "bash",
+      result: [{ type: "text", text: "file1\nfile2" }],
+      isError: false,
+    });
+    // The matching SDK toolResult remains LLM context and adds no competing
+    // transcript fact.
     onMsgEnd({
       type: "message_end",
       message: {
