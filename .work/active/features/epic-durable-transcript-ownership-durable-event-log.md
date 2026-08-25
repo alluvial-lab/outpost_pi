@@ -1,7 +1,7 @@
 ---
 id: epic-durable-transcript-ownership-durable-event-log
 kind: feature
-stage: implementing
+stage: done
 tags: [pi-extension]
 parent: epic-durable-transcript-ownership
 depends_on: []
@@ -453,3 +453,9 @@ weaken the fallback in F1.
 - **Still fallback:** all pre-upgrade SDK-only history and existing F1-era `message_end`, tool, compaction, mesh, and error producers continue through the explicitly named lossy SDK-message fallback. F2/F3 migrate those producers deliberately, and F4 retires re-derivation only after durable coverage is complete.
 - **Invariants held:** SDK messages are neither mutated nor replaced and remain authoritative for LLM context; plain custom entries remain excluded from `buildSessionContext`; extension entries are authoritative only for matching transcript facts; invalid, future-version, and partial writes cannot suppress valid SDK fallback; first-writer event identity, FIFO repeated-user cardinality, fork rehoming, active-branch compaction, and fail-closed append ownership are covered by focused and file-backed tests.
 - **Verification:** final targeted codec/projection/replacement run passed 108 tests; pi-extension typecheck, full 59-file suite (1076 passed, 3 skipped), and build passed.
+
+## Completion (2026-08-25)
+All 3 child stories done (aa6b52bb, ad030bc8, 40732a78). 1076 tests green.
+Durable transcript ownership is live: v1 codec, lifecycle-fresh appendEntry
+binding, two-pass compaction-aware reconciliation with FIFO/fork matching,
+real-file reopen coverage. Legacy re-derivation retained as fallback for F4.
