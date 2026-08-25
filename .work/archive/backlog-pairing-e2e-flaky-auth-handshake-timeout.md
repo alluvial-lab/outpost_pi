@@ -1,4 +1,5 @@
 ---
+status: groom-done
 id: backlog-pairing-e2e-flaky-auth-handshake-timeout
 created: 2026-08-12
 updated: 2026-08-12

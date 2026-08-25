@@ -1,4 +1,5 @@
 ---
+status: groom-done
 id: backlog-app-cold-replay-duplicates-persisted-transcript
 created: 2026-08-22
 updated: 2026-08-22

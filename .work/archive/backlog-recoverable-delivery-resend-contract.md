@@ -1,4 +1,6 @@
 ---
+status: folded
+folded_into: feature-fresh-session-shutdown-and-recoverable-delivery
 id: backlog-recoverable-delivery-resend-contract
 created: 2026-08-11
 updated: 2026-08-11

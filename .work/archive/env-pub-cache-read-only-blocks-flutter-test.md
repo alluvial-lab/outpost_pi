@@ -1,4 +1,5 @@
 ---
+status: groom-done
 id: env-pub-cache-read-only-blocks-flutter-test
 created: 2026-07-12
 updated: 2026-07-11

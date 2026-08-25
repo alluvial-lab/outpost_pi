@@ -1,4 +1,5 @@
 ---
+status: groom-done
 id: env-ext-test-cwd-lock-ordering-flake
 created: 2026-07-12
 updated: 2026-07-11

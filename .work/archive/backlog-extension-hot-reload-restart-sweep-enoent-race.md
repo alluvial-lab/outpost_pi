@@ -1,4 +1,5 @@
 ---
+status: groom-done
 id: backlog-extension-hot-reload-restart-sweep-enoent-race
 created: 2026-08-03
 updated: 2026-08-03
