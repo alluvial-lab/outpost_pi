@@ -850,7 +850,7 @@ class ConnectionManager extends Service {
             await Future.wait(
               attemptTokens
                   .where((token) => !identical(token, attemptToken))
-                  .map((token) => token.cancelAndWait()),
+                  .map((token) => _cancelAttemptBestEffort(token, peer: peer)),
             );
             if (ownerToken.isCancelled || attemptToken.isCancelled) {
               await _closeOwned(
@@ -891,7 +891,7 @@ class ConnectionManager extends Service {
       // before the fallback may authenticate so a superseded attempt cannot
       // later kick whichever channel this race adopts.
       if (attemptTokens.isNotEmpty) {
-        await attemptTokens.first.cancelAndWait();
+        await _cancelAttemptBestEffort(attemptTokens.first, peer: peer);
       }
       if (!ownerToken.isCancelled && !winner.isCompleted) startAttempt();
     };
@@ -901,7 +901,11 @@ class ConnectionManager extends Service {
       if (!winner.isCompleted) {
         winner.completeError(const _ConnectSuperseded());
       }
-      await Future.wait(attemptTokens.map((token) => token.cancelAndWait()));
+      await Future.wait(
+        attemptTokens.map(
+          (token) => _cancelAttemptBestEffort(token, peer: peer),
+        ),
+      );
     };
 
     ownerToken.addCancellationListener(cancelOwnedAttempts);
@@ -917,6 +921,22 @@ class ConnectionManager extends Service {
     } finally {
       ownerToken.removeCancellationListener(cancelOwnedAttempts);
       fallbackTimer?.cancel();
+    }
+  }
+
+  Future<void> _cancelAttemptBestEffort(
+    CancelToken token, {
+    required PeerRecord peer,
+  }) async {
+    try {
+      await token.cancelAndWait();
+    } on Object catch (error) {
+      _logLifecycleFailure(
+        LifecycleOperation.retryConnect,
+        error,
+        peerTail: _peerTail(peer.remoteEpk),
+        room: _activeRoomId,
+      );
     }
   }
 

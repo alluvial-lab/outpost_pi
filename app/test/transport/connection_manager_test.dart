@@ -656,6 +656,48 @@ void main() {
     );
 
     test(
+      'fallback adoption survives primary cancellation cleanup failure',
+      () async {
+        final initial = _ControllableChannel();
+        final fallback = _ControllableChannel();
+        final primaryStarted = Completer<void>();
+        final neverCompletes = Completer<IChannel>();
+        var calls = 0;
+        final cm = ConnectionManager(
+          factory: (_, token) {
+            calls++;
+            return switch (calls) {
+              1 => Future<IChannel>.value(initial),
+              2 => () {
+                token.addCancellationListener(
+                  () async => throw StateError('primary cleanup failed'),
+                );
+                primaryStarted.complete();
+                return neverCompletes.future;
+              }(),
+              _ => Future<IChannel>.value(fallback),
+            };
+          },
+          storage: _FakeStorage([_fakePeer()]),
+          emitDebounce: Duration.zero,
+          reconnectFallbackDelay: const Duration(milliseconds: 10),
+        );
+        addTearDown(cm.dispose);
+
+        await cm.connectTo(_fakePeer());
+        await initial.closeStream();
+        await primaryStarted.future;
+        await cm.statusStream
+            .where((status) => status is StatusOnline)
+            .first
+            .timeout(const Duration(seconds: 1));
+
+        expect(calls, 3);
+        expect(cm.channel, same(fallback));
+      },
+    );
+
+    test(
       'authenticated primary cancels fallback before a second relay auth',
       () async {
         final relay = await _FakeAuthRelay.start();
