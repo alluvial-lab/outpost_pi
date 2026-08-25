@@ -1,7 +1,7 @@
 ---
 id: gate-cruft-unused-hot-reload-path-helpers
 kind: story
-stage: implementing
+stage: done
 tags: [cleanup]
 parent: null
 depends_on: []
@@ -43,3 +43,10 @@ Delete both unreferenced helpers. Keep `_hotReloadArmedPath`, `_hotReloadClaimed
 
 ## Risk
 None to runtime behavior. This is compiler-confirmed removal of two uncallable helpers with no persisted or wire contract impact.
+
+## Implementation
+- Proof: before removal, `tsc --noEmit --noUnusedLocals --noUnusedParameters` reported TS6133 only for `_hotReloadEnabledPath` and `_runtimeIdentityPath`; repository grep found no callers and confirmed active code constructs both paths inline. The armed, claimed, and restart-marker helpers retain callers.
+- Removal: deleted the two unreferenced helper functions without changing filenames, path construction, or hot-reload lifecycle behavior.
+- Verification: the same strict unused-symbol compiler command passed after removal. The release-wide extension typecheck/test/build suite is recorded in the gate-fix completion report.
+- Execution capability: sol/high; direct-read cleanup with before/after compiler evidence.
+- Adjacent issues parked: none.

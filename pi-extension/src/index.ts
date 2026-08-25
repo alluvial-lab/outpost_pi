@@ -2844,20 +2844,12 @@ function _sweepStaleRuntimeIdentities(dir: string): void {
   }
 }
 
-function _hotReloadEnabledPath(): string {
-  return join(_outpostPiRemoteDir(), ".hot-reload-enabled");
-}
-
 function _hotReloadArmedPath(): string {
   return join(_outpostPiRemoteDir(), `.hot-reload-armed-${process.pid}`);
 }
 
 function _hotReloadClaimedPath(): string {
   return join(_outpostPiRemoteDir(), `.claimed-${process.pid}`);
-}
-
-function _runtimeIdentityPath(): string {
-  return join(_outpostPiRemoteDir(), `.runtime-self-${process.pid}`);
 }
 
 function _restartMarkerPath(): string {
