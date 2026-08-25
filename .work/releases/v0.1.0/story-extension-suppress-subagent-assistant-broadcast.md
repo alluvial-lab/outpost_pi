@@ -49,7 +49,7 @@ order during a `gpt-5.3-codex-spark` subagent dispatch from the
 
 ```
 17:43:06 tool_execution_start subagent                     ← parent dispatches
-17:43:07 session_start        startup  sess=ae1d9dfd        ← child session_start (SAME sessionId)
+17:43:07 session_start        startup  sess=3a6f9d70        ← child session_start (SAME sessionId)
 17:43:07 message_end          user                          ← subagent's user msg
 17:43:09 message_end          assistant model=gpt-5.3-codex-spark  ← LEAK
 17:43:09 tool_execution_end   subagent                      ← parent's end
@@ -296,7 +296,7 @@ The child's `session_start` does fire during the window (confirmed in
 its reply (`message_end assistant` fires AFTER `session_start` in the
 capture), so the child SessionManager has no reply text to backfill. The
 capture also shows the child's `session_start` carries the SAME session id as
-the parent (`019f3890`), so `issuer.capture(childCtx)` does not corrupt the
+the parent (`3a6f9d70`), so `issuer.capture(childCtx)` does not corrupt the
 parent's session id.
 
 ### Correction: the prior "stale-module" hypothesis is WRONG — /reload DOES re-import dist

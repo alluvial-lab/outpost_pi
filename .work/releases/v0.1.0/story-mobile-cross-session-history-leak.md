@@ -160,7 +160,7 @@ main session. Full firing sequence around the dispatch:
 
 ```
 17:43:06 tool_execution_start subagent                          ← parent dispatches subagent
-17:43:07 session_start        startup                  sess=ae1d9dfd  ← CHILD session_start fires
+17:43:07 session_start        startup                  sess=06075b43  ← CHILD session_start fires
 17:43:07 message_end          user                                  ← subagent's user msg
 17:43:09 message_end          assistant  model=gpt-5.3-codex-spark    ← LEAK: subagent reply
 17:43:09 tool_execution_end   subagent                              ← parent's tool_execution_end
@@ -177,7 +177,7 @@ toolName, not the model).
 
 **Fix path #2 (session_start detection) is viable but redundant and weaker.**
 The child fires `session_start` with `reason=startup` and the **same
-sessionId `ae1d9dfd`** as the parent — NOT a fresh id. So there is no
+sessionId `06075b43`** as the parent — NOT a fresh id. So there is no
 sessionId-change signal to detect mid-execution; path #2 reduces to
 "a second `session_start` fired while a `subagent` tool_execution is open,"
 which is just path #1 with extra steps. Path #1 is strictly better.
@@ -227,11 +227,11 @@ AND the relay `cross_room` logging (deployed in
 **The cross-room leak hypothesis (h2) is RULED OUT.** Ring-log timeline
 (2026-07-07 05:04 UTC):
 
-- 05:03:54 — burst of envelopes + replayDedup for session `...ae1d9dfd`.
+- 05:03:54 — burst of envelopes + replayDedup for session `...06075b43`.
 - 05:04:04.885-904 — four `room_meta_updated` controls for room
   `7ADky8889NJy` arrive at the phone.
 - 05:04:04.902 — session gate REJECTS `user_input` for session `...24d99f47`
-  with `session_mismatch`. The active session flipped `ae1d9dfd` →
+  with `session_mismatch`. The active session flipped `06075b43` →
   `24d99f47`.
 - 05:04:09 → 05:06:05 — `24d99f47` is now the active session (11
   replayDedup events).

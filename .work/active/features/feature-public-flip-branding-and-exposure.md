@@ -102,7 +102,7 @@ binary-distribution-gated, not flip-gated: .work/backlog/backlog-licensing-binar
 
 The branding half is implemented and locally verified:
 
-- `story-brand-icon-regen-sweep` — `done` (`56bcbcd`): all app/cockpit/site
+- `story-brand-icon-regen-sweep` — `done` (`99876cc0`): all app/cockpit/site
   assets regenerated from Constellation III, 33/33 upstream hashes differ.
 - `story-brand-theme-replacement` — `done` (`970d74a`): mobile/Cockpit dual-mode
   tokens + Space Mono landed; analyzers green, app 874-test serialized suite and
