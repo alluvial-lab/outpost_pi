@@ -101,7 +101,7 @@ active ref) → dropped as `session_mismatch`. So the legitimate
 ### The prior capture's misleading "same session id"
 
 The prior session's `debug-firings.jsonl` capture logged the child's
-`session_start` with the **same** session id as the parent (`019f3890`) and
+`session_start` with the **same** session id as the parent (`06075b43`) and
 concluded "no session-id-change signal." That was an instrumentation artifact:
 the `sessionId` field was read from `_currentRemoteSessionId()` (the issuer's
 cached value), not from `childCtx.sessionManager.getSessionId()` directly.

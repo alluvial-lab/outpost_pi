@@ -35,7 +35,7 @@ next release.
 
 | id | title | kind | git ref |
 |----|-------|------|---------|
-| story-brand-icon-regen-sweep | Icon regeneration sweep — Constellation III across every surface | story | 56bcbcd |
+| story-brand-icon-regen-sweep | Icon regeneration sweep — Constellation III across every surface | story | 99876cc0 |
 | story-brand-theme-replacement | App + cockpit theme replacement — Phosphor Beacon | story | 970d74a |
 | story-brand-site-sync | Site sync — Phosphor Beacon + v2 mark | story | c07fa20 |
 | story-public-flip-shred-runbook | Public flip: targeted history shred + content redaction runbook | story | 56a4be08 |

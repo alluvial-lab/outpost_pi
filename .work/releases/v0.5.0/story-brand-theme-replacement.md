@@ -39,7 +39,7 @@ session screens in both modes.
 ## Implementation run
 
 - Dependency `story-brand-icon-regen-sweep` is `done` with green asset/hash
-  evidence (`56bcbcd`).
+  evidence (`99876cc0`).
 - Ownership: cohesive host implementation across the two Flutter theme roots;
   semantic token names stay stable and platform call sites remain untouched.
 - Capability: `openai-codex/gpt-5.6-sol`, high (caller-selected for the

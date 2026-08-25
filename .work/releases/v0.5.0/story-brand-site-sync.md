@@ -33,7 +33,7 @@ renders both modes AA.
 ## Implementation run
 
 - Dependency `story-brand-icon-regen-sweep` is `done` with green asset/hash
-  evidence (`56bcbcd`).
+  evidence (`99876cc0`).
 - Ownership: direct host implementation under `site/` plus the scoped root
   README reference; the icon story already supplied canonical SVG/favicon
   assets.
