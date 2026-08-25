@@ -46,11 +46,12 @@ the `axisAlignment` argument in `lib/ui/chat/widgets/input_bar.dart`; the source
 comment explains the Flutter pin. Do not fail reviews because of it.
 
 > For the complete APK build path on the dev VM (`dev-vm`) — JDK 21 toolchain
-> + Android SDK API 36, `--release --split-per-abi` build (~31 MB per ABI), and the
-> two build gotchas (`.` vs `source` in dash jobs; complete wipe of
-> `~/.gradle` for Kotlin-DSL workspace corruption) — see the agent-neutral
-> reference `../.agents/skills/flutter-mobile/SKILL.md` ("Android APK build on the
-> dev VM" section).
+> + Android SDK API 36, the full-ABI debug UAT artifact, the release-signed
+> arm64-only slim artifact (`scripts/release-apk.sh --slim`), and the two build
+> gotchas (`.` vs `source` in dash jobs; complete wipe of `~/.gradle` for
+> Kotlin-DSL workspace corruption) — see the agent-neutral reference
+> `../.agents/skills/flutter-mobile/SKILL.md` ("Android APK build on the dev VM"
+> section).
 
 ## Layered architecture
 

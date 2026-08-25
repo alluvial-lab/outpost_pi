@@ -54,6 +54,9 @@ build/
 .packages
 .pub-cache/
 .pub/
+# Named local distributables produced by scripts/release-apk.sh; upload to a
+# GitHub Release, never retain these large binaries in repository history.
+outpost-*.apk
 
 # iOS
 ios/Pods/

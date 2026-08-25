@@ -59,23 +59,22 @@ installed and persisted; these notes are so a fresh agent does not re-derive it.
 **Build commands (run from `app/`):**
 
 ```bash
-# ⭐ DEPLOY TARGET — debug (release signing was dropped at the 0.1.0 rebrand;
-#    release builds fail the task-graph guard without android/key.properties).
+# Full-ABI debug candidate for operator UAT.
 flutter build apk --debug
 
-# (Release variants below are vestigial, kept in case signing is ever restored.)
-# release, one APK per ABI — small. Build the one matching the device:
-#   arm64-v8a   → modern Android phones (Pixel etc.)        ~31 MB
-#   armeabi-v7a → old 32-bit ARM devices                     ~27 MB
-#   x86_64      → emulators                                  ~33 MB
-flutter build apk --release --split-per-abi
+# Operator sideload flow: always rebuilds + verifies the debug candidate, then
+# produces the signed, R8/resource-shrunk arm64 APK for Pixel/modern phones.
+cd .. && scripts/release-apk.sh --slim
 
-# release, single fat APK (all ABIs) — ~3x the per-ABI size
-flutter build apk --release
+# Direct equivalent for the slim build (the script is preferred because it
+# verifies package/version, native-code, and libflutter.so structurally).
+. "$HOME/.config/outpost-pi/keystore.env"
+flutter build apk --release --target-platform android-arm64
 ```
 
-Output lands in `app/build/app/outputs/flutter-apk/`. Side-load with
-`adb install <apk>` (USB debugging / ADB debugging on; uninstall any
+Flutter output lands in `app/build/app/outputs/flutter-apk/`;
+`release-apk.sh` copies named distributables to the repository root. Side-load
+with `adb install <apk>` (USB debugging / ADB debugging on; uninstall any
 same-package build signed with a different key first to avoid
 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
 
@@ -99,14 +98,24 @@ same-package build signed with a different key first to avoid
 Kit/CameraX deps. If the VM is low, reclaim from the systemd journal
 (`journalctl --vacuum-size=100M`) and the apt cache (`apt-get clean`) first.
 
-**Release signing (vestigial):** release signing was **dropped at the 0.1.0
-rebrand** — the project ships **debug** builds (`flutter build apk --debug`),
-which need no `android/key.properties`. The task-graph guard that rejects
-release APK/AAB tasks without a complete keystore still lives in the build
-config, so `flutter build apk --release` now fails fast ("release keystore
-missing") by design; debug builds bypass it. `android/check_release_signing_guard.sh`
-exercises the guard. If release signing is ever restored, seed
-`android/key.properties` + the keystore first; until then, build debug.
+**Release signing (self-hosted, single consumer):** the operator VM owns a
+self-signed upload keystore at
+`~/.config/outpost-pi/release-upload.keystore.jks`. Its strong password and
+exported signing variables live in mode-0600
+`~/.config/outpost-pi/keystore.env`; ignored `android/key.properties` contains
+only `${env.NAME}` references, never the password. This is debug-grade trust for
+a deliberately self-hosted sideload loop, not public-store identity assurance.
+Source the env file before a direct release build; `scripts/release-apk.sh
+--slim` does so automatically.
+
+The task-graph guard still rejects release APK/AAB tasks unless all four resolved
+properties and the keystore file exist; release builds never fall back to debug
+signing. Debug and configuration tasks remain usable without local signing
+state. `android/check_release_signing_guard.sh` temporarily hides any local
+`key.properties`, proves this fail-closed behavior, and restores it. Back up the
+keystore and env file together. If either is lost, already-published sideloaded
+builds cannot be upgraded under the same signature: uninstall/reinstall and
+re-pair the app.
 
 ## App architecture
 

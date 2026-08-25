@@ -191,16 +191,18 @@ Reuses the same brand voice and the protection-copy rule above.
 - **Min SDK:** API 34 (Android 14) — intentional, `outpost_pi_identity` needs
   Block Store. **Target SDK:** Flutter default (verify it meets Play's current
   minimum target — API 35 for new apps).
-- **Signing:** local-only. Before any release task, provide `android/key.properties`
-  with non-blank `storeFile`, `storePassword`, `keyAlias`, and `keyPassword`, plus
-  the referenced keystore. The release-task guard intentionally fails without them;
-  release builds never fall back to debug signing. On first upload, enroll in **Play
-  App Signing** (Google manages the app key; the local keystore is the upload key).
-  - ⚠️ **Back up the upload keystore + `key.properties` securely.** Losing the upload
-    key means contacting Google to reset it; losing it before Play App Signing
-    enrollment is unrecoverable.
+- **Signing:** local-only. `android/key.properties` resolves its four signing
+  values from the mode-0600 `~/.config/outpost-pi/keystore.env`; the referenced
+  upload key is `~/.config/outpost-pi/release-upload.keystore.jks`. The
+  release-task guard intentionally fails when either file or any resolved value
+  is absent; release builds never fall back to debug signing. On first upload,
+  enroll in **Play App Signing** (Google manages the app key; the local keystore
+  remains the upload key).
+  - ⚠️ **Back up the upload keystore + env file securely.** Losing the upload key
+    means contacting Google to reset it after Play enrollment. For direct
+    sideloads, key loss means published upgrades require uninstall/reinstall.
 - **Bundle:** `flutter build appbundle --release` → `build/app/outputs/bundle/release/app-release.aab`
-  (Play requires `.aab`, not `.apk`). Current: versionCode 3, versionName 0.3.0.
+  (Play requires `.aab`, not `.apk`). Current: versionCode 16, versionName 0.8.0.
 
 ## Listing fields
 
