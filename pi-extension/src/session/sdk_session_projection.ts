@@ -34,10 +34,13 @@ import {
   deterministicTranscriptEventId,
   imagesFromContent,
   mapLegacyAgentMessagesToTranscriptEvents,
+  mapSdkContextEntriesToTranscriptEvents,
   projectSessionHistory,
   stringifyContent,
   stringifyToolResult,
+  transcriptUserContentSignature,
   type LegacyAgentMessage,
+  type SdkTranscriptContextEntry,
 } from "./transcript_projection.js";
 
 /** Narrow the Pi APIs that can render extension messages and wake an agent turn. */
@@ -161,13 +164,6 @@ function isFreshActionApi(value: unknown): value is FreshActionApi {
 function isStaleContextError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return message.includes("stale after session replacement or reload");
-}
-
-function userContentSignature(
-  text: string,
-  images: readonly { data: string; mime: string }[] | undefined,
-): string {
-  return JSON.stringify({ text, images: images ?? [] });
 }
 
 function recordArgs(value: unknown): Record<string, unknown> {
@@ -294,89 +290,57 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
   }
 
   /**
-   * On `session_start`, backfill the in-memory `TranscriptEventLog` from the
-   * SDK's durable persisted session so `session_sync` can replay history that
-   * predates this extension instance.
+   * Hydrate transcript authority from the SDK's active, compaction-aware branch.
    *
-   * The SDK loads a resumed/started session's persisted messages into the
-   * `SessionManager` and renders them DIRECTLY to the TUI via
-   * `buildSessionContext()` — bypassing the agent's message pipeline, so
-   * `message_end` never fires for that history. This log is fed only by live
-   * hooks (`message_end`, `tool_execution_*`), so without this backfill a
-   * `/resume`, `/fork`, daemon respawn, or reload leaves the log empty and the
-   * phone's `session_sync` returns a blank `session_history` even though the
-   * TUI shows full history. The SDK is the durable session owner; this log is
-   * only the extension's typed replay source (see `transcript_event_log.ts`).
-   *
-   * Dedupe is by `eventId` (`append`'s `seen` set), so a `/reload` of the same
-   * session re-appends the same persisted entries as no-ops while preserving
-   * any live events captured since the reload. Entries from a prior session id
-   * are inert: `forSession(currentId)` filters them at read time.
+   * SDK messages remain untouched and authoritative for LLM context. This read
+   * only reconciles the extension-owned transcript: validated Outpost-Pi custom
+   * entries win matching facts, while SDK message projection remains the mixed-
+   * version and corrupt-entry fallback.
    */
   private backfillTranscriptFromSessionManager(ctx: ExtensionContext): void {
     const sm = (ctx as { sessionManager?: unknown }).sessionManager;
     if (!sm || typeof sm !== "object") return;
-    // `buildSessionContext` is on `SessionManager` at runtime but is NOT part
-    // of the `ReadonlySessionManager` Pick exposed on the typed ctx. Narrow at
-    // this SDK-read boundary rather than widening the public type.
-    const build = (sm as { buildSessionContext?: () => { messages?: unknown[] } }).buildSessionContext;
+    const build = (sm as { buildContextEntries?: () => unknown }).buildContextEntries;
     if (typeof build !== "function") return;
-    let messages: unknown[];
+    let entries: SdkTranscriptContextEntry[];
     try {
       const resolved = build.call(sm);
-      messages = Array.isArray(resolved?.messages) ? resolved.messages : [];
+      entries = Array.isArray(resolved) ? resolved as SdkTranscriptContextEntry[] : [];
     } catch {
-      // Never block session_start on a backfill read failure.
+      // A transcript read cannot block session_start or mutate SDK context.
       return;
     }
-    if (messages.length === 0) return;
-    // `issuer.capture` already ran at the top of `bindSessionContext`, so the
-    // current id is the fresh session id for this ctx.
+    if (entries.length === 0) return;
     const sessionId = this.issuer.current() ?? this.currentRemoteSessionId(ctx);
-    const mapped = mapLegacyAgentMessagesToTranscriptEvents({
-      sessionId,
-      messages: messages as LegacyAgentMessage[],
+    const mapped = mapSdkContextEntriesToTranscriptEvents({ sessionId, entries });
+
+    // Preserve live app identity across an in-process reload when the SDK-only
+    // fallback synthesizes sync_<ts>. Durable app entries already carry their
+    // canonical id and bypass this compatibility reconciliation.
+    const existingUsers = this.indexExistingUserEventsByContent(sessionId);
+    const reconciled = mapped.map((event): TranscriptEvent => {
+      if (event.kind !== "user_confirmed" || !event.clientMessageId.startsWith("sync_")) return event;
+      const key = transcriptUserContentSignature(event.text, event.images);
+      const claims = existingUsers.get(key);
+      const existing = claims?.shift();
+      if (!existing) return event;
+      if (claims?.length === 0) existingUsers.delete(key);
+      return { ...event, clientMessageId: existing.clientMessageId, eventId: existing.eventId };
     });
-    // Content-aware dedupe against live app-origin user events. A live
-    // `user_message` from the app is stamped with the APP's clientMessageId
-    // (e.g. `msg-1`), while `mapLegacyAgentMessagesToTranscriptEvents` always
-    // synthesizes `sync_${ts}`. eventId-only dedupe (`append`'s `seen` set)
-    // would then NOT collapse them, and the projection dedupes user messages
-    // by `clientMessageId` — so the phone would show the same prompt twice
-    // after a `/reload` that re-runs this backfill over an already-live log.
-    // Reuse any existing same-session user event with matching text+images so
-    // the backfilled event is a true no-op against the live one.
-    const existingUserByContent = this.indexExistingUserEventsByContent(sessionId);
-    for (const event of mapped) {
-      if (event.kind === "user_confirmed") {
-        const key = userContentSignature(event.text, event.images);
-        const existing = existingUserByContent.get(key);
-        if (existing) {
-          // Preserve the app's real clientMessageId + eventId; the synthetic
-          // sync_ event is dropped in favor of the live one already in the log.
-          this.transcriptLog.appendFallback({ ...event, clientMessageId: existing.clientMessageId, eventId: existing.eventId });
-          continue;
-        }
-      }
-      this.transcriptLog.appendFallback(event);
-    }
+    this.transcriptLog.hydrate(reconciled);
     this.recomputeLastTranscriptUserId();
   }
 
-  /**
-   * Index existing `user_confirmed` transcript events for `sessionId` by
-   * content signature, so the resume backfill can reuse an app-origin event's
-   * real `clientMessageId`/`eventId` instead of emitting a duplicate
-   // synthetic `sync_${ts}` event for the same prompt.
-   */
   private indexExistingUserEventsByContent(
     sessionId: string,
-  ): Map<string, { clientMessageId: string; eventId: string }> {
-    const out = new Map<string, { clientMessageId: string; eventId: string }>();
+  ): Map<string, { clientMessageId: string; eventId: string }[]> {
+    const out = new Map<string, { clientMessageId: string; eventId: string }[]>();
     for (const event of this.transcriptLog.forSession(sessionId)) {
       if (event.kind !== "user_confirmed") continue;
-      const key = userContentSignature(event.text, event.images);
-      if (!out.has(key)) out.set(key, { clientMessageId: event.clientMessageId, eventId: event.eventId });
+      const key = transcriptUserContentSignature(event.text, event.images);
+      const claims = out.get(key) ?? [];
+      claims.push({ clientMessageId: event.clientMessageId, eventId: event.eventId });
+      out.set(key, claims);
     }
     return out;
   }
@@ -526,7 +490,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     clientMessageId: string,
     eventId: string,
   ): () => void {
-    const key = userContentSignature(text, images);
+    const key = transcriptUserContentSignature(text, images);
     const entry = { clientMessageId, eventId };
     const existing = this.deliveredUserEventIds.get(key) ?? [];
     existing.push(entry);
@@ -1208,7 +1172,7 @@ export class SdkSessionProjection implements SdkSessionProjectionPort {
     text: string,
     images: readonly { data: string; mime: string }[] | undefined,
   ): { clientMessageId: string; eventId: string } | undefined {
-    const key = userContentSignature(text, images);
+    const key = transcriptUserContentSignature(text, images);
     const existing = this.deliveredUserEventIds.get(key);
     if (!existing || existing.length === 0) return undefined;
     const match = existing.shift();

@@ -6,7 +6,7 @@ import {
 } from "./sdk_session_projection.js";
 import { TRANSCRIPT_EVENT_CUSTOM_TYPE } from "./durable_transcript_event.js";
 import type { TranscriptEvent } from "./transcript_event.js";
-import type { LegacyAgentMessage } from "./transcript_projection.js";
+import type { LegacyAgentMessage, SdkTranscriptContextEntry } from "./transcript_projection.js";
 import { FakeDeliveryDebugLog } from "./delivery_debug_log.test.js";
 
 /**
@@ -545,7 +545,7 @@ describe("SdkSessionProjection stale-ctx crash guard on freshActionCtx", () => {
  * that predates this extension instance.
  *
  * The SDK's `/resume` loads persisted entries into a fresh `SessionManager` and
- * renders them DIRECTLY to the TUI via `buildSessionContext()` — bypassing the
+ * renders them DIRECTLY to the TUI from `buildContextEntries()` — bypassing the
  * agent message pipeline, so `message_end` never fires for resumed history.
  * Without backfill, `TranscriptEventLog` stays empty and `session_sync` returns
  * a blank `session_history` even though the TUI shows full history.
@@ -554,16 +554,23 @@ describe("SdkSessionProjection resume backfill", () => {
   type ResumableCtx = ReturnType<typeof makeSessionStartCtx> & {
     sessionManager: {
       getSessionId: () => string;
-      buildSessionContext: () => { messages: LegacyAgentMessage[] };
+      buildContextEntries: () => SdkTranscriptContextEntry[];
     };
   };
 
-  function makeResumedCtx(sessionId: string, messages: LegacyAgentMessage[]): ResumableCtx {
+  function makeResumedCtx(
+    sessionId: string,
+    messages: LegacyAgentMessage[],
+    extraEntries: SdkTranscriptContextEntry[] = [],
+  ): ResumableCtx {
     return {
       ...makeSessionStartCtx(),
       sessionManager: {
         getSessionId: () => sessionId,
-        buildSessionContext: () => ({ messages }),
+        buildContextEntries: () => [
+          ...messages.map((message) => ({ type: "message" as const, message })),
+          ...extraEntries,
+        ],
       },
     };
   }
@@ -671,25 +678,28 @@ describe("SdkSessionProjection resume backfill", () => {
     expect(userInputs[0]).toMatchObject({ id: "app-msg-1" });
   });
 
-  test("backfill replays a persisted compaction summary (compactionSummary role)", () => {
-    // Review finding: buildSessionContext() emits compaction entries as role
-    // "compactionSummary" (summary on .summary, not .content), but the mapper
-    // only recognized role "compaction" — so a session compacted before
-    // pairing would silently drop the compaction marker from mobile history.
+  test("backfill replays a raw active-branch compaction entry", () => {
     const projection = new SdkSessionProjection({ outputs: makeOutputs() });
     projection.bindApi(makePi());
-    projection.bindSessionContext(
-      makeResumedCtx("compacted-session", [
-        { role: "user", content: "old prompt", timestamp: 100 },
-        {
-          role: "compactionSummary",
-          summary: "prior context was compacted",
-          tokensBefore: 5000,
-          timestamp: 200,
-        },
-        { role: "assistant", content: [{ type: "text", text: "post-compact reply" }], timestamp: 300 },
-      ]),
-    );
+    projection.bindSessionContext({
+      ...makeSessionStartCtx(),
+      sessionManager: {
+        getSessionId: () => "compacted-session",
+        buildContextEntries: () => [
+          { type: "message", message: { role: "user", content: "old prompt", timestamp: 100 } },
+          {
+            type: "compaction",
+            summary: "prior context was compacted",
+            tokensBefore: 5000,
+            timestamp: new Date(200).toISOString(),
+          },
+          {
+            type: "message",
+            message: { role: "assistant", content: [{ type: "text", text: "post-compact reply" }], timestamp: 300 },
+          },
+        ],
+      },
+    } as never);
 
     const history = projection.buildSessionHistoryMessage("req-6", undefined);
     expect(history.events.map((e) => e.type)).toEqual([
@@ -866,13 +876,13 @@ describe("SdkSessionProjection delivered-user reservations", () => {
 // the SAME deterministic identity as session_history replay.
 describe("SdkSessionProjection live assistant identity (decision 1)", () => {
   function makeCtx(sessionId: string): ReturnType<typeof makeSessionStartCtx> & {
-    sessionManager: { getSessionId: () => string; buildSessionContext: () => { messages: never[] } };
+    sessionManager: { getSessionId: () => string; buildContextEntries: () => never[] };
   } {
     return {
       ...makeSessionStartCtx(),
       sessionManager: {
         getSessionId: () => sessionId,
-        buildSessionContext: () => ({ messages: [] as never[] }),
+        buildContextEntries: () => [],
       },
     };
   }

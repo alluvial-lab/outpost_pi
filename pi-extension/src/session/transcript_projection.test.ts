@@ -1,10 +1,16 @@
 import { describe, expect, test } from "vitest";
 import type { TranscriptEvent } from "./transcript_event.js";
 import {
+  TRANSCRIPT_EVENT_CUSTOM_TYPE,
+  encodeDurableTranscriptEventV1,
+} from "./durable_transcript_event.js";
+import {
   deterministicTranscriptEventId,
   mapLegacyAgentMessagesToTranscriptEvents,
+  mapSdkContextEntriesToTranscriptEvents,
   projectSessionHistory,
   stringifyToolResult,
+  type SdkTranscriptContextEntry,
 } from "./transcript_projection.js";
 
 const sessionId = "sess-a";
@@ -18,6 +24,10 @@ function user(clientMessageId: string, text: string, ts: number): TranscriptEven
     clientMessageId,
     text,
   };
+}
+
+function durableEntry(event: TranscriptEvent, customType = TRANSCRIPT_EVENT_CUSTOM_TYPE): SdkTranscriptContextEntry {
+  return { type: "custom", customType, data: encodeDurableTranscriptEventV1(event) };
 }
 
 function assistant(replyTo: string, text: string, ts: number): TranscriptEvent {
@@ -128,6 +138,175 @@ describe("transcript session_history projection", () => {
       expect.objectContaining({ type: "agent_message", in_reply_to: "sync_100", text: "running", usage: { input_tokens: 7, output_tokens: 3 } }),
       expect.objectContaining({ type: "tool_request", tool_call_id: "tc_1", tool: "bash", args: { command: "ls" } }),
       expect.objectContaining({ type: "tool_result", tool_call_id: "tc_1", result: "file" }),
+    ]);
+  });
+
+  test("durable tool execution timestamps win while SDK assistant text remains", () => {
+    const durableRequest1: TranscriptEvent = {
+      kind: "tool_requested",
+      eventId: "durable-request-1",
+      sessionId,
+      ts: 250,
+      toolCallId: "tc_1",
+      tool: "read",
+      args: { path: "a" },
+    };
+    const durableRequest2: TranscriptEvent = {
+      kind: "tool_requested",
+      eventId: "durable-request-2",
+      sessionId,
+      ts: 260,
+      toolCallId: "tc_2",
+      tool: "read",
+      args: { path: "b" },
+    };
+    const durableFinish: TranscriptEvent = {
+      kind: "tool_finished",
+      eventId: "durable-finish-1",
+      sessionId,
+      ts: 350,
+      toolCallId: "tc_1",
+      result: "durable result",
+    };
+    const entries: SdkTranscriptContextEntry[] = [
+      { type: "message", message: { role: "user", content: "inspect", timestamp: 100 } },
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          timestamp: 200,
+          content: [
+            { type: "text", text: "checking" },
+            { type: "toolCall", id: "tc_1", name: "read", arguments: { path: "a" } },
+            { type: "toolCall", id: "tc_2", name: "read", arguments: { path: "b" } },
+          ],
+        },
+      },
+      durableEntry(durableRequest1),
+      durableEntry(durableRequest2),
+      { type: "message", message: { role: "toolResult", toolCallId: "tc_1", content: "sdk result", timestamp: 300 } },
+      durableEntry(durableFinish),
+    ];
+
+    const mapped = mapSdkContextEntriesToTranscriptEvents({ sessionId, entries });
+    expect(mapped.map((event) => [event.kind, event.ts])).toEqual([
+      ["user_confirmed", 100],
+      ["assistant_committed", 200],
+      ["tool_requested", 250],
+      ["tool_requested", 260],
+      ["tool_finished", 350],
+    ]);
+    expect(mapped.filter((event) => event.kind === "tool_requested").map((event) => event.toolCallId))
+      .toEqual(["tc_1", "tc_2"]);
+  });
+
+  test("matches repeated equal-content app users FIFO and preserves unmatched SDK history", () => {
+    const appUser = (id: string, ts: number): TranscriptEvent => ({
+      kind: "user_confirmed",
+      eventId: `app-event-${id}`,
+      sessionId,
+      ts,
+      clientMessageId: id,
+      text: "repeat",
+    });
+    const entries: SdkTranscriptContextEntry[] = [
+      { type: "message", message: { role: "user", content: "repeat", timestamp: 10 } },
+      durableEntry(appUser("app-1", 11)),
+      { type: "message", message: { role: "user", content: "repeat", timestamp: 20 } },
+      durableEntry(appUser("app-2", 21)),
+      { type: "message", message: { role: "user", content: "repeat", timestamp: 30 } },
+    ];
+
+    const users = mapSdkContextEntriesToTranscriptEvents({ sessionId, entries })
+      .filter((event) => event.kind === "user_confirmed");
+    expect(users.map((event) => [event.clientMessageId, event.ts])).toEqual([
+      ["app-1", 11],
+      ["app-2", 21],
+      ["sync_30", 30],
+    ]);
+  });
+
+  test("corrupt and unsupported custom entries cannot suppress SDK fallback", () => {
+    const sdkAssistant: SdkTranscriptContextEntry = {
+      type: "message",
+      message: {
+        role: "assistant",
+        timestamp: 100,
+        content: [{ type: "toolCall", id: "tc_bad", name: "bash", arguments: { command: "pwd" } }],
+      },
+    };
+    const candidate = {
+      kind: "tool_requested",
+      eventId: "future-request",
+      sessionId,
+      ts: 200,
+      toolCallId: "tc_bad",
+      tool: "bash",
+      args: { command: "pwd" },
+    } satisfies TranscriptEvent;
+    const entries: SdkTranscriptContextEntry[] = [
+      sdkAssistant,
+      { type: "custom", customType: TRANSCRIPT_EVENT_CUSTOM_TYPE, data: { ...candidate, ts: -1 } },
+      durableEntry(candidate, "outpost-pi.transcript-event.v2"),
+      { type: "custom", customType: "other-extension.state", data: candidate },
+    ];
+
+    expect(mapSdkContextEntriesToTranscriptEvents({ sessionId, entries }))
+      .toEqual([expect.objectContaining({ kind: "tool_requested", toolCallId: "tc_bad", ts: 100 })]);
+  });
+
+  test("rehomes forked durable events to the current session while preserving identity", () => {
+    const copied = { ...user("copied-client", "from parent", 50), sessionId: "parent-session" };
+    expect(mapSdkContextEntriesToTranscriptEvents({
+      sessionId: "fork-session",
+      entries: [durableEntry(copied)],
+    })).toEqual([{ ...copied, sessionId: "fork-session" }]);
+  });
+
+  test("mixed pre-upgrade history falls back while later durable identity wins", () => {
+    const durableLater: TranscriptEvent = {
+      kind: "user_confirmed",
+      eventId: "app-later",
+      sessionId,
+      ts: 201,
+      clientMessageId: "app-client-later",
+      text: "after upgrade",
+    };
+    const mapped = mapSdkContextEntriesToTranscriptEvents({
+      sessionId,
+      entries: [
+        { type: "message", message: { role: "user", content: "before upgrade", timestamp: 100 } },
+        { type: "message", message: { role: "user", content: "after upgrade", timestamp: 200 } },
+        durableEntry(durableLater),
+      ],
+    });
+
+    expect(mapped.filter((event) => event.kind === "user_confirmed").map((event) => event.clientMessageId))
+      .toEqual(["sync_100", "app-client-later"]);
+  });
+
+  test("maps raw compaction timestamps and ignores duplicate durable identities", () => {
+    const compacted: TranscriptEvent = {
+      kind: "compaction_recorded",
+      eventId: "durable-compaction",
+      sessionId,
+      ts: 500,
+      summary: "durable",
+    };
+    const mapped = mapSdkContextEntriesToTranscriptEvents({
+      sessionId,
+      entries: [
+        { type: "compaction", summary: "raw", tokensBefore: 12, timestamp: "2026-08-25T00:00:00.000Z" },
+        { type: "compaction", summary: "invalid date", tokensBefore: 13, timestamp: "not-a-date" },
+        durableEntry(compacted),
+        durableEntry({ ...compacted, ts: 999 }),
+      ],
+    });
+
+    expect(mapped.map((event) => [event.kind, event.ts, event.eventId])).toEqual([
+      ["compaction_recorded", Date.parse("2026-08-25T00:00:00.000Z"), expect.any(String)],
+      ["compaction_recorded", 0, expect.any(String)],
+      ["compaction_recorded", 500, "durable-compaction"],
     ]);
   });
 
