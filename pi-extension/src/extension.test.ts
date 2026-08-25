@@ -1,8 +1,8 @@
 /**
- * Integration tests: extension default export + pair_request flow + reconnect.
+ * Integration tests for extension startup, owner pairing, sealed traffic, and reconnect.
  *
- * Post plan 06: no Noise XX. Pairing is `pair_request → pair_ok|pair_error`
- * over an opaque outer envelope whose `ct` is base64(JSON.stringify(inner)).
+ * Pairing uses `pair_request → pair_ok|pair_error`; post-pairing traffic crosses
+ * the opaque outer envelope as versioned owner-channel sealed frames.
  */
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { EventEmitter } from "node:events";
