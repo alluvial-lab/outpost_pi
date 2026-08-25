@@ -230,6 +230,26 @@ transcript epic rather than remaining a second implementation item:
   append binding, and durable-first mixed-era reconciliation on which both
   migrations depend.
 
-This story closes as the ground-truth enumeration/design input. It does not
-claim the F2 implementation is already complete; those residuals remain tracked
-by F2's implementing child stories.
+This story closes as the ground-truth enumeration/design input.
+
+## F2 closure update (2026-08-25)
+
+The F2 implementation walked the table above against F1's landed durable APIs.
+Every authoritative current-extension path is now closed:
+
+| Former gap | Final owner/consumer disposition |
+|---|---|
+| App-origin initial, duplicate, and `message_end` echoes | Delivery hook persists one `user_confirmed.ts`; every echo reuses it. |
+| Ordinary tool request/result | Execution hooks persist their lifecycle timestamp; live and reopen history use the durable fact. |
+| Agent-network cards | The admitted request/result pair is persisted and each live frame reuses its event timestamp. |
+| `agent_done` buffered fallback | `agent_end` persists and sends one timestamp; both fallback commit and terminal fact consume it. |
+| Renderable errors | Provider facts are durable; optional `error.ts` covers provider/internal producers and the app consumes it. |
+| Buffered pre-tool narration | One derived `requestTs` is shared with `ToolRequested`. |
+| Compaction and deterministic assistant/user history | Already sound; unchanged. |
+| Deltas, optimistic submissions, cancellation/debug state | Confirmed non-authoritative; excluded from render ordering. |
+
+The remaining `DateTime.now()` branches beside authoritative constructions are
+explicit compatibility fallbacks for ts-less pre-durable frames. Mixed-era tests
+cover tools and errors, so compatibility is preserved without leaving a current
+producer on the phone clock. The authoritative phone-`ts` residual count is now
+zero.

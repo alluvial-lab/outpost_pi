@@ -112,12 +112,14 @@ class _FakeChannel implements IChannel, IControlLink {
         toolCallId: m.toolCallId,
         tool: m.tool,
         args: m.args,
+        ts: m.ts,
       ),
       ToolResult(:final sessionId) when sessionId.isEmpty => ToolResult(
         sessionId: sid,
         toolCallId: m.toolCallId,
         result: m.result,
         error: m.error,
+        ts: m.ts,
       ),
       ErrorMessage(:final sessionId) when sessionId.isEmpty => ErrorMessage(
         sessionId: sid,
@@ -1370,6 +1372,11 @@ void main() {
         .single;
     expect(committed.ts, DateTime.fromMillisecondsSinceEpoch(canonicalTs));
     expect(committed.text, 'server-timed text');
+    final done = store
+        .eventsFor(transcriptKeyFor(s.epk))
+        .whereType<AssistantDoneReceived>()
+        .single;
+    expect(done.ts, DateTime.fromMillisecondsSinceEpoch(canonicalTs));
     s.conn.dispose();
     s.sync.dispose();
   });
@@ -1977,7 +1984,8 @@ void main() {
     'ToolRequest flush is not re-amplified: two tool requests before the async '
     'projection resolves commit the buffered text once',
     () async {
-      final s = await setup();
+      final store = _MemoryTranscriptStore();
+      final s = await setup(transcriptEventStore: store);
       s.ch.push(UserInput(id: 'u1', text: 'go'));
       await _settle();
       s.ch.push(AgentChunk(inReplyTo: 'u1', delta: 'shared text'));
@@ -1985,7 +1993,15 @@ void main() {
       // Two tool requests in the SAME sync tick — the async projection from
       // the first flush has not resolved, so the second flush would re-read
       // the un-cleared buffer and commit 'shared text' a second time.
-      s.ch.push(ToolRequest(toolCallId: 'tc1', tool: 'Read', args: {}));
+      const requestTs = 1_700_000_002_345;
+      s.ch.push(
+        const ToolRequest(
+          toolCallId: 'tc1',
+          tool: 'Read',
+          args: {},
+          ts: requestTs,
+        ),
+      );
       s.ch.push(ToolRequest(toolCallId: 'tc2', tool: 'Grep', args: {}));
       await _settle();
       await _settle();
@@ -2009,6 +2025,15 @@ void main() {
         s.epk,
       ).where((r) => r.role == MsgRole.tool).toList();
       expect(toolRows.length, 2, reason: 'both tool calls are recorded');
+      final events = store.eventsFor(transcriptKeyFor(s.epk));
+      final narration = events
+          .whereType<AssistantMessageCommitted>()
+          .singleWhere((event) => event.text == 'shared text');
+      final request = events
+          .whereType<ToolRequested>()
+          .singleWhere((event) => event.toolCallId == 'tc1');
+      expect(narration.ts, DateTime.fromMillisecondsSinceEpoch(requestTs));
+      expect(request.ts, narration.ts);
       s.conn.dispose();
       s.sync.dispose();
     },
