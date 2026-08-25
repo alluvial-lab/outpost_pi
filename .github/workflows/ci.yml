@@ -51,6 +51,7 @@ jobs:
             app:
               - 'app/**'
               - 'protocol/**'
+              - 'scripts/run_app_perf_regressions.sh'
               - '.github/workflows/ci.yml'
             cockpit:
               - 'cockpit/**'
@@ -158,6 +159,8 @@ jobs:
       - name: Test
         working-directory: app
         run: flutter test --exclude-tags e2e
+      - name: Performance regression budgets
+        run: scripts/run_app_perf_regressions.sh
       - name: Identity package tests
         working-directory: app/packages/outpost_pi_identity
         run: |

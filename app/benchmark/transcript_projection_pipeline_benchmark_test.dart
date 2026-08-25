@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 
 const _sessionId = 'benchmark-session';
+const _cleanFoldP50BudgetUs = 15000;
 const _key = TranscriptSessionKey(
   peerId: 'benchmark-peer',
   roomId: 'main',
@@ -83,7 +84,7 @@ void main() {
 
       expect(
         _percentile(cleanFoldSamples..sort(), 0.50),
-        lessThanOrEqualTo(40000),
+        lessThanOrEqualTo(_cleanFoldP50BudgetUs),
       );
       expect(_percentile(cleanFoldSamples, 0.95), lessThanOrEqualTo(60000));
       expect(

@@ -7,6 +7,7 @@
 // the Chat listener also mirrors _MessageList's transcript-identity anchor gate.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:app/data/local/boxes.dart';
@@ -36,6 +37,9 @@ const _peerEpk = 'perf-room-snapshot-peer';
 const _sessionId = 'perf-room-snapshot-session';
 const _roomId = 'main';
 const _snapshotCount = 339;
+const _snapshotP95BudgetUs = 200;
+final _enforceLatencyBudgets =
+    Platform.environment['OUTPOST_PI_PERF_GATES'] == '1';
 
 final class _FakeChannel implements IChannel, IControlLink {
   final _messages = StreamController<ServerMessage>.broadcast();
@@ -523,12 +527,19 @@ Future<void> main() async {
       final wallP95 = _percentile(perSnapshotUs, 0.95);
       // ignore: avoid_print — machine-readable benchmark output.
       print(
-        'PERF_JSON ${<String, Object>{'probe': 'room_snapshot_consumer_fanout_after_opt_2', 'events': eventCount, 'snapshots': _snapshotCount, 'initial_reads': initialReads, 'snapshot_reads': store.readCalls - initialReads, 'snapshot_read_p50_us': 0, 'snapshot_read_p95_us': 0, 'snapshot_wall_p50_us': wallP50, 'snapshot_wall_p95_us': wallP95, 'binding_refreshes': sync.activateCalls, 'chat_notify_listeners': chat.notifyCalls, 'home_notify_listeners': home.notifyCalls, 'chat_widget_rebuilds': chatBuilds, 'home_widget_rebuilds': homeBuilds, 'post_frame_anchor_callbacks': anchorCallbacks}}',
+        'PERF_JSON ${jsonEncode(<String, Object>{'probe': 'room_snapshot_consumer_fanout_after_opt_2', 'events': eventCount, 'snapshots': _snapshotCount, 'initial_reads': initialReads, 'snapshot_reads': store.readCalls - initialReads, 'snapshot_read_p50_us': 0, 'snapshot_read_p95_us': 0, 'snapshot_wall_p50_us': wallP50, 'snapshot_wall_p95_us': wallP95, 'binding_refreshes': sync.activateCalls, 'chat_notify_listeners': chat.notifyCalls, 'home_notify_listeners': home.notifyCalls, 'chat_widget_rebuilds': chatBuilds, 'home_widget_rebuilds': homeBuilds, 'post_frame_anchor_callbacks': anchorCallbacks})}',
       );
 
       expect(store.readCalls - initialReads, 0);
       expect(sync.activateCalls, 0);
       expect(anchorCallbacks, 0);
+      if (_enforceLatencyBudgets) {
+        expect(
+          wallP95,
+          lessThanOrEqualTo(_snapshotP95BudgetUs),
+          reason: '339-snapshot fan-out p95 exceeded the CI perf budget',
+        );
+      }
 
       final noOpCounters = (
         chat: chat.notifyCalls,

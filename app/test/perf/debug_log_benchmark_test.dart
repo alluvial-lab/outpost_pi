@@ -9,6 +9,9 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 const _discoveryAdmissionBeforeUs = 4448655;
 const _eventCounts = <int>[200, 5500];
 const _criticalEventCount = 339;
+const _admissionBudgetUs = 75000;
+final _enforceLatencyBudgets =
+    Platform.environment['OUTPOST_PI_PERF_GATES'] == '1';
 
 void main() {
   late Directory tempDir;
@@ -72,6 +75,13 @@ void main() {
         lessThanOrEqualTo(_discoveryAdmissionBeforeUs ~/ 5),
         reason: 'the locked discovery baseline requires at least a 5x gain',
       );
+      if (_enforceLatencyBudgets) {
+        expect(
+          admissionUs[5500],
+          lessThanOrEqualTo(_admissionBudgetUs),
+          reason: '5,500-event ring admission exceeded the CI perf budget',
+        );
+      }
 
       final writesBeforeBurst = log.snapshotWriteCountForTesting;
       final enqueue = Stopwatch()..start();
