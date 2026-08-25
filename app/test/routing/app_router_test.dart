@@ -847,7 +847,7 @@ void main() {
 
   void registerTwoPaneRouterSeamTest() {
     testWidgets(
-      'production two-pane router isolates detail keyboard but preserves master modal insets',
+      'production pane collapse hides IME without consuming system-bar or modal insets',
       (tester) async {
         const screen = Size(842, 701);
         tester.view.devicePixelRatio = 1;
@@ -855,6 +855,8 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetViewInsets);
+        addTearDown(tester.view.resetViewPadding);
+        tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 48);
         final textInputCalls = <MethodCall>[];
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           SystemChannels.textInput,
@@ -1019,6 +1021,20 @@ void main() {
             );
           }
           expect(tester.getSize(find.byType(HomePage)), const Size(411, 797));
+          final foldedHomeBody = tester.getRect(
+            find.descendant(
+              of: find.byType(HomePage),
+              matching: find.byType(CustomScrollView),
+            ),
+          );
+          expect(foldedHomeBody.top, 24);
+          expect(
+            foldedHomeBody.bottom,
+            797 - 48,
+            reason:
+                'pane collapse must hide only the IME; the folded Home safe '
+                'area must continue reserving the Android navigation bar',
+          );
 
           tester.view.physicalSize = screen;
           tester.view.viewInsets = const FakeViewPadding(bottom: 280);

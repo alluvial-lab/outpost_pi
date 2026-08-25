@@ -111,13 +111,15 @@ class MasterPaneHomeSurface extends StatelessWidget {
   }
 }
 
-/// Explicitly dismiss the detail IME when a split shell collapses to one pane.
+/// Dismiss the detail IME without consuming stable system-bar insets.
 ///
 /// Flutter moves focus away when the detail branch leaves the rendered shell,
 /// but that focus transition does not send `TextInput.hide`. Pixel Fold's
 /// WindowManager can consequently retain the old IME inset across the posture
-/// resize. This boundary owns the split-to-single transition and requests the
-/// missing platform convergence while an IME inset is active.
+/// resize. During the same transition Android can briefly leave `padding` at
+/// its keyboard-visible value even after the stable `viewPadding` survives.
+/// This boundary requests only IME dismissal and reconstructs safe padding
+/// from the still-current system-bar and IME insets for the folded shell.
 class PaneCollapseImeDismissal extends StatefulWidget {
   const PaneCollapseImeDismissal({
     super.key,
@@ -134,21 +136,49 @@ class PaneCollapseImeDismissal extends StatefulWidget {
 }
 
 class _PaneCollapseImeDismissalState extends State<PaneCollapseImeDismissal> {
+  var _recoverSystemPadding = false;
+
   @override
   void didUpdateWidget(PaneCollapseImeDismissal oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.twoPane || widget.twoPane) return;
+    if (!oldWidget.twoPane || widget.twoPane) {
+      if (widget.twoPane) _recoverSystemPadding = false;
+      return;
+    }
     if (View.of(context).viewInsets.bottom <= 0) return;
 
+    _recoverSystemPadding = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || widget.twoPane) return;
-      FocusManager.instance.primaryFocus?.unfocus();
       unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
     });
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) {
+    if (widget.twoPane || !_recoverSystemPadding) return widget.child;
+
+    final media = MediaQuery.of(context);
+    final systemPadding = EdgeInsets.fromLTRB(
+      math.max(
+        media.padding.left,
+        media.viewPadding.left - media.viewInsets.left,
+      ),
+      math.max(media.padding.top, media.viewPadding.top - media.viewInsets.top),
+      math.max(
+        media.padding.right,
+        media.viewPadding.right - media.viewInsets.right,
+      ),
+      math.max(
+        media.padding.bottom,
+        media.viewPadding.bottom - media.viewInsets.bottom,
+      ),
+    );
+    return MediaQuery(
+      data: media.copyWith(padding: systemPadding),
+      child: widget.child,
+    );
+  }
 }
 
 /// Maximum single-column content width for onboarding and empty states.
