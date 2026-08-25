@@ -17,21 +17,29 @@ val keystoreProperties = Properties().apply {
         FileInputStream(keystorePropertiesFile).use(::load)
     }
 }
+val environmentReference = Regex("""^\$\{env\.([A-Za-z_][A-Za-z0-9_]*)}$""")
+fun releaseSigningProperty(name: String): String? {
+    val configured = keystoreProperties.getProperty(name)?.takeIf(String::isNotBlank) ?: return null
+    val environmentVariable = environmentReference.matchEntire(configured)?.groupValues?.get(1)
+        ?: return configured
+    return System.getenv(environmentVariable)?.takeIf(String::isNotBlank)
+}
+
 val requiredReleaseSigningProperties =
     listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+val releaseSigningProperties =
+    requiredReleaseSigningProperties.associateWith(::releaseSigningProperty)
 val missingReleaseSigningProperties =
-    requiredReleaseSigningProperties.filter { keystoreProperties.getProperty(it).isNullOrBlank() }
+    requiredReleaseSigningProperties.filter { releaseSigningProperties[it].isNullOrBlank() }
 val hasCompleteReleaseSigningProperties = missingReleaseSigningProperties.isEmpty()
 val releaseKeystoreFile =
-    keystoreProperties
-        .getProperty("storeFile")
-        ?.takeIf(String::isNotBlank)
+    releaseSigningProperties["storeFile"]
         ?.let(rootProject::file)
 val releaseSigningConfigurationError =
     when {
         !keystorePropertiesFile.isFile -> "android/key.properties is missing"
         missingReleaseSigningProperties.isNotEmpty() ->
-            "android/key.properties is missing or has blank properties: " +
+            "android/key.properties has missing, blank, or unresolved properties: " +
                 missingReleaseSigningProperties.joinToString()
         releaseKeystoreFile?.isFile != true -> "the configured release keystore file is missing"
         else -> null
@@ -39,6 +47,8 @@ val releaseSigningConfigurationError =
 val releaseSigningError =
     "Release APK/AAB tasks require a complete android/key.properties and an existing release keystore. " +
         "Debug signing is only available to debug builds."
+val requestedTargetPlatforms =
+    providers.gradleProperty("target-platform").orNull?.split(',') ?: emptyList()
 
 android {
     namespace = "dev.kevoun.outpostpi"
@@ -64,21 +74,44 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Flutter's target-platform limits libflutter, but plugin AARs can still
+        // pad every ABI directory. Filter those transitive native libraries too
+        // so a requested android-arm64 APK is structurally arm64-only.
+        if (requestedTargetPlatforms == listOf("android-arm64")) {
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
+        }
     }
 
     signingConfigs {
         if (hasCompleteReleaseSigningProperties) {
             create("release") {
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
+                keyAlias = releaseSigningProperties.getValue("keyAlias")
+                keyPassword = releaseSigningProperties.getValue("keyPassword")
                 storeFile = releaseKeystoreFile
-                storePassword = keystoreProperties.getProperty("storePassword")
+                storePassword = releaseSigningProperties.getValue("storePassword")
+            }
+        }
+    }
+
+    packaging {
+        if (requestedTargetPlatforms == listOf("android-arm64")) {
+            jniLibs {
+                excludes += setOf("lib/armeabi-v7a/**", "lib/x86/**", "lib/x86_64/**")
             }
         }
     }
 
     buildTypes {
         release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             if (hasCompleteReleaseSigningProperties) {
                 signingConfig = signingConfigs.getByName("release")
             }
