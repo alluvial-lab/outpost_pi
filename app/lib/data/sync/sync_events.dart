@@ -26,6 +26,13 @@ final class SessionPersistenceDegraded extends SessionEvent {
   final String message;
 }
 
+/// Signal that the server's bounded history replay changed its truncation state.
+final class SessionHistoryTruncationChanged extends SessionEvent {
+  const SessionHistoryTruncationChanged(this.truncated);
+
+  final bool truncated;
+}
+
 /// Signal that a later transcript operation proved persistence recovered.
 final class SessionPersistenceRecovered extends SessionEvent {
   const SessionPersistenceRecovered();

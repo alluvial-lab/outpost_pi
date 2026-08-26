@@ -389,26 +389,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         actionLabel: 'Re-pair',
         onAction: () => context.go('/pair'),
       ),
-      ChatReady(:final messages, :final streaming) => () {
-        final visible = hideToolCalls
-            ? messages.where((m) => m is! ToolEvent).toList()
-            : messages;
-        // Empty body → the default placeholder (Pi brand icon + "Nothing
-        // here"), shown whenever there's nothing to render — including while
-        // reconnecting (the reconnect handshake never swaps the body).
-        if (visible.isEmpty && streaming == null) {
-          return const _EmptyState(
-            icon: LucideIcons.terminal,
-            message: 'Nothing here',
+      ChatReady(:final messages, :final streaming, :final historyTruncated) =>
+        () {
+          final visible = hideToolCalls
+              ? messages.where((m) => m is! ToolEvent).toList()
+              : messages;
+          // Empty body → the default placeholder (Pi brand icon + "Nothing
+          // here"), shown whenever there's nothing to render — including while
+          // reconnecting (the reconnect handshake never swaps the body).
+          if (visible.isEmpty && streaming == null && !historyTruncated) {
+            return const _EmptyState(
+              icon: LucideIcons.terminal,
+              message: 'Nothing here',
+            );
+          }
+          return _MessageList(
+            messages: visible,
+            streaming: streaming,
+            historyTruncated: historyTruncated,
+            isReconnecting: state.status.transport is! ChatTransportOnline,
+            onDecide: (id, decision) => vm.approveTool(id, decision),
           );
-        }
-        return _MessageList(
-          messages: visible,
-          streaming: streaming,
-          isReconnecting: state.status.transport is! ChatTransportOnline,
-          onDecide: (id, decision) => vm.approveTool(id, decision),
-        );
-      }(),
+        }(),
     };
   }
 
@@ -648,12 +650,14 @@ class _ChatStatusIndicator extends StatelessWidget {
 class _MessageList extends StatefulWidget {
   final List<ChatMessage> messages;
   final StreamingMessage? streaming;
+  final bool historyTruncated;
   final bool isReconnecting;
   final void Function(String, ApproveDecision) onDecide;
 
   const _MessageList({
     required this.messages,
     required this.streaming,
+    required this.historyTruncated,
     required this.isReconnecting,
     required this.onDecide,
   });
@@ -798,7 +802,10 @@ class _MessageListState extends State<_MessageList> {
   Widget build(BuildContext context) {
     final messages = widget.messages;
     final streaming = widget.streaming;
-    final itemCount = messages.length + (streaming != null ? 1 : 0);
+    final itemCount =
+        messages.length +
+        (streaming != null ? 1 : 0) +
+        (widget.historyTruncated ? 1 : 0);
     final colors = context.colors;
 
     return Stack(
@@ -818,6 +825,11 @@ class _MessageListState extends State<_MessageList> {
                   key: const ValueKey('streaming'),
                   child: StreamingBubble(streaming),
                 );
+              }
+              final contentCount =
+                  messages.length + (streaming != null ? 1 : 0);
+              if (widget.historyTruncated && i == contentCount) {
+                return const _HistoryTruncatedNotice();
               }
               final msgIdx =
                   messages.length - 1 - (i - (streaming != null ? 1 : 0));
@@ -872,6 +884,34 @@ class _MessageListState extends State<_MessageList> {
             ),
           ),
       ],
+    );
+  }
+}
+
+final class _HistoryTruncatedNotice extends StatelessWidget {
+  const _HistoryTruncatedNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const Key('history-truncated-notice'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: colors.muted.withValues(alpha: 0.08),
+        border: Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        'Earlier history is not synced on this device.',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontFamily: kMonoFamily,
+          fontSize: 11,
+          color: colors.muted2,
+        ),
+      ),
     );
   }
 }
