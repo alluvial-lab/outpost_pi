@@ -36,6 +36,7 @@ Not release-blocking; the bounded sync is the designed contract.
 - Simplification: No unrelated persistence or replay behavior changed.
 - Discrepancies from design: The implementation surfaces the existing signal; on-demand larger-limit backfill remains intentionally deferred because the story's acceptance direction permits an affordance without a new wire request.
 - Adjacent issues parked: none.
+- Concurrent-work collision: a shared-checkout worker commit (`a4873ac8`) carried the hydration files under an unrelated cockpit message; the app surface was revalidated and restored in `efc574fb`.
 
 ## Blocker
 - Required `flutter analyze && flutter test --exclude-tags e2e --concurrency=2` verification was attempted. Analyze passed; the full suite reached 972 tests but timed out in two unrelated `PairingPage` widget tests after 10 minutes each. The focused truncation regression passed. Per test-integrity rules, the story remains `stage: implementing` until the required full suite is green.
