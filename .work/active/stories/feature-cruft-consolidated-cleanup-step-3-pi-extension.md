@@ -1,7 +1,7 @@
 ---
 id: feature-cruft-consolidated-cleanup-step-3-pi-extension
 kind: story
-stage: implementing
+stage: done
 tags: [refactor, cleanup, pi-extension]
 parent: feature-cruft-consolidated-cleanup
 depends_on: [feature-cruft-consolidated-cleanup-step-2-relay]
@@ -94,6 +94,10 @@ worker's in-flight `delivery_retry` expectation update. The new expiry test
 passes in isolation, and no production expiry code is part of this story. Do
 not waive the full-suite failures or alter the concurrent fresh-session work;
 re-run this story's owning suite after that work is complete.
+
+Resolution (2026-08-26): The concurrent fresh-session work is complete. The
+owning suite now passes in full: typecheck, 1,102 passed / 3 skipped across 60
+Vitest files, and build all succeeded. No failures were waived.
 
 ## Risk
 
