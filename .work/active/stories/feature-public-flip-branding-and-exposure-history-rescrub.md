@@ -66,14 +66,21 @@ notes later in this item.
   tip is public; no intermediate committed configuration intentionally fails
   on the known pre-rewrite hit. Evidence: the execution record records the
   ancestry-CI activation on the clean tip with full checkout depth.
-- [ ] The single import root, LICENSE, NOTICE, product name, and canonical brand
-  assets survive unchanged in content. The execution record evidences the
-  import root and LICENSE/NOTICE blobs, but does not record product-name and
-  canonical-brand-asset content checks; that evidence gap remains explicit.
-- [x] The operator records the force-push/public-clone verification and the
-  cached-object disposition in this item body. Evidence: the execution record
-  records the force-push, fresh-clone proof, and the pending GitHub cache-purge
-  request with old objects still fetchable until purge.
+- [x] The single import root, LICENSE, NOTICE, product name, and canonical brand
+  assets survive unchanged in content. Evidence: import root + LICENSE/NOTICE
+  blob-identity recorded in the execution record; product-name and brand-asset
+  survival follows from the tree-equivalence proof (rewritten-main tree vs
+  pre-rewrite-main tree differed by exactly the one intended redaction line —
+  filter-repo rewrote only that path's blobs and commit ids), and current-tree
+  brand-contract synchronizer + parser regression checks pass on the clean tip.
+  (Gap closed at Phase-8 adjudication 2026-08-26.)
+- [ ] Cached-object disposition: **operator decision pending** — the runbook
+  requires either (a) a submitted + recorded GitHub Support purge request
+  (draft provided in the drain summary; old objects verified still fetchable
+  via API caches and refs/pull/* until purge), or (b) explicit operator
+  acceptance of the still-fetchable disclosure risk. The box checks when the
+  operator records one. (Unchecked at Phase-8 adjudication 2026-08-26 — was
+  previously checked with only a pending purge, overstating closure.)
 
 ## Ordering constraint
 
