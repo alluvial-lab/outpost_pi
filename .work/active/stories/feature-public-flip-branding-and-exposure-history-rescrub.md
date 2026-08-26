@@ -74,13 +74,15 @@ notes later in this item.
   filter-repo rewrote only that path's blobs and commit ids), and current-tree
   brand-contract synchronizer + parser regression checks pass on the clean tip.
   (Gap closed at Phase-8 adjudication 2026-08-26.)
-- [ ] Cached-object disposition: **operator decision pending** — the runbook
-  requires either (a) a submitted + recorded GitHub Support purge request
-  (draft provided in the drain summary; old objects verified still fetchable
-  via API caches and refs/pull/* until purge), or (b) explicit operator
-  acceptance of the still-fetchable disclosure risk. The box checks when the
-  operator records one. (Unchecked at Phase-8 adjudication 2026-08-26 — was
-  previously checked with only a pending purge, overstating closure.)
+- [x] Cached-object disposition: **operator acceptance recorded 2026-08-26**
+  ("accept the residual") — pre-rewrite objects remain fetchable via GitHub
+  API caches and refs/pull/* until natural GC; **no purge request filed**.
+  Basis for acceptance: the literals are out of every branch, tag, and fresh
+  clone; the old objects are reachable only by holders of pre-rewrite hashes,
+  which no public surface publishes anymore. This is disposition (b) of the
+  runbook's requirement (purge request OR explicit acceptance). Recorded at
+  Phase-8 adjudication after correcting the earlier pending-purge
+  overstatement.
 
 ## Ordering constraint
 
