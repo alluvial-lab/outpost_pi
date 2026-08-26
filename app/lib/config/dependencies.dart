@@ -279,7 +279,7 @@ Future<IChannel> _productionConnectionFactory(
   if (resolution is! ConfiguredRelay) {
     throw const RelayNotConfiguredException();
   }
-  final relayUrl = resolution.url;
+  final relayUrls = orderedRelayUrls(resolution.url, [peer.relayUrl]);
   // ConnectionManager retries with the peer snapshot that originally opened
   // the channel. Reload here so persisted sequence advances are never reset by
   // a stale in-memory PeerRecord after a transient disconnect.
@@ -298,47 +298,60 @@ Future<IChannel> _productionConnectionFactory(
   if (cancel.isCancelled) throw _CancelledError();
 
   // Defensive timeout (plan app-state-normalization): without this the
-  // WebSocket connect + Ed25519 challenge round-trip can hang
-  // indefinitely if the relay is unreachable — ChatViewModel would sit
-  // in `ChatConnecting` forever. Throwing here pushes the manager into
-  // its retry/backoff path, which is observable as `StatusRetrying` and
-  // renders a "reconnecting" banner rather than an empty spinner.
+  // WebSocket connect + Ed25519 challenge round-trip can hang indefinitely if
+  // the relay is unreachable. Try the configured endpoint first, then the
+  // relay retained in the pairing record (typically a LAN/tailnet alternate).
+  // Each candidate owns a child cancellation token so a timed-out path is
+  // closed before the next endpoint is attempted.
   const wsConnectTimeout = Duration(seconds: 10);
-  // `peer.relayUrl` is kept on PeerRecord for legacy QR payloads but is
-  // no longer consulted when opening a connection.
-  // Construct the transport with the real destination room from the start
-  // so post-auth frames are demuxed against the correct room from frame 1 —
-  // the relay can push envelopes before any post-connect setActiveRoom call
-  // could land, which previously dropped them as `room-mismatch` (see
-  // `story-fix-transport-active-room-reestablishment-on-reconnect`).
-  final transport =
-      await WsTransport.connect(
-        relayUrl: relayUrl,
-        peerPubkey: channelPeer!.remoteEpk,
-        ed25519Key: ownerKey,
-        deviceId: await _injector.get<DeviceId>().get(),
-        activeRoom: channelPeer.roomId ?? 'main',
+  Object? lastError;
+  StackTrace? lastStack;
+  for (final relayUrl in relayUrls) {
+    if (cancel.isCancelled) throw _CancelledError();
+    final attemptCancel = CancelToken();
+    Future<void> parentCancellation() => attemptCancel.cancelAndWait();
+    cancel.addCancellationListener(parentCancellation);
+    try {
+      // Construct the transport with the real destination room from the start
+      // so post-auth frames are demuxed against the correct room from frame 1.
+      final transport =
+          await WsTransport.connect(
+            relayUrl: relayUrl,
+            peerPubkey: channelPeer!.remoteEpk,
+            ed25519Key: ownerKey,
+            deviceId: await _injector.get<DeviceId>().get(),
+            activeRoom: channelPeer.roomId ?? 'main',
+            debugLog: _injector.get<DebugLog>(),
+            cancellation: attemptCancel,
+          ).timeout(
+            wsConnectTimeout,
+            onTimeout: () => throw TimeoutException(
+              'WS connect to $relayUrl timed out after '
+              '${wsConnectTimeout.inSeconds}s',
+            ),
+          );
+
+      if (cancel.isCancelled) {
+        await transport.close();
+        throw _CancelledError();
+      }
+
+      return SecurePeerChannel(
+        transport: transport,
+        storage: _injector.get<PairingStorage>(),
+        peer: channelPeer,
         debugLog: _injector.get<DebugLog>(),
-        cancellation: cancel,
-      ).timeout(
-        wsConnectTimeout,
-        onTimeout: () => throw TimeoutException(
-          'WS connect to $relayUrl timed out after '
-          '${wsConnectTimeout.inSeconds}s',
-        ),
       );
-
-  if (cancel.isCancelled) {
-    await transport.close();
-    throw _CancelledError();
+    } catch (error, stack) {
+      if (cancel.isCancelled) throw _CancelledError();
+      lastError = error;
+      lastStack = stack;
+      await attemptCancel.cancelAndWait();
+    } finally {
+      cancel.removeCancellationListener(parentCancellation);
+    }
   }
-
-  return SecurePeerChannel(
-    transport: transport,
-    storage: _injector.get<PairingStorage>(),
-    peer: channelPeer,
-    debugLog: _injector.get<DebugLog>(),
-  );
+  Error.throwWithStackTrace(lastError!, lastStack!);
 }
 
 // ---------------------------------------------------------------------------
