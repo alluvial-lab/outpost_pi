@@ -80,11 +80,12 @@ Runs after both the extension shutdown/fence and app durable-resend checkpoints.
   reconnect/rotation still advances the generation and retries.
 - Verification actually run: E2E host TypeScript compile passed; focused Dart
   analysis passed; extension typecheck/full test/build passed (60 files, 1,102
-  passed / 3 skipped); focused app adapter and SyncService suites passed. Four
+  passed / 3 skipped); focused app adapter and SyncService suites passed. Six
   production-backed `e2e/run-pairing.sh` runs built the current relay and host.
-  The new recovery scenario passed end-to-end in three runs; the remaining run
-  also reached successor resend/echo but exposed and fixed the host status
-  readiness condition (`paired` is ready after rapid app reattach).
+  The new recovery scenario passed end-to-end in four runs. One failure exposed
+  and fixed a missing deterministic protected-tail drain/readiness barrier; the
+  other reached successor resend/echo and exposed the host status readiness
+  condition (`paired` is ready after rapid app reattach), which was also fixed.
 
 ## Blocker
 
