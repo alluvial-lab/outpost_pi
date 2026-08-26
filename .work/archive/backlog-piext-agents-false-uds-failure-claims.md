@@ -1,11 +1,21 @@
 ---
 id: backlog-piext-agents-false-uds-failure-claims
 created: 2026-06-30
-updated: 2026-06-30
+updated: 2026-08-26
 tags: [pi-extension, test-debt, agent-discipline, investigation]
+status: folded
+folded_into: .agents/rules/testing-integrity.md ("Agent-reported test results" section)
 ---
 
 # pi-ext implement agents falsely report UDS/broker.sock test failures (recurring)
+
+## Retired (fold, 2026-08-26)
+
+The durable lessons below now live in
+`.agents/rules/testing-integrity.md` → "Agent-reported test results". No
+recurrence in the 7+ weeks since 2026-06-30 (checked against all session
+notes through 2026-08-25 at groom time). This body is retained as the full
+incident history backing those rules.
 
 ## Symptom
 
