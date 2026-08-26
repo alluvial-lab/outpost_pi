@@ -2312,7 +2312,15 @@ void main() {
           truncated: false,
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () =>
+            !s.sync.turnProjection.working &&
+            s.sync.turnProjection.cancelTargetId == null &&
+            s.sync.streaming == null &&
+            !s.conn.isRoomWorking(s.epk, 'main') &&
+            index(s.epk)?.status == SessionActivity.idle,
+        reason: 'late history terminal state to remain settled',
+      );
 
       expect(s.sync.turnProjection.working, isFalse);
       expect(s.sync.turnProjection.cancelTargetId, isNull);
