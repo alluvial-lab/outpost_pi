@@ -85,17 +85,12 @@ class FileReaderImpl implements FileReader {
   }
 
   @override
-  Stream<void> watch(String path) {
-    try {
-      // macOS uses FSEvents. Stream errors, such as replacement by rename, end
-      // the stream silently; the consuming ViewModel handles them through onError.
-      return File(path)
+  Stream<void> watch(String path) =>
+      // macOS uses FSEvents. Preserve stream errors so the consuming owner can
+      // surface a failed watcher instead of silently disabling live reload.
+      File(path)
           .watch(events: FileSystemEvent.modify | FileSystemEvent.delete)
           .map((_) {});
-    } catch (_) {
-      return const Stream<void>.empty();
-    }
-  }
 
   /// Detect likely binary content by a null byte in the first ~8 KB.
   bool _looksBinary(List<int> bytes) {

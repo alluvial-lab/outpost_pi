@@ -1,7 +1,7 @@
 ---
 id: backlog-cockpit-file-watch-reliability
 kind: story
-stage: implementing
+stage: review
 tags: [cockpit, lifecycle]
 parent: null
 depends_on: []
@@ -27,3 +27,24 @@ async work is unobserved and unowned. Absorbed item bodies retained in
 Absorbed: `gate-cruft-file-watcher-errors-swallowed`,
 `gate-refactor-lifecycle-workspace-file-watch-debounce-floating`,
 `gate-refactor-lifecycle-file-viewer-lsp-debounce-floating`.
+
+## Implementation notes
+
+- Execution capability: `openai-codex/gpt-5.6-luna` xhigh, inline; bounded
+  cockpit lifecycle work with direct ownership and verification.
+- Review weight: standard (source: default).
+- Files changed: `cockpit/lib/app/cockpit/data/filesystem/file_reader_impl.dart`,
+  `cockpit/lib/app/cockpit/domain/contracts/file_reader.dart`,
+  `cockpit/lib/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart`,
+  `cockpit/lib/app/cockpit/ui/viewmodels/workspace_projection.dart`,
+  `cockpit/lib/app/cockpit/ui/widgets/file_viewer.dart`, and
+  `cockpit/test/ui/workspace_projection_test.dart`.
+- Tests added: projection coverage now asserts watcher-stream failures and
+  reload failures reach the owner; the existing watcher debounce/disposal
+  coverage remains in place.
+- Simplification: watcher reload now has one owned async method, and LSP
+  debounce cancellation is centralized for edit, retarget, and dispose paths.
+- Discrepancies from design: failures are surfaced through the existing
+  Cockpit recovery banner via a required projection-owner callback; no new UI
+  surface or storage change was introduced.
+- Adjacent issues parked: none.

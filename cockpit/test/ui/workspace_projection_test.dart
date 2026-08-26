@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cockpit/app/cockpit/domain/contracts/file_reader.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/notifier.dart';
@@ -84,6 +85,37 @@ void main() {
 
       expect(projection.item('v1'), isNull);
       expect((viewer.view as FileViewText).text, 'two');
+      await projection.dispose();
+    },
+  );
+
+  test(
+    'surfaces watcher and reload failures to the projection owner',
+    () async {
+      final path = '/workspace/lib/main.dart';
+      final reader = _FileReader(<String, FileView>{
+        path: const FileViewText('one', language: 'dart'),
+      });
+      final failures = <(String, Object)>[];
+      final projection = _projection(
+        reader: reader,
+        onFileWatchError: (path, error, _) => failures.add((path, error)),
+      );
+
+      await projection.createViewer(id: 'v1', projectId: 'p1', path: path);
+      reader.emitError(path, const FileSystemException('watch failed'));
+      await pumpEventQueue();
+
+      expect(failures, hasLength(1));
+      expect(failures.single.$1, path);
+      expect(failures.single.$2, isA<FileSystemException>());
+
+      reader.readFailures[path] = const FileSystemException('reload failed');
+      reader.emit(path);
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+
+      expect(failures, hasLength(2));
+      expect(failures.last.$2, isA<FileSystemException>());
       await projection.dispose();
     },
   );
@@ -451,6 +483,7 @@ WorkspaceProjection _projection({
   _History? history,
   void Function()? onChanged,
   void Function(String projectId)? onDescriptorChanged,
+  WorkspaceProjectionFileWatchError? onFileWatchError,
 }) {
   return WorkspaceProjection(
     rpcFactory: rpcFactory ?? _RpcFactory(),
@@ -459,6 +492,7 @@ WorkspaceProjection _projection({
     history: history ?? _History(),
     notifier: _Notifier(),
     lsp: LspServerPool(_LspFactory()),
+    onFileWatchError: onFileWatchError ?? (_, _, _) {},
     onChanged: onChanged,
     onDescriptorChanged: onDescriptorChanged,
   );
@@ -481,8 +515,11 @@ final class _FileReader implements FileReader {
       <String, StreamController<void>>{};
 
   @override
-  Future<FileView> read(String path) async =>
-      views[path] ?? FileViewText('content for $path');
+  Future<FileView> read(String path) async {
+    final failure = readFailures[path];
+    if (failure != null) throw failure;
+    return views[path] ?? FileViewText('content for $path');
+  }
 
   @override
   Future<bool> write(String path, String content) async {
@@ -494,7 +531,12 @@ final class _FileReader implements FileReader {
   Stream<void> watch(String path) =>
       _controllers.putIfAbsent(path, StreamController<void>.broadcast).stream;
 
+  final Map<String, Object> readFailures = <String, Object>{};
+
   void emit(String path) => _controllers[path]?.add(null);
+
+  void emitError(String path, Object error) =>
+      _controllers[path]?.addError(error, StackTrace.current);
 }
 
 final class _Notifier implements Notifier {

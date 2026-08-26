@@ -85,6 +85,7 @@ class CockpitViewModel extends ChangeNotifier {
       history: history,
       notifier: notifier,
       lsp: lsp,
+      onFileWatchError: _onFileWatchError,
       onChanged: notifyListeners,
       onAgentTurnEnd: _onAgentTurnEnd,
       onDescriptorChanged: _scheduleSave,
@@ -160,6 +161,8 @@ class CockpitViewModel extends ChangeNotifier {
   bool _treeVisible = true;
   bool _ready = false;
   String? _initializationError;
+  String? _fileWatchError;
+  bool _disposed = false;
   int _seq = 0;
 
   /// Mirror the app-scoped notification preference into this page-scoped model.
@@ -217,7 +220,13 @@ class CockpitViewModel extends ChangeNotifier {
   bool get ready => _ready;
 
   /// Explain a workspace recovery failure while keeping the shell usable.
-  String? get initializationError => _initializationError;
+  String? get initializationError {
+    final initial = _initializationError;
+    final watcher = _fileWatchError;
+    if (initial == null) return watcher;
+    if (watcher == null) return initial;
+    return '$initial; $watcher';
+  }
 
   bool get railVisible => _railVisible;
   bool get treeVisible => _treeVisible;
@@ -623,6 +632,17 @@ class CockpitViewModel extends ChangeNotifier {
 
   void _recordInitializationError(Object error) {
     _initializationError ??= error.toString();
+  }
+
+  void _onFileWatchError(String _, Object error, StackTrace stackTrace) {
+    if (_disposed) return;
+    _fileWatchError =
+        'File watcher stopped (${error.runtimeType}); file changes may not '
+        'appear automatically.';
+    debugPrint(
+      '[file-watch] watcher failed (${error.runtimeType})\n$stackTrace',
+    );
+    notifyListeners();
   }
 
   void _recordTerminalRecovery(String? projectId) {
@@ -1615,6 +1635,7 @@ class CockpitViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _gitWatch?.cancel();
     _gitWatchDebounce?.cancel();
     for (final t in _saveTimers.values) {

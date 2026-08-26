@@ -11,6 +11,7 @@ import 'package:cockpit/app/core/data/lsp/lsp_command.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_launchers.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_text_edit.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
+import 'package:cockpit/app/core/ui/async_action.dart';
 import 'package:cockpit/app/core/ui/settings_controller.dart';
 import 'package:cockpit/app/core/ui/widgets/code_editing_controller.dart';
 import 'package:cockpit/app/core/ui/widgets/code_highlight.dart';
@@ -149,6 +150,7 @@ class _FileViewerState extends State<FileViewer> {
     if (widget.session.path != _lastObservedPath) {
       final oldPath = _lastObservedPath;
       _lastObservedPath = widget.session.path;
+      _cancelLspDebounce();
       _editing = false;
       _dirty = false;
       _baseline = '';
@@ -228,7 +230,7 @@ class _FileViewerState extends State<FileViewer> {
   @override
   void dispose() {
     if (widget.session.saveDraft == _save) widget.session.saveDraft = null;
-    _lspDebounce?.cancel();
+    _cancelLspDebounce();
     _diagSub?.cancel();
     if (_vm != null) unawaited(_vm!.lspCloseDocument(widget.session.path));
     _ctrl?.removeListener(_onCtrlChanged);
@@ -242,10 +244,21 @@ class _FileViewerState extends State<FileViewer> {
     // Debounce user edits before notifying LSP to coalesce typing bursts.
     final ctrl = _ctrl;
     if (ctrl == null) return;
-    _lspDebounce?.cancel();
+    _cancelLspDebounce();
+    final path = widget.session.path;
+    final text = ctrl.text;
     _lspDebounce = Timer(const Duration(milliseconds: 400), () {
-      _vm?.lspChangeDocument(widget.session.path, ctrl.text);
+      _lspDebounce = null;
+      if (!mounted) return;
+      final vm = _vm;
+      if (vm == null) return;
+      ownAsync(vm.lspChangeDocument(path, text));
     });
+  }
+
+  void _cancelLspDebounce() {
+    _lspDebounce?.cancel();
+    _lspDebounce = null;
   }
 
   /// Synchronize dirty state locally and with the session's tab/dialog indicators.
