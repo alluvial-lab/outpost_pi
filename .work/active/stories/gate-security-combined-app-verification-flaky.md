@@ -1,14 +1,14 @@
 ---
 id: gate-security-combined-app-verification-flaky
 kind: story
-stage: drafting
+stage: implementing
 tags: [app, testing]
 parent: null
 depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-19
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # Combined app verification command is flaky
@@ -60,3 +60,19 @@ Investigate test isolation/ordering: the failure at line 388 under combined
 execution suggests shared state or ordering sensitivity between the two files.
 Stabilize by ensuring each test file is hermetic (no shared singleton state
 leaking across files in the same process).
+
+## Implementation notes
+- Execution capability: inline, test-infrastructure stabilization only; production lifecycle code was left unchanged.
+- Review weight: standard (source: caller default).
+- Files changed: `app/test/data/sync/sync_service_test.dart`.
+- Tests added/removed: Replaced wall-clock `_settle()` sleeps with deterministic zero-delay event-loop barriers, disabled the test-only room snapshot debounce, added explicit `_waitUntil` barriers for session/projection/outbox completion, and added a user-message-specific send barrier so `SessionSync` cannot satisfy a resend assertion.
+- Simplification: Removed timing dependence from the shared test helper; no assertions were weakened and no behavioral tests were deleted.
+- Discrepancies from design: The required isolated sync suite now contains 115 tests after the already-folded outbox coverage; no production singleton or Hive lifecycle was changed because the failures reproduced at test completion boundaries.
+- Adjacent issues parked: none.
+
+## Verification evidence
+- `flutter test --no-pub test/data/sync/sync_service_test.dart --concurrency=2`: passed twice consecutively after the final fix, 115/115 each run.
+- The full app command was also re-run. Analyze passed, but the full suite still timed out in unrelated `PairingPage` widget tests and showed intermittent failures in other concurrent app tests; that broader runner issue is not waived here.
+
+## Blocker
+- Per the caller's full-suite requirement and test-integrity rules, the story remains `stage: implementing` until `flutter test --exclude-tags e2e --concurrency=2` is green for the whole app. The target `sync_service_test.dart` suite itself meets the mandated repeated-run bar.

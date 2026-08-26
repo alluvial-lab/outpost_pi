@@ -541,15 +541,21 @@ void main() {
           sessionId: rotatedSession,
         ),
       );
-      await _settle();
-      await _settle();
+      await _waitUntil(
+        () => s.conn.activeSessionId == rotatedSession,
+        reason: 'the replacement session boundary to settle',
+      );
 
       final newRef = refFor(s.epk, rotatedSession);
       expect(LocalBoxes.msgsBoxName(newRef), isNot(oldBoxName));
       expect(messages(s.epk), isEmpty, reason: 'new session box starts empty');
 
       s.ch.push(UserInput(id: 'new-u1', text: 'new session row'));
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk, rotatedSession).singleOrNull?.text ==
+            'new session row',
+        reason: 'the replacement session row to persist',
+      );
 
       expect(messages(s.epk, rotatedSession).map((row) => row.text), [
         'new session row',
@@ -1330,7 +1336,12 @@ void main() {
     final id = (s.ch.sent.whereType<UserMessage>().last).id;
     expect(outbox.deliveries[id]?.targetSessionId, s.sessionId);
     s.ch.push(UserInput(id: id, text: 'hello'));
-    await _settle();
+    await _waitUntil(
+      () =>
+          messages(s.epk).singleOrNull?.pending == false &&
+          outbox.deliveries.isEmpty,
+      reason: 'echo confirmation and durable outbox removal',
+    );
 
     final m = messages(s.epk);
     expect(m, hasLength(1), reason: 'echo dedupes by id — no duplicate');
@@ -2156,7 +2167,17 @@ void main() {
           message: 'No active Pi context to abort',
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () =>
+            s.sync.streaming == null &&
+            !s.sync.turnProjection.working &&
+            messages(s.epk).any(
+              (m) =>
+                  m.role == MsgRole.assistant &&
+                  m.text.startsWith('⚠ internal_error:'),
+            ),
+        reason: 'server error terminal projection to settle',
+      );
 
       expect(s.sync.streaming, isNull);
       expect(s.sync.turnProjection.working, isFalse);
@@ -3417,6 +3438,10 @@ void main() {
       await sync2.activate(s.epk, 'main');
       await _settle();
 
+      await _waitUntil(
+        () => messages(s.epk).length == expected.length,
+        reason: 'the rebuilt disposable projection to materialize',
+      );
       final rebuilt = [
         for (final row in messages(s.epk))
           (role: row.role, id: row.id, text: row.text, status: row.status),
@@ -4224,8 +4249,10 @@ void main() {
           sessionId: newSession,
         ),
       );
-      await _settle();
-      await _settle();
+      await _waitUntil(
+        () => s.conn.activeSessionId == newSession,
+        reason: 'the replacement session boundary to settle',
+      );
 
       expect(messages(s.epk, newSession), isEmpty);
       expect(
@@ -4240,7 +4267,10 @@ void main() {
       ]);
 
       s.ch.push(UserInput(id: 'new-u1', text: 'new session'));
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk, newSession).singleOrNull?.text == 'new session',
+        reason: 'the replacement session row to persist',
+      );
       expect(messages(s.epk, newSession).map((row) => row.text), <String>[
         'new session',
       ]);
@@ -4498,7 +4528,13 @@ void main() {
           eos: true,
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () =>
+            messages(s.epk).map((r) => r.id).toList().join(',') == 'stale' &&
+            index(s.epk)?.sessionStartedAt ==
+                DateTime.fromMillisecondsSinceEpoch(staleStartedAt),
+        reason: 'the first post-clear replay boundary to persist',
+      );
       expect(messages(s.epk).map((r) => r.id), ['stale']);
       expect(
         index(s.epk)?.sessionStartedAt,
@@ -4524,7 +4560,13 @@ void main() {
           eos: true,
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () =>
+            messages(s.epk).map((r) => r.id).toList().join(',') == 'fresh' &&
+            index(s.epk)?.sessionStartedAt ==
+                DateTime.fromMillisecondsSinceEpoch(currentSessionStartedAt),
+        reason: 'the fresh post-clear replay to persist',
+      );
       expect(messages(s.epk).map((r) => r.id), ['fresh']);
       expect(
         index(s.epk)?.sessionStartedAt,
@@ -4562,7 +4604,11 @@ void main() {
           eos: true,
         ),
       );
-      await _settle();
+      await _waitUntil(
+        () => messages(s.epk).map((r) => r.id).toList().join(',') ==
+            'fresh,equal',
+        reason: 'the equal-boundary replay to persist additively',
+      );
       expect(messages(s.epk).map((r) => r.id), ['fresh', 'equal']);
 
       s.conn.dispose();
