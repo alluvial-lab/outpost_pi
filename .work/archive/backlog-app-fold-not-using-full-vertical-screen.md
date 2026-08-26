@@ -1,8 +1,10 @@
 ---
 id: backlog-app-fold-not-using-full-vertical-screen
 created: 2026-08-25
-updated: 2026-08-25
+updated: 2026-08-26
 tags: [app, bug, ux]
+status: superseded
+superseded_by: story-fix-app-fold-vertical-screen (done, v0.8.1) — code-verified groom 2026-08-26
 ---
 
 Promoted to `story-fix-app-fold-vertical-screen`.

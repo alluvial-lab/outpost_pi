@@ -1,8 +1,10 @@
 ---
 id: idea-outbound-delivery-detection-lag-window
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-08-26
 tags: [pi-extension, relay, app, bug, lifecycle]
+status: superseded
+superseded_by: app-side auto-session_sync on reconnect implemented (SyncService._onlineActivated → requestSync(), sync_service.dart:1001; ChatViewModel fresh-online edge) — the item's chosen closure option; groom 2026-08-26
 ---
 
 # Outbound delivery gap during the peer_offline detection-lag window

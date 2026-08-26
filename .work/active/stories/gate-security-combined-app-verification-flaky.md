@@ -8,10 +8,30 @@ depends_on: []
 release_binding: null
 gate_origin: security
 created: 2026-07-19
-updated: 2026-07-28
+updated: 2026-08-26
 ---
 
 # Combined app verification command is flaky
+
+## Folded evidence (groom 2026-08-26, from idea-app-sync-service-suite-flakes)
+
+The instability is broader than the two-file command below — the whole
+`sync_service_test.dart` suite is load-sensitive under concurrent execution:
+
+- Two consecutive `flutter test --exclude-tags e2e --concurrency=2` runs
+  failed **different** `app/test/data/sync/sync_service_test.dart` assertions
+  (`two session ids on the same room use different boxes and index keys`,
+  `foreign session_history is dropped before rows or index mutate`,
+  `server error clears pending chunk flush so chat does not stay working`)
+  while the complete file passed 96/96 at `--concurrency=1`.
+- Recurred twice during v0.8.1 final verification
+  (`.work/releases/v0.8.1/story-fix-app-fold-vertical-screen.md`).
+- Direction: find the shared state leaking between concurrent isolates
+  (singleton/Hive box/static timer surviving a test, or event assertion
+  racing the production 60 ms timer — cf. fixed
+  `gate-tests-sync-service-noecho-wallclock-timing`, v0.4.0). Explicit
+  barriers/fakes per testing-integrity; goal is green at
+  `--concurrency=2`, not another cap.
 
 ## Source
 

@@ -1,8 +1,10 @@
 ---
 id: backlog-timestamp-ownership-single-clock-gaps
 created: 2026-08-11
-updated: 2026-08-11
+updated: 2026-08-26
 tags: [pi-extension, app]
+status: superseded
+superseded_by: feature-canonical-transcript-timestamp-ownership (done, v0.8.0) — producer-clock adoption landed per its completion record; groom 2026-08-26
 ---
 
 # Timestamp-ownership / single-clock gaps (gate-confirmed) -> in-flight arc

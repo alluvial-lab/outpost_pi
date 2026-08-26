@@ -141,6 +141,10 @@ split items across component releases.
   `findings-route: none` — findings route through story/feature design, not
   refactor-design, because the fixes are not black-box-preserving). The libraries are
   grounded in `.agents/rules/code-design.md` and were cross-model-reviewed before commit.
+  Tiered-gate model (v0.4.0 trial: full gates on feature items, security-only regression
+  on gate-origin items) evaluated 2026-08-26 and **not carried forward** — post-trial
+  releases ran all six gates by default, and proportionality is handled by two-lane
+  release slicing; record at `.work/archive/idea-evaluate-tiered-release-gates.md`.
 - `release_uat: manual-checkpoint` — after the automated `gates_for_release` pass and
   before tag creation, `release-deploy` pauses for operator action; the operator runs
   the smoke runbook in [`docs/release-uat.md`](../docs/release-uat.md) and records an

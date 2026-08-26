@@ -1,11 +1,22 @@
 ---
 id: idea-evaluate-tiered-release-gates
 created: 2026-08-11
-updated: 2026-08-11
+updated: 2026-08-26
 tags: [workflow]
+status: superseded
+superseded_by: all-gates posture ratified (operator, E4A) — decision recorded in .work/CONVENTIONS.md gates_for_release; groom 2026-08-26
 ---
 
 # Evaluate formalizing the tiered release-gate model
+
+## Resolved (2026-08-26, operator E4A)
+
+Post-trial releases (v0.5.0 post-hoc, v0.7.0, v0.8.0) all ran the full
+gate suite — the trial lapsed by default rather than by decision (the word
+"tiered" appears nowhere after the v0.4.0 record). Operator ratified the
+all-gates posture on 2026-08-26: proportionality is handled by two-lane
+release slicing (fix/feature lanes), not gate tiering. Decision recorded in
+`.work/CONVENTIONS.md` → `gates_for_release`.
 
 ## Context
 

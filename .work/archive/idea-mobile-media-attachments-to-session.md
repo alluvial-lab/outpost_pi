@@ -1,8 +1,10 @@
 ---
 id: idea-mobile-media-attachments-to-session
 created: 2026-08-25
-updated: 2026-08-25
+updated: 2026-08-26
 tags: [app, pi-extension, ux, idea]
+status: superseded
+superseded_by: image attachment shipped (attach_sheet camera/gallery; UserMessage.images) — narrower residue re-parked as idea-mobile-attachments-files-and-share-target; groom 2026-08-26
 ---
 
 # No way to attach files/screenshots in-app to send to the agent session
