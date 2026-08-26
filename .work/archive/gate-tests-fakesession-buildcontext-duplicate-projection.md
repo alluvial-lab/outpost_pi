@@ -3,6 +3,7 @@ id: gate-tests-fakesession-buildcontext-duplicate-projection
 created: 2026-07-24
 updated: 2026-07-24
 stage: done
+release_binding: v0.9.0
 note: "Closed by gate-tests-pairing-token-context-regression-representation-blind (commit 4275fc8): direct never-called assertion landed; projection removed."
 tags: [testing]
 gate_origin: tests

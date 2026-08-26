@@ -5,7 +5,7 @@ stage: done
 tags: [branding, site]
 parent: feature-public-flip-branding-and-exposure
 depends_on: [story-brand-site-sync]
-release_binding: null
+release_binding: v0.9.0
 gate_origin: null
 created: 2026-08-26
 updated: 2026-08-26
