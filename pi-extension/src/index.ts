@@ -327,8 +327,8 @@ let _stopOwnerControl: (() => void) | null = null;
 
 function _ensureOwnerIngressListener(): void {
   if (!_stopOwnerIngress) {
-    _stopOwnerIngress = _relayTransport.onOuterMessage((ingress, isCurrent) =>
-      _handleOwnerOuterFrame(ingress, isCurrent)
+    _stopOwnerIngress = _relayTransport.onOuterMessage((ingress, isCurrent, signal) =>
+      _handleOwnerOuterFrame(ingress, isCurrent, signal)
     );
   }
   if (!_stopOwnerControl) {
@@ -365,12 +365,15 @@ function _handleRelayControlFrame(frame: RelayControlFrame): void {
 async function _handleOwnerOuterFrame(
   ingress: Extract<DecodedRelayIngress, { kind: "outer" }>,
   connectionIsCurrent: () => boolean,
+  signal: AbortSignal,
 ): Promise<boolean> {
-  return _owners.handleOuterFrame({
+  if (signal.aborted) return false;
+  const consumed = await _owners.handleOuterFrame({
     ingress,
     roomId: _myRoomId ?? undefined,
     turnActive: () => _turnProjection().working,
-    isCurrent: () => !_disposed && _state === "started" && connectionIsCurrent(),
+    signal,
+    isCurrent: () => !_disposed && _state === "started" && connectionIsCurrent() && !signal.aborted,
     onMessage: (message, sender) => _routeClientMessageFrom(
       sender as PlainPeerChannel,
       message,
@@ -379,6 +382,7 @@ async function _handleOwnerOuterFrame(
     onDisconnect: (peerId) => _onPeerDisconnect(peerId),
     sendToPeer: (peerId, message) => _sendOwnerMessageToPeer(peerId, message),
   });
+  return signal.aborted ? false : consumed;
 }
 
 function _syncOwnerPresenceSubscription(): void {

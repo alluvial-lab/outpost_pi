@@ -86,7 +86,9 @@ export interface RelayTransportDeps {
 /** Expose the concrete relay adapter's extended startup, control-frame, and diagnostics contract. */
 export interface RelayTransportAdapter extends Omit<RelayTransportPort, "start"> {
   start(input: RelayTransportStartInput): Promise<RelayStartResult>;
-  onControlFrame(handler: (frame: RelayControlFrame) => void | Promise<void>): () => void;
+  onControlFrame(
+    handler: (frame: RelayControlFrame, signal: AbortSignal) => void | Promise<void>,
+  ): () => void;
   emitRelayState(force?: boolean): void;
   hasPendingReconnect(): boolean;
   currentRelayUrl(): string | null;
@@ -156,8 +158,12 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   const outerMessageHandlers = new Set<(
     ingress: DecodedOuterIngress,
     isCurrent: () => boolean,
+    signal: AbortSignal,
   ) => boolean | void | Promise<boolean | void>>();
-  const controlFrameHandlers = new Set<(frame: RelayControlFrame) => void | Promise<void>>();
+  const controlFrameHandlers = new Set<(
+    frame: RelayControlFrame,
+    signal: AbortSignal,
+  ) => void | Promise<void>>();
   type RelayBinding = {
     relay: RelayClient;
     generation: number;
@@ -238,6 +244,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     let dispatchDrain: Promise<void> | null = null;
     let activeDispatch: RetainedDispatch | null = null;
     let bindingAlive = true;
+    const dispatchAbort = new AbortController();
     let pendingDataFrames = 0;
     let pendingDataBytes = 0;
     let pendingControlFrames = 0;
@@ -321,6 +328,10 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
 
     const releasePendingDispatch = (): void => {
       bindingAlive = false;
+      // Abort the active handler before releasing its retained dispatch cell.
+      // Handlers that own awaited I/O can use this signal to stop publishing
+      // stale-generation effects; queued work is discarded below.
+      dispatchAbort.abort();
       // Reconnect invalidates this generation. Queued app frames are
       // recoverable through reconnect + session_sync (pairing retries through
       // its existing timeout), so discard the explicit queue and release raw
@@ -339,12 +350,17 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
           if (work.queue === "control") {
             const frame = work.controlFrame;
             work.controlFrame = null;
-            if (frame) await dispatchRelayControlFrame(next, frame);
+            if (frame) await dispatchRelayControlFrame(next, frame, dispatchAbort.signal);
           } else {
             const line = work.line;
             work.line = null;
             if (line) {
-              await dispatchRelayMessage(next, line, () => connectionIsCurrent(binding));
+              await dispatchRelayMessage(
+                next,
+                line,
+                () => connectionIsCurrent(binding),
+                dispatchAbort.signal,
+              );
             }
           }
         } catch {
@@ -631,6 +647,7 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     handler: (
       ingress: DecodedOuterIngress,
       isCurrent: () => boolean,
+      signal: AbortSignal,
     ) => boolean | void | Promise<boolean | void>,
   ): () => void {
     outerMessageHandlers.add(handler);
@@ -639,7 +656,9 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     };
   }
 
-  function onControlFrame(handler: (frame: RelayControlFrame) => void | Promise<void>): () => void {
+  function onControlFrame(
+    handler: (frame: RelayControlFrame, signal: AbortSignal) => void | Promise<void>,
+  ): () => void {
     controlFrameHandlers.add(handler);
     return () => {
       controlFrameHandlers.delete(handler);
@@ -649,13 +668,16 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
   async function dispatchRelayControlFrame(
     source: RelayClient,
     frame: RelayServerControlFrame,
+    signal: AbortSignal,
   ): Promise<void> {
+    if (signal.aborted) return;
     try {
       for (const handler of controlFrameHandlers) {
-        await handler(frame);
+        if (signal.aborted) return;
+        await handler(frame, signal);
       }
     } finally {
-      publishRelayIngress(source, { kind: "control", frame });
+      if (!signal.aborted) publishRelayIngress(source, { kind: "control", frame });
     }
   }
 
@@ -663,7 +685,9 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     source: RelayClient,
     line: string,
     isCurrent: () => boolean,
+    signal: AbortSignal,
   ): Promise<void> {
+    if (signal.aborted) return;
     let decoded: DecodedRelayIngress;
     try {
       decoded = decodeRelayIngress(line);
@@ -672,19 +696,20 @@ export function createRelayTransportPort(deps: RelayTransportDeps): RelayTranspo
     }
     let consumed = false;
     if (decoded.kind === "control") {
-      await dispatchRelayControlFrame(source, decoded.frame);
+      await dispatchRelayControlFrame(source, decoded.frame, signal);
       return;
     } else if (decoded.kind === "outer") {
       // Owner attachment may require an async peers.json lookup. Complete it
       // before typed fanout so a newly created SecurePeerChannel receives the
       // triggering protected frame; no plaintext shortcut is permitted.
       for (const handler of outerMessageHandlers) {
-        if (await handler(decoded, isCurrent) === true) consumed = true;
+        if (signal.aborted) return;
+        if (await handler(decoded, isCurrent, signal) === true) consumed = true;
       }
     }
     // A consumed pair_request stays on the plaintext handshake path and must
     // not be re-published into the newly established SecurePeerChannel.
-    if (!consumed) publishRelayIngress(source, decoded);
+    if (!signal.aborted && !consumed) publishRelayIngress(source, decoded);
   }
 
   function createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel {

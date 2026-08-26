@@ -517,6 +517,28 @@ describe("relay transport control frames", () => {
     transport.stop();
   });
 
+  test("replacing a relay aborts every prior generation's active dispatch", async () => {
+    const { transport, relays } = makeTransport();
+    const signals: AbortSignal[] = [];
+    transport.onOuterMessage((_ingress, _isCurrent, signal) => {
+      signals.push(signal);
+      // Deliberately never settle: the transport must still abort the stale
+      // generation when its relay is replaced, without awaiting this handler.
+      return new Promise<void>(() => {});
+    });
+
+    for (let generation = 0; generation < 3; generation += 1) {
+      await transport.start({ relayUrl: "ws://relay.test", keypair });
+      relays[generation]!.emit("message", outerLine(`blocked-${generation}`));
+      await flushDispatch();
+      expect(signals).toHaveLength(generation + 1);
+      if (generation > 0) expect(signals[generation - 1]!.aborted).toBe(true);
+    }
+
+    await transport.stop();
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+  });
+
   test("async owner-handler rejection is observed and later frames keep routing", async () => {
     const { transport, relays, auditDispatchOverflow } = makeTransport();
     const dispatched: string[] = [];

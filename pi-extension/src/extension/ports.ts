@@ -87,6 +87,7 @@ export interface RelayTransportPort {
     handler: (
       ingress: Extract<DecodedRelayIngress, { kind: "outer" }>,
       isCurrent: () => boolean,
+      signal: AbortSignal,
     ) => boolean | void | Promise<boolean | void>,
   ): () => void;
   createPeerChannel(input: RelayPeerChannelInput): RelayPeerChannel;
