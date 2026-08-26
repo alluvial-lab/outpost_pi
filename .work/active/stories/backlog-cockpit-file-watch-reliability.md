@@ -1,7 +1,7 @@
 ---
 id: backlog-cockpit-file-watch-reliability
 kind: story
-stage: review
+stage: done
 tags: [cockpit, lifecycle]
 parent: null
 depends_on: []
@@ -48,3 +48,18 @@ Absorbed: `gate-cruft-file-watcher-errors-swallowed`,
   Cockpit recovery banner via a required projection-owner callback; no new UI
   surface or storage change was introduced.
 - Adjacent issues parked: none.
+
+## Review
+
+- Verdict: pass — bounded inline standalone-story review.
+- Watch stream errors and synchronous watch setup failures reach the required
+  projection-owner callback; reload read failures are also surfaced instead of
+  being discarded.
+- File-watch reload futures are explicitly owned with `ownAsync`, stale paths
+  are rejected, and debounce timers are canceled when watchers are replaced or
+  tabs close.
+- LSP debounce futures are explicitly owned with `ownAsync`; the timer is
+  canceled on edits, viewer retargets, and disposal, with path/text captured
+  for the intended document update.
+- Verification: `flutter analyze && flutter test` passed from `cockpit/` (288
+  tests).
