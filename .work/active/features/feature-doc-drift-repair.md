@@ -1,7 +1,7 @@
 ---
 id: feature-doc-drift-repair
 kind: feature
-stage: drafting
+stage: implementing
 tags: [docs, prose]
 parent: null
 depends_on: []
