@@ -3,7 +3,7 @@ use ed25519_dalek::{Signer as _, SigningKey};
 use serde::Deserialize;
 
 use super::challenge::{
-    AuthError, RELAY_AUTH_DOMAIN_PREFIX, gen_nonce, parse_hello, parse_hello_bootstrap,
+    AuthError, RELAY_AUTH_DOMAIN_PREFIX, gen_nonce, parse_hello_bootstrap,
     relay_auth_signing_bytes, verify_auth,
 };
 
@@ -42,7 +42,7 @@ fn relay_auth_signs_the_shared_cross_component_byte_vector() {
 fn sem_hello() {
     // Send an "auth" message before any hello
     let line = r#"{"type":"auth","sig":"AAAA"}"#;
-    let err = parse_hello(line).unwrap_err();
+    let err = parse_hello_bootstrap(line, 0).unwrap_err();
     assert!(matches!(err, AuthError::NoHello));
 }
 

@@ -357,6 +357,7 @@ mod tests {
     use axum::extract::ws::Message;
     use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
     use ed25519_dalek::SigningKey;
+    use tokio::sync::mpsc;
 
     use crate::metrics::FirehoseMetrics;
     use crate::peers::registry::PeerRegistry;
@@ -364,8 +365,8 @@ mod tests {
     use crate::protocol::frame::{FrameDecodeError, RelayControlFrame, decode_relay_frame};
     use crate::protocol::generated::control::{RELAY_CONTROL_FRAME_TYPES, RoomMetaUpdateFrame};
     use crate::protocol::outer::OuterEnvelopeParser;
+    use crate::resource_limits::OUTBOUND_QUEUE_CAPACITY;
     use crate::rooms::{RoomManager, RoomMeta, RoomMetaPatch};
-    use crate::test_support::bounded_mpsc as mpsc;
 
     fn actor_services() -> (Arc<PeerRegistry>, ConnectionActorServices) {
         let presence = Arc::new(PresenceManager::new());
@@ -400,7 +401,7 @@ mod tests {
         }
     }
 
-    fn text_from_rx(rx: &mut mpsc::UnboundedReceiver<Message>) -> String {
+    fn text_from_rx(rx: &mut mpsc::Receiver<Message>) -> String {
         rx.try_recv()
             .expect("recipient must receive forwarded envelope")
             .to_text()
@@ -538,7 +539,7 @@ mod tests {
     #[tokio::test]
     async fn generated_rooms_snapshot_preserves_wire_value() {
         let (registry, services) = actor_services();
-        let (tx, _rx) = mpsc::unbounded_channel::<Message>();
+        let (tx, _rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         registry
             .register(
                 "pi".to_string(),
@@ -687,7 +688,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_outer_forwards_ct_verbatim_and_rewrites_sender_identity() {
         let (registry, services) = actor_services();
-        let (dest_tx, mut dest_rx) = mpsc::unbounded_channel::<Message>();
+        let (dest_tx, mut dest_rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _dest_conn = registry
             .register(
                 "dest-peer".to_string(),
@@ -724,8 +725,8 @@ mod tests {
     #[tokio::test]
     async fn dispatch_outer_targets_exact_destination_room_without_cross_room_contamination() {
         let (registry, services) = actor_services();
-        let (target_tx, mut target_rx) = mpsc::unbounded_channel::<Message>();
-        let (other_tx, mut other_rx) = mpsc::unbounded_channel::<Message>();
+        let (target_tx, mut target_rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+        let (other_tx, mut other_rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let _target_conn = registry
             .register(
                 "dest-peer".to_string(),
@@ -772,8 +773,8 @@ mod tests {
     async fn dispatch_outer_skips_sender_connection_without_suppressing_other_matching_connections()
     {
         let (registry, services) = actor_services();
-        let (sender_tx, mut sender_rx) = mpsc::unbounded_channel::<Message>();
-        let (other_tx, mut other_rx) = mpsc::unbounded_channel::<Message>();
+        let (sender_tx, mut sender_rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
+        let (other_tx, mut other_rx) = mpsc::channel::<Message>(OUTBOUND_QUEUE_CAPACITY);
         let sender_conn = registry
             .register(
                 "owner-peer".to_string(),
