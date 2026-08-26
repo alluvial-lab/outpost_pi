@@ -657,7 +657,7 @@ void main() {
       expect(messages(s.epk), isEmpty);
       expect(index(s.epk), isNull);
       expect(s.sync.streaming, isNull);
-      expect(s.sync.isWorking, isFalse);
+      expect(s.sync.turnProjection.working, isFalse);
       expect(s.sync.queuedText, isNull);
       s.conn.dispose();
       s.sync.dispose();
@@ -677,14 +677,14 @@ void main() {
       );
       await _settle();
       expect(s.sync.streaming, isNull);
-      expect(s.sync.isWorking, isFalse);
+      expect(s.sync.turnProjection.working, isFalse);
 
       s.ch.pushRaw(
         AgentChunk(sessionId: s.sessionId, inReplyTo: 'u1', delta: 'keep'),
       );
       await _settle();
       expect(s.sync.streaming?.buffer, 'keep');
-      expect(s.sync.isWorking, isTrue);
+      expect(s.sync.turnProjection.working, isTrue);
       s.conn.dispose();
       s.sync.dispose();
     },
@@ -864,7 +864,7 @@ void main() {
       'summary',
     ]);
     expect(s.sync.streaming, isNull);
-    expect(s.sync.isWorking, isFalse);
+    expect(s.sync.turnProjection.working, isFalse);
 
     await sub.cancel();
     s.conn.dispose();
@@ -934,8 +934,8 @@ void main() {
         ),
         ['live one', 'live one live two'],
       );
-      expect(s.sync.isWorking, isTrue);
-      expect(s.sync.workingReplyTo, 'live-u2');
+      expect(s.sync.turnProjection.working, isTrue);
+      expect(s.sync.turnProjection.cancelTargetId, 'live-u2');
       expect(
         s.conn.isRoomWorking(s.epk, 'main'),
         isTrue,
@@ -961,7 +961,7 @@ void main() {
       final streamingEmissions = <StreamingMessage?>[];
       final workingEmissions = <bool>[];
       final sub = s.sync.streamingStream.listen(streamingEmissions.add);
-      final workingSub = s.sync.workingStream.listen(workingEmissions.add);
+      final workingSub = s.sync.turnProjectionStream.map((projection) => projection.working).distinct().listen(workingEmissions.add);
 
       final hydration = s.sync.debugApplyHistory(
         SessionHistory(
@@ -997,7 +997,7 @@ void main() {
       );
       expect(workingEmissions, [true, false]);
       expect(s.sync.streaming, isNull);
-      expect(s.sync.isWorking, isFalse);
+      expect(s.sync.turnProjection.working, isFalse);
 
       await workingSub.cancel();
       await sub.cancel();
@@ -1019,7 +1019,7 @@ void main() {
       final streamingEmissions = <StreamingMessage?>[];
       final workingEmissions = <bool>[];
       final sub = s.sync.streamingStream.listen(streamingEmissions.add);
-      final workingSub = s.sync.workingStream.listen(workingEmissions.add);
+      final workingSub = s.sync.turnProjectionStream.map((projection) => projection.working).distinct().listen(workingEmissions.add);
 
       final hydration = s.sync.debugApplyHistory(
         SessionHistory(
@@ -1061,7 +1061,7 @@ void main() {
       );
       expect(workingEmissions, [true, false]);
       expect(s.sync.streaming, isNull);
-      expect(s.sync.isWorking, isFalse);
+      expect(s.sync.turnProjection.working, isFalse);
       expect(s.sync.turnProjection.status, AppTurnStatus.idle);
 
       await workingSub.cancel();
@@ -1337,10 +1337,10 @@ void main() {
         (m) => m.text == 'refine this',
       );
       expect(sent.streamingBehavior, UserMessageStreamingBehavior.steer);
-      expect(s.sync.workingReplyTo, 'u1');
+      expect(s.sync.turnProjection.cancelTargetId, 'u1');
       expect(s.sync.streaming, isNotNull);
       expect(s.sync.streaming!.inReplyTo, 'u1');
-      expect(s.sync.isWorking, isTrue);
+      expect(s.sync.turnProjection.working, isTrue);
 
       s.conn.dispose();
       s.sync.dispose();
@@ -1351,7 +1351,7 @@ void main() {
     final s = await setup();
     s.ch.push(UserInput(id: 'u1', text: 'primary'));
     await _settle();
-    expect(s.sync.workingReplyTo, 'u1');
+    expect(s.sync.turnProjection.cancelTargetId, 'u1');
 
     await s.sync.sendMessage(
       'refine this',
@@ -1371,10 +1371,10 @@ void main() {
     );
     await _settle();
 
-    expect(s.sync.workingReplyTo, 'u1');
+    expect(s.sync.turnProjection.cancelTargetId, 'u1');
     expect(s.sync.streaming, isNotNull);
     expect(s.sync.streaming!.inReplyTo, 'u1');
-    expect(s.sync.isWorking, isTrue);
+    expect(s.sync.turnProjection.working, isTrue);
     var rows = messages(s.epk);
     expect(
       rows.map((row) => row.id),
@@ -1412,7 +1412,7 @@ void main() {
       final s = await setup();
       s.ch.push(UserInput(id: 'u1', text: 'primary'));
       await _waitUntil(
-        () => s.sync.workingReplyTo == 'u1',
+        () => s.sync.turnProjection.cancelTargetId == 'u1',
         reason: 'primary turn activation before steering rejection',
       );
       s.ch.push(AgentChunk(inReplyTo: 'u1', delta: 'primary partial'));
@@ -1445,10 +1445,10 @@ void main() {
         reason: 'correlated steering rejection convergence',
       );
 
-      expect(s.sync.workingReplyTo, 'u1');
+      expect(s.sync.turnProjection.cancelTargetId, 'u1');
       expect(s.sync.streaming?.inReplyTo, 'u1');
       expect(s.sync.streaming?.buffer, 'primary partial');
-      expect(s.sync.isWorking, isTrue);
+      expect(s.sync.turnProjection.working, isTrue);
       final failed = messages(
         s.epk,
       ).where((row) => row.id == sent.id).toList(growable: false);
@@ -1467,7 +1467,7 @@ void main() {
       final s = await setup(transcriptEventStore: store);
       s.ch.push(UserInput(id: 'u1', text: 'primary'));
       await _waitUntil(
-        () => s.sync.workingReplyTo == 'u1',
+        () => s.sync.turnProjection.cancelTargetId == 'u1',
         reason: 'primary turn activation before failed rejection append',
       );
       s.ch.push(AgentChunk(inReplyTo: 'u1', delta: 'primary partial'));
@@ -1497,10 +1497,10 @@ void main() {
         reason: 'persistence-independent steering rejection convergence',
       );
 
-      expect(s.sync.workingReplyTo, 'u1');
+      expect(s.sync.turnProjection.cancelTargetId, 'u1');
       expect(s.sync.streaming?.inReplyTo, 'u1');
       expect(s.sync.streaming?.buffer, 'primary partial');
-      expect(s.sync.isWorking, isTrue);
+      expect(s.sync.turnProjection.working, isTrue);
 
       s.conn.dispose();
       s.sync.dispose();
@@ -1777,7 +1777,7 @@ void main() {
       );
       expect(rows.singleWhere((m) => m.id == 'u1').pending, isFalse);
       expect(s.sync.streaming, isNull);
-      expect(s.sync.isWorking, isFalse);
+      expect(s.sync.turnProjection.working, isFalse);
       expect(index(s.epk)?.status, SessionActivity.idle);
       s.conn.dispose();
       s.sync.dispose();
@@ -1789,7 +1789,7 @@ void main() {
     final s = await setup(transcriptEventStore: store);
     s.ch.push(UserInput(id: 'u1', text: 'primary'));
     await _waitUntil(
-      () => s.sync.workingReplyTo == 'u1',
+      () => s.sync.turnProjection.cancelTargetId == 'u1',
       reason: 'primary turn activation before cancel',
     );
 
@@ -1831,7 +1831,7 @@ void main() {
     );
 
     expect(s.sync.steeringProjection, isA<NoSteering>());
-    expect(s.sync.isWorking, isFalse);
+    expect(s.sync.turnProjection.working, isFalse);
     final failures = store
         .eventsFor(transcriptKeyFor(s.epk))
         .whereType<UserMessageFailed>()
@@ -1870,7 +1870,7 @@ void main() {
     expect(rows.single.role, MsgRole.user);
     expect(rows.single.status, UserMsgStatus.failed);
     expect(s.sync.streaming, isNull);
-    expect(s.sync.isWorking, isFalse);
+    expect(s.sync.turnProjection.working, isFalse);
     expect(index(s.epk)?.status, SessionActivity.idle);
     s.conn.dispose();
     s.sync.dispose();
@@ -1893,7 +1893,7 @@ void main() {
       await _settle();
 
       expect(s.sync.streaming, isNull);
-      expect(s.sync.isWorking, isFalse);
+      expect(s.sync.turnProjection.working, isFalse);
       expect(index(s.epk)?.status, SessionActivity.idle);
       final errorTexts = messages(
         s.epk,
@@ -1906,17 +1906,17 @@ void main() {
 
   test('isWorking spans the whole turn (echo → agent_done)', () async {
     final s = await setup();
-    expect(s.sync.isWorking, isFalse);
+    expect(s.sync.turnProjection.working, isFalse);
     final flags = <bool>[];
-    final sub = s.sync.workingStream.listen(flags.add);
+    final sub = s.sync.turnProjectionStream.map((projection) => projection.working).distinct().listen(flags.add);
 
     s.ch.push(UserInput(id: 'u1', text: 'hi'));
     await _settle();
-    expect(s.sync.isWorking, isTrue, reason: 'working from the echo');
+    expect(s.sync.turnProjection.working, isTrue, reason: 'working from the echo');
 
     s.ch.push(AgentDone(inReplyTo: 'u1'));
     await _settle();
-    expect(s.sync.isWorking, isFalse, reason: 'idle after agent_done');
+    expect(s.sync.turnProjection.working, isFalse, reason: 'idle after agent_done');
     expect(flags, [true, false]);
 
     await sub.cancel();
@@ -1988,16 +1988,16 @@ void main() {
 
       s.ch.push(UserInput(id: 'late-u1', text: 'from late attach'));
       await _settle();
-      expect(s.sync.isWorking, isTrue);
-      expect(s.sync.workingReplyTo, 'late-u1');
+      expect(s.sync.turnProjection.working, isTrue);
+      expect(s.sync.turnProjection.cancelTargetId, 'late-u1');
       expect(s.conn.isRoomWorking(s.epk, 'main'), isTrue);
 
       s.ch.push(AgentChunk(inReplyTo: 'late-u1', delta: 'final text'));
       await _settle();
       s.ch.push(AgentDone(inReplyTo: 'late-u1'));
       await _settle();
-      expect(s.sync.isWorking, isFalse);
-      expect(s.sync.workingReplyTo, isNull);
+      expect(s.sync.turnProjection.working, isFalse);
+      expect(s.sync.turnProjection.cancelTargetId, isNull);
       expect(s.sync.streaming, isNull);
       expect(s.conn.isRoomWorking(s.epk, 'main'), isFalse);
 
@@ -2016,8 +2016,8 @@ void main() {
       );
       await _settle();
 
-      expect(s.sync.isWorking, isFalse);
-      expect(s.sync.workingReplyTo, isNull);
+      expect(s.sync.turnProjection.working, isFalse);
+      expect(s.sync.turnProjection.cancelTargetId, isNull);
       expect(s.sync.streaming, isNull);
       expect(s.conn.isRoomWorking(s.epk, 'main'), isFalse);
       expect(index(s.epk)?.status, SessionActivity.idle);
@@ -2041,12 +2041,12 @@ void main() {
 
       expect(s.sync.queuedText, 'draft');
       expect(
-        s.sync.isWorking,
+        s.sync.turnProjection.working,
         isTrue,
         reason: 'online send enters whole-turn working',
       );
       expect(s.sync.streaming, isNotNull, reason: 'online send seeds cursor');
-      expect(s.sync.workingReplyTo, isNotNull);
+      expect(s.sync.turnProjection.cancelTargetId, isNotNull);
       expect(
         s.sync.debugPendingSendTimerCount,
         1,
@@ -2062,10 +2062,10 @@ void main() {
         isA<StatusRetrying>(),
         reason: 'disconnect transitions to retrying',
       );
-      expect(s.sync.isWorking, isFalse, reason: 'status drop clears working');
+      expect(s.sync.turnProjection.working, isFalse, reason: 'status drop clears working');
       expect(s.sync.streaming, isNull, reason: 'streaming cursor is cleared');
       expect(
-        s.sync.workingReplyTo,
+        s.sync.turnProjection.cancelTargetId,
         isNull,
         reason: 'stale cancel target cleared',
       );
@@ -2131,12 +2131,12 @@ void main() {
       () => s.sync.streaming?.buffer == 'thinking...',
       reason: 'the first session chunk projection',
     );
-    expect(s.sync.isWorking, isTrue);
+    expect(s.sync.turnProjection.working, isTrue);
     expect(s.sync.streaming, isNotNull);
-    expect(s.sync.workingReplyTo, 'r1');
+    expect(s.sync.turnProjection.cancelTargetId, 'r1');
 
     final flags = <bool>[];
-    final sub = s.sync.workingStream.listen(flags.add);
+    final sub = s.sync.turnProjectionStream.map((projection) => projection.working).distinct().listen(flags.add);
 
     // Switch the writer to a DIFFERENT session (what the chat does on a
     // tablet session switch). Must clear the in-memory signals.
@@ -2144,7 +2144,7 @@ void main() {
     await _settle();
 
     expect(
-      s.sync.isWorking,
+      s.sync.turnProjection.working,
       isFalse,
       reason: 'chat 2 must not inherit chat 1 working',
     );
@@ -2153,7 +2153,7 @@ void main() {
       isNull,
       reason: 'chat 1 streaming buffer must not show in chat 2',
     );
-    expect(s.sync.workingReplyTo, isNull);
+    expect(s.sync.turnProjection.cancelTargetId, isNull);
     expect(
       flags,
       contains(false),
@@ -3057,7 +3057,7 @@ void main() {
       expect([for (final row in messages(s.epk)) row.toJson()], afterFirstRows);
       expect(emits, afterFirstEmits);
 
-      final workingBeforeForeign = s.sync.isWorking;
+      final workingBeforeForeign = s.sync.turnProjection.working;
       final streamingBeforeForeign = s.sync.streaming;
       s.ch.pushRaw(
         SessionHistory(
@@ -3078,7 +3078,7 @@ void main() {
         hasLength(afterFirstLog.length),
       );
       expect([for (final row in messages(s.epk)) row.toJson()], afterFirstRows);
-      expect(s.sync.isWorking, workingBeforeForeign);
+      expect(s.sync.turnProjection.working, workingBeforeForeign);
       expect(s.sync.streaming, streamingBeforeForeign);
       expect(
         messages(s.epk).map((row) => row.text),
@@ -3243,7 +3243,7 @@ void main() {
       await _settle();
       s.ch.push(AgentDone(inReplyTo: 'success-u1'));
       await _settle();
-      expect(s.sync.isWorking, isFalse, reason: 'success converges idle');
+      expect(s.sync.turnProjection.working, isFalse, reason: 'success converges idle');
 
       s.ch.push(UserInput(id: 'error-u1', text: 'fail'));
       await _settle();
@@ -3257,14 +3257,14 @@ void main() {
         ),
       );
       await _settle();
-      expect(s.sync.isWorking, isFalse, reason: 'error converges idle');
+      expect(s.sync.turnProjection.working, isFalse, reason: 'error converges idle');
 
       s.ch.push(UserInput(id: 'cancel-u1', text: 'cancel'));
       await _settle();
       s.ch.push(AgentChunk(inReplyTo: 'cancel-u1', delta: 'partial'));
       s.ch.push(Cancelled(inReplyTo: 'cancel-req', targetId: 'cancel-u1'));
       await _settle();
-      expect(s.sync.isWorking, isFalse, reason: 'cancel converges idle');
+      expect(s.sync.turnProjection.working, isFalse, reason: 'cancel converges idle');
 
       s.ch.push(
         Compaction(
@@ -3275,7 +3275,7 @@ void main() {
         ),
       );
       await _settle();
-      expect(s.sync.isWorking, isFalse, reason: 'compaction converges idle');
+      expect(s.sync.turnProjection.working, isFalse, reason: 'compaction converges idle');
 
       final log = await s.sync.debugTranscriptEventStore.readSession(
         transcriptKeyFor(s.epk),
@@ -3310,7 +3310,7 @@ void main() {
         ]),
       );
       expect(replayedTexts, contains(startsWith('⚠ provider_error:')));
-      expect(sync2.isWorking, isFalse, reason: 'replay rebuild stays idle');
+      expect(sync2.turnProjection.working, isFalse, reason: 'replay rebuild stays idle');
 
       s.conn.dispose();
       sync2.dispose();
@@ -3329,13 +3329,13 @@ void main() {
 
       s.ch.push(UserInput(id: 'failure-u1', text: 'keep working'));
       await _settle();
-      expect(s.sync.isWorking, isTrue);
+      expect(s.sync.turnProjection.working, isTrue);
 
       store.failNextAppend = true;
       s.ch.push(AgentChunk(inReplyTo: 'failure-u1', delta: 'partial'));
       await _settle();
       expect(
-        s.sync.isWorking,
+        s.sync.turnProjection.working,
         isTrue,
         reason: 'a non-terminal persistence failure must not idle the turn',
       );
@@ -3379,7 +3379,7 @@ void main() {
       s.ch.push(AgentDone(inReplyTo: 'failure-u1'));
       await _settle();
       expect(
-        s.sync.isWorking,
+        s.sync.turnProjection.working,
         isFalse,
         reason: 'terminal state settles idle even when its append fails',
       );
@@ -4081,12 +4081,12 @@ void main() {
     // Mid-turn: working flag up, streaming buffer populated, reply target set.
     s.ch.push(AgentChunk(inReplyTo: 'r1', delta: 'thinking...'));
     await _settle();
-    expect(s.sync.isWorking, isTrue);
+    expect(s.sync.turnProjection.working, isTrue);
     expect(s.sync.streaming, isNotNull);
-    expect(s.sync.workingReplyTo, 'r1');
+    expect(s.sync.turnProjection.cancelTargetId, 'r1');
 
     final flags = <bool>[];
-    final sub = s.sync.workingStream.listen(flags.add);
+    final sub = s.sync.turnProjectionStream.map((projection) => projection.working).distinct().listen(flags.add);
 
     // `session_new` wipe boundary: clear must converge working state false,
     // not leave a stale cancel target / streaming cursor.
@@ -4094,7 +4094,7 @@ void main() {
     await _settle();
 
     expect(
-      s.sync.isWorking,
+      s.sync.turnProjection.working,
       isFalse,
       reason: 'session clear must idle the in-memory working flag',
     );
@@ -4104,7 +4104,7 @@ void main() {
       reason: 'session clear must drop the streaming cursor',
     );
     expect(
-      s.sync.workingReplyTo,
+      s.sync.turnProjection.cancelTargetId,
       isNull,
       reason: 'session clear must clear the stale cancel target',
     );
@@ -4391,7 +4391,7 @@ void main() {
         await _settle();
         expect(messages(s.epk), hasLength(1), reason: 'optimistic pending row');
         expect(messages(s.epk).first.pending, isTrue);
-        expect(s.sync.isWorking, isTrue);
+        expect(s.sync.turnProjection.working, isTrue);
         expect(s.sync.streaming, isNotNull, reason: 'thinking cursor seeded');
 
         // No echo — wait past the timeout window.
@@ -4404,7 +4404,7 @@ void main() {
         expect(rows.single.status, UserMsgStatus.failed);
         expect(rows.single.text, 'hello');
         expect(
-          s.sync.isWorking,
+          s.sync.turnProjection.working,
           isFalse,
           reason: 'working cleared for this id',
         );
@@ -4672,7 +4672,7 @@ void main() {
       expect(rows.single.role, MsgRole.user);
       expect(rows.single.status, UserMsgStatus.failed);
       expect(rows.single.text, 'hello');
-      expect(s.sync.isWorking, isFalse);
+      expect(s.sync.turnProjection.working, isFalse);
       expect(s.sync.streaming, isNull);
       expect(s.sync.debugPendingSendTimerCount, 0);
       s.conn.dispose();

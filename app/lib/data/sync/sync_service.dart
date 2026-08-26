@@ -297,15 +297,6 @@ class SyncService extends Service {
   Stream<AppTurnProjection> get turnProjectionStream =>
       _turnViewController.stream.map((turn) => turn.toAppProjection());
 
-  /// Compatibility getters. They are derived from [_turnView], never written as
-  /// independent mutable booleans/ids.
-  bool get isWorking => turnProjection.working;
-  Stream<bool> get workingStream =>
-      turnProjectionStream.map((projection) => projection.working).distinct();
-
-  /// `cancel` target for the in-flight reply (null when idle).
-  String? get workingReplyTo => turnProjection.cancelTargetId;
-
   /// Return the active peer identity while a room is bound, if known.
   String? get activeEpk => _activeEpk;
 
