@@ -7,7 +7,7 @@ const relayUrl = requiredEnv("OUTPOST_PI_RELAY");
 const cwd = process.env.E2E_PI_CWD ?? "/tmp/outpost-pi-e2e-cwd";
 const seededTranscriptText = process.env.E2E_SEEDED_TRANSCRIPT ?? "e2e persisted transcript";
 const preserveStateMarker = "/tmp/outpost-pi-e2e-preserve-state";
-const preservedAgentName = await consumePreserveStateMarker();
+const preservedState = await consumePreserveStateMarker();
 
 // Boot line: printed synchronously at process start, BEFORE the awaited
 // runtime start. If a wedged run shows ready-banners up to generation N and
@@ -21,8 +21,9 @@ const runtime = await E2ePiHostRuntime.start({
   relayUrl,
   cwd,
   seededTranscriptText,
-  preserveState: preservedAgentName !== null,
-  agentName: preservedAgentName ?? undefined,
+  preserveState: preservedState !== null,
+  freshSession: preservedState?.freshSession ?? false,
+  agentName: preservedState?.agentName,
 });
 let restarting = false;
 
@@ -135,6 +136,14 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     json(response, 200, runtime.turnControlStatus());
     return;
   }
+  if (request.method === "GET" && url.pathname === "/delivery-control") {
+    json(response, 200, await runtime.deliveryControlStatus());
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/delivery-control/quiesce") {
+    json(response, 200, await runtime.beginDeliveryQuiesce());
+    return;
+  }
   if (request.method === "POST" && url.pathname === "/turn-control/defer-next") {
     const body = await readJson(request);
     const reply = typeof body.reply === "string" ? body.reply : undefined;
@@ -169,8 +178,13 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     const preserving = url.searchParams.get("preserve") === "1";
     if (preserving) {
       const assignedName = await runtime.preparePreservingRestart();
+      const freshSession = url.searchParams.get("fresh") === "1";
       process.stdout.write(`[e2e-pi-host] preserving assigned name=${assignedName}\n`);
-      await writeFile(preserveStateMarker, assignedName, { mode: 0o600 });
+      await writeFile(
+        preserveStateMarker,
+        JSON.stringify({ agentName: assignedName, freshSession }),
+        { mode: 0o600 },
+      );
     }
     json(response, 202, { restarting: true, generation: runtime.generation });
     setTimeout(() => process.exit(preserving ? 75 : 0), 25).unref();
@@ -199,11 +213,26 @@ function json(response: ServerResponse, status: number, body: unknown): void {
   response.end(JSON.stringify(body));
 }
 
-async function consumePreserveStateMarker(): Promise<string | null> {
+async function consumePreserveStateMarker(): Promise<{
+  agentName: string;
+  freshSession: boolean;
+} | null> {
   try {
-    const assignedName = await readFile(preserveStateMarker, "utf8");
+    const raw = await readFile(preserveStateMarker, "utf8");
     await rm(preserveStateMarker, { force: true });
-    return assignedName.trim() || "e2e-agent";
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object") {
+        const marker = parsed as { agentName?: unknown; freshSession?: unknown };
+        if (typeof marker.agentName === "string" && marker.agentName.trim()) {
+          return {
+            agentName: marker.agentName.trim(),
+            freshSession: marker.freshSession === true,
+          };
+        }
+      }
+    } catch { /* compatibility with a pre-structured preserving marker */ }
+    return { agentName: raw.trim() || "e2e-agent", freshSession: false };
   } catch {
     return null;
   }

@@ -616,6 +616,9 @@ class SyncService extends Service {
               : [WireImage(data: image.data, mime: image.mime)],
         ),
       );
+      if (_isCurrentLifecycle(generation, ref)) {
+        _rememberOwnerDeliveryAttempt(generation, id);
+      }
     } catch (_) {
       await _failPendingSend(
         id,
@@ -1117,10 +1120,7 @@ class SyncService extends Service {
     if (!_isCurrentLifecycle(generation, ref)) return;
     final channel = _conn.channel;
     if (channel == null || !_conn.isRoomLive(ref.peerEpk, ref.roomId)) return;
-    if (_ownerDeliveryRecoveryGeneration != generation) {
-      _ownerDeliveryRecoveryGeneration = generation;
-      _recoveredOwnerDeliveryIds.clear();
-    }
+    _ensureOwnerDeliveryRecoveryGeneration(generation);
 
     final pending = await _ownerDeliveryOutbox.listForRoom(
       peerEpk: ref.peerEpk,
@@ -1216,6 +1216,17 @@ class SyncService extends Service {
         debugPrint('[msg-resend] id=${original.id} failed');
       }
     }
+  }
+
+  void _ensureOwnerDeliveryRecoveryGeneration(int generation) {
+    if (_ownerDeliveryRecoveryGeneration == generation) return;
+    _ownerDeliveryRecoveryGeneration = generation;
+    _recoveredOwnerDeliveryIds.clear();
+  }
+
+  void _rememberOwnerDeliveryAttempt(int generation, String id) {
+    _ensureOwnerDeliveryRecoveryGeneration(generation);
+    _recoveredOwnerDeliveryIds.add(id);
   }
 
   void _onServerMessage(ServerMessage msg, [String? originEpk]) {

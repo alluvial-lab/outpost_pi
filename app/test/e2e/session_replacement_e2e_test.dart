@@ -119,6 +119,13 @@ void main() {
         sessionId: replacementSessionId,
       );
       expect(replacementRef, isNot(originalRef));
+      await eventually<bool>(
+        () async =>
+            session.sync.activeSessionRef == replacementRef ? true : null,
+        timeout: const Duration(seconds: 10),
+        description: 'SyncService replacement-session writer binding',
+      );
+      await session.ping();
 
       expect((await host.deferNextTurn()).phase, 'armed');
       await session.sync.sendMessage(_postReplacementText);
@@ -128,6 +135,7 @@ void main() {
         timeout: const Duration(seconds: 10),
         description: 'deferred replacement turn entered',
       );
+      await host.deliveryControlStatus();
 
       // The SDK message_end event occurs while sendUserMessage is still held.
       // It must confirm the original optimistic cli_ row immediately.
