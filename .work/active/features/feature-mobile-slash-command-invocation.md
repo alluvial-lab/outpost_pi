@@ -1,7 +1,7 @@
 ---
 id: feature-mobile-slash-command-invocation
 kind: feature
-stage: review
+stage: done
 tags: [app, pi-extension, bug]
 parent: null
 depends_on: []
@@ -430,6 +430,15 @@ Per-command result:
 The generated schema, extension router, and app contain no `extension_command`,
 command-name, or arbitrary-args dispatcher. Late binding therefore terminates
 this conditional branch without children.
+
+_Boundary note (feature review 2026-08-26): this no-dispatcher claim is
+scoped to the mobile owner-channel surface — the app↔Pi client
+schema/router and the captured extension-side `ExtensionAPI` (which has no
+invocation method). A general command path does exist elsewhere: external
+hosts can run registered extension commands via `AgentSession.prompt`
+or RPC `prompt` (`pi-extension/src/daemon/rpc_child.ts:322-324`, per the
+research child), and the cockpit control schema carries its own curated
+command discriminator. Neither reaches the mobile wire._
 
 ## Simplification
 
