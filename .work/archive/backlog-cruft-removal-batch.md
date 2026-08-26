@@ -1,8 +1,10 @@
 ---
 id: backlog-cruft-removal-batch
 created: 2026-07-23
-updated: 2026-07-23
+updated: 2026-08-26
 tags: [cleanup, refactor, app, relay]
+status: folded
+folded_into: feature-cruft-consolidated-cleanup (groom 2026-08-26)
 ---
 
 # Cruft-removal batch (merged from 8 gate-cruft findings)

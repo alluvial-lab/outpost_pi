@@ -1,8 +1,10 @@
 ---
 id: gate-patterns-v050-token-port-drift
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-26
 tags: [branding, workflow]
+status: folded
+folded_into: feature-theme-token-cross-surface-contract (groom 2026-08-26)
 ---
 
 # v0.5.0 pattern candidates: token-port + mark-geometry drift risks

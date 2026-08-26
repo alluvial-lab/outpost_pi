@@ -1,8 +1,10 @@
 ---
 id: backlog-hot-reload-cruft-batch
 created: 2026-08-11
-updated: 2026-08-11
+updated: 2026-08-26
 tags: [pi-extension]
+status: folded
+folded_into: feature-cruft-consolidated-cleanup (groom 2026-08-26)
 ---
 
 # Hot-reload cruft + expiry-test batch

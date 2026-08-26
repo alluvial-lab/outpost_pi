@@ -8,7 +8,12 @@ depends_on: []
 release_binding: null
 gate_origin: null
 created: 2026-08-04
-updated: 2026-08-04
+updated: 2026-08-26
+research_dials:
+  scope_authority: pre-registered
+  verification_rigor: standard
+  intent: verify the Pi SDK surface for invoking extension/host operations from mobile (verify-first, feeds parent feature design)
+  output_kind: findings recorded in this item body, consumed by parent feature design
 ---
 
 # Extension-command invocation from mobile (verify-first)

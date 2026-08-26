@@ -1,8 +1,14 @@
 ---
 id: backlog-cockpit-file-watch-reliability
-created: 2026-07-23
-updated: 2026-07-23
+kind: story
+stage: drafting
 tags: [cockpit, lifecycle]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-07-23
+updated: 2026-08-26
 ---
 
 # Cockpit file-watch reliability (merged from 3 findings)

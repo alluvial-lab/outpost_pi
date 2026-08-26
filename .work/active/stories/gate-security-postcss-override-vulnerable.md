@@ -1,8 +1,14 @@
 ---
 id: gate-security-postcss-override-vulnerable
-created: 2026-08-15
-updated: 2026-08-15
+kind: story
+stage: drafting
 tags: [site, pi-extension, security]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: security
+created: 2026-08-15
+updated: 2026-08-26
 ---
 
 # pnpm overrides pin PostCSS to a version vulnerable to source-map file reads

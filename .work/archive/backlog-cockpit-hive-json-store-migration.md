@@ -1,8 +1,10 @@
 ---
 id: backlog-cockpit-hive-json-store-migration
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-26
 tags: [cockpit, bug]
+status: folded
+folded_into: feature-cockpit-storage-json-vs-hive (groom 2026-08-26)
 ---
 
 # Cockpit: migrate Hive → atomic JSON stores (Windows crash classes)

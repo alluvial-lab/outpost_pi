@@ -1,8 +1,14 @@
 ---
 id: story-identity-boot-restore-race
-created: 2026-07-27
-updated: 2026-07-27
+kind: story
+stage: drafting
 tags: [app, security, bug]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-07-27
+updated: 2026-08-26
 ---
 
 # Fresh-install identity boot generates before the Block Store restore lands

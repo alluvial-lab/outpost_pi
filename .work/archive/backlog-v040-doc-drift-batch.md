@@ -1,8 +1,10 @@
 ---
 id: backlog-v040-doc-drift-batch
 created: 2026-08-11
-updated: 2026-08-11
+updated: 2026-08-26
 tags: [pi-extension, docs]
+status: folded
+folded_into: feature-doc-drift-repair (groom 2026-08-26)
 ---
 
 # v0.4.0 doc/comment drift batch

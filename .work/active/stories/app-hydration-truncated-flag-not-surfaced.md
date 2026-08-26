@@ -1,8 +1,14 @@
 ---
 id: app-hydration-truncated-flag-not-surfaced
-created: 2026-07-25
-updated: 2026-07-25
+kind: story
+stage: drafting
 tags: [app, ux]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-07-25
+updated: 2026-08-26
 ---
 
 # Session hydration truncation is invisible in the app

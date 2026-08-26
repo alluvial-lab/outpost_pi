@@ -1,8 +1,14 @@
 ---
 id: app-relay-url-network-failover
-created: 2026-07-26
-updated: 2026-07-26
+kind: story
+stage: drafting
 tags: [app, bug]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-07-26
+updated: 2026-08-26
 ---
 
 # Single relay URL leaves the app fully down when its network path dies

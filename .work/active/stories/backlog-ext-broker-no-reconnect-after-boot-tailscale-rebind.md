@@ -1,8 +1,14 @@
 ---
 id: backlog-ext-broker-no-reconnect-after-boot-tailscale-rebind
-created: 2026-08-23
-updated: 2026-08-23
+kind: story
+stage: drafting
 tags: [pi-extension, bug]
+parent: null
+depends_on: []
+release_binding: null
+gate_origin: null
+created: 2026-08-23
+updated: 2026-08-26
 ---
 
 # Broker holds no relay socket after VM reboot + tailscale link rebind

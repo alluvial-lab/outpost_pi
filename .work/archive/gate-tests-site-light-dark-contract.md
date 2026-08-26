@@ -1,8 +1,10 @@
 ---
 id: gate-tests-site-light-dark-contract
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-26
 tags: [site, testing]
+status: folded
+folded_into: feature-site-test-baseline (groom 2026-08-26)
 ---
 
 # Site light/dark resolution and AA contrast have no reproducible automated check
